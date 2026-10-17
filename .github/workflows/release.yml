@@ -14,10 +14,45 @@ on:
         required: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  validate:
+    # This job has no signing secrets or write token. Resolve the tag once, then pass an
+    # immutable commit to the build so a manual dispatch cannot sign an arbitrary branch.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      commit: ${{ steps.release.outputs.commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate the release tag
+        id: release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Use a version tag such as v1.0.14. Branch names are not accepted."
+            exit 1
+          fi
+          COMMIT="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")"
+          if ! git merge-base --is-ancestor "$COMMIT" refs/remotes/origin/main; then
+            echo "::error::The release tag must point to code already on main."
+            exit 1
+          fi
+          printf 'tag=%s\ncommit=%s\n' "$RELEASE_TAG" "$COMMIT" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: validate
+    timeout-minutes: 30
+    permissions:
+      contents: write # Required by the release upload; checkout does not retain this token.
     strategy:
       fail-fast: false
       matrix:
@@ -30,10 +65,11 @@ jobs:
             glob: desktop/dist-app/*.exe
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
-      - uses: actions/setup-node@v4
+          ref: ${{ needs.validate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -46,12 +82,16 @@ jobs:
           SIGN_CERT_P12_BASE64: ${{ secrets.SIGN_CERT_P12_BASE64 }}
           SIGN_CERT_PASSWORD: ${{ secrets.SIGN_CERT_PASSWORD }}
         run: |
+          set -euo pipefail
+          umask 077
+          trap 'rm -f "$RUNNER_TEMP/cert.p12"' EXIT
           if [ -z "$SIGN_CERT_P12_BASE64" ] || [ -z "$SIGN_CERT_PASSWORD" ]; then
             echo "::error title=No signing certificate::Set the secrets SIGN_CERT_P12_BASE64 and SIGN_CERT_PASSWORD. A Mac release never ships an ad-hoc build."
             exit 1
           fi
           KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
           printf '%s' "$SIGN_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
@@ -72,11 +112,13 @@ jobs:
       - name: Show the signature
         if: runner.os == 'macOS'
         run: codesign -d -r- "desktop/dist-app/mac-arm64/Yaseen Docs.app"
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ needs.validate.outputs.tag }}
           files: ${{ matrix.glob }}
           fail_on_unmatched_files: true
       - name: Delete the temporary keychain
         if: always() && runner.os == 'macOS'
-        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+        run: |
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
