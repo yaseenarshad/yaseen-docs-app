@@ -28,7 +28,7 @@ afterEach(() => {
 })
 
 function installBridge(notes: () => Promise<ReleaseNote[]>) {
-  const bridge = { update: { state: vi.fn(), onState: vi.fn(), notes: vi.fn(notes), restart: vi.fn(async () => undefined) } }
+  const bridge = { update: { state: vi.fn(), onState: vi.fn(), notes: vi.fn(async () => ({ current: '1.0.12', releases: await notes() })), restart: vi.fn(async () => undefined) } }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge
 }

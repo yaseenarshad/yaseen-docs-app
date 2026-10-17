@@ -1361,3 +1361,13 @@ export interface ReleaseNote {
   date: string
   body: string
 }
+
+/**
+ * The answer of `update.notes()` (YAZ-2988 D13): every published release, newest first, up to 100, and the
+ * running app's version. The renderer has no other way to know `current`, and the sheet needs it for the tag
+ * "Your current version" and the release it opens on (D10, D11). One answer, so the two always agree.
+ */
+export interface ReleaseNotes {
+  current: string
+  releases: ReleaseNote[]
+}

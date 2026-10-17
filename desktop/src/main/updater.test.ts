@@ -50,7 +50,7 @@ function fake(opts: { latest?: unknown; list?: unknown; requirement?: string | E
     async fetch(url) {
       fetched.push(url)
       if (url === `${FEED}/latest`) return Response.json(opts.latest ?? release('v1.0.13'))
-      if (url === `${FEED}?per_page=20`) return Response.json(opts.list ?? [])
+      if (url === `${FEED}?per_page=100`) return Response.json(opts.list ?? [])
       if (url.startsWith('https://dl.test/')) return new Response(opts.body?.() ?? DMG)
       return new Response('', { status: 404 })
     },
@@ -386,24 +386,29 @@ describe('start deletes what an earlier launch left (S11, S12, S23)', () => {
   })
 })
 
-describe('notes (D5, D8)', () => {
+describe('notes (D5, D8, YAZ-2988 D13)', () => {
   const list = ['v1.0.10', 'v1.0.14', 'v1.0.13', 'v1.0.12', 'v1.0.11', 'v1.0.9', 'v1.0.8'].map((t) => release(t))
-  const drafts = [{ ...release('v1.0.15'), draft: true }, { ...release('v1.0.16'), prerelease: true }]
+  const drafts = [{ ...release('v1.0.15'), draft: true }, { ...release('v1.0.16'), prerelease: true }, release('v1.0.17-beta.1')]
 
-  it('the releases newer than this app, newest first, as ReleaseNote', async () => {
-    const { updater } = fake({ list: [...drafts, ...list] })
-    await expect(updater.notes()).resolves.toEqual([
-      { version: '1.0.14', title: 'Yaseen Docs v1.0.14', date: '2026-10-17T12:00:00Z', body: 'Notes of v1.0.14' },
-      { version: '1.0.13', title: 'Yaseen Docs v1.0.13', date: '2026-10-17T12:00:00Z', body: 'Notes of v1.0.13' },
-    ])
+  it('every published release, newest first by version, as ReleaseNote, with this app\'s version: older ones too', async () => {
+    const { updater, fetched } = fake({ list: [...drafts, ...list] })
+    const notes = await updater.notes()
+    expect(notes.current).toBe('1.0.12')
+    expect(notes.releases.map((n) => n.version)).toEqual(['1.0.14', '1.0.13', '1.0.12', '1.0.11', '1.0.10', '1.0.9', '1.0.8'])
+    expect(notes.releases[0]).toEqual({ version: '1.0.14', title: 'Yaseen Docs v1.0.14', date: '2026-10-17T12:00:00Z', body: 'Notes of v1.0.14' })
+    expect(fetched).toEqual([`${FEED}?per_page=100`]) // one page: GitHub's largest
   })
 
-  it('none newer → the last 5 releases, newest first; a null name or body has a fallback', async () => {
-    const { updater } = fake({ list: [...list, { ...release('v1.0.7'), name: null, body: null }], overrides: { version: '1.0.14' } })
-    const notes = await updater.notes()
-    expect(notes.map((n) => n.version)).toEqual(['1.0.14', '1.0.13', '1.0.12', '1.0.11', '1.0.10'])
-    const { updater: old } = fake({ list: [{ ...release('v1.0.7'), name: null, body: null }], overrides: { version: '1.0.14' } })
-    await expect(old.notes()).resolves.toEqual([{ version: '1.0.7', title: 'v1.0.7', date: '2026-10-17T12:00:00Z', body: '' }])
+  it('at most 100, the newest ones', async () => {
+    const many = Array.from({ length: 105 }, (_, i) => release(`v1.0.${i}`))
+    const { releases } = await fake({ list: many }).updater.notes()
+    expect(releases).toHaveLength(100)
+    expect([releases[0].version, releases[99].version]).toEqual(['1.0.104', '1.0.5'])
+  })
+
+  it('a null name or body has a fallback', async () => {
+    const { updater } = fake({ list: [{ ...release('v1.0.7'), name: null, body: null, published_at: null }] })
+    await expect(updater.notes()).resolves.toEqual({ current: '1.0.12', releases: [{ version: '1.0.7', title: 'v1.0.7', date: '', body: '' }] })
   })
 
   it('rejects when GitHub cannot be reached (S18)', async () => {

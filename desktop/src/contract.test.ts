@@ -38,7 +38,7 @@ afterAll(() => rm(dir, { recursive: true, force: true }))
 
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
   // The three registrations `main/index.ts` makes on `ready`.
-  registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => [] }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
+  registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', releases: [] }) }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
   registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
   registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc)
   expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()).toEqual(INVOKES)

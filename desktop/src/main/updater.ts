@@ -4,7 +4,7 @@ import { constants, readFileSync, rmSync } from 'node:fs'
 import { access, mkdir, mkdtemp, open, rename, rm, rmdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { ReleaseNote, UpdateState } from '@shared/types'
+import type { ReleaseNotes, UpdateState } from '@shared/types'
 
 /**
  * The updater (YAZ-2976 D2): GitHub Releases, no new dependency. A check reads `releases/latest`;
@@ -62,7 +62,8 @@ export interface Updater {
   /** One check now: the state it finds, `downloading` as soon as a download starts. Never two at once; while `downloading` or `ready` it answers the state and fetches nothing (S6). */
   check(): Promise<UpdateState>
   state(): UpdateState
-  notes(): Promise<ReleaseNote[]>
+  /** "What's new" (YAZ-2988 D13): every published release, newest first, up to 100 (one page), and this app's version. Asked only when the sheet opens. */
+  notes(): Promise<ReleaseNotes>
   /** In the quit sequence's `exit`: with an update staged, start the swap; `reopen` opens the new app after it (S21, S22). */
   installOnExit(reopen: boolean): void
 }
@@ -334,10 +335,11 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
     check,
     state: () => state,
     async notes() {
-      const all = (await getJson<GithubRelease[]>(`${feed}?per_page=20`)).filter((r) => r.draft !== true && r.prerelease !== true)
-      all.sort((a, b) => compareVersions(b.tag_name, a.tag_name))
-      const ahead = all.filter((r) => newer(r.tag_name, host.version))
-      return (ahead.length > 0 ? ahead : all.slice(0, 5)).map((r) => ({ version: r.tag_name.replace(/^v/, ''), title: r.name ?? r.tag_name, date: r.published_at ?? '', body: r.body ?? '' }))
+      // 100 is GitHub's largest page: one request (66 releases, about 0.7 MB, today). A tag with a `-` is a
+      // pre-release by name, as in the check, even when GitHub's flag says otherwise. The renderer picks the tags and the default (D10, D11).
+      const releases = (await getJson<GithubRelease[]>(`${feed}?per_page=100`)).filter((r) => r.draft !== true && r.prerelease !== true && !r.tag_name.includes('-'))
+      releases.sort((a, b) => compareVersions(b.tag_name, a.tag_name))
+      return { current: host.version, releases: releases.slice(0, 100).map((r) => ({ version: r.tag_name.replace(/^v/, ''), title: r.name ?? r.tag_name, date: r.published_at ?? '', body: r.body ?? '' })) }
     },
     installOnExit(reopen) {
       if (state.kind !== 'ready') return

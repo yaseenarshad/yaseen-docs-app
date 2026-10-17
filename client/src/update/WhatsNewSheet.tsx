@@ -52,7 +52,7 @@ export default function WhatsNewSheet({ update, onClose }: WhatsNewSheetProps) {
   useEffect(() => {
     let live = true
     api.update.notes().then(
-      (got) => live && setNotes(got),
+      (got) => live && setNotes(got.releases),
       () => live && setNotes('failed'),
     )
     return () => {

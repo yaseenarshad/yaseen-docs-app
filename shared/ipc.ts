@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNote, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TocSource, TreeResponse, UpdateState, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TocSource, TreeResponse, UpdateState, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -290,8 +290,8 @@ export const CONTRACT = {
     state: invoke<[], UpdateState>('update:state', 0),
     /** Fired in every window on each change of the state. */
     onState: push<UpdateState>('update:state-changed'),
-    /** The GitHub release notes for "What's new" (D5): each release newer than this app, newest first; with none newer, the last 5. Rejects when GitHub cannot be reached. */
-    notes: invoke<[], ReleaseNote[]>('update:notes', 0),
+    /** The GitHub release notes for "What's new" (D5): every published release, newest first, up to 100, and this app's version (YAZ-2988 D13). Rejects when GitHub cannot be reached. */
+    notes: invoke<[], ReleaseNotes>('update:notes', 0),
     /** "Restart to update" (D6): quit through the quit sequence, swap, open again. For `manual` (S13) it opens the GitHub release page instead. */
     restart: invoke<[], void>('update:restart', 0),
   },

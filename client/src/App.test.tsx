@@ -339,7 +339,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     update: {
       state: vi.fn(async (): Promise<UpdateState> => ({ kind: 'idle' })),
       onState: vi.fn(() => () => undefined),
-      notes: vi.fn(async () => []),
+      notes: vi.fn(async () => ({ current: '1.0.13', releases: [] })),
       restart: vi.fn(async () => undefined),
     },
   }
