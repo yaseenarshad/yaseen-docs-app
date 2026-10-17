@@ -68,15 +68,16 @@ export interface VaultIslands {
  * The open tabs as islands (D7): one per folder that DIRECTLY holds a page, under its vault. Read
  * off the paths; nothing is stored. Vaults stand in the window's order, a vault's top level first
  * and its folders by path, and the pages of an island in the strip's order. `terms` is the filter,
- * lowercased: a page stays when its title or its path inside the vault holds every one.
+ * lowercased: a page stays when its title, its display name (YAZ-2949) or its path inside the vault holds every one.
  */
 export function buildBoard(tabs: readonly Tab[], roots: readonly string[], vaultNames: readonly string[], labelOf: (path: string) => string, terms: readonly string[] = []): VaultIslands[] {
   const vaults = new Map<number, Map<string, Island>>()
   for (const { id, path, name } of tabs) {
     const root = rootOfPath(roots, path)
     // A display name (YAZ-2949 D5) is the page's label; the filter still finds the page by its own name (S13).
-    const label = name ?? labelOf(path)
-    const hay = `${label}\n${name === undefined ? '' : `${labelOf(path)}\n`}${root === null ? path : relTo(root, path)}`.toLowerCase()
+    const page = labelOf(path)
+    const label = name ?? page
+    const hay = `${label}\n${name === undefined ? '' : `${page}\n`}${root === null ? path : relTo(root, path)}`.toLowerCase()
     if (!terms.every((term) => hay.includes(term))) continue
     const at = root === null ? roots.length : roots.indexOf(root)
     const dir = dirname(path)

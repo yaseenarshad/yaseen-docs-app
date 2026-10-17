@@ -221,7 +221,7 @@ describe('TabOverview', () => {
     const { el, props } = await mount({ reviewState: (path) => (path === '/v/a.md' ? false : null), onSetReview: vi.fn() })
     rightClick(page(el, '/v/a.md'))
     // `TabMenu`, the one the strip's tabs open: the same items in the same order.
-    expect(menuItems(el)).toEqual(['Move to right panel', 'Show in sidebar', 'Copy path', 'Set display name', 'Turn review on', 'Reveal in Finder', 'Open in VS Code'])
+    expect(menuItems(el)).toEqual(['Move to right panel', 'Show in sidebar', 'Copy path', 'Turn review on', 'Reveal in Finder', 'Open in VS Code'])
     key(el, 'Escape')
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(props.onDismiss).not.toHaveBeenCalled()
@@ -541,5 +541,23 @@ describe('TabOverview display name (YAZ-2949 D4, D5)', () => {
     rightClick(page(el, 't1'))
     act(() => menuItem(el, 'Reset to page name')?.click())
     expect(onSetName).toHaveBeenLastCalledWith('t1', null)
+  })
+
+  it('Esc in the field cancels and gives the keys back to the board: the next Esc closes the board; a right-click in the field opens no menu', async () => {
+    const onDismiss = vi.fn()
+    const onSetName = vi.fn()
+    const { el } = await mount({ onDismiss, onSetName })
+    rightClick(page(el, '/v/a.md'))
+    act(() => menuItem(el, 'Set display name')?.click())
+    const input = el.querySelector<HTMLInputElement>('.taboverview__rename')!
+    rightClick(input)
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(el.querySelector('.taboverview__rename')).toBeNull()
+    expect(onSetName).not.toHaveBeenCalled()
+    expect(onDismiss).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(filter(el))
+    key(el, 'Escape')
+    expect(onDismiss).toHaveBeenCalledTimes(1)
   })
 })

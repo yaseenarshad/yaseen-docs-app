@@ -3,6 +3,7 @@
  * (D3, D6). The name is typed where the tab was right-clicked, and the field grows with the text
  * (D4). A named tab shows its name on the strip and on the tab board, and the page name in its
  * tooltip (D5). A copy shows the page name (D2). "Reset to page name" puts the page name back.
+ * "Move to new window" takes the name to the new window, and a reload of that window drops it (D7, S19, S24).
  *
  * Same harness as the rest of the suite: temp `--user-data-dir`, a generated vault, `display-name-`
  * step screenshots, serial. It opens windows on screen: run it only where that is fine.
@@ -11,7 +12,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, menuItem, SEED_FILE, seededState, shoot, tabsOf } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, extraWindow, launchApp, menuItem, SEED_FILE, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -73,6 +74,8 @@ test('right-click a tab › Set display name: the copy gets its own name, on the
 
   // D5, S11: the copy shows its name; the source shows the page name; the tooltip gives the page name back.
   await expect(tabsOf(win)).toHaveText([NAME, LONG])
+  // S7: after ⏎ the tab is as wide as every tab again: 200 px at most, its long name fades out.
+  expect((await win.locator('.tabbar__tab').nth(1).boundingBox())!.width).toBeLessThanOrEqual(202)
   await expect(tabsOf(win).nth(1)).toHaveAttribute('title', `${NAME}\n${notePath}`)
   await shoot(win, 'display-name-3-strip')
 
@@ -89,4 +92,23 @@ test('right-click a tab › Set display name: the copy gets its own name, on the
   await tabsOf(win).nth(1).click({ button: 'right' })
   await menuItem(win, 'Reset to page name').click()
   await expect(tabsOf(win)).toHaveText([NAME, NAME])
+})
+
+test('Move to new window › the named tab keeps its name there, and a reload of that window drops it (D7, S19, S24)', async () => {
+  await tabsOf(win).nth(1).click({ button: 'right' })
+  await menuItem(win, 'Set display name').click()
+  await win.keyboard.type('Outline')
+  await win.keyboard.press('Enter')
+  await expect(tabsOf(win)).toHaveText([NAME, 'Outline'])
+
+  await tabsOf(win).nth(1).click({ button: 'right' })
+  await menuItem(win, 'Move to new window').click()
+  const popped = await extraWindow(app, ['w1'])
+  await expect(tabsOf(popped)).toHaveText(['Outline'])
+  await expect(tabsOf(win)).toHaveText([NAME])
+  await shoot(popped, 'display-name-5-new-window')
+
+  // Main hands the name over ONE time: a reload shows the page name, and nothing was stored.
+  await popped.reload()
+  await expect(tabsOf(popped)).toHaveText([NAME])
 })

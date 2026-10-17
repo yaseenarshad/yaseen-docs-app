@@ -1,3 +1,4 @@
+import { MAX_VAULT_NAME } from '@shared/types'
 import { TextField } from '../views/view/TextField'
 
 export interface TabNameFieldProps {
@@ -25,6 +26,8 @@ export function TabNameField({ label, pageName, className, onCommit, onDone }: T
       value={label}
       placeholder={pageName}
       aria-label="Display name"
+      // The cut of `cleanVaultName` (S5): the field stops there, so ⏎ never cuts a name without a word.
+      maxLength={MAX_VAULT_NAME}
       autoFocus
       selectOnMount
       normalize={(draft) => draft.trim()}

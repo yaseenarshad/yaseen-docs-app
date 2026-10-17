@@ -735,7 +735,7 @@ export function App() {
     // The tab's display name goes with it (YAZ-2949 D7, S19): main hands it to the new window once.
     const name = now.current.tabs.find((t) => t.id === id)?.name
     flushRenamedPath(path)
-      .then(() => api.window.popOut(path, name === undefined ? {} : { name }))
+      .then(() => api.window.popOut(path, { name }))
       .then(() => (now.current.phase === 'open' ? closeUnderOverview([id]) : closeTab(id)))
       .catch((err: unknown) => notify(`Can't move to a new window: ${err instanceof Error ? err.message : String(err)}`))
   }, [closeUnderOverview, closeTab, notify])

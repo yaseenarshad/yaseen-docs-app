@@ -453,7 +453,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(menu?.getAttribute('role')).toBe('menu')
     expect(menu?.style.left).toBe('120px')
     expect(menu?.style.top).toBe('42px')
-    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Set display name', 'Reveal in Finder', 'Open in VS Code'])
+    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   })
 
   it('Show in sidebar targets the right-clicked inactive tab, closes the menu, and never activates it', () => {
@@ -520,8 +520,8 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     const el = mount({ ...props, reviewState, onSetReview })
     rightClick(tabAt(el, 1))
     expect(reviewState).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
-    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Set display name', label, 'Reveal in Finder', 'Open in VS Code'])
-    act(() => items(el)[3]?.click())
+    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', label, 'Reveal in Finder', 'Open in VS Code'])
+    act(() => items(el)[2]?.click())
     expect(onSetReview).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md', !state)
     expect(menuOf(el)).toBeNull()
   })
@@ -529,7 +529,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
   it('a tab with no review state — a folder, a PDF, a note the index has not seen, any note with upkeep off — gets no review item', () => {
     const el = mount({ ...props, reviewState: () => null, onSetReview: vi.fn() })
     rightClick(tabAt(el, 0))
-    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Set display name', 'Reveal in Finder', 'Open in VS Code'])
+    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   })
 
   it('the menu retargets: right-clicking another tab copies THAT tab\'s path', () => {

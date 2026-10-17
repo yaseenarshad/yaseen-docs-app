@@ -82,7 +82,6 @@ function centreIn(el: HTMLElement, root: HTMLElement, scrolled: number): { x: nu
   return { x, y }
 }
 
-/** What a page shows: its title, and under it the first lines of a note. */
 /** A page's face: its name and first lines — or, while "Set display name" is on it, the name's `field` (YAZ-2949 D4). */
 function PageFace({ label, lines, field }: { label: string; lines: string; field?: ReactNode }) {
   return (
@@ -158,8 +157,18 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
    * key and keeps every press: the field keeps its own presses, clicks and keys from the board.
    */
   const nameField = (id: string, path: string, label: string) => (
-    <span onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-      <TabNameField className="taboverview__rename" label={label} pageName={labelOf(path)} onCommit={(next) => onSetName?.(id, next)} onDone={() => setRenaming(null)} />
+    <span onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+      <TabNameField
+        className="taboverview__rename"
+        label={label}
+        pageName={labelOf(path)}
+        onCommit={(next) => onSetName?.(id, next)}
+        // The board reads its keys from the filter box: the field gives the focus back to it, or Esc and the arrows would do nothing.
+        onDone={() => {
+          setRenaming(null)
+          inputRef.current?.focus()
+        }}
+      />
     </span>
   )
   const paths = new Map(tabs.map((t) => [t.id, t.path]))
@@ -627,7 +636,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         </ContextMenuSurface>
       )}
       {/* A page is an open tab, so its menu is the tab's (`TabMenu`). */}
-      {pageMenu !== null && <TabMenu menu={pageMenu} label={labelOf(pageMenu.path)} onClose={() => setPageMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} onDuplicate={onDuplicate} onRename={setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
+      {pageMenu !== null && <TabMenu menu={pageMenu} label={labelOf(pageMenu.path)} onClose={() => setPageMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
       {/* An island is a folder: its row in the sidebar, its path, and its tabs as one. */}
       {islandMenu !== null && menuIsland !== undefined && (
         <ContextMenuSurface x={islandMenu.x} y={islandMenu.y} onClose={() => setIslandMenu(null)}>

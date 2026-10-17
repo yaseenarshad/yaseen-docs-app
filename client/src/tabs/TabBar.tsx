@@ -375,6 +375,8 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
                 } else dropExternal(e, at)
               }}
               onContextMenu={(e) => {
+                // A right-click in the name's field is the field's own (YAZ-2949): no tab menu over it.
+                if (id === renaming) return
                 e.preventDefault()
                 setMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null, named: name !== undefined })
               }}
@@ -432,7 +434,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
         </button>
       )}
       <div className="tabbar-tail" {...endSlot} />
-      {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} onDuplicate={onDuplicate} onRename={setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
+      {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
       {/* The grid button's menu: one item. With no tab it has nothing to close, and is grey like any item that cannot be used. */}
       {gridMenu !== null && (
         <ContextMenuSurface x={gridMenu.x} y={gridMenu.y} onClose={() => setGridMenu(null)}>

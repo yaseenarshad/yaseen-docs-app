@@ -58,7 +58,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, onMoveToNewWindow
       onNotice?.(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? stale : `${failed}: ${err instanceof Error ? err.message : String(err)}`)
     })
   }
-  // Four groups (YAZ-2949 D6), in the sidebar menu's order: the tab's place · find the file · this tab
+  // Four groups (YAZ-2949 D6), in this order: the tab's place · find the file · this tab
   // and its note · outside the app. `ContextMenu` skips an empty group and closes the menu after each item.
   const sections: MenuSection[] = [
     [
