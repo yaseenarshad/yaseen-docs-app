@@ -811,3 +811,44 @@
     transition: none;
   }
 }
+
+/* A tab's display name as a field (YAZ-2949 D4): where the name stood. It grows with the text as it is
+   typed, so a long name is never cut (S6); after ⏎ the tab is as wide as every tab again (S7). */
+.tabbar__tab--renaming {
+  max-width: none;
+  flex-shrink: 0;
+}
+
+.tabbar__tab--renaming .tabbar__close {
+  display: none;
+}
+
+.tabbar__rename,
+.taboverview__rename {
+  field-sizing: content;
+  min-width: 8ch;
+  padding: 1px 4px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  outline: none;
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+}
+
+.tabbar__rename {
+  margin: 0 8px;
+}
+
+/* On the board the card keeps its size: the field floats over it and over its neighbours, up to the board's edge. */
+.taboverview__page--renaming {
+  overflow: visible;
+  z-index: 3;
+}
+
+.taboverview__rename {
+  position: relative;
+  max-width: calc(100vw - 64px);
+  font-size: 15px;
+  font-weight: 600;
+}

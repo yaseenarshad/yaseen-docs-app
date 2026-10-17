@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { dirname } from '../lib/paths'
@@ -7,6 +7,7 @@ import { storedTabs, type Tab } from '../workspace/useWorkspace'
 import { BOARD, buildBoard, islandCols, nearest, stackedIslands, withoutTitle, type Island, type Way } from './board'
 import { setBoardHighlight } from './boardHighlight'
 import { TabMenu, type TabMenuAt } from './TabMenu'
+import { TabNameField } from './TabNameField'
 import { useTabHeads } from './useTabHeads'
 import './tabs.css'
 
@@ -41,6 +42,8 @@ export interface TabOverviewProps {
   onMoveToNewWindow?: (path: string, id: string) => void
   /** "Duplicate tab" (YAZ-2940 D5): a copy of the tab, by id. */
   onDuplicate?: (id: string) => void
+  /** "Set display name" / "Reset to page name" (YAZ-2949): a name for the tab, by id, or null for its page name. */
+  onSetName?: (id: string, name: string | null) => void
   onShowInSidebar?: (path: string) => void
   onNotice?: (message: string) => void
   reviewState?: (path: string) => boolean | null
@@ -79,11 +82,11 @@ function centreIn(el: HTMLElement, root: HTMLElement, scrolled: number): { x: nu
   return { x, y }
 }
 
-/** What a page shows: its title, and under it the first lines of a note. */
-function PageFace({ label, lines }: { label: string; lines: string }) {
+/** A page's face: its name and first lines — or, while "Set display name" is on it, the name's `field` (YAZ-2949 D4). */
+function PageFace({ label, lines, field }: { label: string; lines: string; field?: ReactNode }) {
   return (
     <>
-      <span className="taboverview__title">{label}</span>
+      {field ?? <span className="taboverview__title">{label}</span>}
       {lines !== '' && <span className="taboverview__lines">{lines}</span>}
     </>
   )
@@ -115,7 +118,7 @@ function PageFace({ label, lines }: { label: string; lines: string }) {
  * "Kill all tabs" (YAZ-2739), at the end of the top row, is about every tab of the window, whatever
  * the filter shows. The board only asks: App owns the sheet and the close.
  */
-export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveToNewWindow, onDuplicate, onShowInSidebar, onNotice, reviewState, onSetReview }: TabOverviewProps) {
+export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveToNewWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview }: TabOverviewProps) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState<string | null>(active)
   /** The islands the user spread by hand: they stay spread until the board closes. */
@@ -123,6 +126,8 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   /** The room the islands have: the scroller's own box, less its padding. Null until it is measured. */
   const [area, setArea] = useState<{ w: number; h: number } | null>(null)
   const [pageMenu, setPageMenu] = useState<TabMenuAt | null>(null)
+  /** The page whose name is a field (YAZ-2949 D4), by tab id, or null. */
+  const [renaming, setRenaming] = useState<string | null>(null)
   const [islandMenu, setIslandMenu] = useState<{ x: number; y: number; dir: string } | null>(null)
   /** The menu of the picked pages, opened on one of them. */
   const [pickMenu, setPickMenu] = useState<{ x: number; y: number } | null>(null)
@@ -147,6 +152,25 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   // The heads are a file's, read once for all its copies.
   const linesOf = useTabHeads(storedTabs(tabs))
   const labelOf = (path: string): string => pageLabel(path, isFolder(path), titles)
+  /**
+   * The page's name as a field (YAZ-2949 D4, S2). A press on a page opens it and the board reads every
+   * key and keeps every press: the field keeps its own presses, clicks and keys from the board.
+   */
+  const nameField = (id: string, path: string, label: string) => (
+    <span onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+      <TabNameField
+        className="taboverview__rename"
+        label={label}
+        pageName={labelOf(path)}
+        onCommit={(next) => onSetName?.(id, next)}
+        // The board reads its keys from the filter box: the field gives the focus back to it, or Esc and the arrows would do nothing.
+        onDone={() => {
+          setRenaming(null)
+          inputRef.current?.focus()
+        }}
+      />
+    </span>
+  )
   const paths = new Map(tabs.map((t) => [t.id, t.path]))
   /** The folder of a tab's page: the island it stands on. */
   const dirOf = (id: string): string => dirname(paths.get(id) ?? '')
@@ -385,6 +409,9 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       onKeyDown={onKeyDown}
       onMouseDown={(e) => {
         if (e.target === inputRef.current) return
+        // The board keeps the focus where it is, so a press away from a page's name field would not end it:
+        // that press saves it, as a click away does on the strip (YAZ-2949 S3).
+        if (renaming !== null && document.activeElement instanceof HTMLElement) document.activeElement.blur()
         if (e.target instanceof Element && e.target.closest('[draggable="true"]') !== null) refocus.current = true
         else e.preventDefault()
       }}
@@ -471,18 +498,19 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                         {count > 2 && <span className="taboverview__sheet taboverview__sheet--far" />}
                         <span className="taboverview__sheet" />
                         <span className={`taboverview__page${top.id === active ? ' taboverview__page--active' : ''}${top.id === preview ? ' taboverview__page--preview' : ''}${current !== null && dirOf(current) === island.dir ? ' taboverview__page--current' : ''}`}>
-                          <PageFace label={top.label} lines={withoutTitle(linesOf(top.path), top.label)} />
+                          <PageFace label={top.label} lines={withoutTitle(linesOf(top.path), labelOf(top.path))} />
                         </span>
                       </button>
                     ) : (
                       <div className="taboverview__pages" style={{ gridTemplateColumns: `repeat(${islandCols(count, area?.w ?? Infinity)}, var(--tab-page-w))` }}>
-                        {island.pages.map(({ id, path, label }) => {
+                        {island.pages.map(({ id, path, label, named }) => {
                           const cls = ['taboverview__page']
                           if (id === active) cls.push('taboverview__page--active')
                           if (id === preview) cls.push('taboverview__page--preview')
                           if (id === current) cls.push('taboverview__page--current')
                           if (picked.has(id)) cls.push('taboverview__page--picked')
                           if (id === dragging) cls.push('taboverview__page--dragging')
+                          if (id === renaming) cls.push('taboverview__page--renaming')
                           return (
                             <div
                               key={id}
@@ -494,11 +522,11 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                               // The stops are found by tab id; the page's file stays readable for the e2e specs.
                               data-tab={id}
                               data-path={path}
-                              title={path}
+                              title={named ? `${labelOf(path)}\n${path}` : path}
                               // Shift is the selection gesture and nothing else, as on a sidebar row: it picks, and never opens.
                               onClick={(e) => (e.shiftKey ? togglePick(id) : onOpen(id))}
                               // On one of two or more picked pages the menu is the pick's; on any other page, the tab's.
-                              onContextMenu={(e) => menuOn(e, () => (picked.has(id) && pick.length > 1 ? setPickMenu({ x: e.clientX, y: e.clientY }) : setPageMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null })))}
+                              onContextMenu={(e) => menuOn(e, () => (picked.has(id) && pick.length > 1 ? setPickMenu({ x: e.clientX, y: e.clientY }) : setPageMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null, named })))}
                               // A move of the pointer, never a page that scrolled under it.
                               onMouseMove={() => {
                                 if (id === current) return
@@ -506,13 +534,13 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                                 setCursor(id)
                               }}
                               // The strip's own payload (`pageDrag`), so the right panel takes a page as it takes a tab.
-                              draggable
+                              draggable={id !== renaming}
                               onDragStart={(e) => {
                                 if (e.dataTransfer) writePageDrag(e.dataTransfer, { path, owner: 'main' })
                                 setDragging(id)
                               }}
                             >
-                              <PageFace label={label} lines={withoutTitle(linesOf(path), label)} />
+                              <PageFace label={label} lines={withoutTitle(linesOf(path), labelOf(path))} field={id === renaming ? nameField(id, path, label) : undefined} />
                               <button
                                 type="button"
                                 className="taboverview__close"
@@ -608,7 +636,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         </ContextMenuSurface>
       )}
       {/* A page is an open tab, so its menu is the tab's (`TabMenu`). */}
-      {pageMenu !== null && <TabMenu menu={pageMenu} label={labelOf(pageMenu.path)} onClose={() => setPageMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} onDuplicate={onDuplicate} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
+      {pageMenu !== null && <TabMenu menu={pageMenu} label={labelOf(pageMenu.path)} onClose={() => setPageMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
       {/* An island is a folder: its row in the sidebar, its path, and its tabs as one. */}
       {islandMenu !== null && menuIsland !== undefined && (
         <ContextMenuSurface x={islandMenu.x} y={islandMenu.y} onClose={() => setIslandMenu(null)}>

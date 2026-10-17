@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, isSidebarLens, rootOfPath, type OpenSetResult, type PageView, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, rootOfPath, type OpenSetResult, type PageView, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -79,12 +79,15 @@ function optionalPageView(v: unknown): PageView | undefined {
   return { scrollTop, zoomKey, folds: (folds as string[]).slice(0, MAX_FOLD_KEYS_PER_FILE), magnification }
 }
 
-/** "Move to new window"'s carry (YAZ-2951 D2): absent, or an object whose `view` passes `optionalPageView`. */
+/** "Move to new window"'s carry (YAZ-2951 D2, YAZ-2949 D7): absent, or an object whose `view` passes `optionalPageView`, with an optional display `name`. */
 function optionalPopOutCarry(v: unknown): PopOutCarry {
   if (v === undefined) return {}
   if (!isRecord(v)) throw new BridgeFailure('BAD_REQUEST', "'carry' must be an object")
   const view = optionalPageView(v.view)
-  return view === undefined ? {} : { view }
+  // The tab's display name (YAZ-2949 D7) is only a label: cleaned like a vault's name, and a blank or
+  // non-string name is no name — never an error.
+  const name = cleanVaultName(v.name)
+  return { ...(view === undefined ? {} : { view }), ...(name === null ? {} : { name }) }
 }
 
 /** A saved set's `id` or `name` (YAZ-2602 D8): a string; the store decides what it names. */
@@ -113,7 +116,9 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const { id, root, roots, file, tabs, rightPanel, sidebarCollapsed, sidebarLens } = entryFor(e)
     // A new window's page view goes out with its FIRST identity only (YAZ-2951 S17): a reload starts fresh.
     const startView = windows.takeStartView(id)
-    return { id, root, roots: [...roots], file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}) }
+    // A tab that came with "Move to new window" brings its display name, ONE time (YAZ-2949 D7).
+    const tabNames = windows.takeTabNames(id)
+    return { id, root, roots: [...roots], file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(tabNames === undefined ? {} : { tabNames }) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {

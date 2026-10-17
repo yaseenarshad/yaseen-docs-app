@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { defaultRightPanelIdentity, type RightPanelIdentity } from '@shared/types'
+import { cleanVaultName, defaultRightPanelIdentity, type RightPanelIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
 import { carryEditorAcrossPane, flushRenamedPath } from '../lib/renameContinuity'
 import { hashFilePath } from '../lib/urlHash'
@@ -54,10 +54,15 @@ export interface TabsState {
   blank: boolean
 }
 
-/** One open tab (YAZ-2940 D1): its own id, and the page it shows. */
+/** One open tab (YAZ-2940 D1): its own id, the page it shows, and its display name (YAZ-2949 D1). */
 export interface Tab {
   id: string
   path: string
+  /**
+   * "Set display name" (YAZ-2949): what this tab shows in place of its page name. Session-only like
+   * the id — never stored, never in a file call. A tab that shows a different page has none (D2).
+   */
+  name?: string
 }
 
 /** One tab's back/forward stack (YAZ-721 D1): `entries[index]` is the page the tab shows. */
@@ -120,6 +125,7 @@ export type TabsAction =
   | { type: 'open-background'; path: string } // append a KEPT tab at the end, do NOT activate (no-op when already open)
   | { type: 'duplicate'; id: string } // "Duplicate tab" (YAZ-2940 D6): a copy of the tab, right after it, active
   | { type: 'keep'; id: string } // double click, first edit: the preview tab becomes a kept tab (no-op for any other tab)
+  | { type: 'set-name'; id: string; name: string | null } // "Set display name" / "Reset to page name" (YAZ-2949): null, empty or blank clears it
   | { type: 'new-tab' } // ⌘T, the strip's "+": the blank tab shows (no-op while it does)
   | { type: 'close-blank' } // ⌘W on the blank tab, its ✕: it goes, and the tab that was active is active again
   | { type: 'activate'; id: string } // tab-strip click
@@ -228,7 +234,8 @@ function closeWhere(s: TabsState, f: (path: string) => boolean): TabsState {
 function remapPages(s: TabsState, remap: (p: string) => string): TabsState {
   const moves = (p: string): boolean => remap(p) !== p
   if (!s.tabs.some((t) => moves(t.path)) && !inStacks(s.history, moves)) return s
-  return { ...s, tabs: s.tabs.map((t) => (moves(t.path) ? { id: t.id, path: remap(t.path) } : t)), history: remapStacks(s.history, remap) }
+  // A tab keeps its display name when its file or a folder above it is renamed (YAZ-2949 S16): it is the same page.
+  return { ...s, tabs: s.tabs.map((t) => (moves(t.path) ? { ...t, path: remap(t.path) } : t)), history: remapStacks(s.history, remap) }
 }
 
 /** Every page that `gone` picks leaves every stack first — Back never steps onto a file that is gone — and then each of its tabs closes (`closeWhere`). */
@@ -291,6 +298,16 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
     case 'keep':
       // Nothing stored changes, so the caller mirrors nothing (YAZ-2648 D4).
       return a.id === s.preview ? { ...s, preview: null } : s
+    case 'set-name': {
+      // Session-only (YAZ-2949 D1): nothing stored changes. Trimmed and cut like a vault's display
+      // name (S5); empty is no name (S4). A preview tab that gets a name is kept (S8).
+      const i = s.tabs.findIndex((t) => t.id === a.id)
+      if (i === -1) return s
+      const name = cleanVaultName(a.name)
+      if (name === (s.tabs[i].name ?? null)) return s
+      const tab: Tab = name === null ? { id: a.id, path: s.tabs[i].path } : { ...s.tabs[i], name }
+      return { ...s, tabs: s.tabs.map((t, j) => (j === i ? tab : t)), preview: s.preview === a.id && name !== null ? null : s.preview }
+    }
     case 'new-tab':
       // One blank tab at most (YAZ-2655 D10). Nothing stored changes, so the caller mirrors nothing.
       return s.blank ? s : { ...s, blank: true }
@@ -609,7 +626,10 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
 export function bootTabs(root: string | null): TabsState {
   if (root === null) return EMPTY
   const active = hashFilePath(location.hash) ?? storage.getFile() ?? storage.getLastFile(root)
-  return tabsReducer(EMPTY, { type: 'reset', tabs: storage.getTabs(), active })
+  const s = tabsReducer(EMPTY, { type: 'reset', tabs: storage.getTabs(), active })
+  // A tab moved here from another window keeps its display name (YAZ-2949 D7, S19).
+  const names = storage.getTabNames()
+  return { ...s, tabs: s.tabs.map((t) => (names[t.path] === undefined ? t : { ...t, name: names[t.path] })) }
 }
 
 export function bootWorkspace(root: string | null): WorkspaceState {
@@ -646,6 +666,8 @@ export interface UseWorkspace extends WorkspaceState {
   duplicate: (id: string) => string | null
   /** The preview tab (by id) becomes a kept tab (YAZ-2648 D2): a double click on it, the first edit of its page. A no-op for any other tab. */
   keep: (id: string) => void
+  /** "Set display name" / "Reset to page name" (YAZ-2949): a name for this tab, or null for its page name. Never stored. */
+  setName: (id: string, name: string | null) => void
   /** ⌘T, the strip's "+" (YAZ-2655 D10): the one blank tab shows; a second call changes nothing. Never mirrored. */
   newTab: () => void
   /** The blank tab's ✕: it goes, and the tab that was active before is active again (S75). Never mirrored. */
@@ -739,6 +761,8 @@ export function useWorkspace(root: string | null): UseWorkspace {
   // `keep` changes no stored field (the mark is session-only, D4), so it is never mirrored — and
   // neither is `open-new` on the page the active preview tab shows, which only takes its mark off.
   const keep = useCallback((id: string) => dispatch({ type: 'keep', id }, { mirror: false }), [dispatch])
+  // A display name is never stored (YAZ-2949 D1), so it is never mirrored.
+  const setName = useCallback((id: string, name: string | null) => dispatch({ type: 'set-name', id, name }, { mirror: false }), [dispatch])
   const openKept = useCallback(
     (path: string) => {
       const s = stateRef.current
@@ -812,7 +836,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   return {
     ...state,
     file: activePath(state),
-    openCurrent, navigate, openKept, duplicate, keep, newTab, closeBlank, openBackground, activate, close, closeMany, move, closeActive, next, prev, back, forward, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
+    openCurrent, navigate, openKept, duplicate, keep, setName, newTab, closeBlank, openBackground, activate, close, closeMany, move, closeActive, next, prev, back, forward, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,
     navigateRight: navigateRightCallback,

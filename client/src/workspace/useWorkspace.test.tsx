@@ -460,6 +460,12 @@ describe('bootTabs (rules 12/15)', () => {
     expect(byPath(bootTabs('/v'))).toEqual(state(['/v/pasted.md', '/v/a.md'], '/v/pasted.md'))
   })
 
+  it('a tab moved here from another window wears the display name main handed over (YAZ-2949 D7, S19)', async () => {
+    installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false, tabNames: { '/v/a.md': 'Outline' } })
+    await storage.init()
+    expect(bootTabs('/v').tabs.map((t) => t.name)).toEqual(['Outline'])
+  })
+
   it('a fresh window falls back to the folder lastFile; a null root (Welcome) is empty', async () => {
     installBridge(seeded, { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
@@ -1173,3 +1179,95 @@ describe('copies in the hook (YAZ-2940): the mirror stores each file once, and t
   })
 })
 
+
+describe('display name (YAZ-2949 D1, D2): a name on one tab, for the session', () => {
+  const A = '/v/a.md'
+  const B = '/v/b.md'
+  /** t1 (A, active, preview) · t2 (B). */
+  const two = (over: Partial<IdTabsState> = {}): IdTabsState => ({
+    tabs: [{ id: 't1', path: A }, { id: 't2', path: B }],
+    active: 't1',
+    mounted: ['t1'],
+    history: {},
+    preview: null,
+    blank: false,
+    ...over,
+  })
+  const named = (s: IdTabsState, id = 't1', name: string | null = 'Outline'): IdTabsState => reduceTabs(s, { type: 'set-name', id, name })
+
+  it('S4, S5, S10: set trims and cuts at 80; empty, blank or null clears it; the same name and an unknown tab change nothing', () => {
+    const base = two()
+    const s = named(base, 't1', '  Outline  ')
+    expect(s.tabs[0]).toEqual({ id: 't1', path: A, name: 'Outline' })
+    expect(s.tabs[1]).toBe(base.tabs[1])
+    expect(named(two(), 't1', 'x'.repeat(100)).tabs[0].name).toHaveLength(80)
+    expect(named(s, 't1', null).tabs[0]).toEqual({ id: 't1', path: A })
+    expect(named(s, 't1', '   ').tabs[0]).toEqual({ id: 't1', path: A })
+    expect(named(s, 't1', 'Outline')).toBe(s)
+    const plain = two()
+    expect(named(plain, 't1', null)).toBe(plain)
+    expect(named(plain, 'nope')).toBe(plain)
+  })
+
+  it('S8: a name keeps the preview tab; a reset does not make it a preview tab again; another tab\'s preview mark stays', () => {
+    expect(named(two({ preview: 't1' })).preview).toBeNull()
+    expect(named(two({ preview: 't2' })).preview).toBe('t2')
+    expect(named(named(two({ preview: 't1' })), 't1', null).preview).toBeNull()
+  })
+
+  it('S17: a link, Back and a sidebar click into the preview tab show a different page, and the name goes — Back does not bring it back', () => {
+    const s = named(two())
+    const linked = reduceTabs(s, { type: 'navigate', path: '/v/c.md' })
+    expect(linked.tabs[0]).toEqual({ id: 't1', path: '/v/c.md' })
+    const back = reduceTabs(named(linked, 't1', 'C notes'), { type: 'back' })
+    expect(back.tabs[0]).toEqual({ id: 't1', path: A })
+    // The preview tab that is named is kept, so a sidebar click opens a new preview tab and the name stays.
+    const kept = reduceTabs(named(two({ preview: 't1' })), { type: 'open-current', path: '/v/c.md' })
+    expect(kept.tabs[0].name).toBe('Outline')
+  })
+
+  it('S16, S18, S21, S22: a file or folder rename keeps the name; a copy shows the page name; a move keeps it; a close drops it', () => {
+    const s = named(two())
+    expect(reduceTabs(s, { type: 'rename', oldPath: A, newPath: '/v/z.md' }).tabs[0]).toEqual({ id: 't1', path: '/v/z.md', name: 'Outline' })
+    const inDir = named({ ...two(), tabs: [{ id: 't1', path: '/v/d/a.md' }, { id: 't2', path: B }] })
+    expect(reduceTabs(inDir, { type: 'rename-dir', oldPath: '/v/d', newPath: '/v/e' }).tabs[0]).toEqual({ id: 't1', path: '/v/e/a.md', name: 'Outline' })
+    const copied = reduceTabs(s, { type: 'duplicate', id: 't1' })
+    expect(copied.tabs[0].name).toBe('Outline')
+    expect(copied.tabs[1].name).toBeUndefined()
+    expect(reduceTabs(s, { type: 'move', from: 0, to: 1 }).tabs[1]).toEqual({ id: 't1', path: A, name: 'Outline' })
+    expect(reduceTabs(s, { type: 'close', id: 't1' }).tabs.some((t) => t.name !== undefined)).toBe(false)
+  })
+})
+
+describe('display name in the hook (YAZ-2949 D1): never stored', () => {
+  let reactRoot: Root | null = null
+  let latest: UseWorkspace
+  let bridge: ReturnType<typeof installBridge>
+
+  function Probe() {
+    latest = useWorkspace('/v')
+    return null
+  }
+
+  beforeEach(async () => {
+    bridge = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    reactRoot = createRoot(document.createElement('div'))
+    act(() => reactRoot?.render(<Probe />))
+    act(() => latest.openKept('/v/a.md'))
+  })
+
+  afterEach(() => {
+    act(() => reactRoot?.unmount())
+    reactRoot = null
+  })
+
+  it('setName shows on the tab and writes nothing; a reset writes nothing either', () => {
+    bridge.window.setIdentity.mockClear()
+    act(() => latest.setName(latest.tabs[0].id, 'Outline'))
+    expect(latest.tabs[0].name).toBe('Outline')
+    act(() => latest.setName(latest.tabs[0].id, null))
+    expect(latest.tabs[0].name).toBeUndefined()
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+  })
+})

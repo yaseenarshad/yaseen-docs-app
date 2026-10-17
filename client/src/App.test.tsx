@@ -1072,10 +1072,29 @@ describe('App Move to new window (YAZ-2933)', () => {
       tabsWhenAsked = tabNames(el)
     })
     await act(async () => items(el)[0]!.click())
-    expect(bridge.window.popOut).toHaveBeenCalledWith('/v/b.md', { view: undefined }) // a tab whose editor is not open has no page view
+    expect(bridge.window.popOut).toHaveBeenCalledWith('/v/b.md', { view: undefined, name: undefined }) // a tab whose editor is not open has no page view, and this tab has no display name
     expect(tabsWhenAsked).toEqual(['a', 'b']) // the tab is still here while main opens the window
     expect(tabNames(el)).toEqual(['a'])
     expect(el.querySelector('.ctx-menu__item')).toBeNull()
+  })
+
+  it('YAZ-2949 D7, S19: a tab with a display name asks main to take the name along; a duplicate of it shows the page name (S18)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    rightClick(el.querySelectorAll('.tabbar__tab')[1]!)
+    await act(async () => items(el).find((b) => b.textContent === 'Set display name')!.click())
+    const input = el.querySelector<HTMLInputElement>('.tabbar__rename')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'Outline')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(tabNames(el)).toEqual(['a', 'Outline'])
+    rightClick(el.querySelectorAll('.tabbar__tab')[1]!)
+    await act(async () => items(el).find((b) => b.textContent === 'Duplicate tab')!.click())
+    expect(tabNames(el)).toEqual(['a', 'Outline', 'b'])
+    rightClick(el.querySelectorAll('.tabbar__tab')[1]!)
+    await act(async () => items(el)[0]!.click())
+    expect(bridge.window.popOut).toHaveBeenCalledWith('/v/b.md', expect.objectContaining({ name: 'Outline' }))
   })
 
   it('a refusal leaves the tab where it is and says why (D2)', async () => {

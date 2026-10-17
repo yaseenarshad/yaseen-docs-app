@@ -498,3 +498,66 @@ describe('plainLines (S54)', () => {
     expect(plainLines('R&D costs &# 12; and &#xZZ; and &#0;')).toBe('R&D costs &# 12; and &#xZZ; and &#0;')
   })
 })
+
+describe('TabOverview display name (YAZ-2949 D4, D5)', () => {
+  afterEach(() => {
+    act(() => root?.unmount())
+    root = null
+    container?.remove()
+    container = null
+  })
+
+  it('S2, S3, S12: "Set display name" puts a field on the page; a click and keys in it stay there; ⏎ saves; a named page shows its name, with the page name in its tooltip', async () => {
+    const onSetName = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/w/x.md' }]
+    const onOpen = vi.fn()
+    await act(async () => root?.render(<IdTabOverview roots={['/v', '/w']} vaultNames={['Notes', 'Work']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} onOpen={onOpen} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onSetName={onSetName} />))
+    const el = container
+    const card = page(el, 't1')!
+    expect(card.querySelector('.taboverview__title')?.textContent).toBe('Outline')
+    expect(card.title).toBe('Plan\n/v/a.md')
+    expect(page(el, 't2')!.title).toBe('/w/x.md')
+    rightClick(page(el, 't2'))
+    expect(menuItem(el, 'Reset to page name')).toBeUndefined()
+    act(() => menuItem(el, 'Set display name')?.click())
+    const input = el.querySelector<HTMLInputElement>('.taboverview__rename')!
+    expect(document.activeElement).toBe(input)
+    expect(page(el, 't2')!.getAttribute('draggable')).toBe('false')
+    act(() => void input.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(onOpen).not.toHaveBeenCalled()
+    const typed = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
+    act(() => void input.dispatchEvent(typed))
+    expect(typed.defaultPrevented).toBe(false) // the board did not take the key
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'Inbox')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(onSetName).toHaveBeenCalledExactlyOnceWith('t2', 'Inbox')
+    expect(el.querySelector('.taboverview__rename')).toBeNull()
+    rightClick(page(el, 't1'))
+    act(() => menuItem(el, 'Reset to page name')?.click())
+    expect(onSetName).toHaveBeenLastCalledWith('t1', null)
+  })
+
+  it('Esc in the field cancels and gives the keys back to the board: the next Esc closes the board; a right-click in the field opens no menu', async () => {
+    const onDismiss = vi.fn()
+    const onSetName = vi.fn()
+    const { el } = await mount({ onDismiss, onSetName })
+    rightClick(page(el, '/v/a.md'))
+    act(() => menuItem(el, 'Set display name')?.click())
+    const input = el.querySelector<HTMLInputElement>('.taboverview__rename')!
+    rightClick(input)
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(el.querySelector('.taboverview__rename')).toBeNull()
+    expect(onSetName).not.toHaveBeenCalled()
+    expect(onDismiss).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(filter(el))
+    key(el, 'Escape')
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+})

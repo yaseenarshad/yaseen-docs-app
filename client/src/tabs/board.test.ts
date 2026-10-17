@@ -34,7 +34,14 @@ describe('buildBoard (D7)', () => {
 
   it('YAZ-2940 D1: two tabs of one file are two pages of its island, each with its own tab id, in the strip\'s order', () => {
     const board = buildBoard([{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/b.md' }, { id: 't3', path: '/v/a.md' }], ['/v'], ['Notes'], name)
-    expect(board[0].islands[0].pages).toEqual([{ id: 't1', path: '/v/a.md', label: 'a' }, { id: 't2', path: '/v/b.md', label: 'b' }, { id: 't3', path: '/v/a.md', label: 'a' }])
+    expect(board[0].islands[0].pages).toEqual([{ id: 't1', path: '/v/a.md', label: 'a', named: false }, { id: 't2', path: '/v/b.md', label: 'b', named: false }, { id: 't3', path: '/v/a.md', label: 'a', named: false }])
+  })
+
+  it('YAZ-2949 S12, S13: a named tab is labelled by its display name, and the filter finds it by that name, its page name or its path', () => {
+    const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/v/b.md' }]
+    expect(buildBoard(tabs, ['/v'], ['Notes'], name)[0].islands[0].pages).toEqual([{ id: 't1', path: '/v/a.md', label: 'Outline', named: true }, { id: 't2', path: '/v/b.md', label: 'b', named: false }])
+    for (const term of ['outline', 'a', 'a.md']) expect(buildBoard(tabs, ['/v'], ['Notes'], name, [term])[0].islands[0].pages.map((p) => p.id)).toContain('t1')
+    expect(buildBoard(tabs, ['/v'], ['Notes'], name, ['outline'])[0].islands[0].pages.map((p) => p.id)).toEqual(['t1'])
   })
 })
 

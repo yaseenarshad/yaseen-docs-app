@@ -1,5 +1,6 @@
 import { api, BridgeRequestError } from '../api'
-import { ContextMenuSurface } from '../components/ContextMenuSurface'
+import { ContextMenu } from '../sidebar/ContextMenu'
+import type { MenuSection } from '../sidebar/menuSections'
 
 /** An open tab menu: where it stands, the tab it is about, and that tab's review state as it was when the menu opened. */
 export interface TabMenuAt {
@@ -11,6 +12,8 @@ export interface TabMenuAt {
   path: string
   /** Whether the note is in review; null for a path that is no note in the index, which hides the item. */
   review: boolean | null
+  /** The tab has a display name (YAZ-2949 D3): offers "Reset to page name". */
+  named: boolean
 }
 
 export interface TabMenuProps {
@@ -24,6 +27,10 @@ export interface TabMenuProps {
   onMoveToNewWindow?: (path: string, id: string) => void
   /** "Duplicate tab" (YAZ-2940 D5): a copy of this tab, by id, opens right after it in this window. */
   onDuplicate?: (id: string) => void
+  /** "Set display name" (YAZ-2949 D3, D4): the tab's name turns into a field where it was right-clicked. */
+  onRename?: (id: string) => void
+  /** "Reset to page name" (YAZ-2949 D3): the tab shows its page's own name again. */
+  onResetName?: (id: string) => void
   /** Reveal this exact tab in the sidebar without activating it. */
   onShowInSidebar?: (path: string) => void
   onSetReview?: (path: string, on: boolean) => void
@@ -35,107 +42,46 @@ export interface TabMenuProps {
  * A tab's right-click menu, in ONE place (YAZ-2648): the strip's tabs and the board's pages are
  * the same open files, so they offer the same items — the sidebar row's Copy path (YAZ-922) and
  * its OS actions (YAZ-963: Reveal in Finder, Open in VS Code), Show in sidebar, the move to a
- * new window (YAZ-2933), "Duplicate tab" (YAZ-2940) and the move to the right panel, and the review toggle (YAZ-2322).
+ * new window (YAZ-2933), "Duplicate tab" (YAZ-2940) and the move to the right panel, the tab's
+ * display name (YAZ-2949) and the review toggle (YAZ-2322). Drawn as data by the sidebar's own
+ * `ContextMenu` (YAZ-2949 D6), so its groups have the same lines as every other menu of the app.
  */
-export function TabMenu({ menu, label, onClose, onMoveToRight, onMoveToNewWindow, onDuplicate, onShowInSidebar, onSetReview, onNotice }: TabMenuProps) {
+export function TabMenu({ menu, label, onClose, onMoveToRight, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onSetReview, onNotice }: TabMenuProps) {
   /**
-   * The menu's OS actions (YAZ-963), the sidebar's `reveal` idiom on a tab: read-only, so the
-   * menu closes at once and there is nothing to confirm or repair — but a STALE tab (deleted or
-   * moved externally) rejects `NOT_FOUND`, and without the notice the item would just look
-   * broken. Both messages are the caller's, because "reveal" and "open … in VS Code" name the
-   * gesture differently in each half.
+   * The menu's OS actions (YAZ-963), the sidebar's `reveal` idiom on a tab: read-only, so there is
+   * nothing to confirm or repair — but a STALE tab (deleted or moved externally) rejects `NOT_FOUND`,
+   * and without the notice the item would just look broken. Both messages are the caller's, because
+   * "reveal" and "open … in VS Code" name the gesture differently in each half.
    */
   const osAction = (call: Promise<unknown>, stale: string, failed: string): void => {
-    onClose()
     call.catch((err: unknown) => {
       onNotice?.(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? stale : `${failed}: ${err instanceof Error ? err.message : String(err)}`)
     })
   }
-
-  return (
-    <ContextMenuSurface x={menu.x} y={menu.y} onClose={onClose}>
-      {onMoveToNewWindow !== undefined && (
-        <button
-          type="button"
-          className="ctx-menu__item"
-          role="menuitem"
-          onClick={() => {
-            onMoveToNewWindow(menu.path, menu.id)
-            onClose()
-          }}
-        >
-          Move to new window
-        </button>
-      )}
-      {/* Right after "Move to new window" (YAZ-2940 D5). */}
-      {onDuplicate !== undefined && (
-        <button
-          type="button"
-          className="ctx-menu__item"
-          role="menuitem"
-          onClick={() => {
-            onDuplicate(menu.id)
-            onClose()
-          }}
-        >
-          Duplicate tab
-        </button>
-      )}
-      {onMoveToRight !== undefined && (
-        <button
-          type="button"
-          className="ctx-menu__item"
-          role="menuitem"
-          onClick={() => {
-            onMoveToRight(menu.path)
-            onClose()
-          }}
-        >
-          Move to right panel
-        </button>
-      )}
-      <button
-        type="button"
-        className="ctx-menu__item"
-        role="menuitem"
-        onClick={() => {
-          onShowInSidebar?.(menu.path)
-          onClose()
-        }}
-      >
-        Show in sidebar
-      </button>
-      <button
-        type="button"
-        className="ctx-menu__item"
-        role="menuitem"
-        onClick={() => {
-          void navigator.clipboard.writeText(menu.path)
-          onClose()
-        }}
-      >
-        Copy path
-      </button>
-      {/* The review toggle (YAZ-2322), under Copy path: a tab that is not a note has no state and no item. */}
-      {menu.review !== null && (
-        <button
-          type="button"
-          className="ctx-menu__item"
-          role="menuitem"
-          onClick={() => {
-            onSetReview?.(menu.path, !menu.review)
-            onClose()
-          }}
-        >
-          {menu.review ? 'Turn review off' : 'Turn review on'}
-        </button>
-      )}
-      <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.shell.reveal({ path: menu.path }), `Can't reveal "${label}" — it is no longer there`, "Can't reveal")}>
-        Reveal in Finder
-      </button>
-      <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.shell.openVsCode({ path: menu.path }), `Can't open "${label}" in VS Code — it is no longer there`, "Can't open in VS Code")}>
-        Open in VS Code
-      </button>
-    </ContextMenuSurface>
-  )
+  // Four groups (YAZ-2949 D6), in this order: the tab's place · find the file · this tab
+  // and its note · outside the app. `ContextMenu` skips an empty group and closes the menu after each item.
+  const sections: MenuSection[] = [
+    [
+      ...(onMoveToNewWindow === undefined ? [] : [{ id: 'new-window', label: 'Move to new window', onSelect: () => onMoveToNewWindow(menu.path, menu.id) }]),
+      // Right after "Move to new window" (YAZ-2940 D5).
+      ...(onDuplicate === undefined ? [] : [{ id: 'duplicate', label: 'Duplicate tab', onSelect: () => onDuplicate(menu.id) }]),
+      ...(onMoveToRight === undefined ? [] : [{ id: 'move-right', label: 'Move to right panel', onSelect: () => onMoveToRight(menu.path) }]),
+    ],
+    [
+      { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => onShowInSidebar?.(menu.path) },
+      { id: 'copy-path', label: 'Copy path', onSelect: () => void navigator.clipboard.writeText(menu.path) },
+    ],
+    [
+      // Never "Rename": that word renames on disk in the file menu (YAZ-2949 D3, the vault menu's words).
+      ...(onRename === undefined ? [] : [{ id: 'rename', label: 'Set display name', onSelect: () => onRename(menu.id) }]),
+      ...(menu.named && onResetName !== undefined ? [{ id: 'reset-name', label: 'Reset to page name', onSelect: () => onResetName(menu.id) }] : []),
+      // The review toggle (YAZ-2322): a tab that is not a note — or any tab while upkeep is off — has no state and no item.
+      ...(menu.review === null ? [] : [{ id: 'review', label: menu.review ? 'Turn review off' : 'Turn review on', onSelect: () => onSetReview?.(menu.path, !menu.review) }]),
+    ],
+    [
+      { id: 'reveal', label: 'Reveal in Finder', onSelect: () => osAction(api.shell.reveal({ path: menu.path }), `Can't reveal "${label}" — it is no longer there`, "Can't reveal") },
+      { id: 'open-vscode', label: 'Open in VS Code', onSelect: () => osAction(api.shell.openVsCode({ path: menu.path }), `Can't open "${label}" in VS Code — it is no longer there`, "Can't open in VS Code") },
+    ],
+  ]
+  return <ContextMenu x={menu.x} y={menu.y} sections={sections} onClose={onClose} />
 }

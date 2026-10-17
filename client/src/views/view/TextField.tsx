@@ -12,6 +12,8 @@ interface TextFieldProps {
   commitOnEnter?: boolean
   className?: string
   placeholder?: string
+  /** The most characters the field takes (YAZ-2949: a tab's display name stops where the name is cut). */
+  maxLength?: number
   type?: 'text' | 'date' | 'number'
   inputMode?: 'decimal'
   min?: number

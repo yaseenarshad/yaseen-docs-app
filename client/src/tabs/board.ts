@@ -40,7 +40,10 @@ export const BOARD = {
 export interface BoardPage {
   id: string
   path: string
+  /** What the page shows: the tab's display name, else its page name (YAZ-2949 D5). */
   label: string
+  /** The tab has a display name (YAZ-2949): its menu offers "Reset to page name". */
+  named: boolean
 }
 
 export interface Island {
@@ -65,14 +68,16 @@ export interface VaultIslands {
  * The open tabs as islands (D7): one per folder that DIRECTLY holds a page, under its vault. Read
  * off the paths; nothing is stored. Vaults stand in the window's order, a vault's top level first
  * and its folders by path, and the pages of an island in the strip's order. `terms` is the filter,
- * lowercased: a page stays when its title or its path inside the vault holds every one.
+ * lowercased: a page stays when its title, its display name (YAZ-2949) or its path inside the vault holds every one.
  */
 export function buildBoard(tabs: readonly Tab[], roots: readonly string[], vaultNames: readonly string[], labelOf: (path: string) => string, terms: readonly string[] = []): VaultIslands[] {
   const vaults = new Map<number, Map<string, Island>>()
-  for (const { id, path } of tabs) {
+  for (const { id, path, name } of tabs) {
     const root = rootOfPath(roots, path)
-    const label = labelOf(path)
-    const hay = `${label}\n${root === null ? path : relTo(root, path)}`.toLowerCase()
+    // A display name (YAZ-2949 D5) is the page's label; the filter still finds the page by its own name (S13).
+    const page = labelOf(path)
+    const label = name ?? page
+    const hay = `${label}\n${name === undefined ? '' : `${page}\n`}${root === null ? path : relTo(root, path)}`.toLowerCase()
     if (!terms.every((term) => hay.includes(term))) continue
     const at = root === null ? roots.length : roots.indexOf(root)
     const dir = dirname(path)
@@ -81,7 +86,7 @@ export function buildBoard(tabs: readonly Tab[], roots: readonly string[], vault
     vaults.set(at, islands)
     const island = islands.get(dir) ?? { dir, top, label: root === null ? dir : top ? (vaultNames[at] ?? '') : relTo(root, dir).split('/').join(' / '), pages: [] }
     islands.set(dir, island)
-    island.pages.push({ id, path, label })
+    island.pages.push({ id, path, label, named: name !== undefined })
   }
   return [...vaults]
     .sort(([a], [b]) => a - b)

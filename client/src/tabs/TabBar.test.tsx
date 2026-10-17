@@ -550,10 +550,10 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(menuOf(el)).toBeNull()
   })
 
-  it('a press OUTSIDE dismisses the menu', () => {
+  it('a press OUTSIDE dismisses the menu: it lands on the overlay that covers the window (the sidebar\'s `ContextMenu`, YAZ-2949 D6)', () => {
     const el = mount(props)
     rightClick(tabAt(el, 0))
-    act(() => void document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
     expect(menuOf(el)).toBeNull()
   })
 
@@ -573,9 +573,10 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     const remove = vi.spyOn(window, 'removeEventListener')
     try {
       rightClick(tabAt(el, 0))
-      expect(add.mock.calls.map((c) => c[0]).sort()).toEqual(['keydown', 'mousedown'])
+      expect(add.mock.calls.map((c) => c[0])).toEqual(['keydown'])
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-      expect(remove.mock.calls.map((c) => c[0]).sort()).toEqual(['keydown', 'mousedown'])
+      expect(menuOf(el)).toBeNull()
+      expect(remove.mock.calls.map((c) => c[0])).toEqual(['keydown'])
     } finally {
       add.mockRestore()
       remove.mockRestore()
@@ -796,5 +797,76 @@ describe('TabBar copies (YAZ-2940 D1): two tabs of one file', () => {
     act(() => items()[1].click())
     expect(onDuplicate).toHaveBeenCalledExactlyOnceWith('t2')
     expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+})
+
+describe('TabBar display name (YAZ-2949 D4, D5)', () => {
+  const A = '/v/a.md'
+  const base: IdTabBarProps = { roots: ['/v'], titles: new Map([[A, 'Plan']]), tabs: [{ id: 't1', path: A }, { id: 't2', path: A, name: 'Outline' }], active: 't1', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav }
+  function mountIds(props: Partial<IdTabBarProps> = {}) {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<IdTabBar {...base} {...props} />))
+    return container
+  }
+  const tabs = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab')]
+  const field = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.tabbar__rename')
+  const openField = (el: HTMLElement, i: number) => {
+    act(() => void tabs(el)[i].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === 'Set display name')?.click())
+  }
+  const type = (input: HTMLInputElement, text: string) => {
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, text)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+  const key = (input: HTMLInputElement, k: string) => act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })))
+
+  it('S11, S14: a named tab shows its name; the tooltip gives the page name, then the path; the ✕ names the tab by its display name', () => {
+    const el = mountIds()
+    expect(tabs(el).map((t) => t.querySelector('.tabbar__label')?.textContent)).toEqual(['Plan', 'Outline'])
+    expect(tabs(el).map((t) => t.querySelector<HTMLElement>('.tabbar__btn')?.title)).toEqual([A, `Plan\n${A}`])
+    expect(tabs(el)[1].querySelector('.tabbar__close')?.getAttribute('aria-label')).toBe('Close Outline')
+  })
+
+  it('S1, S3, S9: "Set display name" turns the name into a field there, selected, the page name as placeholder; the tab does not drag; ⏎ saves', () => {
+    const onSetName = vi.fn()
+    const el = mountIds({ onSetName })
+    openField(el, 0)
+    const input = field(el)!
+    expect(document.activeElement).toBe(input)
+    expect([input.value, input.placeholder, input.selectionStart, input.selectionEnd]).toEqual(['Plan', 'Plan', 0, 4])
+    expect(tabs(el)[0].classList.contains('tabbar__tab--renaming')).toBe(true)
+    expect(tabs(el)[0].getAttribute('draggable')).toBe('false')
+    type(input, '  Plan · outline ')
+    key(input, 'Enter')
+    expect(onSetName).toHaveBeenCalledExactlyOnceWith('t1', 'Plan · outline')
+    expect(field(el)).toBeNull()
+  })
+
+  it('S3, S4, S10: Esc changes nothing; an empty field or the page name is no display name; a click away saves; "Reset to page name" clears it', () => {
+    const onSetName = vi.fn()
+    const el = mountIds({ onSetName })
+    openField(el, 1)
+    type(field(el)!, 'Other')
+    key(field(el)!, 'Escape')
+    expect(onSetName).not.toHaveBeenCalled()
+    openField(el, 1)
+    type(field(el)!, '   ')
+    key(field(el)!, 'Enter')
+    expect(onSetName).toHaveBeenLastCalledWith('t2', null)
+    openField(el, 1)
+    type(field(el)!, 'Plan')
+    key(field(el)!, 'Enter')
+    expect(onSetName).toHaveBeenLastCalledWith('t2', null)
+    openField(el, 1)
+    type(field(el)!, 'Draft')
+    act(() => field(el)!.blur())
+    expect(onSetName).toHaveBeenLastCalledWith('t2', 'Draft')
+    act(() => void tabs(el)[1].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === 'Reset to page name')?.click())
+    expect(onSetName).toHaveBeenLastCalledWith('t2', null)
   })
 })

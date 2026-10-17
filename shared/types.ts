@@ -1291,6 +1291,11 @@ export interface WindowIdentity {
    * given out by the FIRST `window:identity` of the new window only (S17). Never stored.
    */
   startView?: StartView
+  /**
+   * Display names a tab brought with "Move to new window" (YAZ-2949 D7), by path. Answered ONCE, to the
+   * new window's first identity read; never in `WindowEntry`, never stored.
+   */
+  tabNames?: Record<string, string>
 }
 
 /**
@@ -1314,9 +1319,14 @@ export interface StartView {
   view: PageView
 }
 
-/** What "Move to new window" carries along with the page (YAZ-2951 D2): one options object, so more can join it. */
+/**
+ * What "Move to new window" carries along with the page, one options object (YAZ-2951 D2, YAZ-2949 D7):
+ * its page view and its display name. Each side reads its own field.
+ */
 export interface PopOutCarry {
   view?: PageView
+  /** The tab's display name (YAZ-2949 D7), if it has one. */
+  name?: string
 }
 
 export interface OpenWindowOptions {

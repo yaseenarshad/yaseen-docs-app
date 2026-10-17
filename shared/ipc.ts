@@ -98,7 +98,11 @@ export const CONTRACT = {
     open: invoke<[opts: OpenWindowOptions], void>('window:open', 1),
     /** `⌘⇧N`: same folder, same file, new window (GRO-2167); its active tab starts with `view` (YAZ-2951 D5). */
     duplicate: invoke<[view?: PageView], void>('window:duplicate', 1),
-    /** A tab's "Move to new window" (YAZ-2933): a new window on the caller's vaults with only `path` in it, sidebar hidden; the page starts with `carry.view` (YAZ-2951 D2). */
+    /**
+     * A tab's "Move to new window" (YAZ-2933): a new window on the caller's vaults with only `path` in it, sidebar hidden.
+     * `carry` is what the tab takes along, handed to the new window once and never stored: its page view
+     * (YAZ-2951 D2: the page starts with `carry.view`) and its display name (YAZ-2949 D7).
+     */
     popOut: invoke<[path: string, carry?: PopOutCarry], void>('window:pop-out', 2),
     /** The vault switcher's one door (YAZ-1767 🔒 D1, D9): raise that vault's windows or open a new one on its last file; `false` = the folder is gone and was pruned from the MRU. */
     openRecent: invoke<[path: string], boolean>('window:open-recent', 1),
