@@ -46,6 +46,10 @@ export interface MenuHandlers {
   /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused note or the app (YAZ-1710). */
   zoom(step: ZoomStep): void
   openHelp(): void
+  /** Yaseen Docs › Check for Updates… (YAZ-2976 D7): one check now; main answers in the window in front with a notice or the "What's new" sheet (S4–S6). */
+  checkForUpdates(): void
+  /** Help › What's New… (YAZ-2976 D8): the focused window's renderer opens its "What's new" sheet. */
+  whatsNew(): void
 }
 
 export interface MenuInputs {
@@ -79,6 +83,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev }: MenuInputs, h
       label: 'Yaseen Docs',
       submenu: [
         { role: 'about' },
+        { id: 'menu.app.check-updates', label: 'Check for Updates…', click: () => handlers.checkForUpdates() },
         { type: 'separator' },
         // ⌘, is the platform's settings key (YAZ-1679); the renderer owns the dialog, so the
         // gesture goes to the focused window's renderer like Search Vault does.
@@ -165,7 +170,14 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev }: MenuInputs, h
         { role: 'front' },
       ],
     },
-    { label: 'Help', role: 'help', submenu: [{ id: 'menu.help.github', label: 'Yaseen Docs on GitHub', click: () => handlers.openHelp() }] },
+    {
+      label: 'Help',
+      role: 'help',
+      submenu: [
+        { id: 'menu.help.whats-new', label: "What's New…", click: () => handlers.whatsNew() },
+        { id: 'menu.help.github', label: 'Yaseen Docs on GitHub', click: () => handlers.openHelp() },
+      ],
+    },
   ]
 }
 
@@ -278,6 +290,8 @@ export interface MenuHost {
   focusedWebContents(): { id: number; send(channel: string, ...args: unknown[]): void } | undefined
   readClipboardText(): string
   openExternal(url: string): void
+  /** Check for Updates… (YAZ-2976): `index.ts` runs the check and answers for each state (S4–S6). */
+  checkForUpdates(): void
 }
 
 type MenuWindows = Pick<WindowManager, 'openRecentBeside' | 'linkNotice'>
@@ -342,6 +356,12 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     },
     openHelp() {
       host.openExternal(HELP_URL)
+    },
+    checkForUpdates() {
+      host.checkForUpdates()
+    },
+    whatsNew() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onWhatsNew.channel)
     },
   }
 }

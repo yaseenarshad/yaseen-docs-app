@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type PageView, type SidebarTab, type TreeNode, type TreeResponse, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type PageView, type SidebarTab, type TreeNode, type TreeResponse, type UpdateState, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -45,6 +45,10 @@ interface SidebarStubProps {
   /** The vault whose folder could not be read. */
   onRootMissing: (root: string) => void
   onFileMissing: () => void
+  /** The updater's state (YAZ-2976 D4): App's one read, which the footer's pill shows. */
+  update: UpdateState
+  /** The pill's click: App mounts the "What's new" sheet (D5). */
+  onOpenWhatsNew: () => void
   /** The ONE rename door (⚡ YAZ-888): the inline rename AND the drag-move both arrive through it. */
   onRenameFile: (oldPath: string, newPath: string, kind: 'file' | 'dir') => Promise<void>
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
@@ -184,6 +188,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuNewTab = new Set<() => void>()
   const menuNewWindow = new Set<() => void>()
   const menuZoom = new Set<() => void>()
+  const menuWhatsNew = new Set<() => void>()
   const linkOpenFile = new Set<(path: string) => void>()
   const linkNotice = new Set<(message: string) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
@@ -274,6 +279,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onNewTab: menuSub(menuNewTab),
       onNewWindow: menuSub(menuNewWindow),
       onZoom: menuSub(menuZoom),
+      onWhatsNew: menuSub(menuWhatsNew),
     },
     link: {
       onOpenFile: vi.fn((l: (path: string) => void) => {
@@ -329,6 +335,13 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       reletter: vi.fn(async (_root?: string, letters = 'YAZ') => ({ letters, notes: 0, stale: 0, old: 0 })),
       backfill: vi.fn(async (_root?: string) => ({ letters: 'YAZ', notes: 0, stale: 0, old: 0 })),
     },
+    // No update (YAZ-2976): App reads the state once and follows its pushes; nothing to show here.
+    update: {
+      state: vi.fn(async (): Promise<UpdateState> => ({ kind: 'idle' })),
+      onState: vi.fn(() => () => undefined),
+      notes: vi.fn(async () => ({ current: '1.0.13', releases: [] })),
+      restart: vi.fn(async () => undefined),
+    },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
@@ -346,6 +359,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitTabOverview: () => menuTabOverview.forEach((l) => l()),
     emitNewTab: () => menuNewTab.forEach((l) => l()),
     emitNewWindow: () => menuNewWindow.forEach((l) => l()),
+    emitWhatsNew: () => menuWhatsNew.forEach((l) => l()),
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
@@ -1312,6 +1326,43 @@ describe('App settings dialog (YAZ-1679)', () => {
     expect(el.querySelector('.settings-dialog')).not.toBeNull()
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')?.click())
     expect(el.querySelector('.settings-dialog')).toBeNull()
+  })
+})
+
+describe('App "What\'s new" sheet (YAZ-2976 D4, D5, D8)', () => {
+  /** The lazy chunk lands on a later tick than the click: settle until the sheet is in (or give up), then let its notes read answer. */
+  const settle = async (el: HTMLElement) => {
+    for (let i = 0; i < 20 && el.querySelector('.whats-new') === null; i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 5)))
+    await act(async () => {}) // and its notes read answers
+  }
+
+  it('Help › What\'s New… and the pill open the ONE lazy sheet; closing it leaves the pill\'s state (S19)', async () => {
+    const ready = { kind: 'ready' as const, version: '1.0.13' }
+    const { el, emitWhatsNew } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, (b) => b.bridge.update.state.mockResolvedValue(ready))
+    await act(async () => {})
+    expect(captured.sidebar?.update).toEqual(ready)
+    expect(el.querySelector('.whats-new')).toBeNull()
+
+    act(() => emitWhatsNew())
+    await settle(el)
+    expect([...el.querySelectorAll('.whats-new__actions button')].map((b) => b.textContent)).toEqual(['Later', 'Restart to update'])
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.whats-new__actions button')][0].click())
+    expect(el.querySelector('.whats-new')).toBeNull()
+    expect(captured.sidebar?.update).toEqual(ready)
+
+    act(() => captured.sidebar?.onOpenWhatsNew())
+    await settle(el)
+    expect(el.querySelector('.whats-new')).not.toBeNull()
+  })
+
+  it('the Welcome window has no sidebar and no pill, but menu:whats-new (Help › What\'s New…, or Check for Updates… with an update) opens the sheet with its button (S6)', async () => {
+    const manual = { kind: 'manual' as const, version: '1.0.13' }
+    const { el, emitWhatsNew } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] }, {}, (b) => b.bridge.update.state.mockResolvedValue(manual))
+    await act(async () => {})
+    expect([el.querySelector('.welcome'), el.querySelector('.update-pill')]).toEqual([expect.anything(), null])
+    act(() => emitWhatsNew())
+    await settle(el)
+    expect([...el.querySelectorAll('.whats-new__actions button')].map((b) => b.textContent)).toEqual(['Later', 'Download'])
   })
 })
 

@@ -12,6 +12,7 @@ import { ipcMain, ipcRenderer } from 'electron'
 import { CONTRACT, leaves, SPECIAL } from '@shared/ipc'
 import { registerIpc } from './main/ipc'
 import { registerClipboardIpc } from './main/ipc/clipboard'
+import { registerUpdateIpc } from './main/ipc/update'
 import { createStore } from './main/store'
 import type { WindowManagerIpc } from './main/windows'
 
@@ -36,7 +37,8 @@ const dir = await mkdtemp(path.join(tmpdir(), 'yd-contract-'))
 afterAll(() => rm(dir, { recursive: true, force: true }))
 
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
-  // The two registrations `main/index.ts` makes on `ready`.
+  // The three registrations `main/index.ts` makes on `ready`.
+  registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', releases: [] }) }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
   registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
   registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc)
   expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()).toEqual(INVOKES)

@@ -141,8 +141,9 @@ function checkApp(app) {
   if (!(plist.CFBundleURLTypes ?? []).flatMap((t) => t.CFBundleURLSchemes ?? []).includes('yaseendocs')) fails.push('Info.plist: CFBundleURLSchemes lacks yaseendocs (deep links, GRO-2171)')
   const md = (plist.CFBundleDocumentTypes ?? []).find((d) => (d.CFBundleTypeExtensions ?? []).includes('md'))
   if (md?.CFBundleTypeRole !== 'Editor' || md?.LSHandlerRank !== 'Alternate') fails.push('Info.plist: .md is not an Editor/Alternate document type')
-  // The deep ad-hoc seal (desktop/build/adhocSign.cjs): without it Gatekeeper calls a download "damaged".
-  if (!/Signature=adhoc/.test(spawnSync('codesign', ['-dv', app]).stderr.toString())) fails.push('codesign: not ad-hoc sealed')
+  // The deep seal (desktop/build/adhocSign.cjs): without it Gatekeeper calls a download "damaged". It is the
+  // certificate "Yaseen Local Signing" (YAZ-2976 D1), or ad-hoc on a machine that lacks it; `--verify` below checks the seal.
+  if (!/Signature=adhoc|Authority=Yaseen Local Signing/.test(spawnSync('codesign', ['-dvv', app]).stderr.toString())) fails.push('codesign: not sealed (neither the certificate nor ad-hoc)')
   const verify = spawnSync('codesign', ['--verify', '--deep', '--strict', app])
   if (verify.status !== 0) fails.push(`codesign --verify --deep --strict failed: ${verify.stderr.toString().slice(0, 300)}`)
   const bin = statSync(join(app, 'Contents/Resources/bin/yaseendocs'), { throwIfNoEntry: false })

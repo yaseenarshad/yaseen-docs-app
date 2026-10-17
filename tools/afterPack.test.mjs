@@ -42,3 +42,29 @@ describe('trimChromiumLocales (🔒 YAZ-2131 D1, YAZ-2182)', () => {
     expect(readdirSync(join(dir, 'locales')).sort()).toEqual(['en-GB.pak', 'en-US.pak'])
   })
 })
+
+const { signIdentity } = createRequire(import.meta.url)('../desktop/build/adhocSign.cjs')
+
+describe('signIdentity (YAZ-2976 D1, S27)', () => {
+  it('signs with the certificate when the keychain has it, named by MAC_SIGN_IDENTITY or by default', () => {
+    expect(signIdentity({}, (n) => n === 'Yaseen Local Signing')).toBe('Yaseen Local Signing')
+    expect(signIdentity({ MAC_SIGN_IDENTITY: 'Other' }, (n) => n === 'Other')).toBe('Other')
+  })
+
+  it('falls back to ad-hoc with a warning when the certificate is missing', () => {
+    const warn = console.warn
+    const said = []
+    console.warn = (m) => said.push(m)
+    try {
+      expect(signIdentity({}, () => false)).toBe('-')
+    } finally {
+      console.warn = warn
+    }
+    expect(said.join('')).toContain('ad-hoc')
+  })
+
+  it('throws instead when REQUIRE_SIGN_IDENTITY is 1: a release never ships an ad-hoc build', () => {
+    expect(() => signIdentity({ REQUIRE_SIGN_IDENTITY: '1' }, () => false)).toThrow(/REQUIRE_SIGN_IDENTITY/)
+    expect(signIdentity({ REQUIRE_SIGN_IDENTITY: '1' }, () => true)).toBe('Yaseen Local Signing')
+  })
+})
