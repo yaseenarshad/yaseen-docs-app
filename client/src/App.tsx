@@ -95,7 +95,7 @@ export function App() {
   // window's `file`: title, URL hash and the sidebar highlight all follow it. Each tab has its own
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
-    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, keep, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, move: moveTab,
+    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
@@ -1396,6 +1396,7 @@ export function App() {
               onMoveToRight={movePageToRight}
               onMoveToNewWindow={movePageToNewWindow}
               onDuplicate={duplicateTab}
+              onSetName={setTabName}
               canBack={canBack}
               canForward={canForward}
               onBack={back}
@@ -1478,6 +1479,7 @@ export function App() {
                 onMoveToRight={movePageToRight}
                 onMoveToNewWindow={movePageToNewWindow}
                 onDuplicate={duplicateTab}
+                onSetName={setTabName}
                 onShowInSidebar={showInSidebar}
                 onNotice={notify}
                 reviewState={reviewState}
