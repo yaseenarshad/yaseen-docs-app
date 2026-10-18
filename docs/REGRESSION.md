@@ -39,7 +39,7 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 | E3 | Heading fold H1–H3 | A `headingFold`, `bigNote` (step 4) |
 | E4 | Image-bullet fold / thumbnail chip | A `imageFold` |
 | E5 | Folds survive external edits; external edits apply as diffs | A `foldExternalEdit`, `foldDiffApply` · U `desktop/src/main/fs/watchConformance.test.ts`, `watchConformance.polling.test.ts` (the watcher engine, 🔒 YAZ-2131 D3) |
-| E6 | Outliner keys: Tab / ⇧Tab / Enter / Backspace | U the Crepe outline suites (`editor/outline/*.test.ts`) · A `folderOutline` (in part) |
+| E6 | Outliner keys: Tab / ⇧Tab / Enter / Backspace, also after a ⇧↑/⇧↓ line selection | U the Crepe outline suites (`editor/outline/*.test.ts`, `coveredLines.test.ts`) · A `folderOutline` (in part) |
 | E7 | Task cycle ⌘Enter | A `tasks` |
 | E8 | Marks: ⌘U underline, ⌘⇧X strike, highlight, marks across line breaks | U `editor/marks/underline.test.ts`, `editor/marks/highlight.test.ts`, `editor/breakMarks.test.ts` |
 | E9 | Lightbox gallery | A `imageGallery` |

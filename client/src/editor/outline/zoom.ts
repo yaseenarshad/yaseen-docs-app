@@ -231,9 +231,10 @@ const zoomOutOneLevel: Command = (state, dispatch) => {
 
 /**
  * Swallow a lift (`Shift-Tab` / `Mod-[`) that would move the caret's item out of the zoomed
- * subtree: the zoomed item itself or one of its direct children.
+ * subtree: the zoomed item itself or one of its direct children. The outliner's outdent calls
+ * it on the covered lines (YAZ-3003); the bindings below still guard outside list items.
  */
-const blockEscapingLift: Command = (state) => {
+export const blockEscapingLift: Command = (state) => {
   const itemPos = getZoomedItemPos(state)
   if (itemPos === null) return false
   const positions = ancestorItemPositions(state.selection.$from)

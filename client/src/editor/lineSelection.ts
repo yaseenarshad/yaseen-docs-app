@@ -14,6 +14,9 @@
  *  - `liftHeadlessItems` — a list_item whose first child is a list yields its kids one level up,
  *    whatever produced it (D3).
  *  - `isHiddenTextblock` — the fold / heading-fold / zoom plugins' own STATE, never the DOM.
+ *  - `coveredLines` / `onCoveredLines` — the selection minus the zero-width touch on the line
+ *    after or before, for commands that act on the lines under it: Tab, Shift-Tab, Mod-] / Mod-[,
+ *    Mod-Enter (YAZ-3003).
  *
  * Priority 100 (Crepe's keymaps are 50), like `outline/hotkeys.ts`; registered before
  * `outlinerKeymap` in `createCrepe.ts`.
@@ -76,6 +79,42 @@ const nextVisibleTextblock = (state: EditorState, $head: ResolvedPos, dir: 1 | -
     if (!isHiddenTextblock(state, $n)) return $n
     from = dir > 0 ? $n.after() : $n.before()
   }
+}
+
+/**
+ * The selection without its zero-width touch (YAZ-3003). A whole-line range ends at offset 0
+ * of the line after (⇧↓ from a start) or starts at the end of the line before (⇧↑ from an
+ * end). ⌫ needs that (D2, D3), but no text of that line is selected. Commands that act on
+ * "the lines under the selection" read this instead: Tab, Shift-Tab, Mod-] / Mod-[, Mod-Enter.
+ * The end is trimmed first; the start only while the range still spans two textblocks.
+ * Hidden lines are stepped over (D6). Returns the selection itself when nothing is trimmed.
+ */
+export const coveredLines = (state: EditorState): Selection => {
+  const sel = state.selection
+  if (!(sel instanceof TextSelection) || sel.empty) return sel
+  let { $from, $to } = sel
+  if ($to.parentOffset === 0 && !$to.sameParent($from)) {
+    const $prev = nextVisibleTextblock(state, $to, -1)
+    if ($prev !== null && $prev !== 'leaf' && $prev.end() >= $from.pos) $to = state.doc.resolve($prev.end())
+  }
+  if ($from.parentOffset === $from.parent.content.size && !$from.sameParent($to)) {
+    const $next = nextVisibleTextblock(state, $from, 1)
+    if ($next !== null && $next !== 'leaf' && $next.start() <= $to.pos) $from = state.doc.resolve($next.start())
+  }
+  return $from.pos === sel.from && $to.pos === sel.to ? sel : new TextSelection($from, $to)
+}
+
+/**
+ * Run `cmd` on `coveredLines`, then put the user's own anchor and head back, mapped. The next
+ * ⇧↑ / ⇧↓ or Tab continues from the same range. One transaction, so one ⌘Z.
+ */
+export const onCoveredLines = (cmd: Command): Command => (state, dispatch, view) => {
+  const covered = coveredLines(state)
+  if (covered === state.selection) return cmd(state, dispatch, view)
+  const { anchor, head } = state.selection
+  const trimmed = state.apply(state.tr.setSelection(covered))
+  const restore = (tr: Transaction) => tr.setSelection(TextSelection.create(tr.doc, tr.mapping.map(anchor), tr.mapping.map(head)))
+  return cmd(trimmed, dispatch && ((tr) => dispatch(restore(tr))), view)
 }
 
 /** Move the selection head to its own line's near edge, or one whole VISIBLE textblock in `dir` from an edge; anchor untouched (D2). */
