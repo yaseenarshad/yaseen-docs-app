@@ -25,6 +25,7 @@ import { toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
 import type { NodeType } from '@milkdown/kit/prose/model'
 import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
+import { coveredLines } from '../lineSelection'
 import { setOutlineFoldAtSelection, undoLastFold } from './outlineFolding'
 
 /** Priority above Crepe's list/table/base keymaps (default 50). */
@@ -35,9 +36,9 @@ type Checked = boolean | null
 /** bullet → unchecked task → checked task → bullet */
 const nextChecked = (checked: Checked): Checked => (checked === null ? false : checked === false ? true : null)
 
-/** Positions of the list_items whose FIRST block overlaps the selection (document order). */
+/** Positions of the list_items whose FIRST block overlaps the covered lines (document order; YAZ-3003). */
 const selectedItemPositions = (itemType: NodeType, state: EditorState): number[] => {
-  const { from, to } = state.selection
+  const { from, to } = coveredLines(state)
   const positions: number[] = []
   state.doc.nodesBetween(from, to, (node, pos) => {
     if (node.type !== itemType) return true

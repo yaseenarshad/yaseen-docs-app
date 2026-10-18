@@ -3,13 +3,18 @@
  * feel on top of Crepe's own list keymap; only the gaps are patched here, Milkdown is not forked.
  *
  * What Crepe (commonmark `listItemKeymap` + ProseMirror schema-list) already does right and is
- * left alone: Tab = sinkListItem, Shift-Tab = liftListItem (level 1 → paragraph, following
- * siblings nest under the lifted item), Enter = splitListItem mid/end of an item, multi-item
- * selection + Tab/Shift-Tab. Markers/indent after any of these serialise correctly (GRO-1844).
+ * reused: Tab = sinkListItem, Shift-Tab = liftListItem (level 1 → paragraph, following siblings
+ * nest under the lifted item), Enter = splitListItem mid/end of an item. Tab and Shift-Tab run
+ * those same commands from our bindings below (YAZ-3003). Markers/indent after any of these
+ * serialise correctly (GRO-1844).
  *
  * Gaps fixed here (registered with priority 100 so they run before Crepe's 50s):
  *  - Tab inside a list item never falls through to `@milkdown/plugin-indent`, which would
  *    insert literal spaces into the text when the item cannot sink (first sibling).
+ *  - Tab, Shift-Tab, Mod-] and Mod-[ act on the lines the selection COVERS (YAZ-3003): a keyboard
+ *    line selection touches the parent or the next sibling at zero width, and that line stays put.
+ *    So Shift-Tab and Mod-[ are ours now: the zoom guard first, then Crepe's own lift. A text
+ *    selection over two or more lines that are not all list items consumes both keys.
  *  - Enter on an EMPTY item (no children) outdents it; at level 1 it leaves the list as a
  *    paragraph. Crepe's `liftEmptyBlock` fallback instead dropped a stray paragraph inside the
  *    parent item when the empty item was not last.
@@ -30,8 +35,10 @@ import type { NodeType, ResolvedPos } from '@milkdown/kit/prose/model'
 import { liftListItem, sinkListItem } from '@milkdown/kit/prose/schema-list'
 import { type Command, type EditorState, Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
+import { onCoveredLines } from '../lineSelection'
 import { findNestedList } from './listNodes'
 import { isOutlineItemCollapsed } from './outlineFolding'
+import { blockEscapingLift } from './zoom'
 
 /** Priority above Crepe's list/indent/base keymaps (default 50). */
 const PRIORITY = 100
@@ -49,12 +56,27 @@ const caretInFirstBlock = (state: EditorState, itemType: NodeType): ResolvedPos 
   return $from
 }
 
-const indentCommand = (itemType: NodeType): Command => (state, dispatch) => {
-  if (!selectionInListItems(state, itemType)) return false
-  sinkListItem(itemType)(state, dispatch)
-  // Handled either way: a first sibling cannot sink, and the indent plugin must not insert spaces.
-  return true
+/** A text selection over two or more lines (YAZ-3003): Tab / Shift-Tab consume it there instead of typing spaces or moving focus. */
+const spansLines = (state: EditorState): boolean => {
+  const sel = state.selection
+  return sel instanceof TextSelection && !sel.$from.sameParent(sel.$to)
 }
+
+const indentCommand = (itemType: NodeType): Command =>
+  onCoveredLines((state, dispatch) => {
+    if (!selectionInListItems(state, itemType)) return spansLines(state)
+    sinkListItem(itemType)(state, dispatch)
+    // Handled either way: a first sibling cannot sink, and the indent plugin must not insert spaces.
+    return true
+  })
+
+const outdentCommand = (itemType: NodeType): Command =>
+  onCoveredLines((state, dispatch) => {
+    if (!selectionInListItems(state, itemType)) return spansLines(state)
+    // Handled either way: GRO-2029's zoom guard reads the covered lines too, then Crepe's lift.
+    if (!blockEscapingLift(state)) liftListItem(itemType)(state, dispatch)
+    return true
+  })
 
 const enterCommand = (itemType: NodeType, paragraphType: NodeType): Command => (state, dispatch) => {
   const $from = caretInFirstBlock(state, itemType)
@@ -122,6 +144,9 @@ export const outlinerKeymap = $shortcut((ctx: Ctx) => {
   const paragraphType = paragraphSchema.type(ctx)
   return {
     Tab: { key: 'Tab', priority: PRIORITY, onRun: () => indentCommand(itemType) },
+    IndentBracket: { key: 'Mod-]', priority: PRIORITY, onRun: () => indentCommand(itemType) },
+    Outdent: { key: 'Shift-Tab', priority: PRIORITY, onRun: () => outdentCommand(itemType) },
+    OutdentBracket: { key: 'Mod-[', priority: PRIORITY, onRun: () => outdentCommand(itemType) },
     Enter: { key: 'Enter', priority: PRIORITY, onRun: () => enterCommand(itemType, paragraphType) },
     Backspace: { key: 'Backspace', priority: PRIORITY, onRun: () => backspaceCommand(itemType) },
   }
