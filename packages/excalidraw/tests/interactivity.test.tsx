@@ -129,6 +129,28 @@ describe("baseline (interactive & ui enabled by default)", () => {
     expect(UI.queryContextMenu()).not.toBe(null);
   });
 
+  it("ctrl+wheel zooms around the wheel event's own position, not the last pointermove", () => {
+    // the page last saw the pointer at A; the wheel arrives at B with no
+    // pointermove in between (the OS cursor moved while another window
+    // covered this one) — the zoom must hold the scene point under B
+    mouse.moveTo(400, 300);
+    const before = h.state;
+    const sceneUnderB = (s: typeof h.state) => ({
+      x: (100 - s.offsetLeft) / s.zoom.value - s.scrollX,
+      y: (100 - s.offsetTop) / s.zoom.value - s.scrollY,
+    });
+    fireEvent.wheel(GlobalTestState.interactiveCanvas, {
+      ctrlKey: true,
+      deltaY: -100,
+      clientX: 100,
+      clientY: 100,
+    });
+    expect(h.state.zoom.value).toBeGreaterThan(before.zoom.value);
+    expect(sceneUnderB(h.state).x).toBeCloseTo(sceneUnderB(before).x, 5);
+    expect(sceneUnderB(h.state).y).toBeCloseTo(sceneUnderB(before).y, 5);
+    expect(h.app.viewport.lastPosition).toEqual({ x: 100, y: 100 });
+  });
+
   it("renders UI chrome", () => {
     expect(queryContainer(".layer-ui__wrapper")).not.toBe(null);
     expect(queryContainer(".App-toolbar")).not.toBe(null);
