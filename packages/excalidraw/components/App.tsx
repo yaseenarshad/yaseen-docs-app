@@ -14614,6 +14614,11 @@ class App extends React.Component<AppProps, AppState> {
       }
 
       event.preventDefault();
+      // the cursor is here now, whatever the last pointermove said: the
+      // cache goes stale when the pointer moved while this document got no
+      // pointermove (e.g. another window covered it, then ⌘-Tab back)
+      this.viewport.lastPosition.x = event.clientX;
+      this.viewport.lastPosition.y = event.clientY;
 
       if (isPanning) {
         return;
@@ -14647,8 +14652,8 @@ class App extends React.Component<AppProps, AppState> {
           (state) => ({
             ...getViewportForZoomWithScrollConstraints(
               {
-                viewportX: this.viewport.lastPosition.x,
-                viewportY: this.viewport.lastPosition.y,
+                viewportX: event.clientX,
+                viewportY: event.clientY,
                 nextZoom: getNormalizedZoom(newZoom),
               },
               state,
