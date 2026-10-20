@@ -21,7 +21,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { claimWorkDir } from './lib/work.mjs'
 import { INSTALLED_APP, killLaunched, releaseLaunchServices } from './lib/app.mjs'
-import { abba, loadSensitive, summarizeRuns } from './lib/stats.mjs'
+import { abba, loadSensitive, overCeilings, summarizeRuns } from './lib/stats.mjs'
 import * as launch from './scenarios/launch.mjs'
 import * as openBig from './scenarios/open-big.mjs'
 import * as typing from './scenarios/typing.mjs'
@@ -32,10 +32,13 @@ import * as storm from './scenarios/storm.mjs'
 import * as watcher from './scenarios/watcher.mjs'
 import * as idle from './scenarios/idle.mjs'
 import * as quit from './scenarios/quit.mjs'
+import * as drawio from './scenarios/drawio.mjs'
 
-const SCENARIOS = { launch, 'open-big': openBig, typing, 'sidebar-resize': sidebarResize, 'tab-switch': tabSwitch, 'multi-vault': multiVault, storm, watcher, idle, quit }
+const SCENARIOS = { launch, 'open-big': openBig, typing, 'sidebar-resize': sidebarResize, 'tab-switch': tabSwitch, 'multi-vault': multiVault, storm, watcher, idle, quit, drawio }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
+/** The timing ceilings (YAZ-3044 A19): budget.json's `perf` rows, checked against each scenario's medians. */
+const { perf: ceilings = {}, perfTolerance = 0 } = JSON.parse(fs.readFileSync(path.join(here, 'budget.json'), 'utf8'))
 const argv = process.argv.slice(2)
 const opt = (name, dflt) => (argv.includes(`--${name}`) ? argv[argv.indexOf(`--${name}`) + 1] : dflt)
 const names = argv.filter((a, i) => !a.startsWith('--') && !/^--(runs|app|vs|work|out)$/.test(argv[i - 1] ?? ''))
@@ -92,7 +95,9 @@ try {
       }
     }
     const metrics = summarizeRuns(contenders[0].results)
+    const over = overCeilings(name, metrics, ceilings, perfTolerance)
     report.scenarios[name] = {
+      over,
       load: { min: Math.min(...load), max: Math.max(...load), runs: load },
       noisy: Math.max(...load) > NOISY_LOAD,
       loadSensitive: Object.keys(metrics).filter(loadSensitive),
@@ -115,3 +120,7 @@ for (const [name, s] of Object.entries(report.scenarios)) {
   }
 }
 console.log(`\nJSON: ${out}`)
+// A median over its ceiling (budget.json `perf`, with `perfTolerance`) fails the run, as in Draw.
+const over = Object.values(report.scenarios).flatMap((s) => s.over)
+for (const line of over) console.error(`OVER: ${line}`)
+if (over.length > 0) process.exitCode = 1
