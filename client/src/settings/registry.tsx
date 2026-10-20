@@ -26,6 +26,7 @@ import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
 import type { GithubSyncStatus, IdsState, IndexResponse, SettingsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
+import type { VaultStorageState } from '../hooks/useVaultStorage'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
@@ -33,6 +34,7 @@ import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
+import { STORAGE_SECTION } from './storageSection'
 import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 export interface SettingsCtx {
@@ -69,6 +71,8 @@ export interface SettingsCtx {
    * it acts on; with one vault the pages read as they always did.
    */
   vaultName?: string
+  /** Settings › Storage (YAZ-1801, YAZ-3039): App's `useVaultStorage` for the active tab's vault; undefined with no vault open, which hides the section. */
+  storage?: VaultStorageState
 }
 
 export interface SettingDef {
@@ -81,10 +85,15 @@ export interface SettingDef {
   wide?: boolean | ((ctx: SettingsCtx) => boolean)
   /** A row that only exists in some states (the Review rows need upkeep on); absent = always. */
   available?: (ctx: SettingsCtx) => boolean
+  /**
+   * No text column at all: the control IS the row, full-width (YAZ-1801, YAZ-3039 — Settings ›
+   * Storage's lists and its one action, which carry their own words). The label and hint still feed search.
+   */
+  bare?: true
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys'
+export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'storage'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -536,6 +545,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
     ],
   },
+  // YAZ-1801 (YAZ-3039): a per-vault report, its own page in the nav's reference list.
+  STORAGE_SECTION,
   {
     id: 'hotkeys',
     title: 'Hotkeys',

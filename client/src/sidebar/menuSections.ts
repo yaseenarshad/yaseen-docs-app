@@ -120,6 +120,8 @@ export interface MenuHandlers {
   onOpenAlone: (root: string) => void
   /** "Info" on one drawing or diagram row (YAZ-3028 D11): the caller opens the board's popover where the menu was. */
   onInfo: (path: string) => void
+  /** "Version history" (YAZ-1897 D4, YAZ-3039): open the board's versions — Info's gate. */
+  onHistory: (path: string) => void
 }
 
 type Item = (t: MenuSectionTargets, h: MenuHandlers) => MenuItem | null
@@ -417,6 +419,13 @@ const info: Leaf = (t, h) => {
   return { id: 'info', label: 'Info', onSelect: () => h.onInfo(path) }
 }
 
+/** "Version history" (YAZ-1897 D4, YAZ-3039): Info's gate too — a draw.io diagram has pictures and Restore (Draw's 🔒 YAZ-1802 D10) — just above Info. */
+const history: Leaf = (t, h) => {
+  const path = t.infoPath
+  if (path === null) return null
+  return { id: 'history', label: 'Version history', onSelect: () => h.onHistory(path) }
+}
+
 /**
  * "Remove shortcut" (YAZ-2290 E5) stands where Delete would on a SHORTCUT row: the note stops
  * appearing in this folder and stays where it lives — the only place it can be deleted from. Not
@@ -464,7 +473,7 @@ const CREATE_GROUP: readonly Item[] = [newNote, newDrawing, newDiagram, newFolde
 const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedDrawing, newDatedFolder]
 const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename]
 const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openAlone, openIn, addVault]
-const DELETE_GROUP: readonly Item[] = [info, del, removeShortcut, removeVault]
+const DELETE_GROUP: readonly Item[] = [history, info, del, removeShortcut, removeVault]
 
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */
 const build = <T extends MenuItem>(group: readonly ((t: MenuSectionTargets, h: MenuHandlers) => T | null)[], t: MenuSectionTargets, h: MenuHandlers): T[] =>

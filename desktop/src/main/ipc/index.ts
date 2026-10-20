@@ -9,6 +9,7 @@ import { registerFsIpc } from './fs'
 import { registerGithubIpc } from './github'
 import { registerPropertiesIpc } from './properties'
 import { registerStateIpc } from './state'
+import { registerStorageIpc } from './storage'
 import { registerVaultConfigIpc } from './vaultConfig'
 import { registerWatchIpc } from './watch'
 import { registerWindowIpc } from './window'
@@ -30,5 +31,6 @@ export function registerIpc(store: Store, windows: WindowManagerIpc): GitSyncMan
   registerFocusIpc(store)
   registerPropertiesIpc(store)
   registerWindowIpc(store, windows)
+  registerStorageIpc()
   return registerGithubIpc(store)
 }

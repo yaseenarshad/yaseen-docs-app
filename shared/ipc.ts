@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SettingsState, TocSource, TreeResponse, UpdateState, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SettingsState, ShrinkResult, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -311,6 +311,18 @@ export const CONTRACT = {
     setEnabled: invoke<[root: string, enabled: boolean], GithubSyncStatus>('github:set-enabled', 2),
     /** Fired in every window on every transition of any vault; filter by `status.root`. */
     onStatus: push<GithubSyncStatus>('github:status-changed'),
+    /** Version history (YAZ-1897 D4, YAZ-3039): a drawing's or diagram's committed versions, newest first. No git, or no commits: `[]`. */
+    history: invoke<[root: string, path: string], BoardVersion[]>('github:history', 2),
+    /** One version's content, its pictures resolved from `assets/` (a drawing) or its XML (a diagram). */
+    version: invoke<[root: string, path: string, ref: string], BoardVersionScene>('github:version', 3),
+    /** Writes that version over the board on disk; the open tab reloads it as an external change. */
+    restore: invoke<[root: string, path: string, ref: string], void>('github:restore', 3),
+  },
+  /** Settings › Storage (YAZ-1801 in Draw, YAZ-3039): what the vault weighs (disk + local git, never the network), and moving pictures out of drawings. */
+  storage: {
+    stats: invoke<[root: string], VaultStorageStats>('storage:stats', 1),
+    /** `skip` = absolute paths with unsaved edits in a tab; an unreadable drawing counts as skipped. */
+    shrink: invoke<[root: string, skip: readonly string[]], ShrinkResult>('storage:shrink', 2),
   },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {

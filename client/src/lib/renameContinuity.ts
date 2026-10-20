@@ -48,6 +48,8 @@ export interface RenameContinuityHandle {
   capture(): RenameBuffer | null
   /** Stop this editor writing ever again (pending drops, unmount flush becomes a no-op). */
   retire(): void
+  /** A board's unsaved edits (YAZ-1801 D5, YAZ-3039), which `capture` never reports; absent = ask `capture`. */
+  dirty?(): boolean
 }
 
 export interface RenameBuffer {
@@ -74,6 +76,16 @@ export function registerRenameContinuity(path: string, handle: RenameContinuityH
     current.delete(handle)
     if (current.size === 0) handles.delete(path)
   }
+}
+
+/**
+ * Every open path in THIS window whose editor has unsaved edits (YAZ-1801 D5, YAZ-3039) — the
+ * `skip` list "Move pictures out" hands main, so it never rewrites a drawing under a dirty buffer
+ * (that is the conflict bar's case). Per renderer, like the map: another WINDOW's dirty tab is not
+ * in it — the shrink's own mtime re-check narrows that race to the instant of the write.
+ */
+export function dirtyPaths(): string[] {
+  return [...handles].filter(([, set]) => [...set].some((h) => (h.dirty?.() ?? h.capture() !== null))).map(([path]) => path)
 }
 
 /** Flush every editor open at `path` — the pre-rename step (a) and the pre-rewrite step. */

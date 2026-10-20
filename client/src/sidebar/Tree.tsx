@@ -5,7 +5,8 @@ import { CreateInline } from './CreateInline'
 import type { EntryKind, MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { isBoard } from '@shared/fileKind'
-import { DiagramBadge, ShortcutIcon } from '../views/view/icons'
+import { CloudOffIcon, DiagramBadge, ShortcutIcon } from '../views/view/icons'
+import { TOO_LARGE_LABEL } from '../lib/syncAttention'
 import { RenameInline } from './RenameInline'
 
 /** Inline "New note" / "New folder" input pending inside the tree (GRO-2022). */
@@ -213,6 +214,8 @@ interface TreeProps {
    * dwell (YAZ-3028 D11). Absent → no row reports it. A note row never does.
    */
   onHoverFile?: (node: { path: string } | null) => void
+  /** YAZ-1801 D3 (YAZ-3039): absolute paths sync held back as over GitHub's limit; their rows get the cloud-off icon. A stable Set (the memo compares identity). */
+  tooLarge?: ReadonlySet<string>
   depth?: number
 }
 
@@ -239,9 +242,10 @@ function TreeLevel({
   onLeaveToPage,
   top,
   onHoverFile,
+  tooLarge,
   depth = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile }
+  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge }
   /** A board row's hover handlers (YAZ-3028 D11): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !isBoard(path) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
@@ -443,6 +447,7 @@ function TreeLevel({
                 {marked(pageLabel(node.path, false, titles), needleFor(node.path))}
               </span>
               {node.kind === 'diagram' && <DiagramBadge />}
+              {tooLarge?.has(node.path) === true && <CloudOffIcon label={TOO_LARGE_LABEL} />}
               {isShortcutRow(node) && <ShortcutIcon />}
               {vaultTag(node.path)}
             </button>

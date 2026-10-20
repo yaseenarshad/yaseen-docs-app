@@ -165,6 +165,8 @@ export function useBoardDocument(options: BoardDocumentOptions) {
         },
         // A board stashes no buffer (see the module doc): flushed first, read back at the new path.
         capture: () => null,
+        // …but Settings › Storage's shrink must know it has unsaved edits (YAZ-3039).
+        dirty: () => autosave.current?.dirty === true,
         retire: () => {
           retired.current = true
           autosave.current?.dispose()

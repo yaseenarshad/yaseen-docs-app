@@ -186,6 +186,19 @@ export const FormulaIcon = () => (
 )
 
 /**
+ * A broken cloud (cloud-off), red, right of a row's name: a file sync held back as over GitHub's
+ * limit (YAZ-1801 D3, ported by YAZ-3039). `label` is `TOO_LARGE_LABEL`, for hover and screen readers.
+ */
+export const CloudOffIcon = ({ label }: { label: string }) => (
+  <span className="tree__too-large" role="img" aria-label={label} title={label}>
+    <svg {...svg} width={14} height={14} viewBox="0 0 24 24" strokeWidth={2}>
+      <path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  </span>
+)
+
+/**
  * A draw.io diagram's type mark (YAZ-3028 D11, Draw's 🔒 YAZ-1802 D15): linked boxes, a generic glyph,
  * never draw.io's logo, after a diagram row's name and named for screen readers. A drawing has none.
  */

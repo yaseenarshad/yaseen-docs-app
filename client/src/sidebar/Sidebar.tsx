@@ -7,7 +7,7 @@ import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { pageName, useAllPathTitles } from '../lib/pageLabel'
-import { relTo } from '../lib/paths'
+import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
@@ -56,6 +56,8 @@ export interface SidebarVault {
    */
   dueCount: number
   reviewing: boolean
+  /** YAZ-1801 D3 (YAZ-3039): vault-relative paths its last sync pass held back as over GitHub's limit (`GithubSyncStatus.tooLarge`). */
+  tooLarge?: readonly string[]
 }
 
 interface SidebarProps {
@@ -76,6 +78,8 @@ interface SidebarProps {
   width: number
   /** This aside, for App's resize drag, which writes the live width to it between renders (YAZ-2239). */
   asideRef?: Ref<HTMLElement>
+  /** Right-click → "Version history" on one board row (YAZ-1897 D4, YAZ-3039): App opens the board's versions. */
+  onHistoryFile?: (path: string) => void
   activeFile: string | null
   /** A click on a row, Enter on a search match: App passes the workspace's openCurrent — the page opens in the preview tab (YAZ-2648 D1). */
   onOpenFile: (path: string) => void
@@ -467,6 +471,7 @@ export function Sidebar({
   onInbox,
   width,
   asideRef,
+  onHistoryFile,
 }: SidebarProps) {
   const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
   // The FIRST vault: the one a window with one vault has.
@@ -984,6 +989,10 @@ export function Sidebar({
    * its identity across renders that change nothing for them. The context menu handler reads the
    * selection and the tree, so it changes on every click; the rows call it through this stable door.
    */
+  // YAZ-1801 D3 (YAZ-3039): every vault's held-back files as tree paths, one Set that keeps its
+  // identity until a list really changes — the memoised levels compare it by identity.
+  const tooLargeKey = vaults.map((vault) => (vault.tooLarge ?? []).map((rel) => absFrom(vault.root, rel)).join('\0')).join('\0')
+  const tooLarge = useMemo<ReadonlySet<string>>(() => new Set(tooLargeKey.split('\0').filter((p) => p !== '')), [tooLargeKey])
   const openMenuRef = useRef(openMenu)
   openMenuRef.current = openMenu
   const openRowMenu = useCallback((node: MenuRow, e: React.MouseEvent) => openMenuRef.current(node, e), [])
@@ -1001,6 +1010,7 @@ export function Sidebar({
   // search tree puts its own folds, highlight and marks over it (YAZ-2620). It is SPREAD into each
   // `<Tree>`, so the memo above compares the values, never this object.
   const treeProps = {
+    tooLarge,
     // Above the vault rows no one directory stands (YAZ-2602 D3).
     dirPath: multi ? '' : root,
     vaultRows,
@@ -1420,6 +1430,7 @@ export function Sidebar({
               onRemoveVault,
               onOpenAlone: openVaultAlone,
               onInfo: (path) => setInfoPopover({ x: menu.x, y: menu.y, path, now: Date.now(), info: null }),
+              onHistory: (path) => onHistoryFile?.(path),
             },
           )}
           onClose={() => setMenu(null)}

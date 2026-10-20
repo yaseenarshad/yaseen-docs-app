@@ -8,6 +8,7 @@ import { newNoteBase } from './editor/wikilink/createFromLink'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { useMenuEvents } from './hooks/useMenuEvents'
+import { useVaultStorage } from './hooks/useVaultStorage'
 import { requestZoom } from './editor/zoomRequest'
 import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
@@ -19,13 +20,14 @@ import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument } from './lib/focusHandoff'
 import { LINK_NOTICE_MS, type Notice, type NoticeKind } from './lib/notice'
 import { NoticeIcon } from './components/NoticeIcon'
-import { dirname, relTo } from './lib/paths'
+import { absFrom, dirname, relTo } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
 import { readPageView } from './lib/pageView'
 import { ownsSidebarHotkey } from './lib/sidebarHotkey'
 import { buildSetupPrompt } from './lib/syncAttention'
+import { mergeNotice } from './history/mergeNotice'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { windowTitle } from './lib/windowTitle'
@@ -54,6 +56,8 @@ import { Welcome } from './Welcome'
 
 /** The "What's new" sheet (YAZ-2976 D5) is its own chunk: launch never parses it, and the first open fetches it. */
 const WhatsNewSheet = lazy(() => import('./update/WhatsNewSheet'))
+/** Version history (YAZ-1897 D4, YAZ-3039): lazy, so a window that never opens it loads none of it. */
+const VersionHistory = lazy(() => import('./history/VersionHistory').then((m) => ({ default: m.VersionHistory })))
 
 /** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
 function syncHash(path: string | null): void {
@@ -168,7 +172,7 @@ export function App() {
   // `'info'` unless the caller names one — so nothing that already said `onNotice(text)` changed.
   const notify = useCallback((text: string, icon: NoticeKind = 'info') => setNotice({ text, icon }), [])
   useEffect(() => {
-    if (notice === null) return
+    if (notice === null || notice.action !== undefined) return
     const timer = setTimeout(() => setNotice(null), LINK_NOTICE_MS)
     return () => clearTimeout(timer)
   }, [notice])
@@ -693,6 +697,32 @@ export function App() {
     prevTab()
   }, [prevTab])
   useLinkEvents({ onOpenFile: openPage, onNotice: notify })
+
+  // Settings › Storage (YAZ-1801 D1, 🔒 D13; YAZ-3039): the active tab's vault, measured only while
+  // Settings is open — on its page's open, a sync pass finishing, and a shrink. A closed dialog hands the hook no sync state.
+  const vaultStorage = useVaultStorage(active.root, settingsOpen ? (active.sync.status?.state ?? null) : null)
+
+  // Version history (YAZ-1897 D4, YAZ-3039): a board row's right-click, or "See changes" on a merge
+  // notice (`fromMerge`). The board's own vault answers for it.
+  const [history, setHistory] = useState<{ root: string; path: string; fromMerge: boolean } | null>(null)
+  const openHistory = useCallback((path: string, fromMerge = false) => {
+    const root = rootOfPath(live.current.roots, path)
+    if (root !== null) setHistory({ root, path, fromMerge })
+  }, [])
+  const closeHistory = useCallback(() => setHistory(null), [])
+  // A sync pass that merged says so ONCE (YAZ-1897 D4): `merged` rides only that pass's broadcast,
+  // so each list is told once, whichever vault of the window it is of. A WeakSet: nothing to clean up.
+  const toldMerges = useRef(new WeakSet<object>())
+  useEffect(() => {
+    for (const vault of vaults) {
+      const merged = vault.sync.status?.merged
+      if (vault.root === null || merged === undefined || merged.length === 0 || toldMerges.current.has(merged)) continue
+      toldMerges.current.add(merged)
+      const { text, firstBoard } = mergeNotice(merged)
+      const board = firstBoard === null ? null : absFrom(vault.root, firstBoard)
+      setNotice(board === null ? { text, icon: 'info' } : { text, icon: 'info', action: { label: 'See changes', run: () => openHistory(board, true) } })
+    }
+  })
   const leftOverview = useCallback(() => setOverview((at) => (at.phase === 'leaving' ? OVERVIEW_CLOSED : at)), [])
   const toggleOverview = useCallback(() => {
     const { phase, active: open } = now.current
@@ -1301,15 +1331,37 @@ export function App() {
     <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines}>
       {notice !== null && (
         // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.
-        <div className="link-notice" role="status" data-icon={notice.icon}>
+        <div className={`link-notice${notice.action === undefined ? '' : ' link-notice--action'}`} role="status" data-icon={notice.icon}>
           <NoticeIcon icon={notice.icon} />
           <span className="link-notice__text">{notice.text}</span>
+          {notice.action !== undefined && (
+            <>
+              <button
+                type="button"
+                className="link-notice__action"
+                onClick={() => {
+                  notice.action?.run()
+                  setNotice(null)
+                }}
+              >
+                {notice.action.label}
+              </button>
+              <button type="button" className="link-notice__close" aria-label="Dismiss" onClick={() => setNotice(null)}>
+                ✕
+              </button>
+            </>
+          )}
         </div>
+      )}
+      {history !== null && (
+        <Suspense fallback={null}>
+          <VersionHistory key={history.path} root={history.root} path={history.path} fromMerge={history.fromMerge} darkColors={settings.diagramDarkColors} onClose={closeHistory} onNotice={notify} />
+        </Suspense>
       )}
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined }} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage }} onClose={closeSettings} />}
       {whatsNewOpen && (
         <Suspense fallback={null}>
           <WhatsNewSheet update={update} onClose={closeWhatsNew} />
@@ -1344,9 +1396,12 @@ export function App() {
               Copy setup prompt
             </button>
           )}
-          <button type="button" onClick={unsynced.dismissSync}>
-            Dismiss
-          </button>
+          {/* YAZ-1801 D3 (YAZ-3039): a file that is not backed up is not a banner to wave away — `too-large` has no Dismiss. */}
+          {syncCopy.dismissible && (
+            <button type="button" onClick={unsynced.dismissSync}>
+              Dismiss
+            </button>
+          )}
         </div>
       )}
       {root !== null && !sidebarCollapsed && (
@@ -1355,7 +1410,7 @@ export function App() {
           key={sidebarKey.current}
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null }))}
+          vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
           closedVaults={closedVaults}
           onSetVaultOpen={setVaultOpen}
           onAddVault={addVault}
@@ -1407,6 +1462,7 @@ export function App() {
           // move restyled the whole window, every mounted tab included.
           width={sidebarWidth}
           asideRef={sidebarRef}
+          onHistoryFile={openHistory}
           // The menu names the folder by its absolute path; a session takes it relative to the vault that holds it.
           onReviewFolder={(dir) => startReview(scopeOf(dir), relLabel(dir))}
           reviewState={reviewState}

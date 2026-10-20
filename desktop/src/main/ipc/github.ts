@@ -4,8 +4,9 @@ import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
 import { detectRepo } from '../git/detect'
 import { resolveGit } from '../git/exec'
+import { boardHistory, boardVersion, restoreBoardVersion } from '../git/history'
 import { createGitSync, type GitSyncManager } from '../git/manager'
-import { syncPass } from '../git/sync'
+import { lookAtRemote, syncPass } from '../git/sync'
 import type { Store } from '../store'
 import { readConfig, subscribeConfig, writeConfig } from '../vaultConfig'
 import { broadcastAll, rootsOf } from './broadcast'
@@ -36,7 +37,7 @@ async function inspect(root: string): Promise<GithubSyncStatus> {
 }
 
 /**
- * Registers the three invokes and starts the manager on the current open roots. Returns the
+ * Registers the invokes and starts the manager on the current open roots. Returns the
  * manager because `main/index.ts` owns the three triggers no renderer can send: window focus,
  * OS wake, and the final flush on quit.
  */
@@ -49,6 +50,7 @@ export function registerGithubIpc(store: Store): GitSyncManager {
     // Every live window hears about every vault; renderers filter by `status.root` (the `state:changed` posture).
     onStatus: (status) => broadcastAll(CONTRACT.github.onStatus.channel, status),
     syncPass,
+    lookAtRemote,
     inspect,
   })
 
@@ -61,6 +63,11 @@ export function registerGithubIpc(store: Store): GitSyncManager {
     if (typeof enabled !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'enabled' must be a boolean")
     return manager.setEnabled(dir, enabled)
   })
+
+  // Version history (YAZ-1897 D4, YAZ-3039): every argument is validated in `history.ts`, like `drawing:load`'s.
+  handle(CONTRACT.github.history, async (root: unknown, path: unknown) => boardHistory(root, path))
+  handle(CONTRACT.github.version, async (root: unknown, path: unknown, ref: unknown) => boardVersion(root, path, ref))
+  handle(CONTRACT.github.restore, async (root: unknown, path: unknown, ref: unknown) => restoreBoardVersion(root, path, ref))
 
   store.onChange((state) => manager.setOpenRoots(rootsOf(state)))
   manager.setOpenRoots(rootsOf(store.get()))

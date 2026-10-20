@@ -24,6 +24,8 @@ vi.mock('electron', () => ({
   dialog: {},
   shell: {},
 }))
+// electron-vite's `?modulePath` is a build-time import (Settings › Storage's worker, YAZ-3039); no door here runs it.
+vi.mock('./main/storageWorker?modulePath', () => ({ default: '' }))
 
 const doors = leaves(CONTRACT).map(([, door]) => door)
 /** Renderer → main invokes: the table's, plus the two the preload's Copy as / Paste as fallback makes. */
