@@ -224,7 +224,7 @@ export const CONTRACT = {
     onExportImage: push('menu:export-image'),
     /** File › Export Excalidraw Drawing… (⌘⇧S, drawings only): write a standalone `.excalidraw`. */
     onExportDrawing: push('menu:export-drawing'),
-    /** File › Share Link (⌘⇧L, any board): open the Share dialog for the visible board (YAZ-3040 fills it). */
+    /** File › Share Link (⌘⇧L, any board): open the Share dialog for the visible board (YAZ-3040). */
     onShareLink: push('menu:share-link'),
     /** View › Canvas Background › a pick (drawings only): the visible drawing takes `color`. */
     onCanvasBackground: push<string>('menu:canvas-background'),

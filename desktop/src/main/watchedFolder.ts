@@ -1,5 +1,4 @@
 import { existsSync, type Stats } from 'node:fs'
-import { readFile, rename } from 'node:fs/promises'
 import path from 'node:path'
 import { watchTree, type TreeWatcher } from './fs/treeWatcher'
 
@@ -30,7 +29,7 @@ export interface WatchedFolder {
   close(): Promise<void>
 }
 
-export interface WatchedFolderOptions {
+interface WatchedFolderOptions {
   dir: string
   /** 0 = the folder's own files; 1 = one level of subfolders too; omitted = every level. */
   depth?: number
@@ -117,50 +116,4 @@ export function createWatchedFolder(opts: WatchedFolderOptions): WatchedFolder {
       return watcher.close()
     },
   }
-}
-
-/**
- * READ A JSON FILE, OR MOVE IT ASIDE — `store.ts`'s posture, shared by every store that owns one
- * (`media.json`, `components.json`, `secrets.json`). A missing file is `null`; a file that is not
- * what it claims to be is renamed `<file>.corrupt-<epoch>` and read as absent, because a bad file
- * must cost a rename, never a launch. A rename that itself fails is logged and the read still
- * answers absent — the app carries on either way.
- */
-export async function readOrQuarantine<T>(file: string, parse: (raw: unknown) => T | null, tag: string, what: string): Promise<T | null> {
-  let raw: string
-  try {
-    raw = await readFile(file, 'utf8')
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw err
-  }
-  let value: T | null = null
-  try {
-    value = parse(JSON.parse(raw))
-  } catch {
-    value = null
-  }
-  if (value !== null) return value
-  const backup = `${file}.corrupt-${Date.now()}`
-  await rename(file, backup).then(
-    () => console.error(`[${tag}] ${file} is not ${what}; moved to ${backup}`),
-    (err: unknown) => console.error(`[${tag}] ${file} is not ${what} and could not be moved aside: ${String(err)}`),
-  )
-  return null
-}
-
-/**
- * A serialising queue: `run(fn)` starts only once every earlier `fn` has settled, so two
- * read-modify-writes of one file can never interleave and lose each other. A rejection is the
- * caller's; the chain itself carries on.
- */
-export function createChain(): { run<T>(fn: () => Promise<T>): Promise<T>; wait<T>(fn: () => Promise<T>): Promise<T> } {
-  let chain: Promise<unknown> = Promise.resolve()
-  const run = <T,>(fn: () => Promise<T>): Promise<T> => {
-    const next = chain.then(fn)
-    chain = next.catch(() => undefined)
-    return next
-  }
-  /** Queue behind the writes without joining them — a read that must see the last write. */
-  return { run, wait: (fn) => chain.then(fn) }
 }

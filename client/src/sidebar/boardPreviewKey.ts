@@ -10,7 +10,7 @@ import type { DiagramDarkColors } from '@shared/types'
  * board's `updatedAt` block (🔒 D1 amendment): every write moves it, a sync or an outside editor
  * included; the block's one advantage, surviving a clone, means nothing to a cache that lives in
  * memory. Docs' tree is not read again on a save, so the caller hands the NEWEST mtime it knows —
- * the tree's, or a later watcher `change` (`HoverPreviewHost`). Newline-separated because a path can hold ':' — the root sits at the start and the rest
+ * the tree's, the board head's, or a watcher `change` while the preview shows (`HoverPreviewHost`, YAZ-3044 A41). Newline-separated because a path can hold ':' — the root sits at the start and the rest
  * at the end, so a path is whatever lies between. The colour setting only changes a diagram's
  * picture; a drawing redrawn after a toggle is the price of one key shape for both kinds.
  */

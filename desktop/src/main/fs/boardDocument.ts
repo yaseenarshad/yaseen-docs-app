@@ -4,12 +4,11 @@
  * guard and stamp a save through here, and keep only what their format needs. `createBoard.ts`
  * resolves the new board's path through `resolveBoard` too.
  */
-import path from 'node:path'
 import { MAX_DIAGRAM_BYTES, MAX_DRAWING_BYTES, type BoardKind } from '@shared/types'
 import type { BoardMetaBlock } from '@shared/drawingAssets'
 import { isDiagram, isDrawing } from '@shared/fileKind'
 import { readBoardHead } from './boardHead'
-import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
+import { BridgeFailure, fsCall, requireAbsPath, resolveUnderRoot } from './fsUtils'
 import { requireRequest } from './validate'
 
 /** Each kind's extension test, the words its failures use, and its read/write ceiling. */
@@ -24,8 +23,7 @@ export const BOARDS = {
  */
 export function resolveBoard(dir: string, rel: unknown, kind: BoardKind): string {
   if (typeof rel !== 'string' || rel.trim() === '' || rel.includes('\0')) throw new BridgeFailure('BAD_REQUEST', "missing 'path'")
-  const file = path.resolve(dir, rel)
-  if (!file.startsWith(dir + path.sep)) throw new BridgeFailure('BAD_REQUEST', 'path escapes the vault root', { path: rel })
+  const file = resolveUnderRoot(dir, rel)
   if (!BOARDS[kind].is(file)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', BOARDS[kind].refused, { path: file })
   return file
 }

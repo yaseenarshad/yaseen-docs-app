@@ -20,8 +20,8 @@ import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { MEDIA_LIBRARY_FILE, type MediaFavoritesRequest, type MediaLibraryFile, type MediaRecentRequest, type StoredMediaItem } from '@shared/types'
 import { EMPTY_MEDIA_LIBRARY, addFavorite, recordRecent, removeFavorite, sanitizeMediaLibrary } from '@shared/mediaLibrary'
-import { atomicWrite, fsCall } from '../fs/fsUtils'
-import { createChain, createWatchedFolder, readOrQuarantine } from '../watchedFolder'
+import { atomicWrite, createChain, fsCall, readOrQuarantine } from '../fs/fsUtils'
+import { createWatchedFolder } from '../watchedFolder'
 
 export interface MediaStore {
   /** Every verb answers the favorites list it produced. */

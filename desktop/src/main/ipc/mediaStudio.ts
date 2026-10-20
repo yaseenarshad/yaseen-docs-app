@@ -39,6 +39,9 @@ function requireBytesRequest(v: unknown): MediaBytesRequest {
   return { provider: r.provider, id: str(r.id, 'id') }
 }
 
+/** How often a running app sweeps the media cache again (YAZ-3044 A34); the first sweep is at launch. */
+export const MEDIA_CACHE_SWEEP_MS = 60 * 60_000
+
 /** The cache folder this registration owns — the one fact a test needs back from it. */
 export function registerMediaStudioIpc(userData: string, secrets: Secrets, fetchImpl: typeof globalThis.fetch = globalThis.fetch): string {
   const folder = join(userData, MEDIA_CACHE_DIR)
@@ -55,6 +58,9 @@ export function registerMediaStudioIpc(userData: string, secrets: Secrets, fetch
       },
       (err: unknown) => console.warn('[media-cache] could not prepare', folder, err),
     )
+
+  // YAZ-3044 A34: a long session sweeps again each hour, not only at launch. `unref`: it never holds the app open.
+  setInterval(() => void cache.sweep().catch(() => undefined), MEDIA_CACHE_SWEEP_MS).unref()
 
   handle(CONTRACT.media.search, async (req: unknown) => providers.search(requireSearchRequest(req)))
   handle(CONTRACT.media.preview, async (req: unknown) => providers.preview(requireBytesRequest(req)))

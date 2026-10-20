@@ -12,7 +12,6 @@ import { resolveDrawioDir, serveDrawio } from './drawio/assets'
 import { excalidrawFontsDir, viewerAssetsDir } from './ipc/share'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
-import { initBoardThumbs } from './ipc/board'
 import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
@@ -21,7 +20,7 @@ import { claimDeepLinkScheme } from './deepLinkScheme'
 import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
-import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
+import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
 import { createStore } from './store'
@@ -96,8 +95,6 @@ const store = createStore(join(app.getPath('userData'), STATE_FILE))
 initIndexCache(join(app.getPath('userData'), 'index-cache'))
 /** This Mac's ID for the count files (YAZ-2677 R13) is kept in userData, never in a vault. */
 initMint(app.getPath('userData'))
-/** A board preview's pictures, made preview-sized once and kept in userData, never in a vault (YAZ-3028 D11). */
-initBoardThumbs(app.getPath('userData'))
 
 /** Window lifecycle (GRO-2160) lives in windows.ts; this host is its Electron-only half. */
 /**
@@ -254,7 +251,7 @@ app.whenReady().then(() => {
         () => manager.linkNotice("Can't check for updates. Try again later"),
       ),
   })
-  // The board items (YAZ-3037, YAZ-3028 D10; Draw's `index.ts:201-212`) are enabled only while the window a
+  // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D10) are enabled only while the window a
   // menu action would target has a board of the right kind in front. Read at build time from the same
   // window `menuTarget` names, so the answer and the send target can never disagree.
   const activeFileKind = () => {
@@ -263,15 +260,17 @@ app.whenReady().then(() => {
     const file = id === undefined ? null : (store.get().windows.find((w) => w.id === id)?.file ?? null)
     return file === null ? null : fileKind(file)
   }
-  const applyMenu = (): void =>
+  const { apply: applyMenu, applyIfMoved } = gateOnBoardKind(activeFileKind, () =>
     Menu.setApplicationMenu(
       Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind() }, handlers)),
-    )
+    ),
+  )
   applyMenu()
   subscribeMenuRebuild(store, applyMenu)
-  // A tab switch changes which file is in front; a focus change changes which window is asked.
-  subscribeMenuRebuildOnActiveFile(store, applyMenu)
-  rebuildMenuOnFocus = applyMenu
+  // A tab switch changes which file is in front; a focus change changes which window is asked. Either
+  // rebuilds only when the board items' answer moves (YAZ-3044 A32).
+  subscribeMenuRebuildOnActiveFile(store, applyIfMoved)
+  rebuildMenuOnFocus = applyIfMoved
   const { sync, secrets } = registerIpc(store, manager, {
     userData: app.getPath('userData'),
     // YAZ-3040: the share viewer's build, draw.io's webapp and Excalidraw's fonts, which share setup uploads.

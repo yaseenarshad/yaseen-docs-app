@@ -1,6 +1,6 @@
 /**
  * "Library folder" (Settings › Images, YAZ-3038; Draw's 🔒 YAZ-1775 D5): the one folder every vault shares, where media
- * favorites and saved components will live (YAZ-1817 / YAZ-1818 / YAZ-1819 fill it).
+ * favorites and saved components live (`library/mediaStore.ts`, `library/componentStore.ts`).
  *
  * A component rather than an inline `render` because the row shows the RESOLVED path, and only
  * main knows what null resolves to (`<userData>/library`) — so it asks, once per value.
@@ -19,7 +19,7 @@ interface LibraryFolderControlProps {
 }
 
 /** The resolved folder for the current setting; `''` while the first fetch is in flight. */
-export function useResolvedLibraryFolder(setting: string | null): string {
+function useResolvedLibraryFolder(setting: string | null): string {
   const [resolved, setResolved] = useState(setting ?? '')
   useEffect(() => {
     let live = true

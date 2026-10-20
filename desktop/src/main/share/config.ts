@@ -11,6 +11,9 @@ import { atomicWrite, BridgeFailure } from '../fs/fsUtils'
 import type { Secrets } from '../secrets'
 import { createCloudflareClient, offline, type AssetFile, type CloudflareClient } from './cloudflare'
 
+/** The file `SharingConfig` lives in, under userData (`ipc/share.ts`; the Draw import copies it, YAZ-3044 A10). */
+export const SHARING_FILE = 'sharing.json'
+
 export interface SharingConfig {
   version: 1
   accountId: string

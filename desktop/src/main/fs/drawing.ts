@@ -93,9 +93,9 @@ async function listStore(dir: string): Promise<Map<string, string>> {
 }
 
 /**
- * `drawing:load`. `imageMaxPx` (a PICTURE of the scene, never an editor) is validated here; the
- * hover preview's thumbnail cache that answers it is the tree's (YAZ-3035), so until then the
- * pictures come back as their own bytes.
+ * `drawing:load`. `imageMaxPx` (a PICTURE of the scene, never an editor) is validated here; `fit`,
+ * the hover preview's thumbnail cache (`ipc/board.ts`, YAZ-3035), answers it. Without `fit` (tests)
+ * the pictures come back as their own bytes.
  */
 export async function loadDrawing(req: unknown, fit?: (files: Record<string, DrawingFileEntry>, elements: readonly unknown[], maxPx: number) => Promise<Record<string, DrawingFileEntry>>): Promise<DrawingLoadResponse> {
   const { dir, file, body } = boardTarget(req, 'drawing')
@@ -118,7 +118,7 @@ export async function loadDrawing(req: unknown, fit?: (files: Record<string, Dra
 /**
  * The pictures a scene references, from the vault's `assets/` store — with a legacy scene's own
  * `embedded` entries as the fallback. Shared by `drawing:load` and Version history's old versions
- * (Draw's YAZ-1897 D4, a later phase), so an old version draws its pictures the way the open board does.
+ * (Draw's YAZ-1897 D4; `git/history.ts`), so an old version draws its pictures the way the open board does.
  */
 export async function resolveFiles(dir: string, embedded: Record<string, DrawingFileEntry>, elements: readonly unknown[]): Promise<{ files: Record<string, DrawingFileEntry>; stored: string[] }> {
   const store = await listStore(dir)
@@ -152,7 +152,7 @@ export interface PendingAsset {
 /**
  * THE ONE EXTRACTION (Draw's YAZ-1801 D5): a scene's lean text, and the embedded pictures that must
  * land in `assets/` before it. `drawing:save` uses it (a legacy board shrinks on its first save);
- * Draw's Settings › Storage "Move pictures out" (a later phase) shares it, so the two can never
+ * Settings › Storage's "Move pictures out" (`fs/shrink.ts`) shares it, so the two can never
  * disagree about which bytes survive.
  *
  * Only pictures the scene still REFERENCES are lifted — an embedded entry no live element uses is
@@ -184,8 +184,7 @@ export function liftEmbedded(scene: Record<string, unknown>, elements: readonly 
  *
  * The name IS the content hash, so a torn file under it would pass for valid forever. The bytes land
  * on a tmp sibling, are fsynced, and only then `link`ed to the name (YAZ-2073 2B1): a crash at any
- * point leaves at most a tmp file (`isAtomicTmp`: never listed, never committed, swept once a day
- * old). `link` never replaces — EEXIST means identical bytes already landed, which is success. Any
+ * point leaves at most a tmp file (`isAtomicTmp`: never listed, never committed). `link` never replaces — EEXIST means identical bytes already landed, which is success. Any
  * other refusal (a volume without hard links, exFAT or FAT, says ENOTSUP) renames instead;
  * replacing identical bytes is harmless there.
  */

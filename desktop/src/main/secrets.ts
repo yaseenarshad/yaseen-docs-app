@@ -25,8 +25,7 @@
 
 import { stat } from 'node:fs/promises'
 import { isRecord } from '@shared/guards'
-import { atomicWrite, fsCall } from './fs/fsUtils'
-import { createChain, readOrQuarantine } from './watchedFolder'
+import { atomicWrite, createChain, fsCall, readOrQuarantine } from './fs/fsUtils'
 
 export const SECRETS_FILE = 'secrets.json'
 /** Owner read/write only — the whole reason the file may hold plain text. */

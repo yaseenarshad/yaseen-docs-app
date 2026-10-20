@@ -1,4 +1,4 @@
-import { link, mkdir, open, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { mkdir, readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { CANVAS_PREF_KEYS, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isRecord, isStringArray } from '@shared/guards'
@@ -13,10 +13,12 @@ import {
   type SettingsState,
 } from '@shared/types'
 import { addFavorites, FAVORITES_FILE } from './favorites'
-import { atomicWrite, tmpSibling } from './fs/fsUtils'
-import { resolveLibraryFolder } from './library/folder'
+import { atomicWrite, createDurable } from './fs/fsUtils'
+import { isAtomicTmp } from '@shared/fileKind'
+import { DEFAULT_LIBRARY_DIR, resolveLibraryFolder } from './library/folder'
 import type { AppState } from '@shared/types'
 import { createSecrets, SECRETS_FILE, type Secrets } from './secrets'
+import { SHARING_FILE } from './share/config'
 import type { Store } from './store'
 import { createConfig } from './vaultConfig'
 
@@ -50,21 +52,17 @@ import { createConfig } from './vaultConfig'
 /** Draw's app name: Electron names its user-data folder after it, under `app.getPath('appData')`. */
 export const DRAW_APP_NAME = 'Yaseen Draw'
 /** Draw's one state file in its user-data folder. */
-export const DRAW_STATE_FILE = 'yaseendraw.json'
+const DRAW_STATE_FILE = 'yaseendraw.json'
 /** Draw's vault-local dotfolder (Draw's `VAULT_CONFIG_DIR`). */
-export const DRAW_VAULT_DIR = '.yaseendraw'
+const DRAW_VAULT_DIR = '.yaseendraw'
 /** The marker in Docs' user-data folder. */
-export const IMPORT_MARKER_FILE = 'draw-import.json'
-/** The library folder's name under userData — the same in both apps (Draw's `DEFAULT_LIBRARY_DIR`). */
-export const LIBRARY_DIR = 'library'
-/** Where sharing points (`ipc/share.ts`), copied whole — and only with the two secrets it needs (A5). */
-const SHARING_FILE = 'sharing.json'
+const IMPORT_MARKER_FILE = 'draw-import.json'
 /** The secrets `sharing.json` is useless without. */
 const SHARING_SECRETS = [CLOUDFLARE_TOKEN_SECRET, SHARE_UPLOAD_PASSWORD_SECRET] as const
 /** The vault files copied whole when Docs has none. */
 const VAULT_FILES = ['github.json', 'shares.json'] as const
 
-export interface AppDataImport {
+interface AppDataImport {
   /** Library files copied, as paths relative to `library/`. */
   library: string[]
   /** `sharing.json` when copied. */
@@ -75,7 +73,7 @@ export interface AppDataImport {
   settings: string[]
 }
 
-export interface VaultImport {
+interface VaultImport {
   /** Favorites added after the Docs ones. */
   favorites: number
   /** `github.json` / `shares.json` when copied. */
@@ -103,45 +101,16 @@ async function readJson(file: string): Promise<unknown> {
 
 const isDir = (p: string): Promise<boolean> => stat(p).then((s) => s.isDirectory(), () => false)
 
-/** Writes `bytes` to a new `file` with `mode` from its first byte, and fsyncs it. EEXIST when `file` exists. */
-async function writeNew(file: string, bytes: Uint8Array, mode: number): Promise<void> {
-  const fh = await open(file, 'wx', mode)
-  try {
-    await fh.writeFile(bytes)
-    await fh.sync()
-  } finally {
-    await fh.close()
-  }
-}
-
 /**
- * Creates `file` with `bytes` only when the name is free: `fsUtils.createDurable` with a mode, so
- * a secrets copy is never readable by others, not even for a moment. False when the name was taken.
- * The hard link claims the name; then fresh bytes are renamed in (YAZ-2380). A volume without
- * hard links gets a plain exclusive create.
+ * Creates `file` with `bytes` only when the name is free: `fsUtils.createDurable` with a mode, so a
+ * secrets copy is never readable by others, not even for a moment. False when the name was taken —
+ * the `createConfig` shape (`vaultConfig.ts`).
  */
 export async function createFileOnce(file: string, bytes: Uint8Array, mode = 0o644): Promise<boolean> {
-  const claim = tmpSibling(file)
-  try {
-    await writeNew(claim, bytes, mode)
-    try {
-      await link(claim, file)
-    } catch (err) {
-      if (code(err) === 'EEXIST') return false
-      return await writeNew(file, bytes, mode).then(() => true, (e: unknown) => (code(e) === 'EEXIST' ? false : Promise.reject(e)))
-    }
-    const fresh = tmpSibling(file)
-    try {
-      await writeNew(fresh, bytes, mode)
-      await rename(fresh, file)
-    } catch (err) {
-      await unlink(fresh).catch(() => undefined)
-      throw err
-    }
-    return true
-  } finally {
-    await unlink(claim).catch(() => undefined)
-  }
+  return createDurable(file, bytes, mode).then(
+    () => true,
+    (err: unknown) => (code(err) === 'EEXIST' ? false : Promise.reject(err)),
+  )
 }
 
 /** Every regular file under `dir`, relative, POSIX. Dot-entries and our own tmp files are left out. */
@@ -149,7 +118,7 @@ async function listFiles(dir: string, rel = ''): Promise<string[]> {
   const entries = await readdir(path.join(dir, rel), { withFileTypes: true }).catch(() => [])
   const out: string[] = []
   for (const e of entries) {
-    if (e.name.startsWith('.') || e.name.includes('.tmp-')) continue
+    if (e.name.startsWith('.') || isAtomicTmp(e.name)) continue
     const child = rel === '' ? e.name : `${rel}/${e.name}`
     if (e.isDirectory()) out.push(...(await listFiles(dir, child)))
     else if (e.isFile()) out.push(child)
@@ -212,7 +181,7 @@ export async function importDrawAppData(deps: { drawDir: string; userData: strin
     store.setSettings({ ...store.get().settings, libraryFolder: drawCustom })
     result.settings.push('libraryFolder')
   } else {
-    const librarySrc = drawCustom ?? path.join(drawDir, LIBRARY_DIR)
+    const librarySrc = drawCustom ?? path.join(drawDir, DEFAULT_LIBRARY_DIR)
     const libraryDst = resolveLibraryFolder(store.get().settings.libraryFolder, userData)
     if (path.resolve(librarySrc) !== path.resolve(libraryDst)) {
       for (const rel of await listFiles(librarySrc)) {
@@ -284,7 +253,7 @@ export function shouldImportDrawAppData(env: NodeJS.ProcessEnv): boolean {
   return env.YASEEN_DOCS_E2E !== '1' && !env.YASEEN_DOCS_USER_DATA_DIR?.trim()
 }
 
-export interface DrawImporter {
+interface DrawImporter {
   /** Hand it every open vault on each change; it looks at each root once per process. */
   vaultsOpened(roots: readonly string[]): void
   /** Settles when every queued step has run (tests). */

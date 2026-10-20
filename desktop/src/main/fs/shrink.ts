@@ -28,7 +28,7 @@ import { MAX_DRAWING_BYTES, type ShrinkResult } from '@shared/types'
 import { isDrawing } from '@shared/fileKind'
 import { serializeBoard } from '@shared/drawingAssets'
 import { readBoundedRegularFile } from './boundedRead'
-import { landAssets, liftEmbedded } from './drawing'
+import { landAssets, liftEmbedded, parseScene } from './drawing'
 import { atomicWrite, vaultFiles } from './fsUtils'
 
 /**
@@ -58,18 +58,18 @@ async function shrinkOne(root: string, file: string, skip: ReadonlySet<string>):
     return { kind: 'skipped' }
   }
   const json = snapshot.data.toString('utf8')
-  let scene: unknown
+  // THE ONE PARSE of a scene (`parseScene`, YAZ-3044 A13): a file that is not one is skipped.
+  let record: Record<string, unknown>
+  let elements: readonly unknown[]
   try {
-    scene = JSON.parse(json)
+    ;({ scene: record, elements } = parseScene(json, file, 'IO_ERROR'))
   } catch {
     return { kind: 'skipped' }
   }
-  if (typeof scene !== 'object' || scene === null || Array.isArray(scene)) return { kind: 'skipped' }
-  const record = scene as Record<string, unknown>
   if (!hasEmbedded(record)) return { kind: 'none' }
-  if (!Array.isArray(record.elements) || skip.has(file)) return { kind: 'skipped' }
+  if (skip.has(file)) return { kind: 'skipped' }
   try {
-    const { lean: leanScene, lifted } = liftEmbedded(record, record.elements)
+    const { lean: leanScene, lifted } = liftEmbedded(record, elements)
     const lean = serializeBoard(leanScene)
     await landAssets(root, lifted)
     // The cheap guard against a writer that landed while we were decoding: the file must still be

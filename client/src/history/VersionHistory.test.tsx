@@ -117,6 +117,26 @@ describe('VersionHistory', () => {
     expect(github.version.mock.calls.filter(([, , ref]) => ref === VERSIONS[2].ref)).toHaveLength(1)
   })
 
+  it('YAZ-3044 A33: a version whose fetch failed is asked for again on the next look, not kept failed', async () => {
+    const real = github.version.getMockImplementation()
+    github.version.mockImplementation(async (r, p, ref) => {
+      if (ref === VERSIONS[2].ref && github.version.mock.calls.filter(([, , x]) => x === ref).length === 1) throw new Error('offline')
+      return real!(r, p, ref)
+    })
+    const d = await mount()
+    const list = d.$('.history-list') as HTMLElement
+    await d.key(list, 'ArrowDown')
+    await flush()
+    await d.key(list, 'ArrowDown')
+    await flush()
+    await d.key(list, 'ArrowUp')
+    await flush()
+    await d.key(list, 'ArrowDown')
+    await flush()
+    expect(github.version.mock.calls.filter(([, , ref]) => ref === VERSIONS[2].ref)).toHaveLength(2)
+    expect(d.text('[data-testid="history-legend"]')).toBe('2 added')
+  })
+
   it('"As it was" draws the chosen version itself, unmarked', async () => {
     const d = await mount(true)
     act(() => [...document.querySelectorAll<HTMLElement>('.history-view__tab')][1].click())

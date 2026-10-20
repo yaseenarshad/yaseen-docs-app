@@ -21,7 +21,6 @@ import { countItems } from '../menuSections'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
 import type { PendingCreate, PendingRename, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
 
-/** `tree` is every row the panel can hold — the forest (YAZ-2602 D3) — or null until every vault's tree has landed. */
 /**
  * A new board (YAZ-3028 D9): name first, then birth. `fs:create-board` writes the empty scene or the
  * empty diagram and never over a file. What was typed is the file NAME — a board has no title and no
@@ -40,6 +39,7 @@ async function createBoardFile(vault: string, parentDir: string, typed: string, 
   throw new Error(`Every name from "${untitledNames(seed)[0]}" to "${untitledNames(seed).at(-1)}" is taken here`)
 }
 
+/** `tree` is every row the panel can hold — the forest (YAZ-2602 D3) — or null until every vault's tree has landed. */
 export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: readonly string[], selectionRef: { current: ReadonlySet<string> }, bodyRef: RefObject<HTMLDivElement | null>) {
   // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
   // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE

@@ -6,7 +6,7 @@ import type { MenuItemConstructorOptions } from 'electron'
 import { defaultRightPanelIdentity, type FileKind, type RecentRoots, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { createStore, type Store } from './store'
-import { CANVAS_BACKGROUND_PICKS, HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile, type ContextMenuActions, type MenuHandlers, type MenuHost, type MenuInputs } from './menu'
+import { CANVAS_BACKGROUND_PICKS, HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, gateOnBoardKind, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile, type ContextMenuActions, type MenuHandlers, type MenuHost, type MenuInputs } from './menu'
 
 // ---------- buildMenuTemplate (pure) ----------
 
@@ -761,6 +761,34 @@ describe('subscribeMenuRebuild', () => {
     store.pushRecent('/vaults/notes')
     store.setFolder('/vaults/notes', { key: 1 })
     expect(rebuild).not.toHaveBeenCalled()
+  })
+})
+
+// ---------- gateOnBoardKind (YAZ-3044 A32) ----------
+
+describe('gateOnBoardKind', () => {
+  it('apply always builds; applyIfMoved builds only when the front file moves between drawing, diagram and other', () => {
+    let kind: FileKind | null = 'markdown'
+    const build = vi.fn()
+    const menu = gateOnBoardKind(() => kind, build)
+    menu.apply()
+    expect(build).toHaveBeenCalledTimes(1)
+    for (const next of ['markdown', 'text', 'pdf', null] as const) {
+      kind = next
+      menu.applyIfMoved()
+    }
+    expect(build).toHaveBeenCalledTimes(1) // note to note, to a PDF, to none: the board items say the same
+    kind = 'drawing'
+    menu.applyIfMoved()
+    menu.applyIfMoved()
+    expect(build).toHaveBeenCalledTimes(2)
+    kind = 'diagram'
+    menu.applyIfMoved()
+    kind = 'markdown'
+    menu.applyIfMoved()
+    expect(build).toHaveBeenCalledTimes(4)
+    menu.apply() // a recents change still rebuilds
+    expect(build).toHaveBeenCalledTimes(5)
   })
 })
 

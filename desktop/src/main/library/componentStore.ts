@@ -61,8 +61,8 @@ import {
   type ComponentOnDisk,
 } from '@shared/savedComponents'
 import { parseDataUrl } from '@shared/drawingAssets'
-import { BridgeFailure, atomicWrite, fsCall } from '../fs/fsUtils'
-import { createChain, createWatchedFolder, readOrQuarantine } from '../watchedFolder'
+import { BridgeFailure, atomicWrite, createChain, fsCall, readOrQuarantine } from '../fs/fsUtils'
+import { createWatchedFolder } from '../watchedFolder'
 
 /** The one preview format (🔒 YAZ-1775 D5): the renderer exports PNG, and nothing else is stored. */
 const PREVIEW_MIME = 'image/png'

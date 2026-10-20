@@ -6,7 +6,7 @@ import { isDrawing } from '@shared/fileKind'
 import { BOARDS } from '../fs/boardDocument'
 import { readBoundedRegularFile } from '../fs/boundedRead'
 import { atomicWrite, BridgeFailure, fsCall } from '../fs/fsUtils'
-import { requireRequest } from '../fs/validate'
+import { requireRequest, str } from '../fs/validate'
 import { handleWithEvent } from './envelope'
 
 const OPTIONS: Electron.OpenDialogOptions = { title: 'Open folder', properties: ['openDirectory', 'createDirectory'] }
@@ -81,8 +81,8 @@ const SAVE_DRAWING_OPTIONS: Omit<Electron.SaveDialogOptions, 'defaultPath'> = {
  */
 export async function saveDrawingFile(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | null>, body: unknown): Promise<SaveDrawingResponse> {
   const req = requireRequest(body)
-  const { defaultName, content } = req
-  if (typeof defaultName !== 'string' || defaultName === '') throw new BridgeFailure('BAD_REQUEST', "'defaultName' must be a non-empty string")
+  const defaultName = str(req.defaultName, 'defaultName')
+  const { content } = req
   if (typeof content !== 'string') throw new BridgeFailure('BAD_REQUEST', "'content' must be a string")
   const file = await showSave(e, inFlight, { ...SAVE_DRAWING_OPTIONS, defaultPath: defaultName })
   if (file === null) return { cancelled: true }
@@ -110,8 +110,8 @@ const IMAGE_DATA_URL = { '.png': 'data:image/png;base64,', '.svg': 'data:image/s
  * format; any other extension is refused, because a sheet lets a name be typed freely.
  */
 export async function saveImageFile(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | null>, body: unknown): Promise<SaveDrawingResponse> {
-  const { defaultName, png, svg } = requireRequest(body)
-  if (typeof defaultName !== 'string' || defaultName === '') throw new BridgeFailure('BAD_REQUEST', "'defaultName' must be a non-empty string")
+  const { png, svg, ...rest } = requireRequest(body)
+  const defaultName = str(rest.defaultName, 'defaultName')
   if (typeof png !== 'string' || !png.startsWith(IMAGE_DATA_URL['.png'])) throw new BridgeFailure('BAD_REQUEST', "'png' must be a PNG data URL")
   if (typeof svg !== 'string' || !svg.startsWith(IMAGE_DATA_URL['.svg'])) throw new BridgeFailure('BAD_REQUEST', "'svg' must be an SVG data URL")
   const file = await showSave(e, inFlight, { ...SAVE_IMAGE_OPTIONS, defaultPath: defaultName })

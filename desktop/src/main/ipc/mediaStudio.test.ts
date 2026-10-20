@@ -13,7 +13,7 @@ import { PIXABAY_SECRET } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
 import { CACHE_TTL_MS } from '../media/cachePolicy'
 import type { Secrets } from '../secrets'
-import { registerMediaStudioIpc } from './mediaStudio'
+import { MEDIA_CACHE_SWEEP_MS, registerMediaStudioIpc } from './mediaStudio'
 import { registered } from './ipcFixture'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() }, BrowserWindow: { getAllWindows: vi.fn(() => []) } }))
@@ -64,6 +64,23 @@ describe('registration', () => {
     const second = registerMediaStudioIpc(userData, fakeSecrets(null), vi.fn() as unknown as typeof globalThis.fetch)
     await until(async () => (await readdir(second)).length === 0)
     expect(await readdir(second)).toEqual([])
+  })
+})
+
+describe('the hourly sweep (YAZ-3044 A34)', () => {
+  it('a running app sweeps again each hour: an entry that went stale mid-session is gone after the next tick', async () => {
+    const tick = vi.spyOn(globalThis, 'setInterval')
+    const folder = registerMediaStudioIpc(userData, fakeSecrets(null), vi.fn() as unknown as typeof globalThis.fetch)
+    await until(async () => (await stat(folder).then(() => true, () => false)))
+    const call = tick.mock.calls.find(([, ms]) => ms === MEDIA_CACHE_SWEEP_MS)
+    expect(call).toBeDefined()
+    const stale = path.join(folder, 'cafebabe.json')
+    await writeFile(stale, '{}')
+    const old = new Date(Date.now() - CACHE_TTL_MS - 1000)
+    await utimes(stale, old, old)
+    ;(call?.[0] as () => void)()
+    await until(async () => (await readdir(folder)).length === 0)
+    tick.mockRestore()
   })
 })
 

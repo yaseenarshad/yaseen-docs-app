@@ -154,8 +154,14 @@ export function VersionHistory({ root, path, fromMerge = false, darkColors, onCl
     let live = true
     let scene = scenes.current.get(version.ref)
     if (scene === undefined) {
-      scene = api.github.version(root, path, version.ref)
-      scenes.current.set(version.ref, scene)
+      const ref = version.ref
+      const fetched = api.github.version(root, path, ref)
+      scenes.current.set(ref, fetched)
+      // YAZ-3044 A33: a failed fetch is not kept, so a second look at that version asks again.
+      fetched.catch(() => {
+        if (scenes.current.get(ref) === fetched) scenes.current.delete(ref)
+      })
+      scene = fetched
     }
     void (async () => {
       try {

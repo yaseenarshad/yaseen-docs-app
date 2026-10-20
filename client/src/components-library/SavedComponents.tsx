@@ -9,7 +9,7 @@
  * `components:changed` push re-lists it, which is what makes one library out of every vault.
  *
  * NO NATIVE DIALOGS. The rename is a field in the card and the delete is a confirm row in it, and
- * 🔒 `confirmDelete` (Settings › Files) decides whether that row appears at all.
+ * 🔒 `confirmDelete` (Settings › Files & Links) decides whether that row appears at all.
  *
  * WHAT AN INSERT COSTS ON DISK: the component's images become `assets/` files in THIS vault the
  * first time the board is saved after it (🔒 YAZ-1775 D3) — see `componentData.ts`.
@@ -123,7 +123,7 @@ export function SavedComponents({ engine, excalidrawAPI, hasSelection }: SavedCo
     }
   }, [])
 
-  // 🔒 `confirmDelete` (Settings › Files) decides whether a delete asks first. Read off the
+  // 🔒 `confirmDelete` (Settings › Files & Links) decides whether a delete asks first. Read off the
   // renderer's own state cache rather than threaded through four components that do not care —
   // the same seam `App` reads it from, so a change in any window reaches this tab too.
   useEffect(() => storage.subscribe(() => setConfirmDelete(storage.getSettings().confirmDelete)), [])

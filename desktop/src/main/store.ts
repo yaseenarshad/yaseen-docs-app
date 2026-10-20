@@ -70,7 +70,7 @@ import {
   type CanvasPanelState,
 } from '@shared/types'
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
-import { isRecord, isStringArray } from '@shared/guards'
+import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { atomicWrite } from './fs/fsUtils'
 
 /**
@@ -155,7 +155,6 @@ export const WRITE_DEBOUNCE_MS = 150
 
 // ---------- validation (field by field; anything off falls back to its default) ----------
 
-const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const isStringOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string'
 const isHexColour = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)
 const clampSidebarWidth = (w: number): number => Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, w))

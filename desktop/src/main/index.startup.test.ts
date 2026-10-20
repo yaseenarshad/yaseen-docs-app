@@ -108,6 +108,7 @@ vi.mock('./menu', () => ({
   buildContextMenuTemplate: vi.fn(),
   buildMenuTemplate: vi.fn(() => []),
   createMenuHandlers: vi.fn(() => ({})),
+  gateOnBoardKind: vi.fn((_kind: unknown, apply: () => void) => ({ apply, applyIfMoved: apply })),
   menuKeyedVaults: vi.fn(() => []),
   pickMenuTargetWindow: vi.fn(),
   subscribeMenuRebuild: vi.fn(),

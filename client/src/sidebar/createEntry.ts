@@ -12,7 +12,7 @@ import { basename, dirname } from '../lib/paths'
 export type EntryKind = 'file' | 'dir' | BoardKind
 
 /** The name an empty board box gives (YAZ-3028 D9): `Untitled`, then `Untitled 2`, … */
-export const UNTITLED = 'Untitled'
+const UNTITLED = 'Untitled'
 
 /**
  * The absolute path of a new BOARD named `typed` (YAZ-3028 D9, Draw's `entryPath`): the name as typed,

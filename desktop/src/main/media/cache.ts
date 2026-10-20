@@ -8,7 +8,7 @@
  * read-only, full, or deleted under us mid-session and the Image Studio keeps working over the
  * network — which is the whole point of it being a cache and not a store.
  *
- * BOUNDED BY A SWEEP, NOT BY A COUNT. `sweep()` runs once at startup, detached, and trashes
+ * BOUNDED BY A SWEEP, NOT BY A COUNT. `sweep()` runs at startup and then each hour (YAZ-3044 A34), detached, and trashes
  * nothing it did not write: only `*.json` older than 24 h, which is exactly the set a read would
  * have refused anyway. So the folder's size follows what the user actually searched for in the
  * last day, and a machine that never opens the studio again ends up with an empty folder rather

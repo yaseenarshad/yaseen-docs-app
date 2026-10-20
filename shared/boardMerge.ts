@@ -28,7 +28,7 @@ import { isFiniteNumber, isRecord } from './guards'
  * anything it must not merge — a side that is not a scene — and the caller keeps both copies.
  */
 
-export interface BoardMerge {
+interface BoardMerge {
   /** The merged board, written the way the app writes one: 2-space JSON and a trailing newline. */
   json: string
   /** Shapes BOTH sides edited (a delete is not an edit); the newest version of each was kept. */

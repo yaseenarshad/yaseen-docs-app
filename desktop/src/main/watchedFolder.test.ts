@@ -1,7 +1,7 @@
 /**
  * The one watched-folder shape every store in main shares (media, components, vault config): the
- * relevance filter and the 50 ms debounce, re-anchoring under the engine's polling fallback, the
- * quarantine read and the serialising chain. Echo suppression, a missing folder and `setFolder` are
+ * relevance filter and the 50 ms debounce, re-anchoring under the engine's polling fallback; and the
+ * quarantine read and the serialising chain (now in `fs/fsUtils.ts`, YAZ-3044 A9). Echo suppression, a missing folder and `setFolder` are
  * `fs/watchConformance.test.ts`'s. Real engine, real temp dirs.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,7 +9,8 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { sleep, until } from './fs/testFixture'
-import { createChain, createWatchedFolder, readOrQuarantine, type WatchedFolder } from './watchedFolder'
+import { createChain, readOrQuarantine } from './fs/fsUtils'
+import { createWatchedFolder, type WatchedFolder } from './watchedFolder'
 
 /** `fs.watch` refuses while set, so the engine runs its chokidar polling fallback (a network volume's path). */
 const nativeWatch = vi.hoisted(() => ({ fail: false }))

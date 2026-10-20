@@ -9,6 +9,7 @@ import type { Secrets } from '../secrets'
 import { DRAWIO_SHARE_DIRS, DRAWIO_SHARE_FILES } from '../drawio/assets'
 import { CLOUDFLARE_API, CLOUDFLARE_TOKEN_PAGE, type AssetFile } from '../share/cloudflare'
 import { shareFsHooks } from '../share/fsHooks'
+import { SHARING_FILE } from '../share/config'
 import { createSharing } from '../share/sharing'
 import workerSource from '../../../../share/worker.js?raw'
 import viewerSource from '../../../../share/viewer/page.js?raw'
@@ -99,7 +100,7 @@ export function registerShareIpc(userData: string, secrets: Secrets, where: Shar
   const { apiBase, demoOrigin, tokenPage } = shareEndpoints(where.isPackaged, process.env)
   const sharing = createSharing({
     secrets,
-    configFile: join(userData, 'sharing.json'),
+    configFile: join(userData, SHARING_FILE),
     apiBase,
     demoOrigin,
     // Uploaded verbatim: the same two files `tools/fakeCloudflare.mjs` imports and runs.

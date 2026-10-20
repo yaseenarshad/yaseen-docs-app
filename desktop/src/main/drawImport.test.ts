@@ -69,7 +69,7 @@ async function seedDraw(): Promise<void> {
   await put(path.join(drawDir, 'library', 'components', 'arrow.excalidrawlib'), '{"type":"excalidrawlib"}')
   await put(path.join(drawDir, 'library', 'components', 'arrow.png'), 'PNGDATA')
   await put(path.join(drawDir, 'library', '.DS_Store'), 'x')
-  await put(path.join(drawDir, 'library', 'media.json.tmp-0a1b'), 'half')
+  await put(path.join(drawDir, 'library', 'media.json.tmp-0a1b2c3d4e5f'), 'half')
   await put(path.join(drawDir, 'thumbs', 't.png'), 'thumb')
   await put(path.join(drawDir, 'media-cache', 'c.json'), '{}')
 }
@@ -117,7 +117,7 @@ describe('into an empty Docs', () => {
     expect(await readFile(path.join(userData, 'library', 'components', 'arrow.png'), 'utf8')).toBe('PNGDATA')
     // Dot-entries, half-written tmp files and Draw's caches stay behind.
     expect(await exists(path.join(userData, 'library', '.DS_Store'))).toBe(false)
-    expect(await exists(path.join(userData, 'library', 'media.json.tmp-0a1b'))).toBe(false)
+    expect(await exists(path.join(userData, 'library', 'media.json.tmp-0a1b2c3d4e5f'))).toBe(false)
     expect(await exists(path.join(userData, 'thumbs'))).toBe(false)
     expect(await exists(path.join(userData, 'media-cache'))).toBe(false)
     const { settings, windows, recents } = store.get()

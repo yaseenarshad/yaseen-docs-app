@@ -997,17 +997,17 @@ export function Sidebar({
   const saveOrder = lens === 'favorites' ? saveFavoriteOrder : lens === 'focus' ? reorderFocus : onReorderVaults
   const { dragging, dropDir, setDropDir, dropOnDir, fileMove, reorder } = useTreeDrag(onRenameFile, orderRef, saveOrder, rootOf, onNotice)
 
-  /**
-   * The Files, Focus and Favorites trees are memoised per level (YAZ-2194), so what they get must keep
-   * its identity across renders that change nothing for them. The context menu handler reads the
-   * selection and the tree, so it changes on every click; the rows call it through this stable door.
-   */
   // YAZ-1801 D3 (YAZ-3039): every vault's held-back files as tree paths, one Set that keeps its
   // identity until a list really changes — the memoised levels compare it by identity.
   const tooLargeKey = vaults.map((vault) => (vault.tooLarge ?? []).map((rel) => absFrom(vault.root, rel)).join('\0')).join('\0')
   const tooLarge = useMemo<ReadonlySet<string>>(() => new Set(tooLargeKey.split('\0').filter((p) => p !== '')), [tooLargeKey])
   // YAZ-3040: a link mark on shared boards, every vault's (red when the last update failed or the link is stale).
   const shareBadges = useShareBadges(roots)
+  /**
+   * The Files, Focus and Favorites trees are memoised per level (YAZ-2194), so what they get must keep
+   * its identity across renders that change nothing for them. The context menu handler reads the
+   * selection and the tree, so it changes on every click; the rows call it through this stable door.
+   */
   const openMenuRef = useRef(openMenu)
   openMenuRef.current = openMenu
   const openRowMenu = useCallback((node: MenuRow, e: React.MouseEvent) => openMenuRef.current(node, e), [])

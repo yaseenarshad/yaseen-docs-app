@@ -72,7 +72,7 @@ export interface MenuInputs {
   isDev: boolean
   /**
    * The kind of the focused window's ACTIVE TAB, null when it has none (YAZ-3037, YAZ-3028 D10; Draw's
-   * `index.ts:201-212`). The board items are enabled only on a kind they work for — Export Image… and
+   * 🔒 YAZ-1775 D10). The board items are enabled only on a kind they work for — Export Image… and
    * Share Link on any board, the Excalidraw-only ones on a drawing — because a menu row that silently
    * does nothing is worse than a greyed-out one. `main/index.ts` reads it on every rebuild;
    * `subscribeMenuRebuildOnActiveFile` and the focus hook are what make a rebuild happen.
@@ -458,6 +458,25 @@ export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => v
     lastVaults = vaults
     rebuild()
   })
+}
+
+/**
+ * The menu's apply step, twice (YAZ-3044 A32): `apply` always rebuilds (a recents change, the first
+ * build); `applyIfMoved` rebuilds only when the board items' answer moves — the file in front of the
+ * asked window going between a drawing, a diagram and anything else. A focus change or a tab switch
+ * from note to note then costs one `fileKind`, not a whole new menu.
+ */
+export function gateOnBoardKind(kindNow: () => FileKind | null, apply: () => void): { apply: () => void; applyIfMoved: () => void } {
+  const bucket = (): 'drawing' | 'diagram' | 'other' => {
+    const kind = kindNow()
+    return kind === 'drawing' || kind === 'diagram' ? kind : 'other'
+  }
+  let last: ReturnType<typeof bucket> | null = null
+  const always = (): void => {
+    last = bucket()
+    apply()
+  }
+  return { apply: always, applyIfMoved: () => (bucket() === last ? undefined : always()) }
 }
 
 /** The one fact the board items are gated on: which file each window has in front. */
