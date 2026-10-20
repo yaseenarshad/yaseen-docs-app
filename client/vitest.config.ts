@@ -20,5 +20,10 @@ export default defineConfig({
     // have hidden a real 4-6x regression — see YAZ-740.
     exclude: ['**/node_modules/**', 'src/**/*.perf.test.{ts,tsx}'],
     testTimeout: 30_000,
+    // The engine's dist imports `roughjs/bin/rough` without an extension, which Node's ESM loader
+    // refuses; inlining lets Vite resolve it, so a test can run the REAL engine (Draw's config, ported
+    // by YAZ-3028 for `boardAppState.test.ts` and `canvasPrefsEngine.test.ts`). Suites that mock the
+    // surface or the engine never load it.
+    server: { deps: { inline: [/@excalidraw\//] } },
   },
 })

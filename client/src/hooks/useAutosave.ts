@@ -53,7 +53,7 @@ export function useAutosave(path: string): AutosaveHandle {
       frontmatterRef.current = frontmatter
       diskBodyRef.current = diskBody
       const autosave = new Autosave({
-        markdown: getContent(),
+        content: getContent(),
         mtime,
         delayMs: 500,
         save: async (content, expectedMtime) => {

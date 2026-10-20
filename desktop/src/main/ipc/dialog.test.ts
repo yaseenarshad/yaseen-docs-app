@@ -1,11 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { CONTRACT, type Envelope } from '@shared/ipc'
 import { registerDialogIpc } from './dialog'
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
-  dialog: { showOpenDialog: vi.fn() },
+  dialog: { showOpenDialog: vi.fn(), showSaveDialog: vi.fn() },
   BrowserWindow: { fromWebContents: vi.fn() },
 }))
 
@@ -31,8 +34,8 @@ beforeEach(() => {
 const pick = () => registered(CONTRACT.pickFolder.channel)({ sender })
 
 describe('dialog:pick-folder', () => {
-  it('registers exactly the pick-folder channel', () => {
-    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel])
+  it('registers exactly the pick-folder and the export channels', () => {
+    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel, CONTRACT.dialog.saveDrawing.channel])
   })
 
   it('opens an openDirectory dialog parented to the calling window and answers { path }', async () => {
@@ -124,5 +127,35 @@ describe('one dialog in flight per window', () => {
     expect(await pick()).toEqual({ ok: false, error: { code: 'PICKER_FAILED', message: 'no display' } })
     showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/Users/x/vault'] })
     expect(await pick()).toEqual({ ok: true, value: { path: '/Users/x/vault' } })
+  })
+})
+
+/** File › Export Drawing… (YAZ-3028, Draw's YAZ-1821): the sheet and the write are one door. */
+describe('dialog:save-file', () => {
+  const showSaveDialog = vi.mocked(dialog.showSaveDialog)
+  const exportTo = (req: unknown) => registered(CONTRACT.dialog.saveDrawing.channel)({ sender }, req)
+  let dir = ''
+  beforeEach(async () => {
+    showSaveDialog.mockReset()
+    dir = await mkdtemp(path.join(tmpdir(), 'yaz-3028-export-'))
+  })
+  afterEach(() => rm(dir, { recursive: true, force: true }))
+
+  it('writes the bytes where the user picked, opening on the board`s name; a dismissed sheet writes nothing', async () => {
+    const file = path.join(dir, 'Flow.excalidraw')
+    showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: file })
+    expect(await exportTo({ defaultName: 'Flow.excalidraw', content: '{"x":1}\n' })).toEqual({ ok: true, value: { path: file } })
+    expect(showSaveDialog.mock.calls[0][0]).toMatchObject({ defaultPath: 'Flow.excalidraw' })
+    expect(await readFile(file, 'utf8')).toBe('{"x":1}\n')
+    showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: '' })
+    expect(await exportTo({ defaultName: 'Flow.excalidraw', content: 'other' })).toEqual({ ok: true, value: { cancelled: true } })
+    expect(await readdir(dir)).toEqual(['Flow.excalidraw'])
+  })
+
+  it('refuses a typed name of any other kind and a malformed request, writing nothing', async () => {
+    showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: path.join(dir, 'Flow.json') })
+    expect(await exportTo({ defaultName: 'Flow.excalidraw', content: '{}' })).toMatchObject({ ok: false, error: { code: 'UNSUPPORTED_EXTENSION' } })
+    expect(await exportTo({ defaultName: '', content: '{}' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    expect(await readdir(dir)).toEqual([])
   })
 })

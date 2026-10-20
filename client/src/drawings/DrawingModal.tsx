@@ -11,8 +11,9 @@
  *
  * 🔒 CHROME ONLY. Everything about the ENGINE — the canvas, what "changed" means, how a scene
  * serializes — lives behind `ExcalidrawSurface`, and nothing in this file imports the package or
- * anything that does. YAZ-868 swaps in yaseendraw by rewriting that one file; this one should not
- * notice. `DrawingModal.test.tsx` pins the boundary.
+ * anything that does. Since YAZ-3028 a drawing TAB (`DrawingEditor`) shares that one surface; the
+ * modal saves its `standalone()` scene (the images inside it), as it always has.
+ * `DrawingModal.test.tsx` pins the boundary.
  *
  * ⚡ KEYS ARE THE OVERLAY'S, NEVER `window`'s (the YAZ-888 lesson, learned by `ConfirmRename` and
  * paid for in e2e): React flushes a component's mount effects INSIDE the dispatch of the event
@@ -30,12 +31,19 @@
  * opens as the error state (message + close, nothing to save), and a failed write leaves the modal
  * open with its error line and the canvas untouched — a save that failed must not eat the drawing.
  */
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
-import { ExcalidrawSurface, type DrawingSnapshot } from './ExcalidrawSurface'
+import type { DrawingSnapshot } from './ExcalidrawSurface'
 import { saveDrawing, saveErrorMessage } from './saveDrawing'
 import './drawingModal.css'
+
+/**
+ * The ONE canvas, in its own chunk (YAZ-3028): since a drawing tab shares it, it carries Draw's engine
+ * options (canvas prefs, fit-on-open, the toolbar mode), and a note that is only being read never
+ * needs them. It arrives with the first open, beside the engine it loads anyway.
+ */
+const ExcalidrawSurface = lazy(() => import('./ExcalidrawSurface').then((m) => ({ default: m.ExcalidrawSurface })))
 
 /** What a sidecar that will not open says — the modal's twin of the preview's broken chip. */
 export const BROKEN_DRAWING_MESSAGE = "This drawing can't be opened: its file is missing or is not a scene."
@@ -111,7 +119,7 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
     setSaving(true)
     setError(null)
     try {
-      await saveDrawing({ root, target, path: loaded.path, content: current.serialize(), expectedMtime: loaded.mtime })
+      await saveDrawing({ root, target, path: loaded.path, content: current.standalone(), expectedMtime: loaded.mtime })
       // The previews re-read from disk on this; the modal's own job is over.
       feed?.poke(target)
       onClose()
@@ -161,7 +169,11 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
           </p>
         )}
         <div className="drawing-modal__canvas">
-          {loaded !== null && <ExcalidrawSurface scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} />}
+          {loaded !== null && (
+            <Suspense fallback={null}>
+              <ExcalidrawSurface scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} />
+            </Suspense>
+          )}
         </div>
       </div>
     </div>

@@ -494,6 +494,22 @@ export interface CreateBoardResponse {
   size: number
 }
 
+/**
+ * File › Export Drawing… (Draw's 🔒 YAZ-1775 D3, YAZ-1821; ported by YAZ-3028): the native SAVE sheet
+ * and the write behind it, ONE door — a standalone `.excalidraw`, every image embedded, written
+ * wherever the user picks. A renderer never holds an arbitrary path it may write to: the only path
+ * written is the one the user just typed into the sheet. The vault file is not touched.
+ */
+export interface SaveDrawingRequest {
+  /** The name the sheet opens on, extension included (`<board name>.excalidraw`). */
+  defaultName: string
+  /** The bytes to write, atomically (tmp + rename), once the user has picked. */
+  content: string
+}
+
+/** Where the file landed, or `{ cancelled: true }` when the sheet was dismissed and nothing was written. */
+export type SaveDrawingResponse = { path: string } | { cancelled: true }
+
 // ---------- writeFile(req) ----------
 
 export interface FileWriteRequest {
@@ -882,6 +898,97 @@ export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
  * `AppState.settings` — app-global editor preferences (GRO-2024). Applied as CSS custom
  * properties on the app container; never written into the markdown on disk.
  */
+// ---------- Canvas preferences (Draw's 🔒 YAZ-1775 D9, ported by YAZ-3028) ----------
+
+/**
+ * The user-level canvas preferences held in `SettingsState.canvas` (ported from Draw by YAZ-3028; the Settings › Canvas page is YAZ-3037): the engine's
+ * `browser: true, export: false` appState (`packages/excalidraw/appState.ts`) plus frame
+ * visibility. The TYPE and the DEFAULTS live in this leaf file; the mapping to and from the
+ * engine's appState keys is `shared/canvasPrefs.ts`, which imports from here so that nothing
+ * downstream of the mapping has to know about the engine.
+ *
+ * WHY here and not in the engine's own localStorage (the web app's answer): the engine package
+ * does not persist appState, so grid / tool lock / zen would reset on every mount, be invisible
+ * to the settings cog, and differ per window. One store, broadcast to every window, is the rule.
+ */
+export const SELECT_ON_MODES = ['wrap', 'overlap'] as const
+export type SelectOn = (typeof SELECT_ON_MODES)[number]
+/** The engine's roughness presets (`ROUGHNESS`): architect 0, artist 1, cartoonist 2. */
+export const ROUGHNESS_LEVELS = [0, 1, 2] as const
+export type Roughness = (typeof ROUGHNESS_LEVELS)[number]
+export const TEXT_ALIGNS = ['left', 'center', 'right'] as const
+export type TextAlign = (typeof TEXT_ALIGNS)[number]
+
+/**
+ * The laser's own settings (🔒 YAZ-1989 D1), in the fork's spelling so the mapping is a straight
+ * copy; the first of each list is the stock laser and the default. `canvasPrefsEngine.test.ts`
+ * pins the lists and defaults to the vendored engine's exports.
+ */
+export const LASER_TRAIL_MODES = ['fade', 'hold', 'sticky'] as const
+export type LaserTrailMode = (typeof LASER_TRAIL_MODES)[number]
+export const LASER_COLORS = ['#ff0000', '#ffd400', '#00c853', '#2979ff', '#d500f9'] as const
+export type LaserColor = (typeof LASER_COLORS)[number]
+export const LASER_SIZES = ['S', 'M', 'L'] as const
+export type LaserSize = (typeof LASER_SIZES)[number]
+
+export interface CanvasPrefs {
+  gridModeEnabled: boolean
+  objectsSnapModeEnabled: boolean
+  /** The engine's `isMidpointSnappingEnabled`. */
+  snapToMidpoints: boolean
+  /** The engine's `isBindingEnabled` (arrows bind to the shapes they touch). */
+  arrowBinding: boolean
+  /** The engine's `boxSelectionMode`: `wrap` = `contain`, `overlap` = `overlap`. */
+  selectOn: SelectOn
+  /** `activeTool.locked` — NOT a plain key: a live update has to merge with the CURRENT tool. */
+  toolLock: boolean
+  zenModeEnabled: boolean
+  writingMode: boolean
+  /** The engine's `currentItemWritingStrokeWidth` (`WRITING_STROKE_WIDTH.default`). */
+  writingStrokeWidth: number
+  /** The engine's `currentItemVectorStrokeWidth` (`STROKE_WIDTH.medium`). */
+  vectorStrokeWidth: number
+  /**
+   * `frameRendering.outline` + `.name` together — the grey box and its label. NEVER `clip` or
+   * `enabled`: turning `enabled` off would also stop frames clipping their children. Applied
+   * through the engine's `updateFrameRendering`, never through appState.
+   */
+  framesVisible: boolean
+  /** New text's font (`currentItemFontFamily`, a `FONT_FAMILY_OPTIONS` id): Assistant (10). */
+  defaultFontFamily: number
+  /** New shapes' sloppiness (`currentItemRoughness`): architect (0). */
+  defaultRoughness: Roughness
+  /** New text's alignment (`currentItemTextAlign`): the engine's `DEFAULT_NEW_TEXT_ALIGN`. */
+  defaultTextAlign: TextAlign
+  /** The laser's trail (`laserTrailMode`): `fade` (🔒 YAZ-1989 D1). */
+  laserTrailMode: LaserTrailMode
+  /** The laser's colour (`laserColor`, a `LASER_COLORS` swatch): red (🔒 YAZ-1989 D1). */
+  laserColor: LaserColor
+  /** The laser's size (`laserSize`): `S` (🔒 YAZ-1989 D1). */
+  laserSize: LaserSize
+}
+
+/** The engine's own defaults (`appState.ts` `getDefaultAppState()` + `constants.ts`). */
+export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
+  gridModeEnabled: false,
+  objectsSnapModeEnabled: false,
+  snapToMidpoints: true,
+  arrowBinding: true,
+  selectOn: 'wrap',
+  toolLock: false,
+  zenModeEnabled: false,
+  writingMode: false,
+  writingStrokeWidth: 0.5,
+  vectorStrokeWidth: 2,
+  framesVisible: true,
+  defaultFontFamily: 10,
+  defaultRoughness: 0,
+  defaultTextAlign: 'center',
+  laserTrailMode: 'fade',
+  laserColor: '#ff0000',
+  laserSize: 'S',
+}
+
 export interface SettingsState {
   /** Line height within a block (Google-Docs-style presets). */
   lineSpacing: number
@@ -925,6 +1032,11 @@ export interface SettingsState {
   tableOfContentsWidth: number
   /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
   tocLines: TocLines
+  /**
+   * The canvas preferences every drawing, every window and every relaunch share (Draw's 🔒 YAZ-1775 D9,
+   * YAZ-3028): seeded into a canvas at mount and kept in step with the engine both ways. See `CanvasPrefs`.
+   */
+  canvas: CanvasPrefs
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
@@ -1014,6 +1126,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableOfContents: 'auto',
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
+  canvas: DEFAULT_CANVAS_PREFS,
 }
 
 export interface WindowBounds {

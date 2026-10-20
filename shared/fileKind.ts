@@ -69,10 +69,11 @@ export const BOARD_TYPE_NAME: Record<BoardKind, string> = { drawing: 'Excalidraw
 /** The extension each kind of board is born with (YAZ-3028 D9). */
 export const BOARD_EXTENSION: Record<BoardKind, string> = { drawing: DRAWING_VIEW_EXTENSIONS[0], diagram: DIAGRAM_EXTENSIONS[0] }
 
-/** A board's name or path without its extension (`Flow.DRAWIO` → `Flow`); any other name is returned whole. */
+/** A board's name or path without its extension (`Flow.DRAWIO` → `Flow`, `.excalidraw` → ``); any other name is returned whole. */
 export function boardBaseName(name: string): string {
   const dot = name.lastIndexOf('.')
-  return dot !== -1 && isBoard(name) ? name.slice(0, dot) : name
+  const ext = dot === -1 ? '' : name.slice(dot).toLowerCase()
+  return ([...DRAWING_VIEW_EXTENSIONS, ...DIAGRAM_EXTENSIONS] as string[]).includes(ext) ? name.slice(0, dot) : name
 }
 
 /**

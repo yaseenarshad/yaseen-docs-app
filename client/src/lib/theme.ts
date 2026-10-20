@@ -37,3 +37,20 @@ export function useSystemPrefersDark(): boolean {
 export function appliedTheme(): 'light' | 'dark' {
   return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
 }
+
+function subscribeApplied(onChange: () => void): () => void {
+  if (typeof MutationObserver === 'undefined') return () => undefined
+  const observer = new MutationObserver(onChange)
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+  return () => observer.disconnect()
+}
+
+/**
+ * `appliedTheme()`, LIVE (Draw's 🔒 YAZ-1810, ported by YAZ-3028): a drawing TAB stays open for as long as
+ * its tab does, so — unlike the transient modal — it must follow a theme change while mounted.
+ * Reads the same `<html data-theme>` App writes, through a MutationObserver: no prop threading, and
+ * no second place that could resolve the theme differently.
+ */
+export function useAppliedTheme(): 'light' | 'dark' {
+  return useSyncExternalStore(subscribeApplied, appliedTheme)
+}

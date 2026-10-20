@@ -154,7 +154,7 @@ describe('outline folding', () => {
     // normalised document; in the app that equals the Autosave baseline and is ignored. Let it pass.
     await sleep(400)
     updates.length = 0
-    autosave = new Autosave({ markdown: getMarkdownForSave(crepe), mtime: 1, delayMs: 20, save, onStatus: () => {}, onConflict: () => {} })
+    autosave = new Autosave({ content: getMarkdownForSave(crepe), mtime: 1, delayMs: 20, save, onStatus: () => {}, onConflict: () => {} })
 
     toggleFor(root, 'Parent').click()
     toggleFor(root, 'Ordered parent').click()

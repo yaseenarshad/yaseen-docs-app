@@ -64,6 +64,7 @@ import {
   type WindowBounds,
   type WindowEntry,
 } from '@shared/types'
+import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isRecord, isStringArray } from '@shared/guards'
 import { atomicWrite } from './fs/fsUtils'
 
@@ -178,6 +179,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableOfContents: (v): v is TableOfContents => typeof v === 'string' && (TABLE_OF_CONTENTS as readonly string[]).includes(v),
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
+  // The canvas prefs (YAZ-3028, Draw's 🔒 YAZ-1775 D9): strict here, the IPC boundary's check; `sanitizeSettings` repairs them field by field.
+  canvas: isCanvasPrefs,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -189,6 +192,8 @@ export function sanitizeSettings(raw: unknown): SettingsState {
     const v = src[k]
     if (SETTINGS_FIELD_OK[k](v)) (out as Record<string, unknown>)[k] = v
   }
+  // A store written before a canvas pref existed keeps every pref it does have, instead of resetting the lot.
+  out.canvas = sanitizeCanvasPrefs(src.canvas)
   return out
 }
 

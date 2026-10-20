@@ -116,7 +116,7 @@ const errorLine = () => container?.querySelector('.drawing-modal__error')?.textC
 
 /** One snapshot from the stand-in engine; the FIRST is the modal's clean baseline. */
 function emit(version: number): void {
-  act(() => seam.props?.onSnapshot({ version, serialize: () => BYTES }))
+  act(() => seam.props?.onSnapshot({ version, serialize: () => ({ json: '', files: {}, referenced: new Set() }), standalone: () => BYTES }))
 }
 
 const escOn = (el: Node): void => {

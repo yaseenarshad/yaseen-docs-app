@@ -21,6 +21,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     createBoard: vi.fn(),
     drawing: vi.fn(),
     diagram: vi.fn(),
+    dialog: vi.fn(),
     pickFolder: vi.fn(),
     watch: vi.fn(),
     state: vi.fn(),
