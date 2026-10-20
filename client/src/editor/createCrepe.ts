@@ -87,7 +87,7 @@
  *  - CMD+F find (YAZ-968, `find/findInPage.ts`): matches + highlight decorations + fold-reveal,
  *    driven through the `FindChannel` the host also gives the find bar. Registered only when
  *    `opts.find` supplies that channel; every transaction it makes is metadata-only.
- *  - Table of contents (YAZ-2700, `toc/tocPlugin.ts`): the note's rows — its H1-H3 outside lists,
+ *  - Table of contents (YAZ-2700, `toc/tocPlugin.ts`): the note's rows — its H1-H5 outside lists,
  *    or its bullets three levels deep when it has fewer than two of those, or what the reader
  *    chose for this note (the channel's source, D14: every heading, or the bullets) — scanned at
  *    view creation, 150 ms after the last document change and at once when the source changes,

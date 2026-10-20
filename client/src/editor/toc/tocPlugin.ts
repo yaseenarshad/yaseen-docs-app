@@ -3,10 +3,11 @@
  * `TocChannel`.
  *
  * THE NOTE'S OWN STRUCTURE decides what the rows are, and the channel never says which:
- *  - HEADINGS, when the note has two or more of them. `headingFolding.ts`'s rule, through its own
- *    helpers — H1-H3, the document's blocks and every walkable container (a blockquote), never
- *    inside a list. One difference: a heading with nothing under it has no section to fold but is
- *    still a place to go, so it is listed. The bullets of such a note are not read at all.
+ *  - HEADINGS, when the note has two or more of them. `headingFolding.ts`'s walk, through its own
+ *    helpers — the document's blocks and every walkable container (a blockquote), never inside a
+ *    list. Two differences: the rows go down to H5 (`DEEPEST_TOC_LEVEL`, YAZ-3051), where folds
+ *    stop at H3; and a heading with nothing under it has no section to fold but is still a place
+ *    to go, so it is listed. H6 is never a row. The bullets of such a note are not read at all.
  *  - BULLETS otherwise — a bullet note is one big list with no headings, and its bullets are its
  *    structure. Every item of a list that is a direct child of the document (bulleted or
  *    numbered, each such list in document order) is a row, three levels down: an item is level 1,
@@ -17,7 +18,7 @@
  *    under two rows either way.
  *
  * That is AUTO. THE READER MAY CHOOSE for one note instead (YAZ-2700 D14, the channel's source):
- *  - `headings`: every H1-H3 of the note in document order, the ones inside list items at any
+ *  - `headings`: every H1-H5 of the note in document order, the ones inside list items at any
  *    depth as well as the ones in blockquotes, each at its heading level, and no bullet. On a
  *    note that is all bullets this lists exactly the bullets the reader made into headings.
  *  - `bullets`: the bullets as above, however many headings the note has.
@@ -35,7 +36,7 @@
  *
  * Positions are remembered from the last scan only to find a row's DOM node for the scroll spy —
  * the heading's, or the list item's. For 150 ms after an edit above a row they are stale, so a
- * node is trusted only when it IS an h1-h3 element (headings) or a list item's own element
+ * node is trusted only when it IS an h1-h5 element (headings) or a list item's own element
  * (bullets); the jump never uses them and scans the live document again.
  *
  * Nothing here changes the document: the jump dispatches an unfold (metadata-only) and a
@@ -48,11 +49,11 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { collapsedHeadingsHiding, DEEPEST_FOLDABLE_LEVEL, headingLevel, isHeadingCollapsed, isWalkableContainer, setHeadingFoldSet } from '../outline/headingFolding'
+import { collapsedHeadingsHiding, headingLevel, isHeadingCollapsed, isWalkableContainer, setHeadingFoldSet } from '../outline/headingFolding'
 import { findNestedLists, isListItem, itemLabelText, LIST_NODE_NAMES, UNTITLED_ITEM } from '../outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos } from '../outline/zoom'
-import { ENOUGH_ROWS, type TocChannel, type TocController, type TocLevel, type TocRow } from './tocChannel'
+import { DEEPEST_TOC_LEVEL, ENOUGH_ROWS, type TocChannel, type TocController, type TocLevel, type TocRow } from './tocChannel'
 
 /** How long the document must rest before it is scanned again. */
 export const SCAN_DELAY_MS = 150
@@ -90,7 +91,7 @@ const REVEAL_STAGGERED = 8
 /** No more blocks than this are eased: the rest of a long section is far off screen. */
 const REVEAL_MOST = 60
 
-/** A bullet deeper than this is not a row: the channel has three levels, whichever structure fills them. */
+/** A bullet deeper than this is not a row. Headings go down to `DEEPEST_TOC_LEVEL`; bullets stay at three levels (YAZ-3051 D3). */
 const DEEPEST_BULLET_LEVEL = 3
 /** The element Crepe's node view gives a `list_item` — what `view.nodeDOM` answers for one; the `<li>` is its child. */
 const LIST_ITEM_CLASS = 'milkdown-list-item-block'
@@ -118,12 +119,12 @@ const collectHeadings = (parent: ProseNode, contentStart: number, found: Scanned
       if (isWalkableContainer(child)) collectHeadings(child, pos + 1, found)
       return
     }
-    if (level > DEEPEST_FOLDABLE_LEVEL) return
+    if (level > DEEPEST_TOC_LEVEL) return
     found.push({ level: level as TocLevel, text: child.textContent.trim() || 'Untitled heading', pos })
   })
 }
 
-/** Every H1-H3 outside lists, in document order. */
+/** Every H1-H5 outside lists, in document order. */
 export const scanHeadings = (doc: ProseNode): ScannedRow[] => {
   const found: ScannedRow[] = []
   collectHeadings(doc, 0, found)
@@ -159,14 +160,14 @@ export const scanBullets = (doc: ProseNode): ScannedRow[] => {
 }
 
 /**
- * Every H1-H3 of the note, in document order: the ones outside lists, in blockquotes, and inside
+ * Every H1-H5 of the note, in document order: the ones outside lists, in blockquotes, and inside
  * list items at any depth. Every block is visited and no textblock is entered.
  */
 export const scanAllHeadings = (doc: ProseNode): ScannedRow[] => {
   const found: ScannedRow[] = []
   doc.descendants((node, pos) => {
     const level = headingLevel(node)
-    if (level !== null && level <= DEEPEST_FOLDABLE_LEVEL) found.push({ level: level as TocLevel, text: node.textContent.trim() || 'Untitled heading', pos })
+    if (level !== null && level <= DEEPEST_TOC_LEVEL) found.push({ level: level as TocLevel, text: node.textContent.trim() || 'Untitled heading', pos })
     return !node.isTextblock
   })
   return found
@@ -194,14 +195,14 @@ const labelledItemPos = (doc: ProseNode, headingPos: number): number | null => {
 
 /**
  * The row's element, or null when `pos` no longer starts a node of its kind (a stale position, or
- * no DOM for it): an h1-h3 for a heading — inside a list item or out of one, the element is the
+ * no DOM for it): an h1-h5 for a heading — inside a list item or out of one, the element is the
  * same — and the node view's own element for a bullet.
  */
 const rowElement = (view: EditorView, pos: number | undefined, bullets: boolean): HTMLElement | null => {
   if (pos === undefined) return null
   const dom = view.nodeDOM(pos)
   if (!(dom instanceof HTMLElement)) return null
-  return (bullets ? dom.classList.contains(LIST_ITEM_CLASS) : /^H[1-3]$/.test(dom.tagName)) ? dom : null
+  return (bullets ? dom.classList.contains(LIST_ITEM_CLASS) : /^H[1-5]$/.test(dom.tagName)) ? dom : null
 }
 
 /**

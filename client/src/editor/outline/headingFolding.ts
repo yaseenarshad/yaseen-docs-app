@@ -29,7 +29,7 @@ import { getOutlineFoldKey } from './outlineFoldKeys'
 import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
-/** H1-H3 fold; H4-H6 are in-paragraph labels here, not structure. The table of contents (YAZ-2700) lists the same three, and a click on a section line (sectionIndent.ts) folds only what a chevron folds. */
+/** H1-H3 fold; H4-H6 are in-paragraph labels here, not structure. The table of contents lists down to H5 (`DEEPEST_TOC_LEVEL`, YAZ-3051), but its H4 and H5 rows do not fold. A click on a section line (sectionIndent.ts) folds only what a chevron folds. */
 export const DEEPEST_FOLDABLE_LEVEL = 3
 
 interface HeadingEntry {

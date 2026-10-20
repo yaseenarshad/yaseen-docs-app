@@ -133,13 +133,19 @@
 
 /* Each name carries a piece of ONE hairline down the list's left edge; the marker rides on it.
    It also carries a piece of each LEVEL LINE that passes it (YAZ-2762): a 1px line below the
-   left edge of each parent level. A line is a background, so it adds no element. */
+   left edge of each parent level: at 12, 24, 36 and 48px for parent levels 1 to 4 (YAZ-3051
+   added the lines at 36 and 48px for the H4 and H5 rows). A line is a background, so it adds no
+   element. */
 .toc__name {
   /* The grey line of each level, then the path over it (YAZ-2762). */
   --toc-l1: transparent;
   --toc-l2: transparent;
+  --toc-l3: transparent;
+  --toc-l4: transparent;
   --toc-p1: transparent;
   --toc-p2: transparent;
+  --toc-p3: transparent;
+  --toc-p4: transparent;
   /* THE LEVEL PIECE: a short flat line from the first level line to a level 2 name, in the grey
      of the lines. On the row where the path arrives at that name it is the accent, and the path's
      own line stops there, at the middle of the row. */
@@ -161,16 +167,21 @@
   background:
     linear-gradient(var(--toc-p1), var(--toc-p1)) 12px 0 / 1px var(--toc-p1-h) no-repeat,
     linear-gradient(var(--toc-p2), var(--toc-p2)) 24px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--toc-p3), var(--toc-p3)) 36px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--toc-p4), var(--toc-p4)) 48px 0 / 1px 100% no-repeat,
     linear-gradient(var(--toc-piece), var(--toc-piece)) 12px 50% / 9px 1px no-repeat,
     linear-gradient(var(--toc-l1), var(--toc-l1)) 12px 0 / 1px 100% no-repeat,
-    linear-gradient(var(--toc-l2), var(--toc-l2)) 24px 0 / 1px 100% no-repeat;
+    linear-gradient(var(--toc-l2), var(--toc-l2)) 24px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--toc-l3), var(--toc-l3)) 36px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--toc-l4), var(--toc-l4)) 48px 0 / 1px 100% no-repeat;
   border-left: 1px solid var(--border);
   border-radius: 0 5px 5px 0;
   transition: color 80ms ease, background-color 80ms ease;
 }
 
 /* The level reads from the indent, the weight and the tone, never from a size: 12px per level
-   below the first, and each level is one step quieter than the one above it (YAZ-2762). */
+   below the first, and each level is one step quieter than the one above it (YAZ-2762), down to
+   level 3. Levels 3, 4 and 5 share the muted tone of `.toc__name` (YAZ-3051 D8). */
 .toc__name[data-level='1'] {
   font-weight: 500;
   color: var(--fg);
@@ -189,16 +200,40 @@
   padding-left: 36px;
 }
 
+.toc__name[data-level='4'] {
+  --toc-l1: var(--toc-rest);
+  --toc-l2: var(--toc-rest);
+  --toc-l3: var(--toc-rest);
+  padding-left: 48px;
+}
+
+.toc__name[data-level='5'] {
+  --toc-l1: var(--toc-rest);
+  --toc-l2: var(--toc-rest);
+  --toc-l3: var(--toc-rest);
+  --toc-l4: var(--toc-rest);
+  padding-left: 60px;
+}
+
 /* The path (YAZ-2762): the level lines from the current name up to its parents are the accent,
    while the lines show. `data-path` is the level whose line is on the path at this row; a `t`
    after it says the path ARRIVES at this name, one level in from its line. Only `1t` draws a
-   level piece: a level 3 name has none, so `2t` is drawn as `2`. */
+   level piece: a name of level 3 or deeper has none, so `2t`, `3t` and `4t` are drawn as `2`,
+   `3` and `4`. */
 .toc__name[data-path^='1'] {
   --toc-p1: var(--toc-path);
 }
 
 .toc__name[data-path^='2'] {
   --toc-p2: var(--toc-path);
+}
+
+.toc__name[data-path^='3'] {
+  --toc-p3: var(--toc-path);
+}
+
+.toc__name[data-path^='4'] {
+  --toc-p4: var(--toc-path);
 }
 
 /* This rule stands AFTER the level 2 rule, which has the same weight and gives the piece its grey. */
@@ -301,7 +336,8 @@
   overflow: hidden;
 }
 
-/* One line per row, `--toc-pitch` apart centre to centre: 18 / 12 / 7 px for level 1 / 2 / 3.
+/* One line per row, `--toc-pitch` apart centre to centre: 18 / 12 / 7 px for level 1 / 2 / 3;
+   levels 4 and 5 are 7 px like level 3 (YAZ-3051 D8).
    The current one is the accent and a little longer, and it grows into that. */
 .toc__line {
   --toc-w: 18px;
@@ -318,7 +354,9 @@
   --toc-w: 12px;
 }
 
-.toc__line[data-level='3'] {
+.toc__line[data-level='3'],
+.toc__line[data-level='4'],
+.toc__line[data-level='5'] {
   --toc-w: 7px;
 }
 
