@@ -96,14 +96,23 @@ initMint(app.getPath('userData'))
 initBoardThumbs(app.getPath('userData'))
 
 /** Window lifecycle (GRO-2160) lives in windows.ts; this host is its Electron-only half. */
+/**
+ * The e2e harness's out-of-sight mode (YAZ-3028): `YASEEN_DOCS_E2E_HIDDEN=1` keeps every window
+ * hidden and unthrottled, so the suite runs while the person keeps using the Mac. Never set in a real run.
+ */
+const hiddenE2E = process.env.YASEEN_DOCS_E2E_HIDDEN === '1'
+
 const manager = createWindowManager(store, {
   create(entry: WindowEntry) {
     const win = new BrowserWindow({
       ...entry.bounds,
+      ...(hiddenE2E && { show: false }),
       // The backing store matches the theme (K, GRO-2218): no white flash on dark launches.
       backgroundColor: windowBackgroundColor(store.get().settings.theme, nativeTheme.shouldUseDarkColors),
-      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true },
+      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true, ...(hiddenE2E && { backgroundThrottling: false }) },
     })
+    // A hidden e2e window must never surface: `focus()` and `show()` would order it front.
+    if (hiddenE2E) win.show = win.focus = () => {}
     win.webContents.setWindowOpenHandler(createWindowOpenHandler(openLink))
     // Electron ships no default context menu (YAZ-672), so the spellchecker's squiggles would
     // otherwise be unactionable; the template itself is pure and lives in menu.ts.
@@ -189,6 +198,7 @@ app.whenReady().then(() => {
   if (!isPrimaryInstance) return
   // A dev run wears the app's own Dock icon instead of Electron's; a packaged build gets it from the bundle.
   if (!app.isPackaged) app.dock?.setIcon(join(__dirname, '../../build/icon.png'))
+  if (hiddenE2E) app.dock?.hide()
   // Appearance (K, GRO-2218): the setting IS the themeSource vocabulary. Applied from the loaded
   // store BEFORE any window is created (`restore` below), re-applied whenever it changes — so
   // `prefers-color-scheme` in every renderer and the OS chrome follow the setting.

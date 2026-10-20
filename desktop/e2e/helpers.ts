@@ -36,7 +36,7 @@ export async function launchApp({ userData, seedState }: LaunchOptions): Promise
   // --user-data-dir, so one inherited from the calling shell would point the app at another profile.
   return _electron.launch({
     args: [MAIN_ENTRY, `--user-data-dir=${userData}`],
-    env: { ...process.env, YASEEN_DOCS_E2E: '1', YASEEN_DOCS_USER_DATA_DIR: userData },
+    env: { ...process.env, YASEEN_DOCS_E2E: '1', YASEEN_DOCS_E2E_HIDDEN: process.env.YASEEN_DOCS_E2E_HIDDEN ?? '1', YASEEN_DOCS_USER_DATA_DIR: userData },
   })
 }
 
