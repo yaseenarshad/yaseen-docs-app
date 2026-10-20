@@ -495,6 +495,18 @@ export interface CreateBoardResponse {
 }
 
 /**
+ * `fs:board-head` (YAZ-3028 D11): a board's Info, off its file head — one open, a 1 KB read, one
+ * `fstat`. Docs' tree carries no dates and does not refresh on a save, so the Info popover asks.
+ */
+export interface BoardHeadResponse {
+  path: string
+  mtime: number
+  size: number
+  /** The board's own dates, or null when it has none yet (the next save writes them). */
+  meta: BoardMeta | null
+}
+
+/**
  * File › Export Drawing… (Draw's 🔒 YAZ-1775 D3, YAZ-1821; ported by YAZ-3028): the native SAVE sheet
  * and the write behind it, ONE door — a standalone `.excalidraw`, every image embedded, written
  * wherever the user picks. A renderer never holds an arbitrary path it may write to: the only path

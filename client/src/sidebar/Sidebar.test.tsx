@@ -355,6 +355,54 @@ afterEach(() => {
 })
 
 /**
+ * Drawing and diagram rows (YAZ-3028 D11): normal rows that open a tab, named by their full file name,
+ * a diagram marked; "Info" on their menu reads the board's head through `fs:board-head`.
+ */
+describe('drawing and diagram rows (YAZ-3028 D11)', () => {
+  const BOARD_TREE: TreeNode[] = [
+    { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+    { type: 'file', name: 'Flow.drawio', path: '/v/Flow.drawio', size: 1, mtime: 1, kind: 'diagram' },
+    { type: 'file', name: 'Sketch.excalidraw', path: '/v/Sketch.excalidraw', size: 1, mtime: 1, kind: 'drawing' },
+  ]
+  const withBoards = (bridge: ReturnType<typeof installBridge>) => {
+    bridge.tree.mockResolvedValue({ root: '/v', tree: BOARD_TREE, generatedAt: 1 })
+    ;(bridge as unknown as Record<string, unknown>).boardHead = vi.fn(async (path: string) => ({ path, mtime: Date.UTC(2026, 9, 20), size: 2048, meta: { createdAt: Date.UTC(2026, 9, 1), updatedAt: Date.UTC(2026, 9, 20) } }))
+  }
+  const boardRow = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row--file[title="${path}"]`)
+
+  it('are normal rows: full file name, not external, the draw.io mark on the diagram only, and a click opens a tab', async () => {
+    const { el, bridge, props } = await mount({}, withBoards)
+    const flow = boardRow(el, '/v/Flow.drawio')
+    const sketch = boardRow(el, '/v/Sketch.excalidraw')
+    expect(flow?.classList.contains('tree__row--external')).toBe(false)
+    expect(sketch?.classList.contains('tree__row--external')).toBe(false)
+    expect(flow?.querySelector('.tree__label')?.textContent).toBe('Flow.drawio')
+    expect(flow?.querySelector('.diagram-mark')?.getAttribute('aria-label')).toBe('draw.io diagram')
+    expect(sketch?.querySelector('.diagram-mark')).toBeNull()
+    await act(async () => sketch?.click())
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/Sketch.excalidraw')
+    expect(bridge.shell.openDefault).not.toHaveBeenCalled()
+  })
+
+  it('"Info" stands above Delete on a board row only; it reads the head and shows the board`s type and dates', async () => {
+    const { el, bridge } = await mount({}, withBoards)
+    act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 5, clientY: 5 })))
+    expect(itemByLabel(el, 'Info')).toBeUndefined() // a note
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    act(() => void boardRow(el, '/v/Flow.drawio')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 5, clientY: 5 })))
+    const labels = menuItems(el).map((b) => b.textContent)
+    expect(labels.slice(-2)).toEqual(['Info', 'Delete'])
+    await act(async () => itemByLabel(el, 'Info')?.click())
+    await act(async () => new Promise((r) => setTimeout(r, 0)))
+    expect((bridge as unknown as { boardHead: ReturnType<typeof vi.fn> }).boardHead).toHaveBeenCalledExactlyOnceWith('/v/Flow.drawio')
+    await vi.waitFor(() => expect(el.ownerDocument.querySelector('.board-info')).not.toBeNull())
+    const info = el.ownerDocument.querySelector('.board-info')?.textContent ?? ''
+    expect(info).toContain('draw.io diagram')
+    expect(info).toContain('2.0 KB')
+  })
+})
+
+/**
  * A row with no in-app viewer (`kind: null`, YAZ-1577 D2): the OS default app IS the viewer, so
  * every open gesture hands the path to `shell.openDefault` and no tab callback fires. Shift is
  * still the selection gesture and still wins (YAZ-1336 🔒 D2).

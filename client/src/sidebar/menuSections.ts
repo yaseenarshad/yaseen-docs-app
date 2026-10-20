@@ -10,7 +10,8 @@ import type { MenuTargets } from './Sidebar'
  * More create · This row · "Open in ▸" · Delete. The component draws a separator between
  * NON-EMPTY groups only, so a blank-space menu (no row to rename or delete) never ends in a
  * stray rule. The last group is where a row LEAVES — a file is deleted, a shortcut removed, a vault
- * removed from the window (YAZ-2602 D7) — one item of it at most, so it always stands alone.
+ * removed from the window (YAZ-2602 D7) — one item of it at most, with a board's read-only "Info"
+ * above it (YAZ-3028 D11).
  * Labels are the bare
  * text — a shortcut hint rides on `hint` and is drawn by CSS from `data-hint`, so `textContent`
  * and the accessible name stay what every test pins.
@@ -111,6 +112,8 @@ export interface MenuHandlers {
   onRemoveVault: (root: string) => void
   /** "Open by itself" on a vault row (YAZ-2858 D4): the vault's root, for main's `window.openAlone`. */
   onOpenAlone: (root: string) => void
+  /** "Info" on one drawing or diagram row (YAZ-3028 D11): the caller opens the board's popover where the menu was. */
+  onInfo: (path: string) => void
 }
 
 type Item = (t: MenuSectionTargets, h: MenuHandlers) => MenuItem | null
@@ -392,6 +395,16 @@ const del: Leaf = (t, h) => {
 }
 
 /**
+ * "Info" (YAZ-3028 D11, Draw's 🔒 YAZ-1835 D6): ONE drawing or diagram row — never a note, a folder,
+ * blank space or a multi-select — directly above Delete, in its group. A read-only item.
+ */
+const info: Leaf = (t, h) => {
+  const path = t.infoPath
+  if (path === null) return null
+  return { id: 'info', label: 'Info', onSelect: () => h.onInfo(path) }
+}
+
+/**
  * "Remove shortcut" (YAZ-2290 E5) stands where Delete would on a SHORTCUT row: the note stops
  * appearing in this folder and stays where it lives — the only place it can be deleted from. Not
  * `danger`, and no confirm: nothing is destroyed.
@@ -438,7 +451,7 @@ const CREATE_GROUP: readonly Item[] = [newNote, newFolder]
 const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedFolder]
 const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename]
 const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openAlone, openIn, addVault]
-const DELETE_GROUP: readonly Item[] = [del, removeShortcut, removeVault]
+const DELETE_GROUP: readonly Item[] = [info, del, removeShortcut, removeVault]
 
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */
 const build = <T extends MenuItem>(group: readonly ((t: MenuSectionTargets, h: MenuHandlers) => T | null)[], t: MenuSectionTargets, h: MenuHandlers): T[] =>

@@ -10,6 +10,7 @@ import { APP_SCHEME } from './appScheme'
 import { resolveDrawioDir, serveDrawio } from './drawio/assets'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
+import { initBoardThumbs } from './ipc/board'
 import { broadcastAll } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerUpdateIpc } from './ipc/update'
@@ -91,6 +92,8 @@ const store = createStore(join(app.getPath('userData'), STATE_FILE))
 initIndexCache(join(app.getPath('userData'), 'index-cache'))
 /** This Mac's ID for the count files (YAZ-2677 R13) is kept in userData, never in a vault. */
 initMint(app.getPath('userData'))
+/** A board preview's pictures, made preview-sized once and kept in userData, never in a vault (YAZ-3028 D11). */
+initBoardThumbs(app.getPath('userData'))
 
 /** Window lifecycle (GRO-2160) lives in windows.ts; this host is its Electron-only half. */
 const manager = createWindowManager(store, {

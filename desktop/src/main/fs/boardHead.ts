@@ -2,7 +2,9 @@ import { Buffer } from 'node:buffer'
 import { open } from 'node:fs/promises'
 import { BOARD_META_HEAD_BYTES, parseBoardMetaBlock, type BoardMetaBlock } from '@shared/drawingAssets'
 import { parseDiagramMetaAttrs } from '@shared/diagramFile'
-import { isDiagram } from '@shared/fileKind'
+import type { BoardHeadResponse } from '@shared/types'
+import { isBoard, isDiagram } from '@shared/fileKind'
+import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
 
 export interface BoardHead {
   /** The `yaseendraw` block off the file head, extras included, or null when there is none to trust (🔒 YAZ-1834 D7). */
@@ -39,4 +41,17 @@ export async function readBoardHead(file: string): Promise<BoardHead | null> {
   } finally {
     await handle.close()
   }
+}
+
+/**
+ * `fs:board-head` (YAZ-3028 D11): the Info popover's one read — what `readBoardHead` knows, as the
+ * bridge answers it. A path that is no board is refused, a file that is gone is `NOT_FOUND`.
+ */
+export async function boardHead(raw: unknown): Promise<BoardHeadResponse> {
+  const file = requireAbsPath(raw, 'path')
+  if (!isBoard(file)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .excalidraw and .drawio files have board info', { path: file })
+  const head = await fsCall(file, () => readBoardHead(file))
+  if (head === null) throw new BridgeFailure('NOT_FOUND', 'no such board', { path: file })
+  const meta = head.block === null ? null : { createdAt: head.block.createdAt, updatedAt: head.block.updatedAt }
+  return { path: file, mtime: head.mtime, size: head.size, meta }
 }

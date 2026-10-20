@@ -184,3 +184,17 @@ export const FormulaIcon = () => (
     <path d="M5.5 7.5h5.5" />
   </svg>
 )
+
+/**
+ * A draw.io diagram's type mark (YAZ-3028 D11, Draw's 🔒 YAZ-1802 D15): linked boxes, a generic glyph,
+ * never draw.io's logo, after a diagram row's name and named for screen readers. A drawing has none.
+ */
+export const DiagramBadge = () => (
+  <span className="diagram-mark" role="img" aria-label="draw.io diagram" title="draw.io diagram">
+    <svg {...svg} width={11} height={11} viewBox="0 0 24 24" strokeWidth={2}>
+      <rect x="3" y="3" width="7" height="6" rx="1" />
+      <rect x="14" y="15" width="7" height="6" rx="1" />
+      <path d="M6.5 9v4a2 2 0 0 0 2 2H14" />
+    </svg>
+  </span>
+)

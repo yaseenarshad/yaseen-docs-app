@@ -15,3 +15,10 @@ export const absFrom = (root: string, rel: string): string => `${root.replace(/\
 
 /** File name without its vault extension (`.md` / `.markdown`). */
 export const stripExt = (name: string) => name.replace(/\.(md|markdown)$/i, '')
+
+/** The folder a board sits in, relative to the vault — `/` at the root (Draw's Info 🔒 YAZ-1835 D7 and hover preview, ported by YAZ-3028 D11). */
+export function boardFolder(root: string, path: string): string {
+  const rel = relTo(root, path)
+  const cut = rel.lastIndexOf('/')
+  return cut === -1 ? '/' : rel.slice(0, cut)
+}

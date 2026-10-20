@@ -43,6 +43,8 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   leaveSearchTo: null,
   // "Show in sidebar" (YAZ-2638): null is a row of the Files tab, and blank space.
   showPath: null,
+  // "Info" (YAZ-3028 D11): null is every row that is not one drawing or diagram.
+  infoPath: null,
   clip: null,
   ...over,
 })
@@ -75,6 +77,7 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onPickVault: vi.fn(),
   onRemoveVault: vi.fn(),
   onOpenAlone: vi.fn(),
+  onInfo: vi.fn(),
   ...over,
 })
 
@@ -694,5 +697,24 @@ describe('Open by itself (YAZ-2858 D4, S15, S16)', () => {
   it('S16: a file row, a folder row and blank space never show it', () => {
     const DIR_ROW: Partial<MenuSectionTargets> = { rowKind: 'dir', targetDir: '/v/sub', copyPath: '/v/sub', openPath: '/v/sub', revealPath: '/v/sub', openVsCodePath: '/v/sub', openDefaultPath: '/v/sub' }
     for (const row of [FILE_ROW, DIR_ROW, BLANK, { targetDir: null }]) expect(itemOf(build(row), 'Open by itself')).toBeUndefined()
+  })
+})
+
+/** "Info" (YAZ-3028 D11, Draw's 🔒 YAZ-1835 D6): one drawing or diagram row, directly above Delete. */
+describe('Info item (YAZ-3028 D11)', () => {
+  const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/Flow.drawio', deletePath: '/v/Flow.drawio', renamePath: '/v/Flow.drawio', infoPath: '/v/Flow.drawio' }
+
+  it('is absent on a note, a folder, blank space and a selection — every menu without a target', () => {
+    expect(labelsOf(build(FILE_ROW))).not.toContain('Info')
+    expect(labelsOf(build(BLANK))).not.toContain('Info')
+  })
+
+  it('a board row: Info stands directly above Delete, in its group, and hands the caller the board', () => {
+    const onInfo = vi.fn()
+    const sections = build(BOARD_ROW, { onInfo })
+    expect(sections[6].map((i) => i.label)).toEqual(['Info', 'Delete'])
+    expect(itemOf(sections, 'Info')?.danger).toBeUndefined()
+    select(sections, 'Info')
+    expect(onInfo).toHaveBeenCalledExactlyOnceWith('/v/Flow.drawio')
   })
 })

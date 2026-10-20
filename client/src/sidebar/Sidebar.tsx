@@ -1,5 +1,6 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react'
-import { SIDEBAR_TABS, stripSlash, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type TreeNode, type UpdateState } from '@shared/types'
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type Ref } from 'react'
+import { isBoard } from '@shared/fileKind'
+import { SIDEBAR_TABS, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -12,6 +13,7 @@ import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
 import { ancestorDirs, findDirNode, findNode, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP } from '../search/searchCandidates'
+import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
@@ -28,6 +30,10 @@ import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
 import { useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
+import { HoverPreviewHost, useHoverPreview } from './HoverPreviewHost'
+
+/** A board's Info popover body (YAZ-3028 D11), with its CSS: loaded on the first "Info". */
+const BoardInfo = lazy(() => import('./BoardInfo'))
 
 /** One vault of the window as the panel reads it (YAZ-2602 D1): its folder, what the app calls it, its watcher, its index snapshot and its review. */
 export interface SidebarVault {
@@ -357,6 +363,12 @@ export interface MenuTargets {
    * selection: the row to show in Files. Null on a row of the Files tab and on blank space. Its OWN field.
    */
   showPath: string | null
+  /**
+   * "Info" (YAZ-3028 D11, Draw's 🔒 YAZ-1835 D6) — ONE drawing or diagram row outside a plural
+   * selection: the board whose Info popover opens. Null on a note, a folder, a shortcut row, blank
+   * space and a 2+ selection. Its OWN field.
+   */
+  infoPath: string | null
 }
 
 /**
@@ -471,6 +483,9 @@ export function Sidebar({
    */
   const vaultOf = useCallback((path: string): SidebarVault => vaultsRef.current.find((vault) => vault.root === rootOf(path)) ?? vaultsRef.current[0], [rootOf])
   const [menu, setMenu] = useState<MenuTargets | null>(null)
+  /** A board's Info popover (YAZ-3028 D11): where the menu was, the board, and its file head once read (`fs:board-head`). */
+  const [infoPopover, setInfoPopover] = useState<{ x: number; y: number; path: string; now: number; info: BoardHeadResponse | null } | null>(null)
+  const infoPath = infoPopover?.path ?? null
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
   // The "Remove shortcut" that would clear values, waiting on its sheet (D21); null when it is closed.
@@ -543,6 +558,26 @@ export function Sidebar({
   const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i] })), [roots, watches, dirsByVault, filesByVault])
   // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
   const searching = lens === 'search'
+  // The hover preview (YAZ-3028 D11): a menu or the Info popover owns the pointer while it stands, and
+  // a typed search hides the tree it would point at.
+  const { hover, hoverFile, closePreview } = useHoverPreview(menu !== null || infoPopover !== null, !searching, activeFile)
+  // The Info popover reads the board's head when it opens (no watcher subscription of its own: the
+  // panel keeps one per vault); a board that cannot be read any more closes it.
+  useEffect(() => {
+    if (infoPath === null) return
+    let live = true
+    void api.boardHead(infoPath).then(
+      (info) => {
+        if (live) setInfoPopover((open) => (open !== null && open.path === infoPath ? { ...open, info, now: Date.now() } : open))
+      },
+      () => {
+        if (live) setInfoPopover(null)
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [infoPath])
   // The keyboard goes to the page on show: the caret into the open page (YAZ-2662 D9), else the
   // focus onto the new tab page, when it shows and has a row (YAZ-2663 D10). With neither, nothing moves.
   const toPage = useCallback(() => focusOpenDocument() || onLeaveToPage?.() === true, [onLeaveToPage])
@@ -784,6 +819,7 @@ export function Sidebar({
         addVaults: node !== null ? null : storage.listVaults().flatMap(({ path, name }) => (roots.includes(path) ? [] : [{ path, name }])),
         removeVault: vaultRow,
         openAlone: vaultRow,
+        infoPath: plural === null && shortcutIn === null && filePath !== null && isBoard(filePath) ? filePath : null,
       })
     },
     [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState],
@@ -951,6 +987,16 @@ export function Sidebar({
   const openMenuRef = useRef(openMenu)
   openMenuRef.current = openMenu
   const openRowMenu = useCallback((node: MenuRow, e: React.MouseEvent) => openMenuRef.current(node, e), [])
+  /** The aside, for the hover preview's placement (YAZ-3028 D11), handed on to App's ref as well. */
+  const asideEl = useRef<HTMLElement | null>(null)
+  const setAside = useCallback(
+    (el: HTMLElement | null) => {
+      asideEl.current = el
+      if (typeof asideRef === 'function') asideRef(el)
+      else if (asideRef != null) (asideRef as MutableRefObject<HTMLElement | null>).current = el
+    },
+    [asideRef],
+  )
   // What the trees share; each tab adds only what differs (`nodes`, `move`, `reorder`), and the
   // search tree puts its own folds, highlight and marks over it (YAZ-2620). It is SPREAD into each
   // `<Tree>`, so the memo above compares the values, never this object.
@@ -972,6 +1018,7 @@ export function Sidebar({
     shortcuts,
     titles,
     onLeaveToPage,
+    onHoverFile: hoverFile,
   }
   // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags.
   const searchTreeProps = { ...treeProps, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, marks }
@@ -995,7 +1042,7 @@ export function Sidebar({
     }
 
   return (
-    <aside ref={asideRef} className="sidebar" style={{ width }}>
+    <aside ref={setAside} className="sidebar" style={{ width }}>
       {/* The root header doubles as the "move to the vault root" drop target (E1b) — of a window
           with one vault. With two or more each vault's own row is that target (YAZ-2602 S14). */}
       <div
@@ -1368,11 +1415,20 @@ export function Sidebar({
               onPickVault,
               onRemoveVault,
               onOpenAlone: openVaultAlone,
+              onInfo: (path) => setInfoPopover({ x: menu.x, y: menu.y, path, now: Date.now(), info: null }),
             },
           )}
           onClose={() => setMenu(null)}
         />
       )}
+      {infoPopover !== null && infoPopover.info !== null && (
+        <ContextMenuSurface x={infoPopover.x} y={infoPopover.y} width={300} role="dialog" onClose={() => setInfoPopover(null)}>
+          <Suspense fallback={null}>
+            <BoardInfo info={infoPopover.info} root={rootOf(infoPopover.path)} now={infoPopover.now} />
+          </Suspense>
+        </ContextMenuSurface>
+      )}
+      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} enabled={!searching} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} onClose={closePreview} />
       {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
       {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} copy={pendingPaste.copy} lost={pendingPaste.lost} titles={titles} onConfirm={confirmPaste} onCancel={cancelPaste} />}
       {confirmingShortcut !== null && (

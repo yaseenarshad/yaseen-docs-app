@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SettingsState, TocSource, TreeResponse, UpdateState, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SettingsState, TocSource, TreeResponse, UpdateState, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -64,6 +64,8 @@ export const CONTRACT = {
    * main, never over an existing file (`ALREADY_EXISTS`). `createFile` stays Markdown-only.
    */
   createBoard: invoke<[req: CreateBoardRequest], CreateBoardResponse>('fs:create-board', 1),
+  /** A board's Info (YAZ-3028 D11): its dates off the file head, its size and mtime — never the whole file. A path that is no board → `UNSUPPORTED_EXTENSION`; a missing file → `NOT_FOUND`. */
+  boardHead: invoke<[path: string], BoardHeadResponse>('fs:board-head', 1),
   /**
    * The drawing DOCUMENT's two doors (YAZ-3028 D2, Draw's 🔒 YAZ-1810): one per direction, the only way a
    * `.excalidraw` opened in a TAB reads and writes. A load is the scene plus the pictures it names; a

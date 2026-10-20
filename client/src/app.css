@@ -1985,6 +1985,14 @@ button {
   color: var(--fg-muted);
 }
 
+/* A draw.io diagram's mark after its row's name (YAZ-3028 D11): the shortcut mark's place and tone. */
+.diagram-mark {
+  display: inline-flex;
+  flex: none;
+  margin-left: 4px;
+  color: var(--fg-muted);
+}
+
 .btn {
   padding: 6px 14px;
   border-radius: 6px;

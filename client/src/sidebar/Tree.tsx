@@ -4,7 +4,8 @@ import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
 import type { EntryKind, MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
-import { ShortcutIcon } from '../views/view/icons'
+import { isBoard } from '@shared/fileKind'
+import { DiagramBadge, ShortcutIcon } from '../views/view/icons'
 import { RenameInline } from './RenameInline'
 
 /** Inline "New note" / "New folder" input pending inside the tree (GRO-2022). */
@@ -207,6 +208,11 @@ interface TreeProps {
   onLeaveToPage?: () => boolean
   /** The top row this level stands under (YAZ-2845 D1); none at the top level. It tells the copies of a row that shows twice apart. */
   top?: string
+  /**
+   * The pointer or the focus rests on a drawing or diagram row, or left it (null): the hover preview's
+   * dwell (YAZ-3028 D11). Absent → no row reports it. A note row never does.
+   */
+  onHoverFile?: (node: { path: string } | null) => void
   depth?: number
 }
 
@@ -232,9 +238,13 @@ function TreeLevel({
   marks,
   onLeaveToPage,
   top,
+  onHoverFile,
   depth = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks }
+  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile }
+  /** A board row's hover handlers (YAZ-3028 D11): pointer and focus alike, so the keyboard walk previews too. */
+  const hoverOf = (path: string) =>
+    onHoverFile === undefined || !isBoard(path) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
   // This folder's shortcuts stand among its FILES in the tree's own name order; dirs still lead, as main sorts a level.
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
@@ -407,6 +417,7 @@ function TreeLevel({
               onContextMenu={(e) => onNodeContextMenu(isShortcutRow(node) ? { type: 'file', path: node.path, shortcutIn: dirPath, top: topOf(node) } : { ...node, top: topOf(node) }, e)}
               title={node.path}
               data-path={node.path}
+              {...hoverOf(node.path)}
               // A shortcut row never drags (YAZ-2290 D2): the drag would move the note out of the folder it lives in.
               draggable={!isShortcutRow(node)}
               onDragStart={isShortcutRow(node) ? undefined : (e) => {
@@ -431,6 +442,7 @@ function TreeLevel({
                 {idFor(node.path)}
                 {marked(pageLabel(node.path, false, titles), needleFor(node.path))}
               </span>
+              {node.kind === 'diagram' && <DiagramBadge />}
               {isShortcutRow(node) && <ShortcutIcon />}
               {vaultTag(node.path)}
             </button>
