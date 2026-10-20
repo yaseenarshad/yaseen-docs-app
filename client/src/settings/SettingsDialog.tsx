@@ -79,7 +79,7 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
   }
 
   const row = (item: SettingDef) => (
-    <SettingRow key={item.id} id={item.id} label={item.label} hint={resolveHint(item, ctx)} wide={resolveWide(item, ctx)}>
+    <SettingRow key={item.id} id={item.id} label={item.label} hint={resolveHint(item, ctx)} wide={resolveWide(item, ctx)} bare={item.bare === true}>
       {item.render(ctx)}
     </SettingRow>
   )

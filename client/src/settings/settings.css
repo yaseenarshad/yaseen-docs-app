@@ -248,6 +248,15 @@
   align-items: stretch;
 }
 
+/* A bare row (YAZ-3068 D16): the control alone, full width, with no label above it and so no gap. */
+.setting--bare {
+  display: block;
+}
+
+.setting--bare .setting__control {
+  display: block;
+}
+
 .setting__text {
   min-width: 0;
 }
@@ -386,9 +395,21 @@
   text-align: right;
 }
 
-/* ---------- heading styles (YAZ-3050 D6, HeadingStylesControl.tsx) ---------- */
+/* ---------- text formatting (YAZ-3068; the lines are YAZ-3050 D6; TextFormattingControl.tsx) ---------- */
 
-/* Six lines, H1 to H6. The controls keep fixed widths, so they line up in columns down the six. */
+/* The "Vault" dropdown (D15), above the lines, with the space of one line under it. */
+.text-formatting__vault {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.text-formatting__vault-label {
+  color: var(--fg);
+}
+
+/* Seven lines, Text and H1 to H6. The controls keep fixed widths, so they line up in columns down the seven. */
 .heading-styles {
   display: flex;
   flex-direction: column;
@@ -481,6 +502,13 @@
 /* "None": the page colour with one diagonal line. */
 .heading-styles__dot--none {
   background: linear-gradient(135deg, transparent calc(50% - 0.75px), var(--fg-muted) calc(50% - 0.75px) calc(50% + 0.75px), transparent calc(50% + 0.75px)), var(--bg);
+}
+
+/* The Text line has no B, U or dots (D14). This space has their width: B and U (2 × 32px, a 4px gap,
+   a 4px margin), the gap of the line (12px), and the five dots (5 × 18px, 4 × 6px). */
+.heading-styles__no-switches {
+  flex: none;
+  width: calc(32px + 4px + 32px + 4px + 12px + 5 * 18px + 4 * 6px);
 }
 
 /* The slot is there on every line, with or without its button. */
