@@ -464,7 +464,8 @@ button {
    Overrides Crepe's frame theme (Rubik/Noto Serif → serif fallback) via its own custom properties.
    Line height and block gap come from the settings panel via App's CSS vars (GRO-2024). */
 .editor-instance .milkdown {
-  --crepe-base-font-size: 16px;
+  /* The Text size of the vault (YAZ-3067 D14): `--text-size` on the page layer; none set, 16px as before. */
+  --crepe-base-font-size: var(--text-size, 16px);
   --crepe-font-default: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --crepe-font-title: var(--crepe-font-default);
   --crepe-font-code: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -507,9 +508,9 @@ button {
    (32/28/24/20/16/16px) are exactly 8/7/6/5/4/4 × the 4px default gap, so the Default
    preset is pixel-identical to Crepe. bullets.css derives its heading-row label offsets
    from the same calc — change one, change both.
-   Heading styles (YAZ-3049 D2): each level reads its own `--hN-*` variables, set on `.app` from
-   Settings › Headings (settings/headingStyles.ts) only for a changed field. Each fallback is the
-   look of 1.0.14. bullets.css reads `--hN-size` with the same em scale as its fallback — change
+   Heading styles (YAZ-3049 D2): each level reads its own `--hN-*` variables, set on each page
+   layer from its vault's text formatting (YAZ-3067 D12, settings/headingStyles.ts) only for a
+   changed field. Each fallback is the look of 1.0.14; the em fallback follows the vault's Text size (D17). bullets.css reads `--hN-size` with the same em scale as its fallback — change
    one, change both. */
 .editor-instance .milkdown .ProseMirror h1 {
   font-size: var(--h1-size, 1.802em);

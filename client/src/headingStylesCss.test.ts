@@ -55,6 +55,14 @@ describe('heading styles CSS contract (YAZ-3049 D2, D7)', () => {
     expect(appCss).not.toMatch(/box-shadow:\s*0 0 0 3px var\(--h\d-bg/)
   })
 
+  it('the editor\'s base size is the vault\'s Text size, 16px when none is set; the headings with no size and the bullet rows follow it (YAZ-3067 D14, D17)', () => {
+    // `--text-size` comes from the page layer (App.tsx); with no file there is none, and the base stays 16px as before.
+    expect(appCss).toMatch(/\.editor-instance \.milkdown \{[^}]*--crepe-base-font-size:\s*var\(--text-size, 16px\);/s)
+    expect(appCss).not.toMatch(/--crepe-base-font-size:\s*16px/)
+    // A heading with no size of its own is in em of that base (the first test), and a bullet's label row reads the base too.
+    expect(bulletsCss).toMatch(/--list-label-height:\s*calc\(var\(--crepe-base-font-size\) \* var\(--edit-line-height, 1\.5\)/)
+  })
+
   it('a heading in a section needs no rule of its own: the wash starts at the words', () => {
     expect(sectionIndentCss).not.toMatch(/:is\(h1, h2, h3, h4, h5, h6\)\[data-sd\]/)
   })
