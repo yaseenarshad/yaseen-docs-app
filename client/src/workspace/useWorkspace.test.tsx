@@ -12,16 +12,10 @@ import { defaultAppState, defaultRightPanelIdentity, type AppState, type WindowI
 import { storage } from '../lib/storage'
 import { _resetRenameContinuity, registerRenameContinuity, takeRenameBuffer } from '../lib/renameContinuity'
 import { activePath, bootTabs, bootWorkspace, newTabId, storedTabs, tabById, tabOf, tabsReducer as reduceTabs, useWorkspace, workspaceReducer as reduceWorkspace, type TabsState as IdTabsState, type UseWorkspace, type WorkspaceState as IdWorkspaceState } from './useWorkspace'
-import { byPath, pathTabsReducer, pathWorkspaceReducer, plain, type PathTabs, type PathWorkspace } from './testTabs'
+import { byPath, pathTabsReducer, pathWorkspaceReducer, type PathTabs, type PathWorkspace } from './testTabs'
 
 // These tests read the model by path (`testTabs.ts`): with no copies, a path names one tab (YAZ-2940 D1).
 const tabsReducer = pathTabsReducer
-/**
- * The identity write of a window with no copies and no display names (YAZ-3057): each path once, the strip
- * with the same paths and the active one marked, and the default right panel.
- */
-const wrote = (tabs: string[], file: string | null, rightPanel = defaultRightPanelIdentity()) =>
-  ({ tabs, tabStrip: tabs.map((path) => (path === file ? { path, active: true } : { path })), file, rightPanel })
 const workspaceReducer = pathWorkspaceReducer
 type TabsState = PathTabs
 type WorkspaceState = PathWorkspace
@@ -128,7 +122,7 @@ describe('tabsReducer', () => {
       expect(tabsReducer(inDir, { type: 'rename-dir', oldPath: '/v/Old', newPath: '/v/New' })).toMatchObject({ tabs: ['/v/a.md', '/v/New/p.md'], preview: '/v/New/p.md' })
       expect(tabsReducer(inDir, { type: 'delete-dir', path: '/v/Old' })).toMatchObject({ tabs: ['/v/a.md'], preview: null, blank: false })
       expect(tabsReducer(previewing(), { type: 'delete', path: '/v/p.md' })).toMatchObject({ tabs: ['/v/a.md'], preview: null, blank: false })
-      expect(tabsReducer(previewing(), { type: 'reset', tabs: plain('/v/p.md'), active: '/v/p.md' })).toMatchObject({ tabs: ['/v/p.md'], preview: null, blank: false })
+      expect(tabsReducer(previewing(), { type: 'reset', tabs: ['/v/p.md'], active: '/v/p.md' })).toMatchObject({ tabs: ['/v/p.md'], preview: null, blank: false })
     })
 
     it('open-new and open-background open KEPT tabs: the mark stays where it was — and open-new on the preview tab itself is the ONE door that keeps it (S19, S25)', () => {
@@ -206,7 +200,7 @@ describe('tabsReducer', () => {
       // A ✕ on another tab — the one that was active — is no trip to a tab: its heir is the stored file, and the blank tab stays.
       expect(tabsReducer(blank(), { type: 'close', path: '/v/a.md' })).toEqual({ ...state(['/v/b.md'], '/v/b.md'), blank: true })
       expect(tabsReducer(blank(), { type: 'move', from: 0, to: 1 })).toMatchObject({ tabs: ['/v/b.md', '/v/a.md'], blank: true })
-      expect(tabsReducer(blank(), { type: 'reset', tabs: plain('/v/a.md'), active: '/v/a.md' })).toMatchObject({ tabs: ['/v/a.md'], blank: false })
+      expect(tabsReducer(blank(), { type: 'reset', tabs: ['/v/a.md'], active: '/v/a.md' })).toMatchObject({ tabs: ['/v/a.md'], blank: false })
     })
   })
 
@@ -327,36 +321,21 @@ describe('tabsReducer', () => {
   })
 
   describe('reset', () => {
-    it('keeps each stored copy (YAZ-3057) and PREPENDS an active file missing from the list (main\'s order)', () => {
-      expect(tabsReducer(state([], null), { type: 'reset', tabs: plain('/v/a.md', '/v/a.md', '/v/b.md'), active: '/v/c.md' })).toEqual(
-        state(['/v/c.md', '/v/a.md', '/v/a.md', '/v/b.md'], '/v/c.md'),
+    it('normalizes: de-duplicates and PREPENDS an active file missing from the list (main\'s order)', () => {
+      expect(tabsReducer(state([], null), { type: 'reset', tabs: ['/v/a.md', '/v/a.md', '/v/b.md'], active: '/v/c.md' })).toEqual(
+        state(['/v/c.md', '/v/a.md', '/v/b.md'], '/v/c.md'),
       )
-    })
-
-    it('YAZ-3057 D4: the display names come back, and the marked copy of the active file is active, else its first copy', () => {
-      const empty: IdTabsState = { tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false }
-      const strip = [{ path: '/v/a.md', name: 'Draft' }, { path: '/v/b.md' }, { path: '/v/a.md', active: true as const }]
-      const s = reduceTabs(empty, { type: 'reset', tabs: strip, active: '/v/a.md' })
-      expect(s.tabs.map((t) => [t.path, t.name])).toEqual([['/v/a.md', 'Draft'], ['/v/b.md', undefined], ['/v/a.md', undefined]])
-      expect(s.active).toBe(s.tabs[2].id)
-      expect(s.mounted).toEqual([s.tabs[2].id])
-      // No mark (S11: the marked copy was deleted): the first copy of the active file is active.
-      const unmarked = reduceTabs(empty, { type: 'reset', tabs: strip.slice(0, 2), active: '/v/a.md' })
-      expect(unmarked.active).toBe(unmarked.tabs[0].id)
-      // A mark on another file's tab is not the active file's.
-      const elsewhere = reduceTabs(empty, { type: 'reset', tabs: [{ path: '/v/a.md' }, { path: '/v/b.md', active: true }], active: '/v/a.md' })
-      expect(elsewhere.active).toBe(elsewhere.tabs[0].id)
     })
 
     it('a null active forces the empty state; resetting an already-empty state is a no-op', () => {
       const s = state(['/v/a.md'], '/v/a.md')
-      expect(tabsReducer(s, { type: 'reset', tabs: plain('/v/a.md'), active: null })).toEqual(state([], null))
+      expect(tabsReducer(s, { type: 'reset', tabs: ['/v/a.md'], active: null })).toEqual(state([], null))
       const empty = state([], null)
       expect(tabsReducer(empty, { type: 'reset', tabs: [], active: null })).toBe(empty)
     })
 
     it('mounts ONLY the active tab (rule 15: restore shows all tabs, one editor)', () => {
-      const next = tabsReducer(state([], null), { type: 'reset', tabs: plain('/v/a.md', '/v/b.md'), active: '/v/b.md' })
+      const next = tabsReducer(state([], null), { type: 'reset', tabs: ['/v/a.md', '/v/b.md'], active: '/v/b.md' })
       expect(next.mounted).toEqual(['/v/b.md'])
     })
   })
@@ -481,13 +460,10 @@ describe('bootTabs (rules 12/15)', () => {
     expect(byPath(bootTabs('/v'))).toEqual(state(['/v/pasted.md', '/v/a.md'], '/v/pasted.md'))
   })
 
-  it('the stored strip comes back: copies, display names and the active copy (YAZ-3057 S1 to S4, S12)', async () => {
-    const tabStrip = [{ path: '/v/a.md', name: 'Outline' }, { path: '/v/b.md' }, { path: '/v/a.md', active: true as const }]
-    installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], tabStrip, sidebarCollapsed: false })
+  it('a tab moved here from another window wears the display name main handed over (YAZ-2949 D7, S19)', async () => {
+    installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false, tabNames: { '/v/a.md': 'Outline' } })
     await storage.init()
-    const s = bootTabs('/v')
-    expect(s.tabs.map((t) => [t.path, t.name])).toEqual([['/v/a.md', 'Outline'], ['/v/b.md', undefined], ['/v/a.md', undefined]])
-    expect(s.active).toBe(s.tabs[2].id)
+    expect(bootTabs('/v').tabs.map((t) => t.name)).toEqual(['Outline'])
   })
 
   it('a fresh window falls back to the folder lastFile; a null root (Welcome) is empty', async () => {
@@ -548,17 +524,17 @@ describe('useWorkspace legacy main-tab mirror', () => {
   it('every mutating action sends ONE setIdentity carrying BOTH tabs and file, plus the folder lastFile', () => {
     act(() => latest.openCurrent('/v/a.md'))
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md'], '/v/a.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
     expect(bridge.state.setFolder).toHaveBeenLastCalledWith('/v', { lastFile: '/v/a.md' })
 
     act(() => latest.openBackground('/v/b.md'))
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/b.md'], '/v/a.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
 
     act(() => latest.next())
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/b.md'], '/v/b.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
 
     act(() => latest.close(idOf('/v/a.md')))
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/b.md'], '/v/b.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(4)
   })
 
@@ -579,7 +555,11 @@ describe('useWorkspace legacy main-tab mirror', () => {
     bridge.window.setIdentity.mockClear()
     act(() => latest.openRight('/v/a.md'))
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote([], null, { open: true, width: 440, items: ['/v/a.md'], expanded: '/v/a.md' }))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: [],
+      file: null,
+      rightPanel: { open: true, width: 440, items: ['/v/a.md'], expanded: '/v/a.md' },
+    })
   })
 
   it('captures and retires the source editor before mirroring a pane transfer', () => {
@@ -601,7 +581,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     const writes = bridge.window.setIdentity.mock.calls.length
     act(() => latest.move(0, 1))
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/b.md', '/v/a.md'], '/v/a.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/a.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
     act(() => latest.move(1, 1))
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
   })
@@ -618,7 +598,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     })
     expect(closed).toBe(true)
     expect(read().tabs).toEqual([])
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote([], null))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null, rightPanel: defaultRightPanelIdentity() })
   })
 
   it('closeMany is ONE identity write for N tabs (YAZ-2657 A10)', () => {
@@ -627,7 +607,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     act(() => latest.closeMany(['/v/a.md', '/v/b.md', '/v/c.md'].map(idOf)))
     expect(read().tabs).toEqual(['/v/d.md'])
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/d.md'], '/v/d.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/d.md'], file: '/v/d.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('keep writes nothing — the preview mark is session-only (YAZ-2648 D4) — and openKept is a double click: the previewed page stays, a page not open yet opens kept', () => {
@@ -683,7 +663,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     expect(latest.blank).toBe(false)
     expect(read().preview).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a2.md', '/v/b.md'], '/v/b.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a2.md', '/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('canBack / canForward read the ACTIVE tab\'s place in its own stack (YAZ-721 D1)', () => {
@@ -705,7 +685,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     const writes = bridge.window.setIdentity.mock.calls.length
     act(() => latest.back())
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md'], '/v/a.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('back at the start of the stack (and forward at its end) mirror nothing', () => {
@@ -721,7 +701,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     act(() => latest.reset('/w', '/w/b.md'))
     expect(read().tabs).toEqual(['/w/b.md'])
     expect(bridge.state.setFolder).toHaveBeenLastCalledWith('/w', { lastFile: '/w/b.md' })
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/w/b.md'], '/w/b.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/w/b.md'], file: '/w/b.md', rightPanel: defaultRightPanelIdentity() })
     const writes = bridge.window.setIdentity.mock.calls.length
     act(() => latest.reset(null, null)) // rides on setRoot's own {root, file: null, tabs: []} write
     expect(read().tabs).toEqual([])
@@ -877,7 +857,7 @@ describe('workspaceReducer right-panel ownership', () => {
       rightMounted: ['/v/c.md'],
       rightHistory: { '/v/c.md': { entries: ['/v/d.md', '/v/c.md'], index: 1 } },
     })
-    const next = workspaceReducer(start, { type: 'reset', tabs: plain('/w/a.md'), active: '/w/a.md' })
+    const next = workspaceReducer(start, { type: 'reset', tabs: ['/w/a.md'], active: '/w/a.md' })
     expect(next).toMatchObject({
       tabs: ['/w/a.md'],
       active: '/w/a.md',
@@ -1049,10 +1029,10 @@ describe('copies: two tabs of one file (YAZ-2940)', () => {
     expect(reduceTabs(copies({ active: 't1' }), { type: 'delete', path: A })).toMatchObject({ active: 't2', tabs: [{ id: 't2', path: B }] })
   })
 
-  it('S13: closing every tab closes the copies too; a reset gives new ids and keeps each stored copy (YAZ-3057)', () => {
+  it('S13: closing every tab closes the copies too; a reset gives new ids and names each stored file once', () => {
     expect(reduceTabs(copies(), { type: 'close-many', ids: ['t1', 't2', 't3'] })).toMatchObject({ tabs: [], active: null, mounted: [] })
-    const reset = reduceTabs(copies(), { type: 'reset', tabs: plain(A, B, A), active: A })
-    expect(paths(reset)).toEqual([A, B, A])
+    const reset = reduceTabs(copies(), { type: 'reset', tabs: [A, B, A], active: A })
+    expect(paths(reset)).toEqual([A, B])
     expect(ids(reset).some((id) => ['t1', 't2', 't3'].includes(id))).toBe(false)
     expect(activePath(reset)).toBe(A)
   })
@@ -1121,7 +1101,7 @@ describe('duplicate (YAZ-2940 D6): "Duplicate tab" makes a copy', () => {
   })
 })
 
-describe('copies in the hook (YAZ-2940): the mirror stores every copy in the strip (YAZ-3057), and the switch save (D4, S22, S25)', () => {
+describe('copies in the hook (YAZ-2940): the mirror stores each file once, and the switch save (D2, D4, S22, S25)', () => {
   let reactRoot: Root | null = null
   let latest: UseWorkspace
   let bridge: ReturnType<typeof installBridge>
@@ -1149,18 +1129,17 @@ describe('copies in the hook (YAZ-2940): the mirror stores every copy in the str
     reactRoot = null
   })
 
-  it('YAZ-3057 D1: each duplicate is ONE write — the file once in `tabs`, every copy in the strip, the copy marked active; the hook gives the copy\'s id', () => {
+  it('a copy of the active tab writes nothing (the stored list and file stay); a copy of another tab writes its file as the active one; the hook gives the copy\'s id', () => {
     bridge.window.setIdentity.mockClear()
     let copy: string | null = null
     act(() => void (copy = latest.duplicate(latest.tabs[1].id)))
     expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md', '/v/b.md'])
     expect(copy).toBe(latest.tabs[2].id)
     expect(latest.active).toBe(copy)
-    expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith({ tabs: ['/v/a.md', '/v/b.md'], tabStrip: [{ path: '/v/a.md' }, { path: '/v/b.md' }, { path: '/v/b.md', active: true }], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
     act(() => void latest.duplicate(latest.tabs[0].id))
     expect(latest.file).toBe('/v/a.md')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], tabStrip: [{ path: '/v/a.md' }, { path: '/v/a.md', active: true }, { path: '/v/b.md' }, { path: '/v/b.md' }], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
-    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(2)
+    expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
     expect(latest.duplicate('nope')).toBeNull()
   })
 
@@ -1183,18 +1162,17 @@ describe('copies in the hook (YAZ-2940): the mirror stores every copy in the str
     offB()
   })
 
-  it('S25: two tabs of one file (an outside rename onto an open file) write that file once in `tabs`, at its first tab, and both in the strip (YAZ-3057)', () => {
-    const both = { tabs: ['/v/a.md', '/v/b.md'], tabStrip: [{ path: '/v/a.md' }, { path: '/v/b.md' }, { path: '/v/a.md', active: true }], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() }
+  it('D2, S25: two tabs of one file (an outside rename onto an open file) write that file once, at its first tab — and an active copy writes its file', () => {
     act(() => latest.openKept('/v/c.md'))
     act(() => latest.renamePath('/v/c.md', '/v/a.md'))
     expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md', '/v/a.md'])
     expect(latest.file).toBe('/v/a.md')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(both)
-    // Go to B, then to the copy at the end: the stored file is the copy's file, and the strip marks that copy.
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
+    // Go to B, then to the copy at the end: the stored file is the copy's file, and the list still names it once.
     act(() => latest.activate(latest.tabs[1].id))
     act(() => latest.activate(latest.tabs[2].id))
     expect(latest.active).toBe(latest.tabs[2].id)
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(both)
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
     // ⌘W on the copy closes it alone; the first tab of the file stays.
     act(() => latest.closeActive())
     expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md'])
@@ -1202,7 +1180,7 @@ describe('copies in the hook (YAZ-2940): the mirror stores every copy in the str
 })
 
 
-describe('display name (YAZ-2949 D2): a name on one tab', () => {
+describe('display name (YAZ-2949 D1, D2): a name on one tab, for the session', () => {
   const A = '/v/a.md'
   const B = '/v/b.md'
   /** t1 (A, active, preview) · t2 (B). */
@@ -1261,7 +1239,7 @@ describe('display name (YAZ-2949 D2): a name on one tab', () => {
   })
 })
 
-describe('display name in the hook (YAZ-3057 D1): stored with the window', () => {
+describe('display name in the hook (YAZ-2949 D1): never stored', () => {
   let reactRoot: Root | null = null
   let latest: UseWorkspace
   let bridge: ReturnType<typeof installBridge>
@@ -1284,14 +1262,12 @@ describe('display name in the hook (YAZ-3057 D1): stored with the window', () =>
     reactRoot = null
   })
 
-  it('setName shows on the tab and is ONE write of the strip with the name; "Reset to page name" is one more', () => {
+  it('setName shows on the tab and writes nothing; a reset writes nothing either', () => {
     bridge.window.setIdentity.mockClear()
     act(() => latest.setName(latest.tabs[0].id, 'Outline'))
     expect(latest.tabs[0].name).toBe('Outline')
-    expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith({ tabs: ['/v/a.md'], tabStrip: [{ path: '/v/a.md', name: 'Outline', active: true }], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
     act(() => latest.setName(latest.tabs[0].id, null))
     expect(latest.tabs[0].name).toBeUndefined()
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md'], '/v/a.md'))
-    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(2)
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
   })
 })

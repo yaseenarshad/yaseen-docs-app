@@ -390,12 +390,6 @@ async function mount(
 }
 
 const recent = (path: string, lastOpened = 1) => ({ path, lastOpened })
-/**
- * The identity write of a window with no copies and no display names (YAZ-3057): each path once, the strip
- * with the same paths and the active one marked, and the right panel.
- */
-const wrote = (tabs: string[], file: string | null, rightPanel = defaultRightPanelIdentity()) =>
-  ({ tabs, tabStrip: tabs.map((path) => (path === file ? { path, active: true } : { path })), file, rightPanel })
 const withFolder = (state: AppState, folderRoot: string, lastFile: string | null): AppState => ({
   ...state,
   folders: { ...state.folders, [folderRoot]: { ...defaultFolderState(), lastFile } },
@@ -693,7 +687,7 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
     // then ONE {tabs, file} write restores the folder's remembered file.
     expect(bridge.window.setIdentity.mock.calls).toEqual([
       [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' }],
-      [wrote(['/w/b.md'], '/w/b.md')],
+      [{ tabs: ['/w/b.md'], file: '/w/b.md', rightPanel: defaultRightPanelIdentity() }],
     ])
     expect(captured.sidebar?.lens).toBe('files') // the Welcome window's stored lens was Favorites; the vault lands on Files (YAZ-1846 D2)
   })
@@ -809,7 +803,7 @@ describe('App deep links (E1, GRO-2171)', () => {
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/v/sub/linked.md')
     expect(location.hash).toBe('#/v/sub/linked.md')
     expect(bridge.state.setFolder).toHaveBeenCalledWith('/v', { lastFile: '/v/sub/linked.md' })
-    expect(bridge.window.setIdentity).toHaveBeenCalledWith(wrote(['/v/sub/linked.md'], '/v/sub/linked.md'))
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/sub/linked.md'], file: '/v/sub/linked.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('link:notice shows the transient banner, which dismisses itself after LINK_NOTICE_MS', async () => {
@@ -837,7 +831,7 @@ describe('App rename push (Links E1, GRO-2194)', () => {
     expect(location.hash).toBe('#/v/C.md')
     expect(document.title).toBe('v — C')
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
-    expect(bridge.window.setIdentity).toHaveBeenCalledWith(wrote(['/v/C.md', '/v/x.md'], '/v/C.md'))
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/C.md', '/v/x.md'], file: '/v/C.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('a rename of a file this window does not show changes nothing (no identity write)', async () => {
@@ -864,7 +858,11 @@ describe('App rename push (Links E1, GRO-2194)', () => {
 
     await act(async () => emitFileRenamed('/v/Docs', '/v/Notes', 'dir'))
     expect(el.querySelector('.right-panel__header')?.getAttribute('title')).toBe('/v/Notes/b.md')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/main.md'], '/v/main.md', { open: true, width: 440, items: ['/v/Notes/b.md'], expanded: '/v/Notes/b.md' }))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/main.md'],
+      file: '/v/main.md',
+      rightPanel: { open: true, width: 440, items: ['/v/Notes/b.md'], expanded: '/v/Notes/b.md' },
+    })
     carry.mockRestore()
   })
 })
@@ -1222,7 +1220,7 @@ describe('App Duplicate tab (YAZ-2940 D5–D7)', () => {
   const stripLabels = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
   const activeTab = (el: HTMLElement) => el.querySelector<HTMLElement>('.tabbar__tab:has([aria-selected="true"])')?.dataset.tab
 
-  it('S1, D7, YAZ-2951 D1: from the strip, the copy opens right after its source and shows, and its editor starts with the source\'s page view; the copy is stored (YAZ-3057 D1)', async () => {
+  it('S1, D7, YAZ-2951 D1: from the strip, the copy opens right after its source and shows, and its editor starts with the source\'s page view; nothing is stored', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     const source = el.querySelector<HTMLElement>('.tabbar__tab')!.dataset.tab!
     // The source's scroller, as the real editor draws it inside its layer, answering for its page view.
@@ -1241,7 +1239,7 @@ describe('App Duplicate tab (YAZ-2940 D5–D7)', () => {
     expect(el.querySelector(`.tabstack__layer[data-tab="${copy}"]`)?.classList.contains('tabstack__layer--hidden')).toBe(false)
     expect(el.querySelector(`.tabstack__layer[data-tab="${source}"]`)?.classList.contains('tabstack__layer--hidden')).toBe(true)
     expect(captured.editors.find((e) => e.startView !== undefined)).toMatchObject({ path: '/v/a.md', startView: view })
-    expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith({ tabs: ['/v/a.md', '/v/b.md'], tabStrip: [{ path: '/v/a.md' }, { path: '/v/a.md', active: true }, { path: '/v/b.md' }], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
     off()
   })
 
@@ -1565,7 +1563,7 @@ describe('App tabs (I2, GRO-2234)', () => {
       ['/v/data.json', true],
       ['/v/report.PDF', false],
     ])
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/data.json', '/v/report.PDF'], '/v/report.PDF'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/data.json', '/v/report.PDF'], file: '/v/report.PDF', rightPanel: defaultRightPanelIdentity() })
     expect(document.title).toBe('v — report.PDF')
   })
 
@@ -1591,7 +1589,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(stripLabels(el)).toEqual(['a', 'b'])
     expect(activeLabel(el)).toBe('a') // activation (and so focus) never moves
     expect(layers(el)).toEqual([['/v/a.md', false]]) // b's editor lazy-mounts on first activation
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/b.md'], '/v/a.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('dragging a tab reorders the strip through the reducer and mirrors ONE {tabs, file} write (I3)', async () => {
@@ -1602,7 +1600,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => void tabB.dispatchEvent(new MouseEvent('drop', { bubbles: true, cancelable: true, clientX: 5 })))
     expect(stripLabels(el)).toEqual(['b', 'a'])
     expect(activeLabel(el)).toBe('a') // reorder never activates
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/b.md', '/v/a.md'], '/v/a.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/a.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('a sidebar click opens in the PREVIEW tab (YAZ-2648 D1): a new tab at the end, no kept tab replaced; the next click reuses it; a double click or the first edit keeps it (D2)', async () => {
@@ -1617,7 +1615,7 @@ describe('App tabs (I2, GRO-2234)', () => {
       ['/v/b.md', false],
     ])
     // ONE explicit identity write carries BOTH halves — never the legacy {file}-only patch.
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/x.md', '/v/b.md'], '/v/b.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/x.md', '/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
     expect(bridge.state.setFolder).toHaveBeenLastCalledWith('/v', { lastFile: '/v/b.md' })
 
     // The next click takes the preview tab's slot: b's editor is GONE (→ autosave flush on unmount).
@@ -1676,7 +1674,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(el.querySelector('.tabbar__tab--preview')).toBeNull()
     expect(el.querySelector('.tabstack > [data-start-page]')).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/b.md', '/v/c.md'], '/v/c.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], file: '/v/c.md', rightPanel: defaultRightPanelIdentity() })
     expect(document.title).toBe('v — c')
   })
 
@@ -1707,7 +1705,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => captured.sidebar?.onOpenFileBackground('/v/c.md'))
     expect(stripLabels(el)).toEqual(['a', 'b', 'c', 'New tab'])
     expect(activeLabel(el)).toBe('New tab')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/b.md', '/v/c.md'], '/v/b.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
     // S80: the board opens without it, and it is no page of the board.
     act(() => emitTabOverview())
     expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
@@ -2184,7 +2182,7 @@ describe('App tabs (I2, GRO-2234)', () => {
       ['/v/a.md', true],
       ['/v/b.md', false],
     ])
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/b.md'], '/v/b.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
     // Title and hash follow the ACTIVE tab (rule 12).
     expect(document.title).toBe('v — b')
     expect(location.hash).toBe('#/v/b.md')
@@ -2221,7 +2219,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => emitCloseTab())
     expect(stripLabels(el)).toEqual([])
     expect(el.querySelector('[data-start-page]')).not.toBeNull() // the new tab page shows
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote([], null))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null, rightPanel: defaultRightPanelIdentity() })
     expect(bridge.window.closeSelf).not.toHaveBeenCalled() // the window stays alive
     act(() => emitCloseTab())
     expect(bridge.window.closeSelf).toHaveBeenCalledTimes(1) // zero tabs: the WINDOW closes
@@ -2334,7 +2332,11 @@ describe('App right-panel shell (YAZ-1272)', () => {
     expect(show).not.toBeNull()
     act(() => show?.click())
     expect(el.querySelector('[aria-label="Right panel"]')).not.toBeNull()
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md'], '/v/a.md', { ...defaultRightPanelIdentity(), open: true }))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/a.md'],
+      file: '/v/a.md',
+      rightPanel: { ...defaultRightPanelIdentity(), open: true },
+    })
   })
 
   it('hosts the existing Editor in retained right layers with right-local plain and background navigation', async () => {
@@ -2415,13 +2417,21 @@ describe('App right-panel shell (YAZ-1272)', () => {
     act(() => void tabA?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     const moveToRight = [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Move to right panel')
     act(() => moveToRight?.click())
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/b.md'], '/v/b.md', { open: true, width: 440, items: ['/v/c.md', '/v/a.md'], expanded: '/v/a.md' }))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/b.md'],
+      file: '/v/b.md',
+      rightPanel: { open: true, width: 440, items: ['/v/c.md', '/v/a.md'], expanded: '/v/a.md' },
+    })
 
     const rightC = [...el.querySelectorAll<HTMLElement>('.right-panel__header')].find((item) => item.textContent?.includes('c'))
     act(() => void rightC?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     const moveToMain = [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Move to main tabs')
     act(() => moveToMain?.click())
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/b.md', '/v/c.md'], '/v/c.md', { open: true, width: 440, items: ['/v/a.md'], expanded: '/v/a.md' }))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/b.md', '/v/c.md'],
+      file: '/v/c.md',
+      rightPanel: { open: true, width: 440, items: ['/v/a.md'], expanded: '/v/a.md' },
+    })
   })
 })
 
@@ -4168,7 +4178,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(callsFor(bridge.index, '/w2')).toBeGreaterThan(0)
     expect(callsFor(bridge.watch, '/w2')).toBeGreaterThan(0)
     // Main's store moved the entry already: the mirror of the tabs is the only write.
-    expect((bridge.window.setIdentity.mock.calls as unknown[][]).map(([patch]) => Object.keys(patch as object).sort())).toEqual([['file', 'rightPanel', 'tabStrip', 'tabs']])
+    expect((bridge.window.setIdentity.mock.calls as unknown[][]).map(([patch]) => Object.keys(patch as object).sort())).toEqual([['file', 'rightPanel', 'tabs']])
     expect({ index: callsFor(bridge.index, '/v'), watch: callsFor(bridge.watch, '/v'), renders: renders('/v/a.md') }).toEqual({ index: before.index, watch: before.watch, renders: before.renders })
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
   })
@@ -4207,7 +4217,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect([...el.querySelectorAll('[data-editor]')].map((e) => [e.getAttribute('data-root'), e.getAttribute('data-path')])).toEqual([['/z', '/z/last.md']])
     expect(bridge.window.setIdentity.mock.calls).toEqual([
       [{ root: '/z', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' }],
-      [wrote(['/z/last.md'], '/z/last.md')],
+      [{ tabs: ['/z/last.md'], file: '/z/last.md', rightPanel: defaultRightPanelIdentity() }],
     ])
     // A vault that leaves the window unloads its scope: each of its watcher subscriptions ended.
     for (const vault of ['/v', '/w']) expect(offs[vault].map((off) => off.mock.calls.length)).toEqual(offs[vault].map(() => 1))
@@ -4387,7 +4397,7 @@ describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
     expect(activeLabel(el)).toBe('a')
     expect([...el.querySelectorAll('.right-panel__header')].map((h) => h.textContent)).toEqual(['r'])
     expect([...el.querySelectorAll('[data-editor]')].map((e) => e.getAttribute('data-path'))).toEqual(['/v/a.md'])
-    expect(bridge.window.setIdentity).toHaveBeenCalledWith(wrote(['/v/a.md'], '/v/a.md', { open: true, width: 440, items: ['/v/r.md'], expanded: '/v/r.md' }))
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/a.md'], file: '/v/a.md', rightPanel: { open: true, width: 440, items: ['/v/r.md'], expanded: '/v/r.md' } })
     // Each editor of /w went by its unmount, which saves its buffer: none was retired, as a deleted file's is.
     for (const spy of retired) expect(spy).not.toHaveBeenCalled()
     expect(bridge.file.delete).not.toHaveBeenCalled()
