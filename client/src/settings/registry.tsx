@@ -28,6 +28,7 @@ import type { GithubSyncStatus, IdsState, IndexResponse, SettingsState } from '@
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { Segmented } from './controls'
+import { HeadingStylesControl } from './HeadingStylesControl'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
@@ -266,6 +267,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             render: ({ settings, onChange }) => (
               <Segmented options={BLOCK_GAP_PRESETS} value={settings.blockGap} onChange={(blockGap) => onChange({ ...settings, blockGap })} ariaLabel="Space between blocks" />
             ),
+          },
+        ],
+      },
+      {
+        // Heading styles (YAZ-3050 D6): one wide row, all six levels in view. App puts the map on `.app` as `--hN-*` variables (YAZ-3049 D2).
+        title: 'Headings',
+        hint: 'How each heading level looks in every note.',
+        items: [
+          {
+            id: 'headingStyles',
+            label: 'Heading styles',
+            keywords: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'size', 'underline', 'highlight', 'bold', 'font'],
+            wide: true,
+            render: ({ settings, onChange }) => <HeadingStylesControl settings={settings} onChange={onChange} />,
           },
         ],
       },

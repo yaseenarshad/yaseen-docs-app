@@ -30,6 +30,7 @@ describe('settingCandidates', () => {
       'contentWidth',
       'lineSpacing',
       'blockGap',
+      'headingStyles',
       'commentsOrder',
       'bulletThreading',
       'threadWidth',
@@ -143,7 +144,8 @@ describe('searchSettings', () => {
   it('a hotkey label finds its Hotkeys table: "close tab" → Window', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'close tab'))).toEqual(['hotkeys-window'])
     expect(ids(searchSettings(settingCandidates(ctx()), '⌘W'))).toEqual(['hotkeys-window'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkeys-keyboard'])
+    // "underline" is also a word of Appearance › Headings (YAZ-3050), which comes first in registry order.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['headingStyles', 'hotkeys-keyboard'])
   })
 
   it('"review", "upkeep" and "inbox" each find every row of the Review section (YAZ-2322)', () => {
