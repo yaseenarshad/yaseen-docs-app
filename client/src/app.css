@@ -2039,6 +2039,19 @@ button {
   color: var(--danger);
 }
 
+/* YAZ-3040: a shared board's link mark, green; red when its last update failed or the link is stale. */
+.tree__share {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--ok);
+}
+
+.tree__share[data-tone='error'] {
+  color: var(--danger);
+}
+
 .btn {
   padding: 6px 14px;
   border-radius: 6px;

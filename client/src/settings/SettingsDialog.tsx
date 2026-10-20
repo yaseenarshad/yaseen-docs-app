@@ -34,9 +34,11 @@ import './settings.css'
 interface SettingsDialogProps {
   ctx: SettingsCtx
   onClose: () => void
+  /** Open straight onto a page (the Share dialog's "Open Settings › Sharing", YAZ-3040); absent = the first. */
+  initialPage?: SettingsSectionId
 }
 
-export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ ctx, onClose, initialPage }: SettingsDialogProps) {
   const sections = availableSections(ctx)
   const settingsPages = sections.filter((s) => s.standalone !== true)
   const referencePages = sections.filter((s) => s.standalone === true)
@@ -45,7 +47,7 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
 
   const [query, setQuery] = useState('')
   /** The section asked for. Search leaves it alone, so clearing a query returns to it. */
-  const [page, setPage] = useState<SettingsSectionId>(sections[0].id)
+  const [page, setPage] = useState<SettingsSectionId>(initialPage ?? sections[0].id)
   /** The section showing: a section this context stops showing while its page is open (Sync, Review) gives way to the first, in the pane and in the nav alike. */
   const shown = sections.find((s) => s.id === page) ?? sections[0]
 

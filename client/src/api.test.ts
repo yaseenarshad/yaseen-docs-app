@@ -39,6 +39,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     github: vi.fn(),
     update: vi.fn(),
     storage: vi.fn(),
+    share: vi.fn(),
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge

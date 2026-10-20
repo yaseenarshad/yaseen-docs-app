@@ -16,8 +16,8 @@
  * "Changes since this version" draws the board as it is NOW with what differs from the chosen
  * version marked (`compare.ts`): pick "your version before the merge" and the marks are what the
  * merge brought in. "As it was" draws the chosen version itself. Restore writes it over the board
- * as an ordinary edit (main); an open editor reloads through its watcher rule, and the version it
- * replaced stays in history.
+ * as an ordinary edit (main); an open editor reloads through its watcher rule, a shared board's
+ * link re-uploads (`noteBoardSaved`, YAZ-3040), and the version it replaced stays in history.
  *
  * 🔒 YAZ-1802 D10: a draw.io diagram's versions are pictures too, drawn by the D9 renderer in the
  * app's theme and dark-mode colours, and Restore works the same (main writes through
@@ -35,6 +35,7 @@ import { relativeTime } from '../lib/relativeTime'
 import { createScenePreviewPng, visibleElements, type PreviewBounds } from '../lib/scenePreview'
 import { cycleTab, useModalKeys } from '../lib/modalKeys'
 import { useAppliedTheme } from '../lib/theme'
+import { noteBoardSaved } from '../share/liveShare'
 import { changesScene, compareBoards, hasChanges, MARK, type BoardChanges } from './compare'
 import './history.css'
 
@@ -192,6 +193,7 @@ export function VersionHistory({ root, path, fromMerge = false, darkColors, onCl
     setProblem(null)
     try {
       await api.github.restore(root, path, version.ref)
+      noteBoardSaved(root, path)
       onNotice(`Restored “${name}” to the version from ${relativeTime(version.at, Date.now())}.`)
       onClose()
     } catch (err) {

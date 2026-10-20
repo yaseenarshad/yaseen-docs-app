@@ -177,8 +177,8 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
  * surface an empty or torn note, state file or image under it. A string lands as UTF-8; bytes (an
  * image through `writeAsset`, YAZ-1661) land verbatim — `writeFile` ignores the encoding for a view.
  */
-export async function writeDurable(file: string, content: string | Uint8Array, flag: 'w' | 'wx'): Promise<void> {
-  const fh = await open(file, flag)
+export async function writeDurable(file: string, content: string | Uint8Array, flag: 'w' | 'wx', mode?: number): Promise<void> {
+  const fh = await open(file, flag, mode)
   try {
     await fh.writeFile(content, 'utf8')
     await fh.sync()
@@ -192,11 +192,15 @@ export function tmpSibling(file: string): string {
   return `${file}.tmp-${randomBytes(ATOMIC_TMP_HEX_LEN / 2).toString('hex')}`
 }
 
-/** Writes `content` durably to a tmp sibling then renames it over `file`. Parent dir must exist. */
-export async function atomicWrite(file: string, content: string | Uint8Array): Promise<{ mtime: number; size: number }> {
+/**
+ * Writes `content` durably to a tmp sibling then renames it over `file`. Parent dir must exist.
+ * `mode` is the tmp file's mode from its creation (the secrets file's 0600, YAZ-3040), so the bytes
+ * are never briefly readable by anyone else.
+ */
+export async function atomicWrite(file: string, content: string | Uint8Array, mode?: number): Promise<{ mtime: number; size: number }> {
   const tmp = tmpSibling(file)
   try {
-    await writeDurable(tmp, content, 'w')
+    await writeDurable(tmp, content, 'w', mode)
     await rename(tmp, file)
   } catch (err) {
     await unlink(tmp).catch(() => undefined)

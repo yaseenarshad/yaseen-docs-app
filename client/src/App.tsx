@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { isViewOnly } from '@shared/fileKind'
+import { isBoard, isViewOnly } from '@shared/fileKind'
 import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPrefs, type CommentsOrder, type PageView, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -28,6 +28,8 @@ import { readPageView } from './lib/pageView'
 import { ownsSidebarHotkey } from './lib/sidebarHotkey'
 import { buildSetupPrompt } from './lib/syncAttention'
 import { mergeNotice } from './history/mergeNotice'
+import { noteBoardRenamed, noteBoardSaved } from './share/liveShare'
+import { useSharing } from './share/useSharing'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { windowTitle } from './lib/windowTitle'
@@ -56,6 +58,8 @@ import { Welcome } from './Welcome'
 
 /** The "What's new" sheet (YAZ-2976 D5) is its own chunk: launch never parses it, and the first open fetches it. */
 const WhatsNewSheet = lazy(() => import('./update/WhatsNewSheet'))
+/** The Share dialog (YAZ-3040): lazy too. Settings › Sharing is the registry's, eager with the dialog. */
+const ShareDialog = lazy(() => import('./share/ShareDialog').then((m) => ({ default: m.ShareDialog })))
 /** Version history (YAZ-1897 D4, YAZ-3039): lazy, so a window that never opens it loads none of it. */
 const VersionHistory = lazy(() => import('./history/VersionHistory').then((m) => ({ default: m.VersionHistory })))
 
@@ -577,7 +581,16 @@ export function App() {
   // open the ONE dialog — and it can open with the sidebar collapsed. `open`/`close` are stable
   // because `useMenuEvents` resubscribes whenever a callback identity changes.
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const openSettings = useCallback(() => setSettingsOpen(true), [])
+  // Which page the dialog opens on: the first, or Sharing from the Share dialog's "Open Settings › Sharing" (YAZ-3040).
+  const [settingsPage, setSettingsPage] = useState<'sharing' | undefined>(undefined)
+  const openSettings = useCallback(() => {
+    setSettingsPage(undefined)
+    setSettingsOpen(true)
+  }, [])
+  const openSharingSettings = useCallback(() => {
+    setSettingsPage('sharing')
+    setSettingsOpen(true)
+  }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
   // The updater (YAZ-2976): the sidebar's pill (D4) and Help › What's New… (D8) open the ONE
@@ -702,6 +715,26 @@ export function App() {
   // Settings is open — on its page's open, a sync pass finishing, and a shrink. A closed dialog hands the hook no sync state.
   const vaultStorage = useVaultStorage(active.root, settingsOpen ? (active.sync.status?.state ?? null) : null)
 
+  // Settings › Sharing (YAZ-3040, Draw's YAZ-1799 D7): main's share status and the active tab's
+  // vault's shared boards, read only while Settings is open.
+  const sharing = useSharing(active.root, settingsOpen)
+  // The ONE Share dialog (YAZ-3040, Draw's YAZ-1799 D6): a board row's "Share", and File › Share Link.
+  const [share, setShare] = useState<{ root: string; path: string } | null>(null)
+  const openShare = useCallback((path: string) => {
+    const root = rootOfPath(live.current.roots, path)
+    if (root !== null && isBoard(path)) setShare({ root, path })
+  }, [])
+  const closeShare = useCallback(() => setShare(null), [])
+  const activeFile = useRef(file)
+  activeFile.current = file
+  /**
+   * File › Share Link ⌘⇧L (YAZ-3040): the Share dialog on the ACTIVE tab's board; nothing on a note
+   * or with no tab. THE seam for the menu item YAZ-3037 adds: wire its push to this callback.
+   */
+  const shareActiveBoard = useCallback(() => {
+    if (activeFile.current !== null) openShare(activeFile.current)
+  }, [openShare])
+
   // Version history (YAZ-1897 D4, YAZ-3039): a board row's right-click, or "See changes" on a merge
   // notice (`fromMerge`). The board's own vault answers for it.
   const [history, setHistory] = useState<{ root: string; path: string; fromMerge: boolean } | null>(null)
@@ -721,6 +754,8 @@ export function App() {
       const { text, firstBoard } = mergeNotice(merged)
       const board = firstBoard === null ? null : absFrom(vault.root, firstBoard)
       setNotice(board === null ? { text, icon: 'info' } : { text, icon: 'info', action: { label: 'See changes', run: () => openHistory(board, true) } })
+      // A shared drawing the merge rewrote re-uploads its link, as a local save would (YAZ-3040).
+      for (const m of merged) if (m.copy === undefined) noteBoardSaved(vault.root, absFrom(vault.root, m.path))
     }
   })
   const leftOverview = useCallback(() => setOverview((at) => (at.phase === 'leaving' ? OVERVIEW_CLOSED : at)), [])
@@ -941,6 +976,8 @@ export function App() {
     () =>
       api.file.onRenamed(({ oldPath, newPath, kind }) => {
         const now = live.current
+        // A shared board's pending live-link upload follows it (YAZ-3040); by prefix, so a folder too.
+        noteBoardRenamed(oldPath, newPath)
         // E1c: an in-app rename's watcher echo (unlink+add with preserved stats) must never
         // be re-offered as an "external rename" hypothesis, by any vault's detector.
         for (const vault of now.vaults) vault.renames.suppress(oldPath, newPath, kind)
@@ -1353,6 +1390,11 @@ export function App() {
           )}
         </div>
       )}
+      {share !== null && (
+        <Suspense fallback={null}>
+          <ShareDialog key={share.path} root={share.root} path={share.path} onClose={closeShare} onOpenSettings={openSharingSettings} />
+        </Suspense>
+      )}
       {history !== null && (
         <Suspense fallback={null}>
           <VersionHistory key={history.path} root={history.root} path={history.path} fromMerge={history.fromMerge} darkColors={settings.diagramDarkColors} onClose={closeHistory} onNotice={notify} />
@@ -1361,7 +1403,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage }} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing }} initialPage={settingsPage} onClose={closeSettings} />}
       {whatsNewOpen && (
         <Suspense fallback={null}>
           <WhatsNewSheet update={update} onClose={closeWhatsNew} />
@@ -1463,6 +1505,7 @@ export function App() {
           width={sidebarWidth}
           asideRef={sidebarRef}
           onHistoryFile={openHistory}
+          onShareFile={openShare}
           // The menu names the folder by its absolute path; a session takes it relative to the vault that holds it.
           onReviewFolder={(dir) => startReview(scopeOf(dir), relLabel(dir))}
           reviewState={reviewState}

@@ -8,6 +8,7 @@ import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { APP_SCHEME } from './appScheme'
 import { resolveDrawioDir, serveDrawio } from './drawio/assets'
+import { excalidrawFontsDir, viewerAssetsDir } from './ipc/share'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { initBoardThumbs } from './ipc/board'
@@ -240,7 +241,14 @@ app.whenReady().then(() => {
     Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged }, handlers)))
   applyMenu()
   subscribeMenuRebuild(store, applyMenu)
-  const sync = registerIpc(store, manager)
+  const sync = registerIpc(store, manager, {
+    userData: app.getPath('userData'),
+    // YAZ-3040: the share viewer's build, draw.io's webapp and Excalidraw's fonts, which share setup uploads.
+    viewerAssetsDir: viewerAssetsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
+    drawioDir: DRAWIO_DIR,
+    fontsDir: excalidrawFontsDir({ isPackaged: app.isPackaged, mainDir: __dirname, appPath: app.getAppPath(), exists: existsSync }),
+    isPackaged: app.isPackaged,
+  })
   gitSync = sync
   registerUpdateIpc(updater, {
     openExternal: (url) => void shell.openExternal(url),

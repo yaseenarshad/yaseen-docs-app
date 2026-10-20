@@ -22,7 +22,7 @@ const put = (rel, body = '') => {
 /** A file of `size` bytes without writing them (sparse): the gate reads sizes, never contents. */
 const grow = (rel, size) => truncateSync(join(out, rel), size)
 const gate = (args = ['--out-only']) => {
-  const r = spawnSync(process.execPath, [script, ...args, '--out', out], { encoding: 'utf8' })
+  const r = spawnSync(process.execPath, [script, ...args, '--out', out, '--share', join(out, 'share')], { encoding: 'utf8' })
   return { code: r.status, text: r.stdout + r.stderr }
 }
 /** A packaged-looking `.app` under `out`: every path `measure` reads, an empty asar and an Info.plist. */
@@ -35,6 +35,7 @@ const fakeApp = () => {
   writeFileSync(join(app, 'Contents/Resources/app.asar'), Buffer.concat([header, json]))
   put('Fake.app/Contents/Resources/en.lproj/.keep')
   put('Fake.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/en.lproj/locale.pak', 'pak')
+  put('Fake.app/Contents/Resources/share-viewer/viewer.js', 'viewer')
   put('Fake.app/Contents/Info.plist', '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict></dict></plist>')
   return app
 }
@@ -53,6 +54,8 @@ beforeEach(() => {
   put('renderer/assets/KaTeX_Main-Regular-abc.woff2')
   put('renderer/excalidraw-assets/fonts/Virgil/Virgil.woff2')
   // The draw.io webapp (YAZ-3028 D5): every file the gate requires, and the two folders it wants filled.
+  // The share viewer build (YAZ-3040), here under `out/share` (`--share` points the gate at it).
+  put('share/viewer.js', 'viewer')
   for (const f of ['index.html', 'yaseen-render.html', 'js/PreConfig.js', 'js/PostConfig.js', 'js/yaseen-render.js', 'js/yaseen-render-config.js', 'yaseen-fonts/fonts.css', 'LICENSE-drawio.txt', 'js/viewer-static.min.js', 'js/stencils.min.js', 'js/app.min.js', 'img/lib/icon.svg', 'math4/es5/startup.js']) put(`drawio/${f}`)
 })
 afterEach(() => rmSync(out, { recursive: true, force: true }))
@@ -98,6 +101,13 @@ describe('perf:budget:ci', () => {
     const { code, text } = gate()
     expect(text).toContain('INTEGRITY FAIL: out: missing drawio/js/PostConfig.js')
     expect(text).toContain('INTEGRITY FAIL: out: drawio/math4/ is empty')
+    expect(code).toBe(1)
+  })
+
+  it('fails when the share viewer is not built (YAZ-3040)', () => {
+    rmSync(join(out, 'share'), { recursive: true })
+    const { code, text } = gate()
+    expect(text).toContain(`INTEGRITY FAIL: no share viewer at ${join(out, 'share')} (run npm run build)`)
     expect(code).toBe(1)
   })
 

@@ -13,3 +13,5 @@ desktop/e2e/artifacts/
 # Agent working notes and plans stay local
 thoughts/
 docs/superpowers/
+# The share viewer build (YAZ-3040, `tools/buildShareViewer.mjs`): made by `npm run build`, shipped as the `share-viewer` extraResource.
+share/dist/

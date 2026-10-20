@@ -26,6 +26,8 @@ interface SidebarStubProps {
   root: string
   /** The window's vaults in the order they were added (YAZ-2602 D1): each with its name, its watcher and its index source. */
   vaults: { root: string; name: string; watch: unknown; index: unknown; upkeep: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[] }[]
+  /** Right-click → "Share" on a board row (YAZ-3040). */
+  onShareFile?: (path: string) => void
   /** The vault rows the user closed (YAZ-2602 R9): App's, for the session. */
   closedVaults: readonly string[]
   onSetVaultOpen: (root: string, open: boolean) => void
@@ -326,6 +328,14 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       history: vi.fn(async () => []),
       version: vi.fn(),
       restore: vi.fn(async () => undefined),
+    },
+    // Settings › Sharing (YAZ-3040): not set up, nothing shared.
+    share: {
+      status: vi.fn(async () => ({ state: 'off' as const, url: null, workersDevUrl: null, customDomain: null, accountName: null, workerName: null, bucketName: null, readyAt: null, demo: false })),
+      list: vi.fn(async () => []),
+      get: vi.fn(async () => null),
+      onChanged: vi.fn(() => () => undefined),
+      onSetupProgress: vi.fn(() => () => undefined),
     },
     // Settings › Storage (YAZ-3039): a plain folder, no git.
     storage: {
@@ -4039,7 +4049,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(bridge.github.setEnabled).toHaveBeenCalledExactlyOnceWith('/w', true)
   })
 
-  it('with two or more vaults the Sync, Review, IDs and Storage settings say which vault they act on: the active tab\'s (R10, S39; Storage YAZ-3039)', async () => {
+  it('with two or more vaults the Sync, Review, IDs, Storage and shared-boards settings say which vault they act on: the active tab\'s (R10, S39; YAZ-3039, YAZ-3040)', async () => {
     const { el, emitSettings } = await mount(defaultAppState(), TWO, {}, (b) => {
       feed({ '/v': { ids: true }, '/w': { ids: false } })(b)
       upkeep({ '/v': true, '/w': true })(b)
@@ -4053,11 +4063,11 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
           return [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].map((n) => n.textContent).filter((text) => text?.startsWith('Vault: ')).map((text) => [title, text])
         })
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v']])
+    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
     act(() => button(el, 'Close settings')?.click())
     show('/w/b.md')
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w']])
+    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
   })
 
   it('two vaults that have no answer on IDs: no box for either, and nothing is written (YAZ-2677 S4)', async () => {
@@ -4138,6 +4148,15 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(writeText.mock.calls[0][0]).not.toContain('/v')
     act(() => button(el, 'Dismiss')?.click())
     expect(el.querySelector('.sync-banner')).toBeNull()
+  })
+
+  it('a board row\'s "Share" opens the ONE Share dialog on that board, in its own vault, and the dialog asks main about it (YAZ-3040)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    await act(async () => captured.sidebar?.onShareFile?.('/w/plans/Roadmap.excalidraw'))
+    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Roadmap"]')).not.toBeNull())
+    expect(bridge.share.get).toHaveBeenCalledWith({ root: '/w', path: '/w/plans/Roadmap.excalidraw' })
+    await act(async () => captured.sidebar?.onShareFile?.('/w/notes.md'))
+    expect(el.querySelectorAll('[role="dialog"][aria-label^="Share "]')).toHaveLength(1)
   })
 
   it('a file held back as too large (YAZ-3039): the banner names it, offers no Dismiss, and its sidebar row gets the cloud-off icon', async () => {

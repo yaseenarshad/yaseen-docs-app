@@ -27,6 +27,8 @@ import { scheduleInWords } from '@shared/schedule'
 import type { GithubSyncStatus, IdsState, IndexResponse, SettingsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
+import { SHARING_SECTION } from '../share/SharingPage'
+import type { SharingState } from '../share/useSharing'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
@@ -73,6 +75,8 @@ export interface SettingsCtx {
   vaultName?: string
   /** Settings › Storage (YAZ-1801, YAZ-3039): App's `useVaultStorage` for the active tab's vault; undefined with no vault open, which hides the section. */
   storage?: VaultStorageState
+  /** Settings › Sharing (YAZ-3040, Draw's YAZ-1799 D7): App's `useSharing`; undefined hides the section. Its shared-boards list is the active tab's vault. */
+  sharing?: SharingState
 }
 
 export interface SettingDef {
@@ -93,7 +97,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'storage'
+export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -547,6 +551,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   // YAZ-1801 (YAZ-3039): a per-vault report, its own page in the nav's reference list.
   STORAGE_SECTION,
+  // YAZ-3040: share links on the user's own Cloudflare — a setup flow and a write-up, its own page too.
+  SHARING_SECTION,
   {
     id: 'hotkeys',
     title: 'Hotkeys',

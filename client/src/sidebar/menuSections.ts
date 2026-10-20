@@ -122,6 +122,8 @@ export interface MenuHandlers {
   onInfo: (path: string) => void
   /** "Version history" (YAZ-1897 D4, YAZ-3039): open the board's versions — Info's gate. */
   onHistory: (path: string) => void
+  /** "Share" (YAZ-3040, Draw's YAZ-1799 D6): open the Share dialog on the board — Info's gate. */
+  onShare: (path: string) => void
 }
 
 type Item = (t: MenuSectionTargets, h: MenuHandlers) => MenuItem | null
@@ -419,6 +421,16 @@ const info: Leaf = (t, h) => {
   return { id: 'info', label: 'Info', onSelect: () => h.onInfo(path) }
 }
 
+/**
+ * "Share" (YAZ-3040, Draw's YAZ-1799 D6): Info's gate — one drawing or diagram row (Draw's 🔒 YAZ-1802
+ * D11) — at the top of the Delete group, above "Version history".
+ */
+const share: Leaf = (t, h) => {
+  const path = t.infoPath
+  if (path === null) return null
+  return { id: 'share', label: 'Share', onSelect: () => h.onShare(path) }
+}
+
 /** "Version history" (YAZ-1897 D4, YAZ-3039): Info's gate too — a draw.io diagram has pictures and Restore (Draw's 🔒 YAZ-1802 D10) — just above Info. */
 const history: Leaf = (t, h) => {
   const path = t.infoPath
@@ -473,7 +485,7 @@ const CREATE_GROUP: readonly Item[] = [newNote, newDrawing, newDiagram, newFolde
 const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedDrawing, newDatedFolder]
 const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename]
 const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openAlone, openIn, addVault]
-const DELETE_GROUP: readonly Item[] = [history, info, del, removeShortcut, removeVault]
+const DELETE_GROUP: readonly Item[] = [share, history, info, del, removeShortcut, removeVault]
 
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */
 const build = <T extends MenuItem>(group: readonly ((t: MenuSectionTargets, h: MenuHandlers) => T | null)[], t: MenuSectionTargets, h: MenuHandlers): T[] =>

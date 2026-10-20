@@ -31,6 +31,7 @@ import { useSameList, useVaultTree } from './hooks/useVaultTree'
 import { useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 import { HoverPreviewHost, useHoverPreview } from './HoverPreviewHost'
+import { useShareBadges } from '../share/useShareBadges'
 
 /** A board's Info popover body (YAZ-3028 D11), with its CSS: loaded on the first "Info". */
 const BoardInfo = lazy(() => import('./BoardInfo'))
@@ -80,6 +81,8 @@ interface SidebarProps {
   asideRef?: Ref<HTMLElement>
   /** Right-click → "Version history" on one board row (YAZ-1897 D4, YAZ-3039): App opens the board's versions. */
   onHistoryFile?: (path: string) => void
+  /** Right-click → "Share" on one board row (YAZ-3040): App opens its one Share dialog on the board. */
+  onShareFile?: (path: string) => void
   activeFile: string | null
   /** A click on a row, Enter on a search match: App passes the workspace's openCurrent — the page opens in the preview tab (YAZ-2648 D1). */
   onOpenFile: (path: string) => void
@@ -472,6 +475,7 @@ export function Sidebar({
   width,
   asideRef,
   onHistoryFile,
+  onShareFile,
 }: SidebarProps) {
   const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
   // The FIRST vault: the one a window with one vault has.
@@ -993,6 +997,8 @@ export function Sidebar({
   // identity until a list really changes — the memoised levels compare it by identity.
   const tooLargeKey = vaults.map((vault) => (vault.tooLarge ?? []).map((rel) => absFrom(vault.root, rel)).join('\0')).join('\0')
   const tooLarge = useMemo<ReadonlySet<string>>(() => new Set(tooLargeKey.split('\0').filter((p) => p !== '')), [tooLargeKey])
+  // YAZ-3040: a link mark on shared boards, every vault's (red when the last update failed or the link is stale).
+  const shareBadges = useShareBadges(roots)
   const openMenuRef = useRef(openMenu)
   openMenuRef.current = openMenu
   const openRowMenu = useCallback((node: MenuRow, e: React.MouseEvent) => openMenuRef.current(node, e), [])
@@ -1011,6 +1017,7 @@ export function Sidebar({
   // `<Tree>`, so the memo above compares the values, never this object.
   const treeProps = {
     tooLarge,
+    shareBadges,
     // Above the vault rows no one directory stands (YAZ-2602 D3).
     dirPath: multi ? '' : root,
     vaultRows,
@@ -1431,6 +1438,7 @@ export function Sidebar({
               onOpenAlone: openVaultAlone,
               onInfo: (path) => setInfoPopover({ x: menu.x, y: menu.y, path, now: Date.now(), info: null }),
               onHistory: (path) => onHistoryFile?.(path),
+              onShare: (path) => onShareFile?.(path),
             },
           )}
           onClose={() => setMenu(null)}

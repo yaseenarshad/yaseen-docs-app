@@ -40,6 +40,7 @@ import type { NoticeKind } from '../lib/notice'
 import { basename } from '../lib/paths'
 import { registerRenameContinuity } from '../lib/renameContinuity'
 import { createStore, type Store } from '../lib/store'
+import { noteBoardSaved } from '../share/liveShare'
 import { BOARD_COMMAND_EVENT, type BoardCommand } from './boardCommand'
 import { ConflictBar } from './ConflictBar'
 
@@ -85,8 +86,10 @@ export function useBoardDocument(options: BoardDocumentOptions) {
   const save = useCallback(
     async (_version: number, expectedMtime: number): Promise<{ mtime: number }> => {
       try {
-        // Draw's always-live share links (YAZ-1799) hook in here, after a write: YAZ-3040.
-        return await engine.current.write(expectedMtime)
+        const res = await engine.current.write(expectedMtime)
+        // Always-live share links (Draw's YAZ-1799, YAZ-3040): a shared board re-uploads once its saves settle.
+        noteBoardSaved(engine.current.root, engine.current.path)
+        return res
       } catch (err) {
         // A stale guard is the conflict bar's business, not an error chip.
         if (err instanceof BridgeRequestError && err.mtime !== undefined) throw new SaveConflict(err.mtime)

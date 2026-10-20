@@ -5,7 +5,7 @@ import { CreateInline } from './CreateInline'
 import type { EntryKind, MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { isBoard } from '@shared/fileKind'
-import { CloudOffIcon, DiagramBadge, ShortcutIcon } from '../views/view/icons'
+import { CloudOffIcon, DiagramBadge, LinkIcon, ShortcutIcon } from '../views/view/icons'
 import { TOO_LARGE_LABEL } from '../lib/syncAttention'
 import { RenameInline } from './RenameInline'
 
@@ -216,8 +216,24 @@ interface TreeProps {
   onHoverFile?: (node: { path: string } | null) => void
   /** YAZ-1801 D3 (YAZ-3039): absolute paths sync held back as over GitHub's limit; their rows get the cloud-off icon. A stable Set (the memo compares identity). */
   tooLarge?: ReadonlySet<string>
+  /** Shared boards (YAZ-3040, Draw's YAZ-1799): a small link mark on the row, red when the last update failed or the link is stale; the title is the status. A stable Map. */
+  shareBadges?: ReadonlyMap<string, ShareBadge>
   depth?: number
 }
+
+/** A shared board's mark (YAZ-3040, Draw's YAZ-1890): its tone, and its title — the link's status in words. */
+export interface ShareBadge {
+  tone: 'ok' | 'error'
+  title: string
+}
+
+/** The shared-board mark: a small link glyph right of the name; nothing for an unshared board. */
+const ShareMark = ({ badge }: { badge: ShareBadge | undefined }) =>
+  badge === undefined ? null : (
+    <span className="tree__share" data-tone={badge.tone} title={badge.title} aria-label={badge.title} role="img">
+      <LinkIcon size={12} />
+    </span>
+  )
 
 function TreeLevel({
   nodes,
@@ -243,9 +259,10 @@ function TreeLevel({
   top,
   onHoverFile,
   tooLarge,
+  shareBadges,
   depth = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge }
+  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges }
   /** A board row's hover handlers (YAZ-3028 D11): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !isBoard(path) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
@@ -448,6 +465,7 @@ function TreeLevel({
               </span>
               {node.kind === 'diagram' && <DiagramBadge />}
               {tooLarge?.has(node.path) === true && <CloudOffIcon label={TOO_LARGE_LABEL} />}
+              <ShareMark badge={shareBadges?.get(node.path)} />
               {isShortcutRow(node) && <ShortcutIcon />}
               {vaultTag(node.path)}
             </button>

@@ -87,8 +87,11 @@ function walk(root, rel = '') {
 /** The drawing component's font folder (YAZ-878). Reported on its own row, never gated (YAZ-2131: out of scope). */
 const DRAWING_ASSETS = 'excalidraw-assets'
 
-/** Metrics of `out` (desktop/out) and, when given, the packaged `app` and `dmg`. */
-export function measure({ out, app, dmg }) {
+/**
+ * Metrics of `out` (desktop/out) and, when given, the packaged `app` and `dmg`. `share` is the share
+ * viewer's build (`share/dist/assets`, YAZ-3040), measured where the app does not hold its own copy.
+ */
+export function measure({ out, app, dmg, share }) {
   const m = {}
   if (app) {
     const res = join(app, 'Contents/Resources')
@@ -117,7 +120,15 @@ export function measure({ out, app, dmg }) {
   m.drawingAssetBytes = bytes(join(r, DRAWING_ASSETS))
   // The pinned draw.io webapp (YAZ-3028 D5): reported, never gated on its own — `asarBytes` holds it.
   m.drawioBytes = bytes(join(out, 'drawio'))
+  // The share viewer (YAZ-3040, Draw's YAZ-1799): `share/dist/assets`, shipped OUTSIDE the asar as the
+  // `share-viewer` extraResource, so no other row holds it. The packaged copy when there is one.
+  m.shareViewerBytes = app ? bytes(join(app, 'Contents/Resources/share-viewer')) : share ? bytes(share) : null
   return m
+}
+
+/** The share viewer build is there and not empty (YAZ-3040): without it Set up sharing cannot upload a page. */
+function checkShare(share) {
+  return existsSync(share) && walk(share).length > 0 ? [] : [`no share viewer at ${share} (run npm run build)`]
 }
 
 /**
@@ -191,12 +202,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const outOnly = argv.includes('--out-only')
   const { version } = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'))
   const out = arg('out', join(repo, 'desktop/out'))
+  const share = arg('share', join(repo, 'share/dist/assets'))
   const app = outOnly ? null : arg('app', join(repo, 'desktop/dist-app/mac-arm64/Yaseen Docs.app'))
   const dmg = outOnly ? null : arg('dmg', join(repo, `desktop/dist-app/Yaseen Docs-${version}-arm64.dmg`))
   const budget = JSON.parse(readFileSync(join(here, 'budget.json'), 'utf8'))
 
-  const fails = [...checkOut(out), ...(app ? checkApp(app) : [])]
-  const metrics = fails.some((f) => f.startsWith('no app')) ? {} : measure({ out, app, dmg })
+  const fails = [...checkOut(out), ...checkShare(share), ...(app ? checkApp(app) : [])]
+  const metrics = fails.some((f) => f.startsWith('no app')) ? {} : measure({ out, app, dmg, share })
   // A packaged run gates the DMG too: an absent one would otherwise skip its row and still PASS.
   if (metrics.appBytes != null && metrics.dmgBytes == null) fails.push(`no dmg at ${dmg} (run npm run desktop:build)`)
   const over = outOfBudget(metrics, budget.size, budget.sizeTolerance)

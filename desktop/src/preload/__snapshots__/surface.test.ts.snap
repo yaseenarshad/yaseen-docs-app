@@ -75,6 +75,19 @@ readFile/1: invoke fs:read ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message"
 readHeads/1: invoke fs:read-heads ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 readImage/1: invoke fs:read-image ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 readPdf/1: invoke fs:read-pdf ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.accounts/1: invoke share:accounts ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.disconnect/2: invoke share:disconnect ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.get/1: invoke share:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.list/2: invoke share:list ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.onChanged/1: on share:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off share:changed
+share.onSetupProgress/1: on share:setup-progress -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off share:setup-progress
+share.openCloudflare/0: invoke share:open-cloudflare []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.publish/1: invoke share:publish ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.setDomain/1: invoke share:set-domain ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.setPermission/1: invoke share:set-permission ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.setup/2: invoke share:setup ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.status/0: invoke share:status []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.stop/1: invoke share:stop ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openDefault/1: invoke shell:openDefault ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openLink/1: invoke shell:open-link ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openVsCode/1: invoke shell:openVsCode ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

@@ -94,6 +94,8 @@ function installBridge() {
     // The door (YAZ-2677 D4): a note's id is the vault's next number, taken before the note is made.
     mintNoteId: testDoor(),
     state: { get: vi.fn(async () => defaultAppState()), setFolder: vi.fn(async () => undefined), setFavoritesOrder: vi.fn(async () => undefined), setFocusOrder: vi.fn(async () => undefined), onChange: vi.fn((_listener: (state: AppState) => void) => () => undefined) },
+    // The shared-board marks (YAZ-3040): nothing shared, and no change pushed.
+    share: { list: vi.fn(async () => []), onChanged: vi.fn(() => () => undefined) },
     window: {
       open: vi.fn(async () => undefined),
       // "Open by itself" on a vault row (YAZ-2858 D4): main's door; `false` = the folder is gone.

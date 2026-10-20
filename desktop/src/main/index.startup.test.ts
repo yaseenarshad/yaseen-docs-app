@@ -76,6 +76,9 @@ const h = vi.hoisted(() => {
   }
 })
 
+// Electron sets it in a real app; main reads it at `ready` for the share viewer's place (YAZ-3040).
+Object.defineProperty(process, 'resourcesPath', { value: '/Applications/Yaseen Docs.app/Contents/Resources', configurable: true })
+
 vi.mock('electron', () => ({
   app: h.app,
   ipcMain: { handle: vi.fn((channel: string, fn: (...args: unknown[]) => Promise<unknown>) => h.handles.set(channel, fn)) },

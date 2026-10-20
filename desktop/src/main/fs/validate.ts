@@ -21,6 +21,24 @@ export function requireStringArray(v: unknown, name: string): string[] {
 
 /** Absolute paths only — one bad element refuses the whole call, named `name[i]` (Settings › Storage's `skip`, YAZ-3039). */
 export function absPaths(v: unknown, name: string): string[] {
-  if (!Array.isArray(v)) throw new BridgeFailure('BAD_REQUEST', `'${name}' must be an array of absolute paths`)
+  if (!Array.isArray(v)) return refuse(`'${name}' must be an array of absolute paths`)
   return v.map((p, i) => requireAbsPath(p, `${name}[${i}]`))
 }
+
+/** The share doors' scalar checks (YAZ-3040, Draw's `fs/validate.ts`): each refuses BAD_REQUEST in the words the renderer shows. */
+const refuse = (message: string): never => {
+  throw new BridgeFailure('BAD_REQUEST', message)
+}
+
+/** A non-empty string. */
+export const str = (v: unknown, name: string): string => (typeof v === 'string' && v !== '' ? v : refuse(`'${name}' must be a non-empty string`))
+
+/** Absent, or any string. */
+export const optStr = (v: unknown, name: string): string | undefined => (v === undefined || typeof v === 'string' ? v : refuse(`'${name}' must be a string`))
+
+/** A string or null; a door that also allows absence checks for it first. */
+export const strOrNull = (v: unknown, name: string): string | null => (v === null || typeof v === 'string' ? v : refuse(`'${name}' must be a string or null`))
+
+export const bool = (v: unknown, name: string): boolean => (typeof v === 'boolean' ? v : refuse(`'${name}' must be a boolean`))
+
+export const optBool = (v: unknown, name: string): boolean | undefined => (v === undefined ? v : bool(v, name))
