@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileLink, parseFileLink } from '@shared/links'
+import { fileLink, isAppLink, LINK_SCHEMES, parseFileLink } from '@shared/links'
 
 // Deep links (E1, GRO-2171; format locked in D7): `yaseendocs://` + percent-encoded absolute
 // path, e.g. `yaseendocs:///Users/me/vault/My%20note.md`. Optional `?root=` override.
@@ -64,5 +64,53 @@ describe('parseFileLink', () => {
   it('ignores a non-absolute root override', () => {
     expect(parseFileLink('yaseendocs:///v/a.md?root=rel')).toEqual({ path: '/v/a.md', root: null })
     expect(parseFileLink('yaseendocs:///v/a.md?root=')).toEqual({ path: '/v/a.md', root: null })
+  })
+})
+
+// Yaseen Draw's links (YAZ-3028 D7): the same format under `yaseendraw://` (Draw's shared/links.ts
+// @ aea9295), so a link saved before the fold opens the file in Docs.
+describe('yaseendraw:// links', () => {
+  it('parses the path Draw encoded, with spaces, unicode, # and ?', () => {
+    expect(parseFileLink('yaseendraw:///Users/me/vault/Board%20one.excalidraw')).toEqual({ path: '/Users/me/vault/Board one.excalidraw', root: null })
+    expect(parseFileLink('yaseendraw:///v/%C3%A9t%C3%A9%20%F0%9F%8E%89.drawio')).toEqual({ path: '/v/été 🎉.drawio', root: null })
+    expect(parseFileLink('yaseendraw:///v/a%231%3F.excalidraw')).toEqual({ path: '/v/a#1?.excalidraw', root: null })
+  })
+
+  it('reads the ?root= override the same way', () => {
+    expect(parseFileLink('yaseendraw:///v/sub/a.excalidraw?root=%2Fv')).toEqual({ path: '/v/sub/a.excalidraw', root: '/v' })
+    expect(parseFileLink('yaseendraw:///v/a.excalidraw?root=rel')).toEqual({ path: '/v/a.excalidraw', root: null })
+  })
+
+  it('every Docs link, re-spelled with the Draw scheme, parses to the same answer', () => {
+    for (const path of ['/Users/me/vault/My note.md', '/v/notes#drafts/a#1.md', '/v/100% done.excalidraw']) {
+      expect(parseFileLink(fileLink(path).replace('yaseendocs://', 'yaseendraw://'))).toEqual({ path, root: null })
+    }
+  })
+
+  it('rejects what the Docs scheme rejects', () => {
+    expect(parseFileLink('yaseendraw://')).toBeNull()
+    expect(parseFileLink('yaseendraw://Users/me/a.excalidraw')).toBeNull() // double-slash form: never a host
+    expect(parseFileLink('yaseendraw:///v/bad%GG.excalidraw')).toBeNull()
+    expect(parseFileLink('yaseendrawx:///v/a.excalidraw')).toBeNull()
+    expect(parseFileLink('yaseen:///v/a.excalidraw')).toBeNull()
+  })
+
+  it("keeps Docs' path rule for Draw's Windows drive form: a POSIX path, not C:\\ (D12)", () => {
+    expect(parseFileLink('yaseendraw:///C:/Vault/a.excalidraw')).toEqual({ path: '/C:/Vault/a.excalidraw', root: null })
+  })
+
+  it('fileLink still writes yaseendocs:// only', () => {
+    expect(fileLink('/v/a.excalidraw')).toBe('yaseendocs:///v/a.excalidraw')
+  })
+})
+
+describe('isAppLink', () => {
+  it('knows both schemes, and nothing else', () => {
+    expect(LINK_SCHEMES).toEqual(['yaseendocs', 'yaseendraw'])
+    expect(isAppLink('yaseendocs:///v/a.md')).toBe(true)
+    expect(isAppLink('yaseendraw:///v/a.excalidraw')).toBe(true)
+    expect(isAppLink('--flag')).toBe(false)
+    expect(isAppLink('https://example.com')).toBe(false)
+    expect(isAppLink('/v/a.md')).toBe(false)
   })
 })

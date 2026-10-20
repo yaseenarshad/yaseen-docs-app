@@ -4,9 +4,20 @@
  * An optional `?root=` (also a percent-encoded absolute path) overrides which folder the
  * link opens under. Shared so main's parser and the client's generator agree byte-for-byte
  * on one encoding.
+ *
+ * Yaseen Draw's `yaseendraw://` links (YAZ-3028 D7) have the same format, so this one parser
+ * reads them too and they open the file in Docs. Docs never WRITES one: `fileLink` stays
+ * `yaseendocs://`. Draw's Windows drive form (`/C:/…`) is not read back to a drive path: Docs
+ * reads paths the way it always has (D12), so such a link names no file here.
  */
 
 const SCHEME = 'yaseendocs://'
+
+/** Every scheme the app claims, its own first (the packaged `protocols` and `claimDeepLinkScheme`). */
+export const LINK_SCHEMES = ['yaseendocs', 'yaseendraw'] as const
+
+/** A URL in one of the app's own schemes: what a second launch's argv may carry (Windows/Linux). */
+export const isAppLink = (url: string): boolean => LINK_SCHEMES.some((s) => url.startsWith(`${s}://`))
 
 /**
  * `encodeURI` keeps `/` readable and encodes spaces/unicode, but leaves `#` and `?` alone —
@@ -29,15 +40,16 @@ function decode(encoded: string): string | null {
 }
 
 /**
- * Parses a `yaseendocs://` link back to its absolute path (+ optional `?root=` override).
- * Null for any other scheme, a relative/empty path, or malformed percent-encoding. Manual
- * string parsing on purpose: `new URL()` host-parses the double-slash form
- * (`yaseendocs://Users/...`) unpredictably for non-special schemes — here it simply decodes
+ * Parses a `yaseendocs://` or `yaseendraw://` link back to its absolute path (+ optional
+ * `?root=` override). Null for any other scheme, a relative/empty path, or malformed
+ * percent-encoding. Manual string parsing on purpose: `new URL()` host-parses the double-slash
+ * form (`yaseendocs://Users/...`) unpredictably for non-special schemes — here it simply decodes
  * to a relative path and is rejected.
  */
 export function parseFileLink(url: string): { path: string; root: string | null } | null {
-  if (!url.startsWith(SCHEME)) return null
-  let rest = url.slice(SCHEME.length)
+  const scheme = LINK_SCHEMES.find((s) => url.startsWith(`${s}://`))
+  if (scheme === undefined) return null
+  let rest = url.slice(scheme.length + 3)
   let root: string | null = null
   const q = rest.indexOf('?')
   if (q !== -1) {

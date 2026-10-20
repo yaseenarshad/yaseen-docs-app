@@ -43,9 +43,11 @@
       "artifactName": "${productName}-${version}-win-x64-setup.${ext}"
     },
     "dmg": { "artifactName": "${productName}-${version}-arm64.dmg" },
-    "protocols": [{ "name": "Yaseen Docs", "schemes": ["yaseendocs"] }],
+    "protocols": [{ "name": "Yaseen Docs", "schemes": ["yaseendocs", "yaseendraw"] }],
     "fileAssociations": [
-      { "ext": ["md", "markdown"], "name": "Markdown", "role": "Editor", "rank": "Alternate" }
+      { "ext": ["md", "markdown"], "name": "Markdown", "role": "Editor", "rank": "Alternate" },
+      { "ext": ["excalidraw"], "name": "Excalidraw Drawing", "role": "Editor", "rank": "Owner" },
+      { "ext": ["drawio"], "name": "draw.io Diagram", "role": "Editor", "rank": "Owner" }
     ]
   }
 }
