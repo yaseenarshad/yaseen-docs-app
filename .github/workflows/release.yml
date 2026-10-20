@@ -83,6 +83,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The pinned draw.io pack (YAZ-3028 D5), cached by its release tag as in ci.yml (YAZ-3044 A38): the build
+      # unpacks it (sha256-checked), and downloads the 54 MB draw.war only when the cache has no copy.
+      - id: drawio
+        shell: bash
+        run: node -e "import('./tools/packDrawio.mjs').then((m) => console.log('tag=' + m.DRAWIO_TAG))" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: desktop/.cache/drawio
+          key: drawio-${{ steps.drawio.outputs.tag }}
       # The free self-signed certificate "Yaseen Local Signing" (YAZ-2976 D1, made for YAZ-2770), from two
       # repo secrets, in a temporary keychain. `desktop/build/adhocSign.cjs` signs the Mac app with it.
       - name: Import the signing certificate
