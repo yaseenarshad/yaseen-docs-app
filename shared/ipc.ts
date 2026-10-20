@@ -179,6 +179,17 @@ export const CONTRACT = {
     onNewWindow: push('menu:new-window'),
     /** Help › What's New… (YAZ-2976 D8): the window opens its "What's new" window. */
     onWhatsNew: push('menu:whats-new'),
+    // The board gestures from Draw's application menu (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D10). The
+    // renderer routes each to the VISIBLE board (`documents/boardCommand.ts`); main enables them only while
+    // the focused window's active tab is a board of a kind they work for.
+    /** File › Export Image… (⌘⇧E): a drawing opens the engine's export dialog; a diagram saves a PNG or SVG. */
+    onExportImage: push('menu:export-image'),
+    /** File › Export Excalidraw Drawing… (⌘⇧S, drawings only): write a standalone `.excalidraw`. */
+    onExportDrawing: push('menu:export-drawing'),
+    /** File › Share Link (⌘⇧L, any board): open the Share dialog for the visible board (YAZ-3040 fills it). */
+    onShareLink: push('menu:share-link'),
+    /** View › Canvas Background › a pick (drawings only): the visible drawing takes `color`. */
+    onCanvasBackground: push<string>('menu:canvas-background'),
   },
   /** Deep links (E1, GRO-2171): main parses a `yaseendocs://` URL (`shared/links.ts`) and routes it to the best window. */
   link: {

@@ -88,10 +88,52 @@ export const MOUSE_TIPS: readonly HotkeyEntry[] = [
   { keys: 'Right-click vault', label: 'Open in this window, Set display name, Set shortcut, Copy vault name / path, Reveal in Finder, VS Code, Remove from recents' },
 ]
 
-/** The four groups as Settings › Hotkeys shows them, heading first — one place to add a fifth. */
-export const HOTKEY_GROUPS: readonly { title: string; entries: readonly HotkeyEntry[] }[] = [
+/**
+ * The shortcuts that only mean something with a DRAWING in front (YAZ-3037, YAZ-3028 D10; ported from
+ * Draw). ⌘⇧E, ⌘⇧S and ⌘⇧L are the application menu's and grey out on any other tab; ⌘⇧S is still the
+ * review's Skip while a review is open. ⌘S is bound on the drawing tab itself.
+ */
+export const CANVAS_HOTKEYS: readonly HotkeyEntry[] = [
+  { keys: '⌘⇧E', label: "Export image… — the engine's own PNG / SVG dialog; a diagram saves a PNG or SVG" },
+  { keys: '⌘⇧S', label: 'Export Excalidraw drawing… — write a standalone .excalidraw with its images embedded' },
+  { keys: '⌘⇧L', label: 'Share link — the drawing or diagram in front' },
+  // Autosave already runs on a 500 ms timer, so this is "write it NOW" (Draw's 🔒 YAZ-1810).
+  { keys: '⌘S', label: 'Save the drawing in front now — it autosaves anyway' },
+]
+
+/**
+ * A draw.io diagram in front (YAZ-3037; Draw's 🔒 YAZ-1802 D12b): Yasin's Excalidraw keys, mapped onto
+ * draw.io (`diagrams/drawioProtocol.ts`). With nothing selected a letter is a tool; with a selection the
+ * same letters colour it. ⌘B / ⌘U / ⌘S are draw.io's own, ⌘B passing to the sidebar when nothing is selected.
+ */
+export const DRAWIO_HOTKEYS: readonly HotkeyEntry[] = [
+  { keys: 'R / O / T', label: 'Rectangle / ellipse / text — with nothing selected' },
+  { keys: 'A / D / L', label: 'Arrow / line — with nothing selected' },
+  { keys: 'W / P / X', label: 'Freehand pen — with nothing selected' },
+  {
+    keys: 'T B W D R P A V U C E G Y O N',
+    label: "Colour the selection (transparent, black, white, gray, red, pink, grape, violet, blue, cyan, teal, green, yellow, orange, bronze) — a shape's fill, a text's colour, a line's stroke, an image's border",
+  },
+  { keys: '⇧ + colour letter', label: "A shape's outline, a text's background" },
+  { keys: '1 … 9, 0', label: 'Size the selection — text 12 to 128, anything else 48 to 1024 on its long side' },
+  { keys: '⌘\\', label: 'Clear formatting' },
+  { keys: '⌘⇧X', label: 'Strikethrough' },
+  { keys: '⌘B / ⌘U', label: 'Bold / underline — ⌘B with nothing selected toggles the sidebar' },
+  // draw.io's own save event, which the host turns into "write it NOW" (Draw's 🔒 YAZ-1802 D6).
+  { keys: '⌘S', label: 'Save the diagram in front now — it autosaves anyway' },
+  { keys: '⌘-scroll / pinch', label: 'Zoom — a plain scroll pans' },
+  { keys: 'Right-click empty canvas', label: 'Grid on / off' },
+]
+
+/**
+ * The groups as Settings › Hotkeys shows them, heading first — one place to add another. `id` names the
+ * table's settings row (`hotkeys-<id>`) where the title is not one word.
+ */
+export const HOTKEY_GROUPS: readonly { id?: string; title: string; entries: readonly HotkeyEntry[] }[] = [
   { title: 'Keyboard', entries: HOTKEYS },
   { title: 'Views', entries: VIEW_HOTKEYS },
   { title: 'Window', entries: WINDOW_HOTKEYS },
+  { id: 'canvas', title: 'Excalidraw canvas', entries: CANVAS_HOTKEYS },
+  { id: 'drawio', title: 'draw.io diagram', entries: DRAWIO_HOTKEYS },
   { title: 'Mouse', entries: MOUSE_TIPS },
 ]

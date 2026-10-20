@@ -927,7 +927,7 @@ export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
 // ---------- Canvas preferences (Draw's 🔒 YAZ-1775 D9, ported by YAZ-3028) ----------
 
 /**
- * The user-level canvas preferences held in `SettingsState.canvas` (ported from Draw by YAZ-3028; the Settings › Canvas page is YAZ-3037): the engine's
+ * The user-level canvas preferences held in `SettingsState.canvas` (ported from Draw by YAZ-3028; the Settings › Canvas page, YAZ-3037): the engine's
  * `browser: true, export: false` appState (`packages/excalidraw/appState.ts`) plus frame
  * visibility. The TYPE and the DEFAULTS live in this leaf file; the mapping to and from the
  * engine's appState keys is `shared/canvasPrefs.ts`, which imports from here so that nothing
@@ -956,6 +956,27 @@ export const LASER_COLORS = ['#ff0000', '#ffd400', '#00c853', '#2979ff', '#d500f
 export type LaserColor = (typeof LASER_COLORS)[number]
 export const LASER_SIZES = ['S', 'M', 'L'] as const
 export type LaserSize = (typeof LASER_SIZES)[number]
+
+/**
+ * The fork's `FONT_FAMILY` ids the Settings › Canvas "Default font" row offers
+ * (`packages/common/src/constants.ts`; ported from Draw by YAZ-3037), Assistant first because it is the
+ * default. Id 4 is deliberately absent: the fork leaves it unused for historical reasons.
+ */
+export const FONT_FAMILY_OPTIONS: ReadonlyArray<{ id: number; label: string }> = [
+  { id: 10, label: 'Assistant' },
+  { id: 5, label: 'Excalifont' },
+  { id: 1, label: 'Virgil' },
+  { id: 2, label: 'Helvetica' },
+  { id: 3, label: 'Cascadia' },
+  { id: 6, label: 'Nunito' },
+  { id: 7, label: 'Lilita One' },
+  { id: 8, label: 'Comic Shanns' },
+  { id: 9, label: 'Liberation Sans' },
+  { id: 11, label: 'Inter' },
+  { id: 12, label: 'Roboto' },
+  { id: 13, label: 'Liberation Serif' },
+  { id: 14, label: 'IBM Plex Mono' },
+]
 
 export interface CanvasPrefs {
   gridModeEnabled: boolean
@@ -1067,7 +1088,7 @@ export interface SettingsState {
    * How draw.io diagrams look in dark mode (YAZ-3028, Draw's 🔒 YAZ-1802 D16): `adapt` lets draw.io
    * re-colour them so an ordinary diagram stays readable, `keep` shows every diagram in its own
    * colours. The DEFAULT only — a file whose `<mxGraphModel>` says `adaptiveColors="none"` keeps its
-   * colours either way. The diagram tab and its pictures follow it, live. Its Settings row is YAZ-3037's.
+   * colours either way. The diagram tab and its pictures follow it, live. Its row is Settings › Appearance (YAZ-3037).
    */
   diagramDarkColors: DiagramDarkColors
 }

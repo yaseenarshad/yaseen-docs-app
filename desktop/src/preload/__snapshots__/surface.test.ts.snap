@@ -45,8 +45,11 @@ index/1: invoke fs:index ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"
 link.onNotice/1: on link:notice -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:notice
 link.onOpenFile/1: on link:open-file -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:open-file
 link.ready/0: invoke link:ready []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+menu.onCanvasBackground/1: on menu:canvas-background -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:canvas-background
 menu.onCloseTab/1: on menu:close-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:close-tab
 menu.onCopyAs/1: (no IPC)
+menu.onExportDrawing/1: on menu:export-drawing -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:export-drawing
+menu.onExportImage/1: on menu:export-image -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:export-image
 menu.onNewTab/1: on menu:new-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:new-tab
 menu.onNewWindow/1: on menu:new-window -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:new-window
 menu.onNextTab/1: on menu:next-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:next-tab
@@ -56,6 +59,7 @@ menu.onPasteAs/1: (no IPC)
 menu.onPrevTab/1: on menu:prev-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:prev-tab
 menu.onSearch/1: on menu:search -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:search
 menu.onSettings/1: on menu:settings -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:settings
+menu.onShareLink/1: on menu:share-link -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:share-link
 menu.onSwitchVault/1: on menu:switch-vault -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:switch-vault
 menu.onTabOverview/1: on menu:tab-overview -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:tab-overview
 menu.onToggleSidebar/1: on menu:toggle-sidebar -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:toggle-sidebar

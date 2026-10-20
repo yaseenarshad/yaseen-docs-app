@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type GithubSyncStatus, type NewNoteLocation, type SectionLines, type StartupWindows, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type SectionLines, type StartupWindows, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -23,6 +23,12 @@ export const CONTENT_WIDTH_OPTIONS: readonly Option<ContentWidth>[] = [
   { label: 'Narrow', value: 'narrow' },
   { label: 'Medium', value: 'medium' },
   { label: 'Full', value: 'full' },
+]
+
+/** draw.io diagrams in dark mode (YAZ-3037; Draw's 🔒 YAZ-1802 D16): the default for every diagram. */
+export const DIAGRAM_DARK_COLORS_OPTIONS: readonly Option<DiagramDarkColors>[] = [
+  { label: 'Adapt colours', value: 'adapt' },
+  { label: 'Keep original colours', value: 'keep' },
 ]
 
 /** Comment stream order (YAZ-1515): a reading preference, global — the block's own toggle drives the same field. */

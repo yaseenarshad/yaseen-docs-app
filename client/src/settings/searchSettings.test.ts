@@ -31,6 +31,7 @@ describe('settingCandidates', () => {
       'lineSpacing',
       'blockGap',
       'commentsOrder',
+      'diagramDarkColors',
       'bulletThreading',
       'threadWidth',
       'threadColor',
@@ -38,6 +39,8 @@ describe('settingCandidates', () => {
       'sectionLines',
       'tableOfContents',
       'tocLines',
+      // Settings › Excalidraw canvas (YAZ-3037).
+      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`),
       'confirmDelete',
       'confirmRename',
       'newNoteLocation',
@@ -49,6 +52,8 @@ describe('settingCandidates', () => {
       'hotkeys-keyboard',
       'hotkeys-views',
       'hotkeys-window',
+      'hotkeys-canvas',
+      'hotkeys-drawio',
       'hotkeys-mouse',
     ])
   })
@@ -94,7 +99,9 @@ describe('searchSettings', () => {
   })
 
   it('matches on a keyword the label does not contain', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['theme'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'system'))).toEqual(['theme'])
+    // "dark" is also the draw.io row's word (YAZ-3037).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['theme', 'diagramDarkColors'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'readable line'))).toEqual(['contentWidth'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'trash'))).toEqual(['confirmDelete'])
   })
@@ -117,7 +124,8 @@ describe('searchSettings', () => {
 
   it('"Level lines" (YAZ-2762): its label and "hierarchy" find that row alone; "outline", "guide" and "hover" find it among the rows that share the word', () => {
     for (const query of ['level lines', 'hierarchy']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['tocLines'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tableOfContents', 'tocLines'])
+    // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkeys-drawio'])
     // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too.
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sectionLines', 'tocLines'])
@@ -143,7 +151,9 @@ describe('searchSettings', () => {
   it('a hotkey label finds its Hotkeys table: "close tab" → Window', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'close tab'))).toEqual(['hotkeys-window'])
     expect(ids(searchSettings(settingCandidates(ctx()), '⌘W'))).toEqual(['hotkeys-window'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkeys-keyboard'])
+    // A note and a draw.io diagram both underline with ⌘U (YAZ-3037): both tables answer.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkeys-keyboard', 'hotkeys-drawio'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkeys-canvas'])
   })
 
   it('"review", "upkeep" and "inbox" each find every row of the Review section (YAZ-2322)', () => {

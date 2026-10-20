@@ -189,6 +189,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuNewWindow = new Set<() => void>()
   const menuZoom = new Set<() => void>()
   const menuWhatsNew = new Set<() => void>()
+  // The board gestures (YAZ-3037): Export Excalidraw Drawing… is the one App routes itself during a review.
+  const menuExportDrawing = new Set<() => void>()
+  const menuShareLink = new Set<() => void>()
   const linkOpenFile = new Set<(path: string) => void>()
   const linkNotice = new Set<(message: string) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
@@ -280,6 +283,10 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onNewWindow: menuSub(menuNewWindow),
       onZoom: menuSub(menuZoom),
       onWhatsNew: menuSub(menuWhatsNew),
+      onExportImage: menuSub(new Set()),
+      onExportDrawing: menuSub(menuExportDrawing),
+      onShareLink: menuSub(menuShareLink),
+      onCanvasBackground: vi.fn(() => () => undefined),
     },
     link: {
       onOpenFile: vi.fn((l: (path: string) => void) => {
@@ -360,6 +367,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitNewTab: () => menuNewTab.forEach((l) => l()),
     emitNewWindow: () => menuNewWindow.forEach((l) => l()),
     emitWhatsNew: () => menuWhatsNew.forEach((l) => l()),
+    emitExportDrawing: () => menuExportDrawing.forEach((l) => l()),
+    emitShareLink: () => menuShareLink.forEach((l) => l()),
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
@@ -817,6 +826,11 @@ describe('App deep links (E1, GRO-2171)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+  it('File › Share Link says so until share links exist (YAZ-3037; the Share dialog is YAZ-3040\'s)', async () => {
+    const { el, emitShareLink } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => emitShareLink())
+    expect(el.querySelector('.link-notice')?.textContent).toBe("Share links aren't available yet")
   })
 })
 
@@ -3352,6 +3366,16 @@ describe('App upkeep review (YAZ-2322)', () => {
     const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
     openInbox()
     act(() => button(el, 'Skip⌘⇧S')?.click())
+    expect(layers(el)).toEqual([
+      ['/v/b.md', true],
+      ['/v/y.md', false],
+    ])
+  })
+
+  it('⌘⇧S stays the review\'s Skip (YAZ-3037, YAZ-3028 D10): with a review open, the menu\'s Export Excalidraw Drawing… gesture skips the note', async () => {
+    const { el, emitExportDrawing } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
+    openInbox()
+    act(() => emitExportDrawing())
     expect(layers(el)).toEqual([
       ['/v/b.md', true],
       ['/v/y.md', false],

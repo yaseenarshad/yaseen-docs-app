@@ -104,6 +104,7 @@ vi.mock('./menu', () => ({
   menuKeyedVaults: vi.fn(() => []),
   pickMenuTargetWindow: vi.fn(),
   subscribeMenuRebuild: vi.fn(),
+  subscribeMenuRebuildOnActiveFile: vi.fn(),
 }))
 
 const NOTE = '/vault/Plans/Roadmap.md'

@@ -9,6 +9,7 @@ import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { requestZoom } from './editor/zoomRequest'
+import { requestBoardCommand } from './documents/boardCommand'
 import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, renameNotice, updateLinksAfterRename } from './links/renameLinks'
@@ -818,7 +819,37 @@ export function App() {
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model — except that
   // with a review open ⌘W closes IT, never the tab hidden under it (YAZ-2322). ⌘W on the blank tab
   // closes it alone (YAZ-2655 S75): that is `closeActive`'s own rule.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: toNextTab, onPrevTab: toPrevTab, onTabOverview: toggleOverview, onNewTab: newTab, onNewWindow: newWindow, onZoom: requestZoom, onWhatsNew: openWhatsNew })
+  //
+  // The board items (YAZ-3037, YAZ-3028 D10) act on the VISIBLE board layer, which `requestBoardCommand`
+  // finds by DOM: several tabs are mounted at once and only one is in front. Main greys each item out
+  // off a board it does not work for. ⌘⇧S is also the review's Skip, and the note keeps its key (D10):
+  // with a review over a drawing tab the menu owns the key, so its gesture goes to Skip, as ⌘W goes to the review.
+  const exportImage = useCallback(() => void requestBoardCommand({ kind: 'export-image' }), [])
+  const exportDrawing = useCallback(() => void requestBoardCommand({ kind: 'export-drawing' }), [])
+  const setCanvasBackground = useCallback((color: string) => void requestBoardCommand({ kind: 'canvas-background', color }), [])
+  // SEAM (YAZ-3040): File › Share Link opens the Share dialog for the active board once share links exist.
+  // Until then the item says so instead of doing nothing.
+  const shareLink = useCallback(() => notify("Share links aren't available yet"), [notify])
+  useMenuEvents({
+    onOpenFolder: pick,
+    onOpenRoot: openVault,
+    onSearch: openSearch,
+    onSwitchVault: openVaultSwitcher,
+    onSettings: openSettings,
+    onToggleSidebar: toggleSidebar,
+    onCloseTab: reviewer === null ? closeTabOrWindow : closeReview,
+    onNextTab: toNextTab,
+    onPrevTab: toPrevTab,
+    onTabOverview: toggleOverview,
+    onNewTab: newTab,
+    onNewWindow: newWindow,
+    onZoom: requestZoom,
+    onWhatsNew: openWhatsNew,
+    onExportImage: exportImage,
+    onExportDrawing: reviewer === null ? exportDrawing : review.skip,
+    onShareLink: shareLink,
+    onCanvasBackground: setCanvasBackground,
+  })
 
   /**
    * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the row of the new tab page that the keyboard is on

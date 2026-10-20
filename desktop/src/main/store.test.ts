@@ -275,6 +275,17 @@ describe('createStore: loading', () => {
     for (const width of [159, 481, NaN, '200', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, tableOfContentsWidth: width })).toBe(false)
   })
 
+  it('canvas and diagramDarkColors (YAZ-3037 done-when): a yaseendocs.json from before YAZ-3028 loads with the defaults; a file with some canvas prefs keeps them', async () => {
+    const { canvas: _canvas, diagramDarkColors: _dark, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: { ...legacySettings, theme: 'dark' } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, theme: 'dark' })
+    // One canvas pref written, the rest missing or junk: each field is repaired on its own.
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, canvas: { gridModeEnabled: true, defaultFontFamily: 'Helvetica' }, diagramDarkColors: 'keep' } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, gridModeEnabled: true }, diagramDarkColors: 'keep' })
+    // The channel check stays strict: a settings write without them is refused as a whole.
+    expect(isSettings(legacySettings)).toBe(false)
+  })
+
   it('tocLines: an older file without the key loads with hover; the three values load as they are; anything else loads as hover, and fails the channel check (YAZ-2762 D5)', async () => {
     expect(TOC_LINES).toEqual(['hover', 'always', 'off'])
     expect(DEFAULT_SETTINGS.tocLines).toBe('hover')
