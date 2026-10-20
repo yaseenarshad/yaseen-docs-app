@@ -248,6 +248,11 @@
   align-items: stretch;
 }
 
+/* A bare row (YAZ-3068 D16): the control alone, full width, with no label above it and so no gap. */
+.setting--bare {
+  display: block;
+}
+
 .setting__text {
   min-width: 0;
 }
@@ -405,25 +410,38 @@
   overflow-wrap: anywhere;
 }
 
-/* ---------- heading styles (YAZ-3050 D6, HeadingStylesControl.tsx) ---------- */
+/* ---------- text formatting (YAZ-3068; the lines are YAZ-3050 D6; TextFormattingControl.tsx) ---------- */
 
-/* Six lines, H1 to H6. The controls keep fixed widths, so they line up in columns down the six. */
-.heading-styles {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.heading-styles__line {
+/* The "Vault" dropdown (D15), above the lines, with the space of one line under it. */
+.text-formatting__vault {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-bottom: 12px;
+}
+
+.text-formatting__vault-label {
+  color: var(--fg);
+}
+
+/* Seven lines, Text and H1 to H6, on one grid: the name, the size, B and U, the dots, Reset. Each
+   line is a subgrid row, so its controls stand in the same columns as on the other six. */
+.heading-styles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(4, auto);
+  gap: 6px 12px;
+}
+
+.heading-styles__line {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
 }
 
 /* The name takes what the controls leave and never wraps. The padding keeps the 3px wash of a
    highlighted name inside the clip of `overflow: hidden`. */
 .heading-styles__label {
-  flex: 1 1 auto;
   min-width: 0;
   padding: 4px;
   overflow: hidden;
@@ -502,12 +520,13 @@
   background: linear-gradient(135deg, transparent calc(50% - 0.75px), var(--fg-muted) calc(50% - 0.75px) calc(50% + 0.75px), transparent calc(50% + 0.75px)), var(--bg);
 }
 
-/* The slot is there on every line, with or without its button. */
+/* The slot is there on every line, with or without its button, so the column never collapses. The
+   Text line has no B, U or dots (D14): its slot goes to the last column all the same. */
 .heading-styles__reset {
   display: flex;
   justify-content: flex-end;
   width: 68px;
-  flex: none;
+  grid-column: -2;
 }
 
 /* ---------- hotkey reference (GRO-2067) — one table per Hotkeys group ---------- */

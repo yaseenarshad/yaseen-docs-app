@@ -6,7 +6,7 @@
  * close the panel in `Sidebar.test.tsx`. The S- and R-numbers are the case record on YAZ-2662.
  */
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { act } from 'react'
+import { act, type CSSProperties } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { CrepeFeature } from '../editor/crepe'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -137,6 +137,15 @@ describe('the preview panel of the search (YAZ-2662 D5)', () => {
     const { panel } = await show('/v/Flow.excalidraw', 'Flow.excalidraw')
     expect(panel.querySelector('.quicklook__body')?.textContent).toBe('No preview for this file.')
     expect(readFile).not.toHaveBeenCalled()
+  })
+
+  it('the panel carries the text formatting of the vault that holds the file, as App hands it over (YAZ-3067 D12)', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => root?.render(<QuickLook path="/v/archive.zip" title="archive.zip" watch={watch} wikilinks={wikilinks} style={{ '--text-size': '18px', '--h2-size': '21px' } as CSSProperties} onClose={vi.fn()} />))
+    const panel = container.querySelector<HTMLElement>('.quicklook')!
+    expect([panel.style.getPropertyValue('--text-size'), panel.style.getPropertyValue('--h2-size')]).toEqual(['18px', '21px'])
   })
 
   it('S40: a file that the app cannot show gets one line, and nothing is read', async () => {

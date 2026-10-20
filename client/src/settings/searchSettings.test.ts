@@ -30,7 +30,7 @@ describe('settingCandidates', () => {
       'contentWidth',
       'lineSpacing',
       'blockGap',
-      'headingStyles',
+      'textFormatting',
       'commentsOrder',
       'diagramDarkColors',
       'bulletThreading',
@@ -164,9 +164,9 @@ describe('searchSettings', () => {
   it('a hotkey label finds its Hotkeys table: "close tab" → Window', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'close tab'))).toEqual(['hotkeys-window'])
     expect(ids(searchSettings(settingCandidates(ctx()), '⌘W'))).toEqual(['hotkeys-window'])
-    // "underline" is a word of Appearance › Headings (YAZ-3050), first in registry order; a note and a
-    // draw.io diagram both underline with ⌘U (YAZ-3037): both hotkey tables answer too.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['headingStyles', 'hotkeys-keyboard', 'hotkeys-drawio'])
+    // "underline" is also a word of Appearance › Text formatting (YAZ-3068), which comes first in registry order;
+    // a note and a draw.io diagram both underline with ⌘U (YAZ-3037): both hotkey tables answer too.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['textFormatting', 'hotkeys-keyboard', 'hotkeys-drawio'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkeys-canvas'])
   })
 

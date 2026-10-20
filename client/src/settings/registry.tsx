@@ -33,13 +33,13 @@ import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { CANVAS_SECTION } from './canvasSection'
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented } from './controls'
-import { HeadingStylesControl } from './HeadingStylesControl'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
 import { STORAGE_SECTION } from './storageSection'
+import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 export interface SettingsCtx {
@@ -80,6 +80,12 @@ export interface SettingsCtx {
   storage?: VaultStorageState
   /** Settings › Sharing (YAZ-3040, Draw's YAZ-1799 D7): App's `useSharing`; undefined hides the section. Its shared-boards list is the active tab's vault. */
   sharing?: SharingState
+  /**
+   * Text formatting (YAZ-3068 D15): each vault of the window, in the window's order — its root, the
+   * name the app calls it, and its `useTextFormatting` — and the active tab's vault, where the
+   * "Vault" dropdown starts. Absent in a window with no vault, so the group is not there.
+   */
+  textFormatting?: { vaults: readonly TextFormattingVault[]; activeRoot: string }
 }
 
 export interface SettingDef {
@@ -90,13 +96,15 @@ export interface SettingDef {
   keywords?: readonly string[]
   /** The control stacks full-width under the text instead of sitting beside it (D7); a function reads live state (the folder input shows only for `folder`). */
   wide?: boolean | ((ctx: SettingsCtx) => boolean)
-  /** A row that only exists in some states (the Review rows need upkeep on); absent = always. */
-  available?: (ctx: SettingsCtx) => boolean
   /**
-   * No text column at all: the control IS the row, full-width (YAZ-1801, YAZ-3039 — Settings ›
-   * Storage's lists and its one action, which carry their own words). The label and hint still feed search.
+   * The row shows its control alone, full width, with no label on screen. Two uses: a control that
+   * carries its own words (YAZ-1801, YAZ-3039 — Settings › Storage's lists and its one action,
+   * Sharing's lists), and a group whose title already says it (Text formatting, YAZ-3068 D16).
+   * Search still finds the row by its label and hint, and the label names the row for a screen reader.
    */
   bare?: true
+  /** A row that only exists in some states (the Review rows need upkeep on); absent = always. */
+  available?: (ctx: SettingsCtx) => boolean
   render: (ctx: SettingsCtx) => ReactNode
 }
 
@@ -286,16 +294,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // Heading styles (YAZ-3050 D6): one wide row, all six levels in view. App puts the map on `.app` as `--hN-*` variables (YAZ-3049 D2).
-        title: 'Headings',
-        hint: 'How each heading level looks in every note.',
+        // Text formatting (YAZ-3068 D14-D16): one bare row, the Text line and all six heading levels
+        // in view, of ONE vault (`.yaseendocs/text-formatting.json`). Its own "Vault" dropdown picks
+        // the vault (D15), so the group has no `vault: true` line. App puts each vault's formatting on
+        // that vault's page layers (YAZ-3067 D12).
+        title: 'Text formatting',
+        hint: 'How text looks in every note of this vault.',
         items: [
           {
-            id: 'headingStyles',
-            label: 'Heading styles',
-            keywords: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'size', 'underline', 'highlight', 'bold', 'font'],
-            wide: true,
-            render: ({ settings, onChange }) => <HeadingStylesControl settings={settings} onChange={onChange} />,
+            id: 'textFormatting',
+            label: 'Text formatting',
+            bare: true,
+            keywords: ['headings', 'text', 'vault', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'size', 'underline', 'highlight', 'bold', 'font'],
+            available: (ctx) => ctx.textFormatting !== undefined,
+            render: ({ textFormatting }) => textFormatting && <TextFormattingControl vaults={textFormatting.vaults} initialRoot={textFormatting.activeRoot} />,
           },
         ],
       },
