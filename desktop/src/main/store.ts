@@ -65,6 +65,9 @@ import {
   type WindowEntry,
   DIAGRAM_DARK_COLORS,
   type DiagramDarkColors,
+  DEFAULT_CANVAS_PANEL,
+  isCanvasPanelTab,
+  type CanvasPanelState,
 } from '@shared/types'
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isRecord, isStringArray } from '@shared/guards'
@@ -161,6 +164,13 @@ const clampRightPanelWidth = (w: number): number => Math.min(RIGHT_PANEL_MAX_W, 
 export const isRecentRoots = (v: unknown): v is RecentRoots =>
   Array.isArray(v) && v.every((x) => isRecord(x) && typeof x.path === 'string' && isFiniteNumber(x.lastOpened))
 
+/** The canvas panel's memory (YAZ-3038, Draw's 🔒 YAZ-1775 D10): both halves guarded; on load an unknown tab reads as the default. */
+export const isCanvasPanel = (v: unknown): v is CanvasPanelState => isRecord(v) && isCanvasPanelTab(v.tab) && typeof v.docked === 'boolean'
+const sanitizeCanvasPanel = (raw: unknown): CanvasPanelState => {
+  const src = isRecord(raw) ? raw : {}
+  return { tab: isCanvasPanelTab(src.tab) ? src.tab : DEFAULT_CANVAS_PANEL.tab, docked: typeof src.docked === 'boolean' ? src.docked : DEFAULT_CANVAS_PANEL.docked }
+}
+
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
 const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is SettingsState[K] } = {
   lineSpacing: isFiniteNumber,
@@ -184,6 +194,10 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   // The canvas prefs (YAZ-3028, Draw's 🔒 YAZ-1775 D9): strict here, the IPC boundary's check; `sanitizeSettings` repairs them field by field.
   canvas: isCanvasPrefs,
   diagramDarkColors: (v): v is DiagramDarkColors => typeof v === 'string' && (DIAGRAM_DARK_COLORS as readonly string[]).includes(v),
+  // YAZ-3038 (Draw's 🔒 YAZ-1775 D5): an absolute path the user picked, or null for `<userData>/library`. Never
+  // `''` — an empty string would resolve to the process cwd, which is not a place for a user's library.
+  libraryFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),
+  canvasPanel: isCanvasPanel,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -197,6 +211,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   }
   // A store written before a canvas pref existed keeps every pref it does have, instead of resetting the lot.
   out.canvas = sanitizeCanvasPrefs(src.canvas)
+  out.canvasPanel = sanitizeCanvasPanel(src.canvasPanel)
   return out
 }
 

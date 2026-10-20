@@ -49,7 +49,8 @@ describe('HOTKEYS source of truth', () => {
   })
 
   it('covers the board keys from Draw (YAZ-3037): the menu\'s three board items and ⌘S, and the draw.io tables, between Window and Mouse', () => {
-    expect(CANVAS_HOTKEYS.map((h) => h.keys)).toEqual(['⌘⇧E', '⌘⇧S', '⌘⇧L', '⌘S'])
+    expect(CANVAS_HOTKEYS.map((h) => h.keys)).toEqual(['⌘⇧E', '⌘⇧S', '⌘⇧L', '⌘S', '⌘F', '⌘C'])
+    expect(CANVAS_HOTKEYS.find((h) => h.keys === '⌘C')?.label).toMatch(/components tab.*nothing is selected/i)
     expect(DRAWIO_HOTKEYS.map((h) => h.keys)).toContain('R / O / T')
     expect(HOTKEY_GROUPS.map((g) => g.title)).toEqual(['Keyboard', 'Views', 'Window', 'Excalidraw canvas', 'draw.io diagram', 'Mouse'])
     // ⌘⇧S keeps both meanings: Skip in a review (the Window table), Export on a drawing tab.

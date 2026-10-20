@@ -91,7 +91,9 @@ export const MOUSE_TIPS: readonly HotkeyEntry[] = [
 /**
  * The shortcuts that only mean something with a DRAWING in front (YAZ-3037, YAZ-3028 D10; ported from
  * Draw). ⌘⇧E, ⌘⇧S and ⌘⇧L are the application menu's and grey out on any other tab; ⌘⇧S is still the
- * review's Skip while a review is open. ⌘S is bound on the drawing tab itself.
+ * review's Skip while a review is open. ⌘S, ⌘F and ⌘C are bound on the drawing tab itself; ⌘F and ⌘C
+ * (the canvas panel, YAZ-3038) step aside whenever the key could mean something else — which is why
+ * ⌘C still copies a selection.
  */
 export const CANVAS_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧E', label: "Export image… — the engine's own PNG / SVG dialog; a diagram saves a PNG or SVG" },
@@ -99,6 +101,8 @@ export const CANVAS_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧L', label: 'Share link — the drawing or diagram in front' },
   // Autosave already runs on a 500 ms timer, so this is "write it NOW" (Draw's 🔒 YAZ-1810).
   { keys: '⌘S', label: 'Save the drawing in front now — it autosaves anyway' },
+  { keys: '⌘F', label: 'Open the Images tab of the canvas panel' },
+  { keys: '⌘C', label: 'Open the Components tab of the canvas panel — when nothing is selected and no text is being edited' },
 ]
 
 /**

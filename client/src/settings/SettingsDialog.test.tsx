@@ -128,6 +128,8 @@ const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionSt
 const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents']
 /** Settings › Excalidraw canvas (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
 const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
+/** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
+const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
 const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows']
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 const HOTKEY_ROWS = ['hotkeys-keyboard', 'hotkeys-views', 'hotkeys-window', 'hotkeys-canvas', 'hotkeys-drawio', 'hotkeys-mouse']
@@ -173,13 +175,13 @@ describe('SettingsDialog shell (D1)', () => {
 describe('SettingsDialog: a page for each section (YAZ-2709, amending the one long page)', () => {
   it('the nav: the settings pages (Review only with a vault, Sync only with the engine), a divider, then the Hotkeys reference page', () => {
     const { el } = mount()
-    expect(navShape(el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Files & Links', '—', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
     unmount()
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
-    expect(navShape(withSync.el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Files & Links', 'Sync', '—', 'Hotkeys'])
+    expect(navShape(withSync.el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', '—', 'Hotkeys'])
     unmount()
     const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
-    expect(navShape(withVault.el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
+    expect(navShape(withVault.el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
   })
 
   it('opens on Appearance: the one section in the pane, anchored by id, with only its rows — no row of a later section is there', () => {
@@ -190,7 +192,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(currentNav(el)).toBe('Appearance')
     expect(currentKind(el)).toBe('page')
     expect(pane(el).scrollTop).toBe(0)
-    for (const id of [...EDITOR_ROWS, ...CANVAS_ROWS, ...FILES_ROWS, ...REVIEW_ROWS, 'githubSync', ...HOTKEY_ROWS]) expect(row(el, id)).toBeNull()
+    for (const id of [...EDITOR_ROWS, ...CANVAS_ROWS, ...IMAGES_ROWS, ...FILES_ROWS, ...REVIEW_ROWS, 'githubSync', ...HOTKEY_ROWS]) expect(row(el, id)).toBeNull()
   })
 
   it('a nav click shows only that section: its heading, its anchor id and its rows in registry order, every row addressed by data-setting, and it alone is aria-current="page"', () => {
@@ -209,6 +211,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       page('Appearance', 'settings-appearance', APPEARANCE_ROWS),
       page('Editor', 'settings-editor', EDITOR_ROWS),
       page('Excalidraw canvas', 'settings-canvas', CANVAS_ROWS),
+      page('Images', 'settings-images', IMAGES_ROWS),
       page('Files & Links', 'settings-files', FILES_ROWS),
       page('Review', 'settings-review', REVIEW_ROWS),
       page('Sync', 'settings-sync', ['githubSync']),
@@ -250,6 +253,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Appearance', []],
       ['Editor', []],
       ['Excalidraw canvas', []],
+      ['Images', []],
       ['Files & Links', []],
       ['Review', [['settings-review', "These settings are saved in this vault's .yaseendocs folder and sync with it."]]],
       ['Sync', [['settings-sync', "These settings are saved in this vault's .yaseendocs folder, not app-wide."]]],
@@ -269,6 +273,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Appearance', []],
       ['Editor', []],
       ['Excalidraw canvas', []],
+      ['Images', []],
       ['Files & Links', [{ text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' }]],
       ['Review', [{ text: 'Vault: Work', under: 'Review', className: 'settings-section__note' }]],
       ['Sync', [{ text: 'Vault: Work', under: 'Sync', className: 'settings-section__note' }]],
@@ -300,7 +305,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Sync')
     expect(currentNav(el)).toBe('Sync')
     act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange }} onClose={onClose} />))
-    expect(navShape(el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Files & Links', '—', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
     expect(headings(el)).toEqual(['Appearance'])
     expect(currentNav(el)).toBe('Appearance')
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
@@ -549,7 +554,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
     const { el } = mount()
     expect(navByTitle(el, 'Review')).toBeUndefined()
     const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'baseDays')])
-    expect(found.map(([title]) => title)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Files & Links', 'Hotkeys'])
+    expect(found.map(([title]) => title)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Hotkeys'])
     for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 

@@ -10,7 +10,8 @@
  * There is no chips ROW here on purpose — the chips are handed to the engine's own top-right
  * slot (`renderTopRight`), so the canvas starts directly under the shell's tab bar.
  *
- * Everything below the canvas frame is the CHROME INSIDE the engine (Draw's YAZ-1812), scoped under
+ * Everything below the canvas frame is the CHROME INSIDE the engine (Draw's YAZ-1812: the rail, the
+ * docked canvas panel, the parity rules), scoped under
  * `.editor--drawing .excalidraw` so the engine's own design tokens apply unchanged and nothing
  * leaks into the shell or into the note embed's modal.
  */
@@ -53,7 +54,9 @@
 }
 
 /* The surface's own element fills the frame, as the engine's does — in the tab and in the embed's
-   modal alike. It is also the containing block the canvas panel's presentation (YAZ-3038) needs. */
+   modal alike. In the tab it is also the ⌘F / ⌘C capture host and the PRESENTATION's containing block
+   (YAZ-3038): the player is a sibling of the engine, absolutely positioned over this pane rather than
+   fixed over the window, because the shell keeps several drawing tabs mounted at once. */
 .drawing-surface {
   position: relative;
   width: 100%;
@@ -65,12 +68,170 @@
   height: 100%;
 }
 
-/* 🔒 Draw's YAZ-1775 D10: the engine's own menu trigger is not this app's door. This is the web app's
-   own rule (`AppSidebar.scss:3-5`); the tab's export and background come from the application menu
-   (YAZ-3037). Scoped to the TAB: the note embed's modal keeps the engine's menu (rule 28). The rail
-   and the canvas panel's rules come with them (YAZ-3038). */
+/* ---------- The rail (YAZ-3038; Draw's 🔒 YAZ-1775 D10): `excalidraw-app/components/AppSidebar.scss`, ported ----------
+   Scoped under the engine's root so its own tokens (island background, primary colour, button
+   sizes) apply unchanged. The rail sits in the top-left row, where the engine's own menu trigger
+   used to be. */
+
+.editor--drawing .excalidraw .app-sidebar-launchers {
+  align-items: center;
+  display: flex;
+  gap: 0.25rem;
+  min-width: 0;
+  order: 2;
+  pointer-events: var(--ui-pointerEvents, all);
+}
+
+.editor--drawing .excalidraw .app-sidebar-launchers__modes {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.editor--drawing .excalidraw .app-sidebar-launcher {
+  align-items: center;
+  background: var(--island-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: var(--border-radius-lg);
+  color: var(--text-primary-color);
+  cursor: pointer;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.0625rem;
+  height: var(--lg-button-size);
+  justify-content: center;
+  padding: 0 0.25rem;
+  min-width: var(--lg-button-size);
+  width: auto;
+  font: inherit;
+}
+
+.editor--drawing .excalidraw .app-sidebar-launcher:hover {
+  background: var(--button-hover-bg);
+}
+
+.editor--drawing .excalidraw .app-sidebar-launcher[aria-pressed='true'] {
+  background: var(--color-surface-primary-container);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.editor--drawing .excalidraw .app-sidebar-launcher:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.editor--drawing .excalidraw .app-sidebar-launcher svg {
+  height: var(--lg-icon-size);
+  width: var(--lg-icon-size);
+}
+
+.editor--drawing .excalidraw .app-sidebar-launcher--quiet {
+  background: transparent;
+  border-color: transparent;
+}
+
+.editor--drawing .excalidraw .app-sidebar-launcher--quiet:hover {
+  border-color: transparent;
+}
+
+/* A preference toggle, not a panel launcher: "on" is the resting state, so it stays quiet and
+   only dims once the user has switched it off. */
+.editor--drawing .excalidraw .app-sidebar-launcher--toggle[aria-pressed='true'] {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-primary-color);
+}
+
+.editor--drawing .excalidraw .app-sidebar-launcher--toggle[aria-pressed='true']:hover {
+  background: var(--button-hover-bg);
+}
+
+.editor--drawing .excalidraw .app-sidebar-launcher--toggle[aria-pressed='false'] {
+  opacity: 0.55;
+}
+
+/* The hamburger (the web app's `app-sidebar-launchers__boards-menu`): a 2rem island button, first
+   in the row, and the icon-only toggles beside it — their labels are their tooltips (🔒 YAZ-1775 D10). */
+.editor--drawing .excalidraw .app-sidebar-launchers__boards-menu,
+.editor--drawing .excalidraw .app-sidebar-launcher--icon {
+  height: 2rem;
+  min-width: 2rem;
+  width: 2rem;
+  padding: 0;
+}
+
+/* 🔒 Draw's YAZ-1775 D10: the engine's own menu trigger is not this app's door — the rail's hamburger is.
+   This is the web app's own rule (`AppSidebar.scss:3-5`); the tab's export and background come from the
+   application menu (YAZ-3037). Scoped to the TAB: the note embed's modal keeps the engine's menu and
+   has no rail and no canvas panel (rule 28). */
 .editor--drawing .excalidraw .main-menu-trigger {
   display: none;
+}
+
+/* ---------- The canvas panel (YAZ-3038; Draw's ⚡ YAZ-1775 D8 amended): `AppSidebar.scss`'s `.default-sidebar` rules ---------- */
+
+.editor--drawing .excalidraw .default-sidebar .sidebar__header {
+  padding-inline-end: 0.375rem;
+  padding-inline-start: 0.5rem;
+}
+
+.editor--drawing .excalidraw .default-sidebar .sidebar-triggers {
+  flex: 1;
+  min-width: 0;
+}
+
+.editor--drawing .excalidraw .default-sidebar .app-sidebar-panel-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--border-radius-lg);
+  color: var(--text-primary-color);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 2rem;
+  height: 2rem;
+  justify-content: center;
+  margin-inline-end: 0.25rem;
+  padding: 0;
+  width: 2rem;
+}
+
+.editor--drawing .excalidraw .default-sidebar .app-sidebar-panel-toggle:hover {
+  background: var(--button-hover-bg);
+}
+
+.editor--drawing .excalidraw .default-sidebar .app-sidebar-panel-toggle svg,
+.editor--drawing .excalidraw .default-sidebar .sidebar__header__buttons button svg {
+  height: 1rem;
+  width: 1rem;
+}
+
+.editor--drawing .excalidraw .default-sidebar .sidebar-triggers .app-sidebar-tab-trigger {
+  flex-direction: column;
+  gap: 0.0625rem;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  width: auto;
+}
+
+.editor--drawing .excalidraw .app-sidebar-tab-label {
+  font-size: 0.5625rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.editor--drawing .excalidraw .default-sidebar .sidebar__header__buttons button {
+  height: 2rem;
+  width: 2rem;
+}
+
+/* The one "no canvas yet" line, for whichever tab is open (CanvasSidebar.tsx). */
+.editor--drawing .excalidraw .canvas-panel__loading {
+  padding: 1rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-primary-color);
+  opacity: 0.7;
 }
 
 /* ---------- Engine parity: the one `excalidraw-app/index.scss` rule that survives (🔒 YAZ-1775 R3) ----------

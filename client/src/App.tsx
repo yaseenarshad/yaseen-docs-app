@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
-import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPrefs, type CommentsOrder, type PageView, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type PageView, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -348,6 +348,14 @@ export function App() {
   const changeTableOfContentsWidth = useCallback((width: number) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContentsWidth: width }), [changeSettings])
   // A drawing's engine moved a canvas pref (YAZ-3028, Draw's 🔒 YAZ-1775 D9): the same stable door.
   const changeCanvasPrefs = useCallback((canvas: CanvasPrefs) => changeSettings({ ...newNoteFolderInputs.current.settings, canvas }), [changeSettings])
+  // The canvas panel's tab and dock choice (YAZ-3038): the same stable door; a choice that did not move is no write.
+  const changeCanvasPanel = useCallback(
+    (canvasPanel: CanvasPanelState) => {
+      const current = newNoteFolderInputs.current.settings.canvasPanel
+      if (current.tab !== canvasPanel.tab || current.docked !== canvasPanel.docked) changeSettings({ ...newNoteFolderInputs.current.settings, canvasPanel })
+    },
+    [changeSettings],
+  )
 
   // Appearance (Desktop K, GRO-2218): `system` tracks the OS live; explicit values win.
   // `data-theme` goes on <html> so body / fixed overlays follow app.css's dark tokens, and
@@ -1289,6 +1297,8 @@ export function App() {
       // YAZ-3028: every drawing tab shares the canvas prefs, a SETTING too.
       canvasPrefs: settings.canvas,
       onChangeCanvasPrefs: changeCanvasPrefs,
+      canvasPanel: settings.canvasPanel,
+      onChangeCanvasPanel: changeCanvasPanel,
       // A diagram tab's dark-mode colours, and ⌘B pressed inside its draw.io frame.
       diagramDarkColors: settings.diagramDarkColors,
       onToggleSidebar: toggleSidebar,

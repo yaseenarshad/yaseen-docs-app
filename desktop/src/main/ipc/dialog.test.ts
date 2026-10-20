@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
@@ -32,10 +32,11 @@ beforeEach(() => {
 })
 
 const pick = () => registered(CONTRACT.pickFolder.channel)({ sender })
+const open = () => registered(CONTRACT.dialog.openDrawing.channel)({ sender })
 
 describe('dialog:pick-folder', () => {
-  it('registers exactly the pick-folder and the two export channels', () => {
-    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel, CONTRACT.dialog.saveDrawing.channel, CONTRACT.dialog.saveImage.channel])
+  it('registers exactly the pick-folder, the two export channels and the import (YAZ-3038)', () => {
+    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel, CONTRACT.dialog.saveDrawing.channel, CONTRACT.dialog.saveImage.channel, CONTRACT.dialog.openDrawing.channel])
   })
 
   it('opens an openDirectory dialog parented to the calling window and answers { path }', async () => {
@@ -70,6 +71,47 @@ describe('dialog:pick-folder', () => {
   it('a dialog failure comes out as PICKER_FAILED', async () => {
     showOpenDialog.mockRejectedValue(new Error('no display'))
     expect(await pick()).toEqual({ ok: false, error: { code: 'PICKER_FAILED', message: 'no display' } })
+  })
+})
+
+/** The Components tab's Import (YAZ-3038, ported from Draw's YAZ-1833 tests). */
+describe('dialog:open-file', () => {
+  let dir = ''
+  const file = async (name: string, content: string) => {
+    if (dir === '') dir = await mkdtemp(path.join(tmpdir(), 'yd-dialog-open-'))
+    const p = path.join(dir, name)
+    await writeFile(p, content, 'utf8')
+    return p
+  }
+  afterAll(() => (dir === '' ? undefined : rm(dir, { recursive: true, force: true })))
+
+  it('opens an openFile dialog filtered to .excalidraw, parented to the calling window, and answers the bytes', async () => {
+    const win = { id: 'w' } as unknown as BrowserWindow
+    fromWebContents.mockReturnValue(win)
+    const picked = await file('03 Legacy embedded.excalidraw', '{"type":"excalidraw","elements":[]}')
+    showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [picked] })
+    expect(await open()).toEqual({ ok: true, value: { path: picked, name: '03 Legacy embedded', content: '{"type":"excalidraw","elements":[]}' } })
+    expect(showOpenDialog).toHaveBeenCalledWith(win, { title: 'Import Excalidraw JSON', properties: ['openFile'], filters: [{ name: 'Excalidraw', extensions: ['excalidraw'] }] })
+  })
+
+  it('a dismissal is { cancelled: true }; a typed name that is not .excalidraw is UNSUPPORTED_EXTENSION; a file gone before the read is NOT_FOUND', async () => {
+    showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    expect(await open()).toEqual({ ok: true, value: { cancelled: true } })
+    const notes = await file('notes.txt', 'hello')
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [notes] })
+    expect(await open()).toMatchObject({ ok: false, error: { code: 'UNSUPPORTED_EXTENSION', path: notes } })
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path.join(tmpdir(), 'yd-dialog-missing', 'gone.excalidraw')] })
+    expect(await open()).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } })
+  })
+
+  it('shares the one-dialog-in-flight guard with the folder picker', async () => {
+    let settle!: (v: Electron.OpenDialogReturnValue) => void
+    showOpenDialog.mockReturnValueOnce(new Promise<Electron.OpenDialogReturnValue>((r) => (settle = r)))
+    const first = pick()
+    expect(await open()).toEqual({ ok: true, value: { cancelled: true } })
+    expect(showOpenDialog).toHaveBeenCalledTimes(1)
+    settle({ canceled: true, filePaths: [] })
+    expect(await first).toEqual({ ok: true, value: { cancelled: true } })
   })
 })
 

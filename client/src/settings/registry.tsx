@@ -28,6 +28,7 @@ import type { GithubSyncStatus, IdsState, IndexResponse, SettingsState } from '@
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { CANVAS_SECTION } from './canvasSection'
+import { IMAGES_SECTION } from './imagesSection'
 import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
@@ -85,7 +86,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas'
+export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -408,6 +409,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   // YAZ-3037 (YAZ-3028 D10): the user-level Excalidraw canvas preferences, declared in their own module
   // because there are fourteen of them and they are the one section with a mapping behind it (`shared/canvasPrefs.ts`).
   CANVAS_SECTION,
+  // YAZ-3038 (YAZ-3028 D10): the canvas panel's Pixabay key and its library folder.
+  IMAGES_SECTION,
   {
     id: 'files',
     title: 'Files & Links',

@@ -12,6 +12,7 @@ import { resolveDrawioDir, serveDrawio } from './drawio/assets'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { initBoardThumbs } from './ipc/board'
+import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerUpdateIpc } from './ipc/update'
@@ -259,7 +260,10 @@ app.whenReady().then(() => {
   // A tab switch changes which file is in front; a focus change changes which window is asked.
   subscribeMenuRebuildOnActiveFile(store, applyMenu)
   rebuildMenuOnFocus = applyMenu
-  const sync = registerIpc(store, manager)
+  const sync = registerIpc(store, manager, app.getPath('userData'))
+  // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
+  // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
+  void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'))
   gitSync = sync
   registerUpdateIpc(updater, {
     openExternal: (url) => void shell.openExternal(url),

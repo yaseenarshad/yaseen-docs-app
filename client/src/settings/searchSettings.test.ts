@@ -41,6 +41,9 @@ describe('settingCandidates', () => {
       'tocLines',
       // Settings › Excalidraw canvas (YAZ-3037).
       ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`),
+      // Settings › Images (YAZ-3038).
+      'pixabayApiKey',
+      'libraryFolder',
       'confirmDelete',
       'confirmRename',
       'newNoteLocation',

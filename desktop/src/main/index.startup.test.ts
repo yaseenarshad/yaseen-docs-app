@@ -94,6 +94,7 @@ vi.mock('./windows', () => ({ createWindowManager: () => h.manager }))
 // The diaries of links (YAZ-2677 R27) are flushed with the index cache, in the same step.
 vi.mock('./vaultIndex', () => ({ initIndexCache: vi.fn(), flushIndexCache: h.flushIndexCache, flushDiaries: vi.fn(async () => undefined) }))
 vi.mock('./ipc', () => ({ registerIpc: h.registerIpc }))
+vi.mock('./library/folder', () => ({ ensureLibraryFolder: vi.fn(async () => '/userData/library') }))
 vi.mock('./updater', () => ({ createUpdater: h.createUpdater, runFile: vi.fn(), spawnDetached: vi.fn(), RELEASES_PAGE: 'https://github.com/yaseenarshad/yaseen-docs-app/releases/latest' }))
 vi.mock('./ipc/clipboard', () => ({ registerClipboardIpc: h.registerClipboardIpc }))
 vi.mock('./theme', () => ({ subscribeNativeTheme: vi.fn(), windowBackgroundColor: vi.fn() }))

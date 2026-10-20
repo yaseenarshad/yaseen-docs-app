@@ -286,6 +286,22 @@ describe('createStore: loading', () => {
     expect(isSettings(legacySettings)).toBe(false)
   })
 
+  it('libraryFolder and canvasPanel (YAZ-3038): an older file loads with null and the default panel; a bad tab or a relative folder falls back; the channel check is strict', async () => {
+    const { libraryFolder: _folder, canvasPanel: _panel, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
+    expect(DEFAULT_SETTINGS.libraryFolder).toBeNull()
+    expect(DEFAULT_SETTINGS.canvasPanel).toEqual({ tab: 'components', docked: false })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, libraryFolder: '/Vault/Library', canvasPanel: { tab: 'presentation', docked: true } } }))
+    expect(createStore(file).get().settings).toMatchObject({ libraryFolder: '/Vault/Library', canvasPanel: { tab: 'presentation', docked: true } })
+    // One bad half costs that half only; '' or a relative path is never a library folder (it would resolve to the cwd).
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, libraryFolder: 'Library', canvasPanel: { tab: 'boards', docked: true } } }))
+    expect(createStore(file).get().settings).toMatchObject({ libraryFolder: null, canvasPanel: { tab: 'components', docked: true } })
+    for (const libraryFolder of ['', 'rel/dir', 7]) expect(isSettings({ ...DEFAULT_SETTINGS, libraryFolder })).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, canvasPanel: { tab: 'image-studio' } })).toBe(false)
+    expect(isSettings(legacySettings)).toBe(false)
+  })
+
   it('tocLines: an older file without the key loads with hover; the three values load as they are; anything else loads as hover, and fails the channel check (YAZ-2762 D5)', async () => {
     expect(TOC_LINES).toEqual(['hover', 'always', 'off'])
     expect(DEFAULT_SETTINGS.tocLines).toBe('hover')

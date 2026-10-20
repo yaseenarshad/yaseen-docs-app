@@ -53,20 +53,28 @@
  * `updateFrameRendering`. Both directions compare against that one ref — the anti-ping-pong rule.
  *
  * THE CHROME INSIDE THE ENGINE. `renderTopRightUI` is the tab's status chips (the slot the web
- * app's cloud status sat in). Draw's rail (`renderTopLeftUI`: the panel hamburger, Writing and
- * Frames) and its docked canvas panel (Images / Components / Present, the engine's one child, and
- * the ⌘F / ⌘C shortcuts that open it) are YAZ-3038's: they plug in beside `renderTopRight`.
+ * app's cloud status sat in). THE CANVAS PANEL (YAZ-3038, ported from Draw's 🔒 YAZ-1775 D8 / D10) is the
+ * TAB's only: a host that passes `onCanvasPanelChange` gets Draw's rail (`renderTopLeftUI`:
+ * `LauncherRail.tsx`, the panel hamburger plus the Writing / Frames toggles), the docked panel
+ * (`CanvasSidebar.tsx`, Images / Components / Present, the engine's one child), the ⌘F / ⌘C keys that
+ * open it — bound on THIS component's own element in the capture phase, never `window`, because
+ * several tabs each mount an engine — and the presentation player. The note embed's modal passes
+ * none of it: it keeps the engine's own menu at top-left, and a note's drawing has no library
+ * (rule 28). Which mode a surface is in is read ONCE, at mount.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
-import { DEFAULT_CANVAS_PREFS, type CanvasPrefs } from '@shared/types'
+import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs } from '@shared/types'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
+import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
 import { openViewport, type DrawingScene } from './drawingScene'
 import { applyToolbarMode, loadExcalidraw, type ExcalidrawModule } from './engine'
 import { assembleStandaloneScene } from './exportDrawing'
 import { yaseenFormFactor } from './formFactor'
 import { applyFramesVisibility } from './framesVisibility'
+import { createLauncherStore, LauncherRail } from './LauncherRail'
+import { PresentationPlayer } from './presentation/PresentationPlayer'
 
 type ExcalidrawProps = ComponentProps<ExcalidrawModule['Excalidraw']>
 type ChangeArgs = Parameters<NonNullable<ExcalidrawProps['onChange']>>
@@ -118,8 +126,15 @@ export interface DrawingSurfaceProps {
    * differ from what the engine is believed to hold. Omitted = the defaults.
    */
   canvasPrefs?: CanvasPrefs
-  /** A pref the ENGINE changed. Reported only when a value actually moved, 300 ms debounced. */
+  /** A pref the ENGINE or the rail changed. Reported only when a value actually moved, 300 ms debounced. */
   onCanvasPrefsChange?: (next: CanvasPrefs) => void
+  /** What the canvas panel remembers (YAZ-3038): the tab the hamburger opens on, and the dock preference. */
+  canvasPanel?: CanvasPanelState
+  /**
+   * A panel choice to remember. PASSING IT IS WHAT TURNS THE CANVAS PANEL ON (YAZ-3038): the drawing TAB
+   * passes it; the note embed's modal does not, and gets no rail, no panel, no ⌘F / ⌘C and no player.
+   */
+  onCanvasPanelChange?: (next: CanvasPanelState) => void
   /** Mount, then every engine change. The first call is the host's clean baseline. */
   onSnapshot: (snapshot: DrawingSnapshot) => void
   /** The engine itself failed to load — the host shows it and offers nothing but the message. */
@@ -166,8 +181,22 @@ function engineScene(scene: DrawingScene, canvasAppState: Record<string, unknown
   }
 }
 
-export function ExcalidrawSurface({ scene, theme, canvasPrefs = DEFAULT_CANVAS_PREFS, onCanvasPrefsChange, onSnapshot, onFailed, onApi, renderTopRight, autoFocus = false }: DrawingSurfaceProps) {
+export function ExcalidrawSurface({
+  scene,
+  theme,
+  canvasPrefs = DEFAULT_CANVAS_PREFS,
+  onCanvasPrefsChange,
+  canvasPanel = DEFAULT_CANVAS_PANEL,
+  onCanvasPanelChange,
+  onSnapshot,
+  onFailed,
+  onApi,
+  renderTopRight,
+  autoFocus = false,
+}: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
+  /** The canvas panel is the tab's (see the module doc); read once, so a surface never changes mode. */
+  const [withPanel] = useState(() => onCanvasPanelChange !== undefined)
   // Callbacks change identity on every host render; the load must run ONCE and `onChange` must
   // never change identity, so all of them go through refs.
   const engineRef = useRef<ExcalidrawModule | null>(null)
@@ -177,14 +206,37 @@ export function ExcalidrawSurface({ scene, theme, canvasPrefs = DEFAULT_CANVAS_P
   const failRef = useRef(onFailed)
   const apiRef = useRef(onApi)
   const prefsOutRef = useRef(onCanvasPrefsChange)
-  /** The engine's raw handle; null until it has mounted. */
+  const panelOutRef = useRef(onCanvasPanelChange)
+  const panelRef = useRef(canvasPanel)
+  /** The engine's raw handle, for the rail and the shortcuts; null until it has mounted. */
   const rawApiRef = useRef<ImperativeApi | null>(null)
+  /**
+   * The same handle as STATE, because the panel's tabs are children of `<Excalidraw>` that have to
+   * re-render when it arrives (Draw's YAZ-1818) — a ref alone would leave the Images tab's insert disabled.
+   */
+  const [imperativeApi, setImperativeApi] = useState<ImperativeApi | null>(null)
+  /**
+   * ⌘F's one-shot request to focus the Images tab's search field (Draw's 🔒 YAZ-1990). A flag the tab
+   * clears; per surface, so a hidden drawing tab can never consume it.
+   */
+  const [searchFocusPending, setSearchFocusPending] = useState(false)
+  const onSearchFocused = useCallback(() => setSearchFocusPending(false), [])
+  /** Whether the canvas holds a selection — the Components tab's "Save selection" gate (Draw's YAZ-1819). */
+  const [hasSelection, setHasSelection] = useState(false)
   /** This seam's own element — the handle's `focus()` reaches the engine's container through it. */
   const rootRef = useRef<HTMLDivElement | null>(null)
+  /**
+   * The presentation, if one is running (Draw's YAZ-1820): the player is a SIBLING of `<Excalidraw>`, not a
+   * child of the Present tab, because a tab's body is unmounted the moment the panel closes and
+   * closing the panel must not end a presentation. It covers this pane and no other.
+   */
+  const [presenting, setPresenting] = useState<{ initialFrameId: string | null } | null>(null)
   emitRef.current = onSnapshot
   failRef.current = onFailed
   apiRef.current = onApi
   prefsOutRef.current = onCanvasPrefsChange
+  panelOutRef.current = onCanvasPanelChange
+  panelRef.current = canvasPanel
 
   /** What the engine is believed to hold (see the anti-ping-pong note in the module doc). */
   const appliedRef = useRef<CanvasPrefs>(canvasPrefs)
@@ -212,10 +264,94 @@ export function ExcalidrawSurface({ scene, theme, canvasPrefs = DEFAULT_CANVAS_P
     [],
   )
 
+  /** Remember a panel choice (Draw's 🔒 YAZ-1775 D10); a value that did not move is not a write. */
+  const rememberPanel = useCallback((patch: Partial<CanvasPanelState>) => {
+    const next = { ...panelRef.current, ...patch }
+    if (next.tab === panelRef.current.tab && next.docked === panelRef.current.docked) return
+    panelRef.current = next
+    panelOutRef.current?.(next)
+  }, [])
+
+  /** THE one door that closes the canvas panel — the hamburger, the ✕ and Play. */
+  const closePanel = useCallback(() => rawApiRef.current?.toggleSidebar({ name: null, force: false }), [])
+
+  // The rail's store, made ONCE: the hamburger drives the engine's sidebar, the two toggles write
+  // the PREF and let the round trip apply it. Every action reads the refs above, so the store — and
+  // therefore `renderTopLeftUI` — never changes identity.
+  const rail = useMemo(() => {
+    const flip = (key: 'writingMode' | 'framesVisible') => prefsOutRef.current?.({ ...appliedRef.current, [key]: !appliedRef.current[key] })
+    const store = createLauncherStore(
+      {
+        // Open on the last-used tab (Components until then); pressing again closes.
+        togglePanel: () => {
+          if (store.getState().activeTab !== null) closePanel()
+          else rawApiRef.current?.toggleSidebar({ name: CANVAS_SIDEBAR, tab: panelRef.current.tab, force: true })
+        },
+        // The web app's rule: open on the tab; the ACTIVE tab's own shortcut closes the panel.
+        openTab: (tab) => rawApiRef.current?.toggleSidebar({ name: CANVAS_SIDEBAR, tab, force: store.getState().activeTab !== tab }),
+        toggleWriting: () => flip('writingMode'),
+        toggleFrames: () => flip('framesVisible'),
+      },
+      { ready: false, activeTab: null, writingMode: canvasPrefs.writingMode, framesVisible: canvasPrefs.framesVisible },
+    )
+    return store
+    // Mount-only by contract: the initial values are read once (`closePanel` is stable), and every
+    // later value arrives through `set` from the effect below.
+  }, [closePanel])
+
+  // Play (Draw's YAZ-1820): the panel closes, because it would otherwise sit on top of the deck.
+  const startPresentation = useCallback(
+    (initialFrameId: string | null) => {
+      closePanel()
+      setPresenting({ initialFrameId })
+    },
+    [closePanel],
+  )
+  const endPresentation = useCallback(() => setPresenting(null), [])
+  /** The player hid the frame outlines to present; this puts back what the user's `framesVisible` pref says. */
+  const restoreFrames = useCallback(() => {
+    const api = rawApiRef.current
+    if (api !== null) applyFramesVisibility(api, appliedRef.current.framesVisible)
+  }, [])
+  const onDock = useCallback((docked: boolean) => rememberPanel({ docked }), [rememberPanel])
+
+  /**
+   * ⌘C → Components and ⌘F → Images (Draw's port of the web app's `c` / `f`, `AppSidebar.tsx:983-1078`),
+   * with its guards: the primary modifier alone, no repeat, no IME composition, no editable target, no
+   * live text selection, and — asked of the engine itself — no element being drawn, dragged, resized,
+   * rotated or cropped, no text being edited, no dialog open and nothing selected. Those gates are why
+   * ⌘C still copies a selection. Bound on THIS element in the capture phase, in the tab only.
+   */
+  const onKeyDownCapture = useCallback(
+    (event: ReactKeyboardEvent) => {
+      const api = rawApiRef.current
+      if (api === null) return
+      const key = event.key.toLowerCase()
+      const tab: CanvasPanelTab | null = key === 'c' ? 'components' : key === 'f' ? 'image-studio' : null
+      if (tab === null || !event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.repeat || event.nativeEvent.isComposing) return
+      const target = event.target
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
+      if (target instanceof HTMLElement && (target.isContentEditable || target.closest("[contenteditable='true']") !== null)) return
+      const selection = window.getSelection()
+      if (selection !== null && !selection.isCollapsed) return
+      const appState = api.getAppState() as unknown as Record<string, unknown>
+      const busy = BUSY_APP_STATE_KEYS.some((k) => Boolean(appState[k]))
+      if (busy || appState.cursorButton === 'down' || Object.keys((appState.selectedElementIds ?? {}) as Record<string, unknown>).length > 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      // ⌘F puts the caret in the search field too — only when this press OPENS the tab: the active
+      // tab's own shortcut closes the panel, and must leave nothing pending behind.
+      if (tab === 'image-studio' && rail.getState().activeTab !== tab) setSearchFocusPending(true)
+      rail.openTab(tab)
+    },
+    [rail],
+  )
+
   // Shell → engine (🔒 D9): a prop that differs from what was last applied is pushed, changed keys
   // only. `framesVisible` goes through `updateFrameRendering`; `toolLock` is merged into the tool
   // the engine is HOLDING, because a partial `activeTool` would wipe it.
   useEffect(() => {
+    rail.set({ writingMode: canvasPrefs.writingMode, framesVisible: canvasPrefs.framesVisible })
     if (prefsEqual(canvasPrefs, appliedRef.current)) return
     const keys = changedPrefKeys(appliedRef.current, canvasPrefs)
     appliedRef.current = canvasPrefs
@@ -228,7 +364,7 @@ export function ExcalidrawSurface({ scene, theme, canvasPrefs = DEFAULT_CANVAS_P
     if (keys.includes('toolLock')) appState.activeTool = { ...api.getAppState().activeTool, locked: canvasPrefs.toolLock }
     if (Object.keys(appState).length > 0) api.updateScene({ appState: appState as unknown as EngineAppState })
     if (keys.includes('framesVisible')) applyFramesVisibility(api, canvasPrefs.framesVisible)
-  }, [canvasPrefs])
+  }, [canvasPrefs, rail])
 
   // The scene and the prefs are read ONCE, at mount, by the effect below; a ref keeps them out of
   // its dependency list without lying to the linter about what it uses.
@@ -275,13 +411,22 @@ export function ExcalidrawSurface({ scene, theme, canvasPrefs = DEFAULT_CANVAS_P
       const mod = engineRef.current
       const edits = countEdits.current
       if (mod !== null && edits !== null) emitRef.current(snapshotOf(mod, elements, appState, files, edits(appState as unknown as Record<string, unknown>)))
+      if (withPanel) {
+        // The canvas panel's open tab: the rail's emphasis, the triggers' opacity, and the memory
+        // the hamburger opens on next time; and the selection gate of "Save selection".
+        setHasSelection(Object.keys((appState as unknown as { selectedElementIds?: Record<string, unknown> }).selectedElementIds ?? {}).length > 0)
+        const activeTab = openCanvasTab((appState as unknown as { openSidebar?: { name?: string; tab?: string } | null }).openSidebar)
+        if (activeTab !== null) rememberPanel({ tab: activeTab })
+        rail.set({ activeTab })
+      }
       // Engine → shell (🔒 D9): the prefs slice, compared before anything is written.
       const seen = appStateToPrefs(appState as unknown as EngineAppStateSlice, appliedRef.current)
       if (prefsEqual(seen, appliedRef.current)) return
       appliedRef.current = seen
+      rail.set({ writingMode: seen.writingMode, framesVisible: seen.framesVisible })
       reportPrefs(seen)
     },
-    [reportPrefs],
+    [withPanel, rail, rememberPanel, reportPrefs],
   )
 
   /** The imperative handle, wrapped once into the engine-free API the host sees. */
@@ -293,6 +438,13 @@ export function ExcalidrawSurface({ scene, theme, canvasPrefs = DEFAULT_CANVAS_P
     rawApiRef.current = api
     // Frames are never appState (🔒 D9): applied the moment the engine can take them.
     applyFramesVisibility(api, appliedRef.current.framesVisible)
+    if (withPanel) {
+      setImperativeApi(api)
+      // The dock preference the web app kept per cloud username, kept in the shell store here.
+      const docked = panelRef.current.docked
+      if (api.getAppState().defaultSidebarDockedPreference !== docked) api.updateScene({ appState: { defaultSidebarDockedPreference: docked } as unknown as EngineAppState })
+      rail.set({ ready: true })
+    }
     apiRef.current?.({
       refresh: () => api.refresh(),
       // `focusContainer()` lives on the engine's App class, not on this handle — so do what it
@@ -316,7 +468,7 @@ export function ExcalidrawSurface({ scene, theme, canvasPrefs = DEFAULT_CANVAS_P
         return mod.getSceneVersion(restored)
       },
     })
-  }, [])
+  }, [withPanel, rail])
 
   // The chips live in the engine's OWN top-right row rather than a strip above the canvas, so the
   // canvas starts directly under the tab bar and the chips can never cover the toolbar island.
@@ -325,11 +477,37 @@ export function ExcalidrawSurface({ scene, theme, canvasPrefs = DEFAULT_CANVAS_P
     [renderTopRight],
   )
 
+  // The rail rides the slot the web app's launchers did; its identity never changes (see above).
+  const renderTopLeftUI = useMemo(() => (withPanel ? () => <LauncherRail store={rail} /> : undefined), [withPanel, rail])
+
+  // The panel is re-created only when the open tab moves — its triggers' emphasis is the one
+  // thing about it that depends on live state.
+  const [activeTab, setActiveTab] = useState<CanvasPanelTab | null>(null)
+  useEffect(() => rail.subscribe(() => setActiveTab(rail.getState().activeTab)), [rail])
+  const canvasSidebar = useMemo(
+    () =>
+      engine === null || !withPanel ? null : (
+        <CanvasSidebar
+          engine={engine}
+          activeTab={activeTab}
+          onClose={closePanel}
+          onDock={onDock}
+          excalidrawAPI={imperativeApi}
+          searchFocusPending={searchFocusPending}
+          onSearchFocused={onSearchFocused}
+          hasSelection={hasSelection}
+          onStartPresentation={startPresentation}
+        />
+      ),
+    [engine, withPanel, activeTab, closePanel, onDock, imperativeApi, searchFocusPending, onSearchFocused, hasSelection, startPresentation],
+  )
+
   // The frame held while the engine chunk is arriving; the host's canvas frame sizes it.
   if (engine === null) return <div className="drawing-surface__loading" />
   const { Excalidraw } = engine
   return (
-    <div ref={rootRef} className="drawing-surface">
+    // The surface's own element, so ⌘F / ⌘C are heard here and nowhere else in the shell (the tab only).
+    <div ref={rootRef} className="drawing-surface" onKeyDownCapture={withPanel ? onKeyDownCapture : undefined}>
       <Excalidraw
         initialData={initialData}
         initialState={initialState}
@@ -337,14 +515,39 @@ export function ExcalidrawSurface({ scene, theme, canvasPrefs = DEFAULT_CANVAS_P
         UIOptions={UI_OPTIONS}
         onChange={onChange}
         onExcalidrawAPI={onExcalidrawAPI}
+        renderTopLeftUI={renderTopLeftUI}
         renderTopRightUI={renderTopRightUI}
         // The engine's own scroll listener is for a page that scrolls under it; neither host does.
         detectScroll={false}
         autoFocus={autoFocus}
-      />
+      >
+        {canvasSidebar}
+      </Excalidraw>
+      {presenting !== null && imperativeApi !== null && (
+        <PresentationPlayer engine={engine} excalidrawAPI={imperativeApi} initialFrameId={presenting.initialFrameId} onExit={endPresentation} onRestoreFrames={restoreFrames} />
+      )}
     </div>
   )
 }
+
+/**
+ * The web app's "a gesture is in flight" set (`AppSidebar.tsx:1011-1061`), as appState keys: any
+ * one of them truthy means the keystroke could have meant something else.
+ */
+const BUSY_APP_STATE_KEYS = [
+  'newElement',
+  'multiElement',
+  'selectionElement',
+  'resizingElement',
+  'selectedLinearElement',
+  'editingFrame',
+  'croppingElementId',
+  'selectedElementsAreBeingDragged',
+  'isResizing',
+  'isRotating',
+  'editingTextElement',
+  'openDialog',
+] as const
 
 /** One snapshot from the engine's own utilities; the only place they are called. */
 function snapshotOf(engine: ExcalidrawModule, elements: ChangeArgs[0], appState: EngineAppState, files: ChangeArgs[2], appStateEditCount: number): DrawingSnapshot {

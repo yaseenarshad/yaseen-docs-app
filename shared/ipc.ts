@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SettingsState, TocSource, TreeResponse, UpdateState, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, StoredMediaItem, TocSource, TreeResponse, UpdateState, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -74,6 +74,8 @@ export const CONTRACT = {
   drawing: {
     load: invoke<[req: DrawingLoadRequest], DrawingLoadResponse>('drawing:load', 1),
     save: invoke<[req: DrawingSaveRequest], DrawingSaveResponse>('drawing:save', 1),
+    /** The RESOLVED library folder (YAZ-3038, Draw's 🔒 YAZ-1775 D5): the setting, or `<userData>/library` — only main knows where userData is. */
+    libraryFolder: invoke<[], string>('drawing:library-folder', 0),
   },
   /** The draw.io DIAGRAM document's two doors (YAZ-3028 D2, Draw's 🔒 YAZ-1802 D6): the XML text and its mtime. */
   diagram: {
@@ -88,6 +90,42 @@ export const CONTRACT = {
     saveDrawing: invoke<[req: SaveDrawingRequest], SaveDrawingResponse>('dialog:save-file', 1),
     /** A diagram's Export Image… (Draw's YAZ-1802 D9): a PNG / SVG sheet; the picked extension decides which picture is written. */
     saveImage: invoke<[req: SaveImageRequest], SaveDrawingResponse>('dialog:save-image', 1),
+    /** The Components tab's Import (YAZ-3038, Draw's YAZ-1833): pick one `.excalidraw` outside the vault and get its bytes; `{ cancelled }` reads nothing. */
+    openDrawing: invoke<[], OpenDrawingResponse>('dialog:open-file', 0),
+  },
+  /** The canvas panel's cross-vault media library over `<library>/media.json` and the Image Studio's providers (YAZ-3038; Draw's 🔒 YAZ-1775 D4 / D5). */
+  media: {
+    /** List / add / remove; every verb answers the list it produced. */
+    favorites: invoke<[req: MediaFavoritesRequest], StoredMediaItem[]>('media:favorites', 1),
+    /** List the MRU, or record a use. */
+    recent: invoke<[req: MediaRecentRequest], StoredMediaItem[]>('media:recent', 1),
+    /** `media.json` changed — any vault, any writer. */
+    onChanged: push('media:changed'),
+    /** Federated search: main fetches, curates and caches, so the renderer never holds a key or reaches a provider. */
+    search: invoke<[req: MediaSearchRequest], MediaSearchResponse>('media:search', 1),
+    /** One tile's picture as a dataURL, from main's 24 h disk cache when it is there. */
+    preview: invoke<[req: MediaPreviewRequest], MediaPreviewResponse>('media:preview', 1),
+    /** The full-size bytes, NEVER cached: they are about to become an `assets/` file. */
+    import: invoke<[req: MediaImportRequest], MediaImportResponse>('media:import', 1),
+  },
+  /** The canvas panel's cross-vault saved-component library over `<library>/components/` (YAZ-3038; Draw's 🔒 YAZ-1775 D5). */
+  components: {
+    /** The index, newest-updated first, reconciled against the folder. */
+    list: invoke<[], ComponentItem[]>('components:list', 0),
+    save: invoke<[req: ComponentSaveRequest], ComponentItem>('components:save', 1),
+    read: invoke<[req: ComponentSlugRequest], ComponentReadResponse>('components:read', 1),
+    /** The label only; both files keep their names. */
+    rename: invoke<[req: ComponentRenameRequest], ComponentItem>('components:rename', 1),
+    /** Both files to the OS trash, and the row out of the index. */
+    delete: invoke<[req: ComponentSlugRequest], void>('components:delete', 1),
+    /** The stored `<slug>.png` as a dataURL; `NOT_FOUND` when it is gone. */
+    preview: invoke<[req: ComponentSlugRequest], string>('components:preview', 1),
+    onChanged: push('components:changed'),
+  },
+  /** The secrets door (YAZ-3038; Draw's 🔒 YAZ-1775 D4): write and ask, never read — no channel answers a value. */
+  secrets: {
+    set: invoke<[req: SecretSetRequest], void>('secrets:set', 1),
+    has: invoke<[req: SecretHasRequest], boolean>('secrets:has', 1),
   },
   /** Targeted mutators (not a generic patch) so several windows never lose each other's writes. */
   state: {

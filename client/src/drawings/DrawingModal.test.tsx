@@ -343,4 +343,9 @@ describe('the engine seam (🔒 one file, YAZ-868 swaps it)', () => {
     expect(source('./ExcalidrawSurface.tsx')).toMatch(engineElement)
     expect(source('./DrawingModal.tsx')).not.toMatch(engineElement)
   })
+
+  it('the modal has no canvas panel (YAZ-3038): it never passes the prop that turns it on', () => {
+    expect(source('./DrawingModal.tsx')).not.toMatch(/onCanvasPanelChange|canvasPanel/)
+    expect(source('./ExcalidrawSurface.tsx')).toMatch(/useState\(\(\) => onCanvasPanelChange !== undefined\)/)
+  })
 })
