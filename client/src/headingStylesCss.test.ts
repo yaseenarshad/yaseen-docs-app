@@ -20,25 +20,43 @@ const ruleBody = (css: string, selector: string): string | undefined => {
 }
 
 describe('heading styles CSS contract (YAZ-3049 D2, D7)', () => {
-  it('each h1-h6 rule reads its five variables, with the look of 1.0.14 as each fallback', () => {
+  it('each h1-h6 rule reads its three variables, with the look of 1.0.14 as each fallback, and stays full width', () => {
     for (const { n, em, weight } of LEVELS) {
       const rule = ruleBody(appCss, `.editor-instance .milkdown .ProseMirror h${n}`)
       expect(rule, `h${n}`).toBeDefined()
       expect(rule).toMatch(new RegExp(`font-size:\\s*var\\(--h${n}-size,\\s*${em.replace('.', '\\.')}\\);`))
       expect(rule).toMatch(new RegExp(`font-weight:\\s*var\\(--h${n}-weight,\\s*${weight}\\);`))
       expect(rule).toMatch(new RegExp(`text-decoration:\\s*var\\(--h${n}-decoration,\\s*none\\);`))
-      // The wash is clipped to the padding box: Section indent's indent is a border.
-      expect(rule).toMatch(new RegExp(`background:\\s*var\\(--h${n}-bg,\\s*none\\) padding-box;`))
-      expect(rule).toMatch(new RegExp(`width:\\s*var\\(--h${n}-width,\\s*auto\\);`))
-      expect(rule).toMatch(new RegExp(`box-shadow:\\s*0 0 0 3px var\\(--h${n}-bg,\\s*transparent\\);`))
+      // The wash goes to the heading's text spans; the heading box keeps its full width, so a click right of the words lands in it (YAZ-3049).
+      expect(rule).toMatch(new RegExp(`--heading-bg:\\s*var\\(--h${n}-bg,\\s*none\\);`))
+      expect(rule).not.toMatch(/width|background|box-shadow/)
     }
     const shared = appCss.match(/\.editor-instance \.milkdown \.ProseMirror h6 \{([^}]*)\}/s)?.[1]
-    expect(shared).toMatch(/max-width:\s*100%;/)
-    expect(shared).toMatch(/border-radius:\s*4px;/)
+    expect(shared).not.toMatch(/width|border-radius/)
+    expect(appCss).not.toMatch(/--h\d-width/)
   })
 
-  it('a heading in a section has no 3px shadow: it would start one indent left of the words', () => {
-    expect(ruleBody(sectionIndentCss, '.editor-instance .milkdown > .ProseMirror > :is(h1, h2, h3, h4, h5, h6)[data-sd]')).toMatch(/box-shadow:\s*none;/)
+  it('the wash is on the heading text (headingText.ts), one per line, and its edge takes no room', () => {
+    const span = ruleBody(appCss, '.milkdown .ProseMirror .heading-text')
+    expect(span).toMatch(/background:\s*var\(--heading-bg,\s*none\);/)
+    // Top and bottom: at most half the room between two lines (1.3 line height), so the washes of a wrapped heading never overlap.
+    expect(span).toMatch(/padding-top:\s*0\.05em;/)
+    expect(span).toMatch(/padding-bottom:\s*0\.05em;/)
+    expect(span).toMatch(/-webkit-box-decoration-break:\s*clone;/)
+    expect(span).toMatch(/(?<!-)box-decoration-break:\s*clone;/)
+    // Only the first and the last span draw the side edges, and a negative margin takes each back.
+    const first = ruleBody(appCss, '.milkdown .ProseMirror .heading-text--first:not(.heading-text--first ~ .heading-text--first)')
+    expect(first).toMatch(/padding-left:\s*3px;/)
+    expect(first).toMatch(/margin-left:\s*-3px;/)
+    const last = ruleBody(appCss, '.milkdown .ProseMirror .heading-text--last:not(:has(~ .heading-text--last))')
+    expect(last).toMatch(/padding-right:\s*3px;/)
+    expect(last).toMatch(/margin-right:\s*-3px;/)
+    // No ring: two spans side by side would lay their see-through edges one over the other.
+    expect(appCss).not.toMatch(/box-shadow:\s*0 0 0 3px var\(--h\d-bg/)
+  })
+
+  it('a heading in a section needs no rule of its own: the wash starts at the words', () => {
+    expect(sectionIndentCss).not.toMatch(/:is\(h1, h2, h3, h4, h5, h6\)\[data-sd\]/)
   })
 
   it('the page title keeps its own look (D9): no heading variable in its rule', () => {

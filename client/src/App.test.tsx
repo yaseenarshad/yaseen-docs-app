@@ -973,7 +973,7 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     expect(headingVarsOn()).toEqual([])
     const renders = captured.editors.length
     act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, headingStyles: { h2: { size: 27, highlight: 'green' }, h5: { bold: false } } } }))
-    expect(headingVarsOn()).toEqual(['--h2-bg', '--h2-size', '--h2-width', '--h5-weight'])
+    expect(headingVarsOn()).toEqual(['--h2-bg', '--h2-size', '--h5-weight'])
     expect(app.style.getPropertyValue('--h2-size')).toBe('27px')
     // Reset of every level: the variables leave again.
     act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, headingStyles: {} } }))

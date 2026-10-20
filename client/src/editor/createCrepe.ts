@@ -102,6 +102,11 @@
  *    itself is a CSS `::after` on that heading, on the one under the mouse and — with the page
  *    cog's "Heading levels" on — on every heading: never text, never selected, never saved. A
  *    caret move inside one heading or outside headings keeps the same plugin state.
+ *  - Heading text (YAZ-3049, `outline/headingText.ts`): an inline decoration, `heading-text`, on
+ *    each text node of every heading (H1-H6, in a bullet and a quote too). app.css paints a
+ *    highlighted level's wash on it, so the wash hugs the words while the heading stays full
+ *    width (a click right of the words lands at the heading's end). Built once; a change rebuilds
+ *    only the textblocks it touched.
  *  - Outline paste (YAZ-937, `outlinePaste.ts`): a pasted Slack/Docs outline of `•`/`◦`/`■` glyphs
  *    is translated to real markdown before it lands, so it arrives as a nested list instead of a
  *    column of paragraphs. Registered as a DIRECT `handlePaste` prop — direct props run before
@@ -193,6 +198,7 @@ import { numberChildrenRow } from './outline/numberChildrenRow'
 import { createHeadingFolding, type HeadingFoldingOptions } from './outline/headingFolding'
 import { headingHotkeys } from './outline/headingHotkeys'
 import { headingLevelTag } from './outline/headingLevelTag'
+import { headingText } from './outline/headingText'
 import { foldAllHotkeys } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
@@ -394,6 +400,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createHeadingFolding(opts.headingFolding))
   crepe.editor.use(headingLevelTag)
+  crepe.editor.use(headingText)
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find))
   if (opts.toc !== undefined) crepe.editor.use(createTableOfContents(opts.toc))
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled', title: () => 'Untitled' }))

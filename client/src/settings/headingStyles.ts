@@ -1,8 +1,9 @@
 /**
  * Heading styles (YAZ-3049 D2): the saved map (`SettingsState.headingStyles`) becomes CSS custom
- * properties on `.app`, the same way as line spacing. `app.css` (each `h1`-`h6` rule) and
- * `bullets.css` (the label row of a bullet that starts with a heading) read them, and each falls
- * back to the look of 1.0.14. Only a changed field gets a variable, so `{}` sets none.
+ * properties on `.app`, the same way as line spacing. `app.css` (each `h1`-`h6` rule, and the
+ * `.heading-text` spans of a heading for the wash) and `bullets.css` (the label row of a bullet
+ * that starts with a heading) read them, and each falls back to the look of 1.0.14. Only a
+ * changed field gets a variable, so `{}` sets none.
  */
 import { HEADING_KEYS, type HeadingHighlight, type HeadingKey, type HeadingStyle, type HeadingStyles } from '@shared/types'
 
@@ -32,11 +33,9 @@ export function headingVars(styles: HeadingStyles): Record<string, string> {
     if (style.size !== undefined) vars[`--${key}-size`] = `${style.size}px`
     if (style.bold === false) vars[`--${key}-weight`] = '400'
     if (style.underline === true) vars[`--${key}-decoration`] = 'underline'
-    if (style.highlight !== undefined) {
-      vars[`--${key}-bg`] = HEADING_HIGHLIGHT_VARS[style.highlight]
-      // Only a highlighted heading hugs its words (D7); the others keep their full width.
-      vars[`--${key}-width`] = 'fit-content'
-    }
+    // The wash hugs the words (D7): app.css paints it on the heading's `.heading-text` spans
+    // (outline/headingText.ts), and the heading keeps its full width.
+    if (style.highlight !== undefined) vars[`--${key}-bg`] = HEADING_HIGHLIGHT_VARS[style.highlight]
   }
   return vars
 }

@@ -21,10 +21,10 @@ describe('headingVars (YAZ-3049 D2)', () => {
     })
   })
 
-  it('yellow is the plain mark colour, the others are named; only a highlight hugs the words', () => {
-    expect(headingVars({ h2: { highlight: 'yellow' } })).toEqual({ '--h2-bg': 'var(--mark-bg)', '--h2-width': 'fit-content' })
-    for (const colour of ['green', 'blue', 'pink'] as const) expect(headingVars({ h4: { highlight: colour } })).toEqual({ '--h4-bg': `var(--mark-bg-${colour})`, '--h4-width': 'fit-content' })
-    expect(Object.keys(headingVars({ h1: { size: 30, bold: false, underline: true } }))).not.toContain('--h1-width')
+  it('yellow is the plain mark colour, the others are named; no level gets a width (the wash is on the words, YAZ-3049)', () => {
+    expect(headingVars({ h2: { highlight: 'yellow' } })).toEqual({ '--h2-bg': 'var(--mark-bg)' })
+    for (const colour of ['green', 'blue', 'pink'] as const) expect(headingVars({ h4: { highlight: colour } })).toEqual({ '--h4-bg': `var(--mark-bg-${colour})` })
+    expect(Object.keys(headingVars({ h1: { size: 30, bold: false, underline: true, highlight: 'pink' } })).some((name) => name.endsWith('-width'))).toBe(false)
   })
 
   it('the default sizes are the em scale × 16px, rounded (D5)', () => {
