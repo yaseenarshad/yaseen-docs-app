@@ -76,3 +76,23 @@ describe('loadExcalidraw', () => {
     await vi.waitFor(() => expect(imported).toEqual({ engine: 1, css: 1 }))
   })
 })
+
+describe('warmEngineFor (Draw\'s YAZ-2073 4B; YAZ-3044 A39)', () => {
+  it('loads nothing for a window with no file open, a note, or a draw.io diagram in front', async () => {
+    const { warmEngineFor } = await freshEngine()
+    warmEngineFor(null)
+    warmEngineFor('/vault/Note.md')
+    warmEngineFor('/vault/flow.drawio')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(imported).toEqual({ engine: 0, css: 0 })
+    expect(window.EXCALIDRAW_ASSET_PATH).toBeUndefined()
+  })
+
+  it('starts the engine and its stylesheet for a drawing — on the ONE promise the canvas awaits', async () => {
+    const { loadExcalidraw, warmEngineFor } = await freshEngine()
+    warmEngineFor('/vault/Board.EXCALIDRAW')
+    expect(window.EXCALIDRAW_ASSET_PATH).toBeDefined()
+    await loadExcalidraw()
+    await vi.waitFor(() => expect(imported).toEqual({ engine: 1, css: 1 }))
+  })
+})

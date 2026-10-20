@@ -34,6 +34,7 @@
  */
 import type { ComponentProps } from 'react'
 import { DRAWING_SOURCE } from '@shared/drawingAssets'
+import { isDrawing } from '@shared/fileKind'
 
 /** Bundle-relative home of the package's `fonts/…` tree (see `excalidrawAssets()` in the vite config). */
 export const EXCALIDRAW_ASSET_DIR = 'excalidraw-assets/'
@@ -135,4 +136,15 @@ export function loadExcalidraw(): Promise<ExcalidrawModule> {
     void import('@excalidraw/excalidraw/index.css')
   }
   return loading
+}
+
+/**
+ * THE BOOT-TIME WARM-UP (Draw's YAZ-2073 4B, ported by YAZ-3044 A39): a window restored onto a
+ * drawing mounts the canvas next, so the engine's download and compile start at boot, in parallel
+ * with the first render, instead of after it. The same ONE promise `ExcalidrawSurface` waits on; a
+ * window on a note, a folder or a diagram loads nothing, as before.
+ */
+export function warmEngineFor(file: string | null): void {
+  if (file === null || !isDrawing(file)) return
+  loadExcalidraw().catch(() => undefined) // the canvas reports a failure itself, awaiting this same promise
 }
