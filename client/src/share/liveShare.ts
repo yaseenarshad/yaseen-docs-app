@@ -50,8 +50,13 @@ export function onLiveShareChange(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-/** Called by `useBoardDocument` after every successful save, for both kinds of board. Cheap: it only (re)arms a timer. */
+/**
+ * Called by `useBoardDocument` after every successful save, for both kinds of board. Cheap: it only
+ * (re)arms a timer. It tells the listeners only when `isPending` flips (YAZ-3044 A29): autosave fires
+ * about every 500 ms while you draw, and each tell re-derives the sidebar's share marks.
+ */
 export function noteBoardSaved(root: string, path: string, settleMs = SETTLE_MS): void {
+  const was = isPending(path)
   const b = boards.get(path) ?? { root, path, timer: null, inFlight: false, again: false }
   b.root = root
   if (b.timer !== null) clearTimeout(b.timer)
@@ -60,7 +65,7 @@ export function noteBoardSaved(root: string, path: string, settleMs = SETTLE_MS)
     void run(b)
   }, settleMs)
   boards.set(path, b)
-  emit()
+  if (!was) emit()
 }
 
 /** An in-app rename or move of `oldPath` (a board, or a folder holding some): pending uploads follow it. */

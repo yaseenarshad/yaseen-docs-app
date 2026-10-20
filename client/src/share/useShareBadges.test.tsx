@@ -26,8 +26,10 @@ const NONE = new Map<string, never>()
 const VAULTS = ['/v']
 const row = (path: string, over: Partial<ShareListEntry> = {}): ShareListEntry => ({ path, id: 'abc', url: 'https://share.test/b/abc', allowDownload: true, sharedAt: 0, updatedAt: Date.now(), sync: { state: 'ok' }, stale: false, fileExists: true, ...over })
 
+const seen: Array<ReadonlyMap<string, unknown>> = []
 function Probe({ nodes, vaults = VAULTS }: { nodes: TreeNode[]; vaults?: readonly string[] }) {
   const badges = useShareBadges(vaults)
+  seen.push(badges)
   return <Tree nodes={nodes} dirPath="/v" vaultRows={NONE} expanded={new Set()} activeFile={null} onToggle={vi.fn()} onOpenFile={vi.fn()} onKeepFile={vi.fn()} onOpenFileBackground={vi.fn()} onOpenDefault={vi.fn()} onNodeContextMenu={vi.fn()} pending={null} renaming={null} move={MOVE} selection={SELECTION} shortcuts={NONE} titles={NONE} shareBadges={badges} />
 }
 
@@ -138,5 +140,17 @@ describe('shared-board marks (YAZ-1890, YAZ-3040)', () => {
     expect(mark(A)?.dataset.tone).toBe('ok')
     expect(mark(W)?.dataset.tone).toBe('ok')
     expect(list.mock.calls.map(([vault]) => vault).sort()).toEqual(['/v', '/w', '/x'])
+  })
+
+  it('YAZ-3044 A29: hands back the SAME map while no mark changes, so the tree is not rendered again on each save', async () => {
+    const A = '/v/a.excalidraw'
+    list.mockResolvedValue([row(A)])
+    await mount([file(A)])
+    const before = seen.at(-1)
+    act(() => root?.render(<Probe nodes={[file(A)]} />))
+    expect(seen.at(-1)).toBe(before)
+    // A save of an UNSHARED board re-derives, and the marks are the same: still the same map.
+    act(() => noteBoardSaved('/v', '/v/other.excalidraw', 1e9))
+    expect(seen.at(-1)).toBe(before)
   })
 })

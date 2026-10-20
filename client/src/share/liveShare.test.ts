@@ -6,7 +6,7 @@ vi.mock('../api', () => ({ api: { share: { publish: (...a: unknown[]) => publish
 const build = vi.fn()
 vi.mock('./shareContent', () => ({ buildShareContent: (...a: unknown[]) => build(...a) }))
 
-const { noteBoardSaved, noteBoardRenamed, isPending, resetLiveShareForTests, SETTLE_MS } = await import('./liveShare')
+const { noteBoardSaved, noteBoardRenamed, isPending, onLiveShareChange, resetLiveShareForTests, SETTLE_MS } = await import('./liveShare')
 
 const ROOT = '/v'
 const P = '/v/Board.excalidraw'
@@ -40,6 +40,15 @@ describe('always-live share links (YAZ-1799 D3, YAZ-1886)', () => {
     // The upload names the link it is for, so main never mistakes it for a new share.
     expect(publish).toHaveBeenCalledWith({ root: ROOT, path: P, content: 'v1', id: 'abc' })
     expect(isPending(P)).toBe(false)
+  })
+
+  it('YAZ-3044 A29: tells its listeners only when a board starts waiting, not on every autosave', async () => {
+    const heard = vi.fn()
+    const off = onLiveShareChange(heard)
+    for (let i = 0; i < 5; i++) noteBoardSaved(ROOT, P)
+    expect(heard).toHaveBeenCalledTimes(1)
+    expect(isPending(P)).toBe(true)
+    off()
   })
 
   it('never uploads a board that is not shared', async () => {

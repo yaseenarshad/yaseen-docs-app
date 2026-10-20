@@ -7,8 +7,11 @@
  * The list is fetched on mount and on `share:changed`, WITHOUT the live check (`check: false`), so a
  * save costs no network call per share; only Settings asks the Worker. The local upload
  * scheduler's changes (a save waiting to upload) just re-derive.
+ *
+ * The SAME map comes back while no mark changed (YAZ-3044 A29): `Tree` compares `shareBadges` by
+ * identity, and a new map would render every memoised level of the tree again.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ShareListEntry } from '@shared/types'
 import { api } from '../api'
 import type { ShareBadge } from '../sidebar/Tree'
@@ -41,6 +44,7 @@ export function useShareBadges(roots: readonly string[]): ReadonlyMap<string, Sh
     }
   }, [key])
 
+  const last = useRef<{ sig: string; badges: ReadonlyMap<string, ShareBadge> } | null>(null)
   return useMemo(() => {
     const now = Date.now()
     const badges = new Map<string, ShareBadge>()
@@ -49,6 +53,8 @@ export function useShareBadges(roots: readonly string[]): ReadonlyMap<string, Sh
       // No "· 5 minutes ago" on a tooltip nothing re-renders; the dialog carries the time.
       badges.set(row.path, { tone: line.tone === 'error' ? 'error' : 'ok', title: `Shared · ${line.tone === 'ok' ? 'Up to date' : line.text}` })
     }
-    return badges
+    const sig = [...badges].map(([path, b]) => `${path}\0${b.tone}\0${b.title}`).join('\n')
+    if (last.current?.sig !== sig) last.current = { sig, badges }
+    return last.current.badges
   }, [rows, localTick])
 }
