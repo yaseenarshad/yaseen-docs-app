@@ -1,8 +1,25 @@
 /** The hover preview's dwell, driven directly on the Sidebar's half (Draw's YAZ-1800; ported by YAZ-3028 D11). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
+import { act, createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { BOARD_PREVIEW_DWELL_MS, useHoverPreview } from './HoverPreviewHost'
+import type { TreeNode } from '@shared/types'
+import { api, BridgeRequestError } from '../api'
+import { createStore } from '../lib/store'
+import { BOARD_PREVIEW_DWELL_MS, HoverPreviewHost, useHoverPreview, type HoverState } from './HoverPreviewHost'
+
+vi.mock('../api', async (original) => ({
+  ...(await original<typeof import('../api')>()),
+  api: { boardHead: vi.fn() },
+}))
+
+/** The lazy panel, stood in: it reports the cache key the host handed it. */
+const panel = vi.hoisted(() => ({ keys: [] as string[] }))
+vi.mock('./BoardPreview', () => ({
+  default: ({ cacheKey }: { cacheKey: string }) => {
+    panel.keys.push(cacheKey)
+    return <div className="fake-board-preview" />
+  },
+}))
 
 const board = (name: string) => ({ path: `/v/${name}.excalidraw` })
 
@@ -79,5 +96,37 @@ describe('only a board row opens a preview in Docs (YAZ-3028 D11)', () => {
     act(() => hook.hoverFile({ path: '/v/Flow.drawio' }))
     wait(BOARD_PREVIEW_DWELL_MS)
     expect(state()).toEqual({ path: '/v/Flow.drawio', shown: true })
+  })
+})
+
+describe('HoverPreviewHost', () => {
+  const file: TreeNode = { type: 'file', name: 'Flow.excalidraw', path: '/v/Flow.excalidraw', size: 10, mtime: 1000, kind: 'drawing' }
+
+  beforeEach(() => {
+    vi.useRealTimers()
+    panel.keys = []
+    vi.mocked(api.boardHead).mockReset()
+  })
+
+  async function show(): Promise<void> {
+    const hover = createStore<HoverState>({ path: file.path, shown: true })
+    await act(async () => {
+      root?.render(<HoverPreviewHost hover={hover} forest={[file]} rootOf={() => '/v'} enabled diagramDarkColors="adapt" anchor={createRef<HTMLElement>()} onClose={() => undefined} />)
+    })
+    // The lazy chunk and the head read both settle.
+    for (let i = 0; i < 3; i++) await act(async () => new Promise((r) => setTimeout(r, 0)))
+  }
+
+  it('opens on the newer of the tree mtime and the board head', async () => {
+    vi.mocked(api.boardHead).mockResolvedValue({ mtime: 2000 } as never)
+    await show()
+    expect(panel.keys.at(-1)?.split('\n')[2]).toBe('2000')
+  })
+
+  it('YAZ-3044 A6: a board head that fails still opens the panel, on the tree mtime, so the picture can say why', async () => {
+    vi.mocked(api.boardHead).mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'gone'))
+    await show()
+    expect(panel.keys.length).toBeGreaterThan(0)
+    expect(panel.keys.at(-1)?.split('\n')[2]).toBe('1000')
   })
 })

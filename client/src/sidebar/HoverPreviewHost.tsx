@@ -124,7 +124,11 @@ export function HoverPreviewHost({ hover, forest, rootOf, enabled, diagramDarkCo
       (res) => {
         if (live) setHead({ path: shownPath, mtime: res.mtime })
       },
-      () => undefined, // the picture's own read says why it cannot be drawn
+      // YAZ-3044 A6: the panel still opens on the tree's mtime (0 never beats it), and the
+      // picture's own read then shows why it cannot be drawn ("Preview unavailable").
+      () => {
+        if (live) setHead({ path: shownPath, mtime: 0 })
+      },
     )
     return () => {
       live = false
