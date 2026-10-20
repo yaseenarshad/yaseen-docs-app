@@ -6,9 +6,10 @@ import { onLiveShareChange } from './liveShare'
 
 /**
  * Settings › Sharing's data (YAZ-1799 D7), App's like Settings › Storage's: read ONLY while
- * Settings is open (`open`), so a closed dialog asks main nothing. Main's status and this vault's
- * shared boards, refetched on every `share:changed`; a local save waiting to upload (`liveShare`)
- * just re-renders, so the list's status line reads "Waiting to upload changes…" at once.
+ * Settings is open (`open`) AND the Sharing page has shown (`show`, called by the page's status
+ * row — YAZ-3044 A30), so opening Settings on another page asks main nothing. Main's status and
+ * this vault's shared boards, refetched on every `share:changed`; a local save waiting to upload
+ * (`liveShare`) just re-renders, so the list's status line reads "Waiting to upload changes…" at once.
  *
  * `status` and `rows` are null until the first answer. `rows` stays null with no vault open.
  */
@@ -21,6 +22,8 @@ export interface SharingState {
   /** When the rows were last read or a local save changed — the status lines' "now". */
   now: number
   refresh: () => void
+  /** The Sharing page is on screen: start reading (once per Settings open). */
+  show: () => void
 }
 
 export function useSharing(root: string | null, open: boolean): SharingState {
@@ -28,6 +31,13 @@ export function useSharing(root: string | null, open: boolean): SharingState {
   const [rows, setRows] = useState<ShareListEntry[] | null>(null)
   const [listError, setListError] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
+  const [shown, setShown] = useState(false)
+  // A closed dialog forgets that the page showed: the next open reads again only when it shows again.
+  useEffect(() => {
+    if (!open) setShown(false)
+  }, [open])
+  const show = useCallback(() => setShown(true), [])
+  const reading = open && shown
 
   const refresh = useCallback(() => {
     api.share.status().then(setStatus, () => setStatus(null))
@@ -46,7 +56,7 @@ export function useSharing(root: string | null, open: boolean): SharingState {
   }, [root])
 
   useEffect(() => {
-    if (!open) return
+    if (!reading) return
     refresh()
     const offMain = api.share.onChanged(refresh)
     const offLocal = onLiveShareChange(() => setNow(Date.now()))
@@ -54,7 +64,7 @@ export function useSharing(root: string | null, open: boolean): SharingState {
       offMain()
       offLocal()
     }
-  }, [open, refresh])
+  }, [reading, refresh])
 
-  return { root, status, rows, listError, now, refresh }
+  return { root, status, rows, listError, now, refresh, show }
 }

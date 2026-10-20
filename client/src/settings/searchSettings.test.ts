@@ -75,7 +75,7 @@ describe('settingCandidates', () => {
 
   it('includes Storage and Sharing only with their hooks, after Sync and before Hotkeys; Excalidraw canvas and Images sit between Editor and Files & Links (YAZ-3028 merge)', () => {
     const storage: SettingsCtx['storage'] = { stats: null, failed: false, refresh: () => undefined, shrink: async () => ({ shrunk: 0, skipped: 0, bytesMoved: 0 }), lastShrink: null }
-    const sharing: SettingsCtx['sharing'] = { root: '/v', status: null, rows: null, listError: null, now: 0, refresh: () => undefined }
+    const sharing: SettingsCtx['sharing'] = { root: '/v', status: null, rows: null, listError: null, now: 0, refresh: () => undefined, show: () => undefined }
     const sectionsOf = (c: SettingsCtx) => [...new Set(settingCandidates(c).map((h) => h.section.id))]
     expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), storage, sharing })).toEqual(['appearance', 'editor', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
     expect(sectionsOf(ctx())).toEqual(['appearance', 'editor', 'canvas', 'images', 'files', 'hotkeys'])

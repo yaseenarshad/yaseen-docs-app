@@ -46,6 +46,9 @@ function statusHint({ sharing }: SettingsCtx): string {
 }
 
 function Status({ sharing }: SettingsCtx) {
+  // The page is on screen: App's `useSharing` starts reading now, not when Settings opened (YAZ-3044 A30).
+  const show = sharing?.show
+  useEffect(() => show?.(), [show])
   if (sharing?.status == null) return null
   return (
     <span data-testid="sharing-status">
