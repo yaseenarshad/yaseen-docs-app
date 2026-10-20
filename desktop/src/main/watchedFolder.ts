@@ -51,7 +51,6 @@ export function createWatchedFolder(opts: WatchedFolderOptions): WatchedFolder {
   let anchored = false
   let timer: ReturnType<typeof setTimeout> | null = null
   let pending = new Set<string>()
-  let closed = false
 
   function start(): TreeWatcher {
     anchored = existsSync(dir)
@@ -62,10 +61,6 @@ export function createWatchedFolder(opts: WatchedFolderOptions): WatchedFolder {
     const depth = opts.depth
     const w = watchTree(watched, depth === undefined ? {} : { ignored: (p) => path.relative(watched, p).split(path.sep).length - 1 > depth })
     const schedule = (p: string, stats?: Stats) => {
-      // Docs' engine can still announce a path after `close()` while its start is in flight (the
-      // resync after the stream hears does not ask whether it was closed): a folder this store has
-      // left, or a store that closed, is silence, whatever its watcher says late.
-      if (closed || w !== watcher) return
       if (!opts.relevant(p, watched)) return
       const own = ownWrites.get(p)
       if (own !== undefined && (stats === undefined ? own === null : own === stats.mtimeMs)) {
@@ -118,7 +113,6 @@ export function createWatchedFolder(opts: WatchedFolderOptions): WatchedFolder {
       watcher = start()
     },
     close() {
-      closed = true
       stopTimer()
       return watcher.close()
     },
