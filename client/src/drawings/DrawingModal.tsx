@@ -27,15 +27,20 @@
  * modal outright; a dirty one raises the inline confirm strip below the title bar — deliberately
  * not a second sheet stacked over this one, which is a modal over a modal for a one-line question.
  *
+ * A CONFLICT (YAZ-3044 A4) — the same drawing saved from a tab since this modal read it — shows the
+ * tab's own `ConflictBar` under the title bar: Reload opens the disk's version here (this canvas's
+ * edits are dropped), Keep mine writes this canvas over it. The modal never wins in silence.
+ *
  * FAILURES are inline and never a dialog: a sidecar that is missing, unreadable or not a scene
  * opens as the error state (message + close, nothing to save), and a failed write leaves the modal
  * open with its error line and the canvas untouched — a save that failed must not eat the drawing.
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { ConflictBar } from '../documents/ConflictBar'
 import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
 import type { DrawingSnapshot } from './ExcalidrawSurface'
-import { saveDrawing, saveErrorMessage } from './saveDrawing'
+import { DrawingConflict, saveDrawing, saveErrorMessage } from './saveDrawing'
 import './drawingModal.css'
 
 /**
@@ -79,6 +84,10 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  /** The disk's mtime while the conflict bar is up (YAZ-3044 A4); null when there is no conflict. */
+  const [conflict, setConflict] = useState<number | null>(null)
+  /** Bumped by Reload so the surface remounts on the disk's scene (it reads `scene` once, on mount). */
+  const [generation, setGeneration] = useState(0)
 
   useEffect(() => {
     let live = true
@@ -113,19 +122,49 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
     else onClose()
   }
 
-  const save = async (): Promise<void> => {
+  /** One guarded write at `expectedMtime`: success pokes the previews and closes; a CONFLICT raises the bar. */
+  const write = async (expectedMtime: number): Promise<void> => {
     const current = snapshot.current
-    if (loaded === null || current === null || !dirty || saving) return
+    if (loaded === null || current === null || saving) return
     setSaving(true)
     setError(null)
+    setConflict(null)
     try {
-      await saveDrawing({ root, target, path: loaded.path, content: current.standalone(), expectedMtime: loaded.mtime })
+      await saveDrawing({ root, target, path: loaded.path, content: current.standalone(), expectedMtime })
       // The previews re-read from disk on this; the modal's own job is over.
       feed?.poke(target)
       onClose()
     } catch (err) {
-      setError(saveErrorMessage(err))
+      if (err instanceof DrawingConflict) setConflict(err.mtime)
+      else setError(saveErrorMessage(err))
       setSaving(false)
+    }
+  }
+
+  const save = async (): Promise<void> => {
+    if (loaded === null || !dirty) return
+    await write(loaded.mtime)
+  }
+
+  /** Keep mine: this canvas over the disk's version, guarded by the mtime the conflict reported. */
+  const keepMine = (): void => {
+    if (conflict !== null) void write(conflict)
+  }
+
+  /** Reload: the disk's version replaces this canvas. The surface remounts on it, clean. */
+  const reload = async (): Promise<void> => {
+    setConflict(null)
+    setError(null)
+    try {
+      const drawing = await openDrawing(root, target)
+      snapshot.current = null
+      baseline.current = null
+      setVersion(null)
+      setLoaded(drawing)
+      setGeneration((g) => g + 1)
+      feed?.poke(target)
+    } catch {
+      setError(BROKEN_DRAWING_MESSAGE)
     }
   }
 
@@ -163,6 +202,7 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
             </button>
           </div>
         )}
+        {conflict !== null && <ConflictBar onReload={() => void reload()} onKeepMine={keepMine} />}
         {error !== null && (
           <p className="drawing-modal__error" role="alert">
             {error}
@@ -171,7 +211,7 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
         <div className="drawing-modal__canvas">
           {loaded !== null && (
             <Suspense fallback={null}>
-              <ExcalidrawSurface scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} />
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} />
             </Suspense>
           )}
         </div>

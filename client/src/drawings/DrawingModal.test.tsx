@@ -3,12 +3,12 @@
  *
  * The ENGINE is mocked and nothing else is: `ExcalidrawSurface` — the ONE seam that owns the
  * canvas — stands in as a component that hands its props back, so every rule pinned here is the
- * MODAL's own (dirty tracking, the discard strip, the key scope, the conflict retry) and none of
+ * MODAL's own (dirty tracking, the discard strip, the key scope, the conflict bar) and none of
  * it depends on Excalidraw. The real package cannot load in jsdom anyway (it imports
  * `roughjs/bin/rough` extensionlessly), which is exactly why the seam is a component boundary.
  *
  * `api` is mocked one level down instead of `saveDrawing`, so the write the user's Save actually
- * makes — bytes, path, `expectedMtime`, and the CONFLICT retry — is the thing under test.
+ * makes — bytes, path, `expectedMtime`, and the CONFLICT bar's two answers — is the thing under test.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -113,6 +113,7 @@ const byText = (text: string): HTMLButtonElement | undefined =>
   Array.from(container?.querySelectorAll<HTMLButtonElement>('button') ?? []).find((b) => b.textContent === text)
 const strip = () => container?.querySelector('.drawing-modal__confirm')?.textContent ?? null
 const errorLine = () => container?.querySelector('.drawing-modal__error')?.textContent ?? null
+const conflictBar = () => container?.querySelector('.conflict-bar')?.textContent ?? null
 
 /** One snapshot from the stand-in engine; the FIRST is the modal's clean baseline. */
 function emit(version: number): void {
@@ -175,18 +176,62 @@ describe('saving', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('a CONFLICT retries ONCE over a refreshed mtime — the canvas wins, the disk bytes are dropped', async () => {
+  it('YAZ-3044 A4: a CONFLICT never wins in silence — it writes once and shows the tab\'s conflict bar', async () => {
     const { onClose, poked } = await open('ok', 100)
     emit(1)
     emit(2)
     writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
-    // The re-read exists only to refresh the guard; its scene is never merged in.
-    readAsset.mockResolvedValue(asset(555))
     await act(async () => saveBtn().click())
+    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(conflictBar()).toBe('File changed on disk.ReloadKeep mine')
+    expect(errorLine()).toBeNull()
+    expect(poked).toEqual([])
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('A4: Keep mine writes this canvas over the disk mtime the conflict reported, then pokes and closes', async () => {
+    const { onClose, poked } = await open('ok', 100)
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await act(async () => saveBtn().click())
+    await act(async () => byText('Keep mine')?.click())
     expect(writeAsset).toHaveBeenCalledTimes(2)
     expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
     expect(poked).toEqual([TARGET])
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('A4: Reload opens the disk\'s version in a fresh, clean canvas and writes nothing', async () => {
+    const { onClose } = await open('ok', 100)
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await act(async () => saveBtn().click())
+    readAsset.mockResolvedValue(asset(555))
+    const mounts = seam.mounts
+    await act(async () => byText('Reload')?.click())
+    expect(seam.mounts).toBeGreaterThan(mounts)
+    expect(conflictBar()).toBeNull()
+    emit(9) // the new surface's mount snapshot: the new baseline
+    expect(saveBtn().disabled).toBe(true)
+    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(onClose).not.toHaveBeenCalled()
+    // A save after the reload is guarded by the disk's new mtime.
+    emit(10)
+    await act(async () => saveBtn().click())
+    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
+  })
+
+  it('A4: a CONFLICT that carries no mtime re-reads the file for it — the read is only for the guard', async () => {
+    await open('ok', 100)
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk'))
+    readAsset.mockResolvedValue(asset(777))
+    await act(async () => saveBtn().click())
+    await act(async () => byText('Keep mine')?.click())
+    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 777 })
   })
 
   it('a failed write is an INLINE error and never a dialog: the modal stays open with the canvas intact', async () => {
@@ -202,15 +247,15 @@ describe('saving', () => {
     expect(saveBtn().disabled).toBe(false)
   })
 
-  it('a second CONFLICT is not retried again — a racing writer is not a retry problem', async () => {
+  it('A4: a second CONFLICT on Keep mine shows the bar again — it never loops', async () => {
     const { onClose } = await open()
     emit(1)
     emit(2)
     writeAsset.mockRejectedValue(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 7))
-    readAsset.mockResolvedValue(asset(7))
     await act(async () => saveBtn().click())
+    await act(async () => byText('Keep mine')?.click())
     expect(writeAsset).toHaveBeenCalledTimes(2)
-    expect(errorLine()).toContain('drawing changed on disk')
+    expect(conflictBar()).not.toBeNull()
     expect(onClose).not.toHaveBeenCalled()
   })
 })
