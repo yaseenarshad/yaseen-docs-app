@@ -1346,9 +1346,9 @@ describe('App settings dialog (YAZ-1679)', () => {
 })
 
 describe('App "What\'s new" sheet (YAZ-2976 D4, D5, D8)', () => {
-  /** The lazy chunk lands on a later tick than the click: settle until the sheet is in (or give up), then let its notes read answer. */
+  /** The lazy chunk lands on a later tick than the click: settle until the sheet is in (or give up after 2 s — a loaded CI runner took more than 100 ms to import it), then let its notes read answer. */
   const settle = async (el: HTMLElement) => {
-    for (let i = 0; i < 20 && el.querySelector('.whats-new') === null; i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 5)))
+    for (let i = 0; i < 400 && el.querySelector('.whats-new') === null; i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 5)))
     await act(async () => {}) // and its notes read answers
   }
 
