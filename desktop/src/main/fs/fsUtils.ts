@@ -155,7 +155,7 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
  * surface an empty or torn note, state file or image under it. A string lands as UTF-8; bytes (an
  * image through `writeAsset`, YAZ-1661) land verbatim — `writeFile` ignores the encoding for a view.
  */
-async function writeDurable(file: string, content: string | Uint8Array, flag: 'w' | 'wx'): Promise<void> {
+export async function writeDurable(file: string, content: string | Uint8Array, flag: 'w' | 'wx'): Promise<void> {
   const fh = await open(file, flag)
   try {
     await fh.writeFile(content, 'utf8')
@@ -166,7 +166,7 @@ async function writeDurable(file: string, content: string | Uint8Array, flag: 'w
 }
 
 /** The sibling a write lands in before it takes `file`'s name: same dir, so the rename or link is atomic. */
-function tmpSibling(file: string): string {
+export function tmpSibling(file: string): string {
   return `${file}.tmp-${randomBytes(ATOMIC_TMP_HEX_LEN / 2).toString('hex')}`
 }
 

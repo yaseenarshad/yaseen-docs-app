@@ -97,11 +97,28 @@ export const IMAGE_VIEW_MIME = {
 } as const
 export const IMAGE_VIEW_EXTENSIONS = Object.freeze(Object.keys(IMAGE_VIEW_MIME)) as readonly (keyof typeof IMAGE_VIEW_MIME)[]
 
-/** The file kinds the app can open in-app; only `markdown` is writable and semantic. A file of no kind still lists (YAZ-1577). */
-export type FileKind = 'markdown' | 'text' | 'pdf' | 'image'
+/** An Excalidraw drawing opened as a document in a tab (YAZ-3028 D2, Draw's YAZ-1810). */
+export const DRAWING_VIEW_EXTENSIONS = ['.excalidraw'] as const
+/** A draw.io diagram opened as a document in a tab (YAZ-3028 D2, Draw's YAZ-1802). `.drawio.svg` / `.drawio.png` stay unsupported, as in Draw. */
+export const DIAGRAM_EXTENSIONS = ['.drawio'] as const
+
+/**
+ * The file kinds the app can open in-app (YAZ-1289, widened by YAZ-3028 D2). `markdown`, `drawing`
+ * and `diagram` are writable; only `markdown` is semantic. A file of no kind still lists (YAZ-1577).
+ */
+export type FileKind = 'markdown' | 'text' | 'pdf' | 'image' | 'drawing' | 'diagram'
+/** The two board kinds (YAZ-3028 D2): each has its own load and save doors, never `fs:write`. */
+export type BoardKind = Extract<FileKind, 'drawing' | 'diagram'>
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
 export const MAX_PDF_BYTES = 50 * 1024 * 1024
 export const MAX_IMAGE_BYTES = 50 * 1024 * 1024
+/**
+ * A board's read and write ceiling (Draw's YAZ-1810): a LEGACY scene embeds its images as base64 and
+ * is routinely past 10 MiB. The cap refuses a file that has stopped being a document; a diagram's
+ * pictures live inside its XML, so it shares the drawing's ceiling.
+ */
+export const MAX_DRAWING_BYTES = 200 * 1024 * 1024
+export const MAX_DIAGRAM_BYTES = MAX_DRAWING_BYTES
 
 // ---------- tree(root) ----------
 
@@ -304,8 +321,9 @@ export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'av
 /**
  * Drawing sidecars the asset pipe reads AND writes (Excalidraw embed, YAZ-852 / YAZ-876): scene
  * JSON standing on its own in the vault (`assets/drawings/` by default), a note holding only
- * `![[<name>.excalidraw]]`. Deliberately unsupported by the shared file classifier, so the
- * Files tree, supported-file watcher and Markdown index all omit it; it rides this pipe alone.
+ * `![[<name>.excalidraw]]`. Since YAZ-3028 D2 the same file is also the `drawing` FileKind: the
+ * Files tree lists it and a tab opens it through `drawing:load` / `drawing:save`. The Markdown
+ * index still omits it, and a note embed still rides this pipe (the modal, rule 28).
  */
 export const DRAWING_EXTENSIONS = ['excalidraw'] as const
 
@@ -346,6 +364,131 @@ export interface AssetWriteRequest {
 }
 
 export interface AssetWriteResponse {
+  path: string
+  mtime: number
+  size: number
+}
+
+// ---------- drawing:* / diagram:* / fs:create-board (YAZ-3028 D2, ported from Draw's YAZ-1810 / YAZ-1802) ----------
+
+/**
+ * The two dates every board main writes carries (Draw's 🔒 YAZ-1834 D1): a drawing's first key
+ * `{ "yaseendraw": { createdAt, updatedAt } }`, a diagram's two `yaseendraw-*` attributes on its
+ * root `<mxfile>`. Set by main only. Rules and readers: `shared/drawingAssets.ts`, `shared/diagramFile.ts`.
+ */
+export interface BoardMeta {
+  /** Epoch ms. Born on create or on the first save of a board without one; never rewritten once it is a finite number. */
+  createdAt: number
+  /** Epoch ms of the last in-app save. */
+  updatedAt: number
+}
+
+/**
+ * One image the canvas holds, as it crosses the bridge: the engine's own mime plus a base64
+ * `data:` URL. Deliberately NOT the engine's `BinaryFileData`: the bridge must not depend on a
+ * renderer package, and `created` / `lastRetrieved` are the engine's bookkeeping, not the file's.
+ */
+export interface DrawingFileEntry {
+  mimeType: string
+  /** `data:<mime>;base64,<payload>` — the only form either side accepts. */
+  dataURL: string
+}
+
+export interface DrawingLoadRequest {
+  /** Vault root; the document must resolve inside it. */
+  root: string
+  /** The document, vault-relative or absolute under `root`. Never a basename search. */
+  path: string
+  /**
+   * For a PICTURE of the scene, never an editor (Draw's 🔒 YAZ-2073 D6): the longest side, in pixels,
+   * of the image the scene is drawn into. Each picture then comes back no bigger than it can appear.
+   */
+  imageMaxPx?: number
+}
+
+export interface DrawingLoadResponse {
+  /** Absolute path that was read — what every later save addresses. */
+  path: string
+  /** The file's bytes as UTF-8 text, exactly as on disk — except that a LEGACY scene's embedded `files` map comes back empty: those bytes travel once, in `files`. */
+  json: string
+  /** Disk mtime of the read: the `expectedMtime` the first save goes back with. */
+  mtime: number
+  size: number
+  /** Every image the scene still references and whose bytes were found, keyed by `fileId`. An id with no bytes is absent: the engine draws its placeholder. */
+  files: Record<string, DrawingFileEntry>
+  /** The subset of `files` that came from the `assets/` store; the renderer never ships these back. */
+  stored: string[]
+}
+
+/** One image a save must land in the store before the scene that names it is written. */
+export interface DrawingNewFile extends DrawingFileEntry {
+  /** Excalidraw's own content id (the SHA-1 of the bytes) — the file's name under `assets/`. */
+  fileId: string
+}
+
+export interface DrawingSaveRequest {
+  root: string
+  path: string
+  /** The serialized scene. Written verbatim but for the store's own `files: {}` rewrite and the date stamp. */
+  json: string
+  /** The mtime the renderer last read or wrote; a differing disk mtime rejects `CONFLICT` and writes NOTHING — assets included. */
+  expectedMtime?: number
+  /** Images the store does not have yet. Written first, so the scene on disk never names bytes that are missing. */
+  newFiles: DrawingNewFile[]
+}
+
+export interface DrawingSaveResponse {
+  path: string
+  mtime: number
+  size: number
+  /** The ids now on disk — the renderer adds them to its persisted set so it never ships them twice. */
+  persisted: string[]
+}
+
+export interface DiagramLoadRequest {
+  /** Vault root; the document must resolve inside it. */
+  root: string
+  /** The `.drawio`, vault-relative or absolute under `root`. */
+  path: string
+}
+
+export interface DiagramLoadResponse {
+  /** Absolute path that was read. */
+  path: string
+  /** The file's XML exactly as it sits on disk (compressed pages included — draw.io inflates them). */
+  xml: string
+  mtime: number
+  size: number
+}
+
+export interface DiagramSaveRequest {
+  root: string
+  path: string
+  /** The document as draw.io serialised it: plain `<mxfile>` XML (Draw's 🔒 YAZ-1802 D3). */
+  xml: string
+  /** A differing disk mtime rejects `CONFLICT` and writes NOTHING. */
+  expectedMtime?: number
+}
+
+export interface DiagramSaveResponse {
+  path: string
+  mtime: number
+  size: number
+}
+
+/**
+ * `fs:create-board` (YAZ-3028 D9): a NEW drawing or diagram, born with its empty content. Main picks
+ * the content by the kind of `path` — the renderer sends none — stamps the dates, and never
+ * overwrites (`ALREADY_EXISTS`). No note ID: IDs are for notes only.
+ */
+export interface CreateBoardRequest {
+  /** Vault root; `path` must resolve inside it. */
+  root: string
+  /** The new `.excalidraw` or `.drawio`, absolute under `root`. Its parent must exist. */
+  path: string
+}
+
+export interface CreateBoardResponse {
   path: string
   mtime: number
   size: number

@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TocSource, TreeResponse, UpdateState, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TocSource, TreeResponse, UpdateState, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -59,6 +59,25 @@ export const CONTRACT = {
   readAsset: invoke<[root: string, ref: string], AssetResponse>('fs:read-asset', 2),
   /** Writes a drawing (string) or an image (bytes) under `root` (YAZ-876, YAZ-1661): explicit path, atomic; see `AssetWriteRequest`. */
   writeAsset: invoke<[req: AssetWriteRequest], AssetWriteResponse>('fs:write-asset', 1),
+  /**
+   * A NEW board (YAZ-3028 D9): an empty `.excalidraw` or `.drawio`, its content picked and stamped by
+   * main, never over an existing file (`ALREADY_EXISTS`). `createFile` stays Markdown-only.
+   */
+  createBoard: invoke<[req: CreateBoardRequest], CreateBoardResponse>('fs:create-board', 1),
+  /**
+   * The drawing DOCUMENT's two doors (YAZ-3028 D2, Draw's 🔒 YAZ-1810): one per direction, the only way a
+   * `.excalidraw` opened in a TAB reads and writes. A load is the scene plus the pictures it names; a
+   * save lands new pictures in `assets/` BEFORE the scene, under the mtime guard. A note embed keeps `readAsset` / `writeAsset`.
+   */
+  drawing: {
+    load: invoke<[req: DrawingLoadRequest], DrawingLoadResponse>('drawing:load', 1),
+    save: invoke<[req: DrawingSaveRequest], DrawingSaveResponse>('drawing:save', 1),
+  },
+  /** The draw.io DIAGRAM document's two doors (YAZ-3028 D2, Draw's 🔒 YAZ-1802 D6): the XML text and its mtime. */
+  diagram: {
+    load: invoke<[req: DiagramLoadRequest], DiagramLoadResponse>('diagram:load', 1),
+    save: invoke<[req: DiagramSaveRequest], DiagramSaveResponse>('diagram:save', 1),
+  },
   /** Native open-directory dialog parented to the calling window (GRO-2163). */
   pickFolder: invoke<[], PickFolderResponse>('dialog:pick-folder', 0),
   /** Targeted mutators (not a generic patch) so several windows never lose each other's writes. */

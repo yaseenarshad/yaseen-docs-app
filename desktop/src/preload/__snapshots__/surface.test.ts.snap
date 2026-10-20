@@ -6,8 +6,13 @@ on app:flush
 on menu:paste-as
 on menu:copy-as
 coldDiff/1: invoke fs:cold-diff ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+createBoard/1: invoke fs:create-board ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 createDir/1: invoke fs:create-dir ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 createFile/1: invoke fs:create-file ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+diagram.load/1: invoke diagram:load ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+diagram.save/1: invoke diagram:save ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+drawing.load/1: invoke drawing:load ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+drawing.save/1: invoke drawing:save ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 favorites.get/1: invoke favorites:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 favorites.onChanged/1: on favorites:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off favorites:changed
 favorites.set/2: invoke favorites:set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canRenameWithoutConversion, fileKind, isAtomicTmp, isViewOnly } from '@shared/fileKind'
+import { boardBaseName, canRenameWithoutConversion, fileKind, isAtomicTmp, isBoard, isDiagram, isDrawing, isMarkdown, isViewOnly } from '@shared/fileKind'
 import { TEXT_VIEW_EXTENSIONS } from '@shared/types'
 
 describe('fileKind', () => {
@@ -29,6 +29,26 @@ describe('fileKind', () => {
     },
   )
 
+  it('classifies boards case-insensitively: .excalidraw a drawing, .drawio a diagram (YAZ-3028 D2)', () => {
+    expect(fileKind('Sketch.excalidraw')).toBe('drawing')
+    expect(fileKind('/vault/assets/drawings/SKETCH.EXCALIDRAW')).toBe('drawing')
+    expect(fileKind('Flow.drawio')).toBe('diagram')
+    expect(fileKind('/vault/Flow.DrawIO')).toBe('diagram')
+    expect(isDrawing('a.Excalidraw')).toBe(true)
+    expect(isDiagram('a.excalidraw')).toBe(false)
+    expect(isBoard('a.drawio') && isBoard('a.excalidraw')).toBe(true)
+    expect(isBoard('a.md')).toBe(false)
+    // Never semantic: a wikilink to a board is navigation-only, and it is no note.
+    expect(isMarkdown('a.excalidraw')).toBe(false)
+    expect(isViewOnly('a.excalidraw') && isViewOnly('a.drawio')).toBe(true)
+    // `.drawio.svg` / `.drawio.png` stay unsupported, the same as Draw; the final suffix decides.
+    expect(fileKind('Flow.drawio.svg')).toBeNull()
+    expect(fileKind('Flow.drawio.png')).toBe('image')
+    expect(fileKind('.excalidraw')).toBeNull()
+    expect(boardBaseName('Flow.DRAWIO')).toBe('Flow')
+    expect(boardBaseName('Note.md')).toBe('Note.md')
+  })
+
   it('returns null for leading-dot-only names, extensionless files, compound unknown suffixes, and binaries', () => {
     expect(fileKind('markdown')).toBeNull()
     expect(fileKind('.md')).toBeNull()
@@ -50,6 +70,15 @@ describe('canRenameWithoutConversion', () => {
     expect(canRenameWithoutConversion('data.json', 'data.yaml')).toBe(true)
     expect(canRenameWithoutConversion('a.md', 'a.txt')).toBe(false)
     expect(canRenameWithoutConversion('a.pdf', 'a.png')).toBe(false)
+  })
+
+  it('a board keeps its kind: .excalidraw ↔ .drawio and board ↔ note fail before the disk changes (YAZ-3028 D2)', () => {
+    expect(canRenameWithoutConversion('a.excalidraw', 'b.EXCALIDRAW')).toBe(true)
+    expect(canRenameWithoutConversion('a.drawio', 'b.drawio')).toBe(true)
+    expect(canRenameWithoutConversion('a.excalidraw', 'a.drawio')).toBe(false)
+    expect(canRenameWithoutConversion('a.drawio', 'a.excalidraw')).toBe(false)
+    expect(canRenameWithoutConversion('a.excalidraw', 'a.md')).toBe(false)
+    expect(canRenameWithoutConversion('a.excalidraw', 'a.json')).toBe(false)
   })
 
   it('keeps raster images at their real encoding; .jpg/.jpeg is the one equivalent pair', () => {

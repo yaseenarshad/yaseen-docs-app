@@ -8,3 +8,6 @@ export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v =
 
 /** An array of strings only. */
 export const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string')
+
+/** A real number: not NaN, not Infinity, and not a numeric string (ported with the board doors, YAZ-3028). */
+export const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
