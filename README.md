@@ -124,7 +124,7 @@ Turn on GitHub sync for a folder that is a git repo. The app commits and pushes 
 
 ### Always know where you are in a long note
 
-A table of contents sits at the right edge of each note. It lists your headings, or your bullets when the note has no headings. Each level has its own tone and its own line, and a marker follows you while you scroll. Click a name to jump there, or press `⌘J` on a Mac. Drag its edge to make it wider.
+A table of contents sits at the right edge of each note. It lists your headings from H1 to H5, or your bullets when the note has no headings. Each level has its own tone and its own line, and a marker follows you while you scroll. Click a name to jump there, or press `⌘J` on a Mac. Drag its edge to make it wider.
 
 **So what:** you jump to any part of a long note in one click, and you always see where you are.
 

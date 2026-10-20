@@ -386,6 +386,111 @@
   text-align: right;
 }
 
+/* ---------- heading styles (YAZ-3050 D6, HeadingStylesControl.tsx) ---------- */
+
+/* Six lines, H1 to H6. The controls keep fixed widths, so they line up in columns down the six. */
+.heading-styles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.heading-styles__line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The name takes what the controls leave and never wraps. The padding keeps the 3px wash of a
+   highlighted name inside the clip of `overflow: hidden`. */
+.heading-styles__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.heading-styles__name {
+  line-height: 1.3;
+  color: var(--fg);
+  border-radius: 4px;
+}
+
+.heading-styles__stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.heading-styles__step,
+.heading-styles__switch {
+  width: 32px;
+  padding: 6px 0;
+  text-align: center;
+}
+
+.heading-styles__step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* "48 px" is the widest value: a fixed width keeps "−" and "+" still while the number changes. */
+.heading-styles__size {
+  width: 52px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--fg);
+}
+
+.heading-styles__switch--bold {
+  font-weight: 700;
+}
+
+.heading-styles__switch--underline {
+  text-decoration: underline;
+}
+
+.heading-styles__dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The colours are the `==highlight==` mark's (app.css `--mark-bg*`), set on each dot by the control.
+   The ring of the selected dot has a gap in the card's colour, so it reads in both themes. */
+.heading-styles__dot {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+}
+
+.heading-styles__dot[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--bg-side), 0 0 0 4px var(--accent);
+}
+
+.heading-styles__dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* "None": the page colour with one diagonal line. */
+.heading-styles__dot--none {
+  background: linear-gradient(135deg, transparent calc(50% - 0.75px), var(--fg-muted) calc(50% - 0.75px) calc(50% + 0.75px), transparent calc(50% + 0.75px)), var(--bg);
+}
+
+/* The slot is there on every line, with or without its button. */
+.heading-styles__reset {
+  display: flex;
+  justify-content: flex-end;
+  width: 68px;
+  flex: none;
+}
+
 /* ---------- hotkey reference (GRO-2067) — one table per Hotkeys group ---------- */
 
 .hotkeys__list {

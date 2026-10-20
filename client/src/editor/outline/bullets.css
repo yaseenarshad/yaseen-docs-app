@@ -24,8 +24,10 @@
    (`* # Part 1`) — starts at the row top with no offset, and its label height is the first
    line's box: font size × line-height + 2 × block-gap padding. Paragraph rows use the
    `--edit-line-height`/`--edit-block-gap` settings vars (Crepe's stock 32px IS 16px × 1.5 +
-   2 × 4px, so Default reproduces it exactly); heading-first rows use the app.css heading
-   scale × 1.3 and the SAME gap padding that app.css gives `li` headings — change one, change
+   2 × 4px, so Default reproduces it exactly); heading-first rows use the heading's size × 1.3
+   and the SAME gap padding that app.css gives `li` headings. The size is the level's
+   `--hN-size` from Settings › Headings (YAZ-3049 D2), or, unset, the app.css em scale × the base
+   font size — the same variable and fallback as each app.css `hN` rule: change one, change
    both. The chevron (outlineFolding.css) reads the same vars. Sizes are in px via the base
    font size so they resolve the same on the label and on the smaller-font chevron. */
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item {
@@ -34,27 +36,27 @@
 }
 
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .children > .content-dom > h1:is(:first-child, .outline-toggle + *)) {
-  --list-label-height: calc(var(--crepe-base-font-size) * 1.802 * 1.3 + 2 * var(--edit-block-gap, 4px));
+  --list-label-height: calc(var(--h1-size, calc(var(--crepe-base-font-size) * 1.802)) * 1.3 + 2 * var(--edit-block-gap, 4px));
 }
 
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .children > .content-dom > h2:is(:first-child, .outline-toggle + *)) {
-  --list-label-height: calc(var(--crepe-base-font-size) * 1.602 * 1.3 + 2 * var(--edit-block-gap, 4px));
+  --list-label-height: calc(var(--h2-size, calc(var(--crepe-base-font-size) * 1.602)) * 1.3 + 2 * var(--edit-block-gap, 4px));
 }
 
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .children > .content-dom > h3:is(:first-child, .outline-toggle + *)) {
-  --list-label-height: calc(var(--crepe-base-font-size) * 1.424 * 1.3 + 2 * var(--edit-block-gap, 4px));
+  --list-label-height: calc(var(--h3-size, calc(var(--crepe-base-font-size) * 1.424)) * 1.3 + 2 * var(--edit-block-gap, 4px));
 }
 
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .children > .content-dom > h4:is(:first-child, .outline-toggle + *)) {
-  --list-label-height: calc(var(--crepe-base-font-size) * 1.266 * 1.3 + 2 * var(--edit-block-gap, 4px));
+  --list-label-height: calc(var(--h4-size, calc(var(--crepe-base-font-size) * 1.266)) * 1.3 + 2 * var(--edit-block-gap, 4px));
 }
 
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .children > .content-dom > h5:is(:first-child, .outline-toggle + *)) {
-  --list-label-height: calc(var(--crepe-base-font-size) * 1.125 * 1.3 + 2 * var(--edit-block-gap, 4px));
+  --list-label-height: calc(var(--h5-size, calc(var(--crepe-base-font-size) * 1.125)) * 1.3 + 2 * var(--edit-block-gap, 4px));
 }
 
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .children > .content-dom > h6:is(:first-child, .outline-toggle + *)) {
-  --list-label-height: calc(var(--crepe-base-font-size) * 1 * 1.3 + 2 * var(--edit-block-gap, 4px));
+  --list-label-height: calc(var(--h6-size, calc(var(--crepe-base-font-size) * 1)) * 1.3 + 2 * var(--edit-block-gap, 4px));
 }
 
 /* One level = label gutter + `--list-label-gap`. Keep the gap, size the gutter. */

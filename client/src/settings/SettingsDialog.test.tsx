@@ -122,7 +122,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
     })
 
 /** The rows of each page with no vault open, in registry order (registry.tsx). */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'headingStyles', 'commentsOrder']
 const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
 const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents']
@@ -130,6 +130,7 @@ const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'startu
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 const HOTKEY_ROWS = ['hotkeys-keyboard', 'hotkeys-views', 'hotkeys-window', 'hotkeys-mouse']
 const THREADING_HINT = 'Guide lines that connect nested bullets.'
+const HEADINGS_HINT = 'How each heading level looks in every note.'
 const TOC_HINT = 'The headings or the bullets of a note, at its right edge.'
 const SECTION_INDENT_HINT = 'Text stands below its heading, with lines that show the sections. Turn it on for a note from the page cog. The purple path uses the Bullet threading settings above.'
 
@@ -216,9 +217,9 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
   it('group titles and hints render on their own page; untitled groups are plain rows', () => {
     const { el } = mount()
     const hints = () => [...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)
-    // Appearance, as it opens: Comments is its last group, after Spacing.
-    expect(groupTitles(el)).toEqual(['Spacing', 'Comments'])
-    expect(hints()).toEqual([])
+    // Appearance, as it opens: Comments is its last group, after Spacing and Headings (YAZ-3050).
+    expect(groupTitles(el)).toEqual(['Spacing', 'Headings', 'Comments'])
+    expect(hints()).toEqual([HEADINGS_HINT])
     expect(row(el, 'commentsOrder')?.querySelector('.setting__label')?.textContent).toBe('Order')
     expect(row(el, 'commentsOrder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Comments')
     // It starts with an untitled group: Theme and Content width sit straight under the section title.
@@ -424,6 +425,102 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     // A saved "Never" comes back pressed.
     const saved = mountOn('Editor', { ...DEFAULT_SETTINGS, tocLines: 'off' })
     expect(rowButtons(saved.el, 'tocLines').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true'])
+  })
+
+  describe('Heading styles (YAZ-3050 D6)', () => {
+    const line = (el: HTMLElement, level: string) => row(el, 'headingStyles')?.querySelector<HTMLElement>(`.heading-styles__line[data-level="${level}"]`) as HTMLElement
+    const button = (el: HTMLElement, level: string, name: string) => line(el, level).querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`) as HTMLButtonElement
+    const dots = (el: HTMLElement, level: string) => [...line(el, level).querySelectorAll<HTMLButtonElement>(`[role="group"][aria-label="Heading ${level.slice(1)} highlight"] button`)]
+    const written = (onChange: ReturnType<typeof vi.fn>) => onChange.mock.calls.map((call) => (call[0] as SettingsState).headingStyles)
+
+    it('one wide row "Heading styles" in the group "Headings", after Spacing on the Appearance page; six lines H1 to H6, each named in its own look with its rounded default size', () => {
+      const { el } = mount()
+      const group = row(el, 'headingStyles')?.closest('.settings-group')
+      expect(row(el, 'headingStyles')?.closest('[data-section]')?.id).toBe('settings-appearance')
+      expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Headings')
+      expect(group?.querySelector('.settings-group__hint')?.textContent).toBe(HEADINGS_HINT)
+      expect([...(group?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual(['headingStyles'])
+      expect(row(el, 'headingStyles')?.classList.contains('setting--wide')).toBe(true)
+      expect(row(el, 'headingStyles')?.querySelector('.setting__label')?.textContent).toBe('Heading styles')
+      const lines = [...(row(el, 'headingStyles')?.querySelectorAll<HTMLElement>('.heading-styles__line') ?? [])]
+      expect(lines.map((l) => [l.dataset.level, l.querySelector('.heading-styles__name')?.textContent, l.querySelector('.heading-styles__size')?.textContent])).toEqual([
+        ['h1', 'Heading 1', '29 px'],
+        ['h2', 'Heading 2', '26 px'],
+        ['h3', 'Heading 3', '23 px'],
+        ['h4', 'Heading 4', '20 px'],
+        ['h5', 'Heading 5', '18 px'],
+        ['h6', 'Heading 6', '16 px'],
+      ])
+      // The name in its level's look: H1 bold at 700, the others at 600; no underline, no wash.
+      const name = (level: string) => line(el, level).querySelector<HTMLElement>('.heading-styles__name')?.style
+      expect([name('h1')?.fontWeight, name('h2')?.fontWeight, name('h1')?.textDecoration, name('h2')?.backgroundColor]).toEqual(['700', '600', 'none', ''])
+      // B is on and U is off by default; the "none" dot is the selected one; no line has Reset.
+      expect([button(el, 'h2', 'Heading 2 bold').textContent, button(el, 'h2', 'Heading 2 bold').getAttribute('aria-pressed'), button(el, 'h2', 'Heading 2 underline').getAttribute('aria-pressed')]).toEqual(['B', 'true', 'false'])
+      expect(dots(el, 'h2').map((d) => [d.getAttribute('aria-label'), d.getAttribute('aria-pressed')])).toEqual([
+        ['No highlight', 'true'],
+        ['Yellow', 'false'],
+        ['Green', 'false'],
+        ['Blue', 'false'],
+        ['Pink', 'false'],
+      ])
+      expect(row(el, 'headingStyles')?.textContent).not.toContain('Reset')
+    })
+
+    it('"+" and "−" step 1px from the rounded default and write only that level and field; they stop at 12 and 48', () => {
+      const { el, onChange } = mount()
+      act(() => button(el, 'h2', 'Heading 2 larger').click())
+      act(() => button(el, 'h1', 'Heading 1 smaller').click())
+      expect(onChange.mock.calls[0][0]).toEqual({ ...DEFAULT_SETTINGS, headingStyles: { h2: { size: 27 } } })
+      expect(written(onChange)).toEqual([{ h2: { size: 27 } }, { h1: { size: 28 } }])
+      unmount()
+      const edges = mount({ ...DEFAULT_SETTINGS, headingStyles: { h1: { size: 48 }, h6: { size: 12 } } })
+      expect(line(edges.el, 'h1').querySelector('.heading-styles__size')?.textContent).toBe('48 px')
+      expect([button(edges.el, 'h1', 'Heading 1 larger').disabled, button(edges.el, 'h1', 'Heading 1 smaller').disabled]).toEqual([true, false])
+      expect([button(edges.el, 'h6', 'Heading 6 smaller').disabled, button(edges.el, 'h6', 'Heading 6 larger').disabled]).toEqual([true, false])
+      act(() => button(edges.el, 'h1', 'Heading 1 smaller').click())
+      expect(written(edges.onChange)).toEqual([{ h1: { size: 47 }, h6: { size: 12 } }])
+    })
+
+    it('B and U are switches: off stores the change, on again removes the field; a dot sets the highlight and "No highlight" removes it', () => {
+      const { el, onChange } = mount()
+      act(() => button(el, 'h3', 'Heading 3 bold').click())
+      act(() => button(el, 'h3', 'Heading 3 underline').click())
+      act(() => dots(el, 'h4')[3].click())
+      expect(written(onChange)).toEqual([{ h3: { bold: false } }, { h3: { underline: true } }, { h4: { highlight: 'blue' } }])
+      unmount()
+      const saved = mount({ ...DEFAULT_SETTINGS, headingStyles: { h3: { bold: false, underline: true }, h4: { highlight: 'blue' } } })
+      expect([button(saved.el, 'h3', 'Heading 3 bold').getAttribute('aria-pressed'), button(saved.el, 'h3', 'Heading 3 underline').getAttribute('aria-pressed')]).toEqual(['false', 'true'])
+      expect(dots(saved.el, 'h4').map((d) => d.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'false', 'true', 'false'])
+      // The name shows the look: normal weight and underlined; the H4 name has the blue wash.
+      const name = (level: string) => line(saved.el, level).querySelector<HTMLElement>('.heading-styles__name')?.style
+      expect([name('h3')?.fontWeight, name('h3')?.textDecoration]).toEqual(['400', 'underline'])
+      expect(name('h4')?.getPropertyValue('background-color')).toBe('var(--mark-bg-blue)')
+      act(() => button(saved.el, 'h3', 'Heading 3 bold').click())
+      act(() => button(saved.el, 'h3', 'Heading 3 underline').click())
+      act(() => dots(saved.el, 'h4')[0].click())
+      expect(written(saved.onChange)).toEqual([
+        { h3: { underline: true }, h4: { highlight: 'blue' } },
+        { h3: { bold: false }, h4: { highlight: 'blue' } },
+        { h3: { bold: false, underline: true } },
+      ])
+    })
+
+    it('"Reset" shows only on a changed line and removes that level\'s key; the other levels stay', () => {
+      const { el, onChange } = mount({ ...DEFAULT_SETTINGS, headingStyles: { h2: { size: 30, highlight: 'pink' }, h5: { underline: true } } })
+      const resets = () => [...(row(el, 'headingStyles')?.querySelectorAll<HTMLButtonElement>('button') ?? [])].filter((b) => b.textContent === 'Reset').map((b) => b.getAttribute('aria-label'))
+      expect(resets()).toEqual(['Reset heading 2', 'Reset heading 5'])
+      act(() => button(el, 'h2', 'Reset heading 2').click())
+      expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, headingStyles: { h5: { underline: true } } })
+    })
+
+    it('search finds the row by its words: "underline", "h2", "highlight", "font", "size", "bold"', () => {
+      const { el } = mount()
+      for (const query of ['underline', 'h2', 'highlight', 'font', 'size', 'bold']) {
+        type(searchInput(el), query)
+        expect(rowIds(el), query).toContain('headingStyles')
+        expect(headings(el), query).toContain('Appearance › Headings')
+      }
+    })
   })
 
   it('Reopen: All vaults · Last vault · None under "When the app starts", Last vault by default; None writes the whole object with only it flipped (YAZ-2589 D2, A3)', () => {

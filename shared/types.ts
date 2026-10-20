@@ -782,6 +782,8 @@ export interface SettingsState {
   tableOfContentsWidth: number
   /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
   tocLines: TocLines
+  /** Heading styles (YAZ-3049 D1): how each level H1-H6 looks in every note. Only the levels and fields the reader changed; `{}` is the app's own look. View-only; never written into the file. */
+  headingStyles: HeadingStyles
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
@@ -796,6 +798,31 @@ export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
 /** The table of contents (YAZ-2762): when its level lines show. */
 export type TocLines = 'hover' | 'always' | 'off'
 export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
+
+/** Heading styles (YAZ-3049 D5): the levels a style can change, in the order Settings shows them. */
+export const HEADING_KEYS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const
+export type HeadingKey = (typeof HEADING_KEYS)[number]
+
+/** The highlight colours of a heading: the colours of the `==highlight==` mark (app.css `--mark-bg`, `--mark-bg-<name>`). */
+export const HEADING_HIGHLIGHTS = ['yellow', 'green', 'blue', 'pink'] as const
+export type HeadingHighlight = (typeof HEADING_HIGHLIGHTS)[number]
+
+/** The smallest and the largest heading size, whole px. */
+export const HEADING_SIZE_MIN = 12
+export const HEADING_SIZE_MAX = 48
+
+/** What one heading level changed (D5). A missing field keeps the app's look: the default size, bold on, no underline, no highlight. */
+export interface HeadingStyle {
+  /** Whole px, `HEADING_SIZE_MIN` to `HEADING_SIZE_MAX`. */
+  size?: number
+  /** `false` draws the heading at normal weight (400). */
+  bold?: boolean
+  underline?: boolean
+  highlight?: HeadingHighlight
+}
+
+/** Only the levels the reader changed (D1). "Reset" removes a level's key; it never stores the defaults. */
+export type HeadingStyles = Partial<Record<HeadingKey, HeadingStyle>>
 
 /** Obsidian's Appearance vocabulary and order — also exactly Electron's `nativeTheme.themeSource`. */
 export type Theme = 'system' | 'light' | 'dark'
@@ -831,7 +858,7 @@ export const TOC_DEFAULT_W = 200
 
 /**
  * What ONE note's table of contents is built from when the reader chose (YAZ-2700 D14): `headings`
- * is every H1-H3 of the note, the ones inside bullets too; `bullets` is its bullets, however many
+ * is every H1-H5 of the note (YAZ-3051), the ones inside bullets too; `bullets` is its bullets, however many
  * headings it has. The third choice, Auto — the note's own structure decides — is the ABSENCE of
  * a choice: it is never stored, and reads as `null` everywhere.
  */
@@ -871,6 +898,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableOfContents: 'auto',
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
+  headingStyles: {},
 }
 
 export interface WindowBounds {

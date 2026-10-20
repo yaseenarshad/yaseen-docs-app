@@ -5,7 +5,7 @@
  * its two commands, `jump` and `current`. It never reads the document.
  *
  * A ROW is a `{ level, text }` and nothing more. The engine decides what the rows are — the
- * note's H1-H3, or the bullets of a note that has no headings to speak of, or what the reader
+ * note's H1-H5, or the bullets of a note that has no headings to speak of, or what the reader
  * chose for this note in the page cog (D14) — and this component is never told which.
  *
  * TWO LOOKS, one `<nav>`:
@@ -94,13 +94,14 @@ export interface ShownRow extends TocRow {
 }
 
 /**
- * The rows a note shows: all three levels (H1-H3, or three depths of bullets) when that is
- * `MAX_ROWS` or fewer, else levels 1-2, else level 1 only (its first `MAX_ROWS`). A row remembers
- * where it stands in the full list.
+ * The rows a note shows: every level (H1-H5, or three depths of bullets) when that is `MAX_ROWS`
+ * or fewer, else it drops the deepest level and tries again — levels 1-4, then 1-3, then 1-2
+ * (YAZ-3051) — else level 1 only (its first `MAX_ROWS`). A row remembers where it stands in the
+ * full list.
  */
 export const shownRows = (all: readonly TocRow[]): ShownRow[] => {
   const rows = all.map((row, index) => ({ ...row, index }))
-  for (const deepest of [3, 2]) {
+  for (const deepest of [5, 4, 3, 2]) {
     const kept = rows.filter(({ level }) => level <= deepest)
     if (kept.length <= MAX_ROWS) return kept
   }
@@ -109,9 +110,10 @@ export const shownRows = (all: readonly TocRow[]): ShownRow[] => {
 
 /**
  * THE PATH (YAZ-2762): for each row, the level whose line is on the way from the current row up
- * to its parents: '' for none, else '1' or '2' (`data-path`), with a 't' after it on a row the
+ * to its parents: '' for none, else '1' to '4' (`data-path`), with a 't' after it on a row the
  * path ARRIVES at: a name on the path that is one level in from that line ('1t' is a level 2
- * name below its level 1 parent).
+ * name below its level 1 parent). A row more than one level in from its parent (an H4 right
+ * under an H2) is passed by the parent's line and gets no 't'.
  * A parent's line passes each row below the parent, down to its child on the path. Bullet
  * threading's rule: the path stops at the current row.
  */

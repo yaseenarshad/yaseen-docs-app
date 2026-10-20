@@ -242,6 +242,8 @@ describe('headingLevelTag.css: how the tag is drawn', () => {
     const base = rules[0].body
     expect(base).toMatch(/user-select:\s*none;/)
     expect(base).toMatch(/pointer-events:\s*none;/)
+    // An underlined heading's line stops at its text: no decoration reaches an inline-block.
+    expect(base).toMatch(/display:\s*inline-block;/)
   })
 
   it('hidden until asked for; the heading of the caret and the one under the mouse show it at once, with no fade; the page switch shows every heading, a little quieter', () => {

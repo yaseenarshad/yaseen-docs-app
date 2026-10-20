@@ -964,6 +964,22 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     expect(captured.editors.length).toBe(renders)
     expect([app.getAttribute('data-section-lines'), app.getAttribute('data-content-width')]).toEqual(['always', 'narrow'])
   })
+
+  it('hands the heading styles to app.css as `--hN-*` variables on the app container, only for a changed field; another window\'s change lands live, and no editor renders for it (YAZ-3049 D2)', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    const headingVarsOn = () => [...app.style].filter((name) => /^--h\d-/.test(name)).sort()
+    // `{}`: no variable, so every heading keeps the look of 1.0.14.
+    expect(headingVarsOn()).toEqual([])
+    const renders = captured.editors.length
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, headingStyles: { h2: { size: 27, highlight: 'green' }, h5: { bold: false } } } }))
+    expect(headingVarsOn()).toEqual(['--h2-bg', '--h2-size', '--h5-weight'])
+    expect(app.style.getPropertyValue('--h2-size')).toBe('27px')
+    // Reset of every level: the variables leave again.
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, headingStyles: {} } }))
+    expect(headingVarsOn()).toEqual([])
+    expect(captured.editors.length).toBe(renders)
+  })
 })
 
 describe('App sidebar resize (YAZ-738)', () => {
@@ -1330,9 +1346,9 @@ describe('App settings dialog (YAZ-1679)', () => {
 })
 
 describe('App "What\'s new" sheet (YAZ-2976 D4, D5, D8)', () => {
-  /** The lazy chunk lands on a later tick than the click: settle until the sheet is in (or give up), then let its notes read answer. */
+  /** The lazy chunk lands on a later tick than the click: settle until the sheet is in (or give up after 2 s — a loaded CI runner took more than 100 ms to import it), then let its notes read answer. */
   const settle = async (el: HTMLElement) => {
-    for (let i = 0; i < 20 && el.querySelector('.whats-new') === null; i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 5)))
+    for (let i = 0; i < 400 && el.querySelector('.whats-new') === null; i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 5)))
     await act(async () => {}) // and its notes read answers
   }
 
