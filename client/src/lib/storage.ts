@@ -22,7 +22,6 @@ import {
   type SettingsState,
   type SidebarLens,
   type StartView,
-  type StoredTab,
   type TocSource,
   type VaultEntry,
   type VaultSet,
@@ -206,11 +205,8 @@ export const storage = {
 
   /** Valid AT BOOT only (like `getFile`): the renderer owns tab state after boot (Tabs I2, GRO-2234). */
   getTabs: (): string[] => identity.tabs,
-  /**
-   * The tabs with their copies, display names and active copy (YAZ-3057): boot only, like `getTabs`.
-   * A window that stores no strip gives its plain `tabs`, one entry per path.
-   */
-  getTabStrip: (): StoredTab[] => identity.tabStrip?.map((t) => ({ ...t })) ?? identity.tabs.map((path) => ({ path })),
+  /** The display names a moved tab brought (YAZ-2949 D7), by path: boot only, like `getTabs`. */
+  getTabNames: (): Readonly<Record<string, string>> => identity.tabNames ?? {},
 
   /** Durable right-panel identity at boot; clone the ordered list so callers cannot mutate the cache. */
   getRightPanel: (): RightPanelIdentity => ({ ...identity.rightPanel, items: [...identity.rightPanel.items] }),
@@ -221,12 +217,10 @@ export const storage = {
   getOpens: (root: string): Readonly<Record<string, OpenStat>> => folderOf(root).opens,
 
   /** One durable mirror for the complete main/right workspace identity. */
-  setWorkspace(root: string | null, strip: readonly StoredTab[], file: string | null, rightPanel: RightPanelIdentity): void {
-    // `tabs` is the strip's paths, each once (GRO-2232); the strip keeps the copies and names (YAZ-3057).
-    const tabs = [...new Set(strip.map((t) => t.path))]
+  setWorkspace(root: string | null, tabs: readonly string[], file: string | null, rightPanel: RightPanelIdentity): void {
     const fileChanged = file !== identity.file
     const nextRight = { ...rightPanel, items: [...rightPanel.items] }
-    identity = { ...identity, file, tabs, tabStrip: strip.map((t) => ({ ...t })), rightPanel: nextRight }
+    identity = { ...identity, file, tabs: [...tabs], rightPanel: nextRight }
     // The file is the last one of the vault that HOLDS it (YAZ-2602): `root`, unless another vault of the window does.
     const home = file === null ? root : (rootOfPath(identity.roots, file) ?? root)
     if (home !== null && fileChanged) {
@@ -235,7 +229,6 @@ export const storage = {
     }
     send('window.setIdentity', () => api.window.setIdentity({
       tabs: [...tabs],
-      tabStrip: strip.map((t) => ({ ...t })),
       file,
       rightPanel: { ...nextRight, items: [...nextRight.items] },
     }))

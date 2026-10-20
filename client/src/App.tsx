@@ -786,7 +786,7 @@ export function App() {
   const movePageToNewWindow = useCallback((path: string, id: string) => {
     // The page opens there as it looks here (YAZ-2951 D2): read before the save, while its editor is the one on show.
     const view = readPageView(id)
-    // The tab's display name goes with it (YAZ-2949 D7, S19): main stores it with the new window's tab (YAZ-3057).
+    // The tab's display name goes with it (YAZ-2949 D7, S19): main hands it to the new window once.
     const name = now.current.tabs.find((t) => t.id === id)?.name
     flushRenamedPath(path)
       .then(() => api.window.popOut(path, { view, name }))

@@ -1157,23 +1157,6 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(store.get().windows.find((w) => w.id === entry.id)?.sidebarCollapsed).toBe(false)
   })
 
-  it('duplicateWindow copies the copies and display names BY VALUE; each window then keeps its own (YAZ-3057 D5, S14)', () => {
-    const tabStrip = [{ path: '/v/a.md', name: 'Draft' }, { path: '/v/a.md', active: true as const }, { path: '/v/b.md' }]
-    const from: WindowEntry = { id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], tabStrip, rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 100, y: 100, width: 800, height: 600 } }
-    store.upsertWindow(from)
-    const { host, created } = makeHost()
-    createWindowManager(store, host).duplicateWindow(from)
-    const entry = created[0].entry
-    expect(entry.tabStrip).toEqual(tabStrip)
-    expect(entry.tabStrip?.[0]).not.toBe(tabStrip[0])
-    store.upsertWindow({ ...entry, tabStrip: [{ path: '/v/a.md', name: 'Mine' }, { path: '/v/b.md' }] })
-    expect(store.get().windows.find((w) => w.id === 'w1')?.tabStrip).toEqual(tabStrip)
-    // A window with no strip gives a copy with none.
-    const plainFrom: WindowEntry = { ...from, id: 'w9', tabStrip: undefined }
-    createWindowManager(store, makeHost().host).duplicateWindow(plainFrom)
-    expect(store.get().windows.at(-1)).not.toHaveProperty('tabStrip')
-  })
-
   it('openWindow takes more vaults for the window: `root` first, each vault once — and a vault another window already shows is shown by both (YAZ-2602 S9)', () => {
     const { host, created } = makeHost()
     const manager = createWindowManager(store, host)
@@ -1228,33 +1211,36 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(store.get().windows).toEqual([from, entry])
   })
 
-  it('popOut STORES the tab\'s display name in the new window\'s strip; the source\'s own strip stays behind; no name, no strip (YAZ-3057 D3, S12, S13)', () => {
-    const sourceStrip = [{ path: '/a/x.md', name: 'Source' }, { path: '/a/x.md', active: true as const }, { path: '/a/y.md' }]
-    const from: WindowEntry = { id: 'w1', root: '/a', roots: ['/a'], file: '/a/x.md', tabs: ['/a/x.md', '/a/y.md'], tabStrip: sourceStrip, rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 100, y: 100, width: 800, height: 600 } }
+  it('popOut holds the tab\'s display name under the NEW window\'s id, for ONE read; a close forgets it; no name holds nothing; nothing is stored (YAZ-2949 D7)', () => {
+    const from: WindowEntry = { id: 'w1', root: '/a', roots: ['/a'], file: '/a/x.md', tabs: ['/a/x.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 100, y: 100, width: 800, height: 600 } }
     store.upsertWindow(from)
     const { host, created } = makeHost()
     const manager = createWindowManager(store, host)
     manager.popOut(from, '/a/x.md', { name: 'Outline' })
-    manager.popOut(from, '/a/y.md', {})
-    const [one, two] = created.map((c) => c.entry)
-    expect(one.tabStrip).toEqual([{ path: '/a/x.md', name: 'Outline' }])
-    expect(two).not.toHaveProperty('tabStrip')
-    // In the store, so every identity read gets it again: a reload and a restart keep the name.
-    expect(store.get().windows.find((w) => w.id === one.id)?.tabStrip).toEqual([{ path: '/a/x.md', name: 'Outline' }])
-    expect(store.get().windows.find((w) => w.id === 'w1')?.tabStrip).toEqual(sourceStrip)
+    manager.popOut(from, '/a/x.md', { name: 'Draft' })
+    manager.popOut(from, '/a/x.md', {})
+    const [one, two, three] = created.map((c) => c.entry.id)
+    expect(store.get().windows.every((w) => !('tabNames' in w))).toBe(true)
+    expect(manager.takeTabNames('w1')).toBeUndefined()
+    expect(manager.takeTabNames(one)).toEqual({ '/a/x.md': 'Outline' })
+    expect(manager.takeTabNames(one)).toBeUndefined() // a reload gets no name (S24)
+    expect(manager.takeTabNames(three)).toBeUndefined()
+    created[1].win.destroy() // `closed`: the window that never read its name forgets it
+    expect(manager.takeTabNames(two)).toBeUndefined()
   })
 
-  it('popOut carries the page view and the display name together: the view is taken once, the name is stored (YAZ-2951 D2, YAZ-3057 D3)', () => {
+  it('popOut carries the page view and the display name together: each is taken once, under the same new window (YAZ-2951 D2, YAZ-2949 D7)', () => {
     const from: WindowEntry = { id: 'w1', root: '/a', roots: ['/a'], file: '/a/x.md', tabs: ['/a/x.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 100, y: 100, width: 800, height: 600 } }
     store.upsertWindow(from)
     const { host, created } = makeHost()
     const manager = createWindowManager(store, host)
     const view = { scrollTop: 10, zoomKey: null, folds: [], magnification: 100 }
     manager.popOut(from, '/a/x.md', { view, name: 'Outline' })
-    const { id, tabStrip } = created[0].entry
+    const id = created[0].entry.id
     expect(manager.takeStartView(id)).toEqual({ path: '/a/x.md', view })
-    expect(tabStrip).toEqual([{ path: '/a/x.md', name: 'Outline' }])
+    expect(manager.takeTabNames(id)).toEqual({ '/a/x.md': 'Outline' })
     expect(manager.takeStartView(id)).toBeUndefined()
+    expect(manager.takeTabNames(id)).toBeUndefined()
   })
 
   it('the cascade is clamped: duplicating a window at the display edge stays fully on-screen (GRO-2167)', () => {

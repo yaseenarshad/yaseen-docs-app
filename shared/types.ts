@@ -905,15 +905,6 @@ export interface WindowBounds {
   height: number
 }
 
-/** One tab as a window stores it (YAZ-3057). A copy is a second entry with the same path. */
-export interface StoredTab {
-  path: string
-  /** The tab's display name (YAZ-2949), cleaned like a vault's (`cleanVaultName`). */
-  name?: string
-  /** On the active copy of `file` only: which of two copies of one file was on show. */
-  active?: true
-}
-
 /**
  * One open window, saved for the next launch (GRO-2160), which brings back the ones it is asked for or
  * the ones `settings.startupWindows` names (YAZ-2589). `root` null = Welcome screen.
@@ -939,12 +930,6 @@ export interface WindowEntry {
   roots: string[]
   file: string | null
   tabs: string[]
-  /**
-   * The tabs as the strip shows them (YAZ-3057): copies, display names and the active copy. Its paths,
-   * each once and in order, are `tabs` (`normalizeTabStrip`). Absent when no tab has a copy or a name.
-   * Additive within version 1: an old build drops the key and opens `tabs`.
-   */
-  tabStrip?: StoredTab[]
   rightPanel: RightPanelIdentity
   /** Whether this window's sidebar is hidden (YAZ-1280); independent from every other window. */
   sidebarCollapsed: boolean
@@ -1321,8 +1306,6 @@ export interface WindowIdentity {
   file: string | null
   /** Open tabs left→right (GRO-2232); `file` is the active one (same invariants as `WindowEntry.tabs`). */
   tabs: string[]
-  /** The tabs with their copies, display names and active copy (YAZ-3057), as `WindowEntry.tabStrip`. */
-  tabStrip?: StoredTab[]
   rightPanel: RightPanelIdentity
   /** Whether this window's sidebar is hidden (YAZ-1280). */
   sidebarCollapsed: boolean
@@ -1333,6 +1316,11 @@ export interface WindowIdentity {
    * given out by the FIRST `window:identity` of the new window only (S17). Never stored.
    */
   startView?: StartView
+  /**
+   * Display names a tab brought with "Move to new window" (YAZ-2949 D7), by path. Answered ONCE, to the
+   * new window's first identity read; never in `WindowEntry`, never stored.
+   */
+  tabNames?: Record<string, string>
 }
 
 /**
@@ -1362,7 +1350,7 @@ export interface StartView {
  */
 export interface PopOutCarry {
   view?: PageView
-  /** The tab's display name (YAZ-2949 D7), if it has one: main stores it with the new window's tab (YAZ-3057 D3). */
+  /** The tab's display name (YAZ-2949 D7), if it has one. */
   name?: string
 }
 
