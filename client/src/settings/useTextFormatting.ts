@@ -21,6 +21,12 @@ export interface TextFormattingState {
 /** The app's look: one object, so a vault with no file never hands out a new one. */
 export const NO_TEXT_FORMATTING: TextFormatting = Object.freeze({})
 
+/** The file or a change, sanitised; nothing left is `NO_TEXT_FORMATTING`. */
+function settled(raw: unknown): TextFormatting {
+  const clean = sanitizeTextFormatting(raw)
+  return Object.keys(clean).length === 0 ? NO_TEXT_FORMATTING : clean
+}
+
 /** `root` is nullable because the scope hooks cannot be conditional: no vault, no bridge call, the app's look. */
 export function useTextFormatting(root: string | null, onNotice: (text: string, icon?: NoticeKind) => void): TextFormattingState {
   const [formatting, setFormatting] = useState(NO_TEXT_FORMATTING)
@@ -36,8 +42,7 @@ export function useTextFormatting(root: string | null, onNotice: (text: string, 
         (raw) => {
           if (!live) return
           malformed.current = false
-          const next = sanitizeTextFormatting(raw)
-          setFormatting(Object.keys(next).length === 0 ? NO_TEXT_FORMATTING : next)
+          setFormatting(settled(raw))
         },
         (err: unknown) => {
           if (!live || !(err instanceof BridgeRequestError && err.code === 'INVALID_CONFIG')) return
@@ -60,11 +65,11 @@ export function useTextFormatting(root: string | null, onNotice: (text: string, 
     (next: TextFormatting) => {
       if (root === null) return
       if (malformed.current) return onNotice(`Can't save the text formatting: ${TEXT_FORMATTING_FILE} is not valid JSON`, 'error')
-      const clean = sanitizeTextFormatting(next)
-      setFormatting(Object.keys(clean).length === 0 ? NO_TEXT_FORMATTING : clean)
+      const clean = settled(next)
+      setFormatting(clean)
       api.vaultConfig.write(root, TEXT_FORMATTING_FILE, textFormattingFile(clean)).catch(() =>
         api.vaultConfig.read(root, TEXT_FORMATTING_FILE).then(
-          (raw) => setFormatting(sanitizeTextFormatting(raw)),
+          (raw) => setFormatting(settled(raw)),
           () => undefined,
         ),
       )

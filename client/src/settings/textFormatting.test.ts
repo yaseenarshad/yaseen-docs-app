@@ -36,7 +36,7 @@ describe('sanitizeTextFormatting (YAZ-3066 D10)', () => {
   it('the version is ignored, whatever it says; the writer always writes version 1 and only the changes', () => {
     expect(sanitizeTextFormatting({ version: 2, h2: { size: 21 } })).toEqual({ h2: { size: 21 } })
     expect(sanitizeTextFormatting({ version: 'x' })).toEqual({})
-    expect(textFormattingFile({ h2: { size: 21, bold: undefined } })).toEqual({ version: 1, h2: { size: 21 } })
+    expect(textFormattingFile({ text: { size: 17 }, h2: { size: 21 } })).toEqual({ version: 1, text: { size: 17 }, h2: { size: 21 } })
     expect(textFormattingFile({})).toEqual({ version: 1 })
   })
 

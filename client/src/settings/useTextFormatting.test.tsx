@@ -98,6 +98,10 @@ describe('useTextFormatting', () => {
     read.mockResolvedValue({ version: 1, text: { size: 17 } })
     await act(async () => state.save({ text: { size: 20 } }))
     expect(state.formatting).toEqual({ text: { size: 17 } })
+    // The fallback to a vault with no file is the one app's look object too, as the load gives.
+    read.mockResolvedValue(null)
+    await act(async () => state.save({ text: { size: 20 } }))
+    expect(state.formatting).toBe(NO_TEXT_FORMATTING)
   })
 
   it('a file that is not valid JSON: the app\'s look, and a save is refused with a notice until the file parses again', async () => {

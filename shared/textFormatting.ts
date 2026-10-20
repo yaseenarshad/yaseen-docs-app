@@ -73,5 +73,9 @@ export function sanitizeTextFormatting(raw: unknown): TextFormatting {
   return out
 }
 
-/** What a writer puts in the file: the version, then only the changed levels and fields. */
-export const textFormattingFile = (formatting: TextFormatting): Record<string, unknown> => ({ version: TEXT_FORMATTING_VERSION, ...sanitizeTextFormatting(formatting) })
+/**
+ * What a writer puts in the file: the version, then only the changed levels and fields. The caller
+ * hands in a clean value (the hook's sanitised one, the store's checked 1.0.15 map); a second
+ * sanitise here would also put the whole sanitiser into the main bundle.
+ */
+export const textFormattingFile = (formatting: TextFormatting): Record<string, unknown> => ({ version: TEXT_FORMATTING_VERSION, ...formatting })
