@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type VaultSet, type WindowEntry } from '@shared/types'
-import { createStore, isSettings, sanitizeSettings } from './store'
+import { createStore, isSettings, normalizeTabStrip, sanitizeSettings } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -1395,6 +1395,84 @@ describe('createStore: mutations', () => {
       // `/v/B.md.md` does NOT start with `/v/B.md/` — only the exact match moved.
       expect(store.get().windows[0].tabs).toEqual(['/v/C.md', '/v/B.md.md'])
     })
+  })
+})
+
+describe('the tab strip: copies, display names and the active copy (YAZ-3057 D1, D2)', () => {
+  const A = '/v/a.md'
+  const B = '/v/b.md'
+  /** Two copies of A — the first named, the second on show — and B. */
+  const strip = [{ path: A, name: 'Draft' }, { path: A, active: true as const }, { path: B }]
+
+  describe('normalizeTabStrip', () => {
+    it('keeps a strip whose paths, each once and in order, are `tabs`', () => {
+      expect(normalizeTabStrip(strip, [A, B], A)).toEqual(strip)
+      expect(normalizeTabStrip(undefined, [A, B], A)).toBeUndefined()
+    })
+
+    it('drops a tab that is no longer open; drops the whole strip when it still disagrees with `tabs` (S26)', () => {
+      expect(normalizeTabStrip([...strip, { path: '/v/gone.md', name: 'Gone' }], [A, B], A)).toEqual(strip)
+      expect(normalizeTabStrip(strip, [B, A], A)).toBeUndefined() // another order
+      expect(normalizeTabStrip(strip, [A, B, '/v/c.md'], A)).toBeUndefined() // a tab the strip does not have
+    })
+
+    it('keeps nothing for a strip with no copy and no name (S23): the window stores what it always did', () => {
+      expect(normalizeTabStrip([{ path: A, active: true }, { path: B }], [A, B], A)).toBeUndefined()
+      expect(normalizeTabStrip([{ path: A, name: 'Solo' }, { path: B }], [A, B], A)).toEqual([{ path: A, name: 'Solo' }, { path: B }])
+    })
+
+    it('keeps the active mark on ONE copy of `file` only (D4)', () => {
+      const marked = [{ path: A, active: true as const }, { path: A, active: true as const }, { path: B, active: true as const }]
+      expect(normalizeTabStrip(marked, [A, B], A)).toEqual([{ path: A, active: true }, { path: A }, { path: B }])
+      expect(normalizeTabStrip(strip, [A, B], B)).toEqual([{ path: A, name: 'Draft' }, { path: A }, { path: B }])
+    })
+  })
+
+  it('loads a stored strip; junk elements drop, a name is cleaned like a vault name, and a strip that disagrees drops whole (S24, S26)', async () => {
+    const junk = [{ path: A, name: `  ${'n'.repeat(MAX_VAULT_NAME + 3)} ` }, 5, { path: 'rel.md' }, null, { path: A, active: true }, { path: B, name: 7 }]
+    await seed(valid({ windows: [win('w1', { root: '/v', file: A, tabs: [A, B], tabStrip: junk as never }), win('w2', { root: '/v', file: A, tabs: [A, B], tabStrip: [{ path: B }, { path: A }, { path: A }] })] }))
+    const [one, two] = createStore(file).get().windows
+    expect(one.tabStrip).toEqual([{ path: A, name: 'n'.repeat(MAX_VAULT_NAME) }, { path: A, active: true }, { path: B }])
+    expect(two).not.toHaveProperty('tabStrip')
+    expect(two.tabs).toEqual([A, B])
+  })
+
+  it('a window without a strip (an older build\'s file) opens its tabs as before (S24)', async () => {
+    await seed(valid({ windows: [win('w1', { root: '/v', file: A, tabs: [A, B] })] }))
+    expect(createStore(file).get().windows[0]).toEqual(win('w1', { root: '/v', file: A, tabs: [A, B] }))
+  })
+
+  it('survives a real flush and reload: the restart brings back the copies, the names and the active copy (S1 to S4)', async () => {
+    const store = createStore(file)
+    store.upsertWindow(win('w1', { root: '/v', file: A, tabs: [A, B], tabStrip: strip }))
+    await store.flush()
+    expect(createStore(file).get().windows).toEqual([win('w1', { root: '/v', file: A, tabs: [A, B], tabStrip: strip })])
+  })
+
+  it('a vault switch empties the tabs, and the strip goes with them (S17)', () => {
+    const store = createStore(file)
+    store.upsertWindow(win('w1', { root: '/v', file: A, tabs: [A, B], tabStrip: strip }))
+    store.upsertWindow({ ...store.get().windows[0], root: '/w', roots: ['/w'], file: null, tabs: [] })
+    expect(store.get().windows[0]).not.toHaveProperty('tabStrip')
+  })
+
+  it('renamePath: every copy and its name follow the file, and a folder rename moves them too (S8, S9)', () => {
+    const store = createStore(file)
+    store.upsertWindow(win('w1', { root: '/v', file: A, tabs: [A, B], tabStrip: strip }))
+    store.renamePath(A, '/v/z.md')
+    expect(store.get().windows[0].tabStrip).toEqual([{ path: '/v/z.md', name: 'Draft' }, { path: '/v/z.md', active: true }, { path: B }])
+    store.renamePath('/v', '/n')
+    expect(store.get().windows[0].tabStrip).toEqual([{ path: '/n/z.md', name: 'Draft' }, { path: '/n/z.md', active: true }, { path: '/n/b.md' }])
+  })
+
+  it('removePath: the deleted file\'s copies leave, the other tabs keep their names; the active mark goes with its copy (S10, S11)', () => {
+    const store = createStore(file)
+    store.upsertWindow(win('w1', { root: '/v', file: A, tabs: [A, B], tabStrip: [...strip, { path: B, name: 'Bee' }] }))
+    store.removePath(A)
+    expect(store.get().windows[0]).toMatchObject({ file: B, tabs: [B], tabStrip: [{ path: B }, { path: B, name: 'Bee' }] })
+    store.upsertWindow(win('w2', { root: '/v', file: B, tabs: [B], tabStrip: [{ path: B, name: 'Solo' }] }))
+    store.removePath(B)
+    expect(store.get().windows[1]).not.toHaveProperty('tabStrip')
   })
 })
 

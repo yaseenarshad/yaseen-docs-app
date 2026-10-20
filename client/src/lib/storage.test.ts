@@ -227,7 +227,7 @@ describe('storage', () => {
     storage.setRoot('/notes')
     expect(storage.getRoot()).toBe('/notes')
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
-    storage.setWorkspace('/notes', ['/notes/a.md'], '/notes/a.md', defaultRightPanelIdentity())
+    storage.setWorkspace('/notes', [{ path: '/notes/a.md' }], '/notes/a.md', defaultRightPanelIdentity())
     storage.setRoot('/notes')
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes' })
     expect(storage.getFile()).toBe('/notes/a.md')
@@ -242,14 +242,14 @@ describe('storage', () => {
   it('the vaults of the window (YAZ-2602 D1): `setRoot` leaves that one vault and names `root` alone in its write; `setRoots` keeps the tabs; `mirrorRoots` writes nothing', () => {
     storage.setRoot('/v')
     expect(storage.getRoots()).toEqual(['/v'])
-    storage.setWorkspace('/v', ['/v/a.md'], '/v/a.md', defaultRightPanelIdentity())
+    storage.setWorkspace('/v', [{ path: '/v/a.md' }], '/v/a.md', defaultRightPanelIdentity())
     storage.setRoots(['/v', '/w/'])
     expect(storage.getRoots()).toEqual(['/v', '/w'])
     expect(storage.getRoot()).toBe('/v')
     expect(storage.getTabs()).toEqual(['/v/a.md'])
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ roots: ['/v', '/w'] })
     // A file is the last file of the vault that holds it.
-    storage.setWorkspace('/v', ['/v/a.md', '/w/b.md'], '/w/b.md', defaultRightPanelIdentity())
+    storage.setWorkspace('/v', [{ path: '/v/a.md' }, { path: '/w/b.md' }], '/w/b.md', defaultRightPanelIdentity())
     expect(storage.getLastFile('/w')).toBe('/w/b.md')
     expect(storage.getLastFile('/v')).toBe('/v/a.md')
 
@@ -275,13 +275,16 @@ describe('storage', () => {
 
   it('setWorkspace mirrors main and right identity in one call and keeps independent item arrays', () => {
     const rightPanel = { open: true, width: 600, items: ['/v/b.md'], expanded: '/v/b.md' }
-    storage.setWorkspace('/v', ['/v/a.md'], '/v/a.md', rightPanel)
+    // Two copies of one page, one named and one active (YAZ-3057): `tabs` has the path once, the strip keeps both.
+    const strip = [{ path: '/v/a.md', name: 'Draft' }, { path: '/v/a.md', active: true as const }]
+    storage.setWorkspace('/v', strip, '/v/a.md', rightPanel)
     expect(storage.getTabs()).toEqual(['/v/a.md'])
     expect(storage.getRightPanel()).toEqual(rightPanel)
     expect(storage.getRightPanel().items).not.toBe(rightPanel.items)
     expect(b.bridge.window.setIdentity).toHaveBeenCalledTimes(1)
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({
       tabs: ['/v/a.md'],
+      tabStrip: strip,
       file: '/v/a.md',
       rightPanel,
     })
@@ -315,50 +318,50 @@ describe('storage', () => {
       ['/r1', { expanded: ['/r1/a'] }],
       ['/r2', { expanded: ['/r2/b'] }],
     ])
-    storage.setWorkspace('/r1', ['/r1/a/x.md', '/r1/y.md'], '/r1/a/x.md', defaultRightPanelIdentity())
+    storage.setWorkspace('/r1', [{ path: '/r1/a/x.md' }, { path: '/r1/y.md' }], '/r1/a/x.md', defaultRightPanelIdentity())
     expect(storage.getLastFile('/r1')).toBe('/r1/a/x.md')
     expect(storage.getLastFile('/r2')).toBeNull()
     expect(storage.getExpanded('/r1')).toEqual(['/r1/a']) // the other folder fields survive
     expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r1', { lastFile: '/r1/a/x.md' })
     // ONE explicit write carries BOTH halves — never the legacy { file }-only patch, whose
     // main-side normalization would prepend the file into tabs on its own.
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/r1/a/x.md', '/r1/y.md'], file: '/r1/a/x.md', rightPanel: defaultRightPanelIdentity() })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/r1/a/x.md', '/r1/y.md'], tabStrip: [{ path: '/r1/a/x.md' }, { path: '/r1/y.md' }], file: '/r1/a/x.md', rightPanel: defaultRightPanelIdentity() })
     storage.setWorkspace('/r1', [], null, defaultRightPanelIdentity())
     expect(storage.getLastFile('/r1')).toBeNull()
     expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r1', { lastFile: null })
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null, rightPanel: defaultRightPanelIdentity() })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], tabStrip: [], file: null, rightPanel: defaultRightPanelIdentity() })
   })
 
   it('a tabs-only change (active file unchanged) writes the identity but NOT the folder (FN14, GRO-2197)', () => {
-    storage.setWorkspace('/r', ['/r/a.md'], '/r/a.md', defaultRightPanelIdentity())
+    storage.setWorkspace('/r', [{ path: '/r/a.md' }], '/r/a.md', defaultRightPanelIdentity())
     expect(b.bridge.state.setFolder).toHaveBeenCalledTimes(1)
     expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r', { lastFile: '/r/a.md' })
     // ⌘-click background tab / drag-reorder / closing a non-active tab: `file` is identical —
     // no redundant lastFile write (which would commit, hit disk and broadcast to every window).
-    storage.setWorkspace('/r', ['/r/a.md', '/r/b.md'], '/r/a.md', defaultRightPanelIdentity())
+    storage.setWorkspace('/r', [{ path: '/r/a.md' }, { path: '/r/b.md' }], '/r/a.md', defaultRightPanelIdentity())
     expect(b.bridge.state.setFolder).toHaveBeenCalledTimes(1)
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/r/a.md', '/r/b.md'], file: '/r/a.md', rightPanel: defaultRightPanelIdentity() })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/r/a.md', '/r/b.md'], tabStrip: [{ path: '/r/a.md' }, { path: '/r/b.md' }], file: '/r/a.md', rightPanel: defaultRightPanelIdentity() })
     expect(storage.getTabs()).toEqual(['/r/a.md', '/r/b.md'])
     expect(storage.getLastFile('/r')).toBe('/r/a.md')
     // A REAL active-file change still writes both halves.
-    storage.setWorkspace('/r', ['/r/a.md', '/r/b.md'], '/r/b.md', defaultRightPanelIdentity())
+    storage.setWorkspace('/r', [{ path: '/r/a.md' }, { path: '/r/b.md' }], '/r/b.md', defaultRightPanelIdentity())
     expect(b.bridge.state.setFolder).toHaveBeenCalledTimes(2)
     expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r', { lastFile: '/r/b.md' })
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/r/a.md', '/r/b.md'], file: '/r/b.md', rightPanel: defaultRightPanelIdentity() })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/r/a.md', '/r/b.md'], tabStrip: [{ path: '/r/a.md' }, { path: '/r/b.md' }], file: '/r/b.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('setWorkspace on a null root (no folder to remember into) updates the identity only', () => {
-    storage.setWorkspace(null, ['/x/a.md'], '/x/a.md', defaultRightPanelIdentity())
+    storage.setWorkspace(null, [{ path: '/x/a.md' }], '/x/a.md', defaultRightPanelIdentity())
     expect(storage.getFile()).toBe('/x/a.md')
     expect(storage.getTabs()).toEqual(['/x/a.md'])
     expect(b.bridge.state.setFolder).not.toHaveBeenCalled()
-    expect(b.bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/x/a.md'], file: '/x/a.md', rightPanel: defaultRightPanelIdentity() })
+    expect(b.bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/x/a.md'], tabStrip: [{ path: '/x/a.md' }], file: '/x/a.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('getFile/getTabs are the window identity: set by setWorkspace, cleared when the root changes', () => {
     expect(storage.getFile()).toBeNull()
     storage.setRoot('/v')
-    storage.setWorkspace('/v', ['/v/b.md', '/v/c.md'], '/v/b.md', defaultRightPanelIdentity())
+    storage.setWorkspace('/v', [{ path: '/v/b.md' }, { path: '/v/c.md' }], '/v/b.md', defaultRightPanelIdentity())
     expect(storage.getFile()).toBe('/v/b.md')
     expect(storage.getTabs()).toEqual(['/v/b.md', '/v/c.md'])
     storage.setRoot('/other')
