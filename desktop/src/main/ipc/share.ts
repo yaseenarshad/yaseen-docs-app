@@ -26,12 +26,23 @@ import { handle, handleWithEvent } from './envelope'
 const req = (v: unknown): Record<string, unknown> => requireRequest(v)
 
 /**
+ * The repo an unpackaged main runs from, by its own bundle (`desktop/out/main` → the repo). The e2e
+ * harness launches `desktop/out/main/index.js` directly, so its `app.getAppPath()` is not `desktop/`
+ * as in `npm run dev` (YAZ-3044 A21): each unpackaged lookup tries the app path, then this.
+ */
+const repoOfMain = (mainDir: string): string => resolve(mainDir, '..', '..', '..')
+
+/**
  * Where the viewer's built assets live (`tools/buildShareViewer.mjs` → `share/dist/assets/`, part of
  * `npm run build`): the packaged app carries them as the `share-viewer` extraResource; dev reads the
- * repo checkout beside `desktop/`.
+ * repo checkout beside `desktop/` — found by the app path, else by main's own folder.
  */
-export function viewerAssetsDir({ isPackaged, resourcesPath, appPath }: { isPackaged: boolean; resourcesPath: string; appPath: string }): string {
-  return isPackaged ? join(resourcesPath, 'share-viewer') : join(appPath, '..', 'share', 'dist', 'assets')
+export function viewerAssetsDir({ isPackaged, resourcesPath, appPath, mainDir, exists }: { isPackaged: boolean; resourcesPath: string; appPath: string; mainDir?: string; exists?: (p: string) => boolean }): string {
+  if (isPackaged) return join(resourcesPath, 'share-viewer')
+  const dev = join(appPath, '..', 'share', 'dist', 'assets')
+  if (mainDir === undefined || exists === undefined || exists(dev)) return dev
+  const fromMain = join(repoOfMain(mainDir), 'share', 'dist', 'assets')
+  return exists(fromMain) ? fromMain : dev
 }
 
 /**
@@ -42,7 +53,7 @@ export function viewerAssetsDir({ isPackaged, resourcesPath, appPath }: { isPack
  */
 export function excalidrawFontsDir({ isPackaged, mainDir, appPath, exists }: { isPackaged: boolean; mainDir: string; appPath: string; exists: (p: string) => boolean }): string {
   if (isPackaged) return resolve(mainDir, '..', 'renderer', EXCALIDRAW_ASSET_DIR, 'fonts')
-  const candidates = excalidrawPackageFonts(join(appPath, '..'))
+  const candidates = [...new Set([...excalidrawPackageFonts(join(appPath, '..')), ...excalidrawPackageFonts(repoOfMain(mainDir))])]
   return candidates.find(exists) ?? candidates[0]
 }
 

@@ -274,7 +274,7 @@ app.whenReady().then(() => {
   const { sync, secrets } = registerIpc(store, manager, {
     userData: app.getPath('userData'),
     // YAZ-3040: the share viewer's build, draw.io's webapp and Excalidraw's fonts, which share setup uploads.
-    viewerAssetsDir: viewerAssetsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
+    viewerAssetsDir: viewerAssetsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(), mainDir: __dirname, exists: existsSync }),
     drawioDir: DRAWIO_DIR,
     fontsDir: excalidrawFontsDir({ isPackaged: app.isPackaged, mainDir: __dirname, appPath: app.getAppPath(), exists: existsSync }),
     isPackaged: app.isPackaged,

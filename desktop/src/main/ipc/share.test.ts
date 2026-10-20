@@ -28,6 +28,13 @@ describe('viewerAssetsDir', () => {
   it('reads the repo checkout beside desktop/ in dev', () => {
     expect(viewerAssetsDir({ ...where, isPackaged: false })).toBe(path.join('/repo', 'share', 'dist', 'assets'))
   })
+
+  it('YAZ-3044: launched on its bundle (the e2e harness), it finds the checkout by main\'s own folder', () => {
+    const fromMain = path.join('/repo', 'share', 'dist', 'assets')
+    const e2e = { ...where, isPackaged: false, appPath: '/repo/desktop/out/main', mainDir: '/repo/desktop/out/main' }
+    expect(viewerAssetsDir({ ...e2e, exists: (p) => p === fromMain })).toBe(fromMain)
+    expect(viewerAssetsDir({ ...where, isPackaged: false, mainDir: '/repo/desktop/out/main', exists: () => true })).toBe(fromMain)
+  })
 })
 
 describe('excalidrawFontsDir (YAZ-2073 3C)', () => {
@@ -41,6 +48,11 @@ describe('excalidrawFontsDir (YAZ-2073 3C)', () => {
     const where = { isPackaged: false, mainDir: '/repo/desktop/out/main', appPath: '/repo/desktop' }
     expect(excalidrawFontsDir({ ...where, exists: (p) => p === root || p === client })).toBe(root)
     expect(excalidrawFontsDir({ ...where, exists: (p) => p === client })).toBe(client)
+  })
+
+  it('YAZ-3044: launched on its bundle (the e2e harness), it finds the package by main\'s own folder', () => {
+    const [root] = excalidrawPackageFonts(path.normalize('/repo'))
+    expect(excalidrawFontsDir({ isPackaged: false, mainDir: '/repo/desktop/out/main', appPath: '/repo/desktop/out/main', exists: (p) => p === root })).toBe(root)
   })
 })
 
