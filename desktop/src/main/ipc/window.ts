@@ -1,9 +1,9 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, rootOfPath, type OpenSetResult, type PageView, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, rootOfPath, type OpenSetResult, type PageView, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type StoredTab, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
-import { normalizeRightPanel, normalizeTabs, type Store } from '../store'
+import { normalizeRightPanel, normalizeTabs, readStoredTab, type Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { handle, handleWithEvent } from './envelope'
 
@@ -21,6 +21,18 @@ function optionalTabs(raw: Record<string, unknown>): string[] | undefined {
   if (v === undefined) return undefined
   if (!Array.isArray(v)) throw new BridgeFailure('BAD_REQUEST', `'tabs' must be an array of absolute paths`)
   return v.map((t, i) => requireAbsPath(t, `tabs[${i}]`))
+}
+
+/** `tabStrip` in the patch (YAZ-3057): absent (untouched), or tabs with absolute paths — one bad element rejects the whole call. */
+function optionalTabStrip(raw: Record<string, unknown>): StoredTab[] | undefined {
+  const v = raw.tabStrip
+  if (v === undefined) return undefined
+  if (!Array.isArray(v)) throw new BridgeFailure('BAD_REQUEST', `'tabStrip' must be an array of tabs`)
+  return v.map((t, i) => {
+    const tab = readStoredTab(t)
+    if (tab === null) throw new BridgeFailure('BAD_REQUEST', `'tabStrip[${i}]' must be { path, name?, active? } with an absolute path`)
+    return tab
+  })
 }
 
 /** `roots` in the patch (YAZ-2602 D1): `tabs`' rule — absent (untouched), or absolute paths only, MAX_WINDOW_ROOTS at most. */
@@ -113,12 +125,11 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   }
 
   handleWithEvent(CONTRACT.window.identity, async (e): Promise<WindowIdentity> => {
-    const { id, root, roots, file, tabs, rightPanel, sidebarCollapsed, sidebarLens } = entryFor(e)
+    const { id, root, roots, file, tabs, tabStrip, rightPanel, sidebarCollapsed, sidebarLens } = entryFor(e)
     // A new window's page view goes out with its FIRST identity only (YAZ-2951 S17): a reload starts fresh.
     const startView = windows.takeStartView(id)
-    // A tab that came with "Move to new window" brings its display name, ONE time (YAZ-2949 D7).
-    const tabNames = windows.takeTabNames(id)
-    return { id, root, roots: [...roots], file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(tabNames === undefined ? {} : { tabNames }) }
+    // The copies and display names (YAZ-3057) go out with EVERY identity read: a reload keeps them, as a restart does.
+    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
@@ -128,6 +139,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const root = patchRoots !== undefined ? (patchRoots[0] ?? null) : optionalPath(patch, 'root')
     const file = optionalPath(patch, 'file')
     const tabs = optionalTabs(patch)
+    const tabStrip = optionalTabStrip(patch)
     const rightPanel = optionalRightPanel(patch)
     const sidebarCollapsed = optionalSidebarCollapsed(patch)
     const sidebarLens = optionalSidebarLens(patch)
@@ -149,6 +161,8 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
       ...(sidebarLens !== undefined ? { sidebarLens } : {}),
       file: nextFile,
       tabs: nextTabs,
+      // A patch without the strip keeps the stored one; the store makes it true to the new `tabs` (YAZ-3057).
+      ...(tabStrip !== undefined ? { tabStrip } : {}),
       rightPanel: normalizeRightPanel(rightPanel ?? entry.rightPanel, nextTabs),
     }, opened)
   })
