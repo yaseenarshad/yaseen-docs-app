@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { VIEW_HOTKEYS, HOTKEYS, MOUSE_TIPS, WINDOW_HOTKEYS } from './hotkeys'
+import { CANVAS_HOTKEYS, DRAWIO_HOTKEYS, HOTKEY_GROUPS, VIEW_HOTKEYS, HOTKEYS, MOUSE_TIPS, WINDOW_HOTKEYS } from './hotkeys'
 
 describe('HOTKEYS source of truth', () => {
   it('covers every shipped keyboard binding', () => {
@@ -46,6 +46,16 @@ describe('HOTKEYS source of truth', () => {
     // The ⌘W ladder swap (GRO-2232, locked): ⌘W closes the TAB, ⌘⇧W the window — never the reverse.
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘W')?.label).toMatch(/close tab/i)
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧W')?.label).toMatch(/close window/i)
+  })
+
+  it('covers the board keys from Draw (YAZ-3037): the menu\'s three board items and ⌘S, and the draw.io tables, between Window and Mouse', () => {
+    expect(CANVAS_HOTKEYS.map((h) => h.keys)).toEqual(['⌘⇧E', '⌘⇧S', '⌘⇧L', '⌘S', '⌘F', '⌘C'])
+    expect(CANVAS_HOTKEYS.find((h) => h.keys === '⌘C')?.label).toMatch(/components tab.*nothing is selected/i)
+    expect(DRAWIO_HOTKEYS.map((h) => h.keys)).toContain('R / O / T')
+    expect(HOTKEY_GROUPS.map((g) => g.title)).toEqual(['Keyboard', 'Views', 'Window', 'Excalidraw canvas', 'draw.io diagram', 'Mouse'])
+    // ⌘⇧S keeps both meanings: Skip in a review (the Window table), Export on a drawing tab.
+    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧S')?.label).toMatch(/review.*skip/i)
+    expect(CANVAS_HOTKEYS.find((h) => h.keys === '⌘⇧S')?.label).toMatch(/export excalidraw drawing/i)
   })
 
   it('covers the review session\'s keys (YAZ-2322): the two answers and the way out', () => {

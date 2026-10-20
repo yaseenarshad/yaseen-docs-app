@@ -386,6 +386,25 @@
   text-align: right;
 }
 
+/* A field that fills its button row (YAZ-3038, Draw's: a pasted API key): the value is long, and the row's buttons sit beside it. */
+.settings__input--fill {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+/*
+ * The resolved path a row reports (Settings › Images › Library folder, YAZ-3038). It is the row's real
+ * content, so it sits above the buttons in a `wide` row — long, monospaced, and allowed to wrap
+ * anywhere rather than pushing the dialog sideways. The Pixabay key's "Key set" line uses it too.
+ */
+.settings__path {
+  margin: 0 0 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
 /* ---------- hotkey reference (GRO-2067) — one table per Hotkeys group ---------- */
 
 .hotkeys__list {

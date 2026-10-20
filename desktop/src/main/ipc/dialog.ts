@@ -1,8 +1,10 @@
 import path from 'node:path'
 import { BrowserWindow, dialog, type IpcMainInvokeEvent } from 'electron'
-import type { PickFolderResponse, SaveDrawingResponse } from '@shared/types'
+import type { OpenDrawingResponse, PickFolderResponse, SaveDrawingResponse } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
 import { isDrawing } from '@shared/fileKind'
+import { BOARDS } from '../fs/boardDocument'
+import { readBoundedRegularFile } from '../fs/boundedRead'
 import { atomicWrite, BridgeFailure, fsCall } from '../fs/fsUtils'
 import { requireRequest } from '../fs/validate'
 import { handleWithEvent } from './envelope'
@@ -30,6 +32,36 @@ export async function pickFolder(e: IpcMainInvokeEvent, inFlight: Set<BrowserWin
   const picked = result.filePaths[0]
   if (result.canceled || picked === undefined) return { cancelled: true }
   return { path: picked.replace(/\/+$/, '') || '/' }
+}
+
+/** The Components tab's Import sheet (YAZ-3038, Draw's YAZ-1833): one `.excalidraw`, never a folder. */
+const OPEN_DRAWING_OPTIONS: Electron.OpenDialogOptions = { title: 'Import Excalidraw JSON', properties: ['openFile'], filters: [{ name: 'Excalidraw', extensions: ['excalidraw'] }] }
+
+/**
+ * `window.yaseenDocs.dialog.openDrawing()` (YAZ-3038, Draw's YAZ-1833): pick one `.excalidraw` and get its
+ * bytes. The picked file lives OUTSIDE the vault and no other door reads an arbitrary absolute path, so
+ * the dialog reads what the user has just chosen — bounded by `MAX_DRAWING_BYTES`, as `drawing:load` is,
+ * because an imported scene may still embed its images. A picked file that is not a `.excalidraw` (a
+ * filter can be defeated by typing a name) is `UNSUPPORTED_EXTENSION`. One sheet per window, as `pickFolder`.
+ */
+export async function openDrawingFile(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | null>): Promise<OpenDrawingResponse> {
+  const win = BrowserWindow.fromWebContents(e.sender)
+  if (inFlight.has(win)) return { cancelled: true }
+  inFlight.add(win)
+  let result: Electron.OpenDialogReturnValue
+  try {
+    result = await (win === null ? dialog.showOpenDialog(OPEN_DRAWING_OPTIONS) : dialog.showOpenDialog(win, OPEN_DRAWING_OPTIONS))
+  } catch (err) {
+    throw new BridgeFailure('PICKER_FAILED', err instanceof Error ? err.message : String(err))
+  } finally {
+    inFlight.delete(win)
+  }
+  const picked = result.filePaths[0]
+  if (result.canceled || picked === undefined) return { cancelled: true }
+  const file = path.resolve(picked)
+  if (!isDrawing(file)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'an import reads a .excalidraw', { path: file })
+  const snapshot = await fsCall(file, () => readBoundedRegularFile(file, BOARDS.drawing.max, BOARDS.drawing.tooLarge))
+  return { path: file, name: path.basename(file, path.extname(file)), content: snapshot.data.toString('utf8') }
 }
 
 /** The export sheet (Draw's 🔒 YAZ-1775 D3, YAZ-1821): one file, the extension it is getting, and no directory picking. */
@@ -117,4 +149,5 @@ export function registerDialogIpc(): void {
   handleWithEvent(CONTRACT.pickFolder, (e) => pickFolder(e, inFlight))
   handleWithEvent(CONTRACT.dialog.saveDrawing, (e, body: unknown) => saveDrawingFile(e, inFlight, body))
   handleWithEvent(CONTRACT.dialog.saveImage, (e, body: unknown) => saveImageFile(e, inFlight, body))
+  handleWithEvent(CONTRACT.dialog.openDrawing, (e) => openDrawingFile(e, inFlight))
 }

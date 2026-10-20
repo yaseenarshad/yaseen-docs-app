@@ -11,12 +11,21 @@ import { describe, expect, it } from 'vitest'
  * Each pin names the ONE file of ours that depends on it, and the no-stale-pin check reads only that
  * file: `.sidebar` and `.sidebar__header` are the app's own sidebar classes too, so a check across
  * every file would always pass (YAZ-2073 8B).
- * An engine bump (`client/vendor/README.md`) re-runs this; the canvas panel (YAZ-3038) adds its pins.
+ * An engine bump (`client/vendor/README.md`) re-runs this; the canvas panel's pins came with YAZ-3038.
  */
 const ENGINE_CLASSES: Record<string, [file: string, why: string]> = {
   excalidraw: ['drawings/drawingEditor.css', 'scopes every in-engine rule of the tab under it'],
   'theme--dark': ['drawings/drawingEditor.css', 'the dark-mode parity rule'],
   'main-menu-trigger': ['drawings/drawingEditor.css', "hides the engine's own menu in a tab (the application menu has its items)"],
+  // The canvas panel (YAZ-3038, Draw's pins).
+  'default-sidebar': ['drawings/drawingEditor.css', 'the docked canvas panel'],
+  sidebar__header: ['drawings/drawingEditor.css', 'the docked panel header'],
+  'sidebar-triggers': ['drawings/drawingEditor.css', 'the panel tab triggers'],
+  sidebar__header__buttons: ['drawings/drawingEditor.css', 'the panel header buttons'],
+  sidebar: ['drawings/presentation/presentation.css', 'hides the canvas panel while presenting'],
+  'layer-ui__wrapper': ['drawings/presentation/presentation.css', 'hides the toolbar, properties and footer while presenting'],
+  'App-top-bar': ['drawings/presentation/presentation.css', 'hides the top bar while presenting'],
+  'App-bottom-bar': ['drawings/presentation/presentation.css', 'hides the bottom bar while presenting'],
   'excalidraw-container': ['drawings/ExcalidrawSurface.tsx', 'focuses it when a tab is revealed (focusHandoff)'],
 }
 
@@ -28,8 +37,8 @@ const writes = (src: string, cls: string) => new RegExp(`["'\`\\s]${cls}["'\`\\s
 const engineJs = read(walk(dirname(createRequire(import.meta.url).resolve('@excalidraw/excalidraw'))).filter((f) => f.endsWith('.js')))
 const src = join(__dirname, '..')
 const ours = walk(src).filter((f) => !f.includes('.test.'))
-// The canvas's own stylesheets: Docs' app CSS has classes of its own that the engine happens to render too (`.sidebar__header`).
-const ourCss = ours.filter((f) => f.endsWith('.css') && f.includes(`${join('src', 'drawings')}`))
+// The canvas's own stylesheets, the canvas panel's included: Docs' app CSS has classes of its own that the engine happens to render too (`.sidebar__header`).
+const ourCss = ours.filter((f) => f.endsWith('.css') && ['drawings', 'image-studio', 'components-library'].some((d) => f.includes(join('src', d))))
 const ourCode = read(ours.filter((f) => /\.tsx?$/.test(f)))
 
 /** Every class a stylesheet's selectors name (comments and at-rule preludes skipped). */

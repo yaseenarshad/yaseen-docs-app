@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { prefsToAppState } from '@shared/canvasPrefs'
-import { DEFAULT_CANVAS_PREFS, LASER_COLORS, LASER_SIZES, LASER_TRAIL_MODES } from '@shared/types'
+import { DEFAULT_CANVAS_PREFS, FONT_FAMILY_OPTIONS, LASER_COLORS, LASER_SIZES, LASER_TRAIL_MODES } from '@shared/types'
 
 describe('laser canvas prefs vs the vendored engine', () => {
   it('offer exactly the engine’s modes, swatches and sizes', async () => {
@@ -20,5 +20,14 @@ describe('laser canvas prefs vs the vendored engine', () => {
     const engine = await import('@excalidraw/excalidraw')
     const { laserTrailMode, laserColor, laserSize } = engine.restoreAppState(null, null)
     expect(prefsToAppState(DEFAULT_CANVAS_PREFS, ['laserTrailMode', 'laserColor', 'laserSize'])).toEqual({ laserTrailMode, laserColor, laserSize })
+  })
+})
+
+describe('Settings › Canvas "Default font" vs the vendored engine (YAZ-3037)', () => {
+  it('offers only fonts the engine has, the default among them', async () => {
+    const engine = await import('@excalidraw/excalidraw')
+    const known = new Set<number>(Object.values(engine.FONT_FAMILY))
+    expect(FONT_FAMILY_OPTIONS.filter(({ id }) => !known.has(id))).toEqual([])
+    expect(FONT_FAMILY_OPTIONS.map(({ id }) => id)).toContain(DEFAULT_CANVAS_PREFS.defaultFontFamily)
   })
 })

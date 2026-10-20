@@ -12,7 +12,11 @@
  *     no request leaves the app.
  *
  *   4 right-click a folder → New Excalidraw drawing → type a name → Enter (YAZ-3036, D9): the file is
- *     born on disk with the empty scene and its dates, and opens in a tab on the canvas.
+ *     born on disk with the empty scene and its dates, and opens in a tab on the canvas. *
+ *   5 the board menu items and the canvas panel (YAZ-3037, YAZ-3038): with the drawing tab in front,
+ *     File › Export Image… and View › Canvas Background are enabled; the rail's hamburger opens the
+ *     panel with its three tabs, and ⌘C on an empty selection opens Components. No search is typed:
+ *     the Image Studio would reach a provider.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -159,4 +163,25 @@ test('step 4 — right-click a folder → New Excalidraw drawing → a name: the
   await expect(canvasFrame(win).locator('canvas').first()).toBeVisible({ timeout: 15_000 })
   await expect(fileRow(win, 'Whiteboard.excalidraw')).toBeVisible()
   await shoot(win, 'boards-06-new-drawing')
+})
+
+test('step 5 — on a drawing tab the board menu items are on, and the rail and ⌘C open the canvas panel (YAZ-3037, YAZ-3038)', async () => {
+  if (app === null) throw new Error('step 4 did not run')
+  const enabled = (id: string) => (app as ElectronApplication).evaluate(({ Menu }, itemId) => Menu.getApplicationMenu()?.getMenuItemById(itemId)?.enabled ?? null, id)
+  await expect.poll(() => enabled('menu.file.export-image')).toBe(true)
+  expect(await enabled('menu.file.export-drawing')).toBe(true)
+  expect(await enabled('menu.view.canvas-background')).toBe(true)
+
+  const panel = drawingTab(win).locator('.default-sidebar')
+  await drawingTab(win).getByRole('button', { name: 'Open workspace panel' }).click()
+  await expect(panel).toBeVisible()
+  await expect(panel.locator('.app-sidebar-tab-label')).toHaveText(['Images', 'Components', 'Present'])
+  await shoot(win, 'boards-07-canvas-panel')
+  await panel.getByRole('button', { name: 'Close workspace panel' }).click()
+  await expect(panel).toHaveCount(0)
+
+  await canvasFrame(win).click()
+  await win.keyboard.press('Meta+c')
+  await expect(panel).toBeVisible()
+  await expect(panel.getByRole('tab', { name: 'Components', selected: true })).toBeVisible()
 })

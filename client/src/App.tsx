@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
-import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPrefs, type CommentsOrder, type PageView, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type PageView, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -9,6 +9,7 @@ import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { requestZoom } from './editor/zoomRequest'
+import { requestBoardCommand } from './documents/boardCommand'
 import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, renameNotice, updateLinksAfterRename } from './links/renameLinks'
@@ -347,6 +348,14 @@ export function App() {
   const changeTableOfContentsWidth = useCallback((width: number) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContentsWidth: width }), [changeSettings])
   // A drawing's engine moved a canvas pref (YAZ-3028, Draw's 🔒 YAZ-1775 D9): the same stable door.
   const changeCanvasPrefs = useCallback((canvas: CanvasPrefs) => changeSettings({ ...newNoteFolderInputs.current.settings, canvas }), [changeSettings])
+  // The canvas panel's tab and dock choice (YAZ-3038): the same stable door; a choice that did not move is no write.
+  const changeCanvasPanel = useCallback(
+    (canvasPanel: CanvasPanelState) => {
+      const current = newNoteFolderInputs.current.settings.canvasPanel
+      if (current.tab !== canvasPanel.tab || current.docked !== canvasPanel.docked) changeSettings({ ...newNoteFolderInputs.current.settings, canvasPanel })
+    },
+    [changeSettings],
+  )
 
   // Appearance (Desktop K, GRO-2218): `system` tracks the OS live; explicit values win.
   // `data-theme` goes on <html> so body / fixed overlays follow app.css's dark tokens, and
@@ -818,7 +827,37 @@ export function App() {
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model — except that
   // with a review open ⌘W closes IT, never the tab hidden under it (YAZ-2322). ⌘W on the blank tab
   // closes it alone (YAZ-2655 S75): that is `closeActive`'s own rule.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: toNextTab, onPrevTab: toPrevTab, onTabOverview: toggleOverview, onNewTab: newTab, onNewWindow: newWindow, onZoom: requestZoom, onWhatsNew: openWhatsNew })
+  //
+  // The board items (YAZ-3037, YAZ-3028 D10) act on the VISIBLE board layer, which `requestBoardCommand`
+  // finds by DOM: several tabs are mounted at once and only one is in front. Main greys each item out
+  // off a board it does not work for. ⌘⇧S is also the review's Skip, and the note keeps its key (D10):
+  // with a review over a drawing tab the menu owns the key, so its gesture goes to Skip, as ⌘W goes to the review.
+  const exportImage = useCallback(() => void requestBoardCommand({ kind: 'export-image' }), [])
+  const exportDrawing = useCallback(() => void requestBoardCommand({ kind: 'export-drawing' }), [])
+  const setCanvasBackground = useCallback((color: string) => void requestBoardCommand({ kind: 'canvas-background', color }), [])
+  // SEAM (YAZ-3040): File › Share Link opens the Share dialog for the active board once share links exist.
+  // Until then the item says so instead of doing nothing.
+  const shareLink = useCallback(() => notify("Share links aren't available yet"), [notify])
+  useMenuEvents({
+    onOpenFolder: pick,
+    onOpenRoot: openVault,
+    onSearch: openSearch,
+    onSwitchVault: openVaultSwitcher,
+    onSettings: openSettings,
+    onToggleSidebar: toggleSidebar,
+    onCloseTab: reviewer === null ? closeTabOrWindow : closeReview,
+    onNextTab: toNextTab,
+    onPrevTab: toPrevTab,
+    onTabOverview: toggleOverview,
+    onNewTab: newTab,
+    onNewWindow: newWindow,
+    onZoom: requestZoom,
+    onWhatsNew: openWhatsNew,
+    onExportImage: exportImage,
+    onExportDrawing: reviewer === null ? exportDrawing : review.skip,
+    onShareLink: shareLink,
+    onCanvasBackground: setCanvasBackground,
+  })
 
   /**
    * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the row of the new tab page that the keyboard is on
@@ -1258,6 +1297,8 @@ export function App() {
       // YAZ-3028: every drawing tab shares the canvas prefs, a SETTING too.
       canvasPrefs: settings.canvas,
       onChangeCanvasPrefs: changeCanvasPrefs,
+      canvasPanel: settings.canvasPanel,
+      onChangeCanvasPanel: changeCanvasPanel,
       // A diagram tab's dark-mode colours, and ⌘B pressed inside its draw.io frame.
       diagramDarkColors: settings.diagramDarkColors,
       onToggleSidebar: toggleSidebar,

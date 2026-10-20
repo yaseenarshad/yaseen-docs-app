@@ -31,13 +31,40 @@ interface UseMenuEventsOptions {
   onZoom: (step: ZoomStep) => void
   /** Help › What's New… (YAZ-2976 D8): open the "What's new" sheet, with or without an update. */
   onWhatsNew: () => void
+  /** File › Export Image… (⌘⇧E, YAZ-3037): the visible drawing opens the engine's export dialog; a diagram saves a PNG or SVG. */
+  onExportImage: () => void
+  /** File › Export Excalidraw Drawing… (⌘⇧S, YAZ-3037): the visible drawing writes a standalone `.excalidraw`. */
+  onExportDrawing: () => void
+  /** File › Share Link (⌘⇧L, YAZ-3037): open the Share dialog for the visible board (YAZ-3040). */
+  onShareLink: () => void
+  /** View › Canvas Background › a pick (YAZ-3037): the visible drawing takes `color`. */
+  onCanvasBackground: (color: string) => void
 }
 
 /** Menu gestures from the main process (GRO-2161, tabs GRO-2232); main sends them to the focused window only. */
-export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onNewTab, onNewWindow, onZoom, onWhatsNew }: UseMenuEventsOptions): void {
+export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onNewTab, onNewWindow, onZoom, onWhatsNew, onExportImage, onExportDrawing, onShareLink, onCanvasBackground }: UseMenuEventsOptions): void {
   useEffect(() => {
     const menu = api.menu
-    const offs = [menu.onOpenFolder(onOpenFolder), menu.onOpenRoot(onOpenRoot), menu.onSearch(onSearch), menu.onSwitchVault(onSwitchVault), menu.onSettings(onSettings), menu.onToggleSidebar(onToggleSidebar), menu.onCloseTab(onCloseTab), menu.onNextTab(onNextTab), menu.onPrevTab(onPrevTab), menu.onTabOverview(onTabOverview), menu.onNewTab(onNewTab), menu.onNewWindow(onNewWindow), menu.onZoom(onZoom), menu.onWhatsNew(onWhatsNew)]
+    const offs = [
+      menu.onOpenFolder(onOpenFolder),
+      menu.onOpenRoot(onOpenRoot),
+      menu.onSearch(onSearch),
+      menu.onSwitchVault(onSwitchVault),
+      menu.onSettings(onSettings),
+      menu.onToggleSidebar(onToggleSidebar),
+      menu.onCloseTab(onCloseTab),
+      menu.onNextTab(onNextTab),
+      menu.onPrevTab(onPrevTab),
+      menu.onTabOverview(onTabOverview),
+      menu.onNewTab(onNewTab),
+      menu.onNewWindow(onNewWindow),
+      menu.onZoom(onZoom),
+      menu.onWhatsNew(onWhatsNew),
+      menu.onExportImage(onExportImage),
+      menu.onExportDrawing(onExportDrawing),
+      menu.onShareLink(onShareLink),
+      menu.onCanvasBackground(onCanvasBackground),
+    ]
     return () => offs.forEach((off) => off())
-  }, [onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onNewTab, onNewWindow, onZoom, onWhatsNew])
+  }, [onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onNewTab, onNewWindow, onZoom, onWhatsNew, onExportImage, onExportDrawing, onShareLink, onCanvasBackground])
 }

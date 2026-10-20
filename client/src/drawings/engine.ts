@@ -99,6 +99,26 @@ export type ExcalidrawModule = typeof import('@excalidraw/excalidraw')
  */
 export type ExcalidrawImperativeApi = NonNullable<Parameters<NonNullable<ComponentProps<ExcalidrawModule['Excalidraw']>['onExcalidrawAPI']>>[0]>
 
+/**
+ * THE ELEMENT PACKAGE, FOR THE SMART SHAPES ONLY (YAZ-3038, Draw's YAZ-1818). `@excalidraw/element` is the
+ * second package of the vendored engine tree, and it is named HERE for the same reason the first one
+ * is: it must not reach the renderer's entry chunk. The Image Studio's Shapes view needs three values
+ * out of it — `SMART_SHAPE_DEFINITIONS`, `generateSmartShapePoints`, `createSmartShapeMetadata` —
+ * which `@excalidraw/excalidraw`'s index does not re-export.
+ *
+ * A SEPARATE promise on purpose: the seven basic shapes need nothing at all, so the Shapes view renders
+ * them at once and the Smart Shapes join a tick later.
+ */
+export type ExcalidrawElementModule = typeof import('@excalidraw/element')
+
+let elementLoading: Promise<ExcalidrawElementModule> | null = null
+
+/** The element package, loaded lazily and shared; every consumer waits on this ONE promise. */
+export function loadExcalidrawElement(): Promise<ExcalidrawElementModule> {
+  elementLoading ??= import('@excalidraw/element')
+  return elementLoading
+}
+
 /** The in-flight (then settled) module load; one per renderer, never re-imported. */
 let loading: Promise<ExcalidrawModule> | null = null
 

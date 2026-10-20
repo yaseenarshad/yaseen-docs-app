@@ -27,13 +27,15 @@ import { scheduleInWords } from '@shared/schedule'
 import type { GithubSyncStatus, IdsState, IndexResponse, SettingsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
+import { CANVAS_SECTION } from './canvasSection'
+import { IMAGES_SECTION } from './imagesSection'
 import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 export interface SettingsCtx {
   settings: SettingsState
@@ -84,7 +86,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys'
+export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -283,6 +285,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
         ],
       },
+      {
+        // YAZ-3037 (Draw's 🔒 YAZ-1802 D16): the default for every diagram; a file that sets its own `adaptiveColors` keeps it.
+        title: 'draw.io diagrams',
+        items: [
+          {
+            id: 'diagramDarkColors',
+            label: 'In dark mode',
+            hint: 'Adapt re-colours diagrams so they stay readable in dark mode. A diagram that asks to keep its own colours always does.',
+            keywords: ['drawio', 'draw.io', 'diagram', 'dark', 'colors', 'colours', 'adaptive'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={DIAGRAM_DARK_COLORS_OPTIONS} value={settings.diagramDarkColors} onChange={(diagramDarkColors) => onChange({ ...settings, diagramDarkColors })} ariaLabel="draw.io diagrams in dark mode" />
+            ),
+          },
+        ],
+      },
     ],
   },
   {
@@ -389,6 +406,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
     ],
   },
+  // YAZ-3037 (YAZ-3028 D10): the user-level Excalidraw canvas preferences, declared in their own module
+  // because there are fourteen of them and they are the one section with a mapping behind it (`shared/canvasPrefs.ts`).
+  CANVAS_SECTION,
+  // YAZ-3038 (YAZ-3028 D10): the canvas panel's Pixabay key and its library folder.
+  IMAGES_SECTION,
   {
     id: 'files',
     title: 'Files & Links',
@@ -544,11 +566,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     // lower-cased (`hotkeys-window`); every key and label of the table is a keyword, so "close
     // tab" or "⌘W" finds it, and "keyboard shortcuts" reaches every table (the Keyboard one is
     // already labelled that).
-    groups: HOTKEY_GROUPS.map(({ title, entries }) => ({
+    groups: HOTKEY_GROUPS.map(({ id, title, entries }) => ({
       title,
       items: [
         {
-          id: `hotkeys-${title.toLowerCase()}`,
+          id: `hotkeys-${id ?? title.toLowerCase()}`,
           label: `${title} shortcuts`,
           keywords: [...(title === 'Keyboard' ? [] : ['keyboard shortcuts']), ...entries.flatMap((entry) => [entry.keys, entry.label])],
           wide: true,

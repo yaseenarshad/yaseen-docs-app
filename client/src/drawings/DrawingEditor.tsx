@@ -36,7 +36,7 @@
  * image is never shipped twice in one session.
  */
 import { useCallback, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import type { CanvasPrefs, DrawingLoadResponse } from '@shared/types'
+import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse } from '@shared/types'
 import { unpersistedFiles } from '@shared/drawingAssets'
 import { api } from '../api'
 import { BoardDocumentShell } from '../documents/BoardDocumentShell'
@@ -63,6 +63,10 @@ export interface DrawingEditorProps extends BoardDocumentProps {
   canvasPrefs?: CanvasPrefs
   /** The engine moved a pref: App writes it back to the one store every window reads. */
   onCanvasPrefsChange?: (next: CanvasPrefs) => void
+  /** What the canvas panel remembers (YAZ-3038): App's copy of `SettingsState.canvasPanel`. Omitted = the default. */
+  canvasPanel?: CanvasPanelState
+  /** A panel choice (its tab, docked or not): App writes it back to the one store every window reads. */
+  onCanvasPanelChange?: (next: CanvasPanelState) => void
   /** The window's ONE passive notice: where an export landed, or why it did not (🔒 YAZ-1775 D3, YAZ-1821). */
   onNotice?: (text: string, icon?: NoticeKind) => void
 }
@@ -104,8 +108,11 @@ interface DrawingHostProps extends DrawingEditorProps {
   onFailed: (message: string) => void
 }
 
+/** A tab ALWAYS has the canvas panel (YAZ-3038); with no host to remember its choices they are simply not kept. */
+const FORGET_PANEL = (): void => undefined
+
 /** Mounts exactly one canvas for `loaded`; its board document owns everything that writes. */
-function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, onNotice, onFailed }: DrawingHostProps) {
+function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, onFailed }: DrawingHostProps) {
   const theme = useAppliedTheme()
   /** The latest snapshot; read only when a save fires (see the module doc). */
   const snapshot = useRef<DrawingSnapshot | null>(null)
@@ -220,6 +227,8 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
           theme={theme}
           canvasPrefs={canvasPrefs}
           onCanvasPrefsChange={onCanvasPrefsChange}
+          canvasPanel={canvasPanel}
+          onCanvasPanelChange={onCanvasPanelChange}
           onSnapshot={onSnapshot}
           onFailed={onFailed}
           onApi={onApi}

@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
-import { TOC_DEFAULT_W, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
+import { TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
@@ -157,13 +157,16 @@ interface EditorProps {
   canvasPrefs?: CanvasPrefs
   /** A drawing's engine moved a pref: App writes the SETTING through this. */
   onChangeCanvasPrefs?: (next: CanvasPrefs) => void
+  /** The drawing tab's canvas panel memory (YAZ-3038): `SettingsState.canvasPanel`, and App's door that writes it. */
+  canvasPanel?: CanvasPanelState
+  onChangeCanvasPanel?: (next: CanvasPanelState) => void
   /** How draw.io diagrams look in dark mode (YAZ-3028, Draw's 🔒 YAZ-1802 D16): `SettingsState.diagramDarkColors`. Absent → `adapt`. */
   diagramDarkColors?: DiagramDarkColors
   /** ⌘B pressed inside a diagram's draw.io frame, where the window never sees the key: App's sidebar toggle. */
   onToggleSidebar?: () => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, canvasPrefs, onChangeCanvasPrefs, diagramDarkColors = 'adapt', onToggleSidebar }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', onToggleSidebar }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -207,7 +210,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     // commands are dispatched on), so nothing wraps it here.
     return (
       <Suspense fallback={<section className="editor" />}>
-        <DrawingEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onChangeCanvasPrefs} onNotice={onNotice} />
+        <DrawingEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onChangeCanvasPrefs} canvasPanel={canvasPanel} onCanvasPanelChange={onChangeCanvasPanel} onNotice={onNotice} />
       </Suspense>
     )
   }

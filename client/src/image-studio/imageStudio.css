@@ -1,0 +1,245 @@
+/*
+ * The Images tab's own styling (YAZ-1818). What it SHARES with the other two tabs — the panel
+ * shell, the tile chequerboard, the placeholder and the message boxes — is
+ * `drawings/canvasPanel.css`. Every colour here is an ENGINE custom property, so the panel follows
+ * the engine's light/dark theme; the only literals left are the two translucent overlays that sit
+ * on a picture rather than on the panel.
+ */
+
+/* The tile's picture is taller here than in the Components grid: an icon needs the room. */
+.image-studio__preview {
+  height: 112px;
+}
+
+.image-studio__header span {
+  color: var(--color-primary);
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.image-studio__header strong {
+  font-size: 17px;
+}
+
+.image-studio__nav {
+  background: var(--button-hover-bg);
+  border-radius: 10px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 3px;
+}
+
+.image-studio__nav button {
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  color: var(--text-secondary-color);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 7px 3px;
+}
+
+.image-studio__nav button.is-active {
+  background: var(--island-bg-color);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+  color: var(--text-primary-color);
+  font-weight: 700;
+}
+
+.image-studio__search {
+  display: flex;
+  gap: 6px;
+}
+
+.image-studio__search input,
+.image-studio__search select {
+  background: var(--input-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 9px;
+  color: var(--text-primary-color);
+  padding: 9px 10px;
+}
+
+.image-studio__search input {
+  flex: 1;
+  min-width: 0;
+}
+
+.image-studio__search select {
+  max-width: 88px;
+}
+
+.image-studio__search button,
+.image-studio__retry {
+  background: var(--color-primary);
+  border: 0;
+  border-radius: 9px;
+  color: var(--island-bg-color);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 8px 10px;
+}
+
+/* One-pixel tail of the grid the observer watches; `overflow-anchor` keeps the scroll from jumping
+   when the next page lands underneath it. */
+.image-studio__search-sentinel {
+  align-self: start;
+  grid-column: 1 / -1;
+  height: 1px;
+  min-height: 1px;
+  overflow-anchor: none;
+}
+
+.image-studio__grid {
+  align-content: start;
+  display: grid;
+  flex: 1;
+  gap: 8px;
+  grid-auto-rows: max-content;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.image-studio__card {
+  align-self: start;
+  background: var(--button-hover-bg);
+  border: 1px solid var(--default-border-color);
+  border-radius: 10px;
+  min-width: 0;
+  overflow: hidden;
+  overflow-anchor: auto;
+  position: relative;
+}
+
+.image-studio__add {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.image-studio__add:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+/* A shape outline follows the panel's text colour, so it is visible in either theme. */
+.image-studio__preview svg {
+  color: var(--text-primary-color);
+  height: 72%;
+  width: 72%;
+}
+
+.image-studio__shape-path--basic,
+.image-studio__shape-path--open {
+  fill: none;
+  stroke: currentColor;
+  stroke-linejoin: round;
+}
+
+.image-studio__shape-path--basic {
+  stroke-width: 3;
+}
+
+.image-studio__shape-path--open {
+  stroke-width: 8;
+}
+
+.image-studio__shape-path--closed {
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+/* Drawn ON the picture while an insert is in flight, so it states its own colours. */
+.image-studio__adding {
+  background: rgb(0 0 0 / 72%);
+  border-radius: 999px;
+  color: #fff;
+  font-size: 11px;
+  left: 50%;
+  padding: 6px 9px;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.image-studio__meta {
+  display: block;
+  min-width: 0;
+  padding: 8px;
+}
+
+.image-studio__meta strong,
+.image-studio__meta small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-studio__meta strong {
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.image-studio__meta small {
+  color: var(--text-secondary-color);
+  font-size: 9px;
+  margin-top: 3px;
+  text-transform: capitalize;
+}
+
+/* The star sits ON the tile's chequerboard, so its own surface is the panel's island colour. */
+.image-studio__favorite {
+  background: var(--island-bg-color);
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-secondary-color);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 28px;
+  padding: 0;
+  position: absolute;
+  right: 7px;
+  text-align: center;
+  top: 7px;
+  width: 28px;
+}
+
+.image-studio__favorite.is-active {
+  color: var(--color-primary);
+}
+
+.image-studio__empty {
+  margin: auto 0;
+  text-align: center;
+}
+
+.image-studio__notice,
+.image-studio__warning {
+  background: var(--button-hover-bg);
+}
+
+.image-studio__retry {
+  align-self: center;
+}
+
+.image-studio__loading-more {
+  color: var(--text-secondary-color);
+  font-size: 11px;
+  text-align: center;
+}
+
+.image-studio__footer {
+  color: var(--text-secondary-color);
+  font-size: 9px;
+  line-height: 1.35;
+  text-align: center;
+}

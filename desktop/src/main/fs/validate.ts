@@ -18,3 +18,15 @@ export function requireStringArray(v: unknown, name: string): string[] {
   if (!isStringArray(v)) throw new BridgeFailure('BAD_REQUEST', `'${name}' must be a string array`)
   return v
 }
+
+/** A non-empty string (YAZ-3038, Draw's `fs/validate.ts`): the canvas panel's doors name slugs, ids and keys with it. */
+export function str(v: unknown, name: string): string {
+  if (typeof v !== 'string' || v === '') throw new BridgeFailure('BAD_REQUEST', `'${name}' must be a non-empty string`)
+  return v
+}
+
+/** A string or null; a door that also allows absence checks for it first. */
+export function strOrNull(v: unknown, name: string): string | null {
+  if (v !== null && typeof v !== 'string') throw new BridgeFailure('BAD_REQUEST', `'${name}' must be a string or null`)
+  return v
+}

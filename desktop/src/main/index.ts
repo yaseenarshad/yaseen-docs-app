@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, pr
 import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { fileKind } from '@shared/fileKind'
 import { fileLink, isAppLink, parseFileLink } from '@shared/links'
 import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
 import { DRAWIO_HOST } from '@shared/drawio'
@@ -11,6 +12,7 @@ import { resolveDrawioDir, serveDrawio } from './drawio/assets'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { initBoardThumbs } from './ipc/board'
+import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerUpdateIpc } from './ipc/update'
@@ -18,7 +20,7 @@ import { claimDeepLinkScheme } from './deepLinkScheme'
 import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
-import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
+import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
 import { createStore } from './store'
@@ -187,8 +189,12 @@ let lastFocusedWcId: number | undefined
 /** The per-vault GitHub sync manager (YAZ-1081), created with the rest of the IPC once `ready` fires. */
 let gitSync: GitSyncManager | undefined
 
+/** The menu's apply step, once `ready` made it: a focus change moves which window the board items ask about (YAZ-3037). */
+let rebuildMenuOnFocus: (() => void) | undefined
+
 app.on('browser-window-focus', (_event, win) => {
   lastFocusedWcId = win.webContents.id
+  rebuildMenuOnFocus?.()
   // YAZ-1081 D2: focusing a vault's window is a PULL trigger — alt-tabbing back from another
   // machine should converge without waiting out a timer. The manager's own cooldown throttles it.
   // Every vault the window shows (YAZ-2602 S43).
@@ -247,11 +253,28 @@ app.whenReady().then(() => {
         () => manager.linkNotice("Can't check for updates. Try again later"),
       ),
   })
+  // The board items (YAZ-3037, YAZ-3028 D10; Draw's `index.ts:201-212`) are enabled only while the window a
+  // menu action would target has a board of the right kind in front. Read at build time from the same
+  // window `menuTarget` names, so the answer and the send target can never disagree.
+  const activeFileKind = () => {
+    const wc = menuTarget()
+    const id = wc === undefined ? undefined : manager.idFor(wc)
+    const file = id === undefined ? null : (store.get().windows.find((w) => w.id === id)?.file ?? null)
+    return file === null ? null : fileKind(file)
+  }
   const applyMenu = (): void =>
-    Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged }, handlers)))
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind() }, handlers)),
+    )
   applyMenu()
   subscribeMenuRebuild(store, applyMenu)
-  const sync = registerIpc(store, manager)
+  // A tab switch changes which file is in front; a focus change changes which window is asked.
+  subscribeMenuRebuildOnActiveFile(store, applyMenu)
+  rebuildMenuOnFocus = applyMenu
+  const sync = registerIpc(store, manager, app.getPath('userData'))
+  // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
+  // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
+  void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'))
   gitSync = sync
   registerUpdateIpc(updater, {
     openExternal: (url) => void shell.openExternal(url),
