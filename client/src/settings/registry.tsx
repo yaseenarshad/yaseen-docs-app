@@ -450,6 +450,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
+            // Draw's YAZ-1800 D2, ported by YAZ-3044 A20: the sidebar's board preview, on by default.
+            id: 'hoverPreview',
+            label: 'Preview on hover',
+            hint: 'Rest the mouse on a drawing or diagram in the sidebar to see the whole board.',
+            keywords: ['drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreview} onChange={(hoverPreview) => onChange({ ...settings, hoverPreview })} ariaLabel="Preview on hover" />
+            ),
+          },
+          {
             id: 'newNoteLocation',
             label: 'Default location for new notes',
             keywords: ['folder', 'wikilink'],

@@ -569,24 +569,33 @@ export function Sidebar({
   const searching = lens === 'search'
   // The hover preview (YAZ-3028 D11): a menu or the Info popover owns the pointer while it stands, and
   // a typed search hides the tree it would point at.
-  const { hover, hoverFile, closePreview } = useHoverPreview(menu !== null || infoPopover !== null, !searching, activeFile)
-  // The Info popover reads the board's head when it opens (no watcher subscription of its own: the
-  // panel keeps one per vault); a board that cannot be read any more closes it.
+  const { hover, hoverFile, closePreview } = useHoverPreview(menu !== null || infoPopover !== null || !settings.hoverPreview, !searching, activeFile) // off (A20): no dwell starts
+  /** The watch feed of the vault that holds `path` (the hover preview and Info listen on it, A41). */
+  const watchOf = useCallback((path: string): WatchSource | undefined => watches[roots.indexOf(rootOf(path))], [watches, roots, rootOf])
+  // The Info popover reads the board's head when it opens, and again on each `change` of that board
+  // while it is open (YAZ-3044 A41: a save, a sync pull or another window's write); a board that
+  // cannot be read any more closes it.
   useEffect(() => {
     if (infoPath === null) return
     let live = true
-    void api.boardHead(infoPath).then(
-      (info) => {
-        if (live) setInfoPopover((open) => (open !== null && open.path === infoPath ? { ...open, info, now: Date.now() } : open))
-      },
-      () => {
-        if (live) setInfoPopover(null)
-      },
-    )
+    const read = () =>
+      void api.boardHead(infoPath).then(
+        (info) => {
+          if (live) setInfoPopover((open) => (open !== null && open.path === infoPath ? { ...open, info, now: Date.now() } : open))
+        },
+        () => {
+          if (live) setInfoPopover(null)
+        },
+      )
+    read()
+    const off = watchOf(infoPath)?.subscribe((ev) => {
+      if (ev.type === 'change' && ev.path === infoPath) read()
+    })
     return () => {
       live = false
+      off?.()
     }
-  }, [infoPath])
+  }, [infoPath, watchOf])
   // The keyboard goes to the page on show: the caret into the open page (YAZ-2662 D9), else the
   // focus onto the new tab page, when it shows and has a row (YAZ-2663 D10). With neither, nothing moves.
   const toPage = useCallback(() => focusOpenDocument() || onLeaveToPage?.() === true, [onLeaveToPage])
@@ -1451,7 +1460,7 @@ export function Sidebar({
           </Suspense>
         </ContextMenuSurface>
       )}
-      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} enabled={!searching} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} onClose={closePreview} />
+      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} enabled={settings.hoverPreview && !searching} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} onClose={closePreview} />
       {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
       {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} copy={pendingPaste.copy} lost={pendingPaste.lost} titles={titles} onConfirm={confirmPaste} onCancel={cancelPaste} />}
       {confirmingShortcut !== null && (

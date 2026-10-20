@@ -11,7 +11,9 @@
  * THE PICTURE'S KEY IS READ AT THE DWELL'S END (YAZ-3028): Docs reads the tree again only on a
  * structural change, never on a save (a note saves every 500 ms), so a board's tree `mtime` can be
  * old. So the panel asks `fs:board-head` for the board's mtime when it opens — one small read — and
- * a board saved since its last picture is drawn again. The panel adds no watcher subscription of its own.
+ * a board saved since its last picture is drawn again. While it shows, it listens on the vault's
+ * watch feed (YAZ-3044 A41): a `change` of that board — a save, a sync pull, another window's
+ * write — takes the event's mtime, and the picture is drawn again.
  *
  * The panel itself (`BoardPreview`, its picture cache and its CSS) loads lazily, on the first dwell.
  */
@@ -19,6 +21,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useS
 import { isBoard } from '@shared/fileKind'
 import type { DiagramDarkColors, TreeNode } from '@shared/types'
 import { api } from '../api'
+import type { WatchSource } from '../hooks/useWatch'
 import { createStore, type Store } from '../lib/store'
 import { useAppliedTheme } from '../lib/theme'
 import { findNode } from '../lib/treeState'
@@ -80,6 +83,8 @@ interface HoverPreviewHostProps {
   forest: readonly TreeNode[] | null
   /** The vault root that holds a path (the panel names the board's folder relative to it). */
   rootOf: (path: string) => string
+  /** The watch feed of the vault that holds a path (A41); undefined when there is none. */
+  watchOf?: (path: string) => WatchSource | undefined
   /** Previews possible (no search typed, no menu up). */
   enabled: boolean
   diagramDarkColors: DiagramDarkColors
@@ -88,7 +93,7 @@ interface HoverPreviewHostProps {
   onClose: () => void
 }
 
-export function HoverPreviewHost({ hover, forest, rootOf, enabled, diagramDarkColors, anchor, onClose }: HoverPreviewHostProps) {
+export function HoverPreviewHost({ hover, forest, rootOf, watchOf, enabled, diagramDarkColors, anchor, onClose }: HoverPreviewHostProps) {
   const { path, shown } = useSyncExternalStore(hover.subscribe, hover.getState)
   const theme = useAppliedTheme()
   const node = useMemo(() => {
@@ -130,10 +135,15 @@ export function HoverPreviewHost({ hover, forest, rootOf, enabled, diagramDarkCo
         if (live) setHead({ path: shownPath, mtime: 0 })
       },
     )
+    // A41: a write while the panel shows moves the key; the event's mtime is the file's own.
+    const off = watchOf?.(shownPath)?.subscribe((ev) => {
+      if (live && ev.type === 'change' && ev.path === shownPath) setHead({ path: shownPath, mtime: ev.mtime })
+    })
     return () => {
       live = false
+      off?.()
     }
-  }, [shownPath])
+  }, [shownPath, watchOf])
   if (!visible || head === null || head.path !== node.path) return null
   const root = rootOf(node.path)
   const mtime = Math.max(node.mtime, head.mtime)

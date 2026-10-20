@@ -343,6 +343,16 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ confirmRename: true })
   })
 
+  it('hoverPreview: a file without the key reads ON, OFF survives, junk falls back to ON (Draw\'s YAZ-1800 D2; YAZ-3044 A20)', async () => {
+    const { hoverPreview: _omitted, ...preHoverSettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: preHoverSettings }))
+    expect(createStore(file).get().settings).toMatchObject({ hoverPreview: true })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, hoverPreview: false } }))
+    expect(createStore(file).get().settings).toMatchObject({ hoverPreview: false })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, hoverPreview: 'no' } }))
+    expect(createStore(file).get().settings).toMatchObject({ hoverPreview: true })
+  })
+
   it('newNoteLocation/newNoteFolder: a pre-C2 file without the keys sanitizes to the defaults (current + "", YAZ-1643); junk falls back (GRO-2240)', async () => {
     // A pre-C2 yaseendocs.json: every field but the Files & Links pair — missing fields just gain their defaults.
     const { newNoteLocation: _loc, newNoteFolder: _folder, ...preC2Settings } = DEFAULT_SETTINGS

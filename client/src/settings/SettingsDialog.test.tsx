@@ -131,7 +131,7 @@ const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents'
 const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
-const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows']
+const FILES_ROWS = ['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation', 'startupWindows']
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 const HOTKEY_ROWS = ['hotkeys-keyboard', 'hotkeys-views', 'hotkeys-window', 'hotkeys-canvas', 'hotkeys-drawio', 'hotkeys-mouse']
 const THREADING_HINT = 'Guide lines that connect nested bullets.'
@@ -803,7 +803,7 @@ describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () =>
     expect(row(el, 'ids')).toBeNull()
     expect(groupTitles(el)).not.toContain('This vault')
     type(searchInput(el), 'files & links')
-    expect(rowIds(el)).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows'])
+    expect(rowIds(el)).toEqual(['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation', 'startupWindows'])
   })
 
   it('a vault open: the row sits in Files & Links under "This vault", with its label and hint', () => {

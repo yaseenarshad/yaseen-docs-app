@@ -404,6 +404,54 @@ describe('drawing and diagram rows (YAZ-3028 D11)', () => {
   })
 })
 
+/** The board picture and Info follow the file while they show (YAZ-3044 A20, A41). */
+describe('hover preview setting and live board heads (YAZ-3044 A20, A41)', () => {
+  const BOARDS: TreeNode[] = [{ type: 'file', name: 'Flow.drawio', path: '/v/Flow.drawio', size: 1, mtime: 1, kind: 'diagram' }]
+  const withBoards = (bridge: ReturnType<typeof installBridge>) => {
+    bridge.tree.mockResolvedValue({ root: '/v', tree: BOARDS, generatedAt: 1 })
+    ;(bridge as unknown as Record<string, unknown>).boardHead = vi.fn(async (path: string) => ({ path, mtime: 5, size: 2048, meta: null }))
+  }
+  const headsOf = (bridge: ReturnType<typeof installBridge>) => (bridge as unknown as { boardHead: ReturnType<typeof vi.fn> }).boardHead
+  const flowRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--file[title="/v/Flow.drawio"]')
+  const withWatcher = () => {
+    const listeners: ((ev: WatchEvent) => void)[] = []
+    const watch = {
+      subscribe: (l: (ev: WatchEvent) => void) => {
+        listeners.push(l)
+        return () => void listeners.splice(listeners.indexOf(l), 1)
+      },
+    }
+    return { watch, fire: (ev: WatchEvent) => [...listeners].forEach((l) => l(ev)) }
+  }
+  const dwell = () => act(() => new Promise<void>((r) => setTimeout(r, 450)))
+
+  it('A20: with "Preview on hover" off, resting on a board row opens no preview; on, it does', async () => {
+    const off = await mount({ settings: { ...DEFAULT_SETTINGS, hoverPreview: false } }, withBoards)
+    act(() => flowRow(off.el)?.focus())
+    await dwell()
+    expect(headsOf(off.bridge)).not.toHaveBeenCalled()
+    act(() => root?.unmount())
+    root = null
+    const on = await mount({ settings: { ...DEFAULT_SETTINGS, hoverPreview: true } }, withBoards)
+    act(() => flowRow(on.el)?.focus())
+    await dwell()
+    expect(headsOf(on.bridge)).toHaveBeenCalledWith('/v/Flow.drawio')
+  })
+
+  it('A41: Info reads the head again on a change of that board, and only of that board', async () => {
+    const { watch, fire } = withWatcher()
+    const { el, bridge } = await mount({ watch }, withBoards)
+    act(() => void flowRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 5, clientY: 5 })))
+    await act(async () => itemByLabel(el, 'Info')?.click())
+    await act(async () => new Promise((r) => setTimeout(r, 0)))
+    expect(headsOf(bridge)).toHaveBeenCalledTimes(1)
+    await act(async () => fire({ type: 'change', path: '/v/other.md', mtime: 9 }))
+    expect(headsOf(bridge)).toHaveBeenCalledTimes(1)
+    await act(async () => fire({ type: 'change', path: '/v/Flow.drawio', mtime: 9 }))
+    expect(headsOf(bridge)).toHaveBeenCalledTimes(2)
+  })
+})
+
 /**
  * The folder menu makes boards (YAZ-3028 D9): name first, then `fs:create-board`, then the tab. An
  * empty box is Untitled, numbered past a name that is taken; a board has no note ID.

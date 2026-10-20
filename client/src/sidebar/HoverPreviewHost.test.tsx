@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { TreeNode } from '@shared/types'
+import type { TreeNode, WatchEvent } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { createStore } from '../lib/store'
 import { BOARD_PREVIEW_DWELL_MS, HoverPreviewHost, useHoverPreview, type HoverState } from './HoverPreviewHost'
@@ -108,10 +108,13 @@ describe('HoverPreviewHost', () => {
     vi.mocked(api.boardHead).mockReset()
   })
 
+  const listeners = new Set<(ev: WatchEvent) => void>()
+  const watch = { subscribe: (l: (ev: WatchEvent) => void) => (listeners.add(l), () => void listeners.delete(l)) }
+
   async function show(): Promise<void> {
     const hover = createStore<HoverState>({ path: file.path, shown: true })
     await act(async () => {
-      root?.render(<HoverPreviewHost hover={hover} forest={[file]} rootOf={() => '/v'} enabled diagramDarkColors="adapt" anchor={createRef<HTMLElement>()} onClose={() => undefined} />)
+      root?.render(<HoverPreviewHost hover={hover} forest={[file]} rootOf={() => '/v'} watchOf={() => watch} enabled diagramDarkColors="adapt" anchor={createRef<HTMLElement>()} onClose={() => undefined} />)
     })
     // The lazy chunk and the head read both settle.
     for (let i = 0; i < 3; i++) await act(async () => new Promise((r) => setTimeout(r, 0)))
@@ -128,5 +131,14 @@ describe('HoverPreviewHost', () => {
     await show()
     expect(panel.keys.length).toBeGreaterThan(0)
     expect(panel.keys.at(-1)?.split('\n')[2]).toBe('1000')
+  })
+
+  it('YAZ-3044 A41: a change of the shown board while the panel is up draws it again on the new mtime; another file does not', async () => {
+    vi.mocked(api.boardHead).mockResolvedValue({ mtime: 2000 } as never)
+    await show()
+    await act(async () => [...listeners].forEach((l) => l({ type: 'change', path: '/v/other.md', mtime: 5000 })))
+    expect(panel.keys.at(-1)?.split('\n')[2]).toBe('2000')
+    await act(async () => [...listeners].forEach((l) => l({ type: 'change', path: file.path, mtime: 3000 })))
+    expect(panel.keys.at(-1)?.split('\n')[2]).toBe('3000')
   })
 })

@@ -1325,6 +1325,8 @@ export interface SettingsState {
   confirmDelete: boolean
   /** Show the rename sheet, with its count of links to update, before a note or folder is renamed (YAZ-2420 3C1). Off renames at once; the links still follow. */
   confirmRename: boolean
+  /** Rest the pointer on a drawing or diagram row to see the whole board (Draw's YAZ-1800 D2; YAZ-3044 A20). Notes never preview. */
+  hoverPreview: boolean
   /** Comment stream order (YAZ-1515): how you READ, global, never part of a note. */
   commentsOrder: CommentsOrder
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
@@ -1444,6 +1446,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   newNoteFolder: '',
   confirmDelete: true,
   confirmRename: true,
+  hoverPreview: true,
   commentsOrder: 'oldest',
   startupWindows: 'last',
   sectionStep: 30,
