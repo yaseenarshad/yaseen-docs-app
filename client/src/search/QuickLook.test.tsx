@@ -53,6 +53,8 @@ vi.mock('../editor/createCrepe', () => ({
 vi.mock('../viewers/TextViewer', () => ({ TextViewer: viewer('text') }))
 vi.mock('../viewers/ImageViewer', () => ({ ImageViewer: viewer('image') }))
 vi.mock('../viewers/PdfViewer', () => ({ PdfViewer: viewer('pdf') }))
+/** The board picture (YAZ-3044 A22), stood in: it says what it was handed. */
+vi.mock('./QuickLookBoard', () => ({ default: (props: { root: string; path: string; darkColors: string }) => <div data-board={props.path} data-root={props.root} data-dark={props.darkColors} /> }))
 
 const NOTE = '---\ntitle: Plan\n---\n\n# Hello\n\nthe body\n'
 const BODY = '\n# Hello\n\nthe body\n'
@@ -118,6 +120,23 @@ describe('the preview panel of the search (YAZ-2662 D5)', () => {
     expect(viewers.at(-1)).toEqual({ kind, path, watch })
     expect(readFile).not.toHaveBeenCalled()
     expect(crepes).toEqual([])
+  })
+
+  it('YAZ-3044 A22: a drawing or a diagram shows the board\'s picture, with its vault and the draw.io colours; with no vault known it gets the one line', async () => {
+    for (const path of ['/v/Flow.excalidraw', '/v/Map.drawio']) {
+      if (root === null) {
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+      }
+      await act(async () => root?.render(<QuickLook path={path} title="Board" watch={watch} wikilinks={wikilinks} root="/v" darkColors="keep" onClose={vi.fn()} />))
+      await act(async () => new Promise((r) => setTimeout(r, 0)))
+      const board = container?.querySelector<HTMLElement>('[data-board]')
+      expect(board?.dataset).toMatchObject({ board: path, root: '/v', dark: 'keep' })
+    }
+    const { panel } = await show('/v/Flow.excalidraw', 'Flow.excalidraw')
+    expect(panel.querySelector('.quicklook__body')?.textContent).toBe('No preview for this file.')
+    expect(readFile).not.toHaveBeenCalled()
   })
 
   it('S40: a file that the app cannot show gets one line, and nothing is read', async () => {

@@ -8,9 +8,10 @@
  * read-only render that the hover card of Table and Board uses; never `Editor`, which would start
  * an autosave, store folds and take the caret. Each other kind is the read-only viewer of its page.
  */
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
+import type { DiagramDarkColors } from '@shared/types'
 import { api } from '../api'
 import { useReadOnlyNote } from '../editor/useReadOnlyNote'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -19,6 +20,9 @@ import { ImageViewer } from '../viewers/ImageViewer'
 import { PdfViewer } from '../viewers/PdfViewer'
 import { TextViewer } from '../viewers/TextViewer'
 import './quickLook.css'
+
+/** A board's picture (YAZ-3044 A22), in its own chunk with the preview cache it shares with the hover panel. */
+const QuickLookBoard = lazy(() => import('./QuickLookBoard'))
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string } | { kind: 'empty' } | { kind: 'gone' }
 
@@ -61,11 +65,14 @@ interface QuickLookProps {
   /** The watcher and the link source of the vault that holds the file. */
   watch: WatchSource
   wikilinks: WikilinkResolveSource
+  /** The vault that holds the file and the draw.io dark colours: a drawing or diagram shows its picture with them (A22). */
+  root?: string | null
+  darkColors?: DiagramDarkColors
   /** The ✕ (S43), and Esc with the keyboard focus inside the panel (S66). */
   onClose: () => void
 }
 
-export function QuickLook({ path, title, watch, wikilinks, onClose }: QuickLookProps) {
+export function QuickLook({ path, title, watch, wikilinks, root = null, darkColors = 'adapt', onClose }: QuickLookProps) {
   // The kinds are the ones `Editor` shows as a page (S39); a file with no viewer gets one line (S40).
   const kind = fileKind(path)
   return (
@@ -98,6 +105,10 @@ export function QuickLook({ path, title, watch, wikilinks, onClose }: QuickLookP
           <PdfViewer path={path} watch={watch} />
         ) : kind === 'image' ? (
           <ImageViewer key={path} path={path} watch={watch} />
+        ) : (kind === 'drawing' || kind === 'diagram') && root !== null ? (
+          <Suspense fallback={null}>
+            <QuickLookBoard key={path} root={root} path={path} darkColors={darkColors} />
+          </Suspense>
         ) : (
           <p className="editor-msg">No preview for this file.</p>
         )}
