@@ -71,7 +71,7 @@ const h = vi.hoisted(() => {
     handles: new Map<string, (...args: unknown[]) => Promise<unknown>>(),
     protocol: { registerSchemesAsPrivileged: vi.fn(log('registerSchemesAsPrivileged')), handle: vi.fn() },
     flushIndexCache: vi.fn(async () => void s.order.push('flushIndexCache')),
-    registerIpc: vi.fn(() => (s.order.push('registerIpc'), gitSync)),
+    registerIpc: vi.fn(() => (s.order.push('registerIpc'), { sync: gitSync, secrets: {} })),
     registerClipboardIpc: vi.fn(log('registerClipboardIpc')),
     /** The Draw import's wiring (YAZ-3028 D6); `drawImport.test.ts` tests the import itself. */
     startDrawImport: vi.fn((_deps: Record<string, unknown>) => void s.order.push('startDrawImport')),
@@ -248,7 +248,7 @@ describe('main startup order (YAZ-2172)', () => {
 describe('a window focus is a pull trigger (YAZ-1081 D2)', () => {
   it('asks the sync manager to pull EVERY vault the focused window shows, and no vault of another window; a Welcome window or an unknown one asks for none (YAZ-2602 S43)', async () => {
     h.s.ready()
-    await settle() // `whenReady` ran: registerIpc handed back the sync manager
+    await settle() // `whenReady` ran: registerIpc handed back the sync manager (and the one secrets instance)
     h.s.stored = [{ id: 'w1', roots: ['/notes', '/work'] }, { id: 'w2', roots: ['/other'] }, { id: 'w3', roots: [] }]
     const focus = (id: string | undefined) => {
       const webContents = { id: 7 }
@@ -268,7 +268,7 @@ describe('a window focus is a pull trigger (YAZ-1081 D2)', () => {
 describe('main quit order: before-quit runs runQuitSequence with the live deps (YAZ-2172, YAZ-2174)', () => {
   it('flushes the renderers first, then the store, index cache and git sync, and exits only once those settle (YAZ-1081 D2)', async () => {
     h.s.ready()
-    await settle() // `whenReady` ran: registerIpc handed back the sync manager
+    await settle() // `whenReady` ran: registerIpc handed back the sync manager (and the one secrets instance)
     const renderers = gate()
     const git = gate()
     h.manager.flushAllForQuit.mockImplementationOnce(() => (h.s.order.push('flushAllForQuit'), renderers.promise))

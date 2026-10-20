@@ -272,7 +272,7 @@ app.whenReady().then(() => {
   // A tab switch changes which file is in front; a focus change changes which window is asked.
   subscribeMenuRebuildOnActiveFile(store, applyMenu)
   rebuildMenuOnFocus = applyMenu
-  const sync = registerIpc(store, manager, {
+  const { sync, secrets } = registerIpc(store, manager, {
     userData: app.getPath('userData'),
     // YAZ-3040: the share viewer's build, draw.io's webapp and Excalidraw's fonts, which share setup uploads.
     viewerAssetsDir: viewerAssetsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
@@ -302,6 +302,7 @@ app.whenReady().then(() => {
     drawDir: join(app.getPath('appData'), DRAW_APP_NAME),
     userData: app.getPath('userData'),
     store,
+    secrets,
     appData: shouldImportDrawAppData(process.env),
     rootsOf,
   })

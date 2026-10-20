@@ -9,6 +9,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CANVAS_PREFS, DEFAULT_SETTINGS, MAX_FAVORITES } from '@shared/types'
 import { createDrawImporter, createFileOnce, fillSettings, importDrawAppData, importDrawVault, shouldImportDrawAppData, startDrawImport } from './drawImport'
+import { createSecrets } from './secrets'
 import { createStore, type Store } from './store'
 
 let tmp: string
@@ -44,7 +45,9 @@ async function snapshot(dir: string): Promise<Record<string, string>> {
   return out
 }
 
-const DRAW_SECRETS = json({ version: 2, values: { pixabayApiKey: 'k-123' } })
+const DRAW_VALUES = { pixabayApiKey: 'k-123', cloudflareApiToken: 'cf-token', shareUploadPassword: 'pw-1' }
+const DRAW_SECRETS = json({ version: 2, values: DRAW_VALUES })
+const secretsOf = async (dir: string): Promise<unknown> => ((await readJson(path.join(dir, 'secrets.json'))) as { values: unknown }).values
 const DRAW_SHARING = json({ version: 1, accountId: 'acc', accountName: 'Me', bucketName: 'b', workerName: 'w', workersDevUrl: 'https://w.example', customDomain: null, readyAt: 1 })
 const DRAW_SHARES = { version: 1, shares: { 'b.excalidraw': { id: 'abc', allowDownload: true, sharedAt: 1, updatedAt: 2 } } }
 
@@ -100,14 +103,15 @@ afterEach(async () => {
 })
 
 describe('into an empty Docs', () => {
-  it('copies the library, secrets.json (owner-only) and sharing.json, and fills the canvas settings', async () => {
+  it('copies the library, the secrets (owner-only) and sharing.json, and fills the canvas settings', async () => {
     const done = await importDrawAppData({ drawDir, userData, store })
     expect(done).toEqual({
       library: ['components/arrow.excalidrawlib', 'components/arrow.png', 'components/components.json', 'media.json'],
-      files: ['secrets.json', 'sharing.json'],
+      files: ['sharing.json'],
+      secrets: ['pixabayApiKey', 'cloudflareApiToken', 'shareUploadPassword'],
       settings: ['canvas.gridModeEnabled', 'canvas.defaultFontFamily', 'canvas.laserColor', 'diagramDarkColors'],
     })
-    expect(await readFile(path.join(userData, 'secrets.json'), 'utf8')).toBe(DRAW_SECRETS)
+    expect(await secretsOf(userData)).toEqual(DRAW_VALUES)
     expect((await stat(path.join(userData, 'secrets.json'))).mode & 0o777).toBe(0o600)
     expect(await readFile(path.join(userData, 'sharing.json'), 'utf8')).toBe(DRAW_SHARING)
     expect(await readFile(path.join(userData, 'library', 'components', 'arrow.png'), 'utf8')).toBe('PNGDATA')
@@ -155,13 +159,32 @@ describe('into a Docs with values', () => {
     const done = await importDrawAppData({ drawDir, userData, store })
     expect(done?.files).toEqual(['sharing.json'])
     expect(done?.library).toEqual(['components/arrow.excalidrawlib', 'components/arrow.png', 'components/components.json'])
+    // YAZ-3044 A5: merged by name — the Docs Pixabay key stays, Draw's sharing secrets come over.
+    expect(done?.secrets).toEqual(['cloudflareApiToken', 'shareUploadPassword'])
+    expect(await secretsOf(userData)).toEqual({ pixabayApiKey: 'docs-key', cloudflareApiToken: 'cf-token', shareUploadPassword: 'pw-1' })
+    expect((await stat(path.join(userData, 'secrets.json'))).mode & 0o777).toBe(0o600)
     const after = await snapshot(userData)
-    expect(after['secrets.json']).toBe(secretsBefore['secrets.json'])
     expect(after[path.join('library', 'media.json')]).toBe(secretsBefore[path.join('library', 'media.json')])
     // A Docs pref that is not the default keeps its value; the defaults take Draw's.
     expect(store.get().settings.canvas.laserColor).toBe('#00c853')
     expect(store.get().settings.canvas.gridModeEnabled).toBe(true)
     expect(done?.settings).not.toContain('canvas.laserColor')
+  })
+
+  it('YAZ-3044 A5: a Docs Cloudflare token of its own keeps Draw\'s sharing.json out — sharing.json never comes without its secrets', async () => {
+    await put(path.join(userData, 'secrets.json'), json({ version: 2, values: { cloudflareApiToken: 'docs-token' } }), 0o600)
+    const done = await importDrawAppData({ drawDir, userData, store })
+    expect(done?.secrets).toEqual(['pixabayApiKey', 'shareUploadPassword'])
+    expect(done?.files).toEqual([])
+    expect(await exists(path.join(userData, 'sharing.json'))).toBe(false)
+    expect(((await secretsOf(userData)) as Record<string, string>).cloudflareApiToken).toBe('docs-token')
+  })
+
+  it('A5: a Draw without the sharing secrets brings no sharing.json either', async () => {
+    await put(path.join(drawDir, 'secrets.json'), json({ version: 2, values: { pixabayApiKey: 'k-123' } }), 0o600)
+    const done = await importDrawAppData({ drawDir, userData, store })
+    expect(done?.secrets).toEqual(['pixabayApiKey'])
+    expect(await exists(path.join(userData, 'sharing.json'))).toBe(false)
   })
 
   it('never writes a malformed Docs favorites.json', async () => {
@@ -189,7 +212,7 @@ describe('a second run', () => {
     const docsData = await snapshot(userData)
     const settings = store.get().settings
 
-    expect(await importDrawAppData({ drawDir, userData, store })).toEqual({ library: [], files: [], settings: [] })
+    expect(await importDrawAppData({ drawDir, userData, store })).toEqual({ library: [], files: [], secrets: [], settings: [] })
     expect(await importDrawVault(vault)).toEqual({ favorites: 0, files: [] })
     expect(await snapshot(path.join(vault, '.yaseendocs'))).toEqual(docsVault)
     expect(await snapshot(userData)).toEqual(docsData)
@@ -266,7 +289,7 @@ describe('the importer and its marker', () => {
     await put(path.join(other, '.yaseendraw', 'github.json'), json({ enabled: true }))
     const rootsOf = (s: { windows: Array<{ roots: string[] }> }): string[] => [...new Set(s.windows.flatMap((w) => w.roots))]
     store.upsertWindow({ id: 'w1', root: vault, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } } as never)
-    const importer = startDrawImport({ drawDir, userData, store, appData: false, rootsOf })
+    const importer = startDrawImport({ drawDir, userData, store, secrets: createSecrets(path.join(userData, 'secrets.json')), appData: false, rootsOf })
     await importer.idle()
     expect(await exists(path.join(vault, '.yaseendocs', 'github.json'))).toBe(true)
     store.upsertWindow({ id: 'w2', root: other, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } } as never)
@@ -276,14 +299,42 @@ describe('the importer and its marker', () => {
 })
 
 describe("Draw's own library folder", () => {
-  it('is the source when Draw set one', async () => {
+  async function drawUses(folder: string): Promise<void> {
+    const state = (await readJson(path.join(drawDir, 'yaseendraw.json'))) as { settings: Record<string, unknown> }
+    state.settings.libraryFolder = folder
+    await put(path.join(drawDir, 'yaseendraw.json'), json(state))
+  }
+
+  it('YAZ-3044 A42: Draw set one and Docs has none — Docs points at it, and nothing is copied', async () => {
     const custom = path.join(tmp, 'Synced', 'Library')
     await put(path.join(custom, 'media.json'), json({ version: 1, items: [{ id: 'custom' }] }))
-    const state = (await readJson(path.join(drawDir, 'yaseendraw.json'))) as { settings: Record<string, unknown> }
-    state.settings.libraryFolder = custom
-    await put(path.join(drawDir, 'yaseendraw.json'), json(state))
+    await drawUses(custom)
+    const done = await importDrawAppData({ drawDir, userData, store })
+    expect(done?.library).toEqual([])
+    expect(done?.settings).toContain('libraryFolder')
+    expect(store.get().settings.libraryFolder).toBe(custom)
+    expect(await exists(path.join(userData, 'library'))).toBe(false)
+  })
+
+  it('A42: Docs has its own folder — the copies land there, the folder Docs reads', async () => {
+    const docsLib = path.join(tmp, 'Docs Library')
+    store.setSettings({ ...store.get().settings, libraryFolder: docsLib })
+    const done = await importDrawAppData({ drawDir, userData, store })
+    expect(done?.library).toContain('media.json')
+    expect(await readJson(path.join(docsLib, 'media.json'))).toEqual({ version: 1, items: [{ id: 'm1' }] })
+    expect(await exists(path.join(userData, 'library'))).toBe(false)
+    expect(store.get().settings.libraryFolder).toBe(docsLib)
+  })
+
+  it('A42: both set — Draw\'s folder is the source, Docs\' folder the target, and Docs\' setting stays', async () => {
+    const custom = path.join(tmp, 'Synced', 'Library')
+    const docsLib = path.join(tmp, 'Docs Library')
+    await put(path.join(custom, 'media.json'), json({ version: 1, items: [{ id: 'custom' }] }))
+    await drawUses(custom)
+    store.setSettings({ ...store.get().settings, libraryFolder: docsLib })
     expect((await importDrawAppData({ drawDir, userData, store }))?.library).toEqual(['media.json'])
-    expect(await readJson(path.join(userData, 'library', 'media.json'))).toEqual({ version: 1, items: [{ id: 'custom' }] })
+    expect(await readJson(path.join(docsLib, 'media.json'))).toEqual({ version: 1, items: [{ id: 'custom' }] })
+    expect(store.get().settings.libraryFolder).toBe(docsLib)
   })
 })
 

@@ -1,5 +1,6 @@
 import { CONTRACT } from '@shared/ipc'
 import type { GitSyncManager } from '../git/manager'
+import type { Secrets } from '../secrets'
 import type { Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { resolveLibraryFolder } from '../library/folder'
@@ -35,7 +36,7 @@ import { registerWindowIpc } from './window'
  */
 export type IpcPlaces = ShareIpcPlaces & { userData: string }
 
-export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces): GitSyncManager {
+export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces): { sync: GitSyncManager; secrets: Secrets } {
   const { userData } = places
   registerFsIpc(store, windows)
   registerBoardIpc()
@@ -59,5 +60,6 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerComponentsIpc(store, userData)
   registerMediaStudioIpc(userData, secrets)
   registerShareIpc(userData, secrets, places)
-  return registerGithubIpc(store)
+  // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
+  return { sync: registerGithubIpc(store), secrets }
 }

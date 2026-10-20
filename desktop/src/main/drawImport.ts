@@ -2,10 +2,21 @@ import { link, mkdir, open, readdir, readFile, rename, stat, unlink } from 'node
 import path from 'node:path'
 import { CANVAS_PREF_KEYS, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isRecord, isStringArray } from '@shared/guards'
-import { DEFAULT_CANVAS_PREFS, DEFAULT_SETTINGS, DIAGRAM_DARK_COLORS, type CanvasPrefs, type DiagramDarkColors, type SettingsState } from '@shared/types'
+import {
+  CLOUDFLARE_TOKEN_SECRET,
+  DEFAULT_CANVAS_PREFS,
+  DEFAULT_SETTINGS,
+  DIAGRAM_DARK_COLORS,
+  SHARE_UPLOAD_PASSWORD_SECRET,
+  type CanvasPrefs,
+  type DiagramDarkColors,
+  type SettingsState,
+} from '@shared/types'
 import { addFavorites, FAVORITES_FILE } from './favorites'
 import { atomicWrite, tmpSibling } from './fs/fsUtils'
+import { resolveLibraryFolder } from './library/folder'
 import type { AppState } from '@shared/types'
+import { createSecrets, SECRETS_FILE, type Secrets } from './secrets'
 import type { Store } from './store'
 import { createConfig } from './vaultConfig'
 
@@ -24,8 +35,16 @@ import { createConfig } from './vaultConfig'
  * Per vault, when a vault with `.yaseendraw/` opens: `favorites.json` → union into
  * `.yaseendocs/favorites.json` (Docs order first, cap 500); `github.json` and `shares.json` →
  * copied only when `.yaseendocs/` has none.
- * App data, on the first launch that finds Draw's user-data folder: `library/` (file by file),
- * `secrets.json` (mode 0600), `sharing.json`, and the canvas settings. Never windows, tabs or recents.
+ * App data, on the first launch that finds Draw's user-data folder:
+ * - `library/`, file by file, into the folder Docs reads (`settings.libraryFolder`, resolved). When
+ *   Draw used a custom folder and Docs has none, Docs points at Draw's folder instead and copies
+ *   nothing: a library Draw kept in a synced vault stays synced (YAZ-3044 A42).
+ * - `secrets.json`, MERGED BY NAME through the one `Secrets` door: each value Docs does not have
+ *   yet (YAZ-3044 A5). A Docs Pixabay key must not keep Draw's Cloudflare token out.
+ * - `sharing.json`, only when the Cloudflare token and the upload password Docs now holds are
+ *   Draw's: a `sharing.json` without them would say "on" with no way to upload.
+ * - the canvas settings, and `diagramDarkColors` (a default-only fill, like the canvas keys).
+ * Never windows, tabs or recents.
  */
 
 /** Draw's app name: Electron names its user-data folder after it, under `app.getPath('appData')`. */
@@ -38,20 +57,21 @@ export const DRAW_VAULT_DIR = '.yaseendraw'
 export const IMPORT_MARKER_FILE = 'draw-import.json'
 /** The library folder's name under userData — the same in both apps (Draw's `DEFAULT_LIBRARY_DIR`). */
 export const LIBRARY_DIR = 'library'
-/** The app-data files copied whole, and the mode each keeps: secrets are owner-only (Draw's YAZ-1842, YAZ-2073 D12). */
-const APP_FILES: ReadonlyArray<{ name: string; mode: number }> = [
-  { name: 'secrets.json', mode: 0o600 },
-  { name: 'sharing.json', mode: 0o644 },
-]
+/** Where sharing points (`ipc/share.ts`), copied whole — and only with the two secrets it needs (A5). */
+const SHARING_FILE = 'sharing.json'
+/** The secrets `sharing.json` is useless without. */
+const SHARING_SECRETS = [CLOUDFLARE_TOKEN_SECRET, SHARE_UPLOAD_PASSWORD_SECRET] as const
 /** The vault files copied whole when Docs has none. */
 const VAULT_FILES = ['github.json', 'shares.json'] as const
 
 export interface AppDataImport {
   /** Library files copied, as paths relative to `library/`. */
   library: string[]
-  /** `secrets.json` / `sharing.json` when copied. */
+  /** `sharing.json` when copied. */
   files: string[]
-  /** The settings that took Draw's value: `canvas.<key>` or `diagramDarkColors`. */
+  /** The secret NAMES that took Draw's value (never the values). */
+  secrets: string[]
+  /** The settings that took Draw's value: `canvas.<key>`, `diagramDarkColors` or `libraryFolder`. */
   settings: string[]
 }
 
@@ -166,38 +186,62 @@ export function fillSettings(docs: SettingsState, drawSettings: unknown): { sett
   return filled.length === 0 ? null : { settings: { ...docs, canvas: canvas as unknown as CanvasPrefs, diagramDarkColors }, filled }
 }
 
+/** Draw's secrets file values (the same `{ version: 2, values }` format, Draw's `secrets.ts`); `{}` when there is none. */
+async function drawSecrets(drawDir: string): Promise<Record<string, string>> {
+  const raw = await readJson(path.join(drawDir, SECRETS_FILE))
+  if (!isRecord(raw) || raw.version !== 2 || !isRecord(raw.values)) return {}
+  return Object.fromEntries(Object.entries(raw.values).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1] !== ''))
+}
+
 /**
  * The app-data half. Null when `drawDir` is not a folder (Draw never ran here). The library comes
  * from where Draw keeps it: its `settings.libraryFolder` when set, else `<drawDir>/library`.
+ * `secrets` is the app's one `Secrets` instance (`registerIpc`); a test may leave it out.
  */
-export async function importDrawAppData(deps: { drawDir: string; userData: string; store: Pick<Store, 'get' | 'setSettings'> }): Promise<AppDataImport | null> {
+export async function importDrawAppData(deps: { drawDir: string; userData: string; store: Pick<Store, 'get' | 'setSettings'>; secrets?: Secrets }): Promise<AppDataImport | null> {
   const { drawDir, userData, store } = deps
   if (!(await isDir(drawDir))) return null
-  const result: AppDataImport = { library: [], files: [], settings: [] }
+  const result: AppDataImport = { library: [], files: [], secrets: [], settings: [] }
   const state = await readJson(path.join(drawDir, DRAW_STATE_FILE))
   const drawSettings = isRecord(state) && isRecord(state.settings) ? state.settings : null
 
   const custom = drawSettings?.libraryFolder
-  const librarySrc = typeof custom === 'string' && path.isAbsolute(custom) ? custom : path.join(drawDir, LIBRARY_DIR)
-  const libraryDst = path.join(userData, LIBRARY_DIR)
-  for (const rel of await listFiles(librarySrc)) {
-    const dst = path.join(libraryDst, ...rel.split('/'))
-    await mkdir(path.dirname(dst), { recursive: true })
-    if (await createFileOnce(dst, await readFile(path.join(librarySrc, ...rel.split('/'))))) result.library.push(rel)
+  const drawCustom = typeof custom === 'string' && path.isAbsolute(custom) && (await isDir(custom)) ? custom : null
+  if (drawCustom !== null && store.get().settings.libraryFolder === null) {
+    // Draw's own folder becomes Docs' (a gap filled, like a setting): nothing to copy.
+    store.setSettings({ ...store.get().settings, libraryFolder: drawCustom })
+    result.settings.push('libraryFolder')
+  } else {
+    const librarySrc = drawCustom ?? path.join(drawDir, LIBRARY_DIR)
+    const libraryDst = resolveLibraryFolder(store.get().settings.libraryFolder, userData)
+    if (path.resolve(librarySrc) !== path.resolve(libraryDst)) {
+      for (const rel of await listFiles(librarySrc)) {
+        const dst = path.join(libraryDst, ...rel.split('/'))
+        await mkdir(path.dirname(dst), { recursive: true })
+        if (await createFileOnce(dst, await readFile(path.join(librarySrc, ...rel.split('/'))))) result.library.push(rel)
+      }
+    }
   }
 
-  for (const { name, mode } of APP_FILES) {
-    const src = path.join(drawDir, name)
-    // Copied as bytes, but only a JSON file: a half-written one would only be quarantined by Docs.
-    if ((await readJson(src)) === null) continue
+  const values = await drawSecrets(drawDir)
+  if (Object.keys(values).length > 0) {
     await mkdir(userData, { recursive: true })
-    if (await createFileOnce(path.join(userData, name), await readFile(src), mode)) result.files.push(name)
+    const secrets = deps.secrets ?? createSecrets(path.join(userData, SECRETS_FILE))
+    for (const [name, value] of Object.entries(values)) {
+      if ((await secrets.read(name)) !== null) continue
+      await secrets.set(name, value)
+      result.secrets.push(name)
+    }
+    const sharingReady = (await Promise.all(SHARING_SECRETS.map(async (name) => values[name] !== undefined && (await secrets.read(name)) === values[name]))).every(Boolean)
+    const sharing = path.join(drawDir, SHARING_FILE)
+    // Copied as bytes, but only a JSON file: a half-written one would only be quarantined by Docs.
+    if (sharingReady && (await readJson(sharing)) !== null && (await createFileOnce(path.join(userData, SHARING_FILE), await readFile(sharing)))) result.files.push(SHARING_FILE)
   }
 
   const fill = fillSettings(store.get().settings, drawSettings)
   if (fill !== null) {
     store.setSettings(fill.settings)
-    result.settings = fill.filled
+    result.settings.push(...fill.filled)
   }
   return result
 }
@@ -252,7 +296,7 @@ export interface DrawImporter {
  * app-data half runs first (when `appData` allows it); a vault costs one `stat` the first time it
  * opens in this process, and nothing after the marker has it.
  */
-export function createDrawImporter(deps: { drawDir: string; userData: string; store: Pick<Store, 'get' | 'setSettings'>; appData: boolean; now?: () => number }): DrawImporter {
+export function createDrawImporter(deps: { drawDir: string; userData: string; store: Pick<Store, 'get' | 'setSettings'>; secrets?: Secrets; appData: boolean; now?: () => number }): DrawImporter {
   const now = deps.now ?? Date.now
   const markerFile = path.join(deps.userData, IMPORT_MARKER_FILE)
   let marker: Marker | null = null
@@ -274,7 +318,7 @@ export function createDrawImporter(deps: { drawDir: string; userData: string; st
       if ((await loadMarker()).appData !== undefined) return
       const done = await importDrawAppData(deps)
       if (done === null) return // no Draw here yet: the next launch looks again
-      console.info(`[drawImport] app data: ${done.library.length} library files, files [${done.files.join(', ')}], settings [${done.settings.join(', ')}]`)
+      console.info(`[drawImport] app data: ${done.library.length} library files, files [${done.files.join(', ')}], secrets [${done.secrets.join(', ')}], settings [${done.settings.join(', ')}]`)
       await saveMarker({ ...(await loadMarker()), appData: now() })
     })
   }
@@ -306,6 +350,7 @@ export function startDrawImport(deps: {
   drawDir: string
   userData: string
   store: Pick<Store, 'get' | 'setSettings' | 'onChange'>
+  secrets: Secrets
   appData: boolean
   rootsOf: (state: AppState) => string[]
 }): DrawImporter {
