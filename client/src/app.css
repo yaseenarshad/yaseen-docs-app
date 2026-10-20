@@ -510,7 +510,8 @@ button {
    from the same calc — change one, change both.
    Heading styles (YAZ-3049 D2): each level reads its own `--hN-*` variables, set on each page
    layer from its vault's text formatting (YAZ-3067 D12, settings/headingStyles.ts) only for a
-   changed field. Each fallback is the look of 1.0.14; the em fallback follows the vault's Text size (D17). bullets.css reads `--hN-size` with the same em scale as its fallback — change
+   changed field. Each fallback is the look of 1.0.14; the em fallback follows the vault's Text
+   size (D17). bullets.css reads `--hN-size` with the same em scale as its fallback — change
    one, change both. */
 .editor-instance .milkdown .ProseMirror h1 {
   font-size: var(--h1-size, 1.802em);

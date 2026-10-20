@@ -72,8 +72,8 @@ const toc = (w: Page) => layer(w).locator('nav.toc')
 const tocRows = (w: Page) => toc(w).locator(':is(.toc__name, .toc__line)')
 
 test.beforeAll(async () => {
-  userData = await mkdtemp(path.join(tmpdir(), 'heading-styles-userdata-'))
-  vault = await mkdtemp(path.join(tmpdir(), 'heading-styles-vault-'))
+  userData = await mkdtemp(path.join(tmpdir(), 'text-formatting-userdata-'))
+  vault = await mkdtemp(path.join(tmpdir(), 'text-formatting-vault-'))
   notePath = path.join(vault, 'Levels.md')
   await writeFile(notePath, LEVELS_NOTE)
 })
@@ -108,7 +108,7 @@ test('step 1 — "Heading 2 larger" three times: the H2 of the open note is 29px
   // Only the changed level and field are stored, in the vault (D1, D10); the app state has no such key.
   await expect.poll(vaultFile).toEqual({ version: 1, h2: { size: 29 } })
   expect(Object.keys((await readState(userData)).settings)).not.toContain('headingStyles')
-  await shoot(win, 'heading-styles-01-h2-29px')
+  await shoot(win, 'text-formatting-01-h2-29px')
 
   // The Text line (D14, D17): two steps make the paragraphs 18px; the H2 keeps the size the reader set.
   const paragraph = editorOf(win).locator('p', { hasText: 'Two filler line 1.' })
@@ -131,5 +131,5 @@ test('step 2 — "TOC made from: Auto" lists the H4 and the H5 of the note, and 
   await expect(tocRows(win)).toHaveCount(5)
   expect(await tocRows(win).evaluateAll((els) => els.map((el) => el.getAttribute('data-level')))).toEqual(['1', '2', '3', '4', '5'])
   await expect(toc(win).locator('[data-level="6"]')).toHaveCount(0)
-  await shoot(win, 'heading-styles-02-toc-h4-h5')
+  await shoot(win, 'text-formatting-02-toc-h4-h5')
 })

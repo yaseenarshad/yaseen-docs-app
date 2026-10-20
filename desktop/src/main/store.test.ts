@@ -311,9 +311,9 @@ describe('createStore: loading', () => {
     const legacy = { h1: { size: 25 }, h2: { size: 21, underline: true }, h3: { size: 18 }, h4: { size: 15, highlight: 'yellow' } }
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, lineSpacing: 2, headingStyles: legacy } }))
     const store = createStore(file)
-    // The settings load as stored, without the retired key; the strict channel check refuses it too.
+    // The settings load as stored, without the retired key. The strict channel check ignores it: it checks only the known keys.
     expect(store.get().settings).toEqual({ ...DEFAULT_SETTINGS, lineSpacing: 2 })
-    expect(isSettings({ ...DEFAULT_SETTINGS, headingStyles: legacy })).toBe(true) // an unknown key is not checked: the store keeps only known keys
+    expect(isSettings({ ...DEFAULT_SETTINGS, headingStyles: legacy })).toBe(true)
     expect(store.takeLegacyHeadingStyles()).toEqual(legacy)
     expect(store.takeLegacyHeadingStyles()).toEqual({})
     // The next write of the state file has no `headingStyles` key.
