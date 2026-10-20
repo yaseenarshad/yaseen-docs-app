@@ -6,6 +6,10 @@ import {
   CONTENT_WIDTHS,
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
+  HEADING_HIGHLIGHTS,
+  HEADING_KEYS,
+  HEADING_SIZE_MAX,
+  HEADING_SIZE_MIN,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FAVORITES_ORDER,
   MAX_FOLD_KEYS_PER_FILE,
@@ -48,6 +52,8 @@ import {
   type ContentWidth,
   type FolderPatch,
   type FolderState,
+  type HeadingStyle,
+  type HeadingStyles,
   type NewNoteLocation,
   type OpenStat,
   type RecentRoots,
@@ -56,6 +62,7 @@ import {
   type SettingsState,
   type SidebarLens,
   type StartupWindows,
+  type StoredTab,
   type TableOfContents,
   type Theme,
   type TocLines,
@@ -170,6 +177,20 @@ const sanitizeCanvasPanel = (raw: unknown): CanvasPanelState => {
   return { tab: isCanvasPanelTab(src.tab) ? src.tab : DEFAULT_CANVAS_PANEL.tab, docked: typeof src.docked === 'boolean' ? src.docked : DEFAULT_CANVAS_PANEL.docked }
 }
 
+/** One heading level's style (YAZ-3049 D1, D5): only the four known fields, each absent or valid. A size is whole px, 12 to 48. */
+const HEADING_STYLE_FIELD_OK: { [K in keyof Required<HeadingStyle>]: (v: unknown) => boolean } = {
+  size: (v) => Number.isInteger(v) && (v as number) >= HEADING_SIZE_MIN && (v as number) <= HEADING_SIZE_MAX,
+  bold: (v) => typeof v === 'boolean',
+  underline: (v) => typeof v === 'boolean',
+  highlight: (v) => typeof v === 'string' && (HEADING_HIGHLIGHTS as readonly string[]).includes(v),
+}
+export const isHeadingStyle = (v: unknown): v is HeadingStyle =>
+  isRecord(v) && Object.entries(v).every(([field, value]) => Object.hasOwn(HEADING_STYLE_FIELD_OK, field) && (value === undefined || HEADING_STYLE_FIELD_OK[field as keyof HeadingStyle](value)))
+
+/** The map of changed levels: keys `h1`-`h6` only. One bad level or field fails the whole map, and `sanitizeSettings` then gives `{}`. */
+export const isHeadingStyles = (v: unknown): v is HeadingStyles =>
+  isRecord(v) && Object.entries(v).every(([key, style]) => (HEADING_KEYS as readonly string[]).includes(key) && isHeadingStyle(style))
+
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
 const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is SettingsState[K] } = {
   lineSpacing: isFiniteNumber,
@@ -198,6 +219,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   // `''` — an empty string would resolve to the process cwd, which is not a place for a user's library.
   libraryFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),
   canvasPanel: isCanvasPanel,
+  headingStyles: isHeadingStyles,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -222,7 +244,7 @@ export const isWindowBounds = (v: unknown): v is WindowBounds =>
   isRecord(v) && isFiniteNumber(v.x) && isFiniteNumber(v.y) && isFiniteNumber(v.width) && isFiniteNumber(v.height)
 
 /** Core v1 shape; additive window-identity fields are repaired separately. */
-type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { roots?: unknown; tabs?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown }
+type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { roots?: unknown; tabs?: unknown; tabStrip?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown }
 const isStoredWindowEntry = (v: unknown): v is StoredWindowEntry =>
   isRecord(v) && typeof v.id === 'string' && isStringOrNull(v.root) && isStringOrNull(v.file) && isWindowBounds(v.bounds)
 
@@ -243,6 +265,42 @@ export function normalizeTabs(tabs: readonly string[], file: string | null): str
   }
   if (!seen.has(file)) out.unshift(file)
   return out
+}
+
+/** One stored tab (YAZ-3057), or null: an absolute path, a display name cleaned like a vault's, and the active mark. */
+export function readStoredTab(raw: unknown): StoredTab | null {
+  if (!isRecord(raw) || typeof raw.path !== 'string' || !isAbsolute(raw.path)) return null
+  const name = cleanVaultName(raw.name)
+  return { path: raw.path, ...(name === null ? {} : { name }), ...(raw.active === true ? { active: true as const } : {}) }
+}
+
+/**
+ * The strip invariant (YAZ-3057), shared by the loader, every window write, rename and delete: the
+ * strip's paths, each once and in order, are `tabs`. A tab that is no longer open drops; a strip that
+ * still disagrees drops whole, and the window opens `tabs` as before. A strip with no copy and no name
+ * is not kept, so a window without either stores what it always did. The active mark stays on ONE
+ * copy of `file` at most.
+ */
+export function normalizeTabStrip(strip: readonly StoredTab[] | undefined, tabs: readonly string[], file: string | null): StoredTab[] | undefined {
+  if (strip === undefined) return undefined
+  const open = new Set(tabs)
+  const kept = strip.filter((t) => open.has(t.path))
+  const order = [...new Set(kept.map((t) => t.path))]
+  if (order.length !== tabs.length || order.some((path, i) => path !== tabs[i])) return undefined
+  if (kept.length === tabs.length && kept.every((t) => t.name === undefined)) return undefined
+  let marked = false
+  return kept.map(({ path, name, active }) => {
+    const on = active === true && path === file && !marked
+    if (on) marked = true
+    return { path, ...(name === undefined ? {} : { name }), ...(on ? { active: true as const } : {}) }
+  })
+}
+
+/** `w` with its strip made true to `tabs` and `file` (`normalizeTabStrip`); no strip, no key. */
+function withTabStrip(w: WindowEntry, strip: readonly StoredTab[] | undefined): WindowEntry {
+  const { tabStrip: _old, ...rest } = w
+  const tabStrip = normalizeTabStrip(strip, w.tabs, w.file)
+  return tabStrip === undefined ? rest : { ...rest, tabStrip }
 }
 
 /** Repair the additive v1 right-panel shape and enforce one editable owner per window. */
@@ -273,6 +331,9 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
     // Junk `tabs` elements (non-strings, relative paths) drop; a missing/invalid list repairs from `file`.
     const rawTabs: unknown = (w as { tabs?: unknown }).tabs
     const tabs = normalizeTabs(Array.isArray(rawTabs) ? rawTabs.filter((t): t is string => typeof t === 'string' && isAbsolute(t)) : [], w.file)
+    // The strip (YAZ-3057) reads with the same rule: a junk element drops, and a strip that disagrees with `tabs` drops whole.
+    const rawStrip: unknown = w.tabStrip
+    const tabStrip = normalizeTabStrip(Array.isArray(rawStrip) ? rawStrip.map(readStoredTab).filter((t): t is StoredTab => t !== null) : undefined, tabs, w.file)
     const rightPanel = normalizeRightPanel((w as { rightPanel?: unknown }).rightPanel, tabs)
     const sidebarCollapsed = typeof w.sidebarCollapsed === 'boolean' ? w.sidebarCollapsed : legacySidebarCollapsed
     const sidebarLens = isSidebarLens(w.sidebarLens) ? w.sidebarLens : legacySidebarLens
@@ -280,7 +341,7 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
     // vault's now, in the vault. The entry is built from the fields below alone, so the next write drops the key.
     // The vault list (YAZ-2602 S74) reads with the `tabs` rule: a junk ELEMENT drops and the rest stay, and a missing list repairs from `root`.
     const roots = normalizeRoots(Array.isArray(w.roots) ? w.roots.filter((r): r is string => typeof r === 'string' && isAbsolute(r)) : [], w.root)
-    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, rightPanel, sidebarCollapsed, sidebarLens, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
+    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, ...(tabStrip === undefined ? {} : { tabStrip }), rightPanel, sidebarCollapsed, sidebarLens, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
   }
   return out
 }
@@ -579,7 +640,7 @@ export function createStore(filePath: string): Store {
 
     upsertWindow(entry, opened = null, now = Date.now()) {
       const tabs = normalizeTabs(entry.tabs, entry.file)
-      const normalized: WindowEntry = { ...entry, roots: normalizeRoots(entry.roots ?? [], entry.root), tabs, rightPanel: normalizeRightPanel(entry.rightPanel, tabs) }
+      const normalized = withTabStrip({ ...entry, roots: normalizeRoots(entry.roots ?? [], entry.root), tabs, rightPanel: normalizeRightPanel(entry.rightPanel, tabs) }, entry.tabStrip)
       const windows = state.windows.some((w) => w.id === entry.id) ? state.windows.map((w) => (w.id === entry.id ? normalized : w)) : [...state.windows, normalized]
       // The use goes in the commit of the window (YAZ-2663 R2): one write, one broadcast. Its vault is the one of the window that holds the page.
       const vault = opened === null ? null : rootOfPath(normalized.roots, opened)
@@ -619,7 +680,8 @@ export function createStore(filePath: string): Store {
         const root = w.root === null ? null : remap(w.root)
         const file = w.file === null ? null : remap(w.file)
         const tabs = normalizeTabs(w.tabs.map(remap), file)
-        return {
+        // Every copy and its display name follow the file (YAZ-3057 S8, S9).
+        return withTabStrip({
           ...w,
           root,
           // Every vault of the window follows its folder, as `root` does (YAZ-2602 S48).
@@ -631,7 +693,7 @@ export function createStore(filePath: string): Store {
             items: w.rightPanel.items.map(remap),
             expanded: w.rightPanel.expanded === null ? null : remap(w.rightPanel.expanded),
           }, tabs),
-        }
+        }, w.tabStrip?.map((t) => ({ ...t, path: remap(t.path) })))
       })
       const recents = state.recents.map((r) => ({ ...r, path: remap(r.path) }))
       const folders = Object.fromEntries(
@@ -707,12 +769,13 @@ export function createStore(filePath: string): Store {
             ?? [...w.rightPanel.items.slice(0, i)].reverse().find((item) => !gone(item))
             ?? null
         }
-        return {
+        // The deleted file's copies leave the strip; its active mark goes with them (YAZ-3057 S10, S11).
+        return withTabStrip({
           ...w,
           file,
           tabs: normalizedTabs,
           rightPanel: normalizeRightPanel({ ...w.rightPanel, items: rightItems, expanded }, normalizedTabs),
-        }
+        }, w.tabStrip)
       })
       const recents = state.recents.filter((r) => !gone(r.path))
       if (recents.length !== state.recents.length) changed = true

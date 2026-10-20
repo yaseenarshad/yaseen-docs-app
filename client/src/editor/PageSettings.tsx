@@ -114,7 +114,7 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, sectionIndent, 
           <dt>Auto</dt>
           <dd>The app selects. A page with two or more headings outside bullets shows its headings. Each other page shows its bullets.</dd>
           <dt>Headings</dt>
-          <dd>Shows each H1, H2 and H3. This includes the headings that are in bullets.</dd>
+          <dd>Shows each heading from H1 to H5. This includes the headings that are in bullets.</dd>
           <dt>Bullets</dt>
           <dd>Shows the bullets, to three levels.</dd>
         </dl>

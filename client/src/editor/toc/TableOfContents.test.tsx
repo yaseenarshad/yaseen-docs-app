@@ -14,7 +14,7 @@ import { TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W, type ContentWidth, type TableOfCon
 import appCss from '../../app.css?inline'
 import { COLUMN_MAX, MAX_ROWS, namesRoom, namesShow, NAMES_FLOOR, pathLines, railPitch, shownRows, TableOfContents, TEXT_FLOOR, TOC_WIDTH } from './TableOfContents'
 import tocCss from './toc.css?inline'
-import { createTocChannel, type TocChannel, type TocRow } from './tocChannel'
+import { createTocChannel, type TocChannel, type TocLevel, type TocRow } from './tocChannel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -89,21 +89,48 @@ describe('namesRoom: how wide the names column may get (YAZ-2752 D2, D3)', () =>
 })
 
 describe('shownRows: which rows, and where each stands in the full list', () => {
-  const many = (level: 1 | 2 | 3, count: number, name: string): TocRow[] => Array.from({ length: count }, (_, i) => ({ level, text: `${name} ${i}` }))
+  const many = (level: TocLevel, count: number, name: string): TocRow[] => Array.from({ length: count }, (_, i) => ({ level, text: `${name} ${i}` }))
 
-  it('200 or fewer: all of H1-H3, each with its own index', () => {
+  it('200 or fewer: all of H1-H5, each with its own index', () => {
     const all: TocRow[] = [
       { level: 1, text: 'One' },
       { level: 2, text: 'Two' },
       { level: 3, text: 'Three' },
+      { level: 4, text: 'Four' },
+      { level: 5, text: 'Five' },
     ]
     expect(shownRows(all)).toEqual([
       { level: 1, text: 'One', index: 0 },
       { level: 2, text: 'Two', index: 1 },
       { level: 3, text: 'Three', index: 2 },
+      { level: 4, text: 'Four', index: 3 },
+      { level: 5, text: 'Five', index: 4 },
     ])
-    expect(shownRows([...many(1, 50, 'a'), ...many(2, 50, 'b'), ...many(3, 100, 'c')])).toHaveLength(MAX_ROWS)
+    expect(shownRows([...many(1, 50, 'a'), ...many(2, 50, 'b'), ...many(3, 50, 'c'), ...many(4, 25, 'd'), ...many(5, 25, 'e')])).toHaveLength(MAX_ROWS)
     expect(shownRows([])).toEqual([])
+  })
+
+  it('more than 200 of five levels: it drops H5, then H4, then H3, then H2, until 200 or fewer are left (YAZ-3051)', () => {
+    const one = many(1, 20, 'one')
+    const two = many(2, 40, 'two')
+    const three = many(3, 60, 'three')
+    const four = many(4, 70, 'four')
+    // Levels of the rows a list shows, counted: level → how many.
+    const counts = (rows: readonly TocRow[]): Record<number, number> => rows.reduce<Record<number, number>>((n, { level }) => ({ ...n, [level]: (n[level] ?? 0) + 1 }), {})
+    // 190 rows of H1-H4 and 11 of H5: H5 goes, the rest stays.
+    expect(counts(shownRows([...one, ...two, ...three, ...four, ...many(5, 11, 'five')]))).toEqual({ 1: 20, 2: 40, 3: 60, 4: 70 })
+    // H1-H4 alone are 210: H4 goes too.
+    expect(counts(shownRows([...one, ...two, ...three, ...four, ...many(4, 20, 'more'), ...many(5, 5, 'five')]))).toEqual({ 1: 20, 2: 40, 3: 60 })
+    // H1-H3 alone are 220: H3 goes too.
+    expect(counts(shownRows([...one, ...two, ...three, ...many(3, 100, 'more'), ...four, ...many(5, 5, 'five')]))).toEqual({ 1: 20, 2: 40 })
+    // H1-H2 alone are 240: H1 only.
+    expect(counts(shownRows([...one, ...many(2, 220, 'two'), ...three, ...four, ...many(5, 5, 'five')]))).toEqual({ 1: 20 })
+    // The rows keep their document order and their index in the FULL list.
+    const mixed = [{ level: 1, text: 'Top' } as TocRow, ...many(5, 201, 'deep'), { level: 4, text: 'Four' } as TocRow]
+    expect(shownRows(mixed)).toEqual([
+      { level: 1, text: 'Top', index: 0 },
+      { level: 4, text: 'Four', index: 202 },
+    ])
   })
 
   it('more than 200: H1-H2, and a row keeps its index in the FULL list', () => {
@@ -131,7 +158,7 @@ describe('shownRows: which rows, and where each stands in the full list', () => 
 
 describe('pathLines: the level lines from the current row up to its parents (YAZ-2762 D3, D7)', () => {
   /** Rows from their levels alone: the path reads nothing else of a row. */
-  const levels = (...of: Array<1 | 2 | 3>): TocRow[] => of.map((level, i) => ({ level, text: `Row ${i}` }))
+  const levels = (...of: TocLevel[]): TocRow[] => of.map((level, i) => ({ level, text: `Row ${i}` }))
   // Row:               0  1  2  3  4  5  6  7  8
   const NOTE = levels(1, 2, 3, 3, 2, 3, 1, 3, 2)
   const NONE = NOTE.map(() => '')
@@ -170,6 +197,18 @@ describe('pathLines: the level lines from the current row up to its parents (YAZ
     // One row, and no row: no list is drawn there, and the rule still answers.
     expect(pathLines(levels(2), 0)).toEqual([''])
     expect(pathLines([], 0)).toEqual([])
+  })
+
+  it('through levels 3 and 4 down to an H5 row: each line from below its parent to the next row on the path (YAZ-3051)', () => {
+    // Row:            0  1  2  3  4
+    const DEEP = levels(1, 2, 3, 4, 5)
+    expect(lit(DEEP, 4)).toEqual({ 1: '1t', 2: '2t', 3: '3t', 4: '4t' })
+    expect(lit(DEEP, 3)).toEqual({ 1: '1t', 2: '2t', 3: '3t' })
+    // An H5 below two H4s: the line of the H3 passes the first H4 on its way to the second.
+    expect(lit(levels(1, 2, 3, 4, 4, 5), 5)).toEqual({ 1: '1t', 2: '2t', 3: '3', 4: '3t', 5: '4t' })
+    // A note that goes from H2 to H4 with no H3: the H4 row gets the line of its H2 and no `t`; an H5 under it gets the line of the H4.
+    expect(lit(levels(1, 2, 4, 5), 2)).toEqual({ 1: '1t', 2: '2' })
+    expect(lit(levels(1, 2, 4, 5), 3)).toEqual({ 1: '1t', 2: '2', 3: '4t' })
   })
 
   it('the path stops at the current row and starts below its top parent, for each row of a note', () => {
@@ -1304,6 +1343,10 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
     expect(rule(tocCss, ".toc__names .toc__name[aria-current='true']")).toMatch(/color:\s*var\(--accent\);/)
     expect(tocCss).not.toMatch(/\.toc__name\[aria-current='true'\]:hover/)
     expect(rule(tocCss, '.toc__line[data-current]')).toMatch(/width:\s*calc\(var\(--toc-w\) \+ 5px\);/)
+    // The rail: 18 / 12 / 7 px for level 1 / 2 / 3, and the H4 and H5 lines are 7 px like level 3 (YAZ-3051 D8).
+    expect(rule(tocCss, '.toc__line')).toMatch(/--toc-w:\s*18px;/)
+    expect(rule(tocCss, ".toc__line[data-level='2']")).toMatch(/--toc-w:\s*12px;/)
+    expect(rule(tocCss, ".toc__line[data-level='3'],\n.toc__line[data-level='4'],\n.toc__line[data-level='5']")).toMatch(/--toc-w:\s*7px;/)
     expect(rule(tocCss, '.toc__card')).toMatch(/max-height:\s*min\([^;]*440px\);/)
   })
 
@@ -1329,9 +1372,9 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
     it('a tone for each level, made from the two text tokens and always on: --fg at weight 500, a mix of the two, --fg-muted (D1)', () => {
       expect(of(".toc__name[data-level='1']")).toEqual({ 'font-weight': '500', color: 'var(--fg)' })
       expect(of(".toc__name[data-level='2']").color).toBe('color-mix(in srgb, var(--fg) 55%, var(--fg-muted))')
-      // Level 3 is the tone of the list itself, as before: its rule sets no colour of its own.
+      // Level 3 is the tone of the list itself, as before: its rule sets no colour of its own. Levels 4 and 5 share it (YAZ-3051 D8).
       expect(of('.toc__name').color).toBe('var(--fg-muted)')
-      expect(of(".toc__name[data-level='3']")).not.toHaveProperty('color')
+      for (const level of [3, 4, 5]) expect(of(`.toc__name[data-level='${level}']`)).not.toHaveProperty('color')
       // The setting does not reach a tone: each rule that reads `data-toc-lines` sets the two line colours and nothing more.
       const gated = rules().filter(([selector]) => selector.includes('data-toc-lines'))
       expect(gated.map(([selector]) => selector)).toEqual([GATE.join(', '), READING])
@@ -1339,10 +1382,10 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
       // The current name outweighs the tone on each level (tested above). The name under the mouse has the weight of a
       // level rule, so it wins by its place alone: after the last of them.
       expect(of('.toc__name:hover').color).toBe('var(--fg)')
-      expect(place('.toc__name:hover')).toBeGreaterThan(place(".toc__name[data-level='3']"))
+      expect(place('.toc__name:hover')).toBeGreaterThan(place(".toc__name[data-level='5']"))
     })
 
-    it('the level lines are backgrounds of the row: 1px at 12px and at 24px, the 9px level piece at mid-row, the path over the piece and the piece over the grey lines — and clear until a level asks for them (D2, D7)', () => {
+    it('the level lines are backgrounds of the row: 1px at 12, 24, 36 and 48px, the 9px level piece at mid-row, the path over the piece and the piece over the grey lines — and clear until a level asks for them (D2, D7; YAZ-3051 D8)', () => {
       const row = of('.toc__name')
       // The layers in paint order, the first on top: [the colour it reads, where and how big].
       const layers = [...row.background.matchAll(/linear-gradient\(var\((--toc-[\w-]+)\), var\(\1\)\) (.*?) no-repeat/g)].map(([, colour, box]) => [colour, box])
@@ -1350,38 +1393,52 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
       expect(layers).toEqual([
         ['--toc-p1', '12px 0 / 1px var(--toc-p1-h)'],
         ['--toc-p2', '24px 0 / 1px 100%'],
+        ['--toc-p3', '36px 0 / 1px 100%'],
+        ['--toc-p4', '48px 0 / 1px 100%'],
         ['--toc-piece', '12px 50% / 9px 1px'],
         ['--toc-l1', '12px 0 / 1px 100%'],
         ['--toc-l2', '24px 0 / 1px 100%'],
+        ['--toc-l3', '36px 0 / 1px 100%'],
+        ['--toc-l4', '48px 0 / 1px 100%'],
       ])
-      // Five gradients and nothing else in the shorthand: no colour, so the wash under the mouse can be one.
+      // Nine gradients and nothing else in the shorthand: no colour, so the wash under the mouse can be one.
       expect(row.background.split('no-repeat')).toHaveLength(layers.length + 1)
       // Each property a layer reads has its default on the row itself, and draws nothing: a clear colour, the full height.
       const read = [...row.background.matchAll(/var\((--toc-[\w-]+)\)/g)].map(([, property]) => property)
       for (const property of read) expect([property, row[property]]).toEqual([property, property === '--toc-p1-h' ? '100%' : 'transparent'])
-      // Level 1: no line. Level 2: the first line and the level piece. Level 3: both lines and no level piece.
+      // Level 1: no line. Level 2: the first line and the level piece. Level 3 and deeper: a line for each level above it, and no level piece.
       const lines = (level: number): Record<string, string> => Object.fromEntries(Object.entries(of(`.toc__name[data-level='${level}']`)).filter(([property]) => property.startsWith('--toc-')))
       expect(lines(1)).toEqual({})
       expect(lines(2)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-piece': 'var(--toc-rest)' })
       expect(lines(3)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-l2': 'var(--toc-rest)' })
+      expect(lines(4)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-l2': 'var(--toc-rest)', '--toc-l3': 'var(--toc-rest)' })
+      expect(lines(5)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-l2': 'var(--toc-rest)', '--toc-l3': 'var(--toc-rest)', '--toc-l4': 'var(--toc-rest)' })
       // A line stands below the left edge of its parent level: the 12px of indent for each level.
-      expect([of(".toc__name[data-level='2']")['padding-left'], of(".toc__name[data-level='3']")['padding-left']]).toEqual(['24px', '36px'])
+      expect([2, 3, 4, 5].map((level) => of(`.toc__name[data-level='${level}']`)['padding-left'])).toEqual(['24px', '36px', '48px', '60px'])
       // The wash under the mouse is a COLOUR behind the lines: the shorthand would take them away. No rule of a name but the first sets it.
       expect(of('.toc__name:hover')).toEqual({ color: 'var(--fg)', 'background-color': 'var(--accent-soft)' })
       expect(rules().filter(([selector, body]) => /\.toc__name(?![\w-])/.test(selector) && 'background' in declared(body)).map(([selector]) => selector)).toEqual(['.toc__name'])
     })
 
-    it('the path is the accent on the line that `data-path` names; on a `1t` row the first line stops at mid-row and the level piece is the accent; `2t` has no rule of its own (D3, D7)', () => {
+    it('the path is the accent on the line that `data-path` names; on a `1t` row the first line stops at mid-row and the level piece is the accent; `2t`, `3t` and `4t` have no rule of their own (D3, D7; YAZ-3051 D8)', () => {
       expect(of(".toc__name[data-path^='1']")).toEqual({ '--toc-p1': 'var(--toc-path)' })
       expect(of(".toc__name[data-path^='2']")).toEqual({ '--toc-p2': 'var(--toc-path)' })
+      expect(of(".toc__name[data-path^='3']")).toEqual({ '--toc-p3': 'var(--toc-path)' })
+      expect(of(".toc__name[data-path^='4']")).toEqual({ '--toc-p4': 'var(--toc-path)' })
       // Half the row and half the 1px piece: the line ends on the lower edge of the piece, with no gap and no stub.
       expect(of(".toc__name[data-path='1t']")).toEqual({ '--toc-piece': 'var(--toc-path)', '--toc-p1-h': 'calc(50% + 0.5px)' })
       // The piece is grey by the level 2 rule, which has the same weight: the accent wins by its place alone.
       expect(place(".toc__name[data-path='1t']")).toBeGreaterThan(place(".toc__name[data-level='2']"))
-      // These three are each rule that reads the attribute: a level 3 name has no level piece, so `2t` is drawn as `2`.
-      expect(rules().map(([selector]) => selector).filter((selector) => selector.includes('data-path'))).toEqual([".toc__name[data-path^='1']", ".toc__name[data-path^='2']", ".toc__name[data-path='1t']"])
+      // These five are each rule that reads the attribute: a name of level 3 or deeper has no level piece, so `2t`, `3t` and `4t` are drawn as `2`, `3` and `4`.
+      expect(rules().map(([selector]) => selector).filter((selector) => selector.includes('data-path'))).toEqual([
+        ".toc__name[data-path^='1']",
+        ".toc__name[data-path^='2']",
+        ".toc__name[data-path^='3']",
+        ".toc__name[data-path^='4']",
+        ".toc__name[data-path='1t']",
+      ])
       // The path never has a colour of its own: it is clear wherever `--toc-path` is.
-      expect(rules().filter(([, body]) => /--toc-(p1|p2|piece):\s*var\(--accent\)/.test(body))).toEqual([])
+      expect(rules().filter(([, body]) => /--toc-(p1|p2|p3|p4|piece):\s*var\(--accent\)/.test(body))).toEqual([])
     })
 
     it('`data-toc-lines` on `.app` says when the lines show: always, or while the mouse or the keyboard is in the list; a turn of the wheel shows the PATH only; `off` has no rule; the two colours fade in 160 ms (D5, D8)', () => {

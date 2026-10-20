@@ -24,10 +24,17 @@
 import type { TocSource } from '@shared/types'
 
 /**
- * Three levels. Of headings, H1-H3: H4-H6 are labels inside a section here, not structure
- * (`headingFolding.ts`). Of bullets, the first three depths of the document's own lists.
+ * Up to five levels. Of headings, H1-H5 (YAZ-3051): H6 is never a row. Of bullets, the first
+ * three depths of the document's own lists, so a bullet row is level 1, 2 or 3.
  */
-export type TocLevel = 1 | 2 | 3
+export type TocLevel = 1 | 2 | 3 | 4 | 5
+
+/**
+ * The deepest heading that is a row (YAZ-3051 D3). It is NOT `DEEPEST_FOLDABLE_LEVEL`
+ * (`headingFolding.ts`, still 3): H4 and H5 are rows of the table of contents, but they do not
+ * fold and make no section line to click. H6 is never a row.
+ */
+export const DEEPEST_TOC_LEVEL = 5
 
 /** The table of contents draws nothing under this many rows, and Auto reads a note by its headings only when it has this many. */
 export const ENOUGH_ROWS = 2
@@ -40,8 +47,8 @@ export interface TocRow {
 
 export interface TocSnapshot {
   /**
-   * The note's rows in document order, by the source: on Auto every H1-H3 outside lists, or the
-   * bullets of a note with fewer than two of those; else what the reader chose — every H1-H3 of
+   * The note's rows in document order, by the source: on Auto every H1-H5 outside lists, or the
+   * bullets of a note with fewer than two of those; else what the reader chose — every H1-H5 of
    * the note, or its bullets. The component decides which of them it shows.
    */
   rows: readonly TocRow[]

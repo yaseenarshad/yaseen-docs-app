@@ -43,6 +43,7 @@ import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRen
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
+import { headingVars } from './settings/headingStyles'
 import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
@@ -387,6 +388,8 @@ export function App() {
     '--section-step-setting': settings.sectionStep,
     // Absent → bulletThreading.css falls back to the app accent.
     ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
+    // Heading styles (YAZ-3049 D2): `--hN-*` only for a changed field; app.css and bullets.css fall back to the app's look.
+    ...headingVars(settings.headingStyles),
   } as CSSProperties
 
   // The URL hash mirrors the ACTIVE tab (GRO-2069; rule 17: on boot the hash already won as
@@ -832,7 +835,7 @@ export function App() {
   const movePageToNewWindow = useCallback((path: string, id: string) => {
     // The page opens there as it looks here (YAZ-2951 D2): read before the save, while its editor is the one on show.
     const view = readPageView(id)
-    // The tab's display name goes with it (YAZ-2949 D7, S19): main hands it to the new window once.
+    // The tab's display name goes with it (YAZ-2949 D7, S19): main stores it with the new window's tab (YAZ-3057).
     const name = now.current.tabs.find((t) => t.id === id)?.name
     flushRenamedPath(path)
       .then(() => api.window.popOut(path, { view, name }))

@@ -3,20 +3,22 @@
  * findInPage.test.ts idiom) and through the `TocChannel` exactly as the host wires it.
  *
  * The contract under test:
- *  - the scan lists H1-H3 outside lists, walks a blockquote, names an empty heading
- *    `Untitled heading`, ignores H4-H6, and keeps a heading with nothing under it;
+ *  - the scan lists H1-H5 outside lists (YAZ-3051: H4 and H5 are rows, H6 never), walks a
+ *    blockquote, names an empty heading `Untitled heading`, and keeps a heading with nothing
+ *    under it; Auto counts H1-H5 when it asks for two headings;
  *  - a note with fewer than two such headings is read by its BULLETS instead: every labelled item
  *    of the document's own lists (bulleted or numbered), three levels deep, the level its depth
  *    and the text its label; a note with two headings or more never has its bullets read;
  *  - the reader may choose the source for one note (D14, the channel's `setSource`): `headings` is
- *    every H1-H3 of the note, the ones inside bullets at any depth too, and no bullet; `bullets`
+ *    every H1-H5 of the note, the ones inside bullets at any depth too, and no bullet; `bullets`
  *    is the bullets whatever headings there are; a chosen source with under two rows publishes
  *    those and never falls back; the choice is scanned at once, and one set before the editor
  *    exists is what the FIRST scan goes by;
  *  - it runs once at view creation and then 150 ms after the LAST document change — a keystroke
  *    only restarts the timer, a caret move starts none;
  *  - the channel says hidden while a bullet zoom is active;
- *  - a jump unfolds what hides its row and the row's own fold, puts the caret at the start of its
+ *  - a jump unfolds what hides its row (an H4 or H5 row too, which has no fold of its own) and the
+ *    row's own fold, puts the caret at the start of its
  *    text, focuses the note, glides to the row and lands it 24px under the scroller's edge — and
  *    never reaches `markdownUpdated`;
  *  - the scroll spy: the last shown row at or above the scroller's top + 40px, the first when
@@ -144,9 +146,20 @@ describe('the heading scan', () => {
     expect(texts(scanHeadings(view.state.doc))).toEqual(['1 Top', '2 Untitled heading'])
   })
 
-  it('ignores H4-H6', async () => {
+  it('lists H4 and H5, each at its own level, and never H6 (YAZ-3051)', async () => {
     const { view } = await mountToc(`# Top\n\n#### Four\n\n##### Five\n\n###### Six\n\n### Three\n`)
-    expect(texts(scanHeadings(view.state.doc))).toEqual(['1 Top', '3 Three'])
+    const found = scanHeadings(view.state.doc)
+    expect(texts(found)).toEqual(['1 Top', '4 Four', '5 Five', '3 Three'])
+    for (const heading of found) expect(view.state.doc.nodeAt(heading.pos)?.type.name).toBe('heading')
+  })
+
+  it('Auto counts H1-H5 for its two headings: a note whose only headings are two H4s shows them, not its bullets (YAZ-3051)', async () => {
+    const { view, channel } = await mountToc(`#### First\n\n* Alpha\n* Beta\n* Gamma\n\n#### Second\n\n###### Six\n`)
+    expect(scanNote(view.state.doc)).toEqual({ bullets: false, rows: scanHeadings(view.state.doc) })
+    expect(texts(channel.getState().rows)).toEqual(['4 First', '4 Second'])
+    // Two H6s are no headings to it: that note shows its bullets.
+    const six = await mountToc(`###### First\n\n* Alpha\n* Beta\n\n###### Second\n`)
+    expect(texts(six.channel.getState().rows)).toEqual(['1 Alpha', '1 Beta'])
   })
 
   it('keeps a heading with nothing under it — no section to fold, still a place to go', async () => {
@@ -227,6 +240,8 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
   * ## Deeper
     * ### Deepest
       * #### Four
+      * ##### Five
+      * ###### Six
 * Plain bullet
 
 > ## Quoted
@@ -243,10 +258,11 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
 `
   const from = (source: TocSource | null) => (channel: TocChannel) => channel.setSource(source)
 
-  it('Headings: every H1-H3 in document order — inside a bullet at any depth, in a blockquote, outside — each at its heading level, and no plain bullet', async () => {
+  it('Headings: every H1-H5 in document order — inside a bullet at any depth, in a blockquote, outside — each at its heading level, and no plain bullet and no H6', async () => {
     const { view } = await mountToc(MIXED)
     const found = scanAllHeadings(view.state.doc)
-    expect(texts(found)).toEqual(['1 Top', '1 In a bullet', '2 Deeper', '3 Deepest', '2 Quoted', '2 After'])
+    // "Four" and "Five" are labels of bullets four deep: no bullet row, but rows under Headings (YAZ-3051).
+    expect(texts(found)).toEqual(['1 Top', '1 In a bullet', '2 Deeper', '3 Deepest', '4 Four', '5 Five', '2 Quoted', '2 After'])
     for (const heading of found) expect(view.state.doc.nodeAt(heading.pos)?.type.name).toBe('heading')
     expect(scanNote(view.state.doc, 'headings')).toEqual({ bullets: false, rows: found })
     // Auto on the same note: the headings outside lists alone.
@@ -295,7 +311,7 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
     const publish = vi.spyOn(channel, 'publish')
     vi.useFakeTimers()
     channel.setSource('headings')
-    expect(texts(channel.getState().rows)).toEqual(['1 Top', '1 In a bullet', '2 Deeper', '3 Deepest', '2 Quoted', '2 After'])
+    expect(texts(channel.getState().rows)).toEqual(['1 Top', '1 In a bullet', '2 Deeper', '3 Deepest', '4 Four', '5 Five', '2 Quoted', '2 After'])
     channel.setSource('bullets')
     expect(texts(channel.getState().rows)).toEqual(['1 In a bullet', '2 Plain child', '2 Deeper', '3 Deepest', '1 Plain bullet'])
     channel.setSource(null)
@@ -588,6 +604,29 @@ describe('the jump', () => {
     expect(isHeadingCollapsed(view.state, sectionA)).toBe(false)
     expect(isHeadingCollapsed(view.state, sectionB)).toBe(true)
     expect(view.state.selection.from).toBe(deepDive + 1)
+  })
+
+  it('an H5 row inside a folded H2 section: every fold above it opens and no other, the caret goes to it and it flashes; it has no fold of its own (YAZ-3051)', async () => {
+    const { view, channel } = await mountToc(`# Part\n\n## Section\n\nBody.\n\n##### Five\n\nFive body.\n\n## Other\n\nOther body.\n`)
+    expect(texts(channel.getState().rows)).toEqual(['1 Part', '2 Section', '5 Five', '2 Other'])
+    const [part, section, five, other] = scanHeadings(view.state.doc).map(({ pos }) => pos)
+    setHeadingFoldSet([part, section, other], true)(view.state, view.dispatch)
+    const landing = stubLanding()
+    try {
+      channel.jump(2)
+      expect(isHeadingCollapsed(view.state, part)).toBe(false)
+      expect(isHeadingCollapsed(view.state, section)).toBe(false)
+      expect(isHeadingCollapsed(view.state, other)).toBe(true)
+      expect(isHeadingCollapsed(view.state, five)).toBe(false)
+      expect(view.state.selection.from).toBe(five + 1)
+      expect(view.hasFocus()).toBe(true)
+      // The flash finds the row's element: an h5 is a row's element now (`rowElement`).
+      const flashes = landing.animate.mock.calls.flatMap((call, i) => (JSON.stringify(call) === JSON.stringify(FLASH) ? [landing.animate.mock.contexts[i] as HTMLElement] : []))
+      expect(flashes.map((element) => element.tagName)).toEqual(['H5'])
+      expect(flashes[0].textContent).toContain('Five')
+    } finally {
+      landing.restore()
+    }
   })
 
   it('opens the heading itself when it is the folded one: the reader asked for the section, not its one line', async () => {
@@ -1072,20 +1111,27 @@ describe('the scroll spy', () => {
     expect(channel.current(ALL, scrollerAt(0))).toBe(-1)
   })
 
-  it('trusts a remembered position only while its node is an h1-h3: a heading made an H4, not yet scanned, is no row', async () => {
+  it('trusts a remembered position only while its node is an h1-h5: a heading made an H5 is still a row, one made an H6, not yet scanned, is not (YAZ-3051)', async () => {
     const { view, channel } = await mountToc(DOC)
     layOut(view, [-400, -50, 140, 141, 900])
     expect(channel.current(ALL, scrollerAt(700))).toBe(2)
     vi.useFakeTimers()
-    // "Deep dive" becomes an H4 where it stands: its remembered position still starts a node, and
-    // that node is given the very box the H3 had, so only the guard can refuse it.
+    // "Deep dive" changes level where it stands: its remembered position still starts a node, and
+    // that node is given the very box the H3 had, so only the guard decides.
     const deepDive = scanHeadings(view.state.doc)[2].pos
-    view.dispatch(view.state.tr.setNodeMarkup(deepDive, undefined, { ...view.state.doc.nodeAt(deepDive)?.attrs, level: 4 }))
-    const h4 = view.nodeDOM(deepDive) as HTMLElement
-    expect(h4.tagName).toBe('H4')
-    Object.defineProperty(h4, 'offsetParent', { configurable: true, get: () => document.body })
-    h4.getBoundingClientRect = () => new DOMRect(0, 140, 600, 30)
-    // Section A, the row above it, is the last one that is still a heading of the list.
+    const relevel = (level: number): HTMLElement => {
+      view.dispatch(view.state.tr.setNodeMarkup(deepDive, undefined, { ...view.state.doc.nodeAt(deepDive)?.attrs, level }))
+      const element = view.nodeDOM(deepDive) as HTMLElement
+      expect(element.tagName).toBe(`H${level}`)
+      Object.defineProperty(element, 'offsetParent', { configurable: true, get: () => document.body })
+      element.getBoundingClientRect = () => new DOMRect(0, 140, 600, 30)
+      return element
+    }
+    // An H5 is a row's element: it is still the current row.
+    relevel(5)
+    expect(channel.current(ALL, scrollerAt(700))).toBe(2)
+    // An H6 is not: Section A, the row above it, is the last one that is still a heading of the list.
+    relevel(6)
     expect(channel.current(ALL, scrollerAt(700))).toBe(1)
     // The scan that follows the edit drops the row.
     vi.advanceTimersByTime(SCAN_DELAY_MS)
