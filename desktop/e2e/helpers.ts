@@ -25,9 +25,11 @@ export interface LaunchOptions {
   userData: string
   /** Written to `<userData>/yaseendocs.json` before launch — a `windows[]` entry skips the native dialog. */
   seedState?: AppState
+  /** Extra environment (YAZ-3044: the fake Cloudflare's two endpoint overrides). Never the harness's own keys. */
+  env?: Record<string, string>
 }
 
-export async function launchApp({ userData, seedState }: LaunchOptions): Promise<ElectronApplication> {
+export async function launchApp({ userData, seedState, env = {} }: LaunchOptions): Promise<ElectronApplication> {
   if (seedState !== undefined) {
     await writeFile(path.join(userData, 'yaseendocs.json'), JSON.stringify(seedState, null, 2))
   }
@@ -36,7 +38,7 @@ export async function launchApp({ userData, seedState }: LaunchOptions): Promise
   // --user-data-dir, so one inherited from the calling shell would point the app at another profile.
   return _electron.launch({
     args: [MAIN_ENTRY, `--user-data-dir=${userData}`],
-    env: { ...process.env, YASEEN_DOCS_E2E: '1', YASEEN_DOCS_E2E_HIDDEN: process.env.YASEEN_DOCS_E2E_HIDDEN ?? '1', YASEEN_DOCS_USER_DATA_DIR: userData },
+    env: { ...process.env, ...env, YASEEN_DOCS_E2E: '1', YASEEN_DOCS_E2E_HIDDEN: process.env.YASEEN_DOCS_E2E_HIDDEN ?? '1', YASEEN_DOCS_USER_DATA_DIR: userData },
   })
 }
 
@@ -415,6 +417,18 @@ export async function clickMenuItem(app: ElectronApplication, itemId: string, fo
     },
     { itemId, focusWinId },
   )
+}
+
+/**
+ * Clicks app-menu item `itemId` with NO focus step (YAZ-3044): main's own target rule picks the one
+ * window. `clickMenuItem` may steal app focus, which a hidden run must never do.
+ */
+export async function clickMenuItemQuietly(app: ElectronApplication, itemId: string): Promise<void> {
+  await app.evaluate(({ Menu }, id) => {
+    const item = Menu.getApplicationMenu()?.getMenuItemById(id)
+    if (item == null) throw new Error(`no menu item with id ${id}`)
+    item.click()
+  }, itemId)
 }
 
 /** Replays macOS's `open-url` (a clicked `yaseendocs://` link) on the running app — the E1 entry point. */
