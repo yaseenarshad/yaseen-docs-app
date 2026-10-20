@@ -15,7 +15,7 @@ export const HEADING_DEFAULT_SIZES: Readonly<Record<HeadingKey, number>> = { h1:
 /** The default weight of each level: app.css gives H1 700 and the others 600. */
 export const HEADING_DEFAULT_WEIGHTS: Readonly<Record<HeadingKey, number>> = { h1: 700, h2: 600, h3: 600, h4: 600, h5: 600, h6: 600 }
 
-/** The wash of each highlight: the `==highlight==` mark's colours, which have their own dark values (app.css). */
+/** The wash of each highlight: the `==highlight==` mark's colours (app.css). Each is one see-through `rgba` that reads in both themes. */
 export const HEADING_HIGHLIGHT_VARS: Readonly<Record<HeadingHighlight, string>> = {
   yellow: 'var(--mark-bg)',
   green: 'var(--mark-bg-green)',

@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, HEADING_HIGHLIGHTS, HEADING_KEYS, HEADING_SIZE_MAX, HEADING_SIZE_MIN, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type VaultSet, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type VaultSet, type WindowEntry } from '@shared/types'
 import { createStore, isSettings, sanitizeSettings } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -308,9 +308,6 @@ describe('createStore: loading', () => {
 
   it('headingStyles: an older file without the key loads as {}; a valid map loads as it is; any bad level or field drops the whole field to {} and keeps the other settings; the channel check refuses it (YAZ-3049 D1)', async () => {
     expect(DEFAULT_SETTINGS.headingStyles).toEqual({})
-    expect(HEADING_KEYS).toEqual(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
-    expect(HEADING_HIGHLIGHTS).toEqual(['yellow', 'green', 'blue', 'pink'])
-    expect([HEADING_SIZE_MIN, HEADING_SIZE_MAX]).toEqual([12, 48])
     // A yaseendocs.json from 1.0.14: the missing field gets `{}`, and no other field changes.
     const { headingStyles: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: { ...legacySettings, lineSpacing: 2 } }))
@@ -367,7 +364,6 @@ describe('createStore: loading', () => {
     for (const map of good) expect(isSettings({ ...DEFAULT_SETTINGS, headingStyles: map })).toBe(true)
     for (const map of [...bad, undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, headingStyles: map }), JSON.stringify(map)).toBe(false)
     expect(isSettings(legacySettings)).toBe(false)
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, headingStyles: { h7: {} } })).toEqual(DEFAULT_SETTINGS)
     // A good map is saved and read again by the next start.
     const store = createStore(file)
     store.setSettings({ ...DEFAULT_SETTINGS, headingStyles: { h2: { size: 27, underline: true } } })

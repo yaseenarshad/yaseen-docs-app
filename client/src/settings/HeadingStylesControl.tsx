@@ -1,18 +1,10 @@
 /**
  * Settings › Appearance › Headings (YAZ-3050 D6): one line for each heading level, H1 to H6, all six
- * in view, so the reader sees the whole ladder of sizes at one time. Each line has:
- *
- * - the name ("Heading 2") drawn in that level's look, its size capped so the line stays one line;
- * - "−", the size ("26 px"), "+": steps of 1px from 12 to 48, and the first step starts from the
- *   rounded default (D5);
- * - "B" and "U", switches with `aria-pressed`;
- * - five dots: none, yellow, green, blue, pink, the selected one with a ring;
- * - "Reset", only on a line that differs from the default: it removes the level from the map (D1).
- *
- * Every change writes the whole settings object with only `headingStyles` changed, through
- * `withHeadingStyle`, which keeps the map to what the reader changed.
+ * in view, so the reader sees the whole ladder of sizes at one time. Every change writes the whole
+ * settings object with only `headingStyles` changed, through `withHeadingStyle` /
+ * `withoutHeadingStyle`, which keep the map to what the reader changed (D1).
  */
-import { HEADING_HIGHLIGHTS, HEADING_KEYS, HEADING_SIZE_MAX, HEADING_SIZE_MIN, type HeadingHighlight, type HeadingKey, type SettingsState } from '@shared/types'
+import { HEADING_HIGHLIGHTS, HEADING_KEYS, HEADING_SIZE_MAX, HEADING_SIZE_MIN, type HeadingHighlight, type HeadingKey, type HeadingStyles, type SettingsState } from '@shared/types'
 import type { CSSProperties } from 'react'
 import { HEADING_DEFAULT_SIZES, HEADING_DEFAULT_WEIGHTS, HEADING_HIGHLIGHT_VARS, isChanged, withHeadingStyle, withoutHeadingStyle } from './headingStyles'
 
@@ -28,7 +20,7 @@ interface Props {
 
 export function HeadingStylesControl({ settings, onChange }: Props) {
   const styles = settings.headingStyles
-  const write = (headingStyles: SettingsState['headingStyles']) => onChange({ ...settings, headingStyles })
+  const write = (headingStyles: HeadingStyles) => onChange({ ...settings, headingStyles })
   return (
     <div className="heading-styles">
       {HEADING_KEYS.map((key) => (
@@ -38,7 +30,7 @@ export function HeadingStylesControl({ settings, onChange }: Props) {
   )
 }
 
-function HeadingLine({ level, styles, write }: { level: HeadingKey; styles: SettingsState['headingStyles']; write: (next: SettingsState['headingStyles']) => void }) {
+function HeadingLine({ level, styles, write }: { level: HeadingKey; styles: HeadingStyles; write: (next: HeadingStyles) => void }) {
   const style = styles[level]
   const n = level.slice(1)
   const size = style?.size ?? HEADING_DEFAULT_SIZES[level]
@@ -89,7 +81,7 @@ function HeadingLine({ level, styles, write }: { level: HeadingKey; styles: Sett
         </button>
       </div>
       <div className="heading-styles__dots" role="group" aria-label={`Heading ${n} highlight`}>
-        <button type="button" className="heading-styles__dot heading-styles__dot--none" aria-label="None" aria-pressed={highlight === undefined} onClick={() => write(withHeadingStyle(styles, level, { highlight: undefined }))} />
+        <button type="button" className="heading-styles__dot heading-styles__dot--none" aria-label="No highlight" aria-pressed={highlight === undefined} onClick={() => write(withHeadingStyle(styles, level, { highlight: undefined }))} />
         {HEADING_HIGHLIGHTS.map((colour) => (
           <button
             key={colour}

@@ -457,7 +457,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       // B is on and U is off by default; the "none" dot is the selected one; no line has Reset.
       expect([button(el, 'h2', 'Heading 2 bold').textContent, button(el, 'h2', 'Heading 2 bold').getAttribute('aria-pressed'), button(el, 'h2', 'Heading 2 underline').getAttribute('aria-pressed')]).toEqual(['B', 'true', 'false'])
       expect(dots(el, 'h2').map((d) => [d.getAttribute('aria-label'), d.getAttribute('aria-pressed')])).toEqual([
-        ['None', 'true'],
+        ['No highlight', 'true'],
         ['Yellow', 'false'],
         ['Green', 'false'],
         ['Blue', 'false'],
@@ -481,7 +481,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       expect(written(edges.onChange)).toEqual([{ h1: { size: 47 }, h6: { size: 12 } }])
     })
 
-    it('B and U are switches: off stores the change, on again removes the field; a dot sets the highlight and "None" removes it', () => {
+    it('B and U are switches: off stores the change, on again removes the field; a dot sets the highlight and "No highlight" removes it', () => {
       const { el, onChange } = mount()
       act(() => button(el, 'h3', 'Heading 3 bold').click())
       act(() => button(el, 'h3', 'Heading 3 underline').click())

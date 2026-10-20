@@ -424,7 +424,8 @@
   gap: 4px;
 }
 
-.heading-styles__step {
+.heading-styles__step,
+.heading-styles__switch {
   width: 32px;
   padding: 6px 0;
   text-align: center;
@@ -442,12 +443,6 @@
   font-variant-numeric: tabular-nums;
   text-align: center;
   color: var(--fg);
-}
-
-.heading-styles__switch {
-  width: 32px;
-  padding: 6px 0;
-  text-align: center;
 }
 
 .heading-styles__switch--bold {
