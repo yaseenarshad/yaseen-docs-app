@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
+import type { TextFormatting } from '@shared/textFormatting'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
 import { idsAskMessage, idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
 import { SettingsDialog } from './SettingsDialog'
@@ -122,7 +123,8 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
     })
 
 /** The rows of each page with no vault open, in registry order (registry.tsx). */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'headingStyles', 'commentsOrder']
+/** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder']
 const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
 const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents']
@@ -130,7 +132,7 @@ const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'startu
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 const HOTKEY_ROWS = ['hotkeys-keyboard', 'hotkeys-views', 'hotkeys-window', 'hotkeys-mouse']
 const THREADING_HINT = 'Guide lines that connect nested bullets.'
-const HEADINGS_HINT = 'How each heading level looks in every note.'
+const TEXT_FORMATTING_HINT = 'How text looks in every note of this vault.'
 const TOC_HINT = 'The headings or the bullets of a note, at its right edge.'
 const SECTION_INDENT_HINT = 'Text stands below its heading, with lines that show the sections. Turn it on for a note from the page cog. The purple path uses the Bullet threading settings above.'
 
@@ -217,9 +219,9 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
   it('group titles and hints render on their own page; untitled groups are plain rows', () => {
     const { el } = mount()
     const hints = () => [...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)
-    // Appearance, as it opens: Comments is its last group, after Spacing and Headings (YAZ-3050).
-    expect(groupTitles(el)).toEqual(['Spacing', 'Headings', 'Comments'])
-    expect(hints()).toEqual([HEADINGS_HINT])
+    // Appearance, as it opens with no vault: Comments is its last group, after Spacing (Text formatting needs a vault, YAZ-3068).
+    expect(groupTitles(el)).toEqual(['Spacing', 'Comments'])
+    expect(hints()).toEqual([])
     expect(row(el, 'commentsOrder')?.querySelector('.setting__label')?.textContent).toBe('Order')
     expect(row(el, 'commentsOrder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Comments')
     // It starts with an untitled group: Theme and Content width sit straight under the section title.
@@ -427,35 +429,64 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(rowButtons(saved.el, 'tocLines').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true'])
   })
 
-  describe('Heading styles (YAZ-3050 D6)', () => {
-    const line = (el: HTMLElement, level: string) => row(el, 'headingStyles')?.querySelector<HTMLElement>(`.heading-styles__line[data-level="${level}"]`) as HTMLElement
+  describe('Text formatting (YAZ-3068; D14, D15, D16 on YAZ-3048; the heading lines YAZ-3050 D6)', () => {
+    const vaultOf = (root: string, name: string, formatting: TextFormatting = {}) => ({ root, name, state: { formatting, save: vi.fn() } })
+    type Vault = ReturnType<typeof vaultOf>
+    /** The dialog in a window with these vaults; `active` is the active tab's vault. `rerender` hands over the vaults as App would after a change. */
+    const mountTf = (vaults: Vault[], active = vaults[0].root) => {
+      const onChange = vi.fn()
+      container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      const render = (list: Vault[]) => act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, textFormatting: { vaults: list, activeRoot: active } }} onClose={() => undefined} />))
+      render(vaults)
+      return { el: container, onChange, rerender: render }
+    }
+    const tf = (el: HTMLElement) => row(el, 'textFormatting') as HTMLElement
+    const line = (el: HTMLElement, level: string) => tf(el).querySelector<HTMLElement>(`.heading-styles__line[data-level="${level}"]`) as HTMLElement
     const button = (el: HTMLElement, level: string, name: string) => line(el, level).querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`) as HTMLButtonElement
+    const sizes = (el: HTMLElement) => [...tf(el).querySelectorAll<HTMLElement>('.heading-styles__line')].map((l) => [l.dataset.level, l.querySelector('.heading-styles__size')?.textContent])
     const dots = (el: HTMLElement, level: string) => [...line(el, level).querySelectorAll<HTMLButtonElement>(`[role="group"][aria-label="Heading ${level.slice(1)} highlight"] button`)]
-    const written = (onChange: ReturnType<typeof vi.fn>) => onChange.mock.calls.map((call) => (call[0] as SettingsState).headingStyles)
+    const resets = (el: HTMLElement) => [...tf(el).querySelectorAll<HTMLButtonElement>('button')].filter((b) => b.textContent === 'Reset').map((b) => b.getAttribute('aria-label'))
+    const picker = (el: HTMLElement) => tf(el).querySelector<HTMLSelectElement>('select[aria-label="Vault"]')
+    const pick = (el: HTMLElement, index: number) =>
+      act(() => {
+        const select = picker(el) as HTMLSelectElement
+        select.value = String(index)
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+    const saved = (vault: Vault) => vault.state.save.mock.calls.map((call) => call[0] as TextFormatting)
 
-    it('one wide row "Heading styles" in the group "Headings", after Spacing on the Appearance page; six lines H1 to H6, each named in its own look with its rounded default size', () => {
-      const { el } = mount()
-      const group = row(el, 'headingStyles')?.closest('.settings-group')
-      expect(row(el, 'headingStyles')?.closest('[data-section]')?.id).toBe('settings-appearance')
-      expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Headings')
-      expect(group?.querySelector('.settings-group__hint')?.textContent).toBe(HEADINGS_HINT)
-      expect([...(group?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual(['headingStyles'])
-      expect(row(el, 'headingStyles')?.classList.contains('setting--wide')).toBe(true)
-      expect(row(el, 'headingStyles')?.querySelector('.setting__label')?.textContent).toBe('Heading styles')
-      const lines = [...(row(el, 'headingStyles')?.querySelectorAll<HTMLElement>('.heading-styles__line') ?? [])]
-      expect(lines.map((l) => [l.dataset.level, l.querySelector('.heading-styles__name')?.textContent, l.querySelector('.heading-styles__size')?.textContent])).toEqual([
-        ['h1', 'Heading 1', '29 px'],
-        ['h2', 'Heading 2', '26 px'],
-        ['h3', 'Heading 3', '23 px'],
-        ['h4', 'Heading 4', '20 px'],
-        ['h5', 'Heading 5', '18 px'],
-        ['h6', 'Heading 6', '16 px'],
+    it('one vault: the group "Text formatting" after Spacing, its hint, one bare row (no label on screen, no gap) and no dropdown; a Text line, then H1 to H6 at their rounded default sizes', () => {
+      const { el } = mountTf([vaultOf('/notes', 'Notes')])
+      expect(groupTitles(el)).toEqual(['Spacing', 'Text formatting', 'Comments'])
+      const group = tf(el).closest('.settings-group') as HTMLElement
+      expect(group.querySelector('.settings-group__hint')?.textContent).toBe(TEXT_FORMATTING_HINT)
+      // No "Vault: name" line: the dropdown replaces it (D15), and with one vault there is none.
+      expect(group.querySelectorAll('.settings-group__hint')).toHaveLength(1)
+      expect([...group.querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting)).toEqual(['textFormatting'])
+      // The bare row (D16): the control alone, the label only for a screen reader.
+      expect(tf(el).classList.contains('setting--bare')).toBe(true)
+      expect(tf(el).querySelector('.setting__text, .setting__label')).toBeNull()
+      expect([tf(el).getAttribute('role'), tf(el).getAttribute('aria-label')]).toEqual(['group', 'Text formatting'])
+      expect(picker(el)).toBeNull()
+      expect(sizes(el)).toEqual([
+        ['text', '16 px'],
+        ['h1', '29 px'],
+        ['h2', '26 px'],
+        ['h3', '23 px'],
+        ['h4', '20 px'],
+        ['h5', '18 px'],
+        ['h6', '16 px'],
       ])
-      // The name in its level's look: H1 bold at 700, the others at 600; no underline, no wash.
+      expect(line(el, 'text').querySelector('.heading-styles__name')?.textContent).toBe('Text')
+      // The Text line is size only (D14): "−" and "+", no B, U or dots.
+      expect([...line(el, 'text').querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Text smaller', 'Text larger'])
+      expect(resets(el)).toEqual([])
+      // The heading lines as in 1.0.15: the name in its level's look, B on, U off, the "none" dot.
       const name = (level: string) => line(el, level).querySelector<HTMLElement>('.heading-styles__name')?.style
       expect([name('h1')?.fontWeight, name('h2')?.fontWeight, name('h1')?.textDecoration, name('h2')?.backgroundColor]).toEqual(['700', '600', 'none', ''])
-      // B is on and U is off by default; the "none" dot is the selected one; no line has Reset.
-      expect([button(el, 'h2', 'Heading 2 bold').textContent, button(el, 'h2', 'Heading 2 bold').getAttribute('aria-pressed'), button(el, 'h2', 'Heading 2 underline').getAttribute('aria-pressed')]).toEqual(['B', 'true', 'false'])
+      expect([button(el, 'h2', 'Heading 2 bold').getAttribute('aria-pressed'), button(el, 'h2', 'Heading 2 underline').getAttribute('aria-pressed')]).toEqual(['true', 'false'])
       expect(dots(el, 'h2').map((d) => [d.getAttribute('aria-label'), d.getAttribute('aria-pressed')])).toEqual([
         ['No highlight', 'true'],
         ['Yellow', 'false'],
@@ -463,62 +494,115 @@ describe('SettingsDialog rows write through the popover contracts', () => {
         ['Blue', 'false'],
         ['Pink', 'false'],
       ])
-      expect(row(el, 'headingStyles')?.textContent).not.toContain('Reset')
     })
 
-    it('"+" and "−" step 1px from the rounded default and write only that level and field; they stop at 12 and 48', () => {
-      const { el, onChange } = mount()
+    it('the Text line: steps of 1px from 16, stops at 12 and 24, "Reset" only when it is not 16; back at 16 the key goes; the headings with no size follow it (D14, D17)', () => {
+      const plain = vaultOf('/notes', 'Notes')
+      const { el, rerender } = mountTf([plain])
+      act(() => button(el, 'text', 'Text larger').click())
+      act(() => button(el, 'text', 'Text smaller').click())
+      expect(saved(plain)).toEqual([{ text: { size: 17 } }, { text: { size: 15 } }])
+      // Text 18: the headings with no size grow with it, an H2 the reader set stays (D17's example).
+      const big = vaultOf('/notes', 'Notes', { text: { size: 18 }, h3: { size: 21 } })
+      rerender([big])
+      expect(sizes(el)).toEqual([
+        ['text', '18 px'],
+        ['h1', '32 px'],
+        ['h2', '29 px'],
+        ['h3', '21 px'],
+        ['h4', '23 px'],
+        ['h5', '20 px'],
+        ['h6', '18 px'],
+      ])
+      expect(resets(el)).toEqual(['Reset text', 'Reset heading 3'])
+      // The first "+" of a heading with no size starts from the number it shows.
       act(() => button(el, 'h2', 'Heading 2 larger').click())
-      act(() => button(el, 'h1', 'Heading 1 smaller').click())
-      expect(onChange.mock.calls[0][0]).toEqual({ ...DEFAULT_SETTINGS, headingStyles: { h2: { size: 27 } } })
-      expect(written(onChange)).toEqual([{ h2: { size: 27 } }, { h1: { size: 28 } }])
-      unmount()
-      const edges = mount({ ...DEFAULT_SETTINGS, headingStyles: { h1: { size: 48 }, h6: { size: 12 } } })
-      expect(line(edges.el, 'h1').querySelector('.heading-styles__size')?.textContent).toBe('48 px')
-      expect([button(edges.el, 'h1', 'Heading 1 larger').disabled, button(edges.el, 'h1', 'Heading 1 smaller').disabled]).toEqual([true, false])
-      expect([button(edges.el, 'h6', 'Heading 6 smaller').disabled, button(edges.el, 'h6', 'Heading 6 larger').disabled]).toEqual([true, false])
-      act(() => button(edges.el, 'h1', 'Heading 1 smaller').click())
-      expect(written(edges.onChange)).toEqual([{ h1: { size: 47 }, h6: { size: 12 } }])
+      act(() => button(el, 'text', 'Reset text').click())
+      expect(saved(big)).toEqual([{ text: { size: 18 }, h2: { size: 30 }, h3: { size: 21 } }, { h3: { size: 21 } }])
+      // A step back to 16 is the app's look: the key goes, as with Reset.
+      const near = vaultOf('/notes', 'Notes', { text: { size: 17 }, h2: { underline: true } })
+      rerender([near])
+      act(() => button(el, 'text', 'Text smaller').click())
+      expect(saved(near)).toEqual([{ h2: { underline: true } }])
+      // The edges.
+      rerender([vaultOf('/notes', 'Notes', { text: { size: 24 } })])
+      expect([button(el, 'text', 'Text larger').disabled, button(el, 'text', 'Text smaller').disabled]).toEqual([true, false])
+      rerender([vaultOf('/notes', 'Notes', { text: { size: 12 } })])
+      expect([button(el, 'text', 'Text larger').disabled, button(el, 'text', 'Text smaller').disabled]).toEqual([false, true])
     })
 
-    it('B and U are switches: off stores the change, on again removes the field; a dot sets the highlight and "No highlight" removes it', () => {
-      const { el, onChange } = mount()
+    it('the heading lines write only that level and field: "+"/"−" stop at 12 and 48, B and U are switches, a dot sets the highlight, "Reset" removes the level; the Text size stays', () => {
+      const vault = vaultOf('/notes', 'Notes', { text: { size: 17 }, h1: { size: 48 }, h6: { size: 12 }, h5: { underline: true } })
+      const { el } = mountTf([vault])
+      expect([button(el, 'h1', 'Heading 1 larger').disabled, button(el, 'h6', 'Heading 6 smaller').disabled]).toEqual([true, true])
+      act(() => button(el, 'h1', 'Heading 1 smaller').click())
       act(() => button(el, 'h3', 'Heading 3 bold').click())
       act(() => button(el, 'h3', 'Heading 3 underline').click())
       act(() => dots(el, 'h4')[3].click())
-      expect(written(onChange)).toEqual([{ h3: { bold: false } }, { h3: { underline: true } }, { h4: { highlight: 'blue' } }])
-      unmount()
-      const saved = mount({ ...DEFAULT_SETTINGS, headingStyles: { h3: { bold: false, underline: true }, h4: { highlight: 'blue' } } })
-      expect([button(saved.el, 'h3', 'Heading 3 bold').getAttribute('aria-pressed'), button(saved.el, 'h3', 'Heading 3 underline').getAttribute('aria-pressed')]).toEqual(['false', 'true'])
-      expect(dots(saved.el, 'h4').map((d) => d.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'false', 'true', 'false'])
-      // The name shows the look: normal weight and underlined; the H4 name has the blue wash.
-      const name = (level: string) => line(saved.el, level).querySelector<HTMLElement>('.heading-styles__name')?.style
-      expect([name('h3')?.fontWeight, name('h3')?.textDecoration]).toEqual(['400', 'underline'])
-      expect(name('h4')?.getPropertyValue('background-color')).toBe('var(--mark-bg-blue)')
-      act(() => button(saved.el, 'h3', 'Heading 3 bold').click())
-      act(() => button(saved.el, 'h3', 'Heading 3 underline').click())
-      act(() => dots(saved.el, 'h4')[0].click())
-      expect(written(saved.onChange)).toEqual([
-        { h3: { underline: true }, h4: { highlight: 'blue' } },
-        { h3: { bold: false }, h4: { highlight: 'blue' } },
-        { h3: { bold: false, underline: true } },
+      act(() => button(el, 'h5', 'Reset heading 5').click())
+      const base = { text: { size: 17 }, h1: { size: 48 }, h6: { size: 12 }, h5: { underline: true } }
+      expect(saved(vault)).toEqual([
+        { ...base, h1: { size: 47 } },
+        { ...base, h3: { bold: false } },
+        { ...base, h3: { underline: true } },
+        { ...base, h4: { highlight: 'blue' } },
+        { text: { size: 17 }, h1: { size: 48 }, h6: { size: 12 } },
       ])
     })
 
-    it('"Reset" shows only on a changed line and removes that level\'s key; the other levels stay', () => {
-      const { el, onChange } = mount({ ...DEFAULT_SETTINGS, headingStyles: { h2: { size: 30, highlight: 'pink' }, h5: { underline: true } } })
-      const resets = () => [...(row(el, 'headingStyles')?.querySelectorAll<HTMLButtonElement>('button') ?? [])].filter((b) => b.textContent === 'Reset').map((b) => b.getAttribute('aria-label'))
-      expect(resets()).toEqual(['Reset heading 2', 'Reset heading 5'])
-      act(() => button(el, 'h2', 'Reset heading 2').click())
-      expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, headingStyles: { h5: { underline: true } } })
+    it('two vaults: a "Vault" dropdown above the lines, in the window\'s order, that starts on the active tab\'s vault; switching shows the other vault\'s values, and a change saves only the chosen vault', () => {
+      const notes = vaultOf('/notes', 'Notes', { h2: { size: 21 } })
+      const work = vaultOf('/work', 'work', { text: { size: 18 } })
+      const { el } = mountTf([notes, work], '/work')
+      const select = picker(el) as HTMLSelectElement
+      expect([...select.options].map((o) => o.textContent)).toEqual(['Notes', 'work'])
+      // Above the lines, directly under the hint.
+      expect(tf(el).querySelector(':scope > .text-formatting > :first-child')?.classList.contains('text-formatting__vault')).toBe(true)
+      expect(select.value).toBe('1')
+      expect(sizes(el).slice(0, 3)).toEqual([
+        ['text', '18 px'],
+        ['h1', '32 px'],
+        ['h2', '29 px'],
+      ])
+      act(() => button(el, 'text', 'Text larger').click())
+      expect(saved(work)).toEqual([{ text: { size: 19 } }])
+      pick(el, 0)
+      expect(sizes(el).slice(0, 3)).toEqual([
+        ['text', '16 px'],
+        ['h1', '29 px'],
+        ['h2', '21 px'],
+      ])
+      act(() => button(el, 'h2', 'Heading 2 larger').click())
+      expect(saved(notes)).toEqual([{ h2: { size: 22 } }])
+      expect(saved(work)).toHaveLength(1)
     })
 
-    it('search finds the row by its words: "underline", "h2", "highlight", "font", "size", "bold"', () => {
+    it('the chosen vault leaves the window while Settings is open: the dropdown falls back to the first vault; with one vault left it goes', () => {
+      const [a, b, c] = [vaultOf('/a', 'A'), vaultOf('/b', 'B', { text: { size: 20 } }), vaultOf('/c', 'C', { text: { size: 13 } })]
+      const { el, rerender } = mountTf([a, b, c], '/b')
+      expect(picker(el)?.value).toBe('1')
+      rerender([c, a])
+      expect(picker(el)?.value).toBe('0')
+      expect(sizes(el)[0]).toEqual(['text', '13 px'])
+      rerender([a])
+      expect(picker(el)).toBeNull()
+      expect(sizes(el)[0]).toEqual(['text', '16 px'])
+    })
+
+    it('a window with no vault (the Welcome window) has no group, and search does not find it', () => {
       const { el } = mount()
-      for (const query of ['underline', 'h2', 'highlight', 'font', 'size', 'bold']) {
+      expect(groupTitles(el)).not.toContain('Text formatting')
+      expect(row(el, 'textFormatting')).toBeNull()
+      type(searchInput(el), 'headings')
+      expect(rowIds(el)).not.toContain('textFormatting')
+    })
+
+    it('search finds the row by its words, under its breadcrumb: "text", "headings", "vault", "h2", "underline", "highlight", "size"', () => {
+      const { el } = mountTf([vaultOf('/notes', 'Notes')])
+      for (const query of ['text', 'headings', 'vault', 'h2', 'underline', 'highlight', 'size', 'text formatting']) {
         type(searchInput(el), query)
-        expect(rowIds(el), query).toContain('headingStyles')
-        expect(headings(el), query).toContain('Appearance › Headings')
+        expect(rowIds(el), query).toContain('textFormatting')
+        expect(headings(el), query).toContain('Appearance › Text formatting')
       }
     })
   })

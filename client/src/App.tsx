@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
+import type { TextFormatting } from '@shared/textFormatting'
 import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CommentsOrder, type PageView, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -38,7 +39,7 @@ import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRen
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
-import { headingVars } from './settings/headingStyles'
+import { textVars } from './settings/headingStyles'
 import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
@@ -69,6 +70,22 @@ const OVERVIEW_CLOSED = { phase: 'closed', from: null } as const
 // with it: a folder's Board runs layout animation after every render, so an unrelated right
 // header click would otherwise remeasure and visibly nudge its cards.
 const RetainedEditor = memo(Editor)
+
+/**
+ * A vault's text formatting as the style of its page layers (YAZ-3067 D12): `--text-size` and the
+ * `--hN-*` variables. One object for each formatting object, so a layer that renders again with
+ * the same formatting hands React the same style, and a change costs one style update on the
+ * layers of that vault only.
+ */
+const layerStyles = new WeakMap<TextFormatting, CSSProperties>()
+function layerStyleOf(formatting: TextFormatting): CSSProperties {
+  let style = layerStyles.get(formatting)
+  if (style === undefined) {
+    style = textVars(formatting) as CSSProperties
+    layerStyles.set(formatting, style)
+  }
+  return style
+}
 
 /**
  * Keeps the current-page navigation function stable for the lifetime of one retained right
@@ -369,9 +386,19 @@ export function App() {
     '--section-step-setting': settings.sectionStep,
     // Absent → bulletThreading.css falls back to the app accent.
     ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
-    // Heading styles (YAZ-3049 D2): `--hN-*` only for a changed field; app.css and bullets.css fall back to the app's look.
-    ...headingVars(settings.headingStyles),
   } as CSSProperties
+  /**
+   * The text formatting of the vault that holds `path` (YAZ-3067 D12), as the style of the layer
+   * that shows it: two vaults in one window look different. Each variable is there only for a
+   * changed field; app.css and bullets.css fall back to the app's look.
+   */
+  const textVarsFor = (path: string): CSSProperties => layerStyleOf(scopeOf(path).textFormatting.formatting)
+  /**
+   * Settings › Text formatting (YAZ-3068 D15): every vault of the window, in its order, and the active
+   * tab's vault, where the "Vault" dropdown starts. None in the Welcome window, so the group is not there.
+   */
+  const settingsTextFormatting =
+    root === null ? undefined : { vaults: vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? storage.vaultName(roots[i]), state: vault.textFormatting })), activeRoot: active.root ?? roots[0] }
 
   // The URL hash mirrors the ACTIVE tab (GRO-2069; rule 17: on boot the hash already won as
   // the active tab in bootTabs, so this first run is a no-op re-write of the same hash).
@@ -1304,7 +1331,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined }} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, textFormatting: settingsTextFormatting }} onClose={closeSettings} />}
       {whatsNewOpen && (
         <Suspense fallback={null}>
           <WhatsNewSheet update={update} onClose={closeWhatsNew} />
@@ -1481,6 +1508,7 @@ export function App() {
                 <div
                   key={id}
                   data-tab={id}
+                  style={textVarsFor(path)}
                   className={
                     id !== shown || (overviewOpen && id !== overview.from)
                       ? 'tabstack__layer tabstack__layer--hidden'
@@ -1505,7 +1533,7 @@ export function App() {
                 <ReviewMessage session={session} onClose={review.close} />
               ) : (
                 reviewLayer === null && (
-                  <div key={session.path} className="tabstack__layer">
+                  <div key={session.path} className="tabstack__layer" style={textVarsFor(session.path)}>
                     <RetainedEditor {...editorPropsFor(session.path)} path={session.path} onOpenFile={openBackground} onOpenFileBackground={openBackground} />
                   </div>
                 )
@@ -1537,7 +1565,7 @@ export function App() {
               />
             )}
             {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
-            {panelPath !== null && <QuickLook path={panelPath} title={nameOf(panelPath)} watch={scopeOf(panelPath).watch} wikilinks={scopeOf(panelPath).wikilinks} onClose={closePreview} />}
+            {panelPath !== null && <QuickLook path={panelPath} title={nameOf(panelPath)} watch={scopeOf(panelPath).watch} wikilinks={scopeOf(panelPath).wikilinks} style={textVarsFor(panelPath)} onClose={closePreview} />}
           </div>
           {session !== null && session.path !== null && <ReviewAnswers onKeep={review.keep} onSkip={review.skip} />}
         </div>
@@ -1566,6 +1594,7 @@ export function App() {
               <div
                 key={path}
                 data-testid={`right-layer-${path}`}
+                style={textVarsFor(path)}
                 className={path === rightPanel.expanded ? 'right-panel__editor-layer' : 'right-panel__editor-layer right-panel__editor-layer--hidden'}
               >
                 <RightWorkspaceEditor

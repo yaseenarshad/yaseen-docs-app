@@ -782,8 +782,6 @@ export interface SettingsState {
   tableOfContentsWidth: number
   /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
   tocLines: TocLines
-  /** Heading styles (YAZ-3049 D1): how each level H1-H6 looks in every note. Only the levels and fields the reader changed; `{}` is the app's own look. View-only; never written into the file. */
-  headingStyles: HeadingStyles
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
@@ -799,7 +797,7 @@ export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
 export type TocLines = 'hover' | 'always' | 'off'
 export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
 
-/** Heading styles (YAZ-3049 D5): the levels a style can change, in the order Settings shows them. */
+/** Heading styles (YAZ-3049 D5): the levels a style can change, in the order Settings shows them. Since 1.0.16 they are saved in each vault (`shared/textFormatting.ts`, YAZ-3066). */
 export const HEADING_KEYS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const
 export type HeadingKey = (typeof HEADING_KEYS)[number]
 
@@ -898,7 +896,6 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableOfContents: 'auto',
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
-  headingStyles: {},
 }
 
 export interface WindowBounds {

@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
+import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
 import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type PageView, type SidebarTab, type TreeNode, type TreeResponse, type UpdateState, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
@@ -963,22 +964,6 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     // It is a gate in the stylesheet and no prop of an editor: the open note is not drawn again, and the other gates stay.
     expect(captured.editors.length).toBe(renders)
     expect([app.getAttribute('data-section-lines'), app.getAttribute('data-content-width')]).toEqual(['always', 'narrow'])
-  })
-
-  it('hands the heading styles to app.css as `--hN-*` variables on the app container, only for a changed field; another window\'s change lands live, and no editor renders for it (YAZ-3049 D2)', async () => {
-    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
-    const app = el.querySelector<HTMLElement>('.app')!
-    const headingVarsOn = () => [...app.style].filter((name) => /^--h\d-/.test(name)).sort()
-    // `{}`: no variable, so every heading keeps the look of 1.0.14.
-    expect(headingVarsOn()).toEqual([])
-    const renders = captured.editors.length
-    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, headingStyles: { h2: { size: 27, highlight: 'green' }, h5: { bold: false } } } }))
-    expect(headingVarsOn()).toEqual(['--h2-bg', '--h2-size', '--h5-weight'])
-    expect(app.style.getPropertyValue('--h2-size')).toBe('27px')
-    // Reset of every level: the variables leave again.
-    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, headingStyles: {} } }))
-    expect(headingVarsOn()).toEqual([])
-    expect(captured.editors.length).toBe(renders)
   })
 })
 
@@ -3828,9 +3813,10 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       watch: ['/v', '/v'],
       properties: [['/v'], ['/v']],
       sync: [['/v'], ['/v']],
-      config: [['/v', 'review.json'], ['/v', 'review.json']],
+      // The vault's review settings and its text formatting (YAZ-3066), each read once for each mount effect.
+      config: [['/v', 'review.json'], ['/v', 'text-formatting.json'], ['/v', 'review.json'], ['/v', 'text-formatting.json']],
       coldDiff: [['/v']],
-      subscriptions: [2, 2, 4],
+      subscriptions: [2, 2, 6],
     }
     expect(asked()).toEqual(boot)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -3876,6 +3862,57 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   /** Main says a vault's file changed, to every listener of the push. */
   const push = <T,>(spy: { mock: { calls: unknown[][] } }, payload: T) => (spy.mock.calls as [(p: T) => void][]).forEach(([listener]) => listener(payload))
 
+  it('each page layer carries its own vault\'s text formatting; a change in one vault restyles only its layers, and no editor renders again (YAZ-3067 D12)', async () => {
+    const files: Record<string, unknown> = { '/v': { version: 1, text: { size: 18 }, h2: { size: 21 } }, '/w': { version: 1, h2: { size: 30, underline: true } } }
+    const { bridge, el } = await mount(defaultAppState(), { ...TWO, rightPanel: { open: true, width: 440, items: ['/w/c.md'], expanded: '/w/c.md' } }, {}, (b) => {
+      NOTES(b)
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === TEXT_FORMATTING_FILE && vault !== undefined ? (files[vault] ?? null) : null))
+    })
+    show('/w/b.md')
+    await act(async () => {})
+    const layer = (path: string) => el.querySelector(`.tabstack__layer [data-editor][data-path="${path}"]`)?.closest<HTMLElement>('.tabstack__layer') as HTMLElement
+    const right = () => el.querySelector<HTMLElement>('[data-testid="right-layer-/w/c.md"]') as HTMLElement
+    const vars = (node: HTMLElement) => Object.fromEntries([...node.style].filter((name) => name.startsWith('--')).map((name) => [name, node.style.getPropertyValue(name)]))
+    expect(vars(layer('/v/a.md'))).toEqual({ '--text-size': '18px', '--h2-size': '21px' })
+    expect(vars(layer('/w/b.md'))).toEqual({ '--h2-size': '30px', '--h2-decoration': 'underline' })
+    expect(vars(right())).toEqual(vars(layer('/w/b.md')))
+    // Nothing on the app container any more: a variable there would reach every vault of the window.
+    expect([...el.querySelector<HTMLElement>('.app')!.style].filter((name) => /^--(h\d|text)-/.test(name))).toEqual([])
+    const before = { v: renders('/v/a.md'), w: renders('/w/b.md'), c: renders('/w/c.md') }
+    const styleOfV = layer('/v/a.md').getAttribute('style')
+    // Sync brings a new file into /w: its layers change, the /v layer keeps its style, and no editor renders again.
+    files['/w'] = { version: 1, text: { size: 14 } }
+    await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: TEXT_FORMATTING_FILE }))
+    expect(vars(layer('/w/b.md'))).toEqual({ '--text-size': '14px' })
+    expect(vars(right())).toEqual({ '--text-size': '14px' })
+    expect(layer('/v/a.md').getAttribute('style')).toBe(styleOfV)
+    expect({ v: renders('/v/a.md'), w: renders('/w/b.md'), c: renders('/w/c.md') }).toEqual(before)
+    // The file is removed: the app's look, no variable at all.
+    files['/w'] = null
+    await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: TEXT_FORMATTING_FILE }))
+    expect(vars(layer('/w/b.md'))).toEqual({})
+  })
+
+  it('Settings › Text formatting lists the window\'s vaults by name (the folder name with none), starts on the active tab\'s vault, and a change writes only that vault\'s file (YAZ-3068 D15)', async () => {
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), { ...TWO, file: '/w/b.md' }, {}, NOTES)
+    act(() => emitSettings())
+    const select = el.querySelector<HTMLSelectElement>('[data-setting="textFormatting"] select[aria-label="Vault"]') as HTMLSelectElement
+    expect([...select.options].map((o) => o.textContent)).toEqual(['v', 'w'])
+    expect(select.value).toBe('1')
+    act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Text larger"]')?.click())
+    expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', TEXT_FORMATTING_FILE, { version: 1, text: { size: 17 } }]])
+    // The page layer of /w takes the new size at once; nothing reaches the layer of /v.
+    await act(async () => {})
+    expect(el.querySelector<HTMLElement>('.tabstack__layer [data-path="/w/b.md"]')?.closest<HTMLElement>('.tabstack__layer')?.style.getPropertyValue('--text-size')).toBe('17px')
+  })
+
+  it('the Welcome window (no vault) has no Text formatting group in Settings', async () => {
+    const { el, emitSettings } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
+    act(() => emitSettings())
+    expect(el.querySelector('.settings-dialog')).not.toBeNull()
+    expect(el.querySelector('[data-setting="textFormatting"]')).toBeNull()
+  })
+
   it('each mounted editor gets the root and the index source of ITS vault, and each vault has its own watcher and index (S30)', async () => {
     const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
     show('/w/b.md')
@@ -3891,7 +3928,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)
       expect(callsFor(bridge.github.status, vault)).toBe(2)
-      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(2)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(4) // review.json and text-formatting.json (YAZ-3066)
       expect(callsFor(bridge.coldDiff, vault)).toBe(1)
     }
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')

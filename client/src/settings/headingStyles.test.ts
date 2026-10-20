@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HEADING_KEYS } from '@shared/types'
-import { HEADING_DEFAULT_SIZES, headingVars, isChanged, withHeadingStyle, withoutHeadingStyle } from './headingStyles'
+import { defaultHeadingSize, HEADING_SCALE, headingVars, isChanged, textVars, withHeadingStyle, withoutHeadingStyle } from './headingStyles'
 
 describe('headingVars (YAZ-3049 D2)', () => {
   it('an empty map sets no variable, so every heading keeps the look of 1.0.14', () => {
@@ -27,10 +27,20 @@ describe('headingVars (YAZ-3049 D2)', () => {
     expect(Object.keys(headingVars({ h1: { size: 30, bold: false, underline: true, highlight: 'pink' } })).some((name) => name.endsWith('-width'))).toBe(false)
   })
 
-  it('the default sizes are the em scale × 16px, rounded (D5)', () => {
-    const scale = { h1: 1.802, h2: 1.602, h3: 1.424, h4: 1.266, h5: 1.125, h6: 1 }
-    for (const key of HEADING_KEYS) expect(HEADING_DEFAULT_SIZES[key]).toBe(Math.round(scale[key] * 16))
-    expect(Object.values(HEADING_DEFAULT_SIZES)).toEqual([29, 26, 23, 20, 18, 16])
+  it('the default sizes are the em scale × the Text size, rounded: 16px by default (D5; YAZ-3067 D17)', () => {
+    expect(HEADING_SCALE).toEqual({ h1: 1.802, h2: 1.602, h3: 1.424, h4: 1.266, h5: 1.125, h6: 1 })
+    expect(HEADING_KEYS.map((key) => defaultHeadingSize(key))).toEqual([29, 26, 23, 20, 18, 16])
+    // D17's example: Text 18px gives an H2 with no size of its own 29px.
+    expect(defaultHeadingSize('h2', 18)).toBe(29)
+    expect(HEADING_KEYS.map((key) => defaultHeadingSize(key, 24))).toEqual([43, 38, 34, 30, 27, 24])
+    expect(HEADING_KEYS.map((key) => defaultHeadingSize(key, 12))).toEqual([22, 19, 17, 15, 14, 12])
+  })
+
+  it('textVars: `--text-size` only when the Text size is set, then the heading variables (YAZ-3067 D12)', () => {
+    expect(textVars({})).toEqual({})
+    expect(textVars({ text: {} })).toEqual({})
+    expect(textVars({ text: { size: 18 } })).toEqual({ '--text-size': '18px' })
+    expect(textVars({ text: { size: 14 }, h2: { size: 21, underline: true } })).toEqual({ '--text-size': '14px', '--h2-size': '21px', '--h2-decoration': 'underline' })
   })
 })
 

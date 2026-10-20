@@ -1,17 +1,23 @@
 /**
- * Heading styles (YAZ-3049 D2): the saved map (`SettingsState.headingStyles`) becomes CSS custom
- * properties on `.app`, the same way as line spacing. `app.css` (each `h1`-`h6` rule, and the
- * `.heading-text` spans of a heading for the wash) and `bullets.css` (the label row of a bullet
- * that starts with a heading) read them, and each falls back to the look of 1.0.14. Only a
+ * Text formatting (YAZ-3049 D2; YAZ-3067 D12, D17): a vault's saved formatting
+ * (`.yaseendocs/text-formatting.json`, `useTextFormatting`) becomes CSS custom properties on each
+ * page layer of that vault: the tab layer, the review layer, the side panel layer and the search
+ * preview. `app.css` reads `--text-size` as the editor's base size, and each `h1`-`h6` rule and the
+ * `.heading-text` spans of a heading read the `--hN-*` variables; `bullets.css` (the label row of a
+ * bullet that starts with a heading) reads both. Each falls back to the look of 1.0.14. Only a
  * changed field gets a variable, so `{}` sets none.
  */
+import { TEXT_DEFAULT_SIZE, type TextFormatting } from '@shared/textFormatting'
 import { HEADING_KEYS, type HeadingHighlight, type HeadingKey, type HeadingStyle, type HeadingStyles } from '@shared/types'
 
+/** app.css's em scale of each level: a heading with no size of its own is this × the Text size (D17). */
+export const HEADING_SCALE: Readonly<Record<HeadingKey, number>> = { h1: 1.802, h2: 1.602, h3: 1.424, h4: 1.266, h5: 1.125, h6: 1 }
+
 /**
- * The default size of each level in px, rounded: app.css's em scale (1.802, 1.602, 1.424, 1.266,
- * 1.125, 1) × the 16px base. Settings shows these, and the first "−" or "+" starts from them (D5).
+ * The size in px, rounded, of a level with no size of its own, at the vault's Text size (D17).
+ * Settings shows it, and the first "−" or "+" starts from it. At 16 px: 29, 26, 23, 20, 18, 16.
  */
-export const HEADING_DEFAULT_SIZES: Readonly<Record<HeadingKey, number>> = { h1: 29, h2: 26, h3: 23, h4: 20, h5: 18, h6: 16 }
+export const defaultHeadingSize = (key: HeadingKey, textSize = TEXT_DEFAULT_SIZE): number => Math.round(HEADING_SCALE[key] * textSize)
 
 /** The default weight of each level: app.css gives H1 700 and the others 600. */
 export const HEADING_DEFAULT_WEIGHTS: Readonly<Record<HeadingKey, number>> = { h1: 700, h2: 600, h3: 600, h4: 600, h5: 600, h6: 600 }
@@ -40,6 +46,12 @@ export function headingVars(styles: HeadingStyles): Record<string, string> {
   return vars
 }
 
+/** The custom properties of a vault's formatting: `--text-size` when the Text size is set, then the `--hN-*` variables. `{}` sets none. */
+export function textVars(formatting: TextFormatting): Record<string, string> {
+  const size = formatting.text?.size
+  return { ...(size !== undefined && { '--text-size': `${size}px` }), ...headingVars(formatting) }
+}
+
 /** Whether a level looks different from the app's own look: any stored field that is not a default. */
 export const isChanged = (style: HeadingStyle | undefined): boolean =>
   style !== undefined && (style.size !== undefined || style.bold === false || style.underline === true || style.highlight !== undefined)
@@ -49,7 +61,7 @@ export const isChanged = (style: HeadingStyle | undefined): boolean =>
  * underline off, no highlight), and a level with no field left leaves it too, so the map holds only
  * what the reader changed (D1). A size stays once it is set; "Reset" removes the level.
  */
-export function withHeadingStyle(styles: HeadingStyles, key: HeadingKey, patch: Partial<HeadingStyle>): HeadingStyles {
+export function withHeadingStyle<T extends HeadingStyles>(styles: T, key: HeadingKey, patch: Partial<HeadingStyle>): T {
   const merged: HeadingStyle = { ...styles[key], ...patch }
   const next: HeadingStyle = {}
   if (merged.size !== undefined) next.size = merged.size
@@ -60,7 +72,7 @@ export function withHeadingStyle(styles: HeadingStyles, key: HeadingKey, patch: 
 }
 
 /** "Reset" (D1): the map without that level's key. */
-export function withoutHeadingStyle(styles: HeadingStyles, key: HeadingKey): HeadingStyles {
+export function withoutHeadingStyle<T extends HeadingStyles>(styles: T, key: HeadingKey): T {
   const { [key]: _removed, ...rest } = styles
-  return rest
+  return rest as T
 }

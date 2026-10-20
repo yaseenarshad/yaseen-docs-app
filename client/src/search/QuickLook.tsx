@@ -8,7 +8,7 @@
  * read-only render that the hover card of Table and Board uses; never `Editor`, which would start
  * an autosave, store folds and take the caret. Each other kind is the read-only viewer of its page.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../api'
@@ -61,11 +61,13 @@ interface QuickLookProps {
   /** The watcher and the link source of the vault that holds the file. */
   watch: WatchSource
   wikilinks: WikilinkResolveSource
+  /** The text formatting of the vault that holds the file (YAZ-3067 D12): `--text-size` and the `--hN-*` variables. */
+  style?: CSSProperties
   /** The ✕ (S43), and Esc with the keyboard focus inside the panel (S66). */
   onClose: () => void
 }
 
-export function QuickLook({ path, title, watch, wikilinks, onClose }: QuickLookProps) {
+export function QuickLook({ path, title, watch, wikilinks, style, onClose }: QuickLookProps) {
   // The kinds are the ones `Editor` shows as a page (S39); a file with no viewer gets one line (S40).
   const kind = fileKind(path)
   return (
@@ -73,6 +75,7 @@ export function QuickLook({ path, title, watch, wikilinks, onClose }: QuickLookP
     // focus on it (no Tab stop), so the search bar's Esc is out of reach: Esc here closes the panel (S66).
     <section
       className="quicklook"
+      style={style}
       aria-label="Preview"
       tabIndex={-1}
       onKeyDown={(e) => {

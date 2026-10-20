@@ -46,8 +46,9 @@ export function Select<T>({ options, value, onChange, ariaLabel }: ChoiceProps<T
   return (
     <span className="settings__select-wrap">
       <select className="settings__select" aria-label={ariaLabel} value={selected} onChange={(e) => onChange(options[Number(e.target.value)].value)}>
+        {/* Keyed by index too: two options may share a label (two vaults with one name, YAZ-3068). */}
         {options.map((option, i) => (
-          <option key={option.label} value={i}>
+          <option key={i} value={i}>
             {option.label}
           </option>
         ))}
