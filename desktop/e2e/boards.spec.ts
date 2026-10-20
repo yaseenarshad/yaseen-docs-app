@@ -11,13 +11,14 @@
  *     down (YAZ-3034); an edit (⌘D on a box) autosaves plain XML with its `yaseendraw-*` dates, and
  *     no request leaves the app.
  *
- * The folder menu's "New Excalidraw drawing" (YAZ-3036) adds its own step below.
+ *   4 right-click a folder → New Excalidraw drawing → type a name → Enter (YAZ-3036, D9): the file is
+ *     born on disk with the empty scene and its dates, and opens in a tab on the canvas.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, copyVault, fileRow, launchApp, layer, quitApp, seededState, shoot } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, copyVault, dirRow, fileRow, launchApp, layer, menuItem, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -138,4 +139,24 @@ test('step 3 — a diagram row opens draw.io offline on app://drawio, and an edi
   expect(xml).not.toContain('compressed="true"')
   expect(outside).toEqual([])
   await shoot(win, 'boards-05-diagram-saved')
+})
+
+test('step 4 — right-click a folder → New Excalidraw drawing → a name: the file is on disk and its tab opens', async () => {
+  if (app === null) throw new Error('step 2 did not relaunch the app')
+  await dirRow(win, 'Projects').click({ button: 'right' })
+  await expect(menuItem(win, 'New Excalidraw drawing')).toBeVisible()
+  await menuItem(win, 'New Excalidraw drawing').click()
+  const box = win.locator('.create-inline__input')
+  await expect(box).toHaveAttribute('placeholder', 'New drawing')
+  await box.fill('Whiteboard')
+  await box.press('Enter')
+  const born = path.join(vault, 'Projects', 'Whiteboard.excalidraw')
+  await expect.poll(async () => (await readFile(born, 'utf8').catch(() => '')).length > 0, { timeout: 10_000 }).toBe(true)
+  const scene = JSON.parse(await readFile(born, 'utf8')) as Record<string, unknown>
+  expect(Object.keys(scene)[0]).toBe('yaseendraw')
+  expect(scene).toMatchObject({ type: 'excalidraw', source: 'yaseen-docs', elements: [], files: {} })
+  await expect(activeTab(win)).toContainText('Whiteboard')
+  await expect(canvasFrame(win).locator('canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(fileRow(win, 'Whiteboard.excalidraw')).toBeVisible()
+  await shoot(win, 'boards-06-new-drawing')
 })

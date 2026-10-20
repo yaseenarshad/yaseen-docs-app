@@ -21,6 +21,7 @@ npm run desktop:build
 
 - Builds `desktop/out` (electron-vite) and then packages with electron-builder: `desktop/dist-app/mac-arm64/Yaseen Docs.app` and `desktop/dist-app/Yaseen Docs-<version>-arm64.dmg` (arm64 only; the filenames contain spaces, so quote them). `mac.identity: null` makes electron-builder skip signing, so `desktop/build/adhocSign.cjs` (`afterPack`) trims Chromium's non-English locale paks and then deep signs the bundle itself — without that seal Gatekeeper reports a downloaded copy as "damaged" instead of offering **Open Anyway**. It signs with the free self-signed certificate **Yaseen Local Signing** when the keychain has it (YAZ-2976 D1; `MAC_SIGN_IDENTITY` names another), else ad-hoc with a warning. The certificate gives every build the same identity (`codesign -d -r-` shows `certificate leaf = H"0344c2f9…"`, not `cdhash`): macOS then keeps the user's permissions across an update, and the in-app updater installs only a build that meets that identity. `REQUIRE_SIGN_IDENTITY=1` turns the ad-hoc fallback into an error. To make the certificate on a new Mac, run `scripts/make-signing-cert.sh` of `yaseen-screenshot-app` (the same certificate signs both apps).
 - The first packaging run on a clean machine needs network: electron-builder downloads its Electron dist zip and dmgbuild once, then caches them.
+- `npm run build` (and `npm run dev`) first runs `tools/packDrawio.mjs` (YAZ-3028 D5): the first run on a machine downloads the pinned `draw.war` (v31.5.2, 54 MB, sha256-checked) into the gitignored `desktop/.cache/drawio/`, unpacks and prunes it there, and lays `desktop/drawio-overlay/` over it; later runs only re-lay the overlay. `npm run drawio:pack` does it alone. The build then copies it to `desktop/out/drawio`, which the app serves as `app://drawio`.
 - Install: drag `Yaseen Docs.app` into `/Applications` in Finder — either straight from `desktop/dist-app/mac-arm64/`, or from the mounted dmg:
 
 ```bash
@@ -48,7 +49,7 @@ ls "$HOME/Library/Application Support/Yaseen Docs/"
 
 ```bash
 npm test          # vitest suite, FOUR projects: client (jsdom), desktop (node), tools (node — the packaging checks, the budget gate and the perf harness), perf (jsdom — the budget tripwires)
-npm run e2e       # Playwright-Electron suite (desktop/e2e/, 65 specs; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
+npm run e2e       # Playwright-Electron suite (desktop/e2e/, 66 specs; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
 npm run typecheck
 npm run build     # electron-vite build → desktop/out
 npm run perf:budget:ci   # the size and integrity gate on desktop/out (what CI runs, after build)

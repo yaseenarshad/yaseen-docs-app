@@ -1,14 +1,20 @@
 import { useRef, useState } from 'react'
 import type { EntryKind } from './createEntry'
 
-/** Placeholder per entry kind; what is typed is its title, and the name on disk is built from it (YAZ-2420 🔒 D6, D20). */
-const PLACEHOLDER: Record<EntryKind, string> = { file: 'New note', dir: 'New folder' }
+/**
+ * Placeholder per entry kind; what is typed is its title, and the name on disk is built from it (YAZ-2420 🔒 D6, D20).
+ * A board's box names its kind (YAZ-3028 D9); what is typed there is the file name.
+ */
+const PLACEHOLDER: Record<EntryKind, string> = { file: 'New note', dir: 'New folder', drawing: 'New drawing', diagram: 'New diagram' }
 
 interface CreateInlineProps {
   kind: EntryKind
   /** Left padding so the input lines up with rows at its depth. */
   indent: number
-  /** Called with the non-empty title, free text; rejects with a message to keep editing. */
+  /**
+   * Called with the non-empty title, free text; rejects with a message to keep editing. A BOARD's box
+   * also submits an empty name (or the seed alone): the board is `Untitled` (YAZ-3028 D9) — so `''` arrives.
+   */
   onSubmit: (name: string) => Promise<void>
   onCancel: () => void
   /** Text the box starts with (YAZ-1604); the caret lands at its end. Default empty, as today. */
@@ -22,10 +28,13 @@ export function CreateInline({ kind, indent, onSubmit, onCancel, seed = '' }: Cr
 
   const submit = async (value: string) => {
     const name = value.trim()
-    if (name === '' || name === seed.trim() || submitting.current) return
+    if (submitting.current) return
+    // A note or a folder needs a name; a board's empty box is "Untitled" (YAZ-3028 D9), so it goes on as ''.
+    const empty = name === '' || name === seed.trim()
+    if (empty && (kind === 'file' || kind === 'dir')) return
     submitting.current = true
     try {
-      await onSubmit(name)
+      await onSubmit(empty ? '' : name)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create')
       submitting.current = false

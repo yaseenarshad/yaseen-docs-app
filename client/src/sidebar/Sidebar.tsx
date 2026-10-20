@@ -1398,6 +1398,10 @@ export function Sidebar({
               onNewDatedNote: viaTree(() => startCreate('file', datedSeed())),
               onNewFolder: viaTree(() => startCreate('dir')),
               onNewDatedFolder: viaTree(() => startCreate('dir', datedSeed())),
+              // The boards (YAZ-3028 D9): name first, then the empty board, then its tab.
+              onNewDrawing: viaTree(() => startCreate('drawing')),
+              onNewDatedDrawing: viaTree(() => startCreate('drawing', datedSeed())),
+              onNewDiagram: viaTree(() => startCreate('diagram')),
               onToggleFavorite: toggleFavorite,
               onReviewFolder,
               onSetReview,

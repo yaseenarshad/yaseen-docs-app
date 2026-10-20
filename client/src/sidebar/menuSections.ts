@@ -92,6 +92,12 @@ export interface MenuHandlers {
   onNewFolder: () => void
   /** "New dated folder" (YAZ-1604): a disk folder born with today's `MM_DD- ` seed. Never hidden, same as `onNewFolder`. */
   onNewDatedFolder: () => void
+  /** "New Excalidraw drawing" (YAZ-3028 D9): the name box, then an empty drawing, then its tab. Never hidden, same as `onNewNote`. */
+  onNewDrawing: () => void
+  /** "New dated Excalidraw drawing" (YAZ-3028 D9): the same, the box seeded with today's `MM_DD- `. */
+  onNewDatedDrawing: () => void
+  /** "New draw.io diagram" (YAZ-3028 D9): the name box, then an empty diagram, then its tab. There is no dated twin. */
+  onNewDiagram: () => void
   /** "Add to favorites" / "Remove N from favorites" (YAZ-1766 D3): the paths and the direction the menu read. */
   onToggleFavorite: (paths: string[], isOn: boolean) => void
   /** "Review this folder" (YAZ-2322): the folder's absolute path; the caller starts the session. */
@@ -260,6 +266,13 @@ const newFolder = create('new-folder', 'New folder', (h) => h.onNewFolder)
 const newDatedNote = create('new-dated-note', 'New dated note', (h) => h.onNewDatedNote)
 
 const newDatedFolder = create('new-dated-folder', 'New dated folder', (h) => h.onNewDatedFolder)
+
+// The boards (YAZ-3028 D9): Draw's names (YAZ-1802 D13), between the note and the folder; one dated twin, the drawing's.
+const newDrawing = create('new-drawing', 'New Excalidraw drawing', (h) => h.onNewDrawing)
+
+const newDatedDrawing = create('new-dated-drawing', 'New dated Excalidraw drawing', (h) => h.onNewDatedDrawing)
+
+const newDiagram = create('new-diagram', 'New draw.io diagram', (h) => h.onNewDiagram)
 
 // ---- (4) This row: acts ON the right-clicked row, so it sits after the create groups ----
 
@@ -447,8 +460,8 @@ const addVault: Item = (t, h) => {
 
 const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
-const CREATE_GROUP: readonly Item[] = [newNote, newFolder]
-const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedFolder]
+const CREATE_GROUP: readonly Item[] = [newNote, newDrawing, newDiagram, newFolder]
+const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedDrawing, newDatedFolder]
 const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename]
 const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openAlone, openIn, addVault]
 const DELETE_GROUP: readonly Item[] = [info, del, removeShortcut, removeVault]

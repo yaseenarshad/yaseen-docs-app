@@ -53,6 +53,7 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 | E17 | Clipboard in/out modes, paste round trip | A `pasteRoundTrip` · U `editor/clipboard*.test.ts` |
 | E18 | Image paste / render / `app://vault` / Copy Image | A `imagePaste`, `imageRender` |
 | E19 | Drawings (Excalidraw sidecar, yaseendraw fork). Out of scope for optimisation, must keep working | A `drawing`, `yaseendraw` |
+| E19b | Drawing and diagram TABS, board rows and the folder menu's New Excalidraw drawing / New draw.io diagram (YAZ-3028) | A `boards` |
 | E20 | Document magnification (YAZ-1410) | A `zoom` · U `editor/DocumentZoom.test.tsx`, `editor/zoomRequest.test.ts` |
 | E21 | The page title is the page's `title:`, not its file name; editing it is the one title edit — `title:` is written, then the file is renamed to the name built from it, the id part unchanged; a title that builds the same name changes the `title:` line only (YAZ-2420 D2, D16) | A `title`, `names` (steps 2, 4) · U `editor/PageTitle.test.tsx`, `desktop/src/main/fs/retitle.test.ts`, `desktop/src/main/noteName.test.ts`, `App.test.tsx` |
 | E22 | Properties panel (typed rows + raw) | A `propertiesReorder` (a folder view's Properties menu only; the note's own panel has no A proof) · U `editor/FrontmatterPanel.test.tsx` |
