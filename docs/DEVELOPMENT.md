@@ -36,8 +36,23 @@ open desktop/dist-app/*.dmg
 ## App state — where it lives, how to reset it
 
 - ONE user-global file, owned by the main process: `~/Library/Application Support/Yaseen Docs/yaseendocs.json` (settings, recents, open windows with their vaults, tabs and sidebar lens, per-folder view state, saved workspaces — schema in `docs/CONTRACTS.md` "App state"). Nothing is ever stored in the browser profile.
-- TWO things do live in the vault, both by design and both the user's own data rather than app state: a folder's settings — its views and columns under the single `folder_settings` key, with the folder's own properties and comments beside them — in a hidden `<folder>/.folder.md` (frontmatter only; created by the first change, never by opening the folder), and the vault-wide property declarations at `<vault>/.yaseendocs/properties.json` — the `.obsidian`-style dotfolder that travels with the notes. The same dotfolder holds the vault's two LISTS, the user's own data too, so they travel with the notes and stay after a quit: the Favorites, `<vault>/.yaseendocs/favorites.json` (YAZ-1766), and the focus list, one file for each Mac, `<vault>/.yaseendocs/focus.<mac id>.json` — the newest file is the list, and no window holds one (YAZ-2702). A change of either starts a GitHub sync, as a note edit does (YAZ-2706). The dotfolder is created lazily on the first write and never otherwise; reading it creates nothing. Everything else about a vault stays in the state file above — the order of the Favorites and of the focus rows ACROSS the vaults of one window too (`favoritesOrder`, `focusOrder`), which is per Mac.
-- Beside it, the drawing tab's canvas panel keeps three things in the same app-data folder (YAZ-3038, ported from Draw): `secrets.json` (the Pixabay API key; owner-only, never in a renderer), `media-cache/` (Image Studio search pages and tile pictures, swept at launch after 24 h) and `library/` (`media.json` favorites and recents, `components/` and `components.json` — the saved components every vault shares). Settings › Images › Library folder can move `library/` anywhere, a synced vault included.
+- These things live in the vault, by design: they are the user's own data rather than app state, so they travel with the notes and stay after a quit. Each one is created lazily on its first write; reading creates nothing.
+  - `<folder>/.folder.md`: a folder's settings — its views and columns under the single `folder_settings` key, with the folder's own properties and comments beside them (frontmatter only; created by the first change, never by opening the folder).
+  - `<vault>/.yaseendocs/properties.json`: the vault-wide property declarations, in the `.obsidian`-style dotfolder.
+  - `<vault>/.yaseendocs/favorites.json`: the Favorites (YAZ-1766).
+  - `<vault>/.yaseendocs/focus.<mac id>.json`: the focus list, one file for each Mac; the newest file is the list, and no window holds one (YAZ-2702).
+  - `<vault>/.yaseendocs/shares.json`: which boards are shared as links, and their ids (YAZ-3040). Sync merges it per entry.
+  - `<vault>/.yaseendocs/github.json`: the vault's sync switch (YAZ-1081).
+  - `<vault>/assets/<sha1>.<ext>`: the pictures inside drawings, one file per picture by its hash (Draw's store, kept where Draw put it; YAZ-3028). Note images stay in `assets/images/`.
+  - A change of a list file starts a GitHub sync, as a note edit does (YAZ-2706). Sync never edits the vault's `.gitignore` (YAZ-3044 A3); the board merge rule lives in `.git/info/attributes`, this machine only.
+  - Everything else about a vault stays in the state file above — the order of the Favorites and of the focus rows ACROSS the vaults of one window too (`favoritesOrder`, `focusOrder`), which is per Mac.
+- Beside the state file, in the same app-data folder (YAZ-3028; most ported from Draw), each made lazily:
+  - `secrets.json` (YAZ-3038, YAZ-3040): the Pixabay API key, the Cloudflare API token and the share upload password. Owner-only (0600), plain text, never sent to a renderer.
+  - `sharing.json` (YAZ-3040): the Cloudflare account, bucket and Worker that share links use.
+  - `library/` (YAZ-3038): `media.json` favorites and recents, `components/` and `components.json` — the saved components every vault shares. Settings › Images › Library folder can move it anywhere, a synced vault included.
+  - `media-cache/` (YAZ-3038): Image Studio search pages and tile pictures, kept 24 h; swept at launch and each hour.
+  - `thumbs/` (YAZ-3035): preview-sized copies of a drawing's pictures for the hover preview, with a byte cap.
+  - `draw-import.json` (YAZ-3041): the Draw import's marker — when the app-data half ran, and each vault's half.
 - To reset or hand-edit: **quit the app first** (⌘Q — quitting flushes the file), then delete or edit the JSON; on the next launch a missing file gets defaults and a corrupt one is moved aside as `yaseendocs.json.corrupt-<epoch>`, never silently overwritten. To find it (the folder first appears after the app has run once against the real state):
 
 ```bash
@@ -51,7 +66,7 @@ ls "$HOME/Library/Application Support/Yaseen Docs/"
 
 ```bash
 npm test          # vitest suite, FOUR projects: client (jsdom), desktop (node), tools (node — the packaging checks, the budget gate and the perf harness), perf (jsdom — the budget tripwires)
-npm run e2e       # Playwright-Electron suite (desktop/e2e/, 66 specs; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
+npm run e2e       # Playwright-Electron suite (desktop/e2e/, 68 specs; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
 npm run typecheck
 npm run build     # electron-vite build → desktop/out, then the share viewer → share/dist/assets
 npm run perf:budget:ci   # the size and integrity gate on desktop/out (what CI runs, after build)

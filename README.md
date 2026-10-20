@@ -122,6 +122,21 @@ Turn on GitHub sync for a folder that is a git repo. The app commits and pushes 
   <img src="docs/assets/sync.png" width="720" alt="The status at the top of a note: Synced and Saved">
 </p>
 
+### Draw and diagram beside your notes
+
+Excalidraw drawings (`.excalidraw`) and draw.io diagrams (`.drawio`) open in tabs, the same as notes. Right-click a folder and pick New Excalidraw drawing or New draw.io diagram. Each one saves 500 ms after your last change.
+
+- **draw.io is built in.** It works offline, and it sends nothing to the internet.
+- **The canvas panel.** Find images and icons in the Image Studio, keep shapes you reuse as Components, and present a drawing frame by frame.
+- **Export.** Save a picture of a drawing or diagram (`⌘⇧E`), or a copy of a drawing (`⌘⇧S`).
+- **Share links.** Share a board as a live link on your own free Cloudflare account (`⌘⇧L`). Each save updates the link.
+- **Version history.** See each saved version of a board in git, with what changed, and restore one.
+- **A look before you open.** Rest the mouse on a board in the sidebar to see all of it. Info shows its type and dates.
+- **Sync that merges.** When two computers change one drawing, sync merges it shape by shape. A diagram keeps both copies. Your notes sync as before.
+- **From Yaseen Draw.** The first time you open a vault from Yaseen Draw, its favorites, sync switch and share links come over. Yaseen Draw stays installed and keeps its own files.
+
+**So what:** your notes and your pictures of the work live in one folder and one app, and both are plain files.
+
 ### Always know where you are in a long note
 
 A table of contents sits at the right edge of each note. It lists your headings, or your bullets when the note has no headings. Each level has its own tone and its own line, and a marker follows you while you scroll. Click a name to jump there, or press `⌘J` on a Mac. Drag its edge to make it wider.
@@ -165,7 +180,7 @@ comments:
 ### Also in the box
 
 - **Links that do not break.** Type `[[` to link to a note. Rename or move a note, and its links follow. Rename it outside the app, and the app offers to repair them.
-- **Search.** `⌘K` finds a note by title, alias or folder, across each vault in the window.
+- **Search.** `⌘K` finds a note by title, alias or folder, and a drawing or diagram by its name, across each vault in the window.
 - **Many vaults, one window.** Put up to 8 folders side by side, and save the set as a workspace.
 - **Live reload.** A file that your agent or a different editor changes updates in your open note. If you have edits that are not saved, the app asks first.
 - **Permanent IDs, if you want them.** Turn them on for a vault, and each note gets a short ID such as `DOC-12` that you and your agent can say, type and search.

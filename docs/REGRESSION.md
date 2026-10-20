@@ -2,7 +2,7 @@
 
 The one list of everything Yaseen Docs does that a change must not lose (YAZ-2171, seeded from the YAZ-2131 scope inventory). Every row has a stable ID. A PR cites the IDs it touches, and each one is proved by the automated test named here, or by walking its hand steps.
 
-- **A** = a Playwright-Electron spec in `desktop/e2e/` (65 specs; run with `npm run e2e`).
+- **A** = a Playwright-Electron spec in `desktop/e2e/` (68 specs; run with `npm run e2e`).
 - **U** = a unit or jsdom suite (run with `npm test`).
 - **M** = hand steps, listed under [Hand scenarios](#hand-scenarios). Only what automation cannot drive lives there.
 
@@ -53,7 +53,7 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 | E17 | Clipboard in/out modes, paste round trip | A `pasteRoundTrip` · U `editor/clipboard*.test.ts` |
 | E18 | Image paste / render / `app://vault` / Copy Image | A `imagePaste`, `imageRender` |
 | E19 | Drawings (Excalidraw sidecar, yaseendraw fork). Out of scope for optimisation, must keep working | A `drawing`, `yaseendraw` |
-| E19b | Drawing and diagram TABS, board rows and the folder menu's New Excalidraw drawing / New draw.io diagram (YAZ-3028) | A `boards` |
+| E19b | Drawing and diagram TABS, board rows and the folder menu's New Excalidraw drawing / New draw.io diagram (YAZ-3028); each Draw feature has its own row under [Drawings and diagrams](#drawings-and-diagrams) | A `boards` |
 | E20 | Document magnification (YAZ-1410) | A `zoom` · U `editor/DocumentZoom.test.tsx`, `editor/zoomRequest.test.ts` |
 | E21 | The page title is the page's `title:`, not its file name; editing it is the one title edit — `title:` is written, then the file is renamed to the name built from it, the id part unchanged; a title that builds the same name changes the `title:` line only (YAZ-2420 D2, D16) | A `title`, `names` (steps 2, 4) · U `editor/PageTitle.test.tsx`, `desktop/src/main/fs/retitle.test.ts`, `desktop/src/main/noteName.test.ts`, `App.test.tsx` |
 | E22 | Properties panel (typed rows + raw) | A `propertiesReorder` (a folder view's Properties menu only; the note's own panel has no A proof) · U `editor/FrontmatterPanel.test.tsx` |
@@ -199,6 +199,29 @@ A vault uses IDs only when its own `.yaseendocs/ids.json` says `{"enabled":true}
 | K5 | What needs IDs is not offered in a plain vault: no "Add note shortcut" and no shortcut rows; no menu and no Copy ID on a link shaped like an id, and a click on one says why it cannot open; nothing is found by id in ⌘K; no "Properties from" in the properties panel; the `[[` picker and link cells insert names. Every screen shows a note under its file name, and `id`, `title`, `also_in` and `in` are ordinary properties; `comments` and `reviews` stay Reserved (YAZ-2523 V5, V12, V13) | U `sidebar/Sidebar.test.tsx`, `links/shortcuts.test.ts`, `editor/wikilink/wikilinkMenu.test.ts`, `editor/wikilink/wikilinkClick.test.ts`, `search/searchCandidates.test.ts`, `links/completion.test.ts`, `links/reservedKeys.test.ts`, `editor/FrontmatterPanel.test.tsx`, `desktop/src/main/vaultIndex/liveIds.test.ts` |
 | K6 | A plain vault's folder page: a Table alone by default, with no Board and no `status` column; its columns are the notes' own properties, `id`, `title`, `also_in` and `in` among them; a cell edit or a board drop writes that one line at the top of the note; opening writes nothing, and the first view or column change makes `.folder.md` holding `folder_settings` only; "Delete column…" is not offered, and a column is hidden; "New" is `Untitled.md`, then `Untitled 2.md` (YAZ-2523 V6, V11) | U `views/FolderView.test.tsx`, `views/folderSettings.test.ts`, `views/writeFolderColumn.test.ts`, `views/engine.test.ts` |
 | K7 | `yaseendocs id` and `links` are refused, exit 1 and nothing written, unless the nearest folder above the page that has answered said yes: a vault that said no, one that has not answered, a folder that only holds `.yaseendocs/`, and no vault at all; `id` is refused even for a page that holds one. `--help` says so (YAZ-2523 V10) | U `desktop/src/cli/cli.test.ts` · M [N12](#n12-the-id-and-links-commands) (step 4) |
+
+## Drawings and diagrams
+
+The Draw features that YAZ-3028 folded into Docs, one row each (YAZ-3044 A26). E19 and E19b under [Editor](#editor) keep the embed modal and the board tabs.
+
+| ID | Feature | Proof |
+|---|---|---|
+| B1 | A board tab autosaves 500 ms after the last change, reloads a clean tab on a disk change, and shows the conflict bar (Reload / Keep mine) on a dirty one | A `boards` (steps 1–3) · U `documents/useBoardDocument.test.tsx`, `documents/ConflictBar.test.tsx`, `drawings/DrawingEditor.test.tsx`, `diagrams/DrawioEditor.test.tsx` |
+| B2 | The embed modal never wins a conflict in silence: a tab's save first raises the same conflict bar in the modal (YAZ-3044 A4) | U `drawings/DrawingModal.test.tsx` |
+| B3 | draw.io ships inside the app (v31.5.2, sha256-pinned) and runs offline on `app://drawio`; no request leaves the app | A `boards` (step 3) · U `tools/packDrawio.test.mjs`, `tools/drawioOverlay.test.mjs` · gate `perf:budget:ci` (`drawioBytes` reported, `asarBytes` packaged) |
+| B4 | The folder menu: New Excalidraw drawing, New draw.io diagram, New dated Excalidraw drawing (`MM_DD- `), `Untitled` / `Untitled 2`, no note ID | A `boards` (step 4), `boardTools` (step 7) · U `sidebar/menuSections.test.ts`, `sidebar/Sidebar.test.tsx` |
+| B5 | File › Export Image… ⌘⇧E, Export Excalidraw Drawing… ⌘⇧S, Share Link ⌘⇧L, View › Canvas Background ▸ — on a board tab only | A `boards` (step 5), `boardTools` (step 5: the export writes where the sheet says) · U `desktop/src/main/menu.test.ts`, `drawings/exportDrawing.test.ts`, `desktop/src/main/ipc/dialog.test.ts` |
+| B6 | The canvas panel: Images (the Image Studio), Components, Present | A `boards` (step 5), `boardTools` (step 6) · U `drawings/CanvasSidebar.test.ts`, `image-studio/ImageStudio.test.tsx`, `components-library/*.test.ts(x)`, `drawings/presentation/*.test.ts(x)` |
+| B7 | Share links on the user's own Cloudflare: setup, Anyone with the link, View only, Not shared, the row's link mark, the live re-upload after 10 s | A `boardShare` (against `tools/fakeCloudflare.mjs`; not the live re-upload) · U `share/*.test.ts(x)`, `desktop/src/main/share/*.test.ts` (`fakeCloudflare.integration.test.ts` among them) |
+| B8 | Version history of a board: its git versions, what changed, Restore | A `boardTools` (step 3) · U `history/VersionHistory.test.tsx`, `history/compare.test.ts`, `desktop/src/main/git/history.test.ts` |
+| B9 | Hover preview (Settings › Files & Links › Preview on hover) and Info; both redraw on a change while they show; Quick Look shows a board's picture; a board's tab card names its kind | A `boardTools` (step 2) · U `sidebar/HoverPreviewHost.test.tsx`, `sidebar/BoardPreview.test.tsx`, `sidebar/BoardInfo.test.tsx`, `sidebar/Sidebar.test.tsx`, `search/QuickLook.test.tsx`, `tabs/TabOverview.test.tsx` |
+| B10 | Sync merges a drawing shape by shape, keeps both copies of a diagram, merges `favorites.json` / `shares.json`; a note conflict stops with the same words; a rebase git refused to start leaves the note untouched and retries (YAZ-3044 A1) | U `desktop/src/main/git/resolve.test.ts`, `boardMerge.test.ts` (real git, two clones). No A proof: two Macs |
+| B11 | A file of 95 MiB or more is held back from the commit and named in the banner; the held-back park restores only its own stash (YAZ-3044 A2) | U `desktop/src/main/git/sync.test.ts`. No A proof |
+| B12 | The idle pull: after a `synced` pass, a 60 s look at the remote; a pull only when it moved | U `desktop/src/main/git/manager.test.ts`, `sync.test.ts` (`lookAtRemote`) |
+| B13 | Settings › Excalidraw canvas, Images, Storage, Sharing | A `settings` (the nav), `boardShare` (Sharing) · U `settings/SettingsDialog.test.tsx`, `settings/storageSection.test.tsx`, `settings/imagesSection.test.tsx`, `share/SharingPage.test.tsx` |
+| B14 | The Draw import: per vault (favorites union, `github.json`, `shares.json`) and app data once (library to the folder Docs reads, secrets merged by name, `sharing.json` only with its secrets, canvas settings); Draw's files never change; off under e2e and a demo profile | A `boardTools` (step 1: the per-vault half) · U `desktop/src/main/drawImport.test.ts` |
+| B15 | Docs claims `.excalidraw` and `.drawio` (rank Owner); a `yaseendraw://` link opens its file like a `yaseendocs://` one | A `boardTools` (step 4: the link) · U `desktop/src/main/links.test.ts`, `deepLinkScheme.test.ts`, `index.startup.test.ts` · gate `npm run perf:budget` (packaged Info.plist) · M [P6](#p6-finder-launchservices-dmg) |
+| B16 | Timing: draw.io opens a 30-box diagram within 760 ms (Draw's ceiling, D5) | `npm run perf -- drawio` (local, `budget.json` `perf`). Not yet measured on Docs |
 
 ## Sync, tools, platform
 
