@@ -557,7 +557,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       const select = picker(el) as HTMLSelectElement
       expect([...select.options].map((o) => o.textContent)).toEqual(['Notes', 'work'])
       // Above the lines, directly under the hint.
-      expect(tf(el).querySelector('.setting__control > .text-formatting > :first-child')?.classList.contains('text-formatting__vault')).toBe(true)
+      expect(tf(el).querySelector(':scope > .text-formatting > :first-child')?.classList.contains('text-formatting__vault')).toBe(true)
       expect(select.value).toBe('1')
       expect(sizes(el).slice(0, 3)).toEqual([
         ['text', '18 px'],

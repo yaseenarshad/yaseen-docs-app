@@ -22,7 +22,7 @@ export function SettingRow({ id, label, hint, wide = false, bare = false, childr
   if (bare) {
     return (
       <div className="setting setting--bare" data-setting={id} role="group" aria-label={label}>
-        <div className="setting__control">{children}</div>
+        {children}
       </div>
     )
   }

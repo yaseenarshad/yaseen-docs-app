@@ -98,13 +98,13 @@ function TextLine({ formatting, write }: { formatting: TextFormatting; write: (n
   return (
     <div className="heading-styles__line" data-level="text">
       <span className="heading-styles__label">
-        <span className="heading-styles__name" style={{ fontSize: `${Math.min(size, NAME_MAX_PX)}px` }}>
+        {/* 24 px at most (TEXT_SIZE_MAX), so the name needs no cap. */}
+        <span className="heading-styles__name" style={{ fontSize: `${size}px` }}>
           Text
         </span>
       </span>
       <Stepper name="Text" size={size} min={TEXT_SIZE_MIN} max={TEXT_SIZE_MAX} onStep={(delta) => set(clamp(size + delta, TEXT_SIZE_MIN, TEXT_SIZE_MAX))} />
-      {/* No bold, underline or highlight for all text (D14): the space keeps the columns of the heading lines. */}
-      <span className="heading-styles__no-switches" aria-hidden="true" />
+      {/* No bold, underline or highlight for all text (D14). Reset still takes the last column (settings.css). */}
       <ResetSlot shown={size !== TEXT_DEFAULT_SIZE} label="Reset text" onReset={() => write(withoutText)} />
     </div>
   )
