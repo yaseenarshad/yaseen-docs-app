@@ -6,6 +6,10 @@ import {
   CONTENT_WIDTHS,
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
+  HEADING_HIGHLIGHTS,
+  HEADING_KEYS,
+  HEADING_SIZE_MAX,
+  HEADING_SIZE_MIN,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FAVORITES_ORDER,
   MAX_FOLD_KEYS_PER_FILE,
@@ -48,6 +52,8 @@ import {
   type ContentWidth,
   type FolderPatch,
   type FolderState,
+  type HeadingStyle,
+  type HeadingStyles,
   type NewNoteLocation,
   type OpenStat,
   type RecentRoots,
@@ -158,6 +164,20 @@ const clampRightPanelWidth = (w: number): number => Math.min(RIGHT_PANEL_MAX_W, 
 export const isRecentRoots = (v: unknown): v is RecentRoots =>
   Array.isArray(v) && v.every((x) => isRecord(x) && typeof x.path === 'string' && isFiniteNumber(x.lastOpened))
 
+/** One heading level's style (YAZ-3049 D1, D5): only the four known fields, each absent or valid. A size is whole px, 12 to 48. */
+const HEADING_STYLE_FIELD_OK: { [K in keyof Required<HeadingStyle>]: (v: unknown) => boolean } = {
+  size: (v) => Number.isInteger(v) && (v as number) >= HEADING_SIZE_MIN && (v as number) <= HEADING_SIZE_MAX,
+  bold: (v) => typeof v === 'boolean',
+  underline: (v) => typeof v === 'boolean',
+  highlight: (v) => typeof v === 'string' && (HEADING_HIGHLIGHTS as readonly string[]).includes(v),
+}
+export const isHeadingStyle = (v: unknown): v is HeadingStyle =>
+  isRecord(v) && Object.entries(v).every(([field, value]) => Object.hasOwn(HEADING_STYLE_FIELD_OK, field) && (value === undefined || HEADING_STYLE_FIELD_OK[field as keyof HeadingStyle](value)))
+
+/** The map of changed levels: keys `h1`-`h6` only. One bad level or field fails the whole map, and `sanitizeSettings` then gives `{}`. */
+export const isHeadingStyles = (v: unknown): v is HeadingStyles =>
+  isRecord(v) && Object.entries(v).every(([key, style]) => (HEADING_KEYS as readonly string[]).includes(key) && isHeadingStyle(style))
+
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
 const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is SettingsState[K] } = {
   lineSpacing: isFiniteNumber,
@@ -178,6 +198,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableOfContents: (v): v is TableOfContents => typeof v === 'string' && (TABLE_OF_CONTENTS as readonly string[]).includes(v),
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
+  headingStyles: isHeadingStyles,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 

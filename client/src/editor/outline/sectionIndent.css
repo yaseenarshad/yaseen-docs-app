@@ -128,6 +128,13 @@
   border-image-outset: 4px 0;
 }
 
+/* A highlighted heading (YAZ-3049 D7) has its wash clipped to the text column in app.css. Its 3px
+   shadow would still start at the column edge, one indent left of the words, so a heading in a
+   section has none. */
+.editor-instance .milkdown > .ProseMirror > :is(h1, h2, h3, h4, h5, h6)[data-sd] {
+  box-shadow: none;
+}
+
 /* A code block's own colour stops at its text column: a background runs under a border. */
 .editor-instance .milkdown > .ProseMirror > .milkdown-code-block[data-sd] {
   background-clip: padding-box;

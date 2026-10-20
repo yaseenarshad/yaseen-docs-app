@@ -964,6 +964,23 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     expect(captured.editors.length).toBe(renders)
     expect([app.getAttribute('data-section-lines'), app.getAttribute('data-content-width')]).toEqual(['always', 'narrow'])
   })
+
+  it('hands the heading styles to app.css as `--hN-*` variables on the app container, only for a changed field; another window\'s change lands live, and no editor renders for it (YAZ-3049 D2)', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    const headingVarsOn = () => [...app.style].filter((name) => /^--h\d-/.test(name)).sort()
+    // `{}`: no variable, so every heading keeps the look of 1.0.14.
+    expect(headingVarsOn()).toEqual([])
+    const renders = captured.editors.length
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, headingStyles: { h2: { size: 27, highlight: 'green' }, h5: { bold: false } } } }))
+    expect(headingVarsOn()).toEqual(['--h2-bg', '--h2-size', '--h2-width', '--h5-weight'])
+    expect(app.style.getPropertyValue('--h2-size')).toBe('27px')
+    expect(app.style.getPropertyValue('--h2-bg')).toBe('var(--mark-bg-green)')
+    // Reset of every level: the variables leave again.
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, headingStyles: {} } }))
+    expect(headingVarsOn()).toEqual([])
+    expect(captured.editors.length).toBe(renders)
+  })
 })
 
 describe('App sidebar resize (YAZ-738)', () => {
