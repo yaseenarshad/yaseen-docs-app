@@ -6,10 +6,7 @@ import {
   CONTENT_WIDTHS,
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
-  HEADING_HIGHLIGHTS,
   HEADING_KEYS,
-  HEADING_SIZE_MAX,
-  HEADING_SIZE_MIN,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FAVORITES_ORDER,
   MAX_FOLD_KEYS_PER_FILE,
@@ -52,7 +49,6 @@ import {
   type ContentWidth,
   type FolderPatch,
   type FolderState,
-  type HeadingStyle,
   type HeadingStyles,
   type NewNoteLocation,
   type OpenStat,
@@ -71,6 +67,7 @@ import {
   type WindowEntry,
 } from '@shared/types'
 import { isRecord, isStringArray } from '@shared/guards'
+import { isHeadingStyle } from '@shared/textFormatting'
 import { atomicWrite } from './fs/fsUtils'
 
 /**
@@ -82,6 +79,12 @@ import { atomicWrite } from './fs/fsUtils'
  */
 export interface Store {
   get(): AppState
+  /**
+   * The heading styles that 1.0.15 saved in `settings.headingStyles` (YAZ-3066 D11), once: the first
+   * call returns them (`{}` when the file had none, or a map that is not valid), every later call `{}`.
+   * The state never holds them, so the next write drops the key from the file.
+   */
+  takeLegacyHeadingStyles(): HeadingStyles
   setSettings(settings: SettingsState): void
   setSidebarWidth(width: number): void
   /** What a window hands in for the vaults `roots` (YAZ-2631 R5): after a drag on its Favorites tab, its favorites in the new order; after a remove, the stored order without the removed paths (R23). Merged into the one order across vaults (`mergeFavoritesOrder`). The same order is no commit. */
@@ -164,17 +167,11 @@ const clampRightPanelWidth = (w: number): number => Math.min(RIGHT_PANEL_MAX_W, 
 export const isRecentRoots = (v: unknown): v is RecentRoots =>
   Array.isArray(v) && v.every((x) => isRecord(x) && typeof x.path === 'string' && isFiniteNumber(x.lastOpened))
 
-/** One heading level's style (YAZ-3049 D1, D5): only the four known fields, each absent or valid. A size is whole px, 12 to 48. */
-const HEADING_STYLE_FIELD_OK: { [K in keyof Required<HeadingStyle>]: (v: unknown) => boolean } = {
-  size: (v) => Number.isInteger(v) && (v as number) >= HEADING_SIZE_MIN && (v as number) <= HEADING_SIZE_MAX,
-  bold: (v) => typeof v === 'boolean',
-  underline: (v) => typeof v === 'boolean',
-  highlight: (v) => typeof v === 'string' && (HEADING_HIGHLIGHTS as readonly string[]).includes(v),
-}
-export const isHeadingStyle = (v: unknown): v is HeadingStyle =>
-  isRecord(v) && Object.entries(v).every(([field, value]) => Object.hasOwn(HEADING_STYLE_FIELD_OK, field) && (value === undefined || HEADING_STYLE_FIELD_OK[field as keyof HeadingStyle](value)))
-
-/** The map of changed levels: keys `h1`-`h6` only. One bad level or field fails the whole map, and `sanitizeSettings` then gives `{}`. */
+/**
+ * The 1.0.15 map of changed heading levels (YAZ-3049 D1), `settings.headingStyles`: keys `h1`-`h6`
+ * only. One bad level or field fails the whole map. Since 1.0.16 the styles live in each vault
+ * (YAZ-3066 D10); the loader keeps a valid map ONCE for `takeLegacyHeadingStyles` (D11).
+ */
 export const isHeadingStyles = (v: unknown): v is HeadingStyles =>
   isRecord(v) && Object.entries(v).every(([key, style]) => (HEADING_KEYS as readonly string[]).includes(key) && isHeadingStyle(style))
 
@@ -198,7 +195,6 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableOfContents: (v): v is TableOfContents => typeof v === 'string' && (TABLE_OF_CONTENTS as readonly string[]).includes(v),
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
-  headingStyles: isHeadingStyles,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -420,24 +416,44 @@ function sanitizeState(raw: unknown): AppState | null {
  * the app would load, field for field — and, unlike `load`, it never moves a file aside.
  */
 export function parseState(text: string): AppState | null {
+  return parseStateDetailed(text)?.state ?? null
+}
+
+/** A loaded state, and the 1.0.15 heading styles its file still held (YAZ-3066 D11); `{}` for none, or for a map that is not valid. */
+interface Loaded {
+  state: AppState
+  legacyHeadingStyles: HeadingStyles
+}
+
+/**
+ * `parseState` with the one retired value the main process still needs: `settings.headingStyles`
+ * of 1.0.15. The state omits it (the settings keep only known keys), so the next write drops it
+ * from the file; until then `takeLegacyHeadingStyles` hands it out once.
+ */
+function parseStateDetailed(text: string): Loaded | null {
+  let raw: unknown
   try {
-    return sanitizeState(JSON.parse(text))
+    raw = JSON.parse(text)
   } catch {
     return null
   }
+  const state = sanitizeState(raw)
+  if (state === null) return null
+  const legacy = isRecord(raw) && isRecord(raw.settings) ? raw.settings.headingStyles : undefined
+  return { state, legacyHeadingStyles: isHeadingStyles(legacy) ? legacy : {} }
 }
 
 /** Reads the file synchronously; a corrupt one is moved aside as `<file>.corrupt-<epoch>` and defaults are used. */
-function load(filePath: string): AppState {
+function load(filePath: string): Loaded {
   let raw: string
   try {
     raw = readFileSync(filePath, 'utf8')
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAppState()
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { state: defaultAppState(), legacyHeadingStyles: {} }
     throw err
   }
-  const state = parseState(raw)
-  if (state !== null) return state
+  const loaded = parseStateDetailed(raw)
+  if (loaded !== null) return loaded
   const backup = `${filePath}.corrupt-${Date.now()}`
   try {
     renameSync(filePath, backup)
@@ -445,13 +461,16 @@ function load(filePath: string): AppState {
   } catch (err) {
     console.error(`[store] ${filePath} is not a valid app state and could not be moved aside: ${String(err)}`)
   }
-  return defaultAppState()
+  return { state: defaultAppState(), legacyHeadingStyles: {} }
 }
 
 // ---------- the store ----------
 
 export function createStore(filePath: string): Store {
-  let state = load(filePath)
+  const loaded = load(filePath)
+  let state = loaded.state
+  /** The 1.0.15 heading styles (YAZ-3066 D11), handed out once. */
+  let legacyHeadingStyles: HeadingStyles | null = loaded.legacyHeadingStyles
   const listeners = new Set<(state: AppState) => void>()
   let dirty = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -494,6 +513,12 @@ export function createStore(filePath: string): Store {
 
   return {
     get: () => state,
+
+    takeLegacyHeadingStyles() {
+      const legacy = legacyHeadingStyles ?? {}
+      legacyHeadingStyles = null
+      return legacy
+    },
 
     setSettings(settings) {
       commit({ ...state, settings: sanitizeSettings(settings) })

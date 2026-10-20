@@ -18,6 +18,7 @@ import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKe
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
 import { createStore } from './store'
+import { moveLegacyHeadingStyles } from './textFormattingMove'
 import { runQuitSequence } from './quitSequence'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
@@ -243,6 +244,10 @@ app.whenReady().then(() => {
   // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
   // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
   // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.
+  // The 1.0.15 heading styles move once into the vaults (YAZ-3066 D11). Before `restore`, which
+  // drops the windows a launch does not bring back: every vault of the last session gets its copy.
+  // It never holds up a window: a renderer that read no file yet hears the write as a change.
+  void moveLegacyHeadingStyles(store).catch((err: unknown) => console.error(`[textFormatting] the move failed: ${String(err)}`))
   const asked = links.pending().flatMap((url) => {
     const link = parseFileLink(url)
     return (link === null ? null : manager.rootFor(link.path, link.root)) ?? []

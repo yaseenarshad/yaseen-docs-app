@@ -48,6 +48,8 @@ const h = vi.hoisted(() => {
   const store = {
     get: () => ({ settings: { theme: 'system', startupWindows: 'none' }, windows: s.stored, recents: [] }),
     flush: vi.fn(async () => void s.order.push('store.flush')),
+    // The 1.0.15 heading styles (YAZ-3066 D11): none here, so the move writes nothing.
+    takeLegacyHeadingStyles: vi.fn(() => (s.order.push('takeLegacyHeadingStyles'), {})),
   }
   /** The updater's face to index.ts (YAZ-2976); `updater.test.ts` tests the updater itself. */
   const updater = {
@@ -188,6 +190,9 @@ describe('main startup order (YAZ-2172)', () => {
     h.s.ready()
     await settle()
     expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith('none')
+    // The 1.0.15 heading styles move once, before `restore` drops the windows a launch does not bring back (YAZ-3066 D11).
+    expect(h.store.takeLegacyHeadingStyles).toHaveBeenCalledOnce()
+    expect(h.s.order.indexOf('takeLegacyHeadingStyles')).toBeLessThan(h.s.order.indexOf('restore:none'))
     expect(h.manager.rootFor.mock.calls).toEqual(routes)
     expect(h.manager.linkNotice.mock.calls).toEqual(notices)
     expect(h.manager.routeToFile.mock.calls).toEqual(routes)

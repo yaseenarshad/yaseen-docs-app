@@ -306,70 +306,32 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings.tocLines).toBe('always')
   })
 
-  it('headingStyles: an older file without the key loads as {}; a valid map loads as it is; any bad level or field drops the whole field to {} and keeps the other settings; the channel check refuses it (YAZ-3049 D1)', async () => {
-    expect(DEFAULT_SETTINGS.headingStyles).toEqual({})
-    // A yaseendocs.json from 1.0.14: the missing field gets `{}`, and no other field changes.
-    const { headingStyles: _omitted, ...legacySettings } = DEFAULT_SETTINGS
-    await seed(valid({ settings: { ...legacySettings, lineSpacing: 2 } }))
-    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, lineSpacing: 2 })
-    const loaded = async (headingStyles: unknown): Promise<unknown> => {
-      await seed(valid({ settings: { ...DEFAULT_SETTINGS, lineSpacing: 2, tocLines: 'off', headingStyles } }))
-      const { settings } = createStore(file).get()
-      // One bad field costs that field only: the settings beside it load as stored.
-      expect(settings.lineSpacing).toBe(2)
-      expect(settings.tocLines).toBe('off')
-      return settings.headingStyles
-    }
-
-    const good = [
-      {},
-      { h2: { size: 24 } },
-      { h1: { size: 12, bold: false, underline: true, highlight: 'yellow' }, h6: { size: 48, highlight: 'pink' } },
-      { h3: { bold: true, underline: false, highlight: 'green' }, h4: { highlight: 'blue' }, h5: {} },
-    ]
-    for (const map of good) expect(await loaded(map)).toEqual(map)
-    const bad: unknown[] = [
-      // An unknown level, and keys that only look like one.
-      { h7: { size: 20 } },
-      { H2: { size: 20 } },
-      { h0: {} },
-      // A size out of range, not whole, or not a number.
-      { h2: { size: 11 } },
-      { h2: { size: 49 } },
-      { h2: { size: 20.5 } },
-      { h2: { size: NaN } },
-      { h2: { size: '20' } },
-      // An unknown colour, and colours in another form.
-      { h2: { highlight: 'red' } },
-      { h2: { highlight: 'Yellow' } },
-      { h2: { highlight: '#ffd500' } },
-      // A switch that is not a boolean, an unknown field, and a field set to null.
-      { h2: { bold: 'no' } },
-      { h2: { underline: 1 } },
-      { h2: { size: 20, color: 'red' } },
-      { h2: { highlight: null } },
-      // A level that is not an object, and a map that is not an object.
-      { h2: null },
-      { h2: 20 },
-      { h2: [] },
-      [],
-      null,
-      'big',
-      // One bad level drops the good levels beside it too: the whole field falls back.
-      { h1: { size: 30 }, h2: { size: 100 } },
-    ]
-    for (const map of bad) expect(await loaded(map), JSON.stringify(map)).toEqual({})
-
-    // `state.setSettings` is strict: a write with a bad `headingStyles`, or with none, is refused as a whole.
-    for (const map of good) expect(isSettings({ ...DEFAULT_SETTINGS, headingStyles: map })).toBe(true)
-    for (const map of [...bad, undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, headingStyles: map }), JSON.stringify(map)).toBe(false)
-    expect(isSettings(legacySettings)).toBe(false)
-    // A good map is saved and read again by the next start.
+  it('the 1.0.15 heading styles (YAZ-3066 D11): the settings never hold them; a valid map is handed out once, then `{}`; a bad map is `{}`; the next write drops the key from the file', async () => {
+    expect(Object.keys(DEFAULT_SETTINGS)).not.toContain('headingStyles')
+    const legacy = { h1: { size: 25 }, h2: { size: 21, underline: true }, h3: { size: 18 }, h4: { size: 15, highlight: 'yellow' } }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, lineSpacing: 2, headingStyles: legacy } }))
     const store = createStore(file)
-    store.setSettings({ ...DEFAULT_SETTINGS, headingStyles: { h2: { size: 27, underline: true } } })
+    // The settings load as stored, without the retired key; the strict channel check refuses it too.
+    expect(store.get().settings).toEqual({ ...DEFAULT_SETTINGS, lineSpacing: 2 })
+    expect(isSettings({ ...DEFAULT_SETTINGS, headingStyles: legacy })).toBe(true) // an unknown key is not checked: the store keeps only known keys
+    expect(store.takeLegacyHeadingStyles()).toEqual(legacy)
+    expect(store.takeLegacyHeadingStyles()).toEqual({})
+    // The next write of the state file has no `headingStyles` key.
+    store.setSidebarWidth(300)
     await store.flush()
-    expect((await onDisk()).settings.headingStyles).toEqual({ h2: { size: 27, underline: true } })
-    expect(createStore(file).get().settings.headingStyles).toEqual({ h2: { size: 27, underline: true } })
+    const disk = await onDisk()
+    expect(Object.keys(disk.settings)).not.toContain('headingStyles')
+    expect(disk.settings.lineSpacing).toBe(2)
+    expect(createStore(file).takeLegacyHeadingStyles()).toEqual({})
+
+    // A map that is not valid as a whole, and a file with no key, give `{}`.
+    for (const bad of [{ h1: { size: 30 }, h2: { size: 100 } }, { h7: { size: 20 } }, null, 'big', undefined]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, headingStyles: bad } }))
+      expect(createStore(file).takeLegacyHeadingStyles(), JSON.stringify(bad)).toEqual({})
+    }
+    // No state file at all.
+    await rm(file)
+    expect(createStore(file).takeLegacyHeadingStyles()).toEqual({})
   })
 
   it('confirmRename: a file without the key sanitizes to on; off survives; junk falls back (YAZ-2420 3C1)', async () => {
