@@ -1258,6 +1258,9 @@ export function App() {
       // YAZ-3028: every drawing tab shares the canvas prefs, a SETTING too.
       canvasPrefs: settings.canvas,
       onChangeCanvasPrefs: changeCanvasPrefs,
+      // A diagram tab's dark-mode colours, and ⌘B pressed inside its draw.io frame.
+      diagramDarkColors: settings.diagramDarkColors,
+      onToggleSidebar: toggleSidebar,
       // Upkeep off (🔒 D7): no settings, so no Reviews section.
       reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
     }

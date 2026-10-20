@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
-import { TOC_DEFAULT_W, type CanvasPrefs, type CommentsOrder, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
+import { TOC_DEFAULT_W, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
@@ -62,6 +62,8 @@ import type { NoticeKind } from '../lib/notice'
  * chunk, and the engine after it (`drawings/engine.ts`) — a window with no drawing tab loads neither.
  */
 const DrawingEditor = lazy(() => import('../drawings/DrawingEditor').then((m) => ({ default: m.DrawingEditor })))
+/** A diagram tab (YAZ-3028 D5): the same rule — its host in its own chunk, and draw.io in its own origin's iframe. */
+const DrawioEditor = lazy(() => import('../diagrams/DrawioEditor').then((m) => ({ default: m.DrawioEditor })))
 
 /**
  * A save flips the chip unsaved → saving → saved, and each flip re-renders CrepeHost; these sections
@@ -155,9 +157,13 @@ interface EditorProps {
   canvasPrefs?: CanvasPrefs
   /** A drawing's engine moved a pref: App writes the SETTING through this. */
   onChangeCanvasPrefs?: (next: CanvasPrefs) => void
+  /** How draw.io diagrams look in dark mode (YAZ-3028, Draw's 🔒 YAZ-1802 D16): `SettingsState.diagramDarkColors`. Absent → `adapt`. */
+  diagramDarkColors?: DiagramDarkColors
+  /** ⌘B pressed inside a diagram's draw.io frame, where the window never sees the key: App's sidebar toggle. */
+  onToggleSidebar?: () => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, canvasPrefs, onChangeCanvasPrefs }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, canvasPrefs, onChangeCanvasPrefs, diagramDarkColors = 'adapt', onToggleSidebar }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -202,6 +208,13 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     return (
       <Suspense fallback={<section className="editor" />}>
         <DrawingEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onChangeCanvasPrefs} onNotice={onNotice} />
+      </Suspense>
+    )
+  }
+  if (kind === 'diagram') {
+    return (
+      <Suspense fallback={<section className="editor" />}>
+        <DrawioEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} darkColors={diagramDarkColors} onNotice={onNotice} onToggleSidebar={onToggleSidebar} />
       </Suspense>
     )
   }

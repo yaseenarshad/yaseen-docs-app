@@ -34,8 +34,8 @@ beforeEach(() => {
 const pick = () => registered(CONTRACT.pickFolder.channel)({ sender })
 
 describe('dialog:pick-folder', () => {
-  it('registers exactly the pick-folder and the export channels', () => {
-    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel, CONTRACT.dialog.saveDrawing.channel])
+  it('registers exactly the pick-folder and the two export channels', () => {
+    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel, CONTRACT.dialog.saveDrawing.channel, CONTRACT.dialog.saveImage.channel])
   })
 
   it('opens an openDirectory dialog parented to the calling window and answers { path }', async () => {
@@ -157,5 +157,17 @@ describe('dialog:save-file', () => {
     expect(await exportTo({ defaultName: 'Flow.excalidraw', content: '{}' })).toMatchObject({ ok: false, error: { code: 'UNSUPPORTED_EXTENSION' } })
     expect(await exportTo({ defaultName: '', content: '{}' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
     expect(await readdir(dir)).toEqual([])
+  })
+
+  it('a diagram`s Export Image… writes the PNG or the SVG by the picked extension, and nothing else', async () => {
+    const image = (req: unknown) => registered(CONTRACT.dialog.saveImage.channel)({ sender }, req)
+    const req = { defaultName: 'Flow.png', png: `data:image/png;base64,${Buffer.from('PNG').toString('base64')}`, svg: `data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base64')}` }
+    showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: path.join(dir, 'Flow.svg') })
+    expect(await image(req)).toEqual({ ok: true, value: { path: path.join(dir, 'Flow.svg') } })
+    expect(await readFile(path.join(dir, 'Flow.svg'), 'utf8')).toBe('<svg/>')
+    showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: path.join(dir, 'Flow.jpg') })
+    expect(await image(req)).toMatchObject({ ok: false, error: { code: 'UNSUPPORTED_EXTENSION' } })
+    expect(await image({ ...req, png: 'nope' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    expect(await readdir(dir)).toEqual(['Flow.svg'])
   })
 })

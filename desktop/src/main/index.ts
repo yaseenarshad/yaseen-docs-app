@@ -1,11 +1,13 @@
 import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell } from 'electron'
-import { statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileLink, parseFileLink } from '@shared/links'
 import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
+import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { APP_SCHEME } from './appScheme'
+import { resolveDrawioDir, serveDrawio } from './drawio/assets'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { broadcastAll } from './ipc/broadcast'
@@ -79,6 +81,8 @@ app.on('open-file', (event, path) => {
 protocol.registerSchemesAsPrivileged([APP_SCHEME])
 
 const RENDERER_DIR = join(__dirname, '../renderer')
+/** The draw.io webapp (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D4/D5): the pack cache in dev, `out/drawio` in a build. */
+const DRAWIO_DIR = resolveDrawioDir({ mainDir: __dirname, appPath: app.getAppPath(), isPackaged: app.isPackaged, exists: existsSync })
 
 /** One user-global state file (D9, GRO-2159): `~/Library/Application Support/Yaseen Docs/yaseendocs.json`. */
 const store = createStore(join(app.getPath('userData'), STATE_FILE))
@@ -191,8 +195,16 @@ app.whenReady().then(() => {
   protocol.handle('app', (req) => {
     const { host, pathname } = new URL(req.url)
     // `app://vault/…` (YAZ-1658): vault images for `<img src>`, resolved by vaultProtocol.ts;
-    // every other host is the renderer bundle, exactly as before.
+    // `app://drawio/…` (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D4): the diagram editor's OWN origin, every
+    // answer under its no-network CSP; every other host is the renderer bundle, exactly as before.
     if (host === 'vault') return serveVaultImage(req, (u) => net.fetch(u))
+    if (host === DRAWIO_HOST) {
+      return serveDrawio(DRAWIO_DIR, pathname, {
+        fetchFile: (url) => net.fetch(url),
+        noStore: !app.isPackaged,
+        onNotFound: app.isPackaged ? undefined : (missing) => console.warn(`[drawio] 404 app://drawio${missing} — not in the pruned pack (tools/lib/drawioPack.mjs)`),
+      })
+    }
     const file = join(RENDERER_DIR, pathname === '/' ? 'index.html' : pathname)
     return net.fetch(pathToFileURL(file).toString())
   })

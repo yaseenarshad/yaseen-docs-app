@@ -115,15 +115,32 @@ export function measure({ out, app, dmg }) {
   m.rendererMapBytes = sum(files.filter((f) => f.endsWith('.map')))
   m.mainBundleBytes = bytes(join(out, 'main'))
   m.drawingAssetBytes = bytes(join(r, DRAWING_ASSETS))
+  // The pinned draw.io webapp (YAZ-3028 D5): reported, never gated on its own — `asarBytes` holds it.
+  m.drawioBytes = bytes(join(out, 'drawio'))
   return m
 }
 
-/** Files every build ships under `out/`: the app, the `yaseendocs` command (YAZ-1617), the preload and the renderer. */
-const REQUIRED_OUT = ['main/index.js', 'main/cli.js', 'preload/index.js', 'renderer/index.html']
+/**
+ * The draw.io webapp every build ships under `out/drawio` (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D5): the editor,
+ * our overlay (the two config hooks, the picture page and its scripts, the fonts sheet), draw.io's
+ * licence, and the bundles the editor and the picture page load. A file missing here is a diagram tab
+ * or preview that breaks only when first opened, so the gate fails on it.
+ */
+const DRAWIO_OUT = [
+  'drawio/index.html', 'drawio/yaseen-render.html', 'drawio/js/PreConfig.js', 'drawio/js/PostConfig.js',
+  'drawio/js/yaseen-render.js', 'drawio/js/yaseen-render-config.js', 'drawio/yaseen-fonts/fonts.css',
+  'drawio/LICENSE-drawio.txt', 'drawio/js/viewer-static.min.js', 'drawio/js/stencils.min.js', 'drawio/js/app.min.js',
+]
+/** Folders of `out/drawio` that must not be empty: library icons a diagram names by path, and the MathJax the editor loads at start. */
+const DRAWIO_DIRS = ['drawio/img', 'drawio/math4']
+
+/** Files every build ships under `out/`: the app, the `yaseendocs` command (YAZ-1617), the preload, the renderer and draw.io. */
+const REQUIRED_OUT = ['main/index.js', 'main/cli.js', 'preload/index.js', 'renderer/index.html', ...DRAWIO_OUT]
 
 /** Integrity of `desktop/out`: what CI can check after `npm run build`. */
 function checkOut(out) {
   const fails = REQUIRED_OUT.filter((p) => !existsSync(join(out, p))).map((p) => `out: missing ${p}`)
+  for (const d of DRAWIO_DIRS) if (!existsSync(join(out, d)) || walk(join(out, d)).length === 0) fails.push(`out: ${d}/ is empty (diagram library icons draw blank, math labels show raw TeX)`)
   const r = join(out, 'renderer')
   if (!existsSync(join(r, 'index.html'))) return fails
   for (const f of rendererGraph(r).missing) fails.push(`renderer: ${f} is imported but not shipped`)
@@ -150,6 +167,7 @@ function checkApp(app) {
   if (!bin || !(bin.mode & 0o111)) fails.push('Resources/bin/yaseendocs missing or not executable (the command line agents run)')
   const inAsar = new Set(asarFiles(join(app, 'Contents/Resources/app.asar')))
   for (const p of REQUIRED_OUT) if (!inAsar.has(`out/${p}`)) fails.push(`asar: missing out/${p}`)
+  for (const d of DRAWIO_DIRS) if (![...inAsar].some((f) => f.startsWith(`out/${d}/`))) fails.push(`asar: out/${d}/ is empty (diagram library icons draw blank, math labels show raw TeX)`)
   return fails
 }
 
@@ -187,7 +205,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const fmt = (n) => (n == null ? '-' : n >= 1e5 ? `${(n / 1e6).toFixed(2)} MB` : String(n))
     for (const [k, v] of Object.entries(metrics)) {
       const row = budget.size[k]
-      console.log(`${k.padEnd(24)} ${fmt(v).padStart(10)}   ${row ? `ceiling ${fmt(row.max)}` : 'not gated (drawing component, out of scope)'}`)
+      console.log(`${k.padEnd(24)} ${fmt(v).padStart(10)}   ${row ? `ceiling ${fmt(row.max)}` : 'not gated (reported only; asarBytes holds it)'}`)
     }
     for (const f of fails) console.log('INTEGRITY FAIL:', f)
     for (const o of over) console.log('OVER BUDGET:', o)

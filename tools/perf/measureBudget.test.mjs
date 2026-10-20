@@ -52,6 +52,8 @@ beforeEach(() => {
   put('renderer/assets/index.css')
   put('renderer/assets/KaTeX_Main-Regular-abc.woff2')
   put('renderer/excalidraw-assets/fonts/Virgil/Virgil.woff2')
+  // The draw.io webapp (YAZ-3028 D5): every file the gate requires, and the two folders it wants filled.
+  for (const f of ['index.html', 'yaseen-render.html', 'js/PreConfig.js', 'js/PostConfig.js', 'js/yaseen-render.js', 'js/yaseen-render-config.js', 'yaseen-fonts/fonts.css', 'LICENSE-drawio.txt', 'js/viewer-static.min.js', 'js/stencils.min.js', 'js/app.min.js', 'img/lib/icon.svg', 'math4/es5/startup.js']) put(`drawio/${f}`)
 })
 afterEach(() => rmSync(out, { recursive: true, force: true }))
 
@@ -87,6 +89,15 @@ describe('perf:budget:ci', () => {
     rmSync(join(out, 'renderer/assets/mermaid.js'))
     const { code, text } = gate()
     expect(text).toContain('INTEGRITY FAIL: renderer: assets/mermaid.js is imported but not shipped')
+    expect(code).toBe(1)
+  })
+
+  it('fails when out/drawio misses a file the diagram tab loads, or its MathJax folder is empty (YAZ-3028 D5)', () => {
+    rmSync(join(out, 'drawio/js/PostConfig.js'))
+    rmSync(join(out, 'drawio/math4'), { recursive: true })
+    const { code, text } = gate()
+    expect(text).toContain('INTEGRITY FAIL: out: missing drawio/js/PostConfig.js')
+    expect(text).toContain('INTEGRITY FAIL: out: drawio/math4/ is empty')
     expect(code).toBe(1)
   })
 

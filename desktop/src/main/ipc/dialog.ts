@@ -52,12 +52,56 @@ export async function saveDrawingFile(e: IpcMainInvokeEvent, inFlight: Set<Brows
   const { defaultName, content } = req
   if (typeof defaultName !== 'string' || defaultName === '') throw new BridgeFailure('BAD_REQUEST', "'defaultName' must be a non-empty string")
   if (typeof content !== 'string') throw new BridgeFailure('BAD_REQUEST', "'content' must be a string")
+  const file = await showSave(e, inFlight, { ...SAVE_DRAWING_OPTIONS, defaultPath: defaultName })
+  if (file === null) return { cancelled: true }
+  if (!isDrawing(file)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'a drawing exports as .excalidraw', { path: file })
+  await fsCall(file, () => atomicWrite(file, content))
+  return { path: file }
+}
+
+/** Export Image… for a diagram (Draw's 🔒 YAZ-1802 D9): PNG first, the format Yasin reuses as content. */
+const SAVE_IMAGE_OPTIONS: Omit<Electron.SaveDialogOptions, 'defaultPath'> = {
+  title: 'Export Image',
+  filters: [
+    { name: 'PNG image', extensions: ['png'] },
+    { name: 'SVG image', extensions: ['svg'] },
+  ],
+  properties: ['createDirectory', 'showOverwriteConfirmation'],
+}
+
+/** The data URL each picture arrives as, by the extension it is written under. */
+const IMAGE_DATA_URL = { '.png': 'data:image/png;base64,', '.svg': 'data:image/svg+xml;base64,' } as const
+
+/**
+ * `window.yaseenDocs.dialog.saveImage(req)` (YAZ-3028, Draw's 🔒 YAZ-1802 D9): a diagram's Export Image… —
+ * `saveDrawingFile`'s one-door rule with a PNG / SVG sheet. The name the user picks decides the
+ * format; any other extension is refused, because a sheet lets a name be typed freely.
+ */
+export async function saveImageFile(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | null>, body: unknown): Promise<SaveDrawingResponse> {
+  const { defaultName, png, svg } = requireRequest(body)
+  if (typeof defaultName !== 'string' || defaultName === '') throw new BridgeFailure('BAD_REQUEST', "'defaultName' must be a non-empty string")
+  if (typeof png !== 'string' || !png.startsWith(IMAGE_DATA_URL['.png'])) throw new BridgeFailure('BAD_REQUEST', "'png' must be a PNG data URL")
+  if (typeof svg !== 'string' || !svg.startsWith(IMAGE_DATA_URL['.svg'])) throw new BridgeFailure('BAD_REQUEST', "'svg' must be an SVG data URL")
+  const file = await showSave(e, inFlight, { ...SAVE_IMAGE_OPTIONS, defaultPath: defaultName })
+  if (file === null) return { cancelled: true }
+  const ext = path.extname(file).toLowerCase()
+  if (ext !== '.png' && ext !== '.svg') throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'an image exports as .png or .svg', { path: file })
+  const dataUrl = ext === '.png' ? png : svg
+  await fsCall(file, () => atomicWrite(file, Buffer.from(dataUrl.slice(IMAGE_DATA_URL[ext].length), 'base64')))
+  return { path: file }
+}
+
+/**
+ * The native SAVE sheet parented to the calling window, under `pickFolder`'s one-sheet-per-window
+ * rule (the same `inFlight` set): the absolute path picked, or null when the sheet was dismissed or
+ * another one of this window is up.
+ */
+async function showSave(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | null>, options: Electron.SaveDialogOptions): Promise<string | null> {
   const win = BrowserWindow.fromWebContents(e.sender)
-  if (inFlight.has(win)) return { cancelled: true }
+  if (inFlight.has(win)) return null
   inFlight.add(win)
   let result: Electron.SaveDialogReturnValue
   try {
-    const options = { ...SAVE_DRAWING_OPTIONS, defaultPath: defaultName }
     result = await (win === null ? dialog.showSaveDialog(options) : dialog.showSaveDialog(win, options))
   } catch (err) {
     throw new BridgeFailure('PICKER_FAILED', err instanceof Error ? err.message : String(err))
@@ -65,15 +109,12 @@ export async function saveDrawingFile(e: IpcMainInvokeEvent, inFlight: Set<Brows
     inFlight.delete(win)
   }
   const picked = result.filePath
-  if (result.canceled || picked === undefined || picked === '') return { cancelled: true }
-  const file = path.resolve(picked)
-  if (!isDrawing(file)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'a drawing exports as .excalidraw', { path: file })
-  await fsCall(file, () => atomicWrite(file, content))
-  return { path: file }
+  return result.canceled || picked === undefined || picked === '' ? null : path.resolve(picked)
 }
 
 export function registerDialogIpc(): void {
   const inFlight = new Set<BrowserWindow | null>()
   handleWithEvent(CONTRACT.pickFolder, (e) => pickFolder(e, inFlight))
   handleWithEvent(CONTRACT.dialog.saveDrawing, (e, body: unknown) => saveDrawingFile(e, inFlight, body))
+  handleWithEvent(CONTRACT.dialog.saveImage, (e, body: unknown) => saveImageFile(e, inFlight, body))
 }

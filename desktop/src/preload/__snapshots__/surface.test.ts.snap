@@ -12,6 +12,7 @@ createFile/1: invoke fs:create-file ["a0"]; => "answer"; !> {"code":"NOT_FOUND",
 diagram.load/1: invoke diagram:load ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 diagram.save/1: invoke diagram:save ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 dialog.saveDrawing/1: invoke dialog:save-file ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+dialog.saveImage/1: invoke dialog:save-image ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 drawing.load/1: invoke drawing:load ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 drawing.save/1: invoke drawing:save ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 favorites.get/1: invoke favorites:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

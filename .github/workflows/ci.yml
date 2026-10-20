@@ -24,6 +24,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The pinned draw.io pack (YAZ-3028 D5, Draw's YAZ-1802 D5): sha256-checked, so the suites that read
+      # the real bundle run here too, and `npm run build` finds it unpacked.
+      - run: npm run drawio:pack
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

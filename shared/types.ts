@@ -510,6 +510,20 @@ export interface SaveDrawingRequest {
 /** Where the file landed, or `{ cancelled: true }` when the sheet was dismissed and nothing was written. */
 export type SaveDrawingResponse = { path: string } | { cancelled: true }
 
+/**
+ * File › Export Image… for a draw.io diagram (YAZ-3028, Draw's 🔒 YAZ-1802 D9): `SaveDrawingRequest`'s
+ * one-door rule with a PNG / SVG sheet. The picked name's extension decides which of the two pictures
+ * is written, so both arrive with the request, already drawn.
+ */
+export interface SaveImageRequest {
+  /** The name the sheet opens on, extension included (`<diagram name>.png`). */
+  defaultName: string
+  /** The picture as a `data:image/png;base64,` URL. */
+  png: string
+  /** The same picture as a `data:image/svg+xml;base64,` URL. */
+  svg: string
+}
+
 // ---------- writeFile(req) ----------
 
 export interface FileWriteRequest {
@@ -1037,7 +1051,17 @@ export interface SettingsState {
    * YAZ-3028): seeded into a canvas at mount and kept in step with the engine both ways. See `CanvasPrefs`.
    */
   canvas: CanvasPrefs
+  /**
+   * How draw.io diagrams look in dark mode (YAZ-3028, Draw's 🔒 YAZ-1802 D16): `adapt` lets draw.io
+   * re-colour them so an ordinary diagram stays readable, `keep` shows every diagram in its own
+   * colours. The DEFAULT only — a file whose `<mxGraphModel>` says `adaptiveColors="none"` keeps its
+   * colours either way. The diagram tab and its pictures follow it, live. Its Settings row is YAZ-3037's.
+   */
+  diagramDarkColors: DiagramDarkColors
 }
+
+export type DiagramDarkColors = 'adapt' | 'keep'
+export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
 
@@ -1127,6 +1151,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
   canvas: DEFAULT_CANVAS_PREFS,
+  diagramDarkColors: 'adapt',
 }
 
 export interface WindowBounds {

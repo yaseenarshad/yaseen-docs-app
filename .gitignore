@@ -3,6 +3,8 @@ dist/
 desktop/out/
 desktop/dist-app/
 desktop/.maps/
+# The pinned draw.io webapp, unpacked by tools/packDrawio.mjs (YAZ-3028 D5): never committed.
+desktop/.cache/
 .DS_Store
 *.log
 .claude/*
