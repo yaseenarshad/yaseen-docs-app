@@ -4,7 +4,7 @@
  * them without changing the existing main-tab reducer expectations beyond `history: {}`.
  */
 import { describe, expect, it } from 'vitest'
-import { pathTabsReducer, type PathTabs } from './testTabs'
+import { pathTabsReducer, plain, type PathTabs } from './testTabs'
 
 // Read by path (`testTabs.ts`): with no copies, a path names one tab, and the stacks are keyed by tab id (YAZ-2940 D1).
 const tabsReducer = pathTabsReducer
@@ -139,7 +139,7 @@ describe('history consistency through rename, delete, close', () => {
   })
 
   it('reset empties history', () => {
-    const s = tabsReducer(abc(), { type: 'reset', tabs: [A, B], active: A })
+    const s = tabsReducer(abc(), { type: 'reset', tabs: plain(A, B), active: A })
     expect(s.history).toEqual({})
   })
 })
