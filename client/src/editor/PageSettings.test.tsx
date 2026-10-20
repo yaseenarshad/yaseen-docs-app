@@ -242,7 +242,7 @@ describe('PageSettings: TOC made from', () => {
       expect([...tip()!.querySelectorAll('dt')].map((dt) => dt.textContent)).toEqual(['Auto', 'Headings', 'Bullets'])
       expect([...tip()!.querySelectorAll('dd')].map((dd) => dd.textContent)).toEqual([
         'The app selects. A page with two or more headings outside bullets shows its headings. Each other page shows its bullets.',
-        'Shows each H1, H2 and H3. This includes the headings that are in bullets.',
+        'Shows each heading from H1 to H5. This includes the headings that are in bullets.',
         'Shows the bullets, to three levels.',
       ])
       // Reading it chose nothing and closed nothing.

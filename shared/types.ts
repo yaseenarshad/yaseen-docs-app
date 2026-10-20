@@ -831,7 +831,7 @@ export const TOC_DEFAULT_W = 200
 
 /**
  * What ONE note's table of contents is built from when the reader chose (YAZ-2700 D14): `headings`
- * is every H1-H3 of the note, the ones inside bullets too; `bullets` is its bullets, however many
+ * is every H1-H5 of the note (YAZ-3051), the ones inside bullets too; `bullets` is its bullets, however many
  * headings it has. The third choice, Auto — the note's own structure decides — is the ABSENCE of
  * a choice: it is never stored, and reads as `null` everywhere.
  */
