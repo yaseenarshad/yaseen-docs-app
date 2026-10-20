@@ -8,7 +8,6 @@ import { FAVORITES_FILE, mergeFavoritesFile } from '../favorites'
 import { atomicWrite } from '../fs/fsUtils'
 import { mergeSharesFile, SHARES_FILE } from '../share/shareLinks'
 import { git, zList } from './exec'
-import { withLines } from './ignore'
 
 /**
  * A REBASE THAT STOPPED ON CONFLICTS, FINISHED INSTEAD OF ABANDONED — for DRAWINGS (🔒 YAZ-1897
@@ -63,6 +62,20 @@ const SHARES_PATH = `${VAULT_CONFIG_DIR}/${SHARES_FILE}`
 const FAVORITES_PATH = `${VAULT_CONFIG_DIR}/${FAVORITES_FILE}`
 
 /**
+ * The file's new contents with every entry of `entries` present, or null when it already has them
+ * all. APPEND-ONLY: every line already there is left byte-for-byte. Comparison is on TRIMMED lines,
+ * because `-merge ` and a leading-whitespace copy are the same rule to git. Pure, so the rule is
+ * testable without a filesystem.
+ */
+export function withLines(current: string | null, entries: readonly string[]): string | null {
+  const lines = current === null ? [] : current.split('\n').map((line) => line.trim())
+  const missing = entries.filter((entry) => !lines.includes(entry))
+  if (missing.length === 0) return null
+  const body = current === null || current === '' ? '' : current.endsWith('\n') ? current : `${current}\n`
+  return `${body}${missing.join('\n')}\n`
+}
+
+/**
  * Each vault's `info/attributes` path: asked of git once, then every pass is one read (YAZ-2073 5H).
  * Kept for the process's life — it moves only with the repository itself, and a pass on a folder
  * that is no longer a repo stops before it asks.
@@ -89,7 +102,7 @@ export async function ensureBoardMergeRule(bin: string, root: string): Promise<v
 }
 
 /** The two ends of what a pass is replaying onto: our HEAD before the rebase, and the upstream it replays onto. */
-export interface RebaseSpan {
+interface RebaseSpan {
   before: string
   upstream: string
 }
@@ -110,11 +123,29 @@ interface Settled {
 const abs = (root: string, rel: string): string => path.join(root, ...rel.split('/'))
 
 /**
+ * Whether git has a rebase STOPPED in this vault (`rebase-merge/` or `rebase-apply/` in the git dir).
+ * A `git rebase` that git refused to start — "cannot rebase: You have unstaged changes", when an
+ * autosave lands between the pass's commit and its rebase — exits non-zero and leaves neither.
+ */
+export async function rebaseStopped(bin: string, root: string): Promise<boolean> {
+  for (const dir of ['rebase-merge', 'rebase-apply']) {
+    const where = await git(bin, root, ['rev-parse', '--git-path', dir])
+    if (where.code === 0 && existsSync(path.resolve(root, where.stdout.trim()))) return true
+  }
+  return false
+}
+
+/**
  * Settles a stopped rebase and continues it to the end. Answers what was merged, or null after
  * aborting (lossless) when something could not be settled. Parked saves are back on disk either way,
  * and only a merge that LANDED moves "before the merge" — a failed one leaves the last one's pointer.
+ *
+ * A rebase that never STARTED is not ours to touch (YAZ-3044 A1): it answers null at once, before
+ * anything is parked. Parking there would check the user's note out to the committed text and write
+ * it back a moment later — two disk changes in one pass, which can reload a clean tab with old text.
  */
 export async function resolveRebase(bin: string, root: string, span: RebaseSpan): Promise<GithubSyncMerge[] | null> {
+  if (!(await rebaseStopped(bin, root))) return null
   const parked = new Map<string, Buffer | null>()
   const copies = new Map<string, string>()
   const report = new Map<string, GithubSyncMerge>()

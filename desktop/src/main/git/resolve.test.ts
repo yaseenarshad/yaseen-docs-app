@@ -1,10 +1,11 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { GITHUB_FILE_LIMIT_BYTES } from '@shared/types'
-import { makeTwoMachines, REAL_GIT_TIMEOUT_MS, type Machine } from './gitFixture'
-import { BEFORE_MERGE_REF, BOARD_MERGE_RULES } from './resolve'
+import { makeTwoMachines, REAL_GIT_TIMEOUT_MS, requireGit, type Machine } from './gitFixture'
+import { BEFORE_MERGE_REF, BOARD_MERGE_RULES, withLines } from './resolve'
 import { syncPass } from './sync'
 
 /**
@@ -343,5 +344,51 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect(await a.git('status')).not.toMatch(/rebase in progress/i)
     // A merge that never landed does not move "your version before the merge" (Version history).
     expect(await a.git('rev-parse', '--verify', '-q', BEFORE_MERGE_REF)).toBe('')
+  })
+
+  it('YAZ-3044 A1: a note autosaved between the commit and the rebase is never touched — the pass says pending, and the next one syncs it', async () => {
+    const { a, b } = await twoMachines({ 'note.md': 'one\n', 'other.md': 'x\n' })
+    await b.write('other.md', 'from sam\n')
+    expect((await syncPass(b.root)).state).toBe('synced')
+    await a.write('note.md', 'typed\n')
+    // A git that stands in for the app's autosave: just before `rebase @{u}` runs, the note is saved
+    // again — after the pass's commit, so git refuses to start the rebase. A hard link outside the
+    // vault pins the saved file's inode: any rewrite (a checkout, a copy put back) would break it.
+    const real = await requireGit()
+    const dir = await mkdtemp(path.join(tmpdir(), 'mdapp-autosave-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+    const probe = path.join(dir, 'probe')
+    const wrapper = path.join(dir, 'git')
+    await writeFile(
+      wrapper,
+      `#!/bin/sh\nif [ "$1" = rebase ] && [ "$2" = '@{u}' ]; then printf 'autosaved\\n' > note.md; ln -f note.md '${probe}'; fi\nexec '${real}' "$@"\n`,
+      { mode: 0o755 },
+    )
+
+    const status = await syncPass(a.root, { candidates: [wrapper] })
+
+    expect(a.read('note.md')).toBe('autosaved\n')
+    expect(statSync(path.join(a.root, 'note.md')).ino).toBe(statSync(probe).ino)
+    expect(statSync(path.join(a.root, 'note.md')).nlink).toBe(2)
+    expect(status.state).toBe('pending')
+    expect(status.message).toMatch(/cannot rebase/i)
+    expect(await a.git('status')).not.toMatch(/rebase in progress/i)
+    // The retry: the save is committed, the rebase runs, and both machines agree.
+    expect((await syncPass(a.root)).state).toBe('synced')
+    expect((await syncPass(b.root)).state).toBe('synced')
+    expect(vault(b.root)).toEqual(vault(a.root))
+    expect(a.read('note.md')).toBe('autosaved\n')
+    expect(a.read('other.md')).toBe('from sam\n')
+  })
+})
+
+describe('withLines (the append-only rule for `.git/info/attributes`)', () => {
+  it('creates, appends without rewriting a line, adds a missing newline, and is a no-op when every entry is there', () => {
+    expect(withLines(null, ['*.drawio -merge'])).toBe('*.drawio -merge\n')
+    expect(withLines('', ['*.drawio -merge'])).toBe('*.drawio -merge\n')
+    expect(withLines('*.md text\n', ['*.drawio -merge'])).toBe('*.md text\n*.drawio -merge\n')
+    expect(withLines('*.md text', ['*.drawio -merge'])).toBe('*.md text\n*.drawio -merge\n')
+    expect(withLines('  *.drawio -merge  \n', ['*.drawio -merge'])).toBeNull()
+    expect(withLines('a\n', ['a', 'b'])).toBe('a\nb\n')
   })
 })

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GIT_TIMEOUT_CODE, git, type GitResult } from './exec'
 import { GITHUB_FILE_LIMIT_BYTES } from '@shared/types'
 import { makeBareRemote, makeGitRepo, REAL_GIT_TIMEOUT_MS, requireGit, wireOrigin, type BareRemote, type GitRepo } from './gitFixture'
-import { classifyGitFailure, commitMessage, lookAtRemote, syncPass, TRANSFER_TIMEOUT_MS } from './sync'
+import { classifyGitFailure, commitMessage, lookAtRemote, parkWhileRebasing, syncPass, TRANSFER_TIMEOUT_MS } from './sync'
 
 /** A file's SHA-1, streamed (the D12 test's file is 95 MiB). */
 async function sha1(file: string): Promise<string> {
@@ -118,41 +118,19 @@ describe('syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect(await repo.run(['rev-parse', 'HEAD'])).toBe(head)
   })
 
-  it("never commits Finder's droppings: `.DS_Store` is ignored, at any depth, before anything is staged (YAZ-1829)", async () => {
+  it('never edits the vault\'s `.gitignore` and syncs a `.DS_Store` like any file — Docs\' own behavior (YAZ-3044 A3, D12)', async () => {
     const { repo } = await pushedRepo()
     await repo.write('a.md', '# a\n')
     await repo.write('.DS_Store', 'finder\n')
-    await repo.write('sub/.DS_Store', 'finder\n')
-
-    expect((await syncPass(repo.root)).state).toBe('synced')
-
-    const tracked = await repo.run(['ls-files'])
-    expect(tracked.split('\n')).toContain('.gitignore')
-    expect(tracked).not.toContain('.DS_Store')
-    // The files are still on disk — ignoring is not deleting.
-    expect(existsSync(path.join(repo.root, '.DS_Store'))).toBe(true)
-  })
-
-  it('UNTRACKS a `.DS_Store` an older version already committed, and leaves it on disk', async () => {
-    const { repo } = await pushedRepo()
-    await repo.write('.DS_Store', 'finder\n')
-    await repo.run(['add', '-A'])
-    await repo.run(['commit', '-m', 'sync: .DS_Store'])
-    await repo.run(['push'])
-
-    expect((await syncPass(repo.root)).state).toBe('synced')
-
-    expect(await repo.run(['ls-files'])).not.toContain('.DS_Store')
-    expect(existsSync(path.join(repo.root, '.DS_Store'))).toBe(true)
-  })
-
-  it('leaves a vault with no droppings untouched — no `.gitignore` appears out of nowhere', async () => {
-    const { repo } = await pushedRepo()
-    await repo.write('a.md', '# a\n')
 
     expect((await syncPass(repo.root)).state).toBe('synced')
 
     expect(existsSync(path.join(repo.root, '.gitignore'))).toBe(false)
+    expect((await repo.run(['ls-files'])).split('\n')).toContain('.DS_Store')
+    // A second pass changes nothing: no commit made for a file sync itself wrote.
+    const head = await repo.run(['rev-parse', 'HEAD'])
+    expect((await syncPass(repo.root)).state).toBe('synced')
+    expect(await repo.run(['rev-parse', 'HEAD'])).toBe(head)
   })
 
   // ---------- YAZ-1801 D3: a file over GitHub's limit never jams the rest ----------
@@ -400,6 +378,60 @@ describe('syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
  * commit is `moved` (fetched — the full pass need not fetch again), and a look that failed is
  * `unknown`, left to the full pass to fetch and classify.
  */
+describe('parkWhileRebasing (YAZ-1801 D12)', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
+  it('YAZ-3044 A2: when the held-back file has no real change, the user\'s own stash is neither restored nor dropped', async () => {
+    const repo = await baseRepo()
+    const bin = await requireGit()
+    await repo.write('big.bin', 'committed\n')
+    await repo.write('mine.md', 'base\n')
+    await repo.run(['add', '-A'])
+    await repo.run(['commit', '-m', 'two files'])
+    // The user's own stash, made in a terminal: an edit of a DIFFERENT file, and one of big.bin.
+    await repo.write('mine.md', 'my stashed work\n')
+    await repo.write('big.bin', 'stashed by the user\n')
+    await repo.run(['stash', 'push', '-m', 'mine'])
+    const theirs = await repo.run(['rev-parse', 'refs/stash'])
+
+    // big.bin is clean now, so `stash push -- big.bin` exits 0 and makes no entry.
+    let ran = false
+    const verdict = await parkWhileRebasing(bin, repo.root, ['big.bin'], async () => {
+      ran = true
+      return true
+    })
+
+    expect(verdict).toBe(true)
+    expect(ran).toBe(true)
+    expect(await repo.run(['rev-parse', 'refs/stash'])).toBe(theirs)
+    expect(await repo.run(['stash', 'list', '--format=%s'])).toMatch(/mine$/)
+    expect(await readFile(path.join(repo.root, 'big.bin'), 'utf8')).toBe('committed\n')
+    expect(await readFile(path.join(repo.root, 'mine.md'), 'utf8')).toBe('base\n')
+  })
+
+  it('a real park drops ITS entry by SHA and leaves the user\'s older stash in place', async () => {
+    const repo = await baseRepo()
+    const bin = await requireGit()
+    await repo.write('big.bin', 'committed\n')
+    await repo.run(['add', '-A'])
+    await repo.run(['commit', '-m', 'big'])
+    await repo.write('note.md', 'stashed note\n')
+    await repo.run(['stash', 'push', '-m', 'mine'])
+    const theirs = await repo.run(['rev-parse', 'refs/stash'])
+    await repo.write('big.bin', 'grew past the line\n')
+
+    let during = ''
+    await parkWhileRebasing(bin, repo.root, ['big.bin'], async () => {
+      during = await readFile(path.join(repo.root, 'big.bin'), 'utf8')
+      return false
+    })
+
+    expect(during).toBe('committed\n') // parked for the length of the rebase
+    expect(await readFile(path.join(repo.root, 'big.bin'), 'utf8')).toBe('grew past the line\n')
+    expect(await repo.run(['rev-parse', 'refs/stash'])).toBe(theirs)
+    expect((await repo.run(['stash', 'list', '--format=%s'])).split('\n')).toHaveLength(1)
+    expect(await repo.run(['diff', '--cached', '--name-only'])).toBe('')
+  })
+})
+
 describe('lookAtRemote', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
   const spawns = (root: string) => vi.mocked(git).mock.calls.filter(([, r]) => r === root).map(([, , args]) => args[0])
 

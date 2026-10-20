@@ -3,7 +3,6 @@ import path from 'node:path'
 import { ATOMIC_TMP_HEX_LEN, isAtomicTmp } from '@shared/fileKind'
 import { GITHUB_FILE_LIMIT_BYTES, type GithubSyncMerge, type GithubSyncStatus } from '@shared/types'
 import { detectRepo } from './detect'
-import { ensureVaultIgnores, VAULT_IGNORED } from './ignore'
 import { git, GIT_TIMEOUT_CODE, installGitHint, resolveGit, zList, type GitResult } from './exec'
 import { ensureBoardMergeRule, resolveRebase } from './resolve'
 
@@ -37,34 +36,6 @@ import { ensureBoardMergeRule, resolveRebase } from './resolve'
 
 /** How many file names a commit subject lists before it summarises the rest. */
 const SUBJECT_FILES = 3
-
-/** Git pathspecs for what a vault ignores; `*` crosses `/`, so these match at any depth. */
-const IGNORED_PATHSPEC = VAULT_IGNORED.map((entry) => `*${entry}`)
-
-const listFiles = async (bin: string, root: string, args: readonly string[]): Promise<string[]> => {
-  const listed = await git(bin, root, ['ls-files', '-z', ...args, '--', ...IGNORED_PATHSPEC])
-  return listed.code === 0 ? listed.stdout.split('\0').filter((p) => p !== '') : []
-}
-
-/**
- * Keep the OS's droppings out of the commit `add -A` is about to make (YAZ-1829; a crashed write's
- * tmp file is `NO_ATOMIC_TMP`'s). `add -A` stages everything, so Finder's `.DS_Store` ends up committed, pushed, and
- * in the commit SUBJECT — which is what this vault's history shows. Two steps, both idempotent and both no-ops until one of
- * these files actually exists:
- *  - the vault's `.gitignore` gains the entry (APPEND-ONLY; the user's own file is not ours to
- *    reorganise, and a vault that already ignores it is not touched at all);
- *  - anything a previous version already committed is untracked with `--cached`, so git stops
- *    carrying it and the file stays exactly where it is on disk.
- * Returns true when either changed something, so the caller knows there is now work to stage.
- */
-async function keepDroppingsOut(bin: string, root: string): Promise<boolean> {
-  const tracked = await listFiles(bin, root, [])
-  const untracked = tracked.length > 0 ? [] : await listFiles(bin, root, ['-o', '--exclude-standard'])
-  if (tracked.length === 0 && untracked.length === 0) return false
-  const ignoreChanged = await ensureVaultIgnores(root).catch(() => false)
-  if (tracked.length === 0) return ignoreChanged
-  return (await git(bin, root, ['rm', '--cached', '--quiet', '--', ...tracked])).code === 0 || ignoreChanged
-}
 
 /**
  * The network budget of a flush pass (YAZ-1111): quitting must never sit out the full 30s wall,
@@ -157,6 +128,12 @@ const IDENTITY_PATTERNS = [/tell me who you are/i, /empty ident/i, /user\.name/i
  */
 const NOTHING_TO_COMMIT = /nothing to commit|nothing added to commit|no changes added/i
 
+/**
+ * git's refusal to START a rebase over a working tree that changed after the commit (YAZ-3044 A1):
+ * a note autosaved between the pass's commit and its `rebase`. Not a conflict — a retry.
+ */
+const REBASE_REFUSED = /cannot rebase: (you have unstaged changes|your index contains uncommitted changes)/i
+
 /** `add -A` never stages a crash-left atomic-write tmp (`isAtomicTmp`, YAZ-2179), so sync never commits or pushes one. */
 const NO_ATOMIC_TMP = `:(exclude,glob)**/*.tmp-${'[0-9a-f]'.repeat(ATOMIC_TMP_HEX_LEN)}`
 
@@ -227,10 +204,9 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
   if (!facts.isRepo || facts.remoteUrl === null) return { root, state: 'off', repo }
 
   // ---------- 1. local edits become one commit (minus anything GitHub would refuse — D3) ----------
-  const droppings = await keepDroppingsOut(bin, root)
   await ensureBoardMergeRule(bin, root) // YAZ-1897 D2: boards never reach git's line merge
   let tooLarge: string[] = []
-  if (facts.dirty || droppings) {
+  if (facts.dirty) {
     const staging = await stageWithinLimit(bin, root)
     tooLarge = staging.tooLarge
     if (staging.failed !== null) return withTooLarge(fromFailure(root, repo, staging.failed), tooLarge)
@@ -267,8 +243,16 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
   let merged: GithubSyncMerge[] = []
   if (behind > 0 && !flush) {
     const span = (await git(bin, root, ['rev-parse', 'HEAD', '@{u}'])).stdout.split('\n')
+    let refused = null as GitResult | null // set in the callback; the cast stops TS narrowing it to null
     const outcome = await parkWhileRebasing(bin, root, tooLarge, async () => {
-      if ((await git(bin, root, ['rebase', '@{u}'])).code === 0) return true
+      const rebased = await git(bin, root, ['rebase', '@{u}'])
+      if (rebased.code === 0) return true
+      // YAZ-3044 A1: an autosave landed between the commit and the rebase, and git refused to
+      // start. Nothing is stopped and nothing is lost: the next pass commits that save and rebases.
+      if (REBASE_REFUSED.test(`${rebased.stderr}\n${rebased.stdout}`)) {
+        refused = rebased
+        return false
+      }
       // YAZ-3039: settle the drawing conflicts and finish; it aborts (losslessly) whatever it cannot
       // settle — a note conflict above all, which keeps Docs' own words below (YAZ-3028 D4).
       const report = await resolveRebase(bin, root, { before: span[0] ?? 'HEAD', upstream: span[1] ?? '@{u}' })
@@ -276,6 +260,7 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
       return report !== null
     })
     if (outcome !== true && outcome !== false) return withTooLarge(fromFailure(root, repo, outcome), tooLarge)
+    if (refused !== null) return withTooLarge({ root, state: 'pending', message: firstMeaningfulLine(refused), repo }, tooLarge)
     if (!outcome) {
       return withTooLarge({ root, state: 'attention', attention: 'conflict', message: 'the same lines changed on two machines — nothing was lost, but this needs a human', repo }, tooLarge)
     }
@@ -332,23 +317,32 @@ export async function lookAtRemote(root: string): Promise<RemoteLook> {
  * (the commit left it out), and `git rebase` refuses to run over an unstaged change — which, with
  * the remote ahead, used to report a false `conflict` on every pass. So exactly those files are
  * parked (`stash push -- <paths>`), `rebase` runs, and their bytes are copied back from the stash
- * (`checkout stash@{0} -- <paths>`, then unstaged so the index matches HEAD again) and the stash
+ * (`checkout <stash> -- <paths>`, then unstaged so the index matches HEAD again) and the stash
  * dropped — whether the rebase landed or aborted. A copy, never a merge: it cannot conflict, and
  * the remote's version of the file stays in history. Untracked held-back files never block a
  * rebase and are not touched. Answers `rebase()`'s verdict, or the git failure that stopped the park.
+ *
+ * The stash this park made is known by its SHA, never as `stash@{0}` (YAZ-3044 A2): `stash push`
+ * exits 0 and makes NO entry when the paths have no real change, and then `stash@{0}` is the
+ * user's own stash — which a blind restore-and-drop would copy over their file and delete.
  */
-async function parkWhileRebasing(bin: string, root: string, tooLarge: readonly string[], rebase: () => Promise<boolean>): Promise<boolean | GitResult> {
+export async function parkWhileRebasing(bin: string, root: string, tooLarge: readonly string[], rebase: () => Promise<boolean>): Promise<boolean | GitResult> {
   const tracked = tooLarge.length === 0 ? [] : zList(await git(bin, root, ['ls-files', '-z', '--', ...tooLarge.map((p) => `:(literal)${p}`)]))
   if (tracked.length === 0) return rebase()
   const specs = tracked.map((p) => `:(literal)${p}`)
+  const stashTip = async () => (await git(bin, root, ['rev-parse', '-q', '--verify', 'refs/stash'])).stdout.trim()
+  const before = await stashTip()
   const parked = await git(bin, root, ['stash', 'push', '-q', '-m', 'yaseendocs: held back while rebasing', '--', ...specs])
   if (parked.code !== 0) return parked
+  const ours = await stashTip()
+  if (ours === '' || ours === before) return rebase() // nothing was parked: nothing to put back, and no entry of ours to drop
   try {
     return await rebase()
   } finally {
-    await git(bin, root, ['checkout', 'stash@{0}', '--', ...specs])
+    await git(bin, root, ['checkout', ours, '--', ...specs])
     await git(bin, root, ['reset', '-q', '--', ...specs])
-    await git(bin, root, ['stash', 'drop', '-q'])
+    const at = zList(await git(bin, root, ['stash', 'list', '-z', '--format=%H'])).indexOf(ours)
+    if (at >= 0) await git(bin, root, ['stash', 'drop', '-q', `stash@{${at}}`])
   }
 }
 
