@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { cleanVaultName, defaultRightPanelIdentity, type RightPanelIdentity } from '@shared/types'
+import { cleanVaultName, defaultRightPanelIdentity, type RightPanelIdentity, type StoredTab } from '@shared/types'
 import { storage } from '../lib/storage'
 import { carryEditorAcrossPane, flushRenamedPath } from '../lib/renameContinuity'
 import { hashFilePath } from '../lib/urlHash'
@@ -14,8 +14,8 @@ import { hashFilePath } from '../lib/urlHash'
  *
  * Each tab has its own id (YAZ-2940 D1), so two tabs may show one path: a copy. `active`,
  * `mounted`, `history` and `preview` name tabs by id; a file call always takes the tab's path.
- * A copy is never stored (D2): the mirror writes `storedTabs(tabs)` — each path once — and the
- * active tab's path as `file`, so main's `WindowEntry.tabs` stays de-duplicated by path.
+ * The mirror writes `tabStrip(state)` — every tab, copies and display names included (YAZ-3057) — and
+ * the active tab's path as `file`. Storage derives `WindowEntry.tabs` from it, each path once.
  *
  * Invariants: `active` is the id of a tab in `tabs` whenever non-null; `tabs: []` ⇔
  * `active: null`; ids are unique. `mounted` is renderer-only: `mounted ⊆ tab ids`,
@@ -59,8 +59,8 @@ export interface Tab {
   id: string
   path: string
   /**
-   * "Set display name" (YAZ-2949): what this tab shows in place of its page name. Session-only like
-   * the id — never stored, never in a file call. A tab that shows a different page has none (D2).
+   * "Set display name" (YAZ-2949): what this tab shows in place of its page name. Stored with the
+   * window (YAZ-3057), never in a file call. A tab that shows a different page has none (D2).
    */
   name?: string
 }
@@ -86,8 +86,15 @@ export function tabOf(s: Pick<TabsState, 'tabs' | 'active'>, path: string): Tab 
   return active !== null && active.path === path ? active : (s.tabs.find((t) => t.path === path) ?? null)
 }
 
-/** What the window stores (YAZ-2940 D2, S25): each path once, in the order of its first tab — a copy is never stored. */
+/** The window's paths (S25): each once, in the order of its first tab — `WindowEntry.tabs`. */
 export const storedTabs = (tabs: readonly Tab[]): string[] => [...new Set(tabs.map((t) => t.path))]
+
+/**
+ * What the window stores of its tabs (YAZ-3057): each tab left→right, copies included, with its display
+ * name, and the active tab marked — so the copy that was on show is the one on show after a restart.
+ */
+export const tabStrip = (s: TabsState): StoredTab[] =>
+  s.tabs.map((t) => ({ path: t.path, ...(t.name === undefined ? {} : { name: t.name }), ...(t.id === s.active ? { active: true as const } : {}) }))
 
 /** The active tab's path: the window's `file`. */
 export const activePath = (s: Pick<TabsState, 'tabs' | 'active'>): string | null => tabById(s, s.active)?.path ?? null
@@ -135,7 +142,7 @@ export type TabsAction =
   | { type: 'cycle'; dir: 1 | -1 } // ⌃Tab / ⌃⇧Tab: wraparound, plain left→right order
   | { type: 'back' } // the active tab steps back through its OWN stack (YAZ-721)
   | { type: 'forward' } // …and forward again, as far as the stack was walked back
-  | { type: 'reset'; tabs: string[]; active: string | null } // boot + root switch: the STORED paths and file; replace wholesale with new ids, normalizing
+  | { type: 'reset'; tabs: readonly StoredTab[]; active: string | null } // boot + root switch: the STORED tabs and file; replace wholesale with new ids
   | { type: 'rename'; oldPath: string; newPath: string } // in-app rename (Links E1, GRO-2194): every tab of the file follows it in place (S17)
   | { type: 'rename-dir'; oldPath: string; newPath: string } // in-app FOLDER rename (Links E1b, GRO-2241): the folder's own tab and every tab under it follow in place
   | { type: 'delete'; path: string } // in-app delete (GRO-2272): every tab of the file goes, each closing as `close` does (S18)
@@ -299,7 +306,7 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // Nothing stored changes, so the caller mirrors nothing (YAZ-2648 D4).
       return a.id === s.preview ? { ...s, preview: null } : s
     case 'set-name': {
-      // Session-only (YAZ-2949 D1): nothing stored changes. Trimmed and cut like a vault's display
+      // Stored with the window (YAZ-3057). Trimmed and cut like a vault's display
       // name (S5); empty is no name (S4). A preview tab that gets a name is kept (S8).
       const i = s.tabs.findIndex((t) => t.id === a.id)
       if (i === -1) return s
@@ -374,9 +381,12 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
     case 'reset': {
       if (a.active === null) return s.tabs.length === 0 && s.active === null && s.mounted.length === 0 && !s.blank ? s : EMPTY
       // An active file missing from the list is PREPENDED — main's own normalization order. Every tab gets a new id.
-      const paths = [...new Set(a.tabs.includes(a.active) ? a.tabs : [a.active, ...a.tabs])]
-      const tabs = paths.map(newTab)
-      const active = tabs[paths.indexOf(a.active)].id
+      // Copies and display names come back (YAZ-3057): the list is the stored strip, not a set. The marked
+      // copy of the active file is active, else its first copy (D4).
+      const stored = a.tabs.some((t) => t.path === a.active) ? a.tabs : [{ path: a.active }, ...a.tabs]
+      const tabs = stored.map(({ path, name }): Tab => (name === undefined ? newTab(path) : { ...newTab(path), name }))
+      const marked = stored.findIndex((t) => t.path === a.active && t.active === true)
+      const active = tabs[marked !== -1 ? marked : stored.findIndex((t) => t.path === a.active)].id
       return { tabs, active, mounted: [active], history: {}, preview: null, blank: false }
     }
     case 'rename':
@@ -626,10 +636,8 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
 export function bootTabs(root: string | null): TabsState {
   if (root === null) return EMPTY
   const active = hashFilePath(location.hash) ?? storage.getFile() ?? storage.getLastFile(root)
-  const s = tabsReducer(EMPTY, { type: 'reset', tabs: storage.getTabs(), active })
-  // A tab moved here from another window keeps its display name (YAZ-2949 D7, S19).
-  const names = storage.getTabNames()
-  return { ...s, tabs: s.tabs.map((t) => (names[t.path] === undefined ? t : { ...t, name: names[t.path] })) }
+  // The copies and display names come back with the window (YAZ-3057), and with a tab "Move to new window" brought (S19).
+  return tabsReducer(EMPTY, { type: 'reset', tabs: storage.getTabStrip(), active })
 }
 
 export function bootWorkspace(root: string | null): WorkspaceState {
@@ -751,9 +759,9 @@ export function useWorkspace(root: string | null): UseWorkspace {
     if (nextState.active !== prevState.active && was !== null && was === activePath(nextState)) void flushRenamedPath(was)
     stateRef.current = nextState
     setState(nextState)
-    // ONE explicit write per durable change carries both owners and the active main file. A copy is
-    // never stored (YAZ-2940 D2): each path once, in the order of its first tab, and the active tab's path.
-    if (opts?.mirror !== false) storage.setWorkspace(opts?.root !== undefined ? opts.root : rootRef.current, storedTabs(nextState.tabs), activePath(nextState), nextState.rightPanel)
+    // ONE explicit write per durable change carries both owners and the active main file. The strip keeps
+    // copies and display names (YAZ-3057); storage derives `tabs` from it, each path once.
+    if (opts?.mirror !== false) storage.setWorkspace(opts?.root !== undefined ? opts.root : rootRef.current, tabStrip(nextState), activePath(nextState), nextState.rightPanel)
   }, [])
 
   const openCurrent = useCallback((path: string) => dispatch({ type: 'open-current', path }), [dispatch])
@@ -761,8 +769,8 @@ export function useWorkspace(root: string | null): UseWorkspace {
   // `keep` changes no stored field (the mark is session-only, D4), so it is never mirrored — and
   // neither is `open-new` on the page the active preview tab shows, which only takes its mark off.
   const keep = useCallback((id: string) => dispatch({ type: 'keep', id }, { mirror: false }), [dispatch])
-  // A display name is never stored (YAZ-2949 D1), so it is never mirrored.
-  const setName = useCallback((id: string, name: string | null) => dispatch({ type: 'set-name', id, name }, { mirror: false }), [dispatch])
+  // A display name is stored with the window (YAZ-3057): one write, like any other tab change.
+  const setName = useCallback((id: string, name: string | null) => dispatch({ type: 'set-name', id, name }), [dispatch])
   const openKept = useCallback(
     (path: string) => {
       const s = stateRef.current
@@ -770,10 +778,10 @@ export function useWorkspace(root: string | null): UseWorkspace {
     },
     [dispatch],
   )
-  // A copy is never stored (D2), so only a copy of a tab that was not active changes what the window stores: its file.
+  // A copy is stored with the window (YAZ-3057): one write, like any other tab change.
   const duplicate = useCallback((id: string): string | null => {
     const s = stateRef.current
-    dispatch({ type: 'duplicate', id }, { mirror: activePath(s) !== tabById(s, id)?.path })
+    dispatch({ type: 'duplicate', id })
     return stateRef.current === s ? null : stateRef.current.active
   }, [dispatch])
   const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path }), [dispatch])

@@ -5,7 +5,11 @@
  * new id, and reads as its path too. A no-op still returns the same object. The tests of copies
  * use the reducers directly, with ids.
  */
+import type { StoredTab } from '@shared/types'
 import { tabById, tabsReducer, workspaceReducer, type Tab, type TabHistory, type TabsAction, type TabsState, type WorkspaceAction, type WorkspaceState } from './useWorkspace'
+
+/** A stored strip of plain tabs (YAZ-3057): one entry per path, no name, no mark — what `reset` gets from a window that stores no strip. */
+export const plain = (...paths: string[]): StoredTab[] => paths.map((path) => ({ path }))
 
 /** `TabsState` read by path. */
 export interface PathTabs {
