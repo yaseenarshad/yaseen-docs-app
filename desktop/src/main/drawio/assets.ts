@@ -34,6 +34,22 @@ export const DRAWIO_CSP = [
 ].join('; ')
 
 /**
+ * Draw's 🔒 YAZ-1802 D5 / D11 (YAZ-1973), ported by YAZ-3040: the pack files a shared diagram's page
+ * runs — draw.io's viewer, every stencil set in one file (loaded only for a diagram that names a
+ * library shape), and draw.io's licence. Share setup publishes each at `/assets/drawio/<the same path>`
+ * straight from the app's own webapp folder (`readViewerAssets` in `ipc/share.ts`), so the app carries
+ * these bytes ONCE — `share/dist/assets` holds only what the viewer build makes itself.
+ */
+export const DRAWIO_SHARE_FILES = ['js/viewer-static.min.js', 'js/stencils.min.js', 'LICENSE-drawio.txt'] as const
+
+/**
+ * …and the pack FOLDERS a shared diagram can reach, published whole: `img/` holds the pictures
+ * draw.io's own image shapes point at, and `math4/` is the MathJax the viewer loads on every page —
+ * without them such a shape draws blank and a math label shows raw TeX on a share link.
+ */
+export const DRAWIO_SHARE_DIRS = ['img', 'math4'] as const
+
+/**
  * The webapp folder. Dev (not packaged) prefers the pack cache — `<desktop>/.cache/drawio/<tag>`,
  * `app.getAppPath()` being `desktop/` there — so the overlay is always the current one; a build
  * falls back to, and a packaged app only ever uses, `out/drawio` beside the main bundle.

@@ -28,6 +28,7 @@ import { doorOf, type IdDoor } from '../vaultIndex/mint'
 import type { WindowManager } from '../windows'
 import { broadcastAll, rootsOf } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
+import { repairShares, shareFsHooks } from '../share/fsHooks'
 
 /**
  * The favorites.json repair (YAZ-1766 6A, D13) rides the SAME handlers as the store repair below,
@@ -98,6 +99,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     store.renamePath(res.oldPath, res.newPath)
     await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     await repairFocus(focus.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
+    await repairShares(shareFsHooks.renamed(rootsOf(store.get()), res.oldPath, res.newPath))
     broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
     return res
   }
@@ -179,6 +181,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     store.removePath(res.path)
     await repairFavorites(favorites.removePath(rootsOf(store.get()), res.path))
     await repairFocus(focus.removePath(rootsOf(store.get()), res.path))
+    await repairShares(shareFsHooks.deleted(rootsOf(store.get()), res.path))
     broadcastAll(CONTRACT.file.onDeleted.channel, { path: res.path, kind: res.kind })
     return res
   })
@@ -193,6 +196,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     store.renamePath(res.oldPath, res.newPath)
     await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     await repairFocus(focus.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
+    await repairShares(shareFsHooks.renamed(rootsOf(store.get()), res.oldPath, res.newPath))
     broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
     return res
   })
@@ -237,6 +241,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
         store.renamePath(r.oldPath, r.newPath)
         await repairFavorites(favorites.renamePath(rootsOf(store.get()), r.oldPath, r.newPath))
         await repairFocus(focus.renamePath(rootsOf(store.get()), r.oldPath, r.newPath))
+        await repairShares(shareFsHooks.renamed(rootsOf(store.get()), r.oldPath, r.newPath))
         broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: r.oldPath, newPath: r.newPath, kind: r.kind })
         return r
       },

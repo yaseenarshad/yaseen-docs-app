@@ -1,5 +1,6 @@
 import type { GithubSyncStatus, VaultConfigChange, WatchEvent } from '@shared/types'
 import { isRecord } from '@shared/guards'
+import type { RemoteLook } from './sync'
 
 /**
  * Per-root sync orchestration (YAZ-1081, 2B): WHEN a pass runs, and what the app is told about it.
@@ -28,6 +29,13 @@ import { isRecord } from '@shared/guards'
  *     back" case sooner than any ladder would.
  *   - FOCUS and WAKE pull, behind a short cooldown, so alt-tabbing between two machines converges
  *     without turning window focus into a git spam button.
+ *   - IDLE pulls too (YAZ-1897 D6 in Draw, YAZ-3039 here — it also covers YAZ-1087): a vault whose
+ *     last pass ended `synced` runs a QUIET pass every `pollMs` (default 60 s), so a note or a board
+ *     someone is only looking at still receives the other machine's changes. Never while edits are
+ *     settling (the debounce's pass is coming anyway), never while `pending` (the retry owns it) or
+ *     `attention` (the next edit or focus does). Quiet means no `syncing` flash on the chip every
+ *     minute — only a changed result is broadcast. It LOOKS first (`host.lookAtRemote`, YAZ-2073
+ *     5H): two git spawns, and the full pass only when there is news — which it does not fetch twice.
  *
  * Two invariants everything else is built to protect:
  *   - ONE pass at a time per root, and a burst of triggers during a running pass collapses into
@@ -43,6 +51,7 @@ export const GITHUB_SYNC_FILE = 'github.json'
 const DEFAULT_QUIET_MS = 30_000
 const DEFAULT_RETRY_MS = 120_000
 const DEFAULT_FOCUS_COOLDOWN_MS = 10_000
+const DEFAULT_POLL_MS = 60_000
 
 export interface GitSyncHost {
   readConfig(root: string, name: string): Promise<unknown>
@@ -50,13 +59,16 @@ export interface GitSyncHost {
   subscribeVault(root: string, listener: (ev: WatchEvent) => void): () => void
   subscribeConfig(root: string, listener: (change: VaultConfigChange) => void): () => void
   onStatus(status: GithubSyncStatus): void
-  /** `flush` is the quit variant (YAZ-1111): commit always, no fetch/rebase, short-capped push. */
-  syncPass(root: string, opts?: { flush?: boolean }): Promise<GithubSyncStatus>
+  /** `flush` is the quit variant (YAZ-1111): commit always, no fetch/rebase, short-capped push. `fetched`: origin was fetched a moment ago. */
+  syncPass(root: string, opts?: { flush?: boolean; fetched?: boolean }): Promise<GithubSyncStatus>
+  /** The idle pull's cheap look (YAZ-2073 5H): `level` only when the branch and its remote provably are. Absent: every pull is a full (quiet) pass. */
+  lookAtRemote?(root: string): Promise<RemoteLook>
   /** Optional read-only facts for an unmanaged (off) root — the settings panel wants remote/branch even when sync is off. */
   inspect?(root: string): Promise<GithubSyncStatus>
   quietMs?: number
   retryMs?: number
   focusCooldownMs?: number
+  pollMs?: number
 }
 
 export interface GitSyncManager {
@@ -88,6 +100,8 @@ interface Entry {
   follow: Follow | null
   debounce: ReturnType<typeof setTimeout> | null
   retry: ReturnType<typeof setTimeout> | null
+  /** The idle pull (YAZ-3039): armed only after a pass that ended `synced` with no edits settling. */
+  poll: ReturnType<typeof setTimeout> | null
   /** Set by `drop`: a pass already in flight must not broadcast or spawn a follow-up after it. */
   dropped: boolean
 }
@@ -99,10 +113,22 @@ function arm(ms: number, fn: () => void): ReturnType<typeof setTimeout> {
   return timer
 }
 
+/** `flush` is the quit variant (YAZ-1111); `poll` is the idle pull (YAZ-3039), which shows no `syncing` and looks first (YAZ-2073 5H). */
+type PassMode = 'normal' | 'flush' | 'poll'
+
+/** Every timer an entry can hold, cleared at once — on drop and before the quit flush. */
+function clearTimers(entry: Entry): void {
+  for (const timer of [entry.debounce, entry.retry, entry.poll]) if (timer !== null) clearTimeout(timer)
+  entry.debounce = null
+  entry.retry = null
+  entry.poll = null
+}
+
 export function createGitSync(host: GitSyncHost): GitSyncManager {
   const quietMs = host.quietMs ?? DEFAULT_QUIET_MS
   const retryMs = host.retryMs ?? DEFAULT_RETRY_MS
   const focusCooldownMs = host.focusCooldownMs ?? DEFAULT_FOCUS_COOLDOWN_MS
+  const pollMs = host.pollMs ?? DEFAULT_POLL_MS
 
   /** Enabled roots only. */
   const entries = new Map<string, Entry>()
@@ -116,7 +142,8 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
 
   function broadcast(root: string, status: GithubSyncStatus): void {
     const entry = entries.get(root)
-    if (entry !== undefined) entry.last = status
+    // `merged` is news about ONE pass (YAZ-1897): kept out of `last`, so a late `status()` never replays the notice.
+    if (entry !== undefined) entry.last = status.merged === undefined ? status : { ...status, merged: undefined }
     try {
       host.onStatus(status)
     } catch (err) {
@@ -124,10 +151,17 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
     }
   }
 
-  /** A transitional status that keeps the repo facts the UI is already showing. */
+  /**
+   * A transitional status that keeps the repo facts the UI is already showing — and the held-back
+   * list (YAZ-1801 D3), so a file's cloud-off icon does not blink away for the length of every
+   * pass. Only a finished pass may clear it. A `too-large` result is otherwise an ordinary
+   * `attention`: no retry is armed (only `pending` arms one), the next edit, focus or wake runs
+   * the next pass, and that pass re-checks the files from scratch — nothing here loops.
+   */
   function carry(root: string, state: 'syncing' | 'pending', entry: Entry): GithubSyncStatus {
     const next: GithubSyncStatus = { root, state, enabled: true }
     if (entry.last.repo !== undefined) next.repo = entry.last.repo
+    if (entry.last.tooLarge !== undefined) next.tooLarge = entry.last.tooLarge
     return next
   }
 
@@ -137,10 +171,10 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
    * The only way a pass ever starts. Idle → run now; busy → join (or create) the ONE follow-up.
    * Unmanaged roots answer `off` without doing anything, so every caller can be unconditional.
    */
-  function requestPass(root: string, flush = false): Promise<GithubSyncStatus> {
+  function requestPass(root: string, mode: PassMode = 'normal'): Promise<GithubSyncStatus> {
     const entry = entries.get(root)
     if (entry === undefined) return Promise.resolve({ root, state: 'off', enabled: false })
-    if (!entry.busy) return runPass(root, entry, flush)
+    if (!entry.busy) return runPass(root, entry, mode)
     if (entry.follow === null) {
       let resolve: (status: GithubSyncStatus) => void = () => {}
       const promise = new Promise<GithubSyncStatus>((r) => {
@@ -148,7 +182,7 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
       })
       entry.follow = { promise, resolve, flush: false }
     }
-    if (flush) entry.follow.flush = true
+    if (mode === 'flush') entry.follow.flush = true
     return entry.follow.promise
   }
 
@@ -160,17 +194,21 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
    * synchronously from `onStatus` must coalesce into the follow-up rather than start a second
    * pass alongside the one that is about to start.
    */
-  async function runPass(root: string, entry: Entry, flush = false): Promise<GithubSyncStatus> {
+  async function runPass(root: string, entry: Entry, mode: PassMode = 'normal'): Promise<GithubSyncStatus> {
     entry.busy = true
-    if (entry.retry !== null) {
-      clearTimeout(entry.retry)
-      entry.retry = null
-    }
-    broadcast(root, carry(root, 'syncing', entry))
+    for (const timer of [entry.retry, entry.poll]) if (timer !== null) clearTimeout(timer)
+    entry.retry = null
+    entry.poll = null
+    if (mode !== 'poll') broadcast(root, carry(root, 'syncing', entry))
 
     let status: GithubSyncStatus
     try {
-      status = await host.syncPass(root, flush ? { flush: true } : undefined)
+      // The idle pull looks before it leaps (YAZ-2073 5H): a level remote leaves the root exactly
+      // as the last pass did, so that status stands, and it arms the next pull below.
+      const look = mode === 'poll' && host.lookAtRemote !== undefined ? await host.lookAtRemote(root) : 'unknown'
+      if (look === 'level') status = entry.last
+      else if (mode === 'flush') status = await host.syncPass(root, { flush: true })
+      else status = await host.syncPass(root, look === 'moved' ? { fetched: true } : undefined)
     } catch (err) {
       status = { root, state: 'attention', attention: 'error', message: String(err) }
     }
@@ -178,15 +216,24 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
     // the pass answers `off` (not a repo / no remote yet) — the settings switch reads this field,
     // so clicking On never looks like it did nothing.
     status = { ...status, enabled: !entry.dropped }
+    // A look that found both tips level counts as a pass here: the cadence runs from it.
     entry.lastPassAt = Date.now()
 
     if (!entry.dropped) {
-      broadcast(root, status)
+      // A quiet pull that changed nothing says nothing: no IPC to every window once a minute.
+      if (mode !== 'poll' || JSON.stringify(status) !== JSON.stringify(entry.last)) broadcast(root, status)
       // Offline. Exactly one timer, replaced by (not stacked on) the next pass's.
       if (status.state === 'pending') {
         entry.retry = arm(retryMs, () => {
           entry.retry = null
           void requestPass(root)
+        })
+      }
+      // YAZ-3039: idle and in step → look again in a minute. Exactly one timer, replaced by the next pass's.
+      if (status.state === 'synced' && entry.debounce === null && mode !== 'flush') {
+        entry.poll = arm(pollMs, () => {
+          entry.poll = null
+          void requestPass(root, 'poll')
         })
       }
     }
@@ -196,7 +243,7 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
     entry.busy = false
     if (follow === null) return status
     if (entry.dropped) follow.resolve(status)
-    else void runPass(root, entry, follow.flush).then(follow.resolve, () => follow.resolve(status))
+    else void runPass(root, entry, follow.flush ? 'flush' : 'normal').then(follow.resolve, () => follow.resolve(status))
     return status
   }
 
@@ -218,6 +265,7 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
       follow: null,
       debounce: null,
       retry: null,
+      poll: null,
       dropped: false,
     }
     entries.set(root, entry)
@@ -232,10 +280,7 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
     const entry = entries.get(root)
     if (entry === undefined) return
     entry.dropped = true
-    if (entry.debounce !== null) clearTimeout(entry.debounce)
-    if (entry.retry !== null) clearTimeout(entry.retry)
-    entry.debounce = null
-    entry.retry = null
+    clearTimers(entry)
     entries.delete(root)
     try {
       entry.unsubVault()
@@ -291,6 +336,9 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
     if (entry === undefined) return
     // The first event of a burst is what the UI needs to hear; the other forty-nine say the same thing.
     if (entry.last.state !== 'pending') broadcast(root, carry(root, 'pending', entry))
+    // YAZ-3039: edits are settling — the debounce's pass replaces the idle pull.
+    if (entry.poll !== null) clearTimeout(entry.poll)
+    entry.poll = null
     if (entry.debounce !== null) clearTimeout(entry.debounce)
     entry.debounce = arm(quietMs, () => {
       entry.debounce = null
@@ -402,12 +450,9 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
       await Promise.all([...evaluations.values()])
       const jobs: Array<Promise<unknown>> = []
       for (const [root, entry] of [...entries]) {
-        if (entry.debounce !== null) clearTimeout(entry.debounce)
-        if (entry.retry !== null) clearTimeout(entry.retry)
-        entry.debounce = null
-        entry.retry = null
+        clearTimers(entry)
         // Through the same chain as everything else: a pass already running is joined, not raced.
-        jobs.push(requestPass(root, true))
+        jobs.push(requestPass(root, 'flush'))
       }
       await Promise.all(jobs)
     },

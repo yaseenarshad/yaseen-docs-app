@@ -24,8 +24,9 @@ export type BridgeErrorCode =
   | 'PICKER_FAILED' // native folder dialog could not be run
   | 'INVALID_CONFIG' // a vault config file (e.g. .yaseendocs/properties.json) is unusable; the mutation is refused, the file never touched
   | 'UNSUPPORTED_TYPE' // YAZ-3038 (Draw's 🔒 YAZ-1775 D4): a media provider answered with something that is not an image
-  | 'PROVIDER_FAILED' // YAZ-3038 (Draw's 🔒 YAZ-1775 D4): a media provider was REACHED and refused, or answered nonsense
-  | 'OFFLINE' // YAZ-3038 (Draw's 🔒 YAZ-1775 D4): the provider could not be reached at all — a passive state in the UI, never an error banner
+  | 'PROVIDER_FAILED' // Draw's 🔒 YAZ-1775 D4 (YAZ-3038 media, YAZ-3040 sharing): a media provider, Cloudflare or the share Worker was REACHED and refused, or answered nonsense
+  | 'OFFLINE' // Draw's 🔒 YAZ-1775 D4 (YAZ-3038 media, YAZ-3040 sharing): the provider, Cloudflare or the share Worker could not be reached at all — a passive state in the UI, never an error banner
+  | 'NOT_SET_UP' // Draw's YAZ-1799 (YAZ-3040): sharing is not set up on this computer yet (Settings › Sharing)
 
 export const MARKDOWN_EXTENSIONS = ['.md', '.markdown'] as const
 export const TEXT_VIEW_EXTENSIONS = [
@@ -1711,9 +1712,30 @@ export interface GithubSyncConfig {
  * the whole reason the set is closed: `no-git` wants "install git" (the Command Line Tools on a Mac, Git for Windows on a PC),
  * `no-identity` wants "set a name and email", `auth` wants "sign in again", `conflict` wants
  * "two machines edited the same lines" (the lossless rule: the working tree was put back exactly
- * as it was — see `git/sync.ts`), and `error` is the honest catch-all that carries a message.
+ * as it was — see `git/sync.ts`; since YAZ-3039 boards merge instead, `git/resolve.ts`, so a
+ * conflict is a note or another file sync does not merge), `too-large` wants "shrink it or move it
+ * out" (YAZ-1801 D3: files held back under `tooLarge`, everything else synced), and `error` is the
+ * honest catch-all that carries a message.
  */
-export type GithubSyncAttention = 'no-git' | 'no-identity' | 'auth' | 'conflict' | 'error'
+export type GithubSyncAttention = 'no-git' | 'no-identity' | 'auth' | 'conflict' | 'error' | 'too-large'
+
+/**
+ * YAZ-1801 D3 (Draw, ported by YAZ-3039): the size at which a sync pass holds a file back instead
+ * of committing it. GitHub REFUSES any file over 100 MiB, and one such file inside a commit rejects
+ * the whole push — so every other edit in the vault would stop syncing behind it. 95 MiB leaves a
+ * margin for a file that grows between the check and the push. `too-large` is the attention that says so.
+ */
+export const GITHUB_FILE_LIMIT_BYTES = 95 * 1024 * 1024
+/**
+ * GitHub warns on a push past 50 MiB (YAZ-1801): from here a file is listed under Settings ›
+ * Storage's "Needs attention" — amber below `GITHUB_FILE_LIMIT_BYTES`, red at or above it (the
+ * same line the sync guard holds files back at, so the page's colour and sync never disagree).
+ */
+export const GITHUB_FILE_WARN_BYTES = 50 * 1024 * 1024
+/** GitHub: ideally under 1 GB, strongly under 5 GB, and 10 GB is its stated maximum — the bar's three steps. */
+export const GITHUB_REPO_SOFT_BYTES = 1024 * 1024 * 1024
+export const GITHUB_REPO_HARD_BYTES = 5 * 1024 * 1024 * 1024
+export const GITHUB_REPO_MAX_BYTES = 10 * 1024 * 1024 * 1024
 
 /**
  * What a vault's sync is doing right now — one object per root, pushed on every transition.
@@ -1738,6 +1760,217 @@ export interface GithubSyncStatus {
    * on statuses that never passed through it (a bare `syncPass` call in tests).
    */
   enabled?: boolean
+  /**
+   * YAZ-1801 D3: vault-relative POSIX paths the last pass held back because each is at or
+   * over `GITHUB_FILE_LIMIT_BYTES`. They stay on this machine only; everything else synced. Present
+   * (and non-empty) only while there is at least one — the sidebar's cloud-off icon, the chip's
+   * "N files not synced" and the `too-large` banner all read this one list.
+   */
+  tooLarge?: readonly string[]
+  /**
+   * YAZ-1897 D4: what THIS pass merged — present only on the status of the pass that did it (the
+   * manager never keeps it as the root's last status, so a late `status()` cannot replay the notice).
+   */
+  merged?: readonly GithubSyncMerge[]
+}
+
+/**
+ * One file a pass merged instead of stopping (YAZ-1897 D1/D3, YAZ-3039). A drawing merged shape by
+ * shape has no `copy`; a diagram kept both versions — the remote's at `path`, ours at `copy` — and
+ * the notice has to say where ours went. A note is never here: a note conflict still stops (D4).
+ */
+export interface GithubSyncMerge {
+  /** Vault-relative POSIX path. */
+  path: string
+  /** Who made the remote's side of it ("Sara", "Sara and Sam"). */
+  author: string
+  /** Shapes both machines edited; the newest edit of each was kept. */
+  clashes: number
+  /** Vault-relative POSIX path of our copy, when both versions were kept. */
+  copy?: string
+}
+
+/** One entry in a drawing's or diagram's Version history (YAZ-1897 D4, YAZ-3039). */
+export interface BoardVersion {
+  /** Opaque to the renderer: hand it back to `version` / `restore`. */
+  ref: string
+  author: string
+  /** Epoch milliseconds of the commit. */
+  at: number
+  /** The version a sync merge produced (its commit carries a `Merged-with:` trailer). */
+  merged: boolean
+  /** "Your version before the merge": never pushed, kept on this machine only until the next merge. */
+  localOnly: boolean
+}
+
+export type BoardVersionScene = { kind: 'drawing'; json: string; files: Record<string, DrawingFileEntry> } | { kind: 'diagram'; xml: string }
+
+// ---------- Storage (Settings › Storage — YAZ-1801, ported by YAZ-3039) ----------
+
+/** One file in "Needs attention" (YAZ-1801): any file in the vault at or over `GITHUB_FILE_WARN_BYTES`. */
+export interface VaultStorageFile {
+  /** Vault-relative POSIX path. */
+  path: string
+  bytes: number
+}
+
+/**
+ * What a vault weighs, from the disk and the LOCAL git only (YAZ-1801 D2) — never the network.
+ * Every number is bytes. `git` is null when the vault is not a git repo (or there is no git).
+ */
+export interface VaultStorageStats {
+  root: string
+  /** Every `.excalidraw` and `.drawio` under the vault (dot-folders skipped), `assets/` included. */
+  boards: { bytes: number; count: number }
+  /** Every other file in the top-level `assets/` folder: note images and the drawings' picture store. */
+  pictures: { bytes: number; count: number }
+  /** Everything else that is not a dot-entry: notes, a video, a PDF someone dropped in. */
+  other: { bytes: number; count: number }
+  git: {
+    /** `git count-objects -v`: loose + packed, i.e. everything `.git` holds for this repo. */
+    historyBytes: number
+    /** The compressed size of the objects HEAD's tree needs — the current snapshot. */
+    headBytes: number
+    /** `max(0, history − head)`: what a history reset would free (YAZ-1801 D6 shows it, never does it). */
+    oldVersionsBytes: number
+  } | null
+  /** Every file — board, picture in `assets/`, anything else — at or over `GITHUB_FILE_WARN_BYTES`, biggest first. */
+  large: VaultStorageFile[]
+  /** Pictures still inside drawings outside `assets/` (the ones "Move pictures out" moves): their `dataURL` bytes and how many drawings carry any. */
+  embedded: { bytes: number; boards: number }
+}
+
+/** What "Move pictures out of drawings" did (YAZ-1801 D5). `bytesMoved` is how much lighter the drawings got. */
+export interface ShrinkResult {
+  shrunk: number
+  skipped: number
+  bytesMoved: number
+}
+
+// ---------- Share links (Draw's YAZ-1799, ported by YAZ-3040) ----------
+
+/**
+ * SHARE LINK (YAZ-1799): one board, uploaded to the user's OWN Cloudflare (one R2
+ * bucket + one small Worker), reachable by anyone with its long random link. ALWAYS LIVE
+ * (🔒 YAZ-1799 D3): every save of a shared board re-uploads it to the same link (`liveShare.ts`).
+ *
+ * WHO OWNS WHAT:
+ *  - MAIN owns Cloudflare: the API token and the Worker's upload password live in `secrets.json`
+ *    (the secrets door — the renderer can never read either), and every HTTP call is main's.
+ *  - The RENDERER assembles the bytes (the same standalone `.excalidraw` Export Drawing writes,
+ *    🔒 YAZ-1799 D3) because only it has the engine; it hands them to main to upload.
+ *  - The vault remembers which boards are shared in `<vault>/.yaseendocs/shares.json`:
+ *    `{ version: 1, shares: { "<vault-relative path>": { id, allowDownload, sharedAt, updatedAt } } }`.
+ *  - ONE LINK per board, `/b/<id>`, plus a permission the owner flips on that same link (the
+ *    Google Docs model): "can view and download" (default) or "can view only". The Worker
+ *    enforces it — `/raw/<id>` is 403 when downloads are off.
+ */
+
+/**
+ * The Workers free-plan request body limit — the Worker enforces it and main pre-checks it,
+ * so a board over it is refused with an explanation instead of a failed upload. Decimal megabytes,
+ * as Cloudflare states the limit.
+ */
+export const MAX_SHARE_BYTES = 100 * 1000 * 1000
+
+/** The two secrets sharing keeps in `secrets.json`. Neither ever reaches a renderer. */
+export const CLOUDFLARE_TOKEN_SECRET = 'cloudflareApiToken'
+export const SHARE_UPLOAD_PASSWORD_SECRET = 'shareUploadPassword'
+
+/** One Cloudflare account a pasted key can see: the setup's account picker lists these. */
+export interface ShareAccount {
+  id: string
+  name: string
+}
+
+/** What Settings › Sharing shows at the top. Holds no secret. */
+export interface ShareStatus {
+  state: 'off' | 'ready'
+  /** The public origin links are built on: the custom domain when attached, else workers.dev. */
+  url: string | null
+  /** The workers.dev address, even when a custom domain is attached. */
+  workersDevUrl: string | null
+  customDomain: string | null
+  accountName: string | null
+  workerName: string | null
+  bucketName: string | null
+  readyAt: number | null
+  /** True when this build talks to the local fake Cloudflare (the demo). */
+  demo: boolean
+}
+
+/** The setup flow's steps, in order — the progress list renders exactly these. */
+export const SHARE_SETUP_STEPS = ['verify', 'account', 'bucket', 'viewer', 'worker', 'subdomain', 'test'] as const
+export type ShareSetupStep = (typeof SHARE_SETUP_STEPS)[number]
+
+export const SHARE_SETUP_LABELS: Record<ShareSetupStep, string> = {
+  verify: 'Checking the key',
+  account: 'Finding your Cloudflare account',
+  bucket: 'Creating the storage bucket (R2)',
+  viewer: 'Uploading the viewer page',
+  worker: 'Uploading the share Worker and its upload password',
+  subdomain: 'Turning on the workers.dev address',
+  test: 'Test upload',
+}
+
+export interface ShareSetupProgress {
+  step: ShareSetupStep
+  state: 'running' | 'done' | 'failed'
+  /** Plain-English detail: what was found, or what went wrong and what to do about it. */
+  message?: string
+}
+
+/**
+ * Where a shared board's ALWAYS-LIVE link stands (Yasin's amendment): every save re-uploads, so
+ * the interesting facts are "is an upload running" and "did the last one fail, and why". Kept by
+ * main in memory — a relaunch starts from `ok`, and the next save tells the truth again.
+ */
+export interface ShareSync {
+  state: 'ok' | 'uploading' | 'failed'
+  /** The last failure, in plain English. */
+  message?: string
+  /** When the last failure happened. */
+  failedAt?: number
+}
+
+/** One board's share record as the renderer sees it. `path` is absolute. */
+export interface ShareEntry {
+  path: string
+  id: string
+  /** `/b/<id>` on the share origin. */
+  url: string
+  /** "can view and download" (true, the default for a new share) or "can view only" (false). */
+  allowDownload: boolean
+  sharedAt: number
+  /** When the link last got a successful upload. */
+  updatedAt: number
+  sync: ShareSync
+  /** The Worker last answered 404 for this link (a Settings check or a permission change): its copy is gone until the next save puts it back. */
+  stale: boolean
+}
+
+/** A Settings list row: the record plus whether the board is still at its path. Whether the link is still live is `stale` (a checked list sets it). */
+export interface ShareListEntry extends ShareEntry {
+  fileExists: boolean
+}
+
+export interface ShareBoardRequest {
+  root: string
+  path: string
+}
+
+export interface SharePublishRequest extends ShareBoardRequest {
+  /** The standalone `.excalidraw` text (images embedded), or a diagram's `.drawio` XML (🔒 YAZ-1802 D11). */
+  content: string
+  /**
+   * A re-upload's link: main finds the record by it even if a rename moved the board since the
+   * save, and refuses (NOT_FOUND) if it was stopped. Absent: share `path` (or re-upload it if shared).
+   */
+  id?: string
+}
+
+export interface SharePermissionRequest extends ShareBoardRequest {
+  allowDownload: boolean
 }
 
 // ---------- Vault-wide property declarations (`<root>/.yaseendocs/properties.json` — YAZ-835) ----------

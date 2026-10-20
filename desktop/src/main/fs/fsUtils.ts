@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { link, open, readdir, rename, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { folderSettingsPath, type BridgeError, type FileKind, type TreeNode } from '@shared/types'
+import { ASSETS_DIR } from '@shared/drawingAssets'
 import { ATOMIC_TMP_HEX_LEN, fileKind, isAtomicTmp, isMarkdown, isSupportedFile } from '@shared/fileKind'
 
 export { isMarkdown, isSupportedFile } from '@shared/fileKind'
@@ -57,6 +58,27 @@ export function requireTextReadableFile(p: string): Extract<FileKind, 'markdown'
 /** Dot-entries and node_modules are invisible to every call. */
 export function isSkipped(name: string): boolean {
   return name.startsWith('.') || name === 'node_modules'
+}
+
+/**
+ * Every regular file in a vault, depth first — the ONE walk Settings › Storage uses (YAZ-1801 in
+ * Draw, ported by YAZ-3039: `git/storage.ts` measures, `fs/shrink.ts` rewrites), so they can never
+ * disagree about which files are the vault's. Dot-entries and `node_modules` are invisible
+ * (`isSkipped`); an unreadable folder is an empty one. `inAssets` marks the TOP-LEVEL `assets/`
+ * folder only — a user's own `assets` folder deeper down is theirs.
+ */
+export async function* vaultFiles(root: string): AsyncGenerator<{ full: string; name: string; inAssets: boolean }> {
+  const stack: Array<{ dir: string; inAssets: boolean }> = [{ dir: root, inAssets: false }]
+  while (stack.length > 0) {
+    const { dir, inAssets } = stack.pop()!
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const e of entries) {
+      if (isSkipped(e.name)) continue
+      const full = path.join(dir, e.name)
+      if (e.isDirectory()) stack.push({ dir: full, inAssets: inAssets || (dir === root && e.name === ASSETS_DIR) })
+      else if (e.isFile()) yield { full, name: e.name, inAssets }
+    }
+  }
 }
 
 export function byNameCi<T extends { name: string }>(a: T, b: T): number {
@@ -171,7 +193,11 @@ export function tmpSibling(file: string): string {
   return `${file}.tmp-${randomBytes(ATOMIC_TMP_HEX_LEN / 2).toString('hex')}`
 }
 
-/** Writes `content` durably to a tmp sibling then renames it over `file`. Parent dir must exist. `mode`: see `writeDurable`. */
+/**
+ * Writes `content` durably to a tmp sibling then renames it over `file`. Parent dir must exist.
+ * `mode` is the tmp file's mode from its creation (the secrets file's 0600; see `writeDurable`), so
+ * the bytes are never briefly readable by anyone else.
+ */
 export async function atomicWrite(file: string, content: string | Uint8Array, mode?: number): Promise<{ mtime: number; size: number }> {
   const tmp = tmpSibling(file)
   try {

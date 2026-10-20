@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, StoredMediaItem, TocSource, TreeResponse, UpdateState, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -360,6 +360,44 @@ export const CONTRACT = {
     setEnabled: invoke<[root: string, enabled: boolean], GithubSyncStatus>('github:set-enabled', 2),
     /** Fired in every window on every transition of any vault; filter by `status.root`. */
     onStatus: push<GithubSyncStatus>('github:status-changed'),
+    /** Version history (YAZ-1897 D4, YAZ-3039): a drawing's or diagram's committed versions, newest first. No git, or no commits: `[]`. */
+    history: invoke<[root: string, path: string], BoardVersion[]>('github:history', 2),
+    /** One version's content, its pictures resolved from `assets/` (a drawing) or its XML (a diagram). */
+    version: invoke<[root: string, path: string, ref: string], BoardVersionScene>('github:version', 3),
+    /** Writes that version over the board on disk; the open tab reloads it as an external change. */
+    restore: invoke<[root: string, path: string, ref: string], void>('github:restore', 3),
+  },
+  /** Settings › Storage (YAZ-1801 in Draw, YAZ-3039): what the vault weighs (disk + local git, never the network), and moving pictures out of drawings. */
+  storage: {
+    stats: invoke<[root: string], VaultStorageStats>('storage:stats', 1),
+    /** `skip` = absolute paths with unsaved edits in a tab; an unreadable drawing counts as skipped. */
+    shrink: invoke<[root: string, skip: readonly string[]], ShrinkResult>('storage:shrink', 2),
+  },
+  /** Share links (Draw's YAZ-1799, YAZ-3040): main owns Cloudflare, the token and the upload password; the renderer hands over bytes. */
+  share: {
+    status: invoke<[], ShareStatus>('share:status', 0),
+    /** The Cloudflare accounts a pasted key sees — more than one means a picker. */
+    accounts: invoke<[token: string], ShareAccount[]>('share:accounts', 1),
+    /** Provision everything from one pasted token; progress arrives on `onSetupProgress`. */
+    setup: invoke<[token: string, accountId?: string], ShareStatus>('share:setup', 2),
+    /** To the window that asked for `setup` only. */
+    onSetupProgress: push<ShareSetupProgress>('share:setup-progress'),
+    /** Cloudflare's "create API token" page (the fake one in the demo), in the browser. */
+    openCloudflare: invoke<[], void>('share:open-cloudflare', 0),
+    get: invoke<[req: ShareBoardRequest], ShareEntry | null>('share:get', 1),
+    /** `check: false` skips the live check (no network): the sidebar badges' call. */
+    list: invoke<[root: string, check?: boolean], ShareListEntry[]>('share:list', 2),
+    /** First share (new id), or the automatic re-upload after a save (same id, permission untouched). */
+    publish: invoke<[req: SharePublishRequest], ShareEntry>('share:publish', 1),
+    /** "View and download" / "view only" on the SAME link — no re-upload. */
+    setPermission: invoke<[req: SharePermissionRequest], ShareEntry>('share:set-permission', 1),
+    /** Delete the object (the link dies at once) and forget the record. */
+    stop: invoke<[req: ShareBoardRequest], void>('share:stop', 1),
+    setDomain: invoke<[hostname: string | null], ShareStatus>('share:set-domain', 1),
+    /** Forget the token and password; `deleteEverything` first wipes every object, the Worker and the bucket. */
+    disconnect: invoke<[root: string | null, deleteEverything: boolean], ShareStatus>('share:disconnect', 2),
+    /** Any status or shares.json change, in every window. */
+    onChanged: push('share:changed'),
   },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {

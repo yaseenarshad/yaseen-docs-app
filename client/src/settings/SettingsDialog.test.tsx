@@ -16,6 +16,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
 import { idsAskMessage, idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
+import { SETTINGS_SECTIONS } from './registry'
 import { SettingsDialog } from './SettingsDialog'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -182,6 +183,10 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     unmount()
     const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
     expect(navShape(withVault.el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
+  })
+
+  it('the registry order once both YAZ-3028 halves land: canvas and images after Editor (YAZ-3037, YAZ-3038), storage and sharing after Sync (YAZ-3039, YAZ-3040), Hotkeys last', () => {
+    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['appearance', 'editor', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
   })
 
   it('opens on Appearance: the one section in the pane, anchored by id, with only its rows — no row of a later section is there', () => {

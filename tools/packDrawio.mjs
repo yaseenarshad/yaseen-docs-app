@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isUnpacked, layOverlay, unpackWebapp, verifyArchive } from './lib/drawioPack.mjs'
+import { excalidrawFontsDir } from './lib/excalidrawFonts.mjs'
 
 /** 🔒 YAZ-1802 D5: the pinned release. Keep in step with `DRAWIO_TAG` in `shared/drawio.ts` (`packDrawio.test.mjs` pins the pair). */
 export const DRAWIO_TAG = 'v31.5.2'
@@ -29,19 +30,6 @@ const repo = resolve(here, '..')
 const CACHE_ROOT = join(repo, 'desktop', '.cache', 'drawio')
 const WEBAPP_DIR = join(CACHE_ROOT, DRAWIO_TAG)
 const OVERLAY_DIR = join(repo, 'desktop', 'drawio-overlay')
-
-/**
- * The Excalidraw package's `fonts/` tree, wherever npm hoisted it — the repo root first, then the
- * client workspace: `excalidrawFontsDir()`'s rule in `desktop/electron.vite.config.ts`, restated
- * because node runs this tool with no TypeScript step. The diagram editor's fonts are copied from it.
- */
-function excalidrawFontsDir() {
-  for (const base of [repo, join(repo, 'client')]) {
-    const dir = join(base, 'node_modules/@excalidraw/excalidraw/dist/prod/fonts')
-    if (existsSync(dir)) return dir
-  }
-  throw new Error('@excalidraw/excalidraw fonts not found — run `npm install`')
-}
 
 /** The archive's bytes, verified: `--war`, else the cached copy, else a fresh download (then cached). */
 async function warBytes(warArg) {

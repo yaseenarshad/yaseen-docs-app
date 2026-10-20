@@ -41,10 +41,13 @@ file.retitle/1: invoke fs:retitle ["a0"]; => "answer"; !> {"code":"NOT_FOUND","m
 focus.get/1: invoke focus:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 focus.onChanged/1: on focus:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off focus:changed
 focus.set/2: invoke focus:set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.history/2: invoke github:history ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.onStatus/1: on github:status-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off github:status-changed
+github.restore/3: invoke github:restore ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.setEnabled/2: invoke github:set-enabled ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.status/1: invoke github:status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.syncNow/1: invoke github:sync-now ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.version/3: invoke github:version ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 ids.backfill/1: invoke ids:backfill ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 ids.check/1: invoke ids:check ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 ids.reletter/2: invoke ids:reletter ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -93,6 +96,19 @@ readImage/1: invoke fs:read-image ["a0"]; => "answer"; !> {"code":"NOT_FOUND","m
 readPdf/1: invoke fs:read-pdf ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 secrets.has/1: invoke secrets:has ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 secrets.set/1: invoke secrets:set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.accounts/1: invoke share:accounts ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.disconnect/2: invoke share:disconnect ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.get/1: invoke share:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.list/2: invoke share:list ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.onChanged/1: on share:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off share:changed
+share.onSetupProgress/1: on share:setup-progress -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off share:setup-progress
+share.openCloudflare/0: invoke share:open-cloudflare []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.publish/1: invoke share:publish ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.setDomain/1: invoke share:set-domain ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.setPermission/1: invoke share:set-permission ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.setup/2: invoke share:setup ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.status/0: invoke share:status []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+share.stop/1: invoke share:stop ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openDefault/1: invoke shell:openDefault ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openLink/1: invoke shell:open-link ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openVsCode/1: invoke shell:openVsCode ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -111,6 +127,8 @@ state.setSettings/1: invoke state:set-settings ["a0"]; => "answer"; !> {"code":"
 state.setSidebarWidth/1: invoke state:set-sidebar-width ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setTocSource/3: invoke state:set-toc-source ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setTocSwitch/3: invoke state:set-toc-switch ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+storage.shrink/2: invoke storage:shrink ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+storage.stats/1: invoke storage:stats ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 tree/1: invoke fs:tree ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 update.notes/0: invoke update:notes []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 update.onState/1: on update:state-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off update:state-changed

@@ -9,6 +9,7 @@ import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { APP_SCHEME } from './appScheme'
 import { resolveDrawioDir, serveDrawio } from './drawio/assets'
+import { excalidrawFontsDir, viewerAssetsDir } from './ipc/share'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { initBoardThumbs } from './ipc/board'
@@ -271,7 +272,14 @@ app.whenReady().then(() => {
   // A tab switch changes which file is in front; a focus change changes which window is asked.
   subscribeMenuRebuildOnActiveFile(store, applyMenu)
   rebuildMenuOnFocus = applyMenu
-  const sync = registerIpc(store, manager, app.getPath('userData'))
+  const sync = registerIpc(store, manager, {
+    userData: app.getPath('userData'),
+    // YAZ-3040: the share viewer's build, draw.io's webapp and Excalidraw's fonts, which share setup uploads.
+    viewerAssetsDir: viewerAssetsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
+    drawioDir: DRAWIO_DIR,
+    fontsDir: excalidrawFontsDir({ isPackaged: app.isPackaged, mainDir: __dirname, appPath: app.getAppPath(), exists: existsSync }),
+    isPackaged: app.isPackaged,
+  })
   // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
   // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
   void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'))

@@ -101,17 +101,22 @@ export async function resolveGit(candidates: readonly string[] = GIT_CANDIDATES)
  * On timeout the child is killed (SIGTERM) and the result resolves with `code`
  * `GIT_TIMEOUT_CODE` (-1) and a `timed out` line appended to stderr, so a wedged git looks like
  * any other classifiable failure to the caller rather than an exception.
+ *
+ * `timeoutMs` defaults to 30 s; the sync pass's two transfers (`fetch`, `push`) raise it to
+ * `TRANSFER_TIMEOUT_MS` (YAZ-1801 D4). `input` is written to the child's stdin and closed.
+ * `maxBuffer` raises the 10 MB stdout cap for the one read that returns a whole file (a board's
+ * old version for Version history, YAZ-1897 D4).
  */
-export function git(bin: string, root: string, args: string[], opts: { timeoutMs?: number } = {}): Promise<GitResult> {
+export function git(bin: string, root: string, args: string[], opts: { timeoutMs?: number; input?: string; maxBuffer?: number } = {}): Promise<GitResult> {
   const timeout = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   return new Promise((resolve, reject) => {
-    execFile(
+    const child = execFile(
       bin,
       args,
       {
         cwd: root,
         timeout,
-        maxBuffer: MAX_BUFFER,
+        maxBuffer: opts.maxBuffer ?? MAX_BUFFER,
         windowsHide: true,
         encoding: 'utf8',
         // Merged over the inherited environment rather than replacing it — git still needs HOME
@@ -144,5 +149,15 @@ export function git(bin: string, root: string, args: string[], opts: { timeoutMs
         reject(err)
       },
     )
+    // `input` (YAZ-1801): the list a `--batch` reader takes on stdin (`cat-file --batch-check`).
+    // Still no shell — it is bytes on a pipe, never parsed as a command line. An EPIPE from a child
+    // that exits early is swallowed here; its exit code is what the caller classifies.
+    if (opts.input !== undefined) {
+      child.stdin?.on('error', () => undefined)
+      child.stdin?.end(opts.input)
+    }
   })
 }
+
+/** One `-z` listing as paths; a failed listing is an empty one (a guard built on it is then a no-op, never a stop). */
+export const zList = (res: GitResult): string[] => (res.code === 0 ? res.stdout.split('\0').filter((p) => p !== '') : [])

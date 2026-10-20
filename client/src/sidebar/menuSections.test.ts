@@ -81,6 +81,8 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onRemoveVault: vi.fn(),
   onOpenAlone: vi.fn(),
   onInfo: vi.fn(),
+  onHistory: vi.fn(),
+  onShare: vi.fn(),
   ...over,
 })
 
@@ -729,9 +731,35 @@ describe('Info item (YAZ-3028 D11)', () => {
   it('a board row: Info stands directly above Delete, in its group, and hands the caller the board', () => {
     const onInfo = vi.fn()
     const sections = build(BOARD_ROW, { onInfo })
-    expect(sections[6].map((i) => i.label)).toEqual(['Info', 'Delete'])
+    expect(sections[6].map((i) => i.label)).toEqual(['Share', 'Version history', 'Info', 'Delete'])
     expect(itemOf(sections, 'Info')?.danger).toBeUndefined()
     select(sections, 'Info')
     expect(onInfo).toHaveBeenCalledExactlyOnceWith('/v/Flow.drawio')
+  })
+})
+
+/** "Version history" (YAZ-1897 D4, YAZ-3039): Info's gate, just above Info. */
+describe('Version history item (YAZ-3039)', () => {
+  const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/B.excalidraw', deletePath: '/v/B.excalidraw', renamePath: '/v/B.excalidraw', infoPath: '/v/B.excalidraw' }
+
+  it('is absent on a note and on blank space, and on a board row hands the caller the board', () => {
+    expect(labelsOf(build(FILE_ROW))).not.toContain('Version history')
+    expect(labelsOf(build(BLANK))).not.toContain('Version history')
+    const onHistory = vi.fn()
+    select(build(BOARD_ROW, { onHistory }), 'Version history')
+    expect(onHistory).toHaveBeenCalledExactlyOnceWith('/v/B.excalidraw')
+  })
+})
+
+/** "Share" (YAZ-3040, Draw's YAZ-1799 D6): Info's gate, at the top of the Delete group. */
+describe('Share item (YAZ-3040)', () => {
+  const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/Flow.drawio', deletePath: '/v/Flow.drawio', renamePath: '/v/Flow.drawio', infoPath: '/v/Flow.drawio' }
+
+  it('is absent on a note and on blank space, and on a board row hands the caller the board', () => {
+    expect(labelsOf(build(FILE_ROW))).not.toContain('Share')
+    expect(labelsOf(build(BLANK))).not.toContain('Share')
+    const onShare = vi.fn()
+    select(build(BOARD_ROW, { onShare }), 'Share')
+    expect(onShare).toHaveBeenCalledExactlyOnceWith('/v/Flow.drawio')
   })
 })

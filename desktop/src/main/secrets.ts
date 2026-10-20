@@ -1,5 +1,7 @@
 /**
- * THE SECRETS DOOR (🔒 YAZ-1842 D1, amending YAZ-1775 D4; YAZ-1817): `userData/secrets.json` =
+ * THE SECRETS DOOR (Draw's 🔒 YAZ-1842 D1, amending YAZ-1775 D4; YAZ-1817 — ported once for YAZ-3028: the
+ * Pixabay key, the share token and the upload password all read the ONE instance `registerIpc` makes):
+ * `userData/secrets.json` =
  * `{ version: 2, values: Record<name, value> }`, plain text, owner-only (mode 0600).
  *
  * THE RULE, and it has no exceptions: **the renderer never receives a value.** It may write one
@@ -74,7 +76,7 @@ export function createSecrets(file: string): Secrets {
         const values = { ...(await load()) }
         if (value === null) delete values[name]
         else values[name] = value
-        // Owner-only from the tmp file's creation, so the value is never briefly world-readable.
+        // Owner-only from the tmp file's creation, so the value is never briefly world-readable (YAZ-2073 D12).
         const { mtime } = await fsCall(file, () => atomicWrite(file, `${JSON.stringify({ version: VERSION, values }, null, 2)}\n`, SECRETS_FILE_MODE))
         cached = { mtimeMs: mtime, values }
       })
