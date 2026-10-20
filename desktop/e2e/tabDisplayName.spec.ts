@@ -3,8 +3,7 @@
  * (D3, D6). The name is typed where the tab was right-clicked, and the field grows with the text
  * (D4). A named tab shows its name on the strip and on the tab board, and the page name in its
  * tooltip (D5). A copy shows the page name (D2). "Reset to page name" puts the page name back.
- * "Move to new window" takes the name to the new window (D7, S19). Since YAZ-3057 the window STORES its copies
- * and names: a reload and a restart bring back the copies, the names and the copy that was on show (S1 to S4, S12).
+ * "Move to new window" takes the name to the new window, and a reload of that window drops it (D7, S19, S24).
  *
  * Same harness as the rest of the suite: temp `--user-data-dir`, a generated vault, `display-name-`
  * step screenshots, serial. It opens windows on screen: run it only where that is fine.
@@ -13,7 +12,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, copyVault, extraWindow, launchApp, menuItem, quitApp, SEED_FILE, seededState, shoot, tabsOf } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, extraWindow, launchApp, menuItem, SEED_FILE, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -95,7 +94,7 @@ test('right-click a tab › Set display name: the copy gets its own name, on the
   await expect(tabsOf(win)).toHaveText([NAME, NAME])
 })
 
-test('Move to new window › the named tab keeps its name there, and a reload of that window keeps it (D7, S19; YAZ-3057 S12)', async () => {
+test('Move to new window › the named tab keeps its name there, and a reload of that window drops it (D7, S19, S24)', async () => {
   await tabsOf(win).nth(1).click({ button: 'right' })
   await menuItem(win, 'Set display name').click()
   await win.keyboard.type('Outline')
@@ -109,32 +108,7 @@ test('Move to new window › the named tab keeps its name there, and a reload of
   await expect(tabsOf(win)).toHaveText([NAME])
   await shoot(popped, 'display-name-5-new-window')
 
-  // The name is stored with the new window's tab (YAZ-3057 D3): a reload reads it again.
+  // Main hands the name over ONE time: a reload shows the page name, and nothing was stored.
   await popped.reload()
-  await expect(tabsOf(popped)).toHaveText(['Outline'])
-})
-
-test('YAZ-3057: a copy, its display name and the copy on show come back after a reload (⌘R) and after a quit and a restart', async () => {
-  await expect(tabsOf(win)).toHaveText([NAME])
-  await tabsOf(win).first().click({ button: 'right' })
-  await menuItem(win, 'Duplicate tab').click()
-  await tabsOf(win).nth(1).click({ button: 'right' })
-  await menuItem(win, 'Set display name').click()
-  await win.keyboard.type('Draft view')
-  await win.keyboard.press('Enter')
-  await expect(tabsOf(win)).toHaveText([NAME, 'Draft view'])
-  await expect(activeTab(win)).toHaveText('Draft view')
-
-  // S3: a reload reads the stored strip.
-  await win.reload()
-  await expect(tabsOf(win)).toHaveText([NAME, 'Draft view'])
-  await expect(activeTab(win)).toHaveText('Draft view')
-
-  // S1, S2, S4: the REAL quit path, then a launch with no re-seed: the restore is whatever quit wrote.
-  await quitApp(app)
-  app = await launchApp({ userData })
-  win = await appWindow(app, 'w1')
-  await expect(tabsOf(win)).toHaveText([NAME, 'Draft view'])
-  await expect(activeTab(win)).toHaveText('Draft view')
-  await shoot(win, 'display-name-6-after-restart')
+  await expect(tabsOf(popped)).toHaveText([NAME])
 })

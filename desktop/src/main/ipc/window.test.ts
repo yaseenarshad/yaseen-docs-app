@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { CONTRACT, SPECIAL, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import * as windows from '../windows'
@@ -34,6 +34,7 @@ let manager: {
   openWindow: ReturnType<typeof vi.fn>
   duplicateWindow: ReturnType<typeof vi.fn>
   popOut: ReturnType<typeof vi.fn>
+  takeTabNames: ReturnType<typeof vi.fn>
   openRecentBeside: ReturnType<typeof vi.fn>
   openAlone: ReturnType<typeof vi.fn>
   openVaultSet: ReturnType<typeof vi.fn>
@@ -53,7 +54,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined) }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeTabNames: vi.fn(() => undefined), takeStartView: vi.fn(() => undefined) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -438,46 +439,11 @@ describe('registerWindowIpc', () => {
     expect(await popOut({ sender }, '/v/a.md', 'Outline')).toEqual(bad('BAD_REQUEST'))
   })
 
-  describe('the tab strip: copies, display names and the active copy (YAZ-3057 D1, D2)', () => {
-    const setIdentity = () => registered(CONTRACT.window.setIdentity.channel)
-    const identity = () => registered(CONTRACT.window.identity.channel)
-
-    it('window:set-identity stores the strip; window:identity answers it on EVERY read (a reload keeps it), as a copy', async () => {
-      const tabStrip = [{ path: '/v/a.md', name: 'Draft' }, { path: '/v/b.md' }, { path: '/v/a.md', active: true }]
-      expect(await setIdentity()({ sender }, { tabs: ['/v/a.md', '/v/b.md'], tabStrip, file: '/v/a.md' })).toEqual(ok(undefined))
-      expect(store.get().windows[0].tabStrip).toEqual(tabStrip)
-      for (let read = 0; read < 2; read++) {
-        expect(await identity()({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], tabStrip, rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files' }))
-      }
-      const answered = (await identity()({ sender })) as { value: { tabStrip: unknown[] } }
-      expect(answered.value.tabStrip[0]).not.toBe(store.get().windows[0].tabStrip?.[0])
-    })
-
-    it('a name is cleaned like a vault name (S26): trimmed, cut at MAX_VAULT_NAME, and blank is no name; a strip with no copy and no name is not kept (S23)', async () => {
-      const long = `  ${'n'.repeat(MAX_VAULT_NAME + 5)}  `
-      expect(await setIdentity()({ sender }, { tabStrip: [{ path: '/v/a.md', name: long }] })).toEqual(ok(undefined))
-      expect(store.get().windows[0].tabStrip).toEqual([{ path: '/v/a.md', name: 'n'.repeat(MAX_VAULT_NAME) }])
-      expect(await setIdentity()({ sender }, { tabStrip: [{ path: '/v/a.md', name: '   ', active: true }] })).toEqual(ok(undefined))
-      expect(store.get().windows[0]).not.toHaveProperty('tabStrip')
-    })
-
-    it('a patch without the strip keeps the stored one, made true to the new tabs: a closed file\'s copies drop (S10); a strip that disagrees drops whole (S26)', async () => {
-      await setIdentity()({ sender }, { tabs: ['/v/a.md', '/v/b.md'], tabStrip: [{ path: '/v/a.md' }, { path: '/v/b.md', name: 'B' }, { path: '/v/b.md' }], file: '/v/a.md' })
-      expect(await setIdentity()({ sender }, { tabs: ['/v/b.md'], file: '/v/b.md' })).toEqual(ok(undefined))
-      expect(store.get().windows[0].tabStrip).toEqual([{ path: '/v/b.md', name: 'B' }, { path: '/v/b.md' }])
-      // The strip names a tab that is not in `tabs`, and misses one that is: it cannot be the window's tabs.
-      expect(await setIdentity()({ sender }, { tabs: ['/v/b.md', '/v/c.md'], tabStrip: [{ path: '/v/c.md', name: 'C' }, { path: '/v/b.md' }] })).toEqual(ok(undefined))
-      expect(store.get().windows[0]).not.toHaveProperty('tabStrip')
-      expect(store.get().windows[0].tabs).toEqual(['/v/b.md', '/v/c.md'])
-    })
-
-    it('rejects the whole call on a bad strip, leaving the entry untouched (S26)', async () => {
-      const before = store.get().windows[0]
-      for (const wrong of ['nope', [{ path: 'rel.md' }], [{ path: '/v/a.md' }, 5], [{ name: 'x' }]]) {
-        expect(await setIdentity()({ sender }, { tabs: ['/v/a.md'], tabStrip: wrong })).toEqual(bad('BAD_REQUEST'))
-      }
-      expect(store.get().windows[0]).toEqual(before)
-    })
+  it('window:identity answers the names a moved tab brought, from the manager, and nothing when it holds none (YAZ-2949 D7)', async () => {
+    manager.takeTabNames.mockReturnValueOnce({ '/v/a.md': 'Outline' })
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', tabNames: { '/v/a.md': 'Outline' } }))
+    expect(manager.takeTabNames).toHaveBeenLastCalledWith('w1')
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files' }))
   })
 
   describe('the page view a new window starts with (YAZ-2951 D5, S17, S19)', () => {
