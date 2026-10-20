@@ -150,14 +150,32 @@ function checkOut(out) {
   return fails
 }
 
+/**
+ * What the Info.plist must claim: the `yaseendocs` scheme and `.md` as Editor/Alternate (GRO-2171,
+ * F1), and since YAZ-3028 D7 Draw's `yaseendraw` scheme and `.excalidraw` / `.drawio` as Editor/Owner.
+ * `plist` is the file as JSON (`plutil -convert json`).
+ */
+export function plistFails(plist) {
+  const fails = []
+  const schemes = (plist.CFBundleURLTypes ?? []).flatMap((t) => t.CFBundleURLSchemes ?? [])
+  if (!schemes.includes('yaseendocs')) fails.push('Info.plist: CFBundleURLSchemes lacks yaseendocs (deep links, GRO-2171)')
+  if (!schemes.includes('yaseendraw')) fails.push("Info.plist: CFBundleURLSchemes lacks yaseendraw (Draw's links, YAZ-3028 D7)")
+  const docType = (ext) => (plist.CFBundleDocumentTypes ?? []).find((d) => (d.CFBundleTypeExtensions ?? []).includes(ext))
+  const md = docType('md')
+  if (md?.CFBundleTypeRole !== 'Editor' || md?.LSHandlerRank !== 'Alternate') fails.push('Info.plist: .md is not an Editor/Alternate document type')
+  for (const ext of ['excalidraw', 'drawio']) {
+    const t = docType(ext)
+    if (t?.CFBundleTypeRole !== 'Editor' || t?.LSHandlerRank !== 'Owner') fails.push(`Info.plist: .${ext} is not an Editor/Owner document type (YAZ-3028 D7)`)
+  }
+  return fails
+}
+
 /** Integrity of the packaged `.app`: Info.plist, the ad-hoc seal, the CLI shim, the asar payload. macOS only. */
 function checkApp(app) {
   if (!existsSync(app)) return [`no app at ${app} (run npm run desktop:build, or use --out-only)`]
   const fails = []
   const plist = JSON.parse(execFileSync('plutil', ['-convert', 'json', '-o', '-', join(app, 'Contents/Info.plist')]).toString())
-  if (!(plist.CFBundleURLTypes ?? []).flatMap((t) => t.CFBundleURLSchemes ?? []).includes('yaseendocs')) fails.push('Info.plist: CFBundleURLSchemes lacks yaseendocs (deep links, GRO-2171)')
-  const md = (plist.CFBundleDocumentTypes ?? []).find((d) => (d.CFBundleTypeExtensions ?? []).includes('md'))
-  if (md?.CFBundleTypeRole !== 'Editor' || md?.LSHandlerRank !== 'Alternate') fails.push('Info.plist: .md is not an Editor/Alternate document type')
+  fails.push(...plistFails(plist))
   // The deep seal (desktop/build/adhocSign.cjs): without it Gatekeeper calls a download "damaged". It is the
   // certificate "Yaseen Local Signing" (YAZ-2976 D1), or ad-hoc on a machine that lacks it; `--verify` below checks the seal.
   if (!/Signature=adhoc|Authority=Yaseen Local Signing/.test(spawnSync('codesign', ['-dvv', app]).stderr.toString())) fails.push('codesign: not sealed (neither the certificate nor ad-hoc)')

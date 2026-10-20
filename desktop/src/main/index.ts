@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, pr
 import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { fileLink, parseFileLink } from '@shared/links'
+import { fileLink, isAppLink, parseFileLink } from '@shared/links'
 import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
 import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
@@ -11,10 +11,11 @@ import { resolveDrawioDir, serveDrawio } from './drawio/assets'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { initBoardThumbs } from './ipc/board'
-import { broadcastAll } from './ipc/broadcast'
+import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerUpdateIpc } from './ipc/update'
 import { claimDeepLinkScheme } from './deepLinkScheme'
+import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
@@ -38,8 +39,8 @@ applyUserDataOverride(app, process.env.YASEEN_DOCS_USER_DATA_DIR)
 const isPrimaryInstance = app.requestSingleInstanceLock()
 if (!isPrimaryInstance) app.quit()
 app.on('second-instance', (_event, argv) => {
-  // Windows/Linux deliver a clicked yaseendocs:// link as an argv entry of the second launch.
-  const urls = argv.filter((arg) => arg.startsWith('yaseendocs://'))
+  // Windows/Linux deliver a clicked yaseendocs:// (or Draw's yaseendraw://, YAZ-3028 D7) link as an argv entry of the second launch.
+  const urls = argv.filter(isAppLink)
   if (urls.length > 0) {
     for (const url of urls) links.push(url)
     return // routing focuses (or opens) the right window itself
@@ -265,6 +266,14 @@ app.whenReady().then(() => {
   // rather than at module scope because powerMonitor is only safe to touch after `ready`.
   powerMonitor.on('resume', () => sync.notifyWake())
   powerMonitor.on('unlock-screen', () => sync.notifyWake())
+  // Draw's data, copied one time into the gaps (YAZ-3028 D6): the app-data half now, each vault's half when it opens.
+  startDrawImport({
+    drawDir: join(app.getPath('appData'), DRAW_APP_NAME),
+    userData: app.getPath('userData'),
+    store,
+    appData: shouldImportDrawAppData(process.env),
+    rootsOf,
+  })
   // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
   // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
   // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.

@@ -69,6 +69,28 @@ export async function setFavorites(root: string, absPaths: readonly string[]): P
   })
 }
 
+/**
+ * Adds vault-relative entries AFTER the stored ones (the Draw import, YAZ-3028 D6): the stored
+ * list keeps its order and is never pruned here; an added entry that is already there, unsafe, or
+ * whose file is gone (D14) is not added; the cap is MAX_FAVORITES. A malformed file is never
+ * written (R2.5). Answers how many entries it added; 0 writes nothing.
+ */
+export async function addFavorites(root: string, rels: readonly string[]): Promise<number> {
+  const r = requireAbsPath(root, 'root')
+  return chained(r, async () => {
+    const raw = await readRaw(r)
+    if (raw.state === 'bad') return 0
+    const stored = raw.state === 'ok' ? raw.rels : []
+    const fresh = [...new Set(rels.filter(isSafeRel))].filter((rel) => !stored.includes(rel))
+    const alive = await Promise.all(fresh.map((rel) => stat(toAbs(r, rel)).then(() => true, () => false)))
+    const added = fresh.filter((_, i) => alive[i]).slice(0, Math.max(0, MAX_FAVORITES - stored.length))
+    if (added.length === 0) return 0
+    const value: FavoritesConfig = { version: 1, favorites: [...stored, ...added] }
+    await writeConfig(r, FAVORITES_FILE, value)
+    return added.length
+  })
+}
+
 /** Fires after any change to favorites.json — an own write or an external edit. Returns an unsubscribe. */
 export function subscribeFavorites(root: string, listener: (change: { root: string }) => void): () => void {
   const r = requireAbsPath(root, 'root')

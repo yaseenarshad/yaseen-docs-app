@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { measure, outOfBudget } from './measureBudget.mjs'
+import { measure, outOfBudget, plistFails } from './measureBudget.mjs'
 
 const script = join(dirname(fileURLToPath(import.meta.url)), 'measureBudget.mjs')
 const budget = JSON.parse(readFileSync(new URL('./budget.json', import.meta.url), 'utf8'))
@@ -133,5 +133,28 @@ describe('outOfBudget', () => {
     const rows = { lprojCount: { max: 55, min: 55 }, dmgBytes: { max: 1000 } }
     expect(outOfBudget({ lprojCount: 55, dmgBytes: 1001 }, rows, 0.001)).toEqual([])
     expect(outOfBudget({ lprojCount: 54, dmgBytes: 1002 }, rows, 0.001)).toEqual(['lprojCount 54 < floor 55', 'dmgBytes 1002 > ceiling 1000'])
+  })
+})
+
+describe('plistFails (Info.plist integrity)', () => {
+  /** The Info.plist keys electron-builder writes from `desktop/package.json` `build.protocols` / `build.fileAssociations`. */
+  const plistOf = (build) => ({
+    CFBundleURLTypes: build.protocols.map((p) => ({ CFBundleURLName: p.name, CFBundleURLSchemes: p.schemes })),
+    CFBundleDocumentTypes: build.fileAssociations.map((a) => ({ CFBundleTypeExtensions: a.ext, CFBundleTypeName: a.name, CFBundleTypeRole: a.role, LSHandlerRank: a.rank })),
+  })
+  const build = JSON.parse(readFileSync(new URL('../../desktop/package.json', import.meta.url), 'utf8')).build
+
+  it('passes what desktop/package.json declares: both schemes, .md Alternate, .excalidraw and .drawio Owner (YAZ-3028 D7)', () => {
+    expect(plistFails(plistOf(build))).toEqual([])
+  })
+
+  it('fails a bundle that lacks the Draw scheme or a drawing type, or claims one at the wrong rank', () => {
+    const noDraw = plistOf({ ...build, protocols: [{ name: 'Yaseen Docs', schemes: ['yaseendocs'] }] })
+    expect(plistFails(noDraw)).toEqual(["Info.plist: CFBundleURLSchemes lacks yaseendraw (Draw's links, YAZ-3028 D7)"])
+    const alternate = plistOf({ ...build, fileAssociations: build.fileAssociations.map((a) => (a.ext.includes('drawio') ? { ...a, rank: 'Alternate' } : a)) })
+    expect(plistFails(alternate)).toEqual(['Info.plist: .drawio is not an Editor/Owner document type (YAZ-3028 D7)'])
+    const mdOnly = plistOf({ ...build, fileAssociations: build.fileAssociations.filter((a) => a.ext.includes('md')) })
+    expect(plistFails(mdOnly)).toHaveLength(2)
+    expect(plistFails({})).toHaveLength(5)
   })
 })
