@@ -12,18 +12,17 @@
  *   5 the `[[` picker's Create row: the number first, then the link by that ID, then the note (S35)
  *   6 the search box finds the note by its bare number, and the row shows the full ID (D9, S69 to S72)
  *   7 "Change letters": each ID, link and file name follows, and a link with the old letters still opens (D5, S81, S82)
+   8 "Change letters" in one window: a second window on the vault opens a link of the old letters at once (YAZ-3102)
  *
  * Same harness as names.spec.ts (temp `--user-data-dir`, a temp vault, `ids-` step screenshots).
  * The two-Mac cases (a clash, the 10-minute wait) are not here: one app is one Mac, and
  * `desktop/src/main/vaultIndex/twoMacs.test.ts` proves them on two vault folders.
  */
-// Written for YAZ-2677 and typechecked only. Not yet run: Playwright was off limits, so every
-// selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, confirmSheet, editorOf, fileRow, idOf, launchApp, lensTab, linkPicker, menuItem, only, quitApp, searchBar, seededState, shoot, showSearchTab } from './helpers'
+import { activeTab, appWindow, clickMenuItem, confirmSheet, editorOf, extraWindow, fileRow, idOf, launchApp, lensTab, linkPicker, menuItem, only, quitApp, searchBar, seededState, shoot, showSearchTab } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -33,6 +32,8 @@ const PLAN = '# Plan\n\nids-plan-body\n'
 /** The letters the user types in step 2, and the letters step 7 changes them to. */
 const LETTERS = 'YAZ'
 const NEW_LETTERS = 'DOC'
+/** The letters step 8 changes them to, in the first of two windows. */
+const THIRD_LETTERS = 'ABC'
 
 let userData: string
 let vault: string
@@ -299,5 +300,34 @@ test('step 7 — "Change letters": each ID, link and file name follows, and a li
   await expect(activeTab(win)).toHaveText('Fresh idea')
   expect(await read(path.join(vault, 'Late.md'))).toContain(`[[${freshId}]]`) // the old link is still on disk
   await shoot(win, 'ids-07b-old-link-opens')
+  await quitApp(app)
+})
+
+test('step 8 — "Change letters" in one window: a second window on the vault opens a link of the old letters at once (YAZ-3102)', async () => {
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Hub.md')) })
+  win = await appWindow(app, 'w1')
+  await expect(linkIn(win, 'Fresh idea')).toBeVisible()
+  // ⌘⇧N: a second window on the same vault, on the same note.
+  await clickMenuItem(app, 'menu.file.new-window', 'w1')
+  const other = await extraWindow(app, ['w1'])
+  await expect(linkIn(other, 'Fresh idea')).toBeVisible()
+
+  const number = numberOf(freshId, LETTERS)
+  await openSettings(win)
+  await rowButton(win, 'idLetters', 'Change letters').click()
+  await field(win).fill(THIRD_LETTERS)
+  await sheetButton(win, 'Change letters').click()
+  await expect(row(win, 'idLetters').getByRole('status')).toHaveText(`This vault's ID letters are ${THIRD_LETTERS}.`)
+  expect(await only(vault, /^fresh-idea-.*\.md$/)).toBe(`fresh-idea-${THIRD_LETTERS.toLowerCase()}-${number}.md`)
+
+  // The OTHER window hears that the change ended (`ids:changed`) and reads its index at once: a
+  // file that comes now, with a link of the letters of just before, opens the note with no wait.
+  await writeFile(path.join(vault, 'Later.md'), `See [[${NEW_LETTERS}-${number}]] here.\n`)
+  await expect(fileRow(other, 'Later')).toBeVisible()
+  await fileRow(other, 'Later').click()
+  await expect(linkIn(other, 'Fresh idea')).toBeVisible()
+  await linkIn(other, 'Fresh idea').click()
+  await expect(activeTab(other)).toHaveText('Fresh idea')
+  await shoot(other, 'ids-08-other-window-old-link-opens')
   await quitApp(app)
 })
