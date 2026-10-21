@@ -38,7 +38,6 @@ import path from 'node:path'
 import {
   activeTab,
   appWindow,
-  builtNote,
   contents,
   copyVault,
   dirRow,
@@ -86,8 +85,8 @@ const RENAMED = 'Deal Win Rate'
  */
 const ROLES = 'Roles'
 const ROLES_RENAMED = 'Buyer Roles'
-/** The directory that title gives the folder: its kebab-case (YAZ-2420 🔒 D6). */
-const ROLES_RENAMED_DIR = 'buyer-roles'
+/** The directory a rename gives the folder in a plain vault: the typed name (YAZ-2523 🔒 V3). */
+const ROLES_RENAMED_DIR = ROLES_RENAMED
 /** The notes in it, alphabetically. */
 const ROLE_MEMBERS = ['CEO', 'Head of Sales', 'RevOps Lead']
 const TOPICS_AFTER = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', ROLES_RENAMED_DIR]
@@ -261,10 +260,10 @@ test('step 3 — navigating the encyclopedia: click → current tab, ⌘-click �
 
 test('step 4 — the backlinks panel finds the whole mention set, problems included', async () => {
   // Who the problems ARE is the folder's own answer, not this file's: the four notes that
-  // live in `Problems`, read straight off its Table — the first of the default views, since its
-  // settings file declares columns and lists no views of its own.
+  // live in `Problems`, read straight off its Table — the one default view of a plain vault
+  // (YAZ-2523 🔒 V11), since its settings file declares columns and lists no views of its own.
   await openFolder(win, path.join(vault, 'Problems'))
-  await expect(viewTabs(contents(win))).toHaveText(['Table', 'Board'])
+  await expect(viewTabs(contents(win))).toHaveText(['Table'])
   await expect(rowNames(contents(win))).toHaveText(PROBLEMS)
 
   await tabsOf(win).filter({ hasText: 'Win Rate' }).click()
@@ -316,12 +315,11 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
 
   // And it still lives where it lived: a note belongs to a folder by BEING in it, so renaming
   // the note is nothing the folder has to be told about — it is the same row, under its new
-  // title, in the path order its built name (`deal-win-rate-<id>.md`, YAZ-2420 🔒 D3) now sorts
-  // to: after the capitalised names of the notes made outside the app.
-  expect(await read(path.join('KPIs', await builtNote(path.join(vault, 'KPIs'), 'deal-win-rate')))).toContain('unit: percent')
+  // name, in the path order its new file name (`Deal Win Rate.md`, a plain vault) now sorts to.
+  expect(await read(path.join('KPIs', `${RENAMED}.md`))).toContain('unit: percent')
   await openFolder(win, path.join(vault, KPIS))
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  await expect(rowNames(contents(win))).toHaveText(['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', RENAMED])
+  await expect(rowNames(contents(win))).toHaveText(['CAC', RENAMED, 'Gross Margin', 'MQL Volume', 'Sales Cycle Time'])
 
   // The durable result: not one dangling wiki link anywhere in the vault.
   await expect.poll(() => brokenLinks(vault)).toEqual([])
@@ -352,10 +350,10 @@ test('step 6 — renaming a FOLDER: the links to it INSIDE folder_settings follo
   await expect.poll(() => read(problems)).toContain(`target: "[[${ROLES_RENAMED}]]"`)
   expect(await read(problems)).toContain('target: "[[KPIs]]"')
   expect(await read(problems)).toContain('required: true')
-  // … the renamed folder's OWN self-target, written at its new path, beside the title it now holds …
+  // … the renamed folder's OWN self-target, written at its new path; a plain vault writes no title there (YAZ-2523 🔒 V3) …
   const renamedSettings = path.join(ROLES_RENAMED_DIR, '.folder.md')
   await expect.poll(() => read(renamedSettings).catch(() => '')).toContain(`target: "[[${ROLES_RENAMED}]]"`)
-  expect(titleOf(await read(renamedSettings))).toBe(ROLES_RENAMED)
+  expect(titleOf(await read(renamedSettings))).toBe('')
   expect(await read(renamedSettings)).toContain('kind: link')
   // … and the notes moved with their folder, their names and their own bare links untouched.
   expect(await read(path.join(ROLES_RENAMED_DIR, 'Head of Sales.md'))).toContain('reports_to: "[[CEO]]"')

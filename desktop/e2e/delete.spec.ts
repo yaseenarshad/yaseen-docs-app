@@ -19,7 +19,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, builtNote, copyVault, dirRow, editorOf, fileRow, launchApp, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, copyVault, dirRow, editorOf, fileRow, launchApp, quitApp, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -134,9 +134,9 @@ test('step 6 — the links now render UNRESOLVED, and clicking one recreates the
   await expect(link).toHaveClass(/wikilink--unresolved/)
   await shoot(win, 'delete-06-unresolved-link')
   await link.click()
-  // Create-on-click makes the page again, titled as the link spells it, under a name built from
-  // that title and a fresh id (YAZ-2420 🔒 D20) — an accidental delete is recoverable here.
-  await expect.poll(() => builtNote(vault, 'doomed')).not.toBe('')
+  // Create-on-click makes the page again, named as the link spells it (a plain vault, YAZ-2523
+  // 🔒 V3) — an accidental delete is recoverable here.
+  await expect.poll(() => readFile(path.join(vault, 'Doomed.md'), 'utf8').catch(() => null)).toBe('')
   await expect(activeTab(win)).toHaveText('Doomed')
 })
 

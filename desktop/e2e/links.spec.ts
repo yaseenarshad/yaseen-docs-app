@@ -5,8 +5,8 @@
  * (activation and the visible editor stay put), and a click on an UNRESOLVED link CREATES the
  * page at the vault root and opens it. Steps 6-7 add Links E2 (GRO-2214): a page declaring
  * frontmatter `aliases` is reachable by them — `[[CAC]]` renders RESOLVED and opens the aliased
- * page, and typing `[[cac` in the picker links the page BY ITS ID on disk (YAZ-2293): step 5's
- * create is what makes the fixture a vault, so by step 7 the sweep has given Metrics.md its id.
+ * page, and typing `[[cac` in the picker links the page by its NAME, the alias its label: the
+ * vault is plain (YAZ-2523 🔒 V3), the default, so no note has an id to link by.
  * Same harness as tabs.spec.ts (temp `--user-data-dir`, COPY of a generated fixture vault,
  * `links-` step screenshots); serial by design — each step continues the previous state.
  */
@@ -15,14 +15,11 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
-  NOTE_ID,
   activeTab,
   appWindow,
   buildFixtureVault,
-  builtNote,
   copyVault,
   editorOf,
-  idOf,
   launchApp,
   quitApp,
   seededState,
@@ -130,20 +127,15 @@ test('step 5 — click an UNRESOLVED link: the note is created beside the hub (a
   await expect(tabsOf(win)).toHaveText(['Roadmap', 'Ideas', FRESH]) // …so the link added no tab: the hub's own was the third
   // …and the file exists ON DISK at the vault root, empty: the default location is the SOURCE page's
   // folder (YAZ-1643), and the hub is seeded at the root, so 'current' == root here.
-  // Born with its id and its title, the link's own text, and nothing else, under the name built
-  // from the two (YAZ-2420, table B).
-  await expect.poll(() => builtNote(vault, 'fresh-note')).not.toBe('')
-  const fresh = await builtNote(vault, 'fresh-note')
-  const born = await readFile(path.join(vault, fresh), 'utf8')
-  expect(born).toMatch(new RegExp(`^---\\ntitle: ${FRESH}\\nid: ${NOTE_ID}\\n---\\n$`))
-  expect(fresh).toBe(`fresh-note-${idOf(born).toLowerCase()}.md`)
+  // Named as the link spells it, with nothing written inside: a plain vault (YAZ-2523 🔒 V3).
+  await expect.poll(() => readFile(path.join(vault, `${FRESH}.md`), 'utf8').catch(() => null)).toBe('')
   await shoot(win, 'links-05-create-on-click')
 })
 
 test('step 6 — an ALIAS-form link renders resolved and opens the aliased page (E2)', async () => {
   await win.locator('.tree__row--file', { hasText: 'Links hub' }).click()
   await expect(editorOf(win)).toContainText(HUB_BODY)
-  // Step 5 made the note, and `[[Fresh note]]` finds it by its title (YAZ-2420 🔒 D17): nothing dims now.
+  // Step 5 made the note, and `[[Fresh note]]` finds it by its name: nothing dims now.
   await expect(linkIn(win, FRESH)).not.toHaveClass(/wikilink--unresolved/)
   await expect(win.locator('.wikilink--unresolved')).toHaveCount(0)
   await expect(linkIn(win, ALIAS)).not.toHaveClass(/wikilink--unresolved/) // `[[CAC]]` found Metrics.md
@@ -153,7 +145,7 @@ test('step 6 — an ALIAS-form link renders resolved and opens the aliased page 
   await shoot(win, 'links-06-alias-resolved')
 })
 
-test('step 7 — the picker suggests the page by alias and links it by its id on disk (E2, YAZ-2293)', async () => {
+test('step 7 — the picker suggests the page by alias and links it by its name, the alias its label (E2)', async () => {
   await win.locator('.tree__row--file', { hasText: 'Links hub' }).click()
   await expect(editorOf(win)).toContainText(HUB_BODY)
   // Type at the end of the hub's link paragraph (never Enter — see smoke.spec step 3).
@@ -164,11 +156,10 @@ test('step 7 — the picker suggests the page by alias and links it by its id on
   await expect(suggestion).toHaveText([`${ALIAS} — Metrics`]) // alias row, disambiguated by page name
   await shoot(win, 'links-07-alias-suggestion')
   await win.keyboard.press('Enter')
-  // The alias is only how the page was FOUND: the link is the plain id, with no label.
-  const metricsId = /^id: (.+)$/m.exec(await readFile(path.join(vault, METRICS_FILE), 'utf8'))?.[1]
-  expect(metricsId).toMatch(new RegExp(`^${NOTE_ID}$`))
+  // The page is linked by its name, and the alias it was found by is the label. Metrics.md is untouched.
   await expect
-    .poll(async () => (await readFile(path.join(vault, HUB_FILE), 'utf8')).includes(`[[${metricsId}]]`), { timeout: 10_000 })
+    .poll(async () => (await readFile(path.join(vault, HUB_FILE), 'utf8')).includes(`${HUB_BODY} [[Metrics|${ALIAS}]]`), { timeout: 10_000 })
     .toBe(true)
+  expect(await readFile(path.join(vault, METRICS_FILE), 'utf8')).toBe(`---\naliases: [${ALIAS}]\n---\n\n${METRICS_BODY}\n`)
   await quitApp(app)
 })

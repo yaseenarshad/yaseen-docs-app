@@ -237,6 +237,22 @@ export async function only(dir: string, pattern: RegExp): Promise<string> {
 /** The one note in `dir` the app named for a title whose kebab-case is `kebab`, or '' (`only`). */
 export const builtNote = (dir: string, kebab: string): Promise<string> => only(dir, new RegExp(`^${kebab}-${NOTE_ID}\\.md$`))
 
+/** This Mac's ID in a test profile (`mac.json` in the user data folder, YAZ-2677): 12 of `[0-9a-z]`. */
+export const E2E_MAC = 'e2emac000001'
+
+/**
+ * A vault that uses IDs before the app opens it (YAZ-2523 🔒 V1): its `ids.json` says yes with
+ * `letters`, and this Mac is its first Mac, so the index gives each note its number at once. With
+ * no count file no Mac is first, and the sweep waits 10 minutes (YAZ-2677 🔒 D8). A vault left as
+ * it is stays plain: that is the default, and every spec that does not call this tests it.
+ */
+export async function idVault(vault: string, userData: string, letters = 'YAZ'): Promise<void> {
+  await mkdir(path.join(vault, '.yaseendocs', 'ids'), { recursive: true })
+  await writeFile(path.join(vault, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: true, letters }))
+  await writeFile(path.join(vault, '.yaseendocs', 'ids', `${E2E_MAC}.json`), JSON.stringify({ name: 'e2e', since: '2026-01-01T00:00:00.000Z', last: 0, made: [] }))
+  await writeFile(path.join(userData, 'mac.json'), JSON.stringify({ id: E2E_MAC }))
+}
+
 export const idOf = (content: string) => /^id: (\S+)$/m.exec(content)?.[1] ?? ''
 /** The `title:` line's text; YAML may quote it (a colon, or a value that was quoted before). */
 export const titleOf = (content: string) => (/^title: (.*)$/m.exec(content)?.[1] ?? '').replace(/^(['"])(.*)\1$/, '$2').replace(/''/g, "'")

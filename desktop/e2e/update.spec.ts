@@ -99,7 +99,7 @@ test('step 1 — Check for Updates… finds v99: the sheet opens at once, and th
   await expect(whatsNew(win)).toBeVisible()
   await expect(actions(win)).toHaveText(['Later', 'Download'])
   await expect(pill(win)).toHaveText('🎉New update ready')
-  await expect(pill(win)).toHaveAttribute('title', 'Yaseen Docs 99.0.0')
+  await expect(pill(win)).toHaveAttribute('title', "Click to see what's new") // YAZ-2988: the tooltip says what a click does
   await shoot(win, 'update-01-pill')
   await whatsNew(win).getByRole('button', { name: 'Later' }).click()
   await expect(whatsNew(win)).toHaveCount(0)
@@ -172,7 +172,7 @@ test('step 6 — the first launch after a swap: the pill says "What\'s new" once
   await expect(rows(win).locator('.whats-new__tag')).toHaveText(['Latest', 'Your current version']) // up to date: one row, both tags
   await expect(actions(win)).toHaveText(['Close'])
   await shoot(win, 'update-06-whats-new-after-update')
-  await whatsNew(win).getByRole('button', { name: 'Close' }).click()
+  await actions(win).click() // the one action, Close; the corner × is the sheet's other Close
   await expect(whatsNew(win)).toHaveCount(0)
   await clickMenuItem(app, 'menu.app.check-updates', 'w1')
   await expect(win.locator('.link-notice')).toHaveText(`Yaseen Docs ${version} is the newest version`)
