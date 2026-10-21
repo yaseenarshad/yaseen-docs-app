@@ -846,6 +846,26 @@ describe('TabBar display name (YAZ-2949 D4, D5)', () => {
     expect(field(el)).toBeNull()
   })
 
+  it('YAZ-3059 S1, S6, S8, S15: a double click keeps the preview tab and opens its name field, selected; with no onSetName it only keeps', () => {
+    const onKeep = vi.fn()
+    const onSetName = vi.fn()
+    const dblclick = (el: HTMLElement, i: number) => act(() => void el.querySelectorAll('[role="tab"]')[i].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    const el = mountIds({ onKeep, onSetName, preview: 't2' })
+    dblclick(el, 1)
+    expect(onKeep).toHaveBeenCalledExactlyOnceWith('t2')
+    const input = field(el)!
+    expect(document.activeElement).toBe(input)
+    expect([input.value, input.placeholder, input.selectionStart, input.selectionEnd]).toEqual(['Outline', 'Plan', 0, 7])
+    key(input, 'Enter')
+    expect(onSetName).not.toHaveBeenCalled()
+
+    act(() => root?.unmount())
+    const bare = mountIds({ onKeep })
+    dblclick(bare, 0)
+    expect(onKeep).toHaveBeenLastCalledWith('t1')
+    expect(field(bare)).toBeNull()
+  })
+
   it('S3, S4, S10: Esc changes nothing; an empty field or the page name is no display name; a click away saves; "Reset to page name" clears it', () => {
     const onSetName = vi.fn()
     const el = mountIds({ onSetName })

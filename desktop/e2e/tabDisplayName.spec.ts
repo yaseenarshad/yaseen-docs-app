@@ -93,6 +93,21 @@ test('right-click a tab › Set display name: the copy gets its own name, on the
   await tabsOf(win).nth(1).click({ button: 'right' })
   await menuItem(win, 'Reset to page name').click()
   await expect(tabsOf(win)).toHaveText([NAME, NAME])
+
+  // YAZ-3059 S1, S2, S3: a double-click on a tab opens the same field, the name selected; type, then ⏎. Esc changes nothing.
+  await tabsOf(win).first().dblclick()
+  await expect(field).toBeFocused()
+  await win.keyboard.type('Today')
+  await win.keyboard.press('Enter')
+  await expect(tabsOf(win)).toHaveText(['Today', NAME])
+  await tabsOf(win).first().dblclick()
+  await win.keyboard.type('Not saved')
+  await win.keyboard.press('Escape')
+  await expect(tabsOf(win)).toHaveText(['Today', NAME])
+  // The next test starts from this window: give the tab its page name back.
+  await tabsOf(win).first().click({ button: 'right' })
+  await menuItem(win, 'Reset to page name').click()
+  await expect(tabsOf(win)).toHaveText([NAME, NAME])
 })
 
 test('Move to new window › the named tab keeps its name there, and a reload of that window keeps it (D7, S19; YAZ-3057 S12)', async () => {
