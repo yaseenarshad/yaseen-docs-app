@@ -38,6 +38,18 @@ function Groups<T extends MenuItem>({ sections, render }: { sections: readonly (
 
 /** A leaf: `onSelect()` then `onClose()` — every item closes the WHOLE menu (🔒 D8). */
 function ActionButton({ item, onClose, onMouseEnter }: { item: MenuAction; onClose: () => void; onMouseEnter?: () => void }) {
+  // The item's preview (YAZ-3091 D8): on while the pointer or the focus is on it, off when both leave or it unmounts.
+  const previewing = useRef(false)
+  const preview = useRef(item.onPreview)
+  preview.current = item.onPreview
+  const setPreview = (on: boolean) => {
+    if (previewing.current === on) return
+    previewing.current = on
+    preview.current?.(on)
+  }
+  useEffect(() => () => {
+    if (previewing.current) preview.current?.(false)
+  }, [])
   return (
     <button
       type="button"
@@ -45,7 +57,13 @@ function ActionButton({ item, onClose, onMouseEnter }: { item: MenuAction; onClo
       className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}`}
       disabled={item.disabled}
       data-hint={item.hint}
-      onMouseEnter={onMouseEnter}
+      onMouseEnter={() => {
+        onMouseEnter?.()
+        setPreview(true)
+      }}
+      onMouseLeave={() => setPreview(false)}
+      onFocus={() => setPreview(true)}
+      onBlur={() => setPreview(false)}
       // An item whose handler already closes the menu (the create group's inline input) just
       // sets the same null twice — harmless.
       onClick={() => {

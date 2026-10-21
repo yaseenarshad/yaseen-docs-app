@@ -1121,6 +1121,97 @@ describe('duplicate (YAZ-2940 D6): "Duplicate tab" makes a copy', () => {
   })
 })
 
+describe('take (YAZ-3091 D5): a tab another window moved here', () => {
+  const A = '/v/a.md'
+  const B = '/v/b.md'
+  /** t1 (A, active) · t2 (B). */
+  const two = (over: Partial<IdTabsState> = {}): IdTabsState => ({
+    tabs: [{ id: 't1', path: A }, { id: 't2', path: B }],
+    active: 't1',
+    mounted: ['t1'],
+    history: {},
+    preview: null,
+    blank: false,
+    ...over,
+  })
+
+  it('S8, S11: always a NEW kept tab at the end, active and mounted — a copy when the page is open; the tab that has it does not change', () => {
+    const c = reduceTabs(two(), { type: 'take', path: '/v/c.md' })
+    expect(c.tabs.map((t) => t.path)).toEqual([A, B, '/v/c.md'])
+    expect(c.active).toBe(c.tabs[2].id)
+    expect(c.mounted).toEqual(['t1', c.tabs[2].id])
+    const s = two({ preview: 't2', history: { t2: { entries: ['/v/x.md', B], index: 1 } } })
+    const copy = reduceTabs(s, { type: 'take', path: B })
+    expect(copy.tabs.map((t) => t.path)).toEqual([A, B, B])
+    expect(copy.tabs[1]).toBe(s.tabs[1])
+    expect(copy.active).toBe(copy.tabs[2].id)
+    expect(copy.tabs[2].id).not.toBe('t2')
+    // The copy has no stack of its own, and the open tab keeps its preview mark and its stack.
+    expect(copy.history).toBe(s.history)
+    expect(copy.preview).toBe('t2')
+  })
+
+  it('S13: under the blank tab the page fills it — a page that is open too gets its copy, never a trip to its tab', () => {
+    const filled = reduceTabs(two({ blank: true }), { type: 'take', path: '/v/c.md' })
+    expect(filled.tabs.map((t) => t.path)).toEqual([A, B, '/v/c.md'])
+    expect(filled.active).toBe(filled.tabs[2].id)
+    expect(filled.blank).toBe(false)
+    const open = reduceTabs(two({ blank: true }), { type: 'take', path: A })
+    expect(open.tabs.map((t) => t.path)).toEqual([A, B, A])
+    expect(open.active).toBe(open.tabs[2].id)
+    expect(open.blank).toBe(false)
+    // An empty window takes it as its one tab.
+    const empty = reduceTabs({ tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false }, { type: 'take', path: A })
+    expect(empty.tabs.map((t) => t.path)).toEqual([A])
+    expect(empty.active).toBe(empty.tabs[0].id)
+  })
+
+  it('S12: a page in the right panel leaves the panel first, and becomes the new tab (one owner)', () => {
+    const s: IdWorkspaceState = { ...two(), rightPanel: { open: true, width: 440, items: ['/v/r.md', '/v/q.md'], expanded: '/v/r.md' }, rightMounted: ['/v/r.md'], rightHistory: {} }
+    const next = reduceWorkspace(s, { type: 'take', path: '/v/r.md' })
+    expect(next.tabs.map((t) => t.path)).toEqual([A, B, '/v/r.md'])
+    expect(next.active).toBe(next.tabs[2].id)
+    expect(next.rightPanel.items).toEqual(['/v/q.md'])
+    expect(next.rightMounted).not.toContain('/v/r.md')
+    // A page the panel does not hold leaves the panel alone.
+    expect(reduceWorkspace(s, { type: 'take', path: A }).rightPanel).toBe(s.rightPanel)
+  })
+})
+
+describe('take in the hook (YAZ-3091 D5)', () => {
+  let reactRoot: Root | null = null
+  let latest: UseWorkspace
+  let bridge: ReturnType<typeof installBridge>
+
+  function Probe() {
+    latest = useWorkspace('/v')
+    return null
+  }
+
+  beforeEach(async () => {
+    bridge = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    reactRoot = createRoot(document.createElement('div'))
+    act(() => reactRoot?.render(<Probe />))
+    act(() => latest.openKept('/v/a.md'))
+  })
+
+  afterEach(() => {
+    act(() => reactRoot?.unmount())
+    reactRoot = null
+  })
+
+  it('gives the new tab\'s id, and stores it with the window in ONE write, the copy too', () => {
+    bridge.window.setIdentity.mockClear()
+    let id = ''
+    act(() => void (id = latest.take('/v/a.md')))
+    expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/a.md'])
+    expect(id).toBe(latest.tabs[1].id)
+    expect(latest.active).toBe(id)
+    expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith({ tabs: ['/v/a.md'], tabStrip: [{ path: '/v/a.md' }, { path: '/v/a.md', active: true }], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
+  })
+})
+
 describe('copies in the hook (YAZ-2940): the mirror stores every copy in the strip (YAZ-3057), and the switch save (D4, S22, S25)', () => {
   let reactRoot: Root | null = null
   let latest: UseWorkspace
