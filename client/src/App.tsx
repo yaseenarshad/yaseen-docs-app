@@ -75,6 +75,8 @@ function syncHash(path: string | null): void {
 
 /** No tab board (YAZ-2648): one object, so closing a board that is closed is no state change. */
 const OVERVIEW_CLOSED = { phase: 'closed', from: null } as const
+/** "Move to ▸": a window row's title is cut to this many characters (YAZ-3104), so a long page name cannot widen the flyout over the tab menu. The tab count after it is never cut. */
+export const MOVE_ROW_TITLE_MAX = 40
 
 // A workspace state change still re-renders App, but unchanged retained editors must not render
 // with it: a folder's Board runs layout animation after every render, so an unrelated right
@@ -683,8 +685,8 @@ export function App() {
   const [overview, setOverview] = useState<{ phase: 'closed' | 'open' | 'leaving'; from: string | null }>(OVERVIEW_CLOSED)
   const overviewOpen = overview.phase === 'open'
   /** What the doors below read at the moment they are used; they keep their identity under the board. */
-  const now = useRef({ file, active: activeTab, tabs, preview, phase: overview.phase, right: rightPanel.items.length })
-  now.current = { file, active: activeTab, tabs, preview, phase: overview.phase, right: rightPanel.items.length }
+  const now = useRef({ file, active: activeTab, tabs, preview, blank, phase: overview.phase, right: rightPanel.items.length })
+  now.current = { file, active: activeTab, tabs, preview, blank, phase: overview.phase, right: rightPanel.items.length }
   // The note's first edit keeps the preview tab that shows it (YAZ-2648 D2). An editor says its path;
   // `keep` takes the tab's id (YAZ-2940 D1). Through `now`, because a new `onUserEdit` identity would rebuild every mounted editor.
   const keepEdited = useCallback((path: string) => {
@@ -868,9 +870,10 @@ export function App() {
     flushRenamedPath(path)
       .then(() => send({ view, name }))
       .then(() => {
-        const { tabs: all, right, phase } = now.current
+        const { tabs: all, right, phase, blank: newTab } = now.current
         // YAZ-3091 D6: the only tab of a window whose right panel is empty takes the window with it, through its real close.
-        if (closeEmptyWindow && all.length === 1 && all[0].id === id && right === 0) void api.window.closeSelf()
+        // An open blank tab is a tab too (YAZ-3105): then the window is not empty, and it stays.
+        if (closeEmptyWindow && all.length === 1 && all[0].id === id && right === 0 && !newTab) void api.window.closeSelf()
         else if (phase === 'open') closeUnderOverview([id])
         else closeTab(id)
       })
@@ -892,7 +895,9 @@ export function App() {
       .map((w) => {
         const vault = (w.file === null ? null : rootOfPath(w.roots, w.file)) ?? w.root
         const n = (w.tabStrip ?? w.tabs).length
-        return { id: w.id, label: `${windowTitle(vault === null ? null : storage.vaultName(vault), w.file, titles)} · ${n} tab${n === 1 ? '' : 's'}` }
+        const title = windowTitle(vault === null ? null : storage.vaultName(vault), w.file, titles)
+        const cut = title.length > MOVE_ROW_TITLE_MAX ? `${title.slice(0, MOVE_ROW_TITLE_MAX - 1).trimEnd()}…` : title
+        return { id: w.id, label: `${cut} · ${n} tab${n === 1 ? '' : 's'}` }
       }), [titles])
   /**
    * "Duplicate tab" (YAZ-2940 D5–D7), on a tab of the strip and on a page of the board: a copy of the tab

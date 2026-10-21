@@ -169,7 +169,7 @@ vi.mock('./sidebar/Sidebar', () => ({
   },
 }))
 
-import { App } from './App'
+import { App, MOVE_ROW_TITLE_MAX } from './App'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -1202,6 +1202,7 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
     )
     const { el } = await mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     openMoveTo(el, 1)
+    // w2 and w6 both show x with 2 tabs (w6 counts a copy), so their rows read the same: D7 accepts that.
     expect(flyout(el)).toEqual([['v — x · 2 tabs', 'z · 0 tabs', 'v — x · 2 tabs'], ['Right panel']])
     act(() => root?.unmount())
     container?.remove()
@@ -1210,6 +1211,15 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
     const one = await mount(withWindows(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     openMoveTo(one.el, 1)
     expect(flyout(one.el)).toEqual([['Right panel']])
+  })
+
+  it('YAZ-3104: a long page name is cut, so the row cannot widen the flyout over the tab menu; the tab count stays', async () => {
+    const long = `/v/${'a very long page name '.repeat(5)}.md`
+    const { el } = await mount(withWindows(entry({ id: 'w2', root: '/v', file: long, tabs: [long, '/v/y.md'] })), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    openMoveTo(el, 1)
+    const [row] = flyout(el)[0]
+    // The title is cut to MOVE_ROW_TITLE_MAX characters with "…"; the count after it is never cut.
+    expect(row).toBe(`${`v — ${'a very long page name '.repeat(5)}`.slice(0, MOVE_ROW_TITLE_MAX - 1).trimEnd()}… · 2 tabs`)
   })
 
   it('S8, S9, S10: a window row saves the page, THEN asks main to move it with its view and name, THEN the tab leaves this window', async () => {
@@ -1229,6 +1239,16 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
     expect(tabNames(el)).toEqual(['b'])
     expect(bridge.window.closeSelf).not.toHaveBeenCalled()
     off()
+  })
+
+  it('YAZ-3105: a window whose blank tab is open is not empty: the move closes only the tab, and the window stays', async () => {
+    const { bridge, el, emitNewTab } = await mount(withWindows(W2), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => emitNewTab())
+    openMoveTo(el, 0)
+    await act(async () => item(el, 'v — x · 2 tabs')!.click())
+    expect(bridge.window.moveTo).toHaveBeenCalledTimes(1)
+    expect(bridge.window.closeSelf).not.toHaveBeenCalled()
+    expect(tabNames(el)).not.toContain('a')
   })
 
   it('S15: the only tab, with an empty right panel, closes the window through its real close; S16: with pages in the right panel the window stays', async () => {
