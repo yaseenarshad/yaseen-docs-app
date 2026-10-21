@@ -29,7 +29,7 @@ export interface TabMenuProps {
   onClose: () => void
   /** Context-menu equivalent of dragging this tab into the right panel: "Move to ▸ Right panel" (YAZ-3091 D3). */
   onMoveToRight?: (path: string) => void
-  /** The other windows that show this page's vault (YAZ-3091 D2), read when the menu opens: the top of "Move to ▸". */
+  /** The other windows that show this page's vault (YAZ-3091 D2), read only while the menu is open: the top of "Move to ▸". */
   moveTargets?: readonly MoveTarget[]
   /** "Move to ▸ <window>" (YAZ-3091 D1): the tab goes to the open window `to` — the page by path, and only this tab (by id) closes here. */
   onMoveToWindow?: (to: string, path: string, id: string) => void

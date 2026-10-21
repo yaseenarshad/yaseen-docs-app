@@ -40,7 +40,7 @@ export interface TabOverviewProps {
   /** A page's menu is a tab's menu (`TabMenu`): these are the strip's own doors. A page dropped on the board's right edge takes the first. */
   onMoveToRight?: (path: string) => void
   onMoveToNewWindow?: (path: string, id: string) => void
-  /** The other windows that can take a tab of `path` (YAZ-3091 D2): asked when a tab menu opens, for its "Move to ▸". */
+  /** The other windows that can take a tab of `path` (YAZ-3091 D2): asked only while a tab menu is open, for its "Move to ▸". */
   onMoveTargets?: (path: string) => readonly MoveTarget[]
   /** "Move to ▸ <window>" (YAZ-3091 D1): the page by path to the open window `to`; only this tab (by id) closes here. */
   onMoveToWindow?: (to: string, path: string, id: string) => void

@@ -44,7 +44,7 @@ export interface TabBarProps {
   onMoveToRight?: (path: string) => void
   /** The menu's "Move to new window" (YAZ-2933): this tab, alone in a window of its own — its page, and its id to close it here. */
   onMoveToNewWindow?: (path: string, id: string) => void
-  /** The other windows that can take a tab of `path` (YAZ-3091 D2): asked when a tab menu opens, for its "Move to ▸". */
+  /** The other windows that can take a tab of `path` (YAZ-3091 D2): asked only while a tab menu is open, for its "Move to ▸". */
   onMoveTargets?: (path: string) => readonly MoveTarget[]
   /** "Move to ▸ <window>" (YAZ-3091 D1): the page by path to the open window `to`; only this tab (by id) closes here. */
   onMoveToWindow?: (to: string, path: string, id: string) => void

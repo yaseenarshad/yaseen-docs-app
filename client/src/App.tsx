@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isBoard, isViewOnly } from '@shared/fileKind'
 import type { TextFormatting } from '@shared/textFormatting'
-import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type MovedTab, type PageView, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -854,24 +854,37 @@ export function App() {
     transferMainToRight(path, now.current.right)
   }, [transferMainToRight])
   /**
-   * "Move to new window" (YAZ-2933 D2), on a page of the board and on a tab of the strip: the page saves
-   * first, so the new window reads what was typed; main opens it; only then does the tab leave, as ⌘W
-   * closes it — an open board stays until its last tab goes (R18), and a last tab leaves this window empty.
-   * A refusal leaves the tab where it is. Only this tab leaves: a copy's twins stay (YAZ-2940 S16).
+   * A tab leaves for another window (YAZ-2933 D2, YAZ-3091 D1), from a page of the board or a tab of the strip.
+   * The page saves first, so the other window reads what was typed; `send` gives main the page with its page
+   * view and display name; only then does the tab leave, as ⌘W closes it — an open board stays until its last
+   * tab goes (R18). A refusal or a failed save leaves the tab where it is, and the notice starts with `failed`.
+   * Only this tab leaves: a copy's twins stay (YAZ-2940 S16).
    */
-  const movePageToNewWindow = useCallback((path: string, id: string) => {
+  const sendTabAway = useCallback((path: string, id: string, send: (carry: PopOutCarry) => Promise<void>, failed: string, closeEmptyWindow: boolean) => {
     // The page opens there as it looks here (YAZ-2951 D2): read before the save, while its editor is the one on show.
     const view = readPageView(id)
-    // The tab's display name goes with it (YAZ-2949 D7, S19): main stores it with the new window's tab (YAZ-3057).
+    // The tab's display name goes with it (YAZ-2949 D7, S19).
     const name = now.current.tabs.find((t) => t.id === id)?.name
     flushRenamedPath(path)
-      .then(() => api.window.popOut(path, { view, name }))
-      .then(() => (now.current.phase === 'open' ? closeUnderOverview([id]) : closeTab(id)))
-      .catch((err: unknown) => notify(`Can't move to a new window: ${err instanceof Error ? err.message : String(err)}`))
+      .then(() => send({ view, name }))
+      .then(() => {
+        const { tabs: all, right, phase } = now.current
+        // YAZ-3091 D6: the only tab of a window whose right panel is empty takes the window with it, through its real close.
+        if (closeEmptyWindow && all.length === 1 && all[0].id === id && right === 0) void api.window.closeSelf()
+        else if (phase === 'open') closeUnderOverview([id])
+        else closeTab(id)
+      })
+      .catch((err: unknown) => notify(`${failed}: ${err instanceof Error ? err.message : String(err)}`))
   }, [closeUnderOverview, closeTab, notify])
+  /** "Move to new window" (YAZ-2933): main opens the window and stores the name with its one tab (YAZ-3057). A last tab leaves this window empty. */
+  const movePageToNewWindow = useCallback((path: string, id: string) =>
+    sendTabAway(path, id, (carry) => api.window.popOut(path, carry), "Can't move to a new window", false), [sendTabAway])
+  /** "Move to ▸ <window>" (YAZ-3091 D1, D6): main hands the tab to the open window `to`, or refuses when it closed (S19). */
+  const movePageToWindow = useCallback((to: string, path: string, id: string) =>
+    sendTabAway(path, id, (carry) => api.window.moveTo(to, path, carry), "Can't move to that window", true), [sendTabAway])
   /**
    * "Move to ▸" (YAZ-3091 D2, D7): the other windows that show a vault of `path`, read from the state cache
-   * when a tab menu opens. Each row is that window's title and its tab count, copies counted (S6).
+   * only while a tab menu is open. Each row is that window's title and its tab count, copies counted (S6).
    */
   const moveTargets = useCallback((path: string): MoveTarget[] =>
     storage.getOtherWindows()
@@ -881,25 +894,6 @@ export function App() {
         const n = (w.tabStrip ?? w.tabs).length
         return { id: w.id, label: `${windowTitle(vault === null ? null : storage.vaultName(vault), w.file, titles)} · ${n} tab${n === 1 ? '' : 's'}` }
       }), [titles])
-  /**
-   * "Move to ▸ <window>" (YAZ-3091 D1, D6), on a page of the board and on a tab of the strip: as "Move to new
-   * window", the page saves first, main hands it to the open window `to`, and only then does the tab leave.
-   * The only tab of a window whose right panel is empty takes the window with it, through its real close (D6).
-   * A refusal (the window closed, S19) or a failed save (S20) leaves the tab where it is.
-   */
-  const movePageToWindow = useCallback((to: string, path: string, id: string) => {
-    const view = readPageView(id)
-    const name = now.current.tabs.find((t) => t.id === id)?.name
-    flushRenamedPath(path)
-      .then(() => api.window.moveTo(to, path, { view, name }))
-      .then(() => {
-        const { tabs: all, right, phase } = now.current
-        if (all.length === 1 && all[0].id === id && right === 0) void api.window.closeSelf()
-        else if (phase === 'open') closeUnderOverview([id])
-        else closeTab(id)
-      })
-      .catch((err: unknown) => notify(`Can't move to that window: ${err instanceof Error ? err.message : String(err)}`))
-  }, [closeUnderOverview, closeTab, notify])
   /**
    * "Duplicate tab" (YAZ-2940 D5–D7), on a tab of the strip and on a page of the board: a copy of the tab
    * opens right after it and shows — under the board it shows on the board beside its source, and the
