@@ -101,11 +101,30 @@ function twoVaultState(): AppState {
   return state
 }
 
-/** The window of state entry `winId` as main sees it: minimized or not, and whether it is the focused one — in front. */
-const windowIs = (a: ElectronApplication, winId: string): Promise<{ minimized: boolean; focused: boolean } | null> =>
+/**
+ * From now on, count each time main raises the window of state entry `winId` (`focus()`). A hidden
+ * run (YAZ-3028) stubs `focus()` so no window surfaces, and so no window is ever the focused one
+ * there: the call is the proof that main brought it to the front.
+ */
+const countRaises = (a: ElectronApplication, winId: string): Promise<void> =>
   a.evaluate(({ BrowserWindow }, id) => {
     const w = BrowserWindow.getAllWindows().find((b) => b.webContents.getURL().includes(`win=${id}`))
-    return w === undefined ? null : { minimized: w.isMinimized(), focused: w.isFocused() }
+    if (w === undefined) throw new Error(`no window ${id}`)
+    const raises = ((globalThis as { e2eRaises?: Record<number, number> }).e2eRaises ??= {})
+    const focus = w.focus.bind(w)
+    raises[w.id] = 0
+    w.focus = () => {
+      raises[w.id] += 1
+      focus()
+    }
+  }, winId)
+
+/** The window of state entry `winId` as main sees it: minimized or not, and whether main raised it since `countRaises`. */
+const windowIs = (a: ElectronApplication, winId: string): Promise<{ minimized: boolean; raised: boolean } | null> =>
+  a.evaluate(({ BrowserWindow }, id) => {
+    const w = BrowserWindow.getAllWindows().find((b) => b.webContents.getURL().includes(`win=${id}`))
+    const raises = (globalThis as { e2eRaises?: Record<number, number> }).e2eRaises ?? {}
+    return w === undefined ? null : { minimized: w.isMinimized(), raised: (raises[w.id] ?? 0) > 0 }
   }, winId)
 
 // ---------- lifecycle ----------
@@ -303,8 +322,9 @@ test('step 6 — ⌘2 from another window restores vault 2\'s minimized window a
 
   // ⌘2 is the Window menu's row for vault 2 (D3), pressed from Alpha's window: main's one door
   // restores Beta's window and raises it (S23) — it never asks the focused renderer (A5).
+  await countRaises(app, 'w2')
   await clickMenuItem(app, 'menu.window.vault.2', 'w1')
-  await expect.poll(() => windowIs(app, 'w2')).toEqual({ minimized: false, focused: true })
+  await expect.poll(() => windowIs(app, 'w2')).toEqual({ minimized: false, raised: true })
   // RAISE, not copy (🔒 D9): read after the raise, when any third window would already exist.
   expect(await windowCount(app)).toBe(2)
   await expect.poll(async () => (await readState(userData)).windows.map((w) => w.id)).toEqual(['w1', 'w2'])
@@ -345,11 +365,12 @@ test('step 7 — "Open by itself" on a vault of a workspace window opens it ALON
   await shoot(winB, 'vault-switcher-11-opened-by-itself')
 
   // A second use RAISES the window with Beta alone (S2): read after the panel closes, when any third window would already exist.
+  await countRaises(app, winBId)
   await openPanel(win)
   await rowNamed(win, BETA).click({ button: 'right' })
   await vaultMenuItem(win, 'Open by itself').click()
   await expect(panel(win)).toHaveCount(0)
-  await expect.poll(async () => (await windowIs(app, winBId))?.focused).toBe(true)
+  await expect.poll(async () => (await windowIs(app, winBId))?.raised).toBe(true)
   expect(await windowCount(app)).toBe(2)
   await expect.poll(async () => (await readState(userData)).windows.length).toBe(2)
   await quitApp(app)

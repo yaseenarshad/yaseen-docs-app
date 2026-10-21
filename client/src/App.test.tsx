@@ -374,6 +374,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       state: vi.fn(async (_root?: string) => ({ letters: 'YAZ', notes: 0, stale: 0, old: 0 })),
       reletter: vi.fn(async (_root?: string, letters = 'YAZ') => ({ letters, notes: 0, stale: 0, old: 0 })),
       backfill: vi.fn(async (_root?: string) => ({ letters: 'YAZ', notes: 0, stale: 0, old: 0 })),
+      onChanged: vi.fn(() => () => undefined),
     },
     // No update (YAZ-2976): App reads the state once and follows its pushes; nothing to show here.
     update: {

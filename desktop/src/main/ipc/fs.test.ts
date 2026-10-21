@@ -510,11 +510,14 @@ describe('registerFsIpc', () => {
         expect(store.get().windows.find((win) => win.id === 'w-kind')).toMatchObject({ file: at('foo-doc-1.md'), tabs: [at('foo-doc-1.md'), at(`old-${ID}.md`)] })
         expect(vi.mocked(favorites.renamePath)).toHaveBeenCalledWith(expect.arrayContaining([vault]), at('foo-yaz-1.md'), at('foo-doc-1.md'))
         expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath: at('foo-yaz-1.md'), newPath: at('foo-doc-1.md'), kind: 'file' })
+        // Each window hears that the change ended, and reads its index at once (YAZ-3102).
+        expect(w.webContents.send).toHaveBeenLastCalledWith(CONTRACT.ids.onChanged.channel, { root: vault })
         // Give old IDs numbers: the same downstream.
         expect(await call(CONTRACT.ids.backfill, vault)).toEqual({ ok: true, value: { letters: 'DOC', notes: 4, stale: 0, old: 0, unfinished: false } })
         expect(await readFile(at('old-doc-4.md'), 'utf8')).toBe('---\nid: DOC-4\ntitle: Old\n---\n[[DOC-1]]\n')
         expect(store.get().windows.find((win) => win.id === 'w-kind')?.tabs).toEqual([at('foo-doc-1.md'), at('old-doc-4.md')])
         expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath: at(`old-${ID}.md`), newPath: at('old-doc-4.md'), kind: 'file' })
+        expect(w.webContents.send).toHaveBeenLastCalledWith(CONTRACT.ids.onChanged.channel, { root: vault })
         // Bad letters, and a folder that is no vault of the calling window, change nothing.
         expect(await call(CONTRACT.ids.reletter, vault, 'x')).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
         for (const door of [CONTRACT.ids.state, CONTRACT.ids.backfill]) expect(await call(door, tmpdir())).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })

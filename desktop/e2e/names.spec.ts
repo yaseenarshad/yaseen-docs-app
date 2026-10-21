@@ -1,7 +1,7 @@
 /**
- * Titles, ids and file names (YAZ-2420) end-to-end against the REAL app, on a vault that starts
- * empty: a note's title is `title:` in the note, its id is `id:`, and its file name is built by the
- * app as `<kebab-title>-<id>.md`.
+ * Titles, ids and file names (YAZ-2420) end-to-end against the REAL app, on a vault that uses IDs
+ * (YAZ-2523, `idVault`) with two notes made outside the app: a note's title is `title:` in the
+ * note, its id is `id:`, and its file name is built by the app as `<kebab-title>-<id>.md`.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 a note made in the app is born with its id, its title and its built name; every screen shows the title
@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { NOTE_ID as ID, activeTab, appWindow, confirmSheet, contents, dirRow, fileRow, idOf, launchApp, layer, lensTab, menuItem, only, openFolder, quitApp, searchBar, seededState, shoot, showSearchTab, tabsOf, titleOf } from './helpers'
+import { NOTE_ID as ID, activeTab, appWindow, confirmSheet, contents, dirRow, fileRow, idOf, idVault, launchApp, layer, lensTab, menuItem, only, openFolder, quitApp, searchBar, seededState, shoot, showSearchTab, tabsOf, titleOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -70,6 +70,8 @@ test.beforeAll(async () => {
   // Made outside the app: a note that links by NAME, and a note with no frontmatter at all.
   await writeFile(path.join(vault, 'Index.md'), 'See [[Guide]] here.\n')
   await writeFile(path.join(vault, 'Plan.md'), 'plan-body\n')
+  // A vault that uses IDs (YAZ-2523): each note made outside the app gets its number when the app opens it.
+  await idVault(vault, userData)
 })
 
 test.afterAll(async () => {
@@ -109,7 +111,7 @@ test('step 2 — a title edit from the page heading writes the title and renames
 
   const built = `what-why-the-handbook-${guideId.toLowerCase()}.md`
   await expect.poll(() => read(path.join(vault, built)).then(titleOf)).toContain('Handbook')
-  expect(await only(vault, new RegExp(`${guideId}\\.md$`))).toBe(built)
+  expect(await only(vault, new RegExp(`${guideId.toLowerCase()}\\.md$`))).toBe(built)
   expect(idOf(await read(path.join(vault, built)))).toBe(guideId)
   await expect(title(win)).toHaveText('What/Why: the "Handbook"?')
   await expect(activeTab(win)).toHaveText('What/Why: the "Handbook"?')
@@ -130,12 +132,12 @@ test('step 3 — the sidebar rename edits the title', async () => {
 test('step 4 — a title that builds the same name changes the title line only', async () => {
   await renameRow(win, fileRow(win, 'Handbook'), 'Handbook', 'HANDBOOK!')
   await expect.poll(() => read(path.join(vault, guide)).then(titleOf)).toBe('HANDBOOK!')
-  expect(await only(vault, new RegExp(`${guideId}\\.md$`))).toBe(guide)
+  expect(await only(vault, new RegExp(`${guideId.toLowerCase()}\\.md$`))).toBe(guide)
   await expect(fileRow(win, 'HANDBOOK!')).toBeVisible()
 })
 
 test('step 5 — a file made outside the app keeps its name until its title is edited in the app', async () => {
-  // Making a note adopted the vault, so the app gave the outside file its id; its name is untouched.
+  // The vault uses IDs, so the app gave the outside file its id; its name is untouched.
   await expect.poll(() => read(path.join(vault, 'Plan.md')).then(idOf)).toMatch(new RegExp(`^${ID}$`))
   const planId = idOf(await read(path.join(vault, 'Plan.md')))
   await expect(fileRow(win, 'Plan')).toBeVisible()
@@ -152,7 +154,7 @@ test('step 6 — a title edited by hand shows at once and renames nothing', asyn
   const file = path.join(vault, guide)
   await writeFile(file, (await read(file)).replace(/^title: .*$/m, 'title: Hand Edited'))
   await expect(fileRow(win, 'Hand Edited')).toBeVisible()
-  expect(await only(vault, new RegExp(`${guideId}\\.md$`))).toBe(guide)
+  expect(await only(vault, new RegExp(`${guideId.toLowerCase()}\\.md$`))).toBe(guide)
 })
 
 test('step 7 — a folder is its title in kebab-case, with its title in .folder.md', async () => {
@@ -186,12 +188,14 @@ test('step 8 — a copy is its own note: a fresh id, its title with copy, its ow
 test('step 9 — the search box finds a note by its id, and by an old path that holds it', async () => {
   // The bar is on the Search tab only (YAZ-2638 D2): show the tab, then type.
   await showSearchTab(win)
+  // A row found by its id shows the id in front of its title (YAZ-2677).
   await searchBar(win).fill(guideId)
-  await expect(results(win)).toHaveText(['Hand Edited'])
+  await expect(results(win)).toHaveText([`${guideId} — Hand Edited`])
   // A path copied before the retitles: the file name is stale, the id in it is not.
   await searchBar(win).fill(path.join(vault, `guide-${guideId.toLowerCase()}.md`))
-  await expect(results(win)).toHaveText(['Hand Edited'])
-  await searchBar(win).fill(guideId.slice(0, 5))
+  await expect(results(win)).toHaveText([`${guideId} — Hand Edited`])
+  // An id matches whole: a longer number is no note's.
+  await searchBar(win).fill(`${guideId}0`)
   await expect(results(win)).toHaveCount(0)
   await shoot(win, 'names-09-search-by-id')
   // Esc goes back to the lens the window last showed, Files — where step 10 right-clicks a row.

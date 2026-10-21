@@ -1,8 +1,9 @@
 /**
  * The page title (⚡ YAZ-888) end-to-end against the REAL app: every page shows its own title as
  * block ZERO of the note's scroller, and editing it IS a rename — through the same one door the
- * sidebar's Rename reaches, so the confirm sheet, the `title:` line, the built file name
- * (YAZ-2420 🔒 D16), the link rewrite and the tab remap all come with it.
+ * sidebar's Rename reaches, so the confirm sheet, the new file name, the link rewrite and the tab
+ * remap all come with it. The vault is plain (YAZ-2523 🔒 V3), the default: the title is the file
+ * name, and a rename writes nothing inside the note. `names.spec.ts` walks a vault that uses IDs.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 a file made outside the app shows its own name as its title, and committing an edit asks
@@ -20,12 +21,13 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, builtNote, confirmSheet, copyVault, editorOf, fileRow, idOf, launchApp, layer, quitApp, seededState, shoot, titleOf } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, confirmSheet, copyVault, editorOf, fileRow, launchApp, layer, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
 /** Seeded on top of the fixture vault: Index links to Guide. */
 const GUIDE_BODY = 'guide-note-body'
+const GUIDE = `# Guide\n\n${GUIDE_BODY}\n`
 const RENAMED = 'Handbook'
 const LEFT = 'Manual'
 
@@ -34,8 +36,6 @@ let vaultSrc: string
 let vault: string
 let app: ElectronApplication
 let win: Page
-/** The id the first title edit gives Guide.md (🔒 D29); every later name is built on it. */
-let guideId = ''
 
 /** Block ZERO of the open note's scroller: the heading, and the input a click swaps in. */
 const title = (w: Page) => layer(w).locator('.page-title__text')
@@ -46,7 +46,7 @@ test.beforeAll(async () => {
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
   await Promise.all([
-    writeFile(path.join(vault, 'Guide.md'), `# Guide\n\n${GUIDE_BODY}\n`),
+    writeFile(path.join(vault, 'Guide.md'), GUIDE),
     writeFile(path.join(vault, 'Index.md'), '# Index\n\nSee [[Guide]] here.\n'),
   ])
 })
@@ -63,7 +63,7 @@ test('step 1 — editing the title renames the page: sheet with the honest count
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Guide.md')) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(GUIDE_BODY)
-  // A file made outside the app has no `title:` yet: its file name, minus the extension, is its title (🔒 D5).
+  // In a plain vault a note's title is its file name, minus the extension (YAZ-2420 🔒 D5, YAZ-2523 🔒 V3).
   await expect(title(win)).toHaveText('Guide')
   await shoot(win, 'title-01-page-title')
 
@@ -78,15 +78,9 @@ test('step 1 — editing the title renames the page: sheet with the honest count
   await confirmSheet(win).locator('.confirm__btn', { hasText: 'Rename' }).click()
   await expect(confirmSheet(win)).toHaveCount(0)
 
-  // Disk: the title is written and the file takes the name built from it, body intact; nothing
-  // remains at the old path.
-  await expect.poll(() => builtNote(vault, 'handbook')).not.toBe('')
-  const built = await builtNote(vault, 'handbook')
-  const renamed = await readFile(path.join(vault, built), 'utf8')
-  guideId = idOf(renamed)
-  expect(built).toBe(`handbook-${guideId.toLowerCase()}.md`)
-  expect(titleOf(renamed)).toBe(RENAMED)
-  expect(renamed).toContain(GUIDE_BODY)
+  // Disk: the file takes the typed name, its bytes as they were (no `title:` line in a plain
+  // vault); nothing remains at the old path.
+  await expect.poll(() => readWhenReady(path.join(vault, `${RENAMED}.md`))).toBe(GUIDE)
   await expect(readFile(path.join(vault, 'Guide.md'), 'utf8')).rejects.toThrow()
   // The note that linked to it was rewritten, and the passive summary says so.
   await expect.poll(() => readWhenReady(path.join(vault, 'Index.md'))).toBe(`# Index\n\nSee [[${RENAMED}]] here.\n`)
@@ -117,11 +111,9 @@ test('step 2 — leaving the title commits (YAZ-1553): click away with a changed
   await confirmSheet(win).locator('.confirm__btn', { hasText: 'Rename' }).click()
   await expect(confirmSheet(win)).toHaveCount(0)
 
-  // The same id under the new title's name.
-  const left = path.join(vault, `manual-${guideId.toLowerCase()}.md`)
-  await expect.poll(() => readWhenReady(left)).toContain(GUIDE_BODY)
-  expect(titleOf(await readFile(left, 'utf8'))).toBe(LEFT)
-  await expect(readFile(path.join(vault, `handbook-${guideId.toLowerCase()}.md`), 'utf8')).rejects.toThrow()
+  // The same bytes under the new name.
+  await expect.poll(() => readWhenReady(path.join(vault, `${LEFT}.md`))).toBe(GUIDE)
+  await expect(readFile(path.join(vault, `${RENAMED}.md`), 'utf8')).rejects.toThrow()
   await expect.poll(() => readWhenReady(path.join(vault, 'Index.md'))).toBe(`# Index\n\nSee [[${LEFT}]] here.\n`)
   await expect(title(win)).toHaveText(LEFT)
   await expect(activeTab(win)).toHaveText(LEFT)
@@ -136,7 +128,7 @@ test('step 3 — Escape is the only discard: no sheet, nothing on disk moves', a
   await expect(titleInput(win)).toHaveCount(0)
   await expect(confirmSheet(win)).toHaveCount(0)
   await expect(title(win)).toHaveText(LEFT)
-  expect(titleOf(await readFile(path.join(vault, `manual-${guideId.toLowerCase()}.md`), 'utf8'))).toBe(LEFT)
+  expect(await readFile(path.join(vault, `${LEFT}.md`), 'utf8')).toBe(GUIDE)
 })
 
 test('step 4 — leaving with the UNCHANGED name is silent: the field closes and no sheet asks', async () => {

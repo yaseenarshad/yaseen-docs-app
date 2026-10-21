@@ -16,7 +16,7 @@ import { WikilinkIndexBridge } from './WikilinkIndexBridge'
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
-  api: { index: vi.fn(), tree: vi.fn(), vaultConfig: { onChange: vi.fn(() => () => undefined) } },
+  api: { index: vi.fn(), tree: vi.fn(), vaultConfig: { onChange: vi.fn(() => () => undefined) }, ids: { onChanged: vi.fn(() => () => undefined) } },
 }))
 
 import { api } from '../../api'

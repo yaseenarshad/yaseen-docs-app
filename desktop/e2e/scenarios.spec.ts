@@ -27,6 +27,7 @@ import {
   clickMenuItem,
   closeWindow,
   copyVault,
+  editorOf,
   emitOpenFile,
   emitOpenUrl,
   extraWindow,
@@ -88,7 +89,7 @@ test.afterAll(async () => {
 test('scenario 1 — ⌘⇧N duplicates the window: same file, cascaded bounds, live sync', async () => {
   app = await launchApp({ userData, seedState: seededState(vaultA, noteA) })
   winA = await appWindow(app, 'w1')
-  await expect(winA.locator('.ProseMirror')).toContainText(SEED_BODY)
+  await expect(editorOf(winA)).toContainText(SEED_BODY)
 
   // The REAL ⌘⇧N path: File › New Window through the application menu (menu.file.new-window),
   // with w1 focused first so the handler's `focusedEntry()` resolves it.
@@ -96,7 +97,7 @@ test('scenario 1 — ⌘⇧N duplicates the window: same file, cascaded bounds, 
   winB = await extraWindow(app, ['w1'])
   winBId = winParam(winB)!
   expect(await windowCount(app)).toBe(2)
-  await expect(winB.locator('.ProseMirror')).toContainText(SEED_BODY) // same file open
+  await expect(editorOf(winB)).toContainText(SEED_BODY) // same file open
   await expect.poll(() => winB.title()).toBe(titleOf(vaultA, noteA))
   // The duplicate's state entry: same root/file, bounds cascaded from the seed's (60, 60).
   await expect.poll(async () => (await readState(userData)).windows.length).toBe(2)
@@ -109,11 +110,11 @@ test('scenario 1 — ⌘⇧N duplicates the window: same file, cascaded bounds, 
 
   // Edit in A (inside an existing bullet — never right after Enter, Milkdown remaps the caret):
   // autosave writes the file, the shared watcher tells B, and B — clean — reloads silently.
-  await winA.locator('.ProseMirror').getByText(LAST_BULLET).click()
+  await editorOf(winA).getByText(LAST_BULLET).click()
   await winA.keyboard.press('End')
   await winA.keyboard.type(` ${SYNC_MARKER}`, { delay: 15 })
-  await expect(winA.locator('.ProseMirror')).toContainText(SYNC_MARKER)
-  await expect(winB.locator('.ProseMirror')).toContainText(SYNC_MARKER, { timeout: 10_000 })
+  await expect(editorOf(winA)).toContainText(SYNC_MARKER)
+  await expect(editorOf(winB)).toContainText(SYNC_MARKER, { timeout: 10_000 })
   await expect(winB.locator('.conflict-bar')).toHaveCount(0) // clean reload path, no conflict bar
   await shoot(winB, 'g3-01b-live-sync')
 })
@@ -121,7 +122,7 @@ test('scenario 1 — ⌘⇧N duplicates the window: same file, cascaded bounds, 
 test('scenario 2 — external edit while B is dirty raises the conflict bar; Reload adopts disk', async () => {
   // Make B dirty, then land an external write BEFORE its 500ms autosave debounce fires:
   // the watcher event (or the resulting 409) must find unsaved changes.
-  await winB.locator('.ProseMirror').getByText(LAST_BULLET).click()
+  await editorOf(winB).getByText(LAST_BULLET).click()
   await winB.keyboard.press('End')
   await winB.keyboard.type(` ${DIRTY_MARKER}`, { delay: 10 })
   await writeFile(noteA, `# Welcome\n\n${EXTERNAL_BODY}\n`) // plain fs write: different content, fresh mtime
@@ -132,8 +133,8 @@ test('scenario 2 — external edit while B is dirty raises the conflict bar; Rel
 
   // Resolution: Reload — the editor adopts the disk version, the dirty edit is discarded.
   await winB.locator('.conflict-bar').getByRole('button', { name: 'Reload' }).click()
-  await expect(winB.locator('.ProseMirror')).toContainText(EXTERNAL_BODY)
-  await expect(winB.locator('.ProseMirror')).not.toContainText(DIRTY_MARKER)
+  await expect(editorOf(winB)).toContainText(EXTERNAL_BODY)
+  await expect(editorOf(winB)).not.toContainText(DIRTY_MARKER)
   await expect(winB.locator('.conflict-bar')).toHaveCount(0)
   // Reload never writes: the disk still holds exactly the external version.
   expect(await readFile(noteA, 'utf8')).toContain(EXTERNAL_BODY)
@@ -158,7 +159,7 @@ test('scenario 3 — ⌘-click on a sidebar file opens a BACKGROUND TAB; the con
   await winA.locator('.ctx-menu__sub .ctx-menu__item', { hasText: 'New window' }).click()
   const winC = await extraWindow(app, ['w1', winBId])
   expect(await windowCount(app)).toBe(3)
-  await expect(winC.locator('.ProseMirror')).toContainText(IDEAS_BODY)
+  await expect(editorOf(winC)).toContainText(IDEAS_BODY)
   await expect.poll(() => winC.title()).toBe(titleOf(vaultA, path.join(vaultA, 'Ideas.md')))
   // The origin window stayed put: same active file/tab, untouched.
   await expect(activeTab(winA)).toHaveText('Welcome note')
@@ -195,15 +196,15 @@ test('scenario 4 — hot deep link routes to the window on its vault; the other 
   })
   winA = await appWindow(app, 'wa')
   winB = await appWindow(app, 'wb')
-  await expect(winA.locator('.ProseMirror')).toContainText(EXTERNAL_BODY) // vault A note as scenario 2 left it
-  await expect(winB.locator('.ProseMirror')).toContainText(SEED_BODY) // vault B copy is pristine
+  await expect(editorOf(winA)).toContainText(EXTERNAL_BODY) // vault A note as scenario 2 left it
+  await expect(editorOf(winB)).toContainText(SEED_BODY) // vault B copy is pristine
 
   const roadmapB = path.join(vaultB, 'Projects', 'Roadmap.md')
   await emitOpenUrl(app, fileLink(roadmapB)) // macOS's open-url, exactly as main receives it
 
   // Routing effect: the vault-B window switches to the linked file; no third window; A untouched.
   await expect.poll(() => winB.title()).toBe(titleOf(vaultB, roadmapB))
-  await expect(winB.locator('.ProseMirror')).toContainText(ROADMAP_BODY)
+  await expect(editorOf(winB)).toContainText(ROADMAP_BODY)
   expect(await windowCount(app)).toBe(2)
   await expect.poll(() => winA.title()).toBe(titleOf(vaultA, noteA))
   await expect(winA.locator('.tree__row--active')).toContainText('Welcome note')
@@ -221,7 +222,7 @@ test('scenario 5 — deep link to a recents-only vault opens a new window on tha
 
   const winNew = await extraWindow(app, ['wa'])
   expect(await windowCount(app)).toBe(2)
-  await expect(winNew.locator('.ProseMirror')).toContainText(IDEAS_BODY)
+  await expect(editorOf(winNew)).toContainText(IDEAS_BODY)
   await expect.poll(() => winNew.title()).toBe(titleOf(vaultB, ideasB)) // rooted at vault B, file open
   await expect
     .poll(async () => (await readState(userData)).windows.find((w) => w.id === winParam(winNew))?.root)
@@ -236,7 +237,7 @@ test('scenario 7 (bonus) — Finder "Open With" (open-file) rides the same link 
 
   // Routed into the existing vault-A window (its root contains the file) — no new window.
   await expect.poll(() => winA.title()).toBe(titleOf(vaultA, roadmapA))
-  await expect(winA.locator('.ProseMirror')).toContainText(ROADMAP_BODY)
+  await expect(editorOf(winA)).toContainText(ROADMAP_BODY)
   expect(await windowCount(app)).toBe(2)
   await shoot(winA, 'g3-07-open-file-routed')
   await quitApp(app)

@@ -111,10 +111,15 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     const unsubscribeIds = api.vaultConfig.onChange((c) => {
       if (c.root === root && c.name === IDS_FILE) refresh()
     })
+    // "Change letters" and "Give old IDs numbers" renamed many notes: read now, not when the events settle (YAZ-3102).
+    const unsubscribeChange = api.ids.onChanged((c) => {
+      if (c.root === root) refresh()
+    })
     return () => {
       generation.current++
       unsubscribe()
       unsubscribeIds()
+      unsubscribeChange()
       if (timer.current !== null) clearTimeout(timer.current)
       timer.current = null
     }

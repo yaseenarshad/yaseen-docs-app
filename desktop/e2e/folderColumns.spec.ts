@@ -32,7 +32,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '../../shared/frontmatter'
-import { activeTab, appWindow, builtNote, contents, copyVault, launchApp, openFolder, quitApp, seededState, shoot, titleOf, viewTabs } from './helpers'
+import { activeTab, appWindow, contents, copyVault, launchApp, openFolder, quitApp, seededState, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -231,18 +231,11 @@ test('step 4 — "New" births a note in the folder with no declared column stamp
   await contents(win).locator('[aria-label="New note"]').click()
 
   // Born IN the folder being viewed (YAZ-2290 D4), from its template and the view's seed alone.
-  // `KPIs` has no `.template.md` and the Table no filter, so the newborn carries nothing but the
-  // `title` and the permanent `id` every created note is given, under the name built from the two
-  // (YAZ-2420 🔒 D20): none of the four declared columns is a key of it.
-  await expect.poll(() => builtNote(folderPath(), 'untitled'), { timeout: 10_000 }).not.toBe('')
-  const created = path.join(folderPath(), await builtNote(folderPath(), 'untitled'))
-  const bornProps = async (): Promise<Record<string, unknown>> =>
-    parseFrontmatter(splitFrontmatter(await readFile(created, 'utf8')).frontmatter).properties
-  await expect.poll(async () => Object.keys(await bornProps()), { timeout: 10_000 }).toEqual(['title', 'id'])
-  const born = await readFile(created, 'utf8')
-  expect(titleOf(born)).toBe('Untitled')
-  expect(born).not.toContain(COLUMN)
-  expect(born).not.toContain('funnel_stages')
+  // `KPIs` has no `.template.md` and the Table no filter, and the vault is plain (YAZ-2523 🔒 V3):
+  // the newborn is `Untitled.md` with nothing written in it, so none of the four declared columns
+  // is a key of it.
+  const created = path.join(folderPath(), 'Untitled.md')
+  await expect.poll(() => readFile(created, 'utf8').catch(() => null), { timeout: 10_000 }).toBe('')
   await expect(activeTab(win)).toHaveText('Untitled')
   await shoot(win, 'columns-05-born-note')
 })

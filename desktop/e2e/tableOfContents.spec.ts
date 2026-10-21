@@ -199,7 +199,8 @@ const linesOf = (w: Page): Promise<{ grey: LineState; path: LineState }> =>
  * level 1 is `--fg` at weight 500, level 2 is the mix of the two text tokens, level 3 is
  * `--fg-muted`, the three are three different colours, and the current name is the accent.
  */
-const tonesOf = (w: Page): Promise<{ one: boolean; weight: string; two: boolean; three: boolean; distinct: boolean; current: boolean }> =>
+/** `three` is null while no H3 row is shown at rest: the current row has the accent, not its level's tone. */
+const tonesOf = (w: Page): Promise<{ one: boolean; weight: string; two: boolean; three: boolean | null; distinct: boolean; current: boolean }> =>
   toc(w)
     .locator('.toc__names')
     .evaluate((list) => {
@@ -220,7 +221,7 @@ const tonesOf = (w: Page): Promise<{ one: boolean; weight: string; two: boolean;
         one: one?.color === colourOf('var(--fg)'),
         weight: one?.fontWeight ?? '',
         two: two?.color === colourOf('color-mix(in srgb, var(--fg) 55%, var(--fg-muted))'),
-        three: three?.color === colourOf('var(--fg-muted)'),
+        three: three === null ? null : three.color === colourOf('var(--fg-muted)'),
         distinct: new Set([one?.color, two?.color, three?.color]).size === 3,
         current: styleOf('.toc__name[aria-current="true"]')?.color === colourOf('var(--accent)'),
       }
@@ -448,8 +449,9 @@ test('step 5c — the hierarchy of the names: a tone for each level, the level l
   await expect(name('Install')).toHaveAttribute('aria-current', 'true')
   await expect.poll(() => pathsOf(win)).toEqual([null, '1t', '2t', null, null, null])
   await expect.poll(() => linesOf(win)).toEqual(BOTH)
-  // The wash of the row below the mouse is behind the lines: the row still draws its five line pieces.
-  expect(await name('Install').evaluate((el) => getComputedStyle(el).backgroundImage.split('linear-gradient').length - 1)).toBe(5)
+  // The wash of the row below the mouse is behind the lines: the row still draws its nine line
+  // pieces — four path lines, the level piece and four level lines, down to H5 (YAZ-3051).
+  expect(await name('Install').evaluate((el) => getComputedStyle(el).backgroundImage.split('linear-gradient').length - 1)).toBe(9)
   await shoot(win, 'toc-05c-lines-on-hover')
 
   // "Reference" is the third level 2 name below "Guide": the line of "Guide" passes the rows above it.
@@ -521,7 +523,8 @@ test('step 5c — the hierarchy of the names: a tone for each level, the level l
   await win.waitForTimeout(PAST_FADE_MS)
   expect(await linesOf(win)).toEqual(NONE)
   await mouseOnNote(win)
-  await expect.poll(() => tonesOf(win)).toEqual(TONES)
+  // "Install", the one H3 row, is the current row again here: it has the accent, so no H3 row shows its tone.
+  await expect.poll(() => tonesOf(win)).toEqual({ ...TONES, three: null })
   await shoot(win, 'toc-05c-never')
 
   // Back to "On hover", the default: at rest there are no lines again, and the mouse on the list shows them.
@@ -663,8 +666,10 @@ test('step 8b — a page turned off stays off: after a reopen, in a new window (
   await expect(toc(win)).toHaveCount(0)
   await expect.poll(async () => (await readState(userData)).folders[vault]?.tocSwitches[chaptersPath], { timeout: 10_000 }).toBe(false)
 
-  // The note closed and opened again: still off. Another note, with no entry, is on.
+  // The note closed and opened again: still off. Another note, with no entry, is on. Chapters is
+  // the one tab since step 7 opened it in the preview tab (YAZ-2648 D1), so Bullets opens by its row.
   await clickMenuItem(app, 'menu.file.close-tab', 'w1')
+  await fileRow(win, 'Bullets').click()
   await expect(activeTab(win)).toContainText('Bullets')
   await expect(lines(win)).not.toHaveCount(0)
   await fileRow(win, 'Chapters').click()
