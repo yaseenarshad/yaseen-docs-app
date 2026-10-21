@@ -848,7 +848,7 @@ describe('TabBar display name (YAZ-2949 D4, D5)', () => {
 
   const dblclick = (el: HTMLElement, i: number) => act(() => void el.querySelectorAll('[role="tab"]')[i].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
 
-  it('YAZ-3059 S1, S6, S8: a double click keeps the preview tab and opens its name field, the display name selected', () => {
+  it('YAZ-3059 S6, S8: a double click keeps the preview tab and opens its name field, the display name selected', () => {
     const onKeep = vi.fn()
     const onSetName = vi.fn()
     const el = mountIds({ onKeep, onSetName, preview: 't2' })
