@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isBoard, isViewOnly } from '@shared/fileKind'
 import type { TextFormatting } from '@shared/textFormatting'
-import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type PageView, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type MovedTab, type PageView, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -49,6 +49,7 @@ import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
+import type { MoveTarget } from './tabs/TabMenu'
 import { TabOverview } from './tabs/TabOverview'
 import { useUpdate } from './update/useUpdate'
 import { RightPanel } from './right-panel/RightPanel'
@@ -136,7 +137,7 @@ export function App() {
   // window's `file`: title, URL hash and the sidebar highlight all follow it. Each tab has its own
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
-    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, move: moveTab,
+    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
@@ -748,7 +749,6 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     prevTab()
   }, [prevTab])
-  useLinkEvents({ onOpenFile: openPage, onNotice: notify })
 
   // Settings › Storage (YAZ-1801 D1, 🔒 D13; YAZ-3039): the active tab's vault, measured only while
   // Settings is open — on its page's open, a sync pass finishing, and a shrink. A closed dialog hands the hook no sync state.
@@ -848,7 +848,7 @@ export function App() {
     closeBlank()
     closeUnderOverview(now.current.tabs.map((t) => t.id))
   }, [closeBlank, closeUnderOverview])
-  /** "Move to right panel", on a page of the board and on a tab of the strip: the page goes to the end of that panel, and an open board stays (R30). */
+  /** "Move to ▸ Right panel" (YAZ-3091 D3), on a page of the board and on a tab of the strip: the page goes to the end of that panel, and an open board stays (R30). */
   const movePageToRight = useCallback((path: string) => {
     ownChange.current = path === now.current.file
     transferMainToRight(path, now.current.right)
@@ -870,6 +870,37 @@ export function App() {
       .catch((err: unknown) => notify(`Can't move to a new window: ${err instanceof Error ? err.message : String(err)}`))
   }, [closeUnderOverview, closeTab, notify])
   /**
+   * "Move to ▸" (YAZ-3091 D2, D7): the other windows that show a vault of `path`, read from the state cache
+   * when a tab menu opens. Each row is that window's title and its tab count, copies counted (S6).
+   */
+  const moveTargets = useCallback((path: string): MoveTarget[] =>
+    storage.getOtherWindows()
+      .filter((w) => rootOfPath(w.roots, path) !== null)
+      .map((w) => {
+        const vault = (w.file === null ? null : rootOfPath(w.roots, w.file)) ?? w.root
+        const n = (w.tabStrip ?? w.tabs).length
+        return { id: w.id, label: `${windowTitle(vault === null ? null : storage.vaultName(vault), w.file, titles)} · ${n} tab${n === 1 ? '' : 's'}` }
+      }), [titles])
+  /**
+   * "Move to ▸ <window>" (YAZ-3091 D1, D6), on a page of the board and on a tab of the strip: as "Move to new
+   * window", the page saves first, main hands it to the open window `to`, and only then does the tab leave.
+   * The only tab of a window whose right panel is empty takes the window with it, through its real close (D6).
+   * A refusal (the window closed, S19) or a failed save (S20) leaves the tab where it is.
+   */
+  const movePageToWindow = useCallback((to: string, path: string, id: string) => {
+    const view = readPageView(id)
+    const name = now.current.tabs.find((t) => t.id === id)?.name
+    flushRenamedPath(path)
+      .then(() => api.window.moveTo(to, path, { view, name }))
+      .then(() => {
+        const { tabs: all, right, phase } = now.current
+        if (all.length === 1 && all[0].id === id && right === 0) void api.window.closeSelf()
+        else if (phase === 'open') closeUnderOverview([id])
+        else closeTab(id)
+      })
+      .catch((err: unknown) => notify(`Can't move to that window: ${err instanceof Error ? err.message : String(err)}`))
+  }, [closeUnderOverview, closeTab, notify])
+  /**
    * "Duplicate tab" (YAZ-2940 D5–D7), on a tab of the strip and on a page of the board: a copy of the tab
    * opens right after it and shows — under the board it shows on the board beside its source, and the
    * board stays (S5: a menu action is no trip to a page, R30). The copy starts with its source's page view
@@ -884,6 +915,19 @@ export function App() {
     const copy = duplicate(id)
     if (copy !== null && view !== undefined) startView.set(copy, view)
   }, [duplicate, startView])
+  /**
+   * A tab another window moved here (YAZ-3091 D5, S8–S14): the board closes, the page is a NEW tab at the end
+   * and shows — a copy when it is open, out of the right panel when it was there — with the moved name and
+   * page view. The view goes to `startView` before the tab's layer mounts, as a duplicate's does.
+   */
+  const takeTab = useCallback(({ path, view, name }: MovedTab) => {
+    setOverview(OVERVIEW_CLOSED)
+    const id = take(path)
+    if (name !== undefined) setTabName(id, name)
+    if (view !== undefined) startView.set(id, view)
+  }, [take, setTabName, startView])
+  // Below `startView`: a moved tab's page view goes there (YAZ-3091 D5).
+  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab })
   // The copy's `Editor` keeps its start in a ref when it mounts, so the entry goes once its layer is there.
   useEffect(() => {
     for (const id of startView.keys()) if (mounted.includes(id)) startView.delete(id)
@@ -1619,6 +1663,8 @@ export function App() {
               onDropPage={dropOnMain}
               onMoveToRight={movePageToRight}
               onMoveToNewWindow={movePageToNewWindow}
+              onMoveTargets={moveTargets}
+              onMoveToWindow={movePageToWindow}
               onDuplicate={duplicateTab}
               onSetName={setTabName}
               canBack={canBack}
@@ -1703,6 +1749,8 @@ export function App() {
                 // A page's menu is a tab's menu: the strip's own doors. A reveal in the sidebar leaves the board open beside it.
                 onMoveToRight={movePageToRight}
                 onMoveToNewWindow={movePageToNewWindow}
+                onMoveTargets={moveTargets}
+                onMoveToWindow={movePageToWindow}
                 onDuplicate={duplicateTab}
                 onSetName={setTabName}
                 onShowInSidebar={showInSidebar}

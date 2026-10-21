@@ -10,7 +10,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type PageView, type SidebarTab, type TreeNode, type TreeResponse, type UpdateState, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type SidebarTab, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -197,6 +197,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuShareLink = new Set<() => void>()
   const linkOpenFile = new Set<(path: string) => void>()
   const linkNotice = new Set<(message: string) => void>()
+  const linkTakeTab = new Set<(tab: MovedTab) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
   const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
   const menuSub = (set: Set<() => void>) =>
@@ -261,6 +262,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       duplicate: vi.fn(async (_view?: PageView) => undefined),
       // A tab's "Move to new window" (YAZ-2933): main opens the window; the tab leaves this one after.
       popOut: vi.fn(async (_path: string, _carry?: { view?: PageView }) => undefined),
+      // A tab's "Move to ▸ <window>" (YAZ-3091 D1): main hands the tab to that window; the tab leaves this one after.
+      moveTo: vi.fn(async (_to: string, _path: string, _carry?: { view?: PageView; name?: string }) => undefined),
       closeSelf: vi.fn(async () => undefined),
       // Main's one open-recent door (YAZ-1767 D1): a vault window's picks and Open Recent land here (YAZ-1914 D1).
       openRecent: vi.fn(async (_path: string) => true),
@@ -299,6 +302,10 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onNotice: vi.fn((l: (message: string) => void) => {
         linkNotice.add(l)
         return () => linkNotice.delete(l)
+      }),
+      onTakeTab: vi.fn((l: (tab: MovedTab) => void) => {
+        linkTakeTab.add(l)
+        return () => linkTakeTab.delete(l)
       }),
       ready: vi.fn(async () => undefined),
     },
@@ -390,6 +397,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitShareLink: () => menuShareLink.forEach((l) => l()),
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
+    emitTakeTab: (tab: MovedTab) => linkTakeTab.forEach((l) => l(tab)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
     emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
   }
@@ -1162,6 +1170,137 @@ describe('App Move to new window (YAZ-2933)', () => {
     await act(async () => items(el)[0]!.click())
     expect(tabNames(el)).toEqual(['a', 'b'])
     expect(el.textContent).toContain("Can't move to a new window: path is in no vault of this window")
+  })
+})
+
+describe('App Move to ▸ a window (YAZ-3091)', () => {
+  const VIEW: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
+  const rightClick = (target: Element | undefined) =>
+    act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+  const items = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')]
+  const item = (el: HTMLElement, label: string) => items(el).find((b) => b.textContent === label)
+  const flyout = (el: HTMLElement) => [...el.querySelectorAll('.ctx-menu__sub [role="group"]')].map((g) => [...g.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent))
+  const tabNames = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+  const activeTab = (el: HTMLElement) => el.querySelector<HTMLElement>('.tabbar__tab:has([aria-selected="true"])')?.dataset.tab
+  const entry = (over: Partial<WindowEntry> & Pick<WindowEntry, 'id' | 'root'>): WindowEntry => ({ roots: over.root === null ? [] : [over.root], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 }, ...over })
+  /** This window w1 on /v, and the other windows the cache knows. */
+  const withWindows = (...others: WindowEntry[]): AppState => ({ ...defaultAppState(), windows: [entry({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }), ...others] })
+  const W2 = entry({ id: 'w2', root: '/v', file: '/v/x.md', tabs: ['/v/x.md', '/v/y.md'] })
+  /** Opens the "Move to ▸" flyout of strip tab `index`. */
+  const openMoveTo = (el: HTMLElement, index: number) => {
+    rightClick(el.querySelectorAll('.tabbar__tab')[index])
+    act(() => item(el, 'Move to')?.click())
+  }
+
+  it('S1-S6, D7: the flyout lists only the other windows that show the page\'s vault, as "<vault> — <page> · N tabs", then "Right panel"', async () => {
+    const state = withWindows(
+      W2,
+      entry({ id: 'w3', root: '/other', file: '/other/o.md', tabs: ['/other/o.md'] }), // S3: another vault only
+      entry({ id: 'w4', root: null }), // S5: a Welcome window
+      entry({ id: 'w5', root: '/z', roots: ['/z', '/v'], file: null, tabs: [] }), // S4, S6: two vaults, no tab
+      entry({ id: 'w6', root: '/v', file: '/v/x.md', tabs: ['/v/x.md'], tabStrip: [{ path: '/v/x.md' }, { path: '/v/x.md', active: true }] }), // S6: copies count
+    )
+    const { el } = await mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    openMoveTo(el, 1)
+    expect(flyout(el)).toEqual([['v — x · 2 tabs', 'z · 0 tabs', 'v — x · 2 tabs'], ['Right panel']])
+    act(() => root?.unmount())
+    container?.remove()
+    history.replaceState(null, '', '/')
+    // S1: no other window: only "Right panel".
+    const one = await mount(withWindows(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    openMoveTo(one.el, 1)
+    expect(flyout(one.el)).toEqual([['Right panel']])
+  })
+
+  it('S8, S9, S10: a window row saves the page, THEN asks main to move it with its view and name, THEN the tab leaves this window', async () => {
+    const { bridge, el } = await mount(withWindows(W2), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const tab = el.querySelector<HTMLElement>('.tabbar__tab')!.dataset.tab!
+    const scroller = document.createElement('div')
+    scroller.className = 'editor-host'
+    el.querySelector(`.tabstack__layer[data-tab="${tab}"]`)!.appendChild(scroller)
+    const off = registerPageView(scroller, () => VIEW)
+    const order: string[] = []
+    vi.spyOn(continuity, 'flushRenamedPath').mockImplementation(async (path) => void order.push(`flush ${path}`))
+    bridge.window.moveTo.mockImplementationOnce(async () => void order.push(`move ${tabNames(el).join(',')}`))
+    openMoveTo(el, 0)
+    await act(async () => item(el, 'v — x · 2 tabs')!.click())
+    expect(order).toEqual(['flush /v/a.md', 'move a,b']) // the tab is still here while main hands it over
+    expect(bridge.window.moveTo).toHaveBeenCalledExactlyOnceWith('w2', '/v/a.md', { view: VIEW, name: undefined })
+    expect(tabNames(el)).toEqual(['b'])
+    expect(bridge.window.closeSelf).not.toHaveBeenCalled()
+    off()
+  })
+
+  it('S15: the only tab, with an empty right panel, closes the window through its real close; S16: with pages in the right panel the window stays', async () => {
+    const { bridge, el } = await mount(withWindows(W2), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    openMoveTo(el, 0)
+    await act(async () => item(el, 'v — x · 2 tabs')!.click())
+    expect(bridge.window.moveTo).toHaveBeenCalledWith('w2', '/v/a.md', expect.anything())
+    expect(bridge.window.closeSelf).toHaveBeenCalledTimes(1)
+    act(() => root?.unmount())
+    container?.remove()
+    history.replaceState(null, '', '/')
+    const right = await mount(withWindows(W2), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: { open: true, width: 440, items: ['/v/c.md'], expanded: '/v/c.md' } })
+    openMoveTo(right.el, 0)
+    await act(async () => item(right.el, 'v — x · 2 tabs')!.click())
+    expect(right.bridge.window.moveTo).toHaveBeenCalledTimes(1)
+    expect(right.bridge.window.closeSelf).not.toHaveBeenCalled()
+    expect(tabNames(right.el)).toEqual([])
+  })
+
+  it('S19: a refusal keeps the tab and says why; S20: a failed save moves nothing and says why', async () => {
+    const { bridge, el } = await mount(withWindows(W2), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    bridge.window.moveTo.mockRejectedValueOnce(new Error('that window is closed or shows no vault of this page'))
+    openMoveTo(el, 1)
+    await act(async () => item(el, 'v — x · 2 tabs')!.click())
+    expect(tabNames(el)).toEqual(['a', 'b'])
+    expect(el.textContent).toContain("Can't move to that window: that window is closed or shows no vault of this page")
+    vi.spyOn(continuity, 'flushRenamedPath').mockRejectedValueOnce(new Error('disk full'))
+    openMoveTo(el, 1)
+    await act(async () => item(el, 'v — x · 2 tabs')!.click())
+    expect(bridge.window.moveTo).toHaveBeenCalledTimes(1)
+    expect(tabNames(el)).toEqual(['a', 'b'])
+    expect(el.textContent).toContain("Can't move to that window: disk full")
+    expect(bridge.window.closeSelf).not.toHaveBeenCalled()
+  })
+
+  it('S17: from a page of the tab board, the tab leaves the board, and the board stays open', async () => {
+    const { bridge, el } = await mount(withWindows(W2), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')!.click())
+    const pages = () => [...el.querySelectorAll<HTMLElement>('.taboverview__page')]
+    rightClick(pages().find((p) => p.querySelector('.taboverview__title')?.textContent === 'b'))
+    act(() => item(el, 'Move to')?.click())
+    await act(async () => item(el, 'v — x · 2 tabs')!.click())
+    expect(bridge.window.moveTo).toHaveBeenCalledWith('w2', '/v/b.md', expect.anything())
+    expect(el.querySelector('.taboverview')).not.toBeNull()
+    expect(pages().map((p) => p.querySelector('.taboverview__title')?.textContent)).toEqual(['a'])
+  })
+
+  it('S8-S11, S14, D5: the target adds the moved tab at the end, active, a copy when the page is open, with its name and page view; the board closes', async () => {
+    const { bridge, el, emitTakeTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')!.click())
+    expect(el.querySelector('.taboverview')).not.toBeNull()
+    bridge.window.setIdentity.mockClear()
+    await act(async () => emitTakeTab({ path: '/v/a.md', view: VIEW, name: 'Outline' }))
+    expect(el.querySelector('.taboverview')).toBeNull()
+    expect(tabNames(el)).toEqual(['a', 'b', 'Outline'])
+    const moved = el.querySelectorAll<HTMLElement>('.tabbar__tab')[2].dataset.tab!
+    expect(activeTab(el)).toBe(moved)
+    expect(captured.editors.find((e) => e.startView !== undefined)).toMatchObject({ path: '/v/a.md', startView: VIEW })
+    // Stored with the window, name and all (YAZ-3057): a reload keeps the moved tab.
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabStrip: [{ path: '/v/a.md' }, { path: '/v/b.md' }, { path: '/v/a.md', name: 'Outline', active: true }], file: '/v/a.md' }))
+    // S9, S10: no name and no page view: a plain tab that opens fresh.
+    captured.editors = []
+    await act(async () => emitTakeTab({ path: '/v/c.md' }))
+    expect(tabNames(el)).toEqual(['a', 'b', 'Outline', 'c'])
+    expect(captured.editors.filter((e) => e.startView !== undefined)).toEqual([])
+  })
+
+  it('S12: a page of the target\'s right panel leaves the panel and becomes the new tab', async () => {
+    const { bridge, emitTakeTab, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: { open: true, width: 440, items: ['/v/c.md', '/v/d.md'], expanded: '/v/c.md' } })
+    await act(async () => emitTakeTab({ path: '/v/c.md', name: 'Moved' }))
+    expect(tabNames(el)).toEqual(['a', 'Moved'])
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabs: ['/v/a.md', '/v/c.md'], rightPanel: expect.objectContaining({ items: ['/v/d.md'] }) }))
   })
 })
 
@@ -2092,7 +2231,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(sheetText()).toBeNull()
   })
 
-  it('the ways off the tab board: every trip to a page closes it, the page ALREADY open too (S46, YAZ-2657 A2); ⌘W closes the tab and it (S47); its last tab closes it (S44, R18). A rename of the open page, an island\'s ✕ — ONE identity write — and "Move to right panel" from a strip tab\'s menu leave it open (R12, R30)', async () => {
+  it('the ways off the tab board: every trip to a page closes it, the page ALREADY open too (S46, YAZ-2657 A2); ⌘W closes the tab and it (S47); its last tab closes it (S44, R18). A rename of the open page, an island\'s ✕ — ONE identity write — and "Move to ▸ Right panel" from a strip tab\'s menu leave it open (R12, R30)', async () => {
     const { bridge, el, emitTabOverview, emitNextTab, emitCloseTab, emitLinkOpenFile, emitFileRenamed } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/x.md', '/v/Docs/c.md', '/v/Docs/d.md', '/v/Docs/e.md'] })
     const board = () => el.querySelector('.taboverview')
     const open = () => {
@@ -2133,10 +2272,11 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(await after(() => emitCloseTab())).toEqual([true, 'b'])
     expect(stripLabels(el)).toEqual(['a', 'b'])
 
-    // R30: "Move to right panel" in the menu of the ACTIVE tab of the strip moves the page and leaves the board, as the board's own does (YAZ-2657 A4).
+    // R30: "Move to ▸ Right panel" (YAZ-3091 D3) in the menu of the ACTIVE tab of the strip moves the page and leaves the board, as the board's own does (YAZ-2657 A4).
     open()
     act(() => void stripTab('b')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
-    expect(await after(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Move to right panel')?.click())).toEqual([false, 'a'])
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Move to')?.click())
+    expect(await after(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Right panel')?.click())).toEqual([false, 'a'])
     expect(stripLabels(el)).toEqual(['a'])
 
     // ⌃Tab with one tab goes to the page already open.
@@ -2440,7 +2580,8 @@ describe('App right-panel shell (YAZ-1272)', () => {
     })
     const tabA = el.querySelector<HTMLElement>('[role="tab"][title="/v/a.md"]')?.closest<HTMLElement>('.tabbar__tab')
     act(() => void tabA?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
-    const moveToRight = [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Move to right panel')
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Move to')?.click())
+    const moveToRight = [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Right panel')
     act(() => moveToRight?.click())
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/b.md'], '/v/b.md', { open: true, width: 440, items: ['/v/c.md', '/v/a.md'], expanded: '/v/a.md' }))
 

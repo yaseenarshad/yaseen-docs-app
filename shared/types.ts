@@ -2185,6 +2185,11 @@ export interface PopOutCarry {
   name?: string
 }
 
+/** A tab that another window hands to this one (YAZ-3091 D1): its page plus the same carry as "Move to new window". */
+export interface MovedTab extends PopOutCarry {
+  path: string
+}
+
 export interface OpenWindowOptions {
   root: string | null
   file: string | null

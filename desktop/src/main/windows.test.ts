@@ -1267,6 +1267,57 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
   })
 })
 
+describe('createWindowManager: moveTo hands a tab to an open window (YAZ-3091 D1, D2)', () => {
+  /** w1 shows /a and /b, w2 shows /c only, w3 is a Welcome window. Nothing has listened yet: link pushes are held. */
+  function seedMove() {
+    store.upsertWindow({ id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w2', root: '/c', roots: ['/c'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 40, y: 40, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w3', root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 70, y: 70, width: 800, height: 600 } })
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    const [w1, w2, w3] = created.map((c) => c.win)
+    return { manager, w1, w2, w3 }
+  }
+  const VIEW: PageView = { scrollTop: 120, zoomKey: 'l1 a:0', folds: ['abc:0'], magnification: 110 }
+
+  it('raises the target and pushes link:take-tab with the path, the view and the name, held until the page listens; no entry changes', () => {
+    const { manager, w1 } = seedMove()
+    const before = store.get().windows
+    w1.minimized = true
+    expect(manager.moveTo('w1', '/b/deep/y.md', { view: VIEW, name: 'Outline' })).toBe(true)
+    expect(w1.isMinimized()).toBe(false)
+    expect(w1.focusCount).toBe(1)
+    expect(w1.webContents.send).not.toHaveBeenCalled() // held like any link push (YAZ-2589 A2)
+    manager.handleLinkReady(w1.webContents)
+    expect(w1.webContents.send.mock.calls).toEqual([[CONTRACT.link.onTakeTab.channel, { path: '/b/deep/y.md', view: VIEW, name: 'Outline' }]])
+    // A window that listens gets the push at once; no carry is just the path.
+    expect(manager.moveTo('w1', '/a/x.md')).toBe(true)
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onTakeTab.channel, { path: '/a/x.md' })
+    // The target stores its own new tab: main changes no entry, and keeps no page view for it.
+    expect(store.get().windows).toBe(before)
+    expect(manager.takeStartView('w1')).toBeUndefined()
+  })
+
+  it('refuses an unknown id, a closed window, a path in no vault of the target, and a Welcome window (D2): nothing is sent, nothing is raised', () => {
+    const { manager, w1, w2, w3 } = seedMove()
+    for (const c of [w1, w2, w3]) manager.handleLinkReady(c.webContents)
+    expect(manager.moveTo('nope', '/a/x.md')).toBe(false)
+    expect(manager.moveTo('w2', '/a/x.md', { name: 'Outline' })).toBe(false) // w2 shows only /c: no vault is added
+    expect(manager.moveTo('w1', '/ab/x.md')).toBe(false) // a sibling folder whose name starts with the vault's
+    expect(manager.moveTo('w3', '/a/x.md')).toBe(false)
+    w1.destroyed = true // destroyed, its `closed` not yet fired
+    expect(manager.moveTo('w1', '/a/x.md')).toBe(false)
+    w1.destroyed = false
+    w1.destroy() // fully closed: no live window
+    expect(manager.moveTo('w1', '/a/x.md')).toBe(false)
+    for (const c of [w1, w2, w3]) {
+      expect(c.webContents.send).not.toHaveBeenCalled()
+      expect(c.focusCount).toBe(0)
+    }
+  })
+})
+
 describe('createWindowManager: a new window gets its page view once (YAZ-2951 D5, S17, S20)', () => {
   const VIEW: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
   const from: WindowEntry = { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 100, y: 100, width: 800, height: 600 } }

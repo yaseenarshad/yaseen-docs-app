@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -170,6 +170,11 @@ export const CONTRACT = {
      * (YAZ-2951 D2: the page starts with `carry.view`) and its display name (YAZ-2949 D7).
      */
     popOut: invoke<[path: string, carry?: PopOutCarry], void>('window:pop-out', 2),
+    /**
+     * A tab's "Move to ▸ <window>" (YAZ-3091 D1, D2): hand `path` with its `carry` to the open window `to`.
+     * Main checks that `to` is live and shows a vault of `path`, raises it, and pushes `link:take-tab` to it.
+     */
+    moveTo: invoke<[to: string, path: string, carry?: PopOutCarry], void>('window:move-to', 3),
     /** The vault switcher's one door (YAZ-1767 🔒 D1, D9): raise that vault's windows or open a new one on its last file; `false` = the folder is gone and was pruned from the MRU. */
     openRecent: invoke<[path: string], boolean>('window:open-recent', 1),
     /** "Open by itself" (YAZ-2858 D1): raise the window that shows ONLY this vault, else open a new one on its last file; a workspace window that shows it does not count and does not change. `false` = the folder is gone and was pruned from the MRU. */
@@ -233,9 +238,11 @@ export const CONTRACT = {
   link: {
     /** A link resolved to this window: open `path` (guaranteed inside this window's root). */
     onOpenFile: push<string>('link:open-file'),
+    /** Another window moved a tab here (YAZ-3091 D1, D5): add it as a new active tab with its name and page view. */
+    onTakeTab: push<MovedTab>('link:take-tab'),
     /** A link could not be opened (bad URL, unsupported, missing or non-regular file): show `message` unobtrusively. */
     onNotice: push<string>('link:notice'),
-    /** This window's two listeners above are on (YAZ-2589 A2): main sends the pushes it held while the page loaded. */
+    /** This window's three listeners above are on (YAZ-2589 A2): main sends the pushes it held while the page loaded. */
     ready: invoke<[], void>('link:ready', 0),
   },
   /** The file lifecycle (Links E1 GRO-2194, GRO-2272, YAZ-1674): each change is one invoke plus a push to EVERY window, its own included. */

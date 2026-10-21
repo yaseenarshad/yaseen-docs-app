@@ -102,6 +102,12 @@ export interface WindowManager extends WindowLookup {
    */
   popOut(from: WindowEntry, path: string, carry?: PopOutCarry): void
   /**
+   * A tab's "Move to ▸ <window>" (YAZ-3091 D1, D2): raise the live window `to` and push `link:take-tab` with
+   * `path` and `carry`, held like any link push until its page listens. `false` = `to` is not live, or none of
+   * its vaults holds `path` (D2): no vault is added. Nothing is stored here: the target stores its own new tab.
+   */
+  moveTo(to: string, path: string, carry?: PopOutCarry): boolean
+  /**
    * The page view a new window starts with (YAZ-2951 D5), handed out ONE time: its first `window:identity`
    * takes it, so a reload starts fresh (S17). A window that closes before it asks drops it (S20). Never stored.
    */
@@ -160,7 +166,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'takeStartView' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'takeStartView' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -404,7 +410,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   }
 
   /** A link push to `win`: at once when its renderer listens, else held for `handleLinkReady` (YAZ-2589 A2). */
-  const sendLink = (win: ManagedWindow, channel: string, payload: string): void => {
+  const sendLink = (win: ManagedWindow, channel: string, payload: unknown): void => {
     const send = (): void => win.webContents.send(channel, payload)
     const held = heldLinks.get(win.webContents.id)
     if (held === undefined) send()
@@ -556,6 +562,15 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // The tab's display name is stored with the new window's one tab (YAZ-3057 D3). `from`'s own strip must not come along.
       const { tabStrip: _from, ...source } = from
       open({ ...source, id, roots: [...from.roots], file: path, tabs: [path], ...(carry?.name === undefined ? {} : { tabStrip: [{ path, name: carry.name }] }), rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: clampBounds(cascaded, host.workAreas()) })
+    },
+
+    moveTo(to, path, carry) {
+      const win = live.get(to)
+      const entry = entryOf(to)
+      if (win === undefined || win.isDestroyed() || entry === undefined || rootOfPath(entry.roots, path) === null) return false
+      focusWindow(win)
+      sendLink(win, CONTRACT.link.onTakeTab.channel, { path, ...carry })
+      return true
     },
 
     takeStartView(id) {

@@ -1,4 +1,4 @@
-/** The tab menu's groups (YAZ-2949 D3, D6): four groups in the sidebar menu's order, the display-name items, and what hides. */
+/** The tab menu's groups (YAZ-2949 D3, D6): four groups in the sidebar menu's order, the display-name items, and what hides; its "Move to ▸" flyout (YAZ-3091 D3). */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -38,7 +38,7 @@ const item = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLBut
 describe('TabMenu (YAZ-2949 D6)', () => {
   it('S26: four groups in the sidebar menu\'s order; "Reset to page name" only on a named tab', () => {
     expect(groups(mount(all()))).toEqual([
-      ['Move to new window', 'Duplicate tab', 'Move to right panel'],
+      ['Move to new window', 'Duplicate tab', 'Move to'],
       ['Show in sidebar', 'Copy path'],
       ['Set display name', 'Turn review on'],
       ['Reveal in Finder', 'Open in VS Code'],
@@ -62,5 +62,49 @@ describe('TabMenu (YAZ-2949 D6)', () => {
     el = mount(props)
     act(() => item(el, 'Reset to page name')?.click())
     expect(props.onResetName).toHaveBeenCalledWith('t1')
+  })
+})
+
+describe('TabMenu "Move to ▸" (YAZ-3091 D3)', () => {
+  const TARGETS = [{ id: 'w2', label: 'Work — Meeting notes · 2 tabs' }, { id: 'w3', label: 'Work · 0 tabs' }]
+  /** The flyout's groups, after a click on "Move to" opens it. */
+  const flyout = (el: HTMLElement) => {
+    act(() => item(el, 'Move to')?.click())
+    return [...el.querySelectorAll('.ctx-menu__sub [role="group"]')].map((g) => [...g.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent))
+  }
+
+  it('S2, D3: the flyout lists each other window, a line, then "Right panel"; a window row moves this tab (path and id) and closes the menu', () => {
+    const props = all({ moveTargets: TARGETS, onMoveToWindow: vi.fn() })
+    const el = mount(props)
+    const parent = item(el, 'Move to')
+    expect(parent?.getAttribute('aria-haspopup')).toBe('menu')
+    expect(flyout(el)).toEqual([['Work — Meeting notes · 2 tabs', 'Work · 0 tabs'], ['Right panel']])
+    act(() => item(el, 'Work · 0 tabs')?.click())
+    expect(props.onMoveToWindow).toHaveBeenCalledWith('w3', '/v/a.md', 't1')
+    expect(props.onMoveToRight).not.toHaveBeenCalled()
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('S1: with no other window the flyout has only "Right panel"; S18: it does what "Move to right panel" did', () => {
+    const props = all({ moveTargets: [], onMoveToWindow: vi.fn() })
+    const el = mount(props)
+    expect(flyout(el)).toEqual([['Right panel']])
+    act(() => item(el, 'Right panel')?.click())
+    expect(props.onMoveToRight).toHaveBeenCalledWith('/v/a.md')
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+    // The top-level item is gone (D3).
+    expect(item(el, 'Move to right panel')).toBeUndefined()
+  })
+
+  it('an empty group is left out, and with no group there is no "Move to" item', () => {
+    let el = mount(all({ onMoveToRight: undefined, moveTargets: TARGETS, onMoveToWindow: vi.fn() }))
+    expect(flyout(el)).toEqual([['Work — Meeting notes · 2 tabs', 'Work · 0 tabs']])
+    act(() => root?.unmount())
+    el = mount(all({ onMoveToRight: undefined, moveTargets: [], onMoveToWindow: vi.fn() }))
+    expect(groups(el)[0]).toEqual(['Move to new window', 'Duplicate tab'])
+    act(() => root?.unmount())
+    // Windows with no door to move to them are no rows either.
+    el = mount(all({ onMoveToRight: undefined, moveTargets: TARGETS }))
+    expect(item(el, 'Move to')).toBeUndefined()
   })
 })
