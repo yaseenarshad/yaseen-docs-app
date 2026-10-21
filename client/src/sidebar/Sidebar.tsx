@@ -1464,7 +1464,7 @@ export function Sidebar({
           </Suspense>
         </ContextMenuSurface>
       )}
-      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} textVarsOf={textVarsFor} enabled={settings.hoverPreview && !searching} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} onClose={closePreview} />
+      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} nameOf={nameOf} textVarsOf={textVarsFor} enabled={settings.hoverPreview && !searching} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} onClose={closePreview} />
       {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
       {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} copy={pendingPaste.copy} lost={pendingPaste.lost} titles={titles} onConfirm={confirmPaste} onCancel={cancelPaste} />}
       {confirmingShortcut !== null && (

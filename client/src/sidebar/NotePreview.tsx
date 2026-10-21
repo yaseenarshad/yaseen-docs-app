@@ -13,7 +13,7 @@ import type { CSSProperties, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { ReadOnlyNote } from '../editor/ReadOnlyNote'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { basename, boardFolder } from '../lib/paths'
+import { boardFolder } from '../lib/paths'
 import { usePlacement } from './previewPlacement'
 import './boardPreview.css'
 
@@ -22,8 +22,10 @@ export const NOTE_PREVIEW_CHARS = 4000
 
 interface NotePreviewProps {
   root: string
-  /** The hovered note: the panel names it as the board panel names a board. */
+  /** The hovered note. */
   node: { path: string }
+  /** The note as the tree names it, by its title (`pageName`): the header says it the same way (YAZ-3075 checker round 1). */
+  name: string
   /** The link source of the note's vault: a `[[<id>]]` link shows its title (C21). */
   wikilinks: WikilinkResolveSource
   /** The text formatting of the note's vault (YAZ-3067 D12, C20): `--text-size` and the `--hN-*` variables. */
@@ -32,13 +34,12 @@ interface NotePreviewProps {
   anchor: RefObject<HTMLElement | null>
 }
 
-export default function NotePreview({ root, node, wikilinks, textVars, anchor }: NotePreviewProps) {
+export default function NotePreview({ root, node, name, wikilinks, textVars, anchor }: NotePreviewProps) {
   const placement = usePlacement(anchor, 'note')
   if (placement === null) return null
-  const name = basename(node.path)
   return createPortal(
     // No live region on the frame: it would read the whole note out on each rest. The header says which note.
-    <div className="board-preview note-preview" aria-label={`Preview of ${name}`} style={{ ...textVars, ...placement }}>
+    <div className="board-preview note-preview" role="group" aria-label={`Preview of ${name}`} style={{ ...textVars, ...placement }}>
       <div className="board-preview__header" role="status">
         <span className="board-preview__name">{name}</span>
         <span className="board-preview__folder">{boardFolder(root, node.path)}</span>

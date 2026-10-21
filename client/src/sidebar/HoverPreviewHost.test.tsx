@@ -130,7 +130,7 @@ describe('HoverPreviewHost', () => {
     const hover = createStore<HoverState>({ path: shown.path, shown: true })
     await act(async () => {
       root?.render(
-        <HoverPreviewHost hover={hover} forest={[shown]} rootOf={() => '/v'} watchOf={() => watch} wikilinksOf={() => wikilinks} textVarsOf={() => ({ '--text-size': '18px' }) as never} enabled diagramDarkColors="adapt" anchor={createRef<HTMLElement>()} onClose={() => undefined} />,
+        <HoverPreviewHost hover={hover} forest={[shown]} rootOf={() => '/v'} watchOf={() => watch} wikilinksOf={() => wikilinks} nameOf={(p) => p.slice(p.lastIndexOf('/') + 1).replace(/\.md$/, '')} textVarsOf={() => ({ '--text-size': '18px' }) as never} enabled diagramDarkColors="adapt" anchor={createRef<HTMLElement>()} onClose={() => undefined} />,
       )
     })
     // The lazy chunk and the head read both settle.

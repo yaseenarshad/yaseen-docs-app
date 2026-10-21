@@ -105,6 +105,8 @@ interface HoverPreviewHostProps {
   watchOf?: (path: string) => WatchSource | undefined
   /** The link source of the vault that holds a note (YAZ-3075 C21). */
   wikilinksOf: (path: string) => WikilinkResolveSource
+  /** A note's name as the tree shows it, its title (`pageName`): the note panel's header. */
+  nameOf: (path: string) => string
   /** The text formatting of the vault that holds a note (YAZ-3067 D12; YAZ-3075 C20). */
   textVarsOf: (path: string) => CSSProperties
   /** Previews possible (no search typed, no menu up). */
@@ -115,7 +117,7 @@ interface HoverPreviewHostProps {
   onClose: () => void
 }
 
-export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, textVarsOf, enabled, diagramDarkColors, anchor, onClose }: HoverPreviewHostProps) {
+export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, nameOf, textVarsOf, enabled, diagramDarkColors, anchor, onClose }: HoverPreviewHostProps) {
   const { path, shown } = useSyncExternalStore(hover.subscribe, hover.getState)
   const theme = useAppliedTheme()
   const node = useMemo(() => {
@@ -173,7 +175,7 @@ export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, 
     const NotePreview = notePreviewModule?.default ?? LazyNotePreview
     return (
       <Suspense fallback={null}>
-        <NotePreview key={node.path} root={root} node={node} wikilinks={wikilinksOf(node.path)} textVars={textVarsOf(node.path)} anchor={anchor} />
+        <NotePreview key={node.path} root={root} node={node} name={nameOf(node.path)} wikilinks={wikilinksOf(node.path)} textVars={textVarsOf(node.path)} anchor={anchor} />
       </Suspense>
     )
   }

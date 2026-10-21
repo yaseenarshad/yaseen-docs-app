@@ -137,7 +137,10 @@ test('step 2b — resting on a note row shows the top of the note (YAZ-3075)', a
     return shown! - start! - 400
   }
   const first = await timedRest()
-  await expect(preview.locator('.board-preview__name')).toHaveText(NOTE)
+  // The header names the note by its title, as the tree row does.
+  await expect(preview.locator('.board-preview__name')).toHaveText('Hover note')
+  // A guard, not a budget: the first rest measured 38–56 ms hidden (YAZ-3087 A1); 362 ms was the bug.
+  expect(first).toBeLessThan(250)
   await expect(preview.locator('.ProseMirror')).toContainText('Hover note top')
   await expect(preview).not.toContainText('title: Hover note')
   await shoot(win, 'board-tools-01b-note-hover-preview')

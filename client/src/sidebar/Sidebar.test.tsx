@@ -485,7 +485,7 @@ describe('note rows open the hover preview (YAZ-3075)', () => {
     expect(notePanel()).toBeNull()
     await dwell()
     await shows()
-    expect(notePanel()?.querySelector('.board-preview__name')?.textContent).toBe('Plan.md')
+    expect(notePanel()?.querySelector('.board-preview__name')?.textContent).toBe('Plan')
     expect(bridge.readFile).toHaveBeenCalledWith('/v/Plan.md')
     await until(() => notePanel()?.querySelector('.ProseMirror')?.textContent?.includes('Hello hover') === true)
     expect(notePanel()?.textContent).not.toContain('title: Plan')

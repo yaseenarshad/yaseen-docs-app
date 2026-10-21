@@ -48,7 +48,7 @@ async function show(path = '/v/notes/Plan.md', textVars: CSSProperties = {}) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  await act(async () => root?.render(<NotePreview root="/v" node={{ path }} wikilinks={createWikilinkResolveSource()} textVars={textVars} anchor={anchor} />))
+  await act(async () => root?.render(<NotePreview root="/v" node={{ path }} name="Plan" wikilinks={createWikilinkResolveSource()} textVars={textVars} anchor={anchor} />))
   await act(async () => new Promise((r) => setTimeout(r, 0)))
   return document.querySelector<HTMLElement>('.note-preview')!
 }
@@ -69,7 +69,7 @@ describe('NotePreview', () => {
     readFile.mockImplementation(file('---\ntitle: Plan\n---\n\n# Hello\n\nthe body\n'))
     const panel = await show('/v/notes/Plan.md', { '--text-size': '18px' } as CSSProperties)
     expect(panel.classList.contains('board-preview')).toBe(true)
-    expect(panel.querySelector('.board-preview__name')?.textContent).toBe('Plan.md')
+    expect(panel.querySelector('.board-preview__name')?.textContent).toBe('Plan')
     expect(panel.querySelector('.board-preview__folder')?.textContent).toBe('notes')
     expect(panel.style.getPropertyValue('--text-size')).toBe('18px')
     expect(readFile).toHaveBeenCalledExactlyOnceWith('/v/notes/Plan.md')
