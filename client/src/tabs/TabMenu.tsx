@@ -33,6 +33,8 @@ export interface TabMenuProps {
   moveTargets?: readonly MoveTarget[]
   /** "Move to ▸ <window>" (YAZ-3091 D1): the tab goes to the open window `to` — the page by path, and only this tab (by id) closes here. */
   onMoveToWindow?: (to: string, path: string, id: string) => void
+  /** A window row under the pointer or the keyboard lights up that window (YAZ-3091 D8); `null` puts it out. */
+  onHighlightWindow?: (to: string | null) => void
   /** "Move to new window" (YAZ-2933): the tab leaves for a window of its own — the page by path, and only this tab (by id) closes here (YAZ-2940 S16). */
   onMoveToNewWindow?: (path: string, id: string) => void
   /** "Duplicate tab" (YAZ-2940 D5): a copy of this tab, by id, opens right after it in this window. */
@@ -56,7 +58,7 @@ export interface TabMenuProps {
  * display name (YAZ-2949) and the review toggle (YAZ-2322). Drawn as data by the sidebar's own
  * `ContextMenu` (YAZ-2949 D6), so its groups have the same lines as every other menu of the app.
  */
-export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onSetReview, onNotice }: TabMenuProps) {
+export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onSetReview, onNotice }: TabMenuProps) {
   /**
    * The menu's OS actions (YAZ-963), the sidebar's `reveal` idiom on a tab: read-only, so there is
    * nothing to confirm or repair — but a STALE tab (deleted or moved externally) rejects `NOT_FOUND`,
@@ -70,7 +72,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
   }
   // "Move to ▸" (YAZ-3091 D3): the other windows, a line, then "Right panel". An empty group is left out, and with no group there is no item.
   const moveTo: MenuAction[][] = [
-    onMoveToWindow === undefined ? [] : moveTargets.map((t) => ({ id: `move-window:${t.id}`, label: t.label, onSelect: () => onMoveToWindow(t.id, menu.path, menu.id) })),
+    onMoveToWindow === undefined ? [] : moveTargets.map((t) => ({ id: `move-window:${t.id}`, label: t.label, onSelect: () => onMoveToWindow(t.id, menu.path, menu.id), onPreview: (on: boolean) => onHighlightWindow?.(on ? t.id : null) })),
     onMoveToRight === undefined ? [] : [{ id: 'move-right', label: 'Right panel', onSelect: () => onMoveToRight(menu.path) }],
   ].filter((group) => group.length > 0)
   // Four groups (YAZ-2949 D6), in this order: the tab's place · find the file · this tab

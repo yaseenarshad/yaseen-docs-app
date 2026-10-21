@@ -64,13 +64,13 @@ test('pop a tab out, then Move to ▸ the first window: the tab comes back last 
   await expect(tabNames(win)).toHaveText(['Stays'])
   expect(await windowCount(app)).toBe(2)
 
-  // D3: Move to new window · Duplicate tab · Move to ▸ (the first window, a line, Right panel). D7: "<vault> — <page> · N tabs".
+  // D3: Move to new window · Duplicate tab · Move to ▸ (the first window, a line, Right panel). D7/D8: "<page> + N more tabs".
   await tabNames(popped).first().click({ button: 'right' })
   await expect(popped.locator('.ctx-menu [role="group"]').first().locator('[role="menuitem"]')).toHaveText(['Move to new window', 'Duplicate tab', 'Move to'])
   await menuEntry(popped, 'Move to').click()
-  expect(await flyoutGroups(popped)).toEqual([[`${path.basename(vault)} — Stays · 1 tab`], ['Right panel']])
+  expect(await flyoutGroups(popped)).toEqual([['Stays'], ['Right panel']])
   await shoot(popped, 'movewin-1-flyout')
-  await menuEntry(popped, /· 1 tab$/).click()
+  await menuEntry(popped, 'Stays').click()
 
   // D5: the first window shows it, last and active, with its page. D6: the small window had no other tab, so it closed.
   await expect(tabNames(win)).toHaveText(['Stays', 'Travels'])
@@ -96,7 +96,7 @@ test('the page is open in the first window too: the move adds a copy at the end,
 
   await tabNames(popped).first().click({ button: 'right' })
   await menuEntry(popped, 'Move to').click()
-  await menuEntry(popped, /· 2 tabs$/).click()
+  await menuEntry(popped, / \+ 1 more tab$/).click()
 
   // D5, S11: a copy at the end, active; the tab that was open keeps its place.
   await expect(tabNames(win)).toHaveText(['Stays', 'Travels', 'Travels'])

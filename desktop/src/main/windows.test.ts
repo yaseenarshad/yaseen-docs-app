@@ -1316,6 +1316,30 @@ describe('createWindowManager: moveTo hands a tab to an open window (YAZ-3091 D1
       expect(c.focusCount).toBe(0)
     }
   })
+
+  it('D8: highlight lights up the window a row points at: on for the row under the pointer, off when the row changes or clears, and when either window closes; it never raises a window', () => {
+    const { manager, w1, w2, w3 } = seedMove()
+    const glow = (c: typeof w1) => c.webContents.send.mock.calls.filter(([channel]) => channel === CONTRACT.window.onGlow.channel).map(([, on]) => on)
+    manager.highlight('w1', 'w2')
+    manager.highlight('w1', 'w2') // the same row again: nothing new
+    manager.highlight('w1', 'w3')
+    manager.highlight('w1', null)
+    expect(glow(w2)).toEqual([true, false])
+    expect(glow(w3)).toEqual([true, false])
+    manager.highlight('w1', 'w1') // its own window never glows
+    manager.highlight('w1', 'nope')
+    expect(glow(w1)).toEqual([])
+    // The source closes while a row is lit: the target goes dark.
+    manager.highlight('w1', 'w2')
+    w1.destroy()
+    expect(glow(w2)).toEqual([true, false, true, false])
+    // A lit target that closes is forgotten: nothing goes to it later.
+    manager.highlight('w3', 'w2')
+    w2.destroy()
+    manager.highlight('w3', null)
+    expect(glow(w2)).toEqual([true, false, true, false, true])
+    for (const c of [w1, w2, w3]) expect(c.focusCount).toBe(0)
+  })
 })
 
 describe('createWindowManager: a new window gets its page view once (YAZ-2951 D5, S17, S20)', () => {

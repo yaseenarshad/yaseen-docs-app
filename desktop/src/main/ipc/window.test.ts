@@ -35,6 +35,7 @@ let manager: {
   duplicateWindow: ReturnType<typeof vi.fn>
   popOut: ReturnType<typeof vi.fn>
   moveTo: ReturnType<typeof vi.fn<(to: string, path: string) => boolean>>
+  highlight: ReturnType<typeof vi.fn>
   openRecentBeside: ReturnType<typeof vi.fn>
   openAlone: ReturnType<typeof vi.fn>
   openVaultSet: ReturnType<typeof vi.fn>
@@ -54,7 +55,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined) }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -76,7 +77,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes, `link:ready` and the paste fallback (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -455,6 +456,17 @@ describe('registerWindowIpc', () => {
     // The manager refuses: the window closed, or it shows no vault of the page (D2). The source keeps its tab.
     manager.moveTo.mockReturnValueOnce(false)
     expect(await moveTo({ sender }, 'w2', '/v/a.md')).toEqual(bad('NOT_FOUND'))
+  })
+
+  it('window:highlight passes the CALLER and the window its row points at, or null to clear; a stranger and a bad id are rejected (YAZ-3091 D8)', async () => {
+    const highlight = registered(CONTRACT.window.highlight.channel)
+    expect(await highlight({ sender }, 'w2')).toEqual(ok(undefined))
+    expect(manager.highlight).toHaveBeenLastCalledWith('w1', 'w2')
+    expect(await highlight({ sender }, null)).toEqual(ok(undefined))
+    expect(manager.highlight).toHaveBeenLastCalledWith('w1', null)
+    expect(await highlight({ sender: stranger }, 'w2')).toEqual(bad('BAD_REQUEST'))
+    expect(await highlight({ sender }, 7)).toEqual(bad('BAD_REQUEST'))
+    expect(manager.highlight).toHaveBeenCalledTimes(2)
   })
 
   describe('the tab strip: copies, display names and the active copy (YAZ-3057 D1, D2)', () => {

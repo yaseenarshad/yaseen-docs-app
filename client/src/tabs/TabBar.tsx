@@ -48,6 +48,8 @@ export interface TabBarProps {
   onMoveTargets?: (path: string) => readonly MoveTarget[]
   /** "Move to ▸ <window>" (YAZ-3091 D1): the page by path to the open window `to`; only this tab (by id) closes here. */
   onMoveToWindow?: (to: string, path: string, id: string) => void
+  /** "Move to ▸": the window a row points at glows (YAZ-3091 D8). */
+  onHighlightWindow?: (to: string | null) => void
   /** "Duplicate tab" (YAZ-2940 D5): a copy of the tab, by id. */
   onDuplicate?: (id: string) => void
   /** "Set display name" / "Reset to page name" (YAZ-2949): a name for the tab, by id, or null for its page name. */
@@ -130,7 +132,7 @@ const Chevron = ({ d }: { d: string }) => (
  * (YAZ-2655): it stands outside the scroller, so it is on show however far the strip scrolled.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onNotice, titles, reviewState, onSetReview }: TabBarProps) {
+export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onNotice, titles, reviewState, onSetReview }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -443,7 +445,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
         </button>
       )}
       <div className="tabbar-tail" {...endSlot} />
-      {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} moveTargets={onMoveTargets?.(menu.path)} onMoveToWindow={onMoveToWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
+      {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} moveTargets={onMoveTargets?.(menu.path)} onMoveToWindow={onMoveToWindow} onHighlightWindow={onHighlightWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
       {/* The grid button's menu: one item. With no tab it has nothing to close, and is grey like any item that cannot be used. */}
       {gridMenu !== null && (
         <ContextMenuSurface x={gridMenu.x} y={gridMenu.y} onClose={() => setGridMenu(null)}>

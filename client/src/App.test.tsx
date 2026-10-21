@@ -189,6 +189,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuPrevTab = new Set<() => void>()
   const menuTabOverview = new Set<() => void>()
   const menuNewTab = new Set<() => void>()
+  const windowGlow = new Set<(on: boolean) => void>()
   const menuNewWindow = new Set<() => void>()
   const menuZoom = new Set<() => void>()
   const menuWhatsNew = new Set<() => void>()
@@ -265,6 +266,12 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       // A tab's "Move to ▸ <window>" (YAZ-3091 D1): main hands the tab to that window; the tab leaves this one after.
       moveTo: vi.fn(async (_to: string, _path: string, _carry?: { view?: PageView; name?: string }) => undefined),
       closeSelf: vi.fn(async () => undefined),
+      // "Move to ▸" (YAZ-3091 D8): a row under the pointer lights up its window; another window's row lights up this one.
+      highlight: vi.fn(async (_to: string | null) => undefined),
+      onGlow: vi.fn((l: (on: boolean) => void) => {
+        windowGlow.add(l)
+        return () => windowGlow.delete(l)
+      }),
       // Main's one open-recent door (YAZ-1767 D1): a vault window's picks and Open Recent land here (YAZ-1914 D1).
       openRecent: vi.fn(async (_path: string) => true),
       // Main saves the CALLING window's vaults under the name (YAZ-2602 D8): a reorder asks it for the workspace that matches (YAZ-2631 D5).
@@ -391,6 +398,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitPrevTab: () => menuPrevTab.forEach((l) => l()),
     emitTabOverview: () => menuTabOverview.forEach((l) => l()),
     emitNewTab: () => menuNewTab.forEach((l) => l()),
+    emitGlow: (on: boolean) => windowGlow.forEach((l) => l(on)),
     emitNewWindow: () => menuNewWindow.forEach((l) => l()),
     emitWhatsNew: () => menuWhatsNew.forEach((l) => l()),
     emitExportDrawing: () => menuExportDrawing.forEach((l) => l()),
@@ -1198,12 +1206,13 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
       entry({ id: 'w3', root: '/other', file: '/other/o.md', tabs: ['/other/o.md'] }), // S3: another vault only
       entry({ id: 'w4', root: null }), // S5: a Welcome window
       entry({ id: 'w5', root: '/z', roots: ['/z', '/v'], file: null, tabs: [] }), // S4, S6: two vaults, no tab
-      entry({ id: 'w6', root: '/v', file: '/v/x.md', tabs: ['/v/x.md'], tabStrip: [{ path: '/v/x.md' }, { path: '/v/x.md', active: true }] }), // S6: copies count
+      entry({ id: 'w6', root: '/v', file: '/v/x.md', tabs: ['/v/x.md'], tabStrip: [{ path: '/v/x.md' }, { path: '/v/x.md', name: 'Draft', active: true }] }), // S6: copies count; the active copy's name
     )
     const { el } = await mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     openMoveTo(el, 1)
-    // w2 and w6 both show x with 2 tabs (w6 counts a copy), so their rows read the same: D7 accepts that.
-    expect(flyout(el)).toEqual([['v — x · 2 tabs', 'z · 0 tabs', 'v — x · 2 tabs'], ['Right panel']])
+    // D7 (revised, D8): no vault (each listed window shows this one), the page on show and the other tabs. w6's
+    // display name of its active copy names it; w2 and a window with copies only differ by that.
+    expect(flyout(el)).toEqual([['x + 1 more tab', 'Empty window', 'Draft + 1 more tab'], ['Right panel']])
     act(() => root?.unmount())
     container?.remove()
     history.replaceState(null, '', '/')
@@ -1218,8 +1227,27 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
     const { el } = await mount(withWindows(entry({ id: 'w2', root: '/v', file: long, tabs: [long, '/v/y.md'] })), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     openMoveTo(el, 1)
     const [row] = flyout(el)[0]
-    // The title is cut to MOVE_ROW_TITLE_MAX characters with "…"; the count after it is never cut.
-    expect(row).toBe(`${`v — ${'a very long page name '.repeat(5)}`.slice(0, MOVE_ROW_TITLE_MAX - 1).trimEnd()}… · 2 tabs`)
+    // The page part is cut to MOVE_ROW_TITLE_MAX characters with "…"; the count after it is never cut.
+    expect(row).toBe(`${'a very long page name '.repeat(5).slice(0, MOVE_ROW_TITLE_MAX - 1).trimEnd()}… + 1 more tab`)
+  })
+
+  it('D8: the row under the pointer lights up its window, and leaving the row or closing the menu puts it out; a glow push from another window shows the ring here', async () => {
+    const { bridge, el, emitGlow } = await mount(withWindows(W2), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    openMoveTo(el, 1)
+    const row = item(el, 'x + 1 more tab')!
+    act(() => void row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    expect(bridge.window.highlight).toHaveBeenLastCalledWith('w2')
+    act(() => void row.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })))
+    expect(bridge.window.highlight).toHaveBeenLastCalledWith(null)
+    act(() => void row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(bridge.window.highlight).toHaveBeenLastCalledWith(null)
+    // The other side: this window is the one a row points at.
+    expect(el.querySelector('.window-glow')).toBeNull()
+    act(() => emitGlow(true))
+    expect(el.querySelector('.window-glow')).not.toBeNull()
+    act(() => emitGlow(false))
+    expect(el.querySelector('.window-glow')).toBeNull()
   })
 
   it('S8, S9, S10: a window row saves the page, THEN asks main to move it with its view and name, THEN the tab leaves this window', async () => {
@@ -1233,7 +1261,7 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
     vi.spyOn(continuity, 'flushRenamedPath').mockImplementation(async (path) => void order.push(`flush ${path}`))
     bridge.window.moveTo.mockImplementationOnce(async () => void order.push(`move ${tabNames(el).join(',')}`))
     openMoveTo(el, 0)
-    await act(async () => item(el, 'v — x · 2 tabs')!.click())
+    await act(async () => item(el, 'x + 1 more tab')!.click())
     expect(order).toEqual(['flush /v/a.md', 'move a,b']) // the tab is still here while main hands it over
     expect(bridge.window.moveTo).toHaveBeenCalledExactlyOnceWith('w2', '/v/a.md', { view: VIEW, name: undefined })
     expect(tabNames(el)).toEqual(['b'])
@@ -1245,7 +1273,7 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
     const { bridge, el, emitNewTab } = await mount(withWindows(W2), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     act(() => emitNewTab())
     openMoveTo(el, 0)
-    await act(async () => item(el, 'v — x · 2 tabs')!.click())
+    await act(async () => item(el, 'x + 1 more tab')!.click())
     expect(bridge.window.moveTo).toHaveBeenCalledTimes(1)
     expect(bridge.window.closeSelf).not.toHaveBeenCalled()
     expect(tabNames(el)).not.toContain('a')
@@ -1255,7 +1283,7 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
   it('S15: the only tab, with an empty right panel, closes the window through its real close; S16: with pages in the right panel the window stays', async () => {
     const { bridge, el } = await mount(withWindows(W2), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     openMoveTo(el, 0)
-    await act(async () => item(el, 'v — x · 2 tabs')!.click())
+    await act(async () => item(el, 'x + 1 more tab')!.click())
     expect(bridge.window.moveTo).toHaveBeenCalledWith('w2', '/v/a.md', expect.anything())
     expect(bridge.window.closeSelf).toHaveBeenCalledTimes(1)
     act(() => root?.unmount())
@@ -1263,7 +1291,7 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
     history.replaceState(null, '', '/')
     const right = await mount(withWindows(W2), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: { open: true, width: 440, items: ['/v/c.md'], expanded: '/v/c.md' } })
     openMoveTo(right.el, 0)
-    await act(async () => item(right.el, 'v — x · 2 tabs')!.click())
+    await act(async () => item(right.el, 'x + 1 more tab')!.click())
     expect(right.bridge.window.moveTo).toHaveBeenCalledTimes(1)
     expect(right.bridge.window.closeSelf).not.toHaveBeenCalled()
     expect(tabNames(right.el)).toEqual([])
@@ -1273,12 +1301,12 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
     const { bridge, el } = await mount(withWindows(W2), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     bridge.window.moveTo.mockRejectedValueOnce(new Error('that window is closed or shows no vault of this page'))
     openMoveTo(el, 1)
-    await act(async () => item(el, 'v — x · 2 tabs')!.click())
+    await act(async () => item(el, 'x + 1 more tab')!.click())
     expect(tabNames(el)).toEqual(['a', 'b'])
     expect(el.textContent).toContain("Can't move to that window: that window is closed or shows no vault of this page")
     vi.spyOn(continuity, 'flushRenamedPath').mockRejectedValueOnce(new Error('disk full'))
     openMoveTo(el, 1)
-    await act(async () => item(el, 'v — x · 2 tabs')!.click())
+    await act(async () => item(el, 'x + 1 more tab')!.click())
     expect(bridge.window.moveTo).toHaveBeenCalledTimes(1)
     expect(tabNames(el)).toEqual(['a', 'b'])
     expect(el.textContent).toContain("Can't move to that window: disk full")
@@ -1291,7 +1319,7 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
     const pages = () => [...el.querySelectorAll<HTMLElement>('.taboverview__page')]
     rightClick(pages().find((p) => p.querySelector('.taboverview__title')?.textContent === 'b'))
     act(() => item(el, 'Move to')?.click())
-    await act(async () => item(el, 'v — x · 2 tabs')!.click())
+    await act(async () => item(el, 'x + 1 more tab')!.click())
     expect(bridge.window.moveTo).toHaveBeenCalledWith('w2', '/v/b.md', expect.anything())
     expect(el.querySelector('.taboverview')).not.toBeNull()
     expect(pages().map((p) => p.querySelector('.taboverview__title')?.textContent)).toEqual(['a'])

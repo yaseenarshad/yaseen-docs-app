@@ -40,6 +40,11 @@ export interface MenuAction extends MenuItemBase {
   children?: undefined
   /** Rendered but inert — Paste with an empty clipboard, for discoverability (🔒 D5, YAZ-1674). Only a leaf can be. */
   disabled?: boolean
+  /**
+   * The pointer or the keyboard is on the item (`true`) or has left it (`false`), and `false` again when the item goes
+   * away while it is on it: a preview of what it acts on (YAZ-3091 D8, a "Move to ▸" row lights up its window).
+   */
+  onPreview?: (on: boolean) => void
 }
 
 /**

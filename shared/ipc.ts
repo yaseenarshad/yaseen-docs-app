@@ -175,6 +175,13 @@ export const CONTRACT = {
      * Main checks that `to` is live and shows a vault of `path`, raises it, and pushes `link:take-tab` to it.
      */
     moveTo: invoke<[to: string, path: string, carry?: PopOutCarry], void>('window:move-to', 3),
+    /**
+     * A "Move to ▸" row under the pointer or the keyboard (YAZ-3091 D8): the open window `to` glows, so you see which
+     * window the row means; `null` puts it out. Main keeps one lit window per caller and puts it out when either closes.
+     */
+    highlight: invoke<[to: string | null], void>('window:highlight', 1),
+    /** This window glows (`true`) or stops (`false`) because a "Move to ▸" row of another window points at it (YAZ-3091 D8). */
+    onGlow: push<boolean>('window:glow'),
     /** The vault switcher's one door (YAZ-1767 🔒 D1, D9): raise that vault's windows or open a new one on its last file; `false` = the folder is gone and was pruned from the MRU. */
     openRecent: invoke<[path: string], boolean>('window:open-recent', 1),
     /** "Open by itself" (YAZ-2858 D1): raise the window that shows ONLY this vault, else open a new one on its last file; a workspace window that shows it does not count and does not change. `false` = the folder is gone and was pruned from the MRU. */

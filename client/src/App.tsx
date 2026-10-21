@@ -75,8 +75,10 @@ function syncHash(path: string | null): void {
 
 /** No tab board (YAZ-2648): one object, so closing a board that is closed is no state change. */
 const OVERVIEW_CLOSED = { phase: 'closed', from: null } as const
-/** "Move to ▸": a window row's title is cut to this many characters (YAZ-3104), so a long page name cannot widen the flyout over the tab menu. The tab count after it is never cut. */
+/** "Move to ▸": a window row's page name is cut to this many characters (YAZ-3104), so a long page name cannot widen the flyout over the tab menu. The tab count after it is never cut. */
 export const MOVE_ROW_TITLE_MAX = 40
+/** The longest a window glows with no word from main (YAZ-3091 D8): only a lost "off" ever reaches it. */
+export const GLOW_MAX_MS = 10_000
 
 // A workspace state change still re-renders App, but unchanged retained editors must not render
 // with it: a folder's Board runs layout animation after every render, so an unrelated right
@@ -886,21 +888,28 @@ export function App() {
   const movePageToWindow = useCallback((to: string, path: string, id: string) =>
     sendTabAway(path, id, (carry) => api.window.moveTo(to, path, carry), "Can't move to that window", true), [sendTabAway])
   /**
-   * "Move to ▸" (YAZ-3091 D2, D7): the other windows that show a vault of `path`, read from the state cache
-   * only while a tab menu is open. Each row is that window's title and its tab count, copies counted (S6).
+   * "Move to ▸" (YAZ-3091 D2, D7 revised by D8): the other windows that show a vault of `path`, read from the state
+   * cache only while a tab menu is open. Every one of them shows this vault, so a row names what that window SHOWS:
+   * the page on show — its tab's display name first — and "+ N more tabs", copies counted (S6). The row lights its
+   * window up (`highlightWindow`), so two rows that read alike are still told apart.
    */
   const moveTargets = useCallback((path: string): MoveTarget[] =>
     storage.getOtherWindows()
       .filter((w) => rootOfPath(w.roots, path) !== null)
       .map((w) => {
-        const vault = (w.file === null ? null : rootOfPath(w.roots, w.file)) ?? w.root
-        const n = (w.tabStrip ?? w.tabs).length
-        const title = windowTitle(vault === null ? null : storage.vaultName(vault), w.file, titles)
-        // By characters, not UTF-16 units, so an emoji is never cut in half.
-        const chars = Array.from(title)
-        const cut = chars.length > MOVE_ROW_TITLE_MAX ? `${chars.slice(0, MOVE_ROW_TITLE_MAX - 1).join('').trimEnd()}…` : title
-        return { id: w.id, label: `${cut} · ${n} tab${n === 1 ? '' : 's'}` }
+        if (w.file === null) return { id: w.id, label: 'Empty window' }
+        const strip = w.tabStrip?.filter((t) => t.path === w.file) ?? []
+        const page = (strip.find((t) => t.active === true) ?? strip[0])?.name ?? pageName(rootOfPath(w.roots, w.file), w.file, titles)
+        // By characters, not UTF-16 units, so an emoji is never cut in half (YAZ-3104).
+        const chars = Array.from(page)
+        const cut = chars.length > MOVE_ROW_TITLE_MAX ? `${chars.slice(0, MOVE_ROW_TITLE_MAX - 1).join('').trimEnd()}…` : page
+        const more = (w.tabStrip ?? w.tabs).length - 1
+        return { id: w.id, label: more > 0 ? `${cut} + ${more} more tab${more === 1 ? '' : 's'}` : cut }
       }), [titles])
+  /** The "Move to ▸" row under the pointer lights up its window (YAZ-3091 D8). A failed call only means no glow. */
+  const highlightWindow = useCallback((to: string | null) => {
+    api.window.highlight(to).catch(() => undefined)
+  }, [])
   /**
    * "Duplicate tab" (YAZ-2940 D5–D7), on a tab of the strip and on a page of the board: a copy of the tab
    * opens right after it and shows — under the board it shows on the board beside its source, and the
@@ -929,6 +938,15 @@ export function App() {
   }, [take, setTabName, startView])
   // Below `startView`: a moved tab's page view goes there (YAZ-3091 D5).
   useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab })
+  // A "Move to ▸" row of another window points at this one (YAZ-3091 D8): a ring shows while it does. Main puts it
+  // out when that row is left or either window closes; GLOW_MAX_MS only covers a lost "off".
+  const [glow, setGlow] = useState(false)
+  useEffect(() => api.window.onGlow(setGlow), [])
+  useEffect(() => {
+    if (!glow) return
+    const timer = window.setTimeout(() => setGlow(false), GLOW_MAX_MS)
+    return () => window.clearTimeout(timer)
+  }, [glow])
   // The copy's `Editor` keeps its start in a ref when it mounts, so the entry goes once its layer is there.
   useEffect(() => {
     for (const id of startView.keys()) if (mounted.includes(id)) startView.delete(id)
@@ -1479,6 +1497,7 @@ export function App() {
 
   return (
     <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines}>
+      {glow && <div className="window-glow" aria-hidden="true" />}
       {notice !== null && (
         // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.
         <div className={`link-notice${notice.action === undefined ? '' : ' link-notice--action'}`} role="status" data-icon={notice.icon}>
@@ -1666,6 +1685,7 @@ export function App() {
               onMoveToNewWindow={movePageToNewWindow}
               onMoveTargets={moveTargets}
               onMoveToWindow={movePageToWindow}
+              onHighlightWindow={highlightWindow}
               onDuplicate={duplicateTab}
               onSetName={setTabName}
               canBack={canBack}
@@ -1752,6 +1772,7 @@ export function App() {
                 onMoveToNewWindow={movePageToNewWindow}
                 onMoveTargets={moveTargets}
                 onMoveToWindow={movePageToWindow}
+                onHighlightWindow={highlightWindow}
                 onDuplicate={duplicateTab}
                 onSetName={setTabName}
                 onShowInSidebar={showInSidebar}
