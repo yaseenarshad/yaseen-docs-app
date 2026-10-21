@@ -332,6 +332,8 @@ export const CONTRACT = {
      * Resolves when it is done, to the state after it.
      */
     backfill: invoke<[root: string], IdsState>('ids:backfill', 1),
+    /** Fired in every window when "Change letters" or "Give old IDs numbers" ends, done or stopped: the notes of `root` have new paths, so its index is read at once (YAZ-3102). Filter by `root`. */
+    onChanged: push<{ root: string }>('ids:changed'),
   },
   /** Vault-wide property declarations over `.yaseendocs/properties.json` (YAZ-835): targeted, serialised mutators; a corrupt file rejects every write `INVALID_CONFIG`. */
   properties: {

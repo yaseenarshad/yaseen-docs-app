@@ -148,8 +148,17 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // open tab, its favorite and its stored paths follow (S86) — also when the change stops later.
   const followed = (res: RenameFileResponse): Promise<unknown> => afterRename(res).catch(() => undefined)
   handleWithEvent(CONTRACT.ids.state, async (e, root: unknown) => idsState(ownVault(e, root)))
-  handleWithEvent(CONTRACT.ids.reletter, async (e, root: unknown, letters: unknown) => changeLetters(ownVault(e, root), letters, followed))
-  handleWithEvent(CONTRACT.ids.backfill, async (e, root: unknown) => giveOldIdsNumbers(ownVault(e, root), followed))
+  // When either ends, done or stopped, each window of the vault reads its index at once: notes have
+  // new paths, and the watcher's events would hold the read back until they settle (YAZ-3102).
+  const thenTell = <T>(root: string, change: Promise<T>): Promise<T> => change.finally(() => broadcastAll(CONTRACT.ids.onChanged.channel, { root }))
+  handleWithEvent(CONTRACT.ids.reletter, async (e, root: unknown, letters: unknown) => {
+    const r = ownVault(e, root)
+    return thenTell(r, changeLetters(r, letters, followed))
+  })
+  handleWithEvent(CONTRACT.ids.backfill, async (e, root: unknown) => {
+    const r = ownVault(e, root)
+    return thenTell(r, giveOldIdsNumbers(r, followed))
+  })
   // A clash this Mac fixed (S45): a note whose file name followed its new ID (R26) takes the rename
   // handler's downstream, so its open tab, its favorite and its stored paths follow; then ONE
   // notice in each window that shows the vault. Set once: `registerFsIpc` runs once.

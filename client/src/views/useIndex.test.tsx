@@ -9,9 +9,10 @@ import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
 import type { IndexRecord, IndexResponse, VaultConfigChange, WatchEvent } from '@shared/types'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
-import { refreshIndex, useIndex, type IndexState } from './useIndex'
+import { useIndex, type IndexState } from './useIndex'
 
 let configListeners: Array<(c: VaultConfigChange) => void> = []
+let idsListeners: Array<(c: { root: string }) => void> = []
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -21,6 +22,12 @@ vi.mock('../api', async (importOriginal) => ({
       onChange: vi.fn((l: (c: VaultConfigChange) => void) => {
         configListeners.push(l)
         return () => (configListeners = configListeners.filter((x) => x !== l))
+      }),
+    },
+    ids: {
+      onChanged: vi.fn((l: (c: { root: string }) => void) => {
+        idsListeners.push(l)
+        return () => (idsListeners = idsListeners.filter((x) => x !== l))
       }),
     },
   },
@@ -126,6 +133,7 @@ afterEach(() => {
   container = null
   listeners = []
   configListeners = []
+  idsListeners = []
   vi.clearAllMocks()
   vi.useRealTimers()
 })
@@ -255,23 +263,22 @@ describe('useIndex', () => {
     expect(configListeners).toEqual([])
   })
 
-  it('refreshIndex(root) fetches at once, in a burst of events too — not for another root, and not after unmount (YAZ-3102)', async () => {
+  it('fetches at once when main says "Change letters" ended for its root, in a burst of events too — not for another root, and not after unmount (YAZ-3102)', async () => {
     mount()
     await flush()
-    // A burst of renames keeps the debounce waiting: "Change letters" ended, so the index is read now.
+    // A burst of renames keeps the debounce waiting: the change ended, so the index is read now.
     await emit({ type: 'unlink', path: '/vault/a.md' })
     await emit({ type: 'add', path: '/vault/a2.md', mtime: 2 })
     indexFn.mockResolvedValue(response('/vault', '/vault/a2.md', '/vault/b.md'))
     await act(async () => {
-      refreshIndex('/other')
-      refreshIndex('/vault')
+      idsListeners.forEach((l) => l({ root: '/other' }))
+      idsListeners.forEach((l) => l({ root: '/vault' }))
       await vi.advanceTimersByTimeAsync(0)
     })
     expect(indexFn).toHaveBeenCalledTimes(2)
     expect(state.records.map((r) => r.path)).toEqual(['/vault/a2.md', '/vault/b.md'])
     act(() => root?.unmount())
     root = null
-    refreshIndex('/vault')
-    expect(indexFn).toHaveBeenCalledTimes(2)
+    expect(idsListeners).toEqual([])
   })
 })

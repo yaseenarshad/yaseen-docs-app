@@ -14,7 +14,6 @@ import { useExternalRenames, type ExternalRenames } from '../links/useExternalRe
 import { useReview, type ReviewApi } from '../review/useReview'
 import { useReviewSettings, type ReviewSettingsState } from '../review/useReviewSettings'
 import { useTextFormatting, type TextFormattingState } from '../settings/useTextFormatting'
-import { refreshIndex } from '../views/useIndex'
 import { useProperties } from '../views/useProperties'
 
 /**
@@ -156,9 +155,8 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const checkIds = (): Promise<string> => (root === null ? Promise.resolve('') : api.ids.check(root))
   // The rows "ID letters" and "Old IDs" (YAZ-2677 🔒 D5, D6): the main process counts and changes. Stable, so a row reads the state one time.
   const idsState = useCallback((): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.state(root)), [root])
-  // Each renames many notes: the index is read again the moment the main process is done (YAZ-3102).
-  const reletter = (letters: string): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.reletter(root, letters).finally(() => refreshIndex(root)))
-  const backfill = (): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.backfill(root).finally(() => refreshIndex(root)))
+  const reletter = (letters: string): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.reletter(root, letters))
+  const backfill = (): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.backfill(root))
 
   return {
     root,

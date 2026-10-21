@@ -32,18 +32,6 @@ const NO_LETTERS: readonly string[] = []
 /** Events settle before the index is re-read, so a burst (a paste of files) costs one fetch. */
 const REFETCH_DEBOUNCE_MS = 300
 
-/** Each mounted index's `refresh`, by root. */
-const refreshers = new Map<string, Set<() => void>>()
-
-/**
- * A change the main process made and finished — "Change letters", "Give old IDs numbers" — renames
- * many notes: the index of `root` is read now, not when the events settle (YAZ-3102). Until then a
- * link with letters of before would open the path the note left.
- */
-export function refreshIndex(root: string): void {
-  for (const refresh of refreshers.get(root) ?? []) refresh()
-}
-
 /** Could this watch event change what the index holds? Markdown notes are the only records. */
 function touchesIndex(ev: WatchEvent): boolean {
   switch (ev.type) {
@@ -123,14 +111,15 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     const unsubscribeIds = api.vaultConfig.onChange((c) => {
       if (c.root === root && c.name === IDS_FILE) refresh()
     })
-    const mine = refreshers.get(root) ?? new Set<() => void>()
-    refreshers.set(root, mine.add(refresh))
+    // "Change letters" and "Give old IDs numbers" renamed many notes: read now, not when the events settle (YAZ-3102).
+    const unsubscribeChange = api.ids.onChanged((c) => {
+      if (c.root === root) refresh()
+    })
     return () => {
       generation.current++
       unsubscribe()
       unsubscribeIds()
-      mine.delete(refresh)
-      if (mine.size === 0 && refreshers.get(root) === mine) refreshers.delete(root)
+      unsubscribeChange()
       if (timer.current !== null) clearTimeout(timer.current)
       timer.current = null
     }
