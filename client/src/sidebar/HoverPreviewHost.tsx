@@ -20,7 +20,7 @@
  * and a save while it shows does not draw it again — so no head read and no watch subscription.
  *
  * The panels themselves (`BoardPreview` with its picture cache, `NotePreview`, and their CSS) load
- * lazily, on the first dwell of their kind.
+ * lazily, on the first dwell of their kind; a note's chunk starts loading when its dwell STARTS.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from 'react'
 import { isBoard, isMarkdown } from '@shared/fileKind'
@@ -34,7 +34,16 @@ import { findNode } from '../lib/treeState'
 import { boardPreviewKey } from './boardPreviewKey'
 
 const BoardPreview = lazy(() => import('./BoardPreview'))
-const NotePreview = lazy(() => import('./NotePreview'))
+/**
+ * The note panel's chunk (YAZ-3087 A1): a note's dwell starts this load, so the chunk arrives during
+ * the wait, and the module is kept once it lands. The host then renders it DIRECTLY: `lazy` suspends
+ * on its first render even with the chunk loaded, and React holds a suspended reveal up to 300 ms
+ * (`FALLBACK_THROTTLE_MS`) — the whole of the slow first hover. `lazy` stays for a chunk still on its
+ * way at the dwell's end.
+ */
+let notePreviewModule: typeof import('./NotePreview') | null = null
+const loadNotePreview = () => import('./NotePreview').then((module) => (notePreviewModule = module))
+const LazyNotePreview = lazy(loadNotePreview)
 
 /** The row the pointer (or focus) rests on — pending until the dwell ends, then shown; `path` null = none. */
 export interface HoverState {
@@ -43,7 +52,7 @@ export interface HoverState {
 }
 
 /** How long the pointer (or focus) rests on a board or note row before its preview opens (Draw's YAZ-1800; one wait for both, YAZ-3075 D3). */
-export const BOARD_PREVIEW_DWELL_MS = 400
+export const HOVER_PREVIEW_DWELL_MS = 400
 
 export function useHoverPreview(blocked: boolean, enabled: boolean, activeFile: string | null) {
   const [hover] = useState(() => createStore<HoverState>({ path: null, shown: false }))
@@ -67,10 +76,12 @@ export function useHoverPreview(blocked: boolean, enabled: boolean, activeFile: 
       const id = hoverRequest.current
       const { path } = node
       hover.set({ path, shown: false })
+      // A failed load is the lazy panel's to meet when it renders; here it would be an unhandled rejection.
+      if (isMarkdown(path)) loadNotePreview().catch(() => undefined)
       hoverTimer.current = setTimeout(() => {
         hoverTimer.current = null
         if (id === hoverRequest.current) hover.set({ shown: true })
-      }, BOARD_PREVIEW_DWELL_MS)
+      }, HOVER_PREVIEW_DWELL_MS)
     },
     [hover, closePreview],
   )
@@ -159,6 +170,7 @@ export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, 
   if (!visible) return null
   const root = rootOf(node.path)
   if (isMarkdown(node.path)) {
+    const NotePreview = notePreviewModule?.default ?? LazyNotePreview
     return (
       <Suspense fallback={null}>
         <NotePreview key={node.path} root={root} node={node} wikilinks={wikilinksOf(node.path)} textVars={textVarsOf(node.path)} anchor={anchor} />

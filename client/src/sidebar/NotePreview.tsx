@@ -14,7 +14,7 @@ import { createPortal } from 'react-dom'
 import { ReadOnlyNote } from '../editor/ReadOnlyNote'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { basename, boardFolder } from '../lib/paths'
-import { usePlacement } from './BoardPreview'
+import { usePlacement } from './previewPlacement'
 import './boardPreview.css'
 
 /** How much of a note's body the hover preview draws (YAZ-3075 D1, C17): about 25 lines need far less. */

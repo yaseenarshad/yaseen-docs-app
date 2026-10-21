@@ -1,6 +1,6 @@
 /** Where the hover preview panel goes (YAZ-1800): a pure rule of the sidebar's right edge and the window. */
 import { describe, expect, it } from 'vitest'
-import { boardPreviewPlacement } from './BoardPreview'
+import { boardPreviewPlacement } from './previewPlacement'
 
 describe('boardPreviewPlacement', () => {
   it('sits a gap right of the sidebar, a little over half the room wide, vertically centred', () => {

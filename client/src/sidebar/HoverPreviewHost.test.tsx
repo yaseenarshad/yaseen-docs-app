@@ -6,7 +6,7 @@ import type { TreeNode, WatchEvent } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { createStore } from '../lib/store'
-import { BOARD_PREVIEW_DWELL_MS, HoverPreviewHost, useHoverPreview, type HoverState } from './HoverPreviewHost'
+import { HOVER_PREVIEW_DWELL_MS, HoverPreviewHost, useHoverPreview, type HoverState } from './HoverPreviewHost'
 
 vi.mock('../api', async (original) => ({
   ...(await original<typeof import('../api')>()),
@@ -60,7 +60,7 @@ describe('useHoverPreview', () => {
     render()
     act(() => hook.hoverFile(board('a')))
     expect(state()).toEqual({ path: '/v/a.excalidraw', shown: false })
-    wait(BOARD_PREVIEW_DWELL_MS - 1)
+    wait(HOVER_PREVIEW_DWELL_MS - 1)
     act(() => hook.hoverFile(board('a')))
     wait(1)
     expect(state()).toEqual({ path: '/v/a.excalidraw', shown: true })
@@ -69,23 +69,23 @@ describe('useHoverPreview', () => {
   it('an earlier row`s dwell never fires for the next one', () => {
     render()
     act(() => hook.hoverFile(board('a')))
-    wait(BOARD_PREVIEW_DWELL_MS - 100)
+    wait(HOVER_PREVIEW_DWELL_MS - 100)
     act(() => hook.hoverFile(board('b')))
     wait(100)
     expect(state()).toEqual({ path: '/v/b.excalidraw', shown: false })
-    wait(BOARD_PREVIEW_DWELL_MS)
+    wait(HOVER_PREVIEW_DWELL_MS)
     expect(state()).toEqual({ path: '/v/b.excalidraw', shown: true })
   })
 
   it('opens nothing while blocked, and closes on blocking, disabling, or another board opening', () => {
     render({ blocked: true })
     act(() => hook.hoverFile(board('a')))
-    wait(BOARD_PREVIEW_DWELL_MS)
+    wait(HOVER_PREVIEW_DWELL_MS)
     expect(state().path).toBeNull()
     for (const next of [{ blocked: true }, { enabled: false }, { activeFile: '/v/b.excalidraw' }]) {
       render()
       act(() => hook.hoverFile(board('a')))
-      wait(BOARD_PREVIEW_DWELL_MS)
+      wait(HOVER_PREVIEW_DWELL_MS)
       expect(state().shown).toBe(true)
       render(next)
       expect(state()).toEqual({ path: null, shown: false })
@@ -98,16 +98,16 @@ describe('a board or a note row opens a preview (YAZ-3028 D11, YAZ-3075 D6)', ()
     render()
     for (const path of ['/v/data.json', '/v/paper.pdf', '/v/photo.png']) {
       act(() => hook.hoverFile({ path }))
-      wait(BOARD_PREVIEW_DWELL_MS)
+      wait(HOVER_PREVIEW_DWELL_MS)
       expect(state()).toEqual({ path: null, shown: false })
     }
     act(() => hook.hoverFile({ path: '/v/Note.md' }))
-    wait(BOARD_PREVIEW_DWELL_MS - 1)
+    wait(HOVER_PREVIEW_DWELL_MS - 1)
     expect(state()).toEqual({ path: '/v/Note.md', shown: false })
     wait(1)
     expect(state()).toEqual({ path: '/v/Note.md', shown: true })
     act(() => hook.hoverFile({ path: '/v/Flow.drawio' }))
-    wait(BOARD_PREVIEW_DWELL_MS)
+    wait(HOVER_PREVIEW_DWELL_MS)
     expect(state()).toEqual({ path: '/v/Flow.drawio', shown: true })
   })
 })
