@@ -2003,11 +2003,14 @@ describe('the mount caret grab yields to a tab\'s name field (YAZ-3059 S7, YAZ-3
     input.className = 'tabbar__rename'
     strip.appendChild(input)
     document.body.appendChild(strip)
-    input.focus()
-    expect(document.activeElement).toBe(input)
-    await mount(FM + BODY)
-    // The editor's load settles after the field opened: it must not take the caret from the field.
-    expect(focusEditor).not.toHaveBeenCalled()
-    strip.remove()
+    try {
+      input.focus()
+      expect(document.activeElement).toBe(input)
+      await mount(FM + BODY)
+      // The editor's load settles after the field opened: it must not take the caret from the field.
+      expect(focusEditor).not.toHaveBeenCalled()
+    } finally {
+      strip.remove()
+    }
   })
 })
