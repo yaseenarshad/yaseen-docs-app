@@ -1993,3 +1993,21 @@ describe('section indent is the page’s own switch (YAZ-2709)', () => {
     expect(showSectionIndentMock).toHaveBeenLastCalledWith(crepe(), true)
   })
 })
+
+describe('the mount caret grab yields to a tab\'s name field (YAZ-3059 S7, YAZ-3084)', () => {
+  it('an editor that mounts while the tab strip\'s name field has the focus leaves the focus in the field', async () => {
+    // The double-click's first click activates a tab whose editor is not mounted yet. The second click opens the name field.
+    const strip = document.createElement('div')
+    strip.className = 'tabbar'
+    const input = document.createElement('input')
+    input.className = 'tabbar__rename'
+    strip.appendChild(input)
+    document.body.appendChild(strip)
+    input.focus()
+    expect(document.activeElement).toBe(input)
+    await mount(FM + BODY)
+    // The editor's load settles after the field opened: it must not take the caret from the field.
+    expect(focusEditor).not.toHaveBeenCalled()
+    strip.remove()
+  })
+})

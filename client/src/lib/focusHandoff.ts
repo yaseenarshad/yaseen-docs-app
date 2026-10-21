@@ -59,3 +59,12 @@ export function mayTakeFocus(active: Element | null, layer: Element | null): boo
   if (active === null || active === active.ownerDocument.body) return true
   return layer !== null && layer.contains(active)
 }
+
+/**
+ * Is the keyboard in a tab's name field on the strip (YAZ-3059)? A double click's first click
+ * activates the tab, and a page that was never shown mounts then; the second click opens the field.
+ * A mount that ends after it must not take the caret, or the typed name lands in the page.
+ */
+export function namingTab(active: Element | null): boolean {
+  return active !== null && active.closest('.tabbar__rename') !== null
+}
