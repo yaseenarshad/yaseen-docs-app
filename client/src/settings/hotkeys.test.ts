@@ -78,6 +78,8 @@ describe('HOTKEYS source of truth', () => {
     // The vault menu (YAZ-1798): the one in-place open lives there, so the tip names it — and the display name (YAZ-1974 D5) and the number (YAZ-2555 D2).
     expect(byKeys('Right-click vault')?.label).toMatch(/Open in this window/)
     expect(byKeys('Right-click vault')?.label).toMatch(/Set display name, Set shortcut/)
+    // A tab's double-click opens its name field (YAZ-3059 D3, S16).
+    expect(byKeys('Double-click tab')?.label).toMatch(/Set its display name/)
     // Multi-select (YAZ-1336 🔒 D2 → YAZ-1337): ⇧-click toggles rows, and the tip has to say what
     // that is FOR — the two plural items a right-click then offers.
     expect(byKeys('⇧-click file or folder')?.label).toMatch(/multi-selection/i)

@@ -16,6 +16,7 @@ import type { DiagramDarkColors } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { BoardDocumentShell } from '../documents/BoardDocumentShell'
 import { BoardChips, exportWithNotice, useBoardDocument, type BoardDocumentProps } from '../documents/useBoardDocument'
+import { namingTab } from '../lib/focusHandoff'
 import type { NoticeKind } from '../lib/notice'
 import { basename } from '../lib/paths'
 import { useAppliedTheme } from '../lib/theme'
@@ -94,12 +95,16 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     frameRef.current?.contentWindow?.postMessage(JSON.stringify(msg), DRAWIO_ORIGIN)
   }, [])
 
-  /** Send a document into draw.io; its `load` answer becomes the new clean baseline at `mtime`. */
+  /**
+   * Send a document into draw.io; its `load` answer becomes the new clean baseline at `mtime`.
+   * draw.io focuses its own window as it loads: while a tab's name field has the caret, our
+   * PostConfig.js skips that once (`yaseenKeepFocus`, YAZ-3084).
+   */
   const sendLoad = useCallback(
     (xml: string, mtime: number) => {
       pendingLoad.current = mtime
       latestXml.current = xml
-      post({ action: 'load', xml, autosave: 1, title: boardBaseName(basename(path)) })
+      post({ action: 'load', xml, autosave: 1, title: boardBaseName(basename(path)), yaseenKeepFocus: namingTab(document.activeElement) })
     },
     [post, path],
   )

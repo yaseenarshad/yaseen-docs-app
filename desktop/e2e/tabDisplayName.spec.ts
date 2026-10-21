@@ -10,7 +10,7 @@
  * step screenshots, serial. It opens windows on screen: run it only where that is fine.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { activeTab, appWindow, buildFixtureVault, copyVault, extraWindow, launchApp, menuItem, quitApp, SEED_FILE, seededState, shoot, tabsOf } from './helpers'
@@ -93,6 +93,21 @@ test('right-click a tab › Set display name: the copy gets its own name, on the
   await tabsOf(win).nth(1).click({ button: 'right' })
   await menuItem(win, 'Reset to page name').click()
   await expect(tabsOf(win)).toHaveText([NAME, NAME])
+
+  // YAZ-3059 S1, S2, S3: a double-click on a tab opens the same field, the name selected; type, then ⏎. Esc changes nothing.
+  await tabsOf(win).first().dblclick()
+  await expect(field).toBeFocused()
+  await win.keyboard.type('Today')
+  await win.keyboard.press('Enter')
+  await expect(tabsOf(win)).toHaveText(['Today', NAME])
+  await tabsOf(win).first().dblclick()
+  await win.keyboard.type('Not saved')
+  await win.keyboard.press('Escape')
+  await expect(tabsOf(win)).toHaveText(['Today', NAME])
+  // The next test starts from this window: give the tab its page name back.
+  await tabsOf(win).first().click({ button: 'right' })
+  await menuItem(win, 'Reset to page name').click()
+  await expect(tabsOf(win)).toHaveText([NAME, NAME])
 })
 
 test('Move to new window › the named tab keeps its name there, and a reload of that window keeps it (D7, S19; YAZ-3057 S12)', async () => {
@@ -138,3 +153,64 @@ test('YAZ-3057: a copy, its display name and the copy on show come back after a 
   await expect(activeTab(win)).toHaveText('Draft view')
   await shoot(win, 'display-name-6-after-restart')
 })
+
+/** A note long enough that its editor is still mounting when the second click of a double-click lands. */
+const BIG = `# Big\n\n${Array.from({ length: 3000 }, (_, i) => `- line ${i} of a long note`).join('\n')}\n`
+const BOARD = `${JSON.stringify({ type: 'excalidraw', version: 2, source: 'yaseen-docs', elements: [], appState: {}, files: {} }, null, 2)}\n`
+const DIAGRAM = '<mxfile><diagram id="p1" name="Page-1"><mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /></root></mxGraphModel></diagram></mxfile>\n'
+
+test('YAZ-3059: a double-click names a tab — also one whose page was never shown (YAZ-3084), never on the board or the blank tab', async () => {
+  test.setTimeout(60_000) // a relaunch, then three pages that mount
+  await quitApp(app)
+  const files = { note: path.join(vault, 'Big.md'), board: path.join(vault, 'Board.excalidraw'), diagram: path.join(vault, 'Flow.drawio') }
+  await Promise.all([writeFile(files.note, BIG), writeFile(files.board, BOARD), writeFile(files.diagram, DIAGRAM)])
+  const state = seededState(vault, path.join(vault, SEED_FILE))
+  state.windows[0].tabs = [path.join(vault, SEED_FILE), files.note, files.board, files.diagram]
+  app = await launchApp({ userData, seedState: state })
+  win = await appWindow(app, 'w1')
+  await expect(tabsOf(win)).toHaveCount(4)
+  const field = win.locator('.tabbar__rename')
+
+  // S7, YAZ-3084: only the first tab's page is mounted. The second click opens the field while each page mounts;
+  // the mount must leave the caret in the field, so the name goes to the tab and the file does not change.
+  for (const [i, name, file] of [[1, 'Today', files.note], [2, 'Sketch', files.board], [3, 'Flowchart', files.diagram]] as const) {
+    const before = await readFile(file, 'utf8')
+    await tabsOf(win).nth(i).dblclick()
+    await expect(field).toBeFocused()
+    await win.waitForTimeout(1500) // the page's mount ends while the field is open
+    await expect(field).toBeFocused()
+    await win.keyboard.type(name)
+    await win.keyboard.press('Enter')
+    await expect(tabsOf(win).nth(i)).toHaveText(name)
+    expect(await readFile(file, 'utf8')).toBe(before)
+  }
+  await shoot(win, 'display-name-7-double-click')
+
+  // S9: the field is open on the last tab; a double-click on another tab saves it and opens the field there.
+  // A tab to the LEFT: the saved name changes the last tab's width, and a tab to its right would move under the second click.
+  await tabsOf(win).nth(3).dblclick()
+  await win.keyboard.type('A1')
+  await tabsOf(win).nth(1).dblclick()
+  // The field on tab 1 takes that tab's button out of `tabsOf`, so tab 4 is read by its wrapper.
+  await expect(win.locator('.tabbar__tab').nth(3)).toHaveText(/^A1/)
+  await expect(field).toBeFocused()
+  await expect(field).toHaveValue('Today')
+  await win.keyboard.press('Escape')
+
+  // S13: the board has no double-click — the page opens, the board closes, no field opens. Then, with the
+  // board open, a double-click on the strip opens the field there.
+  await win.locator('.tabbar-nav [aria-label="Show all open tabs"]').click()
+  await win.locator('.taboverview__page').first().dblclick()
+  await expect(win.locator('.taboverview__page')).toHaveCount(0)
+  await expect(win.locator('.tabbar__rename, .taboverview input')).toHaveCount(0)
+  await win.locator('.tabbar-nav [aria-label="Show all open tabs"]').click()
+  await tabsOf(win).nth(2).dblclick()
+  await expect(field).toBeFocused()
+  await win.keyboard.press('Escape')
+
+  // S12: the blank tab has no name to set.
+  await win.locator('.tabbar__new').click()
+  await win.locator('.tabbar__tab', { hasText: 'New tab' }).locator('button').first().dblclick()
+  await expect(field).toHaveCount(0)
+})
+
