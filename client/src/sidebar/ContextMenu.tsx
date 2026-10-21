@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { MenuAction, MenuItem, MenuParent, MenuSection } from './menuSections'
 
-/** How long a hover waits before it swaps one open flyout for another (YAZ-3085 D4): the pointer's time to cross a row. */
+/** How long a hover waits before it swaps or closes an open flyout (YAZ-3085 D4): the pointer's time to cross a row. */
 export const SWITCH_MS = 200
 
 interface ContextMenuProps {
@@ -108,7 +108,8 @@ function Flyout({ anchor, sections, onClose, onCloseFlyout }: { anchor: RefObjec
  * row or the flyout — there is no leave rule — and closes when the pointer enters a DIFFERENT
  * top-level item, after the root's hover wait (D4).
  * Keyboard: Tab already reaches every item (they are buttons), so Tab + Enter + Escape is the
- * complete path; ArrowRight / Enter to open and ArrowLeft to close are sugar on top of it.
+ * complete path; ArrowRight to open (and Enter, on a parent with no default) and ArrowLeft to close
+ * are sugar on top of it.
  */
 function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { item: MenuParent; open: boolean; onHover: () => void; onOpen: () => void; onCloseFlyout: () => void; onClose: () => void }) {
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -156,8 +157,8 @@ export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
     if (openId === null) setOpenId(id)
     else if (id !== openId) switchTimer.current = window.setTimeout(() => setOpenId(id), SWITCH_MS)
   }
-  // A click or a key opens at once, and drops any switch the pointer left pending.
-  const openNow = (id: string) => {
+  // A click or a key opens (or, with null, closes) at once, and drops any switch the pointer left pending.
+  const openNow = (id: string | null) => {
     window.clearTimeout(switchTimer.current)
     setOpenId(id)
   }
@@ -204,7 +205,7 @@ export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
               // Entering a DIFFERENT top-level item is what closes an open flyout — after the hover wait (D4).
               <ActionButton key={item.id} item={item} onClose={onClose} onMouseEnter={() => hover(null)} />
             ) : (
-              <ParentItem key={item.id} item={item} open={openId === item.id} onHover={() => hover(item.id)} onOpen={() => openNow(item.id)} onCloseFlyout={() => setOpenId(null)} onClose={onClose} />
+              <ParentItem key={item.id} item={item} open={openId === item.id} onHover={() => hover(item.id)} onOpen={() => openNow(item.id)} onCloseFlyout={() => openNow(null)} onClose={onClose} />
             )
           }
         />

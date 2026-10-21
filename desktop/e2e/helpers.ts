@@ -112,16 +112,20 @@ export async function showSearchTab(w: Page): Promise<void> {
 }
 /** An item of the sidebar's own row menu (overlay + menu) by its exact label. */
 export const menuItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
-/** `label` as a whole-text pattern, its dots and other specials literal ("New draw.io diagram"). */
-const exactText = (label: string) => new RegExp(`^${label.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&')}$`)
 /**
  * An item of the menu's open LIST (the flyout, `.ctx-menu__sub`) by its exact label. The create rows
  * (YAZ-3085 D1, D3) share a label with their list's first item — "New note" is both (edge case 9) —
  * so `menuItem` matches two buttons while a list is open; a list item is clicked through this one.
  */
-export const menuListItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu__sub [role="menuitem"]').filter({ hasText: exactText(label) })
-/** A create ROW of the row menu (YAZ-3085): the top-level parent button, never a list item of the same name. */
-export const menuParent = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu [role="menuitem"][aria-haspopup="menu"]').filter({ hasText: new RegExp(`^${label}$`) })
+export const menuListItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu__sub [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
+/**
+ * A parent row of the row menu ("Open in ▸", the create rows of YAZ-3085): the top-level button
+ * with `aria-haspopup`, never a list item of the same name. With no label: every parent row, in order.
+ */
+export const menuParent = (w: Page, label?: string) => {
+  const parents = w.locator('.ctx-overlay .ctx-menu [role="menuitem"][aria-haspopup="menu"]')
+  return label === undefined ? parents : parents.filter({ hasText: new RegExp(`^${label}$`) })
+}
 export const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 export const sheet = (w: Page) => w.locator('[role="dialog"]')
 /** The app's own confirm sheet (a plain `[role="dialog"]` also matches other dialogs). */

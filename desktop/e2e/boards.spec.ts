@@ -156,7 +156,7 @@ test('step 4 — the create rows: hover New drawing → New draw.io diagram → 
   // The three rows, in order (D3), and the drawing list behind a hover — with its separator (two groups).
   await dirRow(win, 'Projects').click({ button: 'right' })
   await expect(menuParent(win, 'New note')).toBeVisible()
-  const rows = await win.locator('.ctx-overlay .ctx-menu [role="menuitem"][aria-haspopup="menu"]').allTextContents()
+  const rows = await menuParent(win).allTextContents()
   expect(rows.slice(0, 3)).toEqual(['New note', 'New drawing', 'New folder'])
   await menuParent(win, 'New drawing').hover()
   const list = win.locator('.ctx-overlay .ctx-menu__sub')

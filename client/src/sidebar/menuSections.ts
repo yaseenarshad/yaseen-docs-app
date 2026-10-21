@@ -260,7 +260,7 @@ const copyPath: Leaf = (t, h) => {
 
 // ---- (3) Create: births BESIDE the right-clicked row — they target a DIRECTORY, never the row.
 // Three parents, each with a default (YAZ-3085 D1, D3): a click makes the everyday kind, and the
-// hover list holds it again with its dated twin — one hover away now, which replaces YAZ-2249
+// flyout holds it again with its dated twin — one hover away now, which replaces YAZ-2249
 // 🔒 E1's own group. With no directory to target —
 // blank space under two or more vaults (YAZ-2602 S10) — there is nothing to create in. ----
 
@@ -282,7 +282,7 @@ const newDatedDrawing = create('new-dated-drawing', 'New dated Excalidraw drawin
 const newDiagram = create('new-diagram', 'New draw.io diagram', (h) => h.onNewDiagram)
 
 /**
- * A create parent (YAZ-3085 D1): its click IS the first leaf of its list, so the two can never
+ * A create parent (YAZ-3085 D1): its click IS the first leaf of its flyout, so the two can never
  * disagree, and no leaf means no parent — `create`'s null-directory rule reaches it through them.
  */
 const createParent = (id: string, label: string, sections: readonly (readonly Leaf[])[]): Item => (t, h) => {
@@ -292,12 +292,12 @@ const createParent = (id: string, label: string, sections: readonly (readonly Le
   return { id, label, onSelect: first.onSelect, children }
 }
 
-// The order is note, drawing, folder (Yasin, YAZ-3085 D3); the separator in the drawing list keeps the two apps apart.
+// The order is note, drawing, folder (Yasin, YAZ-3085 D3); the separator in the drawing flyout keeps the two apps apart.
 const newNoteMenu = createParent('new-note-menu', 'New note', [[newNote, newDatedNote]])
 const newDrawingMenu = createParent('new-drawing-menu', 'New drawing', [[newDrawing, newDatedDrawing], [newDiagram]])
 const newFolderMenu = createParent('new-folder-menu', 'New folder', [[newFolder, newDatedFolder]])
 
-// ---- (4) This row: acts ON the right-clicked row, so it sits after the create groups ----
+// ---- (4) This row: acts ON the right-clicked row, so it sits after the Create group ----
 
 /**
  * "Review this folder" (YAZ-2322): a FOLDER row only, either lens — a review session over the

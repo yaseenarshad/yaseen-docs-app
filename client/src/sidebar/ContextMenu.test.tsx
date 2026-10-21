@@ -326,50 +326,39 @@ describe('the "Open in ▸" flyout (D7 amended)', () => {
 describe('a parent with a default (YAZ-3085 D1)', () => {
   const setup = () => {
     const calls: string[] = []
-    const rowSelect = vi.fn(() => calls.push('row'))
-    const firstSelect = vi.fn(() => calls.push('first'))
-    const datedSelect = vi.fn(() => calls.push('dated'))
     const close = vi.fn(() => calls.push('close'))
-    const NEW_NOTE = parent('New note', [[item('New note', { onSelect: firstSelect }), item('New dated note', { onSelect: datedSelect })]], { onSelect: rowSelect })
+    const NEW_NOTE = parent('New note', [[item('New note', { onSelect: () => calls.push('first') }), item('New dated note', { onSelect: () => calls.push('dated') })]], { onSelect: () => calls.push('row') })
     const el = mount(0, 0, [[item('Copy path')], [NEW_NOTE, parent('Open in', [[item('VS Code')]])], [item('Rename')]], close)
-    return { el, calls, rowSelect, firstSelect, datedSelect, close }
+    return { el, calls, close }
   }
 
-  it('renders exactly like "Open in ▸" (D2): a collapsed menuitem with aria-haspopup, the chevron class, the bare label — no split button', () => {
-    const { el } = setup()
+  it('renders exactly like "Open in ▸" (D2); a click on the row — its flyout closed or open — and Enter run onSelect THEN onClose, once each', () => {
+    const { el, calls } = setup()
     const row = buttonOf(el, 'New note')
+    // One collapsed menuitem with aria-haspopup, the chevron class and the bare label — no split button.
     expect(row?.getAttribute('aria-haspopup')).toBe('menu')
     expect(row?.getAttribute('aria-expanded')).toBe('false')
     expect(row?.classList.contains('ctx-menu__item--parent')).toBe(true)
     expect(row?.textContent).toBe('New note')
     expect(row?.parentElement?.querySelectorAll('button')).toHaveLength(1)
-  })
-
-  it('a click on the row runs its onSelect THEN onClose, once each, and opens no flyout', () => {
-    const { el, calls } = setup()
-    act(() => buttonOf(el, 'New note')?.click())
+    // A click with the flyout closed opens no flyout.
+    act(() => row?.click())
     expect(calls).toEqual(['row', 'close'])
     expect(flyout(el)).toBeNull()
-  })
-
-  it('a click runs the default even while its own list stands open (hover first, then click the row)', () => {
-    const { el, calls } = setup()
-    hover(buttonOf(el, 'New note'))
+    // The test's onClose does not unmount, so the row is still there: with its own flyout open, a click still runs the default.
+    hover(row)
     expect(flyout(el)).not.toBeNull()
-    act(() => buttonOf(el, 'New note')?.click())
-    expect(calls).toEqual(['row', 'close'])
-  })
-
-  it('Enter on the row runs onSelect THEN onClose too — and the key goes no further (preventDefault)', () => {
-    const { el, calls } = setup()
+    act(() => row?.click())
+    expect(calls).toEqual(['row', 'close', 'row', 'close'])
+    // Enter does the same, and the key goes no further (preventDefault).
     const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
-    act(() => void buttonOf(el, 'New note')?.dispatchEvent(ev))
-    expect(calls).toEqual(['row', 'close'])
+    act(() => void row?.dispatchEvent(ev))
+    expect(calls).toEqual(['row', 'close', 'row', 'close', 'row', 'close'])
     expect(ev.defaultPrevented).toBe(true)
   })
 
-  it('ArrowRight and hover open the flyout and run NOTHING', () => {
-    const { el, calls } = setup()
+  it('ArrowRight and hover open the flyout and run NOTHING; edge case 10, the whole keyboard path: ArrowLeft closes the flyout alone, the first Escape closes the flyout, the second the menu, Enter makes the default', () => {
+    const { el, calls, close } = setup()
     key(buttonOf(el, 'New note'), 'ArrowRight')
     expect(flyoutLabels(el)).toEqual(['New note', 'New dated note'])
     expect(buttonOf(el, 'New note')?.getAttribute('aria-expanded')).toBe('true')
@@ -378,31 +367,11 @@ describe('a parent with a default (YAZ-3085 D1)', () => {
     hover(buttonOf(el, 'New note'))
     expect(flyoutLabels(el)).toEqual(['New note', 'New dated note'])
     expect(calls).toEqual([])
-  })
-
-  it('edge case 9: with the list open there are TWO "New note" buttons — the one in .ctx-menu__sub is the list item, and a click on it runs the item, not the row', () => {
-    const { el, calls } = setup()
-    hover(buttonOf(el, 'New note'))
-    expect(buttons(el).filter((b) => b.textContent === 'New note')).toHaveLength(2)
-    act(() => subButtonOf(el, 'New note')?.click())
-    expect(calls).toEqual(['first', 'close'])
-  })
-
-  it('a list item runs its own onSelect, then closes EVERYTHING', () => {
-    const { el, calls } = setup()
-    hover(buttonOf(el, 'New note'))
-    act(() => subButtonOf(el, 'New dated note')?.click())
-    expect(calls).toEqual(['dated', 'close'])
-  })
-
-  it('edge case 10, the whole keyboard path: ArrowRight opens, ArrowLeft closes the list alone, Enter makes the default; the first Escape closes the list, the second the menu', () => {
-    const { el, calls, close } = setup()
-    key(buttonOf(el, 'New note'), 'ArrowRight')
-    expect(flyout(el)).not.toBeNull()
     key(window, 'Escape')
     expect(flyout(el)).toBeNull()
     expect(close).not.toHaveBeenCalled()
     key(buttonOf(el, 'New note'), 'ArrowRight')
+    expect(flyout(el)).not.toBeNull()
     key(subButtonOf(el, 'New dated note'), 'ArrowLeft')
     expect(flyout(el)).toBeNull()
     key(window, 'Escape')
@@ -410,6 +379,16 @@ describe('a parent with a default (YAZ-3085 D1)', () => {
     // The test's onClose does not unmount, so the row is still there: Enter on it is the default, at once.
     key(buttonOf(el, 'New note'), 'Enter')
     expect(calls).toEqual(['close', 'row', 'close'])
+  })
+
+  it('the flyout items: edge case 9 — TWO "New note" buttons while it is open; the one in .ctx-menu__sub runs the item, not the row — and each item runs its own onSelect, then closes EVERYTHING', () => {
+    const { el, calls } = setup()
+    hover(buttonOf(el, 'New note'))
+    expect(buttons(el).filter((b) => b.textContent === 'New note')).toHaveLength(2)
+    act(() => subButtonOf(el, 'New note')?.click())
+    expect(calls).toEqual(['first', 'close'])
+    act(() => subButtonOf(el, 'New dated note')?.click())
+    expect(calls).toEqual(['first', 'close', 'dated', 'close'])
   })
 
   it('a parent WITHOUT a default in the same menu ("Open in ▸") still only opens on a click and on Enter — nothing runs, nothing closes', () => {
@@ -429,7 +408,8 @@ describe('a parent with a default (YAZ-3085 D1)', () => {
  * flyout crosses the next row. With no flyout open, a hover opens at once. With one open, a hover on
  * a DIFFERENT top-level item — a parent or a leaf — waits `SWITCH_MS` before it switches or closes;
  * the pointer that reaches the open flyout re-enters its own parent (the flyout is its DOM child)
- * and cancels the wait. A click never waits. Escape and unmount clear the timer.
+ * and cancels the wait. A click or a key never waits, and drops the pending switch. ArrowLeft,
+ * Escape and unmount clear the timer.
  */
 describe('the hover wait before a switch (YAZ-3085 D4)', () => {
   const MENU = (): MenuSection[] => [
@@ -447,37 +427,31 @@ describe('the hover wait before a switch (YAZ-3085 D4)', () => {
     expect(SWITCH_MS).toBe(200)
   })
 
-  it('the FIRST flyout opens at once — no wait', () => {
+  it('the FIRST flyout opens at once; with one open, a hover on a different parent switches only at SWITCH_MS, and a hover on a LEAF closes it only at SWITCH_MS', () => {
     const el = mount(0, 0, MENU())
     hover(buttonOf(el, 'New drawing'))
     expect(open(el)).toBe('New drawing')
     expect(flyoutLabels(el)).toEqual(['New Excalidraw drawing', 'New draw.io diagram'])
-  })
-
-  it('with one open, a hover on a different parent does NOT switch before SWITCH_MS, and does at SWITCH_MS', () => {
-    const el = mount(0, 0, MENU())
     hover(buttonOf(el, 'New note'))
-    hover(buttonOf(el, 'New drawing'))
     wait(SWITCH_MS - 1)
+    expect(open(el)).toBe('New drawing')
+    expect(flyoutLabels(el)).toEqual(['New Excalidraw drawing', 'New draw.io diagram'])
+    wait(1)
     expect(open(el)).toBe('New note')
     expect(flyoutLabels(el)).toEqual(['New note', 'New dated note'])
-    wait(1)
-    expect(open(el)).toBe('New drawing')
     expect(el.querySelectorAll('.ctx-menu__sub')).toHaveLength(1)
-  })
-
-  it('with one open, a hover on a LEAF closes it only after SWITCH_MS', () => {
-    const el = mount(0, 0, MENU())
-    hover(buttonOf(el, 'New folder'))
     hover(buttonOf(el, 'Rename'))
     wait(SWITCH_MS - 1)
-    expect(open(el)).toBe('New folder')
+    expect(open(el)).toBe('New note')
     wait(1)
     expect(open(el)).toBeNull()
     expect(flyout(el)).toBeNull()
+    // Nothing is open again, so the next hover opens at once.
+    hover(buttonOf(el, 'New folder'))
+    expect(open(el)).toBe('New folder')
   })
 
-  it('the diagonal path: crossing the next row, then reaching the open flyout, cancels the wait — the flyout stays for good', () => {
+  it('the diagonal path — crossing the next row, then reaching the open flyout — cancels the wait for good; re-entering the open row cancels too; each new hover restarts the wait', () => {
     const el = mount(0, 0, MENU())
     hover(buttonOf(el, 'New note'))
     hover(buttonOf(el, 'New drawing'))
@@ -486,11 +460,6 @@ describe('the hover wait before a switch (YAZ-3085 D4)', () => {
     wait(SWITCH_MS * 10)
     expect(open(el)).toBe('New note')
     expect(flyoutLabels(el)).toEqual(['New note', 'New dated note'])
-  })
-
-  it('re-entering the open parent row itself cancels too; each new hover restarts the wait', () => {
-    const el = mount(0, 0, MENU())
-    hover(buttonOf(el, 'New note'))
     hover(buttonOf(el, 'New folder'))
     wait(SWITCH_MS - 1)
     hover(buttonOf(el, 'New note'))
@@ -505,16 +474,7 @@ describe('the hover wait before a switch (YAZ-3085 D4)', () => {
     expect(open(el)).toBe('Open in')
   })
 
-  it('a click never waits: with a flyout open and a switch pending, a click on "Open in" opens it at once', () => {
-    const el = mount(0, 0, MENU())
-    hover(buttonOf(el, 'New note'))
-    hover(buttonOf(el, 'Open in'))
-    act(() => buttonOf(el, 'Open in')?.click())
-    expect(open(el)).toBe('Open in')
-    expect(flyoutLabels(el)).toEqual(['VS Code'])
-  })
-
-  it('a key never waits either: ArrowRight with a close pending opens the list, and the old timer does not close it', () => {
+  it('a key and a click never wait: ArrowRight with a close pending opens the flyout and the old timer does not close it; a click on "Open in" with a switch pending opens it at once', () => {
     const el = mount(0, 0, MENU())
     hover(buttonOf(el, 'New note'))
     hover(buttonOf(el, 'Rename'))
@@ -523,11 +483,27 @@ describe('the hover wait before a switch (YAZ-3085 D4)', () => {
     wait(SWITCH_MS * 10)
     expect(open(el)).toBe('Open in')
     expect(flyoutLabels(el)).toEqual(['VS Code'])
+    // Back to no flyout (the first Escape closes the flyout alone), then the click case.
+    key(window, 'Escape')
+    hover(buttonOf(el, 'New note'))
+    hover(buttonOf(el, 'Open in'))
+    act(() => buttonOf(el, 'Open in')?.click())
+    expect(open(el)).toBe('Open in')
+    expect(flyoutLabels(el)).toEqual(['VS Code'])
   })
 
-  it('Escape clears a pending switch: the open flyout closes, and the pending one never opens', () => {
+  it('ArrowLeft, Escape and unmount each drop a pending switch: the flyout closes, the pending one never opens, and no timer outlives the menu', () => {
     const onClose = vi.fn()
     const el = mount(0, 0, MENU(), onClose)
+    // ArrowLeft in the open flyout.
+    hover(buttonOf(el, 'New note'))
+    hover(buttonOf(el, 'New drawing'))
+    key(subButtonOf(el, 'New dated note'), 'ArrowLeft')
+    expect(flyout(el)).toBeNull()
+    wait(SWITCH_MS * 10)
+    expect(flyout(el)).toBeNull()
+    expect(open(el)).toBeNull()
+    // Escape.
     hover(buttonOf(el, 'New note'))
     hover(buttonOf(el, 'New drawing'))
     key(window, 'Escape')
@@ -536,10 +512,7 @@ describe('the hover wait before a switch (YAZ-3085 D4)', () => {
     expect(flyout(el)).toBeNull()
     expect(open(el)).toBeNull()
     expect(onClose).not.toHaveBeenCalled()
-  })
-
-  it('unmount clears a pending switch: no timer outlives the menu', () => {
-    const el = mount(0, 0, MENU())
+    // Unmount.
     hover(buttonOf(el, 'New note'))
     hover(buttonOf(el, 'New drawing'))
     expect(vi.getTimerCount()).toBe(1)

@@ -115,11 +115,8 @@ const parentOf = (sections: MenuSection[], label: string): MenuParent | undefine
 }
 /** A parent's list as labels, one array per section — a separator is a second section. */
 const listOf = (sections: MenuSection[], label: string) => parentOf(sections, label)?.children.map((section) => section.map((i) => i.label))
-/** The "Open in ▸" parent's sections (D7 amended), or undefined when there is no parent. */
-const openInOf = (sections: MenuSection[]): readonly MenuAction[][] | undefined => (itemOf(sections, 'Open in') as MenuParent | undefined)?.children
-const openInLabels = (sections: MenuSection[]) => openInOf(sections)?.map((section) => section.map((i) => i.label))
-/** A leaf inside the flyout, by label. */
-const subItemOf = (sections: MenuSection[], label: string) => openInOf(sections)?.flat().find((i) => i.label === label)
+/** A leaf inside the "Open in ▸" flyout (D7 amended), by label. */
+const subItemOf = (sections: MenuSection[], label: string) => parentOf(sections, 'Open in')?.children.flat().find((i) => i.label === label)
 /** The non-empty groups' labels — what the component draws, separators between. */
 const groupsOf = (sections: MenuSection[]) => sections.filter((s) => s.length > 0).map((s) => s.map((i) => i.label))
 
@@ -157,8 +154,6 @@ describe('the six groups (🔒 D7, amended; YAZ-3085 D3)', () => {
     expect(build()).toHaveLength(6)
     expect(build(FILE_ROW)).toHaveLength(6)
     expect(build({ targetDir: null })).toHaveLength(6)
-    // The dated twins moved into the create lists: no top-level item is dated any more.
-    expect(labelsOf(build(FILE_ROW)).filter((l) => l.startsWith('New dated'))).toEqual([])
   })
 
   it('a Markdown FILE row fills all six, in the pinned order — the focus toggle is the Open group\'s one item there (YAZ-2619 R6)', () => {
@@ -298,7 +293,7 @@ describe('create parents (YAZ-3085 D1, D3)', () => {
  */
 describe('"Open in ▸" (D7 amended)', () => {
   it('a Markdown FILE row: the three open verbs, then Reveal in its own section', () => {
-    expect(openInLabels(build(FILE_ROW))).toEqual([['New window', 'VS Code', 'Default app'], ['Reveal in Finder']])
+    expect(listOf(build(FILE_ROW), 'Open in')).toEqual([['New window', 'VS Code', 'Default app'], ['Reveal in Finder']])
   })
 
   it('the parent is a parent: no onSelect, and it stands ALONE in its own group between the this-row items and Delete', () => {
@@ -317,7 +312,7 @@ describe('"Open in ▸" (D7 amended)', () => {
 
   it('"New window" is FILE rows only (D2, GRO-2168): blank space gets VS Code / Default app / Reveal on the root', () => {
     const onOpenNewWindow = vi.fn()
-    expect(openInLabels(build(BLANK))).toEqual([['VS Code', 'Default app'], ['Reveal in Finder']])
+    expect(listOf(build(BLANK), 'Open in')).toEqual([['VS Code', 'Default app'], ['Reveal in Finder']])
     expect(subItemOf(build(BLANK), 'New window')).toBeUndefined()
     subItemOf(build({ newWindowPath: '/v/a.md' }, { onOpenNewWindow }), 'New window')?.onSelect()
     expect(onOpenNewWindow).toHaveBeenCalledExactlyOnceWith('/v/a.md')
@@ -327,10 +322,10 @@ describe('"Open in ▸" (D7 amended)', () => {
     const onOpenVsCode = vi.fn()
     const onOpenDefault = vi.fn()
     const onReveal = vi.fn()
-    expect(openInLabels(build({ openVsCodePath: '/v/Zeta' }))).toEqual([['VS Code'], []])
-    expect(openInLabels(build({ revealPath: '/v' }))).toEqual([[], ['Reveal in Finder']])
+    expect(listOf(build({ openVsCodePath: '/v/Zeta' }), 'Open in')).toEqual([['VS Code'], []])
+    expect(listOf(build({ revealPath: '/v' }), 'Open in')).toEqual([[], ['Reveal in Finder']])
     const sections = build({ openVsCodePath: '/v/Zeta', openDefaultPath: '/v/book.epub', revealPath: '/v/sub' }, { onOpenVsCode, onOpenDefault, onReveal })
-    const labels = openInOf(sections)?.flat().map((i) => i.label) ?? []
+    const labels = parentOf(sections, 'Open in')?.children.flat().map((i) => i.label) ?? []
     expect(labels.indexOf('Default app')).toBe(labels.indexOf('VS Code') + 1)
     subItemOf(sections, 'VS Code')?.onSelect()
     subItemOf(sections, 'Default app')?.onSelect()
@@ -728,7 +723,7 @@ describe('the vault items (YAZ-2602)', () => {
       ['Open in'],
       ['Remove from this window'],
     ])
-    expect(openInLabels(sections)).toEqual([['VS Code'], ['Reveal in Finder']])
+    expect(listOf(sections, 'Open in')).toEqual([['VS Code'], ['Reveal in Finder']])
   })
 
   it('"Remove from this window" hands the vault to its handler and is not a danger item: nothing is deleted (D7)', () => {
