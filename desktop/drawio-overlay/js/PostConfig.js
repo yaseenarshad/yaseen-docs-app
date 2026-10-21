@@ -56,6 +56,17 @@ window.ICON_SERVICE_PATH = null;
 	// makes of it: nothing is marked modified, nothing autosaves, undo is untouched. Added before
 	// draw.io's embed handler exists (the handshake), so it can keep draw.io from answering an
 	// action it does not know with `unknownMessage`.
+	var keepHostFocus = false;
+	var focusWindow = window.focus;
+
+	window.focus = function()
+	{
+		if (!keepHostFocus)
+		{
+			focusWindow.apply(window, arguments);
+		}
+	};
+
 	window.addEventListener('message', function(evt)
 	{
 		var msg = null;
@@ -67,6 +78,18 @@ window.ICON_SERVICE_PATH = null;
 		catch (e)
 		{
 			return;
+		}
+
+		// YAZ-3084: a tab's name field opened by a double-click keeps the caret. draw.io calls
+		// `window.focus()` as it handles a `load`, which would take the caret into this frame; the host
+		// flags that one load, and the flag ends once draw.io's own handler has run.
+		if (msg != null && msg.action == 'load')
+		{
+			keepHostFocus = msg.yaseenKeepFocus === true;
+			window.setTimeout(function()
+			{
+				keepHostFocus = false;
+			}, 0);
 		}
 
 		if (msg != null && msg.action == 'yaseenAdaptiveColors')
