@@ -1249,6 +1249,7 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
     expect(bridge.window.moveTo).toHaveBeenCalledTimes(1)
     expect(bridge.window.closeSelf).not.toHaveBeenCalled()
     expect(tabNames(el)).not.toContain('a')
+    expect(tabNames(el)).toContain('New tab')
   })
 
   it('S15: the only tab, with an empty right panel, closes the window through its real close; S16: with pages in the right panel the window stays', async () => {

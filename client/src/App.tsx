@@ -896,7 +896,9 @@ export function App() {
         const vault = (w.file === null ? null : rootOfPath(w.roots, w.file)) ?? w.root
         const n = (w.tabStrip ?? w.tabs).length
         const title = windowTitle(vault === null ? null : storage.vaultName(vault), w.file, titles)
-        const cut = title.length > MOVE_ROW_TITLE_MAX ? `${title.slice(0, MOVE_ROW_TITLE_MAX - 1).trimEnd()}…` : title
+        // By characters, not UTF-16 units, so an emoji is never cut in half.
+        const chars = Array.from(title)
+        const cut = chars.length > MOVE_ROW_TITLE_MAX ? `${chars.slice(0, MOVE_ROW_TITLE_MAX - 1).join('').trimEnd()}…` : title
         return { id: w.id, label: `${cut} · ${n} tab${n === 1 ? '' : 's'}` }
       }), [titles])
   /**
