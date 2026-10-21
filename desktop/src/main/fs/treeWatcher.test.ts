@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { WatchListener, WatchOptionsWithStringEncoding } from 'node:fs'
+import { writeFileSync, type WatchListener, type WatchOptionsWithStringEncoding } from 'node:fs'
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -144,7 +144,9 @@ describe('treeWatcher (YAZ-2192)', { timeout: 20_000 }, () => {
     const dir = await tempDir()
     const r = record(dir)
     await r.ready()
-    await writeFile(path.join(dir, 'late.md'), 'x')
+    // Written and closed in one turn, so the event is truly still pending at the close: an awaited
+    // write on a busy machine can outlast the settle and let the event through first (CI, YAZ-3028).
+    writeFileSync(path.join(dir, 'late.md'), 'x')
     await r.watcher.close()
     await sleep(400)
     expect(r.lines).toEqual([])

@@ -180,6 +180,16 @@ class Engine extends EventEmitter implements TreeWatcher {
     this.start().catch((err: unknown) => this.emit('error', err))
   }
 
+  /**
+   * After `close()` nothing is announced but an error (YAZ-2192 "close() ends every event"): a look,
+   * a walk or the polling engine can be mid-`lstat` when the close lands, and this is the one exit
+   * every one of them goes through — so no path needs its own late check.
+   */
+  override emit(event: string | symbol, ...args: unknown[]): boolean {
+    if (this.closed && event !== 'error') return false
+    return super.emit(event, ...args)
+  }
+
   add(p: string): void {
     this.polling?.add(p)
   }
