@@ -227,12 +227,13 @@ describe('TabOverview', () => {
     const { el, props } = await mount({ reviewState: (path) => (path === '/v/a.md' ? false : null), onSetReview: vi.fn() })
     rightClick(page(el, '/v/a.md'))
     // `TabMenu`, the one the strip's tabs open: the same items in the same order.
-    expect(menuItems(el)).toEqual(['Move to right panel', 'Show in sidebar', 'Copy path', 'Turn review on', 'Reveal in Finder', 'Open in VS Code'])
+    expect(menuItems(el)).toEqual(['Move to', 'Show in sidebar', 'Copy path', 'Turn review on', 'Reveal in Finder', 'Open in VS Code'])
     key(el, 'Escape')
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(props.onDismiss).not.toHaveBeenCalled()
     rightClick(page(el, '/v/a.md'))
-    act(() => menuItem(el, 'Move to right panel')?.click())
+    act(() => menuItem(el, 'Move to')?.click())
+    act(() => menuItem(el, 'Right panel')?.click())
     expect(props.onMoveToRight).toHaveBeenCalledExactlyOnceWith('/v/a.md')
     expect(el.querySelector('.ctx-menu')).toBeNull()
 
@@ -259,12 +260,29 @@ describe('TabOverview', () => {
   it('YAZ-2940 D5, S5: a page\'s menu has "Duplicate tab" right after "Move to new window"; a click copies that tab by id and leaves the board open', async () => {
     const { el, props } = await mount({ onMoveToNewWindow: vi.fn(), onDuplicate: vi.fn() })
     rightClick(page(el, '/v/Projects/plan.md'))
-    expect(menuItems(el).slice(0, 3)).toEqual(['Move to new window', 'Duplicate tab', 'Move to right panel'])
+    expect(menuItems(el).slice(0, 3)).toEqual(['Move to new window', 'Duplicate tab', 'Move to'])
     act(() => menuItem(el, 'Duplicate tab')?.click())
     expect(props.onDuplicate).toHaveBeenCalledExactlyOnceWith('/v/Projects/plan.md')
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(props.onDismiss).not.toHaveBeenCalled()
     expect(props.onOpen).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-3091 D3, S17: a page\'s "Move to ▸" lists the windows asked for ITS page, a line, then "Right panel"; a window row moves that tab by id and leaves the board open', async () => {
+    const onMoveTargets = vi.fn((path: string) => (path.startsWith('/w/') ? [] : [{ id: 'w2', label: 'Notes — plan · 3 tabs' }]))
+    const { el, props } = await mount({ onMoveTargets, onMoveToWindow: vi.fn() })
+    rightClick(page(el, '/v/Projects/plan.md'))
+    expect(onMoveTargets).toHaveBeenLastCalledWith('/v/Projects/plan.md')
+    act(() => menuItem(el, 'Move to')?.click())
+    expect([...el.querySelectorAll('.ctx-menu__sub [role="group"]')].map((g) => g.textContent)).toEqual(['Notes — plan · 3 tabs', 'Right panel'])
+    act(() => menuItem(el, 'Notes — plan · 3 tabs')?.click())
+    expect(props.onMoveToWindow).toHaveBeenCalledExactlyOnceWith('w2', '/v/Projects/plan.md', '/v/Projects/plan.md')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(props.onDismiss).not.toHaveBeenCalled()
+    // A page of a vault no other window shows: only "Right panel" (S1, S3).
+    rightClick(page(el, '/w/x.md'))
+    act(() => menuItem(el, 'Move to')?.click())
+    expect([...el.querySelectorAll('.ctx-menu__sub [role="group"]')].map((g) => g.textContent)).toEqual(['Right panel'])
   })
 
   it('S65 to S69: pick many: shift-click picks and never opens; the bar closes the picked tabs, or the others, and drops the pick; Esc drops the pick before it leaves the board; a plain click still opens', async () => {
@@ -286,7 +304,7 @@ describe('TabOverview', () => {
     expect(props.onCloseTabs).toHaveBeenLastCalledWith(['/v/Projects/report.pdf', '/w/x.md', '/v/Projects/Alpha', '/v/Projects/Alpha/2026-10-08.md'])
     expect(bar()).toBeNull()
     rightClick(page(el, '/w/x.md'))
-    expect(menuItems(el)[0]).toBe('Move to right panel')
+    expect(menuItems(el)[0]).toBe('Move to')
     key(el, 'Escape') // the menu's
 
     shiftClick(page(el, '/v/a.md'))

@@ -54,7 +54,7 @@ test('right-click a tab › Set display name: the copy gets its own name, on the
   // D6, S26: four groups, the name items in the third.
   await tabsOf(win).nth(1).click({ button: 'right' })
   expect((await groups(win)).map((g) => g.filter((label) => !label?.startsWith('Turn review')))).toEqual([
-    ['Move to new window', 'Duplicate tab', 'Move to right panel'],
+    ['Move to new window', 'Duplicate tab', 'Move to'],
     ['Show in sidebar', 'Copy path'],
     ['Set display name'],
     ['Reveal in Finder', 'Open in VS Code'],

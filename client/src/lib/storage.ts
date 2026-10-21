@@ -26,6 +26,7 @@ import {
   type TocSource,
   type VaultEntry,
   type VaultSet,
+  type WindowEntry,
   type WindowIdentity,
 } from '@shared/types'
 import { api } from '../api'
@@ -158,6 +159,11 @@ export const storage = {
    * neighbours), and the cache follows the broadcast.
    */
   getVaultSets: (): VaultSet[] => state.vaultSets,
+  /**
+   * The app's other windows (YAZ-3091 D2), off the cache: a tab's "Move to ▸" lists the ones that show its
+   * page's vault. Read only while a tab menu is open, never a render trigger; main checks the target again.
+   */
+  getOtherWindows: (): WindowEntry[] => state.windows.filter((w) => w.id !== identity.id),
   pushRecentRoot(path: string, now = Date.now()): RecentRoots {
     const next = addRecentRoot(state.recents, path, now)
     state = { ...state, recents: next }

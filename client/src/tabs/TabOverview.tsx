@@ -6,7 +6,7 @@ import { readPageDrag, writePageDrag } from '../workspace/pageDrag'
 import { storedTabs, type Tab } from '../workspace/useWorkspace'
 import { BOARD, buildBoard, islandCols, nearest, stackedIslands, withoutTitle, type Island, type Way } from './board'
 import { setBoardHighlight } from './boardHighlight'
-import { TabMenu, type TabMenuAt } from './TabMenu'
+import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
 import { TabNameField } from './TabNameField'
 import { useTabHeads } from './useTabHeads'
 import './tabs.css'
@@ -40,6 +40,12 @@ export interface TabOverviewProps {
   /** A page's menu is a tab's menu (`TabMenu`): these are the strip's own doors. A page dropped on the board's right edge takes the first. */
   onMoveToRight?: (path: string) => void
   onMoveToNewWindow?: (path: string, id: string) => void
+  /** The other windows that can take a tab of `path` (YAZ-3091 D2): asked only while a tab menu is open, for its "Move to ▸". */
+  onMoveTargets?: (path: string) => readonly MoveTarget[]
+  /** "Move to ▸ <window>" (YAZ-3091 D1): the page by path to the open window `to`; only this tab (by id) closes here. */
+  onMoveToWindow?: (to: string, path: string, id: string) => void
+  /** "Move to ▸": the window a row points at glows (YAZ-3091 D8). */
+  onHighlightWindow?: (to: string | null) => void
   /** "Duplicate tab" (YAZ-2940 D5): a copy of the tab, by id. */
   onDuplicate?: (id: string) => void
   /** "Set display name" / "Reset to page name" (YAZ-2949): a name for the tab, by id, or null for its page name. */
@@ -118,7 +124,7 @@ function PageFace({ label, lines, field }: { label: string; lines: string; field
  * "Kill all tabs" (YAZ-2739), at the end of the top row, is about every tab of the window, whatever
  * the filter shows. The board only asks: App owns the sheet and the close.
  */
-export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveToNewWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview }: TabOverviewProps) {
+export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview }: TabOverviewProps) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState<string | null>(active)
   /** The islands the user spread by hand: they stay spread until the board closes. */
@@ -636,7 +642,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         </ContextMenuSurface>
       )}
       {/* A page is an open tab, so its menu is the tab's (`TabMenu`). */}
-      {pageMenu !== null && <TabMenu menu={pageMenu} label={labelOf(pageMenu.path)} onClose={() => setPageMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
+      {pageMenu !== null && <TabMenu menu={pageMenu} label={labelOf(pageMenu.path)} onClose={() => setPageMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} moveTargets={onMoveTargets?.(pageMenu.path)} onMoveToWindow={onMoveToWindow} onHighlightWindow={onHighlightWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
       {/* An island is a folder: its row in the sidebar, its path, and its tabs as one. */}
       {islandMenu !== null && menuIsland !== undefined && (
         <ContextMenuSurface x={islandMenu.x} y={islandMenu.y} onClose={() => setIslandMenu(null)}>

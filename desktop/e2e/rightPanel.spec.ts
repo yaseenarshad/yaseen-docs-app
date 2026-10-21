@@ -47,7 +47,7 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — a tab\'s "Move to right panel" opens the panel with that page expanded; the main tabs lose it', async () => {
+test('step 1 — a tab\'s "Move to ▸ Right panel" (YAZ-3091 D3) opens the panel with that page expanded; the main tabs lose it', async () => {
   const state = seededState(vault, alpha)
   state.windows[0].tabs = [alpha, beta]
   state.windows[0].bounds = { x: 40, y: 40, width: 1500, height: 800 }
@@ -57,7 +57,8 @@ test('step 1 — a tab\'s "Move to right panel" opens the panel with that page e
   await expect(panel(win)).toHaveCount(0)
 
   await tabsOf(win).filter({ hasText: 'Beta' }).click({ button: 'right' })
-  await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Move to right panel' }).click()
+  await win.locator('.ctx-menu [role="menuitem"]', { hasText: /^Move to$/ }).click()
+  await win.locator('.ctx-menu [role="menuitem"]', { hasText: /^Right panel$/ }).click()
 
   await expect(panel(win)).toBeVisible()
   await expect(header(win, 'Beta')).toHaveAttribute('aria-expanded', 'true')

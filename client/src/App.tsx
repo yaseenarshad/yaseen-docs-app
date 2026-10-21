@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isBoard, isViewOnly } from '@shared/fileKind'
 import type { TextFormatting } from '@shared/textFormatting'
-import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type PageView, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -49,6 +49,7 @@ import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
+import type { MoveTarget } from './tabs/TabMenu'
 import { TabOverview } from './tabs/TabOverview'
 import { useUpdate } from './update/useUpdate'
 import { RightPanel } from './right-panel/RightPanel'
@@ -74,6 +75,10 @@ function syncHash(path: string | null): void {
 
 /** No tab board (YAZ-2648): one object, so closing a board that is closed is no state change. */
 const OVERVIEW_CLOSED = { phase: 'closed', from: null } as const
+/** "Move to ▸": a window row's page name is cut to this many characters (YAZ-3104), so a long page name cannot widen the flyout over the tab menu. The tab count after it is never cut. */
+export const MOVE_ROW_TITLE_MAX = 40
+/** The longest a window glows with no word from main (YAZ-3091 D8): only a lost "off" ever reaches it. */
+export const GLOW_MAX_MS = 10_000
 
 // A workspace state change still re-renders App, but unchanged retained editors must not render
 // with it: a folder's Board runs layout animation after every render, so an unrelated right
@@ -136,7 +141,7 @@ export function App() {
   // window's `file`: title, URL hash and the sidebar highlight all follow it. Each tab has its own
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
-    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, move: moveTab,
+    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
@@ -682,8 +687,8 @@ export function App() {
   const [overview, setOverview] = useState<{ phase: 'closed' | 'open' | 'leaving'; from: string | null }>(OVERVIEW_CLOSED)
   const overviewOpen = overview.phase === 'open'
   /** What the doors below read at the moment they are used; they keep their identity under the board. */
-  const now = useRef({ file, active: activeTab, tabs, preview, phase: overview.phase, right: rightPanel.items.length })
-  now.current = { file, active: activeTab, tabs, preview, phase: overview.phase, right: rightPanel.items.length }
+  const now = useRef({ file, active: activeTab, tabs, preview, blank, phase: overview.phase, right: rightPanel.items.length })
+  now.current = { file, active: activeTab, tabs, preview, blank, phase: overview.phase, right: rightPanel.items.length }
   // The note's first edit keeps the preview tab that shows it (YAZ-2648 D2). An editor says its path;
   // `keep` takes the tab's id (YAZ-2940 D1). Through `now`, because a new `onUserEdit` identity would rebuild every mounted editor.
   const keepEdited = useCallback((path: string) => {
@@ -748,7 +753,6 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     prevTab()
   }, [prevTab])
-  useLinkEvents({ onOpenFile: openPage, onNotice: notify })
 
   // Settings › Storage (YAZ-1801 D1, 🔒 D13; YAZ-3039): the active tab's vault, measured only while
   // Settings is open — on its page's open, a sync pass finishing, and a shrink. A closed dialog hands the hook no sync state.
@@ -848,27 +852,64 @@ export function App() {
     closeBlank()
     closeUnderOverview(now.current.tabs.map((t) => t.id))
   }, [closeBlank, closeUnderOverview])
-  /** "Move to right panel", on a page of the board and on a tab of the strip: the page goes to the end of that panel, and an open board stays (R30). */
+  /** "Move to ▸ Right panel" (YAZ-3091 D3), on a page of the board and on a tab of the strip: the page goes to the end of that panel, and an open board stays (R30). */
   const movePageToRight = useCallback((path: string) => {
     ownChange.current = path === now.current.file
     transferMainToRight(path, now.current.right)
   }, [transferMainToRight])
   /**
-   * "Move to new window" (YAZ-2933 D2), on a page of the board and on a tab of the strip: the page saves
-   * first, so the new window reads what was typed; main opens it; only then does the tab leave, as ⌘W
-   * closes it — an open board stays until its last tab goes (R18), and a last tab leaves this window empty.
-   * A refusal leaves the tab where it is. Only this tab leaves: a copy's twins stay (YAZ-2940 S16).
+   * A tab leaves for another window (YAZ-2933 D2, YAZ-3091 D1), from a page of the board or a tab of the strip.
+   * The page saves first, so the other window reads what was typed; `send` gives main the page with its page
+   * view and display name; only then does the tab leave, as ⌘W closes it — an open board stays until its last
+   * tab goes (R18). A refusal or a failed save leaves the tab where it is, and the notice starts with `failed`.
+   * Only this tab leaves: a copy's twins stay (YAZ-2940 S16).
    */
-  const movePageToNewWindow = useCallback((path: string, id: string) => {
+  const sendTabAway = useCallback((path: string, id: string, send: (carry: PopOutCarry) => Promise<void>, failed: string, closeEmptyWindow: boolean) => {
     // The page opens there as it looks here (YAZ-2951 D2): read before the save, while its editor is the one on show.
     const view = readPageView(id)
-    // The tab's display name goes with it (YAZ-2949 D7, S19): main stores it with the new window's tab (YAZ-3057).
+    // The tab's display name goes with it (YAZ-2949 D7, S19).
     const name = now.current.tabs.find((t) => t.id === id)?.name
     flushRenamedPath(path)
-      .then(() => api.window.popOut(path, { view, name }))
-      .then(() => (now.current.phase === 'open' ? closeUnderOverview([id]) : closeTab(id)))
-      .catch((err: unknown) => notify(`Can't move to a new window: ${err instanceof Error ? err.message : String(err)}`))
+      .then(() => send({ view, name }))
+      .then(() => {
+        const { tabs: all, right, phase, blank: newTab } = now.current
+        // YAZ-3091 D6: the only tab of a window whose right panel is empty takes the window with it, through its real close.
+        // An open blank tab is a tab too (YAZ-3105): then the window is not empty, and it stays.
+        if (closeEmptyWindow && all.length === 1 && all[0].id === id && right === 0 && !newTab) void api.window.closeSelf()
+        else if (phase === 'open') closeUnderOverview([id])
+        else closeTab(id)
+      })
+      .catch((err: unknown) => notify(`${failed}: ${err instanceof Error ? err.message : String(err)}`))
   }, [closeUnderOverview, closeTab, notify])
+  /** "Move to new window" (YAZ-2933): main opens the window and stores the name with its one tab (YAZ-3057). A last tab leaves this window empty. */
+  const movePageToNewWindow = useCallback((path: string, id: string) =>
+    sendTabAway(path, id, (carry) => api.window.popOut(path, carry), "Can't move to a new window", false), [sendTabAway])
+  /** "Move to ▸ <window>" (YAZ-3091 D1, D6): main hands the tab to the open window `to`, or refuses when it closed (S19). */
+  const movePageToWindow = useCallback((to: string, path: string, id: string) =>
+    sendTabAway(path, id, (carry) => api.window.moveTo(to, path, carry), "Can't move to that window", true), [sendTabAway])
+  /**
+   * "Move to ▸" (YAZ-3091 D2, D7 revised by D8): the other windows that show a vault of `path`, read from the state
+   * cache only while a tab menu is open. Every one of them shows this vault, so a row names what that window SHOWS:
+   * the page on show — its tab's display name first — and "+ N more tabs", copies counted (S6). The row lights its
+   * window up (`highlightWindow`), so two rows that read alike are still told apart.
+   */
+  const moveTargets = useCallback((path: string): MoveTarget[] =>
+    storage.getOtherWindows()
+      .filter((w) => rootOfPath(w.roots, path) !== null)
+      .map((w) => {
+        if (w.file === null) return { id: w.id, label: 'Empty window' }
+        const strip = w.tabStrip?.filter((t) => t.path === w.file) ?? []
+        const page = (strip.find((t) => t.active === true) ?? strip[0])?.name ?? pageName(rootOfPath(w.roots, w.file), w.file, titles)
+        // By characters, not UTF-16 units, so an emoji is never cut in half (YAZ-3104).
+        const chars = Array.from(page)
+        const cut = chars.length > MOVE_ROW_TITLE_MAX ? `${chars.slice(0, MOVE_ROW_TITLE_MAX - 1).join('').trimEnd()}…` : page
+        const more = (w.tabStrip ?? w.tabs).length - 1
+        return { id: w.id, label: more > 0 ? `${cut} + ${more} more tab${more === 1 ? '' : 's'}` : cut }
+      }), [titles])
+  /** The "Move to ▸" row under the pointer lights up its window (YAZ-3091 D8). A failed call only means no glow. */
+  const highlightWindow = useCallback((to: string | null) => {
+    api.window.highlight(to).catch(() => undefined)
+  }, [])
   /**
    * "Duplicate tab" (YAZ-2940 D5–D7), on a tab of the strip and on a page of the board: a copy of the tab
    * opens right after it and shows — under the board it shows on the board beside its source, and the
@@ -884,6 +925,28 @@ export function App() {
     const copy = duplicate(id)
     if (copy !== null && view !== undefined) startView.set(copy, view)
   }, [duplicate, startView])
+  /**
+   * A tab another window moved here (YAZ-3091 D5, S8–S14): the board closes, the page is a NEW tab at the end
+   * and shows — a copy when it is open, out of the right panel when it was there — with the moved name and
+   * page view. The view goes to `startView` before the tab's layer mounts, as a duplicate's does.
+   */
+  const takeTab = useCallback(({ path, view, name }: MovedTab) => {
+    setOverview(OVERVIEW_CLOSED)
+    const id = take(path)
+    if (name !== undefined) setTabName(id, name)
+    if (view !== undefined) startView.set(id, view)
+  }, [take, setTabName, startView])
+  // Below `startView`: a moved tab's page view goes there (YAZ-3091 D5).
+  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab })
+  // A "Move to ▸" row of another window points at this one (YAZ-3091 D8): a ring shows while it does. Main puts it
+  // out when that row is left or either window closes; GLOW_MAX_MS only covers a lost "off".
+  const [glow, setGlow] = useState(false)
+  useEffect(() => api.window.onGlow(setGlow), [])
+  useEffect(() => {
+    if (!glow) return
+    const timer = window.setTimeout(() => setGlow(false), GLOW_MAX_MS)
+    return () => window.clearTimeout(timer)
+  }, [glow])
   // The copy's `Editor` keeps its start in a ref when it mounts, so the entry goes once its layer is there.
   useEffect(() => {
     for (const id of startView.keys()) if (mounted.includes(id)) startView.delete(id)
@@ -1434,6 +1497,7 @@ export function App() {
 
   return (
     <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines}>
+      {glow && <div className="window-glow" aria-hidden="true" />}
       {notice !== null && (
         // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.
         <div className={`link-notice${notice.action === undefined ? '' : ' link-notice--action'}`} role="status" data-icon={notice.icon}>
@@ -1619,6 +1683,9 @@ export function App() {
               onDropPage={dropOnMain}
               onMoveToRight={movePageToRight}
               onMoveToNewWindow={movePageToNewWindow}
+              onMoveTargets={moveTargets}
+              onMoveToWindow={movePageToWindow}
+              onHighlightWindow={highlightWindow}
               onDuplicate={duplicateTab}
               onSetName={setTabName}
               canBack={canBack}
@@ -1703,6 +1770,9 @@ export function App() {
                 // A page's menu is a tab's menu: the strip's own doors. A reveal in the sidebar leaves the board open beside it.
                 onMoveToRight={movePageToRight}
                 onMoveToNewWindow={movePageToNewWindow}
+                onMoveTargets={moveTargets}
+                onMoveToWindow={movePageToWindow}
+                onHighlightWindow={highlightWindow}
                 onDuplicate={duplicateTab}
                 onSetName={setTabName}
                 onShowInSidebar={showInSidebar}

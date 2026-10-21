@@ -203,6 +203,22 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     windows.popOut(from, target, optionalPopOutCarry(carry))
   })
 
+  // `window:move-to` (YAZ-3091 D1, D2): a tab's "Move to ▸ <window>". Main checks the target again: a window
+  // that closed, or that shows no vault of the page, refuses, and the source keeps its tab.
+  handleWithEvent(CONTRACT.window.moveTo, async (e, to: unknown, path: unknown, carry: unknown) => {
+    const from = entryFor(e)
+    const id = requireString(to, 'id')
+    const target = requireAbsPath(path, 'path')
+    if (id === from.id) throw new BridgeFailure('BAD_REQUEST', 'a tab cannot move to its own window')
+    if (!windows.moveTo(id, target, optionalPopOutCarry(carry))) throw new BridgeFailure('NOT_FOUND', 'that window is closed or shows no vault of this page')
+  })
+
+  // `window:highlight` (YAZ-3091 D8): the "Move to ▸" row under the pointer lights up its window. Main takes the
+  // CALLER from the sender, so a window can only light another window for its own menu.
+  handleWithEvent(CONTRACT.window.highlight, async (e, to: unknown) => {
+    windows.highlight(entryFor(e).id, to === null ? null : requireString(to, 'id'))
+  })
+
   // `window:open-recent` (YAZ-1767 D1): the vault switcher's door — an absolute path in, and the
   // manager's verdict out: true = the vault is in front (its windows raised, D9, or a new one
   // opened; MRU bumped), false = the folder is gone and was pruned from the MRU instead. Any

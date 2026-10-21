@@ -1,6 +1,6 @@
 import { api, BridgeRequestError } from '../api'
 import { ContextMenu } from '../sidebar/ContextMenu'
-import type { MenuSection } from '../sidebar/menuSections'
+import type { MenuAction, MenuSection } from '../sidebar/menuSections'
 
 /** An open tab menu: where it stands, the tab it is about, and that tab's review state as it was when the menu opened. */
 export interface TabMenuAt {
@@ -16,13 +16,25 @@ export interface TabMenuAt {
   named: boolean
 }
 
+/** One other open window that can take this tab (YAZ-3091 D2): its id for main, and its row text (D7). */
+export interface MoveTarget {
+  id: string
+  label: string
+}
+
 export interface TabMenuProps {
   menu: TabMenuAt
   /** The tab as the menu's notices name it. */
   label: string
   onClose: () => void
-  /** Context-menu equivalent of dragging this tab into the right panel. */
+  /** Context-menu equivalent of dragging this tab into the right panel: "Move to ▸ Right panel" (YAZ-3091 D3). */
   onMoveToRight?: (path: string) => void
+  /** The other windows that show this page's vault (YAZ-3091 D2), read only while the menu is open: the top of "Move to ▸". */
+  moveTargets?: readonly MoveTarget[]
+  /** "Move to ▸ <window>" (YAZ-3091 D1): the tab goes to the open window `to` — the page by path, and only this tab (by id) closes here. */
+  onMoveToWindow?: (to: string, path: string, id: string) => void
+  /** A window row under the pointer or the keyboard lights up that window (YAZ-3091 D8); `null` puts it out. */
+  onHighlightWindow?: (to: string | null) => void
   /** "Move to new window" (YAZ-2933): the tab leaves for a window of its own — the page by path, and only this tab (by id) closes here (YAZ-2940 S16). */
   onMoveToNewWindow?: (path: string, id: string) => void
   /** "Duplicate tab" (YAZ-2940 D5): a copy of this tab, by id, opens right after it in this window. */
@@ -42,11 +54,11 @@ export interface TabMenuProps {
  * A tab's right-click menu, in ONE place (YAZ-2648): the strip's tabs and the board's pages are
  * the same open files, so they offer the same items — the sidebar row's Copy path (YAZ-922) and
  * its OS actions (YAZ-963: Reveal in Finder, Open in VS Code), Show in sidebar, the move to a
- * new window (YAZ-2933), "Duplicate tab" (YAZ-2940) and the move to the right panel, the tab's
+ * new window (YAZ-2933), "Duplicate tab" (YAZ-2940) and "Move to ▸" another window or the right panel (YAZ-3091), the tab's
  * display name (YAZ-2949) and the review toggle (YAZ-2322). Drawn as data by the sidebar's own
  * `ContextMenu` (YAZ-2949 D6), so its groups have the same lines as every other menu of the app.
  */
-export function TabMenu({ menu, label, onClose, onMoveToRight, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onSetReview, onNotice }: TabMenuProps) {
+export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onSetReview, onNotice }: TabMenuProps) {
   /**
    * The menu's OS actions (YAZ-963), the sidebar's `reveal` idiom on a tab: read-only, so there is
    * nothing to confirm or repair — but a STALE tab (deleted or moved externally) rejects `NOT_FOUND`,
@@ -58,6 +70,11 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, onMoveToNewWindow
       onNotice?.(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? stale : `${failed}: ${err instanceof Error ? err.message : String(err)}`)
     })
   }
+  // "Move to ▸" (YAZ-3091 D3): the other windows, a line, then "Right panel". An empty group is left out, and with no group there is no item.
+  const moveTo: MenuAction[][] = [
+    onMoveToWindow === undefined ? [] : moveTargets.map((t) => ({ id: `move-window:${t.id}`, label: t.label, onSelect: () => onMoveToWindow(t.id, menu.path, menu.id), onPreview: (on: boolean) => onHighlightWindow?.(on ? t.id : null) })),
+    onMoveToRight === undefined ? [] : [{ id: 'move-right', label: 'Right panel', onSelect: () => onMoveToRight(menu.path) }],
+  ].filter((group) => group.length > 0)
   // Four groups (YAZ-2949 D6), in this order: the tab's place · find the file · this tab
   // and its note · outside the app. `ContextMenu` skips an empty group and closes the menu after each item.
   const sections: MenuSection[] = [
@@ -65,7 +82,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, onMoveToNewWindow
       ...(onMoveToNewWindow === undefined ? [] : [{ id: 'new-window', label: 'Move to new window', onSelect: () => onMoveToNewWindow(menu.path, menu.id) }]),
       // Right after "Move to new window" (YAZ-2940 D5).
       ...(onDuplicate === undefined ? [] : [{ id: 'duplicate', label: 'Duplicate tab', onSelect: () => onDuplicate(menu.id) }]),
-      ...(onMoveToRight === undefined ? [] : [{ id: 'move-right', label: 'Move to right panel', onSelect: () => onMoveToRight(menu.path) }]),
+      ...(moveTo.length === 0 ? [] : [{ id: 'move-to', label: 'Move to', children: moveTo }]),
     ],
     [
       { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => onShowInSidebar?.(menu.path) },

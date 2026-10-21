@@ -102,6 +102,18 @@ export interface WindowManager extends WindowLookup {
    */
   popOut(from: WindowEntry, path: string, carry?: PopOutCarry): void
   /**
+   * A tab's "Move to ▸ <window>" (YAZ-3091 D1, D2): raise the live window `to` and push `link:take-tab` with
+   * `path` and `carry`, held like any link push until its page listens. `false` = `to` is not live, or none of
+   * its vaults holds `path` (D2): no vault is added. Nothing is stored here: the target stores its own new tab.
+   */
+  moveTo(to: string, path: string, carry?: PopOutCarry): boolean
+  /**
+   * A "Move to ▸" row of window `from` points at window `to` (YAZ-3091 D8): `to` glows, the one lit before goes dark,
+   * and `null` puts it out. Never `from` itself, and never a raise. A glow is a moment: it is not held for a page that
+   * does not listen yet, and it goes out when `from` or `to` closes.
+   */
+  highlight(from: string, to: string | null): void
+  /**
    * The page view a new window starts with (YAZ-2951 D5), handed out ONE time: its first `window:identity`
    * takes it, so a reload starts fresh (S17). A window that closes before it asks drops it (S20). Never stored.
    */
@@ -160,7 +172,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'takeStartView' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'highlight' | 'takeStartView' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -267,6 +279,12 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
    * held until the renderer says `link:ready`; from then on the window has no entry here.
    */
   const heldLinks = new Map<number, Array<() => void>>()
+  /** The window each window's "Move to ▸" row lights up (YAZ-3091 D8), by source id. One at most per source. */
+  const lit = new Map<string, string>()
+  const glow = (id: string, on: boolean): void => {
+    const win = live.get(id)
+    if (win !== undefined && !win.isDestroyed()) win.webContents.send(CONTRACT.window.onGlow.channel, on)
+  }
   /**
    * Live window ids, most recently FOCUSED first (YAZ-1767 D9): `focus` moves an id to the front,
    * `closed` drops it. A window that has never been focused is not in the list at all — it ranks
@@ -377,6 +395,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       live.delete(id)
       startViews.delete(id) // closed before it asked (YAZ-2951 S20)
       heldLinks.delete(wcId)
+      // A lit window goes dark with the window whose row lit it; a closed lit window is forgotten (YAZ-3091 D8).
+      const target = lit.get(id)
+      lit.delete(id)
+      if (target !== undefined) glow(target, false)
+      for (const [from, to] of lit) if (to === id) lit.delete(from)
       const at = focusOrder.indexOf(id)
       if (at !== -1) focusOrder.splice(at, 1)
       if (quitting) return
@@ -404,7 +427,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   }
 
   /** A link push to `win`: at once when its renderer listens, else held for `handleLinkReady` (YAZ-2589 A2). */
-  const sendLink = (win: ManagedWindow, channel: string, payload: string): void => {
+  const sendLink = (win: ManagedWindow, channel: string, payload: unknown): void => {
     const send = (): void => win.webContents.send(channel, payload)
     const held = heldLinks.get(win.webContents.id)
     if (held === undefined) send()
@@ -556,6 +579,27 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // The tab's display name is stored with the new window's one tab (YAZ-3057 D3). `from`'s own strip must not come along.
       const { tabStrip: _from, ...source } = from
       open({ ...source, id, roots: [...from.roots], file: path, tabs: [path], ...(carry?.name === undefined ? {} : { tabStrip: [{ path, name: carry.name }] }), rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: clampBounds(cascaded, host.workAreas()) })
+    },
+
+    moveTo(to, path, carry) {
+      const win = live.get(to)
+      const entry = entryOf(to)
+      if (win === undefined || win.isDestroyed() || entry === undefined || rootOfPath(entry.roots, path) === null) return false
+      focusWindow(win)
+      sendLink(win, CONTRACT.link.onTakeTab.channel, { path, ...carry })
+      return true
+    },
+
+    highlight(from, to) {
+      const before = lit.get(from)
+      const next = to !== null && to !== from && live.has(to) ? to : undefined
+      if (before === next) return
+      if (before !== undefined) glow(before, false)
+      if (next === undefined) lit.delete(from)
+      else {
+        lit.set(from, next)
+        glow(next, true)
+      }
     },
 
     takeStartView(id) {

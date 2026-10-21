@@ -467,11 +467,12 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(menuOf(el)).toBeNull()
   })
 
-  it('Move to right panel transfers the exact tab and closes the menu', () => {
+  it('"Move to ▸ Right panel" transfers the exact tab and closes the menu (YAZ-3091 D3, S18)', () => {
     const onMoveToRight = vi.fn()
     const el = mount({ ...props, onMoveToRight })
     rightClick(tabAt(el, 1))
-    const move = items(el).find((item) => item.textContent === 'Move to right panel')
+    act(() => items(el).find((item) => item.textContent === 'Move to')?.click())
+    const move = items(el).find((item) => item.textContent === 'Right panel')
     act(() => move?.click())
     expect(onMoveToRight).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
     expect(menuOf(el)).toBeNull()
@@ -793,9 +794,29 @@ describe('TabBar copies (YAZ-2940 D1): two tabs of one file', () => {
     const el = container
     act(() => void el.querySelector('[data-tab="t2"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
-    expect(items().map((item) => item.textContent).slice(0, 3)).toEqual(['Move to new window', 'Duplicate tab', 'Move to right panel'])
+    expect(items().map((item) => item.textContent).slice(0, 3)).toEqual(['Move to new window', 'Duplicate tab', 'Move to'])
     act(() => items()[1].click())
     expect(onDuplicate).toHaveBeenCalledExactlyOnceWith('t2')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('YAZ-3091 D2, D3, S7: the menu asks for the windows of the right-clicked tab\'s page when it opens; a window row moves THAT tab, by id', () => {
+    const onMoveTargets = vi.fn((path: string) => [{ id: 'w2', label: `Work — ${path} · 1 tab` }])
+    const onMoveToWindow = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const tabs = [{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/b.md' }]
+    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} tabs={tabs} active="t1" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} onMoveToRight={vi.fn()} onMoveTargets={onMoveTargets} onMoveToWindow={onMoveToWindow} {...noNav} />))
+    const el = container
+    expect(onMoveTargets).not.toHaveBeenCalled() // read when a menu opens, never before
+    act(() => void el.querySelector('[data-tab="t2"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    expect(onMoveTargets).toHaveBeenLastCalledWith('/v/b.md')
+    const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    act(() => items().find((item) => item.textContent === 'Move to')?.click())
+    expect([...el.querySelectorAll('.ctx-menu__sub [role="group"]')].map((g) => g.textContent)).toEqual(['Work — /v/b.md · 1 tab', 'Right panel'])
+    act(() => items().find((item) => item.textContent === 'Work — /v/b.md · 1 tab')?.click())
+    expect(onMoveToWindow).toHaveBeenCalledExactlyOnceWith('w2', '/v/b.md', 't2')
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 })
