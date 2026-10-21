@@ -9,7 +9,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
 import type { IndexRecord, IndexResponse, VaultConfigChange, WatchEvent } from '@shared/types'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
-import { useIndex, type IndexState } from './useIndex'
+import { refreshIndex, useIndex, type IndexState } from './useIndex'
 
 let configListeners: Array<(c: VaultConfigChange) => void> = []
 
@@ -253,5 +253,25 @@ describe('useIndex', () => {
     act(() => root?.unmount())
     root = null
     expect(configListeners).toEqual([])
+  })
+
+  it('refreshIndex(root) fetches at once, in a burst of events too — not for another root, and not after unmount (YAZ-3102)', async () => {
+    mount()
+    await flush()
+    // A burst of renames keeps the debounce waiting: "Change letters" ended, so the index is read now.
+    await emit({ type: 'unlink', path: '/vault/a.md' })
+    await emit({ type: 'add', path: '/vault/a2.md', mtime: 2 })
+    indexFn.mockResolvedValue(response('/vault', '/vault/a2.md', '/vault/b.md'))
+    await act(async () => {
+      refreshIndex('/other')
+      refreshIndex('/vault')
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(indexFn).toHaveBeenCalledTimes(2)
+    expect(state.records.map((r) => r.path)).toEqual(['/vault/a2.md', '/vault/b.md'])
+    act(() => root?.unmount())
+    root = null
+    refreshIndex('/vault')
+    expect(indexFn).toHaveBeenCalledTimes(2)
   })
 })
