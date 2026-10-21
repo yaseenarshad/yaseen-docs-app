@@ -124,7 +124,7 @@ Turn on GitHub sync for a folder that is a git repo. The app commits and pushes 
 
 ### Draw and diagram beside your notes
 
-Excalidraw drawings (`.excalidraw`) and draw.io diagrams (`.drawio`) open in tabs, the same as notes. Right-click a folder and pick New Excalidraw drawing or New draw.io diagram. Each one saves 500 ms after your last change.
+Excalidraw drawings (`.excalidraw`) and draw.io diagrams (`.drawio`) open in tabs, the same as notes. Right-click a folder and click New drawing for an Excalidraw drawing, or hold the pointer on New drawing and pick New draw.io diagram. Each one saves 500 ms after your last change.
 
 - **draw.io is built in.** It works offline, and it sends nothing to the internet.
 - **The canvas panel.** Find images and icons in the Image Studio, keep shapes you reuse as Components, and present a drawing frame by frame.

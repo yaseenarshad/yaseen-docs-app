@@ -326,24 +326,28 @@ const editorStub = (): HTMLElement => {
 const menuItems = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')]
 const itemByLabel = (el: HTMLElement, label: string) => menuItems(el).find((b) => b.textContent === label)
 /**
- * The "Open in ▸" flyout (D7 amended, YAZ-1674): open it (a click on the parent — hover works too)
- * and read its children. `subItemByLabel` is undefined when the parent is absent OR the child is
- * not offered, which is exactly the two "no such item" answers the gating tests below ask for.
+ * A parent's flyout (D7 amended, YAZ-1674): "Open in ▸" unless `parent` names another — a create
+ * row (YAZ-3085 D3) such as "New note ▸". It opens with ArrowRight on the parent: at once, with no
+ * hover wait (D4), and never running a parent's default (D1) the way a click on a create row does.
+ * Then read its children. `subItemByLabel` is undefined when the parent is absent OR the child is
+ * not offered, which is exactly the two "no such item" answers the gating tests below ask for. The
+ * row and its flyout's first item can share a label (edge case 9): `itemByLabel` finds the row,
+ * which comes first, and a child is looked up inside `.ctx-menu__sub` only.
  */
-const openFlyout = (el: HTMLElement) => {
-  const parent = itemByLabel(el, 'Open in')
-  if (parent !== undefined) act(() => parent.click())
+const openFlyout = (el: HTMLElement, parent = 'Open in') => {
+  const row = itemByLabel(el, parent)
+  if (row !== undefined) act(() => void row.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })))
   return [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')]
 }
-const subLabels = (el: HTMLElement) => openFlyout(el).map((b) => b.textContent)
-const subItemByLabel = (el: HTMLElement, label: string) => openFlyout(el).find((b) => b.textContent === label)
+const subLabels = (el: HTMLElement, parent?: string) => openFlyout(el, parent).map((b) => b.textContent)
+const subItemByLabel = (el: HTMLElement, label: string, parent?: string) => openFlyout(el, parent).find((b) => b.textContent === label)
 /** Open the flyout OUTSIDE the click's own `act`: a nested `act` does not flush, so the child must exist before that act begins. */
-const clickSub = (el: HTMLElement, label: string) => {
-  const child = subItemByLabel(el, label)
+const clickSub = (el: HTMLElement, label: string, parent?: string) => {
+  const child = subItemByLabel(el, label, parent)
   act(() => child?.click())
 }
-const clickSubAsync = async (el: HTMLElement, label: string) => {
-  const child = subItemByLabel(el, label)
+const clickSubAsync = async (el: HTMLElement, label: string, parent?: string) => {
+  const child = subItemByLabel(el, label, parent)
   await act(async () => child?.click())
 }
 
@@ -544,9 +548,11 @@ describe('note rows open the hover preview (YAZ-3075)', () => {
 
 /**
  * The folder menu makes boards (YAZ-3028 D9): name first, then `fs:create-board`, then the tab. An
- * empty box is Untitled, numbered past a name that is taken; a board has no note ID.
+ * empty box is Untitled, numbered past a name that is taken; a board has no note ID. Since YAZ-3085
+ * they live in "New drawing ▸": a click on the row is an Excalidraw drawing (D1), and a hover opens
+ * the list — Excalidraw, dated Excalidraw, a separator, draw.io (D3).
  */
-describe('New Excalidraw drawing / New draw.io diagram (YAZ-3028 D9)', () => {
+describe('New drawing ▸: New Excalidraw drawing / New draw.io diagram (YAZ-3028 D9, YAZ-3085)', () => {
   type CreateBoard = ReturnType<typeof vi.fn<(req: { root: string; path: string }) => Promise<{ path: string; mtime: number; size: number }>>>
   const withCreateBoard = (taken: string[] = []) => (bridge: ReturnType<typeof installBridge>) => {
     const createBoard: CreateBoard = vi.fn(async (req) => {
@@ -556,9 +562,11 @@ describe('New Excalidraw drawing / New draw.io diagram (YAZ-3028 D9)', () => {
     ;(bridge as unknown as Record<string, unknown>).createBoard = createBoard
   }
   const createBoardOf = (bridge: ReturnType<typeof installBridge>) => (bridge as unknown as { createBoard: CreateBoard }).createBoard
-  const newIn = async (el: HTMLElement, item: string, typed: string | null) => {
+  /** Right-click the folder, pick `item` — a click on a create row itself, or with `parent` an item of that row's flyout — and commit `typed`. */
+  const newIn = async (el: HTMLElement, item: string, typed: string | null, parent?: string) => {
     act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    act(() => itemByLabel(el, item)?.click())
+    if (parent === undefined) act(() => itemByLabel(el, item)?.click())
+    else clickSub(el, item, parent)
     const input = el.querySelector<HTMLInputElement>('.create-inline__input')
     if (input === null) throw new Error('no create box')
     const placeholder = input.placeholder
@@ -570,25 +578,35 @@ describe('New Excalidraw drawing / New draw.io diagram (YAZ-3028 D9)', () => {
     return placeholder
   }
 
-  it('right-click a folder → New Excalidraw drawing → a name: the board is born in that folder, then opens in a tab', async () => {
+  it('right-click a folder → a click on the "New drawing" ROW itself → the drawing box: an Excalidraw board is born in that folder, then opens in a tab (YAZ-3085 D1)', async () => {
     const { el, bridge, props } = await mount({}, withCreateBoard())
-    expect(await newIn(el, 'New Excalidraw drawing', 'Plan')).toBe('New drawing')
+    expect(await newIn(el, 'New drawing', 'Sketch')).toBe('New drawing')
+    expect(createBoardOf(bridge)).toHaveBeenCalledExactlyOnceWith({ root: '/v', path: '/v/sub/Sketch.excalidraw' })
+    expect(bridge.createFile).not.toHaveBeenCalled()
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Sketch.excalidraw')
+    // The click made it at once: no flyout ever opened, and the menu is gone.
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('right-click a folder → open "New drawing ▸" → New Excalidraw drawing in its flyout → a name: the board is born in that folder, then opens in a tab', async () => {
+    const { el, bridge, props } = await mount({}, withCreateBoard())
+    expect(await newIn(el, 'New Excalidraw drawing', 'Plan', 'New drawing')).toBe('New drawing')
     expect(createBoardOf(bridge)).toHaveBeenCalledExactlyOnceWith({ root: '/v', path: '/v/sub/Plan.excalidraw' })
     expect(bridge.createFile).not.toHaveBeenCalled() // never the note door, and no note ID
     expect(bridge.mintNoteId).not.toHaveBeenCalled()
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Plan.excalidraw')
   })
 
-  it('New draw.io diagram says "New diagram" and makes a .drawio; an empty box is Untitled, then Untitled 2 past a taken one', async () => {
+  it('open "New drawing ▸" → New draw.io diagram in its flyout says "New diagram" and makes a .drawio; an empty box is Untitled, then Untitled 2 past a taken one', async () => {
     const { el, bridge, props } = await mount({}, withCreateBoard(['/v/sub/Untitled.drawio']))
-    expect(await newIn(el, 'New draw.io diagram', null)).toBe('New diagram')
+    expect(await newIn(el, 'New draw.io diagram', null, 'New drawing')).toBe('New diagram')
     expect(createBoardOf(bridge).mock.calls.map(([req]) => req.path)).toEqual(['/v/sub/Untitled.drawio', '/v/sub/Untitled 2.drawio'])
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Untitled 2.drawio')
   })
 
   it('New dated Excalidraw drawing seeds MM_DD- ; Enter on the seed alone is "MM_DD- Untitled"', async () => {
     const { el, bridge } = await mount({}, withCreateBoard())
-    await newIn(el, 'New dated Excalidraw drawing', null)
+    await newIn(el, 'New dated Excalidraw drawing', null, 'New drawing')
     const [[req]] = createBoardOf(bridge).mock.calls
     expect(req.path).toMatch(/^\/v\/sub\/\d{2}_\d{2}- Untitled\.excalidraw$/)
   })
@@ -2421,7 +2439,10 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     await type(searchBar(el)!, 'alpha')
     for (const item of ['New note', 'New dated note', 'New folder', 'New dated folder', 'Rename']) {
       rightClick(row(el, `${v}/Alpha.md`))
-      act(() => itemByLabel(el, item)?.click())
+      // "New note" and "New folder" are the rows' own clicks; the dated twins sit in their flyouts (YAZ-3085 D3).
+      if (item === 'New dated note') clickSub(el, item, 'New note')
+      else if (item === 'New dated folder') clickSub(el, item, 'New folder')
+      else act(() => itemByLabel(el, item)?.click())
       expect([item, vi.mocked(props.onRevealInFiles).mock.lastCall]).toEqual([item, [`${v}/Alpha.md`]])
     }
     expect(props.onRevealInFiles).toHaveBeenCalledTimes(5)
@@ -5316,7 +5337,9 @@ describe('favorites (YAZ-1766)', () => {
       for (const label of ['New folder', 'New dated folder']) {
         vi.mocked(props.onLensChange).mockClear()
         rightClick(el.querySelector('.sidebar__body'))
-        await act(async () => itemByLabel(el, label)?.click())
+        // The row's click, then the dated twin through the "New folder ▸" flyout (YAZ-3085 D3).
+        if (label === 'New folder') await act(async () => itemByLabel(el, label)?.click())
+        else await clickSubAsync(el, label, 'New folder')
         expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
       }
       // In Files the input stands at the top of the vault: the tab's copy means nothing there.
@@ -5341,15 +5364,11 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Copy',
       'Paste',
       'Copy path',
+      // The create rows (YAZ-3085 D3): note, drawing, folder — each a click and a hover list. The
+      // dated twins and the boards' items are in the lists, which stay closed until a hover.
       'New note',
-      // The boards (YAZ-3028 D9), between the note and the folder.
-      'New Excalidraw drawing',
-      'New draw.io diagram',
+      'New drawing',
       'New folder',
-      // Their own section (YAZ-2249 🔒 E1/E2): the dated twins lined up under the everyday items; no dated draw.io.
-      'New dated note',
-      'New dated Excalidraw drawing',
-      'New dated folder',
       'Rename',
       // The favorite toggle (YAZ-1766 D3) leads the "Open in ▸" group, one hairline above Delete.
       'Add to favorites',
@@ -5580,7 +5599,7 @@ describe('New dated note (YAZ-2242)', () => {
     vi.setSystemTime(new Date(2026, 8, 29))
     try {
       const { el, bridge, props } = await openOn('.tree__row--dir')
-      act(() => itemByLabel(el, 'New dated note')?.click())
+      clickSub(el, 'New dated note', 'New note') // in the "New note ▸" flyout (YAZ-3085 D3)
       expect(input(el)?.value).toBe('09_29- ')
       expect(input(el)?.placeholder).toBe('New note')
       await act(async () => {
@@ -5604,7 +5623,7 @@ describe('New dated note (YAZ-2242)', () => {
       bridge.readFile.mockImplementation((path) =>
         path === '/v/sub/.template.md' ? Promise.resolve({ path, content: template, mtime: 1, size: template.length }) : Promise.reject({ code: 'NOT_FOUND', message: `no such file: ${path}` }),
       )
-      act(() => itemByLabel(el, 'New dated note')?.click())
+      clickSub(el, 'New dated note', 'New note')
       await act(async () => {
         input(el)!.value = '09_29- Launch'
         input(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
@@ -5671,7 +5690,7 @@ describe('New folder / New dated folder (GRO-2022, YAZ-1604)', () => {
     vi.setSystemTime(new Date(2026, 5, 22))
     try {
       const { el, bridge } = await openOn('.tree__row--dir')
-      act(() => itemByLabel(el, 'New dated folder')?.click())
+      clickSub(el, 'New dated folder', 'New folder') // in the "New folder ▸" flyout (YAZ-3085 D3)
       expect(input(el)?.value).toBe('06_22- ')
       await commit(el, '06_22- Launch')
       expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/06-22-launch', title: '06_22- Launch' }) // C: a dated folder (YAZ-2420 D6)
@@ -6332,9 +6351,9 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     const paste = itemByLabel(el, 'Paste')
     expect(paste?.disabled).toBe(true)
     expect(paste?.getAttribute('data-hint')).toBe('⌘V')
-    // Seven groups drawn on one Markdown file row: the focus toggle alone in the Open group
-    // (YAZ-2619 R6), clipboard, create, more create, this-row, "Open in" alone, Delete.
-    expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(7)
+    // Six groups drawn on one Markdown file row (YAZ-3085 D3): the focus toggle alone in the Open
+    // group (YAZ-2619 R6), clipboard, create, this-row, "Open in" alone, Delete.
+    expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(6)
   })
 
   it('blank space offers no Cut / Copy (nothing to clip) but keeps the disabled Paste — the root is a paste target', async () => {
@@ -6343,8 +6362,8 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(itemByLabel(el, 'Cut')).toBeUndefined()
     expect(itemByLabel(el, 'Copy')).toBeUndefined()
     expect(itemByLabel(el, 'Paste')?.disabled).toBe(true)
-    // No row to rename or delete: clipboard, create, more create, and the root's own "Open in" — four groups.
-    expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(4)
+    // No row to rename or delete: clipboard, create, and the root's own "Open in" — three groups (YAZ-3085 D3).
+    expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(3)
   })
 
   it('Cut on a single row clips that one path and SAYS SO (YAZ-1341); the menu closes', async () => {
@@ -7327,7 +7346,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     }
     rightClick(body(el))
-    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder', 'New dated note', 'New dated Excalidraw drawing', 'New dated folder', 'Open in', 'Add vault to this window'])
+    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New drawing', 'New folder', 'Open in', 'Add vault to this window'])
     const leaves = flyout(el, 'Add vault to this window')
     expect(leaves.map((b) => b.textContent)).toEqual(['Second', 'First', 'Open folder…'])
     act(() => leaves[1].click())
@@ -7373,12 +7392,12 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(rowByPath(el, b)?.draggable).toBe(true) // to reorder the vaults (YAZ-2631 D5)
   })
 
-  it('the vault row\'s menu: Paste, Copy path · the two create pairs · Open in (VS Code, Reveal in Finder) · Remove from this window — and nothing else: a vault is no item of the focus list (S13, A2)', async () => {
+  it('the vault row\'s menu: Paste, Copy path · the three create rows (YAZ-3085) · Open in (VS Code, Reveal in Finder) · Remove from this window — and nothing else: a vault is no item of the focus list (S13, A2)', async () => {
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     const { el, b, props } = await two({ upkeep: true })
     rightClick(rowByPath(el, b))
-    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder', 'New dated note', 'New dated Excalidraw drawing', 'New dated folder', 'Open by itself', 'Open in', 'Remove from this window'])
+    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New drawing', 'New folder', 'Open by itself', 'Open in', 'Remove from this window'])
     expect(flyout(el, 'Open in').map((item) => item.textContent)).toEqual(['VS Code', 'Reveal in Finder'])
     await act(async () => itemByLabel(el, 'Copy path')?.click())
     expect(writeText).toHaveBeenCalledExactlyOnceWith(b)
@@ -8632,7 +8651,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     const { el, b, input, props, rerender } = await searchTwo()
     await type(input, 'plan')
     rightClick(rowByPath(el, b))
-    expect(topItems(el)).toEqual(['Show in sidebar', 'Paste', 'Copy path', 'New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder', 'New dated note', 'New dated Excalidraw drawing', 'New dated folder', 'Open by itself', 'Open in', 'Remove from this window'])
+    expect(topItems(el)).toEqual(['Show in sidebar', 'Paste', 'Copy path', 'New note', 'New drawing', 'New folder', 'Open by itself', 'Open in', 'Remove from this window'])
     act(() => itemByLabel(el, 'New note')?.click())
     expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith(b)
     await rerender({ lens: 'files', revealRequest: { id: 1, path: b } })

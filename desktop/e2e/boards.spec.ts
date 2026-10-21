@@ -11,8 +11,12 @@
  *     down (YAZ-3034); an edit (⌘D on a box) autosaves plain XML with its `yaseendraw-*` dates, and
  *     no request leaves the app.
  *
- *   4 right-click a folder → New Excalidraw drawing → type a name → Enter (YAZ-3036, D9): the file is
- *     born on disk with the empty scene and its dates, and opens in a tab on the canvas. *
+ *   4 the create rows (YAZ-3085 D1, D3; YAZ-3036, D9): right-click a folder → hover "New drawing" →
+ *     its list (Excalidraw, dated Excalidraw | draw.io) → New draw.io diagram → a name → Enter: the
+ *     `.drawio` is born on disk with its dates and opens in a tab. A click on the "New note" row
+ *     itself opens the name box (Escape makes nothing). A click on the "New drawing" row itself is
+ *     an Excalidraw drawing: the file is born with the empty scene and its dates, and opens on the
+ *     canvas — the tab step 5 needs in front.
  *   5 the board menu items and the canvas panel (YAZ-3037, YAZ-3038): with the drawing tab in front,
  *     File › Export Image… and View › Canvas Background are enabled; the rail's hamburger opens the
  *     panel with its three tabs, and ⌘C on an empty selection opens Components. No search is typed:
@@ -22,7 +26,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, copyVault, dirRow, fileRow, launchApp, layer, menuItem, quitApp, seededState, shoot } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, copyVault, dirRow, fileRow, launchApp, layer, menuListItem, menuParent, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -145,12 +149,44 @@ test('step 3 — a diagram row opens draw.io offline on app://drawio, and an edi
   await shoot(win, 'boards-05-diagram-saved')
 })
 
-test('step 4 — right-click a folder → New Excalidraw drawing → a name: the file is on disk and its tab opens', async () => {
+test('step 4 — the create rows: hover New drawing → New draw.io diagram → a name makes and opens a .drawio; a click on New note opens the name box; a click on New drawing makes an Excalidraw drawing', async () => {
   if (app === null) throw new Error('step 2 did not relaunch the app')
-  await dirRow(win, 'Projects').click({ button: 'right' })
-  await expect(menuItem(win, 'New Excalidraw drawing')).toBeVisible()
-  await menuItem(win, 'New Excalidraw drawing').click()
   const box = win.locator('.create-inline__input')
+
+  // The three rows, in order (D3), and the drawing list behind a hover — with its separator (two groups).
+  await dirRow(win, 'Projects').click({ button: 'right' })
+  await expect(menuParent(win, 'New note')).toBeVisible()
+  const rows = await menuParent(win).allTextContents()
+  expect(rows.slice(0, 3)).toEqual(['New note', 'New drawing', 'New folder'])
+  await menuParent(win, 'New drawing').hover()
+  const list = win.locator('.ctx-overlay .ctx-menu__sub')
+  await expect(list.locator('[role="menuitem"]')).toHaveText(['New Excalidraw drawing', 'New dated Excalidraw drawing', 'New draw.io diagram'])
+  await expect(list.locator('[role="group"]')).toHaveCount(2)
+  await shoot(win, 'boards-06a-new-drawing-list')
+  await menuListItem(win, 'New draw.io diagram').click()
+  await expect(box).toHaveAttribute('placeholder', 'New diagram')
+  await box.fill('Roadmap')
+  await box.press('Enter')
+  const diagram = path.join(vault, 'Projects', 'Roadmap.drawio')
+  await expect.poll(async () => (await readFile(diagram, 'utf8').catch(() => '')).length > 0, { timeout: 10_000 }).toBe(true)
+  expect(await readFile(diagram, 'utf8')).toMatch(/^<mxfile yaseendraw-created="[\d.]+" yaseendraw-updated="\d+"/)
+  await expect(activeTab(win)).toContainText('Roadmap')
+  await expect(layer(win).locator('iframe.drawio-editor__frame')).toBeVisible({ timeout: 15_000 })
+  await expect(fileRow(win, 'Roadmap.drawio')).toBeVisible()
+  await shoot(win, 'boards-06b-new-diagram')
+
+  // A click on the "New note" row itself is the everyday note (D1): the name box opens at once.
+  await dirRow(win, 'Projects').click({ button: 'right' })
+  await menuParent(win, 'New note').click()
+  await expect(win.locator('.ctx-overlay')).toHaveCount(0)
+  await expect(box).toHaveAttribute('placeholder', 'New note')
+  await expect(box).toHaveValue('')
+  await box.press('Escape')
+  await expect(box).toHaveCount(0)
+
+  // A click on the "New drawing" row itself is an Excalidraw drawing (D1).
+  await dirRow(win, 'Projects').click({ button: 'right' })
+  await menuParent(win, 'New drawing').click()
   await expect(box).toHaveAttribute('placeholder', 'New drawing')
   await box.fill('Whiteboard')
   await box.press('Enter')
