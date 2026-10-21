@@ -1,8 +1,8 @@
 import { existsSync, type Stats } from 'node:fs'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { VAULT_CONFIG_DIR, type VaultConfigChange } from '@shared/types'
-import { atomicWrite, BridgeFailure, fsCall, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
+import { atomicWrite, BridgeFailure, createDurable, fsCall, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
 import { watchTree, type TreeWatcher } from './fs/treeWatcher'
 
 /**
@@ -106,18 +106,52 @@ export async function readConfig(root: string, name: string): Promise<unknown> {
   return null
 }
 
+/** The pretty-printed text a config file holds; a value JSON cannot hold is refused. */
+function configText(value: unknown): string {
+  const content: string | undefined = JSON.stringify(value, null, 2)
+  if (content === undefined) throw new BridgeFailure('BAD_REQUEST', "'value' must be JSON-serialisable")
+  return `${content}\n`
+}
+
 /** `mkdir -p` the dotfolder lazily, then an atomic pretty-printed write; own subscribers notified synchronously. */
 export async function writeConfig(root: string, name: string, value: unknown): Promise<void> {
   const r = requireAbsPath(root, 'root')
   const n = requireConfigName(name)
-  const content: string | undefined = JSON.stringify(value, null, 2)
-  if (content === undefined) throw new BridgeFailure('BAD_REQUEST', "'value' must be JSON-serialisable")
+  const content = configText(value)
   const dir = path.join(r, VAULT_CONFIG_DIR)
   const file = path.join(dir, n)
   const { mtime } = await fsCall(file, async () => {
     await mkdir(dir, { recursive: true })
-    return atomicWrite(file, `${content}\n`)
+    return atomicWrite(file, content)
   })
+  announce(r, n, mtime)
+}
+
+/**
+ * `writeConfig`, but only when the file does not exist (the Draw import, YAZ-3028 D6): it never
+ * writes over a value, also one that appears while it runs (`createDurable` claims the name).
+ * True when it made the file; false when one was there. Own subscribers hear it like a write.
+ */
+export async function createConfig(root: string, name: string, value: unknown): Promise<boolean> {
+  const r = requireAbsPath(root, 'root')
+  const n = requireConfigName(name)
+  const content = configText(value)
+  const dir = path.join(r, VAULT_CONFIG_DIR)
+  const file = path.join(dir, n)
+  const made = await fsCall(file, async () => {
+    await mkdir(dir, { recursive: true })
+    return createDurable(file, content).then(
+      () => true,
+      (err: NodeJS.ErrnoException) => (err.code === 'EEXIST' ? false : Promise.reject(err)),
+    )
+  })
+  if (made) announce(r, n, (await stat(file)).mtimeMs)
+  return made
+}
+
+/** Tells this process's subscribers of `root` about an own write of `name`, and keeps its watcher echo out. */
+function announce(r: string, n: string, mtime: number): void {
+  const dir = path.join(r, VAULT_CONFIG_DIR)
   const entry = entries.get(r)
   if (entry !== undefined) {
     entry.ownMtimes.set(n, mtime)

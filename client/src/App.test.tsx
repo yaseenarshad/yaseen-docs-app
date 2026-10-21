@@ -26,7 +26,9 @@ interface SidebarStubProps {
   /** The first vault of `vaults`, read off them by the stub: the vault the panel is keyed on. */
   root: string
   /** The window's vaults in the order they were added (YAZ-2602 D1): each with its name, its watcher and its index source. */
-  vaults: { root: string; name: string; watch: unknown; index: unknown; upkeep: boolean; dueCount: number; reviewing: boolean }[]
+  vaults: { root: string; name: string; watch: unknown; index: unknown; upkeep: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[] }[]
+  /** Right-click → "Share" on a board row (YAZ-3040). */
+  onShareFile?: (path: string) => void
   /** The vault rows the user closed (YAZ-2602 R9): App's, for the session. */
   closedVaults: readonly string[]
   onSetVaultOpen: (root: string, open: boolean) => void
@@ -190,6 +192,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuNewWindow = new Set<() => void>()
   const menuZoom = new Set<() => void>()
   const menuWhatsNew = new Set<() => void>()
+  // The board gestures (YAZ-3037): Export Excalidraw Drawing… is the one App routes itself during a review.
+  const menuExportDrawing = new Set<() => void>()
+  const menuShareLink = new Set<() => void>()
   const linkOpenFile = new Set<(path: string) => void>()
   const linkNotice = new Set<(message: string) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
@@ -281,6 +286,10 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onNewWindow: menuSub(menuNewWindow),
       onZoom: menuSub(menuZoom),
       onWhatsNew: menuSub(menuWhatsNew),
+      onExportImage: menuSub(new Set()),
+      onExportDrawing: menuSub(menuExportDrawing),
+      onShareLink: menuSub(menuShareLink),
+      onCanvasBackground: vi.fn(() => () => undefined),
     },
     link: {
       onOpenFile: vi.fn((l: (path: string) => void) => {
@@ -324,6 +333,22 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       syncNow: vi.fn(async (r: string) => ({ root: r, state: 'off' as const })),
       setEnabled: vi.fn(async (r: string) => ({ root: r, state: 'off' as const })),
       onStatus: vi.fn(() => () => undefined),
+      history: vi.fn(async () => []),
+      version: vi.fn(),
+      restore: vi.fn(async () => undefined),
+    },
+    // Settings › Sharing (YAZ-3040): not set up, nothing shared.
+    share: {
+      status: vi.fn(async () => ({ state: 'off' as const, url: null, workersDevUrl: null, customDomain: null, accountName: null, workerName: null, bucketName: null, readyAt: null, demo: false })),
+      list: vi.fn(async () => []),
+      get: vi.fn(async () => null),
+      onChanged: vi.fn(() => () => undefined),
+      onSetupProgress: vi.fn(() => () => undefined),
+    },
+    // Settings › Storage (YAZ-3039): a plain folder, no git.
+    storage: {
+      stats: vi.fn(async (r: string) => ({ root: r, boards: { bytes: 0, count: 0 }, pictures: { bytes: 0, count: 0 }, other: { bytes: 0, count: 0 }, git: null, large: [], embedded: { bytes: 0, boards: 0 } })),
+      shrink: vi.fn(async () => ({ shrunk: 0, skipped: 0, bytesMoved: 0 })),
     },
     // No `review.json` (YAZ-2322), so upkeep is off: App owns one `useReviewSettings`, which reads and subscribes on vault open.
     vaultConfig: { read: vi.fn(async (_root?: string, _name?: string): Promise<unknown> => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
@@ -361,6 +386,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitNewTab: () => menuNewTab.forEach((l) => l()),
     emitNewWindow: () => menuNewWindow.forEach((l) => l()),
     emitWhatsNew: () => menuWhatsNew.forEach((l) => l()),
+    emitExportDrawing: () => menuExportDrawing.forEach((l) => l()),
+    emitShareLink: () => menuShareLink.forEach((l) => l()),
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
@@ -824,6 +851,20 @@ describe('App deep links (E1, GRO-2171)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+  it('File › Share Link ⌘⇧L opens the Share dialog on the active board (YAZ-3037 menu, YAZ-3040 dialog)', async () => {
+    const { bridge, el, emitShareLink } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/Plan.excalidraw', tabs: ['/v/Plan.excalidraw'] })
+    await act(async () => emitShareLink())
+    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull())
+    expect(bridge.share.get).toHaveBeenCalledWith({ root: '/v', path: '/v/Plan.excalidraw' })
+  })
+
+  it('File › Share Link does nothing on a note: no dialog, no question to main, no notice (YAZ-3040)', async () => {
+    const { bridge, el, emitShareLink } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    await act(async () => emitShareLink())
+    expect(el.querySelector('[role="dialog"][aria-label^="Share "]')).toBeNull()
+    expect(bridge.share.get).not.toHaveBeenCalled()
+    expect(el.querySelector('.link-notice')).toBeNull()
   })
 })
 
@@ -1325,7 +1366,8 @@ describe('App settings dialog (YAZ-1679)', () => {
   it('Yaseen Docs › Settings… (⌘,) mounts the ONE dialog, and its × unmounts it', async () => {
     const { el, emitSettings } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(el.querySelector('.settings-dialog')).toBeNull()
-    act(() => emitSettings())
+    // Async: the dialog's own reads settle inside act (YAZ-3044 A36).
+    await act(async () => emitSettings())
     expect(el.querySelector('.settings-dialog')).not.toBeNull()
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')?.click())
     expect(el.querySelector('.settings-dialog')).toBeNull()
@@ -3349,6 +3391,16 @@ describe('App upkeep review (YAZ-2322)', () => {
     ])
   })
 
+  it('⌘⇧S stays the review\'s Skip (YAZ-3037, YAZ-3028 D10): with a review open, the menu\'s Export Excalidraw Drawing… gesture skips the note', async () => {
+    const { el, emitExportDrawing } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
+    openInbox()
+    act(() => emitExportDrawing())
+    expect(layers(el)).toEqual([
+      ['/v/b.md', true],
+      ['/v/y.md', false],
+    ])
+  })
+
   it('a note that is already an open tab shows through that tab\'s layer — one editor for the path', async () => {
     const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, upkeepOn(due('a')))
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -4074,7 +4126,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(bridge.github.setEnabled).toHaveBeenCalledExactlyOnceWith('/w', true)
   })
 
-  it('with two or more vaults the Sync, Review and IDs settings say which vault they act on: the active tab\'s (R10, S39)', async () => {
+  it('with two or more vaults the Sync, Review, IDs, Storage and shared-boards settings say which vault they act on: the active tab\'s (R10, S39; YAZ-3039, YAZ-3040)', async () => {
     const { el, emitSettings } = await mount(defaultAppState(), TWO, {}, (b) => {
       feed({ '/v': { ids: true }, '/w': { ids: false } })(b)
       upkeep({ '/v': true, '/w': true })(b)
@@ -4088,11 +4140,11 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
           return [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].map((n) => n.textContent).filter((text) => text?.startsWith('Vault: ')).map((text) => [title, text])
         })
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v']])
+    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
     act(() => button(el, 'Close settings')?.click())
     show('/w/b.md')
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w']])
+    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
   })
 
   it('two vaults that have no answer on IDs: no box for either, and nothing is written (YAZ-2677 S4)', async () => {
@@ -4173,6 +4225,34 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(writeText.mock.calls[0][0]).not.toContain('/v')
     act(() => button(el, 'Dismiss')?.click())
     expect(el.querySelector('.sync-banner')).toBeNull()
+  })
+
+  it('a board row\'s "Share" opens the ONE Share dialog on that board, in its own vault, and the dialog asks main about it (YAZ-3040)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    await act(async () => captured.sidebar?.onShareFile?.('/w/plans/Roadmap.excalidraw'))
+    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Roadmap"]')).not.toBeNull())
+    expect(bridge.share.get).toHaveBeenCalledWith({ root: '/w', path: '/w/plans/Roadmap.excalidraw' })
+    await act(async () => captured.sidebar?.onShareFile?.('/w/notes.md'))
+    expect(el.querySelectorAll('[role="dialog"][aria-label^="Share "]')).toHaveLength(1)
+  })
+
+  it('a file held back as too large (YAZ-3039): the banner names it, offers no Dismiss, and its sidebar row gets the cloud-off icon', async () => {
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    act(() => push(bridge.github.onStatus, { root: '/w', state: 'attention', attention: 'too-large', tooLarge: ['Huge.excalidraw'] }))
+    expect(el.querySelector('.sync-banner strong')?.textContent).toBe('A file is too big for GitHub.')
+    expect(el.querySelector('.sync-banner')?.textContent).toContain('Huge.excalidraw is over GitHub')
+    expect(button(el, 'Dismiss')).toBeFalsy()
+    expect(captured.sidebar?.vaults.find((vault) => vault.root === '/w')?.tooLarge).toEqual(['Huge.excalidraw'])
+  })
+
+  it('a pass that merged a drawing says so once, and "See changes" opens that drawing\'s Version history in its own vault (YAZ-3039)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    const merged = [{ path: 'plans/Roadmap.excalidraw', author: 'Sam', clashes: 0 }]
+    act(() => push(bridge.github.onStatus, { root: '/w', state: 'synced', merged }))
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe("Merged Sam's changes into “Roadmap”.")
+    await act(async () => button(el, 'See changes')?.click())
+    await vi.waitFor(() => expect(bridge.github.history).toHaveBeenCalledWith('/w', '/w/plans/Roadmap.excalidraw'))
+    expect(el.querySelector('.link-notice')).toBeNull()
   })
 
   it('the "renamed outside the app" banner of /w names its paths inside /w, and Update repairs /w\'s links (S44)', async () => {

@@ -11,6 +11,11 @@ imports, and those don't exist on npm at the fork's versions — so the siblings
 (they're tiny; the main tarball's ~31 MB is mostly fonts plus the dev build the exports
 map requires).
 
+**Pin:** fork commit `10fa3958` (YAZ-3028 D3), the same build Yaseen Draw ships, so drawing tabs
+and note embeds run one engine. It was `9e63bdf2`. `@excalidraw/laser-pointer` (1.3.1) and
+`@excalidraw/utils` are not vendored: the fork does not touch them, and they resolve from the
+registry as the engine's own dependencies. Do not pack them.
+
 ## Sync a fork change into milkdown
 
 ```bash
@@ -30,6 +35,12 @@ Then in milkdown: delete the old tarballs, point the five `file:` entries in
 `client/package.json` at the new filenames, run `npm install`, build, run the e2e drawing
 specs, commit all of it together. The fork hash in the filenames is deliberate — it pins
 provenance and busts npm's `file:` tarball cache on every bump.
+
+Then check `package-lock.json`: every `resolved` of the five must name the new hash, and each
+`integrity` must be the sha512 of the new tarball (`openssl dgst -sha512 -binary <tgz> | base64`).
+npm keys `file:` deps on content, so a package that builds byte-identically across two commits
+(`fractional-indexing` does) can keep its old `resolved` path. `npm install` hides that; a clean
+`npm ci` then fails on the deleted tarball. `grep -c <old hash> package-lock.json` must print 0.
 
 ## Also here: two patched Milkdown packages
 

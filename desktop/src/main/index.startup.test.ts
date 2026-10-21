@@ -73,10 +73,15 @@ const h = vi.hoisted(() => {
     handles: new Map<string, (...args: unknown[]) => Promise<unknown>>(),
     protocol: { registerSchemesAsPrivileged: vi.fn(log('registerSchemesAsPrivileged')), handle: vi.fn() },
     flushIndexCache: vi.fn(async () => void s.order.push('flushIndexCache')),
-    registerIpc: vi.fn(() => (s.order.push('registerIpc'), gitSync)),
+    registerIpc: vi.fn(() => (s.order.push('registerIpc'), { sync: gitSync, secrets: {} })),
     registerClipboardIpc: vi.fn(log('registerClipboardIpc')),
+    /** The Draw import's wiring (YAZ-3028 D6); `drawImport.test.ts` tests the import itself. */
+    startDrawImport: vi.fn((_deps: Record<string, unknown>) => void s.order.push('startDrawImport')),
   }
 })
+
+// Electron sets it in a real app; main reads it at `ready` for the share viewer's place (YAZ-3040).
+Object.defineProperty(process, 'resourcesPath', { value: '/Applications/Yaseen Docs.app/Contents/Resources', configurable: true })
 
 vi.mock('electron', () => ({
   app: h.app,
@@ -96,16 +101,20 @@ vi.mock('./windows', () => ({ createWindowManager: () => h.manager }))
 // The diaries of links (YAZ-2677 R27) are flushed with the index cache, in the same step.
 vi.mock('./vaultIndex', () => ({ initIndexCache: vi.fn(), flushIndexCache: h.flushIndexCache, flushDiaries: vi.fn(async () => undefined) }))
 vi.mock('./ipc', () => ({ registerIpc: h.registerIpc }))
+vi.mock('./library/folder', () => ({ ensureLibraryFolder: vi.fn(async () => '/userData/library') }))
 vi.mock('./updater', () => ({ createUpdater: h.createUpdater, runFile: vi.fn(), spawnDetached: vi.fn(), RELEASES_PAGE: 'https://github.com/yaseenarshad/yaseen-docs-app/releases/latest' }))
 vi.mock('./ipc/clipboard', () => ({ registerClipboardIpc: h.registerClipboardIpc }))
+vi.mock('./drawImport', async (importOriginal) => ({ ...(await importOriginal<typeof import('./drawImport')>()), startDrawImport: h.startDrawImport }))
 vi.mock('./theme', () => ({ subscribeNativeTheme: vi.fn(), windowBackgroundColor: vi.fn() }))
 vi.mock('./menu', () => ({
   buildContextMenuTemplate: vi.fn(),
   buildMenuTemplate: vi.fn(() => []),
   createMenuHandlers: vi.fn(() => ({})),
+  gateOnBoardKind: vi.fn((_kind: unknown, apply: () => void) => ({ apply, applyIfMoved: apply })),
   menuKeyedVaults: vi.fn(() => []),
   pickMenuTargetWindow: vi.fn(),
   subscribeMenuRebuild: vi.fn(),
+  subscribeMenuRebuildOnActiveFile: vi.fn(),
 }))
 
 const NOTE = '/vault/Plans/Roadmap.md'
@@ -136,8 +145,8 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.s.order.indexOf('setPath:userData')).toBeLessThan(h.s.order.indexOf('singleInstanceLock'))
   })
 
-  it('claims the yaseendocs:// handler once, and never under the e2e harness (YAZ-2131 🔒 D8)', async () => {
-    expect(h.app.setAsDefaultProtocolClient).toHaveBeenCalledExactlyOnceWith('yaseendocs')
+  it('claims the yaseendocs:// and yaseendraw:// handlers once each, and never under the e2e harness (YAZ-2131 🔒 D8, YAZ-3028 D7)', async () => {
+    expect(h.app.setAsDefaultProtocolClient.mock.calls).toEqual([['yaseendocs'], ['yaseendraw']])
     vi.clearAllMocks()
     vi.stubEnv('YASEEN_DOCS_E2E', '1')
     vi.resetModules()
@@ -217,15 +226,35 @@ describe('main startup order (YAZ-2172)', () => {
     h.s.on.get('second-instance')!(event(), ['/Applications/Yaseen Docs.app/Contents/MacOS/Yaseen Docs', fileLink(NOTE)])
     expect(h.manager.routeToFile).toHaveBeenCalledWith(NOTE, null)
     expect(win.focus).not.toHaveBeenCalled()
+    // Draw's scheme rides the same door (YAZ-3028 D7).
+    h.s.on.get('second-instance')!(event(), ['/Applications/Yaseen Docs.app/Contents/MacOS/Yaseen Docs', 'yaseendraw:///vault/Board%20one.excalidraw'])
+    expect(h.manager.routeToFile).toHaveBeenLastCalledWith('/vault/Board one.excalidraw', null)
+    expect(win.focus).not.toHaveBeenCalled()
     h.s.on.get('second-instance')!(event(), ['/Applications/Yaseen Docs.app/Contents/MacOS/Yaseen Docs', '--flag'])
     expect([win.restore, win.focus].map((f) => f.mock.calls.length)).toEqual([1, 1])
+  })
+
+  it('a yaseendraw:// link opens the file like a yaseendocs:// one (YAZ-3028 D7)', async () => {
+    h.s.ready()
+    await settle()
+    h.s.on.get('open-url')!(event(), 'yaseendraw:///vault/Board%20one.excalidraw?root=%2Fvault')
+    expect(h.manager.routeToFile).toHaveBeenCalledWith('/vault/Board one.excalidraw', '/vault')
+  })
+
+  it('starts the Draw import once on ready, before the windows restore, with the app-data half off for an isolated profile (YAZ-3028 D6)', async () => {
+    expect(h.startDrawImport).not.toHaveBeenCalled()
+    h.s.ready()
+    await settle()
+    expect(h.startDrawImport).toHaveBeenCalledOnce()
+    expect(h.startDrawImport.mock.calls[0]![0]).toMatchObject({ drawDir: '/profile/Yaseen Draw', userData: '/profile', appData: false })
+    expect(h.s.order.indexOf('startDrawImport')).toBeLessThan(h.s.order.findIndex((e) => e.startsWith('restore:')))
   })
 })
 
 describe('a window focus is a pull trigger (YAZ-1081 D2)', () => {
   it('asks the sync manager to pull EVERY vault the focused window shows, and no vault of another window; a Welcome window or an unknown one asks for none (YAZ-2602 S43)', async () => {
     h.s.ready()
-    await settle() // `whenReady` ran: registerIpc handed back the sync manager
+    await settle() // `whenReady` ran: registerIpc handed back the sync manager (and the one secrets instance)
     h.s.stored = [{ id: 'w1', roots: ['/notes', '/work'] }, { id: 'w2', roots: ['/other'] }, { id: 'w3', roots: [] }]
     const focus = (id: string | undefined) => {
       const webContents = { id: 7 }
@@ -245,7 +274,7 @@ describe('a window focus is a pull trigger (YAZ-1081 D2)', () => {
 describe('main quit order: before-quit runs runQuitSequence with the live deps (YAZ-2172, YAZ-2174)', () => {
   it('flushes the renderers first, then the store, index cache and git sync, and exits only once those settle (YAZ-1081 D2)', async () => {
     h.s.ready()
-    await settle() // `whenReady` ran: registerIpc handed back the sync manager
+    await settle() // `whenReady` ran: registerIpc handed back the sync manager (and the one secrets instance)
     const renderers = gate()
     const git = gate()
     h.manager.flushAllForQuit.mockImplementationOnce(() => (h.s.order.push('flushAllForQuit'), renderers.promise))

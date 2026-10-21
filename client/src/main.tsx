@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './App'
+import { warmEngineFor } from './drawings/engine'
 import { storage } from './lib/storage'
 // Crepe's common theme file by file, in its own order, minus latex (KaTeX's stylesheet and its 59
 // fonts), top-bar, ai and diff (AI diff review): features that never load (YAZ-2184).
@@ -39,4 +40,8 @@ function render(): void {
 void storage
   .init()
   .catch((err: unknown) => console.error('[storage] init failed; rendering with defaults', err))
-  .then(render)
+  .then(() => {
+    // A window restored onto a drawing tab starts the engine now, beside the first render (YAZ-3044 A39).
+    warmEngineFor(storage.getFile())
+    render()
+  })

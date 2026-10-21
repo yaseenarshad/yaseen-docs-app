@@ -3,10 +3,10 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { MenuItemConstructorOptions } from 'electron'
-import { defaultRightPanelIdentity, type RecentRoots, type WindowEntry } from '@shared/types'
+import { defaultRightPanelIdentity, type FileKind, type RecentRoots, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { createStore, type Store } from './store'
-import { HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild, type ContextMenuActions, type MenuHandlers, type MenuHost, type MenuInputs } from './menu'
+import { CANVAS_BACKGROUND_PICKS, HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, gateOnBoardKind, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile, type ContextMenuActions, type MenuHandlers, type MenuHost, type MenuInputs } from './menu'
 
 // ---------- buildMenuTemplate (pure) ----------
 
@@ -30,6 +30,10 @@ const noopHandlers = (): MenuHandlers => ({
   openHelp: vi.fn(),
   checkForUpdates: vi.fn(),
   whatsNew: vi.fn(),
+  exportImage: vi.fn(),
+  exportDrawing: vi.fn(),
+  shareLink: vi.fn(),
+  canvasBackground: vi.fn(),
 })
 
 const RECENTS: RecentRoots = [
@@ -38,9 +42,13 @@ const RECENTS: RecentRoots = [
   { path: '/vaults/old', lastOpened: 1 },
 ]
 
-function build(recents: RecentRoots = RECENTS, isDev = false, handlers: MenuHandlers = noopHandlers(), keyedVaults: MenuInputs['keyedVaults'] = []) {
-  return buildMenuTemplate({ recents, keyedVaults, isDev }, handlers)
+function build(recents: RecentRoots = RECENTS, isDev = false, handlers: MenuHandlers = noopHandlers(), keyedVaults: MenuInputs['keyedVaults'] = [], activeKind: FileKind | null = null) {
+  return buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }, handlers)
 }
+
+/** The menu with `kind` as the focused window's active tab (YAZ-3037). */
+const onTab = (kind: FileKind | null, handlers: MenuHandlers = noopHandlers()) => build(RECENTS, false, handlers, [], kind)
+const item = (template: MenuItemConstructorOptions[], menu: string, id: string) => menuOf(template, menu).find((i) => i.id === id)
 
 function menuOf(template: MenuItemConstructorOptions[], label: string): MenuItemConstructorOptions[] {
   const top = template.find((m) => m.label === label)
@@ -290,6 +298,60 @@ describe('buildMenuTemplate', () => {
     expect(recent.map((i) => i.id)).toEqual(['menu.file.open-recent.0', 'menu.file.open-recent.1', 'menu.file.open-recent.2'])
     expect(menuOf(build(), 'View').find((i) => i.label === 'Toggle Sidebar')?.id).toBe('menu.view.toggle-sidebar')
     expect((build().find((m) => m.label === 'Help')?.submenu as MenuItemConstructorOptions[]).map((i) => i.id)).toEqual(['menu.help.whats-new', 'menu.help.github'])
+  })
+
+  // ---------- The board items (YAZ-3037, YAZ-3028 D10; ported from Draw's menu.test.ts) ----------
+
+  it('File: Export Image… ⌘⇧E, Export Excalidraw Drawing… ⌘⇧S and Share Link ⌘⇧L, in their own group after Search Vault, each calling its handler', () => {
+    const handlers = noopHandlers()
+    const file = menuOf(onTab('drawing', handlers), 'File')
+    const at = (id: string) => file.findIndex((i) => i.id === id)
+    expect(at('menu.file.export-image')).toBe(at('menu.file.search') + 2)
+    expect([at('menu.file.export-drawing'), at('menu.file.share-link'), at('menu.file.close-tab')]).toEqual([at('menu.file.export-image') + 1, at('menu.file.export-image') + 2, at('menu.file.export-image') + 4])
+    expect(file[at('menu.file.share-link') + 1].type).toBe('separator')
+    expect(['menu.file.export-image', 'menu.file.export-drawing', 'menu.file.share-link'].map((id) => [file[at(id)].label, file[at(id)].accelerator, file[at(id)].enabled])).toEqual([
+      ['Export Image…', 'CmdOrCtrl+Shift+E', true],
+      ['Export Excalidraw Drawing…', 'CmdOrCtrl+Shift+S', true],
+      ['Share Link', 'CmdOrCtrl+Shift+L', true],
+    ])
+    click(file[at('menu.file.export-image')])
+    click(file[at('menu.file.export-drawing')])
+    click(file[at('menu.file.share-link')])
+    expect([handlers.exportImage, handlers.exportDrawing, handlers.shareLink].map((fn) => vi.mocked(fn).mock.calls.length)).toEqual([1, 1, 1])
+  })
+
+  it('the board items are enabled only on a board they work for (Draw\'s index.ts:201-212): a diagram gets Export Image… and Share Link only; a note, a PDF or no tab gets none', () => {
+    const enabled = (kind: FileKind | null) =>
+      [item(onTab(kind), 'File', 'menu.file.export-image'), item(onTab(kind), 'File', 'menu.file.export-drawing'), item(onTab(kind), 'File', 'menu.file.share-link'), item(onTab(kind), 'View', 'menu.view.canvas-background')].map((i) => i?.enabled)
+    expect(enabled('drawing')).toEqual([true, true, true, true])
+    expect(enabled('diagram')).toEqual([true, false, true, false])
+    for (const kind of ['markdown', 'pdf', 'image', 'text', null] as const) expect(enabled(kind), String(kind)).toEqual([false, false, false, false])
+  })
+
+  it('⌘⇧S belongs to the menu ONLY while Export Excalidraw Drawing… is enabled: off a drawing the review\'s Skip (YAZ-2322) keeps it (D10)', () => {
+    const accelerators = (kind: FileKind | null) =>
+      onTab(kind)
+        .flatMap((top) => (Array.isArray(top.submenu) ? (top.submenu as MenuItemConstructorOptions[]) : []))
+        .flatMap((i) => [i, ...(Array.isArray(i.submenu) ? (i.submenu as MenuItemConstructorOptions[]) : [])])
+        .map((i) => i.accelerator)
+        .filter((a): a is string => a !== undefined)
+    expect(accelerators('drawing').filter((a) => a === 'CmdOrCtrl+Shift+S')).toHaveLength(1)
+    for (const kind of ['markdown', 'diagram', null] as const) expect(accelerators(kind), String(kind)).not.toContain('CmdOrCtrl+Shift+S')
+    // ⌘⇧E and ⌘⇧L clash with no in-page key of Docs, so they stay on the greyed rows; each is claimed once.
+    for (const key of ['CmdOrCtrl+Shift+E', 'CmdOrCtrl+Shift+L']) expect(accelerators('markdown').filter((a) => a === key)).toEqual([key])
+  })
+
+  it('View › Canvas Background carries the engine\'s five picks after the zoom items, greyed off a drawing; a pick hands its colour over', () => {
+    const handlers = noopHandlers()
+    const view = menuOf(onTab('drawing', handlers), 'View')
+    const background = view.find((i) => i.id === 'menu.view.canvas-background')
+    expect(view.indexOf(background as MenuItemConstructorOptions)).toBe(view.findIndex((i) => i.id === 'menu.view.zoom-out') + 2)
+    expect([background?.label, background?.accelerator, background?.enabled]).toEqual(['Canvas Background', undefined, true])
+    const picks = background?.submenu as MenuItemConstructorOptions[]
+    expect(picks.map((p) => [p.id, p.label])).toEqual(CANVAS_BACKGROUND_PICKS.map((p, i) => [`menu.view.canvas-background.${i}`, p.label]))
+    expect(CANVAS_BACKGROUND_PICKS.map((p) => p.color)).toEqual(['#ffffff', '#f8f9fa', '#f5faff', '#fffce8', '#fdf8f6'])
+    picks.forEach((pick) => click(pick))
+    expect(vi.mocked(handlers.canvasBackground).mock.calls).toEqual(CANVAS_BACKGROUND_PICKS.map((p) => [p.color]))
   })
 })
 
@@ -595,6 +657,25 @@ describe('createMenuHandlers', () => {
     expect(() => unfocused.zoom(-1)).not.toThrow()
   })
 
+  it('the board gestures go to the focused renderer only (YAZ-3037); no focused window is a no-op', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers } = makeHandlers(wc)
+    handlers.exportImage()
+    handlers.exportDrawing()
+    handlers.shareLink()
+    handlers.canvasBackground('#f5faff')
+    expect(wc.send.mock.calls).toEqual([[CONTRACT.menu.onExportImage.channel], [CONTRACT.menu.onExportDrawing.channel], [CONTRACT.menu.onShareLink.channel], [CONTRACT.menu.onCanvasBackground.channel, '#f5faff']])
+    expect([CONTRACT.menu.onExportImage.channel, CONTRACT.menu.onExportDrawing.channel, CONTRACT.menu.onShareLink.channel, CONTRACT.menu.onCanvasBackground.channel]).toEqual(['menu:export-image', 'menu:export-drawing', 'menu:share-link', 'menu:canvas-background'])
+
+    const { handlers: unfocused } = makeHandlers(undefined)
+    expect(() => {
+      unfocused.exportImage()
+      unfocused.exportDrawing()
+      unfocused.shareLink()
+      unfocused.canvasBackground('#ffffff')
+    }).not.toThrow()
+  })
+
   it("whatsNew sends menu:whats-new to the focused window only; checkForUpdates goes to the host, which owns the check (YAZ-2976 D7, D8)", () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers, host } = makeHandlers(wc)
@@ -679,6 +760,63 @@ describe('subscribeMenuRebuild', () => {
     off()
     store.pushRecent('/vaults/notes')
     store.setFolder('/vaults/notes', { key: 1 })
+    expect(rebuild).not.toHaveBeenCalled()
+  })
+})
+
+// ---------- gateOnBoardKind (YAZ-3044 A32) ----------
+
+describe('gateOnBoardKind', () => {
+  it('apply always builds; applyIfMoved builds only when the front file moves between drawing, diagram and other', () => {
+    let kind: FileKind | null = 'markdown'
+    const build = vi.fn()
+    const menu = gateOnBoardKind(() => kind, build)
+    menu.apply()
+    expect(build).toHaveBeenCalledTimes(1)
+    for (const next of ['markdown', 'text', 'pdf', null] as const) {
+      kind = next
+      menu.applyIfMoved()
+    }
+    expect(build).toHaveBeenCalledTimes(1) // note to note, to a PDF, to none: the board items say the same
+    kind = 'drawing'
+    menu.applyIfMoved()
+    menu.applyIfMoved()
+    expect(build).toHaveBeenCalledTimes(2)
+    kind = 'diagram'
+    menu.applyIfMoved()
+    kind = 'markdown'
+    menu.applyIfMoved()
+    expect(build).toHaveBeenCalledTimes(4)
+    menu.apply() // a recents change still rebuilds
+    expect(build).toHaveBeenCalledTimes(5)
+  })
+})
+
+// ---------- subscribeMenuRebuildOnActiveFile (YAZ-3037, ported from Draw) ----------
+
+describe('subscribeMenuRebuildOnActiveFile', () => {
+  it('rebuilds when a window\'s active file changes, and not for other writes', () => {
+    store.upsertWindow(ENTRY)
+    const rebuild = vi.fn()
+    subscribeMenuRebuildOnActiveFile(store, rebuild)
+
+    store.setSidebarWidth(300)
+    store.pushRecent('/vaults/notes')
+    store.setSettings(store.get().settings)
+    expect(rebuild).not.toHaveBeenCalled()
+
+    store.upsertWindow({ ...ENTRY, file: '/vaults/notes/b.excalidraw', tabs: ['/vaults/notes/a.md', '/vaults/notes/b.excalidraw'] })
+    expect(rebuild).toHaveBeenCalledTimes(1)
+    // A write that leaves every window's active file alone is not a reason to rebuild.
+    store.upsertWindow({ ...ENTRY, file: '/vaults/notes/b.excalidraw', tabs: ['/vaults/notes/a.md', '/vaults/notes/b.excalidraw'], sidebarCollapsed: true })
+    expect(rebuild).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns an unsubscribe', () => {
+    store.upsertWindow(ENTRY)
+    const rebuild = vi.fn()
+    subscribeMenuRebuildOnActiveFile(store, rebuild)()
+    store.upsertWindow({ ...ENTRY, file: null, tabs: [] })
     expect(rebuild).not.toHaveBeenCalled()
   })
 })

@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { AssetResponse, AssetWriteRequest, AssetWriteResponse } from '@shared/types'
 import { DRAWING_EXTENSIONS, IMAGE_EXTENSIONS, MAX_FILE_BYTES } from '@shared/types'
 import { linkTarget } from '../vaultIndex/scan'
-import { atomicWrite, BridgeFailure, byNameCi, createDurable, fsCall, isSkipped, requireAbsPath, requireDir } from './fsUtils'
+import { atomicWrite, BridgeFailure, byNameCi, createDurable, fsCall, isSkipped, requireAbsPath, requireDir, resolveUnderRoot } from './fsUtils'
 import { requireRequest } from './validate'
 
 /**
@@ -113,16 +113,6 @@ export async function readAsset(root: string, ref: string): Promise<AssetRespons
     // the bytes is the only honest place to take the guard from.
     return { path: found, mime, data: (await readFile(found)).toString('base64'), size: st.size, mtime: st.mtimeMs }
   })
-}
-
-/**
- * Resolves a vault-relative (or absolute-under-root) write target and REFUSES anything that
- * lands outside `dir`. Reads may roam the tree by basename; a write never leaves the vault.
- */
-function resolveUnderRoot(dir: string, rel: string): string {
-  const p = path.resolve(dir, rel)
-  if (!p.startsWith(dir + path.sep)) throw new BridgeFailure('BAD_REQUEST', 'path escapes the vault root', { path: rel })
-  return p
 }
 
 /**

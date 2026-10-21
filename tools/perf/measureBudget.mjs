@@ -87,8 +87,11 @@ function walk(root, rel = '') {
 /** The drawing component's font folder (YAZ-878). Reported on its own row, never gated (YAZ-2131: out of scope). */
 const DRAWING_ASSETS = 'excalidraw-assets'
 
-/** Metrics of `out` (desktop/out) and, when given, the packaged `app` and `dmg`. */
-export function measure({ out, app, dmg }) {
+/**
+ * Metrics of `out` (desktop/out) and, when given, the packaged `app` and `dmg`. `share` is the share
+ * viewer's build (`share/dist/assets`, YAZ-3040), measured where the app does not hold its own copy.
+ */
+export function measure({ out, app, dmg, share }) {
   const m = {}
   if (app) {
     const res = join(app, 'Contents/Resources')
@@ -115,15 +118,40 @@ export function measure({ out, app, dmg }) {
   m.rendererMapBytes = sum(files.filter((f) => f.endsWith('.map')))
   m.mainBundleBytes = bytes(join(out, 'main'))
   m.drawingAssetBytes = bytes(join(r, DRAWING_ASSETS))
+  // The pinned draw.io webapp (YAZ-3028 D5): reported, never gated on its own — `asarBytes` holds it.
+  m.drawioBytes = bytes(join(out, 'drawio'))
+  // The share viewer (YAZ-3040, Draw's YAZ-1799): `share/dist/assets`, shipped OUTSIDE the asar as the
+  // `share-viewer` extraResource, so no other row holds it. The packaged copy when there is one.
+  m.shareViewerBytes = app ? bytes(join(app, 'Contents/Resources/share-viewer')) : share ? bytes(share) : null
   return m
 }
 
-/** Files every build ships under `out/`: the app, the `yaseendocs` command (YAZ-1617), the preload and the renderer. */
-const REQUIRED_OUT = ['main/index.js', 'main/cli.js', 'preload/index.js', 'renderer/index.html']
+/** The share viewer build is there and not empty (YAZ-3040): without it Set up sharing cannot upload a page. */
+function checkShare(share) {
+  return existsSync(share) && walk(share).length > 0 ? [] : [`no share viewer at ${share} (run npm run build)`]
+}
+
+/**
+ * The draw.io webapp every build ships under `out/drawio` (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D5): the editor,
+ * our overlay (the two config hooks, the picture page and its scripts, the fonts sheet), draw.io's
+ * licence, and the bundles the editor and the picture page load. A file missing here is a diagram tab
+ * or preview that breaks only when first opened, so the gate fails on it.
+ */
+const DRAWIO_OUT = [
+  'drawio/index.html', 'drawio/yaseen-render.html', 'drawio/js/PreConfig.js', 'drawio/js/PostConfig.js',
+  'drawio/js/yaseen-render.js', 'drawio/js/yaseen-render-config.js', 'drawio/yaseen-fonts/fonts.css',
+  'drawio/LICENSE-drawio.txt', 'drawio/js/viewer-static.min.js', 'drawio/js/stencils.min.js', 'drawio/js/app.min.js',
+]
+/** Folders of `out/drawio` that must not be empty: library icons a diagram names by path, and the MathJax the editor loads at start. */
+const DRAWIO_DIRS = ['drawio/img', 'drawio/math4']
+
+/** Files every build ships under `out/`: the app, the `yaseendocs` command (YAZ-1617), the preload, the renderer and draw.io. */
+const REQUIRED_OUT = ['main/index.js', 'main/cli.js', 'preload/index.js', 'renderer/index.html', ...DRAWIO_OUT]
 
 /** Integrity of `desktop/out`: what CI can check after `npm run build`. */
 function checkOut(out) {
   const fails = REQUIRED_OUT.filter((p) => !existsSync(join(out, p))).map((p) => `out: missing ${p}`)
+  for (const d of DRAWIO_DIRS) if (!existsSync(join(out, d)) || walk(join(out, d)).length === 0) fails.push(`out: ${d}/ is empty (diagram library icons draw blank, math labels show raw TeX)`)
   const r = join(out, 'renderer')
   if (!existsSync(join(r, 'index.html'))) return fails
   for (const f of rendererGraph(r).missing) fails.push(`renderer: ${f} is imported but not shipped`)
@@ -133,14 +161,32 @@ function checkOut(out) {
   return fails
 }
 
+/**
+ * What the Info.plist must claim: the `yaseendocs` scheme and `.md` as Editor/Alternate (GRO-2171,
+ * F1), and since YAZ-3028 D7 Draw's `yaseendraw` scheme and `.excalidraw` / `.drawio` as Editor/Owner.
+ * `plist` is the file as JSON (`plutil -convert json`).
+ */
+export function plistFails(plist) {
+  const fails = []
+  const schemes = (plist.CFBundleURLTypes ?? []).flatMap((t) => t.CFBundleURLSchemes ?? [])
+  if (!schemes.includes('yaseendocs')) fails.push('Info.plist: CFBundleURLSchemes lacks yaseendocs (deep links, GRO-2171)')
+  if (!schemes.includes('yaseendraw')) fails.push("Info.plist: CFBundleURLSchemes lacks yaseendraw (Draw's links, YAZ-3028 D7)")
+  const docType = (ext) => (plist.CFBundleDocumentTypes ?? []).find((d) => (d.CFBundleTypeExtensions ?? []).includes(ext))
+  const md = docType('md')
+  if (md?.CFBundleTypeRole !== 'Editor' || md?.LSHandlerRank !== 'Alternate') fails.push('Info.plist: .md is not an Editor/Alternate document type')
+  for (const ext of ['excalidraw', 'drawio']) {
+    const t = docType(ext)
+    if (t?.CFBundleTypeRole !== 'Editor' || t?.LSHandlerRank !== 'Owner') fails.push(`Info.plist: .${ext} is not an Editor/Owner document type (YAZ-3028 D7)`)
+  }
+  return fails
+}
+
 /** Integrity of the packaged `.app`: Info.plist, the ad-hoc seal, the CLI shim, the asar payload. macOS only. */
 function checkApp(app) {
   if (!existsSync(app)) return [`no app at ${app} (run npm run desktop:build, or use --out-only)`]
   const fails = []
   const plist = JSON.parse(execFileSync('plutil', ['-convert', 'json', '-o', '-', join(app, 'Contents/Info.plist')]).toString())
-  if (!(plist.CFBundleURLTypes ?? []).flatMap((t) => t.CFBundleURLSchemes ?? []).includes('yaseendocs')) fails.push('Info.plist: CFBundleURLSchemes lacks yaseendocs (deep links, GRO-2171)')
-  const md = (plist.CFBundleDocumentTypes ?? []).find((d) => (d.CFBundleTypeExtensions ?? []).includes('md'))
-  if (md?.CFBundleTypeRole !== 'Editor' || md?.LSHandlerRank !== 'Alternate') fails.push('Info.plist: .md is not an Editor/Alternate document type')
+  fails.push(...plistFails(plist))
   // The deep seal (desktop/build/adhocSign.cjs): without it Gatekeeper calls a download "damaged". It is the
   // certificate "Yaseen Local Signing" (YAZ-2976 D1), or ad-hoc on a machine that lacks it; `--verify` below checks the seal.
   if (!/Signature=adhoc|Authority=Yaseen Local Signing/.test(spawnSync('codesign', ['-dvv', app]).stderr.toString())) fails.push('codesign: not sealed (neither the certificate nor ad-hoc)')
@@ -150,6 +196,7 @@ function checkApp(app) {
   if (!bin || !(bin.mode & 0o111)) fails.push('Resources/bin/yaseendocs missing or not executable (the command line agents run)')
   const inAsar = new Set(asarFiles(join(app, 'Contents/Resources/app.asar')))
   for (const p of REQUIRED_OUT) if (!inAsar.has(`out/${p}`)) fails.push(`asar: missing out/${p}`)
+  for (const d of DRAWIO_DIRS) if (![...inAsar].some((f) => f.startsWith(`out/${d}/`))) fails.push(`asar: out/${d}/ is empty (diagram library icons draw blank, math labels show raw TeX)`)
   return fails
 }
 
@@ -173,12 +220,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const outOnly = argv.includes('--out-only')
   const { version } = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'))
   const out = arg('out', join(repo, 'desktop/out'))
+  const share = arg('share', join(repo, 'share/dist/assets'))
   const app = outOnly ? null : arg('app', join(repo, 'desktop/dist-app/mac-arm64/Yaseen Docs.app'))
   const dmg = outOnly ? null : arg('dmg', join(repo, `desktop/dist-app/Yaseen Docs-${version}-arm64.dmg`))
   const budget = JSON.parse(readFileSync(join(here, 'budget.json'), 'utf8'))
 
-  const fails = [...checkOut(out), ...(app ? checkApp(app) : [])]
-  const metrics = fails.some((f) => f.startsWith('no app')) ? {} : measure({ out, app, dmg })
+  const fails = [...checkOut(out), ...checkShare(share), ...(app ? checkApp(app) : [])]
+  const metrics = fails.some((f) => f.startsWith('no app')) ? {} : measure({ out, app, dmg, share })
   // A packaged run gates the DMG too: an absent one would otherwise skip its row and still PASS.
   if (metrics.appBytes != null && metrics.dmgBytes == null) fails.push(`no dmg at ${dmg} (run npm run desktop:build)`)
   const over = outOfBudget(metrics, budget.size, budget.sizeTolerance)
@@ -187,7 +235,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const fmt = (n) => (n == null ? '-' : n >= 1e5 ? `${(n / 1e6).toFixed(2)} MB` : String(n))
     for (const [k, v] of Object.entries(metrics)) {
       const row = budget.size[k]
-      console.log(`${k.padEnd(24)} ${fmt(v).padStart(10)}   ${row ? `ceiling ${fmt(row.max)}` : 'not gated (drawing component, out of scope)'}`)
+      console.log(`${k.padEnd(24)} ${fmt(v).padStart(10)}   ${row ? `ceiling ${fmt(row.max)}` : 'not gated (reported only; asarBytes holds it)'}`)
     }
     for (const f of fails) console.log('INTEGRITY FAIL:', f)
     for (const o of over) console.log('OVER BUDGET:', o)

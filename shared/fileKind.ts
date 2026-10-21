@@ -1,4 +1,4 @@
-import { IMAGE_VIEW_EXTENSIONS, MARKDOWN_EXTENSIONS, PDF_EXTENSIONS, TEXT_VIEW_EXTENSIONS, type FileKind } from './types'
+import { DIAGRAM_EXTENSIONS, DRAWING_VIEW_EXTENSIONS, IMAGE_VIEW_EXTENSIONS, MARKDOWN_EXTENSIONS, PDF_EXTENSIONS, TEXT_VIEW_EXTENSIONS, type BoardKind, type FileKind } from './types'
 
 /**
  * Lower-cased extension of a file name or path, dot included; `null` when there is none. A leading
@@ -18,6 +18,8 @@ export function fileKind(name: string): FileKind | null {
   if ((TEXT_VIEW_EXTENSIONS as readonly string[]).includes(ext)) return 'text'
   if ((PDF_EXTENSIONS as readonly string[]).includes(ext)) return 'pdf'
   if ((IMAGE_VIEW_EXTENSIONS as readonly string[]).includes(ext)) return 'image'
+  if ((DRAWING_VIEW_EXTENSIONS as readonly string[]).includes(ext)) return 'drawing'
+  if ((DIAGRAM_EXTENSIONS as readonly string[]).includes(ext)) return 'diagram'
   return null
 }
 
@@ -25,6 +27,11 @@ export function isMarkdown(name: string): boolean {
   return fileKind(name) === 'markdown'
 }
 
+/**
+ * Not Markdown, but a kind the app opens: never semantic, so a wikilink to it is navigation-only.
+ * Drawings and diagrams count (YAZ-3028 edge cases) although a tab edits them: "view-only" names the
+ * LINK rule, not the editor.
+ */
 export function isViewOnly(name: string): boolean {
   const kind = fileKind(name)
   return kind !== null && kind !== 'markdown'
@@ -32,6 +39,41 @@ export function isViewOnly(name: string): boolean {
 
 export function isSupportedFile(name: string): boolean {
   return fileKind(name) !== null
+}
+
+/**
+ * An EXCALIDRAW scene opened as a document (YAZ-3028 D2, Draw's 🔒 YAZ-1802 D2): the doors that read or
+ * write scene JSON — `drawing:load` / `drawing:save`, the board create — ask this, so a diagram never reaches them.
+ */
+export function isDrawing(name: string): boolean {
+  return fileKind(name) === 'drawing'
+}
+
+/** A draw.io diagram (YAZ-3028 D2): its own doors, `diagram:load` / `diagram:save`. */
+export function isDiagram(name: string): boolean {
+  return fileKind(name) === 'diagram'
+}
+
+/** A drawing OR a diagram: what the generic board surfaces ask (the tree row's Info, the hover preview, the create). */
+export function isBoard(name: string): boolean {
+  const kind = fileKind(name)
+  return kind === 'drawing' || kind === 'diagram'
+}
+
+/**
+ * What the app calls each board kind wherever a TYPE is meant (Draw's 🔒 YAZ-1802 D13): the engine is
+ * named, so "Excalidraw drawing" and "draw.io diagram" never blur into each other.
+ */
+export const BOARD_TYPE_NAME: Record<BoardKind, string> = { drawing: 'Excalidraw drawing', diagram: 'draw.io diagram' }
+
+/** The extension each kind of board is born with (YAZ-3028 D9). */
+export const BOARD_EXTENSION: Record<BoardKind, string> = { drawing: DRAWING_VIEW_EXTENSIONS[0], diagram: DIAGRAM_EXTENSIONS[0] }
+
+/** A board's name or path without its extension (`Flow.DRAWIO` → `Flow`, `.excalidraw` → ``); any other name is returned whole. */
+export function boardBaseName(name: string): string {
+  const dot = name.lastIndexOf('.')
+  const ext = dot === -1 ? '' : name.slice(dot).toLowerCase()
+  return ([...DRAWING_VIEW_EXTENSIONS, ...DIAGRAM_EXTENSIONS] as string[]).includes(ext) ? name.slice(0, dot) : name
 }
 
 /**

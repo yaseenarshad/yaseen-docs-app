@@ -41,3 +41,8 @@ The big notes copy the shapes the YAZ-2132 scope measured (`genVault.mjs`), so t
 | `watcher` | main's open fds at 2k and 10k notes; on 2k, an outside add → tree row and an outside edit → editor |
 | `idle` | 60 s alone: CPU % and RSS per process kind (main, renderer, gpu, utility) |
 | `quit` | `app.quit()` → main process gone |
+| `drawio` | click a `.drawio` (30 boxes) in the tree → draw.io's `load` message, marked in the page as `window.__drawioLoad` (Draw's scenario, YAZ-3044 A19). Ceiling: `drawio.drawioOpenMs` 760 ms. Written, not yet run |
+
+## Timing ceilings
+
+`budget.json`'s `perf` rows (`<scenario>.<metric>`, YAZ-3044 A19) are checked against each scenario's median after a run: a median over `max` by more than `perfTolerance` (15 %) prints `OVER:` and the run exits 1. `drawio.drawioOpenMs` (760 ms) is Draw's ceiling, kept by YAZ-3028 D5. Local only, like the harness.

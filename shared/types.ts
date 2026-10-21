@@ -23,6 +23,10 @@ export type BridgeErrorCode =
   | 'IO_ERROR' // any other fs error
   | 'PICKER_FAILED' // native folder dialog could not be run
   | 'INVALID_CONFIG' // a vault config file (e.g. .yaseendocs/properties.json) is unusable; the mutation is refused, the file never touched
+  | 'UNSUPPORTED_TYPE' // YAZ-3038 (Draw's 🔒 YAZ-1775 D4): a media provider answered with something that is not an image
+  | 'PROVIDER_FAILED' // Draw's 🔒 YAZ-1775 D4 (YAZ-3038 media, YAZ-3040 sharing): a media provider, Cloudflare or the share Worker was REACHED and refused, or answered nonsense
+  | 'OFFLINE' // Draw's 🔒 YAZ-1775 D4 (YAZ-3038 media, YAZ-3040 sharing): the provider, Cloudflare or the share Worker could not be reached at all — a passive state in the UI, never an error banner
+  | 'NOT_SET_UP' // Draw's YAZ-1799 (YAZ-3040): sharing is not set up on this computer yet (Settings › Sharing)
 
 export const MARKDOWN_EXTENSIONS = ['.md', '.markdown'] as const
 export const TEXT_VIEW_EXTENSIONS = [
@@ -97,11 +101,28 @@ export const IMAGE_VIEW_MIME = {
 } as const
 export const IMAGE_VIEW_EXTENSIONS = Object.freeze(Object.keys(IMAGE_VIEW_MIME)) as readonly (keyof typeof IMAGE_VIEW_MIME)[]
 
-/** The file kinds the app can open in-app; only `markdown` is writable and semantic. A file of no kind still lists (YAZ-1577). */
-export type FileKind = 'markdown' | 'text' | 'pdf' | 'image'
+/** An Excalidraw drawing opened as a document in a tab (YAZ-3028 D2, Draw's YAZ-1810). */
+export const DRAWING_VIEW_EXTENSIONS = ['.excalidraw'] as const
+/** A draw.io diagram opened as a document in a tab (YAZ-3028 D2, Draw's YAZ-1802). `.drawio.svg` / `.drawio.png` stay unsupported, as in Draw. */
+export const DIAGRAM_EXTENSIONS = ['.drawio'] as const
+
+/**
+ * The file kinds the app can open in-app (YAZ-1289, widened by YAZ-3028 D2). `markdown`, `drawing`
+ * and `diagram` are writable; only `markdown` is semantic. A file of no kind still lists (YAZ-1577).
+ */
+export type FileKind = 'markdown' | 'text' | 'pdf' | 'image' | 'drawing' | 'diagram'
+/** The two board kinds (YAZ-3028 D2): each has its own load and save doors, never `fs:write`. */
+export type BoardKind = Extract<FileKind, 'drawing' | 'diagram'>
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
 export const MAX_PDF_BYTES = 50 * 1024 * 1024
 export const MAX_IMAGE_BYTES = 50 * 1024 * 1024
+/**
+ * A board's read and write ceiling (Draw's YAZ-1810): a LEGACY scene embeds its images as base64 and
+ * is routinely past 10 MiB. The cap refuses a file that has stopped being a document; a diagram's
+ * pictures live inside its XML, so it shares the drawing's ceiling.
+ */
+export const MAX_DRAWING_BYTES = 200 * 1024 * 1024
+export const MAX_DIAGRAM_BYTES = MAX_DRAWING_BYTES
 
 // ---------- tree(root) ----------
 
@@ -304,8 +325,9 @@ export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'av
 /**
  * Drawing sidecars the asset pipe reads AND writes (Excalidraw embed, YAZ-852 / YAZ-876): scene
  * JSON standing on its own in the vault (`assets/drawings/` by default), a note holding only
- * `![[<name>.excalidraw]]`. Deliberately unsupported by the shared file classifier, so the
- * Files tree, supported-file watcher and Markdown index all omit it; it rides this pipe alone.
+ * `![[<name>.excalidraw]]`. Since YAZ-3028 D2 the same file is also the `drawing` FileKind: the
+ * Files tree lists it and a tab opens it through `drawing:load` / `drawing:save`. The Markdown
+ * index still omits it, and a note embed still rides this pipe (the modal, rule 28).
  */
 export const DRAWING_EXTENSIONS = ['excalidraw'] as const
 
@@ -349,6 +371,190 @@ export interface AssetWriteResponse {
   path: string
   mtime: number
   size: number
+}
+
+// ---------- drawing:* / diagram:* / fs:create-board (YAZ-3028 D2, ported from Draw's YAZ-1810 / YAZ-1802) ----------
+
+/**
+ * The two dates every board main writes carries (Draw's 🔒 YAZ-1834 D1): a drawing's first key
+ * `{ "yaseendraw": { createdAt, updatedAt } }`, a diagram's two `yaseendraw-*` attributes on its
+ * root `<mxfile>`. Set by main only. Rules and readers: `shared/drawingAssets.ts`, `shared/diagramFile.ts`.
+ */
+export interface BoardMeta {
+  /** Epoch ms. Born on create or on the first save of a board without one; never rewritten once it is a finite number. */
+  createdAt: number
+  /** Epoch ms of the last in-app save. */
+  updatedAt: number
+}
+
+/**
+ * One image the canvas holds, as it crosses the bridge: the engine's own mime plus a base64
+ * `data:` URL. Deliberately NOT the engine's `BinaryFileData`: the bridge must not depend on a
+ * renderer package, and `created` / `lastRetrieved` are the engine's bookkeeping, not the file's.
+ */
+export interface DrawingFileEntry {
+  mimeType: string
+  /** `data:<mime>;base64,<payload>` — the only form either side accepts. */
+  dataURL: string
+}
+
+export interface DrawingLoadRequest {
+  /** Vault root; the document must resolve inside it. */
+  root: string
+  /** The document, vault-relative or absolute under `root`. Never a basename search. */
+  path: string
+  /**
+   * For a PICTURE of the scene, never an editor (Draw's 🔒 YAZ-2073 D6): the longest side, in pixels,
+   * of the image the scene is drawn into. Each picture then comes back no bigger than it can appear.
+   */
+  imageMaxPx?: number
+}
+
+export interface DrawingLoadResponse {
+  /** Absolute path that was read — what every later save addresses. */
+  path: string
+  /** The file's bytes as UTF-8 text, exactly as on disk — except that a LEGACY scene's embedded `files` map comes back empty: those bytes travel once, in `files`. */
+  json: string
+  /** Disk mtime of the read: the `expectedMtime` the first save goes back with. */
+  mtime: number
+  size: number
+  /** Every image the scene still references and whose bytes were found, keyed by `fileId`. An id with no bytes is absent: the engine draws its placeholder. */
+  files: Record<string, DrawingFileEntry>
+  /** The subset of `files` that came from the `assets/` store; the renderer never ships these back. */
+  stored: string[]
+}
+
+/** One image a save must land in the store before the scene that names it is written. */
+export interface DrawingNewFile extends DrawingFileEntry {
+  /** Excalidraw's own content id (the SHA-1 of the bytes) — the file's name under `assets/`. */
+  fileId: string
+}
+
+export interface DrawingSaveRequest {
+  root: string
+  path: string
+  /** The serialized scene. Written verbatim but for the store's own `files: {}` rewrite and the date stamp. */
+  json: string
+  /** The mtime the renderer last read or wrote; a differing disk mtime rejects `CONFLICT` and writes NOTHING — assets included. */
+  expectedMtime?: number
+  /** Images the store does not have yet. Written first, so the scene on disk never names bytes that are missing. */
+  newFiles: DrawingNewFile[]
+}
+
+export interface DrawingSaveResponse {
+  path: string
+  mtime: number
+  size: number
+  /** The ids now on disk — the renderer adds them to its persisted set so it never ships them twice. */
+  persisted: string[]
+}
+
+export interface DiagramLoadRequest {
+  /** Vault root; the document must resolve inside it. */
+  root: string
+  /** The `.drawio`, vault-relative or absolute under `root`. */
+  path: string
+}
+
+export interface DiagramLoadResponse {
+  /** Absolute path that was read. */
+  path: string
+  /** The file's XML exactly as it sits on disk (compressed pages included — draw.io inflates them). */
+  xml: string
+  mtime: number
+  size: number
+}
+
+export interface DiagramSaveRequest {
+  root: string
+  path: string
+  /** The document as draw.io serialised it: plain `<mxfile>` XML (Draw's 🔒 YAZ-1802 D3). */
+  xml: string
+  /** A differing disk mtime rejects `CONFLICT` and writes NOTHING. */
+  expectedMtime?: number
+}
+
+export interface DiagramSaveResponse {
+  path: string
+  mtime: number
+  size: number
+}
+
+/**
+ * `fs:create-board` (YAZ-3028 D9): a NEW drawing or diagram, born with its empty content. Main picks
+ * the content by the kind of `path` — the renderer sends none — stamps the dates, and never
+ * overwrites (`ALREADY_EXISTS`). No note ID: IDs are for notes only.
+ */
+export interface CreateBoardRequest {
+  /** Vault root; `path` must resolve inside it. */
+  root: string
+  /** The new `.excalidraw` or `.drawio`, absolute under `root`. Its parent must exist. */
+  path: string
+}
+
+export interface CreateBoardResponse {
+  path: string
+  mtime: number
+  size: number
+}
+
+/**
+ * `fs:board-head` (YAZ-3028 D11): a board's Info, off its file head — one open, a 1 KB read, one
+ * `fstat`. Docs' tree carries no dates and does not refresh on a save, so the Info popover asks.
+ */
+export interface BoardHeadResponse {
+  path: string
+  mtime: number
+  size: number
+  /** The board's own dates, or null when it has none yet (the next save writes them). */
+  meta: BoardMeta | null
+}
+
+/**
+ * File › Export Drawing… (Draw's 🔒 YAZ-1775 D3, YAZ-1821; ported by YAZ-3028): the native SAVE sheet
+ * and the write behind it, ONE door — a standalone `.excalidraw`, every image embedded, written
+ * wherever the user picks. A renderer never holds an arbitrary path it may write to: the only path
+ * written is the one the user just typed into the sheet. The vault file is not touched.
+ */
+export interface SaveDrawingRequest {
+  /** The name the sheet opens on, extension included (`<board name>.excalidraw`). */
+  defaultName: string
+  /** The bytes to write, atomically (tmp + rename), once the user has picked. */
+  content: string
+}
+
+/** Where the file landed, or `{ cancelled: true }` when the sheet was dismissed and nothing was written. */
+export type SaveDrawingResponse = { path: string } | { cancelled: true }
+
+/**
+ * `dialog.openDrawing()` (YAZ-3038, Draw's YAZ-1833): the native OPEN-FILE dialog, filtered to
+ * `.excalidraw`, for the Components tab's "Import". It answers the BYTES and not just a path: the file
+ * an import reaches for is outside the vault, and the renderer has no door that reads an arbitrary
+ * absolute path. The read is bounded by `MAX_DRAWING_BYTES`, as `drawing:load` is.
+ */
+export type OpenDrawingResponse =
+  | {
+      /** Absolute path of the chosen file. */
+      path: string
+      /** Its base name WITHOUT the `.excalidraw` extension — what an import names the component. */
+      name: string
+      /** Its UTF-8 bytes. */
+      content: string
+    }
+  | { cancelled: true }
+
+/**
+ * File › Export Image… for a draw.io diagram (YAZ-3028, Draw's 🔒 YAZ-1802 D9): `SaveDrawingRequest`'s
+ * one-door rule with a PNG / SVG sheet. The picked name's extension decides which of the two pictures
+ * is written, so both arrive with the request, already drawn.
+ */
+export interface SaveImageRequest {
+  /** The name the sheet opens on, extension included (`<diagram name>.png`). */
+  defaultName: string
+  /** The picture as a `data:image/png;base64,` URL. */
+  png: string
+  /** The same picture as a `data:image/svg+xml;base64,` URL. */
+  svg: string
 }
 
 // ---------- writeFile(req) ----------
@@ -739,6 +945,357 @@ export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
  * `AppState.settings` — app-global editor preferences (GRO-2024). Applied as CSS custom
  * properties on the app container; never written into the markdown on disk.
  */
+// ---------- Canvas preferences (Draw's 🔒 YAZ-1775 D9, ported by YAZ-3028) ----------
+
+/**
+ * The user-level canvas preferences held in `SettingsState.canvas` (ported from Draw by YAZ-3028; the Settings › Canvas page, YAZ-3037): the engine's
+ * `browser: true, export: false` appState (`packages/excalidraw/appState.ts`) plus frame
+ * visibility. The TYPE and the DEFAULTS live in this leaf file; the mapping to and from the
+ * engine's appState keys is `shared/canvasPrefs.ts`, which imports from here so that nothing
+ * downstream of the mapping has to know about the engine.
+ *
+ * WHY here and not in the engine's own localStorage (the web app's answer): the engine package
+ * does not persist appState, so grid / tool lock / zen would reset on every mount, be invisible
+ * to the settings cog, and differ per window. One store, broadcast to every window, is the rule.
+ */
+export const SELECT_ON_MODES = ['wrap', 'overlap'] as const
+export type SelectOn = (typeof SELECT_ON_MODES)[number]
+/** The engine's roughness presets (`ROUGHNESS`): architect 0, artist 1, cartoonist 2. */
+export const ROUGHNESS_LEVELS = [0, 1, 2] as const
+export type Roughness = (typeof ROUGHNESS_LEVELS)[number]
+export const TEXT_ALIGNS = ['left', 'center', 'right'] as const
+export type TextAlign = (typeof TEXT_ALIGNS)[number]
+
+/**
+ * The laser's own settings (🔒 YAZ-1989 D1), in the fork's spelling so the mapping is a straight
+ * copy; the first of each list is the stock laser and the default. `canvasPrefsEngine.test.ts`
+ * pins the lists and defaults to the vendored engine's exports.
+ */
+export const LASER_TRAIL_MODES = ['fade', 'hold', 'sticky'] as const
+export type LaserTrailMode = (typeof LASER_TRAIL_MODES)[number]
+export const LASER_COLORS = ['#ff0000', '#ffd400', '#00c853', '#2979ff', '#d500f9'] as const
+export type LaserColor = (typeof LASER_COLORS)[number]
+export const LASER_SIZES = ['S', 'M', 'L'] as const
+export type LaserSize = (typeof LASER_SIZES)[number]
+
+/**
+ * The fork's `FONT_FAMILY` ids the Settings › Canvas "Default font" row offers
+ * (`packages/common/src/constants.ts`; ported from Draw by YAZ-3037), Assistant first because it is the
+ * default. Id 4 is deliberately absent: the fork leaves it unused for historical reasons.
+ */
+export const FONT_FAMILY_OPTIONS: ReadonlyArray<{ id: number; label: string }> = [
+  { id: 10, label: 'Assistant' },
+  { id: 5, label: 'Excalifont' },
+  { id: 1, label: 'Virgil' },
+  { id: 2, label: 'Helvetica' },
+  { id: 3, label: 'Cascadia' },
+  { id: 6, label: 'Nunito' },
+  { id: 7, label: 'Lilita One' },
+  { id: 8, label: 'Comic Shanns' },
+  { id: 9, label: 'Liberation Sans' },
+  { id: 11, label: 'Inter' },
+  { id: 12, label: 'Roboto' },
+  { id: 13, label: 'Liberation Serif' },
+  { id: 14, label: 'IBM Plex Mono' },
+]
+
+export interface CanvasPrefs {
+  gridModeEnabled: boolean
+  objectsSnapModeEnabled: boolean
+  /** The engine's `isMidpointSnappingEnabled`. */
+  snapToMidpoints: boolean
+  /** The engine's `isBindingEnabled` (arrows bind to the shapes they touch). */
+  arrowBinding: boolean
+  /** The engine's `boxSelectionMode`: `wrap` = `contain`, `overlap` = `overlap`. */
+  selectOn: SelectOn
+  /** `activeTool.locked` — NOT a plain key: a live update has to merge with the CURRENT tool. */
+  toolLock: boolean
+  zenModeEnabled: boolean
+  writingMode: boolean
+  /** The engine's `currentItemWritingStrokeWidth` (`WRITING_STROKE_WIDTH.default`). */
+  writingStrokeWidth: number
+  /** The engine's `currentItemVectorStrokeWidth` (`STROKE_WIDTH.medium`). */
+  vectorStrokeWidth: number
+  /**
+   * `frameRendering.outline` + `.name` together — the grey box and its label. NEVER `clip` or
+   * `enabled`: turning `enabled` off would also stop frames clipping their children. Applied
+   * through the engine's `updateFrameRendering`, never through appState.
+   */
+  framesVisible: boolean
+  /** New text's font (`currentItemFontFamily`, a `FONT_FAMILY_OPTIONS` id): Assistant (10). */
+  defaultFontFamily: number
+  /** New shapes' sloppiness (`currentItemRoughness`): architect (0). */
+  defaultRoughness: Roughness
+  /** New text's alignment (`currentItemTextAlign`): the engine's `DEFAULT_NEW_TEXT_ALIGN`. */
+  defaultTextAlign: TextAlign
+  /** The laser's trail (`laserTrailMode`): `fade` (🔒 YAZ-1989 D1). */
+  laserTrailMode: LaserTrailMode
+  /** The laser's colour (`laserColor`, a `LASER_COLORS` swatch): red (🔒 YAZ-1989 D1). */
+  laserColor: LaserColor
+  /** The laser's size (`laserSize`): `S` (🔒 YAZ-1989 D1). */
+  laserSize: LaserSize
+}
+
+/** The engine's own defaults (`appState.ts` `getDefaultAppState()` + `constants.ts`). */
+export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
+  gridModeEnabled: false,
+  objectsSnapModeEnabled: false,
+  snapToMidpoints: true,
+  arrowBinding: true,
+  selectOn: 'wrap',
+  toolLock: false,
+  zenModeEnabled: false,
+  writingMode: false,
+  writingStrokeWidth: 0.5,
+  vectorStrokeWidth: 2,
+  framesVisible: true,
+  defaultFontFamily: 10,
+  defaultRoughness: 0,
+  defaultTextAlign: 'center',
+  laserTrailMode: 'fade',
+  laserColor: '#ff0000',
+  laserSize: 'S',
+}
+
+/**
+ * The in-canvas docked panel's tabs (YAZ-3038; Draw's ⚡ YAZ-1775 D8 amended), in the order its strip shows
+ * them. The tab NAMES are the engine's sidebar tab names, kept as the web app spelled them so the
+ * engine's own sidebar state reads the same on both sides.
+ */
+export const CANVAS_PANEL_TABS = ['image-studio', 'components', 'presentation'] as const
+export type CanvasPanelTab = (typeof CANVAS_PANEL_TABS)[number]
+export const isCanvasPanelTab = (v: unknown): v is CanvasPanelTab => (CANVAS_PANEL_TABS as readonly string[]).includes(v as string)
+
+/**
+ * What the canvas panel remembers between mounts (YAZ-3038; Draw's 🔒 YAZ-1775 D10): the tab the hamburger
+ * opens on, and whether the panel is docked. App-global in `SettingsState`, and every window follows a
+ * change live. Whether the panel is OPEN is not remembered: it starts closed on every mount.
+ */
+export interface CanvasPanelState {
+  tab: CanvasPanelTab
+  docked: boolean
+}
+
+export const DEFAULT_CANVAS_PANEL: CanvasPanelState = { tab: 'components', docked: false }
+
+// ---------- The canvas panel's library (YAZ-3038; Draw's 🔒 YAZ-1775 D4 / D5), and the providers and secrets behind it ----------
+
+/**
+ * Where the media a board can reach comes from (the web app's `ImageStudioProvider`, ported
+ * verbatim): Pixabay photos and illustrations, Iconify icons and logos, and the app's own shapes.
+ * `shape` needs no network and no key at all.
+ */
+type MediaProvider = 'pixabay' | 'iconify' | 'shape'
+const MEDIA_PROVIDERS: readonly MediaProvider[] = ['pixabay', 'iconify', 'shape']
+export const isMediaProvider = (v: unknown): v is MediaProvider => MEDIA_PROVIDERS.includes(v as MediaProvider)
+
+/** What the item IS, independent of who served it (the web app's `ImageStudioItemKind`). */
+export type MediaItemKind = 'photo' | 'illustration' | 'icon' | 'logo' | 'shape'
+const MEDIA_ITEM_KINDS: readonly MediaItemKind[] = ['photo', 'illustration', 'icon', 'logo', 'shape']
+export const isMediaItemKind = (v: unknown): v is MediaItemKind => MEDIA_ITEM_KINDS.includes(v as MediaItemKind)
+
+/**
+ * A POINTER to something a provider can serve — never the bytes. Field for field the web app's
+ * `mediaItemValidator` (`convex/mediaTypes.ts`) so a library written by either app reads in the
+ * other: `itemKey` is the identity (de-dupe and removal both key on it), the rest is attribution
+ * and layout metadata the studio shows.
+ *
+ * `previewUrl` is stored but NEVER TRUSTED: a provider's CDN URL expires, and a stale one in a
+ * file that syncs between machines would render a broken tile. YAZ-1818 re-derives every preview it
+ * shows from `provider` + `providerId` and treats this field as a hint at best.
+ */
+export interface MediaItem {
+  itemKey: string
+  provider: MediaProvider
+  providerId: string
+  kind: MediaItemKind
+  title: string
+  previewUrl?: string
+  creator?: string
+  creatorUrl?: string
+  collectionName?: string
+  sourceUrl?: string
+  licenseName?: string
+  licenseUrl?: string
+  attribution?: string
+  width?: number
+  height?: number
+  trademarkNotice?: boolean
+}
+
+/**
+ * A `MediaItem` as the library FILE holds it — the web app's `storedItemValidator`: the pointer
+ * plus the moment it was last favorited or used. `updatedAt` is stamped by the main process on
+ * every write and is what both lists are ordered by (newest first); a renderer never supplies it.
+ */
+export type StoredMediaItem = MediaItem & { updatedAt: number }
+
+/**
+ * `<library>/media.json` (🔒 YAZ-1775 D5): the cross-vault media library, ONE file for the whole account.
+ * Both lists are newest-first and de-duplicated by `itemKey`; `favorites` is the user's pinned
+ * set, `recent` is an MRU of what they actually placed on a board.
+ */
+export interface MediaLibraryFile {
+  version: 1
+  favorites: StoredMediaItem[]
+  recent: StoredMediaItem[]
+}
+
+/** The library file's name inside the library folder. */
+export const MEDIA_LIBRARY_FILE = 'media.json'
+/**
+ * `<library>/components/` (🔒 YAZ-1775 D5): where YAZ-1819 writes a saved component's `.excalidraw` + `.png`.
+ * Named here so nothing else claims it; YAZ-1817 creates NOTHING — the folder appears on YAZ-1819's first write.
+ */
+export const LIBRARY_COMPONENTS_DIR = 'components'
+/** The components index beside that folder: `<library>/components.json` (🔒 YAZ-1775 D5, YAZ-1819). */
+export const COMPONENTS_INDEX_FILE = 'components.json'
+/** Favorites are capped at the web app's `listFavorites` ceiling; the oldest fall off the end. */
+export const MAX_MEDIA_FAVORITES = 500
+/** The MRU's length, the web app's `RECENT_LIMIT` exactly. */
+export const RECENT_LIMIT = 60
+
+/** `media:favorites` — one channel, three verbs; every verb answers the resulting list. */
+export type MediaFavoritesRequest = { op: 'list' } | { op: 'add'; item: MediaItem } | { op: 'remove'; itemKey: string }
+/** `media:recent` — the same shape: read the MRU, or push an item to its head. */
+export type MediaRecentRequest = { op: 'list' } | { op: 'record'; item: MediaItem }
+
+// ---------- Image Studio: the provider doors (🔒 YAZ-1775 D4, YAZ-1818) ----------
+
+/**
+ * Which providers a search asks. The web app's `ImageStudioSearchSource` exactly: `all` is the
+ * federated mix (Iconify 14 + Pixabay 4 of `SEARCH_LIMIT` 18), the other two are one provider each.
+ */
+export type MediaSearchSource = 'all' | 'iconify' | 'pixabay'
+const MEDIA_SEARCH_SOURCES: readonly MediaSearchSource[] = ['all', 'iconify', 'pixabay']
+export const isMediaSearchSource = (v: unknown): v is MediaSearchSource => MEDIA_SEARCH_SOURCES.includes(v as MediaSearchSource)
+
+/**
+ * A search RESULT — the same pointer `media.json` stores, so favoriting one is a copy rather than
+ * a conversion. It carries NO `previewUrl`: in the web app that field held the Worker route that
+ * would serve the picture, and this app has no routes — a preview is asked for by `provider` +
+ * `providerId` over `media:preview`, which is also why a stored `previewUrl` is never trusted.
+ */
+export type StudioItem = MediaItem
+
+/** The two providers that serve BYTES; `shape` is drawn by the renderer and never fetched. */
+export type MediaBytesProvider = 'pixabay' | 'iconify'
+const MEDIA_BYTES_PROVIDERS: readonly MediaBytesProvider[] = ['pixabay', 'iconify']
+export const isMediaBytesProvider = (v: unknown): v is MediaBytesProvider => MEDIA_BYTES_PROVIDERS.includes(v as MediaBytesProvider)
+
+/** `media:search` — the query, the providers, and the opaque cursor of the page before this one. */
+export interface MediaSearchRequest {
+  q: string
+  source: MediaSearchSource
+  /** The `nextCursor` of the previous page; absent or null starts over. Opaque: main minted it, main reads it. */
+  cursor?: string | null
+}
+
+/**
+ * `media:search`'s answer. `nextCursor` is null when the providers are exhausted — that is what
+ * stops the infinite scroll. `pixabayAvailable` is the ONE thing the renderer learns about the
+ * key (🔒 YAZ-1775 D4: never the value): false hides the Pixabay section instead of showing an error.
+ */
+export interface MediaSearchResponse {
+  items: StudioItem[]
+  nextCursor: string | null
+  pixabayAvailable: boolean
+  /** A provider that was reached and failed while ANOTHER answered — the web app's warning banner. */
+  warnings: string[]
+}
+
+/** `media:preview` / `media:import` — a provider and its own id for the item. */
+export interface MediaBytesRequest {
+  provider: MediaBytesProvider
+  id: string
+}
+export type MediaPreviewRequest = MediaBytesRequest
+export type MediaImportRequest = MediaBytesRequest
+
+/** The tile picture. A dataURL because the renderer is sandboxed and there is no custom protocol. */
+export interface MediaPreviewResponse {
+  mimeType: string
+  dataURL: string
+}
+
+/**
+ * The full-size bytes, plus the item as the PROVIDER describes it now — which is how a Recent row
+ * gets a fresh size and attribution even when the caller's copy came out of an old `media.json`.
+ * Only the fields main can actually know are set; the caller's own item supplies the rest.
+ */
+export interface MediaImportResponse extends MediaPreviewResponse {
+  item: StudioItem
+}
+
+// ---------- Saved components (`<library>/components/` — 🔒 YAZ-1775 D5, YAZ-1819) ----------
+
+/**
+ * ONE saved component as the index names it (🔒 YAZ-1775 D5). The SLUG is the identity: it is the file's
+ * own basename (`<library>/components/<slug>.excalidraw` + `<slug>.png`), so the folder can be
+ * read back into an index with nothing else on hand. The NAME is only the label, which is why a
+ * rename never moves a file — a component inserted into a board is not addressed by either.
+ */
+export interface ComponentItem {
+  slug: string
+  name: string
+  elementCount: number
+  createdAt: number
+  updatedAt: number
+}
+
+/** `<library>/components.json`: the index, rebuilt from the folder whenever it is missing or unreadable. */
+export interface ComponentsIndexFile {
+  version: 1
+  items: ComponentItem[]
+}
+
+/**
+ * `components:save` — the fragment and its picture, both already made by the renderer (only it has
+ * an engine). `fragmentJson` is a whole `.excalidraw` document with the component's image bytes
+ * EMBEDDED (🔒 YAZ-1775 D5: a component is small and self-contained, so it inserts into any vault);
+ * `previewPng` is a `data:image/png;base64,…` dataURL, which is the only way bytes cross the bridge.
+ */
+export interface ComponentSaveRequest {
+  name: string
+  fragmentJson: string
+  previewPng: string
+}
+
+/** `components:read` / `components:delete` / `components:preview` — a component by its slug. */
+export interface ComponentSlugRequest {
+  slug: string
+}
+
+/** `components:rename` — the label only; the slug, and therefore both files, stay put. */
+export interface ComponentRenameRequest {
+  slug: string
+  name: string
+}
+
+/** `components:read`'s answer: the fragment's bytes, exactly as they are on disk. */
+export interface ComponentReadResponse {
+  fragmentJson: string
+}
+
+/** The longest name a component may carry — the web app's `MAX_SAVED_COMPONENT_NAME_LENGTH`. */
+export const MAX_COMPONENT_NAME_LENGTH = 120
+
+// ---------- Secrets (`userData/secrets.json` — 🔒 YAZ-1775 D4) ----------
+
+/** `secrets:set` — a value to store, or null to clear the name entirely. */
+export interface SecretSetRequest {
+  name: string
+  value: string | null
+}
+
+/** `secrets:has` — the ONLY question a renderer may ask about a secret. */
+export interface SecretHasRequest {
+  name: string
+}
+
+/** The name the Pixabay API key is stored under (🔒 YAZ-1775 D4); YAZ-1818 reads it in main, never here. */
+export const PIXABAY_SECRET = 'pixabayApiKey'
+
 export interface SettingsState {
   /** Line height within a block (Google-Docs-style presets). */
   lineSpacing: number
@@ -768,6 +1325,8 @@ export interface SettingsState {
   confirmDelete: boolean
   /** Show the rename sheet, with its count of links to update, before a note or folder is renamed (YAZ-2420 3C1). Off renames at once; the links still follow. */
   confirmRename: boolean
+  /** Rest the pointer on a drawing or diagram row to see the whole board (Draw's YAZ-1800 D2; YAZ-3044 A20). Notes never preview. */
+  hoverPreview: boolean
   /** Comment stream order (YAZ-1515): how you READ, global, never part of a note. */
   commentsOrder: CommentsOrder
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
@@ -782,7 +1341,30 @@ export interface SettingsState {
   tableOfContentsWidth: number
   /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
   tocLines: TocLines
+  /**
+   * The canvas preferences every drawing, every window and every relaunch share (Draw's 🔒 YAZ-1775 D9,
+   * YAZ-3028): seeded into a canvas at mount and kept in step with the engine both ways. See `CanvasPrefs`.
+   */
+  canvas: CanvasPrefs
+  /**
+   * How draw.io diagrams look in dark mode (YAZ-3028, Draw's 🔒 YAZ-1802 D16): `adapt` lets draw.io
+   * re-colour them so an ordinary diagram stays readable, `keep` shows every diagram in its own
+   * colours. The DEFAULT only — a file whose `<mxGraphModel>` says `adaptiveColors="none"` keeps its
+   * colours either way. The diagram tab and its pictures follow it, live. Its row is Settings › Appearance (YAZ-3037).
+   */
+  diagramDarkColors: DiagramDarkColors
+  /**
+   * The canvas panel's library folder (YAZ-3038; Draw's 🔒 YAZ-1775 D5): ONE folder every vault shares, for
+   * saved components and media favorites. null = the default, `<userData>/library`, which only main
+   * can resolve (`drawing.libraryFolder()`); never `''`, which would resolve to the process cwd.
+   */
+  libraryFolder: string | null
+  /** The canvas panel's last tab and dock preference (YAZ-3038). See `CanvasPanelState`. */
+  canvasPanel: CanvasPanelState
 }
+
+export type DiagramDarkColors = 'adapt' | 'keep'
+export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
 
@@ -889,6 +1471,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   newNoteFolder: '',
   confirmDelete: true,
   confirmRename: true,
+  hoverPreview: true,
   commentsOrder: 'oldest',
   startupWindows: 'last',
   sectionStep: 30,
@@ -896,6 +1479,10 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableOfContents: 'auto',
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
+  canvas: DEFAULT_CANVAS_PREFS,
+  diagramDarkColors: 'adapt',
+  libraryFolder: null,
+  canvasPanel: DEFAULT_CANVAS_PANEL,
 }
 
 export interface WindowBounds {
@@ -1168,9 +1755,30 @@ export interface GithubSyncConfig {
  * the whole reason the set is closed: `no-git` wants "install git" (the Command Line Tools on a Mac, Git for Windows on a PC),
  * `no-identity` wants "set a name and email", `auth` wants "sign in again", `conflict` wants
  * "two machines edited the same lines" (the lossless rule: the working tree was put back exactly
- * as it was — see `git/sync.ts`), and `error` is the honest catch-all that carries a message.
+ * as it was — see `git/sync.ts`; since YAZ-3039 boards merge instead, `git/resolve.ts`, so a
+ * conflict is a note or another file sync does not merge), `too-large` wants "shrink it or move it
+ * out" (YAZ-1801 D3: files held back under `tooLarge`, everything else synced), and `error` is the
+ * honest catch-all that carries a message.
  */
-export type GithubSyncAttention = 'no-git' | 'no-identity' | 'auth' | 'conflict' | 'error'
+export type GithubSyncAttention = 'no-git' | 'no-identity' | 'auth' | 'conflict' | 'error' | 'too-large'
+
+/**
+ * YAZ-1801 D3 (Draw, ported by YAZ-3039): the size at which a sync pass holds a file back instead
+ * of committing it. GitHub REFUSES any file over 100 MiB, and one such file inside a commit rejects
+ * the whole push — so every other edit in the vault would stop syncing behind it. 95 MiB leaves a
+ * margin for a file that grows between the check and the push. `too-large` is the attention that says so.
+ */
+export const GITHUB_FILE_LIMIT_BYTES = 95 * 1024 * 1024
+/**
+ * GitHub warns on a push past 50 MiB (YAZ-1801): from here a file is listed under Settings ›
+ * Storage's "Needs attention" — amber below `GITHUB_FILE_LIMIT_BYTES`, red at or above it (the
+ * same line the sync guard holds files back at, so the page's colour and sync never disagree).
+ */
+export const GITHUB_FILE_WARN_BYTES = 50 * 1024 * 1024
+/** GitHub: ideally under 1 GB, strongly under 5 GB, and 10 GB is its stated maximum — the bar's three steps. */
+export const GITHUB_REPO_SOFT_BYTES = 1024 * 1024 * 1024
+export const GITHUB_REPO_HARD_BYTES = 5 * 1024 * 1024 * 1024
+export const GITHUB_REPO_MAX_BYTES = 10 * 1024 * 1024 * 1024
 
 /**
  * What a vault's sync is doing right now — one object per root, pushed on every transition.
@@ -1195,6 +1803,217 @@ export interface GithubSyncStatus {
    * on statuses that never passed through it (a bare `syncPass` call in tests).
    */
   enabled?: boolean
+  /**
+   * YAZ-1801 D3: vault-relative POSIX paths the last pass held back because each is at or
+   * over `GITHUB_FILE_LIMIT_BYTES`. They stay on this machine only; everything else synced. Present
+   * (and non-empty) only while there is at least one — the sidebar's cloud-off icon, the chip's
+   * "N files not synced" and the `too-large` banner all read this one list.
+   */
+  tooLarge?: readonly string[]
+  /**
+   * YAZ-1897 D4: what THIS pass merged — present only on the status of the pass that did it (the
+   * manager never keeps it as the root's last status, so a late `status()` cannot replay the notice).
+   */
+  merged?: readonly GithubSyncMerge[]
+}
+
+/**
+ * One file a pass merged instead of stopping (YAZ-1897 D1/D3, YAZ-3039). A drawing merged shape by
+ * shape has no `copy`; a diagram kept both versions — the remote's at `path`, ours at `copy` — and
+ * the notice has to say where ours went. A note is never here: a note conflict still stops (D4).
+ */
+export interface GithubSyncMerge {
+  /** Vault-relative POSIX path. */
+  path: string
+  /** Who made the remote's side of it ("Sara", "Sara and Sam"). */
+  author: string
+  /** Shapes both machines edited; the newest edit of each was kept. */
+  clashes: number
+  /** Vault-relative POSIX path of our copy, when both versions were kept. */
+  copy?: string
+}
+
+/** One entry in a drawing's or diagram's Version history (YAZ-1897 D4, YAZ-3039). */
+export interface BoardVersion {
+  /** Opaque to the renderer: hand it back to `version` / `restore`. */
+  ref: string
+  author: string
+  /** Epoch milliseconds of the commit. */
+  at: number
+  /** The version a sync merge produced (its commit carries a `Merged-with:` trailer). */
+  merged: boolean
+  /** "Your version before the merge": never pushed, kept on this machine only until the next merge. */
+  localOnly: boolean
+}
+
+export type BoardVersionScene = { kind: 'drawing'; json: string; files: Record<string, DrawingFileEntry> } | { kind: 'diagram'; xml: string }
+
+// ---------- Storage (Settings › Storage — YAZ-1801, ported by YAZ-3039) ----------
+
+/** One file in "Needs attention" (YAZ-1801): any file in the vault at or over `GITHUB_FILE_WARN_BYTES`. */
+export interface VaultStorageFile {
+  /** Vault-relative POSIX path. */
+  path: string
+  bytes: number
+}
+
+/**
+ * What a vault weighs, from the disk and the LOCAL git only (YAZ-1801 D2) — never the network.
+ * Every number is bytes. `git` is null when the vault is not a git repo (or there is no git).
+ */
+export interface VaultStorageStats {
+  root: string
+  /** Every `.excalidraw` and `.drawio` under the vault (dot-folders skipped), `assets/` included. */
+  boards: { bytes: number; count: number }
+  /** Every other file in the top-level `assets/` folder: note images and the drawings' picture store. */
+  pictures: { bytes: number; count: number }
+  /** Everything else that is not a dot-entry: notes, a video, a PDF someone dropped in. */
+  other: { bytes: number; count: number }
+  git: {
+    /** `git count-objects -v`: loose + packed, i.e. everything `.git` holds for this repo. */
+    historyBytes: number
+    /** The compressed size of the objects HEAD's tree needs — the current snapshot. */
+    headBytes: number
+    /** `max(0, history − head)`: what a history reset would free (YAZ-1801 D6 shows it, never does it). */
+    oldVersionsBytes: number
+  } | null
+  /** Every file — board, picture in `assets/`, anything else — at or over `GITHUB_FILE_WARN_BYTES`, biggest first. */
+  large: VaultStorageFile[]
+  /** Pictures still inside drawings outside `assets/` (the ones "Move pictures out" moves): their `dataURL` bytes and how many drawings carry any. */
+  embedded: { bytes: number; boards: number }
+}
+
+/** What "Move pictures out of drawings" did (YAZ-1801 D5). `bytesMoved` is how much lighter the drawings got. */
+export interface ShrinkResult {
+  shrunk: number
+  skipped: number
+  bytesMoved: number
+}
+
+// ---------- Share links (Draw's YAZ-1799, ported by YAZ-3040) ----------
+
+/**
+ * SHARE LINK (YAZ-1799): one board, uploaded to the user's OWN Cloudflare (one R2
+ * bucket + one small Worker), reachable by anyone with its long random link. ALWAYS LIVE
+ * (🔒 YAZ-1799 D3): every save of a shared board re-uploads it to the same link (`liveShare.ts`).
+ *
+ * WHO OWNS WHAT:
+ *  - MAIN owns Cloudflare: the API token and the Worker's upload password live in `secrets.json`
+ *    (the secrets door — the renderer can never read either), and every HTTP call is main's.
+ *  - The RENDERER assembles the bytes (the same standalone `.excalidraw` Export Drawing writes,
+ *    🔒 YAZ-1799 D3) because only it has the engine; it hands them to main to upload.
+ *  - The vault remembers which boards are shared in `<vault>/.yaseendocs/shares.json`:
+ *    `{ version: 1, shares: { "<vault-relative path>": { id, allowDownload, sharedAt, updatedAt } } }`.
+ *  - ONE LINK per board, `/b/<id>`, plus a permission the owner flips on that same link (the
+ *    Google Docs model): "can view and download" (default) or "can view only". The Worker
+ *    enforces it — `/raw/<id>` is 403 when downloads are off.
+ */
+
+/**
+ * The Workers free-plan request body limit — the Worker enforces it and main pre-checks it,
+ * so a board over it is refused with an explanation instead of a failed upload. Decimal megabytes,
+ * as Cloudflare states the limit.
+ */
+export const MAX_SHARE_BYTES = 100 * 1000 * 1000
+
+/** The two secrets sharing keeps in `secrets.json`. Neither ever reaches a renderer. */
+export const CLOUDFLARE_TOKEN_SECRET = 'cloudflareApiToken'
+export const SHARE_UPLOAD_PASSWORD_SECRET = 'shareUploadPassword'
+
+/** One Cloudflare account a pasted key can see: the setup's account picker lists these. */
+export interface ShareAccount {
+  id: string
+  name: string
+}
+
+/** What Settings › Sharing shows at the top. Holds no secret. */
+export interface ShareStatus {
+  state: 'off' | 'ready'
+  /** The public origin links are built on: the custom domain when attached, else workers.dev. */
+  url: string | null
+  /** The workers.dev address, even when a custom domain is attached. */
+  workersDevUrl: string | null
+  customDomain: string | null
+  accountName: string | null
+  workerName: string | null
+  bucketName: string | null
+  readyAt: number | null
+  /** True when this build talks to the local fake Cloudflare (the demo). */
+  demo: boolean
+}
+
+/** The setup flow's steps, in order — the progress list renders exactly these. */
+export const SHARE_SETUP_STEPS = ['verify', 'account', 'bucket', 'viewer', 'worker', 'subdomain', 'test'] as const
+export type ShareSetupStep = (typeof SHARE_SETUP_STEPS)[number]
+
+export const SHARE_SETUP_LABELS: Record<ShareSetupStep, string> = {
+  verify: 'Checking the key',
+  account: 'Finding your Cloudflare account',
+  bucket: 'Creating the storage bucket (R2)',
+  viewer: 'Uploading the viewer page',
+  worker: 'Uploading the share Worker and its upload password',
+  subdomain: 'Turning on the workers.dev address',
+  test: 'Test upload',
+}
+
+export interface ShareSetupProgress {
+  step: ShareSetupStep
+  state: 'running' | 'done' | 'failed'
+  /** Plain-English detail: what was found, or what went wrong and what to do about it. */
+  message?: string
+}
+
+/**
+ * Where a shared board's ALWAYS-LIVE link stands (Yasin's amendment): every save re-uploads, so
+ * the interesting facts are "is an upload running" and "did the last one fail, and why". Kept by
+ * main in memory — a relaunch starts from `ok`, and the next save tells the truth again.
+ */
+export interface ShareSync {
+  state: 'ok' | 'uploading' | 'failed'
+  /** The last failure, in plain English. */
+  message?: string
+  /** When the last failure happened. */
+  failedAt?: number
+}
+
+/** One board's share record as the renderer sees it. `path` is absolute. */
+export interface ShareEntry {
+  path: string
+  id: string
+  /** `/b/<id>` on the share origin. */
+  url: string
+  /** "can view and download" (true, the default for a new share) or "can view only" (false). */
+  allowDownload: boolean
+  sharedAt: number
+  /** When the link last got a successful upload. */
+  updatedAt: number
+  sync: ShareSync
+  /** The Worker last answered 404 for this link (a Settings check or a permission change): its copy is gone until the next save puts it back. */
+  stale: boolean
+}
+
+/** A Settings list row: the record plus whether the board is still at its path. Whether the link is still live is `stale` (a checked list sets it). */
+export interface ShareListEntry extends ShareEntry {
+  fileExists: boolean
+}
+
+export interface ShareBoardRequest {
+  root: string
+  path: string
+}
+
+export interface SharePublishRequest extends ShareBoardRequest {
+  /** The standalone `.excalidraw` text (images embedded), or a diagram's `.drawio` XML (🔒 YAZ-1802 D11). */
+  content: string
+  /**
+   * A re-upload's link: main finds the record by it even if a rename moved the board since the
+   * save, and refuses (NOT_FOUND) if it was stopped. Absent: share `path` (or re-upload it if shared).
+   */
+  id?: string
+}
+
+export interface SharePermissionRequest extends ShareBoardRequest {
+  allowDownload: boolean
 }
 
 // ---------- Vault-wide property declarations (`<root>/.yaseendocs/properties.json` — YAZ-835) ----------

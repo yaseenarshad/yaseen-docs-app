@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef } from 'react'
-import { isMarkdown } from '@shared/fileKind'
+import { BOARD_TYPE_NAME, isBoard, isDrawing, isMarkdown } from '@shared/fileKind'
 import type { FileHead } from '@shared/types'
 import { api } from '../api'
 
@@ -110,7 +110,8 @@ export function useTabHeads(tabs: readonly string[]): (path: string) => string {
     // `wanted` is `fresh` by value: the effect runs again only when a path joins it.
   }, [wanted])
 
-  return (path) => cache.get(path)?.lines ?? ''
+  // A drawing or diagram page names its kind under its title (YAZ-3044 A37): it has no lines, and a blank card read as broken.
+  return (path) => (isBoard(path) ? BOARD_TYPE_NAME[isDrawing(path) ? 'drawing' : 'diagram'] : (cache.get(path)?.lines ?? ''))
 }
 
 /** For the tests: the cache is a module's, and outlives a mount. */

@@ -94,6 +94,8 @@ function installBridge() {
     // The door (YAZ-2677 D4): a note's id is the vault's next number, taken before the note is made.
     mintNoteId: testDoor(),
     state: { get: vi.fn(async () => defaultAppState()), setFolder: vi.fn(async () => undefined), setFavoritesOrder: vi.fn(async () => undefined), setFocusOrder: vi.fn(async () => undefined), onChange: vi.fn((_listener: (state: AppState) => void) => () => undefined) },
+    // The shared-board marks (YAZ-3040): nothing shared, and no change pushed.
+    share: { list: vi.fn(async () => []), onChanged: vi.fn(() => () => undefined) },
     window: {
       open: vi.fn(async () => undefined),
       // "Open by itself" on a vault row (YAZ-2858 D4): main's door; `false` = the folder is gone.
@@ -352,6 +354,154 @@ afterEach(() => {
   previewPanel = null
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   vi.restoreAllMocks()
+})
+
+/**
+ * Drawing and diagram rows (YAZ-3028 D11): normal rows that open a tab, named by their full file name,
+ * a diagram marked; "Info" on their menu reads the board's head through `fs:board-head`.
+ */
+describe('drawing and diagram rows (YAZ-3028 D11)', () => {
+  const BOARD_TREE: TreeNode[] = [
+    { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+    { type: 'file', name: 'Flow.drawio', path: '/v/Flow.drawio', size: 1, mtime: 1, kind: 'diagram' },
+    { type: 'file', name: 'Sketch.excalidraw', path: '/v/Sketch.excalidraw', size: 1, mtime: 1, kind: 'drawing' },
+  ]
+  const withBoards = (bridge: ReturnType<typeof installBridge>) => {
+    bridge.tree.mockResolvedValue({ root: '/v', tree: BOARD_TREE, generatedAt: 1 })
+    ;(bridge as unknown as Record<string, unknown>).boardHead = vi.fn(async (path: string) => ({ path, mtime: Date.UTC(2026, 9, 20), size: 2048, meta: { createdAt: Date.UTC(2026, 9, 1), updatedAt: Date.UTC(2026, 9, 20) } }))
+  }
+  const boardRow = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row--file[title="${path}"]`)
+
+  it('are normal rows: full file name, not external, the draw.io mark on the diagram only, and a click opens a tab', async () => {
+    const { el, bridge, props } = await mount({}, withBoards)
+    const flow = boardRow(el, '/v/Flow.drawio')
+    const sketch = boardRow(el, '/v/Sketch.excalidraw')
+    expect(flow?.classList.contains('tree__row--external')).toBe(false)
+    expect(sketch?.classList.contains('tree__row--external')).toBe(false)
+    expect(flow?.querySelector('.tree__label')?.textContent).toBe('Flow.drawio')
+    expect(flow?.querySelector('.diagram-mark')?.getAttribute('aria-label')).toBe('draw.io diagram')
+    expect(sketch?.querySelector('.diagram-mark')).toBeNull()
+    await act(async () => sketch?.click())
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/Sketch.excalidraw')
+    expect(bridge.shell.openDefault).not.toHaveBeenCalled()
+  })
+
+  it('"Info" stands above Delete on a board row only; it reads the head and shows the board`s type and dates', async () => {
+    const { el, bridge } = await mount({}, withBoards)
+    act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 5, clientY: 5 })))
+    expect(itemByLabel(el, 'Info')).toBeUndefined() // a note
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    act(() => void boardRow(el, '/v/Flow.drawio')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 5, clientY: 5 })))
+    const labels = menuItems(el).map((b) => b.textContent)
+    expect(labels.slice(-2)).toEqual(['Info', 'Delete'])
+    await act(async () => itemByLabel(el, 'Info')?.click())
+    await act(async () => new Promise((r) => setTimeout(r, 0)))
+    expect((bridge as unknown as { boardHead: ReturnType<typeof vi.fn> }).boardHead).toHaveBeenCalledExactlyOnceWith('/v/Flow.drawio')
+    await vi.waitFor(() => expect(el.ownerDocument.querySelector('.board-info')).not.toBeNull())
+    const info = el.ownerDocument.querySelector('.board-info')?.textContent ?? ''
+    expect(info).toContain('draw.io diagram')
+    expect(info).toContain('2.0 KB')
+  })
+})
+
+/** The board picture and Info follow the file while they show (YAZ-3044 A20, A41). */
+describe('hover preview setting and live board heads (YAZ-3044 A20, A41)', () => {
+  const BOARDS: TreeNode[] = [{ type: 'file', name: 'Flow.drawio', path: '/v/Flow.drawio', size: 1, mtime: 1, kind: 'diagram' }]
+  const withBoards = (bridge: ReturnType<typeof installBridge>) => {
+    bridge.tree.mockResolvedValue({ root: '/v', tree: BOARDS, generatedAt: 1 })
+    ;(bridge as unknown as Record<string, unknown>).boardHead = vi.fn(async (path: string) => ({ path, mtime: 5, size: 2048, meta: null }))
+  }
+  const headsOf = (bridge: ReturnType<typeof installBridge>) => (bridge as unknown as { boardHead: ReturnType<typeof vi.fn> }).boardHead
+  const flowRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--file[title="/v/Flow.drawio"]')
+  const withWatcher = () => {
+    const listeners: ((ev: WatchEvent) => void)[] = []
+    const watch = {
+      subscribe: (l: (ev: WatchEvent) => void) => {
+        listeners.push(l)
+        return () => void listeners.splice(listeners.indexOf(l), 1)
+      },
+    }
+    return { watch, fire: (ev: WatchEvent) => [...listeners].forEach((l) => l(ev)) }
+  }
+  const dwell = () => act(() => new Promise<void>((r) => setTimeout(r, 450)))
+
+  it('A20: with "Preview on hover" off, resting on a board row opens no preview; on, it does', async () => {
+    const off = await mount({ settings: { ...DEFAULT_SETTINGS, hoverPreview: false } }, withBoards)
+    act(() => flowRow(off.el)?.focus())
+    await dwell()
+    expect(headsOf(off.bridge)).not.toHaveBeenCalled()
+    act(() => root?.unmount())
+    root = null
+    const on = await mount({ settings: { ...DEFAULT_SETTINGS, hoverPreview: true } }, withBoards)
+    act(() => flowRow(on.el)?.focus())
+    await dwell()
+    expect(headsOf(on.bridge)).toHaveBeenCalledWith('/v/Flow.drawio')
+  })
+
+  it('A41: Info reads the head again on a change of that board, and only of that board', async () => {
+    const { watch, fire } = withWatcher()
+    const { el, bridge } = await mount({ watch }, withBoards)
+    act(() => void flowRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 5, clientY: 5 })))
+    await act(async () => itemByLabel(el, 'Info')?.click())
+    await act(async () => new Promise((r) => setTimeout(r, 0)))
+    expect(headsOf(bridge)).toHaveBeenCalledTimes(1)
+    await act(async () => fire({ type: 'change', path: '/v/other.md', mtime: 9 }))
+    expect(headsOf(bridge)).toHaveBeenCalledTimes(1)
+    await act(async () => fire({ type: 'change', path: '/v/Flow.drawio', mtime: 9 }))
+    expect(headsOf(bridge)).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * The folder menu makes boards (YAZ-3028 D9): name first, then `fs:create-board`, then the tab. An
+ * empty box is Untitled, numbered past a name that is taken; a board has no note ID.
+ */
+describe('New Excalidraw drawing / New draw.io diagram (YAZ-3028 D9)', () => {
+  type CreateBoard = ReturnType<typeof vi.fn<(req: { root: string; path: string }) => Promise<{ path: string; mtime: number; size: number }>>>
+  const withCreateBoard = (taken: string[] = []) => (bridge: ReturnType<typeof installBridge>) => {
+    const createBoard: CreateBoard = vi.fn(async (req) => {
+      if (taken.includes(req.path)) throw { code: 'ALREADY_EXISTS', message: 'file already exists', path: req.path }
+      return { path: req.path, mtime: 2, size: 10 }
+    })
+    ;(bridge as unknown as Record<string, unknown>).createBoard = createBoard
+  }
+  const createBoardOf = (bridge: ReturnType<typeof installBridge>) => (bridge as unknown as { createBoard: CreateBoard }).createBoard
+  const newIn = async (el: HTMLElement, item: string, typed: string | null) => {
+    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, item)?.click())
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    if (input === null) throw new Error('no create box')
+    const placeholder = input.placeholder
+    act(() => {
+      if (typed !== null) input.value = typed
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    await act(async () => undefined)
+    return placeholder
+  }
+
+  it('right-click a folder → New Excalidraw drawing → a name: the board is born in that folder, then opens in a tab', async () => {
+    const { el, bridge, props } = await mount({}, withCreateBoard())
+    expect(await newIn(el, 'New Excalidraw drawing', 'Plan')).toBe('New drawing')
+    expect(createBoardOf(bridge)).toHaveBeenCalledExactlyOnceWith({ root: '/v', path: '/v/sub/Plan.excalidraw' })
+    expect(bridge.createFile).not.toHaveBeenCalled() // never the note door, and no note ID
+    expect(bridge.mintNoteId).not.toHaveBeenCalled()
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Plan.excalidraw')
+  })
+
+  it('New draw.io diagram says "New diagram" and makes a .drawio; an empty box is Untitled, then Untitled 2 past a taken one', async () => {
+    const { el, bridge, props } = await mount({}, withCreateBoard(['/v/sub/Untitled.drawio']))
+    expect(await newIn(el, 'New draw.io diagram', null)).toBe('New diagram')
+    expect(createBoardOf(bridge).mock.calls.map(([req]) => req.path)).toEqual(['/v/sub/Untitled.drawio', '/v/sub/Untitled 2.drawio'])
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Untitled 2.drawio')
+  })
+
+  it('New dated Excalidraw drawing seeds MM_DD- ; Enter on the seed alone is "MM_DD- Untitled"', async () => {
+    const { el, bridge } = await mount({}, withCreateBoard())
+    await newIn(el, 'New dated Excalidraw drawing', null)
+    const [[req]] = createBoardOf(bridge).mock.calls
+    expect(req.path).toMatch(/^\/v\/sub\/\d{2}_\d{2}- Untitled\.excalidraw$/)
+  })
 })
 
 /**
@@ -5102,9 +5252,13 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Paste',
       'Copy path',
       'New note',
+      // The boards (YAZ-3028 D9), between the note and the folder.
+      'New Excalidraw drawing',
+      'New draw.io diagram',
       'New folder',
-      // Their own section (YAZ-2249 🔒 E1/E2): the dated twins lined up under the everyday pair.
+      // Their own section (YAZ-2249 🔒 E1/E2): the dated twins lined up under the everyday items; no dated draw.io.
       'New dated note',
+      'New dated Excalidraw drawing',
       'New dated folder',
       'Rename',
       // The favorite toggle (YAZ-1766 D3) leads the "Open in ▸" group, one hairline above Delete.
@@ -7083,7 +7237,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     }
     rightClick(body(el))
-    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New folder', 'New dated note', 'New dated folder', 'Open in', 'Add vault to this window'])
+    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder', 'New dated note', 'New dated Excalidraw drawing', 'New dated folder', 'Open in', 'Add vault to this window'])
     const leaves = flyout(el, 'Add vault to this window')
     expect(leaves.map((b) => b.textContent)).toEqual(['Second', 'First', 'Open folder…'])
     act(() => leaves[1].click())
@@ -7134,7 +7288,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     const { el, b, props } = await two({ upkeep: true })
     rightClick(rowByPath(el, b))
-    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New folder', 'New dated note', 'New dated folder', 'Open by itself', 'Open in', 'Remove from this window'])
+    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder', 'New dated note', 'New dated Excalidraw drawing', 'New dated folder', 'Open by itself', 'Open in', 'Remove from this window'])
     expect(flyout(el, 'Open in').map((item) => item.textContent)).toEqual(['VS Code', 'Reveal in Finder'])
     await act(async () => itemByLabel(el, 'Copy path')?.click())
     expect(writeText).toHaveBeenCalledExactlyOnceWith(b)
@@ -8388,7 +8542,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     const { el, b, input, props, rerender } = await searchTwo()
     await type(input, 'plan')
     rightClick(rowByPath(el, b))
-    expect(topItems(el)).toEqual(['Show in sidebar', 'Paste', 'Copy path', 'New note', 'New folder', 'New dated note', 'New dated folder', 'Open by itself', 'Open in', 'Remove from this window'])
+    expect(topItems(el)).toEqual(['Show in sidebar', 'Paste', 'Copy path', 'New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder', 'New dated note', 'New dated Excalidraw drawing', 'New dated folder', 'Open by itself', 'Open in', 'Remove from this window'])
     act(() => itemByLabel(el, 'New note')?.click())
     expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith(b)
     await rerender({ lens: 'files', revealRequest: { id: 1, path: b } })

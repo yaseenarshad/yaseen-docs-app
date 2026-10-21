@@ -6,8 +6,8 @@
   "description": "Yaseen Docs — Electron shell (main + preload); the renderer is ../client",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build"
+    "dev": "node ../tools/packDrawio.mjs && node ../tools/buildShareViewer.mjs && electron-vite dev",
+    "build": "node ../tools/packDrawio.mjs && electron-vite build && node ../tools/buildShareViewer.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
@@ -21,7 +21,7 @@
     "productName": "Yaseen Docs",
     "directories": { "output": "dist-app" },
     "files": ["out/**"],
-    "extraResources": [{ "from": "build/bin", "to": "bin" }],
+    "extraResources": [{ "from": "build/bin", "to": "bin" }, { "from": "../share/dist/assets", "to": "share-viewer" }],
     "afterPack": "build/adhocSign.cjs",
     "mac": {
       "target": [
@@ -43,9 +43,11 @@
       "artifactName": "${productName}-${version}-win-x64-setup.${ext}"
     },
     "dmg": { "artifactName": "${productName}-${version}-arm64.dmg" },
-    "protocols": [{ "name": "Yaseen Docs", "schemes": ["yaseendocs"] }],
+    "protocols": [{ "name": "Yaseen Docs", "schemes": ["yaseendocs", "yaseendraw"] }],
     "fileAssociations": [
-      { "ext": ["md", "markdown"], "name": "Markdown", "role": "Editor", "rank": "Alternate" }
+      { "ext": ["md", "markdown"], "name": "Markdown", "role": "Editor", "rank": "Alternate" },
+      { "ext": ["excalidraw"], "name": "Excalidraw Drawing", "role": "Editor", "rank": "Owner" },
+      { "ext": ["drawio"], "name": "draw.io Diagram", "role": "Editor", "rank": "Owner" }
     ]
   }
 }

@@ -4,7 +4,9 @@ import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
 import type { EntryKind, MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
-import { ShortcutIcon } from '../views/view/icons'
+import { isBoard } from '@shared/fileKind'
+import { CloudOffIcon, DiagramBadge, LinkIcon, ShortcutIcon } from '../views/view/icons'
+import { TOO_LARGE_LABEL } from '../lib/syncAttention'
 import { RenameInline } from './RenameInline'
 
 /** Inline "New note" / "New folder" input pending inside the tree (GRO-2022). */
@@ -207,8 +209,31 @@ interface TreeProps {
   onLeaveToPage?: () => boolean
   /** The top row this level stands under (YAZ-2845 D1); none at the top level. It tells the copies of a row that shows twice apart. */
   top?: string
+  /**
+   * The pointer or the focus rests on a drawing or diagram row, or left it (null): the hover preview's
+   * dwell (YAZ-3028 D11). Absent → no row reports it. A note row never does.
+   */
+  onHoverFile?: (node: { path: string } | null) => void
+  /** YAZ-1801 D3 (YAZ-3039): absolute paths sync held back as over GitHub's limit; their rows get the cloud-off icon. A stable Set (the memo compares identity). */
+  tooLarge?: ReadonlySet<string>
+  /** Shared boards (YAZ-3040, Draw's YAZ-1799): a small link mark on the row, red when the last update failed or the link is stale; the title is the status. A stable Map. */
+  shareBadges?: ReadonlyMap<string, ShareBadge>
   depth?: number
 }
+
+/** A shared board's mark (YAZ-3040, Draw's YAZ-1890): its tone, and its title — the link's status in words. */
+export interface ShareBadge {
+  tone: 'ok' | 'error'
+  title: string
+}
+
+/** The shared-board mark: a small link glyph right of the name; nothing for an unshared board. */
+const ShareMark = ({ badge }: { badge: ShareBadge | undefined }) =>
+  badge === undefined ? null : (
+    <span className="tree__share" data-tone={badge.tone} title={badge.title} aria-label={badge.title} role="img">
+      <LinkIcon size={12} />
+    </span>
+  )
 
 function TreeLevel({
   nodes,
@@ -232,9 +257,15 @@ function TreeLevel({
   marks,
   onLeaveToPage,
   top,
+  onHoverFile,
+  tooLarge,
+  shareBadges,
   depth = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks }
+  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges }
+  /** A board row's hover handlers (YAZ-3028 D11): pointer and focus alike, so the keyboard walk previews too. */
+  const hoverOf = (path: string) =>
+    onHoverFile === undefined || !isBoard(path) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
   // This folder's shortcuts stand among its FILES in the tree's own name order; dirs still lead, as main sorts a level.
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
@@ -407,6 +438,7 @@ function TreeLevel({
               onContextMenu={(e) => onNodeContextMenu(isShortcutRow(node) ? { type: 'file', path: node.path, shortcutIn: dirPath, top: topOf(node) } : { ...node, top: topOf(node) }, e)}
               title={node.path}
               data-path={node.path}
+              {...hoverOf(node.path)}
               // A shortcut row never drags (YAZ-2290 D2): the drag would move the note out of the folder it lives in.
               draggable={!isShortcutRow(node)}
               onDragStart={isShortcutRow(node) ? undefined : (e) => {
@@ -431,6 +463,9 @@ function TreeLevel({
                 {idFor(node.path)}
                 {marked(pageLabel(node.path, false, titles), needleFor(node.path))}
               </span>
+              {node.kind === 'diagram' && <DiagramBadge />}
+              {tooLarge?.has(node.path) === true && <CloudOffIcon label={TOO_LARGE_LABEL} />}
+              <ShareMark badge={shareBadges?.get(node.path)} />
               {isShortcutRow(node) && <ShortcutIcon />}
               {vaultTag(node.path)}
             </button>

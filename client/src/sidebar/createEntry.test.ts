@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { datedSeed, plainEntryName, renamedPath, targetDirFor, validateEntryName } from './createEntry'
+import { boardPath, datedSeed, plainEntryName, renamedPath, targetDirFor, untitledNames, validateEntryName } from './createEntry'
 
 const dir = (path: string): TreeNode => ({ type: 'dir', name: path.split('/').pop()!, path, children: [] })
 const file = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 0, mtime: 1, kind: 'markdown' })
@@ -99,5 +99,21 @@ describe('plainEntryName (YAZ-2523 V3): the one rule for a name typed in a vault
   it('a name a file cannot hold is refused with the reason', () => {
     expect(() => plainEntryName('a/b', 'file')).toThrow('Name cannot contain "/"')
     expect(() => plainEntryName('.git', 'dir')).toThrow('Names starting with "." are hidden')
+  })
+})
+
+describe('a new board`s name (YAZ-3028 D9)', () => {
+  it('boardPath: the name as typed plus its kind`s extension, unless the name already carries it; a bad name is refused', () => {
+    expect(boardPath('/v/Projects', ' Flow ', 'diagram')).toBe('/v/Projects/Flow.drawio')
+    expect(boardPath('/v', 'Flow.DRAWIO', 'diagram')).toBe('/v/Flow.DRAWIO')
+    expect(boardPath('/v', 'Sketch', 'drawing')).toBe('/v/Sketch.excalidraw')
+    expect(boardPath('/v', 'Sketch.drawio', 'drawing')).toBe('/v/Sketch.drawio.excalidraw')
+    expect(() => boardPath('/v', 'a/b', 'drawing')).toThrow('Name cannot contain "/"')
+  })
+
+  it('untitledNames: Untitled, Untitled 2, … after the seed, bounded', () => {
+    expect(untitledNames('').slice(0, 3)).toEqual(['Untitled', 'Untitled 2', 'Untitled 3'])
+    expect(untitledNames('10_20- ', 2)).toEqual(['10_20- Untitled', '10_20- Untitled 2'])
+    expect(untitledNames('')).toHaveLength(20)
   })
 })

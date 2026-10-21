@@ -17,6 +17,7 @@ import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { TextFormatting } from '@shared/textFormatting'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
 import { idsAskMessage, idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
+import { SETTINGS_SECTIONS } from './registry'
 import { SettingsDialog } from './SettingsDialog'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -124,13 +125,17 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 
 /** The rows of each page with no vault open, in registry order (registry.tsx). */
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'diagramDarkColors']
 const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
 const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents']
-const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows']
+/** Settings › Excalidraw canvas (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
+const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
+/** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
+const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
+const FILES_ROWS = ['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation', 'startupWindows']
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
-const HOTKEY_ROWS = ['hotkeys-keyboard', 'hotkeys-views', 'hotkeys-window', 'hotkeys-mouse']
+const HOTKEY_ROWS = ['hotkeys-keyboard', 'hotkeys-views', 'hotkeys-window', 'hotkeys-canvas', 'hotkeys-drawio', 'hotkeys-mouse']
 const THREADING_HINT = 'Guide lines that connect nested bullets.'
 const TEXT_FORMATTING_HINT = 'How text looks in every note of this vault.'
 const TOC_HINT = 'The headings or the bullets of a note, at its right edge.'
@@ -174,13 +179,17 @@ describe('SettingsDialog shell (D1)', () => {
 describe('SettingsDialog: a page for each section (YAZ-2709, amending the one long page)', () => {
   it('the nav: the settings pages (Review only with a vault, Sync only with the engine), a divider, then the Hotkeys reference page', () => {
     const { el } = mount()
-    expect(navShape(el)).toEqual(['Appearance', 'Editor', 'Files & Links', '—', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
     unmount()
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
-    expect(navShape(withSync.el)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Sync', '—', 'Hotkeys'])
+    expect(navShape(withSync.el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', '—', 'Hotkeys'])
     unmount()
     const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
-    expect(navShape(withVault.el)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
+    expect(navShape(withVault.el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
+  })
+
+  it('the registry order once both YAZ-3028 halves land: canvas and images after Editor (YAZ-3037, YAZ-3038), storage and sharing after Sync (YAZ-3039, YAZ-3040), Hotkeys last', () => {
+    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['appearance', 'editor', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
   })
 
   it('opens on Appearance: the one section in the pane, anchored by id, with only its rows — no row of a later section is there', () => {
@@ -191,7 +200,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(currentNav(el)).toBe('Appearance')
     expect(currentKind(el)).toBe('page')
     expect(pane(el).scrollTop).toBe(0)
-    for (const id of [...EDITOR_ROWS, ...FILES_ROWS, ...REVIEW_ROWS, 'githubSync', ...HOTKEY_ROWS]) expect(row(el, id)).toBeNull()
+    for (const id of [...EDITOR_ROWS, ...CANVAS_ROWS, ...IMAGES_ROWS, ...FILES_ROWS, ...REVIEW_ROWS, 'githubSync', ...HOTKEY_ROWS]) expect(row(el, id)).toBeNull()
   })
 
   it('a nav click shows only that section: its heading, its anchor id and its rows in registry order, every row addressed by data-setting, and it alone is aria-current="page"', () => {
@@ -209,6 +218,8 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(seen).toEqual([
       page('Appearance', 'settings-appearance', APPEARANCE_ROWS),
       page('Editor', 'settings-editor', EDITOR_ROWS),
+      page('Excalidraw canvas', 'settings-canvas', CANVAS_ROWS),
+      page('Images', 'settings-images', IMAGES_ROWS),
       page('Files & Links', 'settings-files', FILES_ROWS),
       page('Review', 'settings-review', REVIEW_ROWS),
       page('Sync', 'settings-sync', ['githubSync']),
@@ -219,8 +230,8 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
   it('group titles and hints render on their own page; untitled groups are plain rows', () => {
     const { el } = mount()
     const hints = () => [...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)
-    // Appearance, as it opens with no vault: Comments is its last group, after Spacing (Text formatting needs a vault, YAZ-3068).
-    expect(groupTitles(el)).toEqual(['Spacing', 'Comments'])
+    // Appearance, as it opens with no vault: Spacing, Comments, then draw.io diagrams (YAZ-3037). Text formatting needs a vault (YAZ-3068).
+    expect(groupTitles(el)).toEqual(['Spacing', 'Comments', 'draw.io diagrams'])
     expect(hints()).toEqual([])
     expect(row(el, 'commentsOrder')?.querySelector('.setting__label')?.textContent).toBe('Order')
     expect(row(el, 'commentsOrder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Comments')
@@ -249,6 +260,8 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(notes).toEqual([
       ['Appearance', []],
       ['Editor', []],
+      ['Excalidraw canvas', []],
+      ['Images', []],
       ['Files & Links', []],
       ['Review', [['settings-review', "These settings are saved in this vault's .yaseendocs folder and sync with it."]]],
       ['Sync', [['settings-sync', "These settings are saved in this vault's .yaseendocs folder, not app-wide."]]],
@@ -267,6 +280,8 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(lines(el)).toEqual([
       ['Appearance', []],
       ['Editor', []],
+      ['Excalidraw canvas', []],
+      ['Images', []],
       ['Files & Links', [{ text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' }]],
       ['Review', [{ text: 'Vault: Work', under: 'Review', className: 'settings-section__note' }]],
       ['Sync', [{ text: 'Vault: Work', under: 'Sync', className: 'settings-section__note' }]],
@@ -279,7 +294,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(lines(one.el).flatMap(([, found]) => found)).toEqual([])
   })
 
-  it('Hotkeys is a page like the others, under the divider: clicking it swaps the pane for its four tables and takes aria-current="page"', () => {
+  it('Hotkeys is a page like the others, under the divider: clicking it swaps the pane for its six tables and takes aria-current="page"', () => {
     const { el } = mount()
     expect(navShape(el).slice(-2)).toEqual(['—', 'Hotkeys'])
     clickNav(el, 'Hotkeys')
@@ -288,7 +303,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
     expect(headings(el)).toEqual(['Hotkeys'])
     expect(sections(el).map((s) => s.id)).toEqual(['settings-hotkeys'])
-    expect(groupTitles(el)).toEqual(['Keyboard', 'Views', 'Window', 'Mouse'])
+    expect(groupTitles(el)).toEqual(['Keyboard', 'Views', 'Window', 'Excalidraw canvas', 'draw.io diagram', 'Mouse'])
     expect(rowIds(el)).toEqual(HOTKEY_ROWS)
     expect([...el.querySelectorAll('[data-setting="hotkeys-window"] .hotkeys__keys')].map((k) => k.textContent)).toContain('⌘,')
   })
@@ -298,7 +313,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Sync')
     expect(currentNav(el)).toBe('Sync')
     act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange }} onClose={onClose} />))
-    expect(navShape(el)).toEqual(['Appearance', 'Editor', 'Files & Links', '—', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
     expect(headings(el)).toEqual(['Appearance'])
     expect(currentNav(el)).toBe('Appearance')
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
@@ -331,6 +346,52 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       expect(rowIds(again.el)).toEqual(APPEARANCE_ROWS)
       unmount()
     }
+  })
+})
+
+describe('Settings › Excalidraw canvas (YAZ-3037; ported from Draw\'s 🔒 YAZ-1775 D9)', () => {
+  const mountCanvas = () => mountOn('Excalidraw canvas', { ...DEFAULT_SETTINGS })
+
+  it('writes the whole SettingsState with only the one canvas key changed', () => {
+    const { el, onChange } = mountCanvas()
+    act(() => rowButtons(el, 'canvas.gridModeEnabled')[0].click()) // On
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, gridModeEnabled: true } })
+  })
+
+  it('Select on, sloppiness and text alignment speak their own words; Default font is a select, Assistant first and current', () => {
+    const { el, onChange } = mountCanvas()
+    expect(rowButtons(el, 'canvas.selectOn').map((b) => b.textContent)).toEqual(['Wrap', 'Overlap'])
+    expect(rowButtons(el, 'canvas.defaultRoughness').map((b) => b.textContent)).toEqual(['Architect', 'Artist', 'Cartoonist'])
+    expect(rowButtons(el, 'canvas.defaultTextAlign').map((b) => b.textContent)).toEqual(['Left', 'Center', 'Right'])
+    act(() => rowButtons(el, 'canvas.selectOn')[1].click())
+    expect(onChange.mock.calls[0][0].canvas.selectOn).toBe('overlap')
+    const select = row(el, 'canvas.defaultFontFamily')?.querySelector('select') as HTMLSelectElement
+    expect(select.options[select.selectedIndex].textContent).toBe('Assistant')
+    act(() => {
+      select.value = '1' // Excalifont, the second option
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onChange.mock.calls[1][0].canvas.defaultFontFamily).toBe(5)
+  })
+
+  it('a pen width commits a valid number and IGNORES anything the engine could not draw with', () => {
+    const { el, onChange } = mountCanvas()
+    const input = row(el, 'canvas.writingStrokeWidth')?.querySelector('input') as HTMLInputElement
+    expect(input.defaultValue).toBe('0.5')
+    type(input, '1.5')
+    expect(onChange.mock.calls[0][0].canvas.writingStrokeWidth).toBe(1.5)
+    onChange.mockClear()
+    for (const bad of ['0', '-2', '', '999']) {
+      type(input, bad)
+      expect(onChange, bad).not.toHaveBeenCalled()
+    }
+  })
+
+  it('Appearance › draw.io diagrams › In dark mode writes `diagramDarkColors` (YAZ-3037)', () => {
+    const { el, onChange } = mount()
+    expect(rowButtons(el, 'diagramDarkColors').map((b) => b.textContent)).toEqual(['Adapt colours', 'Keep original colours'])
+    act(() => rowButtons(el, 'diagramDarkColors')[1].click())
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, diagramDarkColors: 'keep' })
   })
 })
 
@@ -459,7 +520,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 
     it('one vault: the group "Text formatting" after Spacing, its hint, one bare row (no label on screen, no gap) and no dropdown; a Text line, then H1 to H6 at their rounded default sizes', () => {
       const { el } = mountTf([vaultOf('/notes', 'Notes')])
-      expect(groupTitles(el)).toEqual(['Spacing', 'Text formatting', 'Comments'])
+      expect(groupTitles(el)).toEqual(['Spacing', 'Text formatting', 'Comments', 'draw.io diagrams'])
       const group = tf(el).closest('.settings-group') as HTMLElement
       expect(group.querySelector('.settings-group__hint')?.textContent).toBe(TEXT_FORMATTING_HINT)
       // No "Vault: name" line: the dropdown replaces it (D15), and with one vault there is none.
@@ -679,7 +740,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
     const { el } = mount()
     expect(navByTitle(el, 'Review')).toBeUndefined()
     const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'baseDays')])
-    expect(found.map(([title]) => title)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Hotkeys'])
+    expect(found.map(([title]) => title)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Hotkeys'])
     for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 
@@ -790,11 +851,11 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
 })
 
 describe('SettingsDialog search (D6)', () => {
-  it('"dark" shows the Theme row under an Appearance heading and nothing else — and the row still works', () => {
+  it('"dark" shows the Theme row and the draw.io dark-mode row (YAZ-3037) under Appearance headings and nothing else — and the row still works', () => {
     const { el, onChange } = mount({ ...DEFAULT_SETTINGS }, status())
     type(searchInput(el), 'dark')
-    expect(headings(el)).toEqual(['Appearance'])
-    expect(rowIds(el)).toEqual(['theme'])
+    expect(headings(el)).toEqual(['Appearance', 'Appearance › draw.io diagrams'])
+    expect(rowIds(el)).toEqual(['theme', 'diagramDarkColors'])
     expect(sections(el)).toEqual([]) // the page is gone while the query stands
     act(() => rowButtons(el, 'theme')[2].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, theme: 'dark' })
@@ -844,7 +905,7 @@ describe('SettingsDialog search (D6)', () => {
     const { el } = mount()
     for (const [title, rows] of [['Editor', EDITOR_ROWS], ['Hotkeys', HOTKEY_ROWS]] as const) {
       clickNav(el, title)
-      type(searchInput(el), 'dark')
+      type(searchInput(el), 'system')
       expect(headings(el)).toEqual(['Appearance'])
       expect(rowIds(el)).toEqual(['theme'])
       pressEscape(searchInput(el))
@@ -874,7 +935,7 @@ describe('SettingsDialog search (D6)', () => {
 
     // From a later page: the same page again, not the first.
     clickNav(el, 'Files & Links')
-    type(searchInput(el), 'dark')
+    type(searchInput(el), 'system')
     expect(rowIds(el)).toEqual(['theme'])
     pressEscape(searchInput(el))
     expect(onClose).not.toHaveBeenCalled()
@@ -882,7 +943,7 @@ describe('SettingsDialog search (D6)', () => {
     expect(headings(el)).toEqual(['Files & Links'])
     expect(rowIds(el)).toEqual(FILES_ROWS)
 
-    type(searchInput(el), 'dark')
+    type(searchInput(el), 'system')
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Clear search settings"]')?.click())
     expect(searchInput(el).value).toBe('')
     expect(headings(el)).toEqual(['Files & Links'])
@@ -894,7 +955,7 @@ describe('SettingsDialog search (D6)', () => {
   it('a nav click during a search clears the query and shows that page, from its top', () => {
     const { el } = mount()
     scrollTo(el, 400)
-    type(searchInput(el), 'dark')
+    type(searchInput(el), 'system')
     expect(rowIds(el)).toEqual(['theme'])
     clickNav(el, 'Files & Links')
     expect(searchInput(el).value).toBe('')
@@ -905,7 +966,7 @@ describe('SettingsDialog search (D6)', () => {
     expect(rowIds(el)).toEqual(FILES_ROWS)
     expect(pane(el).scrollTop).toBe(0)
     // And a click on the page the search was typed over: the query goes, that page is back.
-    type(searchInput(el), 'dark')
+    type(searchInput(el), 'system')
     clickNav(el, 'Files & Links')
     expect(searchInput(el).value).toBe('')
     expect(rowIds(el)).toEqual(FILES_ROWS)
@@ -923,7 +984,7 @@ describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () =>
     expect(row(el, 'ids')).toBeNull()
     expect(groupTitles(el)).not.toContain('This vault')
     type(searchInput(el), 'files & links')
-    expect(rowIds(el)).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows'])
+    expect(rowIds(el)).toEqual(['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation', 'startupWindows'])
   })
 
   it('a vault open: the row sits in Files & Links under "This vault", with its label and hint', () => {

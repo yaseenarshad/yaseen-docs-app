@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { isMarkdown } from '@shared/fileKind'
 import type { FileClipState, SidebarLens, SidebarTab, TreeNode } from '@shared/types'
-import { api } from '../../api'
+import { api, BridgeRequestError } from '../../api'
 import type { NoticeKind } from '../../lib/notice'
 import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
@@ -16,10 +16,28 @@ import { findDirNode, notesAt, treeHasPath } from '../../lib/treeState'
 import { dropFolderValuesAfterMove, dropStaleFolderValues, valuesLeftBehind, type LeftBehind, type Move } from '../../links/shortcuts'
 import { createNote, folderPath } from '../../views/scaffold'
 import { transformFile } from '../../views/writeProperty'
-import { renamedPath, targetDirFor, type EntryKind } from '../createEntry'
+import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
 import { countItems } from '../menuSections'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
 import type { PendingCreate, PendingRename, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
+
+/**
+ * A new board (YAZ-3028 D9): name first, then birth. `fs:create-board` writes the empty scene or the
+ * empty diagram and never over a file. What was typed is the file NAME — a board has no title and no
+ * note ID. An EMPTY name (`''`, the box's seed alone) is `Untitled`, then `Untitled 2`, …: only that
+ * case steps past a name that is taken; a typed name that is taken is refused, and the box says so.
+ */
+async function createBoardFile(vault: string, parentDir: string, typed: string, kind: 'drawing' | 'diagram', seed: string): Promise<string> {
+  if (typed !== '') return (await api.createBoard({ root: vault, path: boardPath(parentDir, typed, kind) })).path
+  for (const name of untitledNames(seed)) {
+    try {
+      return (await api.createBoard({ root: vault, path: boardPath(parentDir, name, kind) })).path
+    } catch (err) {
+      if (!(err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS')) throw err
+    }
+  }
+  throw new Error(`Every name from "${untitledNames(seed)[0]}" to "${untitledNames(seed).at(-1)}" is taken here`)
+}
 
 /** `tree` is every row the panel can hold — the forest (YAZ-2602 D3) — or null until every vault's tree has landed. */
 export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: readonly string[], selectionRef: { current: ReadonlySet<string> }, bodyRef: RefObject<HTMLDivElement | null>) {
@@ -391,6 +409,14 @@ export function useInlineEdits(
     async (name: string) => {
       if (creating === null) return
       const { root: vault, index } = vaultOf(creating.parentDir)
+      // A board needs no index: it has no title and no ID (YAZ-3028 D9).
+      if (creating.kind === 'drawing' || creating.kind === 'diagram') {
+        const board = await createBoardFile(vault, creating.parentDir, name, creating.kind, creating.seed)
+        setCreating(null)
+        refresh(vault)
+        onOpenFile(board)
+        return
+      }
       // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
       if (index.resolve === null) throw new Error('Vault index is still loading — try again in a moment')
       // What was typed is the TITLE (YAZ-2420 🔒 D6, D20): the name on disk is built from it.

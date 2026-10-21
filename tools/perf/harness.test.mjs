@@ -4,7 +4,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { sentinel, writeNote } from './genVault.mjs'
-import { abba, loadSensitive, summarizeRuns } from './lib/stats.mjs'
+import { abba, loadSensitive, overCeilings, summarizeRuns } from './lib/stats.mjs'
+import { flowDiagram } from './scenarios/drawio.mjs'
 import { claimWorkDir, writeState } from './lib/work.mjs'
 import { RING, crosses, seedVaults } from './scenarios/multi-vault.mjs'
 import { NOTES } from './scenarios/typing.mjs'
@@ -32,6 +33,28 @@ describe('run order and summaries', () => {
 
   it('flags time and CPU metrics as load-sensitive, not sizes or counts', () => {
     expect(['spawnToDocMs', 'addCpuSec', 'mainCpuPct', 'mainRssMb', 'fds2k'].filter(loadSensitive)).toEqual(['spawnToDocMs', 'addCpuSec', 'mainCpuPct'])
+  })
+})
+
+describe('perf ceilings (YAZ-3044 A19)', () => {
+  it('names each median over its ceiling by more than the tolerance, for its own scenario only', () => {
+    const ceilings = { 'drawio.drawioOpenMs': { max: 760, target: 650 }, 'launch.x': { max: 1 }, $comment: 'text' }
+    expect(overCeilings('drawio', { drawioOpenMs: { median: 870 } }, ceilings, 0.15)).toEqual([])
+    expect(overCeilings('drawio', { drawioOpenMs: { median: 880 } }, ceilings, 0.15)).toEqual(['drawio.drawioOpenMs median 880 > ceiling 760'])
+    expect(overCeilings('drawio', { drawioOpenMs: { median: null } }, ceilings, 0)).toEqual([])
+  })
+
+  it('budget.json keeps Draw\'s draw.io open ceiling (YAZ-3028 D5)', () => {
+    const budget = JSON.parse(fs.readFileSync(new URL('./budget.json', import.meta.url), 'utf8'))
+    expect(budget.perf['drawio.drawioOpenMs']).toEqual({ max: 760, target: 650 })
+    expect(budget.perfTolerance).toBe(0.15)
+  })
+
+  it('the draw.io fixture is n boxes joined in a line', () => {
+    const xml = flowDiagram(4)
+    expect(xml.startsWith('<mxfile')).toBe(true)
+    expect(xml.match(/vertex="1"/g)).toHaveLength(4)
+    expect(xml.match(/edge="1"/g)).toHaveLength(3)
   })
 })
 

@@ -15,29 +15,14 @@
  * is enough because `readAsset`'s shortest-path rule finds it anywhere under the root — the
  * same Obsidian rule every other embed already rides.
  */
+import { EMPTY_SCENE_JSON } from '@shared/drawingAssets'
 import { api, BridgeRequestError } from '../api'
 
 /** The drawing's home under the vault root (writeAsset creates it on first use). */
 export const DRAWINGS_DIR = 'assets/drawings'
 
-/**
- * A valid EMPTY Excalidraw scene. `type`/`version`/`source`/`elements`/`appState` are the
- * shape every Excalidraw export carries; `files` (the binary-asset sidecar map) rides along
- * because real exports always have it and `restore()` reads it — an empty object is the
- * honest value for a scene with no images. `appState: {}` on purpose: Excalidraw fills its
- * own defaults, so the file states nothing about theme or background it does not mean.
- */
-export const EMPTY_SCENE = {
-  type: 'excalidraw',
-  version: 2,
-  source: 'yaseen-docs',
-  elements: [],
-  appState: {},
-  files: {},
-} as const
-
-/** The bytes written for a new drawing: pretty-printed, one trailing newline (a text file in a git vault). */
-export const EMPTY_SCENE_JSON = `${JSON.stringify(EMPTY_SCENE, null, 2)}\n`
+/** The empty scene lives in `shared/` since YAZ-3028 D9: main's `fs:create-board` writes the same bytes. */
+export { EMPTY_SCENE, EMPTY_SCENE_JSON } from '@shared/drawingAssets'
 
 /** Collisions are same-second only; a bound keeps a permanently failing write from looping forever. */
 const MAX_ATTEMPTS = 20

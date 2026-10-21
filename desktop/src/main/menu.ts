@@ -1,12 +1,12 @@
 /**
  * The application menu (B3, GRO-2161). `buildMenuTemplate` is a pure function of its inputs
- * (recents, keyedVaults, isDev, handlers) so structure, accelerators and roles unit-test without Electron;
+ * (recents, keyedVaults, isDev, activeKind, handlers) so structure, accelerators and roles unit-test without Electron;
  * `createMenuHandlers` needs only the injected `MenuHost` for the Electron bits (focused
  * window, external links). The `Menu.buildFromTemplate`/`setApplicationMenu` apply layer
  * lives in `main/index.ts`.
  */
 import type { MenuItemConstructorOptions } from 'electron'
-import { keyedVaults, type AppState, type ClipboardPasteRequest, type KeyedVault, type RecentRoots, type ZoomStep } from '@shared/types'
+import { keyedVaults, type AppState, type ClipboardPasteRequest, type FileKind, type KeyedVault, type RecentRoots, type ZoomStep } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import type { WindowManager } from './windows'
@@ -50,6 +50,17 @@ export interface MenuHandlers {
   checkForUpdates(): void
   /** Help › What's New… (YAZ-2976 D8): the focused window's renderer opens its "What's new" sheet. */
   whatsNew(): void
+  /**
+   * File › Export Image… (⌘⇧E, YAZ-3037; Draw's 🔒 YAZ-1775 D10): the focused renderer's visible board exports a
+   * picture — a drawing through the engine's export dialog, a diagram through its own renderer.
+   */
+  exportImage(): void
+  /** File › Export Excalidraw Drawing… (⌘⇧S, YAZ-3037; Draw's 🔒 YAZ-1775 D3): the visible drawing writes a standalone `.excalidraw`. */
+  exportDrawing(): void
+  /** File › Share Link (⌘⇧L, YAZ-3037): the focused renderer opens the Share dialog for its visible board (YAZ-3040). */
+  shareLink(): void
+  /** View › Canvas Background › a pick (YAZ-3037; Draw's 🔒 YAZ-1775 D10): the focused renderer's visible drawing takes `color`. */
+  canvasBackground(color: string): void
 }
 
 export interface MenuInputs {
@@ -59,7 +70,31 @@ export interface MenuInputs {
   keyedVaults: readonly KeyedVault[]
   /** Dev builds get View › Toggle Developer Tools. */
   isDev: boolean
+  /**
+   * The kind of the focused window's ACTIVE TAB, null when it has none (YAZ-3037, YAZ-3028 D10; Draw's
+   * 🔒 YAZ-1775 D10). The board items are enabled only on a kind they work for — Export Image… and
+   * Share Link on any board, the Excalidraw-only ones on a drawing — because a menu row that silently
+   * does nothing is worse than a greyed-out one. `main/index.ts` reads it on every rebuild;
+   * `subscribeMenuRebuildOnActiveFile` and the focus hook are what make a rebuild happen.
+   */
+  activeKind: FileKind | null
 }
+
+/**
+ * The engine's own canvas-background picks (`DEFAULT_CANVAS_BACKGROUND_PICKS`,
+ * `packages/common/src/colors.ts`): white, then radix slate2 / blue2 / yellow2 / bronze2. No
+ * "Custom…" row: a colour dialog is not a menu item's job (Draw's 🔒 YAZ-1775 D10).
+ */
+export const CANVAS_BACKGROUND_PICKS: ReadonlyArray<{ label: string; color: string }> = [
+  { label: 'White', color: '#ffffff' },
+  { label: 'Slate', color: '#f8f9fa' },
+  { label: 'Blue', color: '#f5faff' },
+  { label: 'Yellow', color: '#fffce8' },
+  { label: 'Bronze', color: '#fdf8f6' },
+]
+
+/** File › Export Excalidraw Drawing…'s key. In a review the same key is Skip (YAZ-2322), so the item owns it only while it is enabled. */
+export const EXPORT_DRAWING_ACCELERATOR = 'CmdOrCtrl+Shift+S'
 
 /** A label that shows `text` as it is (YAZ-2555): Electron reads a single `&` as a mnemonic mark and drops it — "R&D" would read "RD". */
 const menuLabel = (text: string): string => text.replace(/&/g, '&&')
@@ -68,7 +103,7 @@ const menuLabel = (text: string): string => text.replace(/&/g, '&&')
  * The whole menu bar as a template. Item `id`s are stable so a live check (Playwright) can
  * drive items through `Menu.getApplicationMenu().getMenuItemById(...)`.
  */
-export function buildMenuTemplate({ recents, keyedVaults, isDev }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
+export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
   const recentItems: MenuItemConstructorOptions[] =
     recents.length === 0
       ? [{ label: 'No Recent Folders', enabled: false }]
@@ -77,6 +112,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev }: MenuInputs, h
           label: menuLabel(r.path),
           click: () => handlers.openRecent(r.path),
         }))
+  const onBoard = activeKind === 'drawing' || activeKind === 'diagram'
+  const onDrawing = activeKind === 'drawing'
   return [
     // macOS titles the first menu with the running app's name; the label only matters off-mac.
     {
@@ -113,6 +150,16 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev }: MenuInputs, h
         // so the gesture goes to the focused window's renderer — un-collapsing the sidebar first.
         { id: 'menu.file.search', label: 'Search Vault', accelerator: 'CmdOrCtrl+K', click: () => handlers.search() },
         { type: 'separator' },
+        // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D3 / D10, YAZ-1799): greyed out unless
+        // the active tab is a board they work for. Export Image… and Share Link work on any board, Export
+        // Excalidraw Drawing… only on a drawing. ⌘⇧E and ⌘⇧L clash with no in-page key of Docs.
+        { id: 'menu.file.export-image', label: 'Export Image…', accelerator: 'CmdOrCtrl+Shift+E', enabled: onBoard, click: () => handlers.exportImage() },
+        // ⌘⇧S is also the review's Skip (YAZ-2322), and the note keeps its key (D10): a registered
+        // accelerator never reaches the page on macOS, so the item carries the key ONLY while it is
+        // enabled. On a note tab nothing in the menu owns ⌘⇧S; a review over a drawing tab is App's to route.
+        { id: 'menu.file.export-drawing', label: 'Export Excalidraw Drawing…', ...(onDrawing ? { accelerator: EXPORT_DRAWING_ACCELERATOR } : {}), enabled: onDrawing, click: () => handlers.exportDrawing() },
+        { id: 'menu.file.share-link', label: 'Share Link', accelerator: 'CmdOrCtrl+Shift+L', enabled: onBoard, click: () => handlers.shareLink() },
+        { type: 'separator' },
         // ⌘W is Close Tab (GRO-2232, locked): the renderer owns tab state, so the gesture goes to
         // the focused window's renderer. Close Window moves to ⌘⇧W and keeps `role: 'close'` — the
         // OS close that windows.ts intercepts for the flush handshake.
@@ -139,6 +186,16 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev }: MenuInputs, h
         // Electron's own zoomIn role also answers ⌘= (no shift); keep that hidden twin.
         { id: 'menu.view.zoom-in-eq', label: 'Zoom In', accelerator: 'CmdOrCtrl+=', visible: false, click: () => handlers.zoom(1) },
         { id: 'menu.view.zoom-out', label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => handlers.zoom(-1) },
+        { type: 'separator' },
+        // The engine's canvas-background picks (YAZ-3037; Draw's 🔒 YAZ-1775 D10), greyed out off a drawing
+        // tab. The value is per BOARD — the engine writes `viewBackgroundColor` into the file — so it is
+        // here and not in Settings › Canvas with the user-level prefs.
+        {
+          id: 'menu.view.canvas-background',
+          label: 'Canvas Background',
+          enabled: onDrawing,
+          submenu: CANVAS_BACKGROUND_PICKS.map(({ label, color }, i) => ({ id: `menu.view.canvas-background.${i}`, label, click: () => handlers.canvasBackground(color) })),
+        },
       ],
     },
     // Top-level role `window` marks this submenu as macOS's Windows menu, so the OS appends the window list.
@@ -363,6 +420,18 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     whatsNew() {
       host.focusedWebContents()?.send(CONTRACT.menu.onWhatsNew.channel)
     },
+    exportImage() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onExportImage.channel)
+    },
+    exportDrawing() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onExportDrawing.channel)
+    },
+    shareLink() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onShareLink.channel)
+    },
+    canvasBackground(color) {
+      host.focusedWebContents()?.send(CONTRACT.menu.onCanvasBackground.channel, color)
+    },
   }
 }
 
@@ -387,6 +456,45 @@ export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => v
     if (state.recents === last && vaults === lastVaults) return
     last = state.recents
     lastVaults = vaults
+    rebuild()
+  })
+}
+
+/**
+ * The menu's apply step, twice (YAZ-3044 A32): `apply` always rebuilds (a recents change, the first
+ * build); `applyIfMoved` rebuilds only when the board items' answer moves — the file in front of the
+ * asked window going between a drawing, a diagram and anything else. A focus change or a tab switch
+ * from note to note then costs one `fileKind`, not a whole new menu.
+ */
+export function gateOnBoardKind(kindNow: () => FileKind | null, apply: () => void): { apply: () => void; applyIfMoved: () => void } {
+  const bucket = (): 'drawing' | 'diagram' | 'other' => {
+    const kind = kindNow()
+    return kind === 'drawing' || kind === 'diagram' ? kind : 'other'
+  }
+  let last: ReturnType<typeof bucket> | null = null
+  const always = (): void => {
+    last = bucket()
+    apply()
+  }
+  return { apply: always, applyIfMoved: () => (bucket() === last ? undefined : always()) }
+}
+
+/** The one fact the board items are gated on: which file each window has in front. */
+const activeFilesKey = (state: Pick<AppState, 'windows'>): string => state.windows.map((w) => `${w.id}=${w.file ?? ''}`).join('\n')
+
+/**
+ * Rebuild when any window's ACTIVE FILE changes (YAZ-3037; Draw's 🔒 YAZ-1775 D10): the board items are
+ * enabled only while the focused window's active tab is a board of their kind, so a tab switch has to
+ * re-evaluate them. A second subscription rather than a widening of `subscribeMenuRebuild`, so the
+ * recents rule and its test stay as they were. Focus changes are the host's to report
+ * (`browser-window-focus` in `main/index.ts`): they move which window is asked, not what the store says.
+ */
+export function subscribeMenuRebuildOnActiveFile(store: Store, rebuild: () => void): () => void {
+  let last = activeFilesKey(store.get())
+  return store.onChange((state) => {
+    const next = activeFilesKey(state)
+    if (next === last) return
+    last = next
     rebuild()
   })
 }

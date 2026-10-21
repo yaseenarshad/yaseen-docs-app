@@ -200,7 +200,7 @@ describe('heading folding: save path is untouched', () => {
     })
     await sleep(400)
     updates.length = 0
-    autosave = new Autosave({ markdown: getMarkdownForSave(crepe), mtime: 1, delayMs: 20, save, onStatus: () => {}, onConflict: () => {} })
+    autosave = new Autosave({ content: getMarkdownForSave(crepe), mtime: 1, delayMs: 20, save, onStatus: () => {}, onConflict: () => {} })
 
     toggleFor(root, 'Section A').click()
     toggleFor(root, 'Part 2').click()

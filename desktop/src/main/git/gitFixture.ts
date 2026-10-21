@@ -1,6 +1,9 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { mkdir, mkdtemp, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { build } from 'esbuild'
 import { GIT_CANDIDATES, git, resolveGit } from './exec'
 
 /**
@@ -72,4 +75,82 @@ export async function makeBareRemote(): Promise<BareRemote> {
 
 export async function wireOrigin(repo: GitRepo, remote: BareRemote): Promise<void> {
   await repo.run(['remote', 'add', 'origin', remote.url])
+}
+
+/** One machine of a two-machine test (YAZ-1897): its vault, and plain file and git helpers over it. */
+export interface Machine {
+  root: string
+  write: (rel: string, content: string) => Promise<void>
+  read: (rel: string) => string
+  remove: (rel: string) => Promise<void>
+  /** Runs git here and answers trimmed stdout (no throw — the tests assert on what they need). */
+  git: (...args: string[]) => Promise<string>
+}
+
+function machine(root: string, bin: string): Machine {
+  const abs = (rel: string) => path.join(root, rel)
+  return {
+    root,
+    write: async (rel, content) => {
+      await mkdir(path.dirname(abs(rel)), { recursive: true })
+      await writeFile(abs(rel), content)
+    },
+    read: (rel) => readFileSync(abs(rel), 'utf8'),
+    remove: (rel) => unlink(abs(rel)),
+    git: async (...args) => (await git(bin, root, args)).stdout.trim(),
+  }
+}
+
+/**
+ * Two machines sharing one bare-repo "GitHub" (YAZ-1897): machine A ("Yaseen Docs Test") seeded
+ * with `files` and pushed, machine B ("Sam") cloned from it. `cleanup` removes all three.
+ */
+export async function makeTwoMachines(files: Record<string, string>): Promise<{ a: Machine; b: Machine; cleanup: () => Promise<void> }> {
+  const bin = await requireGit()
+  const remote = await makeBareRemote()
+  const repo = await makeGitRepo()
+  const bDir = await mkdtemp(path.join(tmpdir(), 'mdapp-b-'))
+  const cleanup = async () => {
+    await Promise.all([remote.cleanup(), repo.cleanup(), rm(bDir, { recursive: true, force: true })])
+  }
+  for (const [rel, content] of Object.entries(files)) await repo.write(rel, content)
+  await repo.run(['add', '-A'])
+  await repo.run(['commit', '-m', 'base'])
+  await wireOrigin(repo, remote)
+  await repo.run(['push', '-u', 'origin', 'HEAD'])
+  await runIn(bin, tmpdir(), ['clone', remote.url, bDir])
+  for (const cfg of [['user.name', 'Sam'], ['user.email', 'sam@example.invalid'], ['commit.gpgsign', 'false']]) await runIn(bin, bDir, ['config', ...cfg])
+  return { a: machine(repo.root, bin), b: machine(bDir, bin), cleanup }
+}
+
+/**
+ * The ceiling the two REAL-git suites run under (`sync.test.ts`, `guarantees.test.ts`): every case
+ * there is a commit plus a push plus a fetch against a bare repo on disk. Vitest's 5 s default is
+ * enough on a warm Mac and not on a cold CI runner, and the work is real I/O rather than a hang,
+ * so those two describes raise it — and nothing else in the project does.
+ */
+export const REAL_GIT_TIMEOUT_MS = 20_000
+
+let workerBundle: Promise<string> | null = null
+
+/**
+ * `main/storageWorker.ts` bundled to one CJS file, the way electron-vite's `?modulePath` builds it —
+ * a worker thread runs plain JS, not vitest's transformed TS (YAZ-1801 D8, D11). Built once per test
+ * process; the file lives in the temp dir with the rest of the fixtures.
+ */
+export function bundleStorageWorker(): Promise<string> {
+  workerBundle ??= (async () => {
+    const outfile = path.join(await mkdtemp(path.join(tmpdir(), 'mdapp-worker-')), 'storageWorker.cjs')
+    await build({
+      entryPoints: [fileURLToPath(new URL('../storageWorker.ts', import.meta.url))],
+      outfile,
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      alias: { '@shared': fileURLToPath(new URL('../../../../shared', import.meta.url)) },
+      logLevel: 'silent',
+    })
+    return outfile
+  })()
+  return workerBundle
 }

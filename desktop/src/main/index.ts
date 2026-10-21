@@ -1,20 +1,26 @@
 import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell } from 'electron'
-import { statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { fileLink, parseFileLink } from '@shared/links'
+import { fileKind } from '@shared/fileKind'
+import { fileLink, isAppLink, parseFileLink } from '@shared/links'
 import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
+import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { APP_SCHEME } from './appScheme'
+import { resolveDrawioDir, serveDrawio } from './drawio/assets'
+import { excalidrawFontsDir, viewerAssetsDir } from './ipc/share'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
-import { broadcastAll } from './ipc/broadcast'
+import { ensureLibraryFolder } from './library/folder'
+import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerUpdateIpc } from './ipc/update'
 import { claimDeepLinkScheme } from './deepLinkScheme'
+import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
-import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
+import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
 import { createStore } from './store'
@@ -36,8 +42,8 @@ applyUserDataOverride(app, process.env.YASEEN_DOCS_USER_DATA_DIR)
 const isPrimaryInstance = app.requestSingleInstanceLock()
 if (!isPrimaryInstance) app.quit()
 app.on('second-instance', (_event, argv) => {
-  // Windows/Linux deliver a clicked yaseendocs:// link as an argv entry of the second launch.
-  const urls = argv.filter((arg) => arg.startsWith('yaseendocs://'))
+  // Windows/Linux deliver a clicked yaseendocs:// (or Draw's yaseendraw://, YAZ-3028 D7) link as an argv entry of the second launch.
+  const urls = argv.filter(isAppLink)
   if (urls.length > 0) {
     for (const url of urls) links.push(url)
     return // routing focuses (or opens) the right window itself
@@ -80,6 +86,8 @@ app.on('open-file', (event, path) => {
 protocol.registerSchemesAsPrivileged([APP_SCHEME])
 
 const RENDERER_DIR = join(__dirname, '../renderer')
+/** The draw.io webapp (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D4/D5): the pack cache in dev, `out/drawio` in a build. */
+const DRAWIO_DIR = resolveDrawioDir({ mainDir: __dirname, appPath: app.getAppPath(), isPackaged: app.isPackaged, exists: existsSync })
 
 /** One user-global state file (D9, GRO-2159): `~/Library/Application Support/Yaseen Docs/yaseendocs.json`. */
 const store = createStore(join(app.getPath('userData'), STATE_FILE))
@@ -90,14 +98,23 @@ initIndexCache(join(app.getPath('userData'), 'index-cache'))
 initMint(app.getPath('userData'))
 
 /** Window lifecycle (GRO-2160) lives in windows.ts; this host is its Electron-only half. */
+/**
+ * The e2e harness's out-of-sight mode (YAZ-3028): `YASEEN_DOCS_E2E_HIDDEN=1` keeps every window
+ * hidden and unthrottled, so the suite runs while the person keeps using the Mac. Never set in a real run.
+ */
+const hiddenE2E = process.env.YASEEN_DOCS_E2E_HIDDEN === '1'
+
 const manager = createWindowManager(store, {
   create(entry: WindowEntry) {
     const win = new BrowserWindow({
       ...entry.bounds,
+      ...(hiddenE2E && { show: false }),
       // The backing store matches the theme (K, GRO-2218): no white flash on dark launches.
       backgroundColor: windowBackgroundColor(store.get().settings.theme, nativeTheme.shouldUseDarkColors),
-      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true },
+      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true, ...(hiddenE2E && { backgroundThrottling: false }) },
     })
+    // A hidden e2e window must never surface: `focus()` and `show()` would order it front.
+    if (hiddenE2E) win.show = win.focus = () => {}
     win.webContents.setWindowOpenHandler(createWindowOpenHandler(openLink))
     // Electron ships no default context menu (YAZ-672), so the spellchecker's squiggles would
     // otherwise be unactionable; the template itself is pure and lives in menu.ts.
@@ -171,8 +188,12 @@ let lastFocusedWcId: number | undefined
 /** The per-vault GitHub sync manager (YAZ-1081), created with the rest of the IPC once `ready` fires. */
 let gitSync: GitSyncManager | undefined
 
+/** The menu's apply step, once `ready` made it: a focus change moves which window the board items ask about (YAZ-3037). */
+let rebuildMenuOnFocus: (() => void) | undefined
+
 app.on('browser-window-focus', (_event, win) => {
   lastFocusedWcId = win.webContents.id
+  rebuildMenuOnFocus?.()
   // YAZ-1081 D2: focusing a vault's window is a PULL trigger — alt-tabbing back from another
   // machine should converge without waiting out a timer. The manager's own cooldown throttles it.
   // Every vault the window shows (YAZ-2602 S43).
@@ -183,6 +204,7 @@ app.whenReady().then(() => {
   if (!isPrimaryInstance) return
   // A dev run wears the app's own Dock icon instead of Electron's; a packaged build gets it from the bundle.
   if (!app.isPackaged) app.dock?.setIcon(join(__dirname, '../../build/icon.png'))
+  if (hiddenE2E) app.dock?.hide()
   // Appearance (K, GRO-2218): the setting IS the themeSource vocabulary. Applied from the loaded
   // store BEFORE any window is created (`restore` below), re-applied whenever it changes — so
   // `prefers-color-scheme` in every renderer and the OS chrome follow the setting.
@@ -192,8 +214,16 @@ app.whenReady().then(() => {
   protocol.handle('app', (req) => {
     const { host, pathname } = new URL(req.url)
     // `app://vault/…` (YAZ-1658): vault images for `<img src>`, resolved by vaultProtocol.ts;
-    // every other host is the renderer bundle, exactly as before.
+    // `app://drawio/…` (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D4): the diagram editor's OWN origin, every
+    // answer under its no-network CSP; every other host is the renderer bundle, exactly as before.
     if (host === 'vault') return serveVaultImage(req, (u) => net.fetch(u))
+    if (host === DRAWIO_HOST) {
+      return serveDrawio(DRAWIO_DIR, pathname, {
+        fetchFile: (url) => net.fetch(url),
+        noStore: !app.isPackaged,
+        onNotFound: app.isPackaged ? undefined : (missing) => console.warn(`[drawio] 404 app://drawio${missing} — not in the pruned pack (tools/lib/drawioPack.mjs)`),
+      })
+    }
     const file = join(RENDERER_DIR, pathname === '/' ? 'index.html' : pathname)
     return net.fetch(pathToFileURL(file).toString())
   })
@@ -222,11 +252,37 @@ app.whenReady().then(() => {
         () => manager.linkNotice("Can't check for updates. Try again later"),
       ),
   })
-  const applyMenu = (): void =>
-    Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged }, handlers)))
+  // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D10) are enabled only while the window a
+  // menu action would target has a board of the right kind in front. Read at build time from the same
+  // window `menuTarget` names, so the answer and the send target can never disagree.
+  const activeFileKind = () => {
+    const wc = menuTarget()
+    const id = wc === undefined ? undefined : manager.idFor(wc)
+    const file = id === undefined ? null : (store.get().windows.find((w) => w.id === id)?.file ?? null)
+    return file === null ? null : fileKind(file)
+  }
+  const { apply: applyMenu, applyIfMoved } = gateOnBoardKind(activeFileKind, () =>
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind() }, handlers)),
+    ),
+  )
   applyMenu()
   subscribeMenuRebuild(store, applyMenu)
-  const sync = registerIpc(store, manager)
+  // A tab switch changes which file is in front; a focus change changes which window is asked. Either
+  // rebuilds only when the board items' answer moves (YAZ-3044 A32).
+  subscribeMenuRebuildOnActiveFile(store, applyIfMoved)
+  rebuildMenuOnFocus = applyIfMoved
+  const { sync, secrets } = registerIpc(store, manager, {
+    userData: app.getPath('userData'),
+    // YAZ-3040: the share viewer's build, draw.io's webapp and Excalidraw's fonts, which share setup uploads.
+    viewerAssetsDir: viewerAssetsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(), mainDir: __dirname, exists: existsSync }),
+    drawioDir: DRAWIO_DIR,
+    fontsDir: excalidrawFontsDir({ isPackaged: app.isPackaged, mainDir: __dirname, appPath: app.getAppPath(), exists: existsSync }),
+    isPackaged: app.isPackaged,
+  })
+  // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
+  // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
+  void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'))
   gitSync = sync
   registerUpdateIpc(updater, {
     openExternal: (url) => void shell.openExternal(url),
@@ -241,6 +297,15 @@ app.whenReady().then(() => {
   // rather than at module scope because powerMonitor is only safe to touch after `ready`.
   powerMonitor.on('resume', () => sync.notifyWake())
   powerMonitor.on('unlock-screen', () => sync.notifyWake())
+  // Draw's data, copied one time into the gaps (YAZ-3028 D6): the app-data half now, each vault's half when it opens.
+  startDrawImport({
+    drawDir: join(app.getPath('appData'), DRAW_APP_NAME),
+    userData: app.getPath('userData'),
+    store,
+    secrets,
+    appData: shouldImportDrawAppData(process.env),
+    rootsOf,
+  })
   // The 1.0.15 heading styles move once into the vaults (YAZ-3066 D11). Before `restore`, which
   // drops the windows a launch does not bring back: every vault of the last session gets its copy.
   // It never holds up a window: a renderer that read no file yet hears the write as a change.

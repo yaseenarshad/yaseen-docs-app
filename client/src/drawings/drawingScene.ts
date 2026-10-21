@@ -1,5 +1,7 @@
 /**
- * Reading a drawing sidecar back off disk (YAZ-878).
+ * Reading a drawing back off disk: the note embed's sidecar (YAZ-878) and, since YAZ-3028, the
+ * scene text a drawing TAB loads through `drawing:load` (`parseSceneText`, `openViewport`, ported
+ * from Draw's `drawingScene.ts`).
  *
  * `api.readAsset` is the ONE door (YAZ-876): the embed's raw target goes through untouched —
  * path or bare basename — because readAsset already owns the resolution rule (root-relative when
@@ -11,6 +13,9 @@
  * preview's ONE broken state (never a crash, `editor/drawing/drawingPreview.ts`). No repair, no
  * partial render: a half-parsed scene would be a lie about what the file holds.
  */
+import type { DrawingFileEntry } from '@shared/types'
+import { referencedFileIds } from '@shared/drawingAssets'
+import { isRecord } from '@shared/guards'
 import { api } from '../api'
 
 /** The scene shape a preview needs; deliberately loose — the file is user data, not our type. */
@@ -60,10 +65,60 @@ export interface LoadedDrawing {
   readonly mtime: number
 }
 
-/** Reads `target` under `root` and parses it, keeping the identity a save needs. */
+/**
+ * Reads `target` under `root` and parses it, keeping the identity a save needs.
+ *
+ * A scene a drawing TAB saved is lean (YAZ-3028: `files: {}`, its pictures in `<vault>/assets/`), so
+ * a picture the scene names but does not carry is filled in from the store through `drawing:load`
+ * at the resolved path — one extra read, and only for such a scene: an embed's own sidecar carries
+ * its pictures and never pays it. An id found nowhere stays out (the engine's placeholder), and a
+ * store read that fails leaves the scene as the sidecar said: a picture must never cost the drawing.
+ */
 export async function openDrawing(root: string, target: string): Promise<LoadedDrawing> {
   const asset = await api.readAsset(root, target)
-  return { scene: parseScene(asset.data), path: asset.path, mtime: asset.mtime }
+  const scene = parseScene(asset.data)
+  return { scene: await withStoredFiles(root, asset.path, scene), path: asset.path, mtime: asset.mtime }
+}
+
+/** `scene` with every referenced picture it lacks taken from the store (see `openDrawing`). */
+async function withStoredFiles(root: string, path: string, scene: DrawingScene): Promise<DrawingScene> {
+  const own = scene.files ?? {}
+  const missing = [...referencedFileIds(scene.elements)].filter((id) => !(id in own))
+  if (missing.length === 0) return scene
+  const stored: Record<string, DrawingFileEntry> = await api.drawing.load({ root, path }).then(
+    (res) => res.files,
+    () => ({}),
+  )
+  const files: Record<string, unknown> = { ...own }
+  const created = Date.now()
+  for (const id of missing) {
+    const entry = stored[id]
+    if (entry !== undefined) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+  }
+  return { ...scene, files }
+}
+
+/**
+ * A drawing TAB's scene text (`drawing:load`'s `json`, Draw's 🔒 YAZ-1810) → the canvas's opening
+ * scene; throws on anything that is not one, which the tab shows as its ONE readable error pane.
+ */
+export function parseSceneText(text: string): DrawingScene {
+  const parsed: unknown = JSON.parse(text)
+  if (!isRecord(parsed)) throw new Error('not an Excalidraw scene')
+  if (!Array.isArray(parsed.elements)) throw new Error('not an Excalidraw scene: no elements')
+  // The same `isRecord` the whole scene got: a file whose `appState` is an ARRAY carries no prefs, not a list.
+  return { elements: parsed.elements, appState: isRecord(parsed.appState) ? parsed.appState : {}, files: isRecord(parsed.files) ? parsed.files : {} }
+}
+
+/**
+ * The view a drawing OPENS on (Draw's 🔒 YAZ-1855 D1, fit-on-open): the engine's
+ * `initialState.viewport`, fitting every live element and never zooming past 100% (`scale-down`;
+ * the engine floors it at 10%). An empty drawing has nothing to fit, so `undefined` leaves the
+ * engine at its own 100%.
+ */
+export function openViewport(scene: DrawingScene): { viewport: { target: readonly unknown[]; fit: 'scale-down' } } | undefined {
+  const target = scene.elements.filter((e) => isRecord(e) && e.isDeleted !== true)
+  return target.length > 0 ? { viewport: { target, fit: 'scale-down' } } : undefined
 }
 
 /** Reads `target` under `root` and parses it; rejects for the preview's broken state. */

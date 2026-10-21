@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "npm run dev -w desktop",
     "build": "npm run build -w desktop",
+    "drawio:pack": "node tools/packDrawio.mjs",
     "desktop:build": "npm run build -w desktop && node tools/packDesktop.mjs --mac",
     "desktop:build:win": "npm run build -w desktop && node tools/packDesktop.mjs --win",
     "typecheck": "tsc -p client/tsconfig.json --noEmit && tsc -p shared/tsconfig.json --noEmit && tsc -p desktop/tsconfig.json --noEmit",
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@milkdown/components": "file:client/vendor/milkdown-components-7.22.1-yaz1410.tgz",
     "@milkdown/plugin-tooltip": "file:client/vendor/milkdown-plugin-tooltip-7.22.1-yaz2238.tgz",
+    "esbuild": "^0.28.2",
     "jsdom": "^30.0.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"

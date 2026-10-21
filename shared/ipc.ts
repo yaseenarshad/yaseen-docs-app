@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TocSource, TreeResponse, UpdateState, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -59,8 +59,74 @@ export const CONTRACT = {
   readAsset: invoke<[root: string, ref: string], AssetResponse>('fs:read-asset', 2),
   /** Writes a drawing (string) or an image (bytes) under `root` (YAZ-876, YAZ-1661): explicit path, atomic; see `AssetWriteRequest`. */
   writeAsset: invoke<[req: AssetWriteRequest], AssetWriteResponse>('fs:write-asset', 1),
+  /**
+   * A NEW board (YAZ-3028 D9): an empty `.excalidraw` or `.drawio`, its content picked and stamped by
+   * main, never over an existing file (`ALREADY_EXISTS`). `createFile` stays Markdown-only.
+   */
+  createBoard: invoke<[req: CreateBoardRequest], CreateBoardResponse>('fs:create-board', 1),
+  /** A board's Info (YAZ-3028 D11): its dates off the file head, its size and mtime — never the whole file. A path that is no board → `UNSUPPORTED_EXTENSION`; a missing file → `NOT_FOUND`. */
+  boardHead: invoke<[path: string], BoardHeadResponse>('fs:board-head', 1),
+  /**
+   * The drawing DOCUMENT's two doors (YAZ-3028 D2, Draw's 🔒 YAZ-1810): one per direction, the only way a
+   * `.excalidraw` opened in a TAB reads and writes. A load is the scene plus the pictures it names; a
+   * save lands new pictures in `assets/` BEFORE the scene, under the mtime guard. A note embed keeps `readAsset` / `writeAsset`.
+   */
+  drawing: {
+    load: invoke<[req: DrawingLoadRequest], DrawingLoadResponse>('drawing:load', 1),
+    save: invoke<[req: DrawingSaveRequest], DrawingSaveResponse>('drawing:save', 1),
+    /** The RESOLVED library folder (YAZ-3038, Draw's 🔒 YAZ-1775 D5): the setting, or `<userData>/library` — only main knows where userData is. */
+    libraryFolder: invoke<[], string>('drawing:library-folder', 0),
+  },
+  /** The draw.io DIAGRAM document's two doors (YAZ-3028 D2, Draw's 🔒 YAZ-1802 D6): the XML text and its mtime. */
+  diagram: {
+    load: invoke<[req: DiagramLoadRequest], DiagramLoadResponse>('diagram:load', 1),
+    save: invoke<[req: DiagramSaveRequest], DiagramSaveResponse>('diagram:save', 1),
+  },
   /** Native open-directory dialog parented to the calling window (GRO-2163). */
   pickFolder: invoke<[], PickFolderResponse>('dialog:pick-folder', 0),
+  /** Native save sheets, parented to the calling window, each with its write in the same door (YAZ-3028). */
+  dialog: {
+    /** File › Export Drawing… (Draw's YAZ-1821): pick a place, then the standalone `.excalidraw` is written there; `{ cancelled }` writes nothing. */
+    saveDrawing: invoke<[req: SaveDrawingRequest], SaveDrawingResponse>('dialog:save-file', 1),
+    /** A diagram's Export Image… (Draw's YAZ-1802 D9): a PNG / SVG sheet; the picked extension decides which picture is written. */
+    saveImage: invoke<[req: SaveImageRequest], SaveDrawingResponse>('dialog:save-image', 1),
+    /** The Components tab's Import (YAZ-3038, Draw's YAZ-1833): pick one `.excalidraw` outside the vault and get its bytes; `{ cancelled }` reads nothing. */
+    openDrawing: invoke<[], OpenDrawingResponse>('dialog:open-file', 0),
+  },
+  /** The canvas panel's cross-vault media library over `<library>/media.json` and the Image Studio's providers (YAZ-3038; Draw's 🔒 YAZ-1775 D4 / D5). */
+  media: {
+    /** List / add / remove; every verb answers the list it produced. */
+    favorites: invoke<[req: MediaFavoritesRequest], StoredMediaItem[]>('media:favorites', 1),
+    /** List the MRU, or record a use. */
+    recent: invoke<[req: MediaRecentRequest], StoredMediaItem[]>('media:recent', 1),
+    /** `media.json` changed — any vault, any writer. */
+    onChanged: push('media:changed'),
+    /** Federated search: main fetches, curates and caches, so the renderer never holds a key or reaches a provider. */
+    search: invoke<[req: MediaSearchRequest], MediaSearchResponse>('media:search', 1),
+    /** One tile's picture as a dataURL, from main's 24 h disk cache when it is there. */
+    preview: invoke<[req: MediaPreviewRequest], MediaPreviewResponse>('media:preview', 1),
+    /** The full-size bytes, NEVER cached: they are about to become an `assets/` file. */
+    import: invoke<[req: MediaImportRequest], MediaImportResponse>('media:import', 1),
+  },
+  /** The canvas panel's cross-vault saved-component library over `<library>/components/` (YAZ-3038; Draw's 🔒 YAZ-1775 D5). */
+  components: {
+    /** The index, newest-updated first, reconciled against the folder. */
+    list: invoke<[], ComponentItem[]>('components:list', 0),
+    save: invoke<[req: ComponentSaveRequest], ComponentItem>('components:save', 1),
+    read: invoke<[req: ComponentSlugRequest], ComponentReadResponse>('components:read', 1),
+    /** The label only; both files keep their names. */
+    rename: invoke<[req: ComponentRenameRequest], ComponentItem>('components:rename', 1),
+    /** Both files to the OS trash, and the row out of the index. */
+    delete: invoke<[req: ComponentSlugRequest], void>('components:delete', 1),
+    /** The stored `<slug>.png` as a dataURL; `NOT_FOUND` when it is gone. */
+    preview: invoke<[req: ComponentSlugRequest], string>('components:preview', 1),
+    onChanged: push('components:changed'),
+  },
+  /** The secrets door (YAZ-3038; Draw's 🔒 YAZ-1775 D4): write and ask, never read — no channel answers a value. */
+  secrets: {
+    set: invoke<[req: SecretSetRequest], void>('secrets:set', 1),
+    has: invoke<[req: SecretHasRequest], boolean>('secrets:has', 1),
+  },
   /** Targeted mutators (not a generic patch) so several windows never lose each other's writes. */
   state: {
     get: invoke<[], AppState>('state:get', 0),
@@ -151,6 +217,17 @@ export const CONTRACT = {
     onNewWindow: push('menu:new-window'),
     /** Help › What's New… (YAZ-2976 D8): the window opens its "What's new" window. */
     onWhatsNew: push('menu:whats-new'),
+    // The board gestures from Draw's application menu (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D10). The
+    // renderer routes each to the VISIBLE board (`documents/boardCommand.ts`); main enables them only while
+    // the focused window's active tab is a board of a kind they work for.
+    /** File › Export Image… (⌘⇧E): a drawing opens the engine's export dialog; a diagram saves a PNG or SVG. */
+    onExportImage: push('menu:export-image'),
+    /** File › Export Excalidraw Drawing… (⌘⇧S, drawings only): write a standalone `.excalidraw`. */
+    onExportDrawing: push('menu:export-drawing'),
+    /** File › Share Link (⌘⇧L, any board): open the Share dialog for the visible board (YAZ-3040). */
+    onShareLink: push('menu:share-link'),
+    /** View › Canvas Background › a pick (drawings only): the visible drawing takes `color`. */
+    onCanvasBackground: push<string>('menu:canvas-background'),
   },
   /** Deep links (E1, GRO-2171): main parses a `yaseendocs://` URL (`shared/links.ts`) and routes it to the best window. */
   link: {
@@ -283,6 +360,44 @@ export const CONTRACT = {
     setEnabled: invoke<[root: string, enabled: boolean], GithubSyncStatus>('github:set-enabled', 2),
     /** Fired in every window on every transition of any vault; filter by `status.root`. */
     onStatus: push<GithubSyncStatus>('github:status-changed'),
+    /** Version history (YAZ-1897 D4, YAZ-3039): a drawing's or diagram's committed versions, newest first. No git, or no commits: `[]`. */
+    history: invoke<[root: string, path: string], BoardVersion[]>('github:history', 2),
+    /** One version's content, its pictures resolved from `assets/` (a drawing) or its XML (a diagram). */
+    version: invoke<[root: string, path: string, ref: string], BoardVersionScene>('github:version', 3),
+    /** Writes that version over the board on disk; the open tab reloads it as an external change. */
+    restore: invoke<[root: string, path: string, ref: string], void>('github:restore', 3),
+  },
+  /** Settings › Storage (YAZ-1801 in Draw, YAZ-3039): what the vault weighs (disk + local git, never the network), and moving pictures out of drawings. */
+  storage: {
+    stats: invoke<[root: string], VaultStorageStats>('storage:stats', 1),
+    /** `skip` = absolute paths with unsaved edits in a tab; an unreadable drawing counts as skipped. */
+    shrink: invoke<[root: string, skip: readonly string[]], ShrinkResult>('storage:shrink', 2),
+  },
+  /** Share links (Draw's YAZ-1799, YAZ-3040): main owns Cloudflare, the token and the upload password; the renderer hands over bytes. */
+  share: {
+    status: invoke<[], ShareStatus>('share:status', 0),
+    /** The Cloudflare accounts a pasted key sees — more than one means a picker. */
+    accounts: invoke<[token: string], ShareAccount[]>('share:accounts', 1),
+    /** Provision everything from one pasted token; progress arrives on `onSetupProgress`. */
+    setup: invoke<[token: string, accountId?: string], ShareStatus>('share:setup', 2),
+    /** To the window that asked for `setup` only. */
+    onSetupProgress: push<ShareSetupProgress>('share:setup-progress'),
+    /** Cloudflare's "create API token" page (the fake one in the demo), in the browser. */
+    openCloudflare: invoke<[], void>('share:open-cloudflare', 0),
+    get: invoke<[req: ShareBoardRequest], ShareEntry | null>('share:get', 1),
+    /** `check: false` skips the live check (no network): the sidebar badges' call. */
+    list: invoke<[root: string, check?: boolean], ShareListEntry[]>('share:list', 2),
+    /** First share (new id), or the automatic re-upload after a save (same id, permission untouched). */
+    publish: invoke<[req: SharePublishRequest], ShareEntry>('share:publish', 1),
+    /** "View and download" / "view only" on the SAME link — no re-upload. */
+    setPermission: invoke<[req: SharePermissionRequest], ShareEntry>('share:set-permission', 1),
+    /** Delete the object (the link dies at once) and forget the record. */
+    stop: invoke<[req: ShareBoardRequest], void>('share:stop', 1),
+    setDomain: invoke<[hostname: string | null], ShareStatus>('share:set-domain', 1),
+    /** Forget the token and password; `deleteEverything` first wipes every object, the Worker and the bucket. */
+    disconnect: invoke<[root: string | null, deleteEverything: boolean], ShareStatus>('share:disconnect', 2),
+    /** Any status or shares.json change, in every window. */
+    onChanged: push('share:changed'),
   },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {

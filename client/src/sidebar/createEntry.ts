@@ -4,11 +4,36 @@
  * The UI (context menu + inline input) lives in Sidebar/Tree; the main process
  * enforces the same rules again (absolute path, vault extension, no overwrite).
  */
-import { fileKind } from '@shared/fileKind'
+import { BOARD_EXTENSION, fileKind } from '@shared/fileKind'
+import type { BoardKind } from '@shared/types'
 import { basename, dirname } from '../lib/paths'
 
-/** What the inline input creates: a markdown note or a folder. */
-export type EntryKind = 'file' | 'dir'
+/** What the inline input creates: a markdown note, a folder, or a board — an Excalidraw drawing or a draw.io diagram (YAZ-3028 D9). */
+export type EntryKind = 'file' | 'dir' | BoardKind
+
+/** The name an empty board box gives (YAZ-3028 D9): `Untitled`, then `Untitled 2`, … */
+const UNTITLED = 'Untitled'
+
+/**
+ * The absolute path of a new BOARD named `typed` (YAZ-3028 D9, Draw's `entryPath`): the name as typed,
+ * with its kind's extension unless the name already carries it — so `Flow.drawio` typed into a
+ * "New draw.io diagram" box is not `Flow.drawio.drawio`. A name a file cannot hold is refused.
+ */
+export function boardPath(parentDir: string, typed: string, kind: BoardKind): string {
+  const name = typed.trim()
+  const invalid = validateEntryName(name)
+  if (invalid !== null) throw new Error(invalid)
+  return `${parentDir}/${fileKind(name) === kind ? name : name + BOARD_EXTENSION[kind]}`
+}
+
+/**
+ * The names an EMPTY board box tries, in order (YAZ-3028 D9): `Untitled`, `Untitled 2`, … — after the
+ * box's seed, so the dated item gives `10_20- Untitled`. Bounded: a folder that already holds every
+ * one of them gets the create's own "already exists".
+ */
+export function untitledNames(seed: string, max = 20): string[] {
+  return Array.from({ length: max }, (_, i) => `${seed}${UNTITLED}${i === 0 ? '' : ` ${i + 1}`}`)
+}
 
 /** Human-readable reason the name is unusable, or null when fine. */
 export function validateEntryName(name: string): string | null {

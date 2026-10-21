@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { WatchListener, WatchOptionsWithStringEncoding } from 'node:fs'
+import { writeFileSync, type WatchListener, type WatchOptionsWithStringEncoding } from 'node:fs'
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -144,10 +144,38 @@ describe('treeWatcher (YAZ-2192)', { timeout: 20_000 }, () => {
     const dir = await tempDir()
     const r = record(dir)
     await r.ready()
-    await writeFile(path.join(dir, 'late.md'), 'x')
+    // Written and closed in one turn, so the event is truly still pending at the close: an awaited
+    // write on a busy machine can outlast the settle and let the event through first (CI, YAZ-3028).
+    writeFileSync(path.join(dir, 'late.md'), 'x')
     await r.watcher.close()
     await sleep(400)
     expect(r.lines).toEqual([])
+  })
+
+  it('YAZ-3044 A35: a close() during the first walk stops it — no second walk of the vault, no event, no ready', async () => {
+    const dir = await tempDir()
+    await Promise.all(Array.from({ length: 50 }, (_, i) => writeFile(path.join(dir, `n${i}.md`), 'x')))
+    let w: TreeWatcher | null = null
+    let closedAt = -1
+    let looks = 0
+    const ignored = () => {
+      looks += 1
+      if (closedAt === -1 && w !== null) {
+        closedAt = looks
+        void w.close()
+      }
+      return false
+    }
+    w = watchTree(dir, { ignored })
+    watchers.push(w)
+    const events: string[] = []
+    const note = (type: string) => () => void events.push(type)
+    w.on('add', note('add')).on('change', note('change')).on('unlink', note('unlink')).on('addDir', note('addDir')).on('unlinkDir', note('unlinkDir')).on('ready', note('ready'))
+    await until(() => closedAt !== -1, 5000)
+    await sleep(800)
+    // At most the entry in hand when close() ran; before, the walk went on and a resync walked it all again.
+    expect(looks - closedAt).toBeLessThanOrEqual(1)
+    expect(events).toEqual([])
   })
 
   it('a folder that arrives but cannot be watched (EACCES) falls back to polling: what it holds still arrives, nothing throws', async () => {

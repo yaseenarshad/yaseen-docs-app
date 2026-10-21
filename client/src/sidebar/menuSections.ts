@@ -10,7 +10,8 @@ import type { MenuTargets } from './Sidebar'
  * More create · This row · "Open in ▸" · Delete. The component draws a separator between
  * NON-EMPTY groups only, so a blank-space menu (no row to rename or delete) never ends in a
  * stray rule. The last group is where a row LEAVES — a file is deleted, a shortcut removed, a vault
- * removed from the window (YAZ-2602 D7) — one item of it at most, so it always stands alone.
+ * removed from the window (YAZ-2602 D7) — one item of it at most, with a board's read-only "Info"
+ * above it (YAZ-3028 D11).
  * Labels are the bare
  * text — a shortcut hint rides on `hint` and is drawn by CSS from `data-hint`, so `textContent`
  * and the accessible name stay what every test pins.
@@ -91,6 +92,12 @@ export interface MenuHandlers {
   onNewFolder: () => void
   /** "New dated folder" (YAZ-1604): a disk folder born with today's `MM_DD- ` seed. Never hidden, same as `onNewFolder`. */
   onNewDatedFolder: () => void
+  /** "New Excalidraw drawing" (YAZ-3028 D9): the name box, then an empty drawing, then its tab. Never hidden, same as `onNewNote`. */
+  onNewDrawing: () => void
+  /** "New dated Excalidraw drawing" (YAZ-3028 D9): the same, the box seeded with today's `MM_DD- `. */
+  onNewDatedDrawing: () => void
+  /** "New draw.io diagram" (YAZ-3028 D9): the name box, then an empty diagram, then its tab. There is no dated twin. */
+  onNewDiagram: () => void
   /** "Add to favorites" / "Remove N from favorites" (YAZ-1766 D3): the paths and the direction the menu read. */
   onToggleFavorite: (paths: string[], isOn: boolean) => void
   /** "Review this folder" (YAZ-2322): the folder's absolute path; the caller starts the session. */
@@ -111,6 +118,12 @@ export interface MenuHandlers {
   onRemoveVault: (root: string) => void
   /** "Open by itself" on a vault row (YAZ-2858 D4): the vault's root, for main's `window.openAlone`. */
   onOpenAlone: (root: string) => void
+  /** "Info" on one drawing or diagram row (YAZ-3028 D11): the caller opens the board's popover where the menu was. */
+  onInfo: (path: string) => void
+  /** "Version history" (YAZ-1897 D4, YAZ-3039): open the board's versions — Info's gate. */
+  onHistory: (path: string) => void
+  /** "Share" (YAZ-3040, Draw's YAZ-1799 D6): open the Share dialog on the board — Info's gate. */
+  onShare: (path: string) => void
 }
 
 type Item = (t: MenuSectionTargets, h: MenuHandlers) => MenuItem | null
@@ -258,6 +271,13 @@ const newDatedNote = create('new-dated-note', 'New dated note', (h) => h.onNewDa
 
 const newDatedFolder = create('new-dated-folder', 'New dated folder', (h) => h.onNewDatedFolder)
 
+// The boards (YAZ-3028 D9): Draw's names (YAZ-1802 D13), between the note and the folder; one dated twin, the drawing's.
+const newDrawing = create('new-drawing', 'New Excalidraw drawing', (h) => h.onNewDrawing)
+
+const newDatedDrawing = create('new-dated-drawing', 'New dated Excalidraw drawing', (h) => h.onNewDatedDrawing)
+
+const newDiagram = create('new-diagram', 'New draw.io diagram', (h) => h.onNewDiagram)
+
 // ---- (4) This row: acts ON the right-clicked row, so it sits after the create groups ----
 
 /**
@@ -392,6 +412,33 @@ const del: Leaf = (t, h) => {
 }
 
 /**
+ * "Info" (YAZ-3028 D11, Draw's 🔒 YAZ-1835 D6): ONE drawing or diagram row — never a note, a folder,
+ * blank space or a multi-select — directly above Delete, in its group. A read-only item.
+ */
+const info: Leaf = (t, h) => {
+  const path = t.infoPath
+  if (path === null) return null
+  return { id: 'info', label: 'Info', onSelect: () => h.onInfo(path) }
+}
+
+/**
+ * "Share" (YAZ-3040, Draw's YAZ-1799 D6): Info's gate — one drawing or diagram row (Draw's 🔒 YAZ-1802
+ * D11) — at the top of the Delete group, above "Version history".
+ */
+const share: Leaf = (t, h) => {
+  const path = t.infoPath
+  if (path === null) return null
+  return { id: 'share', label: 'Share', onSelect: () => h.onShare(path) }
+}
+
+/** "Version history" (YAZ-1897 D4, YAZ-3039): Info's gate too — a draw.io diagram has pictures and Restore (Draw's 🔒 YAZ-1802 D10) — just above Info. */
+const history: Leaf = (t, h) => {
+  const path = t.infoPath
+  if (path === null) return null
+  return { id: 'history', label: 'Version history', onSelect: () => h.onHistory(path) }
+}
+
+/**
  * "Remove shortcut" (YAZ-2290 E5) stands where Delete would on a SHORTCUT row: the note stops
  * appearing in this folder and stays where it lives — the only place it can be deleted from. Not
  * `danger`, and no confirm: nothing is destroyed.
@@ -434,11 +481,11 @@ const addVault: Item = (t, h) => {
 
 const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
-const CREATE_GROUP: readonly Item[] = [newNote, newFolder]
-const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedFolder]
+const CREATE_GROUP: readonly Item[] = [newNote, newDrawing, newDiagram, newFolder]
+const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedDrawing, newDatedFolder]
 const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename]
 const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openAlone, openIn, addVault]
-const DELETE_GROUP: readonly Item[] = [del, removeShortcut, removeVault]
+const DELETE_GROUP: readonly Item[] = [share, history, info, del, removeShortcut, removeVault]
 
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */
 const build = <T extends MenuItem>(group: readonly ((t: MenuSectionTargets, h: MenuHandlers) => T | null)[], t: MenuSectionTargets, h: MenuHandlers): T[] =>

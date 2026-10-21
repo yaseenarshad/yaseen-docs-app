@@ -43,3 +43,14 @@ export const PAGE_PROBES = `window.__perf ??= (() => {
   p.longestSince = (t0) => Math.max(0, ...p.longTasks.filter((e) => e.t >= t0).map((e) => e.d))
   return p
 })(), true`
+
+/**
+ * The perf ceilings a scenario's medians break (YAZ-3044 A19, Draw's run.mjs): each `<scenario>.<metric>`
+ * row of budget.json's `perf` whose median is over `max` by more than `tolerance` (a fraction), as a line.
+ */
+export function overCeilings(name, metrics, ceilings = {}, tolerance = 0) {
+  return Object.entries(ceilings)
+    .filter(([k, row]) => k.startsWith(`${name}.`) && row?.max != null && metrics[k.slice(name.length + 1)]?.median != null)
+    .filter(([k, { max }]) => metrics[k.slice(name.length + 1)].median - max > max * tolerance)
+    .map(([k, { max }]) => `${k} median ${metrics[k.slice(name.length + 1)].median} > ceiling ${max}`)
+}

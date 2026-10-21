@@ -18,6 +18,14 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     readAsset: vi.fn(),
     writeAsset: vi.fn(),
     mintNoteId: vi.fn(),
+    createBoard: vi.fn(),
+    boardHead: vi.fn(),
+    drawing: vi.fn(),
+    diagram: vi.fn(),
+    dialog: vi.fn(),
+    media: vi.fn(),
+    components: vi.fn(),
+    secrets: vi.fn(),
     pickFolder: vi.fn(),
     watch: vi.fn(),
     state: vi.fn(),
@@ -33,6 +41,8 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     focus: vi.fn(),
     github: vi.fn(),
     update: vi.fn(),
+    storage: vi.fn(),
+    share: vi.fn(),
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge

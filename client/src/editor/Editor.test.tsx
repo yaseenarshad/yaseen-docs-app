@@ -86,6 +86,14 @@ vi.mock('./lineNumbers/lineNumbers', async () => {
 // Section indent (YAZ-2709): the fake Crepe has no view to send the switch to. The real plugin is
 // covered by outline/sectionIndent.test.ts; what the host SENDS is the thing under test here.
 vi.mock('./outline/sectionIndent', () => ({ showSectionIndent: vi.fn() }))
+/** The drawing tab's host (YAZ-3028): a stand-in that records what Editor hands it. */
+const drawingTab = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }))
+vi.mock('../drawings/DrawingEditor', () => ({
+  DrawingEditor: (props: Record<string, unknown>) => {
+    drawingTab.props = props
+    return <section className="editor editor--drawing" />
+  },
+}))
 
 // External edits apply as diffs (YAZ-1347): the fake lands the body the way the real apply would.
 vi.mock('./external/applyExternalMarkdown', () => ({
@@ -295,6 +303,18 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     expect(writeFile).not.toHaveBeenCalled()
     expect(flushListeners).toHaveLength(0)
     expect(el.querySelector('iframe.pdf-viewer__frame')?.getAttribute('title')).toBe('report.PDF')
+  })
+
+  it('routes a mixed-case `.excalidraw` to the lazy drawing tab — no text read, no Markdown stack (YAZ-3028 D2)', async () => {
+    drawingTab.props = null
+    const el = await mount('{}', 1, { path: '/vault/Board.EXCALIDRAW' })
+    await settle()
+    expect(readFile).not.toHaveBeenCalled()
+    expect(createCrepeMock).not.toHaveBeenCalled()
+    expect(flushListeners).toHaveLength(0)
+    expect(drawingTab.props).toMatchObject({ root: '/vault', path: '/vault/Board.EXCALIDRAW', watch })
+    expect(el.querySelector('.editor--drawing')).not.toBeNull()
+    expect(el.querySelector('.page-title, .frontmatter-panel, .folder-view, .backlinks')).toBeNull()
   })
 
   it('routes mixed-case raster images through the exact binary viewer without mounting the Markdown stack', async () => {

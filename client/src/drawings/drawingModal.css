@@ -98,13 +98,10 @@
   position: relative;
 }
 
-/* Whatever the surface mounts fills the frame — an engine container measures its parent. */
-.drawing-modal__canvas > div {
-  width: 100%;
-  height: 100%;
-}
-
-.drawing-modal__loading {
+/* Whatever the surface mounts fills the frame — its own element, and the engine container inside
+   it, which measures its parent (the surface is shared with a drawing tab since YAZ-3028). */
+.drawing-modal__canvas > div,
+.drawing-modal__canvas .drawing-surface > div {
   width: 100%;
   height: 100%;
 }

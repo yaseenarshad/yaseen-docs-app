@@ -18,7 +18,7 @@ import { appWindow, buildFixtureVault, clickMenuItem, copyVault, launchApp, quit
 test.describe.configure({ mode: 'serial' })
 
 /** The nav as the registry orders it (registry.tsx): five settings pages, a divider, the Hotkeys reference page. */
-const NAV_ORDER = ['Appearance', 'Editor', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'] as const
+const NAV_ORDER = ['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Storage', 'Sharing', 'Hotkeys'] as const
 
 // ---------- the dialog's parts, by role and stable class only (never position) ----------
 
@@ -121,12 +121,13 @@ test('step 3 — search narrows the page to hits under breadcrumbs, and a hit st
   await cog(win).click()
   await expect(dialog(win)).toBeVisible()
 
-  // "dark" is a Theme keyword and nothing else's: one row, under its section as the heading
-  // (an untitled group's breadcrumb is just the section).
+  // "dark" is a Theme keyword and the draw.io diagrams' "In dark mode" row (YAZ-3028 D10): two rows,
+  // both on the Appearance page, Theme first under the untitled group's breadcrumb (just the section).
   await search(win).fill('dark')
-  await expect(rows(win)).toHaveCount(1)
+  await expect(rows(win)).toHaveCount(2)
   await expect(row(win, 'theme')).toBeVisible()
-  await expect(headings(win)).toHaveText(['Appearance'])
+  await expect(row(win, 'diagramDarkColors')).toBeVisible()
+  await expect(headings(win).first()).toHaveText('Appearance')
   await shoot(win, 'settings-04-search-dark')
 
   // A hit is the live row, not a copy: clicking Dark in it changes the real setting.

@@ -184,3 +184,54 @@ export const FormulaIcon = () => (
     <path d="M5.5 7.5h5.5" />
   </svg>
 )
+
+/** A share link's glyph (YAZ-3040, Draw's YAZ-1799): the Share dialog's copy button and a shared row's mark. */
+export const LinkIcon = ({ size = 15 }: { size?: number }) => (
+  <svg {...svg} width={size} height={size} viewBox="0 0 24 24" strokeWidth={2}>
+    <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+    <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+  </svg>
+)
+
+/** The Share dialog's "Not shared" (YAZ-3040, Draw's YAZ-1799). */
+export const LockIcon = () => (
+  <svg {...svg} width={18} height={18} viewBox="0 0 24 24" strokeWidth={1.8}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </svg>
+)
+
+/** The Share dialog's "Anyone with the link" (YAZ-3040, Draw's YAZ-1799). */
+export const GlobeIcon = () => (
+  <svg {...svg} width={18} height={18} viewBox="0 0 24 24" strokeWidth={1.8}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+  </svg>
+)
+
+/**
+ * A broken cloud (cloud-off), red, right of a row's name: a file sync held back as over GitHub's
+ * limit (YAZ-1801 D3, ported by YAZ-3039). `label` is `TOO_LARGE_LABEL`, for hover and screen readers.
+ */
+export const CloudOffIcon = ({ label }: { label: string }) => (
+  <span className="tree__too-large" role="img" aria-label={label} title={label}>
+    <svg {...svg} width={14} height={14} viewBox="0 0 24 24" strokeWidth={2}>
+      <path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  </span>
+)
+
+/**
+ * A draw.io diagram's type mark (YAZ-3028 D11, Draw's 🔒 YAZ-1802 D15): linked boxes, a generic glyph,
+ * never draw.io's logo, after a diagram row's name and named for screen readers. A drawing has none.
+ */
+export const DiagramBadge = () => (
+  <span className="diagram-mark" role="img" aria-label="draw.io diagram" title="draw.io diagram">
+    <svg {...svg} width={11} height={11} viewBox="0 0 24 24" strokeWidth={2}>
+      <rect x="3" y="3" width="7" height="6" rx="1" />
+      <rect x="14" y="15" width="7" height="6" rx="1" />
+      <path d="M6.5 9v4a2 2 0 0 0 2 2H14" />
+    </svg>
+  </span>
+)

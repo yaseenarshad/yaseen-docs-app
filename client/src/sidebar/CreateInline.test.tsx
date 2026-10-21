@@ -19,13 +19,13 @@ afterEach(() => {
   container = null
 })
 
-function mount(seed?: string) {
+function mount(seed?: string, kind: 'dir' | 'file' | 'drawing' | 'diagram' = 'dir') {
   const onSubmit = vi.fn(() => Promise.resolve())
   const onCancel = vi.fn()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<CreateInline kind="dir" seed={seed} indent={0} onSubmit={onSubmit} onCancel={onCancel} />))
+  act(() => root?.render(<CreateInline kind={kind} seed={seed} indent={0} onSubmit={onSubmit} onCancel={onCancel} />))
   const field = container.querySelector<HTMLInputElement>('.create-inline__input')
   if (field === null) throw new Error('the create input did not mount')
   return { field, onSubmit }
@@ -64,5 +64,29 @@ describe('CreateInline seed (YAZ-1604)', () => {
     field.value = title
     await enter(field)
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith(title)
+  })
+})
+
+/** The board boxes (YAZ-3028 D9): they name their kind, and an empty box — or the seed alone — is "Untitled". */
+describe('CreateInline for a board (YAZ-3028 D9)', () => {
+  it('says "New drawing" and "New diagram"', () => {
+    expect(mount(undefined, 'drawing').field.placeholder).toBe('New drawing')
+    act(() => root?.unmount())
+    expect(mount(undefined, 'diagram').field.placeholder).toBe('New diagram')
+  })
+
+  it('Enter on an empty box, or on the seed alone, submits "" (the caller names it Untitled); a typed name goes as typed', async () => {
+    const empty = mount(undefined, 'drawing')
+    await act(async () => enter(empty.field))
+    expect(empty.onSubmit).toHaveBeenCalledExactlyOnceWith('')
+    act(() => root?.unmount())
+    const dated = mount('10_20- ', 'drawing')
+    await act(async () => enter(dated.field))
+    expect(dated.onSubmit).toHaveBeenCalledExactlyOnceWith('')
+    act(() => root?.unmount())
+    const named = mount(undefined, 'diagram')
+    named.field.value = '  Flow  '
+    await act(async () => enter(named.field))
+    expect(named.onSubmit).toHaveBeenCalledExactlyOnceWith('Flow')
   })
 })

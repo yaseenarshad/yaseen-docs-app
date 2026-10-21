@@ -47,3 +47,15 @@ export function focusSidebar(): boolean {
   target.focus()
   return true
 }
+
+/**
+ * May a board canvas that just became visible take the keyboard (Draw's 🔒 YAZ-1812, ported by YAZ-3028)?
+ * The canvas focuses itself only at MOUNT, so a revealed tab hands it over — GATED: yes when NOTHING
+ * holds it (`document.activeElement` is null or the body), or when what holds it is inside the tab
+ * layer (the tab being left, or this one). No otherwise: chrome outside the layer (the sidebar's
+ * search bar, the vault switcher, a dialog, the tab strip) keeps what it has.
+ */
+export function mayTakeFocus(active: Element | null, layer: Element | null): boolean {
+  if (active === null || active === active.ownerDocument.body) return true
+  return layer !== null && layer.contains(active)
+}

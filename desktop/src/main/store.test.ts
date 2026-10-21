@@ -275,6 +275,33 @@ describe('createStore: loading', () => {
     for (const width of [159, 481, NaN, '200', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, tableOfContentsWidth: width })).toBe(false)
   })
 
+  it('canvas and diagramDarkColors (YAZ-3037 done-when): a yaseendocs.json from before YAZ-3028 loads with the defaults; a file with some canvas prefs keeps them', async () => {
+    const { canvas: _canvas, diagramDarkColors: _dark, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: { ...legacySettings, theme: 'dark' } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, theme: 'dark' })
+    // One canvas pref written, the rest missing or junk: each field is repaired on its own.
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, canvas: { gridModeEnabled: true, defaultFontFamily: 'Helvetica' }, diagramDarkColors: 'keep' } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, gridModeEnabled: true }, diagramDarkColors: 'keep' })
+    // The channel check stays strict: a settings write without them is refused as a whole.
+    expect(isSettings(legacySettings)).toBe(false)
+  })
+
+  it('libraryFolder and canvasPanel (YAZ-3038): an older file loads with null and the default panel; a bad tab or a relative folder falls back; the channel check is strict', async () => {
+    const { libraryFolder: _folder, canvasPanel: _panel, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
+    expect(DEFAULT_SETTINGS.libraryFolder).toBeNull()
+    expect(DEFAULT_SETTINGS.canvasPanel).toEqual({ tab: 'components', docked: false })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, libraryFolder: '/Vault/Library', canvasPanel: { tab: 'presentation', docked: true } } }))
+    expect(createStore(file).get().settings).toMatchObject({ libraryFolder: '/Vault/Library', canvasPanel: { tab: 'presentation', docked: true } })
+    // One bad half costs that half only; '' or a relative path is never a library folder (it would resolve to the cwd).
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, libraryFolder: 'Library', canvasPanel: { tab: 'boards', docked: true } } }))
+    expect(createStore(file).get().settings).toMatchObject({ libraryFolder: null, canvasPanel: { tab: 'components', docked: true } })
+    for (const libraryFolder of ['', 'rel/dir', 7]) expect(isSettings({ ...DEFAULT_SETTINGS, libraryFolder })).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, canvasPanel: { tab: 'image-studio' } })).toBe(false)
+    expect(isSettings(legacySettings)).toBe(false)
+  })
+
   it('tocLines: an older file without the key loads with hover; the three values load as they are; anything else loads as hover, and fails the channel check (YAZ-2762 D5)', async () => {
     expect(TOC_LINES).toEqual(['hover', 'always', 'off'])
     expect(DEFAULT_SETTINGS.tocLines).toBe('hover')
@@ -342,6 +369,16 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ confirmRename: false })
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, confirmRename: 'no' } }))
     expect(createStore(file).get().settings).toMatchObject({ confirmRename: true })
+  })
+
+  it('hoverPreview: a file without the key reads ON, OFF survives, junk falls back to ON (Draw\'s YAZ-1800 D2; YAZ-3044 A20)', async () => {
+    const { hoverPreview: _omitted, ...preHoverSettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: preHoverSettings }))
+    expect(createStore(file).get().settings).toMatchObject({ hoverPreview: true })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, hoverPreview: false } }))
+    expect(createStore(file).get().settings).toMatchObject({ hoverPreview: false })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, hoverPreview: 'no' } }))
+    expect(createStore(file).get().settings).toMatchObject({ hoverPreview: true })
   })
 
   it('newNoteLocation/newNoteFolder: a pre-C2 file without the keys sanitizes to the defaults (current + "", YAZ-1643); junk falls back (GRO-2240)', async () => {

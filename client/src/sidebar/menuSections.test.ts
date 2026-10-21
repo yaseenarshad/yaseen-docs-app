@@ -43,6 +43,8 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   leaveSearchTo: null,
   // "Show in sidebar" (YAZ-2638): null is a row of the Files tab, and blank space.
   showPath: null,
+  // "Info" (YAZ-3028 D11): null is every row that is not one drawing or diagram.
+  infoPath: null,
   clip: null,
   ...over,
 })
@@ -64,6 +66,9 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onNewDatedNote: vi.fn(),
   onNewFolder: vi.fn(),
   onNewDatedFolder: vi.fn(),
+  onNewDrawing: vi.fn(),
+  onNewDatedDrawing: vi.fn(),
+  onNewDiagram: vi.fn(),
   onToggleFavorite: vi.fn(),
   onReviewFolder: vi.fn(),
   onSetReview: vi.fn(),
@@ -75,6 +80,9 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onPickVault: vi.fn(),
   onRemoveVault: vi.fn(),
   onOpenAlone: vi.fn(),
+  onInfo: vi.fn(),
+  onHistory: vi.fn(),
+  onShare: vi.fn(),
   ...over,
 })
 
@@ -141,8 +149,8 @@ describe('the seven groups (🔒 D7, amended)', () => {
     expect(groupsOf(build(FILE_ROW))).toEqual([
       ['Add to focus'],
       ['Cut', 'Copy', 'Paste', 'Copy path'],
-      ['New note', 'New folder'],
-      ['New dated note', 'New dated folder'],
+      ['New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder'],
+      ['New dated note', 'New dated Excalidraw drawing', 'New dated folder'],
       ['Rename'],
       ['Open in'],
       ['Delete'],
@@ -152,8 +160,8 @@ describe('the seven groups (🔒 D7, amended)', () => {
   it('BLANK SPACE has no row to rename or delete: the this-row and Delete groups are empty, so the menu ends on "Open in"', () => {
     expect(groupsOf(build(BLANK))).toEqual([
       ['Paste', 'Copy path'],
-      ['New note', 'New folder'],
-      ['New dated note', 'New dated folder'],
+      ['New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder'],
+      ['New dated note', 'New dated Excalidraw drawing', 'New dated folder'],
       ['Open in'], // the root's own OS verbs — the one this-row item blank space has
     ])
   })
@@ -190,9 +198,23 @@ describe('the seven groups (🔒 D7, amended)', () => {
  * because the position IS the ruling, not an accident of ordering.
  */
 describe('create groups (YAZ-2249 🔒 E1/E2)', () => {
-  it('offers New note · New folder, then its own section: New dated note · New dated folder', () => {
-    expect(build()[2].map((i) => i.label)).toEqual(['New note', 'New folder'])
-    expect(build()[3].map((i) => i.label)).toEqual(['New dated note', 'New dated folder'])
+  it('offers New note · New Excalidraw drawing · New draw.io diagram · New folder, then its own section: New dated note · New dated Excalidraw drawing · New dated folder (YAZ-3028 D9)', () => {
+    expect(build()[2].map((i) => i.label)).toEqual(['New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder'])
+    expect(build()[3].map((i) => i.label)).toEqual(['New dated note', 'New dated Excalidraw drawing', 'New dated folder'])
+    // No dated draw.io item (YAZ-1999 D2, kept by D9).
+    expect(labelsOf(build())).not.toContain('New dated draw.io diagram')
+  })
+
+  it('each board item hands the click to its own handler, and is absent where there is no folder to create in (YAZ-3028 D9)', () => {
+    const onNewDrawing = vi.fn()
+    const onNewDatedDrawing = vi.fn()
+    const onNewDiagram = vi.fn()
+    const sections = build({}, { onNewDrawing, onNewDatedDrawing, onNewDiagram })
+    select(sections, 'New Excalidraw drawing')
+    select(sections, 'New dated Excalidraw drawing')
+    select(sections, 'New draw.io diagram')
+    expect([onNewDrawing, onNewDatedDrawing, onNewDiagram].map((h) => h.mock.calls.length)).toEqual([1, 1, 1])
+    expect(labelsOf(build({ targetDir: null }))).not.toContain('New Excalidraw drawing')
   })
 
   it('is offered on every row type — the group targets a DIRECTORY, never the clicked row', () => {
@@ -585,8 +607,8 @@ describe('a shortcut row (YAZ-2290 E5)', () => {
     expect(groupsOf(build({ ...SHORTCUT_ROW, clip: { count: 2, op: 'copy', paths: ['/v/a.md', '/v/b.md'] } }))).toEqual([
       ['Add to focus'],
       ['Copy path'],
-      ['New note', 'New folder'],
-      ['New dated note', 'New dated folder'],
+      ['New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder'],
+      ['New dated note', 'New dated Excalidraw drawing', 'New dated folder'],
       ['Open in'],
       ['Remove shortcut'],
     ])
@@ -616,8 +638,8 @@ describe('the vault items (YAZ-2602)', () => {
     expect(sections).toHaveLength(7)
     expect(groupsOf(sections)).toEqual([
       ['Paste', 'Copy path'],
-      ['New note', 'New folder'],
-      ['New dated note', 'New dated folder'],
+      ['New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder'],
+      ['New dated note', 'New dated Excalidraw drawing', 'New dated folder'],
       ['Open in', 'Add vault to this window'],
     ])
   })
@@ -651,8 +673,8 @@ describe('the vault items (YAZ-2602)', () => {
     const sections = build(VAULT_ROW)
     expect(groupsOf(sections)).toEqual([
       ['Paste', 'Copy path'],
-      ['New note', 'New folder'],
-      ['New dated note', 'New dated folder'],
+      ['New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder'],
+      ['New dated note', 'New dated Excalidraw drawing', 'New dated folder'],
       ['Open in'],
       ['Remove from this window'],
     ])
@@ -680,8 +702,8 @@ describe('Open by itself (YAZ-2858 D4, S15, S16)', () => {
     const sections = buildMenuSections(targets(VAULT_ROW), h)
     expect(groupsOf(sections)).toEqual([
       ['Paste', 'Copy path'],
-      ['New note', 'New folder'],
-      ['New dated note', 'New dated folder'],
+      ['New note', 'New Excalidraw drawing', 'New draw.io diagram', 'New folder'],
+      ['New dated note', 'New dated Excalidraw drawing', 'New dated folder'],
       ['Open by itself', 'Open in'],
       ['Remove from this window'],
     ])
@@ -694,5 +716,50 @@ describe('Open by itself (YAZ-2858 D4, S15, S16)', () => {
   it('S16: a file row, a folder row and blank space never show it', () => {
     const DIR_ROW: Partial<MenuSectionTargets> = { rowKind: 'dir', targetDir: '/v/sub', copyPath: '/v/sub', openPath: '/v/sub', revealPath: '/v/sub', openVsCodePath: '/v/sub', openDefaultPath: '/v/sub' }
     for (const row of [FILE_ROW, DIR_ROW, BLANK, { targetDir: null }]) expect(itemOf(build(row), 'Open by itself')).toBeUndefined()
+  })
+})
+
+/** "Info" (YAZ-3028 D11, Draw's 🔒 YAZ-1835 D6): one drawing or diagram row, directly above Delete. */
+describe('Info item (YAZ-3028 D11)', () => {
+  const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/Flow.drawio', deletePath: '/v/Flow.drawio', renamePath: '/v/Flow.drawio', infoPath: '/v/Flow.drawio' }
+
+  it('is absent on a note, a folder, blank space and a selection — every menu without a target', () => {
+    expect(labelsOf(build(FILE_ROW))).not.toContain('Info')
+    expect(labelsOf(build(BLANK))).not.toContain('Info')
+  })
+
+  it('a board row: Info stands directly above Delete, in its group, and hands the caller the board', () => {
+    const onInfo = vi.fn()
+    const sections = build(BOARD_ROW, { onInfo })
+    expect(sections[6].map((i) => i.label)).toEqual(['Share', 'Version history', 'Info', 'Delete'])
+    expect(itemOf(sections, 'Info')?.danger).toBeUndefined()
+    select(sections, 'Info')
+    expect(onInfo).toHaveBeenCalledExactlyOnceWith('/v/Flow.drawio')
+  })
+})
+
+/** "Version history" (YAZ-1897 D4, YAZ-3039): Info's gate, just above Info. */
+describe('Version history item (YAZ-3039)', () => {
+  const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/B.excalidraw', deletePath: '/v/B.excalidraw', renamePath: '/v/B.excalidraw', infoPath: '/v/B.excalidraw' }
+
+  it('is absent on a note and on blank space, and on a board row hands the caller the board', () => {
+    expect(labelsOf(build(FILE_ROW))).not.toContain('Version history')
+    expect(labelsOf(build(BLANK))).not.toContain('Version history')
+    const onHistory = vi.fn()
+    select(build(BOARD_ROW, { onHistory }), 'Version history')
+    expect(onHistory).toHaveBeenCalledExactlyOnceWith('/v/B.excalidraw')
+  })
+})
+
+/** "Share" (YAZ-3040, Draw's YAZ-1799 D6): Info's gate, at the top of the Delete group. */
+describe('Share item (YAZ-3040)', () => {
+  const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/Flow.drawio', deletePath: '/v/Flow.drawio', renamePath: '/v/Flow.drawio', infoPath: '/v/Flow.drawio' }
+
+  it('is absent on a note and on blank space, and on a board row hands the caller the board', () => {
+    expect(labelsOf(build(FILE_ROW))).not.toContain('Share')
+    expect(labelsOf(build(BLANK))).not.toContain('Share')
+    const onShare = vi.fn()
+    select(build(BOARD_ROW, { onShare }), 'Share')
+    expect(onShare).toHaveBeenCalledExactlyOnceWith('/v/Flow.drawio')
   })
 })

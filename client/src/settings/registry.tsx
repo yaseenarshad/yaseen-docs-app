@@ -26,15 +26,21 @@ import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
 import type { GithubSyncStatus, IdsState, IndexResponse, SettingsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
+import type { VaultStorageState } from '../hooks/useVaultStorage'
+import { SHARING_SECTION } from '../share/SharingPage'
+import type { SharingState } from '../share/useSharing'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
+import { CANVAS_SECTION } from './canvasSection'
+import { IMAGES_SECTION } from './imagesSection'
 import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
+import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 export interface SettingsCtx {
   settings: SettingsState
@@ -70,6 +76,10 @@ export interface SettingsCtx {
    * it acts on; with one vault the pages read as they always did.
    */
   vaultName?: string
+  /** Settings › Storage (YAZ-1801, YAZ-3039): App's `useVaultStorage` for the active tab's vault; undefined with no vault open, which hides the section. */
+  storage?: VaultStorageState
+  /** Settings › Sharing (YAZ-3040, Draw's YAZ-1799 D7): App's `useSharing`; undefined hides the section. Its shared-boards list is the active tab's vault. */
+  sharing?: SharingState
   /**
    * Text formatting (YAZ-3068 D15): each vault of the window, in the window's order — its root, the
    * name the app calls it, and its `useTextFormatting` — and the active tab's vault, where the
@@ -87,9 +97,10 @@ export interface SettingDef {
   /** The control stacks full-width under the text instead of sitting beside it (D7); a function reads live state (the folder input shows only for `folder`). */
   wide?: boolean | ((ctx: SettingsCtx) => boolean)
   /**
-   * The row shows its control alone, full width, with no label on screen (YAZ-3068 D16): for a
-   * group whose title already says it. Search still finds the row by its label, and the label names
-   * the row for a screen reader.
+   * The row shows its control alone, full width, with no label on screen. Two uses: a control that
+   * carries its own words (YAZ-1801, YAZ-3039 — Settings › Storage's lists and its one action,
+   * Sharing's lists), and a group whose title already says it (Text formatting, YAZ-3068 D16).
+   * Search still finds the row by its label and hint, and the label names the row for a screen reader.
    */
   bare?: true
   /** A row that only exists in some states (the Review rows need upkeep on); absent = always. */
@@ -97,7 +108,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys'
+export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -314,6 +325,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
         ],
       },
+      {
+        // YAZ-3037 (Draw's 🔒 YAZ-1802 D16): the default for every diagram; a file that sets its own `adaptiveColors` keeps it.
+        title: 'draw.io diagrams',
+        items: [
+          {
+            id: 'diagramDarkColors',
+            label: 'In dark mode',
+            hint: 'Adapt re-colours diagrams so they stay readable in dark mode. A diagram that asks to keep its own colours always does.',
+            keywords: ['drawio', 'draw.io', 'diagram', 'dark', 'colors', 'colours', 'adaptive'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={DIAGRAM_DARK_COLORS_OPTIONS} value={settings.diagramDarkColors} onChange={(diagramDarkColors) => onChange({ ...settings, diagramDarkColors })} ariaLabel="draw.io diagrams in dark mode" />
+            ),
+          },
+        ],
+      },
     ],
   },
   {
@@ -420,6 +446,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
     ],
   },
+  // YAZ-3037 (YAZ-3028 D10): the user-level Excalidraw canvas preferences, declared in their own module
+  // because there are fourteen of them and they are the one section with a mapping behind it (`shared/canvasPrefs.ts`).
+  CANVAS_SECTION,
+  // YAZ-3038 (YAZ-3028 D10): the canvas panel's Pixabay key and its library folder.
+  IMAGES_SECTION,
   {
     id: 'files',
     title: 'Files & Links',
@@ -443,6 +474,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             hint: 'Shows the confirmation, with the number of links that will be updated, before a note or folder is renamed.',
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.confirmRename} onChange={(confirmRename) => onChange({ ...settings, confirmRename })} ariaLabel="Ask before renaming" />
+            ),
+          },
+          {
+            // Draw's YAZ-1800 D2, ported by YAZ-3044 A20: the sidebar's board preview, on by default.
+            id: 'hoverPreview',
+            label: 'Preview on hover',
+            hint: 'Rest the mouse on a drawing or diagram in the sidebar to see the whole board.',
+            keywords: ['drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreview} onChange={(hoverPreview) => onChange({ ...settings, hoverPreview })} ariaLabel="Preview on hover" />
             ),
           },
           {
@@ -567,6 +608,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
     ],
   },
+  // YAZ-1801 (YAZ-3039): a per-vault report, its own page in the nav's reference list.
+  STORAGE_SECTION,
+  // YAZ-3040: share links on the user's own Cloudflare — a setup flow and a write-up, its own page too.
+  SHARING_SECTION,
   {
     id: 'hotkeys',
     title: 'Hotkeys',
@@ -575,11 +620,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     // lower-cased (`hotkeys-window`); every key and label of the table is a keyword, so "close
     // tab" or "⌘W" finds it, and "keyboard shortcuts" reaches every table (the Keyboard one is
     // already labelled that).
-    groups: HOTKEY_GROUPS.map(({ title, entries }) => ({
+    groups: HOTKEY_GROUPS.map(({ id, title, entries }) => ({
       title,
       items: [
         {
-          id: `hotkeys-${title.toLowerCase()}`,
+          id: `hotkeys-${id ?? title.toLowerCase()}`,
           label: `${title} shortcuts`,
           keywords: [...(title === 'Keyboard' ? [] : ['keyboard shortcuts']), ...entries.flatMap((entry) => [entry.keys, entry.label])],
           wide: true,

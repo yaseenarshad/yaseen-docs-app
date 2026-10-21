@@ -32,6 +32,7 @@ describe('settingCandidates', () => {
       'blockGap',
       'textFormatting',
       'commentsOrder',
+      'diagramDarkColors',
       'bulletThreading',
       'threadWidth',
       'threadColor',
@@ -39,8 +40,14 @@ describe('settingCandidates', () => {
       'sectionLines',
       'tableOfContents',
       'tocLines',
+      // Settings › Excalidraw canvas (YAZ-3037).
+      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`),
+      // Settings › Images (YAZ-3038).
+      'pixabayApiKey',
+      'libraryFolder',
       'confirmDelete',
       'confirmRename',
+      'hoverPreview',
       'newNoteLocation',
       'startupWindows',
       'ids',
@@ -50,6 +57,8 @@ describe('settingCandidates', () => {
       'hotkeys-keyboard',
       'hotkeys-views',
       'hotkeys-window',
+      'hotkeys-canvas',
+      'hotkeys-drawio',
       'hotkeys-mouse',
     ])
   })
@@ -63,6 +72,14 @@ describe('settingCandidates', () => {
     const all = ids(settingCandidates(ctx({ status: null, setEnabled: () => undefined }, REVIEW)))
     expect(all.slice(all.indexOf('ids'), all.indexOf('githubSync') + 1)).toEqual(['ids', 'duplicates', 'idLetters', 'oldIds', ...REVIEW_ROWS, 'githubSync'])
     expect(ids(settingCandidates(ctx())).filter((id) => REVIEW_ROWS.includes(id))).toEqual([])
+  })
+
+  it('includes Storage and Sharing only with their hooks, after Sync and before Hotkeys; Excalidraw canvas and Images sit between Editor and Files & Links (YAZ-3028 merge)', () => {
+    const storage: SettingsCtx['storage'] = { stats: null, failed: false, refresh: () => undefined, shrink: async () => ({ shrunk: 0, skipped: 0, bytesMoved: 0 }), lastShrink: null }
+    const sharing: SettingsCtx['sharing'] = { root: '/v', status: null, rows: null, listError: null, now: 0, refresh: () => undefined, show: () => undefined }
+    const sectionsOf = (c: SettingsCtx) => [...new Set(settingCandidates(c).map((h) => h.section.id))]
+    expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), storage, sharing })).toEqual(['appearance', 'editor', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
+    expect(sectionsOf(ctx())).toEqual(['appearance', 'editor', 'canvas', 'images', 'files', 'hotkeys'])
   })
 
   it('a candidate carries label, hint, keywords, group title and section title, case-folded in `lower`', () => {
@@ -95,13 +112,15 @@ describe('searchSettings', () => {
   })
 
   it('matches on a keyword the label does not contain', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['theme'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'system'))).toEqual(['theme'])
+    // "dark" is also the draw.io row's word (YAZ-3037).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['theme', 'diagramDarkColors'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'readable line'))).toEqual(['contentWidth'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'trash'))).toEqual(['confirmDelete'])
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows', 'ids', 'duplicates', 'idLetters', 'oldIds'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation', 'startupWindows', 'ids', 'duplicates', 'idLetters', 'oldIds'])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
@@ -118,10 +137,11 @@ describe('searchSettings', () => {
 
   it('"Level lines" (YAZ-2762): its label and "hierarchy" find that row alone; "outline", "guide" and "hover" find it among the rows that share the word', () => {
     for (const query of ['level lines', 'hierarchy']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['tocLines'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tableOfContents', 'tocLines'])
-    // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too.
+    // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkeys-drawio'])
+    // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sectionLines', 'tocLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sectionLines', 'tocLines', 'hoverPreview'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
   })
@@ -144,8 +164,10 @@ describe('searchSettings', () => {
   it('a hotkey label finds its Hotkeys table: "close tab" → Window', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'close tab'))).toEqual(['hotkeys-window'])
     expect(ids(searchSettings(settingCandidates(ctx()), '⌘W'))).toEqual(['hotkeys-window'])
-    // "underline" is also a word of Appearance › Text formatting (YAZ-3068), which comes first in registry order.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['textFormatting', 'hotkeys-keyboard'])
+    // "underline" is also a word of Appearance › Text formatting (YAZ-3068), which comes first in registry order;
+    // a note and a draw.io diagram both underline with ⌘U (YAZ-3037): both hotkey tables answer too.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['textFormatting', 'hotkeys-keyboard', 'hotkeys-drawio'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkeys-canvas'])
   })
 
   it('"review", "upkeep" and "inbox" each find every row of the Review section (YAZ-2322)', () => {

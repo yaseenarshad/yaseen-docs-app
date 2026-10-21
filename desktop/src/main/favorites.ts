@@ -36,10 +36,33 @@ async function readRaw(root: string): Promise<Raw> {
   const res = await readConfigDetailed(root, FAVORITES_FILE)
   if (res.state === 'absent') return res
   const file = path.join(root, VAULT_CONFIG_DIR, FAVORITES_FILE)
-  if (res.state === 'malformed') return { state: 'bad', file }
-  const v = res.value
-  if (!isRecord(v) || v.version !== 1 || !isStringArray(v.favorites)) return { state: 'bad', file }
-  return { state: 'ok', rels: clean(v.favorites) }
+  const rels = res.state === 'malformed' ? null : relsOf(res.value)
+  return rels === null ? { state: 'bad', file } : { state: 'ok', rels }
+}
+
+/** The cleaned list in a parsed `favorites.json`, or null when it is not `{ version: 1, favorites: string[] }`. */
+const relsOf = (v: unknown): string[] | null => (isRecord(v) && v.version === 1 && isStringArray(v.favorites) ? clean(v.favorites) : null)
+
+/**
+ * Two machines' `favorites.json` after both changed it (YAZ-1897 scope, ported by YAZ-3039 D4): a
+ * 3-way list merge — an entry either side removed is gone, the remote's order is kept, and our
+ * additions follow it. `base` is null when both machines created the file. Answers the file's
+ * text, or null when a side is not a favorites file (sync then stops, as for any conflict it cannot settle).
+ */
+export function mergeFavoritesFile(base: string | null, theirs: string, mine: string): string | null {
+  const parse = (text: string): string[] | null => {
+    try {
+      return relsOf(JSON.parse(text))
+    } catch {
+      return null
+    }
+  }
+  const [b, t, m] = [base === null ? [] : parse(base), parse(theirs), parse(mine)]
+  if (b === null || t === null || m === null) return null
+  const [was, mineSet, theirSet] = [new Set(b), new Set(m), new Set(t)]
+  const kept = t.filter((rel) => !was.has(rel) || mineSet.has(rel))
+  const added = m.filter((rel) => !was.has(rel) && !theirSet.has(rel))
+  return `${JSON.stringify({ version: 1, favorites: clean([...kept, ...added]) }, null, 2)}\n`
 }
 
 /** Writes and repairs on one root never interleave. */
@@ -66,6 +89,28 @@ export async function setFavorites(root: string, absPaths: readonly string[]): P
     const kept = unique.filter((_, i) => alive[i]) // D14: a favorite whose file is gone leaves the list here
     const value: FavoritesConfig = { version: 1, favorites: clean(kept.map((p) => toRel(r, p))) }
     await writeConfig(r, FAVORITES_FILE, value)
+  })
+}
+
+/**
+ * Adds vault-relative entries AFTER the stored ones (the Draw import, YAZ-3028 D6): the stored
+ * list keeps its order and is never pruned here; an added entry that is already there, unsafe, or
+ * whose file is gone (D14) is not added; the cap is MAX_FAVORITES. A malformed file is never
+ * written (R2.5). Answers how many entries it added; 0 writes nothing.
+ */
+export async function addFavorites(root: string, rels: readonly string[]): Promise<number> {
+  const r = requireAbsPath(root, 'root')
+  return chained(r, async () => {
+    const raw = await readRaw(r)
+    if (raw.state === 'bad') return 0
+    const stored = raw.state === 'ok' ? raw.rels : []
+    const fresh = [...new Set(rels.filter(isSafeRel))].filter((rel) => !stored.includes(rel))
+    const alive = await Promise.all(fresh.map((rel) => stat(toAbs(r, rel)).then(() => true, () => false)))
+    const added = fresh.filter((_, i) => alive[i]).slice(0, Math.max(0, MAX_FAVORITES - stored.length))
+    if (added.length === 0) return 0
+    const value: FavoritesConfig = { version: 1, favorites: [...stored, ...added] }
+    await writeConfig(r, FAVORITES_FILE, value)
+    return added.length
   })
 }
 

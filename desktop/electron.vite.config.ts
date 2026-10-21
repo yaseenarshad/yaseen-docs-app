@@ -5,22 +5,20 @@ import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { cp, mkdir, rename, rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+// Relative, not `@shared`: this file runs in Node before any alias exists.
+import { DRAWIO_TAG } from '../shared/drawio'
+import { EXCALIDRAW_ASSET_DIR, excalidrawPackageFonts } from '../shared/excalidrawFonts'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const shared = resolve(here, '../shared')
 const client = resolve(here, '../client')
 const rendererOut = resolve(here, 'out/renderer')
 
-/** Where the renderer expects Excalidraw's assets (mirrors `EXCALIDRAW_ASSET_DIR` in renderScene.ts). */
-const EXCALIDRAW_ASSET_DIR = 'excalidraw-assets'
-
-/** The package's own `fonts/` tree, wherever npm hoisted the workspace dependency. */
+/** The package's own `fonts/` tree, wherever npm hoisted the workspace dependency (`shared/excalidrawFonts.ts`, the rule main's share upload uses too). */
 function excalidrawFontsDir(): string {
-  for (const base of [resolve(here, '..'), client]) {
-    const dir = resolve(base, 'node_modules/@excalidraw/excalidraw/dist/prod/fonts')
-    if (existsSync(dir)) return dir
-  }
-  throw new Error('@excalidraw/excalidraw fonts not found — run `npm install`')
+  const dir = excalidrawPackageFonts(resolve(here, '..')).find((d) => existsSync(d))
+  if (dir === undefined) throw new Error('@excalidraw/excalidraw fonts not found — run `npm install`')
+  return dir
 }
 
 /**
@@ -50,6 +48,29 @@ function excalidrawAssets(): Plugin {
     },
     async writeBundle() {
       await cp(fonts, resolve(rendererOut, EXCALIDRAW_ASSET_DIR, 'fonts'), { recursive: true })
+    },
+  }
+}
+
+/**
+ * The draw.io webapp beside the renderer bundle (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D5),
+ * `excalidrawAssets()`'s twin: `tools/packDrawio.mjs` (the first step of `npm run build`) has
+ * unpacked the pinned release into the gitignored cache, and this copies it into `out/drawio` when the
+ * bundle is written, where main serves it as `app://drawio/…` and electron-builder's `out/**` carries
+ * it into the app. Dev needs no copy — main serves the cache directly (`resolveDrawioDir`). The bytes
+ * are never committed. `out/drawio` sits outside the renderer's `outDir`, so nothing else empties it:
+ * it is replaced whole, or a bumped release would keep the old one's files.
+ */
+function drawioAssets(): Plugin {
+  const cache = resolve(here, '.cache/drawio', DRAWIO_TAG)
+  const target = resolve(here, 'out/drawio')
+  return {
+    name: 'yaseen-drawio-assets',
+    apply: 'build',
+    async writeBundle() {
+      if (!existsSync(resolve(cache, 'index.html'))) throw new Error(`draw.io ${DRAWIO_TAG} is not unpacked at ${cache} — run \`npm run drawio:pack\``)
+      await rm(target, { recursive: true, force: true })
+      await cp(cache, target, { recursive: true })
     },
   }
 }
@@ -96,7 +117,7 @@ export default defineConfig({
   },
   renderer: {
     root: client,
-    plugins: [react(), excalidrawAssets(), renderSourcemapsAside(rendererOut, mapsDir)],
+    plugins: [react(), excalidrawAssets(), drawioAssets(), renderSourcemapsAside(rendererOut, mapsDir)],
     resolve: {
       alias: { '@shared': shared },
       /**

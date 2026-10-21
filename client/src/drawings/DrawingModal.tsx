@@ -11,8 +11,9 @@
  *
  * 🔒 CHROME ONLY. Everything about the ENGINE — the canvas, what "changed" means, how a scene
  * serializes — lives behind `ExcalidrawSurface`, and nothing in this file imports the package or
- * anything that does. YAZ-868 swaps in yaseendraw by rewriting that one file; this one should not
- * notice. `DrawingModal.test.tsx` pins the boundary.
+ * anything that does. Since YAZ-3028 a drawing TAB (`DrawingEditor`) shares that one surface; the
+ * modal saves its `standalone()` scene (the images inside it), as it always has.
+ * `DrawingModal.test.tsx` pins the boundary.
  *
  * ⚡ KEYS ARE THE OVERLAY'S, NEVER `window`'s (the YAZ-888 lesson, learned by `ConfirmRename` and
  * paid for in e2e): React flushes a component's mount effects INSIDE the dispatch of the event
@@ -26,16 +27,28 @@
  * modal outright; a dirty one raises the inline confirm strip below the title bar — deliberately
  * not a second sheet stacked over this one, which is a modal over a modal for a one-line question.
  *
+ * A CONFLICT (YAZ-3044 A4) — the same drawing saved from a tab since this modal read it — shows the
+ * tab's own `ConflictBar` under the title bar: Reload opens the disk's version here (this canvas's
+ * edits are dropped), Keep mine writes this canvas over it. The modal never wins in silence.
+ *
  * FAILURES are inline and never a dialog: a sidecar that is missing, unreadable or not a scene
  * opens as the error state (message + close, nothing to save), and a failed write leaves the modal
  * open with its error line and the canvas untouched — a save that failed must not eat the drawing.
  */
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { ConflictBar } from '../documents/ConflictBar'
 import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
-import { ExcalidrawSurface, type DrawingSnapshot } from './ExcalidrawSurface'
-import { saveDrawing, saveErrorMessage } from './saveDrawing'
+import type { DrawingSnapshot } from './ExcalidrawSurface'
+import { DrawingConflict, saveDrawing, saveErrorMessage } from './saveDrawing'
 import './drawingModal.css'
+
+/**
+ * The ONE canvas, in its own chunk (YAZ-3028): since a drawing tab shares it, it carries Draw's engine
+ * options (canvas prefs, fit-on-open, the toolbar mode), and a note that is only being read never
+ * needs them. It arrives with the first open, beside the engine it loads anyway.
+ */
+const ExcalidrawSurface = lazy(() => import('./ExcalidrawSurface').then((m) => ({ default: m.ExcalidrawSurface })))
 
 /** What a sidecar that will not open says — the modal's twin of the preview's broken chip. */
 export const BROKEN_DRAWING_MESSAGE = "This drawing can't be opened: its file is missing or is not a scene."
@@ -71,6 +84,10 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  /** The disk's mtime while the conflict bar is up (YAZ-3044 A4); null when there is no conflict. */
+  const [conflict, setConflict] = useState<number | null>(null)
+  /** Bumped by Reload so the surface remounts on the disk's scene (it reads `scene` once, on mount). */
+  const [generation, setGeneration] = useState(0)
 
   useEffect(() => {
     let live = true
@@ -105,19 +122,49 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
     else onClose()
   }
 
-  const save = async (): Promise<void> => {
+  /** One guarded write at `expectedMtime`: success pokes the previews and closes; a CONFLICT raises the bar. */
+  const write = async (expectedMtime: number): Promise<void> => {
     const current = snapshot.current
-    if (loaded === null || current === null || !dirty || saving) return
+    if (loaded === null || current === null || saving) return
     setSaving(true)
     setError(null)
+    setConflict(null)
     try {
-      await saveDrawing({ root, target, path: loaded.path, content: current.serialize(), expectedMtime: loaded.mtime })
+      await saveDrawing({ root, target, path: loaded.path, content: current.standalone(), expectedMtime })
       // The previews re-read from disk on this; the modal's own job is over.
       feed?.poke(target)
       onClose()
     } catch (err) {
-      setError(saveErrorMessage(err))
+      if (err instanceof DrawingConflict) setConflict(err.mtime)
+      else setError(saveErrorMessage(err))
       setSaving(false)
+    }
+  }
+
+  const save = async (): Promise<void> => {
+    if (loaded === null || !dirty) return
+    await write(loaded.mtime)
+  }
+
+  /** Keep mine: this canvas over the disk's version, guarded by the mtime the conflict reported. */
+  const keepMine = (): void => {
+    if (conflict !== null) void write(conflict)
+  }
+
+  /** Reload: the disk's version replaces this canvas. The surface remounts on it, clean. */
+  const reload = async (): Promise<void> => {
+    setConflict(null)
+    setError(null)
+    try {
+      const drawing = await openDrawing(root, target)
+      snapshot.current = null
+      baseline.current = null
+      setVersion(null)
+      setLoaded(drawing)
+      setGeneration((g) => g + 1)
+      feed?.poke(target)
+    } catch {
+      setError(BROKEN_DRAWING_MESSAGE)
     }
   }
 
@@ -155,13 +202,18 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
             </button>
           </div>
         )}
+        {conflict !== null && <ConflictBar onReload={() => void reload()} onKeepMine={keepMine} />}
         {error !== null && (
           <p className="drawing-modal__error" role="alert">
             {error}
           </p>
         )}
         <div className="drawing-modal__canvas">
-          {loaded !== null && <ExcalidrawSurface scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} />}
+          {loaded !== null && (
+            <Suspense fallback={null}>
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} />
+            </Suspense>
+          )}
         </div>
       </div>
     </div>

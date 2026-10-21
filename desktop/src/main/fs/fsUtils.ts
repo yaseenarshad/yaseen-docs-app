@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { link, open, readdir, rename, stat, unlink } from 'node:fs/promises'
+import { link, open, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { folderSettingsPath, type BridgeError, type FileKind, type TreeNode } from '@shared/types'
+import { ASSETS_DIR } from '@shared/drawingAssets'
 import { ATOMIC_TMP_HEX_LEN, fileKind, isAtomicTmp, isMarkdown, isSupportedFile } from '@shared/fileKind'
 
 export { isMarkdown, isSupportedFile } from '@shared/fileKind'
@@ -59,6 +60,27 @@ export function isSkipped(name: string): boolean {
   return name.startsWith('.') || name === 'node_modules'
 }
 
+/**
+ * Every regular file in a vault, depth first — the ONE walk Settings › Storage uses (YAZ-1801 in
+ * Draw, ported by YAZ-3039: `git/storage.ts` measures, `fs/shrink.ts` rewrites), so they can never
+ * disagree about which files are the vault's. Dot-entries and `node_modules` are invisible
+ * (`isSkipped`); an unreadable folder is an empty one. `inAssets` marks the TOP-LEVEL `assets/`
+ * folder only — a user's own `assets` folder deeper down is theirs.
+ */
+export async function* vaultFiles(root: string): AsyncGenerator<{ full: string; name: string; inAssets: boolean }> {
+  const stack: Array<{ dir: string; inAssets: boolean }> = [{ dir: root, inAssets: false }]
+  while (stack.length > 0) {
+    const { dir, inAssets } = stack.pop()!
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const e of entries) {
+      if (isSkipped(e.name)) continue
+      const full = path.join(dir, e.name)
+      if (e.isDirectory()) stack.push({ dir: full, inAssets: inAssets || (dir === root && e.name === ASSETS_DIR) })
+      else if (e.isFile()) yield { full, name: e.name, inAssets }
+    }
+  }
+}
+
 export function byNameCi<T extends { name: string }>(a: T, b: T): number {
   return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
 }
@@ -104,6 +126,17 @@ export function createRootChain(): <T>(root: string, fn: () => Promise<T>) => Pr
     )
     return run
   }
+}
+
+/**
+ * Resolves a vault-relative (or absolute-under-root) write target and REFUSES anything that lands
+ * outside `dir` — the vault root itself included. Reads may roam the tree by basename; a write never
+ * leaves the vault. `writeAsset` and the board doors share it (YAZ-3044 A8).
+ */
+export function resolveUnderRoot(dir: string, rel: string): string {
+  const p = path.resolve(dir, rel)
+  if (!p.startsWith(dir + path.sep)) throw new BridgeFailure('BAD_REQUEST', 'path escapes the vault root', { path: rel })
+  return p
 }
 
 /** Runs `fn`, converting any fs error into a BridgeFailure attributed to `p`. */
@@ -154,9 +187,10 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
  * are on disk before a rename or link gives them a real name, so a crash or power loss can't
  * surface an empty or torn note, state file or image under it. A string lands as UTF-8; bytes (an
  * image through `writeAsset`, YAZ-1661) land verbatim — `writeFile` ignores the encoding for a view.
+ * `mode` sets the permissions a NEW file is born with (YAZ-3038: `secrets.json` is owner-only from the start).
  */
-async function writeDurable(file: string, content: string | Uint8Array, flag: 'w' | 'wx'): Promise<void> {
-  const fh = await open(file, flag)
+export async function writeDurable(file: string, content: string | Uint8Array, flag: 'w' | 'wx', mode?: number): Promise<void> {
+  const fh = await open(file, flag, mode)
   try {
     await fh.writeFile(content, 'utf8')
     await fh.sync()
@@ -166,15 +200,19 @@ async function writeDurable(file: string, content: string | Uint8Array, flag: 'w
 }
 
 /** The sibling a write lands in before it takes `file`'s name: same dir, so the rename or link is atomic. */
-function tmpSibling(file: string): string {
+export function tmpSibling(file: string): string {
   return `${file}.tmp-${randomBytes(ATOMIC_TMP_HEX_LEN / 2).toString('hex')}`
 }
 
-/** Writes `content` durably to a tmp sibling then renames it over `file`. Parent dir must exist. */
-export async function atomicWrite(file: string, content: string | Uint8Array): Promise<{ mtime: number; size: number }> {
+/**
+ * Writes `content` durably to a tmp sibling then renames it over `file`. Parent dir must exist.
+ * `mode` is the tmp file's mode from its creation (the secrets file's 0600; see `writeDurable`), so
+ * the bytes are never briefly readable by anyone else.
+ */
+export async function atomicWrite(file: string, content: string | Uint8Array, mode?: number): Promise<{ mtime: number; size: number }> {
   const tmp = tmpSibling(file)
   try {
-    await writeDurable(tmp, content, 'w')
+    await writeDurable(tmp, content, 'w', mode)
     await rename(tmp, file)
   } catch (err) {
     await unlink(tmp).catch(() => undefined)
@@ -196,18 +234,20 @@ export async function atomicWrite(file: string, content: string | Uint8Array): P
  * reports nothing at all when a file whose first name was a since-removed hard link is later
  * deleted, so a note left on the linked inode could be deleted outside the app and stay in the
  * tree and the index for good. A renamed-in file — what every save already leaves — is seen to go.
+ *
+ * `mode` is the new file's permissions from its first byte (YAZ-3044 A7: the Draw import's copies).
  */
-export async function createDurable(file: string, content: string | Uint8Array): Promise<void> {
+export async function createDurable(file: string, content: string | Uint8Array, mode?: number): Promise<void> {
   const tmp = tmpSibling(file)
   try {
-    await writeDurable(tmp, content, 'wx')
+    await writeDurable(tmp, content, 'wx', mode)
     try {
       await link(tmp, file)
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'EEXIST') throw err
-      return await writeDurable(file, content, 'wx')
+      return await writeDurable(file, content, 'wx', mode)
     }
-    await atomicWrite(file, content)
+    await atomicWrite(file, content, mode)
   } finally {
     await unlink(tmp).catch(() => undefined)
   }
@@ -217,4 +257,50 @@ export async function createDurable(file: string, content: string | Uint8Array):
 export async function createFolderSettings(dir: string, content: string): Promise<void> {
   const file = folderSettingsPath(dir)
   await createDurable(file, content).catch((err: NodeJS.ErrnoException) => (err.code === 'EEXIST' ? atomicWrite(file, content) : Promise.reject(err)))
+}
+
+/**
+ * READ A JSON FILE, OR MOVE IT ASIDE — `store.ts`'s posture, shared by every store that owns one
+ * (`media.json`, `components.json`, `secrets.json`). A missing file is `null`; a file that is not
+ * what it claims to be is renamed `<file>.corrupt-<epoch>` and read as absent, because a bad file
+ * must cost a rename, never a launch. A rename that itself fails is logged and the read still
+ * answers absent — the app carries on either way.
+ */
+export async function readOrQuarantine<T>(file: string, parse: (raw: unknown) => T | null, tag: string, what: string): Promise<T | null> {
+  let raw: string
+  try {
+    raw = await readFile(file, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw err
+  }
+  let value: T | null = null
+  try {
+    value = parse(JSON.parse(raw))
+  } catch {
+    value = null
+  }
+  if (value !== null) return value
+  const backup = `${file}.corrupt-${Date.now()}`
+  await rename(file, backup).then(
+    () => console.error(`[${tag}] ${file} is not ${what}; moved to ${backup}`),
+    (err: unknown) => console.error(`[${tag}] ${file} is not ${what} and could not be moved aside: ${String(err)}`),
+  )
+  return null
+}
+
+/**
+ * A serialising queue for ONE file (moved here from `watchedFolder.ts`, YAZ-3044 A9): `run(fn)` starts only once every earlier `fn` has settled, so two
+ * read-modify-writes of one file can never interleave and lose each other. A rejection is the
+ * caller's; the chain itself carries on.
+ */
+export function createChain(): { run<T>(fn: () => Promise<T>): Promise<T>; wait<T>(fn: () => Promise<T>): Promise<T> } {
+  let chain: Promise<unknown> = Promise.resolve()
+  const run = <T,>(fn: () => Promise<T>): Promise<T> => {
+    const next = chain.then(fn)
+    chain = next.catch(() => undefined)
+    return next
+  }
+  /** Queue behind the writes without joining them — a read that must see the last write. */
+  return { run, wait: (fn) => chain.then(fn) }
 }

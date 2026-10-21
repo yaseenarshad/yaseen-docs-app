@@ -129,6 +129,12 @@ describe('TabOverview', () => {
     expect(texts(el, '.taboverview__island-leaf')).toEqual(['Notes', 'Projects'])
   })
 
+  it('YAZ-3044 A37: a drawing or diagram page names its kind under its title, and is never asked for lines', async () => {
+    const { el } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/a.md', '/v/Flow.excalidraw', '/v/Map.drawio'] })
+    expect(readHeads.mock.calls).toEqual([[['/v/a.md']]])
+    expect(texts(el, '.taboverview__lines')).toEqual(['Heading\na task with a link', 'Excalidraw drawing', 'draw.io diagram'])
+  })
+
   it('S40, S41, S43: the keyboard stays in the filter box: typing narrows by title and path, the arrows move the highlight, Enter opens it, Esc goes back; a page ✕ and an island ✕ close tabs and open nothing', async () => {
     const { el, props } = await mount()
     // The highlight starts on the active tab's page.

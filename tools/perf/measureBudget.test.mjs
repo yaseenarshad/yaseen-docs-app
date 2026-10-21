@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { measure, outOfBudget } from './measureBudget.mjs'
+import { measure, outOfBudget, plistFails } from './measureBudget.mjs'
 
 const script = join(dirname(fileURLToPath(import.meta.url)), 'measureBudget.mjs')
 const budget = JSON.parse(readFileSync(new URL('./budget.json', import.meta.url), 'utf8'))
@@ -22,7 +22,7 @@ const put = (rel, body = '') => {
 /** A file of `size` bytes without writing them (sparse): the gate reads sizes, never contents. */
 const grow = (rel, size) => truncateSync(join(out, rel), size)
 const gate = (args = ['--out-only']) => {
-  const r = spawnSync(process.execPath, [script, ...args, '--out', out], { encoding: 'utf8' })
+  const r = spawnSync(process.execPath, [script, ...args, '--out', out, '--share', join(out, 'share')], { encoding: 'utf8' })
   return { code: r.status, text: r.stdout + r.stderr }
 }
 /** A packaged-looking `.app` under `out`: every path `measure` reads, an empty asar and an Info.plist. */
@@ -35,6 +35,7 @@ const fakeApp = () => {
   writeFileSync(join(app, 'Contents/Resources/app.asar'), Buffer.concat([header, json]))
   put('Fake.app/Contents/Resources/en.lproj/.keep')
   put('Fake.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/en.lproj/locale.pak', 'pak')
+  put('Fake.app/Contents/Resources/share-viewer/viewer.js', 'viewer')
   put('Fake.app/Contents/Info.plist', '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict></dict></plist>')
   return app
 }
@@ -52,6 +53,10 @@ beforeEach(() => {
   put('renderer/assets/index.css')
   put('renderer/assets/KaTeX_Main-Regular-abc.woff2')
   put('renderer/excalidraw-assets/fonts/Virgil/Virgil.woff2')
+  // The draw.io webapp (YAZ-3028 D5): every file the gate requires, and the two folders it wants filled.
+  // The share viewer build (YAZ-3040), here under `out/share` (`--share` points the gate at it).
+  put('share/viewer.js', 'viewer')
+  for (const f of ['index.html', 'yaseen-render.html', 'js/PreConfig.js', 'js/PostConfig.js', 'js/yaseen-render.js', 'js/yaseen-render-config.js', 'yaseen-fonts/fonts.css', 'LICENSE-drawio.txt', 'js/viewer-static.min.js', 'js/stencils.min.js', 'js/app.min.js', 'img/lib/icon.svg', 'math4/es5/startup.js']) put(`drawio/${f}`)
 })
 afterEach(() => rmSync(out, { recursive: true, force: true }))
 
@@ -90,6 +95,22 @@ describe('perf:budget:ci', () => {
     expect(code).toBe(1)
   })
 
+  it('fails when out/drawio misses a file the diagram tab loads, or its MathJax folder is empty (YAZ-3028 D5)', () => {
+    rmSync(join(out, 'drawio/js/PostConfig.js'))
+    rmSync(join(out, 'drawio/math4'), { recursive: true })
+    const { code, text } = gate()
+    expect(text).toContain('INTEGRITY FAIL: out: missing drawio/js/PostConfig.js')
+    expect(text).toContain('INTEGRITY FAIL: out: drawio/math4/ is empty')
+    expect(code).toBe(1)
+  })
+
+  it('fails when the share viewer is not built (YAZ-3040)', () => {
+    rmSync(join(out, 'share'), { recursive: true })
+    const { code, text } = gate()
+    expect(text).toContain(`INTEGRITY FAIL: no share viewer at ${join(out, 'share')} (run npm run build)`)
+    expect(code).toBe(1)
+  })
+
   it('fails when the yaseendocs command or the KaTeX fonts are not built', () => {
     rmSync(join(out, 'main/cli.js'))
     rmSync(join(out, 'renderer/assets/KaTeX_Main-Regular-abc.woff2'))
@@ -122,5 +143,28 @@ describe('outOfBudget', () => {
     const rows = { lprojCount: { max: 55, min: 55 }, dmgBytes: { max: 1000 } }
     expect(outOfBudget({ lprojCount: 55, dmgBytes: 1001 }, rows, 0.001)).toEqual([])
     expect(outOfBudget({ lprojCount: 54, dmgBytes: 1002 }, rows, 0.001)).toEqual(['lprojCount 54 < floor 55', 'dmgBytes 1002 > ceiling 1000'])
+  })
+})
+
+describe('plistFails (Info.plist integrity)', () => {
+  /** The Info.plist keys electron-builder writes from `desktop/package.json` `build.protocols` / `build.fileAssociations`. */
+  const plistOf = (build) => ({
+    CFBundleURLTypes: build.protocols.map((p) => ({ CFBundleURLName: p.name, CFBundleURLSchemes: p.schemes })),
+    CFBundleDocumentTypes: build.fileAssociations.map((a) => ({ CFBundleTypeExtensions: a.ext, CFBundleTypeName: a.name, CFBundleTypeRole: a.role, LSHandlerRank: a.rank })),
+  })
+  const build = JSON.parse(readFileSync(new URL('../../desktop/package.json', import.meta.url), 'utf8')).build
+
+  it('passes what desktop/package.json declares: both schemes, .md Alternate, .excalidraw and .drawio Owner (YAZ-3028 D7)', () => {
+    expect(plistFails(plistOf(build))).toEqual([])
+  })
+
+  it('fails a bundle that lacks the Draw scheme or a drawing type, or claims one at the wrong rank', () => {
+    const noDraw = plistOf({ ...build, protocols: [{ name: 'Yaseen Docs', schemes: ['yaseendocs'] }] })
+    expect(plistFails(noDraw)).toEqual(["Info.plist: CFBundleURLSchemes lacks yaseendraw (Draw's links, YAZ-3028 D7)"])
+    const alternate = plistOf({ ...build, fileAssociations: build.fileAssociations.map((a) => (a.ext.includes('drawio') ? { ...a, rank: 'Alternate' } : a)) })
+    expect(plistFails(alternate)).toEqual(['Info.plist: .drawio is not an Editor/Owner document type (YAZ-3028 D7)'])
+    const mdOnly = plistOf({ ...build, fileAssociations: build.fileAssociations.filter((a) => a.ext.includes('md')) })
+    expect(plistFails(mdOnly)).toHaveLength(2)
+    expect(plistFails({})).toHaveLength(5)
   })
 })

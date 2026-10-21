@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { VaultConfigChange } from '@shared/types'
 import { failure, until } from './fs/testFixture'
-import { activeConfigWatcherRoots, readConfig, readConfigDetailed, subscribeConfig, VAULT_CONFIG_DIR, writeConfig } from './vaultConfig'
+import { activeConfigWatcherRoots, createConfig, readConfig, readConfigDetailed, subscribeConfig, VAULT_CONFIG_DIR, writeConfig } from './vaultConfig'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -102,6 +102,20 @@ describe('writeConfig', () => {
     expect((await failure(writeConfig(root, 'a.txt', {}))).code).toBe('UNSUPPORTED_EXTENSION')
     expect((await failure(writeConfig(root, 'a.json', undefined))).code).toBe('BAD_REQUEST')
     expect(await readdir(root)).toEqual([]) // no folder created by any rejected write
+  })
+})
+
+describe('createConfig (the Draw import, YAZ-3028 D6)', () => {
+  it('creates the file like writeConfig and notifies at once; a file already there is never written over', async () => {
+    const root = await makeRoot()
+    const changes = collect(root)
+    expect(await createConfig(root, 'github.json', { enabled: true })).toBe(true)
+    expect(changes).toEqual([{ root, name: 'github.json' }])
+    expect(await readFile(path.join(root, VAULT_CONFIG_DIR, 'github.json'), 'utf8')).toBe('{\n  "enabled": true\n}\n')
+    expect(await createConfig(root, 'github.json', { enabled: false })).toBe(false)
+    expect(await readConfig(root, 'github.json')).toEqual({ enabled: true })
+    expect(changes).toHaveLength(1)
+    expect((await readdir(path.join(root, VAULT_CONFIG_DIR))).filter((n) => n.includes('.tmp-'))).toEqual([])
   })
 })
 

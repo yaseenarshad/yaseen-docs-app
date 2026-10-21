@@ -3,6 +3,8 @@ dist/
 desktop/out/
 desktop/dist-app/
 desktop/.maps/
+# The pinned draw.io webapp, unpacked by tools/packDrawio.mjs (YAZ-3028 D5): never committed.
+desktop/.cache/
 .DS_Store
 *.log
 .claude/*
@@ -11,3 +13,5 @@ desktop/e2e/artifacts/
 # Agent working notes and plans stay local
 thoughts/
 docs/superpowers/
+# The share viewer build (YAZ-3040, `tools/buildShareViewer.mjs`): made by `npm run build`, shipped as the `share-viewer` extraResource.
+share/dist/

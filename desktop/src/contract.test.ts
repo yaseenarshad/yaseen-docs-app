@@ -24,6 +24,8 @@ vi.mock('electron', () => ({
   dialog: {},
   shell: {},
 }))
+// electron-vite's `?modulePath` is a build-time import (Settings › Storage's worker, YAZ-3039); no door here runs it.
+vi.mock('./main/storageWorker?modulePath', () => ({ default: '' }))
 
 const doors = leaves(CONTRACT).map(([, door]) => door)
 /** Renderer → main invokes: the table's, plus the two the preload's Copy as / Paste as fallback makes. */
@@ -40,7 +42,7 @@ it('main handles every invoke exactly once and listens on exactly the send chann
   // The three registrations `main/index.ts` makes on `ready`.
   registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', releases: [] }) }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
   registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
-  registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc)
+  registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc, { userData: dir, viewerAssetsDir: dir, drawioDir: dir, fontsDir: dir, isPackaged: true })
   expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()).toEqual(INVOKES)
   expect(vi.mocked(ipcMain.on).mock.calls.map(([ch]) => ch).sort()).toEqual(SENDS)
 })

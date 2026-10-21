@@ -161,6 +161,14 @@ class Engine extends EventEmitter implements TreeWatcher {
   private listening: Promise<void> = Promise.resolve()
   private started = false
   private closed = false
+  /**
+   * Settles on `close()` (YAZ-3044 A35): `start` waits on the probe, and a probe closed before it
+   * heard would keep `start` — and with it the whole engine — waiting forever.
+   */
+  private markClosed: () => void = () => undefined
+  private readonly whenClosed = new Promise<void>((resolve) => {
+    this.markClosed = resolve
+  })
   /** Set when polling replaces the native engine from the start: the native initial walk stops. */
   private abandoned = false
 
@@ -172,12 +180,23 @@ class Engine extends EventEmitter implements TreeWatcher {
     this.start().catch((err: unknown) => this.emit('error', err))
   }
 
+  /**
+   * After `close()` nothing is announced but an error (YAZ-2192 "close() ends every event"): a look,
+   * a walk or the polling engine can be mid-`lstat` when the close lands, and this is the one exit
+   * every one of them goes through — so no path needs its own late check.
+   */
+  override emit(event: string | symbol, ...args: unknown[]): boolean {
+    if (this.closed && event !== 'error') return false
+    return super.emit(event, ...args)
+  }
+
   add(p: string): void {
     this.polling?.add(p)
   }
 
   async close(): Promise<void> {
     this.closed = true
+    this.markClosed()
     this.native?.close()
     this.timers.forEach(clearTimeout)
     this.timers.clear()
@@ -201,7 +220,11 @@ class Engine extends EventEmitter implements TreeWatcher {
     }
     await initial
     await this.listening
+    // YAZ-3044 A35: a close during the first walk or before the stream heard ends the start here —
+    // no second walk of the vault, and no event from a closed watcher.
+    if (this.closed) return
     if (there) await this.resync()
+    if (this.closed) return
     this.started = true
     // What moved during the walk is looked at now, against what the walk found.
     for (const [p, timer] of [...this.timers]) {
@@ -246,7 +269,7 @@ class Engine extends EventEmitter implements TreeWatcher {
     const probe = probeStream()
     this.probes.push(probe)
     // A probe that cannot run (no temp folder) is reported, and the watch goes on unvouched.
-    this.listening = probe.then((p) => p.heard).catch((err: unknown) => void this.emit('error', err))
+    this.listening = Promise.race([probe.then((p) => p.heard).catch((err: unknown) => void this.emit('error', err)), this.whenClosed])
   }
 
   private watchDir(): void {
@@ -321,10 +344,12 @@ class Engine extends EventEmitter implements TreeWatcher {
 
   /** What is at `p` now, against what the engine knew — and the events that make up the difference. */
   private async look(p: string): Promise<void> {
+    if (this.closed) return
     const parent = path.dirname(p)
     // A path inside a folder nobody announced yet: the folder goes first and brings it along.
     if (p !== this.dir && parent !== this.dir && !this.known.has(parent)) return this.look(parent)
     const st = await lstat(p).catch(() => null)
+    if (this.closed) return
     const was = this.known.get(p)
     if (p === this.dir) {
       if (st?.isDirectory() === true) return this.syncChildren(p)
@@ -373,6 +398,7 @@ class Engine extends EventEmitter implements TreeWatcher {
     const unseen = new Set(this.known.keys())
     const visit = async (d: string): Promise<void> => {
       for (const e of await readdir(d, { withFileTypes: true }).catch(() => [])) {
+        if (this.closed) return
         const p = path.join(d, e.name)
         if (this.skip(p)) continue
         unseen.delete(p)
@@ -381,6 +407,7 @@ class Engine extends EventEmitter implements TreeWatcher {
       }
     }
     await visit(this.dir)
+    if (this.closed) return
     for (const p of unseen) if (this.known.has(p)) this.forget(p)
   }
 
@@ -388,7 +415,7 @@ class Engine extends EventEmitter implements TreeWatcher {
   private async walk(d: string, announce: boolean): Promise<void> {
     const entries = await readdir(d, { withFileTypes: true }).catch(() => [])
     for (const e of entries) {
-      if (this.abandoned) return
+      if (this.abandoned || this.closed) return
       const p = path.join(d, e.name)
       if (this.skip(p) || this.known.has(p)) continue
       const st = await lstat(p).catch(() => null)
