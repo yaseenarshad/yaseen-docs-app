@@ -1325,7 +1325,7 @@ export interface SettingsState {
   confirmDelete: boolean
   /** Show the rename sheet, with its count of links to update, before a note or folder is renamed (YAZ-2420 3C1). Off renames at once; the links still follow. */
   confirmRename: boolean
-  /** Rest the pointer on a drawing or diagram row to see the whole board (Draw's YAZ-1800 D2; YAZ-3044 A20). Notes never preview. */
+  /** Rest the pointer on a note, drawing or diagram row to see it (Draw's YAZ-1800 D2; YAZ-3044 A20; notes since YAZ-3075 D5). Text, PDF and image rows never preview. */
   hoverPreview: boolean
   /** Comment stream order (YAZ-1515): how you READ, global, never part of a note. */
   commentsOrder: CommentsOrder

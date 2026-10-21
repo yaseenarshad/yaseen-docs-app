@@ -1,7 +1,7 @@
 /*
- * A board's hover preview and its Info popover (YAZ-3028 D11, Draw's YAZ-1800 / YAZ-1835 D6–D7), with
- * the app's own tokens. In their own file because both components load lazily: a window that never
- * hovers a drawing never pays for these rules.
+ * A board's hover preview and its Info popover (YAZ-3028 D11, Draw's YAZ-1800 / YAZ-1835 D6–D7), and a
+ * note's hover preview in the same frame (YAZ-3075 D2), with the app's own tokens. In their own file
+ * because these components load lazily: a window that never hovers a row never pays for these rules.
  */
 
 .board-preview {
@@ -84,6 +84,23 @@
   margin: 0;
   font-size: 12.5px;
   color: var(--fg-muted);
+}
+
+/*
+ * A note's hover preview (YAZ-3075 D1, D2): the top of the note on the page background, no scroll.
+ * The last 64 px fade out, so a note cut by the box or by `NOTE_PREVIEW_CHARS` reads as "more below".
+ */
+.note-preview__body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 16px;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+}
+
+/* The page's 48 px sides and 120 px tail are for a tab; the panel is narrower and never scrolls. */
+.note-preview .editor-instance {
+  padding: 0 24px;
 }
 
 /* The Info popover: a two-column definition list on the menu surface. */
