@@ -47,6 +47,7 @@ import { BacklinksSection } from '../links/BacklinksSection'
 import { ReviewsSection } from '../review/ReviewsSection'
 import { pageLabel, usePathTitles, useTreeKind, type PathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
+import { namingTab } from '../lib/focusHandoff'
 import { takeRenameBuffer } from '../lib/renameContinuity'
 import { onTwinSave } from '../lib/twinEditors'
 import { registerPageView } from '../lib/pageView'
@@ -587,8 +588,10 @@ function CrepeHost({
       if (start?.zoomKey) moveCaretIntoZoom(crepe)
       // The mount's caret grab (⚡ YAZ-888) YIELDS to the sidebar walk (YAZ-921): a page opened
       // while focus stands on a tree row is a PREVIEW — stealing the caret would strand the
-      // arrows mid-walk. Every other door (tabs, wikilinks, boot) still lands in the text.
-      if (!(document.activeElement instanceof HTMLElement && document.activeElement.closest('.tree') !== null)) focusEditor(crepe)
+      // arrows mid-walk. It yields to a tab's name field too (YAZ-3059). Every other door (tabs,
+      // wikilinks, boot) still lands in the text.
+      const active = document.activeElement
+      if (!(active instanceof HTMLElement && active.closest('.tree') !== null) && !namingTab(active)) focusEditor(crepe)
       // A copy starts where its source stood (YAZ-2940 D7) — after the caret grab, which may scroll,
       // and after the start drill-in, which the editor state already holds (YAZ-2951 S6).
       const scroller = hostRef.current?.closest('.editor-host')

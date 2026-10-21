@@ -66,6 +66,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps,
 import { referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
 import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs } from '@shared/types'
+import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
 import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
 import { openViewport, type DrawingScene } from './drawingScene'
@@ -519,7 +520,9 @@ export function ExcalidrawSurface({
         renderTopRightUI={renderTopRightUI}
         // The engine's own scroll listener is for a page that scrolls under it; neither host does.
         detectScroll={false}
-        autoFocus={autoFocus}
+        // The engine reads this once, at its mount, after its module loaded: by then a double
+        // click may have opened the tab's name field, which keeps the caret (YAZ-3059).
+        autoFocus={autoFocus && !namingTab(document.activeElement)}
       >
         {canvasSidebar}
       </Excalidraw>

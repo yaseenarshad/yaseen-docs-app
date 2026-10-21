@@ -20,6 +20,8 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
   const posted = []
   const fontCss = []
   const listeners = []
+  /** draw.io's own `window.focus`, before PostConfig.js wraps it. */
+  const windowFocus = vi.fn()
   function Graph() {}
   Graph.prototype.isZoomWheelEvent = (evt) => evt.ctrlKey === true
   function EditorUi() {}
@@ -51,6 +53,8 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
     console: { error: vi.fn() },
     parent: { postMessage: (data, origin) => posted.push({ ...JSON.parse(data), origin }) },
     addEventListener: (type, listener) => listeners.push({ type, listener }),
+    focus: windowFocus,
+    setTimeout,
   }
   env.window = env
   createContext(env)
@@ -61,7 +65,7 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
     for (const l of listeners) if (l.type === 'message') l.listener(evt)
     return evt.stopImmediatePropagation.mock.calls.length > 0
   }
-  return { env, posted, fontCss, message }
+  return { env, posted, fontCss, message, windowFocus }
 }
 
 function geometry(x, y, width, height, relative = false) {
@@ -321,6 +325,19 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     message({ action: 'yaseenAdaptiveColors', value: 'auto' })
     expect(env.Graph.defaultAdaptiveColors).toBe('auto')
     expect(editor.ui.setAdaptiveColors).toHaveBeenLastCalledWith('none')
+  })
+
+  it('skips draw.io\'s window.focus() for a load the host flags with yaseenKeepFocus, and only during that load (YAZ-3084)', async () => {
+    const { env, message, windowFocus: focus } = loadPostConfig()
+    message({ action: 'load', xml: '<mxfile/>', yaseenKeepFocus: true })
+    env.window.focus()
+    expect(focus).not.toHaveBeenCalled()
+    await new Promise((resolve) => setTimeout(resolve, 0)) // after the flag's own timer
+    env.window.focus()
+    expect(focus).toHaveBeenCalledOnce()
+    message({ action: 'load', xml: '<mxfile/>' })
+    env.window.focus()
+    expect(focus).toHaveBeenCalledTimes(2)
   })
 
   it('leaves every other message, and the same one from anywhere but the host, to draw.io', () => {

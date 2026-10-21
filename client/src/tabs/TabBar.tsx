@@ -32,7 +32,7 @@ export interface TabBarProps {
   reserveEnd?: boolean
   /** A tab, by id. */
   onActivate: (id: string) => void
-  /** A double click on a tab (YAZ-2648 D2), by id: the preview tab becomes a kept tab; any other tab is one already. */
+  /** A double click on a tab (YAZ-2648 D2), by id: the preview tab becomes a kept tab; any other tab is one already. The same double click opens the name's field (YAZ-3059). */
   onKeep?: (id: string) => void
   /** A tab's ✕ or middle click, by id: that tab alone, a copy too. */
   onClose: (id: string) => void
@@ -121,7 +121,8 @@ const Chevron = ({ d }: { d: string }) => (
  * nowhere to go — buttons only, per LOCKED ruling D2: no shortcut, no menu item. Right of them
  * the grid button shows every open tab at once (YAZ-2648 D8), and its right-click menu has one
  * item, "Kill all tabs" (YAZ-2739), which App answers with a sheet. The ONE preview tab (YAZ-2648 D1)
- * wears an italic label; a double click on it keeps it. After the tabs a "+" shows the blank tab
+ * wears an italic label; a double click on it keeps it. A double click on any tab also turns its
+ * name into the "Set display name" field (YAZ-3059). After the tabs a "+" shows the blank tab
  * (YAZ-2655): it stands outside the scroller, so it is on show however far the strip scrolled.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
@@ -392,7 +393,11 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
                 // A display name hides the page's own name, so the tooltip gives it back (YAZ-2949 D5, S11).
                 title={name === undefined ? path : `${labelOf(path)}\n${path}`}
                 onClick={() => onActivate(id)}
-                onDoubleClick={() => onKeep?.(id)}
+                // A double click keeps the preview tab (YAZ-2648 S20) and opens the name's field, as "Set display name" does (YAZ-3059 D1).
+                onDoubleClick={() => {
+                  onKeep?.(id)
+                  if (onSetName !== undefined) setRenaming(id)
+                }}
                 onAuxClick={(e) => {
                   // Middle-click closes — the browser-tab convention.
                   if (e.button === 1) onClose(id)

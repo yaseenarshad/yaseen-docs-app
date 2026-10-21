@@ -5,7 +5,7 @@
  * `offsetParent` is stubbed exactly as the tree suites stub it.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { focusOpenDocument, focusSidebar } from './focusHandoff'
+import { focusOpenDocument, focusSidebar, namingTab } from './focusHandoff'
 
 /** An editor stand-in; `visible` models what `offsetParent` answers in a browser. */
 function editor(visible: boolean): HTMLElement {
@@ -123,5 +123,14 @@ describe('focusSidebar: back out of the text', () => {
 
   it('declines with no sidebar on screen — Esc stays free everywhere else', () => {
     expect(focusSidebar()).toBe(false)
+  })
+})
+
+describe('namingTab: a mount keeps out of the tab\'s name field (YAZ-3059)', () => {
+  it('is true in the strip\'s name field only', () => {
+    const field = document.createElement('input')
+    field.className = 'tabbar__rename'
+    const other = document.createElement('input')
+    expect([namingTab(field), namingTab(other), namingTab(null)]).toEqual([true, false, false])
   })
 })
