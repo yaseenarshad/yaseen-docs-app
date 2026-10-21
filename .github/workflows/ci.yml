@@ -25,14 +25,8 @@ jobs:
           cache: npm
       - run: npm ci
       # The pinned draw.io pack (YAZ-3028 D5, Draw's YAZ-1802 D5): sha256-checked, so the suites that read
-      # the real bundle run here too, and `npm run build` finds it unpacked. Cached by its release tag, as
-      # in Draw (YAZ-3044 A38): the 54 MB draw.war is downloaded once per tag, not on each run.
-      - id: drawio
-        run: node -e "import('./tools/packDrawio.mjs').then((m) => console.log('tag=' + m.DRAWIO_TAG))" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: desktop/.cache/drawio
-          key: drawio-${{ steps.drawio.outputs.tag }}
+      # the real bundle run here too, and `npm run build` finds it unpacked. No cache step: the repo allows
+      # only checkout, setup-node and the release action, so the 54 MB draw.war downloads on each run.
       - run: npm run drawio:pack
       - run: npm run typecheck
       - run: npm test
