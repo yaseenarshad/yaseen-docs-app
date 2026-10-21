@@ -1,8 +1,9 @@
 /**
  * THE HOVER PREVIEW (Draw's YAZ-1800, ported by YAZ-3028 D11): a drawing or diagram row rested on
- * for the dwell opens a picture of the whole board beside the sidebar. A note row never does. The
- * row is pending until the dwell ends, then shown; only the row leaving the tree closes it. Every
- * close bumps `hoverRequest`, so an earlier row's dwell never fires late.
+ * for the dwell opens a picture of the whole board beside the sidebar; a note row opens the top of
+ * the note in the same box (YAZ-3075 D1). A text, PDF or image row never does (D6). The row is
+ * pending until the dwell ends, then shown; only the row leaving the tree closes it. Every close
+ * bumps `hoverRequest`, so an earlier row's dwell never fires late.
  *
  * Isolated (Draw's YAZ-2073 5D): the row lives in a tiny store the Sidebar writes and only the panel
  * reads, so a pointer crossing rows re-renders the panel and nothing else — never the Sidebar or the
@@ -15,12 +16,17 @@
  * watch feed (YAZ-3044 A41): a `change` of that board — a save, a sync pull, another window's
  * write — takes the event's mtime, and the picture is drawn again.
  *
- * The panel itself (`BoardPreview`, its picture cache and its CSS) loads lazily, on the first dwell.
+ * A NOTE needs neither (YAZ-3075 D1, C26, C27): `NotePreview` reads the note itself on each open,
+ * and a save while it shows does not draw it again — so no head read and no watch subscription.
+ *
+ * The panels themselves (`BoardPreview` with its picture cache, `NotePreview`, and their CSS) load
+ * lazily, on the first dwell of their kind.
  */
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
-import { isBoard } from '@shared/fileKind'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from 'react'
+import { isBoard, isMarkdown } from '@shared/fileKind'
 import type { DiagramDarkColors, TreeNode } from '@shared/types'
 import { api } from '../api'
+import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { createStore, type Store } from '../lib/store'
 import { useAppliedTheme } from '../lib/theme'
@@ -28,6 +34,7 @@ import { findNode } from '../lib/treeState'
 import { boardPreviewKey } from './boardPreviewKey'
 
 const BoardPreview = lazy(() => import('./BoardPreview'))
+const NotePreview = lazy(() => import('./NotePreview'))
 
 /** The row the pointer (or focus) rests on — pending until the dwell ends, then shown; `path` null = none. */
 export interface HoverState {
@@ -35,7 +42,7 @@ export interface HoverState {
   shown: boolean
 }
 
-/** How long the pointer (or focus) rests on a board row before its preview opens (Draw's YAZ-1800). */
+/** How long the pointer (or focus) rests on a board or note row before its preview opens (Draw's YAZ-1800; one wait for both, YAZ-3075 D3). */
 export const BOARD_PREVIEW_DWELL_MS = 400
 
 export function useHoverPreview(blocked: boolean, enabled: boolean, activeFile: string | null) {
@@ -55,8 +62,8 @@ export function useHoverPreview(blocked: boolean, enabled: boolean, activeFile: 
       // The same row again (focus after the pointer, or back) keeps its dwell or its panel.
       if (node !== null && hover.getState().path === node.path) return
       closePreview()
-      // A note, a text file or an image row has no board picture (YAZ-3028 D11).
-      if (node === null || blockedRef.current || !isBoard(node.path)) return
+      // A board or a note previews (YAZ-3075 D6); a text file, a PDF or an image row has no preview.
+      if (node === null || blockedRef.current || !(isBoard(node.path) || isMarkdown(node.path))) return
       const id = hoverRequest.current
       const { path } = node
       hover.set({ path, shown: false })
@@ -85,6 +92,10 @@ interface HoverPreviewHostProps {
   rootOf: (path: string) => string
   /** The watch feed of the vault that holds a path (A41); undefined when there is none. */
   watchOf?: (path: string) => WatchSource | undefined
+  /** The link source of the vault that holds a note (YAZ-3075 C21). */
+  wikilinksOf: (path: string) => WikilinkResolveSource
+  /** The text formatting of the vault that holds a note (YAZ-3067 D12; YAZ-3075 C20). */
+  textVarsOf: (path: string) => CSSProperties
   /** Previews possible (no search typed, no menu up). */
   enabled: boolean
   diagramDarkColors: DiagramDarkColors
@@ -93,7 +104,7 @@ interface HoverPreviewHostProps {
   onClose: () => void
 }
 
-export function HoverPreviewHost({ hover, forest, rootOf, watchOf, enabled, diagramDarkColors, anchor, onClose }: HoverPreviewHostProps) {
+export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, textVarsOf, enabled, diagramDarkColors, anchor, onClose }: HoverPreviewHostProps) {
   const { path, shown } = useSyncExternalStore(hover.subscribe, hover.getState)
   const theme = useAppliedTheme()
   const node = useMemo(() => {
@@ -120,8 +131,9 @@ export function HoverPreviewHost({ hover, forest, rootOf, watchOf, enabled, diag
     return () => document.removeEventListener('keydown', onKey, true)
   }, [visible, onClose])
   // The board's mtime as its file says now (see the module doc); the tree's until the read answers.
+  // A note has no head and no watch (C27): only a shown BOARD gets a `shownPath`.
   const [head, setHead] = useState<{ path: string; mtime: number } | null>(null)
-  const shownPath = visible ? node.path : null
+  const shownPath = visible && isBoard(node.path) ? node.path : null
   useEffect(() => {
     if (shownPath === null) return
     let live = true
@@ -144,8 +156,16 @@ export function HoverPreviewHost({ hover, forest, rootOf, watchOf, enabled, diag
       off?.()
     }
   }, [shownPath, watchOf])
-  if (!visible || head === null || head.path !== node.path) return null
+  if (!visible) return null
   const root = rootOf(node.path)
+  if (isMarkdown(node.path)) {
+    return (
+      <Suspense fallback={null}>
+        <NotePreview key={node.path} root={root} node={node} wikilinks={wikilinksOf(node.path)} textVars={textVarsOf(node.path)} anchor={anchor} />
+      </Suspense>
+    )
+  }
+  if (head === null || head.path !== node.path) return null
   const mtime = Math.max(node.mtime, head.mtime)
   return (
     <Suspense fallback={null}>

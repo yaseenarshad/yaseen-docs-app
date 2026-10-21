@@ -80,6 +80,19 @@ describe('focusOpenDocument: into the text', () => {
     expect(document.activeElement).toBe(page)
   })
 
+  it('YAZ-3075 C29: the sidebar`s hover preview is no page — the note in `.board-preview` is skipped for the open document', () => {
+    const panel = document.createElement('div')
+    panel.className = 'board-preview note-preview'
+    document.body.appendChild(panel)
+    const hovered = editor(true)
+    panel.appendChild(hovered.parentElement!)
+    expect(focusOpenDocument()).toBe(false)
+    expect(document.activeElement).toBe(document.body)
+    const page = editor(true)
+    expect(focusOpenDocument()).toBe(true)
+    expect(document.activeElement).toBe(page)
+  })
+
   it('declines when every document is hidden, and when there is none at all', () => {
     editor(false)
     expect(focusOpenDocument()).toBe(false)

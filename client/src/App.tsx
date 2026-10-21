@@ -1535,6 +1535,8 @@ export function App() {
           onRevealInFiles={revealInFiles}
           previewPath={previewShown}
           onPreview={setPreviewPath}
+          // A note's hover preview wears its vault's text formatting, as its tab does (YAZ-3075 C20).
+          textVarsFor={textVarsFor}
           onPickFolder={pick}
           pickDisabled={picking}
           onCollapse={toggleSidebar}

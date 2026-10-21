@@ -215,6 +215,8 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     // The preview panel of the search (YAZ-2662 D5): `WithPreview` holds the path, as App does, and tells this door each path that the Sidebar names.
     previewPath: null,
     onPreview: vi.fn(),
+    // A note's hover preview (YAZ-3075 C20): App's text formatting of the vault; none here.
+    textVarsFor: () => ({}),
     onPickFolder: vi.fn(),
     pickDisabled: false,
     // The header's vault switcher (YAZ-1767): 0 = no ⌘O pending; the panel itself is VaultSwitcher.test's subject.
@@ -449,6 +451,94 @@ describe('hover preview setting and live board heads (YAZ-3044 A20, A41)', () =>
     expect(headsOf(bridge)).toHaveBeenCalledTimes(1)
     await act(async () => fire({ type: 'change', path: '/v/Flow.drawio', mtime: 9 }))
     expect(headsOf(bridge)).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * A note row opens the hover preview too (YAZ-3075): the same 400 ms wait, the mouse or the focus,
+ * the top of the note read on each open. The C-numbers are the cases on YAZ-3086.
+ */
+describe('note rows open the hover preview (YAZ-3075)', () => {
+  const NOTES: TreeNode[] = [
+    { type: 'file', name: 'Plan.md', path: '/v/Plan.md', size: 1, mtime: 1, kind: 'markdown' },
+    { type: 'file', name: 'Zed.md', path: '/v/Zed.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+  const withNotes = (bridge: ReturnType<typeof installBridge>) => {
+    bridge.tree.mockResolvedValue({ root: '/v', tree: NOTES, generatedAt: 1 })
+    bridge.readFile.mockImplementation(async (path: string) => ({ path, content: '---\ntitle: Plan\n---\n\n# Hello hover\n', mtime: 1, size: 30 }))
+  }
+  const noteRow = (el: HTMLElement, path = '/v/Plan.md') => el.querySelector<HTMLButtonElement>(`.tree__row--file[title="${path}"]`)!
+  const notePanel = () => document.querySelector<HTMLElement>('.note-preview')
+  const dwell = () => act(() => new Promise<void>((r) => setTimeout(r, 450)))
+  /** Past the lazy chunk (its first import compiles Crepe) and the read. */
+  const settle = () => act(() => new Promise<void>((r) => setTimeout(r, 50)))
+  /** Ticks inside `act` until `ok` holds (10 s at most), so every update on the way is React's. */
+  const until = async (ok: () => boolean) => {
+    for (let i = 0; i < 200 && !ok(); i++) await settle()
+    expect(ok()).toBe(true)
+  }
+  const shows = () => until(() => notePanel() !== null)
+
+  it('C1, C6, C16: the mouse resting 400 ms opens the note`s panel with its body below the frontmatter; the mouse leaving closes it', async () => {
+    const { el, bridge } = await mount({}, withNotes)
+    act(() => void noteRow(el).dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    expect(notePanel()).toBeNull()
+    await dwell()
+    await shows()
+    expect(notePanel()?.querySelector('.board-preview__name')?.textContent).toBe('Plan.md')
+    expect(bridge.readFile).toHaveBeenCalledWith('/v/Plan.md')
+    await until(() => notePanel()?.querySelector('.ProseMirror')?.textContent?.includes('Hello hover') === true)
+    expect(notePanel()?.textContent).not.toContain('title: Plan')
+    act(() => void noteRow(el).dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
+    expect(notePanel()).toBeNull()
+  })
+
+  it('C2, C6: the keyboard focus resting 400 ms opens it too; the focus leaving closes it', async () => {
+    const { el } = await mount({}, withNotes)
+    act(() => noteRow(el).focus())
+    await dwell()
+    await shows()
+    act(() => noteRow(el).blur())
+    expect(notePanel()).toBeNull()
+  })
+
+  it('C12, C13: Space on the row shows the Space panel and closes the hover panel; while it shows no wait starts', async () => {
+    const { el } = await mount({}, withNotes)
+    act(() => noteRow(el).focus())
+    await dwell()
+    await shows()
+    act(() => void noteRow(el).dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })))
+    expect(previewPanel?.path).toBe('/v/Plan.md')
+    expect(notePanel()).toBeNull()
+    act(() => noteRow(el, '/v/Zed.md').focus())
+    await dwell()
+    await settle()
+    expect(notePanel()).toBeNull()
+  })
+
+  it('C32: with "Preview on hover" off, a note row starts no wait', async () => {
+    const { el, bridge } = await mount({ settings: { ...DEFAULT_SETTINGS, hoverPreview: false } }, withNotes)
+    act(() => noteRow(el).focus())
+    await dwell()
+    await settle()
+    expect(notePanel()).toBeNull()
+    expect(bridge.readFile).not.toHaveBeenCalledWith('/v/Plan.md')
+  })
+
+  it('C27: the note panel adds no watcher subscription — still one for the vault', async () => {
+    const counts = { live: 0 }
+    const watch = {
+      subscribe: () => {
+        counts.live++
+        return () => void counts.live--
+      },
+    }
+    const { el } = await mount({ watch }, withNotes)
+    expect(counts.live).toBe(1)
+    act(() => noteRow(el).focus())
+    await dwell()
+    await shows()
+    expect(counts.live).toBe(1)
   })
 })
 

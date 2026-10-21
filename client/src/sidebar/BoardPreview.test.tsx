@@ -18,4 +18,10 @@ describe('boardPreviewPlacement', () => {
   it('renders nothing when the window leaves no room beside the sidebar', () => {
     expect(boardPreviewPlacement(260, 280, 800)).toBeNull()
   })
+
+  it('YAZ-3075 D2, C15: a note takes the same place and width, 70% of the window tall', () => {
+    // height = round(900 * 0.7) = 630; top = (900 - 630) / 2 = 135.
+    expect(boardPreviewPlacement(260, 1440, 900, 'note')).toEqual({ left: 276, top: 135, width: 669, height: 630 })
+    expect(boardPreviewPlacement(260, 280, 800, 'note')).toBeNull()
+  })
 })
