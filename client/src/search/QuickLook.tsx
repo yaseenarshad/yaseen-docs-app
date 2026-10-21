@@ -4,16 +4,14 @@
  * opens nothing, writes nothing and stores nothing (S42), and it takes no focus — the caret stays
  * in the search bar, whose keys show, move and close it (`useSidebarSearch`).
  *
- * READ, NEVER OPEN: a note's body comes from `api.readFile` — the saved text (S44) — into the
- * read-only render that the hover card of Table and Board uses; never `Editor`, which would start
- * an autosave, store folds and take the caret. Each other kind is the read-only viewer of its page.
+ * READ, NEVER OPEN: a note is `ReadOnlyNote` — the saved text (S44) in the read-only render, the
+ * same note the sidebar's hover preview shows (YAZ-3075 D1); never `Editor`, which would start an
+ * autosave, store folds and take the caret. Each other kind is the read-only viewer of its page.
  */
-import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, type CSSProperties } from 'react'
 import { fileKind } from '@shared/fileKind'
-import { splitFrontmatter } from '@shared/frontmatter'
 import type { DiagramDarkColors } from '@shared/types'
-import { api } from '../api'
-import { useReadOnlyNote } from '../editor/useReadOnlyNote'
+import { ReadOnlyNote } from '../editor/ReadOnlyNote'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { ImageViewer } from '../viewers/ImageViewer'
@@ -23,39 +21,6 @@ import './quickLook.css'
 
 /** A board's picture (YAZ-3044 A22), in its own chunk with the preview cache it shares with the hover panel. */
 const QuickLookBoard = lazy(() => import('./QuickLookBoard'))
-
-type Content = { kind: 'loading' } | { kind: 'body'; body: string } | { kind: 'empty' } | { kind: 'gone' }
-
-/** A note, read one time for each mount (R3): the panel keys it by its path, so a read that lands after the highlight moved finds it gone. */
-function Note({ path, title, wikilinks }: { path: string; title: string; wikilinks: WikilinkResolveSource }) {
-  const hostRef = useRef<HTMLDivElement>(null)
-  const [content, setContent] = useState<Content>({ kind: 'loading' })
-
-  useEffect(() => {
-    let live = true
-    api.readFile(path).then(
-      (file) => {
-        if (!live) return
-        const body = splitFrontmatter(file.content).body
-        setContent(body.trim() === '' ? { kind: 'empty' } : { kind: 'body', body })
-      },
-      () => live && setContent({ kind: 'gone' }),
-    )
-    return () => {
-      live = false
-    }
-  }, [path])
-
-  useReadOnlyNote(hostRef, content.kind === 'body' ? content.body : null, wikilinks)
-
-  return (
-    <div className="quicklook__note" ref={hostRef}>
-      {/* A note that is gone, or that the app cannot read (S41), named as the tree names it. */}
-      {content.kind === 'gone' && <p className="editor-msg">Can&apos;t preview &quot;{title}&quot; — it is no longer there</p>}
-      {content.kind === 'empty' && <p className="editor-msg">Empty page</p>}
-    </div>
-  )
-}
 
 interface QuickLookProps {
   /** The file on preview. */
@@ -101,7 +66,8 @@ export function QuickLook({ path, title, watch, wikilinks, root = null, darkColo
       </header>
       <div className="quicklook__body">
         {kind === 'markdown' ? (
-          <Note key={path} path={path} title={title} wikilinks={wikilinks} />
+          // A note that is gone, or that the app cannot read (S41), named as the tree names it.
+          <ReadOnlyNote key={path} className="quicklook__note" path={path} wikilinks={wikilinks} unreadable={<>Can&apos;t preview &quot;{title}&quot; — it is no longer there</>} />
         ) : kind === 'text' ? (
           <TextViewer path={path} watch={watch} />
         ) : kind === 'pdf' ? (

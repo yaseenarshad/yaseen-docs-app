@@ -1,6 +1,6 @@
 /** Where the hover preview panel goes (YAZ-1800): a pure rule of the sidebar's right edge and the window. */
 import { describe, expect, it } from 'vitest'
-import { boardPreviewPlacement } from './BoardPreview'
+import { boardPreviewPlacement } from './previewPlacement'
 
 describe('boardPreviewPlacement', () => {
   it('sits a gap right of the sidebar, a little over half the room wide, vertically centred', () => {
@@ -17,5 +17,11 @@ describe('boardPreviewPlacement', () => {
 
   it('renders nothing when the window leaves no room beside the sidebar', () => {
     expect(boardPreviewPlacement(260, 280, 800)).toBeNull()
+  })
+
+  it('YAZ-3075 D2, C15: a note takes the same place and width, 70% of the window tall', () => {
+    // height = round(900 * 0.7) = 630; top = (900 - 630) / 2 = 135.
+    expect(boardPreviewPlacement(260, 1440, 900, 'note')).toEqual({ left: 276, top: 135, width: 669, height: 630 })
+    expect(boardPreviewPlacement(260, 280, 800, 'note')).toBeNull()
   })
 })

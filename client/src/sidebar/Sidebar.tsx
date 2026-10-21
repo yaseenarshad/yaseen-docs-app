@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type Ref } from 'react'
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { isBoard } from '@shared/fileKind'
 import { SIDEBAR_TABS, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
@@ -105,6 +105,8 @@ interface SidebarProps {
    */
   previewPath: string | null
   onPreview: (path: string | null) => void
+  /** The text formatting of the vault that holds a path (YAZ-3067 D12): App's `textVarsFor`, which a note's hover preview wears (YAZ-3075 C20). */
+  textVarsFor: (path: string) => CSSProperties
   /** "Open folder…" — the last row of the header's vault switcher (YAZ-1767 D4) — runs App's picker; the picked vault opens beside (YAZ-1914). */
   onPickFolder: () => void
   /** True while the native folder dialog is open; the switcher's "Open folder…" row is disabled meanwhile. */
@@ -440,6 +442,7 @@ export function Sidebar({
   onRevealInFiles,
   previewPath,
   onPreview,
+  textVarsFor,
   onPickFolder,
   pickDisabled,
   switcherOpenRequest,
@@ -568,8 +571,9 @@ export function Sidebar({
   // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
   const searching = lens === 'search'
   // The hover preview (YAZ-3028 D11): a menu or the Info popover owns the pointer while it stands, and
-  // a typed search hides the tree it would point at.
-  const { hover, hoverFile, closePreview } = useHoverPreview(menu !== null || infoPopover !== null || !settings.hoverPreview, !searching, activeFile) // off (A20): no dwell starts
+  // a typed search hides the tree it would point at. While App's Space panel shows, no hover preview
+  // starts and one that shows closes (YAZ-3075 D4, C12): one panel at a time.
+  const { hover, hoverFile, closePreview } = useHoverPreview(menu !== null || infoPopover !== null || previewPath !== null || !settings.hoverPreview, !searching, activeFile) // off (A20): no dwell starts
   /** The watch feed of the vault that holds `path` (the hover preview and Info listen on it, A41). */
   const watchOf = useCallback((path: string): WatchSource | undefined => watches[roots.indexOf(rootOf(path))], [watches, roots, rootOf])
   // The Info popover reads the board's head when it opens, and again on each `change` of that board
@@ -1460,7 +1464,7 @@ export function Sidebar({
           </Suspense>
         </ContextMenuSurface>
       )}
-      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} enabled={settings.hoverPreview && !searching} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} onClose={closePreview} />
+      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} nameOf={nameOf} textVarsOf={textVarsFor} enabled={settings.hoverPreview && !searching} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} onClose={closePreview} />
       {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
       {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} copy={pendingPaste.copy} lost={pendingPaste.lost} titles={titles} onConfirm={confirmPaste} onCancel={cancelPaste} />}
       {confirmingShortcut !== null && (

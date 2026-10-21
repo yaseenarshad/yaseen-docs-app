@@ -4,7 +4,7 @@ import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
 import type { EntryKind, MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
-import { isBoard } from '@shared/fileKind'
+import { isBoard, isMarkdown } from '@shared/fileKind'
 import { CloudOffIcon, DiagramBadge, LinkIcon, ShortcutIcon } from '../views/view/icons'
 import { TOO_LARGE_LABEL } from '../lib/syncAttention'
 import { RenameInline } from './RenameInline'
@@ -210,8 +210,9 @@ interface TreeProps {
   /** The top row this level stands under (YAZ-2845 D1); none at the top level. It tells the copies of a row that shows twice apart. */
   top?: string
   /**
-   * The pointer or the focus rests on a drawing or diagram row, or left it (null): the hover preview's
-   * dwell (YAZ-3028 D11). Absent → no row reports it. A note row never does.
+   * The pointer or the focus rests on a drawing, diagram or note row, or left it (null): the hover
+   * preview's dwell (YAZ-3028 D11; notes since YAZ-3075 D4). Absent → no row reports it. A text, PDF
+   * or image row never does.
    */
   onHoverFile?: (node: { path: string } | null) => void
   /** YAZ-1801 D3 (YAZ-3039): absolute paths sync held back as over GitHub's limit; their rows get the cloud-off icon. A stable Set (the memo compares identity). */
@@ -263,9 +264,9 @@ function TreeLevel({
   depth = 0,
 }: TreeProps) {
   const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges }
-  /** A board row's hover handlers (YAZ-3028 D11): pointer and focus alike, so the keyboard walk previews too. */
+  /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
-    onHoverFile === undefined || !isBoard(path) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
+    onHoverFile === undefined || !(isBoard(path) || isMarkdown(path)) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
   // This folder's shortcuts stand among its FILES in the tree's own name order; dirs still lead, as main sorts a level.
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]

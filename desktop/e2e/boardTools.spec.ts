@@ -7,6 +7,9 @@
  *     at launch, and the marker records the vault. The app-data half is off under e2e: no Draw
  *     secrets, sharing or library reach this profile.
  *   2 hover preview and Info (D11): resting on a board row shows its picture; Info names its type.
+ *   2b a note's hover preview (YAZ-3075): resting on a 1 MB note row shows the top of the note; the
+ *     step logs the time from the end of the 400 ms wait to its ProseMirror on the page, on the first
+ *     rest (the lazy chunk and the window's first Crepe) and on the next one.
  *   3 Version history (YAZ-3039): the row menu lists the board's two commits, and Restore writes the
  *     older one back over the file.
  *   4 a `yaseendraw://` link (D7) opens its board in a tab, the same as a `yaseendocs://` one.
@@ -28,6 +31,9 @@ test.describe.configure({ mode: 'serial' })
 
 const BOARD = 'Board.excalidraw'
 const LINKED = 'Linked.excalidraw'
+/** A note of about 1 MB (YAZ-3075): the hover draws only its first 4,000 characters. */
+const NOTE = 'Hover note.md'
+const NOTE_BODY = `---\ntitle: Hover note\n---\n\n# Hover note top\n\n${'A line of the long note, there to make it about one megabyte.\n'.repeat(16_500)}`
 type El = Record<string, unknown> & { id: string }
 const rect = (id: string, x = 0): El => ({ id, type: 'rectangle', x, y: 0, width: 120, height: 80, angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 2, strokeStyle: 'solid', roughness: 1, opacity: 100, groupIds: [], frameId: null, index: `a${id.length}${x}`, roundness: null, seed: 1, version: 1, versionNonce: 1, isDeleted: false, boundElements: null, updated: 1, link: null, locked: false })
 const scene = (elements: El[]): string => `${JSON.stringify({ type: 'excalidraw', version: 2, source: 'test', elements, appState: {}, files: {} }, null, 2)}\n`
@@ -49,6 +55,7 @@ test.beforeAll(async () => {
   vault = await copyVault(vaultSrc)
   await writeFile(path.join(vault, BOARD), scene([rect('first')]))
   await writeFile(path.join(vault, LINKED), scene([rect('linked')]))
+  await writeFile(path.join(vault, NOTE), NOTE_BODY)
   // A Draw vault: Draw's own dotfolder with a favorite (the import copies, never moves).
   await mkdir(path.join(vault, '.yaseendraw'))
   await writeFile(path.join(vault, '.yaseendraw', 'favorites.json'), `${JSON.stringify({ version: 1, favorites: [BOARD] })}\n`)
@@ -102,6 +109,55 @@ test('step 2 — resting on a board row shows its picture; Info names its type',
   await shoot(win, 'board-tools-02-info')
   await win.keyboard.press('Escape')
   await expect(info).toHaveCount(0)
+})
+
+test('step 2b — resting on a note row shows the top of the note (YAZ-3075)', async () => {
+  const notePath = path.join(vault, NOTE)
+  const row = win.locator(`.tree__row--file[data-path="${notePath}"]`)
+  await expect(row).toBeVisible()
+  const preview = win.locator('.note-preview')
+  /** One rest on the row, clocked in the page: from the pointer entering it to the note's ProseMirror on the page, less the 400 ms wait. */
+  const timedRest = async (): Promise<number> => {
+    await row.evaluate((el) => {
+      const rec: { start?: number; shown?: number } = {}
+      ;(window as unknown as { __noteHover: typeof rec }).__noteHover = rec
+      el.addEventListener('mouseenter', () => (rec.start ??= performance.now()), { once: true })
+      const seen = new MutationObserver(() => {
+        if (document.querySelector('.note-preview .ProseMirror') === null) return
+        rec.shown = performance.now()
+        seen.disconnect()
+      })
+      seen.observe(document.body, { childList: true, subtree: true })
+    })
+    await row.hover()
+    await expect(preview.locator('.ProseMirror')).toBeVisible({ timeout: 10_000 })
+    const { start, shown } = await win.evaluate(() => (window as unknown as { __noteHover: { start?: number; shown?: number } }).__noteHover)
+    expect(start).toBeDefined()
+    expect(shown).toBeDefined()
+    return shown! - start! - 400
+  }
+  const first = await timedRest()
+  // The header names the note by its title, as the tree row does.
+  await expect(preview.locator('.board-preview__name')).toHaveText('Hover note')
+  // A guard, not a budget: the first rest measured 38–56 ms hidden (YAZ-3087 A1); 362 ms was the bug.
+  expect(first).toBeLessThan(250)
+  await expect(preview.locator('.ProseMirror')).toContainText('Hover note top')
+  await expect(preview).not.toContainText('title: Hover note')
+  await shoot(win, 'board-tools-01b-note-hover-preview')
+  await win.mouse.move(900, 600)
+  await expect(preview).toHaveCount(0)
+  // Again, with the lazy chunk loaded: the read and the render alone.
+  const again = await timedRest()
+  await win.mouse.move(900, 600)
+  await expect(preview).toHaveCount(0)
+  // The read on its own, over the same bridge.
+  const read = await win.evaluate(async (p) => {
+    const t = performance.now()
+    await (window as unknown as { yaseenDocs: { readFile: (p: string) => Promise<unknown> } }).yaseenDocs.readFile(p)
+    return performance.now() - t
+  }, notePath)
+  console.log(`[YAZ-3075] note hover preview, ${NOTE_BODY.length} characters: ${first.toFixed(1)} ms after the 400 ms wait on the first rest, ${again.toFixed(1)} ms on the next; the read alone ${read.toFixed(1)} ms`)
+  test.info().annotations.push({ type: 'note-hover-ms', description: `first ${first.toFixed(1)}, again ${again.toFixed(1)}, read ${read.toFixed(1)}` })
 })
 
 test('step 3 — Version history lists the two commits, and Restore writes the older one back', async () => {
