@@ -4,13 +4,14 @@
  * itself does with them: viewport clamping (GRO-2204), one group per NON-EMPTY section (🔒 D7),
  * disabled / danger / hint rendering, the select-then-close order, the ways out (Escape,
  * click-away, a stray right-click), and the "Open in ▸" flyout (D7 amended): how it opens, stays,
- * switches, positions and flips. Sizes come from mocked `getBoundingClientRect` (jsdom has no
- * layout); the jsdom viewport is 1024×768.
+ * switches, positions and flips; a parent WITH a default (YAZ-3085 D1, "New note ▸"); and the hover
+ * wait before a switch (YAZ-3085 D4, `SWITCH_MS`) under fake timers. Sizes come from mocked
+ * `getBoundingClientRect` (jsdom has no layout); the jsdom viewport is 1024×768.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { ContextMenu } from './ContextMenu'
+import { ContextMenu, SWITCH_MS } from './ContextMenu'
 import type { MenuAction, MenuParent, MenuSection } from './menuSections'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -40,6 +41,7 @@ afterEach(() => {
   container?.remove()
   container = null
   vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 const item = (id: string, over: Partial<MenuAction> = {}): MenuAction => ({ id, label: id, onSelect: vi.fn(), ...over })
@@ -69,6 +71,10 @@ const flyoutLabels = (el: HTMLElement) => [...(flyout(el)?.querySelectorAll<HTML
 /** React's onMouseEnter is synthesised from `mouseover`; a bubbling one with no relatedTarget enters from outside. */
 const hover = (target: Element | null | undefined) => act(() => void target?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
 const key = (target: Element | Window | null | undefined, k: string) => act(() => void target?.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
+/** Run the hover wait's clock (YAZ-3085 D4) — the test must have called `vi.useFakeTimers()` first. */
+const wait = (ms: number) => act(() => void vi.advanceTimersByTime(ms))
+/** A button inside the open flyout by label — the row and its list's first item can share one (YAZ-3085 edge case 9). */
+const subButtonOf = (el: HTMLElement, label: string) => [...(flyout(el)?.querySelectorAll<HTMLButtonElement>('.ctx-menu__item') ?? [])].find((b) => b.textContent === label)
 
 describe('menu clamping (GRO-2204)', () => {
   it('renders at the requested position when it fits', () => {
@@ -175,7 +181,8 @@ describe('selecting and closing', () => {
  * The "Open in ▸" flyout (D7 amended, YAZ-1674). The parent is a `menuitem`
  * with `aria-haspopup`, its chevron CSS so the text stays bare; it opens on hover AND click,
  * stays while the pointer is inside the row or the flyout, closes when the pointer enters a
- * DIFFERENT top-level item, and only one flyout stands at a time. The flyout is drawn by the
+ * DIFFERENT top-level item — after `SWITCH_MS` (YAZ-3085 D4) — and only one flyout stands at a
+ * time. The flyout is drawn by the
  * root's own group renderer, to the RIGHT of the parent — or to the LEFT when the right edge
  * would spill.
  */
@@ -218,21 +225,26 @@ describe('the "Open in ▸" flyout (D7 amended)', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('stays open while the pointer is inside the flyout; closes when the pointer enters a DIFFERENT top-level item', () => {
+  it('stays open while the pointer is inside the flyout; closes when the pointer enters a DIFFERENT top-level item, once the hover wait runs out (YAZ-3085 D4)', () => {
+    vi.useFakeTimers()
     const el = mount(0, 0, WITH_FLYOUT())
     hover(buttonOf(el, 'Open in'))
     hover(buttonOf(el, 'VS Code'))
+    wait(SWITCH_MS * 5)
     expect(flyout(el)).not.toBeNull()
     hover(buttonOf(el, 'Add to focus'))
+    wait(SWITCH_MS)
     expect(flyout(el)).toBeNull()
     expect(buttonOf(el, 'Open in')?.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('only one flyout stands at a time: hovering a second parent swaps them', () => {
+  it('only one flyout stands at a time: hovering a second parent swaps them, once the hover wait runs out (YAZ-3085 D4)', () => {
+    vi.useFakeTimers()
     const el = mount(0, 0, [[OPEN_IN(), parent('Sort by', [[item('Name')]])]])
     hover(buttonOf(el, 'Open in'))
     expect(flyoutLabels(el)).toEqual(['New window', 'VS Code', 'Reveal in Finder'])
     hover(buttonOf(el, 'Sort by'))
+    wait(SWITCH_MS)
     expect(el.querySelectorAll('.ctx-menu__sub')).toHaveLength(1)
     expect(flyoutLabels(el)).toEqual(['Name'])
     expect(buttonOf(el, 'Open in')?.getAttribute('aria-expanded')).toBe('false')
@@ -301,5 +313,239 @@ describe('the "Open in ▸" flyout (D7 amended)', () => {
     const el = mount(0, 0, [[parent('Open in', [[item('VS Code')], []])]])
     hover(buttonOf(el, 'Open in'))
     expect(flyout(el)?.querySelectorAll('.ctx-menu__group')).toHaveLength(1)
+  })
+})
+
+/**
+ * A parent WITH a default (YAZ-3085 D1, D2 — the create rows, "New note ▸"): one row that looks
+ * like "Open in ▸", whose click or Enter runs its `onSelect` and closes the WHOLE menu, as a leaf
+ * does; only hover and ArrowRight open its flyout. A parent without one ("Open in ▸") keeps opening
+ * on a click — the block above. The test row and its list's first item get DIFFERENT handlers here,
+ * so each case proves which one ran (the builder makes them one function, edge case 1).
+ */
+describe('a parent with a default (YAZ-3085 D1)', () => {
+  const setup = () => {
+    const calls: string[] = []
+    const rowSelect = vi.fn(() => calls.push('row'))
+    const firstSelect = vi.fn(() => calls.push('first'))
+    const datedSelect = vi.fn(() => calls.push('dated'))
+    const close = vi.fn(() => calls.push('close'))
+    const NEW_NOTE = parent('New note', [[item('New note', { onSelect: firstSelect }), item('New dated note', { onSelect: datedSelect })]], { onSelect: rowSelect })
+    const el = mount(0, 0, [[item('Copy path')], [NEW_NOTE, parent('Open in', [[item('VS Code')]])], [item('Rename')]], close)
+    return { el, calls, rowSelect, firstSelect, datedSelect, close }
+  }
+
+  it('renders exactly like "Open in ▸" (D2): a collapsed menuitem with aria-haspopup, the chevron class, the bare label — no split button', () => {
+    const { el } = setup()
+    const row = buttonOf(el, 'New note')
+    expect(row?.getAttribute('aria-haspopup')).toBe('menu')
+    expect(row?.getAttribute('aria-expanded')).toBe('false')
+    expect(row?.classList.contains('ctx-menu__item--parent')).toBe(true)
+    expect(row?.textContent).toBe('New note')
+    expect(row?.parentElement?.querySelectorAll('button')).toHaveLength(1)
+  })
+
+  it('a click on the row runs its onSelect THEN onClose, once each, and opens no flyout', () => {
+    const { el, calls } = setup()
+    act(() => buttonOf(el, 'New note')?.click())
+    expect(calls).toEqual(['row', 'close'])
+    expect(flyout(el)).toBeNull()
+  })
+
+  it('a click runs the default even while its own list stands open (hover first, then click the row)', () => {
+    const { el, calls } = setup()
+    hover(buttonOf(el, 'New note'))
+    expect(flyout(el)).not.toBeNull()
+    act(() => buttonOf(el, 'New note')?.click())
+    expect(calls).toEqual(['row', 'close'])
+  })
+
+  it('Enter on the row runs onSelect THEN onClose too — and the key goes no further (preventDefault)', () => {
+    const { el, calls } = setup()
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    act(() => void buttonOf(el, 'New note')?.dispatchEvent(ev))
+    expect(calls).toEqual(['row', 'close'])
+    expect(ev.defaultPrevented).toBe(true)
+  })
+
+  it('ArrowRight and hover open the flyout and run NOTHING', () => {
+    const { el, calls } = setup()
+    key(buttonOf(el, 'New note'), 'ArrowRight')
+    expect(flyoutLabels(el)).toEqual(['New note', 'New dated note'])
+    expect(buttonOf(el, 'New note')?.getAttribute('aria-expanded')).toBe('true')
+    key(subButtonOf(el, 'New note'), 'ArrowLeft')
+    expect(flyout(el)).toBeNull()
+    hover(buttonOf(el, 'New note'))
+    expect(flyoutLabels(el)).toEqual(['New note', 'New dated note'])
+    expect(calls).toEqual([])
+  })
+
+  it('edge case 9: with the list open there are TWO "New note" buttons — the one in .ctx-menu__sub is the list item, and a click on it runs the item, not the row', () => {
+    const { el, calls } = setup()
+    hover(buttonOf(el, 'New note'))
+    expect(buttons(el).filter((b) => b.textContent === 'New note')).toHaveLength(2)
+    act(() => subButtonOf(el, 'New note')?.click())
+    expect(calls).toEqual(['first', 'close'])
+  })
+
+  it('a list item runs its own onSelect, then closes EVERYTHING', () => {
+    const { el, calls } = setup()
+    hover(buttonOf(el, 'New note'))
+    act(() => subButtonOf(el, 'New dated note')?.click())
+    expect(calls).toEqual(['dated', 'close'])
+  })
+
+  it('edge case 10, the whole keyboard path: ArrowRight opens, ArrowLeft closes the list alone, Enter makes the default; the first Escape closes the list, the second the menu', () => {
+    const { el, calls, close } = setup()
+    key(buttonOf(el, 'New note'), 'ArrowRight')
+    expect(flyout(el)).not.toBeNull()
+    key(window, 'Escape')
+    expect(flyout(el)).toBeNull()
+    expect(close).not.toHaveBeenCalled()
+    key(buttonOf(el, 'New note'), 'ArrowRight')
+    key(subButtonOf(el, 'New dated note'), 'ArrowLeft')
+    expect(flyout(el)).toBeNull()
+    key(window, 'Escape')
+    expect(calls).toEqual(['close'])
+    // The test's onClose does not unmount, so the row is still there: Enter on it is the default, at once.
+    key(buttonOf(el, 'New note'), 'Enter')
+    expect(calls).toEqual(['close', 'row', 'close'])
+  })
+
+  it('a parent WITHOUT a default in the same menu ("Open in ▸") still only opens on a click and on Enter — nothing runs, nothing closes', () => {
+    const { el, calls, close } = setup()
+    act(() => buttonOf(el, 'Open in')?.click())
+    expect(flyoutLabels(el)).toEqual(['VS Code'])
+    key(subButtonOf(el, 'VS Code'), 'ArrowLeft')
+    key(buttonOf(el, 'Open in'), 'Enter')
+    expect(flyoutLabels(el)).toEqual(['VS Code'])
+    expect(close).not.toHaveBeenCalled()
+    expect(calls).toEqual([])
+  })
+})
+
+/**
+ * The hover wait (YAZ-3085 D4): three parents stand in a column, so a pointer on its way into one
+ * flyout crosses the next row. With no flyout open, a hover opens at once. With one open, a hover on
+ * a DIFFERENT top-level item — a parent or a leaf — waits `SWITCH_MS` before it switches or closes;
+ * the pointer that reaches the open flyout re-enters its own parent (the flyout is its DOM child)
+ * and cancels the wait. A click never waits. Escape and unmount clear the timer.
+ */
+describe('the hover wait before a switch (YAZ-3085 D4)', () => {
+  const MENU = (): MenuSection[] => [
+    [parent('New note', [[item('New note'), item('New dated note')]], { onSelect: vi.fn() }), parent('New drawing', [[item('New Excalidraw drawing')], [item('New draw.io diagram')]], { onSelect: vi.fn() }), parent('New folder', [[item('New folder')]], { onSelect: vi.fn() })],
+    [item('Rename')],
+    [parent('Open in', [[item('VS Code')]])],
+  ]
+  const open = (el: HTMLElement) => buttons(menu(el)).find((b) => b.getAttribute('aria-expanded') === 'true')?.textContent ?? null
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  it('is 200 ms (D4)', () => {
+    expect(SWITCH_MS).toBe(200)
+  })
+
+  it('the FIRST flyout opens at once — no wait', () => {
+    const el = mount(0, 0, MENU())
+    hover(buttonOf(el, 'New drawing'))
+    expect(open(el)).toBe('New drawing')
+    expect(flyoutLabels(el)).toEqual(['New Excalidraw drawing', 'New draw.io diagram'])
+  })
+
+  it('with one open, a hover on a different parent does NOT switch before SWITCH_MS, and does at SWITCH_MS', () => {
+    const el = mount(0, 0, MENU())
+    hover(buttonOf(el, 'New note'))
+    hover(buttonOf(el, 'New drawing'))
+    wait(SWITCH_MS - 1)
+    expect(open(el)).toBe('New note')
+    expect(flyoutLabels(el)).toEqual(['New note', 'New dated note'])
+    wait(1)
+    expect(open(el)).toBe('New drawing')
+    expect(el.querySelectorAll('.ctx-menu__sub')).toHaveLength(1)
+  })
+
+  it('with one open, a hover on a LEAF closes it only after SWITCH_MS', () => {
+    const el = mount(0, 0, MENU())
+    hover(buttonOf(el, 'New folder'))
+    hover(buttonOf(el, 'Rename'))
+    wait(SWITCH_MS - 1)
+    expect(open(el)).toBe('New folder')
+    wait(1)
+    expect(open(el)).toBeNull()
+    expect(flyout(el)).toBeNull()
+  })
+
+  it('the diagonal path: crossing the next row, then reaching the open flyout, cancels the wait — the flyout stays for good', () => {
+    const el = mount(0, 0, MENU())
+    hover(buttonOf(el, 'New note'))
+    hover(buttonOf(el, 'New drawing'))
+    wait(SWITCH_MS - 50)
+    hover(subButtonOf(el, 'New dated note'))
+    wait(SWITCH_MS * 10)
+    expect(open(el)).toBe('New note')
+    expect(flyoutLabels(el)).toEqual(['New note', 'New dated note'])
+  })
+
+  it('re-entering the open parent row itself cancels too; each new hover restarts the wait', () => {
+    const el = mount(0, 0, MENU())
+    hover(buttonOf(el, 'New note'))
+    hover(buttonOf(el, 'New folder'))
+    wait(SWITCH_MS - 1)
+    hover(buttonOf(el, 'New note'))
+    wait(SWITCH_MS * 10)
+    expect(open(el)).toBe('New note')
+    hover(buttonOf(el, 'New drawing'))
+    wait(SWITCH_MS - 1)
+    hover(buttonOf(el, 'Open in'))
+    wait(SWITCH_MS - 1)
+    expect(open(el)).toBe('New note')
+    wait(1)
+    expect(open(el)).toBe('Open in')
+  })
+
+  it('a click never waits: with a flyout open and a switch pending, a click on "Open in" opens it at once', () => {
+    const el = mount(0, 0, MENU())
+    hover(buttonOf(el, 'New note'))
+    hover(buttonOf(el, 'Open in'))
+    act(() => buttonOf(el, 'Open in')?.click())
+    expect(open(el)).toBe('Open in')
+    expect(flyoutLabels(el)).toEqual(['VS Code'])
+  })
+
+  it('a key never waits either: ArrowRight with a close pending opens the list, and the old timer does not close it', () => {
+    const el = mount(0, 0, MENU())
+    hover(buttonOf(el, 'New note'))
+    hover(buttonOf(el, 'Rename'))
+    key(buttonOf(el, 'Open in'), 'ArrowRight')
+    expect(open(el)).toBe('Open in')
+    wait(SWITCH_MS * 10)
+    expect(open(el)).toBe('Open in')
+    expect(flyoutLabels(el)).toEqual(['VS Code'])
+  })
+
+  it('Escape clears a pending switch: the open flyout closes, and the pending one never opens', () => {
+    const onClose = vi.fn()
+    const el = mount(0, 0, MENU(), onClose)
+    hover(buttonOf(el, 'New note'))
+    hover(buttonOf(el, 'New drawing'))
+    key(window, 'Escape')
+    expect(flyout(el)).toBeNull()
+    wait(SWITCH_MS * 10)
+    expect(flyout(el)).toBeNull()
+    expect(open(el)).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('unmount clears a pending switch: no timer outlives the menu', () => {
+    const el = mount(0, 0, MENU())
+    hover(buttonOf(el, 'New note'))
+    hover(buttonOf(el, 'New drawing'))
+    expect(vi.getTimerCount()).toBe(1)
+    act(() => root?.unmount())
+    root = null
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

@@ -14,15 +14,15 @@
  *     (the native sheet is answered in main, so no window opens).
  *   6 the canvas panel's Images tab opens the Image Studio (YAZ-3038). Nothing is typed: a search would
  *     reach a provider.
- *   7 right-click a folder → New dated Excalidraw drawing (D9): the box is seeded `MM_DD- `, and the
- *     drawing is born with that name and opens in a tab.
+ *   7 right-click a folder → hover "New drawing" → New dated Excalidraw drawing in its list (D9;
+ *     YAZ-3085 D3): the box is seeded `MM_DD- `, and the drawing is born with that name and opens in a tab.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, clickMenuItemQuietly, copyVault, dirRow, emitOpenUrl, fileRow, launchApp, layer, menuItem, quitApp, seededState, shoot } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, clickMenuItemQuietly, copyVault, dirRow, emitOpenUrl, fileRow, launchApp, layer, menuItem, menuListItem, menuParent, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -153,11 +153,13 @@ test('step 6 — the canvas panel\'s Images tab opens the Image Studio', async (
   await expect(panel).toHaveCount(0)
 })
 
-test('step 7 — New dated Excalidraw drawing seeds MM_DD- and opens the new drawing', async () => {
+test('step 7 — New dated Excalidraw drawing, in the New drawing list, seeds MM_DD- and opens the new drawing', async () => {
   const now = new Date()
   const seed = `${String(now.getMonth() + 1).padStart(2, '0')}_${String(now.getDate()).padStart(2, '0')}- `
   await dirRow(win, 'Projects').click({ button: 'right' })
-  await menuItem(win, 'New dated Excalidraw drawing').click()
+  // The dated twin lives in the "New drawing ▸" list now (YAZ-3085 D3): a hover opens it.
+  await menuParent(win, 'New drawing').hover()
+  await menuListItem(win, 'New dated Excalidraw drawing').click()
   const box = win.locator('.create-inline__input')
   await expect(box).toHaveValue(seed)
   await box.fill(`${seed}Sketch`)

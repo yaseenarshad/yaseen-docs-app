@@ -6,8 +6,8 @@ import type { MenuTargets } from './Sidebar'
  * conditional in `ContextMenu`'s JSX is one small function here returning an item or null, so the
  * component keeps only mechanics (overlay, clamp, Escape) and the rules test PURE — no DOM.
  *
- * SEVEN groups, in this order (🔒 D7, amended three times): Open/View · Clipboard · Create ·
- * More create · This row · "Open in ▸" · Delete. The component draws a separator between
+ * SIX groups, in this order (🔒 D7, amended four times): Open/View · Clipboard · Create ·
+ * This row · "Open in ▸" · Delete. The component draws a separator between
  * NON-EMPTY groups only, so a blank-space menu (no row to rename or delete) never ends in a
  * stray rule. The last group is where a row LEAVES — a file is deleted, a shortcut removed, a vault
  * removed from the window (YAZ-2602 D7) — one item of it at most, with a board's read-only "Info"
@@ -43,12 +43,14 @@ export interface MenuAction extends MenuItemBase {
 }
 
 /**
- * A parent ("Open in ▸", D7 amended): it has NO `onSelect` — selecting it only opens its flyout.
+ * A parent ("Open in ▸", D7 amended): with no `onSelect`, selecting it only opens its flyout.
  * The children are ONE level of leaves in their own groups, so a separator inside the flyout is
  * simply a second non-empty section; the component skips empty ones exactly as it does at the root.
+ * A parent MAY have a default (YAZ-3085 D1): "New note ▸" makes a note on a click or Enter, as a
+ * leaf does, and its flyout opens on hover or ArrowRight only.
  */
 export interface MenuParent extends MenuItemBase {
-  onSelect?: undefined
+  onSelect?: () => void
   children: readonly MenuAction[][]
 }
 
@@ -256,9 +258,10 @@ const copyPath: Leaf = (t, h) => {
   }
 }
 
-// ---- (3) Create and (3b) More create: births BESIDE the right-clicked row — both target a DIRECTORY, never the row.
-// The everyday pair leads; the dated twins get their own section under it, lined
-// up with the pair, so they never crowd it (YAZ-2249 🔒 E1/E2). With no directory to target —
+// ---- (3) Create: births BESIDE the right-clicked row — they target a DIRECTORY, never the row.
+// Three parents, each with a default (YAZ-3085 D1, D3): a click makes the everyday kind, and the
+// hover list holds it again with its dated twin — one hover away now, which replaces YAZ-2249
+// 🔒 E1's own group. With no directory to target —
 // blank space under two or more vaults (YAZ-2602 S10) — there is nothing to create in. ----
 
 const create = (id: string, label: string, pick: (h: MenuHandlers) => () => void): Leaf => (t, h) => (t.targetDir === null ? null : { id, label, onSelect: pick(h) })
@@ -271,12 +274,28 @@ const newDatedNote = create('new-dated-note', 'New dated note', (h) => h.onNewDa
 
 const newDatedFolder = create('new-dated-folder', 'New dated folder', (h) => h.onNewDatedFolder)
 
-// The boards (YAZ-3028 D9): Draw's names (YAZ-1802 D13), between the note and the folder; one dated twin, the drawing's.
+// The boards (YAZ-3028 D9): Draw's names (YAZ-1802 D13), in "New drawing ▸"; one dated twin, the drawing's.
 const newDrawing = create('new-drawing', 'New Excalidraw drawing', (h) => h.onNewDrawing)
 
 const newDatedDrawing = create('new-dated-drawing', 'New dated Excalidraw drawing', (h) => h.onNewDatedDrawing)
 
 const newDiagram = create('new-diagram', 'New draw.io diagram', (h) => h.onNewDiagram)
+
+/**
+ * A create parent (YAZ-3085 D1): its click IS the first leaf of its list, so the two can never
+ * disagree, and no leaf means no parent — `create`'s null-directory rule reaches it through them.
+ */
+const createParent = (id: string, label: string, sections: readonly (readonly Leaf[])[]): Item => (t, h) => {
+  const children = sections.map((section) => build(section, t, h))
+  const first = children.flat()[0]
+  if (first === undefined) return null
+  return { id, label, onSelect: first.onSelect, children }
+}
+
+// The order is note, drawing, folder (Yasin, YAZ-3085 D3); the separator in the drawing list keeps the two apps apart.
+const newNoteMenu = createParent('new-note-menu', 'New note', [[newNote, newDatedNote]])
+const newDrawingMenu = createParent('new-drawing-menu', 'New drawing', [[newDrawing, newDatedDrawing], [newDiagram]])
+const newFolderMenu = createParent('new-folder-menu', 'New folder', [[newFolder, newDatedFolder]])
 
 // ---- (4) This row: acts ON the right-clicked row, so it sits after the create groups ----
 
@@ -481,8 +500,7 @@ const addVault: Item = (t, h) => {
 
 const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
-const CREATE_GROUP: readonly Item[] = [newNote, newDrawing, newDiagram, newFolder]
-const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedDrawing, newDatedFolder]
+const CREATE_GROUP: readonly Item[] = [newNoteMenu, newDrawingMenu, newFolderMenu]
 const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename]
 const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openAlone, openIn, addVault]
 const DELETE_GROUP: readonly Item[] = [share, history, info, del, removeShortcut, removeVault]
@@ -491,7 +509,7 @@ const DELETE_GROUP: readonly Item[] = [share, history, info, del, removeShortcut
 const build = <T extends MenuItem>(group: readonly ((t: MenuSectionTargets, h: MenuHandlers) => T | null)[], t: MenuSectionTargets, h: MenuHandlers): T[] =>
   group.map((rule) => rule(t, h)).filter((item): item is T => item !== null)
 
-/** The seven groups of 🔒 D7 (as amended), in order, every null item dropped. An empty group is the component's to skip. */
+/** The six groups of 🔒 D7 (as amended), in order, every null item dropped. An empty group is the component's to skip. */
 export function buildMenuSections(targets: MenuSectionTargets, handlers: MenuHandlers): MenuSection[] {
-  return [OPEN_GROUP, CLIPBOARD_GROUP, CREATE_GROUP, CREATE_MORE_GROUP, ROW_GROUP, OPEN_IN_GROUP, DELETE_GROUP].map((group) => build(group, targets, handlers))
+  return [OPEN_GROUP, CLIPBOARD_GROUP, CREATE_GROUP, ROW_GROUP, OPEN_IN_GROUP, DELETE_GROUP].map((group) => build(group, targets, handlers))
 }

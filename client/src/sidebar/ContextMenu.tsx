@@ -1,12 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { MenuAction, MenuItem, MenuParent, MenuSection } from './menuSections'
 
+/** How long a hover waits before it swaps one open flyout for another (YAZ-3085 D4): the pointer's time to cross a row. */
+export const SWITCH_MS = 200
+
 interface ContextMenuProps {
   x: number
   y: number
   /**
    * The items as data (🔒 D8, YAZ-1674) — built by a sections builder, where every gating rule
-   * lives: the file tree's `buildMenuSections` (seven groups, 🔒 D7), the vault switcher's
+   * lives: the file tree's `buildMenuSections` (six groups, 🔒 D7), the vault switcher's
    * `buildVaultMenuSections` (five, YAZ-1798 · YAZ-1974) or a tab's `TabMenu` (four, YAZ-2949 D6).
    * This component only draws them: a
    * `role="group"` per NON-EMPTY section (the separator is CSS between adjacent groups), and one
@@ -99,16 +102,23 @@ function Flyout({ anchor, sections, onClose, onCloseFlyout }: { anchor: RefObjec
 
 /**
  * A parent ("Open in ▸"): a `menuitem` with `aria-haspopup`, its chevron drawn by CSS so the text
- * stays the bare label. Opens on hover AND on click (and ArrowRight / Enter); it has no select of
- * its own. The flyout stays while the pointer is inside the row or the flyout — there is no
- * leave rule — and closes when the pointer enters a DIFFERENT top-level item (the root's job).
+ * stays the bare label. Opens on hover AND on click (and ArrowRight / Enter). A parent WITH a
+ * default (YAZ-3085 D1, "New note ▸") runs it on a click or Enter and closes the menu, as a leaf
+ * does; only hover and ArrowRight open its flyout. The flyout stays while the pointer is inside the
+ * row or the flyout — there is no leave rule — and closes when the pointer enters a DIFFERENT
+ * top-level item, after the root's hover wait (D4).
  * Keyboard: Tab already reaches every item (they are buttons), so Tab + Enter + Escape is the
  * complete path; ArrowRight / Enter to open and ArrowLeft to close are sugar on top of it.
  */
-function ParentItem({ item, open, onOpen, onCloseFlyout, onClose }: { item: MenuParent; open: boolean; onOpen: () => void; onCloseFlyout: () => void; onClose: () => void }) {
+function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { item: MenuParent; open: boolean; onHover: () => void; onOpen: () => void; onCloseFlyout: () => void; onClose: () => void }) {
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const choose = () => {
+    if (item.onSelect === undefined) return onOpen()
+    item.onSelect()
+    onClose()
+  }
   return (
-    <div className="ctx-menu__parent" onMouseEnter={onOpen}>
+    <div className="ctx-menu__parent" onMouseEnter={onHover}>
       <button
         ref={buttonRef}
         type="button"
@@ -116,12 +126,13 @@ function ParentItem({ item, open, onOpen, onCloseFlyout, onClose }: { item: Menu
         aria-haspopup="menu"
         aria-expanded={open}
         className="ctx-menu__item ctx-menu__item--parent"
-        onClick={onOpen}
+        onClick={choose}
         onKeyDown={(e) => {
           if (e.key !== 'ArrowRight' && e.key !== 'Enter') return
           e.preventDefault()
           e.stopPropagation()
-          onOpen()
+          if (e.key === 'Enter') choose()
+          else onOpen()
         }}
       >
         {item.label}
@@ -135,10 +146,27 @@ function ParentItem({ item, open, onOpen, onCloseFlyout, onClose }: { item: Menu
 export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
   // The ONE open flyout (D7 amended): at most one parent is expanded at a time.
   const [openId, setOpenId] = useState<string | null>(null)
+  // Hover intent (YAZ-3085 D4): three parents stand in a column, so a pointer on its way into a
+  // flyout crosses the next one. A SWITCH away from an open flyout waits SWITCH_MS; the pointer that
+  // reaches the flyout re-enters its own parent (the flyout is its child) and cancels it. The first
+  // flyout opens at once, and a click or a key never waits.
+  const switchTimer = useRef<number | undefined>(undefined)
+  const hover = (id: string | null) => {
+    window.clearTimeout(switchTimer.current)
+    if (openId === null) setOpenId(id)
+    else if (id !== openId) switchTimer.current = window.setTimeout(() => setOpenId(id), SWITCH_MS)
+  }
+  // A click or a key opens at once, and drops any switch the pointer left pending.
+  const openNow = (id: string) => {
+    window.clearTimeout(switchTimer.current)
+    setOpenId(id)
+  }
+  useEffect(() => () => window.clearTimeout(switchTimer.current), [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
+      window.clearTimeout(switchTimer.current)
       // A flyout owns its own Escape: the first press closes it alone, the next closes the menu.
       if (openId !== null) setOpenId(null)
       else onClose()
@@ -173,10 +201,10 @@ export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
           sections={sections}
           render={(item) =>
             item.children === undefined ? (
-              // Entering a DIFFERENT top-level item is what closes an open flyout.
-              <ActionButton key={item.id} item={item} onClose={onClose} onMouseEnter={() => setOpenId(null)} />
+              // Entering a DIFFERENT top-level item is what closes an open flyout — after the hover wait (D4).
+              <ActionButton key={item.id} item={item} onClose={onClose} onMouseEnter={() => hover(null)} />
             ) : (
-              <ParentItem key={item.id} item={item} open={openId === item.id} onOpen={() => setOpenId(item.id)} onCloseFlyout={() => setOpenId(null)} onClose={onClose} />
+              <ParentItem key={item.id} item={item} open={openId === item.id} onHover={() => hover(item.id)} onOpen={() => openNow(item.id)} onCloseFlyout={() => setOpenId(null)} onClose={onClose} />
             )
           }
         />
