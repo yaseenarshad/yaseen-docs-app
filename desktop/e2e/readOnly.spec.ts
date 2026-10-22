@@ -11,6 +11,8 @@
  *  - A DIAGRAM (YAZ-3119, YAZ-3121): "Read only" on leaves the keyboard on the host, so Esc still
  *    closes the cog menu; and a press inside the draw.io frame closes the menu, as a press outside
  *    closes it on a note.
+ *  - A FOLDER'S TABLE (YAZ-3122): a read-only note's cell shows its value, says "This note is read
+ *    only", and a double-click opens no editor; the note beside it still edits; nothing is written.
  *
  * Same harness as every spec here: temp `--user-data-dir`, a COPY of the fixture vault with one
  * note of this spec's own in it, hidden windows (`YASEEN_DOCS_E2E_HIDDEN`), `read-only-` step
@@ -20,7 +22,8 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, quitApp, seededState, shoot } from './helpers'
+import { setFrontmatterProperty } from '../../shared/frontmatter'
+import { appWindow, buildFixtureVault, contents, copyVault, editorOf, launchApp, layer, openFolder, quitApp, seededState, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -170,4 +173,32 @@ test('step 9 — "Allow edits" turns the diagram back, the same bytes as before'
   await expect.poll(() => readFile(diagramPath, 'utf8')).toBe(ONE_BOX)
   await expect(chip(win)).toHaveCount(0)
   await quitApp(app)
+})
+
+const BIBLE = path.join(__dirname, 'fixtures', 'bible-vault')
+let bible: string
+
+test('step 10 — YAZ-3122: in a folder\u2019s table, a read-only note\u2019s cell opens no editor and says why; the next note still edits', async () => {
+  bible = await copyVault(BIBLE)
+  const cac = path.join(bible, 'KPIs', 'CAC.md')
+  const locked = setFrontmatterProperty(await readFile(cac, 'utf8'), 'readonly', true)
+  await writeFile(cac, locked)
+  app = await launchApp({ userData, seedState: seededState(bible, null) })
+  win = await appWindow(app, 'w1')
+  await openFolder(win, path.join(bible, 'KPIs'))
+  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
+  const cell = (r: number, c: number) => contents(win).locator(`[data-cell="${r}:${c}"]`)
+  await expect(contents(win).locator('.view-table__name').first()).toHaveText('CAC')
+  // Row 0 is CAC (read only), row 1 Gross Margin; column 2 is Unit.
+  await expect(cell(0, 2)).toContainText('currency')
+  await expect(cell(0, 2).locator('[data-edit]')).toHaveCount(0)
+  await expect(cell(0, 2).locator('[title="This note is read only"]')).toHaveCount(1)
+  await cell(0, 2).dblclick()
+  await expect(cell(0, 2).locator('input')).toHaveCount(0)
+  await expect(cell(1, 2).locator('[data-edit]')).toHaveCount(1)
+  await win.waitForTimeout(700)
+  expect(await readFile(cac, 'utf8')).toBe(locked)
+  await shoot(win, 'read-only-4-folder-table')
+  await quitApp(app)
+  await rm(bible, { recursive: true, force: true })
 })
