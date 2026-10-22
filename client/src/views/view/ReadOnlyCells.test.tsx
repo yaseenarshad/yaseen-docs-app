@@ -169,3 +169,29 @@ describe('the one guard in the pane (S54)', () => {
     expect(writeValues).toHaveBeenCalledExactlyOnceWith(OPEN, [{ key: 'priority', value: 9 }])
   })
 })
+
+describe('a lock while the cell is being edited (YAZ-3124)', () => {
+  it('a lock ends the edit and drops the draft: when the switch goes off again, no editor reopens and the focus stays put', async () => {
+    const { EditableCell } = await import('./EditableCell')
+    const { fromYaml } = await import('../expr')
+    const onCommit = vi.fn(async () => undefined)
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const cell = (readOnly: boolean) => <EditableCell propKey="status" raw="idea" value={fromYaml('idea')} editor="text" titles={[]} onCommit={onCommit} readOnly={readOnly} />
+    act(() => root?.render(cell(false)))
+    act(() => container!.querySelector<HTMLElement>('[data-edit]')!.click())
+    expect(container.querySelector('input')).not.toBeNull()
+    // An agent writes `readonly: true`: the cell locks.
+    act(() => root?.render(cell(true)))
+    expect(container.querySelector('input')).toBeNull()
+    act(() => (document.activeElement as HTMLElement | null)?.blur())
+    const before = document.activeElement
+    // …and later removes it.
+    act(() => root?.render(cell(false)))
+    expect(container.querySelector('input')).toBeNull()
+    expect(container.querySelectorAll('[data-edit]')).toHaveLength(1)
+    expect(document.activeElement).toBe(before)
+    expect(onCommit).not.toHaveBeenCalled()
+  })
+})

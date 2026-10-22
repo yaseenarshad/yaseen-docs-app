@@ -74,6 +74,13 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
     }
   }, [rawKey])
 
+  // A lock ends the edit (YAZ-3124): the draft goes with the unmounted field, and no focus moves —
+  // not `close()`, whose focus hand-back is for the human's own Enter or Esc. Without it the editor
+  // would reopen, and take the focus, the moment the note stopped being read only.
+  useEffect(() => {
+    if (readOnly) setEditing(false)
+  }, [readOnly])
+
   // Closing hands focus back to the table cell (4B nav) or the display button elsewhere.
   useEffect(() => {
     if (!closedRef.current || editing) return
