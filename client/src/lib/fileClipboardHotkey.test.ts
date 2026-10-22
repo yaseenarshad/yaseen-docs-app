@@ -50,4 +50,39 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     document.body.append(input)
     expect(fileClipboardVerb(event(input))).toBeNull()
   })
+
+  describe('a read-only note (YAZ-3127, D8): its body keeps ⌘C / ⌘X / ⌘V — never the FILE clipboard', () => {
+    /** A read-only note body as ProseMirror draws it: `contenteditable="false"`, with a text node. */
+    function readOnlyBody(parent: HTMLElement = document.body): { body: HTMLElement; text: Text } {
+      const body = document.createElement('div')
+      body.className = 'ProseMirror'
+      body.setAttribute('contenteditable', 'false')
+      body.tabIndex = -1
+      const text = document.createTextNode('read-only text')
+      body.append(text)
+      parent.append(body)
+      return { body, text }
+    }
+    afterEach(() => document.getSelection()?.removeAllRanges())
+
+    it('the focus in the read-only body: ⌘C, ⌘X and ⌘V are the note\u2019s', () => {
+      const { body } = readOnlyBody()
+      for (const key of ['c', 'x', 'v']) expect(fileClipboardVerb(event(body, { key })), key).toBeNull()
+    })
+
+    it('the focus on <body> with the reader\u2019s selection in a visible read-only body: still the note\u2019s', () => {
+      const { text } = readOnlyBody()
+      document.getSelection()!.setBaseAndExtent(text, 0, text, 4)
+      for (const key of ['c', 'x', 'v']) expect(fileClipboardVerb(event(document.body, { key })), key).toBeNull()
+    })
+
+    it('a selection left in a HIDDEN tab\u2019s read-only body claims nothing: the chrome keeps its chord', () => {
+      const layer = document.createElement('div')
+      layer.style.visibility = 'hidden'
+      document.body.append(layer)
+      const { text } = readOnlyBody(layer)
+      document.getSelection()!.setBaseAndExtent(text, 0, text, 4)
+      expect(fileClipboardVerb(event(document.body))).toBe('copy')
+    })
+  })
 })

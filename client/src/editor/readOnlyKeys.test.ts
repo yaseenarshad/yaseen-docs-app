@@ -28,7 +28,7 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 async function mount(parent: HTMLElement = document.body) {
   const root = document.createElement('div')
   parent.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: NOTE })
+  const crepe = createCrepe({ root, defaultValue: NOTE, readOnlyKeys: true })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, root }
@@ -144,5 +144,38 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     clickIn(editable.root, 'L1 b')
     press('u', { shift: true })
     expect(folded(editable.root)).toBe(0) // its own keymap answers only with the focus in it
+  })
+
+  it('⌘A selects the note\u2019s text, nothing else (YAZ-3127)', async () => {
+    const { crepe, root } = await mount()
+    crepe.setReadonly(true)
+    clickIn(root, 'L2 a')
+    expect(press('a').defaultPrevented).toBe(true)
+    const selection = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.selection)
+    expect(selection.from).toBe(0)
+    expect(selection.to).toBe(crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.doc.content.size))
+  })
+
+  it('a read-only note editor takes the focus (tabindex -1) while it is not editable, and gives it back when it is', async () => {
+    const { crepe, root } = await mount()
+    const dom = root.querySelector('.ProseMirror')!
+    expect(dom.hasAttribute('tabindex')).toBe(false)
+    crepe.setReadonly(true)
+    expect(dom.getAttribute('tabindex')).toBe('-1')
+    crepe.setReadonly(false)
+    expect(dom.hasAttribute('tabindex')).toBe(false)
+  })
+
+  it('a preview (no `readOnlyKeys`) neither takes the focus nor answers the keys', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: NOTE })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    crepe.setReadonly(true)
+    expect(root.querySelector('.ProseMirror')!.hasAttribute('tabindex')).toBe(false)
+    clickIn(root, 'L1 b')
+    press('u', { shift: true })
+    expect(folded(root)).toBe(0)
   })
 })

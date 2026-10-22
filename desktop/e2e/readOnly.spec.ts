@@ -19,7 +19,7 @@
  * screenshots. Serial: each step continues the last.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setFrontmatterProperty } from '../../shared/frontmatter'
@@ -189,6 +189,48 @@ test('step 3c — D8: a read-only outline keeps every view action, with the mous
   expect(await readFile(outlinePath, 'utf8')).toBe(OUTLINE_BODY)
   await fileRow(win, 'Locked note').click()
   await expect(line(win)).toBeVisible()
+})
+
+test('step 3d — YAZ-3127: in a read-only body, ⌘C / ⌘X / ⌘V never reach the FILE clipboard, ↓ stays in the note, ⌘A selects only the note', async () => {
+  // The note's sidebar row is the selected row (step 3c ended by clicking it): the case the file clipboard would take.
+  const vaultFiles = async (): Promise<string[]> => (await readdir(vault)).sort()
+  const before = await vaultFiles()
+  const box = (await line(win).boundingBox())!
+  await win.mouse.move(box.x + 2, box.y + box.height / 2)
+  await win.mouse.down()
+  await win.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 5 })
+  await win.mouse.up()
+  const clip = () => win.evaluate(() => (window as unknown as { yaseenDocs: { file: { clipState(): Promise<unknown> } } }).yaseenDocs.file.clipState())
+  // The chord as the app's own listeners hear it, dispatched where the keyboard is. A synthetic key
+  // runs no NATIVE copy or paste, so the spec never touches the system clipboard; what it pins is
+  // that no app listener takes the chord (`defaultPrevented` stays false) and nothing reaches the
+  // FILE clipboard or the vault.
+  const chord = (key: string) =>
+    win.evaluate((k) => {
+      const target = document.activeElement ?? document.body
+      const event = new KeyboardEvent('keydown', { key: k, code: `Key${k.toUpperCase()}`, metaKey: true, bubbles: true, cancelable: true })
+      target.dispatchEvent(event)
+      return event.defaultPrevented
+    }, key)
+  expect(await chord('c')).toBe(false) // the note's own text copy goes ahead
+  expect(await clip()).toBeNull()
+  expect(await chord('x')).toBe(false)
+  expect(await clip()).toBeNull()
+  await chord('v')
+  await win.waitForTimeout(500)
+  expect(await vaultFiles()).toEqual(before)
+  await expect(layer(win).locator('.read-only-chip__button')).toHaveCount(1)
+  // ↓ stays in the note: never to a sidebar row.
+  await line(win).click()
+  await win.keyboard.press('ArrowDown')
+  expect(await win.evaluate(() => document.activeElement?.closest('.tree__row') === null)).toBe(true)
+  // ⌘A selects the note's text, not the page chrome around it.
+  await win.keyboard.press('Meta+a')
+  const all = await win.evaluate(() => document.getSelection()?.toString() ?? '')
+  expect(all).toContain(LINE)
+  expect(all).not.toContain('Read only')
+  expect(all).not.toContain('100%')
+  expect(await readFile(notePath, 'utf8')).toBe(LOCKED)
 })
 
 test('step 4 — the chip asks "Allow edits?"; "Allow edits" removes the key and the chip', async () => {

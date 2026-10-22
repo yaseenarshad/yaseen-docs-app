@@ -78,4 +78,29 @@ describe('requestZoom (YAZ-1710)', () => {
     expect(zoom).toHaveBeenCalledExactlyOnceWith(1)
     document.getSelection()!.removeAllRanges()
   })
+
+  it('YAZ-3128: a read-only note in a HIDDEN tab never claims it, though the DOM selection stayed there after the tab switch', () => {
+    const layer = document.createElement('div')
+    layer.style.visibility = 'hidden'
+    const section = document.createElement('section')
+    const body = document.createElement('div')
+    body.className = 'ProseMirror'
+    body.setAttribute('contenteditable', 'false')
+    const text = document.createTextNode('hidden read-only text')
+    body.append(text)
+    section.append(body)
+    layer.append(section)
+    document.body.append(layer)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    document.getSelection()!.setBaseAndExtent(text, 2, text, 2)
+    const seen: number[] = []
+    section.addEventListener(ZOOM_EVENT, (event) => {
+      seen.push((event as CustomEvent<number>).detail)
+      event.preventDefault()
+    })
+    requestZoom(1)
+    expect(seen).toEqual([])
+    expect(zoom).toHaveBeenCalledExactlyOnceWith(1)
+    document.getSelection()!.removeAllRanges()
+  })
 })

@@ -250,6 +250,11 @@ export interface CreateCrepeOptions {
    * verbatim — which is what `featureConfig.test.ts` keeps honest.
    */
   features?: Partial<Record<CrepeFeature, boolean>>
+  /**
+   * The note editor (a tab, the right panel): while read only it takes the focus and answers its view
+   * keys itself (`readOnlyKeys.ts`, YAZ-3125, YAZ-3127). Absent on the read-only previews.
+   */
+  readOnlyKeys?: boolean
 }
 
 /** An `Hn` / `T` glyph for the toolbar, drawn as text — the label IS the icon. */
@@ -409,8 +414,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(bulletThreading)
   crepe.editor.use(sectionIndent)
   crepe.editor.use(lineNumbers)
-  // A read-only note's keyboard view actions (YAZ-3125): fold all, fold at the caret, zoom, the view undo.
-  crepe.editor.use(readOnlyKeys)
+  // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
+  if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   // ONE resolve source instance feeds both the decorations and the click plugin's routing.
   const wikilinks = opts.wikilinks ?? createWikilinkResolveSource()
   // A missing catalog must stay passive: recognized non-Markdown targets can never fall through

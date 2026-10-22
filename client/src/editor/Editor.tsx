@@ -580,6 +580,8 @@ function CrepeHost({
       image: { root, notePath: file.path, onOpenImage: setOpenImage, onNotice },
       find: findChannel,
       toc: tocChannel,
+      // A read-only note keeps its keyboard (YAZ-3125, YAZ-3127): this is a note editor, not a preview.
+      readOnlyKeys: true,
     })
     crepeRef.current = crepe
     let controller: ReturnType<typeof attach> | null = null

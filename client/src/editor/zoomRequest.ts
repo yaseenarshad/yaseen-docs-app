@@ -1,5 +1,6 @@
 import type { ZoomStep } from '@shared/types'
 import { api } from '../api'
+import { readOnlySelectionHolder } from '../lib/readOnlyCaret'
 
 /**
  * ⌘+ / ⌘− / ⌘0 (YAZ-1710): the menu sends a step; the renderer decides where it lands. A
@@ -23,7 +24,6 @@ export function requestZoom(step: ZoomStep): void {
  */
 function readOnlyCaretHolder(): Element | null {
   if (document.activeElement !== null && document.activeElement !== document.body) return null
-  const node = document.getSelection()?.anchorNode ?? null
-  const el = node === null ? null : node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
-  return el?.closest('.ProseMirror[contenteditable="false"]') ?? null
+  // Only a VISIBLE one (YAZ-3128): a tab switch leaves the DOM selection in the hidden tab.
+  return readOnlySelectionHolder()
 }
