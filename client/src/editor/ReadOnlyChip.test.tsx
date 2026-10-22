@@ -87,10 +87,10 @@ describe('ReadOnlyChip', () => {
     expect(allowed).not.toHaveBeenCalled()
   })
 
-  it('S46: a click outside cancels; Cancel cancels', () => {
+  it('S46: a press outside cancels; Cancel cancels', () => {
     mount()
     click(chip()!)
-    act(() => void container.querySelector('[data-outside]')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    act(() => void container.querySelector('[data-outside]')!.dispatchEvent(new Event('pointerdown', { bubbles: true })))
     expect(box()).toBeNull()
     click(chip()!)
     click(button('Cancel'))
@@ -102,8 +102,26 @@ describe('ReadOnlyChip', () => {
   it('a press inside the box is not "outside"', () => {
     mount()
     click(chip()!)
-    act(() => void box()!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    act(() => void box()!.dispatchEvent(new Event('pointerdown', { bubbles: true })))
     expect(box()).not.toBeNull()
+  })
+
+  it('S46: a press on a canvas that cancels its pointerdown (Excalidraw\u2019s view mode pans on it, so no mousedown follows) still cancels', () => {
+    mount()
+    click(chip()!)
+    const canvas = container.querySelector('[data-outside]')!
+    canvas.addEventListener('pointerdown', (e) => e.preventDefault())
+    act(() => void canvas.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true })))
+    expect(box()).toBeNull()
+    expect(allowed).not.toHaveBeenCalled()
+  })
+
+  it('S46: the window losing focus cancels — a press inside the draw.io frame never reaches this document', () => {
+    mount()
+    click(chip()!)
+    act(() => void window.dispatchEvent(new Event('blur')))
+    expect(box()).toBeNull()
+    expect(allowed).not.toHaveBeenCalled()
   })
 
   it('S48: "Allow edits" turns read only off, and the chip goes', () => {
