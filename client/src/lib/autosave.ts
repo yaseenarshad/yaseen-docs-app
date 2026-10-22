@@ -133,6 +133,34 @@ export class Autosave<C = string> {
     this.setStatus('saved')
   }
 
+  /**
+   * A write of the app's own BESIDE the content (YAZ-3076 D1: a board's read-only switch, which
+   * changes the file but not what the engine shows). Pending edits save first, so `write` runs on
+   * the bytes the user sees; it gets the baseline mtime as its guard, and the mtime it answers becomes
+   * the baseline's — the content key does not move. It holds the in-flight slot as a save does, so
+   * `settled()` waits for it and the watcher's echo of it is recognised however early it comes.
+   * Rejects — writing nothing — while a conflict blocks the autosave or once it is disposed; a refusal
+   * of `write` itself rejects to the caller and leaves the baseline as it was.
+   */
+  async writeBeside(write: (expectedMtime: number) => Promise<{ mtime: number }>): Promise<void> {
+    if (this.disposed) throw new Error('the document is closed')
+    await this.flush()
+    if (this.blocked) throw new Error('the file has a save conflict')
+    let failure: { err: unknown } | null = null
+    this.inflight = write(this.mtime).then(
+      (res) => {
+        this.mtime = res.mtime
+        this.inflight = null
+      },
+      (err: unknown) => {
+        failure = { err }
+        this.inflight = null
+      },
+    )
+    await this.inflight
+    if (failure !== null) throw (failure as { err: unknown }).err
+  }
+
   /** Keep the editor's content and overwrite the newer disk version. */
   adopt(diskMtime: number): Promise<void> {
     this.mtime = diskMtime

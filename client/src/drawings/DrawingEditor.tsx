@@ -129,6 +129,8 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     watch,
     sync,
     onSyncNow,
+    readOnly: loaded.scene.readOnly === true,
+    onNotice,
     write: async (expectedMtime) => {
       const current = snapshot.current
       if (current === null) throw new Error('nothing to save')
@@ -146,6 +148,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
         reloadedTo.current = doc.mtime
         persisted.current = new Set(doc.stored)
         a.reset(s.replaceScene(doc.scene), doc.mtime)
+        return doc.scene.readOnly === true
       } catch (err) {
         reloadedTo.current = null
         throw err

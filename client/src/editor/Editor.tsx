@@ -30,6 +30,7 @@ import './outline/guideLines.css'
 import './outline/bulletThreading.css'
 import './outline/sectionIndent.css'
 import { splitFrontmatter } from '@shared/frontmatter'
+import { isNoteReadOnly, setNoteReadOnly } from '@shared/readOnly'
 import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
 import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
@@ -48,11 +49,12 @@ import { ReviewsSection } from '../review/ReviewsSection'
 import { pageLabel, usePathTitles, useTreeKind, type PathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { namingTab } from '../lib/focusHandoff'
-import { takeRenameBuffer } from '../lib/renameContinuity'
+import { flushRenamedPath, takeRenameBuffer } from '../lib/renameContinuity'
 import { onTwinSave } from '../lib/twinEditors'
 import { registerPageView } from '../lib/pageView'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
+import { transformFile } from '../views/writeProperty'
 import { TextViewer } from '../viewers/TextViewer'
 import { PdfViewer } from '../viewers/PdfViewer'
 import { ImageViewer } from '../viewers/ImageViewer'
@@ -435,6 +437,12 @@ function CrepeHost({
   /** The disk-truth file both panels read: one identity per `disk`, so the memoised panels skip a save. */
   const diskFile = useMemo(() => ({ ...file, content: disk }), [file, disk])
   /**
+   * The note's read-only switch (YAZ-3076 D1): `readonly: true` IN its frontmatter, so the disk truth
+   * decides it — an agent's edit, another window's toggle or this one's all land through `disk`.
+   * Parsed once per `disk`, never per keystroke or per save.
+   */
+  const readOnly = useMemo(() => isNoteReadOnly(disk), [disk])
+  /**
    * Counts the outside changes that landed in this editor (YAZ-2643): a reload, a frontmatter-only
    * absorb. `disk` cannot say it — it does not follow this editor's own saves, so a file put back
    * to the bytes `disk` still holds is no change to it.
@@ -664,6 +672,29 @@ function CrepeHost({
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
   }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel])
+
+  /**
+   * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1): pending typing saves first
+   * (the pre-rewrite flush every editor on this path takes, S12), then `transformFile` writes the one
+   * key against the fresh bytes. The bytes that landed are adopted at once — the chip shows without
+   * waiting for the watcher, and the watcher's echo then carries this editor's mtime and is skipped:
+   * one read and one write for each click (S17). A refusal is one passive notice; nothing changes.
+   */
+  const setReadOnly = useCallback(
+    async (on: boolean): Promise<void> => {
+      try {
+        await flushRenamedPath(file.path)
+        const landed = await transformFile(file.path, (content) => setNoteReadOnly(content, on))
+        if (absorbFrontmatterOnly(landed.content, landed.mtime)) {
+          setDisk(landed.content)
+          diskLanded()
+        }
+      } catch (err) {
+        onNotice?.(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+    [file.path, absorbFrontmatterOnly, onNotice],
+  )
 
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.

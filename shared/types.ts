@@ -481,6 +481,25 @@ export interface DiagramSaveResponse {
 }
 
 /**
+ * `board:set-read-only` (YAZ-3076 D1): the human's read-only switch, written IN a drawing or a diagram
+ * (`shared/readOnly.ts`). The kind comes from the extension of `path`. One read, one atomic write.
+ */
+export interface BoardReadOnlyRequest {
+  root: string
+  path: string
+  on: boolean
+  /** Required: the mtime the tab last read or wrote. A differing disk mtime rejects `CONFLICT` and writes NOTHING (S13). */
+  expectedMtime: number
+}
+
+/** The file after the write — or as it was, when it already held that value (S11: nothing written, the mtime unmoved). */
+export interface BoardReadOnlyResponse {
+  path: string
+  mtime: number
+  size: number
+}
+
+/**
  * `fs:create-board` (YAZ-3028 D9): a NEW drawing or diagram, born with its empty content. Main picks
  * the content by the kind of `path` — the renderer sends none — stamps the dates, and never
  * overwrites (`ALREADY_EXISTS`). No note ID: IDs are for notes only.

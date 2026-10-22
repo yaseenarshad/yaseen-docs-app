@@ -24,6 +24,13 @@
  * board stashes no buffer across a rename (`capture` answers null): it is flushed first, and the
  * tab at the new path reads it back off disk.
  *
+ * THE READ-ONLY SWITCH (YAZ-3076 D1) is stored IN the file, so the host holds it as the file last
+ * said: the load (`readOnly`), each reload (what `reload` answers), and its own toggle. The toggle
+ * (`setReadOnly`) is an `Autosave.writeBeside`: pending edits save first, then `board:set-read-only`
+ * writes the one key under the new mtime, and the autosave adopts the mtime it answers — so the
+ * watcher's echo is recognised and the scene is not reloaded. A file that changed on disk first is
+ * refused (`CONFLICT`): the board reloads from disk, the switch stays, and one notice says why (S13).
+ *
  * THE APPLICATION MENU'S BOARD COMMANDS (Draw's 🔒 YAZ-1775 D10; the menu items are YAZ-3037) and the
  * TAB-REVEAL focus handoff (🔒 YAZ-1812) are both claimed on THIS host's own element: the shell keeps several boards
  * mounted, and exactly one of them is in front.
@@ -57,8 +64,15 @@ export interface BoardDocumentProps {
 
 export interface BoardDocumentOptions extends BoardDocumentProps {
   write: (expectedMtime: number) => Promise<{ mtime: number }>
-  /** Disk truth into the engine, and `autosave` reset to it; throws when the file cannot be read. */
-  reload: (autosave: Autosave<number>) => Promise<void>
+  /**
+   * Disk truth into the engine, and `autosave` reset to it; throws when the file cannot be read.
+   * Answers the file's read-only switch as it now reads (YAZ-3076 D1); nothing = unchanged.
+   */
+  reload: (autosave: Autosave<number>) => Promise<boolean | void>
+  /** The loaded file's read-only switch (YAZ-3076 D1): `isDrawingReadOnly` / `isDiagramReadOnly` of what the shell loaded. */
+  readOnly?: boolean
+  /** The window's ONE passive notice: why the read-only switch did not change. */
+  onNotice?: (text: string, icon?: NoticeKind) => void
   onCommand: (command: BoardCommand) => void
   /** The tab came back into view; `focus` then hands the engine the keyboard, unless something holds it. */
   onShown?: () => void
@@ -79,6 +93,8 @@ export function useBoardDocument(options: BoardDocumentOptions) {
   /** A retired host never writes again (a delete, or a rename that moved this path away). */
   const retired = useRef(false)
   const [conflictMtime, setConflictMtime] = useState<number | null>(null)
+  /** The file's read-only switch as the file last said it (see the module doc). */
+  const [readOnly, setReadOnlyShown] = useState(options.readOnly === true)
   // The chips' live state, read by `<BoardChips>` alone (YAZ-2073 5D).
   const [chips] = useState(() => createStore<ChipState>({ status: 'saved', sync, onSyncNow }))
   useLayoutEffect(() => chips.set({ sync, onSyncNow }), [chips, sync, onSyncNow])
@@ -111,7 +127,8 @@ export function useBoardDocument(options: BoardDocumentOptions) {
     const a = autosave.current
     if (a === null || retired.current) return
     try {
-      await engine.current.reload(a)
+      const nowReadOnly = await engine.current.reload(a)
+      if (typeof nowReadOnly === 'boolean') setReadOnlyShown(nowReadOnly)
       setConflictMtime(null)
     } catch {
       // The file went, or stopped being a board: keep what is on screen and let the next save
@@ -208,8 +225,29 @@ export function useBoardDocument(options: BoardDocumentOptions) {
     if (!retired.current) void autosave.current?.flush()
   }, [])
 
+  /** The cog's row and the chip's "Allow edits" (YAZ-3076): the switch, written in the file (see the module doc). */
+  const setReadOnly = useCallback(
+    async (on: boolean): Promise<void> => {
+      const a = autosave.current
+      if (a === null || retired.current) return
+      const { root, path: file } = engine.current
+      try {
+        await a.writeBeside((expectedMtime) => api.setBoardReadOnly({ root, path: file, on, expectedMtime }))
+        setReadOnlyShown(on)
+      } catch (err) {
+        if (err instanceof BridgeRequestError && err.code === 'CONFLICT') {
+          engine.current.onNotice?.('The file changed on disk. Try again.', 'error')
+          if (!a.dirty) void reload()
+          return
+        }
+        engine.current.onNotice?.(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      }
+    },
+    [reload],
+  )
+
   const conflictBar = conflictMtime !== null && <ConflictBar onReload={() => void reload()} onKeepMine={keepMine} />
-  return { hostRef, autosave, retired, start, flush, chips, conflictBar }
+  return { hostRef, autosave, retired, start, flush, chips, conflictBar, readOnly, setReadOnly }
 }
 
 /** What the chips show: the save status (the autosave reports it) and the vault's sync, App's. */

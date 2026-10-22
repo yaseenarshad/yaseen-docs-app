@@ -21,7 +21,9 @@ const ROOT = '/vault'
 const PATH = '/vault/Board.excalidraw'
 
 const write = vi.fn<(expectedMtime: number) => Promise<{ mtime: number }>>()
-const reload = vi.fn<(a: Autosave<number>) => Promise<void>>()
+const reload = vi.fn<(a: Autosave<number>) => Promise<boolean | void>>()
+const setBoardReadOnly = vi.fn<(req: { root: string; path: string; on: boolean; expectedMtime: number }) => Promise<{ path: string; mtime: number; size: number }>>()
+const onNotice = vi.fn()
 const onCommand = vi.fn()
 const onShown = vi.fn()
 const focus = vi.fn()
@@ -34,8 +36,8 @@ let root: Root | null = null
 let container: HTMLElement
 
 /** The engine's stand-in: the hook, its bar and its chips in a board section. */
-function Host({ sync, onSyncNow }: { sync?: GithubSyncStatus | null; onSyncNow?: () => void }) {
-  board = useBoardDocument({ root: ROOT, path: PATH, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus })
+function Host({ sync, onSyncNow, readOnly = false }: { sync?: GithubSyncStatus | null; onSyncNow?: () => void; readOnly?: boolean }) {
+  board = useBoardDocument({ root: ROOT, path: PATH, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus, readOnly, onNotice })
   return (
     <section className="editor editor--drawing">
       <div ref={board.hostRef}>
@@ -83,6 +85,7 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: {
+      setBoardReadOnly,
       window: {
         onFlush: (listener: () => Promise<void> | void) => {
           flushListener = listener
@@ -95,6 +98,7 @@ beforeEach(() => {
   })
   write.mockResolvedValue({ mtime: 200 })
   reload.mockResolvedValue()
+  setBoardReadOnly.mockImplementation(async (req) => ({ path: req.path, mtime: req.expectedMtime + 1000, size: 1 }))
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -335,5 +339,66 @@ describe('exportWithNotice', () => {
     expect(notice).toHaveBeenLastCalledWith('disk is full', 'error')
     await exportWithNotice(() => Promise.reject(new Error('timed out')), 'failed', notice)
     expect(notice).toHaveBeenLastCalledWith('failed', 'error')
+  })
+})
+
+describe('the read-only switch in the file (YAZ-3076 D1)', () => {
+  it('starts as the loaded file says it', () => {
+    opened({ readOnly: true })
+    expect(board.readOnly).toBe(true)
+  })
+
+  it('S12: pending edits save first, then the switch is written under the NEW mtime; its echo does not reload', async () => {
+    opened()
+    edit(1)
+    await act(async () => board.setReadOnly(true))
+    expect(write).toHaveBeenCalledExactlyOnceWith(100)
+    expect(setBoardReadOnly).toHaveBeenCalledExactlyOnceWith({ root: ROOT, path: PATH, on: true, expectedMtime: 200 })
+    expect(board.readOnly).toBe(true)
+    expect(board.autosave.current?.mtime).toBe(1200)
+    watcherSaw({ type: 'change', path: PATH, mtime: 1200 })
+    await settle()
+    expect(reload).not.toHaveBeenCalled()
+    expect(text()).not.toContain('File changed on disk.')
+    await act(async () => board.setReadOnly(false))
+    expect(setBoardReadOnly).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, on: false, expectedMtime: 1200 })
+    expect(board.readOnly).toBe(false)
+  })
+
+  it('S13: a file that changed on disk is refused; the board reloads, the switch stays, and one notice says why', async () => {
+    opened()
+    setBoardReadOnly.mockRejectedValue(new BridgeRequestError('CONFLICT', 'changed', 900))
+    await act(async () => board.setReadOnly(true))
+    await settle()
+    expect(board.readOnly).toBe(false)
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('The file changed on disk. Try again.', 'error')
+  })
+
+  it('any other refusal is one notice, and the switch stays', async () => {
+    opened()
+    setBoardReadOnly.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'the file is cut short'))
+    await act(async () => board.setReadOnly(true))
+    expect(board.readOnly).toBe(false)
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Read only could not change: the file is cut short', 'error')
+  })
+
+  it('S14 and S15: a change on disk (another window, an agent) reloads, and the switch follows what the reload read', async () => {
+    opened()
+    reload.mockResolvedValue(true)
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await settle()
+    expect(board.readOnly).toBe(true)
+    reload.mockResolvedValue(false)
+    watcherSaw({ type: 'change', path: PATH, mtime: 500 })
+    await settle()
+    expect(board.readOnly).toBe(false)
+  })
+
+  it('a retired host writes no switch', async () => {
+    opened()
+    act(() => retireDeletedPath(PATH))
+    await act(async () => board.setReadOnly(true))
+    expect(setBoardReadOnly).not.toHaveBeenCalled()
   })
 })

@@ -150,3 +150,52 @@ describe('Autosave', () => {
     expect(save).not.toHaveBeenCalled()
   })
 })
+
+describe('Autosave.writeBeside: a write of the app’s own beside the content (YAZ-3076 D1, a board’s read-only switch)', () => {
+  it('saves pending edits first, then writes with the NEW mtime and adopts the mtime it answers', async () => {
+    const { a, save } = setup(async () => ({ mtime: 200 }))
+    a.update('typed')
+    const write = vi.fn(async (expected: number) => ({ mtime: expected + 100 }))
+    await a.writeBeside(write)
+    expect(save).toHaveBeenCalledWith('typed', 100)
+    expect(write).toHaveBeenCalledWith(200)
+    expect(a.mtime).toBe(300)
+    expect(a.dirty).toBe(false)
+  })
+
+  it('holds the in-flight slot, so `settled()` waits for it: the watcher’s echo is recognised even when it comes first', async () => {
+    const { a } = setup()
+    let answer!: (r: { mtime: number }) => void
+    const done = a.writeBeside(() => new Promise((resolve) => (answer = resolve)))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(a.dirty).toBe(true)
+    let settledAt: number | null = null
+    const settled = a.settled().then(() => (settledAt = a.mtime))
+    answer({ mtime: 555 })
+    await done
+    await settled
+    expect(settledAt).toBe(555)
+    expect(a.dirty).toBe(false)
+  })
+
+  it('a refused write rejects to the caller, keeps the old mtime, and leaves the autosave working', async () => {
+    const { a, save } = setup(async () => ({ mtime: 200 }))
+    await expect(a.writeBeside(async () => Promise.reject(new SaveConflict(999)))).rejects.toBeInstanceOf(SaveConflict)
+    expect(a.mtime).toBe(100)
+    expect(a.dirty).toBe(false)
+    a.update('after')
+    await a.flush()
+    expect(save).toHaveBeenCalledWith('after', 100)
+  })
+
+  it('refuses while a conflict blocks the autosave, and after dispose: nothing is written', async () => {
+    const { a } = setup(async () => Promise.reject(new SaveConflict(150)))
+    a.update('mine')
+    await a.flush()
+    const write = vi.fn(async () => ({ mtime: 1 }))
+    await expect(a.writeBeside(write)).rejects.toThrow(/conflict/)
+    a.dispose()
+    await expect(a.writeBeside(write)).rejects.toThrow(/closed/)
+    expect(write).not.toHaveBeenCalled()
+  })
+})

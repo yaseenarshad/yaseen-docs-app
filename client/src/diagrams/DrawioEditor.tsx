@@ -9,9 +9,10 @@
  * the rules to the board document. Theme (D12) and the dark-mode colour setting (D16) apply live
  * by message. Keys and export: docs/CONTRACTS.md › Editor rules, rule 37.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DRAWIO_ORIGIN } from '@shared/drawio'
 import { boardBaseName } from '@shared/fileKind'
+import { isDiagramReadOnly } from '@shared/readOnly'
 import type { DiagramDarkColors } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { BoardDocumentShell } from '../documents/BoardDocumentShell'
@@ -147,6 +148,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       onNotice,
     )
 
+  const loadedReadOnly = useMemo(() => isDiagramReadOnly(loaded.xml), [loaded.xml])
   // Fresh closures every render are fine: the hook reads them through its `engine` ref, never stale.
   const board = useBoardDocument({
     root,
@@ -154,11 +156,15 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     watch,
     sync,
     onSyncNow,
+    // The switch is read off the LOADED XML, never `latestXml`: draw.io drops attributes it does not know (YAZ-3076 D1).
+    readOnly: loadedReadOnly,
+    onNotice,
     write: (expectedMtime) => api.diagram.save({ root, path, xml: latestXml.current, expectedMtime }),
     reload: async (a) => {
       const res = await api.diagram.load({ root, path })
       a.reset(version.current, res.mtime)
       sendLoad(res.xml, res.mtime)
+      return isDiagramReadOnly(res.xml)
     },
     // Export Image… is the one board command a diagram answers.
     onCommand: (command) => {

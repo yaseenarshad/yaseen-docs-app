@@ -91,8 +91,12 @@ export function diagramDocumentError(xml: string): string | null {
   return null
 }
 
-/** The root `<mxfile …>` opening tag, or as much of it as `head` holds; null for any other root. */
-function mxfileOpenTag(head: string): { start: number; end: number } | null {
+/**
+ * The root `<mxfile …>` opening tag, or as much of it as `head` holds; null for any other root.
+ * `end` is the index of its `>` (`head.length` when the head stops first). Exported for the
+ * read-only attribute (`shared/readOnly.ts`, YAZ-3076 D1), which sits on the same tag as the dates.
+ */
+export function mxfileOpenTag(head: string): { start: number; end: number } | null {
   const at = rootStart(head)
   if (at === -1 || !/^<mxfile(?=[\s/>])/.test(head.slice(at, at + 8))) return null
   const close = head.indexOf('>', at)
@@ -139,4 +143,18 @@ export function stampDiagramMeta(xml: string, at: { createdAt: number; updatedAt
   for (const name of [DIAGRAM_CREATED_ATTR, DIAGRAM_UPDATED_ATTR]) rest = rest.replace(attr(name, 'g'), '')
   const stamped = `<mxfile ${DIAGRAM_CREATED_ATTR}="${createdAt}" ${DIAGRAM_UPDATED_ATTR}="${at.updatedAt}"${rest}`
   return `${xml.slice(0, tag.start)}${stamped}${xml.slice(tag.end)}`
+}
+
+/**
+ * A bare `<mxGraphModel>` document inside the wrapper draw.io's own save writes (🔒 YAZ-1802 D3):
+ * `<mxfile><diagram id="page-1" name="Page-1">` + the model + `</diagram></mxfile>`, the page named as
+ * a new diagram's is (`EMPTY_DIAGRAM_XML`). What stands before the root (a BOM, the declaration,
+ * comments) and after it stays byte for byte. Any other document comes back as it is. The read-only
+ * switch needs it (YAZ-3076 S7): a bare model has no `<mxfile>` to carry the attribute.
+ */
+export function wrapBareModel(xml: string): string {
+  if (diagramRoot(xml) !== 'mxGraphModel' || diagramDocumentError(xml) !== null) return xml
+  const at = rootStart(xml)
+  const end = trimTrailingMisc(xml).length
+  return `${xml.slice(0, at)}<mxfile><diagram id="page-1" name="Page-1">${xml.slice(at, end)}</diagram></mxfile>${xml.slice(end)}`
 }

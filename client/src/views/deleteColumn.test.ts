@@ -93,6 +93,14 @@ describe('undeletableReason: built-in keys are hidden, never deleted', () => {
     await expect(deleteColumn('also_in', h)).rejects.toThrow(/built-in column/)
     expect(h.writeSettings).not.toHaveBeenCalled()
   })
+
+  it('refuses `readonly` (YAZ-3076 S16): the read-only switch is set from the page cog, never stripped as a column', async () => {
+    expect(undeletableReason('readonly')).toBe('Built-in column — hide it instead')
+    expect(undeletableReason('note.readonly')).toBe('Built-in column — hide it instead')
+    const h = host()
+    await expect(deleteColumn('readonly', h)).rejects.toThrow(/built-in column/)
+    expect(h.writeSettings).not.toHaveBeenCalled()
+  })
 })
 
 describe('the pure pruners', () => {
