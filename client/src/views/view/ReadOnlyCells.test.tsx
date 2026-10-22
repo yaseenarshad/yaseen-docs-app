@@ -14,6 +14,8 @@ import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import { READ_ONLY_TIP, guardReadOnly, readOnlyPaths } from '../readOnlyRows'
+import { propertyKeys } from '../engine'
+import { allPropertyKeys } from './properties'
 
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('../../editor/createCrepe', () => ({
@@ -296,5 +298,30 @@ describe('the lock stays visible after a long name (YAZ-3129)', () => {
       container?.remove()
       container = null
     }
+  })
+})
+
+describe('the reserved `readonly` key is no auto-shown property (YAZ-3130 nit): no "Readonly" row on every card', () => {
+  const AUTO: Record<string, string> = {
+    table: `views:\n  - type: table\n    name: T\n`,
+    board: `views:\n  - type: board\n    name: B\n    groupBy:\n      property: note.status\n`,
+    cards: `views:\n  - type: cards\n    name: C\n`,
+    list: `views:\n  - type: list\n    name: L\n`,
+  }
+  for (const [type, text] of Object.entries(AUTO)) {
+    it(`${type}: one locked note in the folder adds no Readonly column or row`, () => {
+      const { el } = mount(text)
+      expect(el.textContent ?? '').toContain('Agentic Agency')
+      expect(el.textContent ?? '').not.toMatch(/Readonly/)
+    })
+  }
+
+  it('the key stays offerable: the properties menu still lists it, and a view that orders it shows it', () => {
+    const def = parseViews(AUTO.cards).def
+    const view = def.views[0]
+    expect(propertyKeys(def, view, lockedRecords())).not.toContain('note.readonly')
+    expect(allPropertyKeys(def, view, lockedRecords())).toContain('note.readonly')
+    expect(propertyKeys(def, { ...view, order: ['file.name', 'note.readonly'] }, lockedRecords())).toContain('note.readonly')
+    expect(propertyKeys(def, view, lockedRecords(), ['readonly'])).toContain('note.readonly')
   })
 })

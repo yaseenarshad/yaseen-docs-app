@@ -9,7 +9,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { createCrepe, getMarkdownForSave, getZoomKeyOf } from './createCrepe'
+import { TextSelection } from '@milkdown/kit/prose/state'
+import { focusReadOnlyBody } from './readOnlyKeys'
+import { createCrepe, focusEditor, getMarkdownForSave, getZoomKeyOf } from './createCrepe'
 import { OUTLINE_FOLDED_ATTR } from './outline/outlineFolding'
 import { HEADING_FOLDED_ATTR } from './outline/headingFolding'
 
@@ -177,5 +179,47 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     clickIn(root, 'L1 b')
     press('u', { shift: true })
     expect(folded(root)).toBe(0)
+  })
+
+  it('YAZ-3130: giving the focus back (`view.focus()`, so `focusEditor`, Find and the table of contents) lands IN a read-only body, with its selection drawn', async () => {
+    const { crepe, root } = await mount()
+    crepe.setReadonly(true)
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    const at = view.state.doc.resolve(5)
+    view.dispatch(view.state.tr.setSelection(TextSelection.near(at)))
+    document.getSelection()?.removeAllRanges()
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    focusEditor(crepe)
+    expect(document.activeElement).toBe(root.querySelector('.ProseMirror'))
+    const sel = document.getSelection()!
+    expect(sel.anchorNode !== null && view.dom.contains(sel.anchorNode)).toBe(true)
+    expect(view.posAtDOM(sel.anchorNode!, sel.anchorOffset)).toBe(view.state.selection.anchor)
+  })
+
+  it('an editable note focuses exactly as before', async () => {
+    const { crepe, root } = await mount()
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    focusEditor(crepe)
+    expect(document.activeElement).toBe(root.querySelector('.ProseMirror'))
+  })
+
+  it('focusReadOnlyBody draws a read-only range selection whole, and leaves an editable view to `focus`', async () => {
+    const { crepe } = await mount()
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    crepe.setReadonly(true)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2, 6)))
+    document.getSelection()?.removeAllRanges()
+    let ran = 0
+    focusReadOnlyBody(view, () => { ran++ })
+    expect(ran).toBe(1)
+    expect(document.activeElement).toBe(view.dom)
+    const sel = document.getSelection()!
+    expect(view.posAtDOM(sel.anchorNode!, sel.anchorOffset)).toBe(2)
+    expect(view.posAtDOM(sel.focusNode!, sel.focusOffset)).toBe(6)
+    crepe.setReadonly(false)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    focusReadOnlyBody(view, () => { ran++ })
+    expect(ran).toBe(2)
+    expect(document.activeElement).not.toBe(view.dom)
   })
 })

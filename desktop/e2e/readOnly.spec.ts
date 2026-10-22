@@ -233,6 +233,46 @@ test('step 3d — YAZ-3127: in a read-only body, ⌘C / ⌘X / ⌘V never reach 
   expect(await readFile(notePath, 'utf8')).toBe(LOCKED)
 })
 
+test('step 3e — YAZ-3130: after ⌘F → Esc, and after ⌘J → Esc, the keyboard is back IN the read-only note: no file clipboard, ↓ stays, ⌘⇧U folds', async () => {
+  await fileRow(win, 'Locked outline').click()
+  const shown = (text: string) => editorOf(win).locator(`p:text-is("${text}")`)
+  await expect(shown('parent-e2e')).toBeVisible()
+  const clip = () => win.evaluate(() => (window as unknown as { yaseenDocs: { file: { clipState(): Promise<unknown> } } }).yaseenDocs.file.clipState())
+  const chordTaken = (key: string) =>
+    win.evaluate((k) => {
+      const event = new KeyboardEvent('keydown', { key: k, code: `Key${k.toUpperCase()}`, metaKey: true, bubbles: true, cancelable: true })
+      ;(document.activeElement ?? document.body).dispatchEvent(event)
+      return event.defaultPrevented
+    }, key)
+  const inNote = () => win.evaluate(() => document.activeElement?.closest('.ProseMirror') !== null)
+  const backInTheNote = async (): Promise<void> => {
+    expect(await inNote()).toBe(true)
+    expect(await chordTaken('c')).toBe(false)
+    expect(await clip()).toBeNull()
+    await win.keyboard.press('ArrowDown')
+    expect(await win.evaluate(() => document.activeElement?.closest('.tree__row') === null)).toBe(true)
+    await win.keyboard.press('Meta+Shift+U')
+    await expect(shown('child-e2e')).toBeHidden()
+    await win.keyboard.press('Meta+Shift+I')
+    await expect(shown('child-e2e')).toBeVisible()
+  }
+  // Find, then Esc.
+  await shown('parent-e2e').click()
+  await win.keyboard.press('Meta+f')
+  await layer(win).locator('.find-bar__input').fill('child-e2e')
+  await win.keyboard.press('Escape')
+  await backInTheNote()
+  // The table of contents, then Esc.
+  await shown('parent-e2e').click()
+  await win.keyboard.press('Meta+j')
+  await expect(layer(win).locator('.toc__name').first()).toBeFocused()
+  await win.keyboard.press('Escape')
+  await backInTheNote()
+  expect(await readFile(outlinePath, 'utf8')).toBe(OUTLINE_BODY)
+  await fileRow(win, 'Locked note').click()
+  await expect(line(win)).toBeVisible()
+})
+
 test('step 4 — the chip asks "Allow edits?"; "Allow edits" removes the key and the chip', async () => {
   await chip(win).click()
   await expect(askBox(win)).toContainText('Allow edits?')

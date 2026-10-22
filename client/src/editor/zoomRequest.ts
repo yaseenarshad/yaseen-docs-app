@@ -17,10 +17,11 @@ export function requestZoom(step: ZoomStep): void {
 }
 
 /**
- * A read-only note's body takes no focus (YAZ-3125, D8), so after a click in it the focus is
- * `<body>`, and the note would never hear its own ⌘+. With the focus nowhere, the element that holds
- * the reader's caret in a NOT editable editor stands in for the focus. An editable editor keeps the
- * old rule: a caret left behind there with the focus elsewhere claims nothing.
+ * A read-only note's body takes the focus (YAZ-3127, and YAZ-3130 for every `view.focus()`), so ⌘+
+ * normally starts from inside the note. This covers the rest: the focus on `<body>` (a click on
+ * the page margin, a closed dialog) with the reader's DOM caret still in a NOT editable, visible
+ * editor — that element stands in for the focus. An editable editor keeps the old rule: a caret
+ * left behind there with the focus elsewhere claims nothing.
  */
 function readOnlyCaretHolder(): Element | null {
   if (document.activeElement !== null && document.activeElement !== document.body) return null

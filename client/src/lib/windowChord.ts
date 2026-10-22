@@ -8,10 +8,9 @@
  * counts as "editing" that drifted between them would be a bug nobody could see — a chord that
  * fires inside a field the other one respects.
  */
-
-/** The chord's own half: which key, and whether Shift is part of it (never merely tolerated). */
 import { readOnlyNoteHoldsKeys } from './readOnlyCaret'
 
+/** The chord's own half: which key, and whether Shift is part of it (never merely tolerated). */
 export interface WindowChord {
   /** Compared case-insensitively — Shift changes `key`'s case, and ⌥ variants are declined above. */
   key: string

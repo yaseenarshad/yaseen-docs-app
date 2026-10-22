@@ -23,6 +23,9 @@
  * previews (the hover card, the search and sidebar previews) neither take the focus nor answer keys. The other view keys have their
  * own paths and need nothing here: ⌘J (the table of contents), ⌘F (the find bar), ⌘+ / ⌘− / ⌘0 (the
  * menu's page zoom), ⌘C (the native selection). Every other chord of the list edits.
+ *
+ * And the focus comes BACK here: after the find bar, the table of contents or any other
+ * `view.focus()` (YAZ-3130, `focusReadOnlyBody`).
  */
 import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
@@ -31,6 +34,29 @@ import { $prose } from '@milkdown/kit/utils'
 import { isShown } from '../lib/readOnlyCaret'
 
 const yes = (): boolean => true
+
+/**
+ * GIVE THE FOCUS BACK TO A READ-ONLY NOTE (YAZ-3130). ProseMirror's `view.focus()` does not focus a
+ * view that is not editable (`if (this.editable) focusPreventScroll(this.dom)`), and it draws that
+ * view's selection only where a DOM selection already is. So after Esc in the find bar or the table
+ * of contents the focus stayed on `<body>` with no selection, and the window took the keys (⌘C copied
+ * the file, ↓ moved the sidebar). This focuses the body (focusable while read only, YAZ-3127), puts
+ * the DOM caret at the editor's selection, then runs ProseMirror's own `focus` to draw it whole.
+ *
+ * It is THE one path: while the note editor is read only, `view.focus` is this (see the plugin view),
+ * so every caller — `focusEditor`, Find close, the table of contents, the editor shell — lands in the
+ * note. An editable view runs ProseMirror's `focus` unchanged.
+ */
+export function focusReadOnlyBody(view: EditorView, focus: () => void): void {
+  if (!view.editable) {
+    view.dom.focus({ preventScroll: true })
+    const { anchor, head } = view.state.selection
+    const from = view.domAtPos(anchor)
+    const to = view.domAtPos(head)
+    view.dom.ownerDocument.getSelection()?.setBaseAndExtent(from.node, from.offset, to.node, to.offset)
+  }
+  focus()
+}
 
 /** Whether `event` is one of the view-action chords — matched the way the keymaps match them. */
 const isViewAction = keydownHandler({
@@ -80,6 +106,10 @@ export const readOnlyKeys = $prose(
           else view.dom.setAttribute('tabindex', '-1')
         }
         focusable()
+        // Every "give the focus back to the note" call goes through `view.focus` (YAZ-3130).
+        const ownFocus = Object.prototype.hasOwnProperty.call(view, 'focus')
+        const focus = view.focus.bind(view)
+        view.focus = () => focusReadOnlyBody(view, focus)
         const onKeyDown = (event: KeyboardEvent): void => {
           if (view.editable || event.defaultPrevented || !isViewAction(view, event) || !holdsReader(view)) return
           // The reader is in this note: the focus is in its body (YAZ-3127), or on `<body>` with their
@@ -115,6 +145,8 @@ export const readOnlyKeys = $prose(
           destroy: () => {
             doc.removeEventListener('keydown', onKeyDown)
             view.dom.removeAttribute('tabindex')
+            if (ownFocus) view.focus = focus
+            else delete (view as { focus?: () => void }).focus
           },
         }
       },
