@@ -5342,6 +5342,92 @@ describe('favorites (YAZ-1766)', () => {
       expect(lit(gtm, 'tree__row--selected')).toEqual([true, false])
     })
 
+    it.each(['favorites', 'focus'] as const)('checker YAZ-3131 S13 on %s: a click on a page in copy B, then a click that closes its folder in copy B — no row lights, and copy A does not take the light', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      expect(rowsByPath(el, plan)).toHaveLength(2) // 0: under the top Wrenly (copy A), 1: under Work (copy B)
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      // The click in copy B opens the page there.
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      // Close GTM in copy B with a click on its row. The page belongs to copy B, so no row lights (S13).
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      expect(rowsByPath(el, plan)).toHaveLength(1) // only copy A still draws the page
+      expect(lit(plan, 'tree__row--active')).toEqual([false])
+    })
+
+    it.each(['favorites', 'focus'] as const)('checker YAZ-3131 S13 by the arrow key on %s: ← closes the folder in copy B — no row lights', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      act(() => void rowsByPath(el, gtm)[1]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })))
+      expect(rowsByPath(el, plan)).toHaveLength(1)
+      expect(lit(plan, 'tree__row--active')).toEqual([false])
+    })
+
+    it.each(['favorites', 'focus'] as const)('checker YAZ-3131 S21 on %s: ⌘V with a row picked in copy B, and Paste from the menu of copy A, each open GTM in that copy alone', async (lens) => {
+      const clipboardRef = { current: null as SidebarClipboard | null }
+      const { el, v, bridge } = await mountVault({ lens, clipboardRef }, { favorites: listed, focus: listed, nodes: WORK })
+      act(() => rowByPath(el, `${v}/Work/Wrenly`)?.click())
+      act(() => rowByPath(el, `${v}/Work`)?.click())
+      act(() => rowsByPath(el, `${v}/Work/Wrenly`)[1]?.click())
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const open = (copy: number) => rowsByPath(el, gtm)[copy]?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+      expect([open(0), open(1)]).toEqual(['false', 'false'])
+      const listener = bridge.file.onClipChanged.mock.calls.at(-1)?.[0] as ((state: FileClipState) => void) | undefined
+      act(() => listener?.({ count: 1, op: 'copy', paths: ['/w/x.md'] }))
+      // ⌘V: pick GTM alone in copy B (two plain clicks: it opens and closes again), then paste.
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      expect([open(0), open(1)]).toEqual(['false', 'false'])
+      await act(async () => void clipboardRef.current?.paste())
+      expect(bridge.file.paste).toHaveBeenLastCalledWith({ targetDir: gtm })
+      expect([open(0), open(1)]).toEqual(['false', 'true'])
+      // The menu's Paste on copy A opens copy A.
+      rightClick(rowsByPath(el, gtm)[0] ?? null)
+      await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+      expect([open(0), open(1)]).toEqual(['true', 'true'])
+    })
+
+    it.each(['favorites', 'focus'] as const)('checker YAZ-3131 S12, S14, S17 on %s: the light follows the folds when no click chose a copy; a shift-click on the same path in the other copy removes it; a tab change clears the copies', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+      // S12: ← closes GTM in copy A. Copy B is now the first copy that shows the page, so it takes the light.
+      act(() => void rowsByPath(el, gtm)[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })))
+      expect(lit(plan, 'tree__row--active')).toEqual([true])
+      act(() => void rowsByPath(el, gtm)[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+      // S14: shift-click adds the row in copy B; a shift-click on the same path in copy A removes the path.
+      shiftClickRow(rowsByPath(el, plan)[1] ?? null)
+      expect(lit(plan, 'tree__row--selected')).toEqual([false, true])
+      shiftClickRow(rowsByPath(el, plan)[0] ?? null)
+      expect(lit(plan, 'tree__row--selected')).toEqual([false, false])
+      // S17: a change of tab clears the selection and the copies.
+      act(() => rowsByPath(el, plan)[1]?.click())
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      await rerender({ lens: 'files', activeFile: plan })
+      await rerender({ lens, activeFile: plan })
+      expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+    })
+
     it.each(['favorites', 'focus'] as const)('S3, S4, S5, S20 on %s: "New folder" on either copy of GTM opens ONE input, under the right-clicked copy; Enter makes the folder there, the tab stays, and no list changes', async (lens) => {
       const { el, v, bridge, props } = await mountWork(lens)
       const gtm = `${v}/Work/Wrenly/GTM`
