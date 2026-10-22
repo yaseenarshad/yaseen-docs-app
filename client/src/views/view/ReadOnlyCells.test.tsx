@@ -195,3 +195,37 @@ describe('a lock while the cell is being edited (YAZ-3124)', () => {
     expect(onCommit).not.toHaveBeenCalled()
   })
 })
+
+describe('a `readonly` column (YAZ-3122 nit, S16): the switch is a reserved key, never written from a view', () => {
+  const READONLY_TABLE = `views:
+  - type: table
+    name: T
+    order:
+      - file.name
+      - note.readonly
+`
+  const READONLY_BOARD = `views:
+  - type: board
+    name: B
+    order:
+      - file.name
+    groupBy:
+      property: note.readonly
+`
+  it('its cells show the value and open no editor, on a locked note and on an editable one', () => {
+    const { el, writeValues } = mount(READONLY_TABLE)
+    for (const title of ['Agentic Agency', 'The Levels of an Agency']) {
+      const cell = cellsOf(rowOf(el, title))[1]
+      expect(cell.querySelector('[data-edit]'), title).toBeNull()
+      expect(cell.querySelector('input:not([disabled])'), title).toBeNull()
+    }
+    expect(writeValues).not.toHaveBeenCalled()
+  })
+
+  it('a board grouped by it moves no card and offers no "+": a drop would write the switch', () => {
+    const { el } = mount(READONLY_BOARD)
+    const cards = [...el.querySelectorAll<HTMLElement>('.view-board__card')]
+    expect(cards.length).toBeGreaterThan(1)
+    for (const card of cards) expect(card.getAttribute('draggable'), card.textContent ?? '').not.toBe('true')
+  })
+})

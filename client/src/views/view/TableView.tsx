@@ -25,7 +25,7 @@ import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
 import { dropIndex, insertionSlot } from '../../lib/dragSlot'
 import { allPropertyKeys } from './properties'
 import { setViewOrder } from './columnOrder'
-import { READ_ONLY_TIP } from '../readOnlyRows'
+import { NO_READ_ONLY, READ_ONLY_TIP, writableKey } from '../readOnlyRows'
 
 export interface TableViewProps {
   def: ViewSet
@@ -149,8 +149,6 @@ function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: 
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-const NO_READ_ONLY: ReadonlySet<string> = new Set()
-
 export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, preview = false, wikilinks, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   const { rowProps, card, close } = usePreview(preview, wikilinks)
@@ -228,7 +226,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
   // memoised so scroll/drag re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
-  const bares = useMemo(() => keys.map((k) => (canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null)), [keys])
+  const bares = useMemo(() => keys.map(writableKey), [keys])
   const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, properties, settings)), [keys, rowRecords, properties, settings])
   /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
   const titles = useMemo(() => titleCandidates(vaultRecords), [vaultRecords])

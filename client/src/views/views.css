@@ -1608,6 +1608,13 @@
   cursor: text;
 }
 
+/* A read-only note's cell (YAZ-3076 D6): the plain value, and a cursor that says no edit is offered;
+   its tooltip says why. Its disabled checkbox takes the same cursor. */
+.view-cell-edit--read-only,
+.view-cell-edit input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+}
+
 .view-cell-edit__input {
   width: 100%;
   min-width: 60px;

@@ -24,6 +24,7 @@ import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
+import { NO_READ_ONLY } from './readOnlyRows'
 
 /**
  * The folder host's bundle (🔒 D3, YAZ-819). ViewsPane stays ONE component: the host (`FolderView`),
@@ -154,8 +155,6 @@ export function freeName(base: string, taken: ReadonlySet<string>): string {
   if (!taken.has(base)) return base
   for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
 }
-
-const NO_READ_ONLY: ReadonlySet<string> = new Set()
 
 export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still

@@ -12,6 +12,7 @@ import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, rowTitle } from './GroupHeader'
 import { PageContextMenu } from './PageContextMenu'
+import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
 
 export interface ListViewProps {
   def: ViewSet
@@ -76,8 +77,6 @@ const separatorOf = (view: ViewDef): string => (typeof view.propertySeparator ==
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-const NO_READ_ONLY: ReadonlySet<string> = new Set()
-
 export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY }: ListViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   /** A typed editor keeps its own (native) menu, as in the table. */
@@ -96,7 +95,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
   // memoised so unrelated re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
-  const bareOf = (key: string) => (canonicalKey(key).startsWith('note.') ? canonicalKey(key).slice(5) : null)
+  const bareOf = writableKey
   const typings = useMemo(
     () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, properties, settings)])),
     [keys, rowRecords, properties, settings],

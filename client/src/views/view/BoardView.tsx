@@ -14,6 +14,7 @@ import { usePreview } from './PreviewCard'
 import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { allPropertyKeys } from './properties'
 import { PageContextMenu } from './PageContextMenu'
+import { NO_READ_ONLY } from '../readOnlyRows'
 
 export interface BoardViewProps {
   def: ViewSet
@@ -82,8 +83,6 @@ export interface BoardViewProps {
 /** The text flags a note row carries (YAZ-1206); the title takes part in the layout only (YAZ-1217). */
 const styleClasses = (style: NonNullable<ViewDef['cardStyle']>[string]) =>
   `${style.bold === true ? ' view-board__prop--bold' : ''}${style.underline === true ? ' view-board__prop--underline' : ''}`
-
-const NO_READ_ONLY: ReadonlySet<string> = new Set()
 
 export function BoardView({
   def,

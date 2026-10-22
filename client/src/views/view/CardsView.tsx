@@ -14,6 +14,7 @@ import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, rowTitle } from './GroupHeader'
 import { PageContextMenu } from './PageContextMenu'
+import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
 
 export interface CardsViewProps {
   def: ViewSet
@@ -136,8 +137,6 @@ function CardCover({ root, cover }: { root: string; cover: Cover }) {
  * page's card); search narrows cards and drops empty groups. Note-property rows edit inline
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
-const NO_READ_ONLY: ReadonlySet<string> = new Set()
-
 export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY }: CardsViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   /** A typed editor keeps its own (native) menu, as in the table. */
@@ -153,7 +152,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
   // memoised so unrelated re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bares = useMemo(
-    () => new Map(rest.map((k) => [k, canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null])),
+    () => new Map(rest.map((k) => [k, writableKey(k)])),
     [rest],
   )
   const typings = useMemo(

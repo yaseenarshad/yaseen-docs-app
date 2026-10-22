@@ -5,6 +5,7 @@ import type { Group } from '../engine'
 import type { Value } from '../expr'
 import { canonicalKey } from './keys'
 import { groupKeyOf, nestedGroupKeyOf } from './GroupHeader'
+import { writableKey } from '../readOnlyRows'
 
 /**
  * Drag between groups (5C, GRO-2143): shared by the board's columns and the grouped table's
@@ -49,9 +50,8 @@ export type PendingMove = PendingWrite[]
  */
 export function groupByKey(view: ViewDef, level = 0): string | null {
   const property = groupByLevels(view)[level]?.property
-  if (typeof property !== 'string') return null
-  const c = canonicalKey(property)
-  return c.startsWith('note.') ? c.slice(5) : null
+  // A key the app owns (`readonly`, YAZ-3122) is grouped by, never written by a drop or seeded by a "+".
+  return typeof property === 'string' ? writableKey(property) : null
 }
 
 /** Whether `groupBy` at `level` is the Folder: nothing to write or drag there, but its group "+" has a place — that folder. */
