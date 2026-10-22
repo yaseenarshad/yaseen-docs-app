@@ -216,7 +216,7 @@ test('step 4b — a folder and its subfolder both in focus: each copy of the sub
   await shoot(win, 'focus-05b-two-copies')
 })
 
-test('checker 4c — ← and → fold one copy in the real app, and a click that closes the folder of the open page in its copy leaves no row lit (YAZ-3131 S6, S13)', async () => {
+test('step 4c — ← and → fold one copy in the real app, and a click that closes the folder of the open page in its copy leaves no row lit (YAZ-3131 S6, S13)', async () => {
   const archive = dirRow(win, 'archive') // 0: inside Projects, 1: the top row
   const item = (copy: number) => archive.nth(copy).locator('..')
   const plan = fileRow(win, 'Old plan')
@@ -236,7 +236,7 @@ test('checker 4c — ← and → fold one copy in the real app, and a click that
   await archive.nth(1).click()
   await expect(item(1)).toHaveAttribute('aria-expanded', 'false')
   await expect(plan).toHaveCount(1)
-  await shoot(win, 'checker-4c-s13')
+  await shoot(win, 'focus-4c-s13')
   await expect(win.locator('.sidebar__body .tree__row--active')).toHaveCount(0)
 })
 

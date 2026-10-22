@@ -719,12 +719,20 @@ export function Sidebar({
   const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
-  // The copy the open page lights in (YAZ-3131 Decision 3, S12): where it was clicked, else the first
-  // copy that shows it. Files and Search draw each row once, so they light every row of it, as before.
+  // The copy the open page lights in (YAZ-3131 Decision 3, S12, S13): where it was clicked, else the
+  // first copy that shows it. Files and Search draw each row once, so they light every row of it, as before.
   const copyTops = lens === 'focus' ? focusNodes : lens === 'favorites' ? favoriteNodes : null
+  // The click is kept apart from the selection (YAZ-3141): a later click on another row — a fold —
+  // makes the selection that row, and the page must not move to the other copy for it (S13). A new
+  // pick of the page, another page, or another tab replaces it.
+  const clickedCopy = useRef<{ lens: SidebarTab; path: string; top: string } | null>(null)
+  const picked = activeFile === null ? undefined : selection.copies?.get(activeFile)
+  if (picked !== undefined && activeFile !== null) clickedCopy.current = { lens, path: activeFile, top: picked }
+  const clicked = clickedCopy.current
+  const keptTop = clicked !== null && clicked.lens === lens && clicked.path === activeFile && copyTops?.some((t) => t.path === clicked.top) === true ? clicked.top : null
   const activeTop = useMemo(
-    () => (activeFile === null || copyTops === null ? null : (selection.copies?.get(activeFile) ?? firstCopy(copyTops, activeFile, expandedSet))),
-    [activeFile, copyTops, selection.copies, expandedSet],
+    () => (activeFile === null || copyTops === null ? null : (keptTop ?? firstCopy(copyTops, activeFile, expandedSet))),
+    [activeFile, copyTops, keptTop, expandedSet],
   )
 
   // A Files reveal targets a file — or, from a folder search row's menu (YAZ-2050) or Enter on it

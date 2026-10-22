@@ -293,8 +293,10 @@ function TreeLevel({
   /** The copy a click picks in (YAZ-3131): only a tree of copies records one. */
   const copyOf = (node: TreeNode): string | undefined => (copies ? topOf(node) : undefined)
   // A path lights in ONE copy (YAZ-3131 Decision 3): the copy it was picked in; with none, every copy, as before.
-  const isActive = (node: TreeNode): boolean => node.path === activeFile && (activeTop == null || activeTop === topOf(node))
-  const isSelected = (node: TreeNode): boolean => selection.paths.has(node.path) && (selection.copies?.get(node.path) ?? topOf(node)) === topOf(node)
+  // A note's SHORTCUT row is no copy (YAZ-3142, S18): it lights with its real row wherever that one
+  // stands, as YAZ-2290 🔒 D3 has it.
+  const isActive = (node: TreeNode): boolean => node.path === activeFile && (activeTop == null || isShortcutRow(node) || activeTop === topOf(node))
+  const isSelected = (node: TreeNode): boolean => selection.paths.has(node.path) && (isShortcutRow(node) || (selection.copies?.get(node.path) ?? topOf(node)) === topOf(node))
   // The top level is no copy of anything: one per tab, so a create there (the root) mounts as before.
   const createsHere = pending !== null && pending.parentDir === dirPath && (pending.top === null || top === undefined || pending.top === top)
   // The reorder gesture lives on the TOP rows alone (YAZ-2631 D3): a favorite, a focus item, a vault row of Files.

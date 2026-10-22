@@ -5342,7 +5342,7 @@ describe('favorites (YAZ-1766)', () => {
       expect(lit(gtm, 'tree__row--selected')).toEqual([true, false])
     })
 
-    it.each(['favorites', 'focus'] as const)('checker YAZ-3131 S13 on %s: a click on a page in copy B, then a click that closes its folder in copy B — no row lights, and copy A does not take the light', async (lens) => {
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S13 (YAZ-3141) on %s: a click on a page in copy B, then a click that closes its folder in copy B — no row lights, and copy A does not take the light', async (lens) => {
       const { el, v, rerender } = await mountWork(lens)
       const gtm = `${v}/Work/Wrenly/GTM`
       const plan = `${gtm}/plan.md`
@@ -5360,7 +5360,7 @@ describe('favorites (YAZ-1766)', () => {
       expect(lit(plan, 'tree__row--active')).toEqual([false])
     })
 
-    it.each(['favorites', 'focus'] as const)('checker YAZ-3131 S13 by the arrow key on %s: ← closes the folder in copy B — no row lights', async (lens) => {
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S13 by the arrow key on %s: ← closes the folder in copy B — no row lights', async (lens) => {
       const { el, v, rerender } = await mountWork(lens)
       const gtm = `${v}/Work/Wrenly/GTM`
       const plan = `${gtm}/plan.md`
@@ -5375,7 +5375,7 @@ describe('favorites (YAZ-1766)', () => {
       expect(lit(plan, 'tree__row--active')).toEqual([false])
     })
 
-    it.each(['favorites', 'focus'] as const)('checker YAZ-3131 S21 on %s: ⌘V with a row picked in copy B, and Paste from the menu of copy A, each open GTM in that copy alone', async (lens) => {
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S21 on %s: ⌘V with a row picked in copy B, and Paste from the menu of copy A, each open GTM in that copy alone', async (lens) => {
       const clipboardRef = { current: null as SidebarClipboard | null }
       const { el, v, bridge } = await mountVault({ lens, clipboardRef }, { favorites: listed, focus: listed, nodes: WORK })
       act(() => rowByPath(el, `${v}/Work/Wrenly`)?.click())
@@ -5399,7 +5399,7 @@ describe('favorites (YAZ-1766)', () => {
       expect([open(0), open(1)]).toEqual(['true', 'true'])
     })
 
-    it.each(['favorites', 'focus'] as const)('checker YAZ-3131 S12, S14, S17 on %s: the light follows the folds when no click chose a copy; a shift-click on the same path in the other copy removes it; a tab change clears the copies', async (lens) => {
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S12, S14, S17 on %s: the light follows the folds when no click chose a copy; a shift-click on the same path in the other copy removes it; a tab change clears the copies', async (lens) => {
       const { el, v, rerender } = await mountWork(lens)
       const gtm = `${v}/Work/Wrenly/GTM`
       const plan = `${gtm}/plan.md`
@@ -6910,7 +6910,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(shortcutRow(el)?.classList.contains('tree__row--active')).toBe(false)
     })
 
-    it.each(['favorites', 'focus'] as const)('checker YAZ-3131 S18 probe on %s: does the shortcut row still light with its real row?', async (lens) => {
+    it.each(['favorites', 'focus'] as const)('on %s, the shortcut row still lights with its real row, as the open page and as the selection (YAZ-3131 S18, YAZ-3142)', async (lens) => {
       const { el, rerender } = await mountLinked([PROJECTS_ID], { lens }, (bridge) => {
         bridge.favorites.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
         bridge.focus.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
