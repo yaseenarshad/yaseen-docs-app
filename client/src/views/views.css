@@ -1608,13 +1608,29 @@
   cursor: text;
 }
 
+/* A read-only note's name and its lock (YAZ-3129): the name text is what ellipses, the lock its
+   sibling, so a long name is cut before the lock and the lock always shows after the "…". */
+.view-read-only-name {
+  display: inline-flex;
+  align-items: baseline;
+  max-width: 100%;
+}
+
+.view-read-only-name__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The lock after a read-only note's name (YAZ-3076 D9, S60): muted, the size of the text, and no
-   layout of its own — `line-height: 0` keeps the row's height, `flex: none` keeps it whole when a
-   long name ellipses. */
+   layout of its own — `line-height: 0` keeps the row's height, `flex: none` keeps it whole beside
+   the ellipsing name above. */
 .view-read-only-mark {
   display: inline-flex;
   flex: none;
   margin-left: 0.3em;
+  align-self: center;
   line-height: 0;
   vertical-align: -0.1em;
   color: var(--fg-muted);

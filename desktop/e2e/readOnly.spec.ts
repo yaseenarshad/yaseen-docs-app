@@ -320,27 +320,43 @@ test('step 10 — YAZ-3122, YAZ-3126: in a folder\u2019s table, a read-only note
   const cac = path.join(bible, 'KPIs', 'CAC.md')
   const locked = setFrontmatterProperty(await readFile(cac, 'utf8'), 'readonly', true)
   await writeFile(cac, locked)
+  // YAZ-3129: a read-only note whose name is far longer than the Name column.
+  const longName = 'Customer Lifetime Value Over A Very Long Horizon For Enterprise Accounts'
+  const longPath = path.join(bible, 'KPIs', `${longName}.md`)
+  await writeFile(longPath, '---\nreadonly: true\nkpi_category: lagging\nunit: currency\n---\n\n# Long\n')
   app = await launchApp({ userData, seedState: seededState(bible, null) })
   win = await appWindow(app, 'w1')
   await openFolder(win, path.join(bible, 'KPIs'))
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   const cell = (r: number, c: number) => contents(win).locator(`[data-cell="${r}:${c}"]`)
   await expect(contents(win).locator('.view-table__name').first()).toHaveText('CAC')
-  // Row 0 is CAC (read only), row 1 Gross Margin; column 2 is Unit.
+  // Row 0 is CAC (read only), row 1 the long read-only name, row 2 Gross Margin; column 2 is Unit.
   await expect(cell(0, 2)).toContainText('currency')
   await expect(cell(0, 2).locator('[data-edit]')).toHaveCount(0)
   await expect(cell(0, 2).locator('[title="This note is read only"]')).toHaveCount(1)
   await cell(0, 2).dblclick()
   await expect(cell(0, 2).locator('input')).toHaveCount(0)
-  await expect(cell(1, 2).locator('[data-edit]')).toHaveCount(1)
+  await expect(cell(2, 2).locator('[data-edit]')).toHaveCount(1)
   // YAZ-3126 (D9): a muted lock after the read-only name, none after the next; the rows keep one height.
   await expect(cell(0, 0).locator('.view-read-only-mark[title="Read only"]')).toHaveCount(1)
-  await expect(cell(1, 0).locator('.view-read-only-mark')).toHaveCount(0)
-  const heights = await Promise.all([0, 1].map(async (r) => (await cell(r, 0).boundingBox())?.height))
-  expect(heights[0]).toBe(heights[1])
+  await expect(cell(2, 0).locator('.view-read-only-mark')).toHaveCount(0)
+  const heights = await Promise.all([0, 1, 2].map(async (r) => (await cell(r, 0).boundingBox())?.height))
+  expect(heights[0]).toBe(heights[2])
+  expect(heights[1]).toBe(heights[2])
+  // YAZ-3129: the long name ellipses and its lock stays inside the Name cell. (This folder's Board has no
+  // grouping, so it shows no cards; the board and the cards are pinned by ReadOnlyCells.test.tsx.)
+  const inside = async (owner: import('@playwright/test').Locator): Promise<boolean> => {
+    const lock = await owner.locator('.view-read-only-mark').boundingBox()
+    const box = await owner.boundingBox()
+    return lock !== null && box !== null && lock.width > 0 && lock.x >= box.x && lock.x + lock.width <= box.x + box.width + 0.5
+  }
+  const longCell = contents(win).locator('.view-table__name', { hasText: 'Customer Lifetime' })
+  await expect(longCell.locator('.view-read-only-mark')).toHaveCount(1)
+  expect(await inside(longCell)).toBe(true)
   await win.waitForTimeout(700)
   expect(await readFile(cac, 'utf8')).toBe(locked)
   await shoot(win, 'read-only-4-folder-table')
+
   await quitApp(app)
   await rm(bible, { recursive: true, force: true })
 })

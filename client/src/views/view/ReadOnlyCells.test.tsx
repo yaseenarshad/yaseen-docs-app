@@ -274,3 +274,27 @@ describe('a lock after a read-only note’s name in every folder view (YAZ-3126,
     expect(mark(cellsOf(rowOf(el, 'Agentic Agency'))[0])).toBeNull()
   })
 })
+
+describe('the lock stays visible after a long name (YAZ-3129)', () => {
+  it('in the table, the board and the cards, the NAME is what ellipses; the lock is its sibling, outside the clipped text', async () => {
+    await import('../views.css')
+    for (const [base, sel] of [[TABLE, '.view-table__name'], [BOARD, '.view-board__title'], [CARDS, '.view-card__title']] as const) {
+      const { el } = mount(base)
+      const owner = [...el.querySelectorAll(sel)].find((n) => n.textContent?.startsWith('Agentic Agency'))!
+      const text = owner.querySelector('.view-read-only-name__text')
+      expect(text, sel).not.toBeNull()
+      expect(text!.textContent, sel).toBe('Agentic Agency')
+      const style = getComputedStyle(text!)
+      expect(style.textOverflow, sel).toBe('ellipsis')
+      expect(style.overflow, sel).toBe('hidden')
+      const lock = owner.querySelector('.view-read-only-mark')!
+      expect(text!.contains(lock), sel).toBe(false)
+      expect(lock.parentElement, sel).toBe(text!.parentElement)
+      expect(getComputedStyle(text!.parentElement!).display, sel).toBe('inline-flex')
+      act(() => root?.unmount())
+      root = null
+      container?.remove()
+      container = null
+    }
+  })
+})

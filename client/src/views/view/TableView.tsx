@@ -26,7 +26,7 @@ import { dropIndex, insertionSlot } from '../../lib/dragSlot'
 import { allPropertyKeys } from './properties'
 import { setViewOrder } from './columnOrder'
 import { NO_READ_ONLY, READ_ONLY_TIP, writableKey } from '../readOnlyRows'
-import { ReadOnlyMark } from './ReadOnlyMark'
+import { ReadOnlyName } from './ReadOnlyMark'
 
 export interface TableViewProps {
   def: ViewSet
@@ -541,10 +541,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                                 />
                               </span>
                             ) : (
-                              <>
-                                {rowTitle(line.row)}
-                                {locked && <ReadOnlyMark />}
-                              </>
+                              locked ? <ReadOnlyName>{rowTitle(line.row)}</ReadOnlyName> : rowTitle(line.row)
                             )}
                             {moveError?.path === line.row.record.path && (
                               <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>

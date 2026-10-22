@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { LockIcon } from './icons'
 
 /**
@@ -10,6 +11,20 @@ export function ReadOnlyMark() {
   return (
     <span className="view-read-only-mark" title="Read only" aria-label="Read only" role="img">
       <LockIcon size={12} />
+    </span>
+  )
+}
+
+/**
+ * A read-only note's name with its lock (YAZ-3129): the NAME is what ellipses, and the lock is its
+ * sibling, so a long name is cut before the lock and the lock always shows after the "…". The views'
+ * name boxes clip with `text-overflow`; a lock inside the clipped text went with the cut.
+ */
+export function ReadOnlyName({ children }: { children: ReactNode }) {
+  return (
+    <span className="view-read-only-name">
+      <span className="view-read-only-name__text">{children}</span>
+      <ReadOnlyMark />
     </span>
   )
 }
