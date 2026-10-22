@@ -247,7 +247,7 @@ export function useBoardDocument(options: BoardDocumentOptions) {
   )
 
   const conflictBar = conflictMtime !== null && <ConflictBar onReload={() => void reload()} onKeepMine={keepMine} />
-  return { hostRef, autosave, retired, start, flush, chips, conflictBar, readOnly, setReadOnly }
+  return { hostRef, autosave, retired, start, flush, reload, chips, conflictBar, readOnly, setReadOnly }
 }
 
 /** What the chips show: the save status (the autosave reports it) and the vault's sync, App's. */

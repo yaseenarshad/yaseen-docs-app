@@ -725,6 +725,19 @@ function CrepeHost({
     }
   }, [lineNumbersOn, readyCrepe])
 
+  // Read only (YAZ-3076 D2): the body takes the disk truth's switch — typing, paste, drop, cut, undo,
+  // the task boxes, the code blocks and the tables all ask `view.editable`. Find, copy, links, folds,
+  // the table of contents, the zoom and line numbers are views and keep working (S25).
+  // Said only while on, and taken back by the cleanup, as line numbers are: an editable note never pays for it.
+  useEffect(() => {
+    const crepe = readyCrepe
+    if (!readOnly || crepe === null || crepeRef.current !== crepe) return
+    crepe.setReadonly(true)
+    return () => {
+      if (crepeRef.current === crepe) crepe.setReadonly(false)
+    }
+  }, [readOnly, readyCrepe])
+
   // Section indent (YAZ-2709) reads only the page itself, so the editor is told once: when the
   // switch turns on, when a recreated editor is ready. An outside change that lands can rebuild
   // the whole editor state (`setMarkdown`), which starts off again, so each landing says it once
@@ -768,13 +781,14 @@ function CrepeHost({
           there, the composer being the door to the first comment), then "Linked mentions"
           (Links D, GRO-2193), then "Reviews" (YAZ-2322), which stays last. All of it scrolls WITH
           the note, never in a panel. */}
-      <div className="editor-host" data-line-numbers={lineNumbersOn || undefined} data-section-indent={sectionIndentOn || undefined} data-heading-levels={headingLevelsOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
+      <div className="editor-host" data-read-only={readOnly || undefined} data-line-numbers={lineNumbersOn || undefined} data-section-indent={sectionIndentOn || undefined} data-heading-levels={headingLevelsOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
         {/* Title and properties share ONE header row (YAZ-918): the panel sits to
             the title's right and wraps under it when the title runs long. */}
         <div className="page-header">
           <PageTitle
             path={file.path}
             titles={titles}
+            readOnly={readOnly}
             onRetitle={(title) => onRetitle(file.path, title, 'file')}
             onArrowDown={() => {
               const crepe = crepeRef.current
@@ -784,7 +798,7 @@ function CrepeHost({
           {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
               folder view — ONE registry, so a type declared in a row types the same column in
               every folder's views. */}
-          <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} />
+          <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} />
         </div>
         <div className="editor-mount" ref={hostRef} />
         {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only

@@ -46,6 +46,51 @@ window.ICON_SERVICE_PATH = null;
 		this.hsplitPosition = 0;
 		createUi.apply(this, arguments);
 		installTextScaling(this.editor.graph);
+
+		if (readOnly)
+		{
+			applyReadOnly();
+		}
+	};
+
+	// YAZ-3076 D2: the file says read only, so the graph takes no edits — the host's `yaseenReadOnly`
+	// message, sent after draw.io's `init` and on every change. draw.io's own viewer does the same
+	// (`graph.isEnabled` false): selection, moves, the rubber band, the keys and a drop from the shapes
+	// panel all ask `graph.isEnabled()`, while the wheel and the panning handler do not, so pan and zoom
+	// still work. Two things draw.io leaves on are closed here: a label being typed is put down
+	// unchanged and the selection is cleared (no Format panel edits a cell picked before), and the
+	// toolbar's Undo / Redo, which follow only the undo history, are off while the graph is.
+	var readOnly = false;
+
+	function applyReadOnly()
+	{
+		var graph = editorUi.editor.graph;
+
+		if (readOnly)
+		{
+			graph.stopEditing(false);
+			graph.clearSelection();
+		}
+
+		graph.setEnabled(!readOnly);
+
+		if (editorUi.actions != null)
+		{
+			editorUi.updateActionStates();
+		}
+	}
+
+	var updateActionStates = EditorUi.prototype.updateActionStates;
+
+	EditorUi.prototype.updateActionStates = function()
+	{
+		updateActionStates.apply(this, arguments);
+
+		if (!this.editor.graph.isEnabled())
+		{
+			this.actions.get('undo').setEnabled(false);
+			this.actions.get('redo').setEnabled(false);
+		}
 	};
 
 	// 🔒 YAZ-1802 D16: the app's "draw.io diagrams in dark mode" setting, LIVE. draw.io reads it once,
@@ -90,6 +135,17 @@ window.ICON_SERVICE_PATH = null;
 			{
 				keepHostFocus = false;
 			}, 0);
+		}
+
+		if (msg != null && msg.action == 'yaseenReadOnly')
+		{
+			evt.stopImmediatePropagation();
+			readOnly = msg.value === true;
+
+			if (editorUi != null)
+			{
+				applyReadOnly();
+			}
 		}
 
 		if (msg != null && msg.action == 'yaseenAdaptiveColors')

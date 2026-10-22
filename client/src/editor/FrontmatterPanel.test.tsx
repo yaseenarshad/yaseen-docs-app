@@ -1629,3 +1629,43 @@ Body
     })
   })
 })
+
+describe('a read-only note (YAZ-3076 D2, S23)', () => {
+  const LOCKED = TYPED.replace('---\n', '---\nreadonly: true\n')
+
+  it('every row is its value with no editor and no property menu; `readonly` itself is Reserved; no Add property', () => {
+    const el = mount(LOCKED, { readOnly: true })
+    expand(el)
+    expect(keysOf(el)).toContain('readonly')
+    expect(chipIn(rowOf(el, 'readonly'))).toBe('Reserved')
+    // A flag's value is drawn as a disabled box; nothing in a row takes input.
+    for (const row of rows(el)) expect(row.querySelector('input:not([disabled]), select, textarea, button, [contenteditable="true"]'), row.dataset.key).toBeNull()
+    expect(el.querySelector('[aria-label^="Configure "]')).toBeNull()
+    expect(btn(el, 'Add property')).toBeNull()
+    // A row the user could edit before carries no chip: it is not the app's, only locked.
+    expect(chipIn(rowOf(el, 'parent'))).toBeNull()
+  })
+
+  it('the YAML is shown but cannot be typed into, and nothing saves', () => {
+    const el = mount(LOCKED, { readOnly: true })
+    expandRaw(el)
+    expect(area(el)?.value).toContain('readonly: true')
+    expect(area(el)?.readOnly).toBe(true)
+    expect(btn(el, 'Save')).toBeNull()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('a YAML draft typed before the switch turned on loses its Save; the switch going off gives it back', () => {
+    const el = mount(TYPED)
+    expandRaw(el)
+    typeInto(el, 'status: changed\n')
+    expect(btn(el, 'Save')).not.toBeNull()
+    rerender(TYPED, { readOnly: true })
+    expect(btn(el, 'Save')).toBeNull()
+    expect(area(el)?.readOnly).toBe(true)
+    // The draft is the user's text: it is kept, and "Allow edits" gives its Save back.
+    rerender(TYPED, { readOnly: false })
+    expect(area(el)?.value).toBe('status: changed\n')
+    expect(btn(el, 'Save')).not.toBeNull()
+  })
+})

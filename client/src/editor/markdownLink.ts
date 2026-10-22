@@ -97,7 +97,8 @@ function renderMenu(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkN
     },
   ]
 
-  for (const row of rows) {
+  // A read-only note (YAZ-3076 D2) keeps only the row that changes nothing.
+  for (const row of rows.filter((r) => view.editable || r.label === 'Copy link')) {
     const item = document.createElement('button')
     item.type = 'button'
     item.className = `ctx-menu__item${row.danger === true ? ' ctx-menu__item--danger' : ''}`

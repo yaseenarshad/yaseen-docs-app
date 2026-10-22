@@ -321,3 +321,48 @@ describe('changes on disk', () => {
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ expectedMtime: 300 }))
   })
 })
+
+describe('read only (YAZ-3076 D2)', () => {
+  const LOCKED = XML.replace('<mxfile>', '<mxfile yaseendraw-readonly="1">')
+
+  it('an editable file says nothing to draw.io: the graph is on by default', async () => {
+    await opened()
+    expect(posted.some((m) => m.action === 'yaseenReadOnly')).toBe(false)
+  })
+
+  it('a read-only file turns the graph off as draw.io starts listening, ahead of the document', async () => {
+    load.mockResolvedValue({ path: PATH, xml: LOCKED, mtime: 100, size: 1 })
+    await opened()
+    expect(posted.map((m) => m.action)).toEqual(['configure', 'yaseenReadOnly', 'load'])
+    expect(posted[1]).toMatchObject({ value: true })
+  })
+
+  it('S29: whatever draw.io reports while read only is never saved; at "Allow edits" the canvas goes back to the disk', async () => {
+    load.mockResolvedValue({ path: PATH, xml: LOCKED, mtime: 100, size: 1 })
+    await opened()
+    drawio({ event: 'autosave', xml: EDITED })
+    drawio({ event: 'save', xml: EDITED })
+    await act(async () => {
+      vi.advanceTimersByTime(1000)
+    })
+    await settle()
+    expect(save).not.toHaveBeenCalled()
+    expect(text()).toContain('Saved')
+    // An agent removes the switch on disk (S15): the tab reloads, the graph turns on, and the canvas is the disk's.
+    load.mockResolvedValue({ path: PATH, xml: XML, mtime: 300, size: 1 })
+    posted = []
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    await settle()
+    expect(posted.filter((m) => m.action === 'yaseenReadOnly')).toEqual([{ action: 'yaseenReadOnly', value: false, _origin: DRAWIO_ORIGIN }])
+    expect(posted.filter((m) => m.action === 'load').at(-1)).toMatchObject({ xml: XML })
+  })
+
+  it('S15: an agent sets the switch on disk — the open tab turns the graph off at once', async () => {
+    await opened()
+    load.mockResolvedValue({ path: PATH, xml: LOCKED, mtime: 300, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    expect(posted).toContainEqual({ action: 'yaseenReadOnly', value: true, _origin: DRAWIO_ORIGIN })
+  })
+})

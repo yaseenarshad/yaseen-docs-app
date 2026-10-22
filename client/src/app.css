@@ -644,6 +644,11 @@ button {
   display: none;
 }
 
+/* A read-only note (YAZ-3076 D2) has no block handle: its drag and its menu would change the note. */
+.editor-host[data-read-only] .editor-instance .milkdown .milkdown-block-handle {
+  display: none;
+}
+
 /* Over a guide-line strip or a fold chevron the handle yields (GRO-2081, blockHandleGate.ts):
    pointer-events off so the click lands on the affordance beneath. */
 .editor-instance .milkdown .milkdown-block-handle.mdapp-handle-muted {

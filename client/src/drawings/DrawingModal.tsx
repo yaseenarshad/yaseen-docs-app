@@ -114,7 +114,9 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
     setVersion(next.version)
   }, [])
 
-  const dirty = version !== null && baseline.current !== null && version !== baseline.current
+  /** The drawing's own file says read only (YAZ-3076 D2, S28): the engine's view mode, and nothing to save. */
+  const readOnly = loaded?.scene.readOnly === true
+  const dirty = !readOnly && version !== null && baseline.current !== null && version !== baseline.current
 
   /** Esc, click-away and ✕ are ONE gesture: leave, asking first only when there is something to lose. */
   const requestClose = (): void => {
@@ -184,7 +186,7 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
           <span className="drawing-modal__title" title={target}>
             {target}
           </span>
-          <button type="button" className="drawing-modal__btn" onClick={() => void save()} disabled={!dirty || saving}>
+          <button type="button" className="drawing-modal__btn" onClick={() => void save()} disabled={!dirty || saving} title={readOnly ? 'This drawing is read only' : undefined}>
             {saving ? 'Saving…' : 'Save'}
           </button>
           <button type="button" className="drawing-modal__btn drawing-modal__close" aria-label="Close drawing" onClick={requestClose}>
@@ -211,7 +213,7 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
         <div className="drawing-modal__canvas">
           {loaded !== null && (
             <Suspense fallback={null}>
-              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} />
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} />
             </Suspense>
           )}
         </div>

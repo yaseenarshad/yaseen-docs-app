@@ -57,11 +57,16 @@ vi.mock('./createCrepe', () => {
     destroy: () => Promise<void>
   }
   return {
-    createCrepe: vi.fn((opts: { defaultValue?: string; onMarkdownUpdated?: (md: string) => void }): FakeCrepe => ({
+    createCrepe: vi.fn((opts: { defaultValue?: string; onMarkdownUpdated?: (md: string) => void }): FakeCrepe & { readonly: boolean; setReadonly: (on: boolean) => void } => ({
       md: opts.defaultValue ?? '',
       onMarkdownUpdated: opts.onMarkdownUpdated,
       create: () => Promise.resolve(),
       destroy: () => Promise.resolve(),
+      // The read-only switch (YAZ-3076 D2): what the host last told the editor.
+      readonly: false,
+      setReadonly(on: boolean) {
+        this.readonly = on
+      },
     })),
     getMarkdownForSave: vi.fn((crepe: FakeCrepe) => crepe.md),
     setMarkdown: vi.fn((crepe: FakeCrepe, md: string) => {
@@ -2012,5 +2017,59 @@ describe('the mount caret grab yields to a tab\'s name field (YAZ-3059 S7, YAZ-3
     } finally {
       strip.remove()
     }
+  })
+})
+
+describe('a read-only note (YAZ-3076 D2)', () => {
+  const LOCKED = '---\nstatus: draft\nreadonly: true\n---\n'
+  const fakeOf = (): FakeCrepe & { readonly: boolean } => crepe() as FakeCrepe & { readonly: boolean }
+
+  it('S20, S22, S23: the switch in the file locks the body, the title and the properties panel', async () => {
+    const el = await mount(LOCKED + BODY)
+    expect(fakeOf().readonly).toBe(true)
+    expect(el.querySelector('.editor-host')?.hasAttribute('data-read-only')).toBe(true)
+    act(() => el.querySelector<HTMLElement>('.page-title__text')?.click())
+    expect(el.querySelector('.page-title__input')).toBeNull()
+    act(() => el.querySelector<HTMLButtonElement>('.frontmatter-panel__header')?.click())
+    expect([...el.querySelectorAll('.frontmatter-panel__btn')].some((b) => b.textContent === 'Add property')).toBe(false)
+  })
+
+  it('S1: a note with no switch is editable and the editor is never told anything', async () => {
+    const el = await mount(FM + BODY)
+    expect(fakeOf().readonly).toBe(false)
+    expect(el.querySelector('.editor-host')?.hasAttribute('data-read-only')).toBe(false)
+  })
+
+  it('S15: an agent sets the switch on disk, then removes it — the open tab follows each time, with no reload and no bar', async () => {
+    const el = await mount(FM + BODY)
+    diskHas(LOCKED + BODY, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(fakeOf().readonly).toBe(true)
+    diskHas(FM + BODY, 3)
+    await emit({ type: 'change', path: PATH, mtime: 3 })
+    expect(fakeOf().readonly).toBe(false)
+    expect(applyExternalMock).not.toHaveBeenCalled()
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+  })
+
+  it('S32: an agent edits the body of a read-only note — the editor is never dirty, so it reloads with no bar and writes nothing', async () => {
+    const el = await mount(LOCKED + BODY)
+    const next = `${LOCKED}# Agent wrote this\n`
+    diskHas(next, 2)
+    diskHas(next, 2) // reload() re-reads
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), '# Agent wrote this\n')
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    expect(fakeOf().readonly).toBe(true)
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('S14: a second copy of the note in this window follows a switch another copy wrote', async () => {
+    await mount(FM + BODY)
+    diskHas(LOCKED + BODY, 5)
+    act(() => announceTwinSave(PATH, 5))
+    await settle()
+    expect(fakeOf().readonly).toBe(true)
   })
 })

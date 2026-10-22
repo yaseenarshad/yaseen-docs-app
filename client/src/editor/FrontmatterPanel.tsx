@@ -39,6 +39,12 @@ export interface FrontmatterPanelProps {
   properties?: PropertiesResponse | null
   /** Live index feed: the folder's settings record, and the link suggestions. */
   wikilinks?: WikilinkResolveSource
+  /**
+   * The note is read only (YAZ-3076 D2, S23): every row shows its value with no editor, no property
+   * menu, no Add, and the raw YAML is shown but cannot be typed into or saved. Comments and reviews,
+   * which write the same block, are not this panel's and stay allowed (S24).
+   */
+  readOnly?: boolean
 }
 
 /** Why a reserved key has no editor, and why Add property refuses one: said once, in the same words. */
@@ -131,7 +137,7 @@ interface Snapshot {
   draft: string | null
 }
 
-export function FrontmatterPanel({ file, root, properties: decls = null, wikilinks }: FrontmatterPanelProps) {
+export function FrontmatterPanel({ file, root, properties: decls = null, wikilinks, readOnly = false }: FrontmatterPanelProps) {
   const [propertyMenu, setPropertyMenu] = useState<{ key: string; folder: boolean; anchor: HTMLElement; definition: PropertyDecl; base: PropertyDecl | undefined; editing: boolean } | null>(null)
   // The panel follows the folder settings FILES (YAZ-2196): every index refetch hands over a new
   // array, and one that moved no `.folder.md` — a save anywhere in the vault — re-renders nothing here.
@@ -179,6 +185,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   /** Tracked like every `transformFile`, so the close/quit flush waits for a Save in flight (YAZ-2174). */
   const save = (): Promise<void> => trackFileWrite(saveBlock())
   const saveBlock = async (): Promise<void> => {
+    if (readOnly) return
     setSaving(true)
     try {
       // Validate the block as it will be WRITTEN, fences and all — never a hand-wrapped copy.
@@ -209,6 +216,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
    * Either row's save also drops the note's values for the folders that no longer show it (D20).
    */
   const commit = async (key: string, value: unknown, folder: boolean): Promise<void> => {
+    if (readOnly) return
     const tidy: ContentTransform = vault === undefined ? (content) => content : dropStaleFolderValues(vault, file.path, folders)
     let change: ContentTransform = (content) => tidy(setFrontmatterProperty(content, key, value))
     if (folder && chosen !== undefined) {
@@ -257,7 +265,9 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   const label = empty ? 'Add properties' : count > 0 ? `Properties (${count})` : 'Properties'
   // A block that will not parse has no rows to show: the raw fallback IS the surface then.
   const rawMode = yamlMode || parseError !== undefined
-  const rows = rawMode ? [] : [...rowsOf(ownFields, reserved, decls).filter((row) => !(own && row.key === FOLDER_SETTINGS_KEY)), ...(folderDefinition === null ? [] : rowsOf(block, reserved, decls, folderDefinition))]
+  const typedRows = rawMode ? [] : [...rowsOf(ownFields, reserved, decls).filter((row) => !(own && row.key === FOLDER_SETTINGS_KEY)), ...(folderDefinition === null ? [] : rowsOf(block, reserved, decls, folderDefinition))]
+  // Read only: each row is its value, with no editor (a Reserved or YAML chip still says why that row never has one).
+  const rows = readOnly ? typedRows.map((row) => ({ ...row, editor: null })) : typedRows
   const needle = query.trim().toLocaleLowerCase()
   const shown = rows.filter((row) => row.key.toLocaleLowerCase().includes(needle))
 
@@ -320,12 +330,14 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
           {row.editor === null ? (
             <>
               {cellContent(fromYaml(!row.folder && row.key === ALSO_IN_KEY ? folderNames(row.raw) : row.raw), resolve)}
-              <span
-                className="frontmatter-panel__chip"
-                title={row.chip === 'reserved' ? reservedText(row.key) : 'No typed editor can hold this value — edit it as YAML'}
-              >
-                {row.chip === 'reserved' ? 'Reserved' : 'YAML'}
-              </span>
+              {row.chip !== null && (
+                <span
+                  className="frontmatter-panel__chip"
+                  title={row.chip === 'reserved' ? reservedText(row.key) : 'No typed editor can hold this value — edit it as YAML'}
+                >
+                  {row.chip === 'reserved' ? 'Reserved' : 'YAML'}
+                </span>
+              )}
             </>
           ) : (
             <EditableCell
@@ -376,6 +388,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
               className="frontmatter-panel__text"
               aria-label="Properties (YAML)"
               spellCheck={false}
+              readOnly={readOnly}
               value={text}
               onChange={(e) => {
                 const draft = e.currentTarget.value
@@ -413,7 +426,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
                   {shown.filter((row) => row.folder).map(rowItem)}
                 </ul>
               )}
-              {adding !== null && (
+              {adding !== null && !readOnly && (
                 <div className="frontmatter-panel__new">
                   <input
                     className="view-input frontmatter-panel__name"
@@ -456,7 +469,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
               {error}
             </p>
           )}
-          {rawMode && dirty && (
+          {rawMode && dirty && !readOnly && (
             <div className="frontmatter-panel__actions">
               <button type="button" className="frontmatter-panel__btn" disabled={saving} onClick={() => void save()}>
                 Save
@@ -468,7 +481,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
           )}
           {/* The two acts that are about the PANEL rather than about a key, on one quiet line. */}
           <div className="frontmatter-panel__footer">
-            {!rawMode && adding === null && (
+            {!rawMode && adding === null && !readOnly && (
               <button
                 type="button"
                 className="frontmatter-panel__btn"

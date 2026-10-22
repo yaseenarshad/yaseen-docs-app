@@ -163,6 +163,28 @@ describe('opening', () => {
   })
 })
 
+describe('read only (YAZ-3076 S28)', () => {
+  it('a drawing whose file says read only opens in the engine\u2019s view mode, and nothing can be saved', async () => {
+    readAsset.mockResolvedValue({ ...asset(100), data: btoa('{"yaseendraw":{"createdAt":1,"updatedAt":2,"readonly":true},"type":"excalidraw","elements":[]}') })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={vi.fn()} />)
+    })
+    expect(seam.props?.readOnly).toBe(true)
+    emit(7)
+    emit(8)
+    expect(saveBtn().disabled).toBe(true)
+    expect(saveBtn().title).toBe('This drawing is read only')
+  })
+
+  it('an editable drawing does not', async () => {
+    await open()
+    expect(seam.props?.readOnly).toBe(false)
+  })
+})
+
 describe('saving', () => {
   it('writes the serialized scene to the RESOLVED path with the loaded mtime, pokes the feed and closes', async () => {
     const { onClose, poked } = await open('ok', 4242)
@@ -387,6 +409,10 @@ describe('the engine seam (🔒 one file, YAZ-868 swaps it)', () => {
     const engineElement = /<Excalidraw(?!Surface)[\s/>]/
     expect(source('./ExcalidrawSurface.tsx')).toMatch(engineElement)
     expect(source('./DrawingModal.tsx')).not.toMatch(engineElement)
+  })
+
+  it('read only is the engine\u2019s own view mode (YAZ-3076 D2)', () => {
+    expect(source('./ExcalidrawSurface.tsx')).toMatch(/viewModeEnabled=\{readOnly\}/)
   })
 
   it('the modal has no canvas panel (YAZ-3038): it never passes the prop that turns it on', () => {

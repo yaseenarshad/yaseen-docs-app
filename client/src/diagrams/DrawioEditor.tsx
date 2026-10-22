@@ -91,6 +91,12 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
   /** The same pair for the dark-mode colour setting: what the configure reply (then each change) sent, and what the app wants now. */
   const shownColors = useRef(darkColors)
   const wantedColors = useRef(darkColors)
+  /** The file's read-only switch as the board document holds it, and what draw.io was last told (YAZ-3076 D2). draw.io starts editable. */
+  const loadedReadOnly = useMemo(() => isDiagramReadOnly(loaded.xml), [loaded.xml])
+  const wantedReadOnly = useRef(loadedReadOnly)
+  const shownReadOnly = useRef(false)
+  /** draw.io reported a change while read only: never saved, and the canvas is put back to the disk at "Allow edits". */
+  const strayWhileReadOnly = useRef(false)
 
   const post = useCallback((msg: Record<string, unknown>) => {
     frameRef.current?.contentWindow?.postMessage(JSON.stringify(msg), DRAWIO_ORIGIN)
@@ -132,6 +138,13 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     post({ action: 'yaseenAdaptiveColors', value: drawioAdaptiveColors(wantedColors.current) })
   }, [post])
 
+  /** The file's switch, once draw.io listens: our PostConfig's `yaseenReadOnly`, which turns the graph off or on (YAZ-3076 D2). */
+  const syncReadOnly = useCallback(() => {
+    if (!handshake.current.initialised || shownReadOnly.current === wantedReadOnly.current) return
+    shownReadOnly.current = wantedReadOnly.current
+    post({ action: 'yaseenReadOnly', value: wantedReadOnly.current })
+  }, [post])
+
   /** File › Export Image… (🔒 D9): the XML draw.io last posted, unsaved edits included, drawn before the sheet opens because the pick decides the format. */
   const exportImage = (): Promise<void> =>
     exportWithNotice(
@@ -148,7 +161,6 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       onNotice,
     )
 
-  const loadedReadOnly = useMemo(() => isDiagramReadOnly(loaded.xml), [loaded.xml])
   // Fresh closures every render are fine: the hook reads them through its `engine` ref, never stale.
   const board = useBoardDocument({
     root,
@@ -195,6 +207,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
           h.initialised = true
           syncTheme()
           syncColors()
+          syncReadOnly()
           sendLoad(latestXml.current, autosave.current?.mtime ?? loaded.mtime)
           return
         case 'load': {
@@ -211,6 +224,12 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
           const a = autosave.current
           // A change before the first `load` answer has no baseline to be measured against.
           if (a === null || retired.current || pendingLoad.current !== null) return
+          // A read-only diagram does not save (YAZ-3076 D1/D2): the graph is off, so this is draw.io's
+          // own chrome at most. It is kept off disk, and the canvas goes back to the disk at "Allow edits".
+          if (wantedReadOnly.current) {
+            strayWhileReadOnly.current = true
+            return
+          }
           latestXml.current = msg.xml
           a.update(++version.current)
           if (msg.event === 'save') void a.flush()
@@ -226,7 +245,20 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       window.removeEventListener('message', onMessage)
       if (fallback !== undefined) clearTimeout(fallback)
     }
-  }, [configure, syncTheme, syncColors, sendLoad, autosave, retired, start, loaded.mtime, onToggleSidebar])
+  }, [configure, syncTheme, syncColors, syncReadOnly, sendLoad, autosave, retired, start, loaded.mtime, onToggleSidebar])
+
+  // YAZ-3076 D2: the file's switch, live — the load, this tab's toggle, or a change on disk.
+  const { readOnly } = board
+  useEffect(() => {
+    wantedReadOnly.current = readOnly
+    syncReadOnly()
+    if (readOnly || !strayWhileReadOnly.current) return
+    strayWhileReadOnly.current = false
+    void api.diagram.load({ root, path }).then(
+      (res) => sendLoad(res.xml, res.mtime),
+      () => undefined,
+    )
+  }, [readOnly, syncReadOnly, sendLoad, root, path])
 
   // 🔒 YAZ-1802 D12: the app's theme, live.
   useEffect(() => {
