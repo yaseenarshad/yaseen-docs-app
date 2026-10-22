@@ -13,6 +13,7 @@ import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, rowTitle } from './GroupHeader'
 import { PageContextMenu } from './PageContextMenu'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
+import { ReadOnlyMark } from './ReadOnlyMark'
 
 export interface ListViewProps {
   def: ViewSet
@@ -143,6 +144,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
                 {nameIsPrimary ? (
                   <button type="button" className="view-list__title" onClick={() => onOpenFile(row.record.path)}>
                     {rowTitle(row)}
+                    {readOnly.has(row.record.path) && <ReadOnlyMark />}
                   </button>
                 ) : (
                   <span className="view-list__primary">{editable(row, primary)}</span>

@@ -229,3 +229,48 @@ describe('a `readonly` column (YAZ-3122 nit, S16): the switch is a reserved key,
     for (const card of cards) expect(card.getAttribute('draggable'), card.textContent ?? '').not.toBe('true')
   })
 })
+
+describe('a lock after a read-only note’s name in every folder view (YAZ-3126, D9: S59, S60, S62)', () => {
+  const LIST = `views:
+  - type: list
+    name: L
+    order:
+      - file.name
+      - note.priority
+`
+  const mark = (scope: Element | null) => scope?.querySelector('.view-read-only-mark') ?? null
+  const byTitle = (el: ParentNode, sel: string, title: string) => [...el.querySelectorAll(sel)].find((n) => n.textContent?.startsWith(title)) ?? null
+
+  it('the table’s Name cell: a muted lock that says "Read only" on a hover; none on an editable note; the name’s text is unchanged', () => {
+    const { el } = mount(TABLE)
+    const locked = cellsOf(rowOf(el, 'Agentic Agency'))[0]
+    expect(mark(locked)?.getAttribute('title')).toBe('Read only')
+    expect(mark(locked)?.querySelector('svg')).not.toBeNull()
+    expect(locked.textContent).toBe('Agentic Agency')
+    expect(mark(cellsOf(rowOf(el, 'The Levels of an Agency'))[0])).toBeNull()
+  })
+
+  it('the board card title', () => {
+    const { el } = mount(BOARD)
+    expect(mark(byTitle(el, '.view-board__title', 'Agentic Agency'))).not.toBeNull()
+    expect(mark(byTitle(el, '.view-board__title', 'The Levels of an Agency'))).toBeNull()
+  })
+
+  it('the cards title', () => {
+    const { el } = mount(CARDS)
+    expect(mark(byTitle(el, '.view-card__title', 'Agentic Agency'))).not.toBeNull()
+    expect(mark(byTitle(el, '.view-card__title', 'The Levels of an Agency'))).toBeNull()
+  })
+
+  it('the list row', () => {
+    const { el } = mount(LIST)
+    expect(mark(byTitle(el, '.view-list__title', 'Agentic Agency'))).not.toBeNull()
+    expect(mark(byTitle(el, '.view-list__title', 'The Levels of an Agency'))).toBeNull()
+  })
+
+  it('S61: the lock follows the next index snapshot', () => {
+    const { el } = mount(TABLE)
+    draw({ records: lockedRecords(false), readOnly: readOnlyPaths(lockedRecords(false)) })
+    expect(mark(cellsOf(rowOf(el, 'Agentic Agency'))[0])).toBeNull()
+  })
+})

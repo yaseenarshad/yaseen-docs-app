@@ -15,6 +15,7 @@ import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin
 import { allPropertyKeys } from './properties'
 import { PageContextMenu } from './PageContextMenu'
 import { NO_READ_ONLY } from '../readOnlyRows'
+import { ReadOnlyMark } from './ReadOnlyMark'
 
 export interface BoardViewProps {
   def: ViewSet
@@ -199,6 +200,7 @@ export function BoardView({
           }}
         >
           {rowTitle(row)}
+          {readOnly.has(row.record.path) && <ReadOnlyMark />}
         </button>
       )
     const style = styleOf(key)

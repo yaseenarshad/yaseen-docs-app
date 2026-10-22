@@ -1608,6 +1608,23 @@
   cursor: text;
 }
 
+/* The lock after a read-only note's name (YAZ-3076 D9, S60): muted, the size of the text, and no
+   layout of its own — `line-height: 0` keeps the row's height, `flex: none` keeps it whole when a
+   long name ellipses. */
+.view-read-only-mark {
+  display: inline-flex;
+  flex: none;
+  margin-left: 0.3em;
+  line-height: 0;
+  vertical-align: -0.1em;
+  color: var(--fg-muted);
+}
+
+.view-read-only-mark svg {
+  width: 0.85em;
+  height: 0.85em;
+}
+
 /* A read-only note's cell (YAZ-3076 D6): the plain value, and a cursor that says no edit is offered;
    its tooltip says why. Its disabled checkbox takes the same cursor. */
 .view-cell-edit--read-only,

@@ -15,6 +15,7 @@ import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, rowTitle } from './GroupHeader'
 import { PageContextMenu } from './PageContextMenu'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
+import { ReadOnlyMark } from './ReadOnlyMark'
 
 export interface CardsViewProps {
   def: ViewSet
@@ -184,6 +185,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
           <div className="view-card__body">
             <button type="button" className="view-card__title" onClick={() => onOpenFile(row.record.path)}>
               {rowTitle(row)}
+              {readOnly.has(row.record.path) && <ReadOnlyMark />}
             </button>
             {rest.map((key) => {
               const bare = bares.get(key) ?? null
