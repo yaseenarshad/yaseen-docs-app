@@ -116,6 +116,10 @@ function openEditor(env) {
     setEnabled(value) {
       this.enabled = value
     },
+    editing: false,
+    isEditing() {
+      return this.editing
+    },
     stopEditing: vi.fn(),
     clearSelection: vi.fn(() => (selection = [])),
   }
@@ -363,6 +367,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     const editor = openEditor(env)
     const shape = cell(RECT)
     editor.select(shape)
+    editor.graph.editing = true
     expect(message({ action: 'yaseenReadOnly', value: true })).toBe(true)
     expect(editor.graph.isEnabled()).toBe(false)
     // A cell selected before keeps no Format panel, and a label being typed is cancelled, never applied (`stopEditing(cancel)`).
@@ -373,6 +378,14 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     expect(message({ action: 'yaseenReadOnly', value: false })).toBe(true)
     expect(editor.graph.isEnabled()).toBe(true)
     expect(editor.actionState).toMatchObject({ undo: true, redo: true })
+  })
+
+  it('YAZ-3119: with no label being typed, yaseenReadOnly never calls stopEditing — draw.io\u2019s wrap of it focuses its container, which takes the keyboard from the host', () => {
+    const { env, message } = loadPostConfig()
+    const editor = openEditor(env)
+    expect(message({ action: 'yaseenReadOnly', value: true })).toBe(true)
+    expect(editor.graph.isEnabled()).toBe(false)
+    expect(editor.graph.stopEditing).not.toHaveBeenCalled()
   })
 
   it('leaves every other message, and the same one from anywhere but the host, to draw.io', () => {
@@ -435,6 +448,7 @@ describe.skipIf(!existsSync(APP_MIN_JS))(`every draw.io action we name exists in
       'mxGraph.setEnabled': /mxGraph\.prototype\.setEnabled\s*=\s*function/,
       'mxGraph.isEnabled': /mxGraph\.prototype\.isEnabled\s*=\s*function/,
       'mxGraph.stopEditing': /mxGraph\.prototype\.stopEditing\s*=\s*function/,
+      'mxGraph.isEditing': /mxGraph\.prototype\.isEditing\s*=\s*function/,
       'mxGraph.clearSelection': /mxGraph\.prototype\.clearSelection\s*=\s*function/,
       'EditorUi.updateActionStates': /EditorUi\.prototype\.updateActionStates\s*=\s*function/,
       'actions.get("undo")': /this\.actions\.get\("undo"\)\.setEnabled/,

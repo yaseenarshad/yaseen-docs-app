@@ -8,6 +8,10 @@
  *    the file is its own bytes again — and the chip goes.
  *  - THEN TYPING SAVES as before.
  *
+ *  - A DIAGRAM (YAZ-3119, YAZ-3121): "Read only" on leaves the keyboard on the host, so Esc still
+ *    closes the cog menu; and a press inside the draw.io frame closes the menu, as a press outside
+ *    closes it on a note.
+ *
  * Same harness as every spec here: temp `--user-data-dir`, a COPY of the fixture vault with one
  * note of this spec's own in it, hidden windows (`YASEEN_DOCS_E2E_HIDDEN`), `read-only-` step
  * screenshots. Serial: each step continues the last.
@@ -21,6 +25,24 @@ import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, qu
 test.describe.configure({ mode: 'serial' })
 
 const NOTE = 'Locked note.md'
+const DIAGRAM = 'Locked flow.drawio'
+/** A one-box diagram, as draw.io writes one: the box's text is how the steps find it in the frame. */
+const ONE_BOX = [
+  '<mxfile>',
+  '  <diagram id="p1" name="Page-1">',
+  '    <mxGraphModel grid="0" page="0">',
+  '      <root>',
+  '        <mxCell id="0" />',
+  '        <mxCell id="1" parent="0" />',
+  '        <mxCell id="c1" value="Hello box" style="rounded=1;whiteSpace=wrap;" vertex="1" parent="1">',
+  '          <mxGeometry x="40" y="40" width="160" height="80" as="geometry" />',
+  '        </mxCell>',
+  '      </root>',
+  '    </mxGraphModel>',
+  '  </diagram>',
+  '</mxfile>',
+  '',
+].join('\n')
 const LINE = 'read-only-line-e2e'
 const BODY = `---\nstatus: draft\n---\n# Locked\n\n${LINE}\n`
 const LOCKED = `---\nstatus: draft\nreadonly: true\n---\n# Locked\n\n${LINE}\n`
@@ -29,6 +51,7 @@ let userData: string
 let vaultSrc: string
 let vault: string
 let notePath: string
+let diagramPath: string
 let app: ElectronApplication
 let win: Page
 
@@ -46,6 +69,8 @@ test.beforeAll(async () => {
   vault = await copyVault(vaultSrc)
   notePath = path.join(vault, NOTE)
   await writeFile(notePath, BODY)
+  diagramPath = path.join(vault, DIAGRAM)
+  await writeFile(diagramPath, ONE_BOX)
 })
 
 test.afterAll(async () => {
@@ -103,5 +128,46 @@ test('step 5 — typing saves again', async () => {
   await win.keyboard.type(' typed-after-allow', { delay: 5 })
   await expect.poll(onDisk).toContain(`${LINE} typed-after-allow`)
   expect(await onDisk()).not.toContain('readonly')
+  await quitApp(app)
+})
+
+const frameBox = (w: Page) => layer(w).frameLocator('iframe.drawio-editor__frame').getByText('Hello box', { exact: true })
+/** Where the keyboard is in the host page: the tag and class of `document.activeElement`. */
+const hostFocus = (w: Page): Promise<string> => w.evaluate(() => `${document.activeElement?.tagName}.${document.activeElement?.className}`)
+
+test('step 6 — a diagram opens editable in draw.io, with the cog first in its strip', async () => {
+  app = await launchApp({ userData, seedState: seededState(vault, diagramPath) })
+  win = await appWindow(app, 'w1')
+  await expect(frameBox(win)).toBeVisible({ timeout: 30_000 })
+  await expect(layer(win).locator('.drawio-editor__chips > :first-child')).toHaveClass(/page-settings/)
+  await expect(chip(win)).toHaveCount(0)
+})
+
+test('step 7 — YAZ-3119: "Read only" on keeps the keyboard on the host, so Esc closes the menu and the focus goes to the cog', async () => {
+  await cog(win).click()
+  await readOnlyRow(win).click()
+  await expect.poll(() => readFile(diagramPath, 'utf8')).toContain('yaseendraw-readonly="1"')
+  await expect(readOnlyRow(win)).toHaveAttribute('aria-pressed', 'true')
+  // draw.io has the switch now: give its message time to land before the focus is read.
+  await win.waitForTimeout(500)
+  expect(await hostFocus(win)).not.toMatch(/^IFRAME/)
+  await win.keyboard.press('Escape')
+  await expect(menu(win)).toHaveCount(0)
+  expect(await hostFocus(win)).toMatch(/page-settings__trigger/)
+  await shoot(win, 'read-only-3-diagram-on')
+})
+
+test('step 8 — YAZ-3121: a press inside the draw.io frame closes the cog menu', async () => {
+  await cog(win).click()
+  await expect(menu(win)).toHaveCount(1)
+  await frameBox(win).click()
+  await expect(menu(win)).toHaveCount(0)
+})
+
+test('step 9 — "Allow edits" turns the diagram back, the same bytes as before', async () => {
+  await chip(win).click()
+  await askBox(win).getByRole('button', { name: 'Allow edits' }).click()
+  await expect.poll(() => readFile(diagramPath, 'utf8')).toBe(ONE_BOX)
+  await expect(chip(win)).toHaveCount(0)
   await quitApp(app)
 })

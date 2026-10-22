@@ -62,7 +62,14 @@ window.ICON_SERVICE_PATH = null;
 
 		if (readOnly)
 		{
-			graph.stopEditing(true);
+			// Only while a label IS being typed (YAZ-3119): draw.io's wrap of `stopEditing` focuses its
+			// diagram container every time, and with no label in hand that focus would take the keyboard
+			// from the host — the cog's menu would no longer hear Esc. A typed label has the focus here already.
+			if (graph.isEditing())
+			{
+				graph.stopEditing(true);
+			}
+
 			graph.clearSelection();
 		}
 
