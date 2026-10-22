@@ -342,6 +342,21 @@ describe('exportWithNotice', () => {
   })
 })
 
+/** The two user doors of the switch (YAZ-3076 D3, D4): the cog's row turns it on; the chip's "Allow edits" turns it off. */
+async function turnReadOnlyOn(): Promise<void> {
+  act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+  const row = [...container.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((b) => b.textContent?.startsWith('Read only'))!
+  await act(async () => row.click())
+  await settle()
+}
+
+async function allowEdits(): Promise<void> {
+  act(() => container.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
+  const allow = [...container.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Allow edits')!
+  await act(async () => allow.click())
+  await settle()
+}
+
 describe('the read-only switch in the file (YAZ-3076 D1)', () => {
   it('starts as the loaded file says it', () => {
     opened({ readOnly: true })
@@ -351,7 +366,7 @@ describe('the read-only switch in the file (YAZ-3076 D1)', () => {
   it('S12: pending edits save first, then the switch is written under the NEW mtime; its echo does not reload', async () => {
     opened()
     edit(1)
-    await act(async () => board.setReadOnly(true))
+    await turnReadOnlyOn()
     expect(write).toHaveBeenCalledExactlyOnceWith(100)
     expect(setBoardReadOnly).toHaveBeenCalledExactlyOnceWith({ root: ROOT, path: PATH, on: true, expectedMtime: 200 })
     expect(board.readOnly).toBe(true)
@@ -360,7 +375,7 @@ describe('the read-only switch in the file (YAZ-3076 D1)', () => {
     await settle()
     expect(reload).not.toHaveBeenCalled()
     expect(text()).not.toContain('File changed on disk.')
-    await act(async () => board.setReadOnly(false))
+    await allowEdits()
     expect(setBoardReadOnly).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, on: false, expectedMtime: 1200 })
     expect(board.readOnly).toBe(false)
   })
@@ -368,7 +383,7 @@ describe('the read-only switch in the file (YAZ-3076 D1)', () => {
   it('S13: a file that changed on disk is refused; the board reloads, the switch stays, and one notice says why', async () => {
     opened()
     setBoardReadOnly.mockRejectedValue(new BridgeRequestError('CONFLICT', 'changed', 900))
-    await act(async () => board.setReadOnly(true))
+    await turnReadOnlyOn()
     await settle()
     expect(board.readOnly).toBe(false)
     expect(reload).toHaveBeenCalledTimes(1)
@@ -378,7 +393,7 @@ describe('the read-only switch in the file (YAZ-3076 D1)', () => {
   it('any other refusal is one notice, and the switch stays', async () => {
     opened()
     setBoardReadOnly.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'the file is cut short'))
-    await act(async () => board.setReadOnly(true))
+    await turnReadOnlyOn()
     expect(board.readOnly).toBe(false)
     expect(onNotice).toHaveBeenCalledExactlyOnceWith('Read only could not change: the file is cut short', 'error')
   })
@@ -398,7 +413,7 @@ describe('the read-only switch in the file (YAZ-3076 D1)', () => {
   it('a retired host writes no switch', async () => {
     opened()
     act(() => retireDeletedPath(PATH))
-    await act(async () => board.setReadOnly(true))
+    await turnReadOnlyOn()
     expect(setBoardReadOnly).not.toHaveBeenCalled()
   })
 })

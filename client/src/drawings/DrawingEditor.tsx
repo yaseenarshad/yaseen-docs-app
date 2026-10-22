@@ -167,7 +167,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     onShown: () => surface.current?.refresh(),
     focus: () => surface.current?.focus(),
   })
-  const { autosave, start, chips, readOnly } = board
+  const { autosave, start, chips, readOnly, reload } = board
   /**
    * Read only (YAZ-3076 D2): the engine is in view mode, so nothing should change; a snapshot whose
    * version moves anyway (a door the view mode does not close) is kept off disk, and the canvas is
@@ -184,8 +184,8 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     }
     if (!strayWhileReadOnly.current) return
     strayWhileReadOnly.current = false
-    void board.reload()
-  }, [readOnly, board.reload]) // eslint-disable-line react-hooks/exhaustive-deps -- `board` is a fresh object per render; its `reload` is stable
+    void reload()
+  }, [readOnly, reload])
 
   const onSnapshot = useCallback(
     (next: DrawingSnapshot) => {

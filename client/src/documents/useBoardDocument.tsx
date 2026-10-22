@@ -275,7 +275,7 @@ export function useBoardDocument(options: BoardDocumentOptions) {
   )
 
   const conflictBar = conflictMtime !== null && <ConflictBar onReload={() => void reload()} onKeepMine={keepMine} />
-  return { hostRef, autosave, retired, start, flush, reload, chips, conflictBar, readOnly, setReadOnly }
+  return { hostRef, autosave, retired, start, flush, reload, chips, conflictBar, readOnly }
 }
 
 /** The cog's row and the chip's three answers (YAZ-3076 D3, D4). */

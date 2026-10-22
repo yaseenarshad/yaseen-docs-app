@@ -103,7 +103,8 @@ export function setDiagramReadOnly(xml: string, on: boolean): string {
   }
   if (tag.end === xml.length) return xml
   const open = xml.slice(tag.start, tag.end)
-  if (on ? ONE_ATTR.test(open) : !new RegExp(ANY_ATTR.source).test(open)) return xml
+  // `search`, not `test`: `ANY_ATTR` is global, and `test` would carry its `lastIndex` into the next call.
+  if (on ? ONE_ATTR.test(open) : open.search(ANY_ATTR) === -1) return xml
   const cleared = open.replace(ANY_ATTR, '')
   const marked = !on ? cleared : cleared.endsWith('/') ? `${cleared.slice(0, -1)} ${DIAGRAM_READ_ONLY_ATTR}="1"/` : `${cleared} ${DIAGRAM_READ_ONLY_ATTR}="1"`
   return `${xml.slice(0, tag.start)}${marked}${xml.slice(tag.end)}`

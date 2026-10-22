@@ -15,7 +15,7 @@
  */
 import { diagramDocumentError } from '@shared/diagramFile'
 import { serializeBoard } from '@shared/drawingAssets'
-import { isDiagram, isDrawing } from '@shared/fileKind'
+import { fileKind } from '@shared/fileKind'
 import { setDiagramReadOnly, withDrawingReadOnly } from '@shared/readOnly'
 import type { BoardKind, BoardReadOnlyResponse } from '@shared/types'
 import { BOARDS, boardTarget } from './boardDocument'
@@ -24,12 +24,13 @@ import { parseScene } from './drawing'
 import { atomicWrite, BridgeFailure, fsCall, requireDir } from './fsUtils'
 import { requireRequest } from './validate'
 
-/** The kind by the request path's extension; any other file has no read-only switch of this door's. */
+/** The kind by the request path's extension (`fileKind`, as `createBoard` reads it); any other file has no read-only switch of this door's. */
 function kindOf(raw: unknown): BoardKind {
   const rel = requireRequest(raw).path
-  // A missing or empty path is `boardTarget`'s BAD_REQUEST.
-  if (typeof rel !== 'string' || rel.trim() === '' || isDrawing(rel)) return 'drawing'
-  if (isDiagram(rel)) return 'diagram'
+  const kind = typeof rel === 'string' ? fileKind(rel) : null
+  if (kind === 'drawing' || kind === 'diagram') return kind
+  // A missing or empty path is `boardTarget`'s BAD_REQUEST, which comes first.
+  if (typeof rel !== 'string' || rel.trim() === '') return 'drawing'
   throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .excalidraw and .drawio files have this read-only switch; a note keeps it in its frontmatter', { path: rel })
 }
 

@@ -292,7 +292,7 @@ function CrepeHost({
   onOpenFile: (path: string) => void
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
-  onNotice?: (message: string) => void
+  onNotice?: (message: string, icon?: NoticeKind) => void
   newNoteFolderFor?: (sourcePath: string) => string
   wikilinks?: WikilinkResolveSource
   viewOnlyLinks?: ViewOnlyLinkSource
@@ -696,7 +696,7 @@ function CrepeHost({
           diskLanded()
         }
       } catch (err) {
-        onNotice?.(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`)
+        onNotice?.(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
     [file.path, absorbFrontmatterOnly, onNotice],

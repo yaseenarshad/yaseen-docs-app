@@ -21,6 +21,7 @@ import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/vi
 import * as frontmatter from '@shared/frontmatter'
 import { announceTwinSave } from '../lib/twinEditors'
 import { readPageView } from '../lib/pageView'
+import type { NoticeKind } from '../lib/notice'
 
 /**
  * Render counters for the note's heavy sections (YAZ-2196): each is the REAL component, called
@@ -159,7 +160,7 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void; tableOfContents?: TableOfContents; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
@@ -2155,7 +2156,7 @@ describe('the cog’s "Read only" row, the chip and the "Allow edits?" box on a 
       await vi.advanceTimersByTimeAsync(0)
     })
     await settle()
-    expect(onNotice).toHaveBeenCalledWith(expect.stringMatching(/^Read only could not change: frontmatter is not valid YAML/))
+    expect(onNotice).toHaveBeenCalledWith(expect.stringMatching(/^Read only could not change: frontmatter is not valid YAML/), 'error')
     expect(writeFile).not.toHaveBeenCalled()
     expect(chipButton(el)).toBeNull()
   })
