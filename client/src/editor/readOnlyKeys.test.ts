@@ -11,6 +11,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { focusReadOnlyBody } from './readOnlyKeys'
+import { pageHoldsKeys } from '../lib/readOnlyCaret'
 import { createCrepe, focusEditor, getMarkdownForSave, getZoomKeyOf } from './createCrepe'
 import { OUTLINE_FOLDED_ATTR } from './outline/outlineFolding'
 import { HEADING_FOLDED_ATTR } from './outline/headingFolding'
@@ -243,6 +244,7 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     const { page, title } = notePage()
     const { crepe, root } = await mount(page)
     crepe.setReadonly(true)
+    title.parentElement!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     document.getSelection()!.setBaseAndExtent(title, 0, title, 2)
     ;(document.activeElement as HTMLElement | null)?.blur()
     expect(press('u', { shift: true }).defaultPrevented).toBe(true)
@@ -258,6 +260,7 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     const { page, title } = notePage()
     const { crepe, root } = await mount(page)
     crepe.setReadonly(true)
+    title.parentElement!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     document.getSelection()!.collapse(title, 1)
     ;(document.activeElement as HTMLElement | null)?.blur()
     expect(press('a').defaultPrevented).toBe(true)
@@ -280,5 +283,21 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     expect(folded(root)).toBe(0)
     other.page.parentElement?.remove()
     page.parentElement?.remove()
+  })
+
+  it('YAZ-3145: `focusEditor` (first launch, a tab open, Esc from the table of contents) claims its page for the keys, editable or read only, after a click elsewhere ended the claim', async () => {
+    for (const locked of [false, true]) {
+      const { page } = notePage()
+      const { crepe, root } = await mount(page)
+      if (locked) crepe.setReadonly(true)
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      focusEditor(crepe)
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      clickIn(root, 'L1 a')
+      expect(pageHoldsKeys(document.body), `locked ${locked}`).toBe(true)
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      expect(pageHoldsKeys(document.body), `locked ${locked}`).toBe(false)
+      page.parentElement?.remove()
+    }
   })
 })

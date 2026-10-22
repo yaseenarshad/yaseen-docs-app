@@ -70,10 +70,17 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
       for (const key of ['c', 'x', 'v']) expect(fileClipboardVerb(event(body, { key })), key).toBeNull()
     })
 
-    it('the focus on <body> with the reader\u2019s selection in a visible read-only body: still the note\u2019s', () => {
-      const { text } = readOnlyBody()
+    it('the focus on <body> with the reader\u2019s selection in a visible read-only body they clicked in: still the note\u2019s', () => {
+      const page = document.createElement('div')
+      page.dataset.page = 'note'
+      document.body.append(page)
+      const { body, text } = readOnlyBody(page)
+      body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
       document.getSelection()!.setBaseAndExtent(text, 0, text, 4)
       for (const key of ['c', 'x', 'v']) expect(fileClipboardVerb(event(document.body, { key })), key).toBeNull()
+      // YAZ-3145: a press on blank sidebar space ends the note's claim — ⌘V pastes the copied FILE, as on main.
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      expect(fileClipboardVerb(event(document.body, { key: 'v' }))).toBe('paste')
     })
 
     it('a selection left in a HIDDEN tab\u2019s read-only body claims nothing: the chrome keeps its chord', () => {
@@ -103,6 +110,7 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
 
     it('⌘C, ⌘X and ⌘V are the page’s: the native text copy, never the FILE clipboard', () => {
       const { title } = titled()
+      title.parentElement!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
       document.getSelection()!.setBaseAndExtent(title, 0, title, 2)
       for (const key of ['c', 'x', 'v']) expect(fileClipboardVerb(event(document.body, { key })), key).toBeNull()
     })

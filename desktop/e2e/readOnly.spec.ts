@@ -69,6 +69,19 @@ const chip = (w: Page) => layer(w).locator('.read-only-chip__button')
 const askBox = (w: Page) => layer(w).locator('.read-only-chip__ask')
 const line = (w: Page) => editorOf(w).locator(`p:text-is("${LINE}")`)
 const onDisk = (): Promise<string> => readFile(notePath, 'utf8')
+/** A click on blank sidebar space (YAZ-3145): below the last row, on no row, button or field. */
+const blankSidebar = async (w: Page): Promise<void> => {
+  const at = await w.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('.sidebar .tree__row')).filter((r) => r.offsetParent !== null)
+    const last = rows[rows.length - 1].getBoundingClientRect()
+    const x = last.left + last.width / 2
+    const y = last.bottom + 30
+    const hit = document.elementFromPoint(x, y)
+    if (hit === null || hit.closest('.sidebar') === null || hit.closest('.tree__row, button, input, textarea, [contenteditable]') !== null) throw new Error(`not blank: ${hit?.className}`)
+    return { x, y }
+  })
+  await w.mouse.click(at.x, at.y)
+}
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'readonly-userdata-'))
@@ -78,6 +91,9 @@ test.beforeAll(async () => {
   await writeFile(notePath, BODY)
   outlinePath = path.join(vault, OUTLINE_NOTE)
   await writeFile(outlinePath, OUTLINE_BODY)
+  // A wikilink to the read-only outline (YAZ-3145: a wikilink open claims the page it opens).
+  const ideas = path.join(vault, 'Ideas.md')
+  await writeFile(ideas, `${await readFile(ideas, 'utf8')}\n[[Locked outline]]\n`)
   diagramPath = path.join(vault, DIAGRAM)
   await writeFile(diagramPath, ONE_BOX)
 })
@@ -324,7 +340,19 @@ test('step 3f — YAZ-3140: after a click or a drag on a read-only TITLE the pag
   await win.mouse.up()
   expect(await where()).toEqual({ body: true, inTitle: true })
   await pageHoldsTheKeys()
-  // First launch and a wikilink open leave the focus on <body> with the caret in the body: the same rule.
+  // A wikilink open: the app reveals the note in the sidebar and focuses its row, as on main — the row holds the keys.
+  await fileRow(win, 'Ideas').click()
+  await editorOf(win).locator('.wikilink', { hasText: 'Locked outline' }).first().click()
+  await expect(shown('parent-e2e')).toBeVisible()
+  expect(await win.evaluate(() => document.activeElement?.closest('.tree__row') != null)).toBe(true)
+  // A route with no click in the page claims the page it focuses (YAZ-3145; first launch and a tab open
+  // run the same `focusEditor`): blank sidebar space ends the claim, then ⌘J → Esc sends the focus back
+  // into the note. Even with the focus fallen back to <body>, the page holds the keys.
+  await shown('parent-e2e').click()
+  await blankSidebar(win)
+  await win.keyboard.press('Meta+j')
+  await expect(layer(win).locator('.toc__name').first()).toBeFocused()
+  await win.keyboard.press('Escape')
   await win.evaluate(() => {
     ;(document.activeElement as HTMLElement | null)?.blur()
     const text = Array.from(document.querySelectorAll('.ProseMirror p')).find((p) => p.textContent === 'parent-e2e')!.firstChild!
@@ -333,6 +361,10 @@ test('step 3f — YAZ-3140: after a click or a drag on a read-only TITLE the pag
   await pageHoldsTheKeys()
   await win.keyboard.press('ArrowDown')
   expect(await win.evaluate(() => document.activeElement?.closest('.tree__row') === null)).toBe(true)
+  await win.keyboard.press('Meta+Shift+U')
+  await expect(shown('child-e2e')).toBeHidden()
+  await win.keyboard.press('Meta+Shift+I')
+  await expect(shown('child-e2e')).toBeVisible()
   expect(await readFile(outlinePath, 'utf8')).toBe(OUTLINE_BODY)
   // Control 1: a real "nowhere" (no selection anywhere) still sends ↓ to the sidebar, as on main.
   await win.evaluate(() => {
@@ -350,6 +382,49 @@ test('step 3f — YAZ-3140: after a click or a drag on a read-only TITLE the pag
   await expect.poll(async () => (await vaultFiles()).includes('Locked outline copy.md')).toBe(true)
   await rm(copy)
   await expect.poll(vaultFiles).toEqual(before)
+  await fileRow(win, 'Locked note').click()
+  await expect(line(win)).toBeVisible()
+})
+
+test('step 3g — YAZ-3145: the last click decides — after a click in a note, a click on blank sidebar space gives ⌘V (paste the copied file) and ↓ (a sidebar row) back, as on main; editable and read-only', async () => {
+  const vaultFiles = async (): Promise<string[]> => (await readdir(vault)).sort()
+  const before = await vaultFiles()
+  const clip = () => win.evaluate(() => (window as unknown as { yaseenDocs: { file: { clipState(): Promise<{ op: string } | null> } } }).yaseenDocs.file.clipState())
+  const chord = (key: string) =>
+    win.evaluate((k) => {
+      const event = new KeyboardEvent('keydown', { key: k, code: `Key${k.toUpperCase()}`, metaKey: true, bubbles: true, cancelable: true })
+      ;(document.activeElement ?? document.body).dispatchEvent(event)
+      return event.defaultPrevented
+    }, key)
+  // Copy a FILE from its row.
+  await fileRow(win, 'Ideas').click()
+  expect(await chord('c')).toBe(true)
+  expect((await clip())?.op).toBe('copy')
+  const pasteAfterBlank = async (): Promise<void> => {
+    await blankSidebar(win)
+    expect(await win.evaluate(() => document.activeElement === document.body)).toBe(true)
+    expect(await win.evaluate(() => document.getSelection()?.anchorNode?.parentElement?.closest('[data-page="note"]') != null)).toBe(true)
+    expect(await chord('v')).toBe(true)
+    await expect.poll(async () => (await vaultFiles()).includes('Ideas copy.md')).toBe(true)
+    await rm(path.join(vault, 'Ideas copy.md'))
+    await expect.poll(vaultFiles).toEqual(before)
+    await blankSidebar(win)
+    await win.keyboard.press('ArrowDown')
+    expect(await win.evaluate(() => document.activeElement?.closest('.tree__row') != null)).toBe(true)
+  }
+  // An EDITABLE note: a click in its body, then blank sidebar space.
+  await fileRow(win, 'Ideas').click()
+  await editorOf(win).locator('p:text-is("synthetic-idea-body")').click()
+  await pasteAfterBlank()
+  // A READ-ONLY note: the same.
+  await fileRow(win, 'Locked note').click()
+  await line(win).click()
+  await pasteAfterBlank()
+  // And its title (YAZ-3140): a click there gives the page the keys again; blank space takes them back.
+  await layer(win).locator('.page-title__text').click()
+  expect(await chord('c')).toBe(false)
+  await pasteAfterBlank()
+  expect(await readFile(notePath, 'utf8')).toBe(LOCKED)
   await fileRow(win, 'Locked note').click()
   await expect(line(win)).toBeVisible()
 })

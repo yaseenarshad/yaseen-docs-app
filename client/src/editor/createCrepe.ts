@@ -212,6 +212,7 @@ import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPick
 import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
+import { claimPage } from '../lib/readOnlyCaret'
 
 export interface CreateCrepeOptions {
   root: HTMLElement
@@ -506,7 +507,12 @@ export function setMarkdown(crepe: Crepe, markdown: string): void {
 
 /** Move keyboard focus into the document (e.g. right after opening a file from the sidebar). */
 export function focusEditor(crepe: Crepe): void {
-  crepe.editor.action((ctx) => ctx.get(editorViewCtx).focus())
+  crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx)
+    // Sent into the page with no click (a tab open, a wikilink, Esc from the table of contents): it has the keys (YAZ-3145).
+    claimPage(view.dom)
+    view.focus()
+  })
 }
 
 /**

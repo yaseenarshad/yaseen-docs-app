@@ -20,15 +20,40 @@ export const NOTE_PAGE = '[data-page="note"]'
 
 const elementOf = (node: Node | null): Element | null => (node === null ? null : node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement)
 
+/**
+ * THE LAST CLICK DECIDES (YAZ-3145, option 1): the page the reader last pressed in, or last moved the
+ * focus into; null after a press or a focus move outside every page (blank sidebar space, the tab
+ * strip, a sidebar row, the title bar). A caret left in a page does not keep the keys once the reader
+ * has clicked away, so the window's file clipboard and the sidebar's arrows run as before. Routes
+ * with no click — first launch, a wikilink open, ⌘F / ⌘J then Esc — focus the page, and
+ * `focusEditor` / `focusReadOnlyBody` claim it outright (a focus that stays where it was fires no
+ * `focusin`). One capture listener pair per window, set once: no work on render.
+ */
+let claimed: Element | null = null
+
+/** Claims the page `el` is in for the keys; ends the claim when `el` is null or outside every page. */
+export function claimPage(el: Element | null): void {
+  claimed = el?.closest(NOTE_PAGE) ?? null
+}
+
+const pressedOrFocused = (event: Event): void => claimPage(event.target instanceof Element ? event.target : null)
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerdown', pressedOrFocused, true)
+  document.addEventListener('focusin', pressedOrFocused, true)
+}
+
+/** Whether `el` is in the page the reader last clicked in or was sent to. */
+const claims = (el: Element): boolean => claimed !== null && claimed.contains(el)
+
 /** Whether `el` is drawn: not inside a `visibility: hidden` tab layer. */
 export function isShown(el: Element): boolean {
   return el.ownerDocument.defaultView?.getComputedStyle(el).visibility !== 'hidden'
 }
 
-/** The visible read-only body that holds the reader's DOM selection, or null. */
+/** The visible read-only body that holds the reader's DOM selection, in the page they last clicked in (YAZ-3145), or null. */
 export function readOnlySelectionHolder(doc: Document = document): Element | null {
   const body = elementOf(doc.getSelection()?.anchorNode ?? null)?.closest(READ_ONLY_BODY) ?? null
-  return body !== null && isShown(body) ? body : null
+  return body !== null && isShown(body) && claims(body) ? body : null
 }
 
 /**
@@ -43,12 +68,12 @@ export function readOnlyNoteHoldsKeys(target: EventTarget | null): boolean {
   return (target === doc.body || target === doc.documentElement) && readOnlySelectionHolder(doc) !== null
 }
 
-/** The visible note page that holds either end of the reader's DOM selection (a caret counts), or null. */
+/** The visible note page that holds either end of the reader's DOM selection (a caret counts), when it is the page they last clicked in (YAZ-3145); null otherwise. */
 export function pageSelectionHolder(doc: Document = document): Element | null {
   const sel = doc.getSelection()
   for (const node of [sel?.anchorNode ?? null, sel?.focusNode ?? null]) {
     const page = elementOf(node)?.closest(NOTE_PAGE) ?? null
-    if (page !== null && isShown(page)) return page
+    if (page !== null && isShown(page) && claims(page)) return page
   }
   return null
 }
@@ -58,8 +83,9 @@ export function pageSelectionHolder(doc: Document = document): Element | null {
  * sidebar's arrows "from nowhere". A key belongs to the page when the target is a read-only body
  * (`readOnlyNoteHoldsKeys`), or the focus is nowhere (`<body>`) and the reader's selection is
  * anywhere in a visible note page — the title of a read-only note takes no focus, and neither does
- * the text of its properties, comments, backlinks or reviews. A focused control (a sidebar row)
- * keeps its own keys, and a real "nowhere" (no selection in a page) stays the sidebar's.
+ * the text of its properties, comments, backlinks or reviews. Only while that page has the reader's
+ * last click (YAZ-3145): a press outside every page ends it. A focused control (a sidebar row)
+ * keeps its own keys, and a real "nowhere" (no claimed selection in a page) stays the sidebar's.
  */
 export function pageHoldsKeys(target: EventTarget | null): boolean {
   if (readOnlyNoteHoldsKeys(target)) return true

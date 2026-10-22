@@ -32,7 +32,7 @@ import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { NOTE_PAGE, isShown, pageSelectionHolder } from '../lib/readOnlyCaret'
+import { NOTE_PAGE, claimPage, isShown, pageSelectionHolder } from '../lib/readOnlyCaret'
 
 const yes = (): boolean => true
 
@@ -49,6 +49,8 @@ const yes = (): boolean => true
  * note. An editable view runs ProseMirror's `focus` unchanged.
  */
 export function focusReadOnlyBody(view: EditorView, focus: () => void): void {
+  // Sent here with no click: this page has the keys (YAZ-3145).
+  claimPage(view.dom)
   if (!view.editable) {
     view.dom.focus({ preventScroll: true })
     const { anchor, head } = view.state.selection

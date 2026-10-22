@@ -47,9 +47,14 @@ describe('requestZoom (YAZ-1710)', () => {
     body.setAttribute('contenteditable', 'false')
     const text = document.createTextNode('read-only text')
     body.append(text)
-    section.append(body)
+    // The note's page (YAZ-3140), where the reader clicked (YAZ-3145: the last click decides).
+    const page = document.createElement('div')
+    page.dataset.page = 'note'
+    page.append(body)
+    section.append(page)
     document.body.append(section)
     ;(document.activeElement as HTMLElement | null)?.blur()
+    body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     document.getSelection()!.setBaseAndExtent(text, 2, text, 2)
     const seen: number[] = []
     section.addEventListener(ZOOM_EVENT, (event) => {
@@ -58,6 +63,12 @@ describe('requestZoom (YAZ-1710)', () => {
     })
     requestZoom(1)
     expect(seen).toEqual([1])
+    // A press outside every page (blank sidebar space) ends the claim: the app zooms, as on main.
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    requestZoom(1)
+    expect(seen).toEqual([1])
+    expect(zoom).toHaveBeenLastCalledWith(1)
+    zoom.mockClear()
     expect(zoom).not.toHaveBeenCalled()
     document.getSelection()!.removeAllRanges()
   })
