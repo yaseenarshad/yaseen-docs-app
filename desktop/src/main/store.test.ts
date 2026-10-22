@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type VaultSet, type WindowEntry } from '@shared/types'
+import { copyFoldKey } from '@shared/foldKey'
 import { createStore, isSettings, normalizeTabStrip, sanitizeSettings } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -1386,6 +1387,22 @@ describe('createStore: mutations', () => {
       store.pushRecent(OLD, 2)
       store.renamePath(OLD, NEW)
       expect(store.get().recents.map((r) => r.path)).toEqual([NEW, '/other'])
+    })
+
+    it('a copy fold key of Focus or Favorites (YAZ-3131 S7, S8): a rename moves each half on its own; a delete drops the key when either half goes', () => {
+      const store = createStore(file)
+      const key = (top: string, path: string) => copyFoldKey(top, path)
+      store.setFolder('/v', { expanded: [`${OLD}/deep`, key(OLD, OLD), key(OLD, `${OLD}/deep`), key(`${OLD}/deep`, `${OLD}/deep/sub`), key('/v/x', '/v/x/y')] })
+      store.renamePath(OLD, NEW)
+      expect(store.get().folders['/v'].expanded).toEqual([`${NEW}/deep`, key(NEW, NEW), key(NEW, `${NEW}/deep`), key(`${NEW}/deep`, `${NEW}/deep/sub`), key('/v/x', '/v/x/y')])
+      // A rename BELOW the top moves the path half alone.
+      store.renamePath(`${NEW}/deep`, `${NEW}/inner`)
+      expect(store.get().folders['/v'].expanded).toEqual([`${NEW}/inner`, key(NEW, NEW), key(NEW, `${NEW}/inner`), key(`${NEW}/inner`, `${NEW}/inner/sub`), key('/v/x', '/v/x/y')])
+      // A delete below the top drops the keys whose path half went; the top's own key stays.
+      store.removePath(`${NEW}/inner`)
+      expect(store.get().folders['/v'].expanded).toEqual([key(NEW, NEW), key('/v/x', '/v/x/y')])
+      store.removePath(NEW)
+      expect(store.get().folders['/v'].expanded).toEqual([key('/v/x', '/v/x/y')])
     })
 
     it('a FILE rename never trips the prefix branch (nothing is stored under a file path)', () => {

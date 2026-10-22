@@ -75,6 +75,7 @@ import {
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
+import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { atomicWrite } from './fs/fsUtils'
 
 /**
@@ -699,6 +700,11 @@ export function createStore(filePath: string): Store {
         changed = true
         return newPath + key.slice(oldPath.length)
       }
+      // A copy's fold key (YAZ-3131) is `<top>\0<path>`: each half follows the rename on its own.
+      const remapFold = (key: string): string => {
+        const parts = copyFoldParts(key)
+        return parts === null ? remap(key) : copyFoldKey(remap(parts[0]), remap(parts[1]))
+      }
       const remapKeys = <T>(lists: Record<string, T>, remapKey: (key: string) => string): Record<string, T> =>
         Object.fromEntries(Object.entries(lists).map(([key, value]) => [remapKey(key), value]))
       const windows = state.windows.map((w) => {
@@ -726,7 +732,7 @@ export function createStore(filePath: string): Store {
           remap(root),
           {
             ...folder,
-            expanded: folder.expanded.map(remap),
+            expanded: folder.expanded.map(remapFold),
             lastFile: folder.lastFile === null ? null : remap(folder.lastFile),
             folds: remapKeys(folder.folds, remap),
             baseGroups: remapKeys(folder.baseGroups, remapBaseGroupKey),
@@ -758,8 +764,10 @@ export function createStore(filePath: string): Store {
       const prefix = `${deleted}/`
       /** Is this stored path the deleted entry, or inside it? */
       const gone = (p: string): boolean => p === deleted || p.startsWith(prefix)
-      const drop = (paths: readonly string[]): string[] => {
-        const kept = paths.filter((p) => !gone(p))
+      /** A copy's fold key (YAZ-3131) goes when either half goes. */
+      const foldGone = (key: string): boolean => (copyFoldParts(key) ?? [key]).some(gone)
+      const drop = (paths: readonly string[], isGone = gone): string[] => {
+        const kept = paths.filter((p) => !isGone(p))
         if (kept.length !== paths.length) changed = true
         return kept
       }
@@ -815,7 +823,7 @@ export function createStore(filePath: string): Store {
             root,
             {
               ...folder,
-              expanded: drop(folder.expanded),
+              expanded: drop(folder.expanded, foldGone),
               lastFile: folder.lastFile !== null && gone(folder.lastFile) ? ((changed = true), null) : folder.lastFile,
               folds: dropKeys(folder.folds, gone),
               baseGroups: dropKeys(folder.baseGroups, baseGroupGone),

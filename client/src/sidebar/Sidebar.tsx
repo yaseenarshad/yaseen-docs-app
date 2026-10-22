@@ -1358,7 +1358,7 @@ export function Sidebar({
             {errorLines}
             {!loaded && favoriteNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
             {loaded && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
-            {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={reorder} />}
+            {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={reorder} copies />}
           </>
         ) : lens === 'focus' ? (
           // The Focus tab (YAZ-2619 D2, D4): the focus lists of the window's vaults (kept in the vault, YAZ-2702) in their own order, each a full
@@ -1378,7 +1378,7 @@ export function Sidebar({
                     Clear
                   </button>
                 </div>
-                <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={reorder} />
+                <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={reorder} copies />
               </>
             )}
           </>
@@ -1422,7 +1422,7 @@ export function Sidebar({
               },
               onCut: (paths) => clipTo(paths, 'cut'),
               onCopy: (paths) => clipTo(paths, 'copy'),
-              onPaste: () => menu.targetDir !== null && pasteInto(menu.targetDir),
+              onPaste: () => menu.targetDir !== null && pasteInto(menu.targetDir, menu.lens === 'files' ? undefined : (menu.top ?? undefined)),
               onNotice,
               onNewNote: viaTree(() => startCreate('file')),
               onNewDatedNote: viaTree(() => startCreate('file', datedSeed())),

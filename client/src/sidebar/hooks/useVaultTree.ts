@@ -4,6 +4,7 @@
  * focus list (both kept in the vault), and the checks that close a tab whose file is gone.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
+import { copyFoldKey } from '@shared/foldKey'
 import { MAX_FOCUS, rootOfPath, stripSlash, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import type { WatchSource } from '../../hooks/useWatch'
@@ -11,7 +12,7 @@ import type { NoticeKind } from '../../lib/notice'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../../lib/leadingTrailing'
 import { storage } from '../../lib/storage'
 import { fetchTree, latestTree, onTree } from '../../lib/treeFeed'
-import { allDirs, favoriteOrder, favoriteRoots, otherFiles, treeHasPath, treeReducer } from '../../lib/treeState'
+import { allDirs, ancestorDirs, copyDirs, favoriteOrder, favoriteRoots, otherFiles, treeHasPath, treeReducer } from '../../lib/treeState'
 import type { SidebarVault } from '../Sidebar'
 
 const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
@@ -205,7 +206,8 @@ export function useVaultTree(
   const focusOrder = useSyncExternalStore(storage.subscribe, storage.getFocusOrder)
   const focusList = useMemo(() => favoriteOrder(roots, focusByRoot, focusOrder), [roots, focusByRoot, focusOrder])
   const focusNodes = useMemo(() => (forest === null ? [] : favoriteRoots(forest, focusList)), [forest, focusList])
-  const focusDirs = useMemo(() => allDirs(focusNodes), [focusNodes])
+  // Each copy folds on its own (YAZ-3131 Decision 2), so the tab's expand-all set is its copies' keys.
+  const focusDirs = useMemo(() => copyDirs(focusNodes), [focusNodes])
   // The Favorites tab's rows (YAZ-1766 D4; YAZ-2631 D1): ONE flat list across the vaults of the window,
   // off the live trees, by the Focus rule above; nesting and redundancy are kept. `favoritePaths` is
   // every favorite in the tab's order — the store's order across vaults over each vault's own file
@@ -213,7 +215,7 @@ export function useVaultTree(
   const storedOrder = useSyncExternalStore(storage.subscribe, storage.getFavoritesOrder)
   const favoritePaths = useMemo(() => favoriteOrder(roots, favoritesByRoot, storedOrder), [roots, favoritesByRoot, storedOrder])
   const favoriteNodes = useMemo(() => (forest === null ? [] : favoriteRoots(forest, favoritePaths)), [forest, favoritePaths])
-  const favoriteDirs = useMemo(() => allDirs(favoriteNodes), [favoriteNodes])
+  const favoriteDirs = useMemo(() => copyDirs(favoriteNodes), [favoriteNodes])
 
   /** Ask for a fresh tree of one vault; the answer lands through its feed below. A folder that is gone is App's to drop (R6). */
   const refresh = useCallback((vault: string) => {
@@ -401,13 +403,16 @@ export function useVaultTree(
   /**
    * Open the way to `file` (YAZ-2602): every folder above it in the vault that holds it — a
    * synthetic child opens the folder itself — and that vault's row, if the user closed it. For the
-   * gestures that SHOW a row: a reveal (S17), a create, a paste.
+   * gestures that SHOW a row: a reveal (S17), a create, a paste. With `top`, the gesture came from a
+   * copy of Focus or Favorites (YAZ-3131 Decision 4), whose folds are its own: the way down from that
+   * top row opens too, in that copy alone.
    */
   const openTo = useCallback(
-    (file: string) => {
+    (file: string, top?: string) => {
       const vault = rootOf(file)
       if (live.current.closedVaults.includes(vault)) live.current.onSetVaultOpen(vault, true)
       dispatch({ type: 'expandTo', root: vault, file })
+      if (top !== undefined && file.startsWith(`${top}/`)) dispatch({ type: 'open', dirs: [top, ...ancestorDirs(top, file)].map((dir) => copyFoldKey(top, dir)) })
     },
     [rootOf],
   )
@@ -446,8 +451,8 @@ export function useVaultTree(
   /**
    * The focus toggle (YAZ-2619 D3), into the vaults' own lists since YAZ-2702 (`toggleIn`):
    * `MAX_FOCUS` at most for EACH VAULT (R2; S5) — an add past it keeps the first `MAX_FOCUS` of that
-   * vault and says so. `isOn` arrives with the paths. A folder just added shows OPEN on the tab (R4;
-   * the synthetic-child idiom `startCreate` uses), the items go last on the tab, and the toast
+   * vault and says so. `isOn` arrives with the paths. A folder just added shows OPEN on the tab (R4),
+   * as its own top row's copy (YAZ-3131 S4), the items go last on the tab, and the toast
    * confirms, as the favorite toggle's does (R3).
    */
   const toggleFocus = useCallback(
@@ -456,7 +461,8 @@ export function useVaultTree(
       if (full === null) return onNotice('Focus is still loading. Try again.', 'error')
       const n = paths.length > 1 ? `${paths.length} ` : ''
       if (isOn) return onNotice(`Removed ${n}from focus`)
-      for (const path of paths) if (dirs.includes(path)) dispatch({ type: 'expandTo', root: rootOf(path), file: `${path}/x` })
+      // A folder joins open (R4) in its own copy only (YAZ-3131 S4): Files and the other copies keep their folds.
+      dispatch({ type: 'open', dirs: paths.filter((path) => dirs.includes(path)).map((path) => copyFoldKey(path, path)) })
       if (full) return onNotice(`Focus limit reached: ${MAX_FOCUS} items`, 'error')
       // With two or more vaults the new items go LAST on the tab, "the order added" (YAZ-2619 D1), as
       // before the lists were the vaults': the order across vaults takes them. Favorites writes no order
@@ -464,7 +470,7 @@ export function useVaultTree(
       if (live.current.roots.length > 1) storage.setFocusOrder(live.current.roots.filter((vault) => focus.held.current[vault] !== undefined), [...focusList, ...paths.filter((p) => !focusList.includes(p))])
       onNotice(`Added ${n}to focus`)
     },
-    [rootOf, dirs, focus, focusList, toggleIn, onNotice],
+    [dirs, focus, focusList, toggleIn, onNotice],
   )
   /**
    * "Clear" (YAZ-2619; YAZ-2702 S4): the list of each vault of the window that has items becomes

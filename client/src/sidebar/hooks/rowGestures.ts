@@ -193,7 +193,7 @@ export function useFileClipboard(
   orderedSelectedPaths: () => string[],
   dirs: string[],
   refresh: (root: string) => void,
-  openTo: (file: string) => void,
+  openTo: (file: string, top?: string) => void,
   clipboardRef: { current: SidebarClipboard | null },
   onNotice: (message: string, kind?: NoticeKind) => void,
 ) {
@@ -205,7 +205,7 @@ export function useFileClipboard(
    */
   const [clip, setClip] = useState<FileClipState>(null)
   // The paste of a Cut that would clear values, or of a Copy that would not keep them (YAZ-2420 3E1), waiting on its sheet (D21); null when it is closed.
-  const [pendingPaste, setPendingPaste] = useState<{ dir: string; moves: Move[]; lost: LeftBehind; copy: boolean } | null>(null)
+  const [pendingPaste, setPendingPaste] = useState<{ dir: string; top?: string; moves: Move[]; lost: LeftBehind; copy: boolean } | null>(null)
   // The sheet speaks for the clipboard it was asked about: another one ends the question.
   useEffect(() => setPendingPaste(null), [clip])
   useEffect(() => {
@@ -261,12 +261,13 @@ export function useFileClipboard(
    * judged as a paste from another window is.
    */
   const runPaste = useCallback(
-    async (dir: string) => {
+    // `top`: the copy of Focus or Favorites the paste came from (YAZ-3131 S21), which opens the folder there too.
+    async (dir: string, top?: string) => {
       const { root: vault, index } = vaultOf(dir)
       try {
         const before = clip?.op === 'cut' ? { records: index.records, folders: index.folders } : null
         const res = await api.file.paste({ targetDir: dir })
-        openTo(`${dir}/x`)
+        openTo(`${dir}/x`, top)
         refresh(vault)
         if (before !== null) for (const { from, to, kind } of res.pasted) await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })
         else if (index.ids) {
@@ -299,7 +300,7 @@ export function useFileClipboard(
    * record, so it never asks: the index cannot speak for it.
    */
   const pasteInto = useCallback(
-    (dir: string) => {
+    (dir: string, top?: string) => {
       if (clip !== null) {
         const moves = clip.paths.flatMap((oldPath): Move[] => {
           const newPath = `${dir}/${basename(oldPath)}`
@@ -307,9 +308,9 @@ export function useFileClipboard(
         })
         const { root: vault, index } = vaultOf(dir)
         const lost = valuesLeftBehind({ root: vault, moves, records: index.records, folders: index.folders })
-        if (lost.folders.length > 0) return setPendingPaste({ dir, moves, lost, copy: clip.op === 'copy' })
+        if (lost.folders.length > 0) return setPendingPaste({ dir, top, moves, lost, copy: clip.op === 'copy' })
       }
-      void runPaste(dir)
+      void runPaste(dir, top)
     },
     [vaultOf, clip, dirs, runPaste],
   )
@@ -318,7 +319,7 @@ export function useFileClipboard(
   const confirmPaste = useCallback(() => {
     if (pendingPaste === null) return
     setPendingPaste(null)
-    void runPaste(pendingPaste.dir)
+    void runPaste(pendingPaste.dir, pendingPaste.top)
   }, [pendingPaste, runPaste])
 
   /**
@@ -377,7 +378,7 @@ export function useInlineEdits(
   onOpenFile: (path: string) => void,
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>,
-  openTo: (file: string) => void,
+  openTo: (file: string, top?: string) => void,
 ) {
   const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; top: string | null } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir'; top: string | null } | null>(null)
@@ -385,18 +386,19 @@ export function useInlineEdits(
   const startCreate = useCallback(
     (kind: EntryKind, seed = '') => {
       if (menu === null || menu.targetDir === null) return
-      // The input renders inside the target dir's children, so that dir must be open — and its
-      // vault's row with it; `openTo` opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
-      openTo(`${menu.targetDir}/x`)
       // Favorites and Focus each show a SUBSET of the vault (YAZ-1766 3B1, YAZ-2619 S36): a target dir
       // the tab does not hold — or the root on a tab with no rows — would give the input nowhere to
-      // mount, so the create moves to Files, where the `openTo` above has already opened that dir.
+      // mount, so the create moves to Files, where the `openTo` below opens that dir.
       // A FOLDER made at the root goes there too: it is no item of the list, so the tab would never
       // show it. A note made there opens as a tab, so it stays (YAZ-2619 R18, YAZ-2845 D2).
       // The reveal hop's rule (D10), applied to the other gesture that needs a row. With two or more
       // vaults a vault's root is held only as its row (YAZ-2602), and neither tab has that row (YAZ-2631 D1).
       const shown = menu.lens === 'favorites' ? favoriteNodes : menu.lens === 'focus' ? focusNodes : null
       const toFiles = shown !== null && (menu.targetDir === root ? shown.length === 0 || kind === 'dir' : findDirNode(shown, menu.targetDir) === null)
+      // The input renders inside the target dir's children, so that dir must be open — and its
+      // vault's row with it; `openTo` opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
+      // In a copy of Focus or Favorites it opens there too, and in that copy alone (YAZ-3131 S20).
+      openTo(`${menu.targetDir}/x`, shown === null || toFiles ? undefined : (menu.top ?? undefined))
       if (toFiles) onLensChange('files')
       // The copy this tab's row stands under means nothing in Files, which draws each row once (YAZ-2845 D1).
       setCreating({ kind, seed, parentDir: menu.targetDir, top: toFiles ? null : menu.top })
