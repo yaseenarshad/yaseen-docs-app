@@ -164,6 +164,7 @@ import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
 import { $shortcut, replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
+import { readOnlyKeys } from './readOnlyKeys'
 import { createBlockHandleMenu } from './blockHandleMenu'
 import { breakMarks } from './breakMarks'
 import { createDrawingPreview, type DrawingPreviewOptions } from './drawing/drawingPreview'
@@ -408,6 +409,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(bulletThreading)
   crepe.editor.use(sectionIndent)
   crepe.editor.use(lineNumbers)
+  // A read-only note's keyboard view actions (YAZ-3125): fold all, fold at the caret, zoom, the view undo.
+  crepe.editor.use(readOnlyKeys)
   // ONE resolve source instance feeds both the decorations and the click plugin's routing.
   const wikilinks = opts.wikilinks ?? createWikilinkResolveSource()
   // A missing catalog must stay passive: recognized non-Markdown targets can never fall through
