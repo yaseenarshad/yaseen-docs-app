@@ -216,6 +216,30 @@ test('step 4b — a folder and its subfolder both in focus: each copy of the sub
   await shoot(win, 'focus-05b-two-copies')
 })
 
+test('checker 4c — ← and → fold one copy in the real app, and a click that closes the folder of the open page in its copy leaves no row lit (YAZ-3131 S6, S13)', async () => {
+  const archive = dirRow(win, 'archive') // 0: inside Projects, 1: the top row
+  const item = (copy: number) => archive.nth(copy).locator('..')
+  const plan = fileRow(win, 'Old plan')
+  await expect(item(0)).toHaveAttribute('aria-expanded', 'true')
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'true')
+  // S6: the arrow keys fold the copy that has the keyboard focus.
+  await archive.nth(1).focus()
+  await win.keyboard.press('ArrowLeft')
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'false')
+  await expect(item(0)).toHaveAttribute('aria-expanded', 'true')
+  await win.keyboard.press('ArrowRight')
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'true')
+  await expect(plan).toHaveCount(2)
+  // S13: open the page from copy 1, then close archive in copy 1 with a click.
+  await plan.nth(1).click()
+  await expect(plan.nth(1)).toHaveClass(/tree__row--active/)
+  await archive.nth(1).click()
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'false')
+  await expect(plan).toHaveCount(1)
+  await shoot(win, 'checker-4c-s13')
+  await expect(win.locator('.sidebar__body .tree__row--active')).toHaveCount(0)
+})
+
 // ---------------------------------------------------------------- clear
 
 test('step 5 — "Clear" empties the list: the empty message shows, the count line goes, the tab stays, and the vault\'s focus file holds an empty list', async () => {
