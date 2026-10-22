@@ -43,6 +43,11 @@ const toggle = () => switchNamed('Line numbers')
 /** The switch under it (YAZ-2709). */
 const indentToggle = () => switchNamed('Section indent')
 const click = (element: Element) => act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+/** A real press: `pointerdown`, then the `click` (a press outside closes on the first). */
+const press = (element: Element) => {
+  act(() => void element.dispatchEvent(new Event('pointerdown', { bubbles: true })))
+  click(element)
+}
 
 describe('PageSettings', () => {
   it('opens under the cog on a click and closes on the second (S2)', () => {
@@ -56,10 +61,35 @@ describe('PageSettings', () => {
     expect(menu()).toBeNull()
   })
 
-  it('closes on a click outside (S3)', () => {
+  it('closes on a press outside (S3)', () => {
     mount()
     click(cog())
-    click(container.querySelector('[data-outside]')!)
+    press(container.querySelector('[data-outside]')!)
+    expect(menu()).toBeNull()
+  })
+
+  it('YAZ-3121: closes when the window loses focus — a press inside the draw.io frame reaches no event of this document', () => {
+    mount()
+    click(cog())
+    act(() => void window.dispatchEvent(new Event('blur')))
+    expect(menu()).toBeNull()
+  })
+
+  it('YAZ-3121: closes on a press whose pointerdown a canvas cancels (no mousedown or click may follow)', () => {
+    mount()
+    click(cog())
+    const canvas = container.querySelector('[data-outside]')!
+    canvas.addEventListener('pointerdown', (e) => e.preventDefault())
+    act(() => void canvas.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true })))
+    expect(menu()).toBeNull()
+  })
+
+  it('a press on the cog or inside the menu is not "outside": the cog\u2019s own click toggles it', () => {
+    mount()
+    click(cog())
+    press(toggle())
+    expect(menu()).not.toBeNull()
+    press(cog())
     expect(menu()).toBeNull()
   })
 

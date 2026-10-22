@@ -63,13 +63,22 @@ export function PageSettings({ readOnly, onToggleReadOnly, lineNumbers = false, 
   const menuId = useId()
   const tipId = useId()
 
+  // A press outside closes the menu, and so does the window losing focus (YAZ-3121, the rule of the
+  // "Allow edits?" box): a `pointerdown` in the capture phase, because a canvas may cancel what follows
+  // it, and `blur`, because a press inside the draw.io frame reaches no event of this document at all.
+  // The press that opened the menu came before it existed, so it never closes it.
   useEffect(() => {
     if (!open) return
-    const onOutsideClick = (event: MouseEvent) => {
+    const onOutside = (event: Event) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
     }
-    document.addEventListener('click', onOutsideClick)
-    return () => document.removeEventListener('click', onOutsideClick)
+    const onBlur = () => setOpen(false)
+    document.addEventListener('pointerdown', onOutside, true)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      document.removeEventListener('pointerdown', onOutside, true)
+      window.removeEventListener('blur', onBlur)
+    }
   }, [open])
 
   return (
