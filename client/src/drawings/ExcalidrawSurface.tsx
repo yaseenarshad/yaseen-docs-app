@@ -553,7 +553,10 @@ export function ExcalidrawSurface({
         // The engine reads this once, at its mount, after its module loaded: by then a double
         // click may have opened the tab's name field, which keeps the caret (YAZ-3059).
         autoFocus={autoFocus && !namingTab(document.activeElement)}
-        viewModeEnabled={readOnly}
+        // Read only forces the engine's view mode; an editable drawing passes NONE, because a defined
+        // prop — `false` too — turns off the engine's own ⌥R toggle (YAZ-3120). `true` → `undefined`
+        // still leaves view mode: the engine sets it to `!!viewModeEnabled` when the prop changes.
+        viewModeEnabled={readOnly ? true : undefined}
       >
         {canvasSidebar}
       </Excalidraw>
