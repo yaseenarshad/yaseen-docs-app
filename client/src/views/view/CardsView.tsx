@@ -49,6 +49,8 @@ export interface CardsViewProps {
   resolveLink: ResolveLink
   /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
   onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
+  /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
+  readOnly?: ReadonlySet<string>
 }
 
 // ---------- covers ----------
@@ -134,7 +136,9 @@ function CardCover({ root, cover }: { root: string; cover: Cover }) {
  * page's card); search narrows cards and drops empty groups. Note-property rows edit inline
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
-export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue }: CardsViewProps) {
+const NO_READ_ONLY: ReadonlySet<string> = new Set()
+
+export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY }: CardsViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   /** A typed editor keeps its own (native) menu, as in the table. */
   const openMenu = (event: ReactMouseEvent, row: Row): void => {
@@ -199,6 +203,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                         options={typings.get(key)?.options}
                         titles={linkNames.get(key) ?? titles}
                         resolve={resolve}
+                        readOnly={readOnly.has(row.record.path)}
                         onCommit={(next) => onWriteValue(row.record.path, bare, next)}
                       />
                     )}

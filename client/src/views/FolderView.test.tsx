@@ -1612,3 +1612,39 @@ describe('each folder has its own properties (D19)', () => {
     })
   })
 })
+
+/**
+ * A read-only note in a folder that uses IDs (YAZ-3076 D6, S52, S53, S57): the views show the
+ * folder's block of `in`, never the note's top-level fields, so the switch must reach them from the
+ * note's OWN properties. Its cell opens no editor, its card does not move, and nothing is written.
+ */
+describe('a read-only note in a folder that uses IDs (YAZ-3076 D6)', () => {
+  const locked = (): IndexRecord[] => vault().map((r) => (r.path === DEEP ? { ...r, properties: { ...r.properties, readonly: true } } : r))
+  const cellOf = (el: ParentNode, name: string, column: number): HTMLElement => q<HTMLElement>(el, `[data-cell="${rowNames(el).indexOf(name)}:${column}"]`)
+  const cardOf = (el: ParentNode, name: string): Element => [...el.querySelectorAll('.view-board__title')].find((title) => title.textContent === name)!.closest('.view-board__card')!
+
+  it('its cell shows the folder’s value and has no editor, while another note’s cell still edits', async () => {
+    const el = await mount({ ...SETTINGS, views: [TABLE] }, locked())
+    expect(cellOf(el, 'Old', 1).textContent).toContain('3')
+    expect(cellOf(el, 'Old', 1).querySelector('[data-edit]')).toBeNull()
+    expect(cellOf(el, 'Old', 1).querySelector('[title="This note is read only"]')).not.toBeNull()
+    expect(cellOf(el, 'Sales', 1).querySelector('[data-edit]')).not.toBeNull()
+  })
+
+  it('its board card does not drag; nothing is written', async () => {
+    const el = await mount({ ...SETTINGS, views: [{ ...BOARD, order: ['file.name'], groupBy: { property: 'note.order' } }] }, locked())
+    expect(cardOf(el, 'Old').getAttribute('draggable')).not.toBe('true')
+    act(() => void cardOf(el, 'Old').dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true })))
+    const sales = cardOf(el, 'Sales').closest('.view-board__col')!
+    act(() => void sales.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true })))
+    await flush()
+    expect(writeValues).not.toHaveBeenCalled()
+  })
+
+  it('S57: a new snapshot without the switch gives the cell its editor back', async () => {
+    const el = await mount({ ...SETTINGS, views: [TABLE] }, locked())
+    feed({ ...SETTINGS, views: [TABLE] }, vault())
+    await flush()
+    expect(cellOf(el, 'Old', 1).querySelector('[data-edit]')).not.toBeNull()
+  })
+})

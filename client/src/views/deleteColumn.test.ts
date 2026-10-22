@@ -186,6 +186,14 @@ describe('deleteColumn', () => {
     expect(vi.mocked(transformFile).mock.calls.map(([path]) => path)).toEqual([A, C])
   })
 
+  it('S55 (YAZ-3076 D6): a read-only note loses the column too — a folder-wide action keeps the folder consistent, as a link rewrite does', async () => {
+    disk.set(C, `---\nreadonly: true\nin:\n  ${FOLDER_ID}:\n    status: 1-Backlog\n---\nbody c\n`)
+    const h = host({ records: [rec(A, held({ status: '2-Todo', owner: '[[Sam]]' }, { title: 'A' })), rec(B, held({ owner: '[[Kim]]' }, { title: 'B' })), rec(C, held({ status: '1-Backlog' }, { readonly: true }))] })
+    await deleteColumn('note.status', h)
+    expect(disk.get(C)).toBe('---\nreadonly: true\n---\nbody c\n')
+    expect(vi.mocked(transformFile).mock.calls.map(([path]) => path)).toEqual([A, C])
+  })
+
   it('settings land BEFORE the first strip — the source of truth first', async () => {
     const order: string[] = []
     const h = host({ writeSettings: vi.fn(async () => void order.push('settings')) })

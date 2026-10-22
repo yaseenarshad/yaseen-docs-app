@@ -35,8 +35,14 @@ export const DIAGRAM_READ_ONLY_ATTR = 'yaseendraw-readonly'
 export function isNoteReadOnly(content: string): boolean {
   const { frontmatter } = splitFrontmatter(content)
   if (!frontmatter.includes(READ_ONLY_KEY)) return false
-  return parseFrontmatter(frontmatter).properties[READ_ONLY_KEY] === true
+  return isReadOnlyProperties(parseFrontmatter(frontmatter).properties)
 }
+
+/**
+ * The same rule on properties already parsed — a note as the index holds it (YAZ-3076 D6, S57): the
+ * folder views read each row's switch here, with no read of their own.
+ */
+export const isReadOnlyProperties = (properties: Readonly<Record<string, unknown>>): boolean => properties[READ_ONLY_KEY] === true
 
 /**
  * The note with the switch on or off, every other byte kept (`setFrontmatterProperty`, S2). Off of

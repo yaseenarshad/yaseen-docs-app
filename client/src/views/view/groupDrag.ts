@@ -102,8 +102,11 @@ export interface GroupDrag {
   drag: { path: string; gk: string; key: Value | null; outer: string } | null
   /** Group key of the hovered drop target (never the source group), inner groups scoped by their outer. */
   over: string | null
-  /** Spread on each draggable card/row, with the group it is being dragged out of and where that group sits. */
-  source: (path: string, group: Group, at?: GroupSpot) => Record<string, unknown>
+  /**
+   * Spread on each draggable card/row, with the group it is being dragged out of and where that group
+   * sits. `locked` (a read-only note, YAZ-3076 D6 S53) makes it no drag source: a move writes a property.
+   */
+  source: (path: string, group: Group, at?: GroupSpot, locked?: boolean) => Record<string, unknown>
   /** Spread on each column/section drop target (a group's own rows included — events bubble). */
   target: (group: Group, at?: GroupSpot) => Record<string, unknown>
 }
@@ -148,8 +151,8 @@ export function useGroupDrag(
     drag,
     over,
     // A row stays draggable while ANY level accepts drops; the target side rejects the rest.
-    source: (path, group, at = { level: 0, outer: group }) =>
-      !keys.some((k) => k !== null)
+    source: (path, group, at = { level: 0, outer: group }, locked = false) =>
+      locked || !keys.some((k) => k !== null)
         ? {}
         : {
             draggable: true,

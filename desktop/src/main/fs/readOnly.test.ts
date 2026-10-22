@@ -188,3 +188,12 @@ describe('a diagram: `yaseendraw-readonly="1"` on `<mxfile>`', () => {
     for (const xml of ['', 'not xml', '<svg/>', '<mxfile']) expect(setDiagramReadOnly(xml, true)).toBe(xml)
   })
 })
+
+describe('a note as the index holds it: its parsed properties (YAZ-3076 D6, S57)', () => {
+  it('only `readonly: true` counts, the rule of `isNoteReadOnly`', async () => {
+    const { isReadOnlyProperties } = await import('@shared/readOnly')
+    expect(isReadOnlyProperties({ readonly: true })).toBe(true)
+    for (const value of ['yes', 1, 'true', false, null, undefined]) expect(isReadOnlyProperties({ readonly: value }), String(value)).toBe(false)
+    expect(isReadOnlyProperties({})).toBe(false)
+  })
+})

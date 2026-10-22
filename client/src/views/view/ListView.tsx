@@ -47,6 +47,8 @@ export interface ListViewProps {
   resolveLink: ResolveLink
   /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
   onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
+  /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
+  readOnly?: ReadonlySet<string>
 }
 
 export type MarkerStyle = 'bullet' | 'number' | 'none'
@@ -74,7 +76,9 @@ const separatorOf = (view: ViewDef): string => (typeof view.propertySeparator ==
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue }: ListViewProps) {
+const NO_READ_ONLY: ReadonlySet<string> = new Set()
+
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY }: ListViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   /** A typed editor keeps its own (native) menu, as in the table. */
   const openMenu = (event: ReactMouseEvent, row: Row): void => {
@@ -118,6 +122,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
                         options={typings.get(key)?.options}
         titles={linkNames.get(key) ?? titles}
         resolve={resolve}
+        readOnly={readOnly.has(row.record.path)}
         onCommit={(next) => onWriteValue(row.record.path, bare, next)}
       />
     )
