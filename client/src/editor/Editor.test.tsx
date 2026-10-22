@@ -597,7 +597,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
       // A mount writes nothing; the one door a click may use is the switch's own.
       const stores = watchStores(['setTocSwitch'])
       clickCog(el)
-      expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
+      expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
       act(() => row(el, 'Table of contents').click())
       expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
       expect(el.querySelector('nav.toc')).toBeNull()
@@ -636,7 +636,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
   it('with the app-wide setting Off the cog has no "Table of contents" row — there is nothing to turn off — and "Heading levels" is still there', async () => {
     const el = await mount(BODY, 1, { tableOfContents: 'off' })
     clickCog(el)
-    expect(rows(el).map((button) => button.textContent)).toEqual(['Line numbers', 'Section indent', 'Heading levels'])
+    expect(rows(el).map((button) => button.textContent)).toEqual(['Read only', 'Line numbers', 'Section indent', 'Heading levels'])
     expect(el.querySelector('.page-settings__choices')).toBeNull()
   })
 
@@ -646,7 +646,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     try {
       const el = await mount(BODY, 1, { tableOfContents: 'off' })
       clickCog(el)
-      expect(rows(el).map((button) => button.textContent)).toEqual(['Line numbers', 'Section indent', 'Heading levels'])
+      expect(rows(el).map((button) => button.textContent)).toEqual(['Read only', 'Line numbers', 'Section indent', 'Heading levels'])
       clickCog(el)
       // The setting comes back in the same editor (Settings in this or another window): the page is still off.
       act(() => root!.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} tableOfContents="auto" />))
@@ -1530,10 +1530,13 @@ describe('a save repaints only the chips (YAZ-2196 P6)', () => {
 /** One click on the page settings cog: opens the menu, or closes it. */
 const clickCog = (host: ParentNode): void => act(() => host.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
 
-/** The menu's one switch, through the real cog: opens the menu, clicks "Line numbers", closes the menu. */
+/** A switch of the cog's menu by its name ("Read only" stands first, YAZ-3076). */
+const menuSwitch = (host: ParentNode, name: string): HTMLButtonElement => [...host.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button[aria-pressed]')].find((button) => button.textContent?.startsWith(name))!
+
+/** "Line numbers", through the real cog: opens the menu, clicks the switch, closes the menu. */
 function switchLineNumbers(host: ParentNode): void {
   clickCog(host)
-  act(() => host.querySelector<HTMLButtonElement>('.page-settings__menu button[aria-pressed]')!.click())
+  act(() => menuSwitch(host, 'Line numbers').click())
   clickCog(host)
 }
 
@@ -2071,5 +2074,89 @@ describe('a read-only note (YAZ-3076 D2)', () => {
     act(() => announceTwinSave(PATH, 5))
     await settle()
     expect(fakeOf().readonly).toBe(true)
+  })
+})
+
+describe('the cog’s "Read only" row, the chip and the "Allow edits?" box on a note (YAZ-3076 D3, D4)', () => {
+  const LOCKED_FM = '---\nstatus: draft\nreadonly: true\n---\n'
+  const chipButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.read-only-chip__button')
+  const askBox = (el: HTMLElement) => el.querySelector<HTMLElement>('.read-only-chip__ask')
+  const boxButton = (el: HTMLElement, name: string) => [...(askBox(el)?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === name)!
+  const readonlyOf = () => (crepe() as FakeCrepe & { readonly: boolean }).readonly
+
+  it('S12, S43, S44: on saves the typing first, then writes the key; the chip shows between the zoom and the save chip, and nothing asked', async () => {
+    let mtime = 10
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: ++mtime, size: body.content.length }))
+    const el = await mount(FM + BODY)
+    type('# Hello\n\ntyped first\n')
+    // transformFile reads the file the flush has just written.
+    diskHas(`${FM}# Hello\n\ntyped first\n`, 11)
+    clickCog(el)
+    await act(async () => {
+      menuSwitch(el, 'Read only').click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
+    expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual([`${FM}# Hello\n\ntyped first\n`, `---\nstatus: draft\nreadonly: true\n---\n# Hello\n\ntyped first\n`])
+    expect(writeFile.mock.calls[1]?.[0].expectedMtime).toBe(11)
+    // The menu stays open with the check mark (S43); nothing asked.
+    expect(menuSwitch(el, 'Read only').getAttribute('aria-pressed')).toBe('true')
+    expect(askBox(el)).toBeNull()
+    expect(readonlyOf()).toBe(true)
+    expect([...el.querySelector('.status-chips')!.children].map((c) => c.className)).toEqual(['page-settings', 'document-zoom', 'read-only-chip', expect.stringContaining('save-indicator')])
+    // The watcher's echo of the switch carries this editor's mtime: no read, no reload, no bar (S12, S17).
+    const reads = readFile.mock.calls.length
+    await emit({ type: 'change', path: PATH, mtime: 12 })
+    expect(readFile.mock.calls.length).toBe(reads)
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+  })
+
+  it('S45, S47, S48: the chip asks; the cog’s row while on opens the same box; "Allow edits" removes the key and the chip', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
+    const el = await mount(LOCKED_FM + BODY)
+    expect(chipButton(el)?.textContent).toBe('Read only')
+    act(() => chipButton(el)!.click())
+    expect(askBox(el)?.textContent).toContain('Allow edits?')
+    act(() => chipButton(el)!.click())
+    expect(askBox(el)).toBeNull()
+    // The cog's row while on: the menu closes, the box opens under the chip.
+    clickCog(el)
+    act(() => menuSwitch(el, 'Read only').click())
+    expect(el.querySelector('.page-settings__menu')).toBeNull()
+    expect(askBox(el)).not.toBeNull()
+    expect(writeFile).not.toHaveBeenCalled()
+    diskHas(LOCKED_FM + BODY, 1)
+    await act(async () => {
+      boxButton(el, 'Allow edits').click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: FM + BODY, expectedMtime: 1 })
+    expect(chipButton(el)).toBeNull()
+    expect(readonlyOf()).toBe(false)
+  })
+
+  it('S51: nothing but the cog and the chip turns it on or off — Cancel writes nothing', async () => {
+    const el = await mount(LOCKED_FM + BODY)
+    act(() => chipButton(el)!.click())
+    act(() => boxButton(el, 'Cancel').click())
+    expect(askBox(el)).toBeNull()
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(readonlyOf()).toBe(true)
+  })
+
+  it('a refused write is one passive notice, and the switch stays as it was', async () => {
+    const onNotice = vi.fn()
+    const el = await mount('---\na: [\n---\n' + BODY, 1, { onNotice })
+    diskHas('---\na: [\n---\n' + BODY, 1)
+    clickCog(el)
+    await act(async () => {
+      menuSwitch(el, 'Read only').click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
+    expect(onNotice).toHaveBeenCalledWith(expect.stringMatching(/^Read only could not change: frontmatter is not valid YAML/))
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(chipButton(el)).toBeNull()
   })
 })

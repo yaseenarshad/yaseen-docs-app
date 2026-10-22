@@ -38,6 +38,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { GithubSyncStatus, SaveDrawingResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
+import { PageSettings } from '../editor/PageSettings'
+import { ReadOnlyChip } from '../editor/ReadOnlyChip'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { SyncIndicator } from '../editor/SyncIndicator'
 import type { WatchSource } from '../hooks/useWatch'
@@ -95,9 +97,17 @@ export function useBoardDocument(options: BoardDocumentOptions) {
   const [conflictMtime, setConflictMtime] = useState<number | null>(null)
   /** The file's read-only switch as the file last said it (see the module doc). */
   const [readOnly, setReadOnlyShown] = useState(options.readOnly === true)
+  /** The chip's "Allow edits?" box (YAZ-3076 D4): this tab's own, and gone once read only is. */
+  const [askingUnlock, setAskingUnlock] = useState(false)
+  useEffect(() => {
+    if (!readOnly) setAskingUnlock(false)
+  }, [readOnly])
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
   // The chips' live state, read by `<BoardChips>` alone (YAZ-2073 5D).
-  const [chips] = useState(() => createStore<ChipState>({ status: 'saved', sync, onSyncNow }))
+  const [chips] = useState(() => createStore<ChipState>({ status: 'saved', sync, onSyncNow, readOnly: options.readOnly === true, askingUnlock: false, readOnlyActions: NO_READ_ONLY_ACTIONS }))
   useLayoutEffect(() => chips.set({ sync, onSyncNow }), [chips, sync, onSyncNow])
+  useLayoutEffect(() => chips.set({ readOnly, askingUnlock }), [chips, readOnly, askingUnlock])
 
   const save = useCallback(
     async (_version: number, expectedMtime: number): Promise<{ mtime: number }> => {
@@ -246,22 +256,58 @@ export function useBoardDocument(options: BoardDocumentOptions) {
     [reload],
   )
 
+  // The cog's row and the chip, wired once: the chips read them from the store, never from props,
+  // because the drawing's chips are one memoized render function for the host's life.
+  useLayoutEffect(
+    () =>
+      chips.set({
+        readOnlyActions: {
+          toggle: () => (readOnlyRef.current ? setAskingUnlock(true) : void setReadOnly(true)),
+          ask: () => setAskingUnlock(true),
+          allow: () => {
+            setAskingUnlock(false)
+            void setReadOnly(false)
+          },
+          cancel: () => setAskingUnlock(false),
+        },
+      }),
+    [chips, setReadOnly],
+  )
+
   const conflictBar = conflictMtime !== null && <ConflictBar onReload={() => void reload()} onKeepMine={keepMine} />
   return { hostRef, autosave, retired, start, flush, reload, chips, conflictBar, readOnly, setReadOnly }
 }
 
-/** What the chips show: the save status (the autosave reports it) and the vault's sync, App's. */
+/** The cog's row and the chip's three answers (YAZ-3076 D3, D4). */
+interface ReadOnlyActions {
+  toggle: () => void
+  ask: () => void
+  allow: () => void
+  cancel: () => void
+}
+
+const NO_READ_ONLY_ACTIONS: ReadOnlyActions = { toggle: () => undefined, ask: () => undefined, allow: () => undefined, cancel: () => undefined }
+
+/** What the chips show: the save status (the autosave reports it), the vault's sync, App's, and the file's read-only switch. */
 interface ChipState {
   status: SaveStatus
   sync: GithubSyncStatus | null | undefined
   onSyncNow: (() => void) | undefined
+  readOnly: boolean
+  askingUnlock: boolean
+  readOnlyActions: ReadOnlyActions
 }
 
-/** The sync chip (when the vault has one) and the save chip; what they say comes from the store. */
+/**
+ * The page cog (YAZ-3076 D3: one row, "Read only"), the "Read only" chip while it is on (D4), the
+ * sync chip (when the vault has one) and the save chip; what they say comes from the store.
+ */
 export function BoardChips({ store, className }: { store: Store<ChipState>; className: string }) {
-  const { status, sync, onSyncNow } = useSyncExternalStore(store.subscribe, store.getState)
+  const { status, sync, onSyncNow, readOnly, askingUnlock, readOnlyActions: actions } = useSyncExternalStore(store.subscribe, store.getState)
   return (
     <div className={className}>
+      <PageSettings readOnly={readOnly} onToggleReadOnly={actions.toggle} />
+      {readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={actions.ask} onAllow={actions.allow} onCancel={actions.cancel} />}
       {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
       <SaveIndicator status={status} />
     </div>

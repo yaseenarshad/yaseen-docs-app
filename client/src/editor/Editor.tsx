@@ -35,6 +35,7 @@ import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
 import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
 import { PageSettings } from './PageSettings'
+import { ReadOnlyChip } from './ReadOnlyChip'
 import { ZOOM_EVENT } from './zoomRequest'
 import { fileLines } from './lineNumbers/fileLines'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
@@ -442,6 +443,11 @@ function CrepeHost({
    * Parsed once per `disk`, never per keystroke or per save.
    */
   const readOnly = useMemo(() => isNoteReadOnly(disk), [disk])
+  /** The chip's "Allow edits?" box is open (YAZ-3076 D4): this tab's own, and gone once read only is. */
+  const [askingUnlock, setAskingUnlock] = useState(false)
+  useEffect(() => {
+    if (!readOnly) setAskingUnlock(false)
+  }, [readOnly])
   /**
    * Counts the outside changes that landed in this editor (YAZ-2643): a reload, a frontmatter-only
    * absorb. `disk` cannot say it — it does not follow this editor's own saves, so a file put back
@@ -758,8 +764,9 @@ function CrepeHost({
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
       <div className="status-chips">
-        <PageSettings lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={tableOfContents === 'off' ? undefined : toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContents === 'off' || !tableOfContentsOn ? undefined : changeTocSource} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
+        <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={tableOfContents === 'off' ? undefined : toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContents === 'off' || !tableOfContentsOn ? undefined : changeTocSource} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
         <DocumentZoom value={documentZoom} onChange={changeZoom} />
+        {readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={() => setAskingUnlock(true)} onAllow={() => { setAskingUnlock(false); void setReadOnly(false) }} onCancel={() => setAskingUnlock(false)} />}
         {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
         <SaveIndicator status={autosave.status} />
       </div>

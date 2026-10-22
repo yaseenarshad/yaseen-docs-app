@@ -402,3 +402,56 @@ describe('the read-only switch in the file (YAZ-3076 D1)', () => {
     expect(setBoardReadOnly).not.toHaveBeenCalled()
   })
 })
+
+describe('the cog, the "Read only" chip and the "Allow edits?" box on a board (YAZ-3076 D3, D4)', () => {
+  const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
+  const menuRows = () => [...container.querySelectorAll<HTMLButtonElement>('.page-settings__menu > *')]
+  const chip = () => container.querySelector<HTMLButtonElement>('.read-only-chip__button')
+  const ask = () => container.querySelector<HTMLElement>('.read-only-chip__ask')
+  const chipOrder = () => [...container.querySelector('.chips')!.children].map((c) => c.className.split(' ')[0])
+
+  it('S40, S41: the cog is the first chip, and its menu has only "Read only"', () => {
+    opened()
+    expect(chipOrder()[0]).toBe('page-settings')
+    act(() => cog().click())
+    expect(menuRows().map((r) => r.textContent)).toEqual(['Read only'])
+  })
+
+  it('S43, S44: the row turns it on at once; the chip shows after the cog (cog, chip, save)', async () => {
+    opened()
+    act(() => cog().click())
+    await act(async () => menuRows()[0].click())
+    await settle()
+    expect(setBoardReadOnly).toHaveBeenCalledExactlyOnceWith({ root: ROOT, path: PATH, on: true, expectedMtime: 100 })
+    expect(chipOrder()).toEqual(['page-settings', 'read-only-chip', 'save-indicator'])
+    expect(menuRows()[0].getAttribute('aria-pressed')).toBe('true')
+    expect(ask()).toBeNull()
+  })
+
+  it('S45-S48: the chip asks; the row while on opens the same box; "Allow edits" writes the switch off and the chip goes', async () => {
+    opened({ readOnly: true })
+    act(() => chip()!.click())
+    expect(ask()?.textContent).toContain('Allow edits?')
+    act(() => chip()!.click())
+    expect(ask()).toBeNull()
+    act(() => cog().click())
+    act(() => menuRows()[0].click())
+    expect(container.querySelector('.page-settings__menu')).toBeNull()
+    expect(ask()).not.toBeNull()
+    expect(setBoardReadOnly).not.toHaveBeenCalled()
+    const allow = [...ask()!.querySelectorAll('button')].find((b) => b.textContent === 'Allow edits')!
+    expect(document.activeElement).toBe(allow)
+    await act(async () => allow.click())
+    await settle()
+    expect(setBoardReadOnly).toHaveBeenCalledExactlyOnceWith({ root: ROOT, path: PATH, on: false, expectedMtime: 100 })
+    expect(chip()).toBeNull()
+    expect(board.readOnly).toBe(false)
+  })
+
+  it('S49: the chip shows while read only, whatever else the row holds — no sync chip, an unsaved board', () => {
+    opened({ readOnly: true })
+    edit(1)
+    expect(chip()).not.toBeNull()
+    expect(text()).toContain('Unsaved')
+  })
+})
