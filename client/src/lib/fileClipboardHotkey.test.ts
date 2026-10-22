@@ -85,4 +85,36 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
       expect(fileClipboardVerb(event(document.body))).toBe('copy')
     })
   })
+
+  describe('a page holds the keys (YAZ-3140): the focus on <body>, the selection in a read-only note’s TITLE', () => {
+    function titled(): { title: Text } {
+      const host = document.createElement('div')
+      host.className = 'editor-host'
+      host.dataset.page = 'note'
+      host.dataset.readOnly = 'true'
+      const title = document.createElement('div')
+      title.className = 'page-title'
+      title.textContent = 'RO doc'
+      host.append(title)
+      document.body.append(host)
+      return { title: title.firstChild as Text }
+    }
+    afterEach(() => document.getSelection()?.removeAllRanges())
+
+    it('⌘C, ⌘X and ⌘V are the page’s: the native text copy, never the FILE clipboard', () => {
+      const { title } = titled()
+      document.getSelection()!.setBaseAndExtent(title, 0, title, 2)
+      for (const key of ['c', 'x', 'v']) expect(fileClipboardVerb(event(document.body, { key })), key).toBeNull()
+    })
+
+    it('a focused sidebar row still copies and pastes files', () => {
+      const { title } = titled()
+      document.getSelection()!.setBaseAndExtent(title, 0, title, 2)
+      const row = document.createElement('button')
+      row.className = 'tree__row'
+      document.body.append(row)
+      expect(fileClipboardVerb(event(row, { key: 'c' }))).toBe('copy')
+      expect(fileClipboardVerb(event(row, { key: 'v' }))).toBe('paste')
+    })
+  })
 })

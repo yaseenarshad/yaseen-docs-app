@@ -12,8 +12,9 @@
  *
  * Only the note the reader is in answers: the view must be visible (a hidden tab keeps its DOM
  * selection), and either the focus is in its body (it takes the focus while read only, YAZ-3127) or the
- * focus is on `<body>` with the DOM selection inside it — never with the focus in the find bar, a
- * dialog or another note. An editable view is
+ * focus is on `<body>` with the DOM selection anywhere in its page — the body, or the title,
+ * properties, comments, backlinks and reviews around it (YAZ-3140) — never with the focus in the find
+ * bar, a dialog or another note. An editable view is
  * ProseMirror's own business, so nothing here runs for it.
  *
  * The chords (Settings › Hotkeys, the note's view actions): ⌘⇧U / ⌘⇧I fold / unfold all, ⌘↑ / ⌘↓ fold /
@@ -31,7 +32,7 @@ import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { isShown } from '../lib/readOnlyCaret'
+import { NOTE_PAGE, isShown, pageSelectionHolder } from '../lib/readOnlyCaret'
 
 const yes = (): boolean => true
 
@@ -94,6 +95,18 @@ function holdsReader(view: EditorView): boolean {
   return section !== null && section.contains(active) && !(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
 }
 
+/**
+ * The focus is nowhere and the reader's selection is elsewhere in THIS note's visible page — its
+ * title, properties, comments, backlinks or reviews (YAZ-3140, "a page holds the keys"): the
+ * page's view keys are still this note's.
+ */
+function inOwnPage(view: EditorView): boolean {
+  const doc = view.dom.ownerDocument
+  if (doc.activeElement !== null && doc.activeElement !== doc.body) return false
+  const page = view.dom.closest(NOTE_PAGE)
+  return page !== null && pageSelectionHolder(doc) === page
+}
+
 export const readOnlyKeys = $prose(
   () =>
     new Plugin({
@@ -116,13 +129,11 @@ export const readOnlyKeys = $prose(
           // DOM selection here. With the focus in the body the editor's own selection stands, even when
           // the DOM has none left (an arrow key in a non-editable body can drop it).
           const caret = domCaret(view)
-          if (caret === null && !view.dom.contains(view.dom.ownerDocument.activeElement)) return
+          if (caret === null && !view.dom.contains(view.dom.ownerDocument.activeElement) && !inOwnPage(view)) return
           // ProseMirror draws a non-editable view's selection only where a DOM selection already is
-          // (`editorOwnsSelection`), so one is put back at the editor's own caret first: then ⌘A shows.
-          if (caret === null) {
-            const at = view.domAtPos(view.state.selection.head)
-            view.dom.ownerDocument.getSelection()?.collapse(at.node, at.offset)
-          }
+          // (`editorOwnsSelection`), so the body takes the focus with the editor's own selection
+          // drawn first (`focusReadOnlyBody`): then ⌘A shows, and the next key starts in the note.
+          if (caret === null) view.focus()
           // The caret the reader clicked is where "at the caret" means.
           const { selection } = view.state
           if (caret !== null && (selection.anchor !== caret.anchor || selection.head !== caret.head)) {

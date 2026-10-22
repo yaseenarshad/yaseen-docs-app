@@ -273,6 +273,87 @@ test('step 3e — YAZ-3130: after ⌘F → Esc, and after ⌘J → Esc, the keyb
   await expect(line(win)).toBeVisible()
 })
 
+test('step 3f — YAZ-3140: after a click or a drag on a read-only TITLE the page holds the keys; a focused sidebar row still owns the file clipboard; a real nowhere still goes to the sidebar', async () => {
+  await fileRow(win, 'Locked outline').click()
+  const shown = (text: string) => editorOf(win).locator(`p:text-is("${text}")`)
+  await expect(shown('parent-e2e')).toBeVisible()
+  const title = layer(win).locator('.page-title__text')
+  const vaultFiles = async (): Promise<string[]> => (await readdir(vault)).sort()
+  const before = await vaultFiles()
+  const clip = () => win.evaluate(() => (window as unknown as { yaseenDocs: { file: { clipState(): Promise<{ op: string; paths: string[] } | null> } } }).yaseenDocs.file.clipState())
+  // The chord as the app's listeners hear it, where the keyboard is (no native copy: never the system clipboard).
+  const chord = (key: string) =>
+    win.evaluate((k) => {
+      const event = new KeyboardEvent('keydown', { key: k, code: `Key${k.toUpperCase()}`, metaKey: true, bubbles: true, cancelable: true })
+      ;(document.activeElement ?? document.body).dispatchEvent(event)
+      return event.defaultPrevented
+    }, key)
+  const where = () => win.evaluate(() => ({ body: document.activeElement === document.body, inTitle: document.getSelection()?.anchorNode?.parentElement?.closest('.page-title') != null }))
+  const pageHoldsTheKeys = async (): Promise<void> => {
+    expect(await chord('c')).toBe(false)
+    expect(await clip()).toBeNull()
+    expect(await chord('x')).toBe(false)
+    expect(await clip()).toBeNull()
+    await chord('v')
+    await win.waitForTimeout(400)
+    expect(await vaultFiles()).toEqual(before)
+  }
+  // A click on the title: the focus stays on <body>, the selection goes into the title.
+  await title.click()
+  expect(await where()).toEqual({ body: true, inTitle: true })
+  await pageHoldsTheKeys()
+  await title.click()
+  await win.keyboard.press('ArrowDown')
+  expect(await win.evaluate(() => document.activeElement?.closest('.tree__row') === null)).toBe(true)
+  await title.click()
+  await win.keyboard.press('Meta+Shift+U')
+  await expect(shown('child-e2e')).toBeHidden()
+  await win.keyboard.press('Meta+Shift+I')
+  await expect(shown('child-e2e')).toBeVisible()
+  // ⌘A from the title selects the note's text (D8), never the page chrome.
+  await title.click()
+  await win.keyboard.press('Meta+a')
+  const all = await win.evaluate(() => document.getSelection()?.toString() ?? '')
+  expect(all).toContain('parent-e2e')
+  expect(all).not.toContain('Read only')
+  // A drag across the title's text: the same.
+  const box = (await title.boundingBox())!
+  await win.mouse.move(box.x + 2, box.y + box.height / 2)
+  await win.mouse.down()
+  await win.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 5 })
+  await win.mouse.up()
+  expect(await where()).toEqual({ body: true, inTitle: true })
+  await pageHoldsTheKeys()
+  // First launch and a wikilink open leave the focus on <body> with the caret in the body: the same rule.
+  await win.evaluate(() => {
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    const text = Array.from(document.querySelectorAll('.ProseMirror p')).find((p) => p.textContent === 'parent-e2e')!.firstChild!
+    document.getSelection()!.collapse(text, 1)
+  })
+  await pageHoldsTheKeys()
+  await win.keyboard.press('ArrowDown')
+  expect(await win.evaluate(() => document.activeElement?.closest('.tree__row') === null)).toBe(true)
+  expect(await readFile(outlinePath, 'utf8')).toBe(OUTLINE_BODY)
+  // Control 1: a real "nowhere" (no selection anywhere) still sends ↓ to the sidebar, as on main.
+  await win.evaluate(() => {
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    document.getSelection()?.removeAllRanges()
+  })
+  await win.keyboard.press('ArrowDown')
+  expect(await win.evaluate(() => document.activeElement?.closest('.tree__row') !== null)).toBe(true)
+  // Control 2: a focused sidebar row still copies and pastes its FILE.
+  await fileRow(win, 'Locked outline').click()
+  expect(await chord('c')).toBe(true)
+  expect((await clip())?.op).toBe('copy')
+  expect(await chord('v')).toBe(true)
+  const copy = path.join(vault, 'Locked outline copy.md')
+  await expect.poll(async () => (await vaultFiles()).includes('Locked outline copy.md')).toBe(true)
+  await rm(copy)
+  await expect.poll(vaultFiles).toEqual(before)
+  await fileRow(win, 'Locked note').click()
+  await expect(line(win)).toBeVisible()
+})
+
 test('step 4 — the chip asks "Allow edits?"; "Allow edits" removes the key and the chip', async () => {
   await chip(win).click()
   await expect(askBox(win)).toContainText('Allow edits?')

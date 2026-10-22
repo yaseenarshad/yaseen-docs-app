@@ -32,7 +32,7 @@ import { useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './h
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 import { HoverPreviewHost, useHoverPreview } from './HoverPreviewHost'
 import { useShareBadges } from '../share/useShareBadges'
-import { readOnlyNoteHoldsKeys } from '../lib/readOnlyCaret'
+import { pageHoldsKeys } from '../lib/readOnlyCaret'
 
 /** A board's Info popover body (YAZ-3028 D11), with its CSS: loaded on the first "Info". */
 const BoardInfo = lazy(() => import('./BoardInfo'))
@@ -666,8 +666,8 @@ export function Sidebar({
       // Where the key was pressed: nowhere is the body, or a part of the panel that is no row and no field.
       const on = e.target instanceof Element ? e.target : null
       const nowhere = on === null || on === document.body || on === document.documentElement || (on.closest('.sidebar') !== null && !on.matches('.tree__row, input, textarea, select, [contenteditable]'))
-      // A read-only note keeps its arrows (YAZ-3127): the reader's selection in it is not "nowhere".
-      if (!nowhere || readOnlyNoteHoldsKeys(on) || document.querySelector('[aria-modal="true"]') !== null) return
+      // A page holds the keys (YAZ-3127, YAZ-3140): the reader's selection in a note page is not "nowhere".
+      if (!nowhere || pageHoldsKeys(on) || document.querySelector('[aria-modal="true"]') !== null) return
       if (e.key === 'ArrowRight') {
         if (onLeaveToPage?.() === true) e.preventDefault()
         return

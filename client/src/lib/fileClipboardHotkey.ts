@@ -1,3 +1,4 @@
+import { pageHoldsKeys } from './readOnlyCaret'
 import { ownsWindowChord } from './windowChord'
 
 export type FileClipboardVerb = 'copy' | 'cut' | 'paste'
@@ -18,6 +19,8 @@ const VERBS: readonly (readonly [string, FileClipboardVerb])[] = [
  * heard them. ⌘ only, like every renderer chord here: the Ctrl spellings are the platform menu's.
  */
 export function fileClipboardVerb(event: KeyboardEvent): FileClipboardVerb | null {
+  // A page holds the keys (YAZ-3140): with the reader's selection in a note page, ⌘C copies its text.
+  if (pageHoldsKeys(event.target)) return null
   for (const [key, verb] of VERBS) if (ownsWindowChord(event, { key, shift: false })) return verb
   return null
 }

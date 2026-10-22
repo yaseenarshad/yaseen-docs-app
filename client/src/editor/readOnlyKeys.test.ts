@@ -207,7 +207,7 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     const { crepe } = await mount()
     const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
     crepe.setReadonly(true)
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2, 6)))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2, 4)))
     document.getSelection()?.removeAllRanges()
     let ran = 0
     focusReadOnlyBody(view, () => { ran++ })
@@ -215,11 +215,70 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     expect(document.activeElement).toBe(view.dom)
     const sel = document.getSelection()!
     expect(view.posAtDOM(sel.anchorNode!, sel.anchorOffset)).toBe(2)
-    expect(view.posAtDOM(sel.focusNode!, sel.focusOffset)).toBe(6)
+    expect(view.posAtDOM(sel.focusNode!, sel.focusOffset)).toBe(4)
     crepe.setReadonly(false)
     ;(document.activeElement as HTMLElement | null)?.blur()
     focusReadOnlyBody(view, () => { ran++ })
     expect(ran).toBe(2)
     expect(document.activeElement).not.toBe(view.dom)
+  })
+
+  /** A note page around the editor, as `Editor.tsx` draws it: `section.editor`, then the page with its title block first. */
+  function notePage(): { page: HTMLElement; title: Text } {
+    const section = document.createElement('section')
+    section.className = 'editor'
+    document.body.append(section)
+    const page = document.createElement('div')
+    page.className = 'editor-host'
+    page.dataset.page = 'note'
+    const title = document.createElement('div')
+    title.className = 'page-title'
+    title.textContent = 'RO doc'
+    page.append(title)
+    section.append(page)
+    return { page, title: title.firstChild as Text }
+  }
+
+  it('YAZ-3140: with the selection in the read-only page’s TITLE, ⌘⇧U / ⌘⇧I still fold and unfold, and the focus moves into the body', async () => {
+    const { page, title } = notePage()
+    const { crepe, root } = await mount(page)
+    crepe.setReadonly(true)
+    document.getSelection()!.setBaseAndExtent(title, 0, title, 2)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(press('u', { shift: true }).defaultPrevented).toBe(true)
+    expect(folded(root)).toBe(3)
+    expect(document.activeElement).toBe(root.querySelector('.ProseMirror'))
+    press('i', { shift: true })
+    expect(folded(root)).toBe(0)
+    expect(getMarkdownForSave(crepe)).toBe(NOTE)
+    page.parentElement?.remove()
+  })
+
+  it('YAZ-3140: ⌘A from the title selects the note’s text only, never the page around it', async () => {
+    const { page, title } = notePage()
+    const { crepe, root } = await mount(page)
+    crepe.setReadonly(true)
+    document.getSelection()!.collapse(title, 1)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(press('a').defaultPrevented).toBe(true)
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    expect(view.state.selection.from).toBe(0)
+    expect(view.state.selection.to).toBe(view.state.doc.content.size)
+    const sel = document.getSelection()!
+    expect(root.contains(sel.anchorNode) && root.contains(sel.focusNode)).toBe(true)
+    page.parentElement?.remove()
+  })
+
+  it('a selection in ANOTHER page, or in the chrome, is not this note’s: no key is taken', async () => {
+    const other = notePage()
+    const { page } = notePage()
+    const { crepe, root } = await mount(page)
+    crepe.setReadonly(true)
+    document.getSelection()!.setBaseAndExtent(other.title, 0, other.title, 2)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(press('u', { shift: true }).defaultPrevented).toBe(false)
+    expect(folded(root)).toBe(0)
+    other.page.parentElement?.remove()
+    page.parentElement?.remove()
   })
 })

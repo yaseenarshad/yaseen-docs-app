@@ -12,6 +12,14 @@
 /** A ProseMirror root that is not editable: a read-only note's body (or a preview of one). */
 const READ_ONLY_BODY = '.ProseMirror[contenteditable="false"]'
 
+/**
+ * A note PAGE: the scroller `Editor.tsx` draws for a note, in a tab or the right panel — its title,
+ * properties, body, comments, backlinks and reviews (YAZ-3140).
+ */
+export const NOTE_PAGE = '[data-page="note"]'
+
+const elementOf = (node: Node | null): Element | null => (node === null ? null : node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement)
+
 /** Whether `el` is drawn: not inside a `visibility: hidden` tab layer. */
 export function isShown(el: Element): boolean {
   return el.ownerDocument.defaultView?.getComputedStyle(el).visibility !== 'hidden'
@@ -19,9 +27,7 @@ export function isShown(el: Element): boolean {
 
 /** The visible read-only body that holds the reader's DOM selection, or null. */
 export function readOnlySelectionHolder(doc: Document = document): Element | null {
-  const node = doc.getSelection()?.anchorNode ?? null
-  const el = node === null ? null : node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
-  const body = el?.closest(READ_ONLY_BODY) ?? null
+  const body = elementOf(doc.getSelection()?.anchorNode ?? null)?.closest(READ_ONLY_BODY) ?? null
   return body !== null && isShown(body) ? body : null
 }
 
@@ -35,4 +41,29 @@ export function readOnlyNoteHoldsKeys(target: EventTarget | null): boolean {
   if (target.closest(READ_ONLY_BODY) !== null) return true
   const doc = target.ownerDocument
   return (target === doc.body || target === doc.documentElement) && readOnlySelectionHolder(doc) !== null
+}
+
+/** The visible note page that holds either end of the reader's DOM selection (a caret counts), or null. */
+export function pageSelectionHolder(doc: Document = document): Element | null {
+  const sel = doc.getSelection()
+  for (const node of [sel?.anchorNode ?? null, sel?.focusNode ?? null]) {
+    const page = elementOf(node)?.closest(NOTE_PAGE) ?? null
+    if (page !== null && isShown(page)) return page
+  }
+  return null
+}
+
+/**
+ * A PAGE HOLDS THE KEYS (YAZ-3140): the rule of the window's file clipboard (⌘C / ⌘X / ⌘V) and the
+ * sidebar's arrows "from nowhere". A key belongs to the page when the target is a read-only body
+ * (`readOnlyNoteHoldsKeys`), or the focus is nowhere (`<body>`) and the reader's selection is
+ * anywhere in a visible note page — the title of a read-only note takes no focus, and neither does
+ * the text of its properties, comments, backlinks or reviews. A focused control (a sidebar row)
+ * keeps its own keys, and a real "nowhere" (no selection in a page) stays the sidebar's.
+ */
+export function pageHoldsKeys(target: EventTarget | null): boolean {
+  if (readOnlyNoteHoldsKeys(target)) return true
+  if (!(target instanceof Element)) return false
+  const doc = target.ownerDocument
+  return (target === doc.body || target === doc.documentElement) && pageSelectionHolder(doc) !== null
 }

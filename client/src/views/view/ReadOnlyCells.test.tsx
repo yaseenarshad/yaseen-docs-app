@@ -324,4 +324,18 @@ describe('the reserved `readonly` key is no auto-shown property (YAZ-3130 nit): 
     expect(propertyKeys(def, { ...view, order: ['file.name', 'note.readonly'] }, lockedRecords())).toContain('note.readonly')
     expect(propertyKeys(def, view, lockedRecords(), ['readonly'])).toContain('note.readonly')
   })
+
+  it('a folder that DECLARES `readonly` keeps its column on every card, as before the nit (the declared layout does not change)', () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const r = createRoot(container)
+    const folder = testFolderHost({ writeValues: vi.fn(async () => undefined), retitle: vi.fn() })
+    folder.settings = { ...folder.settings, columns: { readonly: { type: 'checkbox' } as never } }
+    act(() => r.render(<ViewsPane parsed={parseViews(AUTO.cards)} onChange={() => undefined} root="/vault" folderPath="/vault/pillars.md" records={lockedRecords()} readOnly={readOnlyPaths(lockedRecords())} folder={folder} onOpenFile={vi.fn()} />))
+    const cards = [...container.querySelectorAll<HTMLElement>('.view-card')]
+    expect(cards.length).toBeGreaterThan(1)
+    for (const card of cards) expect(card.textContent ?? '', card.textContent ?? '').toMatch(/Readonly/)
+    act(() => r.unmount())
+    container.remove()
+  })
 })
