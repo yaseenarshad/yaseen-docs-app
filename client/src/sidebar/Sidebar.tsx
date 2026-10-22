@@ -11,7 +11,7 @@ import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
-import { ancestorDirs, findDirNode, findNode, pinnedRoots, treeHasFile } from '../lib/treeState'
+import { ancestorDirs, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP } from '../search/searchCandidates'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
@@ -719,6 +719,13 @@ export function Sidebar({
   const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
+  // The copy the open page lights in (YAZ-3131 Decision 3, S12): where it was clicked, else the first
+  // copy that shows it. Files and Search draw each row once, so they light every row of it, as before.
+  const copyTops = lens === 'focus' ? focusNodes : lens === 'favorites' ? favoriteNodes : null
+  const activeTop = useMemo(
+    () => (activeFile === null || copyTops === null ? null : (selection.copies?.get(activeFile) ?? firstCopy(copyTops, activeFile, expandedSet))),
+    [activeFile, copyTops, selection.copies, expandedSet],
+  )
 
   // A Files reveal targets a file — or, from a folder search row's menu (YAZ-2050) or Enter on it
   // (YAZ-2662 D1), a DIR of the tree. Both questions are asked once here and read by the two steps
@@ -767,7 +774,7 @@ export function Sidebar({
       // BLANK SPACE is not a row and never touches it (YAZ-1337): its menu is about the vault
       // root, and a right-click into the empty space below the tree must not throw a selection away.
       // Nor is a SHORTCUT row a pick (YAZ-2290 D2): the selection is what ⌘C / ⌘X act on.
-      if (!outside && node !== null && node.shortcutIn === undefined && !selectedPaths.has(node.path)) dispatchSelection({ type: 'set', path: node.path })
+      if (!outside && node !== null && node.shortcutIn === undefined && !selectedPaths.has(node.path)) selection.set(node.path, lens === 'focus' || lens === 'favorites' ? (node.top ?? undefined) : undefined)
       // On a search row the highlight follows the right-click too, as it follows a click (YAZ-803; S26 on YAZ-2620).
       if (!outside && searching && node !== null) searchCursor.set(node.path)
       // The plural gesture exists only when the right-clicked row — file or folder (YAZ-1578) — is
@@ -844,7 +851,7 @@ export function Sidebar({
         infoPath: plural === null && shortcutIn === null && filePath !== null && isBoard(filePath) ? filePath : null,
       })
     },
-    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState],
+    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState],
   )
   const openMenu = useCallback(
     (node: MenuRow | null, e: React.MouseEvent) => {
@@ -869,7 +876,7 @@ export function Sidebar({
     if (node !== null) openMenuAt(node, menuRequest.x, menuRequest.y, true)
   }, [menuRequest, forest, trees, favoritesByRoot, rootOf, onMenuConsumed, openMenuAt])
 
-  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, vaultOf, vaultRows, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice)
+  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice)
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
@@ -1036,6 +1043,7 @@ export function Sidebar({
     vaultRows,
     expanded: expandedSet,
     activeFile,
+    activeTop,
     onToggle: toggleDir,
     onOpenFile,
     onKeepFile,

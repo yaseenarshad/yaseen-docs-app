@@ -39,6 +39,9 @@ async function createBoardFile(vault: string, parentDir: string, typed: string, 
   throw new Error(`Every name from "${untitledNames(seed)[0]}" to "${untitledNames(seed).at(-1)}" is taken here`)
 }
 
+/** No copy recorded (YAZ-3131): the one empty value, so a reset on an empty one is no render. */
+const NO_COPIES: ReadonlyMap<string, string> = new Map()
+
 /** `tree` is every row the panel can hold — the forest (YAZ-2602 D3) — or null until every vault's tree has landed. */
 export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: readonly string[], selectionRef: { current: ReadonlySet<string> }, bodyRef: RefObject<HTMLDivElement | null>) {
   // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
@@ -47,6 +50,10 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
   // only while the sidebar is open, so a selection is honestly about rows currently on screen and
   // cannot outlive them (a collapse ends it). It may hold rows of two vaults (YAZ-2602 S18).
   const [selectedPaths, dispatchSelection] = useReducer(selectionReducer, EMPTY_SELECTION)
+  // The copy each path was picked in (YAZ-3131 Decision 3): a row of Focus or Favorites can stand
+  // under two top rows, and only the picked one lights. A plain click starts it again, and a tab
+  // change empties it, so it holds at most one entry for each pick since the last plain click.
+  const [copies, setCopies] = useState<ReadonlyMap<string, string>>(NO_COPIES)
 
   // A vault that leaves the window ends the selection (YAZ-2602 S50): the rows it was about moved.
   const before = useRef(roots)
@@ -62,6 +69,7 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
   // empty selection returns the same set, so the mount pass and every ordinary render below cost nothing.
   useEffect(() => {
     dispatchSelection({ type: 'clear' })
+    setCopies(NO_COPIES)
   }, [lens])
 
   // The loaded tree is the canonical disk truth for BOTH lenses,
@@ -94,9 +102,15 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
   const orderedSelectedPaths = useCallback((): string[] => orderedSelection(selectedPaths, bodyRef.current), [selectedPaths])
 
   /** The multi-select as both trees take it (YAZ-1336): the set, plus its two gestures — toggle (shift) and set (any other click, D9). */
-  const toggleSelection = useCallback((path: string) => dispatchSelection({ type: 'toggle', path }), [])
-  const setSelection = useCallback((path: string) => dispatchSelection({ type: 'set', path }), [])
-  const selection: TreeSelection = useMemo(() => ({ paths: selectedPaths, toggle: toggleSelection, set: setSelection }), [selectedPaths, toggleSelection, setSelection])
+  const toggleSelection = useCallback((path: string, top?: string) => {
+    dispatchSelection({ type: 'toggle', path })
+    if (top !== undefined) setCopies((prev) => (prev.get(path) === top ? prev : new Map(prev).set(path, top)))
+  }, [])
+  const setSelection = useCallback((path: string, top?: string) => {
+    dispatchSelection({ type: 'set', path })
+    setCopies((prev) => (top === undefined ? NO_COPIES : prev.size === 1 && prev.get(path) === top ? prev : new Map([[path, top]])))
+  }, [])
+  const selection: TreeSelection = useMemo(() => ({ paths: selectedPaths, copies, toggle: toggleSelection, set: setSelection }), [selectedPaths, copies, toggleSelection, setSelection])
 
   return { selectedPaths, dispatchSelection, orderedSelectedPaths, selection }
 }
@@ -189,7 +203,7 @@ export function useFileClipboard(
   /** The vault rows' paths; empty with one vault. */
   vaultRows: ReadonlyMap<string, string>,
   menu: MenuTargets | null,
-  selectedPaths: ReadonlySet<string>,
+  selection: TreeSelection,
   orderedSelectedPaths: () => string[],
   dirs: string[],
   refresh: (root: string) => void,
@@ -344,7 +358,7 @@ export function useFileClipboard(
   useEffect(() => {
     clipboardRef.current = {
       cutOrCopy: (op) => {
-        if (menu !== null || selectedPaths.size === 0 || [...selectedPaths].some((path) => vaultRows.has(path))) return false
+        if (menu !== null || selection.paths.size === 0 || [...selection.paths].some((path) => vaultRows.has(path))) return false
         clipTo(orderedSelectedPaths(), op)
         return true
       },
@@ -352,14 +366,15 @@ export function useFileClipboard(
         if (menu !== null || clip === null) return false
         const dir = pasteTargetDir()
         if (dir === null) onNotice('Select a vault or a folder first')
-        else pasteInto(dir)
+        // The copy of the first selected row (YAZ-3131 S21): the folder opens in that copy too.
+        else pasteInto(dir, selection.copies?.get(orderedSelectedPaths()[0] ?? ''))
         return true
       },
     }
     return () => {
       clipboardRef.current = null
     }
-  }, [clipboardRef, menu, selectedPaths, vaultRows, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir, onNotice])
+  }, [clipboardRef, menu, selection, vaultRows, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir, onNotice])
 
   return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null) }
 }

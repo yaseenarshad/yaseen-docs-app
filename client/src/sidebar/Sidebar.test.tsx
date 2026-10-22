@@ -5083,7 +5083,7 @@ describe('favorites (YAZ-1766)', () => {
     expect(rowsByPath(el, `${v}/Projects/p.md`)).toHaveLength(2)
   })
 
-  it('a path drawn on TWO rows counts, copies and opens ONCE (YAZ-1337 🔒 D3), still in visible order', async () => {
+  it('a path drawn on TWO rows counts, copies and opens ONCE (YAZ-1337 🔒 D3), still in visible order, and lights in the copy it was picked in (YAZ-3131 S16)', async () => {
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     const { el, v, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Projects', '/Projects/p.md', '/top.md'] })
@@ -5093,8 +5093,8 @@ describe('favorites (YAZ-1766)', () => {
     expect(twice).toHaveLength(2) // both occurrences are on screen…
     shiftClickRow(twice[0])
     shiftClickRow(rowByPath(el, `${v}/top.md`))
-    // …and BOTH light up off the ONE selected path, which is the whole reason the count can lie.
-    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(3)
+    // …and only the copy it was picked in lights (YAZ-3131 S11, S16): the ONE selected path is still one path.
+    expect([...el.querySelectorAll('.tree__row--selected')]).toEqual([twice[0], rowByPath(el, `${v}/top.md`)])
     rightClick(twice[1]) // either occurrence is the file
     expect(itemByLabel(el, 'Copy 2 paths')).toBeDefined()
     expect(itemByLabel(el, 'Copy 3 paths')).toBeUndefined()
@@ -5320,6 +5320,26 @@ describe('favorites (YAZ-1766)', () => {
       expect(rowsByPath(el, `${wrenly}/GTM`)).toHaveLength(1) // only the open copy draws its rows
       await rerender({ lens: 'files' })
       expect(rowByPath(el, `${v}/Work`)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S11, S12, S15 on %s: the open page and the selection light in ONE copy — the copy that was clicked, else the first that shows it', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      expect(rowsByPath(el, plan)).toHaveLength(2) // 0: under the top Wrenly, 1: under Work
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      // S12: a page opened from elsewhere lights in the first copy that shows it.
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+      // S11: a click in the other copy takes the light there, as the open page and as the selection.
+      act(() => rowsByPath(el, plan)[1]?.click())
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      expect(lit(plan, 'tree__row--selected')).toEqual([false, true])
+      // S15: a right-click on a row outside the selection picks it in that copy.
+      rightClick(rowsByPath(el, gtm)[0] ?? null)
+      expect(lit(gtm, 'tree__row--selected')).toEqual([true, false])
     })
 
     it.each(['favorites', 'focus'] as const)('S3, S4, S5, S20 on %s: "New folder" on either copy of GTM opens ONE input, under the right-clicked copy; Enter makes the folder there, the tab stays, and no list changes', async (lens) => {
