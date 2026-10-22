@@ -273,7 +273,7 @@ test('step 9b — YAZ-3123: with a label being typed, "Read only" on still keeps
 const BIBLE = path.join(__dirname, 'fixtures', 'bible-vault')
 let bible: string
 
-test('step 10 — YAZ-3122: in a folder\u2019s table, a read-only note\u2019s cell opens no editor and says why; the next note still edits', async () => {
+test('step 10 — YAZ-3122, YAZ-3126: in a folder\u2019s table, a read-only note\u2019s cell opens no editor and says why, and a lock follows its name; the next note still edits', async () => {
   bible = await copyVault(BIBLE)
   const cac = path.join(bible, 'KPIs', 'CAC.md')
   const locked = setFrontmatterProperty(await readFile(cac, 'utf8'), 'readonly', true)
@@ -291,6 +291,11 @@ test('step 10 — YAZ-3122: in a folder\u2019s table, a read-only note\u2019s ce
   await cell(0, 2).dblclick()
   await expect(cell(0, 2).locator('input')).toHaveCount(0)
   await expect(cell(1, 2).locator('[data-edit]')).toHaveCount(1)
+  // YAZ-3126 (D9): a muted lock after the read-only name, none after the next; the rows keep one height.
+  await expect(cell(0, 0).locator('.view-read-only-mark[title="Read only"]')).toHaveCount(1)
+  await expect(cell(1, 0).locator('.view-read-only-mark')).toHaveCount(0)
+  const heights = await Promise.all([0, 1].map(async (r) => (await cell(r, 0).boundingBox())?.height))
+  expect(heights[0]).toBe(heights[1])
   await win.waitForTimeout(700)
   expect(await readFile(cac, 'utf8')).toBe(locked)
   await shoot(win, 'read-only-4-folder-table')
