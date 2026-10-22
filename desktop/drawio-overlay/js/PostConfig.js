@@ -62,12 +62,34 @@ window.ICON_SERVICE_PATH = null;
 
 		if (readOnly)
 		{
-			// Only while a label IS being typed (YAZ-3119): draw.io's wrap of `stopEditing` focuses its
-			// diagram container every time, and with no label in hand that focus would take the keyboard
-			// from the host — the cog's menu would no longer hear Esc. A typed label has the focus here already.
+			// Only while a label IS being typed (YAZ-3119), and with draw.io's focus pull silenced (YAZ-3123):
+			// draw.io's wrap of `stopEditing` ends with `cellEditor.focusContainer()`, which focuses the
+			// diagram container. A click on the cog moves the focus to the host while draw.io keeps the
+			// label open, so that pull would take the keyboard back into this frame and the cog's menu
+			// would close. The cell editor's own `focusContainer` (EditorUi sets one on the instance) is
+			// shadowed for the call and put back after.
 			if (graph.isEditing())
 			{
-				graph.stopEditing(true);
+				var cellEditor = graph.cellEditor;
+				var ownPull = Object.prototype.hasOwnProperty.call(cellEditor, 'focusContainer');
+				var pull = cellEditor.focusContainer;
+				cellEditor.focusContainer = function() {};
+
+				try
+				{
+					graph.stopEditing(true);
+				}
+				finally
+				{
+					if (ownPull)
+					{
+						cellEditor.focusContainer = pull;
+					}
+					else
+					{
+						delete cellEditor.focusContainer;
+					}
+				}
 			}
 
 			graph.clearSelection();

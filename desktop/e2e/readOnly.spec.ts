@@ -172,6 +172,24 @@ test('step 9 — "Allow edits" turns the diagram back, the same bytes as before'
   await askBox(win).getByRole('button', { name: 'Allow edits' }).click()
   await expect.poll(() => readFile(diagramPath, 'utf8')).toBe(ONE_BOX)
   await expect(chip(win)).toHaveCount(0)
+})
+
+test('step 9b — YAZ-3123: with a label being typed, "Read only" on still keeps the menu open and the keyboard on the host', async () => {
+  await frameBox(win).dblclick()
+  await win.keyboard.type('ZZ')
+  await cog(win).click()
+  expect(await hostFocus(win)).toMatch(/page-settings__trigger/)
+  await readOnlyRow(win).click()
+  await expect.poll(() => readFile(diagramPath, 'utf8')).toContain('yaseendraw-readonly="1"')
+  await win.waitForTimeout(500)
+  await expect(menu(win)).toHaveCount(1)
+  await expect(readOnlyRow(win)).toHaveAttribute('aria-pressed', 'true')
+  expect(await hostFocus(win)).not.toMatch(/^IFRAME/)
+  await win.keyboard.press('Escape')
+  await expect(menu(win)).toHaveCount(0)
+  expect(await hostFocus(win)).toMatch(/page-settings__trigger/)
+  // The typed label was cancelled, never saved (YAZ-3116 A2).
+  expect(await readFile(diagramPath, 'utf8')).not.toContain('ZZ')
   await quitApp(app)
 })
 
