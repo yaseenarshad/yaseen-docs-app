@@ -5360,6 +5360,56 @@ describe('favorites (YAZ-1766)', () => {
       expect(lit(plan, 'tree__row--active')).toEqual([false])
     })
 
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S12, S17 on %s: a page clicked in copy B, then Files and back — the page lights in the first copy that shows it', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      await rerender({ lens: 'files', activeFile: plan })
+      await rerender({ lens, activeFile: plan })
+      expect(rowsByPath(el, plan)).toHaveLength(2)
+      // S17 clears the recorded copies on a tab change, so S12 applies: the first copy that shows the page.
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S12 (YAZ-3143) on %s: a page clicked in copy B, a fold click, another page, then the page again from the tab bar — it lights in the first copy that shows it', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      // A click on a folder row moves the selection (D9): close and open GTM in copy A.
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      expect(rowsByPath(el, plan)).toHaveLength(2)
+      await rerender({ activeFile: `${v}/top.md` })
+      await rerender({ activeFile: plan }) // the tab bar: S12, the first copy that shows it
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S12 (YAZ-3143) on %s: a page clicked in copy B, another page, then the page again from the tab bar — it lights in the first copy that shows it', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      await rerender({ activeFile: `${v}/top.md` })
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+    })
+
     it.each(['favorites', 'focus'] as const)('YAZ-3131 S13 by the arrow key on %s: ← closes the folder in copy B — no row lights', async (lens) => {
       const { el, v, rerender } = await mountWork(lens)
       const gtm = `${v}/Work/Wrenly/GTM`
@@ -6917,6 +6967,30 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       })
       await rerender({ activeFile: HEALTH })
       expect(shortcutRow(el)).not.toBeNull()
+      expect(row(el, HEALTH)?.classList.contains('tree__row--active')).toBe(true)
+      expect(shortcutRow(el)?.classList.contains('tree__row--active')).toBe(true)
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S18 (YAZ-3142) on %s: a click on the real row — the shortcut row shows selected and active too (YAZ-2290 D3)', async (lens) => {
+      const { el, rerender } = await mountLinked([PROJECTS_ID], { lens }, (bridge) => {
+        bridge.favorites.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
+        bridge.focus.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
+      })
+      act(() => row(el, HEALTH)?.click())
+      await rerender({ activeFile: HEALTH })
+      expect(row(el, HEALTH)?.classList.contains('tree__row--selected')).toBe(true)
+      expect(shortcutRow(el)?.classList.contains('tree__row--selected')).toBe(true)
+      expect(row(el, HEALTH)?.classList.contains('tree__row--active')).toBe(true)
+      expect(shortcutRow(el)?.classList.contains('tree__row--active')).toBe(true)
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S18 (YAZ-3142) on %s: a click on the shortcut row — the real row lights as the open page too', async (lens) => {
+      const { el, rerender } = await mountLinked([PROJECTS_ID], { lens }, (bridge) => {
+        bridge.favorites.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
+        bridge.focus.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
+      })
+      act(() => shortcutRow(el)?.click())
+      await rerender({ activeFile: HEALTH })
       expect(row(el, HEALTH)?.classList.contains('tree__row--active')).toBe(true)
       expect(shortcutRow(el)?.classList.contains('tree__row--active')).toBe(true)
     })

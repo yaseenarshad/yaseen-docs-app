@@ -722,17 +722,23 @@ export function Sidebar({
   // The copy the open page lights in (YAZ-3131 Decision 3, S12, S13): where it was clicked, else the
   // first copy that shows it. Files and Search draw each row once, so they light every row of it, as before.
   const copyTops = lens === 'focus' ? focusNodes : lens === 'favorites' ? favoriteNodes : null
-  // The click is kept apart from the selection (YAZ-3141): a later click on another row — a fold —
-  // makes the selection that row, and the page must not move to the other copy for it (S13). A new
-  // pick of the page, another page, or another tab replaces it.
-  const clickedCopy = useRef<{ lens: SidebarTab; path: string; top: string } | null>(null)
-  const picked = activeFile === null ? undefined : selection.copies?.get(activeFile)
-  if (picked !== undefined && activeFile !== null) clickedCopy.current = { lens, path: activeFile, top: picked }
-  const clicked = clickedCopy.current
-  const keptTop = clicked !== null && clicked.lens === lens && clicked.path === activeFile && copyTops?.some((t) => t.path === clicked.top) === true ? clicked.top : null
+  // The click that OPENED the page names its copy — never the selection, which a later click on a fold
+  // replaces (YAZ-3141), and which a page opened from the tab bar leaves as it was (YAZ-3143). Another
+  // page or another tab forgets it, and the page then lights in the first copy that shows it (S12).
+  const [openCopy, setOpenCopy] = useState<{ path: string; top: string } | null>(null)
+  useEffect(() => setOpenCopy((prev) => (prev === null || prev.path === activeFile ? prev : null)), [activeFile])
+  useEffect(() => setOpenCopy(null), [lens])
+  const openFromTree = useCallback(
+    (path: string, top?: string) => {
+      setOpenCopy(top === undefined ? null : { path, top })
+      onOpenFile(path)
+    },
+    [onOpenFile],
+  )
+  const clickedTop = openCopy !== null && openCopy.path === activeFile && copyTops?.some((t) => t.path === openCopy.top) === true ? openCopy.top : null
   const activeTop = useMemo(
-    () => (activeFile === null || copyTops === null ? null : (keptTop ?? firstCopy(copyTops, activeFile, expandedSet))),
-    [activeFile, copyTops, keptTop, expandedSet],
+    () => (activeFile === null || copyTops === null ? null : (clickedTop ?? firstCopy(copyTops, activeFile, expandedSet))),
+    [activeFile, copyTops, clickedTop, expandedSet],
   )
 
   // A Files reveal targets a file — or, from a folder search row's menu (YAZ-2050) or Enter on it
@@ -1053,7 +1059,7 @@ export function Sidebar({
     activeFile,
     activeTop,
     onToggle: toggleDir,
-    onOpenFile,
+    onOpenFile: openFromTree,
     onKeepFile,
     onOpenFileBackground,
     onOpenDefault: openDefault,

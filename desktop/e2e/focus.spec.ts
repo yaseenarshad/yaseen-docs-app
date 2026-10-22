@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, extraWindow, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, SEED_FILE, seededState, shoot, topLabels, windowCount, winParam } from './helpers'
+import { activeTab, tabsOf, appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, extraWindow, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, SEED_FILE, seededState, shoot, topLabels, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -238,6 +238,27 @@ test('step 4c — ← and → fold one copy in the real app, and a click that cl
   await expect(plan).toHaveCount(1)
   await shoot(win, 'focus-4c-s13')
   await expect(win.locator('.sidebar__body .tree__row--active')).toHaveCount(0)
+})
+
+test('step 4d — a page clicked in copy 1, a fold click, another tab, then its own tab again: the page lights in the first copy that shows it (YAZ-3131 S12, Decision 3)', async () => {
+  const archive = dirRow(win, 'archive') // 0: inside Projects, 1: the top row
+  const item = (copy: number) => archive.nth(copy).locator('..')
+  const plan = fileRow(win, 'Old plan')
+  // After 4c: the page was clicked in copy 1, and copy 1 is closed. Open copy 1 again with a click.
+  await archive.nth(1).click()
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'true')
+  await expect(item(0)).toHaveAttribute('aria-expanded', 'true')
+  await expect(plan).toHaveCount(2)
+  const other = tabsOf(win).filter({ hasNotText: 'Old plan' }).first()
+  await expect(other).toHaveCount(1)
+  await other.click()
+  await expect(activeTab(win)).not.toHaveText(/Old plan/)
+  await tabsOf(win).filter({ hasText: 'Old plan' }).first().click()
+  await expect(activeTab(win)).toHaveText(/Old plan/)
+  await shoot(win, 'focus-4d-s12')
+  // S12: opened from the tab bar, the page lights in the first copy whose folds show it — copy 0.
+  await expect(plan.nth(0)).toHaveClass(/tree__row--active/)
+  await expect(plan.nth(1)).not.toHaveClass(/tree__row--active/)
 })
 
 // ---------------------------------------------------------------- clear

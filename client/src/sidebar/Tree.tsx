@@ -176,7 +176,8 @@ interface TreeProps {
   /** The copy the open page lights in (YAZ-3131 Decision 3); null or absent: every row of it lights. */
   activeTop?: string | null
   onToggle: (dir: string) => void
-  onOpenFile: (path: string) => void
+  /** `top`: the copy of Focus or Favorites the row was clicked in (YAZ-3131 S11), so the page lights there. */
+  onOpenFile: (path: string, top?: string) => void
   /**
    * A double click on a row (YAZ-2648 D2): the page is a KEPT tab. On a file row the first click
    * has opened it in the preview tab, and this keeps it; a folder row opens its folder as one.
@@ -371,7 +372,7 @@ function TreeLevel({
                   if (e.key !== 'Enter' || e.shiftKey || vaultRows.has(node.path)) return
                   e.preventDefault()
                   selection.set(node.path, copyOf(node))
-                  onOpenFile(node.path)
+                  onOpenFile(node.path, copyOf(node))
                 }}
                 onContextMenu={(e) => onNodeContextMenu({ ...node, top: topOf(node) }, e)}
                 draggable={rowReorder !== null}
@@ -450,7 +451,8 @@ function TreeLevel({
                 // it already shows, and App closes the tab board over it (YAZ-2648 S46).
                 if (e.metaKey) onOpenFileBackground(node.path)
                 else {
-                  onOpenFile(node.path)
+                  // A shortcut row hands no copy (YAZ-3142): its note lights where the note itself stands.
+                  onOpenFile(node.path, isShortcutRow(node) ? undefined : copyOf(node))
                   if (node.path === activeFile && e.detail === 0) focusOpenDocument() // YAZ-961: the VISIBLE one
                 }
               }}
