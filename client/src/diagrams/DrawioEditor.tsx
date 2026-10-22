@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DRAWIO_ORIGIN } from '@shared/drawio'
 import { boardBaseName } from '@shared/fileKind'
-import { isDiagramReadOnly } from '@shared/readOnly'
+import { isDiagramReadOnly, setDiagramReadOnly } from '@shared/readOnly'
 import type { DiagramDarkColors } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { BoardDocumentShell } from '../documents/BoardDocumentShell'
@@ -171,7 +171,9 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     // The switch is read off the LOADED XML, never `latestXml`: draw.io drops attributes it does not know (YAZ-3076 D1).
     readOnly: loadedReadOnly,
     onNotice,
-    write: (expectedMtime) => api.diagram.save({ root, path, xml: latestXml.current, expectedMtime }),
+    // A change draw.io queued before "on" landed saves after it: it keeps the switch, which draw.io's
+    // XML never carries (it drops attributes it does not know — YAZ-3116 A3).
+    write: (expectedMtime) => api.diagram.save({ root, path, xml: wantedReadOnly.current ? setDiagramReadOnly(latestXml.current, true) : latestXml.current, expectedMtime }),
     reload: async (a) => {
       const res = await api.diagram.load({ root, path })
       a.reset(version.current, res.mtime)
@@ -248,17 +250,15 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
   }, [configure, syncTheme, syncColors, syncReadOnly, sendLoad, autosave, retired, start, loaded.mtime, onToggleSidebar])
 
   // YAZ-3076 D2: the file's switch, live — the load, this tab's toggle, or a change on disk.
-  const { readOnly } = board
+  // At "Allow edits" after a stray change, the board's own reload (the drawing's rule) puts the disk back.
+  const { readOnly, reload } = board
   useEffect(() => {
     wantedReadOnly.current = readOnly
     syncReadOnly()
     if (readOnly || !strayWhileReadOnly.current) return
     strayWhileReadOnly.current = false
-    void api.diagram.load({ root, path }).then(
-      (res) => sendLoad(res.xml, res.mtime),
-      () => undefined,
-    )
-  }, [readOnly, syncReadOnly, sendLoad, root, path])
+    void reload()
+  }, [readOnly, syncReadOnly, reload])
 
   // 🔒 YAZ-1802 D12: the app's theme, live.
   useEffect(() => {

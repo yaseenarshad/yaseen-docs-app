@@ -365,21 +365,14 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     editor.select(shape)
     expect(message({ action: 'yaseenReadOnly', value: true })).toBe(true)
     expect(editor.graph.isEnabled()).toBe(false)
-    // A cell selected before keeps no Format panel, and a label being typed is put down unchanged.
-    expect(editor.graph.stopEditing).toHaveBeenCalledWith(false)
+    // A cell selected before keeps no Format panel, and a label being typed is cancelled, never applied (`stopEditing(cancel)`).
+    expect(editor.graph.stopEditing).toHaveBeenCalledWith(true)
     expect(editor.graph.isSelectionEmpty()).toBe(true)
     // The toolbar's Undo and Redo do not edit a read-only diagram either.
     expect(editor.actionState).toMatchObject({ undo: false, redo: false })
     expect(message({ action: 'yaseenReadOnly', value: false })).toBe(true)
     expect(editor.graph.isEnabled()).toBe(true)
     expect(editor.actionState).toMatchObject({ undo: true, redo: true })
-  })
-
-  it('a yaseenReadOnly before the editor exists is held, and applied when draw.io builds it', () => {
-    const { env, message } = loadPostConfig()
-    expect(message({ action: 'yaseenReadOnly', value: true })).toBe(true)
-    const editor = openEditor(env)
-    expect(editor.graph.isEnabled()).toBe(false)
   })
 
   it('leaves every other message, and the same one from anywhere but the host, to draw.io', () => {

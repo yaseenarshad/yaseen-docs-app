@@ -46,29 +46,23 @@ window.ICON_SERVICE_PATH = null;
 		this.hsplitPosition = 0;
 		createUi.apply(this, arguments);
 		installTextScaling(this.editor.graph);
-
-		if (readOnly)
-		{
-			applyReadOnly();
-		}
 	};
 
 	// YAZ-3076 D2: the file says read only, so the graph takes no edits — the host's `yaseenReadOnly`
-	// message, sent after draw.io's `init` and on every change. draw.io's own viewer does the same
-	// (`graph.isEnabled` false): selection, moves, the rubber band, the keys and a drop from the shapes
-	// panel all ask `graph.isEnabled()`, while the wheel and the panning handler do not, so pan and zoom
-	// still work. Two things draw.io leaves on are closed here: a label being typed is put down
-	// unchanged and the selection is cleared (no Format panel edits a cell picked before), and the
+	// message, sent only after draw.io's `init` (when the editor exists, as for `yaseenAdaptiveColors`)
+	// and on every change. draw.io's own viewer does the same (`graph.isEnabled` false): selection,
+	// moves, the rubber band, the keys and a drop from the shapes panel all ask `graph.isEnabled()`,
+	// while the wheel and the panning handler do not, so pan and zoom still work. Two things draw.io
+	// leaves on are closed here: a label being typed is CANCELLED, never applied (`stopEditing(cancel)`,
+	// YAZ-3116 A2), and the selection is cleared (no Format panel edits a cell picked before); and the
 	// toolbar's Undo / Redo, which follow only the undo history, are off while the graph is.
-	var readOnly = false;
-
-	function applyReadOnly()
+	function applyReadOnly(readOnly)
 	{
 		var graph = editorUi.editor.graph;
 
 		if (readOnly)
 		{
-			graph.stopEditing(false);
+			graph.stopEditing(true);
 			graph.clearSelection();
 		}
 
@@ -140,12 +134,7 @@ window.ICON_SERVICE_PATH = null;
 		if (msg != null && msg.action == 'yaseenReadOnly')
 		{
 			evt.stopImmediatePropagation();
-			readOnly = msg.value === true;
-
-			if (editorUi != null)
-			{
-				applyReadOnly();
-			}
+			applyReadOnly(msg.value === true);
 		}
 
 		if (msg != null && msg.action == 'yaseenAdaptiveColors')

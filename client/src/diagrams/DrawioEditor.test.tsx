@@ -29,6 +29,8 @@ const load = vi.mocked(api.diagram.load)
 const save = vi.mocked(api.diagram.save)
 const saveImage = vi.mocked(api.dialog.saveImage)
 const toggleSidebar = vi.fn()
+/** `board:set-read-only` (YAZ-3076), on the bridge itself: `api` reaches it through `window.yaseenDocs`. */
+const setBoardReadOnly = vi.fn()
 const notice = vi.fn()
 
 const ROOT = '/vault'
@@ -96,6 +98,7 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: {
+      setBoardReadOnly,
       window: {
         onFlush: () => () => {},
       },
@@ -364,5 +367,32 @@ describe('read only (YAZ-3076 D2)', () => {
     watcherSaw({ type: 'change', path: PATH, mtime: 300 })
     await settle()
     expect(posted).toContainEqual({ action: 'yaseenReadOnly', value: true, _origin: DRAWIO_ORIGIN })
+  })
+})
+
+describe('read only: a change draw.io queued before the switch landed (YAZ-3116 A3)', () => {
+  it('an autosave that arrives while the switch is being written saves WITH the switch: draw.io\u2019s XML has no attribute of ours', async () => {
+    await opened()
+    let answer!: (res: { path: string; mtime: number; size: number }) => void
+    setBoardReadOnly.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    const row = [...container.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((b) => b.textContent?.startsWith('Read only'))!
+    await act(async () => {
+      row.click()
+      await Promise.resolve()
+    })
+    expect(setBoardReadOnly).toHaveBeenCalledWith({ root: ROOT, path: PATH, on: true, expectedMtime: 100 })
+    // draw.io reports a change made just before the click, while the switch is on its way to disk.
+    drawio({ event: 'autosave', xml: EDITED })
+    await act(async () => answer({ path: PATH, mtime: 300, size: 1 }))
+    await settle()
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await settle()
+    expect(save).toHaveBeenCalledTimes(1)
+    const written = save.mock.calls[0]![0]
+    expect(written.expectedMtime).toBe(300)
+    expect(written.xml).toBe(EDITED.replace('<mxfile>', '<mxfile yaseendraw-readonly="1">'))
   })
 })
