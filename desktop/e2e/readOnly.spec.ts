@@ -23,7 +23,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setFrontmatterProperty } from '../../shared/frontmatter'
-import { appWindow, buildFixtureVault, contents, copyVault, editorOf, launchApp, layer, openFolder, quitApp, seededState, shoot, viewTabs } from './helpers'
+import { appWindow, buildFixtureVault, contents, copyVault, editorOf, fileRow, launchApp, layer, openFolder, quitApp, seededState, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -54,6 +54,10 @@ let userData: string
 let vaultSrc: string
 let vault: string
 let notePath: string
+/** A read-only outline (YAZ-3125, D8): every view action of a note, with the mouse and with its key. */
+const OUTLINE_NOTE = 'Locked outline.md'
+const OUTLINE_BODY = '---\nreadonly: true\n---\n- parent-e2e\n  - child-e2e\n- other-e2e [[Ideas]]\n'
+let outlinePath: string
 let diagramPath: string
 let app: ElectronApplication
 let win: Page
@@ -72,6 +76,8 @@ test.beforeAll(async () => {
   vault = await copyVault(vaultSrc)
   notePath = path.join(vault, NOTE)
   await writeFile(notePath, BODY)
+  outlinePath = path.join(vault, OUTLINE_NOTE)
+  await writeFile(outlinePath, OUTLINE_BODY)
   diagramPath = path.join(vault, DIAGRAM)
   await writeFile(diagramPath, ONE_BOX)
 })
@@ -112,6 +118,77 @@ test('step 3 — typing changes nothing: the file keeps its bytes past the autos
   expect(await onDisk()).toBe(LOCKED)
   await expect(line(win)).toBeVisible()
   await expect(layer(win).locator('.conflict-bar')).toHaveCount(0)
+})
+
+test('step 3b — YAZ-3125: the view-action keys still answer — ⌘⇧U folds the heading section, ⌘⇧I unfolds it; the file keeps its bytes', async () => {
+  await editorOf(win).locator('h1', { hasText: 'Locked' }).click()
+  await win.keyboard.press('Meta+Shift+U')
+  await expect(line(win)).toBeHidden()
+  await win.keyboard.press('Meta+Shift+I')
+  await expect(line(win)).toBeVisible()
+  await win.waitForTimeout(700)
+  expect(await onDisk()).toBe(LOCKED)
+})
+
+test('step 3c — D8: a read-only outline keeps every view action, with the mouse and with its key; nothing is written', async () => {
+  await fileRow(win, 'Locked outline').click()
+  const item = (text: string) => editorOf(win).locator('li', { hasText: text }).first()
+  const shown = (text: string) => editorOf(win).locator(`p:text-is("${text}")`)
+  await expect(shown('parent-e2e')).toBeVisible()
+  await expect(chip(win)).toHaveText('Read only')
+  // A chevron click folds and unfolds one bullet.
+  await item('parent-e2e').hover()
+  await item('parent-e2e').locator('.outline-toggle').first().click()
+  await expect(shown('child-e2e')).toBeHidden()
+  await item('parent-e2e').locator('.outline-toggle').first().click()
+  await expect(shown('child-e2e')).toBeVisible()
+  // ⌘↑ / ⌘↓ at the clicked bullet, and ⌘Z puts back the fold.
+  await shown('parent-e2e').click()
+  await win.keyboard.press('Meta+ArrowUp')
+  await expect(shown('child-e2e')).toBeHidden()
+  await win.keyboard.press('Meta+ArrowDown')
+  await expect(shown('child-e2e')).toBeVisible()
+  await win.keyboard.press('Meta+ArrowUp')
+  await win.keyboard.press('Meta+z')
+  await expect(shown('child-e2e')).toBeVisible()
+  // ⌘. zooms into the bullet and ⌘⇧. zooms back out.
+  await shown('parent-e2e').click()
+  await win.keyboard.press('Meta+Period')
+  await expect(shown('other-e2e')).toBeHidden()
+  await win.keyboard.press('Meta+Shift+Period')
+  await expect(editorOf(win).locator('p', { hasText: 'other-e2e' })).toBeVisible()
+  // A click on the bullet's glyph zooms in; the breadcrumb's first crumb zooms out.
+  await item('parent-e2e').locator('.label-wrapper').first().click()
+  await expect(editorOf(win).locator('p', { hasText: 'other-e2e' })).toBeHidden()
+  await layer(win).locator('[aria-label="Zoom breadcrumbs"] button').first().click()
+  await expect(editorOf(win).locator('p', { hasText: 'other-e2e' })).toBeVisible()
+  // ⌘F finds in the note.
+  await shown('parent-e2e').click()
+  await win.keyboard.press('Meta+f')
+  await layer(win).locator('.find-bar__input').fill('child-e2e')
+  await expect(layer(win).locator('.find-bar__count')).toHaveText('1 of 1')
+  await win.keyboard.press('Escape')
+  // Line numbers from the cog.
+  await cog(win).click()
+  await menu(win).locator('button[aria-pressed]', { hasText: 'Line numbers' }).click()
+  await expect(editorOf(win).locator('[data-line]').first()).toBeVisible()
+  await win.keyboard.press('Escape')
+  // A selection of the text (copy is the native one; the spec never writes the system clipboard).
+  // (A drag: a synthetic double-click selects no word in this harness, in an editable note too.)
+  const box = (await shown('child-e2e').boundingBox())!
+  await win.mouse.move(box.x + 2, box.y + box.height / 2)
+  await win.mouse.down()
+  await win.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 5 })
+  await win.mouse.up()
+  expect(await win.evaluate(() => document.getSelection()?.toString())).toContain('child-e2e')
+  await win.waitForTimeout(700)
+  expect(await readFile(outlinePath, 'utf8')).toBe(OUTLINE_BODY)
+  // A link still opens: the wiki link goes to its note.
+  await editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).first().click()
+  await expect(layer(win).locator('.page-title__text')).toHaveText('Ideas')
+  expect(await readFile(outlinePath, 'utf8')).toBe(OUTLINE_BODY)
+  await fileRow(win, 'Locked note').click()
+  await expect(line(win)).toBeVisible()
 })
 
 test('step 4 — the chip asks "Allow edits?"; "Allow edits" removes the key and the chip', async () => {
