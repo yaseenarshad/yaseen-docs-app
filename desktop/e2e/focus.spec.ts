@@ -170,6 +170,52 @@ test('step 4 — a second window on the vault shows the same list (YAZ-2702 S7, 
   expect(await focusListOnDisk()).toEqual(['Projects'])
 })
 
+// ---------------------------------------------------------------- a folder and its subfolder (YAZ-3131)
+
+test('step 4b — a folder and its subfolder both in focus: each copy of the subfolder folds on its own, and the open page lights in the copy that was clicked (YAZ-3131 S1, S2, S4, S11)', async () => {
+  // Projects is the one item; open it and put its subfolder in focus too, so `archive` shows two times.
+  await dirRow(win, 'Projects').click()
+  await pickFromRowMenu(dirRow(win, 'archive'), 'Add to focus')
+  await expect(toast(win)).toHaveText('Added to focus')
+  await expect(topLabels(win)).toHaveText(['Projects', 'archive'])
+  const archive = dirRow(win, 'archive') // 0: inside Projects, 1: the top row
+  const item = (copy: number) => archive.nth(copy).locator('..')
+  const plan = fileRow(win, 'Old plan')
+  await expect(archive).toHaveCount(2)
+  // The add opened the new item's own row alone (S4): the copy inside Projects stays closed.
+  await expect(item(0)).toHaveAttribute('aria-expanded', 'false')
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'true')
+  await expect(plan).toHaveCount(1)
+
+  // A click folds one copy, never the other (S1).
+  await archive.nth(1).click()
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'false')
+  await expect(item(0)).toHaveAttribute('aria-expanded', 'false')
+  await archive.nth(0).click()
+  await expect(item(0)).toHaveAttribute('aria-expanded', 'true')
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'false')
+  await archive.nth(1).click()
+  await expect(plan).toHaveCount(2)
+
+  // Files keeps its own folds (S2): no fold of the Focus tab opened anything there. (An OPENED page
+  // still opens its folders in Files, its rule since YAZ-1642, so this is checked before any page opens.)
+  await lensTab(win, 'Files').click()
+  await expect(dirRow(win, 'Projects').locator('..')).toHaveAttribute('aria-expanded', 'false')
+  await focusTab(win).click()
+  await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true')
+  await expect(plan).toHaveCount(2) // the tab's folds outlived the trip to Files
+
+  // The open page lights in the copy that was clicked, and only there (S11).
+  await plan.nth(1).click()
+  await expect(plan.nth(1)).toHaveClass(/tree__row--active/)
+  await expect(plan.nth(0)).not.toHaveClass(/tree__row--active/)
+  await expect(win.locator('.sidebar__body .tree__row--active')).toHaveCount(1)
+  await plan.nth(0).click()
+  await expect(plan.nth(0)).toHaveClass(/tree__row--active/)
+  await expect(plan.nth(1)).not.toHaveClass(/tree__row--active/)
+  await shoot(win, 'focus-05b-two-copies')
+})
+
 // ---------------------------------------------------------------- clear
 
 test('step 5 — "Clear" empties the list: the empty message shows, the count line goes, the tab stays, and the vault\'s focus file holds an empty list', async () => {
