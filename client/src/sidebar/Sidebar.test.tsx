@@ -5410,6 +5410,90 @@ describe('favorites (YAZ-1766)', () => {
       expect(lit(plan, 'tree__row--active')).toEqual([true, false])
     })
 
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R1) on %s: a double click opens a FOLDER page in copy B — the folder row lights in copy B (Decision 3)', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      expect(rowsByPath(el, gtm)).toHaveLength(2)
+      // A real double click: two clicks (each selects and folds), then the dblclick (YAZ-2648 D2).
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      act(() => void rowsByPath(el, gtm)[1]?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+      await rerender({ activeFile: gtm })
+      expect(lit(gtm, 'tree__row--selected')).toEqual([false, true])
+      expect(lit(gtm, 'tree__row--active')).toEqual([false, true])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R2) on %s: Enter opens a FOLDER page in copy B — the folder row lights in copy B', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => void rowsByPath(el, gtm)[1]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+      await rerender({ activeFile: gtm })
+      expect(lit(gtm, 'tree__row--active')).toEqual([false, true])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R3) on %s: a double click on a FILE in copy B keeps the light in copy B', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      act(() => void rowsByPath(el, plan)[1]?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R4) on %s: a click in copy B, a blank tab (no page), then the page again — the first copy lights (S12)', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      await rerender({ activeFile: null })
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R5) on %s: a click on the open page in copy A after copy B — the light moves to copy A (S11)', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      act(() => rowsByPath(el, plan)[0]?.click())
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+      act(() => rowsByPath(el, plan)[1]?.click())
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      // A fold click in copy A, then the light must stay in copy B while the page stays open (S13).
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R6) on %s: the row menu "Open" on a FOLDER in copy B — its page lights in copy B (Decision 3, S15)', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      // "Open" is a FOLDER row's item (YAZ-2290 D3); a file row opens on its click and has none.
+      act(() => void rowsByPath(el, gtm)[1]?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 5, clientY: 5 })))
+      const open = itemByLabel(el, 'Open')
+      expect(open).toBeDefined()
+      act(() => open?.click())
+      await rerender({ activeFile: gtm })
+      expect(lit(gtm, 'tree__row--selected')).toEqual([false, true])
+      expect(lit(gtm, 'tree__row--active')).toEqual([false, true])
+    })
+
     it.each(['favorites', 'focus'] as const)('YAZ-3131 S13 by the arrow key on %s: ← closes the folder in copy B — no row lights', async (lens) => {
       const { el, v, rerender } = await mountWork(lens)
       const gtm = `${v}/Work/Wrenly/GTM`

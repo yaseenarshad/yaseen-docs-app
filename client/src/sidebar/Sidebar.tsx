@@ -735,6 +735,14 @@ export function Sidebar({
     },
     [onOpenFile],
   )
+  // A double click and the row menu's "Open" keep the page as a tab (YAZ-2648 D2): the same rule (YAZ-3144).
+  const keepFromTree = useCallback(
+    (path: string, top?: string) => {
+      setOpenCopy(top === undefined ? null : { path, top })
+      onKeepFile(path)
+    },
+    [onKeepFile],
+  )
   const clickedTop = openCopy !== null && openCopy.path === activeFile && copyTops?.some((t) => t.path === openCopy.top) === true ? openCopy.top : null
   const activeTop = useMemo(
     () => (activeFile === null || copyTops === null ? null : (clickedTop ?? firstCopy(copyTops, activeFile, expandedSet))),
@@ -1060,7 +1068,7 @@ export function Sidebar({
     activeTop,
     onToggle: toggleDir,
     onOpenFile: openFromTree,
-    onKeepFile,
+    onKeepFile: keepFromTree,
     onOpenFileBackground,
     onOpenDefault: openDefault,
     onNodeContextMenu: openRowMenu,
@@ -1429,7 +1437,7 @@ export function Sidebar({
           sections={buildMenuSections(
             { ...menu, clip },
             {
-              onOpen: onKeepFile,
+              onOpen: (path) => keepFromTree(path, menu.lens === 'focus' || menu.lens === 'favorites' ? (menu.top ?? undefined) : undefined),
               onOpenInNewTabs: openFilesInTabs,
               onShowInSidebar: onRevealInFiles,
               onOpenNewWindow: openFileNewWindow,

@@ -182,7 +182,8 @@ interface TreeProps {
    * A double click on a row (YAZ-2648 D2): the page is a KEPT tab. On a file row the first click
    * has opened it in the preview tab, and this keeps it; a folder row opens its folder as one.
    */
-  onKeepFile: (path: string) => void
+  /** `top`: as `onOpenFile`'s (YAZ-3144), so a page kept from a copy lights there too. */
+  onKeepFile: (path: string, top?: string) => void
   /**
    * ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open it in a background tab of THIS
    * window — activation stays put. "Open in new window" lives on the context menu (D2).
@@ -364,7 +365,7 @@ function TreeLevel({
                 // as ever; shift never opens. A vault row is no page (YAZ-2602 D3): neither gesture
                 // opens one, and Enter folds it.
                 onDoubleClick={(e) => {
-                  if (!e.shiftKey && !vaultRows.has(node.path)) onKeepFile(node.path)
+                  if (!e.shiftKey && !vaultRows.has(node.path)) onKeepFile(node.path, copyOf(node))
                 }}
                 // Enter opens it too, as it opens a file row — there through the button's own click,
                 // which on this row folds. So the key is taken here and Space is left to fold.
@@ -459,7 +460,7 @@ function TreeLevel({
               // The second click of a double click KEEPS the tab the first one previewed (YAZ-2648 D2).
               // A row with no viewer in the app has no tab, and ⌘ opened a kept tab already.
               onDoubleClick={(e) => {
-                if (!e.shiftKey && !e.metaKey && node.kind !== null) onKeepFile(node.path)
+                if (!e.shiftKey && !e.metaKey && node.kind !== null) onKeepFile(node.path, isShortcutRow(node) ? undefined : copyOf(node))
               }}
               onContextMenu={(e) => onNodeContextMenu(isShortcutRow(node) ? { type: 'file', path: node.path, shortcutIn: dirPath, top: topOf(node) } : { ...node, top: topOf(node) }, e)}
               title={node.path}

@@ -261,6 +261,17 @@ test('step 4d — a page clicked in copy 1, a fold click, another tab, then its 
   await expect(plan.nth(1)).not.toHaveClass(/tree__row--active/)
 })
 
+test('step 4e — a double click opens the FOLDER page of archive in copy 1: its row lights in copy 1 (Decision 3)', async () => {
+  const archive = dirRow(win, 'archive') // 0: inside Projects, 1: the top row
+  await expect(archive).toHaveCount(2)
+  await archive.nth(1).dblclick()
+  await expect(activeTab(win)).toHaveText(/archive/)
+  await expect(archive).toHaveCount(2)
+  await shoot(win, 'focus-4e-folder-page')
+  await expect(archive.nth(1)).toHaveClass(/tree__row--active/)
+  await expect(archive.nth(0)).not.toHaveClass(/tree__row--active/)
+})
+
 // ---------------------------------------------------------------- clear
 
 test('step 5 — "Clear" empties the list: the empty message shows, the count line goes, the tab stays, and the vault\'s focus file holds an empty list', async () => {
