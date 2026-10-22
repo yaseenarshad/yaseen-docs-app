@@ -6910,6 +6910,17 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(shortcutRow(el)?.classList.contains('tree__row--active')).toBe(false)
     })
 
+    it.each(['favorites', 'focus'] as const)('checker YAZ-3131 S18 probe on %s: does the shortcut row still light with its real row?', async (lens) => {
+      const { el, rerender } = await mountLinked([PROJECTS_ID], { lens }, (bridge) => {
+        bridge.favorites.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
+        bridge.focus.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
+      })
+      await rerender({ activeFile: HEALTH })
+      expect(shortcutRow(el)).not.toBeNull()
+      expect(row(el, HEALTH)?.classList.contains('tree__row--active')).toBe(true)
+      expect(shortcutRow(el)?.classList.contains('tree__row--active')).toBe(true)
+    })
+
     it('a click, a shift-click or a right-click on it selects nothing, so ⌘C / ⌘X never reach the real note from here', async () => {
       const clipboardRef: SidebarProps['clipboardRef'] = { current: null }
       const { el, bridge } = await mountLinked([PROJECTS_ID], { clipboardRef })
