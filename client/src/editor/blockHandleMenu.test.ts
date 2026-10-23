@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createBlockHandleMenu, type MenuRow, type RowProvider } from './blockHandleMenu'
+import { createBlockHandleMenu, parseNumberField, renderMenu, type MenuNumberField, type MenuRow, type RowProvider } from './blockHandleMenu'
 import { features } from './featureConfig'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
@@ -165,5 +165,122 @@ describe('destroy', () => {
     expect(down).toHaveBeenCalledTimes(1)
     expect(contextmenu(item).defaultPrevented).toBe(false)
     expect(parent.querySelector('.ctx-menu--editor')).toBeNull()
+  })
+})
+
+/** A number field like the line's darkness (YAZ-3164 D3); `run` is a spy. */
+const field = (over: Partial<MenuNumberField> = {}): MenuNumberField => ({
+  kind: 'number',
+  label: 'Size',
+  unit: '%',
+  value: 10,
+  presets: [10, 50, 100],
+  fallback: 10,
+  min: 5,
+  max: 100,
+  error: 'Use a whole number from 5–100%.',
+  run: vi.fn(),
+  ...over,
+})
+
+describe('number fields (YAZ-3164 D3)', () => {
+  it('draws the zoom menu’s box and presets after a divider, labels the default, and presses the current value', async () => {
+    const { view, item } = await mount(() => [{ label: 'One', run: vi.fn() }, field({ value: 50 })])
+    contextmenu(item)
+    const popup = popupOf(view)!
+    expect([...popup.children].map((el) => el.className)).toEqual(['ctx-menu__item', 'document-zoom__divider', 'document-zoom__custom', 'document-zoom__divider', 'document-zoom__presets'])
+    const label = popup.querySelector('label')!
+    const box = popup.querySelector('input')!
+    expect(label.textContent).toBe('Size')
+    expect(label.htmlFor).toBe(box.id)
+    expect(box.value).toBe('50%')
+    expect(box.inputMode).toBe('numeric')
+    const buttons = [...popup.querySelectorAll('.document-zoom__presets button')]
+    expect(buttons.map((b) => b.firstElementChild?.textContent)).toEqual(['10% (default)', '50%', '100%'])
+    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
+    expect(buttons.map((b) => b.lastElementChild?.textContent)).toEqual(['', '✓', ''])
+  })
+
+  it('a menu that starts with a field has no divider first, and the first box takes the focus with its text selected', async () => {
+    const { view, item } = await mount(() => [field(), field({ label: 'Other' })])
+    contextmenu(item)
+    const popup = popupOf(view)!
+    expect(popup.firstElementChild?.className).toBe('document-zoom__custom')
+    const [first] = popup.querySelectorAll('input')
+    expect(document.activeElement).toBe(first)
+    expect([first.selectionStart, first.selectionEnd]).toEqual([0, 3])
+  })
+
+  it('Enter runs a new valid value once and closes; the current value closes without running', async () => {
+    const run = vi.fn()
+    const { view, item } = await mount(() => [field({ run })])
+    contextmenu(item)
+    let box = popupOf(view)!.querySelector('input')!
+    box.value = '60'
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(run).toHaveBeenCalledExactlyOnceWith(60)
+    expect(popupOf(view)).toBeNull()
+    contextmenu(item)
+    box = popupOf(view)!.querySelector('input')!
+    box.value = '10%'
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(popupOf(view)).toBeNull()
+  })
+
+  it('a bad value shows the error, marks the box and keeps the menu open; typing clears it', async () => {
+    const run = vi.fn()
+    const { view, item } = await mount(() => [field({ run })])
+    contextmenu(item)
+    const box = popupOf(view)!.querySelector('input')!
+    box.value = 'abc'
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(run).not.toHaveBeenCalled()
+    expect(popupOf(view)).not.toBeNull()
+    expect(box.getAttribute('aria-invalid')).toBe('true')
+    expect(popupOf(view)!.querySelector('.document-zoom__error')?.textContent).toBe('Use a whole number from 5–100%.')
+    box.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(box.getAttribute('aria-invalid')).toBe('false')
+    expect(popupOf(view)!.querySelector('.document-zoom__error')).toBeNull()
+  })
+
+  it('a preset click runs and closes; a click on the current preset only closes', async () => {
+    const run = vi.fn()
+    const { view, item } = await mount(() => [field({ run })])
+    contextmenu(item)
+    popupOf(view)!.querySelectorAll<HTMLButtonElement>('.document-zoom__presets button')[2].click()
+    expect(run).toHaveBeenCalledExactlyOnceWith(100)
+    expect(popupOf(view)).toBeNull()
+    contextmenu(item)
+    popupOf(view)!.querySelectorAll<HTMLButtonElement>('.document-zoom__presets button')[0].click()
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(popupOf(view)).toBeNull()
+  })
+
+  it('a click inside the box keeps the menu open; a click away closes it with no run', async () => {
+    const run = vi.fn()
+    const { view, item } = await mount(() => [field({ run })])
+    contextmenu(item)
+    popupOf(view)!.querySelector('input')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(popupOf(view)).not.toBeNull()
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(popupOf(view)).toBeNull()
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('rows alone take no focus (the id link’s menu, YAZ-2293, is unchanged)', () => {
+    const before = document.activeElement
+    const popup = renderMenu(document.body, [{ label: 'Copy ID', run: vi.fn() }], () => {})
+    expect(popup.querySelector('input')).toBeNull()
+    expect(document.activeElement).toBe(before)
+    popup.remove()
+  })
+
+  it('parseNumberField: whole numbers in range, the unit optional and only its own', () => {
+    const spec = { unit: 'px' as const, min: 1, max: 24 }
+    expect(parseNumberField(spec, '6')).toBe(6)
+    expect(parseNumberField(spec, ' 6px ')).toBe(6)
+    expect(parseNumberField(spec, '6 px')).toBe(6)
+    for (const bad of ['', '0', '25', '6%', '6.5', 'six', '-3', '1e1']) expect(parseNumberField(spec, bad), bad).toBeNull()
   })
 })

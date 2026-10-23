@@ -26,6 +26,7 @@
  * move); `ignoreMutation` answers false only to the `selection` pseudo-mutation, so a click still
  * selects the node. A read-only editor has no gesture.
  */
+import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { NodeSelection } from '@milkdown/kit/prose/state'
 import type { EditorView, NodeView, ViewMutationRecord } from '@milkdown/kit/prose/view'
@@ -118,7 +119,8 @@ class LineNodeView implements NodeView {
     if (pos === undefined) return
     const stored = width >= LINE_WIDTH_DEFAULT ? null : width
     if (stored === lineStyleOf(this.node).width) return
-    const tr = this.view.state.tr.setNodeMarkup(pos, undefined, { ...this.node.attrs, width: stored })
+    // Its own undo step, even right after another change (a pick in the menu, a keystroke).
+    const tr = closeHistory(this.view.state.tr).setNodeMarkup(pos, undefined, { ...this.node.attrs, width: stored })
     this.view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)))
   }
 

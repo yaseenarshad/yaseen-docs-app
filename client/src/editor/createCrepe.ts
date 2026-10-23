@@ -70,7 +70,7 @@
  *    reuse Crepe's link-tooltip API, including one logical range when formatting splits the DOM
  *    anchor. Registered only when `opts.markdownLinkNav` supplies the host boundary.
  *  - Block handle menu (YAZ-726, `blockHandleMenu.ts`): right-click on the 6-dot handle opens a
- *    `.ctx-menu` popup; rows are data from a provider; capture-suppresses Crepe's right-button
+ *    `.ctx-menu` popup; rows (or number fields, YAZ-3164) are data from a provider; capture-suppresses Crepe's right-button
  *    mousedown/mouseup so the selection/focus don't jump. First row: Number children ↔ Bullet
  *    children (YAZ-729, `outline/numberChildrenRow.ts`), disabled when the item has no direct
  *    child list.
@@ -135,7 +135,9 @@
  *    not the default. A `$remark` plugin joins the line and its comment on load in every container;
  *    any other comment stays HTML, bytes untouched. The second node view (`line/lineView.ts`, on
  *    every editor) draws it from custom properties and gives a selected line a round end handle
- *    that drags its length: live while it moves, ONE `setNodeMarkup` on mouseup.
+ *    that drags its length: live while it moves, ONE `setNodeMarkup` on mouseup. The block handle
+ *    menu of a line (`line/lineRows.ts`) adds "Line darkness" and "Line thickness", number fields
+ *    in the zoom menu's shape.
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
  *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
@@ -198,6 +200,7 @@ import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHigh
 import { inlineBreaks } from './inlineBreaks'
 import { lineStyle } from './line/lineStyle'
 import { lineView } from './line/lineView'
+import { lineRows } from './line/lineRows'
 import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
 import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
@@ -456,7 +459,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // Numbers are manual-only (YAZ-793/YAZ-1329): only the explicit block-handle command creates
   // ordered children. Typing, slash-menu and keyboard conversion paths are all absent.
   void crepe.editor.remove([wrapInOrderedListInputRule, ...orderedListKeymap])
-  crepe.editor.use(createBlockHandleMenu(numberChildrenRow))
+  // A line's darkness and thickness pickers follow the first row (YAZ-3164 D3); every other block gets the rows of before.
+  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...numberChildrenRow(view, target, ctx), ...lineRows(view, target, ctx)]))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.
