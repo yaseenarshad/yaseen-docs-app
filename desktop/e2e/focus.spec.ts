@@ -75,8 +75,8 @@ test('step 1 — "Add to focus" on a folder shows the Focus tab with the folder 
   await expect(fileRow(win, 'Ideas')).toBeVisible()
   expect(await focusListOnDisk()).toBeNull() // a read creates nothing (YAZ-2702 R6): no focus file until the first add
   await expect(dirRow(win, 'Projects')).toBeVisible()
-  // The tab row reads Files, magnifier, eye, heart (S18; the Search tab since YAZ-2638 D2) — and no eye button stands at its far end.
-  await expect(win.locator('.sidebar__lenses [role="tab"]')).toHaveCount(4)
+  // The tab row reads Files, magnifier, eye, heart, stack (S18; the Search tab since YAZ-2638 D2, Sessions since YAZ-3147 D4) — and no eye button stands at its far end.
+  await expect(win.locator('.sidebar__lenses [role="tab"]')).toHaveCount(5)
   await expect(focusTab(win)).toHaveAttribute('aria-selected', 'false')
 
   await pickFromRowMenu(dirRow(win, 'Projects'), 'Add to focus')
