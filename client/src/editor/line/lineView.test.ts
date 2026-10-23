@@ -83,6 +83,16 @@ describe('rendering', () => {
     expect(wrapper.querySelector('hr')?.getAttribute('style')).toBeNull()
   })
 
+  it('S73–S76: a dotted or dashed line carries data-line-pattern on its wrapper; an undo of it takes the attribute away', async () => {
+    const { root, view } = await mount('***\n<!-- line: thickness 6px, style dashed, length 40% -->\n')
+    expect(wrapperOf(root).getAttribute('data-line-pattern')).toBe('dashed')
+    expect(wrapperOf(root).style.getPropertyValue('--line-width')).toBe('40%')
+    view.dispatch(view.state.tr.setNodeMarkup(hrPos(view), undefined, { ...view.state.doc.child(0).attrs, pattern: 'dotted' }))
+    expect(wrapperOf(root).getAttribute('data-line-pattern')).toBe('dotted')
+    view.dispatch(view.state.tr.setNodeMarkup(hrPos(view), undefined, { ...view.state.doc.child(0).attrs, pattern: null }))
+    expect(wrapperOf(root).hasAttribute('data-line-pattern')).toBe(false)
+  })
+
   it('S20: a plain line has no property at all, so the stylesheet defaults draw it', async () => {
     const { root } = await mount('a\n\n***\n\nb\n')
     expect(wrapperOf(root).getAttribute('style') ?? '').toBe('')
@@ -97,7 +107,7 @@ describe('rendering', () => {
     const handled = view.someProp('handleTextInput', (f) => f(view, view.state.selection.from, view.state.selection.from, '-', () => view.state.tr))
     expect(handled).toBe(true)
     expect(view.state.doc.child(0).type.name).toBe('hr')
-    expect(view.state.doc.child(0).attrs).toEqual({ darkness: null, thickness: null, width: null })
+    expect(view.state.doc.child(0).attrs).toEqual({ darkness: null, thickness: null, pattern: null, width: null })
     expect(wrapperOf(root)).not.toBeNull()
   })
 

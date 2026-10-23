@@ -128,10 +128,10 @@
  *    Registered only when `opts.image` supplies the root + note path; without it images render as
  *    Crepe's stock `<img>` — the folder outline (its bullets-only lock has no `image`) and the
  *    hover preview card (no root in reach) say so where they mount.
- *  - The line's style (YAZ-3164, `line/lineStyle.ts`): the `hr` node gains `darkness`, `thickness` and
- *    `width` (each null for its default) — the ONE exception to the images rule above, because
+ *  - The line's style (YAZ-3164, `line/lineStyle.ts`): the `hr` node gains `darkness`, `thickness`,
+ *    `pattern` and `width` (each null for its default) — the ONE exception to the images rule above, because
  *    Markdown has no carrier for them. A plain line stays `***`; a styled one is `***` then the
- *    next block `<!-- line: darkness 80%, thickness 6px, length 40% -->`, only the parts that are
+ *    next block `<!-- line: darkness 80%, thickness 6px, style dashed, length 40% -->`, only the parts that are
  *    not the default. A `$remark` plugin joins the line and its comment on load in every container;
  *    any other comment stays HTML, bytes untouched. The second node view (`line/lineView.ts`, on
  *    every editor) draws it from custom properties and gives a selected line a round end handle

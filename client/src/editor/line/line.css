@@ -1,5 +1,5 @@
 /*
- * The line node view (YAZ-3164, 🔒 D2 / D4 / D5 / D6) — classes applied by lineView.ts.
+ * The line node view (YAZ-3164, 🔒 D2 / D4 / D5 / D6 / D7) — classes applied by lineView.ts.
  *
  * Scoped under `.milkdown .ProseMirror` on purpose (imageView.css's lesson): Crepe's reset loads
  * after this file, and its `.milkdown .ProseMirror hr` rule must lose to ours.
@@ -18,10 +18,35 @@
 }
 
 .milkdown .ProseMirror .line-view > hr {
+  --line-color: color-mix(in srgb, var(--crepe-color-on-background) var(--line-darkness, 50%), transparent);
   width: var(--line-width, 100%);
   height: calc(12px + var(--line-thickness, 3px));
   margin-inline: 0;
-  background-color: color-mix(in srgb, var(--crepe-color-on-background) var(--line-darkness, 50%), transparent);
+  background-color: var(--line-color);
+}
+
+/*
+ * Dotted and dashed (D7): drawn by background images on the content box — so the colour is the
+ * darkness colour, as for a solid line, and a short line ends at its length (the images repeat
+ * inside the `hr`'s own width). `background-origin: content-box` puts the one row of tiles on the
+ * line itself, between the 6px paddings. Dashed: a tile of 5 × thickness, the first 3 painted, so
+ * a dash is 3× the thickness and a gap 2× (S73). Dotted: a tile of 2 × thickness by the thickness,
+ * a round dot as wide as the thickness in its middle, so the gap is the thickness too (S74).
+ */
+.milkdown .ProseMirror .line-view[data-line-pattern] > hr {
+  background-color: transparent;
+  background-origin: content-box;
+  background-repeat: repeat-x;
+}
+
+.milkdown .ProseMirror .line-view[data-line-pattern='dashed'] > hr {
+  background-image: linear-gradient(to right, var(--line-color) 60%, transparent 60%);
+  background-size: calc(5 * var(--line-thickness, 3px)) 100%;
+}
+
+.milkdown .ProseMirror .line-view[data-line-pattern='dotted'] > hr {
+  background-image: radial-gradient(circle closest-side, var(--line-color) 92%, transparent 100%);
+  background-size: calc(2 * var(--line-thickness, 3px)) 100%;
 }
 
 /* Selected (ProseMirror's NodeSelection, editable only): Crepe's selected tint over the whole row,

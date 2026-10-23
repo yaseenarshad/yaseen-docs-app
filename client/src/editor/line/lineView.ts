@@ -8,6 +8,7 @@
  * The wrapper is the block: it is as wide as the row, so a node decoration on it (the line number,
  * `data-line`) sits in the lane whatever the line's length. The values go to the custom properties
  * `--line-darkness`, `--line-thickness` and `--line-width` on the wrapper (`line.css` reads them),
+ * and the pattern (YAZ-3164 D7) to its `data-line-pattern` attribute,
  * NEVER `style.width`: an inline width beats every stylesheet rule (rule 30's reason). No property
  * when the attribute is `null`, so the stylesheet's default takes over. `update()` patches the
  * properties in place; nothing here is ever rebuilt.
@@ -31,7 +32,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { NodeSelection } from '@milkdown/kit/prose/state'
 import type { EditorView, NodeView, ViewMutationRecord } from '@milkdown/kit/prose/view'
 import { $view } from '@milkdown/kit/utils'
-import { LINE_WIDTH_DEFAULT, MIN_LINE_WIDTH, lineSchema, lineStyleOf, lineStyleProperties } from './lineStyle'
+import { LINE_WIDTH_DEFAULT, MIN_LINE_WIDTH, PATTERN_ATTR, lineSchema, lineStyleOf, lineStyleProperties } from './lineStyle'
 import './line.css'
 
 export const LINE_VIEW_CLASS = 'line-view'
@@ -60,10 +61,13 @@ class LineNodeView implements NodeView {
     this.patch()
   }
 
-  /** The node's style onto the wrapper: set parts as properties, every other property removed. */
+  /** The node's style onto the wrapper: set parts as properties, the pattern as an attribute, everything else removed. */
   private patch(): void {
+    const style = lineStyleOf(this.node)
     for (const name of PROPERTIES) this.dom.style.removeProperty(name)
-    for (const [name, value] of lineStyleProperties(lineStyleOf(this.node))) this.dom.style.setProperty(name, value)
+    for (const [name, value] of lineStyleProperties(style)) this.dom.style.setProperty(name, value)
+    if (style.pattern === null) this.dom.removeAttribute(PATTERN_ATTR)
+    else this.dom.setAttribute(PATTERN_ATTR, style.pattern)
   }
 
   private startDrag(event: MouseEvent): void {
