@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isBoard, isViewOnly } from '@shared/fileKind'
 import type { TextFormatting } from '@shared/textFormatting'
-import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -863,6 +863,53 @@ export function App() {
     closeBlank()
     closeUnderOverview(now.current.tabs.map((t) => t.id))
   }, [closeBlank, closeUnderOverview])
+  /**
+   * A save of the open tabs as a session (YAZ-3147 D5, S1–S9): "Save open tabs" on the Sessions tab and the
+   * grid menu's two items. Main saves THIS window's tabs under "New session" (the blank tab is no tab, and the
+   * preview tab saves as a kept one). The sidebar then shows the Sessions tab, and the new row opens its name
+   * field. "Save and close all tabs" closes every tab, the blank one too, with no sheet — the tabs are saved —
+   * and only after the save. A refusal closes nothing. Past MAX_SESSION_TABS a notice says the first ones are saved.
+   */
+  const [sessionNameRequest, setSessionNameRequest] = useState<string | null>(null)
+  const clearSessionNameRequest = useCallback(() => setSessionNameRequest(null), [])
+  const saveSession = useCallback(async (closeAll: boolean): Promise<void> => {
+    const count = now.current.tabs.length
+    if (count === 0) {
+      notify('No open tabs to save')
+      return
+    }
+    const id = await api.window.saveSession('New session').catch((err: unknown) => {
+      console.error('[sessions] save failed:', err)
+      return null
+    })
+    if (id === null) {
+      notify(`Can't save: ${MAX_SESSIONS} sessions at most`)
+      return
+    }
+    if (sidebarCollapsedRef.current) toggleSidebar()
+    changeLens('sessions')
+    setSessionNameRequest(id)
+    if (closeAll) {
+      closeBlank()
+      closeUnderOverview(now.current.tabs.map((t) => t.id))
+    }
+    if (count > MAX_SESSION_TABS) notify(`Saved the first ${MAX_SESSION_TABS} tabs`)
+  }, [notify, toggleSidebar, changeLens, closeBlank, closeUnderOverview])
+  const saveOpenTabs = useCallback(() => void saveSession(false), [saveSession])
+  const saveFromGrid = useCallback((closeAll: boolean) => void saveSession(closeAll), [saveSession])
+  /** "Update with open tabs" (S28, S29): the same door with the session's id — it keeps its id and its name. No tab: nothing changes. */
+  const updateSession = useCallback((id: string) => {
+    const count = now.current.tabs.length
+    if (count === 0) {
+      notify('No open tabs to save')
+      return
+    }
+    void api.window.saveSession('', id)
+      .then((saved) => {
+        if (saved !== null && count > MAX_SESSION_TABS) notify(`Saved the first ${MAX_SESSION_TABS} tabs`)
+      })
+      .catch((err: unknown) => console.error('[sessions] update failed:', err))
+  }, [notify])
   /** "Move to ▸ Right panel" (YAZ-3091 D3), on a page of the board and on a tab of the strip: the page goes to the end of that panel, and an open board stays (R30). */
   const movePageToRight = useCallback((path: string) => {
     ownChange.current = path === now.current.file
@@ -1628,6 +1675,10 @@ export function App() {
           update={update}
           onOpenWhatsNew={openWhatsNew}
           onRestoreSession={restoreSavedSession}
+          onSaveSession={saveOpenTabs}
+          onUpdateSession={updateSession}
+          sessionNameRequest={sessionNameRequest}
+          onSessionNameConsumed={clearSessionNameRequest}
           onRootMissing={dropVault}
           onFileMissing={onFileMissing}
           onRenameFile={requestPathRename}
@@ -1709,6 +1760,7 @@ export function App() {
               onToggleOverview={toggleOverview}
               overviewOpen={overviewOpen}
               onKillAll={askKillAll}
+              onSaveSession={saveFromGrid}
               onNotice={notify}
               titles={titles}
               reviewState={reviewState}

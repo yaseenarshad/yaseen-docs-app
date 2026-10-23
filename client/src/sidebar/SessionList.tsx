@@ -1,4 +1,4 @@
-import { memo, useCallback, useState, useSyncExternalStore, type MouseEvent } from 'react'
+import { memo, useCallback, useEffect, useState, useSyncExternalStore, type MouseEvent } from 'react'
 import { MAX_VAULT_NAME, cleanVaultName, rootOfPath, type Session } from '@shared/types'
 import { api } from '../api'
 import { ConfirmSheet } from '../components/ConfirmSheet'
@@ -25,6 +25,10 @@ interface SessionListProps {
   onSave?: () => void
   /** "Update with open tabs" (S28): App saves this window's tabs into the session. */
   onUpdate?: (id: string) => void
+  /** A save just made this session (D5, S1): its row opens its name field, with the name selected, once it is in the list. */
+  renameRequest?: string | null
+  /** The request was acted on: it must not open the field again. */
+  onRenameConsumed?: () => void
 }
 
 type Menu = { x: number; y: number; id: string; tab: number | null }
@@ -36,12 +40,18 @@ type Menu = { x: number; y: number; id: string; tab: number | null }
  * It reads the sessions from the cache, which answers the same array until they change, so the list
  * renders again only then (and for its own folds, menus and field).
  */
-export function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate }: SessionListProps) {
+export function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate, renameRequest = null, onRenameConsumed }: SessionListProps) {
   const sessions = useSyncExternalStore(storage.subscribe, storage.getSessions)
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set())
   const [renaming, setRenaming] = useState<string | null>(null)
   const [menu, setMenu] = useState<Menu | null>(null)
   const [deleting, setDeleting] = useState<Session | null>(null)
+  // The new session reaches the cache with main's broadcast, which can come after the save's answer: the field opens when its row is there.
+  useEffect(() => {
+    if (renameRequest === null || !sessions.some((s) => s.id === renameRequest)) return
+    setRenaming(renameRequest)
+    onRenameConsumed?.()
+  }, [renameRequest, sessions, onRenameConsumed])
 
   const toggle = useCallback((id: string) => setOpen((was) => {
     const next = new Set(was)

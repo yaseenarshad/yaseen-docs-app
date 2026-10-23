@@ -10,7 +10,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type SidebarTab, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type RestoreSessionResult, type SidebarTab, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -108,6 +108,12 @@ interface SidebarStubProps {
   onSetReview: (path: string, on: boolean) => void
   /** The vault menu's "Open in this window" (YAZ-1798 D11): the one in-place switch. */
   onOpenVaultHere: (path: string) => Promise<boolean>
+  /** The Sessions tab's doors (YAZ-3147 D3, D5): App restores, saves and updates; the new row's name field is App's request. */
+  onRestoreSession: (id: string) => void
+  onSaveSession?: () => void
+  onUpdateSession?: (id: string) => void
+  sessionNameRequest?: string | null
+  onSessionNameConsumed?: () => void
 }
 
 const captured = vi.hoisted(() => ({
@@ -276,6 +282,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       openRecent: vi.fn(async (_path: string) => true),
       // Main saves the CALLING window's vaults under the name (YAZ-2602 D8): a reorder asks it for the workspace that matches (YAZ-2631 D5).
       saveSet: vi.fn(async (_name: string) => true),
+      // Sessions (YAZ-3147 D2): main saves the CALLING window's tabs and answers the id; a restore answers what exists.
+      saveSession: vi.fn(async (_name: string, _replaceId?: string): Promise<string | null> => 's-new'),
+      restoreSession: vi.fn(async (_id: string): Promise<RestoreSessionResult> => ({ tabs: [], roots: [], missing: [] })),
       onFlush: vi.fn(() => () => undefined),
     },
     menu: {
@@ -4870,5 +4879,87 @@ describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
     act(() => captured.sidebar?.onRemoveVault('/w'))
     expect(await add('/w')).toBe(true)
     expect(captured.sidebar?.closedVaults).toEqual([])
+  })
+})
+
+describe('App sessions (YAZ-3147 D3, D5)', () => {
+  const THREE: IdentityFixture = { id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], sidebarLens: 'files' }
+  const stripLabels = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+  const activeLabel = (el: HTMLElement) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent
+  const noticeText = (el: HTMLElement) => el.querySelector('.link-notice__text')?.textContent ?? null
+  const fromGrid = async (el: HTMLElement, label: string) => {
+    act(() => void el.querySelector('[aria-label="Show all open tabs"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === label)?.click())
+  }
+
+  it('S3: "Save and close all tabs" saves under "New session" FIRST, then closes every tab, the blank one too, with no sheet; the sidebar shows the Sessions tab and the new row\'s name field is asked for (S1, S2)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), THREE)
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar__new')?.click()) // the blank tab
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c', 'New tab'])
+    bridge.window.setIdentity.mockClear()
+    await fromGrid(el, 'Save and close all tabs')
+    expect(bridge.window.saveSession).toHaveBeenCalledExactlyOnceWith('New session')
+    expect(stripLabels(el)).toEqual([]) // the blank tab too
+    expect(document.querySelector('.confirm')).toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarLens: 'sessions' })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote([], null))
+    expect(bridge.window.saveSession.mock.invocationCallOrder[0]).toBeLessThan(bridge.window.setIdentity.mock.invocationCallOrder[0])
+    expect(captured.sidebar?.lens).toBe('sessions')
+    expect(captured.sidebar?.sessionNameRequest).toBe('s-new')
+    act(() => captured.sidebar?.onSessionNameConsumed?.())
+    expect(captured.sidebar?.sessionNameRequest).toBeNull()
+    expect(noticeText(el)).toBeNull()
+  })
+
+  it('"Save tabs as session" keeps the tabs; a refused save (S7) closes nothing and says why; "Save open tabs" with no tab saves nothing (S4); past 40 tabs a notice says so (S8)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), THREE)
+    await fromGrid(el, 'Save tabs as session')
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
+    expect(captured.sidebar?.lens).toBe('sessions')
+
+    bridge.window.saveSession.mockResolvedValueOnce(null)
+    await fromGrid(el, 'Save and close all tabs')
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
+    expect(noticeText(el)).toBe("Can't save: 30 sessions at most")
+
+    act(() => captured.sidebar?.onLensChange('files'))
+    for (let i = 0; i < 3; i++) act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar__close')][0]?.click())
+    expect(stripLabels(el)).toEqual([])
+    bridge.window.saveSession.mockClear()
+    await act(async () => captured.sidebar?.onSaveSession?.())
+    expect(bridge.window.saveSession).not.toHaveBeenCalled()
+    expect(noticeText(el)).toBe('No open tabs to save')
+    expect(captured.sidebar?.lens).toBe('files')
+
+    const many = Array.from({ length: 45 }, (_, i) => `/v/n${i}.md`)
+    const second = await mount(defaultAppState(), { id: 'w1', root: '/v', file: many[0], tabs: many, sidebarLens: 'files' })
+    await act(async () => captured.sidebar?.onSaveSession?.())
+    expect(noticeText(second.el)).toBe('Saved the first 40 tabs')
+  })
+
+  it('"Update with open tabs" (S28, S29) is the same door with the id; with no tab it is refused with the S4 notice', async () => {
+    const { bridge, el } = await mount(defaultAppState(), THREE)
+    await act(async () => captured.sidebar?.onUpdateSession?.('s1'))
+    expect(bridge.window.saveSession).toHaveBeenCalledExactlyOnceWith('', 's1')
+    expect(noticeText(el)).toBeNull()
+    for (let i = 0; i < 3; i++) act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar__close')][0]?.click())
+    await act(async () => captured.sidebar?.onUpdateSession?.('s1'))
+    expect(bridge.window.saveSession).toHaveBeenCalledOnce()
+    expect(noticeText(el)).toBe('No open tabs to save')
+  })
+
+  it('"Restore session" (S17, S18, S21, S20): a missing vault joins, the tabs join the end in ONE identity write, the open page opens no copy and becomes active, and one notice counts the skipped tab', async () => {
+    const { bridge, el } = await mount(defaultAppState(), THREE)
+    bridge.window.restoreSession.mockResolvedValueOnce({ tabs: [{ path: '/v/a.md', active: true }, { path: '/w/x.md', name: 'Ex' }], roots: ['/v', '/w'], missing: ['/v/gone.md'] })
+    bridge.window.setIdentity.mockClear()
+    await act(async () => captured.sidebar?.onRestoreSession('s1'))
+    await act(async () => {})
+    expect(bridge.window.restoreSession).toHaveBeenCalledExactlyOnceWith('s1')
+    expect(storage.getRoots()).toEqual(['/v', '/w'])
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c', 'Ex'])
+    expect(activeLabel(el)).toBe('a')
+    // The vault's write, then ONE write of the strip (S27).
+    expect((bridge.window.setIdentity.mock.calls as unknown as [object][]).filter(([patch]) => 'tabs' in patch)).toHaveLength(1)
+    expect(noticeText(el)).toBe("1 tab did not open: the file is gone or its vault can't join")
   })
 })

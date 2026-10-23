@@ -37,14 +37,14 @@ let b: ReturnType<typeof installBridge>
 const props = { titles: new Map([['/w/b.md', 'Bee page']]), onOpenFile: vi.fn(), onRestore: vi.fn(), onSave: vi.fn(), onUpdate: vi.fn() }
 let renders = 0
 
-async function mount(sessions: Session[]) {
+async function mount(sessions: Session[], extra: Partial<Parameters<typeof SessionList>[0]> = {}) {
   b = installBridge({ ...defaultAppState(), sessions, folders: { '/w': { ...defaultFolderState(), name: 'Work vault' } } })
   await storage.init()
   el = document.createElement('div')
   document.body.appendChild(el)
   root = createRoot(el)
   renders = 0
-  act(() => root?.render(<Profiler id="list" onRender={() => void renders++}><SessionList {...props} /></Profiler>))
+  act(() => root?.render(<Profiler id="list" onRender={() => void renders++}><SessionList {...props} {...extra} /></Profiler>))
 }
 
 const rows = () => [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Sessions"] > li > .tree__row')]
@@ -166,5 +166,21 @@ describe('SessionList (YAZ-3147 D6)', () => {
     expect(renders).toBe(before + 1)
     expect(rows().map(text)).toEqual([['', 'Work', '0 tabs']]) // S31: the session stays
     expect(tabRows()).toEqual([])
+  })
+
+  it('S1, S11: a save asks for the new row\'s name field — it opens once the row is in the list, with "New session" selected; Esc keeps the name', async () => {
+    const onRenameConsumed = vi.fn()
+    await mount([SOLO], { renameRequest: 's9', onRenameConsumed })
+    expect(field()).toBeNull() // main's broadcast has not come yet
+    expect(onRenameConsumed).not.toHaveBeenCalled()
+    b.emit({ ...defaultAppState(), sessions: [{ id: 's9', name: 'New session', tabs: [{ path: '/v/a.md' }], roots: ['/v'], lastUsed: 30 }, SOLO] })
+    const input = field()
+    expect(input?.value).toBe('New session')
+    expect([input?.selectionStart, input?.selectionEnd]).toEqual([0, 11])
+    expect(onRenameConsumed).toHaveBeenCalledOnce()
+    key(input, 'Escape')
+    expect(field()).toBeNull()
+    expect(b.bridge.window.renameSession).not.toHaveBeenCalled()
+    expect(rows()[0].textContent).toContain('New session')
   })
 })

@@ -107,6 +107,36 @@ describe('TabBar', () => {
     expect(items()).toEqual([])
   })
 
+  it('the grid menu\'s saves (YAZ-3147 D5, S2–S4): "Save tabs as session" and "Save and close all tabs", a line, then "Kill all tabs"; each asks App; with no tab all three are grey and ask nothing', () => {
+    const onKillAll = vi.fn()
+    const onSaveSession = vi.fn()
+    const base = { active: '/v/a.md', onToggleOverview: vi.fn(), onKillAll, onSaveSession, ...noop, ...noNav }
+    const el = mount({ tabs: ['/v/a.md'], ...base })
+    const grid = () => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')!
+    const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    const groups = () => [...el.querySelectorAll('.ctx-menu [role="group"]')].map((g) => [...g.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent))
+    const rightClick = () => act(() => void grid().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+
+    rightClick()
+    expect(groups()).toEqual([['Save tabs as session', 'Save and close all tabs'], ['Kill all tabs']])
+    expect(items().map((item) => [item.className, item.disabled])).toEqual([['ctx-menu__item', false], ['ctx-menu__item', false], ['ctx-menu__item ctx-menu__item--danger', false]])
+    act(() => items()[0].click())
+    expect(onSaveSession).toHaveBeenLastCalledWith(false)
+    expect(items()).toEqual([])
+    rightClick()
+    act(() => items()[1].click())
+    expect(onSaveSession).toHaveBeenLastCalledWith(true)
+    expect(onSaveSession).toHaveBeenCalledTimes(2)
+    expect(onKillAll).not.toHaveBeenCalled()
+
+    act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={[]} {...base} active={null} />))
+    rightClick()
+    expect(items().map((item) => item.disabled)).toEqual([true, true, true])
+    for (const item of items()) act(() => item.click())
+    expect(onSaveSession).toHaveBeenCalledTimes(2)
+    expect(onKillAll).not.toHaveBeenCalled()
+  })
+
   it('renders a labelled tablist: one role=tab per path, extension-stripped label, full path as tooltip', () => {
     const el = mount({ tabs: ['/v/Note.md', '/v/sub/Plan.markdown'], active: '/v/Note.md', ...noop, ...noNav })
     expect(el.querySelector('.tabbar')?.getAttribute('role')).toBe('tablist')

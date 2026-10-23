@@ -165,6 +165,9 @@ interface SidebarProps {
   onSaveSession?: () => void
   /** The Sessions tab's "Update with open tabs" (S28): App saves this window's tabs into that session. */
   onUpdateSession?: (id: string) => void
+  /** A save just made this session (YAZ-3147 D5): the Sessions tab opens its name field once; then `onSessionNameConsumed`. */
+  sessionNameRequest?: string | null
+  onSessionNameConsumed?: () => void
   /** A vault's folder could not be read (e.g. deleted): which one; parent decides what to do. */
   onRootMissing: (root: string) => void
   /** The restored last file is not in the tree any more (checked once per root). */
@@ -472,6 +475,8 @@ export function Sidebar({
   onRestoreSession,
   onSaveSession,
   onUpdateSession,
+  sessionNameRequest = null,
+  onSessionNameConsumed,
   onRootMissing,
   onFileMissing,
   onRenameFile,
@@ -1396,7 +1401,7 @@ export function Sidebar({
           )
         ) : lens === 'sessions' ? (
           // The Sessions tab (YAZ-3147 D4, D6): the saved sessions of the app, not a tree of a vault.
-          <SessionList titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} />
+          <SessionList titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} renameRequest={sessionNameRequest} onRenameConsumed={onSessionNameConsumed} />
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
