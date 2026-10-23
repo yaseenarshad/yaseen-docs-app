@@ -14,6 +14,8 @@
  *  - close restores search-revealed folds EXCEPT those hiding the active match (the landing),
  *    clears every decoration, and puts the selection on the active match;
  *  - while zoomed, only matches inside the zoomed subtree count;
+ *  - after a query or a step the thread points at the active match, until the caret moves or the
+ *    doc changes (YAZ-3166, `findThreadAnchor`);
  *  - a whole search session never reaches `markdownUpdated` (the save path).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -28,7 +30,7 @@ import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { getZoomedItemPos } from '../outline/zoom'
 import { createFindChannel, type FindChannel } from './findChannel'
-import { FIND_ACTIVE_CLASS, FIND_MATCH_CLASS } from './findInPage'
+import { FIND_ACTIVE_CLASS, FIND_MATCH_CLASS, findThreadAnchor } from './findInPage'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -176,6 +178,42 @@ describe('cycling', () => {
     } finally {
       delete proto.scrollIntoView
     }
+  })
+})
+
+/** The thread's anchor (YAZ-3166): bulletThreading.test.ts and sectionIndent.test.ts check what it draws. */
+describe('the thread anchor', () => {
+  it('is the active match after a query and a step, and null with no query, after a caret move and after close', async () => {
+    const { view, channel } = await mountFind('apple one apple two')
+    expect(findThreadAnchor(view.state)).toBeNull()
+    channel.open()
+    expect(findThreadAnchor(view.state)).toBeNull()
+    channel.setQuery('apple')
+    expect(findThreadAnchor(view.state)).toBe(posOfText(view.state.doc, 'apple one'))
+    channel.next()
+    expect(findThreadAnchor(view.state)).toBe(posOfText(view.state.doc, 'apple two'))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOfText(view.state.doc, 'one'))))
+    expect(findThreadAnchor(view.state)).toBeNull()
+    // The next step brings it back; close lands the caret there and the anchor is the caret again.
+    channel.next()
+    expect(findThreadAnchor(view.state)).toBe(posOfText(view.state.doc, 'apple one'))
+    channel.close()
+    expect(findThreadAnchor(view.state)).toBeNull()
+    expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'apple one'))
+  })
+
+  it('stays on the match through the reveal of a collapsed fold, and an edit gives it back', async () => {
+    // The query is the first transaction: Milkdown's trailing paragraph (an appended doc change) rides on it.
+    const { root, view, channel } = await mountFind('* Parent\n  * hidden apple\n* visible banana\n', {
+      folding: { seedCollapsedKeys: () => new Set([getOutlineFoldKey('Parent', 0)]) },
+    })
+    channel.open()
+    channel.setQuery('apple')
+    expect(foldedEls(root)).toHaveLength(0)
+    expect(findThreadAnchor(view.state)).toBe(posOfText(view.state.doc, 'apple'))
+    view.dispatch(view.state.tr.insertText('x', posOfText(view.state.doc, 'banana')))
+    expect(channel.getState().total).toBe(1)
+    expect(findThreadAnchor(view.state)).toBeNull()
   })
 })
 

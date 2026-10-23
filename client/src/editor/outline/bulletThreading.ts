@@ -4,7 +4,8 @@
  * the accent colour and stop at the active bullet.
  *
  * Design: view state only, like folding and zoom. Nothing is stored; the decorations are derived
- * from `state.selection.$from` on every update and are plain node classes on the `list_item`
+ * from the ANCHOR on every update (`threadAnchor`): `state.selection.$from`, or CMD+F's active match
+ * while you step through the matches (YAZ-3166). They are plain node classes on the `list_item`
  * blocks (`div.milkdown-list-item-block`):
  *  - THREAD_NODE_CLASS on every list_item on the root → caret path (glyph accent);
  *  - inside each NESTED list on the path (top-level lists have no guide line, same as Logseq),
@@ -17,6 +18,7 @@ import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { findThreadAnchor } from '../find/findInPage'
 import { isListItem } from './listNodes'
 
 export const THREAD_NODE_CLASS = 'outline-thread-node'
@@ -25,13 +27,19 @@ export const THREAD_STOP_CLASS = 'outline-thread-stop'
 
 const pluginKey = new PluginKey('mdapp-bullet-threading')
 
+/** What the thread points at: CMD+F's active match while you step through the matches (YAZ-3166), else the caret. */
+export const threadAnchor = (state: EditorState): ResolvedPos => {
+  const match = findThreadAnchor(state)
+  return match === null ? state.selection.$from : state.doc.resolve(match)
+}
+
 /**
- * The set depends only on the doc and the list_items holding the caret, so a caret move within the
+ * The set depends only on the doc and the list_items holding the anchor, so a caret move within the
  * same bullet (every arrow key along a line) reuses it instead of rebuilding it (YAZ-2131 4C).
  */
 const decorationCache = new WeakMap<ProseNode, { path: string; set: DecorationSet }>()
 
-/** Positions of the list_items holding the caret: all `buildDecorations` reads besides the doc itself. */
+/** Positions of the list_items holding the anchor: all `buildDecorations` reads besides the doc itself. */
 const caretPath = ($from: ResolvedPos): string => {
   let path = ''
   for (let depth = 1; depth <= $from.depth; depth++) if (isListItem($from.node(depth))) path += `${$from.before(depth)} `
@@ -39,8 +47,7 @@ const caretPath = ($from: ResolvedPos): string => {
 }
 
 /** One decoration per block with the merged class list (several per range would work too; one keeps tests plain). */
-const buildDecorations = (state: EditorState): Decoration[] => {
-  const $from = state.selection.$from
+const buildDecorations = ($from: ResolvedPos): Decoration[] => {
   const classes = new Map<number, { node: ProseNode; names: Set<string> }>()
   const add = (pos: number, node: ProseNode, name: string) => {
     const entry = classes.get(pos) ?? { node, names: new Set<string>() }
@@ -74,10 +81,11 @@ export const bulletThreading = $prose(
       key: pluginKey,
       props: {
         decorations: (state) => {
-          const path = caretPath(state.selection.$from)
+          const $anchor = threadAnchor(state)
+          const path = caretPath($anchor)
           const cached = decorationCache.get(state.doc)
           if (cached?.path === path) return cached.set
-          const decorations = buildDecorations(state)
+          const decorations = buildDecorations($anchor)
           const set = decorations.length === 0 ? DecorationSet.empty : DecorationSet.create(state.doc, decorations)
           decorationCache.set(state.doc, { path, set })
           return set

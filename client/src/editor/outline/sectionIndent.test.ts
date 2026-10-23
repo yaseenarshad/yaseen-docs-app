@@ -11,6 +11,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection, type Plugin } from '@milkdown/kit/prose/state'
 import { DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
+import { createFindChannel } from '../find/findChannel'
 import { HEADING_FOLDED_ATTR, setHeadingFoldSet } from './headingFolding'
 import sectionIndentCss from './sectionIndent.css?inline'
 import { SECTION_DEPTH_ATTR, SECTION_LINE_HOVER_CLASS, SECTION_PATH_ATTR, sectionDepths, sectionLineAtOffset, sectionLineFoldTargets, showSectionIndent } from './sectionIndent'
@@ -191,6 +192,23 @@ describe('the purple path', () => {
     expect(moved.state).not.toBe(before.state)
     expect(moved.set).not.toBe(before.set)
     //                             Intro Alpha alpha Deep deep Five five Six six list quote Beta beta
+    expect(pathShown(crepe)).toEqual([0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0])
+  })
+
+  it("follows CMD+F's active match after a query and a step, and a caret move gives it back (YAZ-3166)", async () => {
+    const channel = createFindChannel()
+    const { crepe } = await mount(NOTE, { find: channel })
+    turnOn(crepe)
+    caretIn(crepe, 'Intro paragraph')
+    expect(pathShown(crepe)).toEqual(DEPTHS.map(() => 0))
+    channel.open()
+    // The first "text" at or after the caret is "alpha text", then a step goes to "deep text".
+    channel.setQuery('text')
+    //                             Intro Alpha alpha Deep deep Five five Six six list quote Beta beta Gamma gamma Top top
+    expect(pathShown(crepe)).toEqual([0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    channel.next()
+    expect(pathShown(crepe)).toEqual([0, 0, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    caretIn(crepe, 'beta text')
     expect(pathShown(crepe)).toEqual([0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0])
   })
 })

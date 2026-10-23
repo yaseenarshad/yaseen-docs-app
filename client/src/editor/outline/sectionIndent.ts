@@ -8,7 +8,8 @@
  * the markdown on disk never changes. The decorations are ONE node decoration for each TOP-LEVEL
  * block that is inside a section:
  *  - SECTION_DEPTH_ATTR (`data-sd`, 1-6): how many sections hold the block, so how many steps in;
- *  - SECTION_PATH_ATTR (`data-sp`, 1-6): how many of its lines, from the left, are on the caret's path.
+ *  - SECTION_PATH_ATTR (`data-sp`, 1-6): how many of its lines, from the left, are on the caret's path
+ *    (or the path of CMD+F's active match while you step through the matches, YAZ-3166).
  * Drawing is pure CSS (sectionIndent.css): the indent is a transparent left border and the lines
  * are a gradient inside it.
  *
@@ -38,6 +39,7 @@ import { type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
+import { threadAnchor } from './bulletThreading'
 import { DEEPEST_FOLDABLE_LEVEL, headingLevel, isHeadingCollapsed, setHeadingFoldSet } from './headingFolding'
 import { getZoomedItemPos } from './zoom'
 
@@ -52,7 +54,7 @@ const LINE_BAND_HALF_WIDTH = 5
 interface SectionIndentState {
   /** The page's switch: what the host sends (`showSectionIndent`). */
   on: boolean
-  /** Index of the top-level block that holds the caret: all the path reads besides the doc itself. */
+  /** Index of the top-level block that holds the anchor (the caret, or CMD+F's active match, YAZ-3166): all the path reads besides the doc itself. */
   caret: number
   set: DecorationSet
 }
@@ -135,10 +137,10 @@ const sectionPaths = (doc: ProseNode, depths: Uint8Array, caret: number): Uint8A
 }
 
 /** One pass: a node decoration for each top-level block inside a section, in document order. */
-const build = (state: EditorState): DecorationSet => {
+const build = (state: EditorState, caret: number): DecorationSet => {
   const { doc } = state
   const depths = sectionDepths(doc)
-  const purple = sectionPaths(doc, depths, state.selection.$from.index(0))
+  const purple = sectionPaths(doc, depths, caret)
   const local: Decoration[] = []
   doc.forEach((block, pos, index) => {
     const depth = depths[index]
@@ -217,10 +219,11 @@ export const sectionIndent = $prose(() => {
       apply: (transaction, previous, _oldState, newState) => {
         const meta = transaction.getMeta(pluginKey) as boolean | undefined
         if (!(meta ?? previous.on)) return OFF
-        const caret = newState.selection.$from.index(0)
+        // The caret, or CMD+F's active match while you step (YAZ-3166). Find is registered first, so its state here is new.
+        const caret = threadAnchor(newState).index(0)
         // A caret move inside one block changes no depth and no path: keep the SAME state object (YAZ-2189).
         if (meta === undefined && !transaction.docChanged && caret === previous.caret) return previous
-        return { on: true, caret, set: build(newState) }
+        return { on: true, caret, set: build(newState, caret) }
       },
     },
     props: {

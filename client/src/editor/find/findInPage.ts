@@ -18,6 +18,9 @@
  * Collapsed HEADING sections (YAZ-1140) hide matches the same way and get the same treatment, on
  * their own books: two revealed sets, never merged, because the two kinds are separate plugin
  * states and each must be handed back only its own positions.
+ *
+ * The thread (YAZ-3166): after a query or a step, bullet threading and section indent point at the
+ * active match instead of the caret (`findThreadAnchor`); a caret move or an edit gives them back.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
@@ -47,6 +50,8 @@ interface FindState {
   revealed: ReadonlySet<number>
   /** The same, for heading sections (YAZ-1140) — kept apart: the two plugins own different positions. */
   revealedHeadings: ReadonlySet<number>
+  /** The thread points at the active match (YAZ-3166): true after a query or a step, false once the caret moves or the doc is edited. */
+  onMatch: boolean
 }
 
 type FindMeta =
@@ -58,7 +63,13 @@ type FindMeta =
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const findKey = new PluginKey<FindState>('mdapp-find-in-page')
 
-const EMPTY: FindState = { query: '', matches: [], activeIndex: -1, revealed: new Set(), revealedHeadings: new Set() }
+const EMPTY: FindState = { query: '', matches: [], activeIndex: -1, revealed: new Set(), revealedHeadings: new Set(), onMatch: false }
+
+/** Where the thread points while you step through the matches (YAZ-3166): the active match's start, else null (the caret). */
+export const findThreadAnchor = (state: EditorState): number | null => {
+  const find = findKey.getState(state)
+  return find?.onMatch === true ? (find.matches[find.activeIndex]?.from ?? null) : null
+}
 
 /**
  * The block's text as runs of ADJACENT text nodes, each with its absolute start. Marks split text
@@ -241,10 +252,21 @@ const findPlugin = (channel: FindChannel) =>
               meta?.type === 'revealed' ? meta.revealedHeadings : undefined,
               previous.revealedHeadings,
             )
-            if (meta === undefined && !recompute && revealed === previous.revealed && revealedHeadings === previous.revealedHeadings)
+            // A reveal (fold) transaction is metadata-only and keeps it; `close()` lands the caret on the match.
+            // An APPENDED doc change keeps it too: a real edit is the root transaction and clears it first, but
+            // Milkdown's trailing paragraph can ride on find's own query, the first transaction after mount.
+            const edited = transaction.docChanged && transaction.getMeta('appendedTransaction') === undefined
+            const onMatch = meta?.type === 'query' || meta?.type === 'step' || (previous.onMatch && !transaction.selectionSet && !edited)
+            if (
+              meta === undefined &&
+              !recompute &&
+              onMatch === previous.onMatch &&
+              revealed === previous.revealed &&
+              revealedHeadings === previous.revealedHeadings
+            )
               return previous
             const matches = recompute ? findMatches(newState.doc, query, zoomedRange(transaction, oldState, newState)) : previous.matches
-            return { query, matches, activeIndex: nextActive(previous, meta, matches, newState.selection.from), revealed, revealedHeadings }
+            return { query, matches, activeIndex: nextActive(previous, meta, matches, newState.selection.from), revealed, revealedHeadings, onMatch }
           },
         },
         props: {
