@@ -135,9 +135,20 @@ export const toggleSelectedLineUnderlines = (args: {
     enabled: args.enabled,
   });
 
-const getEditWindow = (previousText: string, nextText: string) => {
+const getEditWindow = (
+  previousText: string,
+  nextText: string,
+  caret?: number,
+) => {
+  // An insert ends at the caret. Without it, "Title|" + Enter and "|body" + Enter
+  // give the same text, and the common prefix would put the edit on the wrong line.
+  const maxStart =
+    caret === undefined
+      ? Infinity
+      : caret - Math.max(0, nextText.length - previousText.length);
   let start = 0;
   while (
+    start < maxStart &&
     start < previousText.length &&
     start < nextText.length &&
     previousText[start] === nextText[start]
@@ -165,6 +176,10 @@ export const remapLineStylesForTextEdit = (
   lineStyles: readonly boolean[] | undefined,
   options?: {
     wholeElementStyled?: boolean;
+    /** The caret after the edit: it places an insert that the text alone cannot. */
+    caret?: number;
+    /** A line the edit inserted at this index: it copies the line above it. */
+    insertedLine?: number;
   },
 ) => {
   const previousLineCount = previousText.split("\n").length;
@@ -176,7 +191,19 @@ export const remapLineStylesForTextEdit = (
     return normalizeLineStyles(resolvedLineStyles, nextText.split("\n").length);
   }
 
-  const edit = getEditWindow(previousText, nextText);
+  const insertedLine = options?.insertedLine;
+  if (insertedLine !== undefined) {
+    return normalizeLineStyles(
+      [
+        ...resolvedLineStyles.slice(0, insertedLine),
+        resolvedLineStyles[insertedLine - 1] === true,
+        ...resolvedLineStyles.slice(insertedLine),
+      ],
+      nextText.split("\n").length,
+    );
+  }
+
+  const edit = getEditWindow(previousText, nextText, options?.caret);
   const previousStartLine = getLogicalLineIndexAtOffset(
     previousText,
     edit.start,
@@ -210,9 +237,7 @@ export const remapLineUnderlinesForTextEdit = (
   previousText: string,
   nextText: string,
   lineUnderlines: readonly boolean[] | undefined,
-  options?: {
-    wholeElementStyled?: boolean;
-  },
+  options?: Parameters<typeof remapLineStylesForTextEdit>[3],
 ) =>
   remapLineStylesForTextEdit(previousText, nextText, lineUnderlines, options);
 

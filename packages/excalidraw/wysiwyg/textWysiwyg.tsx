@@ -42,6 +42,7 @@ import {
   getStyledVisualLineStart,
   getStyledVisualLines,
   getStyledVisualSelectionGeometry,
+  getLogicalLineIndexAtOffset,
   remapLineStylesForTextEdit,
   remapLineUnderlinesForTextEdit,
 } from "@excalidraw/element";
@@ -664,6 +665,7 @@ export const textWysiwyg = ({
   });
   editable.value = element.originalText;
   let previousEditableValue = editable.value;
+  let pendingInsertedLine: number | null = null;
 
   function renderVisualSelection() {
     underlineOverlay
@@ -1072,11 +1074,17 @@ export const textWysiwyg = ({
       const currentElement = app.scene.getElement(
         element.id,
       ) as ExcalidrawTextElement | null;
+      const edit = {
+        caret: editable.selectionEnd,
+        insertedLine: pendingInsertedLine ?? undefined,
+      };
+      pendingInsertedLine = null;
       const nextLineBolds = remapLineStylesForTextEdit(
         previousEditableValue,
         editable.value,
         currentElement?.lineBolds,
         {
+          ...edit,
           wholeElementStyled: currentElement?.fontWeight === "bold",
         },
       );
@@ -1085,6 +1093,7 @@ export const textWysiwyg = ({
         editable.value,
         currentElement?.lineUnderlines,
         {
+          ...edit,
           wholeElementStyled: currentElement?.textDecoration === "underline",
         },
       );
@@ -1093,6 +1102,7 @@ export const textWysiwyg = ({
         editable.value,
         currentElement?.lineStrikethroughs,
         {
+          ...edit,
           wholeElementStyled: currentElement?.strikethrough === true,
         },
       );
@@ -1116,6 +1126,14 @@ export const textWysiwyg = ({
       return false;
     }
 
+    // A numbered Enter renumbers the items below, so the input handler cannot find
+    // the new line by a text diff: name it here, and it copies the item above.
+    if (change.text.split("\n").length > value.split("\n").length) {
+      pendingInsertedLine = getLogicalLineIndexAtOffset(
+        change.text,
+        change.selectionStart,
+      );
+    }
     editable.value = change.text;
     editable.setSelectionRange(change.selectionStart, change.selectionEnd);
 

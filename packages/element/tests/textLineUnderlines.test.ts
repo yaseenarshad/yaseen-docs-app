@@ -174,6 +174,61 @@ describe("remapLineStylesForTextEdit", () => {
     ).toEqual([true, true]);
   });
 
+  it("uses the caret to tell Enter at a line end from Enter at the next line start", () => {
+    // "Title|" + Enter and "|body" + Enter give the same text; the caret differs
+    expect(
+      remapLineStylesForTextEdit("Title\nbody", "Title\n\nbody", [true], {
+        caret: 6,
+      }),
+    ).toEqual([true, true]);
+    expect(
+      remapLineStylesForTextEdit("Title\nbody", "Title\n\nbody", [true], {
+        caret: 7,
+      }),
+    ).toEqual([true]);
+    expect(
+      remapLineStylesForTextEdit(
+        "plain\nBold",
+        "plain\n\nBold",
+        [false, true],
+        {
+          caret: 6,
+        },
+      ),
+    ).toEqual([false, false, true]);
+    expect(
+      remapLineStylesForTextEdit("• A\n• B", "• A\n• \n• B", [true], {
+        caret: 6,
+      }),
+    ).toEqual([true, true]);
+  });
+
+  it("copies the line above into a line inserted at a known index", () => {
+    // a numbered Enter renumbers the items below it, so a text diff cannot find the new line
+    expect(
+      remapLineStylesForTextEdit(
+        "1. A\n2. B\n3. C",
+        "1. A\n2. \n3. B\n4. C",
+        [false, true],
+        { insertedLine: 1 },
+      ),
+    ).toEqual([false, false, true]);
+    expect(
+      remapLineStylesForTextEdit(
+        "1. A\n2. B\n3. C",
+        "1. A\n2. \n3. B\n4. C",
+        [true, false, true],
+        { insertedLine: 1 },
+      ),
+    ).toEqual([true, true, false, true]);
+    expect(
+      remapLineStylesForTextEdit("1. A\n2. B", "1. A\n2. \n3. B", undefined, {
+        insertedLine: 1,
+        wholeElementStyled: true,
+      }),
+    ).toEqual([true, true, true]);
+  });
+
   it("keeps the new line plain when Enter splits a plain line", () => {
     expect(
       remapLineStylesForTextEdit("Title\nBody", "Title\nBody\n", [true]),

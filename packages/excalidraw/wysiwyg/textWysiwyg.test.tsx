@@ -1244,6 +1244,50 @@ describe("textWysiwyg", () => {
       expect((h.elements[0] as ExcalidrawTextElement).fontWeight).toBe("bold");
     });
 
+    it("carries the style of the line above when Enter is not on the last line", () => {
+      fireEvent.input(textarea, { target: { value: "Title\nbody" } });
+      textarea.setSelectionRange(0, 5);
+      fireEvent.keyDown(textarea, {
+        [KEYS.CTRL_OR_CMD]: true,
+        key: "b",
+        code: CODES.B,
+      });
+
+      // Enter at the end of "Title": the caret ends on the new empty line
+      textarea.value = "Title\n\nbody";
+      textarea.setSelectionRange(6, 6);
+      fireEvent.input(textarea, { inputType: "insertLineBreak" });
+
+      expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
+        true,
+        true,
+      ]);
+    });
+
+    it.each([
+      ["bullet", "• A\n• B", 3, "• A\n• \n• B"],
+      ["numbered", "1. A\n2. B\n3. C", 4, "1. A\n2. \n3. B\n4. C"],
+    ])(
+      "carries the style of the %s item above when Enter is not on the last item",
+      (_kind, value, lineEnd, expected) => {
+        fireEvent.input(textarea, { target: { value } });
+        textarea.setSelectionRange(0, 3);
+        fireEvent.keyDown(textarea, {
+          [KEYS.CTRL_OR_CMD]: true,
+          key: "b",
+          code: CODES.B,
+        });
+        textarea.selectionStart = textarea.selectionEnd = lineEnd;
+        fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+
+        expect(textarea.value).toBe(expected);
+        expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
+          true,
+          true,
+        ]);
+      },
+    );
+
     it("keeps a plain line plain when Enter creates a line below it", () => {
       fireEvent.input(textarea, {
         target: { value: "Title\nBody" },
