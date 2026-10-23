@@ -12,8 +12,11 @@
  *     and the in-page preview redraws bold — proof the swap changed the engine, not the plumbing
  *   3 a STOCK-authored scene (no formatting fields at all) still opens clean in the modal —
  *     Save stays disabled, nothing on disk moves: old drawings are untouched by the new engine
- *   4 in the text editor of a per-line bold element, a double click selects one word and a triple
- *     click selects the line (YAZ-3175: Chromium's pointerdown carries no click count)
+ *   4 Enter keeps the line format (YAZ-3177): a new line typed after the styled line is saved bold
+ *     and underlined too — `lineBolds` / `lineUnderlines` grow to `[true, true]`
+ *   5 in the text editor of a per-line bold element, a double click selects one word, a triple
+ *     click selects the line, and a drag after a double click keeps its range (YAZ-3175:
+ *     Chromium's pointerdown carries no click count)
  *
  * Same harness as drawing.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `yaseendraw-` step screenshots).
@@ -189,7 +192,38 @@ test('step 3 — a stock-authored scene opens clean: Save disabled, disk untouch
   expect(await readSidecar(STYLED)).toBe(before)
 })
 
-test('step 4 — a double click selects a word and a triple click the line in per-line bold text', async () => {
+test('step 4 — Enter keeps the line format: the new line is saved bold and underlined too', async () => {
+  await previewOf(win, STYLED).click()
+  await expect(modal(win)).toBeVisible()
+  await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
+
+  // Select the one text element, Enter starts editing it, End puts the caret after the styled line.
+  const box = await modalCanvas(win).boundingBox()
+  if (box === null) throw new Error('the modal canvas has no box')
+  await win.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.8)
+  await win.keyboard.press('ControlOrMeta+a')
+  await win.keyboard.press('Enter')
+  const editor = modal(win).locator('textarea.excalidraw-wysiwyg')
+  await expect(editor).toBeFocused()
+  await win.keyboard.press('End')
+  await win.keyboard.press('Enter')
+  await win.keyboard.type('next-line')
+  // A click on empty canvas ends the edit, as a user does.
+  await win.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.8)
+  await shoot(win, 'yaseendraw-05-enter-keeps-format')
+
+  await expect(saveButton(win)).toBeEnabled()
+  await saveButton(win).click()
+  await expect(modal(win)).toHaveCount(0)
+
+  await expect.poll(async () => JSON.parse(await readSidecar(STYLED)).elements[0]).toMatchObject({
+    originalText: 'styled-label\nnext-line',
+    lineBolds: [true, true],
+    lineUnderlines: [true, true],
+  })
+})
+
+test('step 5 — a double click selects a word, a triple click the line, and a drag keeps its range', async () => {
   const before = await readSidecar(STYLED)
   await previewOf(win, STYLED).click()
   await expect(modal(win)).toBeVisible()
@@ -199,19 +233,32 @@ test('step 4 — a double click selects a word and a triple click the line in pe
   await win.keyboard.press('ControlOrMeta+a')
   await win.keyboard.press('Enter')
 
-  // `lineBolds: [true]` turns on the fork's own caret layer, the path that counts clicks itself.
+  // Per-line bold (`lineBolds`) turns on the fork's own caret layer, the path that counts clicks itself.
   const editor = modal(win).locator('textarea.excalidraw-wysiwyg')
   await expect(editor).toBeVisible()
   const field = await editor.boundingBox()
   if (field === null) throw new Error('the text editor has no box')
-  const at = { x: field.x + 8, y: field.y + field.height / 2 }
+  // Step 4 added a second line: aim at the middle of the first one.
+  const at = { x: field.x + 8, y: field.y + field.height / 4 }
   const selection = () => editor.evaluate((t: HTMLTextAreaElement) => [t.selectionStart, t.selectionEnd])
 
   await win.mouse.dblclick(at.x, at.y)
   await expect.poll(selection).toEqual([0, 'styled'.length])
   await win.mouse.click(at.x, at.y, { clickCount: 3 })
   await expect.poll(selection).toEqual([0, 'styled-label'.length])
-  await shoot(win, 'yaseendraw-05-word-selected')
+  await shoot(win, 'yaseendraw-06-word-selected')
+
+  // A drag after a double click keeps the character range that the drag made (S7).
+  await win.waitForTimeout(700)
+  await win.mouse.move(at.x, at.y)
+  await win.mouse.down({ clickCount: 1 })
+  await win.mouse.up({ clickCount: 1 })
+  await win.mouse.down({ clickCount: 2 })
+  await win.mouse.move(field.x + field.width - 8, at.y, { steps: 8 })
+  const dragged = await selection()
+  expect(dragged[1]).toBeGreaterThan(dragged[0])
+  await win.mouse.up({ clickCount: 2 })
+  await expect.poll(selection).toEqual(dragged)
 
   // Leave the editor with Esc, the modal with ✕ (the canvas keeps a second Esc). Opening the editor
   // already marks the modal dirty, so ✕ asks first: Discard. The selection wrote nothing to disk.

@@ -11,10 +11,10 @@ imports, and those don't exist on npm at the fork's versions — so the siblings
 (they're tiny; the main tarball's ~31 MB is mostly fonts plus the dev build the exports
 map requires).
 
-**Pin:** fork commit `ee7fd5f8` (YAZ-3175 D1: the double and triple click in styled text). Drawing
-tabs and note embeds run this one engine. Yaseen Draw still ships `10fa3958`, which differs only by
-that fix; it moves on its own later bump. It was `10fa3958` (YAZ-3028 D3), and before that
-`9e63bdf2`. `@excalidraw/laser-pointer` (1.3.1) and
+**Pin:** fork commit `1caba0b6`: YAZ-3177 (Enter keeps the line format) and YAZ-3175 (a double
+click selects the word and a triple click the line in styled text). Drawing tabs and note embeds
+run this one engine. It was `57727ef6` (YAZ-3177), `10fa3958` (YAZ-3028 D3) and `9e63bdf2` before
+that. Yaseen Draw is legacy and stays on `10fa3958`. `@excalidraw/laser-pointer` (1.3.1) and
 `@excalidraw/utils` are not vendored: the fork does not touch them, and they resolve from the
 registry as the engine's own dependencies. Do not pack them.
 
