@@ -119,7 +119,8 @@
  *    explicit empty lines. Copy as chooses plain text or Markdown; saves stay intact (YAZ-1443).
  *  - Images (YAZ-1656, `image/imageView.ts`): the FIRST node view in the codebase, on the commonmark
  *    `image` node the schema already has — a node view is allowed ONLY on an existing node and
- *    never touches the serializer, so `![alt|300](src)` stays byte-identical. Vault-relative srcs
+ *    never touches the serializer (the line below is the one exception), so `![alt|300](src)`
+ *    stays byte-identical. Vault-relative srcs
  *    load through main's `app://vault/` protocol (`image/imageSrc.ts`); eight aspect-locked handles
  *    resize into Obsidian's `alt|width`; double-click opens the host's lightbox (`image/ImageModal`).
  *    Paste/drop of image BYTES writes `assets/images/<note>-<stamp>.<ext>` and inserts the node
@@ -127,6 +128,12 @@
  *    Registered only when `opts.image` supplies the root + note path; without it images render as
  *    Crepe's stock `<img>` — the folder outline (its bullets-only lock has no `image`) and the
  *    hover preview card (no root in reach) say so where they mount.
+ *  - The line's style (YAZ-3164, `line/lineStyle.ts`): the `hr` node gains `darkness`, `thickness` and
+ *    `width` (each null for its default) — the ONE exception to the images rule above, because
+ *    Markdown has no carrier for them. A plain line stays `***`; a styled one is `***` then the
+ *    next block `<!-- line: darkness 50%, thickness 6px, length 40% -->`, only the parts that are
+ *    not the default. A `$remark` plugin joins the line and its comment on load in every container;
+ *    any other comment stays HTML, bytes untouched.
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
  *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
@@ -187,6 +194,7 @@ import {
 import { underline } from './marks/underline'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
 import { inlineBreaks } from './inlineBreaks'
+import { lineStyle } from './line/lineStyle'
 import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
 import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
@@ -396,6 +404,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listItemRoundTrip)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
+  // The line's darkness, thickness and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
+  crepe.editor.use(lineStyle)
   // Milkdown's empty-line plugin deletes every inline <br> on parse (YAZ-1452). Ours must run
   // first; re-registering Milkdown's AFTER keeps its id resolvable so empty paragraphs still
   // serialise as `<br />`.
