@@ -877,9 +877,15 @@ export const textWysiwyg = ({
 
   // Chromium sends `detail: 0` on every pointerdown, so the click count comes
   // from `click`. It still fires after the pointerdown above calls
-  // preventDefault(), and it follows the OS double-click speed.
+  // preventDefault(), and it follows the OS double-click speed. A plain
+  // pointerdown above leaves a caret, so a range here means the pointer was
+  // dragged before the release: keep what the drag selected.
   const handleEditableClick = (event: MouseEvent) => {
-    if (event.detail < 2 || !currentTextLayout?.hasVisualLineOverlay) {
+    if (
+      event.detail < 2 ||
+      !currentTextLayout?.hasVisualLineOverlay ||
+      editable.selectionStart !== editable.selectionEnd
+    ) {
       return;
     }
 

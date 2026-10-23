@@ -937,8 +937,33 @@ describe("textWysiwyg", () => {
       fireEvent.click(editor, { clientX: x, clientY: y, detail: 2 });
       expect([editor.selectionStart, editor.selectionEnd]).toEqual([0, 4]);
 
+      // Each press of a triple click comes before its own `click`.
+      fireEvent.pointerDown(editor, {
+        button: 0,
+        buttons: 1,
+        clientX: x,
+        clientY: y,
+        pointerId: 1,
+        detail: 0,
+      });
+      fireEvent.pointerUp(editor, { button: 0, pointerId: 1 });
       fireEvent.click(editor, { clientX: x, clientY: y, detail: 3 });
       expect([editor.selectionStart, editor.selectionEnd]).toEqual([0, 12]);
+
+      // A drag after the second press: its release still sends `detail: 2`,
+      // and the range that the drag made stays.
+      fireEvent.pointerDown(editor, {
+        button: 0,
+        buttons: 1,
+        clientX: x,
+        clientY: y,
+        pointerId: 1,
+        detail: 0,
+      });
+      editor.setSelectionRange(0, 7, "forward");
+      fireEvent.pointerUp(editor, { button: 0, pointerId: 1 });
+      fireEvent.click(editor, { clientX: x, clientY: y, detail: 2 });
+      expect([editor.selectionStart, editor.selectionEnd]).toEqual([0, 7]);
     });
 
     it("uses the same hanging-indent overlay for list text bound inside a shape", async () => {
