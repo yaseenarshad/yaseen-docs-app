@@ -872,28 +872,35 @@ export function App() {
    */
   const [sessionNameRequest, setSessionNameRequest] = useState<string | null>(null)
   const clearSessionNameRequest = useCallback(() => setSessionNameRequest(null), [])
+  // One save at a time: a second press of "Save open tabs" (⏎ on the focused button) before main answers is no second session.
+  const savingSession = useRef(false)
   const saveSession = useCallback(async (closeAll: boolean): Promise<void> => {
     const count = now.current.tabs.length
     if (count === 0) {
       notify('No open tabs to save')
       return
     }
+    if (savingSession.current) return
+    savingSession.current = true
     const id = await api.window.saveSession('New session').catch((err: unknown) => {
       console.error('[sessions] save failed:', err)
       return null
+    }).finally(() => {
+      savingSession.current = false
     })
     if (id === null) {
-      notify(`Can't save: ${MAX_SESSIONS} sessions at most`)
+      notify(storage.getSessions().length >= MAX_SESSIONS ? `Can't save: ${MAX_SESSIONS} sessions at most` : "Can't save the tabs")
       return
     }
     if (sidebarCollapsedRef.current) toggleSidebar()
     changeLens('sessions')
     setSessionNameRequest(id)
     if (closeAll) {
+      // Only the saved tabs close (S8): past MAX_SESSION_TABS the others stay open, so no tab goes unsaved.
       closeBlank()
-      closeUnderOverview(now.current.tabs.map((t) => t.id))
+      closeUnderOverview(now.current.tabs.slice(0, MAX_SESSION_TABS).map((t) => t.id))
     }
-    if (count > MAX_SESSION_TABS) notify(`Saved the first ${MAX_SESSION_TABS} tabs`)
+    if (count > MAX_SESSION_TABS) notify(closeAll ? `Saved and closed the first ${MAX_SESSION_TABS} tabs. ${count - MAX_SESSION_TABS} stay open` : `Saved the first ${MAX_SESSION_TABS} tabs`)
   }, [notify, toggleSidebar, changeLens, closeBlank, closeUnderOverview])
   const saveOpenTabs = useCallback(() => void saveSession(false), [saveSession])
   const saveFromGrid = useCallback((closeAll: boolean) => void saveSession(closeAll), [saveSession])

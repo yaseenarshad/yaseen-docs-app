@@ -1248,9 +1248,12 @@ describe('open-stored (YAZ-3147 D3): "Restore session" adds the stored tabs to t
   })
 
   it('S25: every page open already, and nothing to activate, is the SAME state (no write); the blank tab drops only for a trip to a tab', () => {
-    const s = two()
+    const s = two({ preview: null })
     expect(reduceTabs(s, { type: 'open-stored', tabs: [{ path: A, active: true }, { path: B }] })).toBe(s)
     expect(reduceTabs(s, { type: 'open-stored', tabs: [] })).toBe(s)
+    // A page of the session in the preview tab is kept now, so the next sidebar click does not replace it.
+    expect(reduceTabs(two({ preview: 't1' }), { type: 'open-stored', tabs: [{ path: A, active: true }] })).toMatchObject({ active: 't1', preview: null })
+    expect(reduceTabs(two({ preview: 't2' }), { type: 'open-stored', tabs: [{ path: A, active: true }] })).toMatchObject({ preview: 't2' })
     // Under the blank tab: the session's active tab is a trip to it, and the blank tab goes.
     expect(reduceTabs(two({ blank: true }), { type: 'open-stored', tabs: [{ path: A, active: true }] })).toMatchObject({ active: 't1', blank: false })
     // No mark under the blank tab: the tabs join, and the blank tab still shows.

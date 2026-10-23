@@ -401,8 +401,10 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // mark, an empty window takes the first new tab (a strip with tabs needs an active one), and a window with tabs keeps its own.
       const page = a.tabs.find((t) => t.active === true)?.path
       const active = marked ?? (page === undefined ? null : (tabOf(s, page)?.id ?? null)) ?? (s.active === null ? (added[0]?.id ?? null) : null)
-      if (added.length === 0 && (active === null || (active === s.active && !s.blank))) return s
-      const grown: TabsState = { ...s, tabs: [...s.tabs, ...added] }
+      // A page of the session that shows in the preview tab is kept now: the next sidebar click must not replace it.
+      const kept = s.preview !== null && a.tabs.some((t) => t.path === tabById(s, s.preview)?.path) ? null : s.preview
+      if (added.length === 0 && kept === s.preview && (active === null || (active === s.active && !s.blank))) return s
+      const grown: TabsState = { ...s, tabs: [...s.tabs, ...added], preview: kept }
       return active === null ? grown : withActive(grown, active)
     }
     case 'reset': {

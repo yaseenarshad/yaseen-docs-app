@@ -34,7 +34,7 @@ function installBridge(app: AppState) {
 let root: Root | null = null
 let el: HTMLElement
 let b: ReturnType<typeof installBridge>
-const props = { titles: new Map([['/w/b.md', 'Bee page']]), onOpenFile: vi.fn(), onRestore: vi.fn(), onSave: vi.fn(), onUpdate: vi.fn() }
+const props = { titles: new Map([['/w/b.md', 'Bee page']]), onOpenFile: vi.fn(), onRestore: vi.fn(), onSave: vi.fn(), onUpdate: vi.fn(), renameRequest: null as string | null, onRenameConsumed: vi.fn() }
 let renders = 0
 
 async function mount(sessions: Session[], extra: Partial<Parameters<typeof SessionList>[0]> = {}) {
@@ -48,7 +48,7 @@ async function mount(sessions: Session[], extra: Partial<Parameters<typeof Sessi
 }
 
 const rows = () => [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Sessions"] > li > .tree__row')]
-const tabRows = () => [...el.querySelectorAll<HTMLButtonElement>('[role="group"] .tree__row')]
+const tabRows = () => [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Sessions"] > li > ul .tree__row')]
 const text = (b: Element) => [...b.children].map((c) => c.textContent)
 const field = () => el.querySelector<HTMLInputElement>('input[aria-label="Session name"]')
 const key = (target: Element | null, k: string) => act(() => void target?.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
@@ -88,7 +88,7 @@ describe('SessionList (YAZ-3147 D6)', () => {
     expect(tabRows()).toEqual([])
     act(() => rows()[0].click())
     expect(rows()[0].querySelector('.tree__chevron--open')).not.toBeNull()
-    expect(rows()[0].closest('li')?.getAttribute('aria-expanded')).toBe('true')
+    expect(rows()[0].getAttribute('aria-expanded')).toBe('true')
     expect(tabRows().map(text)).toEqual([['Plan', 'v'], ['Bee page', 'Work vault'], ['Bee page', 'Work vault']])
     act(() => tabRows()[1].click())
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/w/b.md')
@@ -140,7 +140,7 @@ describe('SessionList (YAZ-3147 D6)', () => {
     rightClick(rows()[0])
     choose('Delete session')
     const sheet = () => document.querySelector('[role="dialog"]')
-    expect(sheet()?.querySelector('.confirm__text')?.textContent).toBe('Delete "Work"?Its tabs and files do not change.')
+    expect(sheet()?.querySelector('.confirm__text')?.textContent).toBe('Delete "Work"?Your files and open tabs do not change.')
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.confirm button')].find((x) => x.textContent === 'Cancel')?.click())
     expect(sheet()).toBeNull()
     expect(b.bridge.window.removeSession).not.toHaveBeenCalled()

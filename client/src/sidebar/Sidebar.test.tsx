@@ -239,6 +239,10 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onOpenSettings: vi.fn(),
     // The Sessions tab's doors (YAZ-3147): App's; SessionList.test is their subject.
     onRestoreSession: vi.fn(),
+    onSaveSession: vi.fn(),
+    onUpdateSession: vi.fn(),
+    sessionNameRequest: null,
+    onSessionNameConsumed: vi.fn(),
     // No update (YAZ-2976 D4): the footer shows only the cog.
     update: { kind: 'idle' },
     onOpenWhatsNew: vi.fn(),
@@ -5011,7 +5015,7 @@ describe('favorites (YAZ-1766)', () => {
     }
   })
 
-  it('the tab is the last, right of Focus (YAZ-2619; Search is the second, YAZ-2638 D2), and starts on the empty hint', async () => {
+  it('the tab is right of Focus and left of Sessions (YAZ-2619, YAZ-3147 D4; Search is the second, YAZ-2638 D2), and starts on the empty hint', async () => {
     const { el } = await mountVault({ lens: 'favorites' })
     expect([...el.querySelectorAll('.sidebar__lenses [role="tab"]')].map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions'])
     expect(bodyMsg(el)).toBe('No favorites yet. Right-click a file or folder → Add to favorites.')

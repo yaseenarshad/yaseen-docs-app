@@ -22,13 +22,13 @@ interface SessionListProps {
   /** "Restore session" (D3): App adds the session's tabs to this window. */
   onRestore: (id: string) => void
   /** "Save open tabs" (D5): App saves this window's tabs as a new session. */
-  onSave?: () => void
+  onSave: () => void
   /** "Update with open tabs" (S28): App saves this window's tabs into the session. */
-  onUpdate?: (id: string) => void
+  onUpdate: (id: string) => void
   /** A save just made this session (D5, S1): its row opens its name field, with the name selected, once it is in the list. */
-  renameRequest?: string | null
+  renameRequest: string | null
   /** The request was acted on: it must not open the field again. */
-  onRenameConsumed?: () => void
+  onRenameConsumed: () => void
 }
 
 type Menu = { x: number; y: number; id: string; tab: number | null }
@@ -40,7 +40,7 @@ type Menu = { x: number; y: number; id: string; tab: number | null }
  * It reads the sessions from the cache, which answers the same array until they change, so the list
  * renders again only then (and for its own folds, menus and field).
  */
-export function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate, renameRequest = null, onRenameConsumed }: SessionListProps) {
+export function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate, renameRequest, onRenameConsumed }: SessionListProps) {
   const sessions = useSyncExternalStore(storage.subscribe, storage.getSessions)
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set())
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -50,7 +50,7 @@ export function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate, r
   useEffect(() => {
     if (renameRequest === null || !sessions.some((s) => s.id === renameRequest)) return
     setRenaming(renameRequest)
-    onRenameConsumed?.()
+    onRenameConsumed()
   }, [renameRequest, sessions, onRenameConsumed])
 
   const toggle = useCallback((id: string) => setOpen((was) => {
@@ -74,7 +74,7 @@ export function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate, r
       ? [
           [
             { id: 'restore-session', label: 'Restore session', onSelect: () => onRestore(session.id) },
-            { id: 'update-session', label: 'Update with open tabs', onSelect: () => onUpdate?.(session.id) },
+            { id: 'update-session', label: 'Update with open tabs', onSelect: () => onUpdate(session.id) },
             { id: 'rename-session', label: 'Rename', onSelect: () => setRenaming(session.id) },
           ],
           [{ id: 'delete-session', label: 'Delete session', danger: true, onSelect: () => setDeleting(session) }],
@@ -96,7 +96,8 @@ export function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate, r
       </div>
       {sessions.length === 0 && <p className="sidebar__msg">{NO_SESSIONS_HELP}</p>}
       {sessions.length > 0 && (
-        <ul className="tree" role="tree" aria-label="Sessions">
+        // A plain list, not a `tree`: the sidebar's arrow keys walk file rows only, so the rows are buttons that Tab reaches.
+        <ul className="tree" aria-label="Sessions">
           {sessions.map((session) => (
             <SessionRow
               key={session.id}
@@ -122,7 +123,7 @@ export function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate, r
             <>
               <strong>Delete &quot;{deleting.name}&quot;?</strong>
               <br />
-              Its tabs and files do not change.
+              Your files and open tabs do not change.
             </>
           }
           confirmLabel="Delete"
@@ -155,27 +156,27 @@ interface SessionRowProps {
 const SessionRow = memo(function SessionRow({ session, open, renaming, titles, onToggle, onStartRename, onRename, onEndRename, onMenu, onOpenFile }: SessionRowProps) {
   const { id, name, tabs, roots } = session
   return (
-    <li role="treeitem" aria-expanded={open}>
+    <li>
       {renaming ? (
         // The name field (S11–S15): the name selected; Return saves, Esc keeps the name, a blank name is refused, a long one is cut at 80.
         <div className="create-inline" style={{ paddingLeft: 8 }}>
           <TextField className="create-inline__input" value={name} aria-label="Session name" autoFocus selectOnMount maxLength={MAX_VAULT_NAME} normalize={cleanVaultName} onCommit={(next) => onRename(id, next)} onDone={onEndRename} />
         </div>
       ) : (
-        <button type="button" className="tree__row tree__row--dir" onClick={() => onToggle(id)} onDoubleClick={() => onStartRename(id)} onContextMenu={(e) => onMenu(e, id, null)}>
+        <button type="button" className="tree__row" aria-expanded={open} onClick={() => onToggle(id)} onDoubleClick={() => onStartRename(id)} onContextMenu={(e) => onMenu(e, id, null)}>
           <span className={`tree__chevron${open ? ' tree__chevron--open' : ''}`} />
           <span className="tree__label">{name}</span>
           <span className="tree__count">{count(tabs.length, 'tab', 'tabs')}</span>
         </button>
       )}
       {open && tabs.length > 0 && (
-        <ul className="tree" role="group">
+        <ul className="tree">
           {tabs.map((tab, i) => {
             const vault = rootOfPath(roots, tab.path)
             return (
               // A session may hold two copies of one page: the place in the list is the key.
-              <li key={i} role="treeitem">
-                <button type="button" className="tree__row tree__row--file" style={{ paddingLeft: 36 }} title={tab.path} onClick={() => onOpenFile(tab.path)} onContextMenu={(e) => onMenu(e, id, i)}>
+              <li key={i}>
+                <button type="button" className="tree__row" style={{ paddingLeft: 36 }} title={tab.path} onClick={() => onOpenFile(tab.path)} onContextMenu={(e) => onMenu(e, id, i)}>
                   <span className="tree__label">{tab.name ?? pageLabel(tab.path, false, titles)}</span>
                   {vault !== null && <span className="tree__vault">{storage.vaultName(vault)}</span>}
                 </button>

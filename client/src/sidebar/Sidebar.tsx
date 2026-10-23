@@ -162,12 +162,12 @@ interface SidebarProps {
   /** The Sessions tab's "Restore session" (YAZ-3147 D3): App adds the session's tabs to this window. */
   onRestoreSession: (id: string) => void
   /** The Sessions tab's "Save open tabs" (D5): App saves this window's tabs as a new session. */
-  onSaveSession?: () => void
+  onSaveSession: () => void
   /** The Sessions tab's "Update with open tabs" (S28): App saves this window's tabs into that session. */
-  onUpdateSession?: (id: string) => void
+  onUpdateSession: (id: string) => void
   /** A save just made this session (YAZ-3147 D5): the Sessions tab opens its name field once; then `onSessionNameConsumed`. */
-  sessionNameRequest?: string | null
-  onSessionNameConsumed?: () => void
+  sessionNameRequest: string | null
+  onSessionNameConsumed: () => void
   /** A vault's folder could not be read (e.g. deleted): which one; parent decides what to do. */
   onRootMissing: (root: string) => void
   /** The restored last file is not in the tree any more (checked once per root). */
@@ -475,7 +475,7 @@ export function Sidebar({
   onRestoreSession,
   onSaveSession,
   onUpdateSession,
-  sessionNameRequest = null,
+  sessionNameRequest,
   onSessionNameConsumed,
   onRootMissing,
   onFileMissing,

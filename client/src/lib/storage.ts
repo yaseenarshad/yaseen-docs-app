@@ -106,6 +106,9 @@ export const storage = {
       for (const key of ORDER_KEYS) {
         if (held[key].length === next[key].length && held[key].every((path, at) => path === next[key][at])) state = { ...state, [key]: held[key] }
       }
+      // The sessions too (YAZ-3147 D6): a tab click writes the window and broadcasts, and the open
+      // Sessions tab must not draw again for it. 30 sessions of 40 tabs at most, so the compare stays small.
+      if (JSON.stringify(held.sessions) === JSON.stringify(next.sessions)) state = { ...state, sessions: held.sessions }
       listeners.forEach((l) => l())
     })
   },

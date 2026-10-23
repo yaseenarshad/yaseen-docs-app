@@ -138,9 +138,13 @@ describe('storage.getSessions (YAZ-3147 D2)', () => {
     expect(storage.getSessions()).toBe(loaded)
     const woke = vi.fn()
     storage.subscribe(woke)
+    // A broadcast for anything else (a tab click writes the window) is a new copy of the same sessions:
+    // the array keeps its identity, so the open Sessions tab does not draw again.
+    b.emit({ ...defaultAppState(), sessions: structuredClone([work, empty]), sidebarWidth: 300 })
+    expect(storage.getSessions()).toBe(loaded)
     b.emit({ ...defaultAppState(), sessions: [empty] })
     expect(storage.getSessions()).toEqual([empty])
-    expect(woke).toHaveBeenCalledTimes(1)
+    expect(woke).toHaveBeenCalledTimes(2)
   })
 })
 

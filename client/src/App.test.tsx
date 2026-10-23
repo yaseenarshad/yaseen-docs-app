@@ -110,10 +110,10 @@ interface SidebarStubProps {
   onOpenVaultHere: (path: string) => Promise<boolean>
   /** The Sessions tab's doors (YAZ-3147 D3, D5): App restores, saves and updates; the new row's name field is App's request. */
   onRestoreSession: (id: string) => void
-  onSaveSession?: () => void
-  onUpdateSession?: (id: string) => void
-  sessionNameRequest?: string | null
-  onSessionNameConsumed?: () => void
+  onSaveSession: () => void
+  onUpdateSession: (id: string) => void
+  sessionNameRequest: string | null
+  onSessionNameConsumed: () => void
 }
 
 const captured = vi.hoisted(() => ({
@@ -4906,7 +4906,7 @@ describe('App sessions (YAZ-3147 D3, D5)', () => {
     expect(bridge.window.saveSession.mock.invocationCallOrder[0]).toBeLessThan(bridge.window.setIdentity.mock.invocationCallOrder[0])
     expect(captured.sidebar?.lens).toBe('sessions')
     expect(captured.sidebar?.sessionNameRequest).toBe('s-new')
-    act(() => captured.sidebar?.onSessionNameConsumed?.())
+    act(() => captured.sidebar?.onSessionNameConsumed())
     expect(captured.sidebar?.sessionNameRequest).toBeNull()
     expect(noticeText(el)).toBeNull()
   })
@@ -4920,30 +4920,62 @@ describe('App sessions (YAZ-3147 D3, D5)', () => {
     bridge.window.saveSession.mockResolvedValueOnce(null)
     await fromGrid(el, 'Save and close all tabs')
     expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
-    expect(noticeText(el)).toBe("Can't save: 30 sessions at most")
+    expect(noticeText(el)).toBe("Can't save the tabs") // refused for a reason other than the cap
 
     act(() => captured.sidebar?.onLensChange('files'))
     for (let i = 0; i < 3; i++) act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar__close')][0]?.click())
     expect(stripLabels(el)).toEqual([])
     bridge.window.saveSession.mockClear()
-    await act(async () => captured.sidebar?.onSaveSession?.())
+    await act(async () => captured.sidebar?.onSaveSession())
     expect(bridge.window.saveSession).not.toHaveBeenCalled()
     expect(noticeText(el)).toBe('No open tabs to save')
     expect(captured.sidebar?.lens).toBe('files')
 
     const many = Array.from({ length: 45 }, (_, i) => `/v/n${i}.md`)
     const second = await mount(defaultAppState(), { id: 'w1', root: '/v', file: many[0], tabs: many, sidebarLens: 'files' })
-    await act(async () => captured.sidebar?.onSaveSession?.())
+    await act(async () => captured.sidebar?.onSaveSession())
     expect(noticeText(second.el)).toBe('Saved the first 40 tabs')
+    // "Save and close all tabs" past 40 tabs closes only the 40 saved ones (S8): no tab goes unsaved.
+    await fromGrid(second.el, 'Save and close all tabs')
+    expect(stripLabels(second.el)).toEqual(many.slice(40).map((p) => p.slice(3, -3)))
+    expect(noticeText(second.el)).toBe('Saved and closed the first 40 tabs. 5 stay open')
+
+    // S7: with 30 sessions the refusal names the cap.
+    const full = { ...defaultAppState(), sessions: Array.from({ length: 30 }, (_, i) => ({ id: `s${i}`, name: `S${i}`, tabs: [], roots: [], lastUsed: 0 })) }
+    const third = await mount(full, THREE)
+    third.bridge.window.saveSession.mockResolvedValueOnce(null)
+    await fromGrid(third.el, 'Save tabs as session')
+    expect(noticeText(third.el)).toBe("Can't save: 30 sessions at most")
+  })
+
+  it('a second "Save open tabs" before main answers saves nothing more', async () => {
+    const { bridge } = await mount(defaultAppState(), THREE)
+    let answer: (id: string | null) => void = () => undefined
+    bridge.window.saveSession.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+    await act(async () => {
+      captured.sidebar?.onSaveSession()
+      captured.sidebar?.onSaveSession()
+    })
+    expect(bridge.window.saveSession).toHaveBeenCalledTimes(1)
+    await act(async () => answer('s-new'))
+    await act(async () => captured.sidebar?.onSaveSession())
+    expect(bridge.window.saveSession).toHaveBeenCalledTimes(2)
+  })
+
+  it('S2: a save from the grid menu while the sidebar is hidden shows it, on the Sessions tab', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { ...THREE, sidebarCollapsed: true })
+    await fromGrid(el, 'Save tabs as session')
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
+    expect(captured.sidebar?.lens).toBe('sessions')
   })
 
   it('"Update with open tabs" (S28, S29) is the same door with the id; with no tab it is refused with the S4 notice', async () => {
     const { bridge, el } = await mount(defaultAppState(), THREE)
-    await act(async () => captured.sidebar?.onUpdateSession?.('s1'))
+    await act(async () => captured.sidebar?.onUpdateSession('s1'))
     expect(bridge.window.saveSession).toHaveBeenCalledExactlyOnceWith('', 's1')
     expect(noticeText(el)).toBeNull()
     for (let i = 0; i < 3; i++) act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar__close')][0]?.click())
-    await act(async () => captured.sidebar?.onUpdateSession?.('s1'))
+    await act(async () => captured.sidebar?.onUpdateSession('s1'))
     expect(bridge.window.saveSession).toHaveBeenCalledOnce()
     expect(noticeText(el)).toBe('No open tabs to save')
   })
