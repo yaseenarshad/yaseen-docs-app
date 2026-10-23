@@ -74,7 +74,8 @@ describe('line numbers CSS contract', () => {
   })
 
   it('a rule and a code block do not clip their number; a table keeps its clip and is never positioned', () => {
-    expect(bodyOf(`${ON} hr[data-line]`)).toMatch(/overflow:\s*visible;/)
+    expect(bodyOf(`${ON} .line-view[data-line]`)).toMatch(/overflow:\s*visible;/)
+    expect(bodyOf(`${ON} .line-view[data-line]::after`)).toMatch(/top:\s*50%;/)
     expect(bodyOf(`${ON} .milkdown-code-block[data-line]`)).toMatch(/overflow:\s*visible;/)
     const table = bodyOf(`${ON} .milkdown-table-block[data-line]`)
     expect(table).toMatch(/position:\s*static;/)

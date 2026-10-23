@@ -133,7 +133,9 @@
  *    Markdown has no carrier for them. A plain line stays `***`; a styled one is `***` then the
  *    next block `<!-- line: darkness 50%, thickness 6px, length 40% -->`, only the parts that are
  *    not the default. A `$remark` plugin joins the line and its comment on load in every container;
- *    any other comment stays HTML, bytes untouched.
+ *    any other comment stays HTML, bytes untouched. The second node view (`line/lineView.ts`, on
+ *    every editor) draws it from custom properties and gives a selected line a round end handle
+ *    that drags its length: live while it moves, ONE `setNodeMarkup` on mouseup.
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
  *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
@@ -195,6 +197,7 @@ import { underline } from './marks/underline'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
 import { inlineBreaks } from './inlineBreaks'
 import { lineStyle } from './line/lineStyle'
+import { lineView } from './line/lineView'
 import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
 import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
@@ -444,6 +447,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     ctx.inject(imageOptionsCtx, opts.image ?? null)
   })
   if (opts.image !== undefined) crepe.editor.use(createImageView(opts.image))
+  // The line (YAZ-3164): its look and its length handle, on every editor — the line's style is in the schema.
+  crepe.editor.use(lineView)
   crepe.editor.use(outlinePaste)
   crepe.editor.use(clipboardPaste)
   crepe.editor.use(clipboardCopyOut)

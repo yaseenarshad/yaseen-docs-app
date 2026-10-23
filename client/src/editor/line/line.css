@@ -1,0 +1,66 @@
+/*
+ * The line node view (YAZ-3164, 🔒 D2 / D4 / D5 / D6) — classes applied by lineView.ts.
+ *
+ * Scoped under `.milkdown .ProseMirror` on purpose (imageView.css's lesson): Crepe's reset loads
+ * after this file, and its `.milkdown .ProseMirror hr` rule must lose to ours.
+ *
+ * The wrapper is the block and is as wide as the row; the `<hr>` inside it is the line. Crepe's
+ * `hr` is border-box with `padding: 6px 0` and a `content-box` background, so the line's colour is
+ * exactly the content height: `12px + thickness` makes a line of exactly `thickness`, and a thick
+ * line makes its row taller by the thickness only (D6). The colour is a share of the text colour,
+ * so it follows dark mode (D4). `margin-inline: 0`, so a short line starts at the left edge (D5).
+ * The three values are custom properties on the wrapper, set by the node view only when they are
+ * not the default; every fallback here is the default.
+ */
+
+.milkdown .ProseMirror .line-view {
+  position: relative;
+}
+
+.milkdown .ProseMirror .line-view > hr {
+  width: var(--line-width, 100%);
+  height: calc(12px + var(--line-thickness, 1px));
+  margin-inline: 0;
+  background-color: color-mix(in srgb, var(--crepe-color-on-background) var(--line-darkness, 10%), transparent);
+}
+
+/* Selected (ProseMirror's NodeSelection, editable only): Crepe's selected tint over the whole row,
+   and the line keeps its own look, so what is selected is what is saved. */
+.milkdown .ProseMirror .line-view.is-selected {
+  background-color: color-mix(in srgb, var(--crepe-color-outline), transparent 80%);
+}
+
+/* The round end handle (D5): at the line's right end, on its middle, only while the line is
+   selected or dragged. */
+.milkdown .ProseMirror .line-view__end {
+  position: absolute;
+  top: 50%;
+  left: var(--line-width, 100%);
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+  display: none;
+}
+
+.milkdown .ProseMirror .line-view.is-selected .line-view__end,
+.milkdown .ProseMirror .line-view--dragging .line-view__end {
+  display: block;
+}
+
+/* No text selection while the end follows the pointer. */
+.milkdown .ProseMirror .line-view--dragging {
+  user-select: none;
+}
+
+/* A read-only editor has no gesture, and no handle or selected tint to promise one (S38). */
+.milkdown .ProseMirror[contenteditable='false'] .line-view.is-selected {
+  background-color: transparent;
+}
+
+.milkdown .ProseMirror[contenteditable='false'] .line-view__end {
+  display: none;
+}

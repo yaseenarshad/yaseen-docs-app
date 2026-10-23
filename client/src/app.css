@@ -2577,15 +2577,16 @@ button {
   content: attr(data-line) '–' attr(data-line-end);
 }
 
-/* Three blocks clip what leaves their box, and the margin is outside it. A rule (the browser's own
-   `overflow: hidden`) and a code block give the clip up while the numbers show: a rule holds
-   nothing, and code wraps (YAZ-2270). The rule's number sits on the line itself. */
-.editor-host[data-line-numbers] .ProseMirror hr[data-line],
+/* Three blocks clip what leaves their box, and the margin is outside it. A rule and a code block
+   give the clip up while the numbers show: a rule holds nothing, and code wraps (YAZ-2270). The
+   rule's number is on its node view's wrapper (YAZ-3164 D2), which is as wide as the row whatever
+   the line's length, and sits at the middle of the line, a thick one too (S22). */
+.editor-host[data-line-numbers] .ProseMirror .line-view[data-line],
 .editor-host[data-line-numbers] .ProseMirror .milkdown-code-block[data-line] {
   overflow: visible;
 }
 
-.editor-host[data-line-numbers] .ProseMirror hr[data-line]::after {
+.editor-host[data-line-numbers] .ProseMirror .line-view[data-line]::after {
   top: 50%;
   padding-top: 0;
   transform: translateY(-50%);
