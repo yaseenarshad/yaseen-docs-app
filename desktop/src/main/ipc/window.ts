@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, rootOfPath, type OpenSetResult, type PageView, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type StoredTab, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, rootOfPath, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type StoredTab, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -24,13 +25,13 @@ function optionalTabs(raw: Record<string, unknown>): string[] | undefined {
 }
 
 /** `tabStrip` in the patch (YAZ-3057): absent (untouched), or tabs with absolute paths — one bad element rejects the whole call. */
-function optionalTabStrip(raw: Record<string, unknown>): StoredTab[] | undefined {
-  const v = raw.tabStrip
+function optionalTabStrip(raw: Record<string, unknown>, key: 'tabStrip' | 'tabs' = 'tabStrip'): StoredTab[] | undefined {
+  const v = raw[key]
   if (v === undefined) return undefined
-  if (!Array.isArray(v)) throw new BridgeFailure('BAD_REQUEST', `'tabStrip' must be an array of tabs`)
+  if (!Array.isArray(v)) throw new BridgeFailure('BAD_REQUEST', `'${key}' must be an array of tabs`)
   return v.map((t, i) => {
     const tab = readStoredTab(t)
-    if (tab === null) throw new BridgeFailure('BAD_REQUEST', `'tabStrip[${i}]' must be { path, name?, active? } with an absolute path`)
+    if (tab === null) throw new BridgeFailure('BAD_REQUEST', `'${key}[${i}]' must be { path, name?, active? } with an absolute path`)
     return tab
   })
 }
@@ -102,7 +103,7 @@ function optionalPopOutCarry(v: unknown): PopOutCarry {
   return { ...(view === undefined ? {} : { view }), ...(name === null ? {} : { name }) }
 }
 
-/** A saved set's `id` or `name` (YAZ-2602 D8): a string; the store decides what it names. */
+/** A saved set's or a session's `id` or `name` (YAZ-2602 D8, YAZ-3147 D2): a string; the store decides what it names. */
 function requireString(v: unknown, param: 'id' | 'name'): string {
   if (typeof v !== 'string') throw new BridgeFailure('BAD_REQUEST', `'${param}' must be a string`)
   return v
@@ -237,6 +238,42 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   handle(CONTRACT.window.renameSet, async (id: unknown, name: unknown): Promise<boolean> => store.renameVaultSet(requireString(id, 'id'), requireString(name, 'name')))
   handle(CONTRACT.window.removeSet, async (id: unknown) => {
     store.removeVaultSet(requireString(id, 'id'))
+  })
+
+  // Sessions (YAZ-3147 D2): saved copies of a window's tabs. `window:save-session` saves the CALLER's own
+  // tabs from its window entry — the strip with its copies and names, else `tabs` with `file` as the active
+  // tab — so the renderer sends only a name. It answers the session's id, or null when the store refused.
+  // Any window may restore, rename, change or delete a session; each change reaches every window as `state:changed` (S36).
+  handleWithEvent(CONTRACT.window.saveSession, async (e, name: unknown, replaceId: unknown): Promise<string | null> => {
+    const session = requireString(name, 'name')
+    const replace = replaceId === undefined ? undefined : requireString(replaceId, 'id')
+    const { tabStrip, tabs, file, roots } = entryFor(e)
+    const strip = tabStrip ?? tabs.map((path) => (path === file ? { path, active: true as const } : { path }))
+    return store.saveSession(session, strip, roots, replace)?.id ?? null
+  })
+  // A restore (D3) answers the tabs whose file exists and the vaults whose folder exists; the renderer adds
+  // them to its own window. An unknown id answers nothing to open. The session becomes the last used (S26).
+  handle(CONTRACT.window.restoreSession, async (id: unknown): Promise<RestoreSessionResult> => {
+    const session = store.get().sessions.find((s) => s.id === requireString(id, 'id'))
+    if (session === undefined) return { tabs: [], roots: [], missing: [] }
+    const result: RestoreSessionResult = { tabs: [], roots: session.roots.filter((r) => existsSync(r)), missing: [] }
+    for (const tab of session.tabs) {
+      if (existsSync(tab.path)) result.tabs.push({ ...tab })
+      else result.missing.push(tab.path)
+    }
+    store.touchSession(session.id)
+    return result
+  })
+  handle(CONTRACT.window.renameSession, async (id: unknown, name: unknown): Promise<boolean> => store.renameSession(requireString(id, 'id'), requireString(name, 'name')))
+  // "Remove from session" (S30): the renderer sends the tabs that stay, checked as a window's strip is.
+  handle(CONTRACT.window.setSessionTabs, async (id: unknown, tabs: unknown): Promise<boolean> => {
+    const sessionId = requireString(id, 'id')
+    const kept = optionalTabStrip({ tabs }, 'tabs')
+    if (kept === undefined) throw new BridgeFailure('BAD_REQUEST', "'tabs' must be an array of tabs")
+    return store.setSessionTabs(sessionId, kept)
+  })
+  handle(CONTRACT.window.removeSession, async (id: unknown) => {
+    store.removeSession(requireString(id, 'id'))
   })
 
   // Explicit paste outside a Crepe editor uses Chromium insertion for native selection/undo.

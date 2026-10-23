@@ -12,6 +12,8 @@ import {
   MAX_FOLD_KEYS_PER_FILE,
   MAX_OPENS,
   MAX_RECENT_ROOTS,
+  MAX_SESSIONS,
+  MAX_SESSION_TABS,
   MAX_VAULT_SETS,
   NEW_NOTE_LOCATIONS,
   RIGHT_PANEL_DEFAULT_W,
@@ -56,6 +58,7 @@ import {
   type RightPanelIdentity,
   type SectionLines,
   type SettingsState,
+  type Session,
   type SidebarLens,
   type StartupWindows,
   type StoredTab,
@@ -158,6 +161,22 @@ export interface Store {
   removeVaultSet(id: string): void
   /** The set was just used (S65): `lastUsed` is `now`, and it moves to the front. An unknown `id` is a no-op. */
   touchVaultSet(id: string, now?: number): void
+  /**
+   * Save `tabs` as a session (YAZ-3147 D2) and answer it. The tabs are cut at MAX_SESSION_TABS, and only
+   * the vaults of `roots` that hold a tab are kept. A new session goes to the front. With `replaceId`
+   * ("Update with open tabs", S28) the session keeps its id and its name, takes the new tabs and moves to
+   * the front. Refused with null, and no commit: no tab, an unknown `replaceId`, or for a NEW session an
+   * empty name or MAX_SESSIONS sessions (S7).
+   */
+  saveSession(name: string, tabs: readonly StoredTab[], roots: readonly string[], replaceId?: string, now?: number): Session | null
+  /** Rename a session (S12). False, and no commit: an unknown `id` or an empty name. Two sessions can have one name (S10). */
+  renameSession(id: string, name: string): boolean
+  /** "Remove from session" (S30): the session's tabs are now `tabs`, and its vaults follow them. Its place in the list stays. A session with no tab stays (S31). False for an unknown `id`. */
+  setSessionTabs(id: string, tabs: readonly StoredTab[]): boolean
+  /** "Delete session" (S32); no file and no window is touched. An unknown `id` is a no-op. */
+  removeSession(id: string): void
+  /** The session was just restored (S26): `lastUsed` is `now`, and it moves to the front. An unknown `id` is a no-op. */
+  touchSession(id: string, now?: number): void
   onChange(listener: (state: AppState) => void): () => void
   flush(): Promise<void>
 }
@@ -441,6 +460,45 @@ function sanitizeVaultSets(raw: unknown): VaultSet[] {
   return out.slice(0, MAX_VAULT_SETS)
 }
 
+/** A session's tabs as the store keeps them (YAZ-3147 D2): each a stored tab (`readStoredTab`), MAX_SESSION_TABS at most, the active mark on ONE tab at most. */
+function cleanSessionTabs(raw: unknown): StoredTab[] {
+  if (!Array.isArray(raw)) return []
+  let marked = false
+  const out: StoredTab[] = []
+  for (const t of raw) {
+    const tab = readStoredTab(t)
+    if (tab === null) continue
+    if (tab.active === true && marked) delete tab.active
+    if (tab.active === true) marked = true
+    out.push(tab)
+    if (out.length === MAX_SESSION_TABS) break
+  }
+  return out
+}
+
+/** A session's vaults (YAZ-3147 D2): `roots` cleaned like a saved set's, and only the ones that hold a tab (`rootOfPath`: the most specific vault). */
+function sessionRoots(tabs: readonly StoredTab[], raw: unknown): string[] {
+  const roots = cleanSetRoots(raw)
+  const held = new Set(tabs.map((t) => rootOfPath(roots, t.path)))
+  return roots.filter((r) => held.has(r))
+}
+
+/** The sessions (YAZ-3147 D2) read with the windows' rule: a bad entry drops alone. A session needs a string id of its own and a name; a session with no tab is good (S31). */
+function sanitizeSessions(raw: unknown): Session[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const out: Session[] = []
+  for (const s of raw) {
+    if (!isRecord(s) || typeof s.id !== 'string' || seen.has(s.id)) continue
+    const name = cleanVaultName(s.name)
+    if (name === null) continue
+    seen.add(s.id)
+    const tabs = cleanSessionTabs(s.tabs)
+    out.push({ id: s.id, name, tabs, roots: sessionRoots(tabs, s.roots), lastUsed: isFiniteNumber(s.lastUsed) ? s.lastUsed : 0 })
+  }
+  return out.slice(0, MAX_SESSIONS)
+}
+
 /** An order across vaults — `favoritesOrder` (YAZ-2631 D1) and `focusOrder` (YAZ-2702 Decision 3): absolute paths, cut at the limit; a missing or junk list is empty. */
 const sanitizeOrder = (raw: unknown): string[] => (isStringArray(raw) ? raw.filter(isAbsolute).slice(0, MAX_FAVORITES_ORDER) : [])
 
@@ -469,6 +527,7 @@ function sanitizeState(raw: unknown): AppState | null {
     vaultSets: sanitizeVaultSets(raw.vaultSets),
     favoritesOrder: sanitizeOrder(raw.favoritesOrder),
     focusOrder: sanitizeOrder(raw.focusOrder),
+    sessions: sanitizeSessions(raw.sessions),
   }
 }
 
@@ -752,8 +811,13 @@ export function createStore(filePath: string): Store {
       // A renamed favorite keeps its place in the order across vaults (YAZ-2631 R6), and a renamed focus item in its own (YAZ-2702 Decision 3).
       const favoritesOrder = state.favoritesOrder.map(remap)
       const focusOrder = state.focusOrder.map(remap)
+      // Each session's tabs, copies and names follow the file, and its vaults their folders (YAZ-3147 D2, S34).
+      const sessions = state.sessions.map((s) => {
+        const tabs = s.tabs.map((t) => ({ ...t, path: remap(t.path) }))
+        return { ...s, tabs, roots: sessionRoots(tabs, s.roots.map(remap)) }
+      })
       if (!changed) return
-      commit({ ...state, windows, recents, folders, vaultSets, favoritesOrder, focusOrder })
+      commit({ ...state, windows, recents, folders, vaultSets, favoritesOrder, focusOrder, sessions })
     },
 
     removePath(deleted) {
@@ -839,8 +903,15 @@ export function createStore(filePath: string): Store {
       // A deleted favorite leaves the order across vaults (YAZ-2631 R6), and a deleted focus item its own (YAZ-2702 Decision 3).
       const favoritesOrder = drop(state.favoritesOrder)
       const focusOrder = drop(state.focusOrder)
+      // A deleted file leaves each session, and a vault with no tab left goes with it; a session with no tab stays (YAZ-3147 D2, S31, S34).
+      const sessions = state.sessions.map((s) => {
+        const tabs = s.tabs.filter((t) => !gone(t.path))
+        if (tabs.length === s.tabs.length) return s
+        changed = true
+        return { ...s, tabs, roots: sessionRoots(tabs, s.roots) }
+      })
       if (!changed) return
-      commit({ ...state, windows, recents, folders, vaultSets, favoritesOrder, focusOrder })
+      commit({ ...state, windows, recents, folders, vaultSets, favoritesOrder, focusOrder, sessions })
     },
 
     saveVaultSet(rawName, rawRoots, now = Date.now()) {
@@ -872,6 +943,46 @@ export function createStore(filePath: string): Store {
       const set = state.vaultSets.find((s) => s.id === id)
       if (set === undefined || (state.vaultSets[0] === set && set.lastUsed === now)) return
       commit({ ...state, vaultSets: [{ ...set, lastUsed: now }, ...state.vaultSets.filter((s) => s !== set)] })
+    },
+
+    saveSession(rawName, rawTabs, rawRoots, replaceId, now = Date.now()) {
+      const tabs = cleanSessionTabs(rawTabs)
+      if (tabs.length === 0) return null
+      const existing = replaceId === undefined ? undefined : state.sessions.find((s) => s.id === replaceId)
+      if (replaceId !== undefined && existing === undefined) return null
+      // An update keeps the session's own name (S28); only a new session needs one, and counts against the cap (S7).
+      const name = existing?.name ?? cleanVaultName(rawName)
+      if (name === null || (existing === undefined && state.sessions.length >= MAX_SESSIONS)) return null
+      const saved: Session = { id: existing?.id ?? randomUUID(), name, tabs, roots: sessionRoots(tabs, rawRoots), lastUsed: now }
+      commit({ ...state, sessions: [saved, ...state.sessions.filter((s) => s !== existing)] })
+      return saved
+    },
+
+    renameSession(id, rawName) {
+      const name = cleanVaultName(rawName)
+      const session = state.sessions.find((s) => s.id === id)
+      if (name === null || session === undefined) return false
+      if (session.name !== name) commit({ ...state, sessions: state.sessions.map((s) => (s === session ? { ...s, name } : s)) })
+      return true
+    },
+
+    setSessionTabs(id, rawTabs) {
+      const session = state.sessions.find((s) => s.id === id)
+      if (session === undefined) return false
+      const tabs = cleanSessionTabs(rawTabs)
+      commit({ ...state, sessions: state.sessions.map((s) => (s === session ? { ...s, tabs, roots: sessionRoots(tabs, s.roots) } : s)) })
+      return true
+    },
+
+    removeSession(id) {
+      if (!state.sessions.some((s) => s.id === id)) return
+      commit({ ...state, sessions: state.sessions.filter((s) => s.id !== id) })
+    },
+
+    touchSession(id, now = Date.now()) {
+      const session = state.sessions.find((s) => s.id === id)
+      if (session === undefined || (state.sessions[0] === session && session.lastUsed === now)) return
+      commit({ ...state, sessions: [{ ...session, lastUsed: now }, ...state.sessions.filter((s) => s !== session)] })
     },
 
     onChange(listener) {

@@ -1656,6 +1656,38 @@ export interface OpenSetResult {
   missing: string[]
 }
 
+/** The app keeps this many sessions at most (YAZ-3147 D2): a save of a new session past it is refused. */
+export const MAX_SESSIONS = 30
+/** A session keeps this many tabs at most (YAZ-3147 D2): a save keeps the first ones. */
+export const MAX_SESSION_TABS = 40
+
+/**
+ * A session (YAZ-3147 D1): a named, saved COPY of a window's tabs. It changes only when it is saved
+ * again ("Update with open tabs"); it never follows the tabs live. Per machine, in the app state.
+ */
+export interface Session {
+  id: string
+  /** Its name, cleaned like a vault's display name (`cleanVaultName`). Two sessions can have one name (S10). */
+  name: string
+  /** Its tabs left→right, as a window stores them (YAZ-3057): copies, display names and the active mark. MAX_SESSION_TABS at most. */
+  tabs: StoredTab[]
+  /** The vaults that hold its tabs, in the window's order: each once, trailing slash off. A vault with no tab left is not kept. */
+  roots: string[]
+  /** When it was last saved or restored (ms); 0 = not known. */
+  lastUsed: number
+}
+
+/**
+ * What `window.restoreSession` answers (YAZ-3147 D3): the session's tabs whose file exists, in the saved
+ * order; its vaults whose folder exists; and `missing`, ONE path for each tab whose file is gone (a copy
+ * counts again), so its length is the number of tabs that did not pass the file check.
+ */
+export interface RestoreSessionResult {
+  tabs: StoredTab[]
+  roots: string[]
+  missing: string[]
+}
+
 /**
  * The whole persisted app state — one user-global JSON file, owned by the main process
  * (`~/Library/Application Support/Yaseen Docs/yaseendocs.json`). Settings are global so
@@ -1684,11 +1716,16 @@ export interface AppState {
    * mix of two vaults does not travel, the order inside each vault does. A file without it loads as `[]`.
    */
   focusOrder: string[]
+  /**
+   * The saved sessions (YAZ-3147 D2), last used first, MAX_SESSIONS at most. Per machine: never in a
+   * vault, so they do not sync. Additive within version 1, like `vaultSets`: a file without it loads as `[]`, and an old build drops the key.
+   */
+  sessions: Session[]
 }
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [] }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [] }
 }
 
 export function defaultFolderState(): FolderState {
