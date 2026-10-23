@@ -239,3 +239,80 @@ test.describe('folder tab: CMD+F belongs to the outline, the only editor it has'
     await expect(bar(win)).toHaveCount(0)
   })
 })
+
+test.describe('the bullet thread follows the active match (YAZ-3166)', () => {
+  const THREAD_FILE = 'Thread.md'
+  let userData: string
+  let vault: string
+  let app: ElectronApplication
+  let win: Page
+
+  /** Each nested list on the path stops at its path child; the deepest stop is the anchor's own bullet. */
+  const stop = (w: Page) => w.locator('.milkdown-list-item-block.outline-thread-stop')
+  /** The anchor bullet's own line: the deepest stop's first paragraph, not the bullets below it. */
+  const stopLine = (w: Page) => stop(w).last().locator('p').first()
+  const line = (w: Page, text: string) => w.locator('.editor-mount .ProseMirror p', { hasText: text })
+
+  test.beforeAll(async () => {
+    userData = await mkdtemp(path.join(tmpdir(), 'find-e2e-thread-'))
+    vault = await copyVault(await buildFixtureVault())
+    await writeFile(
+      path.join(vault, THREAD_FILE),
+      [
+        '# Thread',
+        '',
+        '- Alpha parent',
+        '  - Alpha child',
+        '    - The first zebra line',
+        '- Beta parent',
+        '  - Beta child',
+        '    - Beta grandchild',
+        '      - The second zebra line',
+        '- Gamma caret line',
+        '',
+      ].join('\n'),
+    )
+    app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, THREAD_FILE)) })
+    win = await appWindow(app, 'w1')
+    await expect(win.locator('.editor-mount .ProseMirror')).toBeVisible()
+  })
+
+  test.afterAll(async () => {
+    await quitApp(app)
+    await rm(userData, { recursive: true, force: true })
+    await rm(vault, { recursive: true, force: true })
+  })
+
+  test('each step moves the thread to the match, a click gives it back to the caret, and Esc lands on the match', async () => {
+    // The caret stands in a top-level bullet below both matches: a top-level item has no segment.
+    await line(win, 'Gamma caret line').click()
+    await expect(stop(win)).toHaveCount(0)
+
+    await win.keyboard.press('Meta+f')
+    await input(win).fill('zebra')
+    await expect(counter(win)).toHaveText('1 of 2')
+    await expect(stop(win)).toHaveCount(2)
+    await expect(stopLine(win)).toHaveText('The first zebra line')
+
+    await win.keyboard.press('Enter')
+    await expect(counter(win)).toHaveText('2 of 2')
+    await expect(stopLine(win)).toHaveText('The second zebra line')
+    await expect(win.locator('.outline-thread-node')).toHaveCount(4)
+    await shoot(win, 'find-thread-on-match')
+
+    // A click in the note moves the caret: the thread goes back to it, and the bar stays open.
+    await line(win, 'Alpha child').click()
+    await expect(stopLine(win)).toHaveText('Alpha child')
+    await expect(counter(win)).toHaveText('2 of 2')
+
+    // The next step brings it back to the match.
+    await win.getByRole('button', { name: 'Next match' }).click()
+    await expect(counter(win)).toHaveText('1 of 2')
+    await expect(stopLine(win)).toHaveText('The first zebra line')
+
+    // Esc puts the caret on the match, so the thread does not move.
+    await win.keyboard.press('Escape')
+    await expect(bar(win)).toHaveCount(0)
+    await expect(stopLine(win)).toHaveText('The first zebra line')
+  })
+})
