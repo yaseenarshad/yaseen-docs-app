@@ -114,7 +114,7 @@ describe('which blocks get the pickers', () => {
     }
   })
 
-  it('S42: a bullet whose FIRST block is a line gets the pickers; a bullet whose line comes later does not', async () => {
+  it('S42: a bullet whose FIRST block is a line gets the pickers; a LATER line gets them from its OWN handle, and the bullet’s own handle shows none', async () => {
     const first = await mount('* ---\n  * child\n')
     // Crepe's handle stands for the bullet when its first block is hovered: the probe lands in the line.
     aim(first.view, nth(first.view, 'hr'))
@@ -128,7 +128,7 @@ describe('which blocks get the pickers', () => {
     aim(later.view, nth(later.view, 'paragraph'))
     rightClick(later.item)
     expect(popupOf(later.view)!.querySelector('.block-menu-picker')).toBeNull()
-    // That line has a handle of its own, and its own menu has the pickers.
+    // Crepe gives that later line a 6-dot handle of its own: its menu has the pickers.
     aim(later.view, nth(later.view, 'hr'))
     rightClick(later.item)
     expect(pickers(later.view)).toHaveLength(3)

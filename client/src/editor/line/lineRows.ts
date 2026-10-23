@@ -5,8 +5,8 @@
  *
  * They show only when the handle points at a line (S40, S42): the target is an `hr`, or it sits in
  * a bullet whose FIRST block is an `hr` (Crepe's handle stands for the bullet when its first block
- * is hovered). A bullet whose line is a later block gets the menu of today: that line has a handle
- * of its own. A read-only editor shows no pickers (S51). Each pick is ONE `setNodeMarkup` (one ⌘Z,
+ * is hovered). A line that is a LATER block of a bullet gets the pickers from its OWN 6-dot handle
+ * (Crepe gives that block one); the bullet's own handle shows none (S42). A read-only editor shows no pickers (S51). Each pick is ONE `setNodeMarkup` (one ⌘Z,
  * S50); the default is stored as `null`, so it leaves the comment (S49); the current value never
  * runs (the menu's rule, S47).
  */

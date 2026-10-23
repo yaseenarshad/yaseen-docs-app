@@ -2,7 +2,7 @@
 
 The one list of everything Yaseen Docs does that a change must not lose (YAZ-2171, seeded from the YAZ-2131 scope inventory). Every row has a stable ID. A PR cites the IDs it touches, and each one is proved by the automated test named here, or by walking its hand steps.
 
-- **A** = a Playwright-Electron spec in `desktop/e2e/` (72 specs; run with `npm run e2e`).
+- **A** = a Playwright-Electron spec in `desktop/e2e/` (73 specs; run with `npm run e2e`).
 - **U** = a unit or jsdom suite (run with `npm test`).
 - **M** = hand steps, listed under [Hand scenarios](#hand-scenarios). Only what automation cannot drive lives there.
 
