@@ -3,7 +3,7 @@ import { act, Profiler } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MAX_VAULT_NAME, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type Session, type WindowIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
-import { NO_SESSIONS_HELP, SessionList } from './SessionList'
+import { NO_SESSIONS_HELP, RENAME_CLICK_GAP_MS, SessionList } from './SessionList'
 
 const WORK: Session = { id: 's1', name: 'Work', tabs: [{ path: '/v/a.md', name: 'Plan' }, { path: '/w/b.md', active: true }, { path: '/w/b.md' }], roots: ['/v', '/w'], lastUsed: 20 }
 const SOLO: Session = { id: 's2', name: 'Solo', tabs: [{ path: '/v/c.md' }], roots: ['/v'], lastUsed: 10 }
@@ -47,6 +47,12 @@ async function mount(sessions: Session[], extra: Partial<Parameters<typeof Sessi
   act(() => root?.render(<Profiler id="list" onRender={() => void renders++}><SessionList {...props} {...extra} /></Profiler>))
 }
 
+/** Two quick clicks on a row's name: what a rename asks for (RENAME_CLICK_GAP_MS). */
+const renameClicks = (row: Element) => {
+  const label = row.querySelector('.tree__label') as Element
+  act(() => void label.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
+  act(() => void label.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 })))
+}
 const rows = () => [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Sessions"] > li > .tree__row')]
 const tabRows = () => [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Sessions"] > li > ul .tree__row')]
 const text = (b: Element) => [...b.children].map((c) => c.textContent)
@@ -96,9 +102,29 @@ describe('SessionList (YAZ-3147 D6)', () => {
     expect(tabRows()).toEqual([])
   })
 
+  it('a rename needs two clicks on the NAME within RENAME_CLICK_GAP_MS: slower clicks, or clicks on the arrow or the count, only fold and unfold', async () => {
+    await mount([WORK, SOLO])
+    const now = vi.spyOn(performance, 'now')
+    const clickAt = (target: Element, at: number, detail: number) => {
+      now.mockReturnValue(at)
+      act(() => void target.dispatchEvent(new MouseEvent('click', { bubbles: true, detail })))
+    }
+    const label = () => rows()[1].querySelector('.tree__label') as Element
+    clickAt(label(), 1000, 1)
+    clickAt(label(), 1000 + RENAME_CLICK_GAP_MS + 50, 2) // the Mac still calls it a double-click
+    expect(field()).toBeNull()
+    clickAt(rows()[1].querySelector('.tree__count') as Element, 3000, 1)
+    clickAt(rows()[1].querySelector('.tree__count') as Element, 3100, 2)
+    expect(field()).toBeNull()
+    clickAt(label(), 5000, 1)
+    clickAt(label(), 5000 + RENAME_CLICK_GAP_MS, 2)
+    expect(field()?.value).toBe('Solo')
+    now.mockRestore()
+  })
+
   it('S12–S15: a double-click opens the name field with the name selected; Return saves through main; Esc keeps the name; a blank name is refused; the field takes 80 characters', async () => {
     await mount([WORK, SOLO])
-    act(() => void rows()[1].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    renameClicks(rows()[1])
     const input = field()
     expect(input?.value).toBe('Solo')
     expect(document.activeElement).toBe(input)
@@ -109,11 +135,11 @@ describe('SessionList (YAZ-3147 D6)', () => {
     expect(b.bridge.window.renameSession).toHaveBeenCalledExactlyOnceWith('s2', 'Deep work')
     expect(field()).toBeNull()
 
-    act(() => void rows()[1].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    renameClicks(rows()[1])
     fill(field() as HTMLInputElement, 'Changed')
     key(field(), 'Escape')
     expect(field()).toBeNull()
-    act(() => void rows()[1].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    renameClicks(rows()[1])
     fill(field() as HTMLInputElement, '   ')
     key(field(), 'Enter')
     expect(b.bridge.window.renameSession).toHaveBeenCalledOnce()

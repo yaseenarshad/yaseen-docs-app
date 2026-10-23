@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState, useSyncExternalStore, type MouseEvent } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react'
 import { MAX_VAULT_NAME, cleanVaultName, rootOfPath, type Session } from '@shared/types'
 import { api } from '../api'
 import { ConfirmSheet } from '../components/ConfirmSheet'
@@ -10,6 +10,12 @@ import type { MenuSection } from './menuSections'
 
 /** The help line of an empty Sessions tab (YAZ-3147 S37). */
 export const NO_SESSIONS_HELP = 'Save your open tabs as a session. Restore them later in one click.'
+
+/**
+ * A rename asks for two clicks ON THE NAME, at most this far apart (ms) — tighter than the Mac's own
+ * double-click time, so two quick clicks to fold and unfold a row do not rename it (Yaseen, guided test).
+ */
+export const RENAME_CLICK_GAP_MS = 300
 
 const count = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
 const failed = (what: string) => (err: unknown): void => console.error(`[sessions] ${what} failed:`, err)
@@ -155,6 +161,15 @@ interface SessionRowProps {
 /** One session and, unfolded, its tabs (D6). Memo: a fold, a menu or a field of another row does not render it again. */
 const SessionRow = memo(function SessionRow({ session, open, renaming, titles, onToggle, onStartRename, onRename, onEndRename, onMenu, onOpenFile }: SessionRowProps) {
   const { id, name, tabs, roots } = session
+  // When the last click on this row's name landed; a second one inside RENAME_CLICK_GAP_MS renames.
+  const lastNameClick = useRef(-Infinity)
+  const click = (e: MouseEvent) => {
+    onToggle(id)
+    if ((e.target as Element).closest('.tree__label') === null) return
+    const at = performance.now()
+    if (e.detail >= 2 && at - lastNameClick.current <= RENAME_CLICK_GAP_MS) onStartRename(id)
+    lastNameClick.current = at
+  }
   return (
     <li>
       {renaming ? (
@@ -163,7 +178,7 @@ const SessionRow = memo(function SessionRow({ session, open, renaming, titles, o
           <TextField className="create-inline__input" value={name} aria-label="Session name" autoFocus selectOnMount maxLength={MAX_VAULT_NAME} normalize={cleanVaultName} onCommit={(next) => onRename(id, next)} onDone={onEndRename} />
         </div>
       ) : (
-        <button type="button" className="tree__row" aria-expanded={open} onClick={() => onToggle(id)} onDoubleClick={() => onStartRename(id)} onContextMenu={(e) => onMenu(e, id, null)}>
+        <button type="button" className="tree__row" aria-expanded={open} onClick={click} onContextMenu={(e) => onMenu(e, id, null)}>
           <span className={`tree__chevron${open ? ' tree__chevron--open' : ''}`} />
           <span className="tree__label">{name}</span>
           <span className="tree__count">{count(tabs.length, 'tab', 'tabs')}</span>
