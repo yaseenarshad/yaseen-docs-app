@@ -1190,26 +1190,77 @@ describe("textWysiwyg", () => {
       ]);
     });
 
-    it("starts a line created with Enter without inherited line formatting", () => {
+    it("carries every line style onto a line created with Enter", () => {
+      const primaryModifier = { [KEYS.CTRL_OR_CMD]: true };
       fireEvent.input(textarea, {
         target: { value: "Title" },
       });
       textarea.setSelectionRange(0, 5);
       fireEvent.keyDown(textarea, {
-        [KEYS.CTRL_OR_CMD]: true,
+        ...primaryModifier,
+        key: "b",
+        code: CODES.B,
+      });
+      fireEvent.keyDown(textarea, {
+        ...primaryModifier,
         key: "u",
         code: CODES.U,
       });
-      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
-        true,
-      ]);
+      fireEvent.keyDown(textarea, {
+        ...primaryModifier,
+        shiftKey: true,
+        key: "x",
+        code: CODES.X,
+      });
 
       fireEvent.input(textarea, {
         target: { value: "Ti\ntle" },
         inputType: "insertLineBreak",
       });
+      fireEvent.input(textarea, {
+        target: { value: "Ti\ntle\n" },
+        inputType: "insertLineBreak",
+      });
+      fireEvent.input(textarea, {
+        target: { value: "Ti\ntle\nNext" },
+      });
 
-      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
+      expect(h.elements[0]).toMatchObject({
+        lineBolds: [true, true, true],
+        lineUnderlines: [true, true, true],
+        lineStrikethroughs: [true, true, true],
+      });
+    });
+
+    it("keeps a whole-element style whole when Enter creates a line", () => {
+      API.updateElement(h.elements[0] as ExcalidrawTextElement, {
+        fontWeight: "bold",
+      });
+      fireEvent.input(textarea, {
+        target: { value: "Title\n" },
+        inputType: "insertLineBreak",
+      });
+
+      expect((h.elements[0] as ExcalidrawTextElement).fontWeight).toBe("bold");
+    });
+
+    it("keeps a plain line plain when Enter creates a line below it", () => {
+      fireEvent.input(textarea, {
+        target: { value: "Title\nBody" },
+      });
+      textarea.setSelectionRange(0, 5);
+      fireEvent.keyDown(textarea, {
+        [KEYS.CTRL_OR_CMD]: true,
+        key: "b",
+        code: CODES.B,
+      });
+
+      fireEvent.input(textarea, {
+        target: { value: "Title\nBody\n" },
+        inputType: "insertLineBreak",
+      });
+
+      expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
         true,
       ]);
     });
@@ -1335,7 +1386,7 @@ describe("textWysiwyg", () => {
       );
     });
 
-    it("starts a continued bullet line without inherited text styles", () => {
+    it("carries text styles onto a continued bullet line", () => {
       fireEvent.input(textarea, {
         target: { value: "• Styled" },
       });
@@ -1354,6 +1405,7 @@ describe("textWysiwyg", () => {
 
       expect(textarea.value).toBe("• Styled\n• ");
       expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
+        true,
         true,
       ]);
     });

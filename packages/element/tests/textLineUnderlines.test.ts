@@ -148,17 +148,45 @@ describe("remapLineUnderlinesForTextEdit", () => {
 });
 
 describe("remapLineStylesForTextEdit", () => {
-  it("starts the new right line plain when Enter splits a styled line", () => {
+  it("carries the line style onto the new line when Enter splits a styled line", () => {
+    // in the middle, at the end, at the start
+    expect(remapLineStylesForTextEdit("Title", "Ti\ntle", [true])).toEqual([
+      true,
+      true,
+    ]);
+    expect(remapLineStylesForTextEdit("Title", "Title\n", [true])).toEqual([
+      true,
+      true,
+    ]);
+    expect(remapLineStylesForTextEdit("Title", "\nTitle", [true])).toEqual([
+      true,
+      true,
+    ]);
+    // a manually styled blank line
     expect(
-      remapLineStylesForTextEdit("Title", "Ti\ntle", [true], {
-        newLineStyle: "plain",
-      }),
-    ).toEqual([true]);
+      remapLineStylesForTextEdit("Title\n", "Title\n\n", [false, true]),
+    ).toEqual([false, true, true]);
+    // a whole-element style
     expect(
-      remapLineStylesForTextEdit("Title", "Title\n", [true], {
-        newLineStyle: "plain",
+      remapLineStylesForTextEdit("Title", "Title\n", undefined, {
+        wholeElementStyled: true,
       }),
+    ).toEqual([true, true]);
+  });
+
+  it("keeps the new line plain when Enter splits a plain line", () => {
+    expect(
+      remapLineStylesForTextEdit("Title\nBody", "Title\nBody\n", [true]),
     ).toEqual([true]);
+  });
+
+  it("gives a line break that replaces a multiline selection the first line style", () => {
+    expect(
+      remapLineStylesForTextEdit("Title\nBody", "Ti\ndy", [true, false]),
+    ).toEqual([true, true]);
+    expect(
+      remapLineStylesForTextEdit("Title\nBody", "Ti\ndy", [false, true]),
+    ).toBeUndefined();
   });
 
   it("lets manually styled blank lines retain their style as text is typed", () => {

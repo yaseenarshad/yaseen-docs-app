@@ -164,7 +164,6 @@ export const remapLineStylesForTextEdit = (
   nextText: string,
   lineStyles: readonly boolean[] | undefined,
   options?: {
-    newLineStyle?: "inherit" | "plain";
     wholeElementStyled?: boolean;
   },
 ) => {
@@ -193,20 +192,11 @@ export const remapLineStylesForTextEdit = (
     (_, offset) => resolvedLineStyles[previousStartLine + offset] === true,
   );
   const nextAffectedCount = nextEndLine - nextStartLine + 1;
-  const insertedText = nextText.slice(edit.start, edit.nextEnd);
-  const nextAffected =
-    options?.newLineStyle === "plain" &&
-    nextAffectedCount > 1 &&
-    insertedText.includes("\n")
-      ? [
-          previousAffected[0] === true,
-          ...Array<boolean>(nextAffectedCount - 1).fill(false),
-        ]
-      : Array<boolean>(nextAffectedCount).fill(
-          nextAffectedCount < previousAffected.length
-            ? previousAffected.some(Boolean)
-            : previousAffected[0] === true,
-        );
+  const nextAffected = Array<boolean>(nextAffectedCount).fill(
+    nextAffectedCount < previousAffected.length
+      ? previousAffected.some(Boolean)
+      : previousAffected[0] === true,
+  );
   const next = [
     ...resolvedLineStyles.slice(0, previousStartLine),
     ...nextAffected,
@@ -221,7 +211,6 @@ export const remapLineUnderlinesForTextEdit = (
   nextText: string,
   lineUnderlines: readonly boolean[] | undefined,
   options?: {
-    newLineStyle?: "inherit" | "plain";
     wholeElementStyled?: boolean;
   },
 ) =>

@@ -664,7 +664,6 @@ export const textWysiwyg = ({
   });
   editable.value = element.originalText;
   let previousEditableValue = editable.value;
-  let pendingNewLineStyle: "inherit" | "plain" | null = null;
 
   function renderVisualSelection() {
     underlineOverlay
@@ -1048,7 +1047,7 @@ export const textWysiwyg = ({
       }
     };
 
-    editable.oninput = (event) => {
+    editable.oninput = () => {
       const normalized = normalizeText(editable.value);
       if (editable.value !== normalized) {
         const selectionStart = editable.selectionStart;
@@ -1073,19 +1072,11 @@ export const textWysiwyg = ({
       const currentElement = app.scene.getElement(
         element.id,
       ) as ExcalidrawTextElement | null;
-      const inputType = (event as InputEvent).inputType;
-      const newLineStyle =
-        pendingNewLineStyle ??
-        (inputType === "insertLineBreak" || inputType === "insertParagraph"
-          ? "plain"
-          : "inherit");
-      pendingNewLineStyle = null;
       const nextLineBolds = remapLineStylesForTextEdit(
         previousEditableValue,
         editable.value,
         currentElement?.lineBolds,
         {
-          newLineStyle,
           wholeElementStyled: currentElement?.fontWeight === "bold",
         },
       );
@@ -1094,7 +1085,6 @@ export const textWysiwyg = ({
         editable.value,
         currentElement?.lineUnderlines,
         {
-          newLineStyle,
           wholeElementStyled: currentElement?.textDecoration === "underline",
         },
       );
@@ -1103,26 +1093,15 @@ export const textWysiwyg = ({
         editable.value,
         currentElement?.lineStrikethroughs,
         {
-          newLineStyle,
           wholeElementStyled: currentElement?.strikethrough === true,
         },
       );
       previousEditableValue = editable.value;
       onChange({
         nextOriginalText: editable.value,
-        nextFontWeight:
-          newLineStyle === "plain" && currentElement?.fontWeight === "bold"
-            ? "normal"
-            : currentElement?.fontWeight,
-        nextTextDecoration:
-          newLineStyle === "plain" &&
-          currentElement?.textDecoration === "underline"
-            ? "none"
-            : currentElement?.textDecoration,
-        nextStrikethrough:
-          newLineStyle === "plain" && currentElement?.strikethrough === true
-            ? false
-            : currentElement?.strikethrough,
+        nextFontWeight: currentElement?.fontWeight,
+        nextTextDecoration: currentElement?.textDecoration,
+        nextStrikethrough: currentElement?.strikethrough,
         nextLineBolds,
         nextLineUnderlines,
         nextLineStrikethroughs,
@@ -1140,7 +1119,6 @@ export const textWysiwyg = ({
     editable.value = change.text;
     editable.setSelectionRange(change.selectionStart, change.selectionEnd);
 
-    pendingNewLineStyle = "plain";
     editable.dispatchEvent(new Event("input"));
     return true;
   };
