@@ -25,6 +25,7 @@ import {
   type StoredTab,
   type TocSource,
   type VaultEntry,
+  type Session,
   type VaultSet,
   type WindowEntry,
   type WindowIdentity,
@@ -105,6 +106,9 @@ export const storage = {
       for (const key of ORDER_KEYS) {
         if (held[key].length === next[key].length && held[key].every((path, at) => path === next[key][at])) state = { ...state, [key]: held[key] }
       }
+      // The sessions too (YAZ-3147 D6): a tab click writes the window and broadcasts, and the open
+      // Sessions tab must not draw again for it. 30 sessions of 40 tabs at most, so the compare stays small.
+      if (JSON.stringify(held.sessions) === JSON.stringify(next.sessions)) state = { ...state, sessions: held.sessions }
       listeners.forEach((l) => l())
     })
   },
@@ -159,6 +163,13 @@ export const storage = {
    * neighbours), and the cache follows the broadcast.
    */
   getVaultSets: (): VaultSet[] => state.vaultSets,
+  /**
+   * The saved sessions (YAZ-3147 D2), last used first. Read-only here, like `getVaultSets`: main saves,
+   * renames, changes and deletes one through its own doors (`api.window.saveSession` and its neighbours),
+   * and the cache follows the broadcast. The same array until a change, so a `useSyncExternalStore` reader
+   * renders again only when the sessions change.
+   */
+  getSessions: (): Session[] => state.sessions,
   /**
    * The app's other windows (YAZ-3091 D2), off the cache: a tab's "Move to ▸" lists the ones that show its
    * page's vault. Read only while a tab menu is open, never a render trigger; main checks the target again.

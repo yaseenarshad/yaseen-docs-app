@@ -237,6 +237,12 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     settings: { ...DEFAULT_SETTINGS },
     onChangeSettings: vi.fn(),
     onOpenSettings: vi.fn(),
+    // The Sessions tab's doors (YAZ-3147): App's; SessionList.test is their subject.
+    onRestoreSession: vi.fn(),
+    onSaveSession: vi.fn(),
+    onUpdateSession: vi.fn(),
+    sessionNameRequest: null,
+    onSessionNameConsumed: vi.fn(),
     // No update (YAZ-2976 D4): the footer shows only the cog.
     update: { kind: 'idle' },
     onOpenWhatsNew: vi.fn(),
@@ -2150,13 +2156,13 @@ describe('the Search tab (YAZ-2638 D2)', () => {
 
   it('S1: the tabs are Files, Search, Focus, Favorites, in this order; Search is a glyph, and its name is in `title` and `aria-label`', async () => {
     const { el } = await open()
-    expect(tabs(el).map(tabName)).toEqual(['Files', 'Search', 'Focus', 'Favorites'])
+    expect(tabs(el).map(tabName)).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions'])
     const search = tabs(el)[1]
     expect([search.getAttribute('aria-label'), search.title, search.textContent, search.querySelector('svg') !== null]).toEqual(['Search', 'Search', '', true])
     expect(search.classList.contains('sidebar__lens--glyph')).toBe(true)
-    expect(tabs(el).map((b) => b.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false'])
+    expect(tabs(el).map((b) => b.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false', 'false'])
     showTab?.('search')
-    expect(tabs(el).map((b) => b.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false', 'false'])
+    expect(tabs(el).map((b) => b.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false', 'false', 'false'])
   })
 
   it('S2, S5: a request for the Search tab — ⌘K, or a click on the tab, which App hands down with the tab — puts the caret in the bar and selects the text that is there; the tab alone, with no request, does not', async () => {
@@ -3370,9 +3376,9 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     expect(focused()).not.toBe('top') // a row above it: ↑ walks, as before
     act(() => row(el, `${v}/Projects`)?.focus()) // the first row
     expect([key(document.activeElement, 'ArrowUp').defaultPrevented, onTab()]).toEqual([true, 0]) // Files
-    // ← and → on the tab buttons: Files, Search, Focus, Favorites. → never goes to the page from here.
-    const walk = ['ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'].map((name) => [key(document.activeElement, name).defaultPrevented, onTab()])
-    expect(walk).toEqual([[true, 0], [true, 1], [true, 2], [true, 3], [true, 3]])
+    // ← and → on the tab buttons: Files, Search, Focus, Favorites, Sessions. → never goes to the page from here.
+    const walk = ['ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft'].map((name) => [key(document.activeElement, name).defaultPrevented, onTab()])
+    expect(walk).toEqual([[true, 0], [true, 1], [true, 2], [true, 3], [true, 4], [true, 4], [true, 3]])
     expect(onLeaveToPage).not.toHaveBeenCalled()
     // ↓ on a tab that does not show: the tab is asked for, and the keyboard stays on its button.
     vi.mocked(props.onLensChange).mockClear()
@@ -4335,15 +4341,33 @@ describe('lens tabs (🔒 D4, YAZ-847; YAZ-2638 D2)', () => {
   const resultLabels = (el: HTMLElement) => [...el.querySelectorAll('.sidebar__body .tree__row .tree__label')].map((n) => n.textContent)
   const dirItem = (el: HTMLElement) => el.querySelector('.tree__row--dir')?.closest('[role="treeitem"]') ?? null
 
-  it('renders a tablist of exactly Files, Search, Focus, then Favorites (YAZ-1766 D1, YAZ-2619, YAZ-2638 S1), the active one aria-selected and no other', async () => {
+  it('renders a tablist of exactly Files, Search, Focus, Favorites, then Sessions (YAZ-1766 D1, YAZ-2619, YAZ-2638 S1, YAZ-3147 D4), the active one aria-selected and no other', async () => {
     const { el } = await mount({ lens: 'files' })
-    expect(tabs(el).map(tabName)).toEqual(['Files', 'Search', 'Focus', 'Favorites'])
+    expect(tabs(el).map(tabName)).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions'])
     expect(selectedTabs(el)).toEqual(['Files'])
     expect(selectedTabs((await mount({ lens: 'search' })).el)).toEqual(['Search'])
     expect(selectedTabs((await mount({ lens: 'focus' })).el)).toEqual(['Focus'])
     const favorites = await mount({ lens: 'favorites' })
     expect(selectedTabs(favorites.el)).toEqual(['Favorites'])
     expect(searchBar(favorites.el)).toBeNull() // the bar is in the Search tab only (YAZ-2638 S6)
+  })
+
+  it('the Sessions tab (YAZ-3147 D4, S37): a glyph labelled "Sessions"; its body is the session list — no file tree, no expand-all button, and its blank space has no tree menu', async () => {
+    const { el, props } = await mount({ lens: 'sessions' })
+    const sessions = tabByLabel(el, 'Sessions')
+    expect(sessions?.getAttribute('title')).toBe('Sessions')
+    expect(sessions?.querySelector('svg.stack-icon')).not.toBeNull()
+    expect(selectedTabs(el)).toEqual(['Sessions'])
+    expect(el.querySelector('.sidebar__body .tree')).toBeNull()
+    expect(el.querySelector('.sidebar__expand-all')).toBeNull()
+    expect(el.querySelector('.sidebar__body .sidebar__focus-bar')?.textContent).toBe('No sessionsSave open tabs')
+    expect(bodyMsg(el)).toBe('Save your open tabs as a session. Restore them later in one click.')
+    const blank = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(blank))
+    expect(blank.defaultPrevented).toBe(true)
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    act(() => tabByLabel(el, 'Files')?.click())
+    expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
   })
 
   it('the Files lens is today\'s tree, unchanged', async () => {
@@ -4685,14 +4709,14 @@ describe('focus tab (YAZ-2619)', () => {
   it('S18, S19, S21, S39: the tab row reads Files, magnifier (YAZ-2638 D2), eye, heart — the eye a glyph named "Focus" — and an empty list shows the message, no count line, no chevrons and no eye button', async () => {
     const { el, props } = await mountVault({ lens: 'focus' })
     const tabs = [...el.querySelectorAll<HTMLButtonElement>('.sidebar__lenses [role="tab"]')]
-    expect(tabs.map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['Files', 'Search', 'Focus', 'Favorites'])
+    expect(tabs.map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions'])
     const eye = tabs[2]
     expect(eye.textContent).toBe('')
     expect(eye.querySelector('svg')).not.toBeNull()
     expect(eye.title).toBe('Focus')
     expect(eye.className).toBe('sidebar__lens sidebar__lens--glyph sidebar__lens--active') // the accent rides on these two classes (app.css)
     expect(eye.getAttribute('aria-selected')).toBe('true')
-    expect(el.querySelectorAll('.sidebar__lenses button')).toHaveLength(4) // the tabs alone: no eye button at the far end, nothing to unfold
+    expect(el.querySelectorAll('.sidebar__lenses button')).toHaveLength(5) // the tabs alone: no eye button at the far end, nothing to unfold
     expect(bodyMsg(el)).toBe(EMPTY)
     expect(countLine(el)).toBeNull()
     act(() => tabs[0].click())
@@ -4991,9 +5015,9 @@ describe('favorites (YAZ-1766)', () => {
     }
   })
 
-  it('the tab is the last, right of Focus (YAZ-2619; Search is the second, YAZ-2638 D2), and starts on the empty hint', async () => {
+  it('the tab is right of Focus and left of Sessions (YAZ-2619, YAZ-3147 D4; Search is the second, YAZ-2638 D2), and starts on the empty hint', async () => {
     const { el } = await mountVault({ lens: 'favorites' })
-    expect([...el.querySelectorAll('.sidebar__lenses [role="tab"]')].map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['Files', 'Search', 'Focus', 'Favorites'])
+    expect([...el.querySelectorAll('.sidebar__lenses [role="tab"]')].map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions'])
     expect(bodyMsg(el)).toBe('No favorites yet. Right-click a file or folder → Add to favorites.')
     expect(el.querySelector('.tree')).toBeNull()
   })

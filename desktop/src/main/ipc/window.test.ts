@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { CONTRACT, SPECIAL, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import * as windows from '../windows'
@@ -77,7 +77,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes, `link:ready` and the paste fallback (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -154,8 +154,12 @@ describe('registerWindowIpc', () => {
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'favorites' })).toEqual(ok(undefined))
     expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'favorites' }])
     expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'favorites' }))
-    // A value that is not a tab is refused, and the message names the three tabs.
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'nope' })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: "'sidebarLens' must be 'files', 'focus' or 'favorites'" }) })
+    // The Sessions tab is a stored lens too (YAZ-3147 D4, S35).
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'sessions' })).toEqual(ok(undefined))
+    expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'sessions' }])
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'favorites' })).toEqual(ok(undefined))
+    // A value that is not a tab is refused, and the message names the four tabs.
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'nope' })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: "'sidebarLens' must be 'files', 'focus', 'favorites' or 'sessions'" }) })
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 1 })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'topics' })).toEqual(bad('BAD_REQUEST')) // the retired lens (YAZ-2290)
     expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'favorites' }])
@@ -405,6 +409,86 @@ describe('registerWindowIpc', () => {
       expect(await registered(CONTRACT.window.removeSet.channel)({ sender }, 'nope')).toEqual(ok(undefined)) // an unknown id is a no-op
       expect(await registered(CONTRACT.window.removeSet.channel)({ sender }, 5)).toEqual(bad('BAD_REQUEST'))
       expect(store.get().vaultSets).toEqual([{ ...a, name: 'Alpha' }])
+    })
+  })
+
+  describe('sessions (YAZ-3147 D2, D3)', () => {
+    const save = (name: unknown, replaceId?: unknown, from: unknown = sender) => registered(CONTRACT.window.saveSession.channel)({ sender: from }, name, replaceId)
+
+    it('window:save-session saves the CALLING window\'s own tabs: the strip with its copies and names, else `tabs` with `file` active; the vaults that hold a tab; null when the store refuses; BAD_REQUEST for junk', async () => {
+      // No strip: `tabs`, with `file` as the active tab.
+      store.upsertWindow({ ...entry, roots: ['/v', '/w', '/x'], file: '/w/b.md', tabs: ['/v/a.md', '/w/b.md'] })
+      const first = await save('  Work  ')
+      expect(first).toEqual(ok(expect.any(String)))
+      expect(store.get().sessions).toEqual([{ id: (first as { value: string }).value, name: 'Work', tabs: [{ path: '/v/a.md' }, { path: '/w/b.md', active: true }], roots: ['/v', '/w'], lastUsed: expect.any(Number) }])
+      // A strip (YAZ-3057): two copies, a display name, the active copy (S5).
+      store.upsertWindow({ ...entry, file: '/v/a.md', tabs: ['/v/a.md'], tabStrip: [{ path: '/v/a.md', name: 'One' }, { path: '/v/a.md', active: true }] })
+      const second = (await save('Copies')) as { value: string }
+      expect(store.get().sessions[0]).toEqual({ id: second.value, name: 'Copies', tabs: [{ path: '/v/a.md', name: 'One' }, { path: '/v/a.md', active: true }], roots: ['/v'], lastUsed: expect.any(Number) })
+      // Update (S28): the id and name stay, the tabs are the window's now.
+      store.upsertWindow(entry)
+      expect(await save('ignored', (first as { value: string }).value)).toEqual(first)
+      expect(store.get().sessions.map((s) => [s.name, s.tabs])).toEqual([['Work', [{ path: '/v/a.md', active: true }]], ['Copies', [{ path: '/v/a.md', name: 'One' }, { path: '/v/a.md', active: true }]]])
+
+      // Refused: no tab (S4, S29), an unknown id, 30 sessions for a new one (S7) — an update at the cap still saves.
+      store.upsertWindow({ ...entry, file: null, tabs: [] })
+      expect(await save('Empty')).toEqual(ok(null))
+      expect(await save('Work', second.value)).toEqual(ok(null))
+      store.upsertWindow(entry)
+      expect(await save('X', 'nope')).toEqual(ok(null))
+      for (let i = 2; i < MAX_SESSIONS; i++) store.saveSession(`S${i}`, [{ path: '/v/a.md' }], ['/v'])
+      expect(await save('The 31st')).toEqual(ok(null))
+      expect(await save('', second.value)).toEqual(ok(second.value))
+
+      const before = store.get()
+      for (const [name, id, from] of [[5, undefined, sender], [undefined, undefined, sender], ['Ok', 5, sender], ['Mine', undefined, stranger]] as const) expect(await save(name, id, from)).toEqual(bad('BAD_REQUEST'))
+      expect(store.get()).toBe(before)
+    })
+
+    it('window:restore-session answers the tabs whose file exists, the vaults whose folder exists, one missing path per gone tab (S20, S23), and touches the session (S26); an unknown id opens nothing', async () => {
+      const v = path.join(dir, 'v')
+      const w = path.join(dir, 'w')
+      await mkdir(v)
+      await writeFile(path.join(v, 'a.md'), 'a')
+      const tabs = [{ path: path.join(v, 'a.md'), name: 'A' }, { path: path.join(v, 'gone.md'), active: true as const }, { path: path.join(v, 'gone.md') }, { path: path.join(w, 'b.md') }]
+      const s = store.saveSession('Mixed', tabs, [v, w], undefined, 1)
+      store.saveSession('Later', [{ path: '/v/a.md' }], ['/v'], undefined, 2)
+      if (s === null) throw new Error('the store refused the session')
+      expect(store.get().sessions[0].name).toBe('Later')
+      const restore = registered(CONTRACT.window.restoreSession.channel)
+      expect(await restore({ sender: stranger }, s.id)).toEqual(ok({ tabs: [{ path: path.join(v, 'a.md'), name: 'A' }], roots: [v], missing: [path.join(v, 'gone.md'), path.join(v, 'gone.md'), path.join(w, 'b.md')] }))
+      expect(store.get().sessions[0]).toMatchObject({ id: s.id, tabs })
+      expect(store.get().sessions[0].lastUsed).toBeGreaterThan(2)
+      const before = store.get()
+      expect(await restore({ sender }, 'nope')).toEqual(ok({ tabs: [], roots: [], missing: [] }))
+      expect(await restore({ sender }, 5)).toEqual(bad('BAD_REQUEST'))
+      expect(store.get()).toBe(before)
+    })
+
+    it('window:rename-session, window:set-session-tabs (checked as a strip) and window:remove-session act by id', async () => {
+      const a = store.saveSession('A', [{ path: '/v/a.md' }, { path: '/v/b.md', active: true }], ['/v'], undefined, 1)
+      if (a === null) throw new Error('the store refused the session')
+      const rename = registered(CONTRACT.window.renameSession.channel)
+      expect(await rename({ sender }, a.id, '  Alpha ')).toEqual(ok(true))
+      expect(await rename({ sender }, a.id, '   ')).toEqual(ok(false))
+      expect(await rename({ sender }, 'nope', 'B')).toEqual(ok(false))
+      expect(await rename({ sender }, a.id, 5)).toEqual(bad('BAD_REQUEST'))
+      expect(store.get().sessions[0].name).toBe('Alpha')
+
+      const setTabs = registered(CONTRACT.window.setSessionTabs.channel)
+      expect(await setTabs({ sender }, a.id, [{ path: '/v/b.md', active: true }])).toEqual(ok(true))
+      expect(store.get().sessions[0].tabs).toEqual([{ path: '/v/b.md', active: true }])
+      expect(await setTabs({ sender }, 'nope', [])).toEqual(ok(false))
+      for (const junk of [undefined, 'tabs', [{ path: 'rel.md' }], [5]]) expect(await setTabs({ sender }, a.id, junk)).toEqual(bad('BAD_REQUEST'))
+      expect(await setTabs({ sender }, 5, [])).toEqual(bad('BAD_REQUEST'))
+      expect(store.get().sessions[0].tabs).toEqual([{ path: '/v/b.md', active: true }])
+
+      const remove = registered(CONTRACT.window.removeSession.channel)
+      expect(await remove({ sender }, 'nope')).toEqual(ok(undefined))
+      expect(await remove({ sender }, 5)).toEqual(bad('BAD_REQUEST'))
+      expect(store.get().sessions).toHaveLength(1)
+      expect(await remove({ sender }, a.id)).toEqual(ok(undefined))
+      expect(store.get().sessions).toEqual([])
     })
   })
 

@@ -143,6 +143,7 @@ export type TabsAction =
   | { type: 'cycle'; dir: 1 | -1 } // ⌃Tab / ⌃⇧Tab: wraparound, plain left→right order
   | { type: 'back' } // the active tab steps back through its OWN stack (YAZ-721)
   | { type: 'forward' } // …and forward again, as far as the stack was walked back
+  | { type: 'open-stored'; tabs: readonly StoredTab[] } // "Restore session" (YAZ-3147 D3): the pages that are not open join the END, in ONE change; an open page opens no copy
   | { type: 'reset'; tabs: readonly StoredTab[]; active: string | null } // boot + root switch: the STORED tabs and file; replace wholesale with new ids
   | { type: 'rename'; oldPath: string; newPath: string } // in-app rename (Links E1, GRO-2194): every tab of the file follows it in place (S17)
   | { type: 'rename-dir'; oldPath: string; newPath: string } // in-app FOLDER rename (Links E1b, GRO-2241): the folder's own tab and every tab under it follow in place
@@ -383,6 +384,29 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       const i = s.tabs.findIndex((t) => t.id === s.active)
       return withActive(s, s.tabs[(i + a.dir + s.tabs.length) % s.tabs.length].id)
     }
+    case 'open-stored': {
+      // A restore (YAZ-3147 D3, S16–S19, S27): each page that no tab shows joins the end in the saved
+      // order, with its copies and display names, as kept tabs. A page that is open opens no copy (S18,
+      // S19): the check is against the strip as it was, so two saved copies of a closed page both open.
+      const open = new Set(s.tabs.map((t) => t.path))
+      const added: Tab[] = []
+      let marked: string | null = null
+      for (const t of a.tabs) {
+        if (open.has(t.path)) continue
+        const tab = t.name === undefined ? newTab(t.path) : { ...newTab(t.path), name: t.name }
+        if (t.active === true && marked === null) marked = tab.id
+        added.push(tab)
+      }
+      // The session's active tab is active: its new copy, else the open tab of its page (S18). With no
+      // mark, an empty window takes the first new tab (a strip with tabs needs an active one), and a window with tabs keeps its own.
+      const page = a.tabs.find((t) => t.active === true)?.path
+      const active = marked ?? (page === undefined ? null : (tabOf(s, page)?.id ?? null)) ?? (s.active === null ? (added[0]?.id ?? null) : null)
+      // A page of the session that shows in the preview tab is kept now: the next sidebar click must not replace it.
+      const kept = s.preview !== null && a.tabs.some((t) => t.path === tabById(s, s.preview)?.path) ? null : s.preview
+      if (added.length === 0 && kept === s.preview && (active === null || (active === s.active && !s.blank))) return s
+      const grown: TabsState = { ...s, tabs: [...s.tabs, ...added], preview: kept }
+      return active === null ? grown : withActive(grown, active)
+    }
     case 'reset': {
       if (a.active === null) return s.tabs.length === 0 && s.active === null && s.mounted.length === 0 && !s.blank ? s : EMPTY
       // An active file missing from the list is PREPENDED — main's own normalization order. Every tab gets a new id.
@@ -616,6 +640,12 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
         || Object.values(s.rightHistory).some((history) => history.entries.some(gone))
       return main === s && !rightReferenced ? s : repairRightPaths(s, main, map)
     }
+    case 'open-stored': {
+      // A page on the right panel is open too (one owner per file, YAZ-2940 S15): it stays there and opens no main tab (YAZ-3147 D3).
+      const tabs = a.tabs.filter((t) => !s.rightPanel.items.includes(t.path))
+      const main = tabsReducer(s, tabs.length === a.tabs.length ? a : { type: 'open-stored', tabs })
+      return main === s ? s : withMain(s, main)
+    }
     case 'open-current':
     case 'navigate':
     case 'open-new':
@@ -696,6 +726,8 @@ export interface UseWorkspace extends WorkspaceState {
   close: (id: string) => void
   /** The tab board's closes of several tabs (YAZ-2648 D9, D15), by id: each as `close`, and ONE identity write for all of them. */
   closeMany: (ids: readonly string[]) => void
+  /** "Restore session" (YAZ-3147 D3): the stored tabs whose page is not open join the end, ONE change and ONE identity write (S27). */
+  openStored: (tabs: readonly StoredTab[]) => void
   /** Drag-to-reorder (I3): the tab at `from` lands at final index `to`; activation untouched. */
   move: (from: number, to: number) => void
   /** ⌘W: closes the active tab — the blank tab alone, while it shows (YAZ-2655 S75); false when there is none (App escalates to `closeSelf`). */
@@ -801,6 +833,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
   const close = useCallback((id: string) => dispatch({ type: 'close', id }), [dispatch])
   const closeMany = useCallback((ids: readonly string[]) => dispatch({ type: 'close-many', ids }), [dispatch])
+  const openStored = useCallback((tabs: readonly StoredTab[]) => dispatch({ type: 'open-stored', tabs }), [dispatch])
   const move = useCallback((from: number, to: number) => dispatch({ type: 'move', from, to }), [dispatch])
   // The blank tab is in no stored field (YAZ-2655 D10): showing it and closing it mirror nothing.
   const newTab = useCallback(() => dispatch({ type: 'new-tab' }, { mirror: false }), [dispatch])
@@ -857,7 +890,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   return {
     ...state,
     file: activePath(state),
-    openCurrent, navigate, openKept, duplicate, take, keep, setName, newTab, closeBlank, openBackground, activate, close, closeMany, move, closeActive, next, prev, back, forward, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
+    openCurrent, navigate, openKept, duplicate, take, keep, setName, newTab, closeBlank, openBackground, activate, close, closeMany, openStored, move, closeActive, next, prev, back, forward, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,
     navigateRight: navigateRightCallback,

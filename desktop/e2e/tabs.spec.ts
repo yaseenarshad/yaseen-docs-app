@@ -250,7 +250,7 @@ test('step 4c — "Kill all tabs" (YAZ-2739): the grid button\'s menu and the bo
   const sheet = dup.locator('.confirm')
   const ASK = 'Kill all 5 tabs? Your text is saved. The tabs do not come back.'
 
-  // A right-click on the grid button: a menu of one item. Cancel on its sheet closes nothing.
+  // A right-click on the grid button: the two session saves (YAZ-3147 D5), then this item. Cancel on its sheet closes nothing.
   await gridButton(dup).click({ button: 'right' })
   await dup.locator('.ctx-menu').getByRole('menuitem', { name: 'Kill all tabs', exact: true }).click()
   await expect(sheet.locator('.confirm__text')).toHaveText(ASK)
