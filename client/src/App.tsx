@@ -58,6 +58,7 @@ import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import type { PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
 import { tabById, tabOf, useWorkspace } from './workspace/useWorkspace'
+import { restoreSession } from './workspace/restoreSession'
 import { Welcome } from './Welcome'
 
 /** The "What's new" sheet (YAZ-2976 D5) is its own chunk: launch never parses it, and the first open fetches it. */
@@ -141,7 +142,7 @@ export function App() {
   // window's `file`: title, URL hash and the sidebar highlight all follow it. Each tab has its own
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
-    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, move: moveTab,
+    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
@@ -498,12 +499,16 @@ export function App() {
    * (S6), and the ninth (R7). The probe is the tree feed's read, so the sidebar's first tree of the
    * vault is that walk's. Resolves whether the vault was added.
    */
-  const addVault = useCallback(async (folder: string): Promise<boolean> => {
+  const addVault = useCallback(async (folder: string, quiet = false): Promise<boolean> => {
     const path = stripSlash(folder)
     const name = storage.vaultName(path)
-    /** Why the window as it stands cannot take the folder; asked again after the probe, which waits. */
+    /**
+     * Why the window as it stands cannot take the folder; asked again after the probe, which waits.
+     * It reads the identity, not the last render: a restore adds vaults one after the other, before
+     * React renders again (YAZ-3147 D3).
+     */
     const refusal = (): string | null => {
-      const now = live.current.roots
+      const now = storage.getRoots()
       if (now.some((vault) => stripSlash(vault) === path)) return `${name} is already in this window`
       const holder = rootOfPath(now, path)
       if (holder !== null) return `Can't add ${name}: it is inside ${storage.vaultName(holder)}`
@@ -521,18 +526,24 @@ export function App() {
           refused = `Can't add ${name}: folder not found`
         }
       }
-      refused ??= refusal() ?? (live.current.roots.length >= MAX_WINDOW_ROOTS ? `A window holds ${MAX_WINDOW_ROOTS} vaults at most` : null)
+      refused ??= refusal() ?? (storage.getRoots().length >= MAX_WINDOW_ROOTS ? `A window holds ${MAX_WINDOW_ROOTS} vaults at most` : null)
     }
     if (refused !== null) {
-      notify(refused)
+      // A restore says it in its own one notice (YAZ-3147 D3): the tabs of the vault stay closed.
+      if (!quiet) notify(refused)
       return false
     }
-    storage.setRoots([...live.current.roots, path])
+    storage.setRoots([...storage.getRoots(), path])
     storage.pushRecentRoot(path)
     setRoots(storage.getRoots())
     setVaultOpen(path, true)
     return true
   }, [notify, setVaultOpen])
+  /** "Restore session" (YAZ-3147 D3): the session's tabs join this window's strip; `workspace/restoreSession.ts` has the rules. */
+  const restoreSavedSession = useCallback((id: string): void => {
+    void restoreSession(id, { restore: api.window.restoreSession, roots: storage.getRoots, addVault: (root) => addVault(root, true), openStored, notify })
+      .catch((err: unknown) => console.error('[sessions] restore failed:', err))
+  }, [addVault, openStored, notify])
   // The flyout's "Open folder…" (S3): the system picker, and the picked folder is added. File ›
   // Open Folder… stays the picker above: its folder opens beside (S62).
   const { pick: pickVault } = usePickFolder({ onPicked: addVault })
