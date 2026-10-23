@@ -213,9 +213,8 @@ test('step 4 — a double click selects a word and a triple click the line in pe
   await expect.poll(selection).toEqual([0, 'styled-label'.length])
   await shoot(win, 'yaseendraw-05-word-selected')
 
-  // Leave the editor, then the modal. Opening the text editor already marks the modal dirty, clicks
-  // or not, so ✕ asks first: Discard. The selection wrote nothing, so the sidecar has not moved.
-  // (After the editor closes, the canvas keeps the Esc, so ✕ closes the modal.)
+  // Leave the editor with Esc, the modal with ✕ (the canvas keeps a second Esc). Opening the editor
+  // already marks the modal dirty, so ✕ asks first: Discard. The selection wrote nothing to disk.
   await win.keyboard.press('Escape')
   await expect(editor).toHaveCount(0)
   await modal(win).getByRole('button', { name: 'Close drawing' }).click()
