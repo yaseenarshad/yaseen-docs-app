@@ -315,4 +315,25 @@ test.describe('the bullet thread follows the active match (YAZ-3166)', () => {
     await expect(bar(win)).toHaveCount(0)
     await expect(stopLine(win)).toHaveText('The first zebra line')
   })
+
+  test("a click on the caret's own spot gives the thread back, though the caret does not move (YAZ-3200)", async () => {
+    // The caret at the END of a top-level line: its thread is the one glyph, with no stop.
+    const target = line(win, 'Gamma caret line')
+    const box = (await target.boundingBox())!
+    const atEnd = { position: { x: box.width - 4, y: box.height / 2 } }
+    await target.click(atEnd)
+    await expect(stop(win)).toHaveCount(0)
+
+    await win.keyboard.press('Meta+f')
+    await input(win).fill('zebra')
+    await expect(counter(win)).toHaveText('1 of 2')
+    await expect(stopLine(win)).toHaveText('The first zebra line')
+
+    // The same click again: ProseMirror sends no transaction, and the bar stays open.
+    await target.click(atEnd)
+    await expect(counter(win)).toHaveText('1 of 2')
+    await expect(stop(win)).toHaveCount(0)
+    await expect(win.locator('.outline-thread-node')).toHaveCount(1)
+    await win.keyboard.press('Escape')
+  })
 })

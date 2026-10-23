@@ -50,7 +50,11 @@ interface FindState {
   revealed: ReadonlySet<number>
   /** The same, for heading sections (YAZ-1140) — kept apart: the two plugins own different positions. */
   revealedHeadings: ReadonlySet<number>
-  /** The thread points at the active match (YAZ-3166): true after a query or a step, false once the caret moves or the doc is edited. */
+  /**
+   * The thread points at the active match (YAZ-3166): true after a query or a step. False once the
+   * caret moves, the doc is edited, or a click or a key lands in the note (YAZ-3200). A doc change
+   * that another plugin appends to find's own transaction keeps it.
+   */
   onMatch: boolean
 }
 
@@ -59,6 +63,8 @@ type FindMeta =
   | { type: 'step'; delta: 1 | -1 }
   | { type: 'revealed'; revealed: ReadonlySet<number>; revealedHeadings: ReadonlySet<number> }
   | { type: 'clear' }
+  /** A click or a key in the note that sent no transaction of its own: the thread goes back to the caret (YAZ-3200). */
+  | { type: 'release' }
 
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const findKey = new PluginKey<FindState>('mdapp-find-in-page')
@@ -233,6 +239,19 @@ const createController = (view: EditorView): FindController => {
   }
 }
 
+/** A modifier alone is not a key in the note: ⌘ on its way to a shortcut must not move the thread. */
+const MODIFIER_KEYS = new Set(['Shift', 'Meta', 'Alt', 'Control', 'CapsLock'])
+
+/**
+ * A click or a key in the note gives the thread back to the caret (YAZ-3200), also when the caret
+ * stays where it is and ProseMirror sends no transaction: a click on the caret's own spot, or an
+ * arrow key at the end of the doc. A real caret move or edit clears it in `apply` anyway.
+ */
+const releaseThread = (view: EditorView): false => {
+  if (findKey.getState(view.state)?.onMatch === true) view.dispatch(view.state.tr.setMeta(findKey, { type: 'release' } satisfies FindMeta))
+  return false
+}
+
 const findPlugin = (channel: FindChannel) =>
   $prose(
     () =>
@@ -256,7 +275,8 @@ const findPlugin = (channel: FindChannel) =>
             // An APPENDED doc change keeps it too: a real edit is the root transaction and clears it first, but
             // Milkdown's trailing paragraph can ride on find's own query, the first transaction after mount.
             const edited = transaction.docChanged && transaction.getMeta('appendedTransaction') === undefined
-            const onMatch = meta?.type === 'query' || meta?.type === 'step' || (previous.onMatch && !transaction.selectionSet && !edited)
+            const onMatch =
+              meta?.type === 'query' || meta?.type === 'step' || (meta?.type !== 'release' && previous.onMatch && !transaction.selectionSet && !edited)
             if (
               meta === undefined &&
               !recompute &&
@@ -270,6 +290,10 @@ const findPlugin = (channel: FindChannel) =>
           },
         },
         props: {
+          handleDOMEvents: {
+            mousedown: (view) => releaseThread(view),
+            keydown: (view, event) => (MODIFIER_KEYS.has(event.key) ? false : releaseThread(view)),
+          },
           decorations: (state) => {
             const { matches, activeIndex } = findKey.getState(state) ?? EMPTY
             if (matches.length === 0) return DecorationSet.empty

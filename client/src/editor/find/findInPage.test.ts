@@ -202,6 +202,23 @@ describe('the thread anchor', () => {
     expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'apple one'))
   })
 
+  it('a click or a key in the note gives it back, also when the caret does not move (YAZ-3200)', async () => {
+    const { view, channel } = await mountFind('apple one apple two')
+    channel.open()
+    channel.setQuery('apple')
+    expect(findThreadAnchor(view.state)).toBe(posOfText(view.state.doc, 'apple one'))
+    // A click on the caret's own spot moves nothing, so no selection reaches the find state.
+    view.dom.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    expect(findThreadAnchor(view.state)).toBeNull()
+    channel.next()
+    expect(findThreadAnchor(view.state)).toBe(posOfText(view.state.doc, 'apple two'))
+    // A modifier alone is not a key in the note; an arrow key at the end of the doc moves nothing.
+    view.dom.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Shift' }))
+    expect(findThreadAnchor(view.state)).toBe(posOfText(view.state.doc, 'apple two'))
+    view.dom.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }))
+    expect(findThreadAnchor(view.state)).toBeNull()
+  })
+
   it('stays on the match through the reveal of a collapsed fold, and an edit gives it back', async () => {
     // The query is the first transaction: Milkdown's trailing paragraph (an appended doc change) rides on it.
     const { root, view, channel } = await mountFind('* Parent\n  * hidden apple\n* visible banana\n', {
