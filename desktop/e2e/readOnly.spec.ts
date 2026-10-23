@@ -377,7 +377,9 @@ test('step 3f — YAZ-3140: after a click or a drag on a read-only TITLE the pag
   await fileRow(win, 'Locked outline').click()
   expect(await chord('c')).toBe(true)
   expect((await clip())?.op).toBe('copy')
-  expect(await chord('v')).toBe(true)
+  // YAZ-3146: the window learns of the copy a moment after ⌘C. A ⌘V before that is a no-op (it pastes
+  // nothing), so the press is repeated until the window takes it — exactly one paste, as the poll stops there.
+  await expect.poll(() => chord('v')).toBe(true)
   const copy = path.join(vault, 'Locked outline copy.md')
   await expect.poll(async () => (await vaultFiles()).includes('Locked outline copy.md')).toBe(true)
   await rm(copy)
@@ -404,7 +406,7 @@ test('step 3g — YAZ-3145: the last click decides — after a click in a note, 
     await blankSidebar(win)
     expect(await win.evaluate(() => document.activeElement === document.body)).toBe(true)
     expect(await win.evaluate(() => document.getSelection()?.anchorNode?.parentElement?.closest('[data-page="note"]') != null)).toBe(true)
-    expect(await chord('v')).toBe(true)
+    await expect.poll(() => chord('v')).toBe(true) // YAZ-3146: see step 3f
     await expect.poll(async () => (await vaultFiles()).includes('Ideas copy.md')).toBe(true)
     await rm(path.join(vault, 'Ideas copy.md'))
     await expect.poll(vaultFiles).toEqual(before)
