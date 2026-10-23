@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createBlockHandleMenu, parseNumberField, renderMenu, type MenuNumberField, type MenuRow, type RowProvider } from './blockHandleMenu'
+import { createBlockHandleMenu, parseNumberField, renderMenu, type MenuChoiceField, type MenuNumberField, type MenuRow, type RowProvider } from './blockHandleMenu'
 import { features } from './featureConfig'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
@@ -183,47 +183,109 @@ const field = (over: Partial<MenuNumberField> = {}): MenuNumberField => ({
   ...over,
 })
 
-describe('number fields (YAZ-3164 D3)', () => {
-  it('draws the zoom menu’s box and presets after a divider, labels the default, and presses the current value', async () => {
-    const { view, item } = await mount(() => [{ label: 'One', run: vi.fn() }, field({ value: 10 })])
+/** A choice field like the line's style (YAZ-3164 D7); `run` is a spy. */
+const choice = (over: Partial<MenuChoiceField> = {}): MenuChoiceField => ({
+  kind: 'choice',
+  label: 'Kind',
+  value: 'a',
+  choices: [
+    { value: 'a', label: 'Alpha', sample: 'sample-a' },
+    { value: 'b', label: 'Bravo' },
+  ],
+  fallback: 'a',
+  run: vi.fn(),
+  ...over,
+})
+
+const pickers = (view: EditorView) => [...popupOf(view)!.querySelectorAll<HTMLElement>('.block-menu-picker')]
+const valueOf = (picker: HTMLElement) => picker.querySelector<HTMLButtonElement>('.block-menu-picker__value')!
+const panelOf = (picker: HTMLElement) => picker.querySelector<HTMLElement>('.block-menu-picker__panel')!
+const enter = (box: HTMLInputElement) => box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+
+describe('pickers (YAZ-3164 D3, condensed)', () => {
+  it('S80: each picker is one row — the name left, the value right — every one closed, and nothing takes the focus', async () => {
+    const { view, item } = await mount(() => [{ label: 'One', run: vi.fn() }, field({ value: 10 }), choice({ value: 'b' })])
+    const before = document.activeElement
     contextmenu(item)
     const popup = popupOf(view)!
-    expect([...popup.children].map((el) => el.className)).toEqual(['ctx-menu__item', 'document-zoom__divider', 'document-zoom__custom', 'document-zoom__divider', 'document-zoom__presets'])
-    const label = popup.querySelector('label')!
-    const box = popup.querySelector('input')!
-    expect(label.textContent).toBe('Size')
-    expect(label.htmlFor).toBe(box.id)
+    expect([...popup.children].map((el) => el.className)).toEqual(['ctx-menu__item', 'document-zoom__divider', 'block-menu-picker', 'block-menu-picker'])
+    const [size, kind] = pickers(view)
+    expect(size.querySelector('.block-menu-picker__label')?.textContent).toBe('Size')
+    expect(valueOf(size).textContent).toBe('10% ▾')
+    expect(valueOf(kind).textContent).toBe('Bravo ▾')
+    for (const picker of [size, kind]) {
+      expect(panelOf(picker).hidden).toBe(true)
+      expect(valueOf(picker).getAttribute('aria-expanded')).toBe('false')
+      expect(valueOf(picker).getAttribute('aria-controls')).toBe(panelOf(picker).id)
+    }
+    expect(document.activeElement).toBe(before)
+  })
+
+  it('S81: a click on a value opens that picker — the box focused and selected — and closes any other', async () => {
+    const { view, item } = await mount(() => [field({ value: 10 }), choice()])
+    contextmenu(item)
+    const [size, kind] = pickers(view)
+    valueOf(kind).click()
+    expect(panelOf(kind).hidden).toBe(false)
+    expect(valueOf(kind).getAttribute('aria-expanded')).toBe('true')
+    valueOf(size).click()
+    expect(panelOf(kind).hidden).toBe(true)
+    expect(valueOf(kind).getAttribute('aria-expanded')).toBe('false')
+    expect(panelOf(size).hidden).toBe(false)
+    const box = panelOf(size).querySelector('input')!
+    expect(document.activeElement).toBe(box)
     expect(box.value).toBe('10%')
-    expect(box.inputMode).toBe('numeric')
-    const buttons = [...popup.querySelectorAll('.document-zoom__presets button')]
+    expect([box.selectionStart, box.selectionEnd]).toEqual([0, 3])
+    expect(box.getAttribute('aria-label')).toBe('Size')
+  })
+
+  it('S82: a second click on the open value closes the picker', async () => {
+    const { view, item } = await mount(() => [field()])
+    contextmenu(item)
+    const [size] = pickers(view)
+    valueOf(size).click()
+    valueOf(size).click()
+    expect(panelOf(size).hidden).toBe(true)
+    expect(valueOf(size).getAttribute('aria-expanded')).toBe('false')
+    expect(popupOf(view)).not.toBeNull()
+  })
+
+  it('a number panel is the zoom menu’s: the box, a divider, the presets with the default labelled and the current one pressed', async () => {
+    const { view, item } = await mount(() => [field({ value: 10 })])
+    contextmenu(item)
+    const panel = panelOf(pickers(view)[0])
+    expect([...panel.children].map((el) => el.className)).toEqual(['document-zoom__custom', 'document-zoom__divider', 'document-zoom__presets'])
+    const buttons = [...panel.querySelectorAll('.document-zoom__presets button')]
     expect(buttons.map((b) => b.firstElementChild?.textContent)).toEqual(['10%', '50% (default)', '100%'])
     expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false'])
     expect(buttons.map((b) => b.lastElementChild?.textContent)).toEqual(['✓', '', ''])
   })
 
-  it('a menu that starts with a field has no divider first, and the first box takes the focus with its text selected', async () => {
-    const { view, item } = await mount(() => [field(), field({ label: 'Other' })])
+  it('a choice panel lists the choices with their samples, the default labelled and the current one pressed', async () => {
+    const { view, item } = await mount(() => [choice({ value: 'b' })])
     contextmenu(item)
-    const popup = popupOf(view)!
-    expect(popup.firstElementChild?.className).toBe('document-zoom__custom')
-    const [first] = popup.querySelectorAll('input')
-    expect(document.activeElement).toBe(first)
-    expect([first.selectionStart, first.selectionEnd]).toEqual([0, 3])
+    const buttons = [...panelOf(pickers(view)[0]).querySelectorAll('.document-zoom__presets button')]
+    expect(buttons.map((b) => b.firstElementChild?.textContent)).toEqual(['Alpha (default)', 'Bravo'])
+    expect(buttons[0].querySelector('.block-menu-picker__sample')?.className).toBe('block-menu-picker__sample sample-a')
+    expect(buttons[1].querySelector('.block-menu-picker__sample')).toBeNull()
+    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
   })
 
-  it('Enter runs a new valid value once and closes; the current value closes without running', async () => {
+  it('S83: Enter runs a new valid value once and closes the whole menu; the current value closes without running', async () => {
     const run = vi.fn()
     const { view, item } = await mount(() => [field({ run })])
     contextmenu(item)
+    valueOf(pickers(view)[0]).click()
     let box = popupOf(view)!.querySelector('input')!
     box.value = '60'
-    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    enter(box)
     expect(run).toHaveBeenCalledExactlyOnceWith(60)
     expect(popupOf(view)).toBeNull()
     contextmenu(item)
+    valueOf(pickers(view)[0]).click()
     box = popupOf(view)!.querySelector('input')!
     box.value = '50%'
-    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    enter(box)
     expect(run).toHaveBeenCalledTimes(1)
     expect(popupOf(view)).toBeNull()
   })
@@ -232,9 +294,10 @@ describe('number fields (YAZ-3164 D3)', () => {
     const run = vi.fn()
     const { view, item } = await mount(() => [field({ run })])
     contextmenu(item)
+    valueOf(pickers(view)[0]).click()
     const box = popupOf(view)!.querySelector('input')!
     box.value = 'abc'
-    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    enter(box)
     expect(run).not.toHaveBeenCalled()
     expect(popupOf(view)).not.toBeNull()
     expect(box.getAttribute('aria-invalid')).toBe('true')
@@ -244,34 +307,77 @@ describe('number fields (YAZ-3164 D3)', () => {
     expect(popupOf(view)!.querySelector('.document-zoom__error')).toBeNull()
   })
 
-  it('a preset click runs and closes; a click on the current preset only closes', async () => {
-    const run = vi.fn()
-    const { view, item } = await mount(() => [field({ run })])
+  it('S83: a preset or a choice runs and closes the whole menu; the current one only closes', async () => {
+    const runSize = vi.fn()
+    const runKind = vi.fn()
+    const { view, item } = await mount(() => [field({ run: runSize }), choice({ run: runKind })])
     contextmenu(item)
-    popupOf(view)!.querySelectorAll<HTMLButtonElement>('.document-zoom__presets button')[2].click()
-    expect(run).toHaveBeenCalledExactlyOnceWith(100)
+    valueOf(pickers(view)[0]).click()
+    panelOf(pickers(view)[0]).querySelectorAll<HTMLButtonElement>('button')[2].click()
+    expect(runSize).toHaveBeenCalledExactlyOnceWith(100)
     expect(popupOf(view)).toBeNull()
     contextmenu(item)
-    popupOf(view)!.querySelectorAll<HTMLButtonElement>('.document-zoom__presets button')[1].click()
-    expect(run).toHaveBeenCalledTimes(1)
+    valueOf(pickers(view)[1]).click()
+    panelOf(pickers(view)[1]).querySelectorAll<HTMLButtonElement>('button')[1].click()
+    expect(runKind).toHaveBeenCalledExactlyOnceWith('b')
+    expect(popupOf(view)).toBeNull()
+    contextmenu(item)
+    panelOf(pickers(view)[1]).querySelectorAll<HTMLButtonElement>('button')[0].click()
+    expect(runKind).toHaveBeenCalledTimes(1)
     expect(popupOf(view)).toBeNull()
   })
 
-  it('a click inside the box keeps the menu open; a click away closes it with no run', async () => {
+  it('S84: Tab from the editor goes to the first value button (Shift-Tab to the last); Enter on it opens the picker', async () => {
+    const { view, item } = await mount(() => [{ label: 'One', run: vi.fn() }, field(), choice()])
+    view.focus()
+    contextmenu(item)
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    view.dom.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(valueOf(pickers(view)[0]))
+    view.focus()
+    view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(valueOf(pickers(view)[1]))
+    // A focused button's Enter and Space are its click (the browser's own); the picker opens.
+    valueOf(pickers(view)[0]).click()
+    expect(panelOf(pickers(view)[0]).hidden).toBe(false)
+    // Inside the menu Tab is the browser's: nothing here takes it.
+    const inside = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    popupOf(view)!.querySelector('input')!.dispatchEvent(inside)
+    expect(inside.defaultPrevented).toBe(false)
+  })
+
+  it('Tab with a menu of rows only is left to the editor: nothing in the menu takes the focus', async () => {
+    const { view, item } = await mount(twoRows)
+    view.focus()
+    contextmenu(item)
+    let reached = false
+    const listener = (e: KeyboardEvent) => (reached = e.key === 'Tab')
+    view.dom.addEventListener('keydown', listener)
+    view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    view.dom.removeEventListener('keydown', listener)
+    expect(reached).toBe(true)
+    expect(document.activeElement?.closest('.ctx-menu')).toBeFalsy()
+  })
+
+  it('a click inside a panel keeps the menu open; a click away closes it with no run, and the focus goes back to the editor', async () => {
     const run = vi.fn()
     const { view, item } = await mount(() => [field({ run })])
     contextmenu(item)
+    valueOf(pickers(view)[0]).click()
     popupOf(view)!.querySelector('input')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     expect(popupOf(view)).not.toBeNull()
-    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    window.dispatchEvent(new Event('blur'))
     expect(popupOf(view)).toBeNull()
     expect(run).not.toHaveBeenCalled()
+    expect(view.dom.contains(document.activeElement)).toBe(true)
   })
 
   it('rows alone take no focus (the id link’s menu, YAZ-2293, is unchanged)', () => {
     const before = document.activeElement
     const popup = renderMenu(document.body, [{ label: 'Copy ID', run: vi.fn() }], () => {})
     expect(popup.querySelector('input')).toBeNull()
+    expect(popup.querySelector('.document-zoom__divider')).toBeNull()
     expect(document.activeElement).toBe(before)
     popup.remove()
   })

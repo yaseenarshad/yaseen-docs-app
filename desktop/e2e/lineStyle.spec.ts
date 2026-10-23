@@ -8,11 +8,14 @@
  * of the wrapper's real on-screen width; and the bytes are what the real autosave writes.
  *
  *  1. A plain line draws 15px tall (6 + 3 + 6, the default 3px) and full width.
- *  2. Right-click its handle: "Number children" (disabled), "Line darkness", "Line thickness"; the
- *     darkness box has the focus. Type 80 + Enter → `<!-- line: darkness 80% -->` on disk.
- *  3. The "6px" preset → `darkness 80%, thickness 6px`, and the line is 18px tall.
- *  4. Click the line, drag its end handle to about 40% → `… length 40% -->` (±2).
- *  5. ⌘Z → the length part leaves the comment.
+ *  2. Right-click its handle: "Number children" (disabled), then one closed row each for "Line
+ *     darkness", "Line thickness" and "Line style", nothing focused. Click "50% ▾": the box has the
+ *     focus. Type 80 + Enter → `<!-- line: darkness 80% -->` on disk.
+ *  3. "3px ▾", then the "6px" preset → `darkness 80%, thickness 6px`, and the line is 18px tall.
+ *  4. "Solid ▾", then "Dashed" → `… style dashed -->`, drawn as dashes (a background image); dark
+ *     mode keeps the dashes in the text colour.
+ *  5. Click the line, drag its end handle to about 40% → `… length 40% -->` (±2).
+ *  6. ⌘Z → the length part leaves the comment.
  *
  * Same harness as imageRender.spec.ts: temp `--user-data-dir`, a COPY of the fixture vault, one
  * serial run, `lineStyle-` screenshots. Hidden window (the harness default).
@@ -39,8 +42,10 @@ const readNote = () => readFile(path.join(vault, NOTE), 'utf8')
 const lineView = (w: Page) => editorOf(w).locator('.line-view')
 const lineHr = (w: Page) => lineView(w).locator('hr')
 const menu = (w: Page) => w.locator('.ctx-menu--editor')
-const boxes = (w: Page) => menu(w).locator('.document-zoom__custom input')
-const preset = (w: Page, text: string) => menu(w).locator('.document-zoom__presets button', { hasText: text })
+const pickers = (w: Page) => menu(w).locator('.block-menu-picker')
+const valueButton = (w: Page, i: number) => pickers(w).nth(i).locator('.block-menu-picker__value')
+const box = (w: Page) => menu(w).locator('.document-zoom__custom input:visible')
+const preset = (w: Page, text: string) => menu(w).locator('.document-zoom__presets button:visible', { hasText: text })
 /** The `hr`'s laid-out box: what the eye sees. */
 const hrBox = async (w: Page) => {
   const box = await lineHr(w).boundingBox()
@@ -100,11 +105,15 @@ test('step 2 — the 6-dot menu of a line: type 80 + Enter sets the darkness on 
   await openLineMenu(win)
   await expect(menu(win).locator('.ctx-menu__item')).toHaveText(['Number children'])
   await expect(menu(win).locator('.ctx-menu__item')).toBeDisabled()
-  await expect(menu(win).locator('.document-zoom__custom label')).toHaveText(['Line darkness', 'Line thickness'])
-  await expect(boxes(win).first()).toBeFocused()
-  await expect(boxes(win).nth(0)).toHaveValue('50%')
-  await expect(boxes(win).nth(1)).toHaveValue('3px')
+  await expect(pickers(win).locator('.block-menu-picker__label')).toHaveText(['Line darkness', 'Line thickness', 'Line style'])
+  await expect(pickers(win).locator('.block-menu-picker__value')).toHaveText(['50% ▾', '3px ▾', 'Solid ▾'])
+  await expect(menu(win).locator('.block-menu-picker__panel:visible')).toHaveCount(0)
+  await expect(menu(win).locator(':focus')).toHaveCount(0)
   await shoot(win, 'lineStyle-02-menu')
+  await valueButton(win, 0).click()
+  await expect(box(win)).toBeFocused()
+  await expect(box(win)).toHaveValue('50%')
+  await shoot(win, 'lineStyle-02-darkness-open')
   // The box's text is selected, so typing replaces it.
   await win.keyboard.type('80')
   await win.keyboard.press('Enter')
@@ -114,8 +123,9 @@ test('step 2 — the 6-dot menu of a line: type 80 + Enter sets the darkness on 
 
 test('step 3 — the 6px preset makes the line 6px thick, on screen and on disk', async () => {
   await openLineMenu(win)
-  await expect(boxes(win).nth(0)).toHaveValue('80%')
-  await expect(boxes(win).nth(1)).toHaveValue('3px')
+  await expect(pickers(win).locator('.block-menu-picker__value')).toHaveText(['80% ▾', '3px ▾', 'Solid ▾'])
+  await valueButton(win, 1).click()
+  await expect(box(win)).toHaveValue('3px')
   await preset(win, '6px').click()
   await expect(menu(win)).toBeHidden()
   await expect.poll(readNote, { timeout: 10_000 }).toContain('***\n\n<!-- line: darkness 80%, thickness 6px -->\n')
@@ -123,7 +133,35 @@ test('step 3 — the 6px preset makes the line 6px thick, on screen and on disk'
   await shoot(win, 'lineStyle-03-thick')
 })
 
-test('step 4 — click the line, drag its end handle to about 40%: the length lands on disk', async () => {
+test('step 4 — the style picker makes the line dashed, in the darkness colour, in light and dark', async () => {
+  await openLineMenu(win)
+  await valueButton(win, 2).click()
+  await expect(preset(win, 'Solid (default)')).toHaveAttribute('aria-pressed', 'true')
+  await expect(menu(win).locator('.line-sample:visible')).toHaveCount(3)
+  await shoot(win, 'lineStyle-04-style-open')
+  await preset(win, 'Dashed').click()
+  await expect(menu(win)).toBeHidden()
+  await expect.poll(readNote, { timeout: 10_000 }).toContain('***\n\n<!-- line: darkness 80%, thickness 6px, style dashed -->\n')
+  await expect(lineView(win)).toHaveAttribute('data-line-pattern', 'dashed')
+  const look = () => lineHr(win).evaluate((el) => {
+    const style = getComputedStyle(el)
+    return { image: style.backgroundImage, size: style.backgroundSize, color: style.backgroundColor }
+  })
+  const light = await look()
+  expect(light.image).toMatch(/^linear-gradient/)
+  // The tile is 5 × the 6px thickness: a 18px dash and a 12px gap.
+  expect(light.size).toMatch(/^30px/)
+  expect(light.color).toBe('rgba(0, 0, 0, 0)')
+  expect((await hrBox(win)).height).toBeCloseTo(18, 0)
+  await shoot(win, 'lineStyle-04-dashed-light')
+  await win.emulateMedia({ colorScheme: 'dark' })
+  await expect.poll(async () => (await look()).image).not.toBe(light.image)
+  await shoot(win, 'lineStyle-04-dashed-dark')
+  await win.emulateMedia({ colorScheme: 'light' })
+  await expect.poll(async () => (await look()).image).toBe(light.image)
+})
+
+test('step 5 — click the line, drag its end handle to about 40%: the length lands on disk', async () => {
   const box = await hrBox(win)
   await win.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
   await expect(lineView(win)).toHaveClass(/\bis-selected\b/)
@@ -136,7 +174,7 @@ test('step 4 — click the line, drag its end handle to about 40%: the length la
   await win.mouse.down()
   await win.mouse.move(row!.x + row!.width * 0.4, y, { steps: 12 })
   await win.mouse.up()
-  const re = /\*\*\*\n\n<!-- line: darkness 80%, thickness 6px, length (\d+)% -->\n/
+  const re = /\*\*\*\n\n<!-- line: darkness 80%, thickness 6px, style dashed, length (\d+)% -->\n/
   await expect.poll(readNote, { timeout: 10_000 }).toMatch(re)
   const length = Number(re.exec(await readNote())![1])
   expect(length).toBeGreaterThanOrEqual(38)
@@ -144,12 +182,12 @@ test('step 4 — click the line, drag its end handle to about 40%: the length la
   // The line on screen is that share of the row, and it is still selected.
   expect((await hrBox(win)).width / row!.width).toBeCloseTo(length / 100, 1)
   await expect(lineView(win)).toHaveClass(/\bis-selected\b/)
-  await shoot(win, 'lineStyle-04-short')
+  await shoot(win, 'lineStyle-05-short')
 })
 
-test('step 5 — ⌘Z takes the length back out in one step', async () => {
+test('step 6 — ⌘Z takes the length back out in one step', async () => {
   await win.keyboard.press('Meta+z')
-  await expect.poll(readNote, { timeout: 10_000 }).toBe(`${NOTE_BODY}\n\n***\n\n<!-- line: darkness 80%, thickness 6px -->\n\nafter the line\n`)
-  const [box, row] = await Promise.all([hrBox(win), lineView(win).boundingBox()])
-  expect(box.width).toBeCloseTo(row!.width, 0)
+  await expect.poll(readNote, { timeout: 10_000 }).toBe(`${NOTE_BODY}\n\n***\n\n<!-- line: darkness 80%, thickness 6px, style dashed -->\n\nafter the line\n`)
+  const [lineBox, row] = await Promise.all([hrBox(win), lineView(win).boundingBox()])
+  expect(lineBox.width).toBeCloseTo(row!.width, 0)
 })

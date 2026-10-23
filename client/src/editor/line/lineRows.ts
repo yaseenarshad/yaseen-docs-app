@@ -1,6 +1,7 @@
 /**
- * The line's two pickers in the block handle menu (YAZ-3164, 🔒 D3 / D4 / D6; CONTRACTS rule 41):
- * "Line darkness" (%) and "Line thickness" (px), each a number field in the zoom menu's shape.
+ * The line's three pickers in the block handle menu (YAZ-3164, 🔒 D3 / D4 / D6 / D7; CONTRACTS rule
+ * 41): "Line darkness" (%) and "Line thickness" (px), number fields in the zoom menu's shape, and
+ * "Line style" (YAZ-3198), a choice of Solid, Dotted and Dashed, each with a small sample (S78).
  *
  * They show only when the handle points at a line (S40, S42): the target is an `hr`, or it sits in
  * a bullet whose FIRST block is an `hr` (Crepe's handle stands for the bullet when its first block
@@ -12,7 +13,7 @@
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import type { MenuNumberField, RowProvider } from '../blockHandleMenu'
+import type { MenuChoiceField, MenuNumberField, RowProvider } from '../blockHandleMenu'
 import {
   DARKNESS_DEFAULT,
   DARKNESS_MAX,
@@ -22,6 +23,7 @@ import {
   THICKNESS_MAX,
   THICKNESS_MIN,
   THICKNESS_PRESETS,
+  type LinePattern,
   lineStyleOf,
   type LineStyle,
 } from './lineStyle'
@@ -46,12 +48,15 @@ export function targetLine(doc: ProseNode, inside: number): { node: ProseNode; p
  * One attribute of the line at `pos`, in one transaction; the default is stored as null. The
  * history is closed first, so a pick is always its own undo step, even right after another change.
  */
-const setPart = (view: EditorView, pos: number, attr: keyof LineStyle, value: number, fallback: number) => {
+const setPart = (view: EditorView, pos: number, attr: keyof LineStyle, value: number | string, fallback: number | string) => {
   const node = view.state.doc.nodeAt(pos)
   if (node?.type.name !== 'hr') return
   view.dispatch(closeHistory(view.state.tr).setNodeMarkup(pos, undefined, { ...node.attrs, [attr]: value === fallback ? null : value }))
   view.focus()
 }
+
+/** The choice value of the default pattern: solid is `null` on the node and never written (S70). */
+const SOLID = 'solid'
 
 export const lineRows: RowProvider = (view, target) => {
   if (!view.editable) return []
@@ -82,5 +87,17 @@ export const lineRows: RowProvider = (view, target) => {
     error: `Use a whole number from ${THICKNESS_MIN}–${THICKNESS_MAX}px.`,
     run: (value) => setPart(view, line.pos, 'thickness', value, THICKNESS_DEFAULT),
   }
-  return [darkness, thickness]
+  const pattern: MenuChoiceField = {
+    kind: 'choice',
+    label: 'Line style',
+    value: style.pattern ?? SOLID,
+    choices: [
+      { value: SOLID, label: 'Solid', sample: 'line-sample' },
+      { value: 'dotted', label: 'Dotted', sample: 'line-sample line-sample--dotted' },
+      { value: 'dashed', label: 'Dashed', sample: 'line-sample line-sample--dashed' },
+    ],
+    fallback: SOLID,
+    run: (value) => setPart(view, line.pos, 'pattern', value as LinePattern | typeof SOLID, SOLID),
+  }
+  return [darkness, thickness, pattern]
 }

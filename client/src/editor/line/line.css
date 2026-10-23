@@ -89,3 +89,22 @@
 .milkdown .ProseMirror[contenteditable='false'] .line-view__end {
   display: none;
 }
+
+/* The style picker's samples (YAZ-3164 D7, S78): a short 3px line in the text colour, drawn by the
+   same images as the line, so each choice shows what it makes. The block menu is in `.milkdown`,
+   outside `.ProseMirror`. */
+.milkdown .line-sample {
+  --line-thickness: 3px;
+  display: inline-block;
+  width: 36px;
+  height: var(--line-thickness);
+  background: currentColor;
+}
+
+.milkdown .line-sample--dashed {
+  background: linear-gradient(to right, currentColor 60%, transparent 60%) 0 0 / calc(5 * var(--line-thickness)) 100% repeat-x;
+}
+
+.milkdown .line-sample--dotted {
+  background: radial-gradient(circle closest-side, currentColor 92%, transparent 100%) 0 0 / calc(2 * var(--line-thickness)) 100% repeat-x;
+}

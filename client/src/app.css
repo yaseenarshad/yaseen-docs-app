@@ -2300,11 +2300,54 @@ button {
   line-height: 1.3;
 }
 
-/* A number field in the block handle menu (YAZ-3164 D3) wears the zoom menu's classes. That menu
-   is mounted in the editor, whose text is 16px; the field takes the zoom menu's own 12px. */
+/* A picker in the block handle menu (YAZ-3164 D3, condensed in the guided test): one row, the name
+   left at the menu item's size and a value button right; its panel wears the zoom menu's classes at
+   that menu's 12px (the menu is mounted in the editor, whose text is 16px). Scoped under
+   `.ctx-menu--editor` so Crepe's `.milkdown button` reset does not win. */
 .ctx-menu--editor .document-zoom__custom,
 .ctx-menu--editor .document-zoom__presets {
   font-size: 12px;
+}
+
+.ctx-menu--editor .block-menu-picker__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 3px 4px 3px 10px;
+  font-size: 13px;
+}
+
+.ctx-menu--editor .block-menu-picker__value {
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ctx-menu--editor .block-menu-picker__value:hover,
+.ctx-menu--editor .block-menu-picker__value[aria-expanded="true"] {
+  background: var(--bg-hover);
+}
+
+.ctx-menu--editor .block-menu-picker__value:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.ctx-menu--editor .block-menu-picker__panel {
+  padding: 2px 4px 6px 10px;
+}
+
+.ctx-menu--editor .block-menu-picker__sample {
+  margin-right: 8px;
+  vertical-align: middle;
 }
 
 /* The "Read only" chip (YAZ-3076 D4): the cog's size and shape, in the accent's soft tone, because read

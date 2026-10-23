@@ -10,15 +10,20 @@
  * lives in `view.dom.parentElement` and tabs keep hidden editors mounted, so only this
  * editor's own handle is handled.
  *
- * An item is a row (a label and a run) or, since YAZ-3164 (🔒 D3), a NUMBER FIELD in the shape of
- * the document zoom menu (`DocumentZoom.tsx`), on that menu's own CSS classes: a labelled box for a
- * typed number, then its presets, each part after a divider. The first box takes the focus with
- * its text selected when the menu opens. Enter applies a valid value (the unit is optional) and
- * closes; a bad value shows the field's error, marks the box `aria-invalid` and keeps the menu
- * open, and typing clears it. A preset click applies and closes; the current one is pressed and
- * shows ✓. The current value applies nothing — no run, so no document change and no undo step.
- * Escape, a click away, a scroll and a window blur close with no change, as for rows; when the
- * focus was in the menu it goes back to the editor.
+ * An item is a row (a label and a run) or, since YAZ-3164, a PICKER (🔒 D3 as amended in the guided
+ * test): one row with the name on the left and a value button on the right ("50% ▾"). A picker is
+ * a number field (`kind: 'number'`) or a choice (`kind: 'choice'`). The menu opens with every
+ * picker closed and takes no focus (S80). A click on a value opens that picker's panel and closes
+ * any other (S81); a second click closes it (S82). A number field's panel is the document zoom
+ * menu's (`DocumentZoom.tsx`), on its own CSS classes: a box for a typed number, focused and
+ * selected, a divider, then its presets. A choice's panel lists its choices, each with an optional
+ * sample. Enter in the box, a preset or a choice applies and closes the whole menu (S83); a bad
+ * number shows the field's error, marks the box `aria-invalid` and keeps the menu open, and typing
+ * clears it. The current one is pressed and shows ✓, and picking it applies nothing — no run, so
+ * no document change and no undo step. Tab from the editor, while the menu shows, goes to the first
+ * value button (the outliner would take it otherwise); Enter or Space opens a picker (S84). Escape,
+ * a click away, a scroll and a window blur close with no change, as for rows; when the focus was in
+ * the menu it goes back to the editor.
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
@@ -33,13 +38,13 @@ export interface MenuRow {
   run: () => void
 }
 
-/** A typed number with presets (YAZ-3164 D3): the zoom menu's box and presets, in the block menu. */
+/** A typed number with presets (YAZ-3164 D3): a picker row whose panel is the zoom menu's box and presets. */
 export interface MenuNumberField {
   kind: 'number'
-  /** The box's label, e.g. "Line darkness". */
+  /** The row's name, e.g. "Line darkness"; also the box's accessible name. */
   label: string
   unit: '%' | 'px'
-  /** The current value, the default resolved (never null): what the box shows and the pressed preset. */
+  /** The current value, the default resolved (never null): the value button, the box and the pressed preset. */
   value: number
   presets: number[]
   /** The default: its preset reads "<n><unit> (default)". */
@@ -52,7 +57,27 @@ export interface MenuNumberField {
   run: (value: number) => void
 }
 
-export type MenuItem = MenuRow | MenuNumberField
+/** One choice of a choice picker; `sample` is a class list for a small drawn sample before the label. */
+export interface MenuChoice {
+  value: string
+  label: string
+  sample?: string
+}
+
+/** A pick from a short list (YAZ-3164 D7, "Line style"): a picker row whose panel lists the choices. */
+export interface MenuChoiceField {
+  kind: 'choice'
+  label: string
+  /** The current choice's value, the default resolved. */
+  value: string
+  choices: MenuChoice[]
+  /** The default choice: it reads "<label> (default)". */
+  fallback: string
+  /** A new value only: the current value never runs. */
+  run: (value: string) => void
+}
+
+export type MenuItem = MenuRow | MenuNumberField | MenuChoiceField
 
 /** Called at open time with the handle's target (from blockHandleTarget.handleTargetPos) and the editor ctx. */
 export type RowProvider = (view: EditorView, target: HandleTarget, ctx: Ctx) => MenuItem[]
@@ -74,21 +99,49 @@ const divider = (): HTMLElement => {
 
 let fieldIds = 0
 
-/** The box, a divider and the presets of one number field: DocumentZoom's markup, built by hand. */
-function renderNumberField(field: MenuNumberField, close: () => void): HTMLElement[] {
-  const id = `block-menu-field-${++fieldIds}`
+/** A preset or choice button in the zoom menu's shape: the text (and a sample) left, ✓ right when current. */
+function optionButton(text: string, current: boolean, apply: () => void, sample?: string): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.setAttribute('aria-pressed', String(current))
+  const name = document.createElement('span')
+  if (sample !== undefined) {
+    const drawn = document.createElement('span')
+    drawn.className = `block-menu-picker__sample ${sample}`
+    drawn.setAttribute('aria-hidden', 'true')
+    name.appendChild(drawn)
+  }
+  name.append(text)
+  const check = document.createElement('span')
+  check.setAttribute('aria-hidden', 'true')
+  check.textContent = current ? '✓' : ''
+  button.append(name, check)
+  button.addEventListener('mousedown', (e) => e.preventDefault())
+  button.addEventListener('click', apply)
+  return button
+}
+
+const optionList = (label: string, buttons: HTMLButtonElement[]): HTMLElement => {
+  const list = document.createElement('div')
+  list.className = 'document-zoom__presets'
+  list.setAttribute('role', 'group')
+  list.setAttribute('aria-label', label)
+  list.append(...buttons)
+  return list
+}
+
+/** A number field's panel: the box, a divider and the presets — DocumentZoom's markup, built by hand. Returns the box too. */
+function numberPanel(field: MenuNumberField, id: string, close: () => void): { parts: HTMLElement[]; box: HTMLInputElement } {
   const apply = (value: number) => {
     if (value !== field.value) field.run(value)
     close()
   }
   const custom = document.createElement('div')
   custom.className = 'document-zoom__custom'
-  const label = document.createElement('label')
-  label.htmlFor = id
-  label.textContent = field.label
   const input = document.createElement('input')
-  input.id = id
+  input.id = `${id}-box`
   input.inputMode = 'numeric'
+  input.setAttribute('aria-label', field.label)
   input.title = `${field.label} (${field.min}–${field.max}${field.unit})`
   input.value = `${field.value}${field.unit}`
   input.setAttribute('aria-invalid', 'false')
@@ -97,13 +150,12 @@ function renderNumberField(field: MenuNumberField, close: () => void): HTMLEleme
   error.className = 'document-zoom__error'
   error.setAttribute('role', 'alert')
   error.textContent = field.error
-  const clearError = () => {
+  input.addEventListener('focus', () => input.select())
+  input.addEventListener('input', () => {
     error.remove()
     input.setAttribute('aria-invalid', 'false')
     input.removeAttribute('aria-describedby')
-  }
-  input.addEventListener('focus', () => input.select())
-  input.addEventListener('input', clearError)
+  })
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
       event.preventDefault()
@@ -122,43 +174,94 @@ function renderNumberField(field: MenuNumberField, close: () => void): HTMLEleme
       close()
     }
   })
-  custom.append(label, input)
-  const presets = document.createElement('div')
-  presets.className = 'document-zoom__presets'
-  presets.setAttribute('role', 'group')
-  presets.setAttribute('aria-label', `${field.label} presets`)
-  for (const preset of field.presets) {
-    const button = document.createElement('button')
-    button.type = 'button'
-    const current = preset === field.value
-    button.setAttribute('aria-pressed', String(current))
-    const text = document.createElement('span')
-    text.textContent = `${preset}${field.unit}${preset === field.fallback ? ' (default)' : ''}`
-    const check = document.createElement('span')
-    check.setAttribute('aria-hidden', 'true')
-    check.textContent = current ? '✓' : ''
-    button.append(text, check)
-    button.addEventListener('mousedown', (e) => e.preventDefault())
-    button.addEventListener('click', () => apply(preset))
-    presets.appendChild(button)
-  }
-  return [custom, divider(), presets]
+  custom.appendChild(input)
+  const presets = field.presets.map((preset) =>
+    optionButton(`${preset}${field.unit}${preset === field.fallback ? ' (default)' : ''}`, preset === field.value, () => apply(preset)),
+  )
+  return { parts: [custom, divider(), optionList(`${field.label} presets`, presets)], box: input }
+}
+
+/** A choice field's panel: one button per choice, with its sample. */
+function choicePanel(field: MenuChoiceField, close: () => void): HTMLElement[] {
+  const buttons = field.choices.map((choice) =>
+    optionButton(`${choice.label}${choice.value === field.fallback ? ' (default)' : ''}`, choice.value === field.value, () => {
+      if (choice.value !== field.value) field.run(choice.value)
+      close()
+    }, choice.sample),
+  )
+  return [optionList(`${field.label} choices`, buttons)]
 }
 
 /**
- * Draws the popup into `parent`, unplaced: a clicked row runs, then `close`; a number field applies
- * as the header says. The first number box takes the focus (no scroll: the popup is not placed
- * yet). Exported for the id link's menu (`wikilink/wikilinkMenu.ts`, YAZ-2293) — the same rows,
- * on another target.
+ * One picker: the row (name left, value button right) and its panel, closed. `toggle` opens this
+ * panel and closes the menu's others, or closes it when it is open.
+ */
+function renderPicker(field: MenuNumberField | MenuChoiceField, menu: HTMLElement, close: () => void): HTMLElement {
+  const id = `block-menu-picker-${++fieldIds}`
+  const picker = document.createElement('div')
+  picker.className = 'block-menu-picker'
+  const row = document.createElement('div')
+  row.className = 'block-menu-picker__row'
+  const name = document.createElement('span')
+  name.className = 'block-menu-picker__label'
+  name.id = `${id}-label`
+  name.textContent = field.label
+  const value = document.createElement('button')
+  value.type = 'button'
+  value.className = 'block-menu-picker__value'
+  value.setAttribute('aria-expanded', 'false')
+  value.setAttribute('aria-controls', `${id}-panel`)
+  value.setAttribute('aria-labelledby', `${id}-label ${id}-value`)
+  const text = document.createElement('span')
+  text.id = `${id}-value`
+  text.textContent = field.kind === 'number' ? `${field.value}${field.unit}` : (field.choices.find((c) => c.value === field.value)?.label ?? field.value)
+  const caret = document.createElement('span')
+  caret.setAttribute('aria-hidden', 'true')
+  caret.textContent = ' ▾'
+  value.append(text, caret)
+  row.append(name, value)
+  const panel = document.createElement('div')
+  panel.className = 'block-menu-picker__panel'
+  panel.id = `${id}-panel`
+  panel.hidden = true
+  let box: HTMLInputElement | null = null
+  if (field.kind === 'number') {
+    const built = numberPanel(field, id, close)
+    panel.append(...built.parts)
+    box = built.box
+  } else panel.append(...choicePanel(field, close))
+  value.addEventListener('click', () => {
+    const open = !panel.hidden
+    for (const other of menu.querySelectorAll<HTMLElement>('.block-menu-picker__panel')) other.hidden = true
+    for (const other of menu.querySelectorAll('.block-menu-picker__value')) other.setAttribute('aria-expanded', 'false')
+    if (open) return
+    panel.hidden = false
+    value.setAttribute('aria-expanded', 'true')
+    if (box !== null) {
+      box.focus({ preventScroll: true })
+      box.select()
+    }
+  })
+  picker.append(row, panel)
+  return picker
+}
+
+/**
+ * Draws the popup into `parent`, unplaced: a clicked row runs, then `close`; a picker works as the
+ * header says, every one closed, and nothing takes the focus. Exported for the id link's menu
+ * (`wikilink/wikilinkMenu.ts`, YAZ-2293) — the same rows, on another target.
  */
 export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close: () => void): HTMLElement {
   const el = document.createElement('div')
   el.className = 'ctx-menu ctx-menu--editor'
   el.setAttribute('role', 'menu')
+  let pickers = false
   for (const row of items) {
-    if (row.kind === 'number') {
-      if (el.childElementCount > 0) el.appendChild(divider())
-      el.append(...renderNumberField(row, close))
+    if (row.kind === 'number' || row.kind === 'choice') {
+      // One divider between the rows and the pickers; the pickers sit together.
+      if (!pickers && el.childElementCount > 0) el.appendChild(divider())
+      pickers = true
+      el.appendChild(renderPicker(row, el, close))
       continue
     }
     const item = document.createElement('button')
@@ -175,11 +278,6 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
     el.appendChild(item)
   }
   parent?.appendChild(el)
-  const box = el.querySelector('input')
-  if (box !== null) {
-    box.focus({ preventScroll: true })
-    box.select()
-  }
   return el
 }
 
@@ -226,12 +324,24 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           const onKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') close()
           }
+          // Tab while the menu shows and the focus is still in the editor: the first value button (last
+          // with Shift) takes it, before the outliner's Tab can indent (S84). Inside the menu Tab is the browser's.
+          const onTab = (e: KeyboardEvent) => {
+            if (e.key !== 'Tab' || popup === null || popup.contains(document.activeElement)) return
+            const values = popup.querySelectorAll<HTMLButtonElement>('.block-menu-picker__value')
+            const next = e.shiftKey ? values[values.length - 1] : values[0]
+            if (next === undefined) return
+            e.preventDefault()
+            e.stopPropagation()
+            next.focus({ preventScroll: true })
+          }
 
           document.addEventListener('mousedown', onMouseDown, true)
           document.addEventListener('mouseup', onMouseUp, true)
           document.addEventListener('contextmenu', onContextMenu, true)
           document.addEventListener('scroll', close, true)
           window.addEventListener('keydown', onKeyDown)
+          document.addEventListener('keydown', onTab, true)
           window.addEventListener('blur', close)
           return {
             update: (v, prevState) => {
@@ -243,6 +353,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
               document.removeEventListener('contextmenu', onContextMenu, true)
               document.removeEventListener('scroll', close, true)
               window.removeEventListener('keydown', onKeyDown)
+              document.removeEventListener('keydown', onTab, true)
               window.removeEventListener('blur', close)
               close()
             },
