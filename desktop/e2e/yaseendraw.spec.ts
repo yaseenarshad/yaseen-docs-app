@@ -12,6 +12,8 @@
  *     and the in-page preview redraws bold — proof the swap changed the engine, not the plumbing
  *   3 a STOCK-authored scene (no formatting fields at all) still opens clean in the modal —
  *     Save stays disabled, nothing on disk moves: old drawings are untouched by the new engine
+ *   4 in the text editor of a per-line bold element, a double click selects one word and a triple
+ *     click selects the line (YAZ-3175: Chromium's pointerdown carries no click count)
  *
  * Same harness as drawing.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `yaseendraw-` step screenshots).
@@ -184,6 +186,41 @@ test('step 3 — a stock-authored scene opens clean: Save disabled, disk untouch
   await win.keyboard.press('Escape')
   await expect(modal(win)).toHaveCount(0)
 
+  expect(await readSidecar(STYLED)).toBe(before)
+})
+
+test('step 4 — a double click selects a word and a triple click the line in per-line bold text', async () => {
+  const before = await readSidecar(STYLED)
+  await previewOf(win, STYLED).click()
+  await expect(modal(win)).toBeVisible()
+  const box = await modalCanvas(win).boundingBox()
+  if (box === null) throw new Error('the modal canvas has no box')
+  await win.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.8)
+  await win.keyboard.press('ControlOrMeta+a')
+  await win.keyboard.press('Enter')
+
+  // `lineBolds: [true]` turns on the fork's own caret layer, the path that counts clicks itself.
+  const editor = modal(win).locator('textarea.excalidraw-wysiwyg')
+  await expect(editor).toBeVisible()
+  const field = await editor.boundingBox()
+  if (field === null) throw new Error('the text editor has no box')
+  const at = { x: field.x + 8, y: field.y + field.height / 2 }
+  const selection = () => editor.evaluate((t: HTMLTextAreaElement) => [t.selectionStart, t.selectionEnd])
+
+  await win.mouse.dblclick(at.x, at.y)
+  await expect.poll(selection).toEqual([0, 'styled'.length])
+  await win.mouse.click(at.x, at.y, { clickCount: 3 })
+  await expect.poll(selection).toEqual([0, 'styled-label'.length])
+  await shoot(win, 'yaseendraw-05-word-selected')
+
+  // Leave the editor, then the modal. Opening the text editor already marks the modal dirty, clicks
+  // or not, so ✕ asks first: Discard. The selection wrote nothing, so the sidecar has not moved.
+  // (After the editor closes, the canvas keeps the Esc, so ✕ closes the modal.)
+  await win.keyboard.press('Escape')
+  await expect(editor).toHaveCount(0)
+  await modal(win).getByRole('button', { name: 'Close drawing' }).click()
+  await modal(win).locator('.drawing-modal__confirm').getByRole('button', { name: 'Discard' }).click()
+  await expect(modal(win)).toHaveCount(0)
   expect(await readSidecar(STYLED)).toBe(before)
   await quitApp(app)
 })
