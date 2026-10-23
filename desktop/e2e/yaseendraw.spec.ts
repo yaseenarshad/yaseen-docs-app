@@ -12,6 +12,8 @@
  *     and the in-page preview redraws bold — proof the swap changed the engine, not the plumbing
  *   3 a STOCK-authored scene (no formatting fields at all) still opens clean in the modal —
  *     Save stays disabled, nothing on disk moves: old drawings are untouched by the new engine
+ *   4 Enter keeps the line format (YAZ-3177): a new line typed after the styled line is saved bold
+ *     and underlined too — `lineBolds` / `lineUnderlines` grow to `[true, true]`
  *
  * Same harness as drawing.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `yaseendraw-` step screenshots).
@@ -185,5 +187,36 @@ test('step 3 — a stock-authored scene opens clean: Save disabled, disk untouch
   await expect(modal(win)).toHaveCount(0)
 
   expect(await readSidecar(STYLED)).toBe(before)
+})
+
+test('step 4 — Enter keeps the line format: the new line is saved bold and underlined too', async () => {
+  await previewOf(win, STYLED).click()
+  await expect(modal(win)).toBeVisible()
+  await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
+
+  // Select the one text element, Enter starts editing it, End puts the caret after the styled line.
+  const box = await modalCanvas(win).boundingBox()
+  if (box === null) throw new Error('the modal canvas has no box')
+  await win.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.8)
+  await win.keyboard.press('ControlOrMeta+a')
+  await win.keyboard.press('Enter')
+  const editor = modal(win).locator('textarea.excalidraw-wysiwyg')
+  await expect(editor).toBeFocused()
+  await win.keyboard.press('End')
+  await win.keyboard.press('Enter')
+  await win.keyboard.type('next-line')
+  // A click on empty canvas ends the edit, as a user does.
+  await win.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.8)
+  await shoot(win, 'yaseendraw-05-enter-keeps-format')
+
+  await expect(saveButton(win)).toBeEnabled()
+  await saveButton(win).click()
+  await expect(modal(win)).toHaveCount(0)
+
+  await expect.poll(async () => JSON.parse(await readSidecar(STYLED)).elements[0]).toMatchObject({
+    originalText: 'styled-label\nnext-line',
+    lineBolds: [true, true],
+    lineUnderlines: [true, true],
+  })
   await quitApp(app)
 })
