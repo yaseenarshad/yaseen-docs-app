@@ -42,11 +42,12 @@ type Menu = { x: number; y: number; id: string; tab: number | null }
 /**
  * The Sessions tab (YAZ-3147 D4, D6): the saved sessions, last used first as main keeps them. A bar
  * counts them and saves the open tabs. A session row folds and unfolds on a click, and its name
- * becomes a field on a double-click. Each row has its menu; a tab row opens its page.
+ * becomes a field on two quick clicks on the name (RENAME_CLICK_GAP_MS). Each row has its menu; a tab row opens its page.
  * It reads the sessions from the cache, which answers the same array until they change, so the list
  * renders again only then (and for its own folds, menus and field).
+ * Memo: App draws again on each app-state broadcast; the list draws only when its own props or the sessions change.
  */
-export function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate, renameRequest, onRenameConsumed }: SessionListProps) {
+export const SessionList = memo(function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate, renameRequest, onRenameConsumed }: SessionListProps) {
   const sessions = useSyncExternalStore(storage.subscribe, storage.getSessions)
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set())
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -143,7 +144,7 @@ export function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate, r
       )}
     </>
   )
-}
+})
 
 interface SessionRowProps {
   session: Session

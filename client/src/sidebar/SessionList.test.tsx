@@ -186,7 +186,7 @@ describe('SessionList (YAZ-3147 D6)', () => {
     expect(b.bridge.window.setSessionTabs).toHaveBeenCalledExactlyOnceWith('s1', WORK.tabs.slice(0, 2))
 
     const before = renders
-    b.emit({ ...defaultAppState(), sessions: storage.getSessions(), recents: [{ path: '/v', lastOpened: 9 }] })
+    b.emit({ ...defaultAppState(), sessions: structuredClone(storage.getSessions()), recents: [{ path: '/v', lastOpened: 9 }] }) // a new copy, as main sends
     expect(renders).toBe(before) // another change of the app state: no render
     b.emit({ ...defaultAppState(), sessions: [{ ...WORK, tabs: [] }] })
     expect(renders).toBe(before + 1)
