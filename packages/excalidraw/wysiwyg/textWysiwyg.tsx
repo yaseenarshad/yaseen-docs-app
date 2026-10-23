@@ -858,42 +858,6 @@ export const textWysiwyg = ({
     visualSelectionPointerId = event.pointerId;
     editable.setPointerCapture?.(event.pointerId);
 
-    if (event.detail >= 3) {
-      const lineStart = editable.value.lastIndexOf("\n", caretIndex - 1) + 1;
-      const nextLineBreak = editable.value.indexOf("\n", caretIndex);
-      const lineEnd =
-        nextLineBreak === -1 ? editable.value.length : nextLineBreak;
-      visualSelectionAnchor = null;
-      editable.setSelectionRange(lineStart, lineEnd, "forward");
-      renderVisualSelection();
-      return;
-    }
-
-    if (event.detail === 2) {
-      const isWordCharacter = (character: string) =>
-        /[\p{L}\p{M}\p{N}_]/u.test(character);
-      let wordStart = caretIndex;
-      let wordEnd = caretIndex;
-
-      while (
-        wordStart > 0 &&
-        isWordCharacter(editable.value.slice(wordStart - 1, wordStart))
-      ) {
-        wordStart--;
-      }
-      while (
-        wordEnd < editable.value.length &&
-        isWordCharacter(editable.value.slice(wordEnd, wordEnd + 1))
-      ) {
-        wordEnd++;
-      }
-
-      visualSelectionAnchor = null;
-      editable.setSelectionRange(wordStart, wordEnd, "forward");
-      renderVisualSelection();
-      return;
-    }
-
     visualSelectionAnchor = event.shiftKey
       ? editable.selectionDirection === "backward"
         ? editable.selectionEnd
@@ -908,6 +872,48 @@ export const textWysiwyg = ({
     window.addEventListener("pointermove", updateVisualSelectionFromPointer);
     window.addEventListener("pointerup", stopVisualSelectionDrag);
     window.addEventListener("pointercancel", stopVisualSelectionDrag);
+  };
+
+  // Chromium sends `detail: 0` on every pointerdown, so the click count comes
+  // from `click`. It still fires after the pointerdown above calls
+  // preventDefault(), and it follows the OS double-click speed.
+  const handleEditableClick = (event: MouseEvent) => {
+    if (event.detail < 2 || !currentTextLayout?.hasVisualLineOverlay) {
+      return;
+    }
+
+    const sceneCoords = viewportCoordsToSceneCoords(event, app.state);
+    const caretIndex = getCaretIndexFromSceneCoords(sceneCoords);
+    if (caretIndex === null) {
+      return;
+    }
+
+    let start = caretIndex;
+    let end = caretIndex;
+    if (event.detail >= 3) {
+      start = editable.value.lastIndexOf("\n", caretIndex - 1) + 1;
+      const nextLineBreak = editable.value.indexOf("\n", caretIndex);
+      end = nextLineBreak === -1 ? editable.value.length : nextLineBreak;
+    } else {
+      const isWordCharacter = (character: string) =>
+        /[\p{L}\p{M}\p{N}_]/u.test(character);
+      while (
+        start > 0 &&
+        isWordCharacter(editable.value.slice(start - 1, start))
+      ) {
+        start--;
+      }
+      while (
+        end < editable.value.length &&
+        isWordCharacter(editable.value.slice(end, end + 1))
+      ) {
+        end++;
+      }
+    }
+
+    visualSelectionAnchor = null;
+    editable.setSelectionRange(start, end, "forward");
+    renderVisualSelection();
   };
 
   if (onChange) {
@@ -1432,6 +1438,7 @@ export const textWysiwyg = ({
     editable.removeEventListener("select", renderVisualSelection);
     editable.removeEventListener("keyup", renderVisualSelection);
     editable.removeEventListener("pointerdown", handleEditablePointerDown);
+    editable.removeEventListener("click", handleEditableClick);
     document.removeEventListener(
       "selectionchange",
       handleDocumentSelectionChange,
@@ -1615,6 +1622,7 @@ export const textWysiwyg = ({
   // used by styled text cannot appear frozen.
   editable.addEventListener("keyup", renderVisualSelection);
   editable.addEventListener("pointerdown", handleEditablePointerDown);
+  editable.addEventListener("click", handleEditableClick);
   document.addEventListener("selectionchange", handleDocumentSelectionChange);
 
   // rAF (+ capture to by doubly sure) so we don't catch te pointerdown that

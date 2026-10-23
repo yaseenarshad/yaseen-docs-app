@@ -897,6 +897,50 @@ describe("textWysiwyg", () => {
       fireEvent.pointerUp(editor, { button: 0, pointerId: 1 });
     });
 
+    it("selects a word on a double click and a line on a triple click in styled text", async () => {
+      const originalText = "Lead Nurture\nsecond line";
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: originalText,
+          textAlign: "left",
+        }),
+        originalText,
+        lineBolds: [true, false],
+      } as ExcalidrawTextElement;
+      API.setElements([text]);
+
+      UI.clickTool("selection");
+      mouse.doubleClickAt(text.x + 10, text.y + 10);
+      const editor = await getTextEditor();
+      const lineHeight = getLineHeightInPx(text.fontSize, text.lineHeight);
+      const { x, y } = sceneCoordsToViewportCoords(
+        { sceneX: text.x + 2, sceneY: text.y + lineHeight * 0.5 },
+        h.state,
+      );
+
+      // As in Chromium: pointerdown has `detail: 0`; only `click` counts.
+      fireEvent.pointerDown(editor, {
+        button: 0,
+        buttons: 1,
+        clientX: x,
+        clientY: y,
+        pointerId: 1,
+        detail: 0,
+      });
+      fireEvent.pointerUp(editor, {
+        button: 0,
+        clientX: x,
+        clientY: y,
+        pointerId: 1,
+      });
+      fireEvent.click(editor, { clientX: x, clientY: y, detail: 2 });
+      expect([editor.selectionStart, editor.selectionEnd]).toEqual([0, 4]);
+
+      fireEvent.click(editor, { clientX: x, clientY: y, detail: 3 });
+      expect([editor.selectionStart, editor.selectionEnd]).toEqual([0, 12]);
+    });
+
     it("uses the same hanging-indent overlay for list text bound inside a shape", async () => {
       const originalText = "• Search inventory facts from the connected store";
       const [container, boundText] = API.createTextContainer({
