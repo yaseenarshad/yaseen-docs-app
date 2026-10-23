@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { copyFoldKey } from '@shared/foldKey'
 import { parseFrontmatter } from '@shared/frontmatter'
 import { DEFAULT_SETTINGS, MAX_FOCUS, defaultAppState, defaultRightPanelIdentity, type AppState, type FileClipRequest, type FileClipState, type IndexRecord, type PasteResponse, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
 import appCss from '../app.css?inline'
@@ -2834,9 +2835,10 @@ describe('"Show in sidebar" on a row of Search, Focus and Favorites (YAZ-2638 D1
 
   it.each(['focus', 'favorites'] as const)('S34: on the %s tab each row has the item, first in the menu — a top row and a row inside a folder, a file and a folder — and the rest is the menu of its row in Files', async (lens) => {
     const { el, v, rerender } = await mountVault()
-    click(row(el, `${v}/Projects`)) // open on every tab: the folds are shared
+    click(row(el, `${v}/Projects`)) // open in Files
     const inFiles = Object.fromEntries(ROWS.map((rel) => [rel, menuOf(el, row(el, `${v}${rel}`))]))
     await rerender({ lens })
+    click(row(el, `${v}/Projects`)) // and on the tab: its folds are its own (YAZ-3131 S2)
     for (const rel of ROWS) {
       expect(row(el, `${v}${rel}`), rel).not.toBeNull()
       expect([rel, menuOf(el, row(el, `${v}${rel}`))]).toEqual([rel, [ITEM, ...inFiles[rel]]])
@@ -4585,13 +4587,15 @@ describe('focus tab (YAZ-2619)', () => {
     expect(topLabels(el)).toEqual(EVERY_TOP_ROW) // App has not handed the lens back yet: this is still Files, and it is not narrowed
     await pick(el, `${v}/top.md`, 'Add to focus')
     expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`, `${v}/top.md`])
-    expect(storage.getExpanded(v)).toEqual([`${v}/Projects`]) // the folder opened; the file opened nothing
+    // The folder opened in its own copy only (YAZ-3131 S4), never in Files; the file opened nothing.
+    expect(storage.getExpanded(v)).toEqual([copyFoldKey(`${v}/Projects`, `${v}/Projects`)])
     await rerender({ lens: 'focus' })
     expect(topLabels(el)).toEqual(['Projects', 'top'])
     expect(isOpen(el, `${v}/Projects`)).toBe('true')
     expect(countLine(el)).toBe('2 in focus')
     await rerender({ lens: 'files' })
     expect(topLabels(el)).toEqual(EVERY_TOP_ROW)
+    expect(isOpen(el, `${v}/Projects`)).toBe('false')
   })
 
   it('S3, S4, S6, R5, R9, R12: a selection adds in panel order; a mixed one reads Add and puts in only the missing row; an all-in one reads "Remove 3 from focus" and keeps the tab', async () => {
@@ -4703,7 +4707,8 @@ describe('focus tab (YAZ-2619)', () => {
     act(() => allButton(el)?.click())
     expect(isOpen(el, `${v}/Projects`)).toBe('true')
     expect(isOpen(el, `${v}/Projects/Alpha`)).toBe('true')
-    expect(storage.getExpanded(v)).toEqual([`${v}/Projects`, `${v}/Projects/Alpha`]) // Notes is not on the tab, so it never opened
+    // The copy's own keys (YAZ-3131 S5); Notes is not on the tab, so it never opened, and Files opened nothing.
+    expect(storage.getExpanded(v)).toEqual([copyFoldKey(`${v}/Projects`, `${v}/Projects`), copyFoldKey(`${v}/Projects`, `${v}/Projects/Alpha`)])
     await pick(el, `${v}/Projects`, 'Remove from focus')
     expect(topLabels(el)).toEqual(['top'])
     expect(allButton(el)).toBeNull() // a file is no folder to unfold (S21)
@@ -5054,12 +5059,19 @@ describe('favorites (YAZ-1766)', () => {
     expect(bridge.favorites.set).not.toHaveBeenCalled()
   })
 
-  it('a favorited folder unfolds in place, and its fold is the Files tree\'s own (D7)', async () => {
+  it('a favorited folder unfolds in place, and its fold is its own, not the Files tree\'s (D7, as YAZ-3131 S2 changed it)', async () => {
     const { el, v, rerender } = await mountVault({ lens: 'favorites' }, { favorites: ['/Projects'] })
     expect(isOpen(el, `${v}/Projects`)).toBe('false')
     act(() => rowByPath(el, `${v}/Projects`)?.click())
     expect(isOpen(el, `${v}/Projects`)).toBe('true')
     expect(rowByPath(el, `${v}/Projects/p.md`)).not.toBeNull()
+    // Files keeps its own folds, both ways.
+    await rerender({ lens: 'files' })
+    expect(isOpen(el, `${v}/Projects`)).toBe('false')
+    act(() => rowByPath(el, `${v}/Projects`)?.click())
+    await rerender({ lens: 'favorites' })
+    expect(isOpen(el, `${v}/Projects`)).toBe('true')
+    act(() => rowByPath(el, `${v}/Projects`)?.click())
     await rerender({ lens: 'files' })
     expect(isOpen(el, `${v}/Projects`)).toBe('true')
   })
@@ -5071,7 +5083,7 @@ describe('favorites (YAZ-1766)', () => {
     expect(rowsByPath(el, `${v}/Projects/p.md`)).toHaveLength(2)
   })
 
-  it('a path drawn on TWO rows counts, copies and opens ONCE (YAZ-1337 🔒 D3), still in visible order', async () => {
+  it('a path drawn on TWO rows counts, copies and opens ONCE (YAZ-1337 🔒 D3), still in visible order, and lights in the copy it was picked in (YAZ-3131 S16)', async () => {
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     const { el, v, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Projects', '/Projects/p.md', '/top.md'] })
@@ -5081,8 +5093,8 @@ describe('favorites (YAZ-1766)', () => {
     expect(twice).toHaveLength(2) // both occurrences are on screen…
     shiftClickRow(twice[0])
     shiftClickRow(rowByPath(el, `${v}/top.md`))
-    // …and BOTH light up off the ONE selected path, which is the whole reason the count can lie.
-    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(3)
+    // …and only the copy it was picked in lights (YAZ-3131 S11, S16): the ONE selected path is still one path.
+    expect([...el.querySelectorAll('.tree__row--selected')]).toEqual([twice[0], rowByPath(el, `${v}/top.md`)])
     rightClick(twice[1]) // either occurrence is the file
     expect(itemByLabel(el, 'Copy 2 paths')).toBeDefined()
     expect(itemByLabel(el, 'Copy 3 paths')).toBeUndefined()
@@ -5286,8 +5298,269 @@ describe('favorites (YAZ-1766)', () => {
     const mountWork = async (lens: 'favorites' | 'focus') => {
       const m = await mountVault({ lens }, { favorites: listed, focus: listed, nodes: WORK })
       act(() => rowByPath(m.el, `${m.v}/Work/Wrenly`)?.click()) // the top copy unfolds, and with it GTM shows
+      // Each copy folds on its own (YAZ-3131 S1): Work, then its own Wrenly, open for GTM to show a second time.
+      act(() => rowByPath(m.el, `${m.v}/Work`)?.click())
+      act(() => rowsByPath(m.el, `${m.v}/Work/Wrenly`)[1]?.click())
       return m
     }
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S1, S2, S6 on %s: each copy of Wrenly folds on its own, by a click and by the arrow keys, and Files keeps its own folds', async (lens) => {
+      const { el, v, rerender } = await mountVault({ lens }, { favorites: listed, focus: listed, nodes: WORK })
+      const wrenly = `${v}/Work/Wrenly`
+      const open = (copy: number) => rowsByPath(el, wrenly)[copy]?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+      const key = (copy: number, name: string) => act(() => void rowsByPath(el, wrenly)[copy]?.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true })))
+      act(() => rowByPath(el, `${v}/Work`)?.click())
+      expect(rowsByPath(el, wrenly)).toHaveLength(2) // 0: the top row, 1: inside Work
+      act(() => rowsByPath(el, wrenly)[0]?.click())
+      expect([open(0), open(1)]).toEqual(['true', 'false'])
+      key(1, 'ArrowRight')
+      expect([open(0), open(1)]).toEqual(['true', 'true'])
+      key(0, 'ArrowLeft')
+      expect([open(0), open(1)]).toEqual(['false', 'true'])
+      expect(rowsByPath(el, `${wrenly}/GTM`)).toHaveLength(1) // only the open copy draws its rows
+      await rerender({ lens: 'files' })
+      expect(rowByPath(el, `${v}/Work`)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S11, S12, S15 on %s: the open page and the selection light in ONE copy — the copy that was clicked, else the first that shows it', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      expect(rowsByPath(el, plan)).toHaveLength(2) // 0: under the top Wrenly, 1: under Work
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      // S12: a page opened from elsewhere lights in the first copy that shows it.
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+      // S11: a click in the other copy takes the light there, as the open page and as the selection.
+      act(() => rowsByPath(el, plan)[1]?.click())
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      expect(lit(plan, 'tree__row--selected')).toEqual([false, true])
+      // S15: a right-click on a row outside the selection picks it in that copy.
+      rightClick(rowsByPath(el, gtm)[0] ?? null)
+      expect(lit(gtm, 'tree__row--selected')).toEqual([true, false])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S13 (YAZ-3141) on %s: a click on a page in copy B, then a click that closes its folder in copy B — no row lights, and copy A does not take the light', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      expect(rowsByPath(el, plan)).toHaveLength(2) // 0: under the top Wrenly (copy A), 1: under Work (copy B)
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      // The click in copy B opens the page there.
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      // Close GTM in copy B with a click on its row. The page belongs to copy B, so no row lights (S13).
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      expect(rowsByPath(el, plan)).toHaveLength(1) // only copy A still draws the page
+      expect(lit(plan, 'tree__row--active')).toEqual([false])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S12, S17 on %s: a page clicked in copy B, then Files and back — the page lights in the first copy that shows it', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      await rerender({ lens: 'files', activeFile: plan })
+      await rerender({ lens, activeFile: plan })
+      expect(rowsByPath(el, plan)).toHaveLength(2)
+      // S17 clears the recorded copies on a tab change, so S12 applies: the first copy that shows the page.
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S12 (YAZ-3143) on %s: a page clicked in copy B, a fold click, another page, then the page again from the tab bar — it lights in the first copy that shows it', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      // A click on a folder row moves the selection (D9): close and open GTM in copy A.
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      expect(rowsByPath(el, plan)).toHaveLength(2)
+      await rerender({ activeFile: `${v}/top.md` })
+      await rerender({ activeFile: plan }) // the tab bar: S12, the first copy that shows it
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S12 (YAZ-3143) on %s: a page clicked in copy B, another page, then the page again from the tab bar — it lights in the first copy that shows it', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      await rerender({ activeFile: `${v}/top.md` })
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R1) on %s: a double click opens a FOLDER page in copy B — the folder row lights in copy B (Decision 3)', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      expect(rowsByPath(el, gtm)).toHaveLength(2)
+      // A real double click: two clicks (each selects and folds), then the dblclick (YAZ-2648 D2).
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      act(() => void rowsByPath(el, gtm)[1]?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+      await rerender({ activeFile: gtm })
+      expect(lit(gtm, 'tree__row--selected')).toEqual([false, true])
+      expect(lit(gtm, 'tree__row--active')).toEqual([false, true])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R2) on %s: Enter opens a FOLDER page in copy B — the folder row lights in copy B', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => void rowsByPath(el, gtm)[1]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+      await rerender({ activeFile: gtm })
+      expect(lit(gtm, 'tree__row--active')).toEqual([false, true])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R3) on %s: a double click on a FILE in copy B keeps the light in copy B', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      act(() => void rowsByPath(el, plan)[1]?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R4) on %s: a click in copy B, a blank tab (no page), then the page again — the first copy lights (S12)', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      await rerender({ activeFile: null })
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R5) on %s: a click on the open page in copy A after copy B — the light moves to copy A (S11)', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      act(() => rowsByPath(el, plan)[0]?.click())
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+      act(() => rowsByPath(el, plan)[1]?.click())
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      // A fold click in copy A, then the light must stay in copy B while the page stays open (S13).
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R6) on %s: the row menu "Open" on a FOLDER in copy B — its page lights in copy B (Decision 3, S15)', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      // "Open" is a FOLDER row's item (YAZ-2290 D3); a file row opens on its click and has none.
+      act(() => void rowsByPath(el, gtm)[1]?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 5, clientY: 5 })))
+      const open = itemByLabel(el, 'Open')
+      expect(open).toBeDefined()
+      act(() => open?.click())
+      await rerender({ activeFile: gtm })
+      expect(lit(gtm, 'tree__row--selected')).toEqual([false, true])
+      expect(lit(gtm, 'tree__row--active')).toEqual([false, true])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S13 by the arrow key on %s: ← closes the folder in copy B — no row lights', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      act(() => rowsByPath(el, plan)[1]?.click())
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      act(() => void rowsByPath(el, gtm)[1]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })))
+      expect(rowsByPath(el, plan)).toHaveLength(1)
+      expect(lit(plan, 'tree__row--active')).toEqual([false])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S21 on %s: ⌘V with a row picked in copy B, and Paste from the menu of copy A, each open GTM in that copy alone', async (lens) => {
+      const clipboardRef = { current: null as SidebarClipboard | null }
+      const { el, v, bridge } = await mountVault({ lens, clipboardRef }, { favorites: listed, focus: listed, nodes: WORK })
+      act(() => rowByPath(el, `${v}/Work/Wrenly`)?.click())
+      act(() => rowByPath(el, `${v}/Work`)?.click())
+      act(() => rowsByPath(el, `${v}/Work/Wrenly`)[1]?.click())
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const open = (copy: number) => rowsByPath(el, gtm)[copy]?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+      expect([open(0), open(1)]).toEqual(['false', 'false'])
+      const listener = bridge.file.onClipChanged.mock.calls.at(-1)?.[0] as ((state: FileClipState) => void) | undefined
+      act(() => listener?.({ count: 1, op: 'copy', paths: ['/w/x.md'] }))
+      // ⌘V: pick GTM alone in copy B (two plain clicks: it opens and closes again), then paste.
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      expect([open(0), open(1)]).toEqual(['false', 'false'])
+      await act(async () => void clipboardRef.current?.paste())
+      expect(bridge.file.paste).toHaveBeenLastCalledWith({ targetDir: gtm })
+      expect([open(0), open(1)]).toEqual(['false', 'true'])
+      // The menu's Paste on copy A opens copy A.
+      rightClick(rowsByPath(el, gtm)[0] ?? null)
+      await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+      expect([open(0), open(1)]).toEqual(['true', 'true'])
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S12, S14, S17 on %s: the light follows the folds when no click chose a copy; a shift-click on the same path in the other copy removes it; a tab change clears the copies', async (lens) => {
+      const { el, v, rerender } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      const plan = `${gtm}/plan.md`
+      act(() => rowsByPath(el, gtm)[0]?.click())
+      act(() => rowsByPath(el, gtm)[1]?.click())
+      act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+      const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
+      await rerender({ activeFile: plan })
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+      // S12: ← closes GTM in copy A. Copy B is now the first copy that shows the page, so it takes the light.
+      act(() => void rowsByPath(el, gtm)[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })))
+      expect(lit(plan, 'tree__row--active')).toEqual([true])
+      act(() => void rowsByPath(el, gtm)[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+      // S14: shift-click adds the row in copy B; a shift-click on the same path in copy A removes the path.
+      shiftClickRow(rowsByPath(el, plan)[1] ?? null)
+      expect(lit(plan, 'tree__row--selected')).toEqual([false, true])
+      shiftClickRow(rowsByPath(el, plan)[0] ?? null)
+      expect(lit(plan, 'tree__row--selected')).toEqual([false, false])
+      // S17: a change of tab clears the selection and the copies.
+      act(() => rowsByPath(el, plan)[1]?.click())
+      expect(lit(plan, 'tree__row--active')).toEqual([false, true])
+      await rerender({ lens: 'files', activeFile: plan })
+      await rerender({ lens, activeFile: plan })
+      expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
+      expect(lit(plan, 'tree__row--active')).toEqual([true, false])
+    })
 
     it.each(['favorites', 'focus'] as const)('S3, S4, S5, S20 on %s: "New folder" on either copy of GTM opens ONE input, under the right-clicked copy; Enter makes the folder there, the tab stays, and no list changes', async (lens) => {
       const { el, v, bridge, props } = await mountWork(lens)
@@ -5295,10 +5568,12 @@ describe('favorites (YAZ-1766)', () => {
       for (const copy of [0, 1]) {
         rightClick(rowsByPath(el, gtm)[copy] ?? null)
         await act(async () => itemByLabel(el, 'New folder')?.click())
-        // `openTo` opened Work too, so GTM shows two times now — yet one input stands, in the copy that was clicked.
+        // GTM shows two times — yet one input stands, in the copy that was clicked, and only that copy opened (YAZ-3131 S20).
         expect(rowsByPath(el, gtm)).toHaveLength(2)
         expect(inputs(el)).toHaveLength(1)
         expect(copyOf(el, inputs(el)[0]!)).toBe(copy)
+        // The first create opened GTM in its own copy; the other copy of GTM stayed closed (YAZ-3131 S20).
+        if (copy === 0) expect(rowsByPath(el, gtm)[1]?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('false')
         await type(inputs(el)[0]!, `Made ${copy}`)
         expect(bridge.createDir).toHaveBeenCalledTimes(copy + 1)
         expect(bridge.createDir.mock.calls[copy]?.[0].path.startsWith(`${gtm}/`)).toBe(true)
@@ -5317,7 +5592,6 @@ describe('favorites (YAZ-1766)', () => {
     it.each(['favorites', 'focus'] as const)('S8 on %s: "Rename" on a copy of a folder that shows two times opens ONE input, on that copy, and Enter renames it', async (lens) => {
       const { el, v, props } = await mountWork(lens)
       const gtm = `${v}/Work/Wrenly/GTM`
-      act(() => rowByPath(el, `${v}/Work`)?.click())
       rightClick(rowsByPath(el, gtm)[1] ?? null)
       await act(async () => itemByLabel(el, 'Rename')?.click())
       expect(inputs(el)).toHaveLength(1)
@@ -6679,7 +6953,8 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
   const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
 
   const mountLinked = async (alsoIn?: unknown, over: Partial<SidebarProps> = {}, tweak?: (bridge: ReturnType<typeof installBridge>) => unknown) => {
-    vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/Areas', '/v/Projects'])
+    // Open in Files, and as the top rows of Focus and Favorites, whose folds are their own (YAZ-3131 S2).
+    vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/Areas', '/v/Projects', copyFoldKey('/v/Areas', '/v/Areas'), copyFoldKey('/v/Projects', '/v/Projects')])
     const indexSource = createWikilinkResolveSource()
     act(() => indexSource.update(() => null, records(alsoIn), FOLDERS, true))
     const disk = new Map([
@@ -6767,6 +7042,41 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(shortcutRow(el)?.classList.contains('tree__row--selected')).toBe(true)
       await rerender({ activeFile: '/v/top.md' })
       expect(shortcutRow(el)?.classList.contains('tree__row--active')).toBe(false)
+    })
+
+    it.each(['favorites', 'focus'] as const)('on %s, the shortcut row still lights with its real row, as the open page and as the selection (YAZ-3131 S18, YAZ-3142)', async (lens) => {
+      const { el, rerender } = await mountLinked([PROJECTS_ID], { lens }, (bridge) => {
+        bridge.favorites.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
+        bridge.focus.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
+      })
+      await rerender({ activeFile: HEALTH })
+      expect(shortcutRow(el)).not.toBeNull()
+      expect(row(el, HEALTH)?.classList.contains('tree__row--active')).toBe(true)
+      expect(shortcutRow(el)?.classList.contains('tree__row--active')).toBe(true)
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S18 (YAZ-3142) on %s: a click on the real row — the shortcut row shows selected and active too (YAZ-2290 D3)', async (lens) => {
+      const { el, rerender } = await mountLinked([PROJECTS_ID], { lens }, (bridge) => {
+        bridge.favorites.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
+        bridge.focus.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
+      })
+      act(() => row(el, HEALTH)?.click())
+      await rerender({ activeFile: HEALTH })
+      expect(row(el, HEALTH)?.classList.contains('tree__row--selected')).toBe(true)
+      expect(shortcutRow(el)?.classList.contains('tree__row--selected')).toBe(true)
+      expect(row(el, HEALTH)?.classList.contains('tree__row--active')).toBe(true)
+      expect(shortcutRow(el)?.classList.contains('tree__row--active')).toBe(true)
+    })
+
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 S18 (YAZ-3142) on %s: a click on the shortcut row — the real row lights as the open page too', async (lens) => {
+      const { el, rerender } = await mountLinked([PROJECTS_ID], { lens }, (bridge) => {
+        bridge.favorites.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
+        bridge.focus.get.mockResolvedValue(['/v/Areas', '/v/Projects'])
+      })
+      act(() => shortcutRow(el)?.click())
+      await rerender({ activeFile: HEALTH })
+      expect(row(el, HEALTH)?.classList.contains('tree__row--active')).toBe(true)
+      expect(shortcutRow(el)?.classList.contains('tree__row--active')).toBe(true)
     })
 
     it('a click, a shift-click or a right-click on it selects nothing, so ⌘C / ⌘X never reach the real note from here', async () => {
@@ -7936,9 +8246,9 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect([tag(el, `${b}/b.md`), tag(el, `${a}/sub`)]).toEqual(['Work', 'Notes'])
     expect(el.querySelector('.tree__row--vault')).toBeNull()
     expect(countLine(el)).toBe('2 in focus')
-    // The folder opened in its own vault (YAZ-2619 R4); what stands below a top row is not tagged.
+    // The folder opened in its own vault (YAZ-2619 R4), as its own copy (YAZ-3131 S4); what stands below a top row is not tagged.
     expect(allRows(el)).toEqual([`${b}/b.md`, `${a}/sub`, `${a}/sub/in.md`])
-    expect(setFolderCalls(bridge)).toContainEqual([a, { expanded: [`${a}/sub`] }])
+    expect(setFolderCalls(bridge)).toContainEqual([a, { expanded: [copyFoldKey(`${a}/sub`, `${a}/sub`)] }])
     expect(el.querySelectorAll('.tree__vault')).toHaveLength(2)
     // The tag stands after the label, on a file row as on a folder row.
     for (const row of [`${b}/b.md`, `${a}/sub`]) expect(rowByPath(el, row)?.querySelector('.tree__vault')?.previousElementSibling?.className).toBe('tree__label')
@@ -7982,8 +8292,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(bridge.focus.set.mock.calls).toEqual([[a, [`${a}/a.md`]], [b, [`${b}/docs`]]])
     expect(props.onNotice).toHaveBeenLastCalledWith('Added 2 to focus')
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('focus')
-    // The folder opened in ITS vault, the second: its open folders are stored under that vault (YAZ-2619 R4).
-    expect(setFolderCalls(bridge)).toContainEqual([b, { expanded: [`${b}/docs`] }])
+    // The folder opened in ITS vault, the second, as its own copy (YAZ-3131 S4): its open folders are stored under that vault (YAZ-2619 R4).
+    expect(setFolderCalls(bridge)).toContainEqual([b, { expanded: [copyFoldKey(`${b}/docs`, `${b}/docs`)] }])
 
     dropSelection()
     rightClick(rowByPath(el, `${b}/docs`))
@@ -8082,7 +8392,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(button()?.getAttribute('aria-label')).toBe('Expand all')
     act(() => button()?.click())
     expect(allRows(el)).toEqual([`${a}/sub`, `${a}/sub/in.md`, `${b}/docs`, `${b}/docs/d.md`])
-    expect(setFolderCalls(bridge).filter(([, patch]) => patch.expanded !== undefined)).toEqual([[a, { expanded: [`${a}/sub`] }], [b, { expanded: [`${b}/docs`] }]])
+    // Each copy's own key (YAZ-3131 S5), each under the vault that holds it.
+    expect(setFolderCalls(bridge).filter(([, patch]) => patch.expanded !== undefined)).toEqual([[a, { expanded: [copyFoldKey(`${a}/sub`, `${a}/sub`)] }], [b, { expanded: [copyFoldKey(`${b}/docs`, `${b}/docs`)] }]])
     expect(button()?.getAttribute('aria-label')).toBe('Collapse all')
     act(() => button()?.click())
     expect(allRows(el)).toEqual([`${a}/sub`, `${b}/docs`])

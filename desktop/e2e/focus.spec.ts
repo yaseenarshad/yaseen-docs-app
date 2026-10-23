@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, extraWindow, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, SEED_FILE, seededState, shoot, topLabels, windowCount, winParam } from './helpers'
+import { activeTab, tabsOf, appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, extraWindow, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, SEED_FILE, seededState, shoot, topLabels, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -168,6 +168,108 @@ test('step 4 — a second window on the vault shows the same list (YAZ-2702 S7, 
   await closeWindow(app, dupId)
   await expect.poll(() => windowCount(app)).toBe(1)
   expect(await focusListOnDisk()).toEqual(['Projects'])
+})
+
+// ---------------------------------------------------------------- a folder and its subfolder (YAZ-3131)
+
+test('step 4b — a folder and its subfolder both in focus: each copy of the subfolder folds on its own, and the open page lights in the copy that was clicked (YAZ-3131 S1, S2, S4, S11)', async () => {
+  // Projects is the one item; open it and put its subfolder in focus too, so `archive` shows two times.
+  await dirRow(win, 'Projects').click()
+  await pickFromRowMenu(dirRow(win, 'archive'), 'Add to focus')
+  await expect(toast(win)).toHaveText('Added to focus')
+  await expect(topLabels(win)).toHaveText(['Projects', 'archive'])
+  const archive = dirRow(win, 'archive') // 0: inside Projects, 1: the top row
+  const item = (copy: number) => archive.nth(copy).locator('..')
+  const plan = fileRow(win, 'Old plan')
+  await expect(archive).toHaveCount(2)
+  // The add opened the new item's own row alone (S4): the copy inside Projects stays closed.
+  await expect(item(0)).toHaveAttribute('aria-expanded', 'false')
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'true')
+  await expect(plan).toHaveCount(1)
+
+  // A click folds one copy, never the other (S1).
+  await archive.nth(1).click()
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'false')
+  await expect(item(0)).toHaveAttribute('aria-expanded', 'false')
+  await archive.nth(0).click()
+  await expect(item(0)).toHaveAttribute('aria-expanded', 'true')
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'false')
+  await archive.nth(1).click()
+  await expect(plan).toHaveCount(2)
+
+  // Files keeps its own folds (S2): no fold of the Focus tab opened anything there. (An OPENED page
+  // still opens its folders in Files, its rule since YAZ-1642, so this is checked before any page opens.)
+  await lensTab(win, 'Files').click()
+  await expect(dirRow(win, 'Projects').locator('..')).toHaveAttribute('aria-expanded', 'false')
+  await focusTab(win).click()
+  await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true')
+  await expect(plan).toHaveCount(2) // the tab's folds outlived the trip to Files
+
+  // The open page lights in the copy that was clicked, and only there (S11).
+  await plan.nth(1).click()
+  await expect(plan.nth(1)).toHaveClass(/tree__row--active/)
+  await expect(plan.nth(0)).not.toHaveClass(/tree__row--active/)
+  await expect(win.locator('.sidebar__body .tree__row--active')).toHaveCount(1)
+  await plan.nth(0).click()
+  await expect(plan.nth(0)).toHaveClass(/tree__row--active/)
+  await expect(plan.nth(1)).not.toHaveClass(/tree__row--active/)
+  await shoot(win, 'focus-05b-two-copies')
+})
+
+test('step 4c — ← and → fold one copy in the real app, and a click that closes the folder of the open page in its copy leaves no row lit (YAZ-3131 S6, S13)', async () => {
+  const archive = dirRow(win, 'archive') // 0: inside Projects, 1: the top row
+  const item = (copy: number) => archive.nth(copy).locator('..')
+  const plan = fileRow(win, 'Old plan')
+  await expect(item(0)).toHaveAttribute('aria-expanded', 'true')
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'true')
+  // S6: the arrow keys fold the copy that has the keyboard focus.
+  await archive.nth(1).focus()
+  await win.keyboard.press('ArrowLeft')
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'false')
+  await expect(item(0)).toHaveAttribute('aria-expanded', 'true')
+  await win.keyboard.press('ArrowRight')
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'true')
+  await expect(plan).toHaveCount(2)
+  // S13: open the page from copy 1, then close archive in copy 1 with a click.
+  await plan.nth(1).click()
+  await expect(plan.nth(1)).toHaveClass(/tree__row--active/)
+  await archive.nth(1).click()
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'false')
+  await expect(plan).toHaveCount(1)
+  await shoot(win, 'focus-4c-s13')
+  await expect(win.locator('.sidebar__body .tree__row--active')).toHaveCount(0)
+})
+
+test('step 4d — a page clicked in copy 1, a fold click, another tab, then its own tab again: the page lights in the first copy that shows it (YAZ-3131 S12, Decision 3)', async () => {
+  const archive = dirRow(win, 'archive') // 0: inside Projects, 1: the top row
+  const item = (copy: number) => archive.nth(copy).locator('..')
+  const plan = fileRow(win, 'Old plan')
+  // After 4c: the page was clicked in copy 1, and copy 1 is closed. Open copy 1 again with a click.
+  await archive.nth(1).click()
+  await expect(item(1)).toHaveAttribute('aria-expanded', 'true')
+  await expect(item(0)).toHaveAttribute('aria-expanded', 'true')
+  await expect(plan).toHaveCount(2)
+  const other = tabsOf(win).filter({ hasNotText: 'Old plan' }).first()
+  await expect(other).toHaveCount(1)
+  await other.click()
+  await expect(activeTab(win)).not.toHaveText(/Old plan/)
+  await tabsOf(win).filter({ hasText: 'Old plan' }).first().click()
+  await expect(activeTab(win)).toHaveText(/Old plan/)
+  await shoot(win, 'focus-4d-s12')
+  // S12: opened from the tab bar, the page lights in the first copy whose folds show it — copy 0.
+  await expect(plan.nth(0)).toHaveClass(/tree__row--active/)
+  await expect(plan.nth(1)).not.toHaveClass(/tree__row--active/)
+})
+
+test('step 4e — a double click opens the FOLDER page of archive in copy 1: its row lights in copy 1 (Decision 3)', async () => {
+  const archive = dirRow(win, 'archive') // 0: inside Projects, 1: the top row
+  await expect(archive).toHaveCount(2)
+  await archive.nth(1).dblclick()
+  await expect(activeTab(win)).toHaveText(/archive/)
+  await expect(archive).toHaveCount(2)
+  await shoot(win, 'focus-4e-folder-page')
+  await expect(archive.nth(1)).toHaveClass(/tree__row--active/)
+  await expect(archive.nth(0)).not.toHaveClass(/tree__row--active/)
 })
 
 // ---------------------------------------------------------------- clear

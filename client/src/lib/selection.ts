@@ -3,7 +3,8 @@
  * the state, this owns the rules. A selection is a set of PATHS — files and, since YAZ-1578,
  * folders (a folder is itself, never its contents) — so ONE path is ONE entry however many rows
  * draw it (🔒 D3: the Favorites tab shows a favorited file at its root AND inside its favorited
- * folder, and both rows are the same selected thing).
+ * folder, and both rows are the same selected thing). Since YAZ-3131 Decision 3 that data rule
+ * stays, but only the copy where the path was picked LIGHTS (`TreeSelection.copies`).
  */
 
 /** The one empty selection: an untouched sidebar and a cleared one are then the SAME value. */

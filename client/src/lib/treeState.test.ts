@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import type { TreeNode } from '@shared/types'
-import { allDirs, ancestorDirs, atOrBelow, favoriteOrder, favoriteRoots, findDirNode, findNode, notesAt, otherFiles, pinnedRoots, treeHasFile, treeHasPath, treeReducer, withoutPaths } from './treeState'
+import { allDirs, ancestorDirs, copyDirs, firstCopy, atOrBelow, favoriteOrder, favoriteRoots, findDirNode, findNode, notesAt, otherFiles, pinnedRoots, treeHasFile, treeHasPath, treeReducer, withoutPaths } from './treeState'
 
 describe('treeReducer', () => {
   it('toggle adds then removes a dir', () => {
@@ -72,6 +73,45 @@ describe('allDirs', () => {
     ]
     expect(allDirs(tree)).toEqual(['/r/a', '/r/a/b', '/r/c'])
     expect(allDirs([])).toEqual([])
+  })
+})
+
+/**
+ * The copies of Focus and Favorites (YAZ-3131): folder `F` and its subfolder `F/S` are both top rows,
+ * so `F/S` and the note in it stand under two tops. Each copy folds under its own key.
+ */
+describe('copy folds (YAZ-3131)', () => {
+  const note: TreeNode = { type: 'file', name: 'n.md', path: '/v/F/S/n.md', size: 1, mtime: 1, kind: 'markdown' }
+  const sub: TreeNode = { type: 'dir', name: 'S', path: '/v/F/S', children: [note] }
+  const tops: TreeNode[] = [{ type: 'dir', name: 'F', path: '/v/F', children: [sub] }, sub]
+  const key = copyFoldKey
+
+  it('a key splits back into its top and its path; a plain path is no copy key', () => {
+    expect(copyFoldParts(key('/v/F', '/v/F/S'))).toEqual(['/v/F', '/v/F/S'])
+    expect(copyFoldParts('/v/F/S')).toBeNull()
+  })
+
+  it('`open` adds only the closed keys, and gives the SAME list when none is missing', () => {
+    const before = [key('/v/F', '/v/F')]
+    const after = treeReducer(before, { type: 'open', dirs: [key('/v/F', '/v/F'), key('/v/F/S', '/v/F/S')] })
+    expect(after).toEqual([key('/v/F', '/v/F'), key('/v/F/S', '/v/F/S')])
+    expect(treeReducer(after, { type: 'open', dirs: [key('/v/F/S', '/v/F/S')] })).toBe(after)
+  })
+
+  it('copyDirs gives each folder once for each top that holds it (S5)', () => {
+    expect(copyDirs(tops)).toEqual([key('/v/F', '/v/F'), key('/v/F', '/v/F/S'), key('/v/F/S', '/v/F/S')])
+  })
+
+  it('firstCopy (S12): the first top whose folds show the path, else the first that holds it, else null', () => {
+    // Nothing open: no copy shows the note, so the first holder takes it.
+    expect(firstCopy(tops, note.path, new Set())).toBe('/v/F')
+    // Only the second copy is open down to the note: it takes the light.
+    expect(firstCopy(tops, note.path, new Set([key('/v/F/S', '/v/F/S')]))).toBe('/v/F/S')
+    // Both open: the first from the top wins.
+    expect(firstCopy(tops, note.path, new Set([key('/v/F', '/v/F'), key('/v/F', '/v/F/S'), key('/v/F/S', '/v/F/S')]))).toBe('/v/F')
+    // A top row is shown by itself; a path no top holds lights nowhere.
+    expect(firstCopy(tops, '/v/F/S', new Set())).toBe('/v/F/S')
+    expect(firstCopy(tops, '/v/other.md', new Set())).toBeNull()
   })
 })
 

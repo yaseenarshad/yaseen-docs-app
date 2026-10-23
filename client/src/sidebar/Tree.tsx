@@ -5,6 +5,7 @@ import { CreateInline } from './CreateInline'
 import type { EntryKind, MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { isBoard, isMarkdown } from '@shared/fileKind'
+import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { CloudOffIcon, DiagramBadge, LinkIcon, ShortcutIcon } from '../views/view/icons'
 import { TOO_LARGE_LABEL } from '../lib/syncAttention'
 import { RenameInline } from './RenameInline'
@@ -107,7 +108,8 @@ function rowArrows(e: React.KeyboardEvent<HTMLElement>, onToggle: (dir: string) 
     rows[rows.indexOf(row) + (e.key === 'ArrowDown' ? 1 : -1)]?.focus()
   } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
     // A folder's item says whether it is open; a file's says nothing, so neither key acts on it.
-    if (row.closest('[role="treeitem"]')?.getAttribute('aria-expanded') === String(e.key === 'ArrowLeft')) onToggle(path)
+    // A folder row of a copy (YAZ-3131) folds under its own key, which the row carries in `data-fold`.
+    if (row.closest('[role="treeitem"]')?.getAttribute('aria-expanded') === String(e.key === 'ArrowLeft')) onToggle(row.dataset.fold ?? path)
     // → with nothing to open — a file row, a folder that is open — goes to the new tab page, when
     // it shows and has a row (YAZ-2663 D8). With no such page the key does nothing, as before (S62).
     else if (e.key === 'ArrowRight' && !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)) onLeaveToPage?.()
@@ -131,16 +133,18 @@ function heldEnter(e: React.KeyboardEvent<HTMLElement>): void {
 /**
  * Sidebar multi-select (YAZ-1336, 🔒 D1) as both trees take it: the selected PATHS plus the two
  * gestures that change them. The Sidebar owns the reducer behind it; keying by path is 🔒 D3, so
- * a favorite standing at the root AND inside its favorited parent shows selected on BOTH of its
- * rows. A path is a file or a FOLDER (YAZ-1578): a selected folder is the folder itself, never its
- * contents.
+ * a favorite standing at the root AND inside its favorited parent is ONE selected path. Which of
+ * its rows LIGHTS is the copy it was picked in (YAZ-3131 Decision 3, `copies`). A path is a file
+ * or a FOLDER (YAZ-1578): a selected folder is the folder itself, never its contents.
  */
 export interface TreeSelection {
   paths: ReadonlySet<string>
-  /** 🔒 D2: shift+click on a file or folder row toggles it in or out — no range, never an open, never a fold. */
-  toggle: (path: string) => void
-  /** D9 (YAZ-1674): a plain click or ⌘-click makes the selection EXACTLY this row — then opens or folds as before. */
-  set: (path: string) => void
+  /** The copy each picked path was picked in (YAZ-3131): its top row. A path with no entry lights in every copy. */
+  copies?: ReadonlyMap<string, string>
+  /** 🔒 D2: shift+click on a file or folder row toggles it in or out — no range, never an open, never a fold. `top`: the copy it was picked in. */
+  toggle: (path: string, top?: string) => void
+  /** D9 (YAZ-1674): a plain click or ⌘-click makes the selection EXACTLY this row — then opens or folds as before. `top`: the copy it was picked in. */
+  set: (path: string, top?: string) => void
 }
 
 /** What a search tree marks (🔒 D5, YAZ-2620): the paths the query matched, and the query as the matcher reads it — trimmed, lowercased. */
@@ -163,14 +167,23 @@ interface TreeProps {
    */
   vaultRows: ReadonlyMap<string, string>
   expanded: ReadonlySet<string>
+  /**
+   * The rows are copies (YAZ-3131 Decision 2): Focus and Favorites can draw one folder under two top
+   * rows. Each copy then folds under its own key (`copyFoldKey`), never the Files tab's plain path.
+   */
+  copies?: boolean
   activeFile: string | null
+  /** The copy the open page lights in (YAZ-3131 Decision 3); null or absent: every row of it lights. */
+  activeTop?: string | null
   onToggle: (dir: string) => void
-  onOpenFile: (path: string) => void
+  /** `top`: the copy of Focus or Favorites the row was clicked in (YAZ-3131 S11), so the page lights there. */
+  onOpenFile: (path: string, top?: string) => void
   /**
    * A double click on a row (YAZ-2648 D2): the page is a KEPT tab. On a file row the first click
    * has opened it in the preview tab, and this keeps it; a folder row opens its folder as one.
+   * `top`: as `onOpenFile`'s (YAZ-3144), so a page kept from a copy lights there too.
    */
-  onKeepFile: (path: string) => void
+  onKeepFile: (path: string, top?: string) => void
   /**
    * ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open it in a background tab of THIS
    * window — activation stays put. "Open in new window" lives on the context menu (D2).
@@ -241,7 +254,9 @@ function TreeLevel({
   dirPath,
   vaultRows,
   expanded,
+  copies = false,
   activeFile,
+  activeTop,
   onToggle,
   onOpenFile,
   onKeepFile,
@@ -263,7 +278,7 @@ function TreeLevel({
   shareBadges,
   depth = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges }
+  const recurse = { vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !(isBoard(path) || isMarkdown(path)) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
@@ -275,6 +290,15 @@ function TreeLevel({
   // that shows twice apart, and a right-click hands it to the menu, so an input mounts in that copy alone.
   const topOf = (node: TreeNode): string => top ?? node.path
   const inCopy = (want: string | null, node: TreeNode): boolean => want === null || want === topOf(node)
+  /** The key this folder row folds under: its copy's own in Focus and Favorites (YAZ-3131), else its path. */
+  const foldOf = (node: TreeNode): string => (copies ? copyFoldKey(topOf(node), node.path) : node.path)
+  /** The copy a click picks in (YAZ-3131): only a tree of copies records one. */
+  const copyOf = (node: TreeNode): string | undefined => (copies ? topOf(node) : undefined)
+  // A path lights in ONE copy (YAZ-3131 Decision 3): the copy it was picked in; with none, every copy, as before.
+  // A note's SHORTCUT row is no copy (YAZ-3142, S18): it lights with its real row wherever that one
+  // stands, as YAZ-2290 🔒 D3 has it.
+  const isActive = (node: TreeNode): boolean => node.path === activeFile && (activeTop == null || isShortcutRow(node) || activeTop === topOf(node))
+  const isSelected = (node: TreeNode): boolean => selection.paths.has(node.path) && (isShortcutRow(node) || (selection.copies?.get(node.path) ?? topOf(node)) === topOf(node))
   // The top level is no copy of anything: one per tab, so a create there (the root) mounts as before.
   const createsHere = pending !== null && pending.parentDir === dirPath && (pending.top === null || top === undefined || pending.top === top)
   // The reorder gesture lives on the TOP rows alone (YAZ-2631 D3): a favorite, a focus item, a vault row of Files.
@@ -309,7 +333,7 @@ function TreeLevel({
       )}
       {rows.map((node) =>
         node.type === 'dir' ? (
-          <li key={node.path} role="treeitem" aria-expanded={expanded.has(node.path)} aria-selected={node.path === activeFile || selection.paths.has(node.path)}>
+          <li key={node.path} role="treeitem" aria-expanded={expanded.has(foldOf(node))} aria-selected={isActive(node) || isSelected(node)}>
             {renaming !== null && renaming.path === node.path && inCopy(renaming.top, node) ? (
               // Inline FOLDER rename (E1b, GRO-2241): same idiom as files, and what it edits is
               // the folder's TITLE (YAZ-2420 🔒 D16).
@@ -318,37 +342,38 @@ function TreeLevel({
               <button
                 type="button"
                 // The folder itself is a tab (YAZ-2290 D3), so its row is the active one while that tab is.
-                className={`tree__row tree__row--dir${vaultRows.has(node.path) ? ' tree__row--vault' : ''}${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}${dropEdge(node.path)}${context(node.path)}`}
+                className={`tree__row tree__row--dir${vaultRows.has(node.path) ? ' tree__row--vault' : ''}${isActive(node) ? ' tree__row--active' : ''}${isSelected(node) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}${dropEdge(node.path)}${context(node.path)}`}
                 style={{ paddingLeft: 8 + depth * 14 }}
                 // Read by `flashTreeRows` (a Files reveal of a FOLDER, YAZ-1491) and by
                 // `orderedSelection`, which puts a selected folder in on-screen order (YAZ-1578).
                 data-path={node.path}
+                data-fold={foldOf(node)}
                 // Shift is the SELECTION gesture everywhere (YAZ-1340) and a folder joins the
                 // selection like a file (YAZ-1578, 🔒 D1) — so shift toggles and never folds. A
                 // PLAIN click SELECTS the folder (D9, YAZ-1674 — the Finder rule) and then folds,
                 // so ⌘C / ⌘V have a target the moment a folder is clicked.
                 onClick={(e) => {
                   if (e.shiftKey) {
-                    selection.toggle(node.path)
+                    selection.toggle(node.path, copyOf(node))
                     return
                   }
-                  selection.set(node.path)
-                  onToggle(node.path)
+                  selection.set(node.path, copyOf(node))
+                  onToggle(foldOf(node))
                 }}
                 // The folder itself is the tab (YAZ-2290 D3, overturning YAZ-1578 D3): a double
                 // click opens it, as a KEPT tab (YAZ-2648 D2). Its two clicks have selected and folded
                 // as ever; shift never opens. A vault row is no page (YAZ-2602 D3): neither gesture
                 // opens one, and Enter folds it.
                 onDoubleClick={(e) => {
-                  if (!e.shiftKey && !vaultRows.has(node.path)) onKeepFile(node.path)
+                  if (!e.shiftKey && !vaultRows.has(node.path)) onKeepFile(node.path, copyOf(node))
                 }}
                 // Enter opens it too, as it opens a file row — there through the button's own click,
                 // which on this row folds. So the key is taken here and Space is left to fold.
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter' || e.shiftKey || vaultRows.has(node.path)) return
                   e.preventDefault()
-                  selection.set(node.path)
-                  onOpenFile(node.path)
+                  selection.set(node.path, copyOf(node))
+                  onOpenFile(node.path, copyOf(node))
                 }}
                 onContextMenu={(e) => onNodeContextMenu({ ...node, top: topOf(node) }, e)}
                 draggable={rowReorder !== null}
@@ -377,7 +402,7 @@ function TreeLevel({
                   else move.drop(node.path)
                 }}
               >
-                <span className={`tree__chevron${expanded.has(node.path) ? ' tree__chevron--open' : ''}`} />
+                <span className={`tree__chevron${expanded.has(foldOf(node)) ? ' tree__chevron--open' : ''}`} />
                 <span className="tree__label">
                   {idFor(node.path)}
                   {vaultRows.has(node.path) ? node.name : marked(pageLabel(node.path, true, titles), needleFor(node.path))}
@@ -385,7 +410,7 @@ function TreeLevel({
                 {vaultTag(node.path)}
               </button>
             )}
-            {expanded.has(node.path) && <Tree nodes={node.children} dirPath={node.path} depth={depth + 1} top={topOf(node)} {...recurse} />}
+            {expanded.has(foldOf(node)) && <Tree nodes={node.children} dirPath={node.path} depth={depth + 1} top={topOf(node)} {...recurse} />}
           </li>
         ) : renaming !== null && renaming.path === node.path && !isShortcutRow(node) && inCopy(renaming.top, node) ? (
           // Inline rename (Links E1, GRO-2194): a note's box edits its TITLE (YAZ-2420 🔒 D16);
@@ -396,21 +421,21 @@ function TreeLevel({
             <RenameInline initial={pageLabel(node.path, false, titles)} title={renaming.title && node.kind === 'markdown'} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
           </li>
         ) : (
-          <li key={node.path} role="treeitem" aria-selected={node.path === activeFile || selection.paths.has(node.path)}>
+          <li key={node.path} role="treeitem" aria-selected={isActive(node) || isSelected(node)}>
             <button
               type="button"
-              className={`tree__row tree__row--file${node.kind === null ? ' tree__row--external' : ''}${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${dropEdge(node.path)}${context(node.path)}`}
+              className={`tree__row tree__row--file${node.kind === null ? ' tree__row--external' : ''}${isActive(node) ? ' tree__row--active' : ''}${isSelected(node) ? ' tree__row--selected' : ''}${dropEdge(node.path)}${context(node.path)}`}
               style={{ paddingLeft: 8 + depth * 14 + 14 }}
               onClick={(e) => {
                 // Shift is the SELECTION gesture and nothing else (YAZ-1336, 🔒 D2): it never
                 // opens, never previews — so it is asked first, before any of the open rules.
                 if (e.shiftKey) {
-                  if (!isShortcutRow(node)) selection.toggle(node.path)
+                  if (!isShortcutRow(node)) selection.toggle(node.path, copyOf(node))
                   return
                 }
                 // Every other click makes the selection THIS row (D9, YAZ-1674) — plain and ⌘
                 // alike, the external row too — before the open rules decide where it opens.
-                if (!isShortcutRow(node)) selection.set(node.path)
+                if (!isShortcutRow(node)) selection.set(node.path, copyOf(node))
                 // No in-app viewer (YAZ-1577 D2): the OS default app IS the viewer, so no tab —
                 // and nothing for ⌘ to background. Asked before the open rules, after shift.
                 if (node.kind === null) {
@@ -427,14 +452,15 @@ function TreeLevel({
                 // it already shows, and App closes the tab board over it (YAZ-2648 S46).
                 if (e.metaKey) onOpenFileBackground(node.path)
                 else {
-                  onOpenFile(node.path)
+                  // A shortcut row hands no copy (YAZ-3142): its note lights where the note itself stands.
+                  onOpenFile(node.path, isShortcutRow(node) ? undefined : copyOf(node))
                   if (node.path === activeFile && e.detail === 0) focusOpenDocument() // YAZ-961: the VISIBLE one
                 }
               }}
               // The second click of a double click KEEPS the tab the first one previewed (YAZ-2648 D2).
               // A row with no viewer in the app has no tab, and ⌘ opened a kept tab already.
               onDoubleClick={(e) => {
-                if (!e.shiftKey && !e.metaKey && node.kind !== null) onKeepFile(node.path)
+                if (!e.shiftKey && !e.metaKey && node.kind !== null) onKeepFile(node.path, isShortcutRow(node) ? undefined : copyOf(node))
               }}
               onContextMenu={(e) => onNodeContextMenu(isShortcutRow(node) ? { type: 'file', path: node.path, shortcutIn: dirPath, top: topOf(node) } : { ...node, top: topOf(node) }, e)}
               title={node.path}
@@ -498,7 +524,7 @@ function changedBelow(a: ReadonlySet<string>, b: ReadonlySet<string>, drawn: (pa
 function sameLevel(prev: TreeProps, next: TreeProps): boolean {
   const keys = new Set([...Object.keys(prev), ...Object.keys(next)] as (keyof TreeProps)[])
   for (const key of keys) {
-    if (key === 'expanded' || key === 'activeFile' || key === 'selection') continue
+    if (key === 'expanded' || key === 'activeFile' || key === 'activeTop' || key === 'selection') continue
     if (!Object.is(prev[key], next[key])) return false
   }
   const dir = next.dirPath
@@ -510,8 +536,12 @@ function sameLevel(prev: TreeProps, next: TreeProps): boolean {
     return elsewhere.has(path)
   }
   if (prev.activeFile !== next.activeFile && (drawn(prev.activeFile) || drawn(next.activeFile))) return false
+  // The copy that lights (YAZ-3131) moves only the levels that draw what it lights.
+  if (prev.activeTop !== next.activeTop && drawn(next.activeFile)) return false
   if (prev.selection.toggle !== next.selection.toggle || prev.selection.set !== next.selection.set) return false
-  return !changedBelow(prev.expanded, next.expanded, (path) => below(path, dir)) && !changedBelow(prev.selection.paths, next.selection.paths, drawn)
+  if (prev.selection.copies !== next.selection.copies && [...next.selection.paths].some(drawn)) return false
+  // A copy's fold key (YAZ-3131) is drawn where its PATH half is.
+  return !changedBelow(prev.expanded, next.expanded, (key) => below(copyFoldParts(key)?.[1] ?? key, dir)) && !changedBelow(prev.selection.paths, next.selection.paths, drawn)
 }
 
 export const Tree = memo(TreeLevel, sameLevel)
