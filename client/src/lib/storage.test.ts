@@ -126,6 +126,28 @@ describe('storage.getVaultSets (YAZ-2602 D8)', () => {
   })
 })
 
+describe('storage.getSessions (YAZ-3147 D2)', () => {
+  it('is the cache\'s sessions, last used first as main keeps them; the same array until a change, which any window can make (S36)', async () => {
+    expect(storage.getSessions()).toEqual([])
+    const work = { id: 's1', name: 'Work', tabs: [{ path: '/v/a/1.md', active: true as const }], roots: ['/v/a'], lastUsed: 20 }
+    const empty = { id: 's2', name: 'Empty', tabs: [], roots: [], lastUsed: 10 }
+    b = installBridge({ ...defaultAppState(), sessions: [work, empty] }, { id: 'w1', root: '/v/a', file: null, tabs: [] })
+    await storage.init()
+    const loaded = storage.getSessions()
+    expect(loaded).toEqual([work, empty])
+    expect(storage.getSessions()).toBe(loaded)
+    const woke = vi.fn()
+    storage.subscribe(woke)
+    // A broadcast for anything else (a tab click writes the window) is a new copy of the same sessions:
+    // the array keeps its identity, so the open Sessions tab does not draw again.
+    b.emit({ ...defaultAppState(), sessions: structuredClone([work, empty]), sidebarWidth: 300 })
+    expect(storage.getSessions()).toBe(loaded)
+    b.emit({ ...defaultAppState(), sessions: [empty] })
+    expect(storage.getSessions()).toEqual([empty])
+    expect(woke).toHaveBeenCalledTimes(2)
+  })
+})
+
 // The two orders across vaults have one rule in the cache (YAZ-2702 Decision 3): the test runs for the two.
 describe.each([
   ['favoritesOrder', 'getFavoritesOrder', 'setFavoritesOrder'],

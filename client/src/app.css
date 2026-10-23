@@ -2058,8 +2058,10 @@ button {
 
 /* The Inbox row's due number, pushed to the right edge of the row. */
 .tree__count {
+  flex: none;
   margin-left: auto;
   padding-left: 6px;
+  white-space: nowrap;
   font-size: 11px;
   color: var(--fg-muted);
 }

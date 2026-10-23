@@ -912,7 +912,8 @@ export function mergeFavoritesOrder(stored: string[], roots: readonly string[], 
 /**
  * `WindowEntry.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
  * `files` (the file explorer), `focus` (the focus lists of the window's vaults, YAZ-2619, in the
- * vault since YAZ-2702 — the tab between the two) or `favorites` (the pinned files and folders, YAZ-1766 D1).
+ * vault since YAZ-2702 — the tab between the two), `favorites` (the pinned files and folders, YAZ-1766 D1)
+ * or `sessions` (the saved sessions of the app, YAZ-3147 D4 — a stored lens like the other three).
  * Window identity like `sidebarCollapsed` since YAZ-1628 (global, like `sidebarWidth`, from
  * YAZ-847 until then): the tabs are not per-folder view state, so there is no per-root keying
  * and no `FolderState` entry. Default `DEFAULT_SIDEBAR_LENS` (`files` since YAZ-1846) — a
@@ -920,16 +921,16 @@ export function mergeFavoritesOrder(stored: string[], roots: readonly string[], 
  * window that has none of its own. A state file that still names the retired `topics` lens reads
  * as the default one, and its two retired keys are ignored on load (`store.ts`).
  */
-export type SidebarLens = 'files' | 'focus' | 'favorites'
-/** The tabs' order, left→right — independent of the default lens (🔒 D3, YAZ-1846). */
-export const SIDEBAR_LENSES: readonly SidebarLens[] = ['files', 'focus', 'favorites']
+export type SidebarLens = 'files' | 'focus' | 'favorites' | 'sessions'
+/** The tabs' order, left→right — independent of the default lens (🔒 D3, YAZ-1846). Sessions (YAZ-3147 D4) stands last, right of Favorites. */
+export const SIDEBAR_LENSES: readonly SidebarLens[] = ['files', 'focus', 'favorites', 'sessions']
 /** The lens a brand-new window, and a switch to a different vault, opens on (🔒 D1/D2, YAZ-1846). */
 export const DEFAULT_SIDEBAR_LENS: SidebarLens = 'files'
 export const isSidebarLens = (v: unknown): v is SidebarLens => SIDEBAR_LENSES.includes(v as SidebarLens)
 /** The tabs of the sidebar's row 1 (YAZ-2638 D2): the lenses, and Search — a tab that is never stored. */
 export type SidebarTab = SidebarLens | 'search'
 /** The order the tabs are drawn in: Search stands right after Files. */
-export const SIDEBAR_TABS: readonly SidebarTab[] = ['files', 'search', 'focus', 'favorites']
+export const SIDEBAR_TABS: readonly SidebarTab[] = ['files', 'search', 'focus', 'favorites', 'sessions']
 
 /** `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. */
 export const SIDEBAR_MIN_W = 180
@@ -1656,6 +1657,38 @@ export interface OpenSetResult {
   missing: string[]
 }
 
+/** The app keeps this many sessions at most (YAZ-3147 D2): a save of a new session past it is refused. */
+export const MAX_SESSIONS = 30
+/** A session keeps this many tabs at most (YAZ-3147 D2): a save keeps the first ones. */
+export const MAX_SESSION_TABS = 40
+
+/**
+ * A session (YAZ-3147 D1): a named, saved COPY of a window's tabs. It changes only when it is saved
+ * again ("Update with open tabs"); it never follows the tabs live. Per machine, in the app state.
+ */
+export interface Session {
+  id: string
+  /** Its name, cleaned like a vault's display name (`cleanVaultName`). Two sessions can have one name (S10). */
+  name: string
+  /** Its tabs left→right, as a window stores them (YAZ-3057): copies, display names and the active mark. MAX_SESSION_TABS at most. */
+  tabs: StoredTab[]
+  /** The vaults that hold its tabs, in the window's order: each once, trailing slash off. A vault with no tab left is not kept. */
+  roots: string[]
+  /** When it was last saved or restored (ms); 0 = not known. */
+  lastUsed: number
+}
+
+/**
+ * What `window.restoreSession` answers (YAZ-3147 D3): the session's tabs whose file exists, in the saved
+ * order; its vaults whose folder exists; and `missing`, ONE path for each tab whose file is gone (a copy
+ * counts again), so its length is the number of tabs that did not pass the file check.
+ */
+export interface RestoreSessionResult {
+  tabs: StoredTab[]
+  roots: string[]
+  missing: string[]
+}
+
 /**
  * The whole persisted app state — one user-global JSON file, owned by the main process
  * (`~/Library/Application Support/Yaseen Docs/yaseendocs.json`). Settings are global so
@@ -1684,11 +1717,16 @@ export interface AppState {
    * mix of two vaults does not travel, the order inside each vault does. A file without it loads as `[]`.
    */
   focusOrder: string[]
+  /**
+   * The saved sessions (YAZ-3147 D2), last used first, MAX_SESSIONS at most. Per machine: never in a
+   * vault, so they do not sync. Additive within version 1, like `vaultSets`: a file without it loads as `[]`, and an old build drops the key.
+   */
+  sessions: Session[]
 }
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [] }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [] }
 }
 
 export function defaultFolderState(): FolderState {

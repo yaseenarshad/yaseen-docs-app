@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type VaultSet, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { createStore, isSettings, normalizeTabStrip, sanitizeSettings } from './store'
 
@@ -136,6 +136,7 @@ describe('createStore: loading', () => {
       vaultSets: [],
       favoritesOrder: ['/v/a.md', '/w/b.md'],
       focusOrder: ['/w/docs', '/v/sub'],
+      sessions: [{ id: 's1', name: 'Work', tabs: [{ path: '/v/a.md', active: true }, { path: '/v/a.md', name: 'Copy' }], roots: ['/v'], lastUsed: 7 }],
     }
     await seed(state)
     expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], name: null, key: null } } })
@@ -1830,6 +1831,160 @@ describe.each([
     expect(seen).toHaveLength(4)
     store.removePath('/v/a/other.md')
     expect(seen).toHaveLength(4)
+  })
+})
+
+describe('sessions (YAZ-3147 D1, D2)', () => {
+  const counted = () => {
+    const store = createStore(file)
+    const seen: AppState[] = []
+    store.onChange((s) => seen.push(s))
+    return { store, seen }
+  }
+  const A = '/v/a.md'
+  const B = '/v/b.md'
+  const W = '/w/c.md'
+
+  it('loads with the windows\' rule: a bad entry drops alone, tabs are read as a strip and cut at MAX_SESSION_TABS, one active mark, only the vaults that hold a tab, at most MAX_SESSIONS; a file without the key is []', async () => {
+    await seed(valid({ sessions: undefined }))
+    expect(createStore(file).get().sessions).toEqual([])
+    await seed(valid({ sessions: 'junk' }))
+    expect(createStore(file).get().sessions).toEqual([])
+    const many = Array.from({ length: MAX_SESSION_TABS + 5 }, (_, i) => ({ path: `/v/${i}.md` }))
+    await seed(valid({
+      sessions: [
+        { id: 'good', name: '  Work  ', tabs: [{ path: A, active: true }, { path: 'relative.md' }, 5, { path: W, name: '  Mine ', active: true }], roots: ['/v/', '/w', '/x', 'rel'], lastUsed: 'soon' },
+        { id: 'good', name: 'Twice', tabs: [], roots: [], lastUsed: 1 }, // the same id again
+        { id: 7, name: 'No id', tabs: [], roots: [], lastUsed: 1 },
+        { id: 'blank', name: '   ', tabs: [], roots: [], lastUsed: 1 },
+        { id: 'empty', name: 'Empty', tabs: 'none', roots: 'none', lastUsed: 3 }, // S31: no tab is a good session
+        { id: 'many', name: 'Many', tabs: many, roots: ['/v'], lastUsed: 4 },
+        null,
+      ],
+    }))
+    expect(createStore(file).get().sessions).toEqual([
+      { id: 'good', name: 'Work', tabs: [{ path: A, active: true }, { path: W, name: 'Mine' }], roots: ['/v', '/w'], lastUsed: 0 },
+      { id: 'empty', name: 'Empty', tabs: [], roots: [], lastUsed: 3 },
+      { id: 'many', name: 'Many', tabs: many.slice(0, MAX_SESSION_TABS), roots: ['/v'], lastUsed: 4 },
+    ])
+    await seed(valid({ sessions: Array.from({ length: MAX_SESSIONS + 3 }, (_, i) => ({ id: `s${i}`, name: `S${i}`, tabs: [], roots: [], lastUsed: i })) }))
+    expect(createStore(file).get().sessions).toHaveLength(MAX_SESSIONS)
+  })
+
+  it('saveSession: a new session at the front with the vaults that hold its tabs (S6); copies and names kept (S5); names may repeat (S10); cut at 40 tabs (S8); a copy of the list, stored per machine', async () => {
+    const { store, seen } = counted()
+    const tabs: StoredTab[] = [{ path: A }, { path: A, name: 'Second', active: true }, { path: W }]
+    const work = store.saveSession('  Work  ', tabs, ['/v', '/x', '/w/'], undefined, 10) as Session
+    expect(work).toEqual({ id: expect.any(String), name: 'Work', tabs: [{ path: A }, { path: A, name: 'Second', active: true }, { path: W }], roots: ['/v', '/w'], lastUsed: 10 })
+    tabs.push({ path: B })
+    expect(store.get().sessions[0].tabs).toHaveLength(3)
+    const twin = store.saveSession('Work', [{ path: B }], ['/v'], undefined, 20) as Session
+    expect(twin.id).not.toBe(work.id)
+    expect(store.get().sessions.map((s) => s.id)).toEqual([twin.id, work.id])
+    expect(seen).toHaveLength(2)
+    // The most specific vault holds a tab: a vault inside another keeps only the tabs below it.
+    expect(store.saveSession('Nested', [{ path: '/v/sub/x.md' }], ['/v', '/v/sub'], undefined, 25)?.roots).toEqual(['/v/sub'])
+    const many = Array.from({ length: MAX_SESSION_TABS + 5 }, (_, i) => ({ path: `/v/${i}.md` }))
+    expect(store.saveSession('Many', many, ['/v'], undefined, 30)?.tabs).toEqual(many.slice(0, MAX_SESSION_TABS))
+
+    await store.flush()
+    expect((await onDisk()).sessions).toEqual(store.get().sessions)
+    expect(createStore(file).get().sessions).toEqual(store.get().sessions)
+  })
+
+  it('saveSession with replaceId ("Update with open tabs", S28): the id and the name stay, the tabs and vaults are new, it moves to the front; refused with null and no commit — no tab (S29), an empty name, an unknown id, or a NEW session when 30 exist (S7)', () => {
+    const { store, seen } = counted()
+    const old = store.saveSession('Old', [{ path: A }], ['/v'], undefined, 1) as Session
+    const other = store.saveSession('Other', [{ path: B }], ['/v'], undefined, 2) as Session
+    seen.length = 0
+    expect(store.saveSession('Ignored', [{ path: W, active: true }], ['/v', '/w'], old.id, 3)).toEqual({ id: old.id, name: 'Old', tabs: [{ path: W, active: true }], roots: ['/w'], lastUsed: 3 })
+    expect(store.get().sessions.map((s) => s.id)).toEqual([old.id, other.id])
+    expect(seen).toHaveLength(1)
+
+    const before = store.get()
+    expect(store.saveSession('Old', [], ['/v'], old.id, 4)).toBeNull() // S29
+    expect(store.saveSession('None', [{ path: 'rel.md' }], ['/v'], undefined, 4)).toBeNull()
+    expect(store.saveSession('   ', [{ path: A }], ['/v'], undefined, 4)).toBeNull()
+    expect(store.saveSession('X', [{ path: A }], ['/v'], 'nope', 4)).toBeNull()
+    expect(store.get()).toBe(before)
+
+    for (let i = 2; i < MAX_SESSIONS; i++) expect(store.saveSession(`S${i}`, [{ path: A }], ['/v'], undefined, 10 + i)).not.toBeNull()
+    expect(store.get().sessions).toHaveLength(MAX_SESSIONS)
+    const full = store.get()
+    expect(store.saveSession('The 31st', [{ path: A }], ['/v'], undefined, 99)).toBeNull()
+    expect(store.get()).toBe(full)
+    // An update at the cap still saves (S7).
+    expect(store.saveSession('', [{ path: B }], ['/v'], other.id, 100)?.id).toBe(other.id)
+    expect(store.get().sessions).toHaveLength(MAX_SESSIONS)
+    expect(store.get().sessions[0].id).toBe(other.id)
+  })
+
+  it('renameSession, setSessionTabs, removeSession, touchSession: one commit each; refusals and unknown ids change nothing', () => {
+    const { store, seen } = counted()
+    const a = store.saveSession('A', [{ path: A, active: true }, { path: W }], ['/v', '/w'], undefined, 1) as Session
+    const b = store.saveSession('B', [{ path: B }], ['/v'], undefined, 2) as Session
+    seen.length = 0
+
+    expect(store.renameSession(a.id, '  Alpha  ')).toBe(true)
+    expect(store.renameSession(a.id, 'B')).toBe(true) // S10: a name another session has is good
+    expect(store.renameSession(a.id, '   ')).toBe(false) // S13
+    expect(store.renameSession('nope', 'New')).toBe(false)
+    expect(store.renameSession(a.id, 'x'.repeat(MAX_VAULT_NAME + 5))).toBe(true) // S15: cut at 80
+    expect(store.get().sessions[1].name).toBe('x'.repeat(MAX_VAULT_NAME))
+    expect(store.renameSession(a.id, 'x'.repeat(MAX_VAULT_NAME))).toBe(true) // its own name: nothing to write
+    expect(seen).toHaveLength(3)
+
+    // Remove from session (S30, S31): the place in the list stays; the vault with no tab left goes; no tab left is still a session.
+    seen.length = 0
+    expect(store.setSessionTabs(a.id, [{ path: A, active: true }])).toBe(true)
+    expect(store.get().sessions[1]).toMatchObject({ id: a.id, tabs: [{ path: A, active: true }], roots: ['/v'], lastUsed: 1 })
+    expect(store.setSessionTabs(a.id, [])).toBe(true)
+    expect(store.get().sessions[1]).toMatchObject({ id: a.id, tabs: [], roots: [] })
+    expect(store.setSessionTabs('nope', [])).toBe(false)
+    expect(seen).toHaveLength(2)
+
+    store.touchSession(a.id, 50) // S26
+    expect(store.get().sessions.map((s) => [s.id, s.lastUsed])).toEqual([[a.id, 50], [b.id, 2]])
+    store.touchSession(a.id, 50)
+    store.touchSession('nope', 60)
+    expect(seen).toHaveLength(3)
+
+    store.upsertWindow(win('w1', { root: '/v', file: B, tabs: [B] }))
+    seen.length = 0
+    const windows = store.get().windows
+    store.removeSession(b.id) // S32
+    expect(store.get().sessions.map((s) => s.id)).toEqual([a.id])
+    expect(store.get().windows).toBe(windows)
+    store.removeSession('nope')
+    expect(seen).toHaveLength(1)
+  })
+
+  it('repair (S34): a rename in the app moves each session\'s tabs, names and vaults; a delete drops the tabs and a vault with no tab left; a session with no tab stays; nothing else is one commit', () => {
+    const { store, seen } = counted()
+    const s1 = store.saveSession('One', [{ path: A, name: 'Named', active: true }, { path: A }, { path: '/v/sub/d.md' }, { path: W }], ['/v', '/w'], undefined, 1) as Session
+    const s2 = store.saveSession('Two', [{ path: W }], ['/w'], undefined, 2) as Session
+    seen.length = 0
+
+    store.renamePath(A, '/v/z.md')
+    expect(store.get().sessions[1].tabs).toEqual([{ path: '/v/z.md', name: 'Named', active: true }, { path: '/v/z.md' }, { path: '/v/sub/d.md' }, { path: W }])
+    store.renamePath('/v/sub', '/v/moved')
+    expect(store.get().sessions[1].tabs[2]).toEqual({ path: '/v/moved/d.md' })
+    // A vault folder renamed in another window: the session's vault follows.
+    store.renamePath('/w', '/w2')
+    expect(store.get().sessions.map((s) => s.roots)).toEqual([['/w2'], ['/v', '/w2']])
+    expect(seen).toHaveLength(3)
+    store.renamePath('/nothing', '/else')
+    expect(seen).toHaveLength(3)
+
+    store.removePath('/v/z.md') // both copies go, and the active mark with them
+    expect(store.get().sessions[1]).toMatchObject({ id: s1.id, tabs: [{ path: '/v/moved/d.md' }, { path: '/w2/c.md' }], roots: ['/v', '/w2'] })
+    store.removePath('/v/moved')
+    expect(store.get().sessions[1]).toMatchObject({ tabs: [{ path: '/w2/c.md' }], roots: ['/w2'] })
+    store.removePath('/w2/c.md')
+    expect(store.get().sessions).toEqual([{ ...s2, tabs: [], roots: [] }, { ...s1, tabs: [], roots: [] }])
+    expect(seen).toHaveLength(6)
+    store.removePath('/nothing')
+    expect(seen).toHaveLength(6)
   })
 })
 

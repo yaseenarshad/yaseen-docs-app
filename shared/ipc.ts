@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -196,6 +196,21 @@ export const CONTRACT = {
     renameSet: invoke<[id: string, name: string], boolean>('window:rename-set', 2),
     /** Forget a saved set (S67); the folders are not touched. */
     removeSet: invoke<[id: string], void>('window:remove-set', 1),
+    /**
+     * Save THIS window's tabs as a session (YAZ-3147 D2, S1): main reads them from the window's own entry,
+     * copies and display names included, and keeps the vaults that hold them. With `replaceId` ("Update with
+     * open tabs", S28) that session keeps its id and name and takes the tabs. Answers the session's id, or
+     * `null` = refused: no tab, an empty name, an unknown `replaceId`, or a new session when MAX_SESSIONS exist (S7).
+     */
+    saveSession: invoke<[name: string, replaceId?: string], string | null>('window:save-session', 2),
+    /** "Restore session" (D3): the session's tabs whose file exists, its vaults whose folder exists, and one missing path per tab that is gone (S20). It becomes the last used (S26). */
+    restoreSession: invoke<[id: string], RestoreSessionResult>('window:restore-session', 1),
+    /** Rename a session (S12); `false` = an unknown id or an empty name. Two sessions can have one name (S10). */
+    renameSession: invoke<[id: string, name: string], boolean>('window:rename-session', 2),
+    /** "Remove from session" (S30): the session keeps only `tabs`, checked as a window's strip is; `false` = an unknown id. */
+    setSessionTabs: invoke<[id: string, tabs: StoredTab[]], boolean>('window:set-session-tabs', 2),
+    /** "Delete session" (S32); no file and no tab changes. */
+    removeSession: invoke<[id: string], void>('window:remove-session', 1),
     /** Close THIS window through the REAL close path, so the flush handshake runs (GRO-2232). */
     closeSelf: invoke<[], void>('window:close-self', 0),
     /** App-wide zoom for THIS window (YAZ-1710): what the stock `zoomIn` / `zoomOut` / `resetZoom` roles did — level ± 0.5, or back to 0. */

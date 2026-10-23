@@ -1212,6 +1212,88 @@ describe('take in the hook (YAZ-3091 D5)', () => {
   })
 })
 
+describe('open-stored (YAZ-3147 D3): "Restore session" adds the stored tabs to the window', () => {
+  const A = '/v/a.md'
+  const B = '/v/b.md'
+  const C = '/w/c.md'
+  const EMPTY_TABS: IdTabsState = { tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false }
+  /** t1 (A, active, preview) · t2 (B). */
+  const two = (over: Partial<IdTabsState> = {}): IdTabsState => ({ tabs: [{ id: 't1', path: A }, { id: 't2', path: B }], active: 't1', mounted: ['t1'], history: {}, preview: 't1', blank: false, ...over })
+  const view = (s: IdTabsState) => s.tabs.map((t) => (t.name === undefined ? t.path : `${t.path}=${t.name}`))
+
+  it('S16, S5, S19: an empty window opens the tabs in the saved order, copies and names kept, as kept tabs; the marked tab is active and the only one mounted', () => {
+    const next = reduceTabs(EMPTY_TABS, { type: 'open-stored', tabs: [{ path: A, name: 'One' }, { path: C }, { path: A, active: true }] })
+    expect(view(next)).toEqual([`${A}=One`, C, A])
+    expect(next.active).toBe(next.tabs[2].id)
+    expect(next.mounted).toEqual([next.tabs[2].id])
+    expect(next.preview).toBeNull()
+    expect(next.history).toEqual({})
+    // No mark (the active tab's file was gone): an empty window takes the first tab.
+    const unmarked = reduceTabs(EMPTY_TABS, { type: 'open-stored', tabs: [{ path: C }, { path: A }] })
+    expect(unmarked.active).toBe(unmarked.tabs[0].id)
+  })
+
+  it('S17, S18, S19: other tabs stay and the new ones join the END; an open page opens no copy, and as the session\'s active tab its open tab becomes active', () => {
+    const s = two()
+    const next = reduceTabs(s, { type: 'open-stored', tabs: [{ path: C }, { path: B, active: true }, { path: B, name: 'Copy' }, { path: '/w/d.md' }] })
+    expect(view(next)).toEqual([A, B, C, '/w/d.md'])
+    expect(next.tabs.slice(0, 2)).toEqual(s.tabs)
+    expect(next.active).toBe('t2')
+    expect(next.preview).toBe('t1') // the window's preview tab is not touched
+    // The active mark on a new tab wins over the window's own active tab.
+    const marked = reduceTabs(s, { type: 'open-stored', tabs: [{ path: C, active: true }] })
+    expect(marked.active).toBe(marked.tabs[2].id)
+    // No mark: the window keeps its active tab.
+    expect(reduceTabs(s, { type: 'open-stored', tabs: [{ path: C }] }).active).toBe('t1')
+  })
+
+  it('S25: every page open already, and nothing to activate, is the SAME state (no write); the blank tab drops only for a trip to a tab', () => {
+    const s = two({ preview: null })
+    expect(reduceTabs(s, { type: 'open-stored', tabs: [{ path: A, active: true }, { path: B }] })).toBe(s)
+    expect(reduceTabs(s, { type: 'open-stored', tabs: [] })).toBe(s)
+    // A page of the session in the preview tab is kept now, so the next sidebar click does not replace it.
+    expect(reduceTabs(two({ preview: 't1' }), { type: 'open-stored', tabs: [{ path: A, active: true }] })).toMatchObject({ active: 't1', preview: null })
+    expect(reduceTabs(two({ preview: 't2' }), { type: 'open-stored', tabs: [{ path: A, active: true }] })).toMatchObject({ preview: 't2' })
+    // Under the blank tab: the session's active tab is a trip to it, and the blank tab goes.
+    expect(reduceTabs(two({ blank: true }), { type: 'open-stored', tabs: [{ path: A, active: true }] })).toMatchObject({ active: 't1', blank: false })
+    // No mark under the blank tab: the tabs join, and the blank tab still shows.
+    expect(reduceTabs(two({ blank: true }), { type: 'open-stored', tabs: [{ path: C }] })).toMatchObject({ active: 't1', blank: true })
+    // A window with only the blank tab: the first new tab is active.
+    const blankOnly = reduceTabs({ ...EMPTY_TABS, blank: true }, { type: 'open-stored', tabs: [{ path: C }] })
+    expect(blankOnly).toMatchObject({ active: blankOnly.tabs[0].id, blank: false })
+  })
+
+  it('a page on the right panel is open too: it stays there and opens no main tab', () => {
+    const s: IdWorkspaceState = { ...two(), rightPanel: { open: true, width: 440, items: [C], expanded: C }, rightMounted: [C], rightHistory: {} }
+    const next = reduceWorkspace(s, { type: 'open-stored', tabs: [{ path: C, active: true }, { path: '/w/d.md' }] })
+    expect(next.tabs.map((t) => t.path)).toEqual([A, B, '/w/d.md'])
+    expect(next.rightPanel).toBe(s.rightPanel)
+    expect(next.active).toBe('t1')
+    expect(reduceWorkspace(s, { type: 'open-stored', tabs: [{ path: C }] })).toBe(s)
+  })
+
+  it('S27, in the hook: openStored is ONE change and ONE identity write for all the tabs; a restore that opens nothing writes nothing', async () => {
+    const bridge = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    let latest: UseWorkspace | undefined
+    let renders = 0
+    function Probe() {
+      latest = useWorkspace('/v')
+      renders++
+      return null
+    }
+    const reactRoot = createRoot(document.createElement('div'))
+    act(() => reactRoot.render(<Probe />))
+    const before = renders
+    act(() => latest?.openStored([{ path: A }, { path: B, name: 'Bee', active: true }, { path: A }]))
+    expect(renders).toBe(before + 1)
+    expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith({ tabs: [A, B], tabStrip: [{ path: A }, { path: B, name: 'Bee', active: true }, { path: A }], file: B, rightPanel: defaultRightPanelIdentity() })
+    act(() => latest?.openStored([{ path: A }, { path: B, active: true }]))
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
+    act(() => reactRoot.unmount())
+  })
+})
+
 describe('copies in the hook (YAZ-2940): the mirror stores every copy in the strip (YAZ-3057), and the switch save (D4, S22, S25)', () => {
   let reactRoot: Root | null = null
   let latest: UseWorkspace

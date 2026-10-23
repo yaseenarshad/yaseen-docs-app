@@ -192,9 +192,9 @@ test('step 1 — ⌘K shows the Search tab, its bar, one line of help and the ke
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(CEO_BODY)
   await expect(tabsOf(win)).toHaveCount(1)
-  // The tab row reads Files, Search, Focus, Favorites (YAZ-2638 S1); the window opens on Files,
+  // The tab row reads Files, Search, Focus, Favorites, Sessions (YAZ-2638 S1, YAZ-3147 D4); the window opens on Files,
   // which has the tree and NO bar (S6) — before YAZ-2638 the bar stood on every tab.
-  await expect.poll(() => sidebarTabs(win).evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute('aria-label') ?? tab.textContent))).toEqual(['Files', 'Search', 'Focus', 'Favorites'])
+  await expect.poll(() => sidebarTabs(win).evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute('aria-label') ?? tab.textContent))).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions'])
   await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
   await expect(searchBar(win)).toHaveCount(0)
   await expect(treeRows(win).first()).toBeVisible()
