@@ -71,12 +71,12 @@ const countChanges = (view: EditorView) => {
 
 describe('rendering', () => {
   it('draws the line inside a wrapper that carries the style as custom properties, never style.width (S23)', async () => {
-    const { root } = await mount('***\n<!-- line: darkness 50%, thickness 6px, length 40% -->\n')
+    const { root } = await mount('***\n<!-- line: darkness 80%, thickness 6px, length 40% -->\n')
     const wrapper = wrapperOf(root)
     expect(wrapper.tagName).toBe('DIV')
     expect(wrapper.getAttribute('contenteditable')).toBe('false')
     expect([...wrapper.children].map((el) => el.tagName)).toEqual(['HR', 'SPAN'])
-    expect(wrapper.style.getPropertyValue('--line-darkness')).toBe('50%')
+    expect(wrapper.style.getPropertyValue('--line-darkness')).toBe('80%')
     expect(wrapper.style.getPropertyValue('--line-thickness')).toBe('6px')
     expect(wrapper.style.getPropertyValue('--line-width')).toBe('40%')
     expect(wrapper.style.width).toBe('')
@@ -103,9 +103,9 @@ describe('rendering', () => {
 
   it('S27: an outside change reloads with the style', async () => {
     const { crepe, root } = await mount('***\n')
-    setMarkdown(crepe, '***\n<!-- line: thickness 3px -->\n')
-    expect(wrapperOf(root).style.getPropertyValue('--line-thickness')).toBe('3px')
-    expect(getMarkdownForSave(crepe)).toBe('***\n\n<!-- line: thickness 3px -->\n')
+    setMarkdown(crepe, '***\n<!-- line: thickness 12px -->\n')
+    expect(wrapperOf(root).style.getPropertyValue('--line-thickness')).toBe('12px')
+    expect(getMarkdownForSave(crepe)).toBe('***\n\n<!-- line: thickness 12px -->\n')
   })
 })
 
@@ -137,11 +137,11 @@ describe('selection and the length handle', () => {
   })
 
   it('S32: a drag to the right edge or past it gives a full line, and the length part leaves the comment', async () => {
-    const { crepe, root } = await mount('***\n<!-- line: darkness 50%, length 40% -->\n')
+    const { crepe, root } = await mount('***\n<!-- line: darkness 80%, length 40% -->\n')
     rowWidth(root, 500)
     drag(root, 200, [450, 900])
     expect(wrapperOf(root).style.getPropertyValue('--line-width')).toBe('')
-    expect(getMarkdownForSave(crepe)).toBe('***\n\n<!-- line: darkness 50% -->\n')
+    expect(getMarkdownForSave(crepe)).toBe('***\n\n<!-- line: darkness 80% -->\n')
   })
 
   it('S33: the line cannot get shorter than 10%', async () => {
@@ -221,7 +221,7 @@ describe('selection and the length handle', () => {
   })
 
   it('S25: Backspace on a selected line removes it, with its style', async () => {
-    const { crepe, view } = await mount('a\n\n***\n<!-- line: darkness 50% -->\n\nb\n')
+    const { crepe, view } = await mount('a\n\n***\n<!-- line: darkness 80% -->\n\nb\n')
     select(view)
     view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
     expect(getMarkdownForSave(crepe)).toBe('a\n\nb\n')

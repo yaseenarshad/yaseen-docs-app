@@ -168,14 +168,14 @@ describe('destroy', () => {
   })
 })
 
-/** A number field like the line's darkness (YAZ-3164 D3); `run` is a spy. */
+/** A number field like the line's darkness (YAZ-3164 D3, default 50); `run` is a spy. */
 const field = (over: Partial<MenuNumberField> = {}): MenuNumberField => ({
   kind: 'number',
   label: 'Size',
   unit: '%',
-  value: 10,
+  value: 50,
   presets: [10, 50, 100],
-  fallback: 10,
+  fallback: 50,
   min: 5,
   max: 100,
   error: 'Use a whole number from 5–100%.',
@@ -185,7 +185,7 @@ const field = (over: Partial<MenuNumberField> = {}): MenuNumberField => ({
 
 describe('number fields (YAZ-3164 D3)', () => {
   it('draws the zoom menu’s box and presets after a divider, labels the default, and presses the current value', async () => {
-    const { view, item } = await mount(() => [{ label: 'One', run: vi.fn() }, field({ value: 50 })])
+    const { view, item } = await mount(() => [{ label: 'One', run: vi.fn() }, field({ value: 10 })])
     contextmenu(item)
     const popup = popupOf(view)!
     expect([...popup.children].map((el) => el.className)).toEqual(['ctx-menu__item', 'document-zoom__divider', 'document-zoom__custom', 'document-zoom__divider', 'document-zoom__presets'])
@@ -193,12 +193,12 @@ describe('number fields (YAZ-3164 D3)', () => {
     const box = popup.querySelector('input')!
     expect(label.textContent).toBe('Size')
     expect(label.htmlFor).toBe(box.id)
-    expect(box.value).toBe('50%')
+    expect(box.value).toBe('10%')
     expect(box.inputMode).toBe('numeric')
     const buttons = [...popup.querySelectorAll('.document-zoom__presets button')]
-    expect(buttons.map((b) => b.firstElementChild?.textContent)).toEqual(['10% (default)', '50%', '100%'])
-    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
-    expect(buttons.map((b) => b.lastElementChild?.textContent)).toEqual(['', '✓', ''])
+    expect(buttons.map((b) => b.firstElementChild?.textContent)).toEqual(['10%', '50% (default)', '100%'])
+    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false'])
+    expect(buttons.map((b) => b.lastElementChild?.textContent)).toEqual(['✓', '', ''])
   })
 
   it('a menu that starts with a field has no divider first, and the first box takes the focus with its text selected', async () => {
@@ -222,7 +222,7 @@ describe('number fields (YAZ-3164 D3)', () => {
     expect(popupOf(view)).toBeNull()
     contextmenu(item)
     box = popupOf(view)!.querySelector('input')!
-    box.value = '10%'
+    box.value = '50%'
     box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     expect(run).toHaveBeenCalledTimes(1)
     expect(popupOf(view)).toBeNull()
@@ -252,7 +252,7 @@ describe('number fields (YAZ-3164 D3)', () => {
     expect(run).toHaveBeenCalledExactlyOnceWith(100)
     expect(popupOf(view)).toBeNull()
     contextmenu(item)
-    popupOf(view)!.querySelectorAll<HTMLButtonElement>('.document-zoom__presets button')[0].click()
+    popupOf(view)!.querySelectorAll<HTMLButtonElement>('.document-zoom__presets button')[1].click()
     expect(run).toHaveBeenCalledTimes(1)
     expect(popupOf(view)).toBeNull()
   })

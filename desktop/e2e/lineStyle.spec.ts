@@ -7,10 +7,10 @@
  * the line's height is real CSS layout (Crepe's border-box `hr` + `line.css`); the drag is a share
  * of the wrapper's real on-screen width; and the bytes are what the real autosave writes.
  *
- *  1. A plain line draws 13px tall (6 + 1 + 6) and full width.
+ *  1. A plain line draws 15px tall (6 + 3 + 6, the default 3px) and full width.
  *  2. Right-click its handle: "Number children" (disabled), "Line darkness", "Line thickness"; the
- *     darkness box has the focus. Type 50 + Enter → `<!-- line: darkness 50% -->` on disk.
- *  3. The "6px" preset → `darkness 50%, thickness 6px`, and the line is 18px tall.
+ *     darkness box has the focus. Type 80 + Enter → `<!-- line: darkness 80% -->` on disk.
+ *  3. The "6px" preset → `darkness 80%, thickness 6px`, and the line is 18px tall.
  *  4. Click the line, drag its end handle to about 40% → `… length 40% -->` (±2).
  *  5. ⌘Z → the length part leaves the comment.
  *
@@ -88,37 +88,37 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — a plain line draws 13px tall and as wide as the row', async () => {
+test('step 1 — a plain line draws 15px tall and as wide as the row', async () => {
   await expect(lineView(win)).toHaveCount(1)
   const [box, row] = await Promise.all([hrBox(win), lineView(win).boundingBox()])
-  expect(box.height).toBeCloseTo(13, 0)
+  expect(box.height).toBeCloseTo(15, 0)
   expect(box.width).toBeCloseTo(row!.width, 0)
   await shoot(win, 'lineStyle-01-plain')
 })
 
-test('step 2 — the 6-dot menu of a line: type 50 + Enter sets the darkness on disk', async () => {
+test('step 2 — the 6-dot menu of a line: type 80 + Enter sets the darkness on disk', async () => {
   await openLineMenu(win)
   await expect(menu(win).locator('.ctx-menu__item')).toHaveText(['Number children'])
   await expect(menu(win).locator('.ctx-menu__item')).toBeDisabled()
   await expect(menu(win).locator('.document-zoom__custom label')).toHaveText(['Line darkness', 'Line thickness'])
   await expect(boxes(win).first()).toBeFocused()
-  await expect(boxes(win).nth(0)).toHaveValue('10%')
-  await expect(boxes(win).nth(1)).toHaveValue('1px')
+  await expect(boxes(win).nth(0)).toHaveValue('50%')
+  await expect(boxes(win).nth(1)).toHaveValue('3px')
   await shoot(win, 'lineStyle-02-menu')
   // The box's text is selected, so typing replaces it.
-  await win.keyboard.type('50')
+  await win.keyboard.type('80')
   await win.keyboard.press('Enter')
   await expect(menu(win)).toBeHidden()
-  await expect.poll(readNote, { timeout: 10_000 }).toBe(`${NOTE_BODY}\n\n***\n\n<!-- line: darkness 50% -->\n\nafter the line\n`)
+  await expect.poll(readNote, { timeout: 10_000 }).toBe(`${NOTE_BODY}\n\n***\n\n<!-- line: darkness 80% -->\n\nafter the line\n`)
 })
 
 test('step 3 — the 6px preset makes the line 6px thick, on screen and on disk', async () => {
   await openLineMenu(win)
-  await expect(boxes(win).nth(0)).toHaveValue('50%')
-  await expect(boxes(win).nth(1)).toHaveValue('1px')
+  await expect(boxes(win).nth(0)).toHaveValue('80%')
+  await expect(boxes(win).nth(1)).toHaveValue('3px')
   await preset(win, '6px').click()
   await expect(menu(win)).toBeHidden()
-  await expect.poll(readNote, { timeout: 10_000 }).toContain('***\n\n<!-- line: darkness 50%, thickness 6px -->\n')
+  await expect.poll(readNote, { timeout: 10_000 }).toContain('***\n\n<!-- line: darkness 80%, thickness 6px -->\n')
   await expect.poll(async () => Math.round((await hrBox(win)).height)).toBe(18)
   await shoot(win, 'lineStyle-03-thick')
 })
@@ -136,7 +136,7 @@ test('step 4 — click the line, drag its end handle to about 40%: the length la
   await win.mouse.down()
   await win.mouse.move(row!.x + row!.width * 0.4, y, { steps: 12 })
   await win.mouse.up()
-  const re = /\*\*\*\n\n<!-- line: darkness 50%, thickness 6px, length (\d+)% -->\n/
+  const re = /\*\*\*\n\n<!-- line: darkness 80%, thickness 6px, length (\d+)% -->\n/
   await expect.poll(readNote, { timeout: 10_000 }).toMatch(re)
   const length = Number(re.exec(await readNote())![1])
   expect(length).toBeGreaterThanOrEqual(38)
@@ -149,7 +149,7 @@ test('step 4 — click the line, drag its end handle to about 40%: the length la
 
 test('step 5 — ⌘Z takes the length back out in one step', async () => {
   await win.keyboard.press('Meta+z')
-  await expect.poll(readNote, { timeout: 10_000 }).toBe(`${NOTE_BODY}\n\n***\n\n<!-- line: darkness 50%, thickness 6px -->\n\nafter the line\n`)
+  await expect.poll(readNote, { timeout: 10_000 }).toBe(`${NOTE_BODY}\n\n***\n\n<!-- line: darkness 80%, thickness 6px -->\n\nafter the line\n`)
   const [box, row] = await Promise.all([hrBox(win), lineView(win).boundingBox()])
   expect(box.width).toBeCloseTo(row!.width, 0)
 })

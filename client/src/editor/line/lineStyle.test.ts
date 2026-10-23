@@ -75,20 +75,20 @@ async function saveStyled(attrs: Partial<Record<keyof LineStyle, unknown>>, mark
 
 describe('parseLineComment / formatLineComment', () => {
   it('reads the exact form, with only the parts it holds', () => {
-    expect(parseLineComment('<!-- line: darkness 50%, thickness 6px, length 40% -->')).toEqual({ darkness: 50, thickness: 6, width: 40 })
+    expect(parseLineComment('<!-- line: darkness 80%, thickness 6px, length 40% -->')).toEqual({ darkness: 80, thickness: 6, width: 40 })
     expect(parseLineComment('<!-- line: thickness 6px -->')).toEqual({ darkness: null, thickness: 6, width: null })
     expect(parseLineComment('<!--line:length 99%-->')).toEqual({ darkness: null, thickness: null, width: 99 })
   })
 
   it('writes the parts that are not the default, in the fixed order', () => {
-    expect(formatLineComment({ width: 40, thickness: 6, darkness: 50 })).toBe('<!-- line: darkness 50%, thickness 6px, length 40% -->')
-    expect(formatLineComment({ darkness: 10, thickness: 1, width: 100 })).toBeNull()
+    expect(formatLineComment({ width: 40, thickness: 6, darkness: 80 })).toBe('<!-- line: darkness 80%, thickness 6px, length 40% -->')
+    expect(formatLineComment({ darkness: 50, thickness: 3, width: 100 })).toBeNull()
     expect(formatLineComment(PLAIN_LINE)).toBeNull()
   })
 
   it('S4: a comment that holds only defaults is ours and reads as the plain line', () => {
-    expect(parseLineComment('<!-- line: darkness 10% -->')).toEqual(PLAIN_LINE)
-    expect(parseLineComment('<!-- line: darkness 10%, thickness 1px -->')).toEqual(PLAIN_LINE)
+    expect(parseLineComment('<!-- line: darkness 50% -->')).toEqual(PLAIN_LINE)
+    expect(parseLineComment('<!-- line: darkness 50%, thickness 3px -->')).toEqual(PLAIN_LINE)
   })
 
   it.each([
@@ -104,17 +104,17 @@ describe('parseLineComment / formatLineComment', () => {
 
   it.each([
     ['<!-- line: -->'],
-    ['<!-- lines: darkness 50% -->'],
+    ['<!-- lines: darkness 80% -->'],
     ['<!-- line: dark 50% -->'],
-    ['<!-- line: darkness 50%, color red -->'],
-    ['<!-- line: thickness 6px, darkness 50% -->'],
-    ['<!-- line: darkness 50%, darkness 60% -->'],
-    ['<!-- line: darkness 50 -->'],
+    ['<!-- line: darkness 80%, color red -->'],
+    ['<!-- line: thickness 6px, darkness 80% -->'],
+    ['<!-- line: darkness 80%, darkness 60% -->'],
+    ['<!-- line: darkness 80 -->'],
     ['<!-- line: darkness 50px -->'],
     ['<!-- line: darkness 5.5% -->'],
     ['<!-- line: darkness 050% -->'],
-    ['<!-- line: darkness 50%, -->'],
-    ['<!-- line: darkness 50% thickness 6px -->'],
+    ['<!-- line: darkness 80%, -->'],
+    ['<!-- line: darkness 80% thickness 6px -->'],
     ['<!-- a note -->'],
   ])('S6: %s is another form, so it is not the line comment', (comment) => {
     expect(parseLineComment(comment)).toBeNull()
@@ -127,7 +127,7 @@ describe('the line in the file', () => {
   })
 
   it.each([
-    [{ darkness: 50 }, '<!-- line: darkness 50% -->'],
+    [{ darkness: 80 }, '<!-- line: darkness 80% -->'],
     [{ thickness: 6 }, '<!-- line: thickness 6px -->'],
     [{ width: 40 }, '<!-- line: length 40% -->'],
   ])('S2: only %o writes only that part', async (attrs, comment) => {
@@ -136,29 +136,44 @@ describe('the line in the file', () => {
   })
 
   it('S3: all parts are written as darkness, thickness, length', async () => {
-    const out = await saveStyled({ width: 40, thickness: 6, darkness: 50 })
-    expect(out).toBe('a\n\n***\n\n<!-- line: darkness 50%, thickness 6px, length 40% -->\n\nb\n')
+    const out = await saveStyled({ width: 40, thickness: 6, darkness: 80 })
+    expect(out).toBe('a\n\n***\n\n<!-- line: darkness 80%, thickness 6px, length 40% -->\n\nb\n')
     expect(await save(out)).toBe(out)
     const { view } = await mount(out)
-    expect(lines(view.state.doc)).toEqual([{ darkness: 50, thickness: 6, width: 40 }])
+    expect(lines(view.state.doc)).toEqual([{ darkness: 80, thickness: 6, width: 40 }])
     expect(htmlValues(view.state.doc)).toEqual([])
   })
 
   it('S4: default values are never written, and a hand-written default reads as the plain line', async () => {
-    expect(await saveStyled({ darkness: 10, thickness: 1, width: 100 })).toBe('a\n\n***\n\nb\n')
-    const { view } = await mount('a\n\n***\n<!-- line: darkness 10% -->\n\nb\n')
+    expect(await saveStyled({ darkness: 50, thickness: 3, width: 100 })).toBe('a\n\n***\n\nb\n')
+    const { view } = await mount('a\n\n***\n<!-- line: darkness 50% -->\n\nb\n')
     expect(lines(view.state.doc)).toEqual([PLAIN_LINE])
     expect(htmlValues(view.state.doc)).toEqual([])
-    expect(await save('a\n\n***\n<!-- line: darkness 10% -->\n\nb\n')).toBe('a\n\n***\n\nb\n')
-    expect(await save('***\n<!-- line: darkness 10%, thickness 6px -->\n')).toBe('***\n\n<!-- line: thickness 6px -->\n')
+    expect(await save('a\n\n***\n<!-- line: darkness 50% -->\n\nb\n')).toBe('a\n\n***\n\nb\n')
+    expect(await save('***\n<!-- line: darkness 50%, thickness 6px -->\n')).toBe('***\n\n<!-- line: thickness 6px -->\n')
+  })
+
+  it('S4: darkness 10% and thickness 1px are no defaults any more, so they are written', async () => {
+    const out = await saveStyled({ darkness: 10, thickness: 1 })
+    expect(out).toBe('a\n\n***\n\n<!-- line: darkness 10%, thickness 1px -->\n\nb\n')
+    const { view } = await mount(out)
+    expect(lines(view.state.doc)).toEqual([{ darkness: 10, thickness: 1, width: null }])
+  })
+
+  it('S4: a hand-written darkness 50%, thickness 3px is the plain line and saves as ***', async () => {
+    const note = 'a\n\n***\n<!-- line: darkness 50%, thickness 3px -->\n\nb\n'
+    const { view } = await mount(note)
+    expect(lines(view.state.doc)).toEqual([PLAIN_LINE])
+    expect(htmlValues(view.state.doc)).toEqual([])
+    expect(await save(note)).toBe('a\n\n***\n\nb\n')
   })
 
   it.each([
     ['<!-- line: darkness 4% -->'],
     ['<!-- line: thickness 25px -->'],
     ['<!-- line: length 100% -->'],
-    ['<!-- line: thickness 6px, darkness 50% -->'],
-    ['<!-- line: darkness 50%, color red -->'],
+    ['<!-- line: thickness 6px, darkness 80% -->'],
+    ['<!-- line: darkness 80%, color red -->'],
     ['<!-- line: dark 50% -->'],
   ])('S5, S6: %s stays HTML, bytes untouched, and the line stays plain', async (comment) => {
     const { view } = await mount(`a\n\n***\n${comment}\n\nb\n`)
@@ -168,12 +183,12 @@ describe('the line in the file', () => {
   })
 
   it('S7: a comment with a block between it and the line, or before a line, stays HTML', async () => {
-    const after = 'a\n\n***\n\ntext\n\n<!-- line: darkness 50% -->\n'
-    const before = '<!-- line: darkness 50% -->\n\n***\n\nb\n'
+    const after = 'a\n\n***\n\ntext\n\n<!-- line: darkness 80% -->\n'
+    const before = '<!-- line: darkness 80% -->\n\n***\n\nb\n'
     for (const note of [after, before]) {
       const { view } = await mount(note)
       expect(lines(view.state.doc)).toEqual([PLAIN_LINE])
-      expect(htmlValues(view.state.doc)).toEqual(['<!-- line: darkness 50% -->'])
+      expect(htmlValues(view.state.doc)).toEqual(['<!-- line: darkness 80% -->'])
       expect(await save(note)).toBe(note)
     }
   })
@@ -197,57 +212,57 @@ describe('the line in the file', () => {
   })
 
   it('S9: in a bullet without children, the bullets after it stay siblings', async () => {
-    const out = await save('* ---\n  <!-- line: darkness 50% -->\n* b\n* c\n')
+    const out = await save('* ---\n  <!-- line: darkness 80% -->\n* b\n* c\n')
     const { view } = await mount(out)
     const list = view.state.doc.child(0)
     expect(list.childCount).toBe(3)
-    expect(list.child(0).child(0).attrs.darkness).toBe(50)
+    expect(list.child(0).child(0).attrs.darkness).toBe(80)
     expect([list.child(1).textContent, list.child(2).textContent]).toEqual(['b', 'c'])
     expect(htmlValues(view.state.doc)).toEqual([])
   })
 
   it('S10: a line in a blockquote keeps its comment in the blockquote', async () => {
-    const out = await save('> ***\n> <!-- line: thickness 3px -->\n')
-    expect(out).toBe('> ***\n>\n> <!-- line: thickness 3px -->\n')
+    const out = await save('> ***\n> <!-- line: thickness 12px -->\n')
+    expect(out).toBe('> ***\n>\n> <!-- line: thickness 12px -->\n')
     const { view } = await mount(out)
     const quote = view.state.doc.child(0)
     expect(quote.type.name).toBe('blockquote')
     expect(quote.childCount).toBe(1)
-    expect(quote.child(0).attrs.thickness).toBe(3)
+    expect(quote.child(0).attrs.thickness).toBe(12)
   })
 
   it('S11: a styled line first or last in the note saves and loads the same, and a first *** is no frontmatter', async () => {
-    const first = await save('***\n<!-- line: darkness 50% -->\n\ntext\n')
-    expect(first).toBe('***\n\n<!-- line: darkness 50% -->\n\ntext\n')
+    const first = await save('***\n<!-- line: darkness 80% -->\n\ntext\n')
+    expect(first).toBe('***\n\n<!-- line: darkness 80% -->\n\ntext\n')
     expect(splitFrontmatter(first).frontmatter).toBe('')
-    const last = await save('text\n\n***\n<!-- line: darkness 50% -->\n')
-    expect(last).toBe('text\n\n***\n\n<!-- line: darkness 50% -->\n')
-    const only = await save('***\n<!-- line: darkness 50%, length 40% -->\n')
-    expect(only).toBe('***\n\n<!-- line: darkness 50%, length 40% -->\n')
+    const last = await save('text\n\n***\n<!-- line: darkness 80% -->\n')
+    expect(last).toBe('text\n\n***\n\n<!-- line: darkness 80% -->\n')
+    const only = await save('***\n<!-- line: darkness 80%, length 40% -->\n')
+    expect(only).toBe('***\n\n<!-- line: darkness 80%, length 40% -->\n')
     const { view } = await mount(only)
-    expect(lines(view.state.doc)).toEqual([{ darkness: 50, thickness: null, width: 40 }])
+    expect(lines(view.state.doc)).toEqual([{ darkness: 80, thickness: null, width: 40 }])
   })
 
   it('S12: two lines in a row each keep their own style', async () => {
-    const out = await save('***\n<!-- line: darkness 50% -->\n\n***\n\n***\n<!-- line: length 20% -->\n')
-    expect(out).toBe('***\n\n<!-- line: darkness 50% -->\n\n***\n\n***\n\n<!-- line: length 20% -->\n')
+    const out = await save('***\n<!-- line: darkness 80% -->\n\n***\n\n***\n<!-- line: length 20% -->\n')
+    expect(out).toBe('***\n\n<!-- line: darkness 80% -->\n\n***\n\n***\n\n<!-- line: length 20% -->\n')
     const { view } = await mount(out)
     expect(lines(view.state.doc)).toEqual([
-      { darkness: 50, thickness: null, width: null },
+      { darkness: 80, thickness: null, width: null },
       PLAIN_LINE,
       { darkness: null, thickness: null, width: 20 },
     ])
   })
 
   it('S13: text with --- under it is still a heading, not a line', async () => {
-    const { view } = await mount('Text\n---\n\n<!-- line: darkness 50% -->\n')
+    const { view } = await mount('Text\n---\n\n<!-- line: darkness 80% -->\n')
     expect(view.state.doc.child(0).type.name).toBe('heading')
     expect(lines(view.state.doc)).toEqual([])
-    expect(htmlValues(view.state.doc)).toEqual(['<!-- line: darkness 50% -->'])
+    expect(htmlValues(view.state.doc)).toEqual(['<!-- line: darkness 80% -->'])
   })
 
   it('S14: *** and the comment inside code are text', async () => {
-    const note = '```\n***\n<!-- line: darkness 50% -->\n```\n\nSee `***` and `<!-- line: darkness 50% -->` here.\n'
+    const note = '```\n***\n<!-- line: darkness 80% -->\n```\n\nSee `***` and `<!-- line: darkness 80% -->` here.\n'
     const { view } = await mount(note)
     expect(lines(view.state.doc)).toEqual([])
     expect(htmlValues(view.state.doc)).toEqual([])
@@ -257,16 +272,16 @@ describe('the line in the file', () => {
 
 describe('parseDOM / toDOM (S26)', () => {
   it('writes the custom properties of the parts that are set, and reads them back', async () => {
-    const { view } = await mount('***\n<!-- line: darkness 50%, thickness 6px, length 40% -->\n')
+    const { view } = await mount('***\n<!-- line: darkness 80%, thickness 6px, length 40% -->\n')
     const { schema } = view.state
     const hr = view.state.doc.child(0)
     const dom = DOMSerializer.fromSchema(schema).serializeNode(hr) as HTMLElement
     expect(dom.tagName).toBe('HR')
-    expect(dom.getAttribute('style')).toMatch(/^--line-darkness: 50%; --line-thickness: 6px; --line-width: 40%;?$/)
+    expect(dom.getAttribute('style')).toMatch(/^--line-darkness: 80%; --line-thickness: 6px; --line-width: 40%;?$/)
     const holder = document.createElement('div')
-    holder.innerHTML = '<hr style="--line-thickness: 3px"><hr><hr style="--line-darkness: 4%; --line-width: 100%">'
+    holder.innerHTML = '<hr style="--line-thickness: 12px"><hr><hr style="--line-darkness: 4%; --line-width: 100%">'
     const parsed = DOMParser.fromSchema(schema).parse(holder)
-    expect(lines(parsed)).toEqual([{ darkness: null, thickness: 3, width: null }, PLAIN_LINE, PLAIN_LINE])
+    expect(lines(parsed)).toEqual([{ darkness: null, thickness: 12, width: null }, PLAIN_LINE, PLAIN_LINE])
   })
 
   it('a plain line has no style attribute', async () => {

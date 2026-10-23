@@ -4,7 +4,7 @@
  * — each `null` for its default, and Markdown has no syntax for any of them.
  *
  * ON DISK a plain line is `***`, exactly the bytes of before (rule 6). A styled line is `***`, then
- * an HTML comment as the NEXT block: `<!-- line: darkness 50%, thickness 6px, length 40% -->`. Only
+ * an HTML comment as the NEXT block: `<!-- line: darkness 80%, thickness 6px, length 40% -->`. Only
  * the parts that are not the default are written, always in that order. A comment, not `<hr …>`:
  * an HTML block of `<hr>` ends only at a blank line, so in a tight bullet with children the next
  * `  * child` line would go INTO it; a comment ends at `-->`. Obsidian and GitHub hide it and show a
@@ -16,7 +16,7 @@
  * part of the preset). The style goes on `node.data.lineStyle` and the comment leaves the tree. Any
  * other comment — other words, another order, a value out of range, a block between it and the
  * line, a comment BEFORE a line — is not ours and stays an `html` node, bytes untouched (S5–S7). A
- * hand-written default (`darkness 10%`) reads as the default, so the next save writes plain `***`
+ * hand-written default (`darkness 50%`) reads as the default, so the next save writes plain `***`
  * (S4). Code is never a `thematicBreak` or an `html` node, so it is never touched (S14).
  *
  * SAVE: `toMarkdown` writes the `thematicBreak`, then an `html` node with the comment when any part
@@ -29,11 +29,11 @@ import { $remark } from '@milkdown/kit/utils'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Nodes, Parent, RootContent } from 'mdast'
 
-export const DARKNESS_DEFAULT = 10
+export const DARKNESS_DEFAULT = 50
 export const DARKNESS_PRESETS = [10, 50, 100]
 export const DARKNESS_MIN = 5
 export const DARKNESS_MAX = 100
-export const THICKNESS_DEFAULT = 1
+export const THICKNESS_DEFAULT = 3
 export const THICKNESS_PRESETS = [1, 3, 6]
 export const THICKNESS_MIN = 1
 export const THICKNESS_MAX = 24

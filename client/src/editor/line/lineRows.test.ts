@@ -88,11 +88,11 @@ describe('which blocks get the pickers', () => {
       'document-zoom__divider',
       'box:Line darkness',
       'document-zoom__divider',
-      'presets:10% (default)|50%|100%',
+      'presets:10%|50% (default)|100%',
       'document-zoom__divider',
       'box:Line thickness',
       'document-zoom__divider',
-      'presets:1px (default)|3px|6px',
+      'presets:1px|3px (default)|6px',
     ])
   })
 
@@ -152,24 +152,24 @@ describe('picking', () => {
     const [darkness, thickness] = boxes(view)
     expect(document.activeElement).toBe(darkness)
     expect([darkness.selectionStart, darkness.selectionEnd]).toEqual([0, darkness.value.length])
-    expect(darkness.value).toBe('10%')
+    expect(darkness.value).toBe('50%')
     expect(thickness.value).toBe('6px')
     const pressed = presetButtons(view, 1).map((b) => [b.getAttribute('aria-pressed'), b.lastElementChild?.textContent])
     expect(pressed).toEqual([['false', ''], ['false', ''], ['true', '✓']])
-    expect(presetButtons(view, 0)[0].getAttribute('aria-pressed')).toBe('true')
+    expect(presetButtons(view, 0).map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
   })
 
   it('S44: Enter applies a typed value and closes; the unit is optional', async () => {
     const { crepe, view, item } = await openOnLine('a\n\n***\n\nb\n')
-    type(boxes(view)[0], '50')
+    type(boxes(view)[0], '80')
     press(boxes(view)[0], 'Enter')
     expect(popupOf(view)).toBeNull()
-    expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: darkness 50% -->\n\nb\n')
+    expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: darkness 80% -->\n\nb\n')
     expect(view.dom.contains(document.activeElement)).toBe(true)
     rightClick(item)
     type(boxes(view)[1], '6px')
     press(boxes(view)[1], 'Enter')
-    expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: darkness 50%, thickness 6px -->\n\nb\n')
+    expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: darkness 80%, thickness 6px -->\n\nb\n')
     rightClick(item)
     type(boxes(view)[0], ' 75 % ')
     press(boxes(view)[0], 'Enter')
@@ -210,12 +210,12 @@ describe('picking', () => {
   })
 
   it('S47: the current value, typed or picked, closes the menu with no document change', async () => {
-    const { view, item } = await openOnLine('***\n<!-- line: darkness 50% -->\n')
+    const { view, item } = await openOnLine('***\n<!-- line: darkness 100% -->\n')
     const doc = view.state.doc
-    presetButtons(view, 0)[1].click()
+    presetButtons(view, 0)[2].click()
     expect(popupOf(view)).toBeNull()
     rightClick(item)
-    type(boxes(view)[1], '1')
+    type(boxes(view)[1], '3')
     press(boxes(view)[1], 'Enter')
     expect(popupOf(view)).toBeNull()
     expect(view.state.doc).toBe(doc)
@@ -236,7 +236,7 @@ describe('picking', () => {
       expect(popupOf(view)).toBeNull()
       expect(getMarkdownForSave(crepe)).toBe('***\n')
       rightClick(item)
-      expect(boxes(view)[0].value).toBe('10%')
+      expect(boxes(view)[0].value).toBe('50%')
     }
   })
 
@@ -252,27 +252,27 @@ describe('picking', () => {
   })
 
   it('S49: a pick of the default removes that part, and all defaults give plain ***', async () => {
-    const { crepe, view, item } = await openOnLine('***\n<!-- line: darkness 50%, thickness 6px, length 40% -->\n')
-    presetButtons(view, 0)[0].click()
+    const { crepe, view, item } = await openOnLine('***\n<!-- line: darkness 80%, thickness 6px, length 40% -->\n')
+    presetButtons(view, 0)[1].click()
     expect(getMarkdownForSave(crepe)).toBe('***\n\n<!-- line: thickness 6px, length 40% -->\n')
     expect(view.state.doc.child(0).attrs.darkness).toBeNull()
     rightClick(item)
-    type(boxes(view)[1], '1px')
+    type(boxes(view)[1], '3px')
     press(boxes(view)[1], 'Enter')
     expect(getMarkdownForSave(crepe)).toBe('***\n\n<!-- line: length 40% -->\n')
-    const line = await openOnLine('***\n<!-- line: thickness 3px -->\n')
-    presetButtons(line.view, 1)[0].click()
+    const line = await openOnLine('***\n<!-- line: thickness 12px -->\n')
+    presetButtons(line.view, 1)[1].click()
     expect(getMarkdownForSave(line.crepe)).toBe('***\n')
   })
 
   it('S50: ⌘Z undoes one pick in one step', async () => {
     const { crepe, view, item } = await openOnLine('a\n\n***\n\nb\n')
-    presetButtons(view, 0)[1].click()
+    presetButtons(view, 0)[0].click()
     rightClick(item)
-    presetButtons(view, 1)[1].click()
-    expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: darkness 50%, thickness 3px -->\n\nb\n')
+    presetButtons(view, 1)[0].click()
+    expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: darkness 10%, thickness 1px -->\n\nb\n')
     expect(undo(view.state, view.dispatch)).toBe(true)
-    expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: darkness 50% -->\n\nb\n')
+    expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: darkness 10% -->\n\nb\n')
     expect(undo(view.state, view.dispatch)).toBe(true)
     expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\nb\n')
   })
