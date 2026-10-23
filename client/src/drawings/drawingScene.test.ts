@@ -147,3 +147,13 @@ describe('openViewport', () => {
     expect(openViewport(scene([{ id: 'gone', isDeleted: true }]))).toBeUndefined()
   })
 })
+
+describe('the read-only switch (YAZ-3076 D1)', () => {
+  it('is read in the same parse, and only from the `yaseendraw` block; an editable scene keeps its old shape', () => {
+    expect(parseSceneText(JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, elements: [] })).readOnly).toBe(true)
+    expect(parseSceneText(JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: 'yes' }, elements: [] }))).not.toHaveProperty('readOnly')
+    expect(parseSceneText(JSON.stringify({ readonly: true, elements: [] }))).not.toHaveProperty('readOnly')
+    const base64 = btoa(JSON.stringify({ yaseendraw: { readonly: true }, elements: [] }))
+    expect(parseScene(base64).readOnly).toBe(true)
+  })
+})

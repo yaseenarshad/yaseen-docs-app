@@ -78,13 +78,15 @@ function renderMenu(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkN
   popup.className = 'ctx-menu ctx-menu--editor'
   popup.setAttribute('role', 'menu')
 
-  const rows: Array<{ label: string; danger?: boolean; run: () => void }> = [
+  // `edits: false` marks the one row that changes nothing: the only row a read-only note keeps (YAZ-3076 D2).
+  const rows: Array<{ label: string; danger?: boolean; edits?: false; run: () => void }> = [
     {
       label: 'Edit link',
       run: () => ctx.get(linkTooltipAPI.key).editLink(hit.mark, hit.from, hit.to),
     },
     {
       label: 'Copy link',
+      edits: false,
       run: () => {
         const copy = nav.copy ?? ((href: string) => navigator.clipboard.writeText(href))
         attempt(() => copy(hit.href), 'Could not copy link', nav.onNotice)
@@ -97,7 +99,7 @@ function renderMenu(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkN
     },
   ]
 
-  for (const row of rows) {
+  for (const row of rows.filter((r) => view.editable || r.edits === false)) {
     const item = document.createElement('button')
     item.type = 'button'
     item.className = `ctx-menu__item${row.danger === true ? ' ctx-menu__item--danger' : ''}`

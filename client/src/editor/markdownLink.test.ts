@@ -100,6 +100,13 @@ describe('right-click menu', () => {
     expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Edit link', 'Copy link', 'Remove link'])
   })
 
+  it('a read-only note (YAZ-3076 D2) offers only Copy: Edit and Remove would change the note', async () => {
+    const { crepe, root, view } = await mount()
+    crepe.setReadonly(true)
+    mouse(anchorOf(root), 'contextmenu', { button: 2 })
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Copy link'])
+  })
+
   it('Edit link opens Crepe\'s existing editor with the current href', async () => {
     const { root, view } = await mount()
     mouse(anchorOf(root), 'contextmenu', { button: 2 })

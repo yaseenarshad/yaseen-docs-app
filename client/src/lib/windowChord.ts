@@ -8,6 +8,7 @@
  * counts as "editing" that drifted between them would be a bug nobody could see — a chord that
  * fires inside a field the other one respects.
  */
+import { readOnlyNoteHoldsKeys } from './readOnlyCaret'
 
 /** The chord's own half: which key, and whether Shift is part of it (never merely tolerated). */
 export interface WindowChord {
@@ -30,6 +31,8 @@ export function ownsWindowChord(event: KeyboardEvent, chord: WindowChord): boole
 
   const target = event.target
   if (!(target instanceof Element)) return false
+  // A read-only note is a note (YAZ-3127, D8): its body, or `<body>` with the reader's selection in it, keeps its keys.
+  if (readOnlyNoteHoldsKeys(target)) return false
   if (target.ownerDocument.querySelector('[aria-modal="true"]') !== null) return false
 
   for (let el: Element | null = target; el !== null; el = el.parentElement) {

@@ -30,10 +30,12 @@ import './outline/guideLines.css'
 import './outline/bulletThreading.css'
 import './outline/sectionIndent.css'
 import { splitFrontmatter } from '@shared/frontmatter'
+import { isNoteReadOnly, setNoteReadOnly } from '@shared/readOnly'
 import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
 import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
 import { PageSettings } from './PageSettings'
+import { ReadOnlyChip } from './ReadOnlyChip'
 import { ZOOM_EVENT } from './zoomRequest'
 import { fileLines } from './lineNumbers/fileLines'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
@@ -48,11 +50,12 @@ import { ReviewsSection } from '../review/ReviewsSection'
 import { pageLabel, usePathTitles, useTreeKind, type PathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { namingTab } from '../lib/focusHandoff'
-import { takeRenameBuffer } from '../lib/renameContinuity'
+import { flushRenamedPath, takeRenameBuffer } from '../lib/renameContinuity'
 import { onTwinSave } from '../lib/twinEditors'
 import { registerPageView } from '../lib/pageView'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
+import { transformFile } from '../views/writeProperty'
 import { TextViewer } from '../viewers/TextViewer'
 import { PdfViewer } from '../viewers/PdfViewer'
 import { ImageViewer } from '../viewers/ImageViewer'
@@ -289,7 +292,7 @@ function CrepeHost({
   onOpenFile: (path: string) => void
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
-  onNotice?: (message: string) => void
+  onNotice?: (message: string, icon?: NoticeKind) => void
   newNoteFolderFor?: (sourcePath: string) => string
   wikilinks?: WikilinkResolveSource
   viewOnlyLinks?: ViewOnlyLinkSource
@@ -435,6 +438,17 @@ function CrepeHost({
   /** The disk-truth file both panels read: one identity per `disk`, so the memoised panels skip a save. */
   const diskFile = useMemo(() => ({ ...file, content: disk }), [file, disk])
   /**
+   * The note's read-only switch (YAZ-3076 D1): `readonly: true` IN its frontmatter, so the disk truth
+   * decides it — an agent's edit, another window's toggle or this one's all land through `disk`.
+   * Parsed once per `disk`, never per keystroke or per save.
+   */
+  const readOnly = useMemo(() => isNoteReadOnly(disk), [disk])
+  /** The chip's "Allow edits?" box is open (YAZ-3076 D4): this tab's own, and gone once read only is. */
+  const [askingUnlock, setAskingUnlock] = useState(false)
+  useEffect(() => {
+    if (!readOnly) setAskingUnlock(false)
+  }, [readOnly])
+  /**
    * Counts the outside changes that landed in this editor (YAZ-2643): a reload, a frontmatter-only
    * absorb. `disk` cannot say it — it does not follow this editor's own saves, so a file put back
    * to the bytes `disk` still holds is no change to it.
@@ -566,6 +580,8 @@ function CrepeHost({
       image: { root, notePath: file.path, onOpenImage: setOpenImage, onNotice },
       find: findChannel,
       toc: tocChannel,
+      // A read-only note keeps its keyboard (YAZ-3125, YAZ-3127): this is a note editor, not a preview.
+      readOnlyKeys: true,
     })
     crepeRef.current = crepe
     let controller: ReturnType<typeof attach> | null = null
@@ -665,6 +681,29 @@ function CrepeHost({
     }
   }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel])
 
+  /**
+   * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1): pending typing saves first
+   * (the pre-rewrite flush every editor on this path takes, S12), then `transformFile` writes the one
+   * key against the fresh bytes. The bytes that landed are adopted at once — the chip shows without
+   * waiting for the watcher, and the watcher's echo then carries this editor's mtime and is skipped:
+   * one read and one write for each click (S17). A refusal is one passive notice; nothing changes.
+   */
+  const setReadOnly = useCallback(
+    async (on: boolean): Promise<void> => {
+      try {
+        await flushRenamedPath(file.path)
+        const landed = await transformFile(file.path, (content) => setNoteReadOnly(content, on))
+        if (absorbFrontmatterOnly(landed.content, landed.mtime)) {
+          setDisk(landed.content)
+          diskLanded()
+        }
+      } catch (err) {
+        onNotice?.(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      }
+    },
+    [file.path, absorbFrontmatterOnly, onNotice],
+  )
+
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
   // A worker that fails shows one passive notice and is not asked again until the next of those three.
@@ -694,6 +733,19 @@ function CrepeHost({
     }
   }, [lineNumbersOn, readyCrepe])
 
+  // Read only (YAZ-3076 D2): the body takes the disk truth's switch — typing, paste, drop, cut, undo,
+  // the task boxes, the code blocks and the tables all ask `view.editable`. Find, copy, links, folds,
+  // the table of contents, the zoom and line numbers are views and keep working (S25).
+  // Said only while on, and taken back by the cleanup, as line numbers are: an editable note never pays for it.
+  useEffect(() => {
+    const crepe = readyCrepe
+    if (!readOnly || crepe === null || crepeRef.current !== crepe) return
+    crepe.setReadonly(true)
+    return () => {
+      if (crepeRef.current === crepe) crepe.setReadonly(false)
+    }
+  }, [readOnly, readyCrepe])
+
   // Section indent (YAZ-2709) reads only the page itself, so the editor is told once: when the
   // switch turns on, when a recreated editor is ready. An outside change that lands can rebuild
   // the whole editor state (`setMarkdown`), which starts off again, so each landing says it once
@@ -714,8 +766,9 @@ function CrepeHost({
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
       <div className="status-chips">
-        <PageSettings lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={tableOfContents === 'off' ? undefined : toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContents === 'off' || !tableOfContentsOn ? undefined : changeTocSource} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
+        <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={tableOfContents === 'off' ? undefined : toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContents === 'off' || !tableOfContentsOn ? undefined : changeTocSource} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
         <DocumentZoom value={documentZoom} onChange={changeZoom} />
+        {readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={() => setAskingUnlock(true)} onAllow={() => { setAskingUnlock(false); void setReadOnly(false) }} onCancel={() => setAskingUnlock(false)} />}
         {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
         <SaveIndicator status={autosave.status} />
       </div>
@@ -737,13 +790,14 @@ function CrepeHost({
           there, the composer being the door to the first comment), then "Linked mentions"
           (Links D, GRO-2193), then "Reviews" (YAZ-2322), which stays last. All of it scrolls WITH
           the note, never in a panel. */}
-      <div className="editor-host" data-line-numbers={lineNumbersOn || undefined} data-section-indent={sectionIndentOn || undefined} data-heading-levels={headingLevelsOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
+      <div className="editor-host" data-page="note" data-read-only={readOnly || undefined} data-line-numbers={lineNumbersOn || undefined} data-section-indent={sectionIndentOn || undefined} data-heading-levels={headingLevelsOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
         {/* Title and properties share ONE header row (YAZ-918): the panel sits to
             the title's right and wraps under it when the title runs long. */}
         <div className="page-header">
           <PageTitle
             path={file.path}
             titles={titles}
+            readOnly={readOnly}
             onRetitle={(title) => onRetitle(file.path, title, 'file')}
             onArrowDown={() => {
               const crepe = crepeRef.current
@@ -753,7 +807,7 @@ function CrepeHost({
           {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
               folder view — ONE registry, so a type declared in a row types the same column in
               every folder's views. */}
-          <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} />
+          <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} />
         </div>
         <div className="editor-mount" ref={hostRef} />
         {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only

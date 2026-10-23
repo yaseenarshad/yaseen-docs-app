@@ -50,4 +50,79 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     document.body.append(input)
     expect(fileClipboardVerb(event(input))).toBeNull()
   })
+
+  describe('a read-only note (YAZ-3127, D8): its body keeps ⌘C / ⌘X / ⌘V — never the FILE clipboard', () => {
+    /** A read-only note body as ProseMirror draws it: `contenteditable="false"`, with a text node. */
+    function readOnlyBody(parent: HTMLElement = document.body): { body: HTMLElement; text: Text } {
+      const body = document.createElement('div')
+      body.className = 'ProseMirror'
+      body.setAttribute('contenteditable', 'false')
+      body.tabIndex = -1
+      const text = document.createTextNode('read-only text')
+      body.append(text)
+      parent.append(body)
+      return { body, text }
+    }
+    afterEach(() => document.getSelection()?.removeAllRanges())
+
+    it('the focus in the read-only body: ⌘C, ⌘X and ⌘V are the note\u2019s', () => {
+      const { body } = readOnlyBody()
+      for (const key of ['c', 'x', 'v']) expect(fileClipboardVerb(event(body, { key })), key).toBeNull()
+    })
+
+    it('the focus on <body> with the reader\u2019s selection in a visible read-only body they clicked in: still the note\u2019s', () => {
+      const page = document.createElement('div')
+      page.dataset.page = 'note'
+      document.body.append(page)
+      const { body, text } = readOnlyBody(page)
+      body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      document.getSelection()!.setBaseAndExtent(text, 0, text, 4)
+      for (const key of ['c', 'x', 'v']) expect(fileClipboardVerb(event(document.body, { key })), key).toBeNull()
+      // YAZ-3145: a press on blank sidebar space ends the note's claim — ⌘V pastes the copied FILE, as on main.
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      expect(fileClipboardVerb(event(document.body, { key: 'v' }))).toBe('paste')
+    })
+
+    it('a selection left in a HIDDEN tab\u2019s read-only body claims nothing: the chrome keeps its chord', () => {
+      const layer = document.createElement('div')
+      layer.style.visibility = 'hidden'
+      document.body.append(layer)
+      const { text } = readOnlyBody(layer)
+      document.getSelection()!.setBaseAndExtent(text, 0, text, 4)
+      expect(fileClipboardVerb(event(document.body))).toBe('copy')
+    })
+  })
+
+  describe('a page holds the keys (YAZ-3140): the focus on <body>, the selection in a read-only note’s TITLE', () => {
+    function titled(): { title: Text } {
+      const host = document.createElement('div')
+      host.className = 'editor-host'
+      host.dataset.page = 'note'
+      host.dataset.readOnly = 'true'
+      const title = document.createElement('div')
+      title.className = 'page-title'
+      title.textContent = 'RO doc'
+      host.append(title)
+      document.body.append(host)
+      return { title: title.firstChild as Text }
+    }
+    afterEach(() => document.getSelection()?.removeAllRanges())
+
+    it('⌘C, ⌘X and ⌘V are the page’s: the native text copy, never the FILE clipboard', () => {
+      const { title } = titled()
+      title.parentElement!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      document.getSelection()!.setBaseAndExtent(title, 0, title, 2)
+      for (const key of ['c', 'x', 'v']) expect(fileClipboardVerb(event(document.body, { key })), key).toBeNull()
+    })
+
+    it('a focused sidebar row still copies and pastes files', () => {
+      const { title } = titled()
+      document.getSelection()!.setBaseAndExtent(title, 0, title, 2)
+      const row = document.createElement('button')
+      row.className = 'tree__row'
+      document.body.append(row)
+      expect(fileClipboardVerb(event(row, { key: 'c' }))).toBe('copy')
+      expect(fileClipboardVerb(event(row, { key: 'v' }))).toBe('paste')
+    })
+  })
 })

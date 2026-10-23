@@ -1,4 +1,5 @@
 import type { IndexRecord } from '@shared/types'
+import { READ_ONLY_KEY } from '@shared/readOnly'
 import type { ViewSet, ViewDef } from '../viewSchema'
 import type { ColumnDecl } from '../folderSettings'
 import { propertyKeys, propertyLabel } from '../engine'
@@ -31,6 +32,8 @@ export function allPropertyKeys(
   const declared = Object.keys(columns)
   for (const k of propertyKeys(def, view, records, declared)) add(k)
   for (const k of propertyKeys(def, { ...view, order: undefined }, records, declared)) add(k)
+  // The read-only switch is no auto-shown column (YAZ-3130 nit), but a reader may still show it.
+  if (records.some((r) => READ_ONLY_KEY in r.properties)) add(`note.${READ_ONLY_KEY}`)
   add('file.basename')
   for (const name of Object.keys(def.formulas ?? {})) add(`formula.${name}`)
   return out

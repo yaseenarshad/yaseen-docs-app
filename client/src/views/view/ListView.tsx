@@ -12,6 +12,8 @@ import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, rowTitle } from './GroupHeader'
 import { PageContextMenu } from './PageContextMenu'
+import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
+import { ReadOnlyName } from './ReadOnlyMark'
 
 export interface ListViewProps {
   def: ViewSet
@@ -47,6 +49,8 @@ export interface ListViewProps {
   resolveLink: ResolveLink
   /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
   onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
+  /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
+  readOnly?: ReadonlySet<string>
 }
 
 export type MarkerStyle = 'bullet' | 'number' | 'none'
@@ -74,7 +78,7 @@ const separatorOf = (view: ViewDef): string => (typeof view.propertySeparator ==
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue }: ListViewProps) {
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY }: ListViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   /** A typed editor keeps its own (native) menu, as in the table. */
   const openMenu = (event: ReactMouseEvent, row: Row): void => {
@@ -92,7 +96,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
   // memoised so unrelated re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
-  const bareOf = (key: string) => (canonicalKey(key).startsWith('note.') ? canonicalKey(key).slice(5) : null)
+  const bareOf = writableKey
   const typings = useMemo(
     () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, properties, settings)])),
     [keys, rowRecords, properties, settings],
@@ -118,6 +122,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
                         options={typings.get(key)?.options}
         titles={linkNames.get(key) ?? titles}
         resolve={resolve}
+        readOnly={readOnly.has(row.record.path)}
         onCommit={(next) => onWriteValue(row.record.path, bare, next)}
       />
     )
@@ -138,7 +143,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
               <div className="view-list__line">
                 {nameIsPrimary ? (
                   <button type="button" className="view-list__title" onClick={() => onOpenFile(row.record.path)}>
-                    {rowTitle(row)}
+                    {readOnly.has(row.record.path) ? <ReadOnlyName>{rowTitle(row)}</ReadOnlyName> : rowTitle(row)}
                   </button>
                 ) : (
                   <span className="view-list__primary">{editable(row, primary)}</span>

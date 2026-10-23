@@ -14,16 +14,27 @@ const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] 
  * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab —
  * all but section indent (YAZ-2709), "Table of contents" (YAZ-2950) and "TOC made from" (YAZ-2700
  * D14), which the host saves with the note. "Line numbers" and "Heading levels" are never saved.
+ *
+ * "Read only" (YAZ-3076 D3) is the FIRST row on every kind of file — a note, a drawing, a diagram —
+ * and is stored IN the file by the host. A board's menu has only that row: every Markdown-only row
+ * and the counts show only when their handler is given, the rule "Table of contents" already had.
+ * While read only is on, the row closes the menu and the host opens the chip's "Allow edits?" box
+ * (D4, S47); while it is off, the row turns it on at once and the menu stays open (S43).
  */
-export function PageSettings({ lineNumbers, onToggleLineNumbers, sectionIndent, onToggleSectionIndent, headingLevels, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, readText }: {
-  lineNumbers: boolean
-  onToggleLineNumbers: () => void
+export function PageSettings({ readOnly, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, readText }: {
+  /** The file's read-only switch (YAZ-3076 D1): every kind has it. */
+  readOnly: boolean
+  /** Off → the host turns it on; on → the host opens the "Allow edits?" box (this menu closes first). */
+  onToggleReadOnly: () => void
+  lineNumbers?: boolean
+  /** Absent → no row (a board). The same for "Section indent" and "Heading levels". */
+  onToggleLineNumbers?: () => void
   /** This page's text stands below its headings (YAZ-2709); how it looks is in Settings › Editor › Section indent. */
-  sectionIndent: boolean
-  onToggleSectionIndent: () => void
+  sectionIndent?: boolean
+  onToggleSectionIndent?: () => void
   /** Every heading wears its level, "H2", after its text (YAZ-2700). Without the switch on, only the heading in hand does. */
-  headingLevels: boolean
-  onToggleHeadingLevels: () => void
+  headingLevels?: boolean
+  onToggleHeadingLevels?: () => void
   /** This page shows its table of contents (YAZ-2700). On unless the reader turns it off for this page. */
   tableOfContents?: boolean
   /** Absent → the menu has no "Table of contents" row (the app-wide setting is Off: there is nothing to turn off here). */
@@ -32,16 +43,17 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, sectionIndent, 
   tocSource?: TocSource | null
   /** Absent → the menu has no "TOC made from" choice (this page shows no table of contents: there is nothing to build). */
   onChangeTocSource?: (source: TocSource | null) => void
-  /** The page's plain text. Read once when the menu opens, never while it is closed. */
-  readText: () => string
+  /** The page's plain text. Read once when the menu opens, never while it is closed. Absent → no counts (a board). */
+  readText?: () => string
 }) {
   // The text counted at the open IS the open state: the counts cannot drift while the menu shows.
+  // A board has no text to count: its open menu holds '' and shows no counts.
   const [text, setText] = useState<string | null>(null)
   const open = text !== null
   // The explanation behind the small "i" beside "TOC made from": shown while the mouse or the keyboard is on it.
   const [info, setInfo] = useState(false)
   const setOpen = (next: boolean) => {
-    setText(next ? readText() : null)
+    setText(next ? (readText?.() ?? '') : null)
     // The explanation goes with the menu: a menu that closes under a mouse at rest sends the "i" no
     // `mouseleave`, and the text would stand there, unasked, at the next open.
     if (!next) setInfo(false)
@@ -51,13 +63,22 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, sectionIndent, 
   const menuId = useId()
   const tipId = useId()
 
+  // A press outside closes the menu, and so does the window losing focus (YAZ-3121, the rule of the
+  // "Allow edits?" box): a `pointerdown` in the capture phase, because a canvas may cancel what follows
+  // it, and `blur`, because a press inside the draw.io frame reaches no event of this document at all.
+  // The press that opened the menu came before it existed, so it never closes it.
   useEffect(() => {
     if (!open) return
-    const onOutsideClick = (event: MouseEvent) => {
+    const onOutside = (event: Event) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
     }
-    document.addEventListener('click', onOutsideClick)
-    return () => document.removeEventListener('click', onOutsideClick)
+    const onBlur = () => setOpen(false)
+    document.addEventListener('pointerdown', onOutside, true)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      document.removeEventListener('pointerdown', onOutside, true)
+      window.removeEventListener('blur', onBlur)
+    }
   }, [open])
 
   return (
@@ -74,15 +95,22 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, sectionIndent, 
         <CogIcon size={13} />
       </button>
       {text !== null && <div id={menuId} className="page-settings__menu" role="group" aria-label="Page settings">
-        <button type="button" aria-pressed={lineNumbers} onClick={onToggleLineNumbers}>
+        <button type="button" aria-pressed={readOnly} onClick={() => {
+          // On: the one box, under the chip (D4) — so the menu makes way for it.
+          if (readOnly) setOpen(false)
+          onToggleReadOnly()
+        }}>
+          <span>Read only</span><span aria-hidden="true">{readOnly ? '✓' : ''}</span>
+        </button>
+        {onToggleLineNumbers !== undefined && <button type="button" aria-pressed={lineNumbers} onClick={onToggleLineNumbers}>
           <span>Line numbers</span><span aria-hidden="true">{lineNumbers ? '✓' : ''}</span>
-        </button>
-        <button type="button" aria-pressed={sectionIndent} onClick={onToggleSectionIndent}>
+        </button>}
+        {onToggleSectionIndent !== undefined && <button type="button" aria-pressed={sectionIndent} onClick={onToggleSectionIndent}>
           <span>Section indent</span><span aria-hidden="true">{sectionIndent ? '✓' : ''}</span>
-        </button>
-        <button type="button" aria-pressed={headingLevels} onClick={onToggleHeadingLevels}>
+        </button>}
+        {onToggleHeadingLevels !== undefined && <button type="button" aria-pressed={headingLevels} onClick={onToggleHeadingLevels}>
           <span>Heading levels</span><span aria-hidden="true">{headingLevels ? '✓' : ''}</span>
-        </button>
+        </button>}
         {onToggleTableOfContents !== undefined && <button type="button" aria-pressed={tableOfContents} onClick={onToggleTableOfContents}>
           <span>Table of contents</span><span aria-hidden="true">{tableOfContents ? '✓' : ''}</span>
         </button>}
@@ -103,9 +131,11 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, sectionIndent, 
             ))}
           </div>
         </>}
-        <div className="page-settings__divider" aria-hidden="true" />
-        <p>{(text.match(/\S+/g)?.length ?? 0).toLocaleString()} words</p>
-        <p>{text.length.toLocaleString()} characters</p>
+        {readText !== undefined && <>
+          <div className="page-settings__divider" aria-hidden="true" />
+          <p>{(text.match(/\S+/g)?.length ?? 0).toLocaleString()} words</p>
+          <p>{text.length.toLocaleString()} characters</p>
+        </>}
       </div>}
       {/* BESIDE the menu, not in it: the menu scrolls and is 172px wide, and this is a short text to read. */}
       {open && info && <div id={tipId} role="tooltip" className="page-settings__tip">

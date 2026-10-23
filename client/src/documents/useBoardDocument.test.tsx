@@ -21,7 +21,9 @@ const ROOT = '/vault'
 const PATH = '/vault/Board.excalidraw'
 
 const write = vi.fn<(expectedMtime: number) => Promise<{ mtime: number }>>()
-const reload = vi.fn<(a: Autosave<number>) => Promise<void>>()
+const reload = vi.fn<(a: Autosave<number>) => Promise<boolean | void>>()
+const setBoardReadOnly = vi.fn<(req: { root: string; path: string; on: boolean; expectedMtime: number }) => Promise<{ path: string; mtime: number; size: number }>>()
+const onNotice = vi.fn()
 const onCommand = vi.fn()
 const onShown = vi.fn()
 const focus = vi.fn()
@@ -34,8 +36,8 @@ let root: Root | null = null
 let container: HTMLElement
 
 /** The engine's stand-in: the hook, its bar and its chips in a board section. */
-function Host({ sync, onSyncNow }: { sync?: GithubSyncStatus | null; onSyncNow?: () => void }) {
-  board = useBoardDocument({ root: ROOT, path: PATH, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus })
+function Host({ sync, onSyncNow, readOnly = false }: { sync?: GithubSyncStatus | null; onSyncNow?: () => void; readOnly?: boolean }) {
+  board = useBoardDocument({ root: ROOT, path: PATH, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus, readOnly, onNotice })
   return (
     <section className="editor editor--drawing">
       <div ref={board.hostRef}>
@@ -83,6 +85,7 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: {
+      setBoardReadOnly,
       window: {
         onFlush: (listener: () => Promise<void> | void) => {
           flushListener = listener
@@ -95,6 +98,7 @@ beforeEach(() => {
   })
   write.mockResolvedValue({ mtime: 200 })
   reload.mockResolvedValue()
+  setBoardReadOnly.mockImplementation(async (req) => ({ path: req.path, mtime: req.expectedMtime + 1000, size: 1 }))
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -335,5 +339,134 @@ describe('exportWithNotice', () => {
     expect(notice).toHaveBeenLastCalledWith('disk is full', 'error')
     await exportWithNotice(() => Promise.reject(new Error('timed out')), 'failed', notice)
     expect(notice).toHaveBeenLastCalledWith('failed', 'error')
+  })
+})
+
+/** The two user doors of the switch (YAZ-3076 D3, D4): the cog's row turns it on; the chip's "Allow edits" turns it off. */
+async function turnReadOnlyOn(): Promise<void> {
+  act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+  const row = [...container.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((b) => b.textContent?.startsWith('Read only'))!
+  await act(async () => row.click())
+  await settle()
+}
+
+async function allowEdits(): Promise<void> {
+  act(() => container.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
+  const allow = [...container.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Allow edits')!
+  await act(async () => allow.click())
+  await settle()
+}
+
+describe('the read-only switch in the file (YAZ-3076 D1)', () => {
+  it('starts as the loaded file says it', () => {
+    opened({ readOnly: true })
+    expect(board.readOnly).toBe(true)
+  })
+
+  it('S12: pending edits save first, then the switch is written under the NEW mtime; its echo does not reload', async () => {
+    opened()
+    edit(1)
+    await turnReadOnlyOn()
+    expect(write).toHaveBeenCalledExactlyOnceWith(100)
+    expect(setBoardReadOnly).toHaveBeenCalledExactlyOnceWith({ root: ROOT, path: PATH, on: true, expectedMtime: 200 })
+    expect(board.readOnly).toBe(true)
+    expect(board.autosave.current?.mtime).toBe(1200)
+    watcherSaw({ type: 'change', path: PATH, mtime: 1200 })
+    await settle()
+    expect(reload).not.toHaveBeenCalled()
+    expect(text()).not.toContain('File changed on disk.')
+    await allowEdits()
+    expect(setBoardReadOnly).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, on: false, expectedMtime: 1200 })
+    expect(board.readOnly).toBe(false)
+  })
+
+  it('S13: a file that changed on disk is refused; the board reloads, the switch stays, and one notice says why', async () => {
+    opened()
+    setBoardReadOnly.mockRejectedValue(new BridgeRequestError('CONFLICT', 'changed', 900))
+    await turnReadOnlyOn()
+    await settle()
+    expect(board.readOnly).toBe(false)
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('The file changed on disk. Try again.', 'error')
+  })
+
+  it('any other refusal is one notice, and the switch stays', async () => {
+    opened()
+    setBoardReadOnly.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'the file is cut short'))
+    await turnReadOnlyOn()
+    expect(board.readOnly).toBe(false)
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Read only could not change: the file is cut short', 'error')
+  })
+
+  it('S14 and S15: a change on disk (another window, an agent) reloads, and the switch follows what the reload read', async () => {
+    opened()
+    reload.mockResolvedValue(true)
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await settle()
+    expect(board.readOnly).toBe(true)
+    reload.mockResolvedValue(false)
+    watcherSaw({ type: 'change', path: PATH, mtime: 500 })
+    await settle()
+    expect(board.readOnly).toBe(false)
+  })
+
+  it('a retired host writes no switch', async () => {
+    opened()
+    act(() => retireDeletedPath(PATH))
+    await turnReadOnlyOn()
+    expect(setBoardReadOnly).not.toHaveBeenCalled()
+  })
+})
+
+describe('the cog, the "Read only" chip and the "Allow edits?" box on a board (YAZ-3076 D3, D4)', () => {
+  const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
+  const menuRows = () => [...container.querySelectorAll<HTMLButtonElement>('.page-settings__menu > *')]
+  const chip = () => container.querySelector<HTMLButtonElement>('.read-only-chip__button')
+  const ask = () => container.querySelector<HTMLElement>('.read-only-chip__ask')
+  const chipOrder = () => [...container.querySelector('.chips')!.children].map((c) => c.className.split(' ')[0])
+
+  it('S40, S41: the cog is the first chip, and its menu has only "Read only"', () => {
+    opened()
+    expect(chipOrder()[0]).toBe('page-settings')
+    act(() => cog().click())
+    expect(menuRows().map((r) => r.textContent)).toEqual(['Read only'])
+  })
+
+  it('S43, S44: the row turns it on at once; the chip shows after the cog (cog, chip, save)', async () => {
+    opened()
+    act(() => cog().click())
+    await act(async () => menuRows()[0].click())
+    await settle()
+    expect(setBoardReadOnly).toHaveBeenCalledExactlyOnceWith({ root: ROOT, path: PATH, on: true, expectedMtime: 100 })
+    expect(chipOrder()).toEqual(['page-settings', 'read-only-chip', 'save-indicator'])
+    expect(menuRows()[0].getAttribute('aria-pressed')).toBe('true')
+    expect(ask()).toBeNull()
+  })
+
+  it('S45-S48: the chip asks; the row while on opens the same box; "Allow edits" writes the switch off and the chip goes', async () => {
+    opened({ readOnly: true })
+    act(() => chip()!.click())
+    expect(ask()?.textContent).toContain('Allow edits?')
+    act(() => chip()!.click())
+    expect(ask()).toBeNull()
+    act(() => cog().click())
+    act(() => menuRows()[0].click())
+    expect(container.querySelector('.page-settings__menu')).toBeNull()
+    expect(ask()).not.toBeNull()
+    expect(setBoardReadOnly).not.toHaveBeenCalled()
+    const allow = [...ask()!.querySelectorAll('button')].find((b) => b.textContent === 'Allow edits')!
+    expect(document.activeElement).toBe(allow)
+    await act(async () => allow.click())
+    await settle()
+    expect(setBoardReadOnly).toHaveBeenCalledExactlyOnceWith({ root: ROOT, path: PATH, on: false, expectedMtime: 100 })
+    expect(chip()).toBeNull()
+    expect(board.readOnly).toBe(false)
+  })
+
+  it('S49: the chip shows while read only, whatever else the row holds — no sync chip, an unsaved board', () => {
+    opened({ readOnly: true })
+    edit(1)
+    expect(chip()).not.toBeNull()
+    expect(text()).toContain('Unsaved')
   })
 })

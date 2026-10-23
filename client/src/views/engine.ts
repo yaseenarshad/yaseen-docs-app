@@ -1,4 +1,5 @@
 import { vaultNoteId } from '@shared/noteId'
+import { READ_ONLY_KEY } from '@shared/readOnly'
 import { type IndexRecord, inFolder } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, groupByLevels } from './viewSchema'
 import {
@@ -410,11 +411,15 @@ export function folderAt(folder: string, page: string, depth: number): string {
  * a column before any note carries it, so a new folder shows its `status` at once. Every key
  * the rows hold is one: a folder's values where the vault uses IDs, and where it does not the
  * notes' own properties — `id`, `title` and `also_in` like the rest (YAZ-2523 🔒 V12).
+ * Except the read-only switch (`readonly`, a reserved key the index keeps so the views can lock a
+ * note's cells, YAZ-3122): one locked note must not put a "Readonly" row on every card (YAZ-3130
+ * nit). It shows only where a view orders it or the folder declares it; the menus still offer it.
+ * (`comments` and `reviews` never reach here: the index drops them.)
  */
 export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   if (view.order) return [...view.order]
   const keys = new Set<string>(declared.map((k) => `note.${k}`))
-  for (const r of records) for (const k of Object.keys(r.properties)) keys.add(`note.${k}`)
+  for (const r of records) for (const k of Object.keys(r.properties)) if (k !== READ_ONLY_KEY) keys.add(`note.${k}`)
   return ['file.name', ...[...keys].sort()]
 }
 

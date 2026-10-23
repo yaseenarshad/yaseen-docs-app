@@ -20,7 +20,7 @@ function mount(text = 'one two  three\nfour') {
     const [on, setOn] = useState(false)
     const [indent, setIndent] = useState(false)
     return <>
-      <PageSettings lineNumbers={on} onToggleLineNumbers={() => setOn((value) => !value)} sectionIndent={indent} onToggleSectionIndent={() => setIndent((value) => !value)} headingLevels={false} onToggleHeadingLevels={() => undefined} readText={readText} />
+      <PageSettings readOnly={false} onToggleReadOnly={() => undefined} lineNumbers={on} onToggleLineNumbers={() => setOn((value) => !value)} sectionIndent={indent} onToggleSectionIndent={() => setIndent((value) => !value)} headingLevels={false} onToggleHeadingLevels={() => undefined} readText={readText} />
       <button data-outside>Outside</button>
     </>
   }
@@ -37,10 +37,17 @@ afterEach(() => {
 
 const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
 const menu = () => container.querySelector<HTMLElement>('.page-settings__menu[role="group"]')
-const toggle = () => menu()!.querySelector<HTMLButtonElement>('button[aria-pressed]')!
-/** The second switch (YAZ-2709). */
-const indentToggle = () => menu()!.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')[1]
+/** A switch of the menu by its name: "Read only" stands first (YAZ-3076), so the rows are found by what they say. */
+const switchNamed = (name: string) => [...menu()!.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')].find((button) => button.textContent?.startsWith(name))!
+const toggle = () => switchNamed('Line numbers')
+/** The switch under it (YAZ-2709). */
+const indentToggle = () => switchNamed('Section indent')
 const click = (element: Element) => act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+/** A real press: `pointerdown`, then the `click` (a press outside closes on the first). */
+const press = (element: Element) => {
+  act(() => void element.dispatchEvent(new Event('pointerdown', { bubbles: true })))
+  click(element)
+}
 
 describe('PageSettings', () => {
   it('opens under the cog on a click and closes on the second (S2)', () => {
@@ -54,10 +61,35 @@ describe('PageSettings', () => {
     expect(menu()).toBeNull()
   })
 
-  it('closes on a click outside (S3)', () => {
+  it('closes on a press outside (S3)', () => {
     mount()
     click(cog())
-    click(container.querySelector('[data-outside]')!)
+    press(container.querySelector('[data-outside]')!)
+    expect(menu()).toBeNull()
+  })
+
+  it('YAZ-3121: closes when the window loses focus — a press inside the draw.io frame reaches no event of this document', () => {
+    mount()
+    click(cog())
+    act(() => void window.dispatchEvent(new Event('blur')))
+    expect(menu()).toBeNull()
+  })
+
+  it('YAZ-3121: closes on a press whose pointerdown a canvas cancels (no mousedown or click may follow)', () => {
+    mount()
+    click(cog())
+    const canvas = container.querySelector('[data-outside]')!
+    canvas.addEventListener('pointerdown', (e) => e.preventDefault())
+    act(() => void canvas.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true })))
+    expect(menu()).toBeNull()
+  })
+
+  it('a press on the cog or inside the menu is not "outside": the cog\u2019s own click toggles it', () => {
+    mount()
+    click(cog())
+    press(toggle())
+    expect(menu()).not.toBeNull()
+    press(cog())
     expect(menu()).toBeNull()
   })
 
@@ -80,7 +112,7 @@ describe('PageSettings', () => {
     mount()
     click(cog())
     // This host hands no table of contents handler, as the app does with the setting Off: three switches.
-    expect([...menu()!.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Line numbers', 'Section indent', 'Heading levels'])
+    expect([...menu()!.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Read only', 'Line numbers', 'Section indent', 'Heading levels'])
     expect(toggle().textContent).toContain('Line numbers')
     expect(toggle().getAttribute('aria-pressed')).toBe('false')
     click(toggle())
@@ -154,7 +186,7 @@ describe('PageSettings: TOC made from', () => {
         changed(next)
         setSource(next)
       }
-      return <PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined} sectionIndent={false} onToggleSectionIndent={() => undefined} headingLevels={false} onToggleHeadingLevels={() => undefined} tableOfContents onToggleTableOfContents={() => undefined} tocSource={source} onChangeTocSource={shown ? onChange : undefined} readText={readText} />
+      return <PageSettings readOnly={false} onToggleReadOnly={() => undefined} lineNumbers={false} onToggleLineNumbers={() => undefined} sectionIndent={false} onToggleSectionIndent={() => undefined} headingLevels={false} onToggleHeadingLevels={() => undefined} tableOfContents onToggleTableOfContents={() => undefined} tocSource={source} onChangeTocSource={shown ? onChange : undefined} readText={readText} />
     }
     container = document.createElement('div')
     document.body.append(container)
@@ -179,7 +211,7 @@ describe('PageSettings: TOC made from', () => {
     expect(menu()!.querySelector('.page-settings__label')?.textContent).toBe('TOC made from:')
     expect(pressed()).toEqual(['Auto:true', 'Headings:false', 'Bullets:false'])
     const order = [...menu()!.children].map((child) => child.className || child.textContent)
-    expect(order).toEqual(['Line numbers', 'Section indent', 'Heading levels', 'Table of contents✓', 'page-settings__label', 'page-settings__choices', 'page-settings__divider', '1 words', '4 characters'])
+    expect(order).toEqual(['Read only', 'Line numbers', 'Section indent', 'Heading levels', 'Table of contents✓', 'page-settings__label', 'page-settings__choices', 'page-settings__divider', '1 words', '4 characters'])
   })
 
   it('shows the saved choice pressed, and that one alone', () => {
@@ -287,7 +319,7 @@ describe('PageSettings: Heading levels and Table of contents', () => {
     function Harness() {
       const [levels, setLevels] = useState(false)
       const [contents, setContents] = useState(true)
-      return <PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined}
+      return <PageSettings readOnly={false} onToggleReadOnly={() => undefined} lineNumbers={false} onToggleLineNumbers={() => undefined}
         sectionIndent={false} onToggleSectionIndent={() => undefined}
         headingLevels={levels} onToggleHeadingLevels={() => setLevels((on) => !on)}
         tableOfContents={contents} onToggleTableOfContents={tableOfContentsRow ? () => setContents((on) => !on) : undefined}
@@ -305,23 +337,87 @@ describe('PageSettings: Heading levels and Table of contents', () => {
 
   it('stand under "Line numbers" and "Section indent" (YAZ-2709), in that order: "Heading levels" off and "Table of contents" on until the reader says otherwise', () => {
     mountSwitches()
-    expect(state()).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
+    expect(state()).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
   })
 
   it('each flips its own host state and no other, and leaves the menu open', () => {
     mountSwitches()
     click(row('Heading levels'))
-    expect(state()).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels✓:true', 'Table of contents✓:true'])
+    expect(state()).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels✓:true', 'Table of contents✓:true'])
     click(row('Table of contents'))
-    expect(state()).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels✓:true', 'Table of contents:false'])
+    expect(state()).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels✓:true', 'Table of contents:false'])
     click(row('Heading levels'))
     click(row('Table of contents'))
-    expect(state()).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
+    expect(state()).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
     expect(menu()).not.toBeNull()
   })
 
   it('a host that hands no handler for "Table of contents" gets no row for it: the app-wide setting is Off, so there is nothing to turn off here', () => {
     mountSwitches(false)
-    expect(state()).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels:false'])
+    expect(state()).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false'])
+  })
+})
+
+/**
+ * "Read only" (YAZ-3076 D3, D4): the first row on every kind of file. The host decides what the
+ * row does — on at once, or the "Allow edits?" box — and the menu closes when the box is to open.
+ */
+describe('PageSettings: Read only', () => {
+  let toggled: ReturnType<typeof vi.fn<() => void>>
+
+  function mountReadOnly({ initial = false, board = false }: { initial?: boolean; board?: boolean } = {}) {
+    readText = vi.fn(() => 'text')
+    toggled = vi.fn()
+    function Harness() {
+      const [on, setOn] = useState(initial)
+      // The host's rule (D4): off → on at once; on → the box, which this harness only records.
+      const onToggle = () => {
+        toggled()
+        if (!on) setOn(true)
+      }
+      return board ? <PageSettings readOnly={on} onToggleReadOnly={onToggle} /> : <PageSettings readOnly={on} onToggleReadOnly={onToggle} lineNumbers={false} onToggleLineNumbers={() => undefined} sectionIndent={false} onToggleSectionIndent={() => undefined} headingLevels={false} onToggleHeadingLevels={() => undefined} readText={readText} />
+    }
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<Harness />))
+    click(cog())
+  }
+
+  it('S41: "Read only" is the first row of a note\u2019s menu', () => {
+    mountReadOnly()
+    expect(menu()!.querySelector('button')?.textContent).toBe('Read only')
+  })
+
+  it('S41: a board\u2019s menu has only that row, and no counts', () => {
+    mountReadOnly({ board: true })
+    expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Read only'])
+    expect(menu()!.textContent).not.toContain('words')
+  })
+
+  it('S43: a click while off turns it on at once; the menu stays open and the check mark shows', () => {
+    mountReadOnly()
+    click(switchNamed('Read only'))
+    expect(toggled).toHaveBeenCalledTimes(1)
+    expect(menu()).not.toBeNull()
+    expect(switchNamed('Read only').getAttribute('aria-pressed')).toBe('true')
+    expect(switchNamed('Read only').textContent).toBe('Read only✓')
+  })
+
+  it('S47: a click while on asks the host (the box) and closes the menu', () => {
+    mountReadOnly({ initial: true })
+    expect(switchNamed('Read only').getAttribute('aria-pressed')).toBe('true')
+    click(switchNamed('Read only'))
+    expect(toggled).toHaveBeenCalledTimes(1)
+    expect(menu()).toBeNull()
+  })
+
+  it('S42: a board\u2019s cog opens, closes on a second click and on Esc, as a note\u2019s does', () => {
+    mountReadOnly({ board: true })
+    click(cog())
+    expect(menu()).toBeNull()
+    click(cog())
+    act(() => void switchNamed('Read only').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(menu()).toBeNull()
   })
 })

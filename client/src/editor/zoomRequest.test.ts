@@ -39,4 +39,79 @@ describe('requestZoom (YAZ-1710)', () => {
     requestZoom(0)
     expect(zoom).toHaveBeenLastCalledWith(0)
   })
+
+  it('YAZ-3125 (D8): with the focus nowhere, the read-only note the reader clicked in claims it — its body takes no focus', () => {
+    const section = document.createElement('section')
+    const body = document.createElement('div')
+    body.className = 'ProseMirror'
+    body.setAttribute('contenteditable', 'false')
+    const text = document.createTextNode('read-only text')
+    body.append(text)
+    // The note's page (YAZ-3140), where the reader clicked (YAZ-3145: the last click decides).
+    const page = document.createElement('div')
+    page.dataset.page = 'note'
+    page.append(body)
+    section.append(page)
+    document.body.append(section)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    document.getSelection()!.setBaseAndExtent(text, 2, text, 2)
+    const seen: number[] = []
+    section.addEventListener(ZOOM_EVENT, (event) => {
+      seen.push((event as CustomEvent<number>).detail)
+      event.preventDefault()
+    })
+    requestZoom(1)
+    expect(seen).toEqual([1])
+    // A press outside every page (blank sidebar space) ends the claim: the app zooms, as on main.
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    requestZoom(1)
+    expect(seen).toEqual([1])
+    expect(zoom).toHaveBeenLastCalledWith(1)
+    zoom.mockClear()
+    expect(zoom).not.toHaveBeenCalled()
+    document.getSelection()!.removeAllRanges()
+  })
+
+  it('a caret left in an EDITABLE note does not claim it with the focus elsewhere: the app zooms, as before', () => {
+    const section = document.createElement('section')
+    const body = document.createElement('div')
+    body.className = 'ProseMirror'
+    body.setAttribute('contenteditable', 'true')
+    const text = document.createTextNode('editable text')
+    body.append(text)
+    section.append(body)
+    document.body.append(section)
+    document.getSelection()!.setBaseAndExtent(text, 2, text, 2)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    section.addEventListener(ZOOM_EVENT, (event) => event.preventDefault())
+    requestZoom(1)
+    expect(zoom).toHaveBeenCalledExactlyOnceWith(1)
+    document.getSelection()!.removeAllRanges()
+  })
+
+  it('YAZ-3128: a read-only note in a HIDDEN tab never claims it, though the DOM selection stayed there after the tab switch', () => {
+    const layer = document.createElement('div')
+    layer.style.visibility = 'hidden'
+    const section = document.createElement('section')
+    const body = document.createElement('div')
+    body.className = 'ProseMirror'
+    body.setAttribute('contenteditable', 'false')
+    const text = document.createTextNode('hidden read-only text')
+    body.append(text)
+    section.append(body)
+    layer.append(section)
+    document.body.append(layer)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    document.getSelection()!.setBaseAndExtent(text, 2, text, 2)
+    const seen: number[] = []
+    section.addEventListener(ZOOM_EVENT, (event) => {
+      seen.push((event as CustomEvent<number>).detail)
+      event.preventDefault()
+    })
+    requestZoom(1)
+    expect(seen).toEqual([])
+    expect(zoom).toHaveBeenCalledExactlyOnceWith(1)
+    document.getSelection()!.removeAllRanges()
+  })
 })

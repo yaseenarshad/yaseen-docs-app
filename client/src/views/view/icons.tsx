@@ -193,9 +193,9 @@ export const LinkIcon = ({ size = 15 }: { size?: number }) => (
   </svg>
 )
 
-/** The Share dialog's "Not shared" (YAZ-3040, Draw's YAZ-1799). */
-export const LockIcon = () => (
-  <svg {...svg} width={18} height={18} viewBox="0 0 24 24" strokeWidth={1.8}>
+/** The Share dialog's "Not shared" (YAZ-3040, Draw's YAZ-1799), and the "Read only" chip's lock (YAZ-3076 D4). */
+export const LockIcon = ({ size = 18 }: { size?: number }) => (
+  <svg {...svg} width={size} height={size} viewBox="0 0 24 24" strokeWidth={1.8}>
     <rect x="5" y="11" width="14" height="10" rx="2" />
     <path d="M8 11V7a4 4 0 0 1 8 0v4" />
   </svg>

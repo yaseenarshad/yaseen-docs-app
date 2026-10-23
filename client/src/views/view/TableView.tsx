@@ -25,6 +25,8 @@ import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
 import { dropIndex, insertionSlot } from '../../lib/dragSlot'
 import { allPropertyKeys } from './properties'
 import { setViewOrder } from './columnOrder'
+import { NO_READ_ONLY, READ_ONLY_TIP, writableKey } from '../readOnlyRows'
+import { ReadOnlyName } from './ReadOnlyMark'
 
 export interface TableViewProps {
   def: ViewSet
@@ -78,6 +80,8 @@ export interface TableViewProps {
   valueCount: (key: string) => number
   /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
   onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
+  /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
+  readOnly?: ReadonlySet<string>
   /** The Name cell's commit (YAZ-2420 🔒 D19): the row's new title, through `FolderHost.retitle`. */
   onRetitle: (path: string, title: string) => void
 }
@@ -146,7 +150,7 @@ function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: 
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, preview = false, wikilinks, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, preview = false, wikilinks, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   const { rowProps, card, close } = usePreview(preview, wikilinks)
   /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
@@ -223,7 +227,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
   // memoised so scroll/drag re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
-  const bares = useMemo(() => keys.map((k) => (canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null)), [keys])
+  const bares = useMemo(() => keys.map(writableKey), [keys])
   const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, properties, settings)), [keys, rowRecords, properties, settings])
   /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
   const titles = useMemo(() => titleCandidates(vaultRecords), [vaultRecords])
@@ -492,7 +496,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 <tr
                   key={rowKey(line)}
                   className={line.gk !== null && dnd.over === line.gk ? 'view-table__row--drop' : undefined}
-                  {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at), ...dnd.target(line.g, line.at) })}
+                  {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)), ...dnd.target(line.g, line.at) })}
                   {...rowProps(line.row.record)}
                   // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart
                   // rather than replacing it (YAZ-1244): a card must never hang over a drag.
@@ -504,6 +508,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   {keys.map((key, c) => {
                     const v = line.row.values[key]
                     const { path, title } = line.row.record
+                    const locked = readOnly.has(path)
                     return (
                       <td
                         key={key}
@@ -514,7 +519,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                         data-cell={`${line.r}:${c}`}
                         // The Name cell (YAZ-2420 🔒 D26): ⌘ and ⌥ open the note; a plain click only selects, as on any cell.
                         onClick={c === nameCol ? (e) => (e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
-                        onDoubleClick={c === nameCol ? () => setTitleEdit(rowKey(line)) : bares[c] === null ? undefined : activateEditorFromCell}
+                        // A read-only note's Name cell opens no title field: a title edit renames the note (YAZ-3076 D6).
+                        title={c === nameCol && locked ? READ_ONLY_TIP : undefined}
+                        onDoubleClick={c === nameCol ? (locked ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}
                       >
                         {c === nameCol ? (
                           <>
@@ -534,7 +541,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                                 />
                               </span>
                             ) : (
-                              rowTitle(line.row)
+                              locked ? <ReadOnlyName>{rowTitle(line.row)}</ReadOnlyName> : rowTitle(line.row)
                             )}
                             {moveError?.path === line.row.record.path && (
                               <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
@@ -551,6 +558,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                             options={typings[c]?.options}
                             titles={linkNames[c] ?? titles}
                             resolve={resolve}
+                            readOnly={locked}
                             onCommit={(next) => onWriteValue(line.row.record.path, bares[c]!, next)}
                           />
                         ) : (

@@ -35,7 +35,7 @@
  * bytes into `assets/`, JSON down to `files: {}`. The persisted set only ever grows, so the same
  * image is never shipped twice in one session.
  */
-import { useCallback, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse } from '@shared/types'
 import { unpersistedFiles } from '@shared/drawingAssets'
 import { api } from '../api'
@@ -129,6 +129,8 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     watch,
     sync,
     onSyncNow,
+    readOnly: loaded.scene.readOnly === true,
+    onNotice,
     write: async (expectedMtime) => {
       const current = snapshot.current
       if (current === null) throw new Error('nothing to save')
@@ -146,6 +148,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
         reloadedTo.current = doc.mtime
         persisted.current = new Set(doc.stored)
         a.reset(s.replaceScene(doc.scene), doc.mtime)
+        return doc.scene.readOnly === true
       } catch (err) {
         reloadedTo.current = null
         throw err
@@ -164,7 +167,25 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     onShown: () => surface.current?.refresh(),
     focus: () => surface.current?.focus(),
   })
-  const { autosave, start, chips } = board
+  const { autosave, start, chips, readOnly, reload } = board
+  /**
+   * Read only (YAZ-3076 D2): the engine is in view mode, so nothing should change; a snapshot whose
+   * version moves anyway (a door the view mode does not close) is kept off disk, and the canvas is
+   * put back to the disk at "Allow edits". `lockedAt` is the version read only began on.
+   */
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
+  const lockedAt = useRef<number | null>(null)
+  const strayWhileReadOnly = useRef(false)
+  useEffect(() => {
+    if (readOnly) {
+      lockedAt.current = snapshot.current?.version ?? null
+      return
+    }
+    if (!strayWhileReadOnly.current) return
+    strayWhileReadOnly.current = false
+    void reload()
+  }, [readOnly, reload])
 
   const onSnapshot = useCallback(
     (next: DrawingSnapshot) => {
@@ -173,6 +194,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       // The first snapshot IS the clean baseline (the surface restored the disk elements first).
       if (a === null) {
         start(next.version, loaded.mtime)
+        lockedAt.current = next.version
         return
       }
       const mtime = reloadedTo.current
@@ -181,6 +203,12 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
         // Whatever the engine settled on after `replaceScene` IS the baseline; treating it as a
         // change would write the bytes we have just read straight back to disk.
         a.reset(next.version, mtime)
+        lockedAt.current = next.version
+        return
+      }
+      // Read only: never an edit (see `lockedAt`).
+      if (readOnlyRef.current) {
+        if (next.version !== lockedAt.current) strayWhileReadOnly.current = true
         return
       }
       a.update(next.version)
@@ -233,6 +261,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
           onFailed={onFailed}
           onApi={onApi}
           renderTopRight={renderTopRight}
+          readOnly={readOnly}
           autoFocus
         />
       </div>

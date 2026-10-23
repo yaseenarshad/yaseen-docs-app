@@ -53,6 +53,13 @@
   pointer-events: var(--ui-pointerEvents, all);
 }
 
+/* The page cog and the "Read only" chip (YAZ-3076 D3, D4) keep the app's own type: the engine sizes
+   every button under `.excalidraw` (`.excalidraw button { font-size: .8333rem }`). */
+.editor--drawing .excalidraw .drawing-editor__chips .page-settings button,
+.editor--drawing .excalidraw .drawing-editor__chips .read-only-chip button {
+  font-size: 12px;
+}
+
 /* The surface's own element fills the frame, as the engine's does — in the tab and in the embed's
    modal alike. In the tab it is also the ⌘F / ⌘C capture host and the PRESENTATION's containing block
    (YAZ-3038): the player is a sibling of the engine, absolutely positioned over this pane rather than

@@ -7,6 +7,7 @@ import { TextField } from './TextField'
 import { createPortal } from 'react-dom'
 import { Popover } from './Popover'
 import { SelectValueEditor } from './SelectValueEditor'
+import { READ_ONLY_TIP } from '../readOnlyRows'
 
 export interface EditableCellProps {
   /** Bare key (no `note.` prefix): the cell's accessible name. */
@@ -31,6 +32,12 @@ export interface EditableCellProps {
    * link as its note's title. Display ONLY: the editors' text and every commit stay the stored form.
    */
   resolve?: Resolver
+  /**
+   * The note is read only (YAZ-3076 D6, S52, S56): the value shows with the tooltip "This note is read
+   * only", with no `[data-edit]`, so a click, a double-click or a key opens nothing; a checkbox is
+   * shown disabled. Nothing commits.
+   */
+  readOnly?: boolean
 }
 
 /**
@@ -42,7 +49,7 @@ export interface EditableCellProps {
  * until the index refetch delivers it (`raw` changes); a failed write reverts the cell and
  * shows an inline error. Checkboxes are live and commit on every toggle, no edit mode.
  */
-export function EditableCell({ propKey, raw, value, editor, titles, onCommit, options = [], resolve }: EditableCellProps) {
+export function EditableCell({ propKey, raw, value, editor, titles, onCommit, options = [], resolve, readOnly = false }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   /** Committed-but-not-yet-indexed value; cleared when `raw` catches up (or the write fails). */
   const [pending, setPending] = useState<{ v: unknown } | null>(null)
@@ -67,6 +74,13 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
     }
   }, [rawKey])
 
+  // A lock ends the edit (YAZ-3124): the draft goes with the unmounted field, and no focus moves —
+  // not `close()`, whose focus hand-back is for the human's own Enter or Esc. Without it the editor
+  // would reopen, and take the focus, the moment the note stopped being read only.
+  useEffect(() => {
+    if (readOnly) setEditing(false)
+  }, [readOnly])
+
   // Closing hands focus back to the table cell (4B nav) or the display button elsewhere.
   useEffect(() => {
     if (!closedRef.current || editing) return
@@ -76,6 +90,17 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
   }, [editing])
 
   if (editor === null) return <>{cellContent(value, resolve)}</>
+  if (readOnly) {
+    return editor === 'checkbox' ? (
+      <span className="view-cell-edit">
+        <input type="checkbox" disabled checked={raw === true} aria-label={propKey} title={READ_ONLY_TIP} />
+      </span>
+    ) : (
+      <span className="view-cell-edit view-cell-edit--read-only" title={READ_ONLY_TIP}>
+        {cellContent(value, resolve)}
+      </span>
+    )
+  }
 
   const current = pending !== null ? pending.v : raw
 

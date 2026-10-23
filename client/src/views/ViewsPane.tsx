@@ -24,6 +24,7 @@ import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
+import { NO_READ_ONLY } from './readOnlyRows'
 
 /**
  * The folder host's bundle (🔒 D3, YAZ-819). ViewsPane stays ONE component: the host (`FolderView`),
@@ -106,6 +107,12 @@ export interface ViewsPaneProps {
   /** The notes the views query (YAZ-2290 D4) — the folder's own rows, never the whole vault — each with the FOLDER's values for it as its `properties` (D19). */
   records: IndexRecord[]
   /**
+   * The read-only notes among `records` (YAZ-3076 D6): the host reads the switch off each note's OWN
+   * properties (`readOnlyPaths`), because `records` carry the folder's values. Their cells open no
+   * editor, their cards do not move, and the host refuses their writes. Absent = none.
+   */
+  readOnly?: ReadonlySet<string>
+  /**
    * The vault-wide property declarations (5E, GRO-2217; `useProperties`) — typing rung 2, fed
    * App → `Editor` → `FolderView` since YAZ-846. null/absent until the fetch resolves; a
    * `properties.error` renders its own passive line and never blocks a row.
@@ -149,7 +156,7 @@ export function freeName(base: string, taken: ReadonlySet<string>): string {
   for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
 }
 
-export function ViewsPane({ parsed, onChange, root, folderPath, records, properties = null, onOpenFile, folder }: ViewsPaneProps) {
+export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
@@ -272,7 +279,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
   // outer, both optimistic as ONE unit so either failing snaps the whole move back (🔒 YAZ-745).
   const onMoveToGroup = (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => {
     const key = groupByKey(view, drop?.level ?? 0)
-    if (key === null) return
+    // A read-only note never moves, not even optimistically: the move writes a property (YAZ-3076 S53).
+    if (key === null || readOnly.has(path)) return
     const props = records.find((r) => r.path === path)?.properties
     const prevRaw = props?.[key]
     if (swap !== undefined) {
@@ -430,6 +438,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
         />
       ) : view.type === 'table' ? (
         <TableView
+          readOnly={readOnly}
           def={def}
           view={view}
           viewIndex={index}
@@ -463,6 +472,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
         />
       ) : view.type === 'board' ? (
         <BoardView
+          readOnly={readOnly}
           settings={folder.settings}
           def={def}
           view={view}
@@ -485,6 +495,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
         />
       ) : view.type === 'cards' ? (
         <CardsView
+          readOnly={readOnly}
           def={def}
           view={view}
           root={root}
@@ -508,6 +519,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
         />
       ) : view.type === 'list' ? (
         <ListView
+          readOnly={readOnly}
           def={def}
           view={view}
           records={records}

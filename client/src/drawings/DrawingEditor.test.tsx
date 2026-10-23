@@ -436,3 +436,55 @@ describe('the one engine seam', () => {
     expect(onCanvasPanelChange).toHaveBeenCalledExactlyOnceWith({ tab: 'image-studio', docked: true })
   })
 })
+
+describe('read only (YAZ-3076 D2)', () => {
+  const LOCKED = `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, type: 'excalidraw', version: 2, elements: [], appState: {}, files: {} })}\n`
+
+  it('S26: a read-only file opens the canvas in the engine’s view mode; an editable one does not', async () => {
+    render()
+    await flush()
+    expect(surface.props?.readOnly).toBe(false)
+    load.mockResolvedValue(loaded({ json: LOCKED }))
+    render({ path: '/vault/Locked.excalidraw' })
+    await flush()
+    expect(surface.props?.readOnly).toBe(true)
+  })
+
+  it('a change the view mode lets through is never saved, and "Allow edits" (here: an agent on disk) puts the disk back', async () => {
+    load.mockResolvedValue(loaded({ json: LOCKED }))
+    render()
+    await flush()
+    emit(7)
+    emit(9)
+    await act(async () => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(save).not.toHaveBeenCalled()
+    expect(chips()).toContain('Saved')
+    // S15: the switch goes off on disk; the clean tab reloads, the canvas leaves view mode.
+    load.mockResolvedValue(loaded({ mtime: 300 }))
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await flush()
+    await flush()
+    expect(surface.props?.readOnly).toBe(false)
+    expect(surface.replaced.length).toBeGreaterThan(0)
+  })
+
+  it('S15: an agent turns the switch on — the open tab goes to view mode at once, and edits stop saving', async () => {
+    render()
+    await flush()
+    emit(7)
+    load.mockResolvedValue(loaded({ json: LOCKED, mtime: 300 }))
+    surface.nextReplaceVersion = 7
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await flush()
+    await flush()
+    emit(7)
+    expect(surface.props?.readOnly).toBe(true)
+    emit(8)
+    await act(async () => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(save).not.toHaveBeenCalled()
+  })
+})

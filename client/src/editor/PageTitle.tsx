@@ -13,7 +13,7 @@
  * door, which asks first (the name changes with it) and routes every failure to the passive
  * notice — so nothing here duplicates that.
  */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 
 interface PageTitleProps {
@@ -27,9 +27,14 @@ interface PageTitleProps {
   onArrowDown?: () => void
   /** `dir` = a folder's title (YAZ-2290 D9). */
   kind?: 'file' | 'dir'
+  /**
+   * The note is read only (YAZ-3076 D2, S22): the heading does not open the field, and a field that
+   * is open when the switch turns on is put down unchanged. The sidebar still renames the file.
+   */
+  readOnly?: boolean
 }
 
-export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file' }: PageTitleProps) {
+export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file', readOnly = false }: PageTitleProps) {
   const title = pageLabel(path, kind === 'dir', titles)
   const [editing, setEditing] = useState(false)
   // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is `leave`'s only caller.
@@ -44,6 +49,11 @@ export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file' 
     settled.current = true
     setEditing(false)
   }
+
+  // The switch turned on mid-edit (an agent, another window): Escape's discard, never a commit.
+  useEffect(() => {
+    if (readOnly) discard()
+  }, [readOnly])
 
   /** The one door: the title the user left behind, whichever way they left. */
   const leave = (value: string): void => {
@@ -96,10 +106,11 @@ export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file' 
           input, so a rename never REQUIRES the mouse. */}
       <h1
         className="page-title__text"
-        tabIndex={0}
-        onClick={open}
+        tabIndex={readOnly ? undefined : 0}
+        aria-readonly={readOnly || undefined}
+        onClick={readOnly ? undefined : open}
         onKeyDown={(e) => {
-          if (e.key !== 'Enter') return
+          if (readOnly || e.key !== 'Enter') return
           e.preventDefault()
           open()
         }}

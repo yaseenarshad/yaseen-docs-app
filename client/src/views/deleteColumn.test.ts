@@ -93,6 +93,14 @@ describe('undeletableReason: built-in keys are hidden, never deleted', () => {
     await expect(deleteColumn('also_in', h)).rejects.toThrow(/built-in column/)
     expect(h.writeSettings).not.toHaveBeenCalled()
   })
+
+  it('refuses `readonly` (YAZ-3076 S16): the read-only switch is set from the page cog, never stripped as a column', async () => {
+    expect(undeletableReason('readonly')).toBe('Built-in column — hide it instead')
+    expect(undeletableReason('note.readonly')).toBe('Built-in column — hide it instead')
+    const h = host()
+    await expect(deleteColumn('readonly', h)).rejects.toThrow(/built-in column/)
+    expect(h.writeSettings).not.toHaveBeenCalled()
+  })
 })
 
 describe('the pure pruners', () => {
@@ -175,6 +183,14 @@ describe('deleteColumn', () => {
     expect(disk.get(C)).toBe('---\n---\nbody c\n') // the emptied block goes, and `in` with it
     // a note without the field is never even read
     expect(disk.get(B)).toBe(`---\ntitle: B\nin:\n  ${FOLDER_ID}:\n    owner: "[[Kim]]"\n---\n`)
+    expect(vi.mocked(transformFile).mock.calls.map(([path]) => path)).toEqual([A, C])
+  })
+
+  it('S55 (YAZ-3076 D6): a read-only note loses the column too — a folder-wide action keeps the folder consistent, as a link rewrite does', async () => {
+    disk.set(C, `---\nreadonly: true\nin:\n  ${FOLDER_ID}:\n    status: 1-Backlog\n---\nbody c\n`)
+    const h = host({ records: [rec(A, held({ status: '2-Todo', owner: '[[Sam]]' }, { title: 'A' })), rec(B, held({ owner: '[[Kim]]' }, { title: 'B' })), rec(C, held({ status: '1-Backlog' }, { readonly: true }))] })
+    await deleteColumn('note.status', h)
+    expect(disk.get(C)).toBe('---\nreadonly: true\n---\nbody c\n')
     expect(vi.mocked(transformFile).mock.calls.map(([path]) => path)).toEqual([A, C])
   })
 

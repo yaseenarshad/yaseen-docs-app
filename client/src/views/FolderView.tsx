@@ -46,6 +46,7 @@ import { ViewsPane, type FolderHost } from './ViewsPane'
 import { folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
 import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
 import { createNote } from './scaffold'
+import { guardReadOnly, readOnlyPaths } from './readOnlyRows'
 import { writeFolderValues, writeProperties } from './writeProperty'
 import { ViewFolder } from './view/GroupHeader'
 import './views.css'
@@ -139,6 +140,8 @@ export function FolderView({
   const id = record?.id
   /** The rows as the views read them (D19): each row's `properties` are THIS folder's values for the note — or, where the vault does not use IDs, the note's own. */
   const shown = useMemo(() => (ids ? rows.map((row) => ({ ...row, properties: folderValues(row.properties, id) })) : rows), [rows, id, ids])
+  /** The read-only notes (YAZ-3076 D6), read off each note's OWN properties before `shown` swaps in the folder's values. */
+  const locked = useMemo(() => readOnlyPaths(rows), [rows])
 
   /**
    * The settings file's own BYTES (D9), which the properties panel and the comments read as a note's
@@ -311,7 +314,8 @@ export function FolderView({
     // A folder with no id is given one first — the path its first shortcut uses (`folderId`) — then the value is written.
     // The same save drops the note's values for the folders that no longer show it (D20).
     // Where the vault does not use IDs the value is the note's own property, and that is all the write is.
-    writeValues: ids ? async (note, writes) => writeFolderValues(note, id ?? (await folderId(path)), writes, dropStaleFolderValues(root, note, feed.folders)) : writeProperties,
+    // A read-only note's write is refused here, the one door every view write passes (YAZ-3076 D6, S54).
+    writeValues: guardReadOnly(locked, ids ? async (note, writes) => writeFolderValues(note, id ?? (await folderId(path)), writes, dropStaleFolderValues(root, note, feed.folders)) : writeProperties),
     // ONE declaration, ahead first (YAZ-1549): the panel sees it at once; a refusal puts back what
     // stood before and rejects to the caller, whose inline text is the report.
     setColumn: (key, next, base) => {
@@ -349,7 +353,9 @@ export function FolderView({
         }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     }),
     valueCount: (key: string) => notesHolding(feed.records, id, key).length,
-    retitle: (note, title) => onRetitle(note, title, 'file'),
+    retitle: (note, title) => {
+      if (!locked.has(note)) onRetitle(note, title, 'file')
+    },
     openRight: onOpenFileRight,
     openBackground: onOpenFileBackground,
     onNotice,
@@ -382,6 +388,7 @@ export function FolderView({
             root={root}
             folderPath={path}
             records={shown}
+            readOnly={locked}
             properties={properties}
             onOpenFile={onOpenFile}
             folder={host}

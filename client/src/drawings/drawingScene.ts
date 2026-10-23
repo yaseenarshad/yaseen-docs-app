@@ -16,6 +16,7 @@
 import type { DrawingFileEntry } from '@shared/types'
 import { referencedFileIds } from '@shared/drawingAssets'
 import { isRecord } from '@shared/guards'
+import { isDrawingReadOnly } from '@shared/readOnly'
 import { api } from '../api'
 
 /** The scene shape a preview needs; deliberately loose — the file is user data, not our type. */
@@ -26,7 +27,12 @@ export interface DrawingScene {
   readonly appState: Record<string, unknown>
   /** The binary-asset map; `null` when the file has none, which is what exportToSvg wants. */
   readonly files: Record<string, unknown> | null
+  /** The file's read-only switch (YAZ-3076 D1, `isDrawingReadOnly`), read in the same parse; absent = editable. */
+  readonly readOnly?: boolean
 }
+
+/** The scene's read-only switch, present only when it is on: an editable scene keeps the shape it always had. */
+const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true } => (isDrawingReadOnly(scene) ? { readOnly: true } : {})
 
 /** Embed targets that get a preview — everything else renders exactly as it always has. */
 export const DRAWING_EMBED_SUFFIX = '.excalidraw'
@@ -51,7 +57,7 @@ export function parseScene(base64: string): DrawingScene {
   if (!Array.isArray(scene.elements)) throw new Error('not an Excalidraw scene: no elements')
   const appState = typeof scene.appState === 'object' && scene.appState !== null ? (scene.appState as Record<string, unknown>) : {}
   const files = typeof scene.files === 'object' && scene.files !== null ? (scene.files as Record<string, unknown>) : null
-  return { elements: scene.elements, appState, files }
+  return { elements: scene.elements, appState, files, ...readOnlyOf(scene) }
 }
 
 /**
@@ -107,7 +113,7 @@ export function parseSceneText(text: string): DrawingScene {
   if (!isRecord(parsed)) throw new Error('not an Excalidraw scene')
   if (!Array.isArray(parsed.elements)) throw new Error('not an Excalidraw scene: no elements')
   // The same `isRecord` the whole scene got: a file whose `appState` is an ARRAY carries no prefs, not a list.
-  return { elements: parsed.elements, appState: isRecord(parsed.appState) ? parsed.appState : {}, files: isRecord(parsed.files) ? parsed.files : {} }
+  return { elements: parsed.elements, appState: isRecord(parsed.appState) ? parsed.appState : {}, files: isRecord(parsed.files) ? parsed.files : {}, ...readOnlyOf(parsed) }
 }
 
 /**

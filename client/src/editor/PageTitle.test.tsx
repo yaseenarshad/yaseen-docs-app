@@ -21,18 +21,20 @@ afterEach(() => {
 
 const PATH = '/vault/Docs/Old Note.md'
 
-function mount(opts: { path?: string; kind?: 'file' | 'dir'; titles?: PathTitles } = {}) {
+function mount(opts: { path?: string; kind?: 'file' | 'dir'; titles?: PathTitles; readOnly?: boolean } = {}) {
   const onRetitle = vi.fn()
   const onArrowDown = vi.fn()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() =>
-    root?.render(
-      <PageTitle path={opts.path ?? PATH} kind={opts.kind} titles={opts.titles ?? new Map()} onRetitle={onRetitle} onArrowDown={onArrowDown} />,
-    ),
-  )
-  return { el: container, onRetitle, onArrowDown }
+  const render = (readOnly = opts.readOnly) =>
+    act(() =>
+      root?.render(
+        <PageTitle path={opts.path ?? PATH} kind={opts.kind} titles={opts.titles ?? new Map()} onRetitle={onRetitle} onArrowDown={onArrowDown} readOnly={readOnly} />,
+      ),
+    )
+  render()
+  return { el: container, onRetitle, onArrowDown, render }
 }
 
 const heading = (el: HTMLElement) => el.querySelector<HTMLHeadingElement>('.page-title__text')
@@ -187,5 +189,27 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     expect(heading(el)?.tabIndex).toBe(0)
     press(heading(el)!, 'Enter')
     expect(input(el)?.value).toBe('Old Note')
+  })
+})
+
+describe('PageTitle on a read-only note (YAZ-3076 S22)', () => {
+  it('neither a click nor Enter opens the field; the heading is not a tab stop', () => {
+    const { el } = mount({ readOnly: true })
+    act(() => heading(el)?.click())
+    expect(input(el)).toBeNull()
+    press(heading(el)!, 'Enter')
+    expect(input(el)).toBeNull()
+    expect(heading(el)?.hasAttribute('tabindex')).toBe(false)
+    expect(heading(el)?.getAttribute('aria-readonly')).toBe('true')
+  })
+
+  it('a field open when the switch turns on is put down unchanged — nothing is renamed', () => {
+    const { el, onRetitle, render } = mount()
+    act(() => heading(el)?.click())
+    field(el).value = 'Half typed'
+    render(true)
+    expect(input(el)).toBeNull()
+    expect(onRetitle).not.toHaveBeenCalled()
+    expect(heading(el)?.textContent).toBe('Old Note')
   })
 })

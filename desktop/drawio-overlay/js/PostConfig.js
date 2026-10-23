@@ -48,6 +48,74 @@ window.ICON_SERVICE_PATH = null;
 		installTextScaling(this.editor.graph);
 	};
 
+	// YAZ-3076 D2: the file says read only, so the graph takes no edits — the host's `yaseenReadOnly`
+	// message, sent only after draw.io's `init` (when the editor exists, as for `yaseenAdaptiveColors`)
+	// and on every change. draw.io's own viewer does the same (`graph.isEnabled` false): selection,
+	// moves, the rubber band, the keys and a drop from the shapes panel all ask `graph.isEnabled()`,
+	// while the wheel and the panning handler do not, so pan and zoom still work. Two things draw.io
+	// leaves on are closed here: a label being typed is CANCELLED, never applied (`stopEditing(cancel)`,
+	// YAZ-3116 A2), and the selection is cleared (no Format panel edits a cell picked before); and the
+	// toolbar's Undo / Redo, which follow only the undo history, are off while the graph is.
+	function applyReadOnly(readOnly)
+	{
+		var graph = editorUi.editor.graph;
+
+		if (readOnly)
+		{
+			// Only while a label IS being typed (YAZ-3119), and with draw.io's focus pull silenced (YAZ-3123):
+			// draw.io's wrap of `stopEditing` ends with `cellEditor.focusContainer()`, which focuses the
+			// diagram container. A click on the cog moves the focus to the host while draw.io keeps the
+			// label open, so that pull would take the keyboard back into this frame and the cog's menu
+			// would close. The cell editor's own `focusContainer` (EditorUi sets one on the instance) is
+			// shadowed for the call and put back after.
+			if (graph.isEditing())
+			{
+				var cellEditor = graph.cellEditor;
+				var ownPull = Object.prototype.hasOwnProperty.call(cellEditor, 'focusContainer');
+				var pull = cellEditor.focusContainer;
+				cellEditor.focusContainer = function() {};
+
+				try
+				{
+					graph.stopEditing(true);
+				}
+				finally
+				{
+					if (ownPull)
+					{
+						cellEditor.focusContainer = pull;
+					}
+					else
+					{
+						delete cellEditor.focusContainer;
+					}
+				}
+			}
+
+			graph.clearSelection();
+		}
+
+		graph.setEnabled(!readOnly);
+
+		if (editorUi.actions != null)
+		{
+			editorUi.updateActionStates();
+		}
+	}
+
+	var updateActionStates = EditorUi.prototype.updateActionStates;
+
+	EditorUi.prototype.updateActionStates = function()
+	{
+		updateActionStates.apply(this, arguments);
+
+		if (!this.editor.graph.isEnabled())
+		{
+			this.actions.get('undo').setEnabled(false);
+			this.actions.get('redo').setEnabled(false);
+		}
+	};
+
 	// 🔒 YAZ-1802 D16: the app's "draw.io diagrams in dark mode" setting, LIVE. draw.io reads it once,
 	// as the configure reply's `defaultAdaptiveColors`, and has no embed action to change it, so the
 	// host's `yaseenAdaptiveColors` message is answered here — only after draw.io's `init`, when the
@@ -90,6 +158,12 @@ window.ICON_SERVICE_PATH = null;
 			{
 				keepHostFocus = false;
 			}, 0);
+		}
+
+		if (msg != null && msg.action == 'yaseenReadOnly')
+		{
+			evt.stopImmediatePropagation();
+			applyReadOnly(msg.value === true);
 		}
 
 		if (msg != null && msg.action == 'yaseenAdaptiveColors')

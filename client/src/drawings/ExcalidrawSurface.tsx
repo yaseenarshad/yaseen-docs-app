@@ -150,6 +150,29 @@ export interface DrawingSurfaceProps {
    * reaches it first (rule 28).
    */
   autoFocus?: boolean
+  /**
+   * The file says read only (YAZ-3076 D2): the engine's own view mode — pan, zoom, select-free
+   * viewing, Export Image and Present; no tools. The canvas background command does nothing, and
+   * the canvas panel gets a handle that cannot change the scene (no insert, no slide reorder or
+   * rename). Live: a change of the prop switches the engine in place.
+   */
+  readOnly?: boolean
+}
+
+/**
+ * The engine's handle with its scene-changing doors shut (YAZ-3076 D2): `insertElements` and
+ * `addFiles` do nothing, and `updateScene` passes only what is not the scene's elements (a view,
+ * a dialog, a tool), so the canvas panel can still present and look but never edit a read-only drawing.
+ */
+export function readOnlyHandle(api: ImperativeApi): ImperativeApi {
+  return {
+    ...api,
+    insertElements: () => undefined,
+    addFiles: () => undefined,
+    updateScene: (scene) => {
+      if (scene.elements === undefined) api.updateScene(scene)
+    },
+  }
 }
 
 /** The one failure this seam can raise on its own (the file's own failures are the host's). */
@@ -194,6 +217,7 @@ export function ExcalidrawSurface({
   onApi,
   renderTopRight,
   autoFocus = false,
+  readOnly = false,
 }: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
   /** The canvas panel is the tab's (see the module doc); read once, so a surface never changes mode. */
@@ -238,6 +262,9 @@ export function ExcalidrawSurface({
   prefsOutRef.current = onCanvasPrefsChange
   panelOutRef.current = onCanvasPanelChange
   panelRef.current = canvasPanel
+  /** Read by the handle's background command, which is made once (see `onExcalidrawAPI`). */
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
 
   /** What the engine is believed to hold (see the anti-ping-pong note in the module doc). */
   const appliedRef = useRef<CanvasPrefs>(canvasPrefs)
@@ -452,7 +479,10 @@ export function ExcalidrawSurface({
       // does: focus the engine's own container, the element it gives `tabIndex` for exactly this.
       focus: () => rootRef.current?.querySelector<HTMLElement>('.excalidraw-container')?.focus(),
       openImageExport: () => api.updateScene({ appState: { openDialog: { name: 'imageExport' } } as unknown as EngineAppState }),
-      setCanvasBackground: (color) => api.updateScene({ appState: { viewBackgroundColor: color } as unknown as EngineAppState }),
+      // A read-only drawing keeps its background: the colour is written into the file (YAZ-3076 S26).
+      setCanvasBackground: (color) => {
+        if (!readOnlyRef.current) api.updateScene({ appState: { viewBackgroundColor: color } as unknown as EngineAppState })
+      },
       // The FULL files map, straight off the engine: everything hydrated out of `assets/` at load
       // plus anything pasted since and not yet saved. The store's copy would be missing the second half.
       exportScene: () =>
@@ -493,14 +523,14 @@ export function ExcalidrawSurface({
           activeTab={activeTab}
           onClose={closePanel}
           onDock={onDock}
-          excalidrawAPI={imperativeApi}
+          excalidrawAPI={imperativeApi === null || !readOnly ? imperativeApi : readOnlyHandle(imperativeApi)}
           searchFocusPending={searchFocusPending}
           onSearchFocused={onSearchFocused}
           hasSelection={hasSelection}
           onStartPresentation={startPresentation}
         />
       ),
-    [engine, withPanel, activeTab, closePanel, onDock, imperativeApi, searchFocusPending, onSearchFocused, hasSelection, startPresentation],
+    [engine, withPanel, activeTab, closePanel, onDock, imperativeApi, readOnly, searchFocusPending, onSearchFocused, hasSelection, startPresentation],
   )
 
   // The frame held while the engine chunk is arriving; the host's canvas frame sizes it.
@@ -523,6 +553,10 @@ export function ExcalidrawSurface({
         // The engine reads this once, at its mount, after its module loaded: by then a double
         // click may have opened the tab's name field, which keeps the caret (YAZ-3059).
         autoFocus={autoFocus && !namingTab(document.activeElement)}
+        // Read only forces the engine's view mode; an editable drawing passes NONE, because a defined
+        // prop — `false` too — turns off the engine's own ⌥R toggle (YAZ-3120). `true` → `undefined`
+        // still leaves view mode: the engine sets it to `!!viewModeEnabled` when the prop changes.
+        viewModeEnabled={readOnly ? true : undefined}
       >
         {canvasSidebar}
       </Excalidraw>

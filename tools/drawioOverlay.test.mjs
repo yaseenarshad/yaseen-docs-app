@@ -27,6 +27,11 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
   function EditorUi() {}
   EditorUi.prototype.createUi = function () {}
   EditorUi.prototype.installKeyboardShortcuts = function () {}
+  // draw.io's own: Undo and Redo follow the undo history, never whether the graph takes edits.
+  EditorUi.prototype.updateActionStates = function () {
+    this.actions.get('undo').setEnabled(true)
+    this.actions.get('redo').setEnabled(true)
+  }
   function Menus() {}
   Menus.prototype.createPopupMenu = (menu) => menu.items.push('zoomIn', 'zoomOut')
   const env = {
@@ -104,7 +109,23 @@ function openEditor(env) {
     updateCellSize: vi.fn(),
     addListener: (name, listener) => (listeners[name] = listener),
     refresh: vi.fn(),
+    enabled: true,
+    isEnabled() {
+      return this.enabled
+    },
+    setEnabled(value) {
+      this.enabled = value
+    },
+    cellEditor: { focusContainer: vi.fn() },
+    editing: false,
+    isEditing() {
+      return this.editing
+    },
+    stopEditing: vi.fn(),
+    clearSelection: vi.fn(() => (selection = [])),
   }
+  const actionState = {}
+  const actions = { get: (name) => ({ setEnabled: (on) => (actionState[name] = on) }) }
   const bold = vi.fn()
   const keyHandler = {
     normalKeys: {},
@@ -124,13 +145,15 @@ function openEditor(env) {
       return table[evt.keyCode] ?? null
     },
   }
-  const ui = { editor: { graph }, keyHandler, hsplitPosition: 208, setAdaptiveColors: vi.fn() }
+  // An EditorUi as draw.io builds it: its prototype's methods, PostConfig's wraps included.
+  const ui = Object.assign(Object.create(env.EditorUi.prototype), { editor: { graph }, keyHandler, hsplitPosition: 208, setAdaptiveColors: vi.fn(), actions })
   env.EditorUi.prototype.createUi.call(ui)
   env.EditorUi.prototype.installKeyboardShortcuts.call(ui)
   return {
     ui,
     bold,
     graph,
+    actionState,
     select: (...cs) => (selection = cs),
     /** A keydown as draw.io's handler takes it; true when something was bound to it. */
     press(key, mods = {}) {
@@ -340,11 +363,52 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     expect(focus).toHaveBeenCalledTimes(2)
   })
 
+  it('the host\u2019s yaseenReadOnly turns the graph off and on; draw.io never sees the message (YAZ-3076 D2)', () => {
+    const { env, message } = loadPostConfig()
+    const editor = openEditor(env)
+    const shape = cell(RECT)
+    editor.select(shape)
+    editor.graph.editing = true
+    expect(message({ action: 'yaseenReadOnly', value: true })).toBe(true)
+    expect(editor.graph.isEnabled()).toBe(false)
+    // A cell selected before keeps no Format panel, and a label being typed is cancelled, never applied (`stopEditing(cancel)`).
+    expect(editor.graph.stopEditing).toHaveBeenCalledWith(true)
+    expect(editor.graph.isSelectionEmpty()).toBe(true)
+    // The toolbar's Undo and Redo do not edit a read-only diagram either.
+    expect(editor.actionState).toMatchObject({ undo: false, redo: false })
+    expect(message({ action: 'yaseenReadOnly', value: false })).toBe(true)
+    expect(editor.graph.isEnabled()).toBe(true)
+    expect(editor.actionState).toMatchObject({ undo: true, redo: true })
+  })
+
+  it('YAZ-3123: with a label being typed, the label is cancelled with draw.io\u2019s focus pull silenced, and the pull is put back after', () => {
+    const { env, message } = loadPostConfig()
+    const editor = openEditor(env)
+    const pull = vi.fn()
+    editor.graph.cellEditor = { focusContainer: pull }
+    // draw.io's own wrap: `stopEditing` ends with `this.focusContainer()` on the cell editor.
+    editor.graph.stopEditing.mockImplementation(() => editor.graph.cellEditor.focusContainer())
+    editor.graph.editing = true
+    expect(message({ action: 'yaseenReadOnly', value: true })).toBe(true)
+    expect(editor.graph.stopEditing).toHaveBeenCalledWith(true)
+    expect(pull).not.toHaveBeenCalled()
+    expect(editor.graph.cellEditor.focusContainer).toBe(pull)
+  })
+
+  it('YAZ-3119: with no label being typed, yaseenReadOnly never calls stopEditing — draw.io\u2019s wrap of it focuses its container, which takes the keyboard from the host', () => {
+    const { env, message } = loadPostConfig()
+    const editor = openEditor(env)
+    expect(message({ action: 'yaseenReadOnly', value: true })).toBe(true)
+    expect(editor.graph.isEnabled()).toBe(false)
+    expect(editor.graph.stopEditing).not.toHaveBeenCalled()
+  })
+
   it('leaves every other message, and the same one from anywhere but the host, to draw.io', () => {
     const { env, message } = loadPostConfig()
     openEditor(env)
     expect(message({ action: 'load', xml: '<mxfile/>' })).toBe(false)
     expect(message({ action: 'yaseenAdaptiveColors', value: 'none' }, {})).toBe(false)
+    expect(message({ action: 'yaseenReadOnly', value: true }, {})).toBe(false)
     expect(env.Graph.defaultAdaptiveColors).toBeUndefined()
   })
 
@@ -396,6 +460,15 @@ describe.skipIf(!existsSync(APP_MIN_JS))(`every draw.io action we name exists in
       'Graph.toggleCellStyleFlags': /toggleCellStyleFlags\s*=\s*function/,
       'Graph.getEditableCells': /getEditableCells\s*=\s*function/,
       'Graph.updateCellSize': /updateCellSize\s*=\s*function/,
+      'mxGraph.setEnabled': /mxGraph\.prototype\.setEnabled\s*=\s*function/,
+      'mxGraph.isEnabled': /mxGraph\.prototype\.isEnabled\s*=\s*function/,
+      'mxGraph.stopEditing': /mxGraph\.prototype\.stopEditing\s*=\s*function/,
+      'mxGraph.isEditing': /mxGraph\.prototype\.isEditing\s*=\s*function/,
+      'stopEditing ends with focusContainer()': /this\.focusContainer\(\)\};mxCellEditor\.prototype\.focusContainer\s*=\s*function/,
+      'EditorUi sets cellEditor.focusContainer': /\.cellEditor\.focusContainer\s*=/,
+      'mxGraph.clearSelection': /mxGraph\.prototype\.clearSelection\s*=\s*function/,
+      'EditorUi.updateActionStates': /EditorUi\.prototype\.updateActionStates\s*=\s*function/,
+      'actions.get("undo")': /this\.actions\.get\("undo"\)\.setEnabled/,
     }
     for (const [name, pattern] of Object.entries(internals)) expect(app, name).toMatch(pattern)
   })

@@ -14,6 +14,8 @@ import { usePreview } from './PreviewCard'
 import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { allPropertyKeys } from './properties'
 import { PageContextMenu } from './PageContextMenu'
+import { NO_READ_ONLY } from '../readOnlyRows'
+import { ReadOnlyName } from './ReadOnlyMark'
 
 export interface BoardViewProps {
   def: ViewSet
@@ -38,6 +40,8 @@ export interface BoardViewProps {
   onNotice?: (message: string) => void
   /** A drop on another section, including nested level metadata, via ViewsPane's existing optimistic write path. */
   onMoveToGroup: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void
+  /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
+  readOnly?: ReadonlySet<string>
   /** The last failed move, flagged inline on its card. */
   moveError: { path: string; message: string } | null
   /** Create a note seeded at one group level; nested spots let ViewsPane seed the outer too. A `name` is the inline add's typed one. */
@@ -101,6 +105,7 @@ export function BoardView({
   preview = false,
   wikilinks,
   resolve,
+  readOnly = NO_READ_ONLY,
 }: BoardViewProps) {
   const { rowProps, card, close } = usePreview(preview, wikilinks)
   const levelKeys = [groupByKey(view), groupByKey(view, 1)]
@@ -194,7 +199,7 @@ export function BoardView({
             openCard(row, event)
           }}
         >
-          {rowTitle(row)}
+          {readOnly.has(row.record.path) ? <ReadOnlyName>{rowTitle(row)}</ReadOnlyName> : rowTitle(row)}
         </button>
       )
     const style = styleOf(key)
@@ -219,7 +224,7 @@ export function BoardView({
     setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, title: row.record.title })
   }
   const dragSource = (row: Row, group: Group, at: GroupSpot): Record<string, unknown> => {
-    const source = dnd.source(row.record.path, group, at)
+    const source = dnd.source(row.record.path, group, at, readOnly.has(row.record.path))
     const onDragEnd = source.onDragEnd as ((event: ReactDragEvent) => void) | undefined
     if (onDragEnd === undefined) return source
     return {
