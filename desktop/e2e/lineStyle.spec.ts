@@ -191,3 +191,27 @@ test('step 6 — ⌘Z takes the length back out in one step', async () => {
   const [lineBox, row] = await Promise.all([hrBox(win), lineView(win).boundingBox()])
   expect(lineBox.width).toBeCloseTo(row!.width, 0)
 })
+
+test('step 7 — line numbers (S22, YAZ-3204): the thick styled line shows 3–5 at its middle, and the paragraph after it 7', async () => {
+  await layer(win).locator('.page-settings__trigger').click()
+  const lineSwitch = layer(win).locator('.page-settings__menu button[aria-pressed]', { hasText: 'Line numbers' })
+  await lineSwitch.click()
+  await expect(lineSwitch).toHaveAttribute('aria-pressed', 'true')
+  await win.keyboard.press('Escape')
+  // The comment (line 5) is no block of the page: it is the line's range, and the next block is line 7.
+  await expect.poll(() => lineView(win).getAttribute('data-line'), { timeout: 15_000 }).toBe('3')
+  await expect(lineView(win)).toHaveAttribute('data-line-end', '5')
+  await expect(editorOf(win).locator('p[data-line]', { hasText: NOTE_BODY })).toHaveAttribute('data-line', '1')
+  await expect(editorOf(win).locator('p[data-line]', { hasText: 'after the line' })).toHaveAttribute('data-line', '7')
+  // The number's box is centred on the wrapper, and the wrapper is the 18px line itself: the middle of the line.
+  const at = await lineView(win).evaluate((el) => {
+    const after = getComputedStyle(el, '::after')
+    return { content: after.content, top: after.top, transform: after.transform, wrapper: el.getBoundingClientRect().height, line: el.querySelector('hr')!.getBoundingClientRect().height }
+  })
+  expect(at.content).toBe('"3–5"')
+  expect(at.wrapper).toBeCloseTo(at.line, 0)
+  expect(at.line).toBeCloseTo(18, 0)
+  expect(parseFloat(at.top)).toBeCloseTo(at.wrapper / 2, 0)
+  expect(at.transform).not.toBe('none')
+  await shoot(win, 'lineStyle-07-line-numbers')
+})

@@ -1,10 +1,17 @@
 import { parse, postprocess, preprocess } from 'micromark'
 import { gfm } from 'micromark-extension-gfm'
+import { parseLineComment } from '../line/lineComment'
 
 /**
  * One entry per leaf block, in document order: the line it starts on (1-based), the line it ends
  * on, and its kind. Code has two kinds: `c` has a fence line above its first code line, and `i`
  * (indented) starts on that line.
+ *
+ * A styled line's comment is no block (YAZ-3204, rule 41): the editor joins `***` and the
+ * `<!-- line: … -->` right after it, in the same container, into ONE `hr` (`lineStyleRemark`), so
+ * the comment is skipped here by the same rule, and the line's entry ends on the comment's last
+ * line — a block of two or more lines of the file shows its range (D7), as a setext heading's
+ * underline does. Any other HTML block is a block, as before.
  */
 export interface BlockLines {
   lines: number[]
@@ -33,6 +40,8 @@ export function blockLines(text: string): BlockLines {
     ends.push(end)
     kinds += kind
   }
+  // Right after a thematic break, until anything else happens in the flow: the next HTML block may be its comment.
+  let afterBreak = false
   const flush = () => {
     if (emptyItem === null) return
     add(emptyItem, emptyItem, 'p')
@@ -40,6 +49,8 @@ export function blockLines(text: string): BlockLines {
   }
   for (const [phase, token] of events) {
     const { type } = token
+    // A new list item, a list or a quote that opens or closes: the next block is no sibling of the line.
+    if (LISTS.has(type) || type === 'blockQuote' || type === 'listItemPrefix') afterBreak = false
     if (LISTS.has(type)) {
       // A nested list on the item's OWN line (`* - nested`) is the item's first block: the editor adds
       // a paragraph only when the list starts on a later line (listItemRoundTrip rule 2).
@@ -64,7 +75,14 @@ export function blockLines(text: string): BlockLines {
     emptyItem = null
     // A fence that is never closed runs to the end of the text, and ends at the START of the line under its last one.
     const { start, end } = token
-    add(start.line, end.column === 1 && end.line > start.line ? end.line - 1 : end.line, kind)
+    const last = end.column === 1 && end.line > start.line ? end.line - 1 : end.line
+    if (afterBreak && type === 'htmlFlow' && parseLineComment(text.slice(start.offset, end.offset)) !== null) {
+      ends[ends.length - 1] = last
+      afterBreak = false
+      continue
+    }
+    afterBreak = type === 'thematicBreak'
+    add(start.line, last, kind)
   }
   return { lines, ends, kinds }
 }

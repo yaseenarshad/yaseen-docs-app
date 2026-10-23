@@ -235,3 +235,18 @@ describe('fileLines: the frontmatter above, and the blank lines the load adds', 
     expect(ends.map(toFileLine)).toEqual([4, 5, 7, 11])
   })
 })
+
+describe('a styled line (YAZ-3204, rule 41)', () => {
+  it('skips the line comment right after a thematic break, and the line ends on it', () => {
+    expect(blockLines('First\n\n***\n\n<!-- line: darkness 50% -->\n\nSecond\n')).toEqual({ lines: [1, 3, 7], ends: [1, 5, 7], kinds: 'prp' })
+    expect(blockLines('- a\n- ***\n  <!-- line: thickness 6px -->\n- b\n')).toEqual({ lines: [1, 2, 4], ends: [1, 3, 4], kinds: 'prp' })
+  })
+
+  it('keeps every other HTML block: not ours, not right after the line, or in another container', () => {
+    expect(blockLines('***\n\n<!-- line: style wavy -->\n').kinds).toBe('rp')
+    expect(blockLines('***\n\nText\n\n<!-- line: darkness 50% -->\n').kinds).toBe('rpp')
+    expect(blockLines('<!-- line: darkness 50% -->\n\n***\n').kinds).toBe('pr')
+    expect(blockLines('- ***\n- <!-- line: darkness 50% -->\n').kinds).toBe('rp')
+    expect(blockLines('> ***\n\n<!-- line: darkness 50% -->\n').kinds).toBe('rp')
+  })
+})
