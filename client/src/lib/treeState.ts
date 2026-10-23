@@ -1,3 +1,4 @@
+import { copyFoldKey } from '@shared/foldKey'
 import type { TreeNode } from '@shared/types'
 
 /** Expanded-directory set for the sidebar tree (persisted per root; see storage.ts). */
@@ -6,6 +7,8 @@ export type TreeAction =
   /** Replace the whole set (⚡ YAZ-862): expand-all and collapse-all are this ONE action, `[]` being the latter. */
   | { type: 'setAll'; dirs: string[] }
   | { type: 'expandTo'; root: string; file: string }
+  /** Open each of these fold keys that is closed (YAZ-3131): a new focus item, or the way down in one copy. */
+  | { type: 'open'; dirs: string[] }
 
 export function treeReducer(expanded: string[], action: TreeAction): string[] {
   switch (action.type) {
@@ -15,6 +18,10 @@ export function treeReducer(expanded: string[], action: TreeAction): string[] {
       return action.dirs
     case 'expandTo': {
       const missing = ancestorDirs(action.root, action.file).filter((d) => !expanded.includes(d))
+      return missing.length === 0 ? expanded : [...expanded, ...missing]
+    }
+    case 'open': {
+      const missing = action.dirs.filter((d) => !expanded.includes(d))
       return missing.length === 0 ? expanded : [...expanded, ...missing]
     }
   }
@@ -36,6 +43,21 @@ export function ancestorDirs(root: string, file: string): string[] {
 /** Every directory in `tree`, at every depth, outer before inner — the expand-all set (YAZ-862). */
 export function allDirs(tree: TreeNode[]): string[] {
   return tree.flatMap((n) => (n.type === 'dir' ? [n.path, ...allDirs(n.children)] : []))
+}
+
+/** Every fold key of the copies under these top rows (YAZ-3131): the expand-all set of Focus or Favorites. */
+export function copyDirs(tops: readonly TreeNode[]): string[] {
+  return tops.flatMap((top) => allDirs([top]).map((dir) => copyFoldKey(top.path, dir)))
+}
+
+/**
+ * The copy a path lights in when no click chose one (YAZ-3131 S12): of the top rows that hold it, the
+ * first whose folds show it, else the first. Null when no top row holds it.
+ */
+export function firstCopy(tops: readonly TreeNode[], path: string, expanded: ReadonlySet<string>): string | null {
+  const holding = tops.filter((top) => path === top.path || path.startsWith(`${top.path}/`))
+  const shown = holding.find((top) => path === top.path || [top.path, ...ancestorDirs(top.path, path)].every((dir) => expanded.has(copyFoldKey(top.path, dir))))
+  return (shown ?? holding[0])?.path ?? null
 }
 
 /** Every file in `tree` that is not a note, in tree order: the search's rows the index does not hold (YAZ-2620 🔒 D3). */

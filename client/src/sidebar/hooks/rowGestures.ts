@@ -39,6 +39,9 @@ async function createBoardFile(vault: string, parentDir: string, typed: string, 
   throw new Error(`Every name from "${untitledNames(seed)[0]}" to "${untitledNames(seed).at(-1)}" is taken here`)
 }
 
+/** No copy recorded (YAZ-3131): the one empty value, so a reset on an empty one is no render. */
+const NO_COPIES: ReadonlyMap<string, string> = new Map()
+
 /** `tree` is every row the panel can hold — the forest (YAZ-2602 D3) — or null until every vault's tree has landed. */
 export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: readonly string[], selectionRef: { current: ReadonlySet<string> }, bodyRef: RefObject<HTMLDivElement | null>) {
   // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
@@ -47,6 +50,10 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
   // only while the sidebar is open, so a selection is honestly about rows currently on screen and
   // cannot outlive them (a collapse ends it). It may hold rows of two vaults (YAZ-2602 S18).
   const [selectedPaths, dispatchSelection] = useReducer(selectionReducer, EMPTY_SELECTION)
+  // The copy each path was picked in (YAZ-3131 Decision 3): a row of Focus or Favorites can stand
+  // under two top rows, and only the picked one lights. A plain click starts it again, and a tab
+  // change empties it, so it holds at most one entry for each pick since the last plain click.
+  const [copies, setCopies] = useState<ReadonlyMap<string, string>>(NO_COPIES)
 
   // A vault that leaves the window ends the selection (YAZ-2602 S50): the rows it was about moved.
   const before = useRef(roots)
@@ -62,6 +69,7 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
   // empty selection returns the same set, so the mount pass and every ordinary render below cost nothing.
   useEffect(() => {
     dispatchSelection({ type: 'clear' })
+    setCopies(NO_COPIES)
   }, [lens])
 
   // The loaded tree is the canonical disk truth for BOTH lenses,
@@ -94,9 +102,15 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
   const orderedSelectedPaths = useCallback((): string[] => orderedSelection(selectedPaths, bodyRef.current), [selectedPaths])
 
   /** The multi-select as both trees take it (YAZ-1336): the set, plus its two gestures — toggle (shift) and set (any other click, D9). */
-  const toggleSelection = useCallback((path: string) => dispatchSelection({ type: 'toggle', path }), [])
-  const setSelection = useCallback((path: string) => dispatchSelection({ type: 'set', path }), [])
-  const selection: TreeSelection = useMemo(() => ({ paths: selectedPaths, toggle: toggleSelection, set: setSelection }), [selectedPaths, toggleSelection, setSelection])
+  const toggleSelection = useCallback((path: string, top?: string) => {
+    dispatchSelection({ type: 'toggle', path })
+    if (top !== undefined) setCopies((prev) => (prev.get(path) === top ? prev : new Map(prev).set(path, top)))
+  }, [])
+  const setSelection = useCallback((path: string, top?: string) => {
+    dispatchSelection({ type: 'set', path })
+    setCopies((prev) => (top === undefined ? NO_COPIES : prev.size === 1 && prev.get(path) === top ? prev : new Map([[path, top]])))
+  }, [])
+  const selection: TreeSelection = useMemo(() => ({ paths: selectedPaths, copies, toggle: toggleSelection, set: setSelection }), [selectedPaths, copies, toggleSelection, setSelection])
 
   return { selectedPaths, dispatchSelection, orderedSelectedPaths, selection }
 }
@@ -189,11 +203,11 @@ export function useFileClipboard(
   /** The vault rows' paths; empty with one vault. */
   vaultRows: ReadonlyMap<string, string>,
   menu: MenuTargets | null,
-  selectedPaths: ReadonlySet<string>,
+  selection: TreeSelection,
   orderedSelectedPaths: () => string[],
   dirs: string[],
   refresh: (root: string) => void,
-  openTo: (file: string) => void,
+  openTo: (file: string, top?: string) => void,
   clipboardRef: { current: SidebarClipboard | null },
   onNotice: (message: string, kind?: NoticeKind) => void,
 ) {
@@ -205,7 +219,7 @@ export function useFileClipboard(
    */
   const [clip, setClip] = useState<FileClipState>(null)
   // The paste of a Cut that would clear values, or of a Copy that would not keep them (YAZ-2420 3E1), waiting on its sheet (D21); null when it is closed.
-  const [pendingPaste, setPendingPaste] = useState<{ dir: string; moves: Move[]; lost: LeftBehind; copy: boolean } | null>(null)
+  const [pendingPaste, setPendingPaste] = useState<{ dir: string; top?: string; moves: Move[]; lost: LeftBehind; copy: boolean } | null>(null)
   // The sheet speaks for the clipboard it was asked about: another one ends the question.
   useEffect(() => setPendingPaste(null), [clip])
   useEffect(() => {
@@ -261,12 +275,13 @@ export function useFileClipboard(
    * judged as a paste from another window is.
    */
   const runPaste = useCallback(
-    async (dir: string) => {
+    // `top`: the copy of Focus or Favorites the paste came from (YAZ-3131 S21), which opens the folder there too.
+    async (dir: string, top?: string) => {
       const { root: vault, index } = vaultOf(dir)
       try {
         const before = clip?.op === 'cut' ? { records: index.records, folders: index.folders } : null
         const res = await api.file.paste({ targetDir: dir })
-        openTo(`${dir}/x`)
+        openTo(`${dir}/x`, top)
         refresh(vault)
         if (before !== null) for (const { from, to, kind } of res.pasted) await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })
         else if (index.ids) {
@@ -299,7 +314,7 @@ export function useFileClipboard(
    * record, so it never asks: the index cannot speak for it.
    */
   const pasteInto = useCallback(
-    (dir: string) => {
+    (dir: string, top?: string) => {
       if (clip !== null) {
         const moves = clip.paths.flatMap((oldPath): Move[] => {
           const newPath = `${dir}/${basename(oldPath)}`
@@ -307,9 +322,9 @@ export function useFileClipboard(
         })
         const { root: vault, index } = vaultOf(dir)
         const lost = valuesLeftBehind({ root: vault, moves, records: index.records, folders: index.folders })
-        if (lost.folders.length > 0) return setPendingPaste({ dir, moves, lost, copy: clip.op === 'copy' })
+        if (lost.folders.length > 0) return setPendingPaste({ dir, top, moves, lost, copy: clip.op === 'copy' })
       }
-      void runPaste(dir)
+      void runPaste(dir, top)
     },
     [vaultOf, clip, dirs, runPaste],
   )
@@ -318,7 +333,7 @@ export function useFileClipboard(
   const confirmPaste = useCallback(() => {
     if (pendingPaste === null) return
     setPendingPaste(null)
-    void runPaste(pendingPaste.dir)
+    void runPaste(pendingPaste.dir, pendingPaste.top)
   }, [pendingPaste, runPaste])
 
   /**
@@ -343,7 +358,7 @@ export function useFileClipboard(
   useEffect(() => {
     clipboardRef.current = {
       cutOrCopy: (op) => {
-        if (menu !== null || selectedPaths.size === 0 || [...selectedPaths].some((path) => vaultRows.has(path))) return false
+        if (menu !== null || selection.paths.size === 0 || [...selection.paths].some((path) => vaultRows.has(path))) return false
         clipTo(orderedSelectedPaths(), op)
         return true
       },
@@ -351,14 +366,15 @@ export function useFileClipboard(
         if (menu !== null || clip === null) return false
         const dir = pasteTargetDir()
         if (dir === null) onNotice('Select a vault or a folder first')
-        else pasteInto(dir)
+        // The copy of the first selected row (YAZ-3131 S21): the folder opens in that copy too.
+        else pasteInto(dir, selection.copies?.get(orderedSelectedPaths()[0] ?? ''))
         return true
       },
     }
     return () => {
       clipboardRef.current = null
     }
-  }, [clipboardRef, menu, selectedPaths, vaultRows, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir, onNotice])
+  }, [clipboardRef, menu, selection, vaultRows, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir, onNotice])
 
   return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null) }
 }
@@ -377,7 +393,7 @@ export function useInlineEdits(
   onOpenFile: (path: string) => void,
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>,
-  openTo: (file: string) => void,
+  openTo: (file: string, top?: string) => void,
 ) {
   const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; top: string | null } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir'; top: string | null } | null>(null)
@@ -385,18 +401,19 @@ export function useInlineEdits(
   const startCreate = useCallback(
     (kind: EntryKind, seed = '') => {
       if (menu === null || menu.targetDir === null) return
-      // The input renders inside the target dir's children, so that dir must be open — and its
-      // vault's row with it; `openTo` opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
-      openTo(`${menu.targetDir}/x`)
       // Favorites and Focus each show a SUBSET of the vault (YAZ-1766 3B1, YAZ-2619 S36): a target dir
       // the tab does not hold — or the root on a tab with no rows — would give the input nowhere to
-      // mount, so the create moves to Files, where the `openTo` above has already opened that dir.
+      // mount, so the create moves to Files, where the `openTo` below opens that dir.
       // A FOLDER made at the root goes there too: it is no item of the list, so the tab would never
       // show it. A note made there opens as a tab, so it stays (YAZ-2619 R18, YAZ-2845 D2).
       // The reveal hop's rule (D10), applied to the other gesture that needs a row. With two or more
       // vaults a vault's root is held only as its row (YAZ-2602), and neither tab has that row (YAZ-2631 D1).
       const shown = menu.lens === 'favorites' ? favoriteNodes : menu.lens === 'focus' ? focusNodes : null
       const toFiles = shown !== null && (menu.targetDir === root ? shown.length === 0 || kind === 'dir' : findDirNode(shown, menu.targetDir) === null)
+      // The input renders inside the target dir's children, so that dir must be open — and its
+      // vault's row with it; `openTo` opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
+      // In a copy of Focus or Favorites it opens there too, and in that copy alone (YAZ-3131 S20).
+      openTo(`${menu.targetDir}/x`, shown === null || toFiles ? undefined : (menu.top ?? undefined))
       if (toFiles) onLensChange('files')
       // The copy this tab's row stands under means nothing in Files, which draws each row once (YAZ-2845 D1).
       setCreating({ kind, seed, parentDir: menu.targetDir, top: toFiles ? null : menu.top })
