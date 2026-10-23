@@ -1627,6 +1627,7 @@ export function App() {
           onOpenSettings={openSettings}
           update={update}
           onOpenWhatsNew={openWhatsNew}
+          onRestoreSession={restoreSavedSession}
           onRootMissing={dropVault}
           onFileMissing={onFileMissing}
           onRenameFile={requestPathRename}

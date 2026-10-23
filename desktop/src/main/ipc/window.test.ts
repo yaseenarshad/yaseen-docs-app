@@ -154,8 +154,12 @@ describe('registerWindowIpc', () => {
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'favorites' })).toEqual(ok(undefined))
     expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'favorites' }])
     expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'favorites' }))
-    // A value that is not a tab is refused, and the message names the three tabs.
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'nope' })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: "'sidebarLens' must be 'files', 'focus' or 'favorites'" }) })
+    // The Sessions tab is a stored lens too (YAZ-3147 D4, S35).
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'sessions' })).toEqual(ok(undefined))
+    expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'sessions' }])
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'favorites' })).toEqual(ok(undefined))
+    // A value that is not a tab is refused, and the message names the four tabs.
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'nope' })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: "'sidebarLens' must be 'files', 'focus', 'favorites' or 'sessions'" }) })
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 1 })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'topics' })).toEqual(bad('BAD_REQUEST')) // the retired lens (YAZ-2290)
     expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'favorites' }])

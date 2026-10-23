@@ -2,7 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import { isBoard } from '@shared/fileKind'
 import { SIDEBAR_TABS, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
+import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon, StackIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
@@ -22,6 +22,7 @@ import { datedSeed, targetDirFor, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
 import { buildMenuSections } from './menuSections'
+import { SessionList } from './SessionList'
 import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind } from '../lib/notice'
 import { Tree, type TreeFileMove } from './Tree'
@@ -158,6 +159,12 @@ interface SidebarProps {
   update: UpdateState
   /** The pill's click: App mounts the "What's new" sheet (D5), as it does the settings dialog. */
   onOpenWhatsNew: () => void
+  /** The Sessions tab's "Restore session" (YAZ-3147 D3): App adds the session's tabs to this window. */
+  onRestoreSession: (id: string) => void
+  /** The Sessions tab's "Save open tabs" (D5): App saves this window's tabs as a new session. */
+  onSaveSession?: () => void
+  /** The Sessions tab's "Update with open tabs" (S28): App saves this window's tabs into that session. */
+  onUpdateSession?: (id: string) => void
   /** A vault's folder could not be read (e.g. deleted): which one; parent decides what to do. */
   onRootMissing: (root: string) => void
   /** The restored last file is not in the tree any more (checked once per root). */
@@ -404,7 +411,7 @@ export function countChildren(nodes: readonly TreeNode[], dir: string): { notes:
 }
 
 /** The tabs' copy; the ORDER is `SIDEBAR_TABS`', so the default lens leads (YAZ-847) and Search stands right after it (YAZ-2638 D2). */
-const LENS_LABEL: Record<SidebarTab, string> = { files: 'Files', search: 'Search', focus: 'Focus', favorites: 'Favorites' }
+const LENS_LABEL: Record<SidebarTab, string> = { files: 'Files', search: 'Search', focus: 'Focus', favorites: 'Favorites', sessions: 'Sessions' }
 
 /** The keys of the search, as the empty Search tab lists them (YAZ-2662 D10, S59): the keycaps of a row, and what they do. */
 const SEARCH_KEYS: readonly (readonly [keys: readonly string[], does: string])[] = [
@@ -426,6 +433,8 @@ const INERT_MOVE: TreeFileMove = { dragging: null, dropDir: null, start: () => u
 /** What the search cuts before the tree has loaded, and its shortcut rows — none (S7, YAZ-2620): one object each, so the memoised tree sees no change (YAZ-2194). */
 const NO_NODES: readonly TreeNode[] = []
 const NO_SHORTCUTS: ReadonlyMap<string, readonly TreeNode[]> = new Map()
+/** The folders the Sessions tab unfolds — none: it has no file tree (YAZ-3147 D4), so it has no expand-all button. One array, so nothing reads a change. */
+const NO_DIRS: readonly string[] = []
 
 /** Mounted with `key={one vault of the window}` by App (YAZ-2631 D5), so all state below lives while that vault is in the window. */
 export function Sidebar({
@@ -460,6 +469,9 @@ export function Sidebar({
   onOpenSettings,
   update,
   onOpenWhatsNew,
+  onRestoreSession,
+  onSaveSession,
+  onUpdateSession,
   onRootMissing,
   onFileMissing,
   onRenameFile,
@@ -545,7 +557,7 @@ export function Sidebar({
   const nameOf = useCallback((path: string) => pageName(rootOf(path), path, titles), [rootOf, titles])
 
   // What the chevrons button unfolds on the active lens: the folders that tab shows (YAZ-2619 R10).
-  const bodyDirs = lens === 'favorites' ? favoriteDirs : lens === 'focus' ? focusDirs : dirs
+  const bodyDirs = lens === 'favorites' ? favoriteDirs : lens === 'focus' ? focusDirs : lens === 'sessions' ? NO_DIRS : dirs
   // Enter in the search bar, on a file: the highlighted row's page opens as a tab.
   // The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the bar, so ↑/↓ carry
   // on — and a second on the page already open is the deliberate "take me in". A CLICK is the tree
@@ -1027,6 +1039,7 @@ export function Sidebar({
 
   // The one list the shown tab's top rows reorder, and its writer (YAZ-2631 D3): every favorite of the
   // window in the tab's order (D1), every focus item of the window by the same rule (YAZ-2702 Decision 3), or the vault rows of Files (D5).
+  // The Sessions tab draws no tree, so nothing drags there (YAZ-3147: no drag reorder); it keeps the Files default.
   const orderRef = useRef<readonly string[]>([])
   orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : roots.map(stripSlash)
   const saveOrder = lens === 'favorites' ? saveFavoriteOrder : lens === 'focus' ? reorderFocus : onReorderVaults
@@ -1190,11 +1203,11 @@ export function Sidebar({
             aria-selected={lens === id}
             className={`sidebar__lens${id !== 'files' ? ' sidebar__lens--glyph' : ''}${lens === id ? ' sidebar__lens--active' : ''}`}
             onClick={() => onLensChange(id)}
-            // Search, Focus and Favorites are glyphs, not words (YAZ-2638 D2, YAZ-2619 D4, YAZ-1766 D1): the label lives in `title` + `aria-label`.
+            // Search, Focus, Favorites and Sessions are glyphs, not words (YAZ-2638 D2, YAZ-2619 D4, YAZ-1766 D1, YAZ-3147 D4): the label lives in `title` + `aria-label`.
             title={id !== 'files' ? LENS_LABEL[id] : undefined}
             aria-label={id !== 'files' ? LENS_LABEL[id] : undefined}
           >
-            {id === 'favorites' ? <HeartIcon /> : id === 'focus' ? <EyeIcon /> : id === 'search' ? <SearchIcon /> : LENS_LABEL[id]}
+            {id === 'favorites' ? <HeartIcon /> : id === 'focus' ? <EyeIcon /> : id === 'search' ? <SearchIcon /> : id === 'sessions' ? <StackIcon /> : LENS_LABEL[id]}
           </button>
         ))}
         {/* One button for both directions AND every lens (⚡ YAZ-862, ⚡ YAZ-873): anything open
@@ -1263,7 +1276,8 @@ export function Sidebar({
       <div
         ref={bodyRef}
         className="sidebar__body"
-        onContextMenu={(e) => (searching ? e.preventDefault() : openMenu(null, e))}
+        // The Sessions tab has no vault behind its blank space either (YAZ-3147 D4): its rows have their own menus.
+        onContextMenu={(e) => (searching || lens === 'sessions' ? e.preventDefault() : openMenu(null, e))}
         // Escape drops the multi-select (YAZ-1336) — and ONLY when there is one: with nothing
         // selected the key still belongs to everyone else listening for it, so this must neither
         // swallow it nor stop it travelling. An OPEN context menu owns the key outright
@@ -1380,6 +1394,9 @@ export function Sidebar({
           ) : (
             <p className="sidebar__msg">No matches</p>
           )
+        ) : lens === 'sessions' ? (
+          // The Sessions tab (YAZ-3147 D4, D6): the saved sessions of the app, not a tree of a vault.
+          <SessionList titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} />
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and

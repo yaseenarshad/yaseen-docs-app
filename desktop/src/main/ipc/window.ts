@@ -69,11 +69,11 @@ function optionalSidebarCollapsed(raw: Record<string, unknown>): boolean | undef
   return v
 }
 
-/** `sidebarLens` (YAZ-1628): absent (untouched), or one of the three lenses (YAZ-2619). */
+/** `sidebarLens` (YAZ-1628): absent (untouched), or one of the four lenses (YAZ-2619; Sessions, YAZ-3147 D4). */
 function optionalSidebarLens(raw: Record<string, unknown>): SidebarLens | undefined {
   const v = raw.sidebarLens
   if (v === undefined) return undefined
-  if (!isSidebarLens(v)) throw new BridgeFailure('BAD_REQUEST', "'sidebarLens' must be 'files', 'focus' or 'favorites'")
+  if (!isSidebarLens(v)) throw new BridgeFailure('BAD_REQUEST', "'sidebarLens' must be 'files', 'focus', 'favorites' or 'sessions'")
   return v
 }
 

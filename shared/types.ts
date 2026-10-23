@@ -912,7 +912,8 @@ export function mergeFavoritesOrder(stored: string[], roots: readonly string[], 
 /**
  * `WindowEntry.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
  * `files` (the file explorer), `focus` (the focus lists of the window's vaults, YAZ-2619, in the
- * vault since YAZ-2702 — the tab between the two) or `favorites` (the pinned files and folders, YAZ-1766 D1).
+ * vault since YAZ-2702 — the tab between the two), `favorites` (the pinned files and folders, YAZ-1766 D1)
+ * or `sessions` (the saved sessions of the app, YAZ-3147 D4 — a stored lens like the other three).
  * Window identity like `sidebarCollapsed` since YAZ-1628 (global, like `sidebarWidth`, from
  * YAZ-847 until then): the tabs are not per-folder view state, so there is no per-root keying
  * and no `FolderState` entry. Default `DEFAULT_SIDEBAR_LENS` (`files` since YAZ-1846) — a
@@ -920,16 +921,16 @@ export function mergeFavoritesOrder(stored: string[], roots: readonly string[], 
  * window that has none of its own. A state file that still names the retired `topics` lens reads
  * as the default one, and its two retired keys are ignored on load (`store.ts`).
  */
-export type SidebarLens = 'files' | 'focus' | 'favorites'
-/** The tabs' order, left→right — independent of the default lens (🔒 D3, YAZ-1846). */
-export const SIDEBAR_LENSES: readonly SidebarLens[] = ['files', 'focus', 'favorites']
+export type SidebarLens = 'files' | 'focus' | 'favorites' | 'sessions'
+/** The tabs' order, left→right — independent of the default lens (🔒 D3, YAZ-1846). Sessions (YAZ-3147 D4) stands last, right of Favorites. */
+export const SIDEBAR_LENSES: readonly SidebarLens[] = ['files', 'focus', 'favorites', 'sessions']
 /** The lens a brand-new window, and a switch to a different vault, opens on (🔒 D1/D2, YAZ-1846). */
 export const DEFAULT_SIDEBAR_LENS: SidebarLens = 'files'
 export const isSidebarLens = (v: unknown): v is SidebarLens => SIDEBAR_LENSES.includes(v as SidebarLens)
 /** The tabs of the sidebar's row 1 (YAZ-2638 D2): the lenses, and Search — a tab that is never stored. */
 export type SidebarTab = SidebarLens | 'search'
 /** The order the tabs are drawn in: Search stands right after Files. */
-export const SIDEBAR_TABS: readonly SidebarTab[] = ['files', 'search', 'focus', 'favorites']
+export const SIDEBAR_TABS: readonly SidebarTab[] = ['files', 'search', 'focus', 'favorites', 'sessions']
 
 /** `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. */
 export const SIDEBAR_MIN_W = 180
