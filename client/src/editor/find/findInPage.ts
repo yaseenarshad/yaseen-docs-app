@@ -68,7 +68,7 @@ const EMPTY: FindState = { query: '', matches: [], activeIndex: -1, revealed: ne
 /** Where the thread points while you step through the matches (YAZ-3166): the active match's start, else null (the caret). */
 export const findThreadAnchor = (state: EditorState): number | null => {
   const find = findKey.getState(state)
-  return find?.onMatch === true ? (find.matches[find.activeIndex]?.from ?? null) : null
+  return find?.onMatch ? (find.matches[find.activeIndex]?.from ?? null) : null
 }
 
 /**

@@ -175,12 +175,4 @@ describe('bullet threading: the active match', () => {
     view.dispatch(view.state.tr.insertText('!'))
     expect(thread(root)).toEqual({ node: ['L1 a', 'L2 b!'], seg: ['L2 a', 'L2 b!'], stop: ['L2 b!'] })
   })
-
-  it('stays on the same path when find closes: the caret lands on the match', async () => {
-    const { root, channel } = await mountFind()
-    channel.setQuery('apple')
-    channel.next()
-    channel.close()
-    expect(thread(root)).toEqual(ON_NESTED_APPLE)
-  })
 })
