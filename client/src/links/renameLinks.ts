@@ -319,7 +319,8 @@ export async function updateLinksAfterRename({ ids, root, oldPath, newPath, kind
         const next = rewriteNoteLinks(file.content, resolves, newTarget)
         if (next === null) break
         try {
-          await api.writeFile({ path: filePath, content: next, expectedMtime: file.mtime })
+          // Quiet (YAZ-3235 D1): a link rewrite is not an edit the user made, so Recents does not list this note.
+          await api.writeFile({ path: filePath, content: next, expectedMtime: file.mtime, quiet: true })
           summary.updated++
           break
         } catch (err) {

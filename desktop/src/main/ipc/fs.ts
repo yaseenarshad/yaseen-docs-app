@@ -26,7 +26,7 @@ import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow,
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
 import type { WindowManager } from '../windows'
-import { broadcastAll, rootsOf } from './broadcast'
+import { broadcastAll, loggedSave, rootsOf, senderRoots } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
 import { repairShares, shareFsHooks } from '../share/fsHooks'
 
@@ -47,9 +47,9 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   handle(CONTRACT.readHeads, readHeads)
   handle(CONTRACT.readPdf, readPdf)
   handle(CONTRACT.readImage, readImage)
-  handle(CONTRACT.writeFile, writeFile)
-  /** The vaults the calling window shows (YAZ-2602 D1); none for Welcome or an unknown sender. */
-  const rootsOfSender = (e: IpcMainInvokeEvent): readonly string[] => store.get().windows.find((w) => w.id === windows.idFor(e.sender))?.roots ?? []
+  // A note's save goes in the save log (YAZ-3235 D1); a quiet tidy-up write (`FileWriteRequest.quiet`) does not.
+  handleWithEvent(CONTRACT.writeFile, loggedSave(store, windows, writeFile, (req) => (req as { quiet?: unknown } | null)?.quiet !== true))
+  const rootsOfSender = (e: IpcMainInvokeEvent): readonly string[] => senderRoots(store, windows, e)
   /**
    * Does what `req` names get IDs (YAZ-2523 🔒 V5)? Only when a vault of the calling window holds
    * the path (YAZ-2602 S78) and that vault said yes: then this is that vault's door, which gives each

@@ -237,6 +237,9 @@ export const storage = {
   /** A vault's open history (YAZ-2663 D1): page → how much it is used, and when it was last on show. Read-only here: main alone adds a use, and the cache follows the broadcast. */
   getOpens: (root: string): Readonly<Record<string, OpenStat>> => folderOf(root).opens,
 
+  /** A vault's save log (YAZ-3235 D1): file → when the app last saved it. Read-only here: main alone adds a save, and the cache follows the broadcast. */
+  getEdits: (root: string): Readonly<Record<string, number>> => folderOf(root).edits,
+
   /** One durable mirror for the complete main/right workspace identity. */
   setWorkspace(root: string | null, strip: readonly StoredTab[], file: string | null, rightPanel: RightPanelIdentity): void {
     // `tabs` is the strip's paths, each once (GRO-2232); the strip keeps the copies and names (YAZ-3057).

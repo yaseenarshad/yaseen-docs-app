@@ -121,7 +121,8 @@ export async function folderId(dir: string): Promise<string> {
   if (there !== undefined) return there
   const fresh = await takeNoteId(dir)
   // Written against the file's bytes as they are now: an id that arrived since the read above stays.
-  const { content } = await transformFile(file, (bytes) => (held(bytes) === undefined ? setFrontmatterProperty(bytes, NOTE_ID_KEY, fresh) : bytes))
+  // Quiet (YAZ-3235 D1): a folder's id is the app's bookkeeping, not an edit the user made.
+  const { content } = await transformFile(file, (bytes) => (held(bytes) === undefined ? setFrontmatterProperty(bytes, NOTE_ID_KEY, fresh) : bytes), true)
   return held(content) ?? fresh
 }
 
@@ -233,7 +234,7 @@ function staleAfterMove({ root, oldPath, newPath, kind, records, folders }: Move
  */
 export async function dropFolderValuesAfterMove(move: Move & Snapshot): Promise<void> {
   const { after, stale } = staleAfterMove(move)
-  for (const { path } of stale) await transformFile(path, dropStaleFolderValues(move.root, path, after)).catch(() => undefined)
+  for (const { path } of stale) await transformFile(path, dropStaleFolderValues(move.root, path, after), true).catch(() => undefined) // quiet (YAZ-3235 D1)
 }
 
 /** What a gesture would clear (D21): how many notes, and the folders whose values go — their directories, nearest to the note first. */

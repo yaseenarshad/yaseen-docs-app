@@ -260,6 +260,8 @@ describe('updateLinksAfterRename', () => {
     expect(files['/v/E.md'].content).toBe('![[C]]\n')
     expect(files['/v/N.md'].content).toBe('nothing\n')
     expect(bridge.writeFile).toHaveBeenCalledTimes(2)
+    // A link rewrite is quiet (YAZ-3235 D1): the save log does not list the notes it touched.
+    expect(bridge.writeFile.mock.calls.every(([req]) => (req as { quiet?: boolean }).quiet === true)).toBe(true)
   })
 
   it('a CONFLICT re-reads once and retries; a second conflict skips the file', async () => {

@@ -196,7 +196,7 @@ describe('storage.init', () => {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2 },
       recents: [{ path: '/v', lastOpened: 5 }],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, opens: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, opens: {}, edits: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
     }
     const rightPanel = { open: true, width: 520, items: ['/v/b.md'], expanded: '/v/b.md' }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel, sidebarCollapsed: true })
@@ -396,7 +396,7 @@ describe('storage', () => {
 
   it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {
     // Two windows on the same folder: w2 restored on b.md while the folder's lastFile is a.md.
-    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } } }
+    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, edits: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } } }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/b.md'], sidebarCollapsed: false })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/b.md')
@@ -600,7 +600,7 @@ describe('storage', () => {
     const next: AppState = {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, threadWidth: 3 },
-      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, opens: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
+      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, opens: {}, edits: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
     }
     b.emit(next)
     expect(seen).toHaveBeenCalledTimes(1)

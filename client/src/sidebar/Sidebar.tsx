@@ -2,7 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import { isBoard } from '@shared/fileKind'
 import { SIDEBAR_TABS, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon, SortIcon, StackIcon } from '../views/view/icons'
+import { ChevronsIcon, ClockIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon, SortIcon, StackIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
@@ -23,6 +23,7 @@ import { datedSeed, targetDirFor, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
 import { buildMenuSections } from './menuSections'
+import { RecentList } from './RecentList'
 import { SessionList } from './SessionList'
 import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind } from '../lib/notice'
@@ -415,7 +416,7 @@ export function countChildren(nodes: readonly TreeNode[], dir: string): { notes:
 }
 
 /** The tabs' copy; the ORDER is `SIDEBAR_TABS`', so the default lens leads (YAZ-847) and Search stands right after it (YAZ-2638 D2). */
-const LENS_LABEL: Record<SidebarTab, string> = { files: 'Files', search: 'Search', focus: 'Focus', favorites: 'Favorites', sessions: 'Sessions' }
+const LENS_LABEL: Record<SidebarTab, string> = { files: 'Files', search: 'Search', focus: 'Focus', favorites: 'Favorites', sessions: 'Sessions', recents: 'Recents' }
 
 /** The keys of the search, as the empty Search tab lists them (YAZ-2662 D10, S59): the keycaps of a row, and what they do. */
 const SEARCH_KEYS: readonly (readonly [keys: readonly string[], does: string])[] = [
@@ -571,7 +572,7 @@ export function Sidebar({
   const nameOf = useCallback((path: string) => pageName(rootOf(path), path, titles), [rootOf, titles])
 
   // What the chevrons button unfolds on the active lens: the folders that tab shows (YAZ-2619 R10).
-  const bodyDirs = lens === 'favorites' ? favoriteDirs : lens === 'focus' ? focusDirs : lens === 'sessions' ? NO_DIRS : dirs
+  const bodyDirs = lens === 'favorites' ? favoriteDirs : lens === 'focus' ? focusDirs : lens === 'sessions' || lens === 'recents' ? NO_DIRS : dirs
   // Enter in the search bar, on a file: the highlighted row's page opens as a tab.
   // The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the bar, so ↑/↓ carry
   // on — and a second on the page already open is the deliberate "take me in". A CLICK is the tree
@@ -903,6 +904,15 @@ export function Sidebar({
     },
     [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState],
   )
+  // A right-click on a Recents row (YAZ-3235 D7, S20): the one-row file menu, "Show in sidebar" first,
+  // as a row of the new tab page. Through a ref, so the memo list does not draw again on each selection.
+  const openMenuAtRef = useRef(openMenuAt)
+  openMenuAtRef.current = openMenuAt
+  const recentMenu = useCallback((path: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    openMenuAtRef.current({ type: 'file', path }, e.clientX, e.clientY, true)
+  }, [])
   const openMenu = useCallback(
     (node: MenuRow | null, e: React.MouseEvent) => {
       e.preventDefault()
@@ -1053,7 +1063,7 @@ export function Sidebar({
 
   // The one list the shown tab's top rows reorder, and its writer (YAZ-2631 D3): every favorite of the
   // window in the tab's order (D1), every focus item of the window by the same rule (YAZ-2702 Decision 3), or the vault rows of Files (D5).
-  // The Sessions tab draws no tree, so nothing drags there (YAZ-3147: no drag reorder); it keeps the Files default.
+  // The Sessions and Recents tabs draw no tree, so nothing drags there (YAZ-3147: no drag reorder; YAZ-3235: no drag); they keep the Files default.
   const orderRef = useRef<readonly string[]>([])
   orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : roots.map(stripSlash)
   const saveOrder = lens === 'favorites' ? saveFavoriteOrder : lens === 'focus' ? reorderFocus : onReorderVaults
@@ -1217,11 +1227,11 @@ export function Sidebar({
             aria-selected={lens === id}
             className={`sidebar__lens${id !== 'files' ? ' sidebar__lens--glyph' : ''}${lens === id ? ' sidebar__lens--active' : ''}`}
             onClick={() => onLensChange(id)}
-            // Search, Focus, Favorites and Sessions are glyphs, not words (YAZ-2638 D2, YAZ-2619 D4, YAZ-1766 D1, YAZ-3147 D4): the label lives in `title` + `aria-label`.
+            // Search, Focus, Favorites, Sessions and Recents are glyphs, not words (YAZ-2638 D2, YAZ-2619 D4, YAZ-1766 D1, YAZ-3147 D4, YAZ-3235 D4): the label lives in `title` + `aria-label`.
             title={id !== 'files' ? LENS_LABEL[id] : undefined}
             aria-label={id !== 'files' ? LENS_LABEL[id] : undefined}
           >
-            {id === 'favorites' ? <HeartIcon /> : id === 'focus' ? <EyeIcon /> : id === 'search' ? <SearchIcon /> : id === 'sessions' ? <StackIcon /> : LENS_LABEL[id]}
+            {id === 'favorites' ? <HeartIcon /> : id === 'focus' ? <EyeIcon /> : id === 'search' ? <SearchIcon /> : id === 'sessions' ? <StackIcon /> : id === 'recents' ? <ClockIcon /> : LENS_LABEL[id]}
           </button>
         ))}
         {/* The sort button (YAZ-3227 D5): left of expand-all, on Files, Focus and Favorites. A second click closes its menu. */}
@@ -1309,8 +1319,8 @@ export function Sidebar({
       <div
         ref={bodyRef}
         className="sidebar__body"
-        // The Sessions tab has no vault behind its blank space either (YAZ-3147 D4): its rows have their own menus.
-        onContextMenu={(e) => (searching || lens === 'sessions' ? e.preventDefault() : openMenu(null, e))}
+        // The Sessions and Recents tabs have no vault behind their blank space either (YAZ-3147 D4, YAZ-3235 S20): their rows have their own menus.
+        onContextMenu={(e) => (searching || lens === 'sessions' || lens === 'recents' ? e.preventDefault() : openMenu(null, e))}
         // Escape drops the multi-select (YAZ-1336) — and ONLY when there is one: with nothing
         // selected the key still belongs to everyone else listening for it, so this must neither
         // swallow it nor stop it travelling. An OPEN context menu owns the key outright
@@ -1430,6 +1440,9 @@ export function Sidebar({
         ) : lens === 'sessions' ? (
           // The Sessions tab (YAZ-3147 D4, D6): the saved sessions of the app, not a tree of a vault.
           <SessionList titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} renameRequest={sessionNameRequest} onRenameConsumed={onSessionNameConsumed} />
+        ) : lens === 'recents' ? (
+          // The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window, by day.
+          <RecentList trees={trees} roots={roots} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} />
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
