@@ -38,7 +38,7 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 | E12 | Guide lines click | U `editor/outline/guideLines.test.ts` |
 | E13 | Drag handle, multi-block drag | A `easyWave`, `numberedBullets` (in part) |
 | E14 | Numbered bullets | A `numberedBullets` |
-| E15 | Find in page ⌘F | A `findInPage` |
+| E15 | Find in page ⌘F; while you step, the bullet thread and the section lines follow the active match, and a click, a key or an edit in the note gives them back to the caret (YAZ-3166) | A `findInPage` · U `editor/find/findInPage.test.ts`, `editor/outline/bulletThreading.test.ts`, `editor/outline/sectionIndent.test.ts` |
 | E16 | Wikilinks: click, ⌘-click, `[[` completion, aliases | A `links` |
 | E17 | Clipboard in/out modes, paste round trip | A `pasteRoundTrip` · U `editor/clipboard*.test.ts` |
 | E18 | Image paste / render / `app://vault` / Copy Image | A `imagePaste`, `imageRender` |
