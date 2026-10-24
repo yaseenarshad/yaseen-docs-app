@@ -11,19 +11,20 @@
  * editor's own handle is handled.
  *
  * An item is a row (a label and a run) or, since YAZ-3164, a PICKER (🔒 D3 as amended in the guided
- * test): one row with the name on the left and a value button on the right ("50% ▾"). A picker is
- * a number field (`kind: 'number'`) or a choice (`kind: 'choice'`). The menu opens with every
- * picker closed and takes no focus (S80). A click on a value opens that picker's panel and closes
- * any other (S81); a second click closes it (S82). A number field's panel is the document zoom
- * menu's (`DocumentZoom.tsx`), on its own CSS classes: a box for a typed number, focused and
- * selected, a divider, then its presets. A choice's panel lists its choices, each with an optional
- * sample. Enter in the box, a preset or a choice applies and closes the whole menu (S83); a bad
- * number shows the field's error, marks the box `aria-invalid` and keeps the menu open, and typing
- * clears it. The current one is pressed and shows ✓, and picking it applies nothing — no run, so
- * no document change and no undo step. Tab from the editor, while the menu shows, goes to the first
- * value button (the outliner would take it otherwise); Enter or Space opens a picker (S84). Escape,
- * a click away, a scroll and a window blur close with no change, as for rows; when the focus was in
- * the menu it goes back to the editor.
+ * test): one row with the name on the left and a value button on the right ("50% ▾"). A picker is a
+ * number field (`kind: 'number'`) or a choice (`kind: 'choice'`). The menu opens with every picker
+ * closed and takes no focus (S80). A click on a value opens that picker's panel and closes any
+ * other (S81); a second click closes it (S82). A number field's panel is the document zoom menu's
+ * (`DocumentZoom.tsx`), on its own CSS classes: a box for a typed number, focused and selected, a
+ * divider, then its presets. A choice's panel lists its choices, each with an optional sample. Each
+ * list starts with "Default (<the current default>)", which picks null, and a picker that follows
+ * the default reads that on its value button (YAZ-3208 D11). Enter in the box, a preset or a choice
+ * applies and closes the whole menu (S83); a bad number shows the field's error, marks the box
+ * `aria-invalid` and keeps the menu open, and typing clears it. The current one is pressed and
+ * shows ✓, and picking it applies nothing — no run, so no document change and no undo step. Tab
+ * from the editor, while the menu shows, goes to the first value button (the outliner would take it
+ * otherwise); Enter or Space opens a picker (S84). Escape, a click away, a scroll and a window blur
+ * close with no change, as for rows; when the focus was in the menu it goes back to the editor.
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
@@ -44,17 +45,17 @@ export interface MenuNumberField {
   /** The row's name, e.g. "Line darkness"; also the box's accessible name. */
   label: string
   unit: '%' | 'px'
-  /** The current value, the default resolved (never null): the value button, the box and the pressed preset. */
-  value: number
+  /** The current value, or null when the block follows the default (YAZ-3208 D11): the value button, the box and the pressed item. */
+  value: number | null
   presets: number[]
-  /** The default: its preset reads "<n><unit> (default)". */
+  /** The current default: the first item reads "Default (<n><unit>)" and picks null. */
   fallback: number
   min: number
   max: number
   /** What a bad value shows, e.g. "Use a whole number from 5–100%." */
   error: string
-  /** A new value only: the current value never runs. */
-  run: (value: number) => void
+  /** A new value only (null: the "Default" item): the current value never runs. */
+  run: (value: number | null) => void
 }
 
 /** One choice of a choice picker; `sample` is a class list for a small drawn sample before the label. */
@@ -68,13 +69,13 @@ export interface MenuChoice {
 export interface MenuChoiceField {
   kind: 'choice'
   label: string
-  /** The current choice's value, the default resolved. */
-  value: string
+  /** The current choice's value, or null when the block follows the default (YAZ-3208 D11). */
+  value: string | null
   choices: MenuChoice[]
-  /** The default choice: it reads "<label> (default)". */
+  /** The current default choice's value: the first item reads "Default (<its label>)" with its sample, and picks null. */
   fallback: string
-  /** A new value only: the current value never runs. */
-  run: (value: string) => void
+  /** A new value only (null: the "Default" item): the current value never runs. */
+  run: (value: string | null) => void
 }
 
 export type MenuItem = MenuRow | MenuNumberField | MenuChoiceField
@@ -132,7 +133,7 @@ const optionList = (label: string, buttons: HTMLButtonElement[]): HTMLElement =>
 
 /** A number field's panel: the box, a divider and the presets — DocumentZoom's markup, built by hand. Returns the box too. */
 function numberPanel(field: MenuNumberField, id: string, close: () => void): { parts: HTMLElement[]; box: HTMLInputElement } {
-  const apply = (value: number) => {
+  const apply = (value: number | null) => {
     if (value !== field.value) field.run(value)
     close()
   }
@@ -143,7 +144,7 @@ function numberPanel(field: MenuNumberField, id: string, close: () => void): { p
   input.inputMode = 'numeric'
   input.setAttribute('aria-label', field.label)
   input.title = `${field.label} (${field.min}–${field.max}${field.unit})`
-  input.value = `${field.value}${field.unit}`
+  input.value = `${field.value ?? field.fallback}${field.unit}`
   input.setAttribute('aria-invalid', 'false')
   const error = document.createElement('div')
   error.id = `${id}-error`
@@ -175,21 +176,37 @@ function numberPanel(field: MenuNumberField, id: string, close: () => void): { p
     }
   })
   custom.appendChild(input)
-  const presets = field.presets.map((preset) =>
-    optionButton(`${preset}${field.unit}${preset === field.fallback ? ' (default)' : ''}`, preset === field.value, () => apply(preset)),
-  )
+  const presets = [
+    optionButton(defaultLabel(field), field.value === null, () => apply(null)),
+    ...field.presets.map((preset) => optionButton(`${preset}${field.unit}`, preset === field.value, () => apply(preset))),
+  ]
   return { parts: [custom, divider(), optionList(`${field.label} presets`, presets)], box: input }
 }
 
 /** A choice field's panel: one button per choice, with its sample. */
 function choicePanel(field: MenuChoiceField, close: () => void): HTMLElement[] {
-  const buttons = field.choices.map((choice) =>
-    optionButton(`${choice.label}${choice.value === field.fallback ? ' (default)' : ''}`, choice.value === field.value, () => {
-      if (choice.value !== field.value) field.run(choice.value)
-      close()
-    }, choice.sample),
-  )
+  const pick = (value: string | null) => () => {
+    if (value !== field.value) field.run(value)
+    close()
+  }
+  const fallback = field.choices.find((c) => c.value === field.fallback)
+  const buttons = [
+    optionButton(defaultLabel(field), field.value === null, pick(null), fallback?.sample),
+    ...field.choices.map((choice) => optionButton(choice.label, choice.value === field.value, pick(choice.value), choice.sample)),
+  ]
   return [optionList(`${field.label} choices`, buttons)]
+}
+
+/** "Default (50%)", "Default (Solid)": the first item of a picker, and its value button while it follows the default (D11). */
+function defaultLabel(field: MenuNumberField | MenuChoiceField): string {
+  const shown = field.kind === 'number' ? `${field.fallback}${field.unit}` : (field.choices.find((c) => c.value === field.fallback)?.label ?? field.fallback)
+  return `Default (${shown})`
+}
+
+/** What a picker's value button reads: the value, or "Default (…)" while it follows the default. */
+function valueLabel(field: MenuNumberField | MenuChoiceField): string {
+  if (field.value === null) return defaultLabel(field)
+  return field.kind === 'number' ? `${field.value}${field.unit}` : (field.choices.find((c) => c.value === field.value)?.label ?? field.value)
 }
 
 /**
@@ -214,7 +231,7 @@ function renderPicker(field: MenuNumberField | MenuChoiceField, menu: HTMLElemen
   value.setAttribute('aria-labelledby', `${id}-label ${id}-value`)
   const text = document.createElement('span')
   text.id = `${id}-value`
-  text.textContent = field.kind === 'number' ? `${field.value}${field.unit}` : (field.choices.find((c) => c.value === field.value)?.label ?? field.value)
+  text.textContent = valueLabel(field)
   const caret = document.createElement('span')
   caret.setAttribute('aria-hidden', 'true')
   caret.textContent = ' ▾'

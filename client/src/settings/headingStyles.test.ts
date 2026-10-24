@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HEADING_KEYS } from '@shared/types'
-import { defaultHeadingSize, HEADING_SCALE, headingVars, isChanged, textVars, withHeadingStyle, withoutHeadingStyle } from './headingStyles'
+import { defaultHeadingSize, HEADING_SCALE, headingVars, isChanged, lineDefaultsOf, lineVars, textVars, withHeadingStyle, withLineDefaults, withoutHeadingStyle } from './headingStyles'
 
 describe('headingVars (YAZ-3049 D2)', () => {
   it('an empty map sets no variable, so every heading keeps the look of 1.0.14', () => {
@@ -61,5 +61,30 @@ describe('withHeadingStyle / withoutHeadingStyle (YAZ-3049 D1)', () => {
     expect(isChanged(undefined)).toBe(false)
     expect(isChanged({ bold: true, underline: false })).toBe(false)
     expect(isChanged({ size: 29 })).toBe(true)
+  })
+})
+
+describe('the default line (YAZ-3208 D8, D10)', () => {
+  it('S90: no `line` sets no line variable; each set field sets its own (S91)', () => {
+    expect(lineVars(undefined)).toEqual({})
+    expect(textVars({ text: { size: 18 } })).toEqual({ '--text-size': '18px' })
+    expect(textVars({ line: { darkness: 70, thickness: 4, pattern: 'dashed' } })).toEqual({
+      '--line-default-darkness': '70%',
+      '--line-default-thickness': '4px',
+      '--line-default-pattern': 'dashed',
+    })
+    expect(lineVars({ thickness: 6 })).toEqual({ '--line-default-thickness': '6px' })
+  })
+
+  it('lineDefaultsOf: the vault’s fields over the app’s 50%, 3px, solid', () => {
+    expect(lineDefaultsOf(undefined)).toEqual({ darkness: 50, thickness: 3, pattern: 'solid' })
+    expect(lineDefaultsOf({ pattern: 'dotted' })).toEqual({ darkness: 50, thickness: 3, pattern: 'dotted' })
+  })
+
+  it('S97: withLineDefaults keeps only the fields off the app default; none left removes `line`, and the other keys stay', () => {
+    expect(withLineDefaults({ text: { size: 18 } }, { darkness: 70 })).toEqual({ text: { size: 18 }, line: { darkness: 70 } })
+    expect(withLineDefaults({ line: { darkness: 70 } }, { pattern: 'dashed' })).toEqual({ line: { darkness: 70, pattern: 'dashed' } })
+    expect(withLineDefaults({ line: { darkness: 70, pattern: 'dashed' } }, { pattern: 'solid' })).toEqual({ line: { darkness: 70 } })
+    expect(withLineDefaults({ h1: { size: 30 }, line: { darkness: 70 } }, { darkness: 50 })).toEqual({ h1: { size: 30 } })
   })
 })

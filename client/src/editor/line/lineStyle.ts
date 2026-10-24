@@ -18,8 +18,8 @@
  * first, as part of the preset). The style goes on `node.data.lineStyle` and the comment leaves the
  * tree. Any other comment — other words, another order, a value out of range, a block between it
  * and the line, a comment BEFORE a line, a style word other than `solid`, `dotted` or `dashed`
- * (S72) — is not ours and stays an `html` node, bytes untouched (S5–S7). A hand-written default
- * (`darkness 50%`, `style solid`) reads as the default, so the next save writes plain `***` (S4).
+ * (S72) — is not ours and stays an `html` node, bytes untouched (S5–S7). A hand-written value equal
+ * to the default (`darkness 50%`, `style solid`) is read and written as it is (YAZ-3208 D9, S93).
  * Code is never a `thematicBreak` or an `html` node, so it is never touched (S14).
  *
  * SAVE: `toMarkdown` writes the `thematicBreak`, then an `html` node with the comment when any part
@@ -41,7 +41,6 @@ import {
   PLAIN_LINE,
   formatLineComment,
   parseLineComment,
-  stored,
   type LinePattern,
   type LineStyle,
 } from './lineComment'
@@ -50,15 +49,15 @@ export * from './lineComment'
 
 /**
  * Raw values as a style, every value checked against `NUMBER_PARTS` (an attribute set by a
- * transaction, or read from a paste): a number out of its range, or the default, is `null`, and so
- * is a pattern that is not known.
+ * transaction, or read from a paste): a number out of its range is `null`, and so is a pattern
+ * that is not known. A value equal to the default stays as it is (D9).
  */
 const cleanStyle = (raw: Record<keyof LineStyle, unknown>): LineStyle => {
   const style: LineStyle = { ...PLAIN_LINE }
-  for (const { attr, min, max, fallback } of NUMBER_PARTS) {
+  for (const { attr, min, max } of NUMBER_PARTS) {
     const value = raw[attr]
     const n = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10)
-    style[attr] = Number.isInteger(n) && n >= min && n <= max ? stored(n, fallback) : null
+    style[attr] = Number.isInteger(n) && n >= min && n <= max ? n : null
   }
   style.pattern = LINE_PATTERNS.includes(raw.pattern as LinePattern) ? (raw.pattern as LinePattern) : null
   return style

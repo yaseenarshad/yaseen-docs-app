@@ -518,6 +518,49 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       })
     const saved = (vault: Vault) => vault.state.save.mock.calls.map((call) => call[0] as TextFormatting)
 
+    it('YAZ-3208 D10, S96, S97: the Line line — darkness in steps of 5 (5–100), thickness in steps of 1 (1–24), the style, and Reset; a field back at the app default leaves the file', () => {
+      const plain = vaultOf('/notes', 'Notes')
+      const { el, rerender } = mountTf([plain])
+      const lineRow = line(el, 'line')
+      expect(lineRow.querySelector('.heading-styles__name')?.textContent).toBe('Line')
+      expect([...lineRow.querySelectorAll('.heading-styles__size')].map((x) => x.textContent)).toEqual(['50%', '3 px'])
+      expect([...lineRow.querySelectorAll('[aria-label="Line style"] button')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Solid', 'true'], ['Dotted', 'false'], ['Dashed', 'false']])
+      expect(resets(el)).toEqual([])
+      act(() => button(el, 'line', 'Line darkness larger').click())
+      act(() => button(el, 'line', 'Line thickness smaller').click())
+      act(() => (lineRow.querySelector('[aria-label="Line style"] button:nth-child(3)') as HTMLButtonElement).click())
+      expect(saved(plain)).toEqual([{ line: { darkness: 55 } }, { line: { thickness: 2 } }, { line: { pattern: 'dashed' } }])
+      // The limits (S96), and a hand-written darkness off the grid steps onto it.
+      const edge = vaultOf('/notes', 'Notes', { text: { size: 18 }, line: { darkness: 100, thickness: 24, pattern: 'dotted' } })
+      rerender([edge])
+      expect(button(el, 'line', 'Line darkness larger').disabled).toBe(true)
+      expect(button(el, 'line', 'Line thickness larger').disabled).toBe(true)
+      expect(resets(el)).toEqual(['Reset text', 'Reset line'])
+      act(() => (line(el, 'line').querySelector('[aria-label="Line style"] button') as HTMLButtonElement).click())
+      act(() => button(el, 'line', 'Reset line').click())
+      expect(saved(edge)).toEqual([{ text: { size: 18 }, line: { darkness: 100, thickness: 24 } }, { text: { size: 18 } }])
+      const low = vaultOf('/notes', 'Notes', { line: { darkness: 52, thickness: 1 } })
+      rerender([low])
+      expect(button(el, 'line', 'Line thickness smaller').disabled).toBe(true)
+      act(() => button(el, 'line', 'Line darkness smaller').click())
+      act(() => button(el, 'line', 'Line darkness larger').click())
+      // 52 steps onto the grid: down to 50 (the app default, so it leaves the key), up to 55.
+      expect(saved(low)).toEqual([{ line: { thickness: 1 } }, { line: { darkness: 55, thickness: 1 } }])
+      // Back at the app default (50%, 3px, solid), the key goes (S97).
+      const one = vaultOf('/notes', 'Notes', { line: { darkness: 55 } })
+      rerender([one])
+      act(() => button(el, 'line', 'Line darkness smaller').click())
+      expect(saved(one)).toEqual([{}])
+    })
+
+    it('YAZ-3208 S99: the preview draws the default line: its darkness and thickness, and the pattern class', () => {
+      const { el } = mountTf([vaultOf('/notes', 'Notes', { line: { darkness: 70, thickness: 4, pattern: 'dashed' } })])
+      const preview = line(el, 'line').querySelector<HTMLElement>('.heading-styles__line-preview') as HTMLElement
+      expect(preview.style.getPropertyValue('--preview-darkness')).toBe('70%')
+      expect(preview.style.getPropertyValue('--preview-thickness')).toBe('4px')
+      expect(preview.classList.contains('heading-styles__line-preview--dashed')).toBe(true)
+    })
+
     it('one vault: the group "Text formatting" after Spacing, its hint, one bare row (no label on screen, no gap) and no dropdown; a Text line, then H1 to H6 at their rounded default sizes', () => {
       const { el } = mountTf([vaultOf('/notes', 'Notes')])
       expect(groupTitles(el)).toEqual(['Spacing', 'Text formatting', 'Comments', 'draw.io diagrams'])
@@ -539,6 +582,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
         ['h4', '20 px'],
         ['h5', '18 px'],
         ['h6', '16 px'],
+        ['line', '50%'],
       ])
       expect(line(el, 'text').querySelector('.heading-styles__name')?.textContent).toBe('Text')
       // The Text line is size only (D14): "−" and "+", no B, U or dots.
@@ -574,6 +618,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
         ['h4', '23 px'],
         ['h5', '20 px'],
         ['h6', '18 px'],
+        ['line', '50%'],
       ])
       expect(resets(el)).toEqual(['Reset text', 'Reset heading 3'])
       // The first "+" of a heading with no size starts from the number it shows.

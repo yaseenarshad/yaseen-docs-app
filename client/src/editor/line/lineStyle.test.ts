@@ -1,13 +1,14 @@
 /**
  * The line's style in the file (YAZ-3164, YAZ-3167; CONTRACTS rule 41): real editors (`createCrepe`)
- * load a note, save it, and load the save again. Pinned here, by scenario key: the plain line
- * (S1), only the parts that are not the default and in the fixed order (S2, S3), defaults never
- * written and a hand-written default read as the plain line (S4), every comment that is not ours
- * kept byte for byte (S5–S7), the comment in a bullet with and without children and in a quote
- * (S8–S10), a styled line first and last (S11), two lines in a row (S12), a setext heading (S13),
- * code (S14) and the second save (S17). `parseDOM` / `toDOM` carry the style through a copy (S26).
- * The line pattern (YAZ-3198, 🔒 D7): solid never written (S70), `style dotted` / `style dashed` in
- * the order darkness, thickness, style, length (S71), another style word not ours (S72), a copy (S77).
+ * load a note, save it, and load the save again. Pinned here, by scenario key: the plain line (S1),
+ * only the set parts and in the fixed order (S2, S3), a value equal to the default written as it is
+ * (S93, YAZ-3208 D9) and a line at Default in every part saved as `***` (S94), every comment that
+ * is not ours kept byte for byte (S5–S7), the comment in a bullet with and without children and in
+ * a quote (S8–S10), a styled line first and last (S11), two lines in a row (S12), a setext heading
+ * (S13), code (S14) and the second save (S17). `parseDOM` / `toDOM` carry the style through a copy
+ * (S26). The line pattern (YAZ-3198, 🔒 D7): no style part while it follows the default (S70),
+ * `style solid` written when picked (S100), `style dotted` / `style dashed` in the order darkness,
+ * thickness, style, length (S71), another style word not ours (S72), a copy (S77).
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -82,15 +83,14 @@ describe('parseLineComment / formatLineComment', () => {
     expect(parseLineComment('<!--line:length 99%-->')).toEqual({ darkness: null, thickness: null, pattern: null, width: 99 })
   })
 
-  it('writes the parts that are not the default, in the fixed order', () => {
+  it('writes the set parts, in the fixed order; a line that follows the default in every part has no comment', () => {
     expect(formatLineComment({ width: 40, pattern: null, thickness: 6, darkness: 80 })).toBe('<!-- line: darkness 80%, thickness 6px, length 40% -->')
-    expect(formatLineComment({ darkness: 50, thickness: 3, pattern: null, width: 100 })).toBeNull()
     expect(formatLineComment(PLAIN_LINE)).toBeNull()
   })
 
-  it('S4: a comment that holds only defaults is ours and reads as the plain line', () => {
-    expect(parseLineComment('<!-- line: darkness 50% -->')).toEqual(PLAIN_LINE)
-    expect(parseLineComment('<!-- line: darkness 50%, thickness 3px -->')).toEqual(PLAIN_LINE)
+  it('S93: a value equal to the app’s default is a value: read and written as it is (YAZ-3208 D9)', () => {
+    expect(parseLineComment('<!-- line: darkness 50%, thickness 3px, style solid -->')).toEqual({ darkness: 50, thickness: 3, pattern: 'solid', width: null })
+    expect(formatLineComment({ darkness: 50, thickness: 3, pattern: 'solid', width: null })).toBe('<!-- line: darkness 50%, thickness 3px, style solid -->')
   })
 
   it.each([
@@ -146,28 +146,24 @@ describe('the line in the file', () => {
     expect(htmlValues(view.state.doc)).toEqual([])
   })
 
-  it('S4: default values are never written, and a hand-written default reads as the plain line', async () => {
-    expect(await saveStyled({ darkness: 50, thickness: 3, pattern: null, width: 100 })).toBe('a\n\n***\n\nb\n')
-    const { view } = await mount('a\n\n***\n<!-- line: darkness 50% -->\n\nb\n')
-    expect(lines(view.state.doc)).toEqual([PLAIN_LINE])
-    expect(htmlValues(view.state.doc)).toEqual([])
-    expect(await save('a\n\n***\n<!-- line: darkness 50% -->\n\nb\n')).toBe('a\n\n***\n\nb\n')
-    expect(await save('***\n<!-- line: darkness 50%, thickness 6px -->\n')).toBe('***\n\n<!-- line: thickness 6px -->\n')
-  })
-
-  it('S4: darkness 10% and thickness 1px are no defaults any more, so they are written', async () => {
+  it('darkness 10% and thickness 1px are written (the defaults before the guided test)', async () => {
     const out = await saveStyled({ darkness: 10, thickness: 1 })
     expect(out).toBe('a\n\n***\n\n<!-- line: darkness 10%, thickness 1px -->\n\nb\n')
     const { view } = await mount(out)
     expect(lines(view.state.doc)).toEqual([{ darkness: 10, thickness: 1, pattern: null, width: null }])
   })
 
-  it('S4: a hand-written darkness 50%, thickness 3px is the plain line and saves as ***', async () => {
+  it('S93: a picked value equal to the default is written, and a hand-written one stays as written', async () => {
+    expect(await saveStyled({ darkness: 50, thickness: 3, pattern: 'solid' })).toBe('a\n\n***\n\n<!-- line: darkness 50%, thickness 3px, style solid -->\n\nb\n')
     const note = 'a\n\n***\n<!-- line: darkness 50%, thickness 3px -->\n\nb\n'
     const { view } = await mount(note)
-    expect(lines(view.state.doc)).toEqual([PLAIN_LINE])
+    expect(lines(view.state.doc)).toEqual([{ darkness: 50, thickness: 3, pattern: null, width: null }])
     expect(htmlValues(view.state.doc)).toEqual([])
-    expect(await save(note)).toBe('a\n\n***\n\nb\n')
+    expect(await save(note)).toBe('a\n\n***\n\n<!-- line: darkness 50%, thickness 3px -->\n\nb\n')
+  })
+
+  it('S94: a line with every part at Default (null) saves as plain ***', async () => {
+    expect(await saveStyled({ darkness: null, thickness: null, pattern: null, width: null }, 'a\n\n***\n<!-- line: darkness 80%, style dashed -->\n\nb\n')).toBe('a\n\n***\n\nb\n')
   })
 
   it.each([
@@ -294,11 +290,12 @@ describe('parseDOM / toDOM (S26)', () => {
 })
 
 describe('the line pattern (YAZ-3198, D7)', () => {
-  it('S70: solid is the default and is never written; a hand-written style solid reads as the plain line', async () => {
+  it('S70, S100: a line that follows the default has no style part; style solid is a value and stays (YAZ-3208 D9)', async () => {
     expect(formatLineComment({ ...PLAIN_LINE, pattern: null })).toBeNull()
-    expect(parseLineComment('<!-- line: style solid -->')).toEqual(PLAIN_LINE)
-    expect(await save('***\n<!-- line: style solid -->\n')).toBe('***\n')
-    expect(await save('***\n<!-- line: darkness 80%, style solid -->\n')).toBe('***\n\n<!-- line: darkness 80% -->\n')
+    expect(parseLineComment('<!-- line: style solid -->')).toEqual({ ...PLAIN_LINE, pattern: 'solid' })
+    expect(await save('***\n<!-- line: style solid -->\n')).toBe('***\n\n<!-- line: style solid -->\n')
+    expect(await save('***\n<!-- line: darkness 80%, style solid -->\n')).toBe('***\n\n<!-- line: darkness 80%, style solid -->\n')
+    expect(await saveStyled({ pattern: 'solid' })).toBe('a\n\n***\n\n<!-- line: style solid -->\n\nb\n')
   })
 
   it.each([['dotted'], ['dashed']])('S71: style %s saves and loads', async (pattern) => {

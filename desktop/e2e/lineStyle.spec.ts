@@ -229,3 +229,34 @@ test('step 8 — a line as a bullet\'s first block meets the bullet dot at its m
   expect(Math.abs(mids.dot - mids.line)).toBeLessThan(1)
   await shoot(win, 'lineStyle-08-line-in-a-bullet')
 })
+
+test('step 9 — the vault\'s default line in Settings (YAZ-3208): a plain line follows it at once, a line set to solid keeps its own style', async () => {
+  // An outside change gives the note one plain line and one line set to solid (S27, S92, S100).
+  await writeFile(path.join(vault, NOTE), `${NOTE_BODY}\n\n***\n\n***\n\n<!-- line: style solid -->\n`)
+  await expect(lineView(win)).toHaveCount(2)
+  await expect(lineView(win).nth(1)).toHaveAttribute('data-line-pattern', 'solid')
+  const look = (i: number) => lineView(win).nth(i).locator('hr').evaluate((el) => ({ image: getComputedStyle(el).backgroundImage, height: el.getBoundingClientRect().height }))
+  expect(await look(0)).toEqual({ image: 'none', height: 15 })
+
+  await win.getByRole('button', { name: 'Settings', exact: true }).click()
+  const row = win.locator('.settings-dialog[role="dialog"] [data-setting="textFormatting"] .heading-styles__line[data-level="line"]')
+  await expect(row.locator('.heading-styles__size')).toHaveText(['50%', '3 px'])
+  await row.getByRole('button', { name: 'Line thickness larger', exact: true }).click()
+  await row.locator('[aria-label="Line style"]').getByRole('button', { name: 'Dashed', exact: true }).click()
+  await expect(row.locator('.heading-styles__size')).toHaveText(['50%', '4 px'])
+  await shoot(win, 'lineStyle-09-settings-line')
+
+  // Only the changed fields are in the vault's file (D8); the note's bytes do not change (D9).
+  await expect.poll(async () => JSON.parse(await readFile(path.join(vault, '.yaseendocs', 'text-formatting.json'), 'utf8'))).toEqual({ version: 1, line: { thickness: 4, pattern: 'dashed' } })
+  // The plain line follows the default at once, under the open dialog (S91); the solid one keeps its own (S92, S100).
+  await expect.poll(async () => (await look(0)).image).toMatch(/^linear-gradient/)
+  expect((await look(0)).height).toBeCloseTo(16, 0)
+  expect((await look(1)).image).toBe('none')
+  expect((await look(1)).height).toBeCloseTo(16, 0)
+
+  // Reset removes the key (S97), and the plain line is solid and 3px again.
+  await row.getByRole('button', { name: 'Reset line', exact: true }).click()
+  await expect.poll(async () => (await look(0)).image).toBe('none')
+  await win.keyboard.press('Escape')
+  expect(await readNote()).toBe(`${NOTE_BODY}\n\n***\n\n***\n\n<!-- line: style solid -->\n`)
+})

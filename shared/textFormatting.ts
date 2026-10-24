@@ -1,4 +1,5 @@
 import { isRecord } from './guards'
+import { isLineDefaults, type LineDefaults } from './line'
 import { HEADING_HIGHLIGHTS, HEADING_KEYS, HEADING_SIZE_MAX, HEADING_SIZE_MIN, type HeadingStyle, type HeadingStyles } from './types'
 
 /**
@@ -9,7 +10,8 @@ import { HEADING_HIGHLIGHTS, HEADING_KEYS, HEADING_SIZE_MAX, HEADING_SIZE_MIN, t
  *
  * The file holds only what the reader changed, beside a version:
  * `{ "version": 1, "text": { "size": 17 }, "h2": { "size": 21, "underline": true } }`.
- * A missing file, or `{}`, is the app's own look.
+ * A missing file, or `{}`, is the app's own look. Since YAZ-3208 (🔒 D8) an optional `line` key
+ * holds the vault's default line: `"line": { "darkness": 70, "pattern": "dashed" }`.
  */
 
 export const TEXT_FORMATTING_FILE = 'text-formatting.json'
@@ -27,7 +29,7 @@ export interface TextStyle {
 }
 
 /** Only the levels and the fields the reader changed. "Reset" removes a key; the defaults are never stored. */
-export type TextFormatting = HeadingStyles & { text?: TextStyle }
+export type TextFormatting = HeadingStyles & { text?: TextStyle; line?: LineDefaults }
 
 const wholeIn = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
 
@@ -54,7 +56,8 @@ function definedFields<T extends object>(style: T): T | null {
 
 /**
  * The file as the app uses it (D10). A missing file or one that is not an object is the app's look,
- * `{}`. Each level and the Text line fall back alone: a bad one is left out and the others stay.
+ * `{}`. Each level, the Text line and the default line fall back alone: a bad one is left out and
+ * the others stay (S95).
  * `version` and unknown keys are ignored.
  */
 export function sanitizeTextFormatting(raw: unknown): TextFormatting {
@@ -63,6 +66,10 @@ export function sanitizeTextFormatting(raw: unknown): TextFormatting {
   if (isTextStyle(r.text)) {
     const text = definedFields(r.text)
     if (text !== null) out.text = text
+  }
+  if (isLineDefaults(r.line)) {
+    const line = definedFields(r.line)
+    if (line !== null) out.line = line
   }
   for (const key of HEADING_KEYS) {
     const style = r[key]

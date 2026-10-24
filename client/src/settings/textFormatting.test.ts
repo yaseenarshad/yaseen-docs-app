@@ -46,3 +46,23 @@ describe('sanitizeTextFormatting (YAZ-3066 D10)', () => {
     for (const bad of [{ highlight: null }, { size: 20, color: 'red' }, null, [], 'h2']) expect(isHeadingStyle(bad), JSON.stringify(bad)).toBe(false)
   })
 })
+
+describe('the default line (YAZ-3208 D8, S95)', () => {
+  it('a good `line` loads with only its fields; the edges of each range are good', () => {
+    expect(sanitizeTextFormatting({ version: 1, line: { darkness: 70, pattern: 'dashed' } })).toEqual({ line: { darkness: 70, pattern: 'dashed' } })
+    expect(sanitizeTextFormatting({ line: { darkness: 5, thickness: 24, pattern: 'dotted' } })).toEqual({ line: { darkness: 5, thickness: 24, pattern: 'dotted' } })
+    expect(sanitizeTextFormatting({ line: { darkness: 100, thickness: 1 } })).toEqual({ line: { darkness: 100, thickness: 1 } })
+  })
+
+  it('S95: a bad `line` falls back alone; the other keys of the file stay', () => {
+    for (const line of [{ darkness: 4 }, { darkness: 101 }, { thickness: 0 }, { thickness: 25 }, { thickness: 2.5 }, { pattern: 'wavy' }, { pattern: 'solid' }, { colour: 'red' }, 'dashed', [1], null]) {
+      expect(sanitizeTextFormatting({ text: { size: 18 }, h2: { size: 21 }, line }), JSON.stringify(line)).toEqual({ text: { size: 18 }, h2: { size: 21 } })
+    }
+    // An empty `line` is no change.
+    expect(sanitizeTextFormatting({ line: {} })).toEqual({})
+  })
+
+  it('the writer carries the `line` key as it is', () => {
+    expect(textFormattingFile({ line: { thickness: 6 } })).toEqual({ version: 1, line: { thickness: 6 } })
+  })
+})

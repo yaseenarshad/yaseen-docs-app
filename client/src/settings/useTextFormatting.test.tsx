@@ -89,6 +89,13 @@ describe('useTextFormatting', () => {
     expect(state.formatting).toEqual({ h1: { size: 25 } })
   })
 
+  it('S98: a default line changed in another window or on another Mac arrives as `vaultConfig:changed` and is read again', async () => {
+    await mount('/vault')
+    read.mockResolvedValue({ version: 1, line: { darkness: 70, pattern: 'dashed' } })
+    await changed({ root: '/vault', name: TEXT_FORMATTING_FILE })
+    expect(state.formatting).toEqual({ line: { darkness: 70, pattern: 'dashed' } })
+  })
+
   it('save shows the change at once and writes `{ version: 1, ...only the changes }`; a failed write falls back to the file', async () => {
     await mount('/vault')
     await act(async () => state.save({ text: { size: 17 }, h2: { size: 21, bold: undefined } }))

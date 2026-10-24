@@ -67,8 +67,12 @@ const openRow = (view: EditorView, i: number): HTMLElement => {
 }
 /** The number box of picker `i`, its row opened first. */
 const box = (view: EditorView, i: number) => openRow(view, i).querySelector<HTMLInputElement>('input')!
-/** The preset (or choice) buttons of picker `i`, its row opened first. */
-const presetButtons = (view: EditorView, i: number) => [...openRow(view, i).querySelectorAll<HTMLButtonElement>('.document-zoom__presets button')]
+/** Every item of picker `i`'s list, "Default (…)" first (YAZ-3208 D11), its row opened first. */
+const listButtons = (view: EditorView, i: number) => [...openRow(view, i).querySelectorAll<HTMLButtonElement>('.document-zoom__presets button')]
+/** The "Default (…)" item of picker `i`. */
+const defaultButton = (view: EditorView, i: number) => listButtons(view, i)[0]
+/** The preset (or choice) buttons of picker `i`, after "Default". */
+const presetButtons = (view: EditorView, i: number) => listButtons(view, i).slice(1)
 const press = (box: HTMLInputElement, key: string) => box.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
 const type = (box: HTMLInputElement, text: string) => {
   box.value = text
@@ -94,14 +98,14 @@ describe('which blocks get the pickers', () => {
     expect(parts).toEqual([
       'row:Number children:disabled',
       'document-zoom__divider',
-      'picker:Line darkness:50% ▾',
-      'picker:Line thickness:3px ▾',
-      'picker:Line style:Solid ▾',
+      'picker:Line darkness:Default (50%) ▾',
+      'picker:Line thickness:Default (3px) ▾',
+      'picker:Line style:Default (Solid) ▾',
     ])
-    const labels = (i: number) => presetButtons(view, i).map((b) => b.firstElementChild?.textContent)
-    expect(labels(0)).toEqual(['10%', '50% (default)', '100%'])
-    expect(labels(1)).toEqual(['1px', '3px (default)', '6px'])
-    expect(labels(2)).toEqual(['Solid (default)', 'Dotted', 'Dashed'])
+    const labels = (i: number) => listButtons(view, i).map((b) => b.firstElementChild?.textContent)
+    expect(labels(0)).toEqual(['Default (50%)', '10%', '50%', '100%'])
+    expect(labels(1)).toEqual(['Default (3px)', '1px', '3px', '6px'])
+    expect(labels(2)).toEqual(['Default (Solid)', 'Solid', 'Dotted', 'Dashed'])
   })
 
   it('S41: a paragraph, a heading and a bullet get the menu of today', async () => {
@@ -171,7 +175,7 @@ describe('picking', () => {
     const { view } = await openOnLine('***\n<!-- line: thickness 6px, style dotted -->\n')
     expect(pickers(view).map((p) => p.querySelector<HTMLElement>('.block-menu-picker__panel')!.hidden)).toEqual([true, true, true])
     expect(document.activeElement).toBe(before)
-    expect([0, 1, 2].map((i) => valueOf(view, i).textContent)).toEqual(['50% ▾', '6px ▾', 'Dotted ▾'])
+    expect([0, 1, 2].map((i) => valueOf(view, i).textContent)).toEqual(['Default (50%) ▾', '6px ▾', 'Dotted ▾'])
   })
 
   it('S81: a click on a value opens only that row, its box focused and selected, with the current preset pressed', async () => {
@@ -180,7 +184,8 @@ describe('picking', () => {
     expect(document.activeElement).toBe(darkness)
     expect([darkness.selectionStart, darkness.selectionEnd]).toEqual([0, darkness.value.length])
     expect(darkness.value).toBe('50%')
-    expect(presetButtons(view, 0).map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
+    // The line follows the default: "Default" is pressed, not the 50% preset (D11).
+    expect(listButtons(view, 0).map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false', 'false'])
     const thickness = box(view, 1)
     expect(pickers(view)[0].querySelector<HTMLElement>('.block-menu-picker__panel')!.hidden).toBe(true)
     expect(document.activeElement).toBe(thickness)
@@ -197,8 +202,8 @@ describe('picking', () => {
       'block-menu-picker__sample line-sample line-sample--dotted',
       'block-menu-picker__sample line-sample line-sample--dashed',
     ])
-    expect(choices.map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false'])
-    expect(choices[0].lastElementChild?.textContent).toBe('✓')
+    expect(choices.map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'false'])
+    expect(defaultButton(view, 2).lastElementChild?.textContent).toBe('✓')
     choices[2].click()
     expect(popupOf(view)).toBeNull()
     expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: style dashed -->\n\nb\n')
@@ -209,9 +214,12 @@ describe('picking', () => {
     expect(undo(view.state, view.dispatch)).toBe(true)
     expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: style dashed -->\n\nb\n')
     rightClick(item)
-    presetButtons(view, 2)[0].click()
+    defaultButton(view, 2).click()
     expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\nb\n')
     expect(view.state.doc.child(1).attrs.pattern).toBeNull()
+    rightClick(item)
+    presetButtons(view, 2)[0].click()
+    expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: style solid -->\n\nb\n')
   })
 
   it('S44: Enter applies a typed value and closes; the unit is optional', async () => {
@@ -265,7 +273,7 @@ describe('picking', () => {
   })
 
   it('S47, S78: the current value, typed, picked or chosen, closes the menu with no document change', async () => {
-    const { view, item } = await openOnLine('***\n<!-- line: darkness 100%, style dotted -->\n')
+    const { view, item } = await openOnLine('***\n<!-- line: darkness 100%, thickness 6px, style dotted -->\n')
     const doc = view.state.doc
     presetButtons(view, 0)[2].click()
     expect(popupOf(view)).toBeNull()
@@ -273,7 +281,7 @@ describe('picking', () => {
     presetButtons(view, 2)[1].click()
     expect(popupOf(view)).toBeNull()
     rightClick(item)
-    type(box(view, 1), '3')
+    type(box(view, 1), '6')
     press(box(view, 1), 'Enter')
     expect(popupOf(view)).toBeNull()
     expect(view.state.doc).toBe(doc)
@@ -309,18 +317,43 @@ describe('picking', () => {
     expect(view.dom.contains(document.activeElement)).toBe(true)
   })
 
-  it('S49: a pick of the default removes that part, and all defaults give plain ***', async () => {
+  it('S94: "Default" removes that part, and a line with every part at Default saves as plain ***', async () => {
     const { crepe, view, item } = await openOnLine('***\n<!-- line: darkness 80%, thickness 6px, length 40% -->\n')
-    presetButtons(view, 0)[1].click()
+    defaultButton(view, 0).click()
     expect(getMarkdownForSave(crepe)).toBe('***\n\n<!-- line: thickness 6px, length 40% -->\n')
     expect(view.state.doc.child(0).attrs.darkness).toBeNull()
     rightClick(item)
-    type(box(view, 1), '3px')
-    press(box(view, 1), 'Enter')
+    defaultButton(view, 1).click()
     expect(getMarkdownForSave(crepe)).toBe('***\n\n<!-- line: length 40% -->\n')
     const line = await openOnLine('***\n<!-- line: thickness 12px -->\n')
-    presetButtons(line.view, 1)[1].click()
+    defaultButton(line.view, 1).click()
     expect(getMarkdownForSave(line.crepe)).toBe('***\n')
+  })
+
+  it('S93: a picked or typed value equal to the default is written', async () => {
+    const { crepe, view, item } = await openOnLine('a\n\n***\n\nb\n')
+    presetButtons(view, 0)[1].click()
+    expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: darkness 50% -->\n\nb\n')
+    rightClick(item)
+    type(box(view, 1), '3px')
+    press(box(view, 1), 'Enter')
+    expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\n<!-- line: darkness 50%, thickness 3px -->\n\nb\n')
+    rightClick(item)
+    // The value button now shows the value, not "Default (…)".
+    expect(valueOf(view, 0).textContent).toBe('50% ▾')
+  })
+
+  it('D11: "Default" reads the vault’s current default from the line’s computed --line-default-*', async () => {
+    const { view, item } = await mount('***\n')
+    const wrapper = view.nodeDOM(nth(view, 'hr')) as HTMLElement
+    wrapper.style.setProperty('--line-default-darkness', '70%')
+    wrapper.style.setProperty('--line-default-thickness', '8px')
+    wrapper.style.setProperty('--line-default-pattern', 'dashed')
+    aim(view, nth(view, 'hr'))
+    rightClick(item)
+    expect([0, 1, 2].map((i) => valueOf(view, i).textContent)).toEqual(['Default (70%) ▾', 'Default (8px) ▾', 'Default (Dashed) ▾'])
+    expect(box(view, 0).value).toBe('70%')
+    expect(defaultButton(view, 2).querySelector('.block-menu-picker__sample')?.className).toBe('block-menu-picker__sample line-sample line-sample--dashed')
   })
 
   it('S50: ⌘Z undoes one pick in one step', async () => {

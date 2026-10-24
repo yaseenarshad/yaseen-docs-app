@@ -251,25 +251,46 @@ describe('pickers (YAZ-3164 D3, condensed)', () => {
     expect(popupOf(view)).not.toBeNull()
   })
 
-  it('a number panel is the zoom menu’s: the box, a divider, the presets with the default labelled and the current one pressed', async () => {
+  it('a number panel is the zoom menu’s: the box, a divider, "Default (…)" first, then the presets, the current one pressed', async () => {
     const { view, item } = await mount(() => [field({ value: 10 })])
     contextmenu(item)
     const panel = panelOf(pickers(view)[0])
     expect([...panel.children].map((el) => el.className)).toEqual(['document-zoom__custom', 'document-zoom__divider', 'document-zoom__presets'])
     const buttons = [...panel.querySelectorAll('.document-zoom__presets button')]
-    expect(buttons.map((b) => b.firstElementChild?.textContent)).toEqual(['10%', '50% (default)', '100%'])
-    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false'])
-    expect(buttons.map((b) => b.lastElementChild?.textContent)).toEqual(['✓', '', ''])
+    expect(buttons.map((b) => b.firstElementChild?.textContent)).toEqual(['Default (50%)', '10%', '50%', '100%'])
+    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false', 'false'])
+    expect(buttons.map((b) => b.lastElementChild?.textContent)).toEqual(['', '✓', '', ''])
   })
 
-  it('a choice panel lists the choices with their samples, the default labelled and the current one pressed', async () => {
+  it('YAZ-3208 D11: a field that follows the default reads "Default (…) ▾", its box shows the default, and "Default" is pressed', async () => {
+    const run = vi.fn()
+    const { view, item } = await mount(() => [field({ value: null, fallback: 70, run }), choice({ value: null, fallback: 'b' })])
+    contextmenu(item)
+    expect(valueOf(pickers(view)[0]).textContent).toBe('Default (70%) ▾')
+    expect(valueOf(pickers(view)[1]).textContent).toBe('Default (Bravo) ▾')
+    valueOf(pickers(view)[0]).click()
+    expect(panelOf(pickers(view)[0]).querySelector('input')!.value).toBe('70%')
+    const buttons = [...panelOf(pickers(view)[0]).querySelectorAll('.document-zoom__presets button')]
+    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false', 'false'])
+    // "Default" again is the current value: nothing runs. A preset equal to the default is a value (D9).
+    ;(buttons[0] as HTMLButtonElement).click()
+    expect(run).not.toHaveBeenCalled()
+    contextmenu(item)
+    valueOf(pickers(view)[0]).click()
+    panelOf(pickers(view)[0]).querySelectorAll<HTMLButtonElement>('.document-zoom__presets button')[2].click()
+    expect(run).toHaveBeenCalledExactlyOnceWith(50)
+  })
+
+  it('a choice panel lists "Default (…)", then the choices with their samples, the current one pressed', async () => {
     const { view, item } = await mount(() => [choice({ value: 'b' })])
     contextmenu(item)
     const buttons = [...panelOf(pickers(view)[0]).querySelectorAll('.document-zoom__presets button')]
-    expect(buttons.map((b) => b.firstElementChild?.textContent)).toEqual(['Alpha (default)', 'Bravo'])
+    expect(buttons.map((b) => b.firstElementChild?.textContent)).toEqual(['Default (Alpha)', 'Alpha', 'Bravo'])
+    // "Default" draws the default choice's sample.
     expect(buttons[0].querySelector('.block-menu-picker__sample')?.className).toBe('block-menu-picker__sample sample-a')
-    expect(buttons[1].querySelector('.block-menu-picker__sample')).toBeNull()
-    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+    expect(buttons[1].querySelector('.block-menu-picker__sample')?.className).toBe('block-menu-picker__sample sample-a')
+    expect(buttons[2].querySelector('.block-menu-picker__sample')).toBeNull()
+    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true'])
   })
 
   it('S83: Enter runs a new valid value once and closes the whole menu; the current value closes without running', async () => {
@@ -314,16 +335,16 @@ describe('pickers (YAZ-3164 D3, condensed)', () => {
     const { view, item } = await mount(() => [field({ run: runSize }), choice({ run: runKind })])
     contextmenu(item)
     valueOf(pickers(view)[0]).click()
-    panelOf(pickers(view)[0]).querySelectorAll<HTMLButtonElement>('button')[2].click()
+    panelOf(pickers(view)[0]).querySelectorAll<HTMLButtonElement>('button')[3].click()
     expect(runSize).toHaveBeenCalledExactlyOnceWith(100)
     expect(popupOf(view)).toBeNull()
     contextmenu(item)
     valueOf(pickers(view)[1]).click()
-    panelOf(pickers(view)[1]).querySelectorAll<HTMLButtonElement>('button')[1].click()
+    panelOf(pickers(view)[1]).querySelectorAll<HTMLButtonElement>('button')[2].click()
     expect(runKind).toHaveBeenCalledExactlyOnceWith('b')
     expect(popupOf(view)).toBeNull()
     contextmenu(item)
-    panelOf(pickers(view)[1]).querySelectorAll<HTMLButtonElement>('button')[0].click()
+    panelOf(pickers(view)[1]).querySelectorAll<HTMLButtonElement>('button')[1].click()
     expect(runKind).toHaveBeenCalledTimes(1)
     expect(popupOf(view)).toBeNull()
   })

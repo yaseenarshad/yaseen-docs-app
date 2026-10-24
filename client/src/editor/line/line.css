@@ -9,8 +9,10 @@
  * exactly the content height: `12px + thickness` makes a line of exactly `thickness`, and a thick
  * line makes its row taller by the thickness only (D6). The colour is a share of the text colour,
  * so it follows dark mode (D4). `margin-inline: 0`, so a short line starts at the left edge (D5).
- * The three values are custom properties on the wrapper, set by the node view only when they are
- * not the default; every fallback here is the default.
+ * The values are custom properties on the wrapper, set by the node view only when the line has its
+ * own; a line that follows the default (`null`, YAZ-3208 D9) falls back to the vault's default line,
+ * the `--line-default-*` properties that `textVars` puts on each page layer (D8), and then to the
+ * app's default, 50% and 3px.
  */
 
 .milkdown .ProseMirror .line-view {
@@ -18,9 +20,10 @@
 }
 
 .milkdown .ProseMirror .line-view > hr {
-  --line-color: color-mix(in srgb, var(--crepe-color-on-background) var(--line-darkness, 50%), transparent);
+  --line-thick: var(--line-thickness, var(--line-default-thickness, 3px));
+  --line-color: color-mix(in srgb, var(--crepe-color-on-background) var(--line-darkness, var(--line-default-darkness, 50%)), transparent);
   width: var(--line-width, 100%);
-  height: calc(12px + var(--line-thickness, 3px));
+  height: calc(12px + var(--line-thick));
   margin-inline: 0;
   background-color: var(--line-color);
 }
@@ -46,9 +49,12 @@
  * inside the `hr`'s own width). `background-origin: content-box` puts the one row of tiles on the
  * line itself, between the 6px paddings. Dashed: a tile of 5 × thickness, the first 3 painted, so
  * a dash is 3× the thickness and a gap 2× (S73). Dotted: a tile of 2 × thickness by the thickness,
- * a round dot as wide as the thickness in its middle, so the gap is the thickness too (S74).
+ * a round dot as wide as the thickness in its middle, so the gap is the thickness too (S74). A line
+ * with no pattern of its own takes the vault's default pattern (YAZ-3208 D8) through a style
+ * query on `--line-default-pattern`: the `hr`'s container is the wrapper, which inherits it from the
+ * page layer. A line set to `solid` stays solid under a dashed default (S100).
  */
-.milkdown .ProseMirror .line-view[data-line-pattern] > hr {
+.milkdown .ProseMirror .line-view:is([data-line-pattern='dotted'], [data-line-pattern='dashed']) > hr {
   background-color: transparent;
   background-origin: content-box;
   background-repeat: repeat-x;
@@ -56,13 +62,33 @@
 
 .milkdown .ProseMirror .line-view[data-line-pattern='dashed'] > hr {
   background-image: linear-gradient(to right, var(--line-color) 60%, transparent 60%);
-  background-size: calc(5 * var(--line-thickness, 3px)) 100%;
+  background-size: calc(5 * var(--line-thick)) 100%;
 }
 
 .milkdown .ProseMirror .line-view[data-line-pattern='dotted'] > hr {
   /* The dot is solid to 92% of its radius and fades out by 100%: a soft edge, so a small dot is round, not jagged. */
   background-image: radial-gradient(circle closest-side, var(--line-color) 92%, transparent 100%);
-  background-size: calc(2 * var(--line-thickness, 3px)) 100%;
+  background-size: calc(2 * var(--line-thick)) 100%;
+}
+
+@container style(--line-default-pattern: dashed) {
+  .milkdown .ProseMirror .line-view:not([data-line-pattern]) > hr {
+    background-color: transparent;
+    background-origin: content-box;
+    background-repeat: repeat-x;
+    background-image: linear-gradient(to right, var(--line-color) 60%, transparent 60%);
+    background-size: calc(5 * var(--line-thick)) 100%;
+  }
+}
+
+@container style(--line-default-pattern: dotted) {
+  .milkdown .ProseMirror .line-view:not([data-line-pattern]) > hr {
+    background-color: transparent;
+    background-origin: content-box;
+    background-repeat: repeat-x;
+    background-image: radial-gradient(circle closest-side, var(--line-color) 92%, transparent 100%);
+    background-size: calc(2 * var(--line-thick)) 100%;
+  }
 }
 
 /* Selected (ProseMirror's NodeSelection, editable only): Crepe's selected tint over the whole row,

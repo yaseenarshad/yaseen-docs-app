@@ -529,6 +529,40 @@
   grid-column: -2;
 }
 
+/* The Line line (YAZ-3208 D10): "Line" and a preview of the vault's default line, drawn as the
+   page draws it (editor/line/line.css): a share of the text colour, its thickness, and the dotted or
+   dashed tiles (5 × and 2 × the thickness). */
+.heading-styles__label--line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.heading-styles__line-controls {
+  grid-column: 2 / -2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.heading-styles__line-preview {
+  flex: 1;
+  min-width: 24px;
+  max-width: 120px;
+  height: var(--preview-thickness);
+  --preview-color: color-mix(in srgb, var(--fg) var(--preview-darkness), transparent);
+  background: var(--preview-color);
+}
+
+.heading-styles__line-preview--dashed {
+  background: linear-gradient(to right, var(--preview-color) 60%, transparent 60%) 0 0 / calc(5 * var(--preview-thickness)) 100% repeat-x;
+}
+
+.heading-styles__line-preview--dotted {
+  background: radial-gradient(circle closest-side, var(--preview-color) 92%, transparent 100%) 0 0 / calc(2 * var(--preview-thickness)) 100% repeat-x;
+}
+
 /* ---------- hotkey reference (GRO-2067) — one table per Hotkeys group ---------- */
 
 .hotkeys__list {
