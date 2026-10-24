@@ -15,13 +15,15 @@
  *     `<u>` + children + `</u>`.
  *  2. `underlineSchema` ($markSchema): `parseDOM` u / `text-decoration: underline`, `toDOM` u,
  *     `parseMarkdown` from / `toMarkdown` to the `underline` mdast node.
- *  3. `underlineKeymap` ($shortcut): `Mod-u` = `toggleMark`. Not a Crepe feature — the feature
- *     allowlist is untouched and the toolbar does not get a button.
+ *  3. `underlineKeymap` ($shortcut): `Mod-u` = `toggleMark`, through `onVisibleLines` so a
+ *     selection over folded lines underlines the visible ones only (YAZ-3209). Not a Crepe
+ *     feature — the feature allowlist is untouched and the toolbar does not get a button.
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { toggleMark } from '@milkdown/kit/prose/commands'
 import type { Command } from '@milkdown/kit/prose/state'
 import { $markSchema, $remark, $shortcut } from '@milkdown/kit/utils'
+import { onVisibleLines } from '../lineSelection'
 import type { Parent, PhrasingContent } from 'mdast'
 import type { Handle, Options as ToMarkdownOptions } from 'mdast-util-to-markdown'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
@@ -101,7 +103,7 @@ export const underlineSchema = $markSchema('underline', () => ({
 /** Priority above Crepe's keymaps (default 50), like the outliner keymaps. */
 const PRIORITY = 100
 
-const toggleUnderline = (ctx: Ctx): Command => toggleMark(underlineSchema.type(ctx))
+const toggleUnderline = (ctx: Ctx): Command => onVisibleLines(toggleMark(underlineSchema.type(ctx)))
 
 export const underlineKeymap = $shortcut((ctx: Ctx) => ({
   ToggleUnderline: { key: 'Mod-u', priority: PRIORITY, onRun: () => toggleUnderline(ctx) },

@@ -5,8 +5,9 @@
  *  - `Mod-Enter`   cycle the list item(s) under the selection: bullet → `[ ]` → `[x]` → bullet.
  *                  Each item cycles from its OWN state (Obsidian toggle-list); only items whose
  *                  first block touches the selection change, so a parent whose text sits above the
- *                  selection stays as it is. Outside list items the key falls through (Crepe's
- *                  table `Mod-Enter` = exit table, CodeMirror's = exit code block are untouched).
+ *                  selection stays as it is. Hidden items (a folded item's kids) keep their state
+ *                  (YAZ-3209). Outside list items the key falls through (Crepe's table
+ *                  `Mod-Enter` = exit table, CodeMirror's = exit code block are untouched).
  *  - `Mod-Shift-u` / `Mod-Shift-i` are coordinated across bullets + headings by foldAllHotkeys.ts.
  *  - `Mod-ArrowUp` / `Mod-ArrowDown` (GRO-2092, Logseq's defaults) fold / unfold the caret's item;
  *                  consumed inside any list item (leaf = no-op), falls through outside lists so the
@@ -25,7 +26,7 @@ import { toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
 import type { NodeType } from '@milkdown/kit/prose/model'
 import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
-import { coveredLines } from '../lineSelection'
+import { coveredLines, eachVisibleTextblock } from '../lineSelection'
 import { setOutlineFoldAtSelection, undoLastFold } from './outlineFolding'
 
 /** Priority above Crepe's list/table/base keymaps (default 50). */
@@ -36,18 +37,17 @@ type Checked = boolean | null
 /** bullet → unchecked task → checked task → bullet */
 const nextChecked = (checked: Checked): Checked => (checked === null ? false : checked === false ? true : null)
 
-/** Positions of the list_items whose FIRST block overlaps the covered lines (document order; YAZ-3003). */
+/**
+ * Positions of the list_items whose FIRST block overlaps the covered lines (document order;
+ * YAZ-3003) and is VISIBLE: a folded item's hidden kids keep their state (YAZ-3209). The walk is
+ * widened by one each side so a first block that only touches the range still counts.
+ */
 const selectedItemPositions = (itemType: NodeType, state: EditorState): number[] => {
   const { from, to } = coveredLines(state)
   const positions: number[] = []
-  state.doc.nodesBetween(from, to, (node, pos) => {
-    if (node.type !== itemType) return true
-    const first = node.firstChild
-    if (!first) return true
-    const firstStart = pos + 1
-    const firstEnd = firstStart + first.nodeSize
-    if (from <= firstEnd && to >= firstStart) positions.push(pos)
-    return true
+  eachVisibleTextblock(state, Math.max(0, from - 1), Math.min(state.doc.content.size, to + 1), (block, pos, parent, index) => {
+    if (parent.type !== itemType || index !== 0) return
+    if (from <= pos + block.nodeSize && to >= pos) positions.push(pos - 1)
   })
   return positions
 }

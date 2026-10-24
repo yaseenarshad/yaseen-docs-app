@@ -203,6 +203,7 @@ import { lineStyle } from './line/lineStyle'
 import { lineView } from './line/lineView'
 import { lineRows } from './line/lineRows'
 import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
+import { visibleFormatting } from './visibleFormatting'
 import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
 import { multiBlockDrag } from './multiBlockDrag'
@@ -413,6 +414,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(highlight)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
+  // YAZ-3209: over hidden lines, Bold, Italic, Strikethrough, code and H1-H3 / T change the visible
+  // ones only, and the toolbar lights for visible lines only. After the presets, by `EditorViewReady`.
+  crepe.editor.use(visibleFormatting)
   // Milkdown's empty-line plugin deletes every inline <br> on parse (YAZ-1452). Ours must run
   // first; re-registering Milkdown's AFTER keeps its id resolvable so empty paragraphs still
   // serialise as `<br />`.

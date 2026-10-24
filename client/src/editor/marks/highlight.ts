@@ -22,6 +22,7 @@ import { splice } from 'micromark-util-chunked'
 import { classifyCharacter } from 'micromark-util-classify-character'
 import { resolveAll } from 'micromark-util-resolve-all'
 import type { Event, Extension, Resolver, State, Token, TokenizeContext, Tokenizer } from 'micromark-util-types'
+import { visibleRangeHasMark, visibleRanges } from '../lineSelection'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
 
 /** The named colours; yellow is `null` (the default, and the only one with Markdown syntax). */
@@ -208,12 +209,14 @@ export const highlightSchema = $markSchema('highlight', () => ({
 /**
  * Whether ANY of the selection carries a highlight of exactly this colour — Bold's toggle
  * semantics (🔒 D5): a partly highlighted line still lights the dot, and the click then removes.
- * At a caret: the marks it would type with.
+ * Only VISIBLE lines count: a highlighted kid under a fold does not light it (YAZ-3209 D4). At a
+ * caret: the marks it would type with.
  */
 export const rangeHasHighlight = (state: EditorState, type: MarkType, color: HighlightColor): boolean => {
-  const { empty, $from, from, to } = state.selection
+  const { empty, $from } = state.selection
   const mark = type.create({ color })
-  return empty ? mark.isInSet(state.storedMarks ?? $from.marks()) : state.doc.rangeHasMark(from, to, mark)
+  if (empty) return mark.isInSet(state.storedMarks ?? $from.marks())
+  return visibleRangeHasMark(state, mark)
 }
 
 /** ProseMirror's own guard: a command that cannot apply anywhere declines, so it never eats the key. */
@@ -232,23 +235,27 @@ const markApplies = (state: EditorState, type: MarkType): boolean => {
  * One click, one step (🔒 D5): a lit colour is removed from the selection, an unlit one applied
  * (addMark replaces any other colour). At a caret the same flip goes to the stored marks. Edge
  * whitespace stays outside the mark, as Bold does — `==word ==` would not read back as a mark.
+ * Over hidden lines only the visible ones change (YAZ-3209 `visibleRanges`); nothing visible
+ * selected declines.
  */
 const setHighlight = (type: MarkType, color: HighlightColor): Command => (state, dispatch) => {
-  if (!markApplies(state, type)) return false
+  const ranges = visibleRanges(state)
+  if (!markApplies(state, type) || (!state.selection.empty && ranges.length === 0)) return false
   const mark = type.create({ color })
   const lit = rangeHasHighlight(state, type, color)
-  const { $from, $to, empty } = state.selection
   const tr = state.tr
-  if (empty) lit ? tr.removeStoredMark(mark) : tr.addStoredMark(mark)
-  else if (lit) tr.removeMark($from.pos, $to.pos, mark)
-  else {
-    let { pos: from } = $from
-    let { pos: to } = $to
-    const lead = $from.nodeAfter?.text?.match(/^\s*/)?.[0].length ?? 0
-    const trail = $to.nodeBefore?.text?.match(/\s*$/)?.[0].length ?? 0
-    if (from + lead < to) (from += lead), (to -= trail)
-    tr.addMark(from, to, mark)
-  }
+  if (state.selection.empty) lit ? tr.removeStoredMark(mark) : tr.addStoredMark(mark)
+  else
+    for (let { from, to } of ranges) {
+      if (lit) {
+        tr.removeMark(from, to, mark)
+        continue
+      }
+      const lead = state.doc.resolve(from).nodeAfter?.text?.match(/^\s*/)?.[0].length ?? 0
+      const trail = state.doc.resolve(to).nodeBefore?.text?.match(/\s*$/)?.[0].length ?? 0
+      if (from + lead < to) (from += lead), (to -= trail)
+      tr.addMark(from, to, mark)
+    }
   dispatch?.(tr.scrollIntoView())
   return true
 }
