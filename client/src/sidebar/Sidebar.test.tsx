@@ -6983,6 +6983,12 @@ describe('the tree re-renders only the rows a change touches (YAZ-2194)', () => 
     expect(rendered()).toEqual([])
   })
 
+  it('a settings copy that changes no setting — a state:changed broadcast — re-renders no row at all (YAZ-3237)', async () => {
+    const { rerender } = await mountNested()
+    await rerender({ settings: structuredClone(DEFAULT_SETTINGS) })
+    expect(rendered()).toEqual([])
+  })
+
   it('an index snapshot that moves no shortcut — a save — re-renders no row at all (YAZ-2290 D2)', async () => {
     const indexSource = createWikilinkResolveSource()
     const records = NESTED.flatMap((node) => (node.type === 'dir' ? node.children.map((child) => indexRecord(child.path)) : []))

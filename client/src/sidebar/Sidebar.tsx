@@ -1,6 +1,6 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { isBoard } from '@shared/fileKind'
-import { SIDEBAR_TABS, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TreeNode, type UpdateState } from '@shared/types'
+import { SIDEBAR_TABS, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon, SortIcon, StackIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -501,7 +501,10 @@ export function Sidebar({
 }: SidebarProps) {
   // The tab the sort button serves (YAZ-3227 D5): Files, Focus and Favorites. Search and Sessions have none.
   const sortedTab: SortedTab | null = lens === 'files' || lens === 'focus' || lens === 'favorites' ? lens : null
-  const sort = sortedTab === null ? undefined : settings.sidebarSort[sortedTab]
+  const stored = sortedTab === null ? undefined : settings.sidebarSort[sortedTab]
+  // Each state broadcast hands over a new copy of the settings (YAZ-3237): the sort keeps its identity while its
+  // value stays, so the memoised levels (YAZ-2194) draw nothing again on a tab click or a window move.
+  const sort = useMemo<TabSort | undefined>(() => (stored === undefined ? undefined : { by: stored.by, reverse: stored.reverse }), [stored?.by, stored?.reverse])
   const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice, sort?.by === 'updated')
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]

@@ -1,6 +1,7 @@
 /** The sidebar sort at the repo's 10k-note scale (YAZ-3227): a level, a whole tree and a save stay far under a frame. Runs in the `perf` project (YAZ-740). */
 import { describe, expect, it } from 'vitest'
 import type { TabSort, TreeNode, TreeResponse } from '@shared/types'
+import { pageLabel } from '../lib/pageLabel'
 import { sortLevel, withMtime } from './treeSort'
 
 // 100 folders × 10 subfolders × 10 notes = 10,000 notes, each with its own time; plus a level of 108 rows, the largest one a real vault has.
@@ -17,7 +18,9 @@ const tree = (): TreeNode[] =>
       children: Array.from({ length: 10 }, (_, n) => note(`/v/Folder ${f}/Sub ${s}/Note ${n}.md`, (f * 100 + s * 10 + n) * 7919 % 10_000)),
     })),
   }))
-const label = (node: TreeNode) => node.name
+/** The label the rows draw (`Tree.tsx`): no title known, so the file name without `.md`, as for a note the index has not read. */
+const NO_TITLES = new Map<string, string>()
+const label = (node: TreeNode) => pageLabel(node.path, node.type === 'dir', NO_TITLES)
 const UPDATED: TabSort = { by: 'updated', reverse: false }
 
 /** Every level of the tree sorted, as a fully open sidebar draws it. */
