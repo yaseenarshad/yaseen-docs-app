@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import lineCss from './line.css?inline'
+import appCss from '../../app.css?inline'
 
 const css = lineCss.replace(/\/\*[\s\S]*?\*\//g, '')
 const bodyOf = (selector: string): string => {
@@ -39,5 +40,11 @@ describe('line CSS contract', () => {
     const dotted = bodyOf(`${HR}[data-line-pattern='dotted'] > hr`)
     expect(dotted).toMatch(/radial-gradient\(circle closest-side, var\(--line-color\)/)
     expect(dotted).toMatch(/background-size:\s*calc\(2 \* var\(--line-thickness, 3px\)\) 100%;/)
+  })
+
+  it('the block menu keeps its width when a bad number’s message shows: the message wraps inside it', () => {
+    const rule = /\.ctx-menu--editor \.document-zoom__error\s*\{([^}]*)\}/.exec(appCss.replace(/\/\*[\s\S]*?\*\//g, ''))
+    expect(rule?.[1]).toMatch(/width:\s*0;/)
+    expect(rule?.[1]).toMatch(/min-width:\s*100%;/)
   })
 })

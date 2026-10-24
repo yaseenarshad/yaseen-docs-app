@@ -2345,6 +2345,13 @@ button {
   padding: 2px 4px 6px 10px;
 }
 
+/* The red message of a bad number wraps inside the menu's width: `width: 0` keeps it out of the
+   menu's own size, `min-width: 100%` then fills the box's width, so the menu never grows when it shows. */
+.ctx-menu--editor .document-zoom__error {
+  width: 0;
+  min-width: 100%;
+}
+
 .ctx-menu--editor .block-menu-picker__sample {
   margin-right: 8px;
   vertical-align: middle;
