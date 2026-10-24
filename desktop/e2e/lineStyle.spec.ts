@@ -16,6 +16,8 @@
  *     mode keeps the dashes in the text colour.
  *  5. Click the line, drag its end handle to about 40% → `… length 40% -->` (±2).
  *  6. ⌘Z → the length part leaves the comment.
+ *  7. Line numbers: the styled line shows its range at its middle (YAZ-3204).
+ *  8. A line as a bullet's first block meets the bullet dot at its middle (YAZ-3207).
  *
  * Same harness as imageRender.spec.ts: temp `--user-data-dir`, a COPY of the fixture vault, one
  * serial run, `lineStyle-` screenshots. Hidden window (the harness default).
@@ -214,4 +216,16 @@ test('step 7 — line numbers (S22, YAZ-3204): the thick styled line shows 3–5
   expect(parseFloat(at.top)).toBeCloseTo(at.wrapper / 2, 0)
   expect(at.transform).not.toBe('none')
   await shoot(win, 'lineStyle-07-line-numbers')
+})
+
+test('step 8 — a line as a bullet\'s first block meets the bullet dot at its middle (YAZ-3207)', async () => {
+  await writeFile(path.join(vault, NOTE), `${NOTE_BODY}\n\n* text before\n* ---\n  * child\n* text after\n`)
+  const item = editorOf(win).locator('.milkdown-list-item-block > li:has(> .children > .content-dom > .line-view)')
+  await expect(item).toHaveCount(1, { timeout: 15_000 })
+  const mids = await item.evaluate((li) => {
+    const mid = (el: Element) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2 }
+    return { dot: mid(li.querySelector(':scope > .label-wrapper')!), line: mid(li.querySelector('.line-view > hr')!) }
+  })
+  expect(Math.abs(mids.dot - mids.line)).toBeLessThan(1)
+  await shoot(win, 'lineStyle-08-line-in-a-bullet')
 })

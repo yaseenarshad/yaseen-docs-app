@@ -26,6 +26,21 @@
 }
 
 /*
+ * A line as a bullet's first block (YAZ-3207): its row is as tall as the bullet's label row
+ * (`--list-label-height`, bullets.css) and the line sits on the row's middle, so the line meets the
+ * bullet dot as a text row does. A 15px row alone would put the line 8.5px above the dot.
+ */
+.editor-instance .milkdown .milkdown-list-item-block > li > .children > .content-dom > .line-view:is(:first-child, .outline-toggle + *) {
+  display: flex;
+  align-items: center;
+  min-height: var(--list-label-height);
+}
+
+.editor-instance .milkdown .milkdown-list-item-block > li > .children > .content-dom > .line-view:is(:first-child, .outline-toggle + *) > hr {
+  flex: none;
+}
+
+/*
  * Dotted and dashed (D7): drawn by background images on the content box — so the colour is the
  * darkness colour, as for a solid line, and a short line ends at its length (the images repeat
  * inside the `hr`'s own width). `background-origin: content-box` puts the one row of tiles on the
