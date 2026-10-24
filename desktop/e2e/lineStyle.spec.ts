@@ -260,6 +260,19 @@ test('step 9 — the vault\'s default line in Settings (YAZ-3208): a plain line 
   })
   expect(fit.previewWidth).toBeGreaterThanOrEqual(48)
   expect(fit).toMatchObject({ onTop: true, apart: true, nameFits: true })
+  // A narrow window: the controls wrap under "Line", every button stays inside the row and none
+  // covers another (the round-2 nit on YAZ-3208).
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(700, 800))
+  await expect.poll(() => win.evaluate(() => window.innerWidth)).toBeLessThan(720)
+  const narrow = await row.evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    const boxes = Array.from(el.querySelectorAll('button'), (b) => b.getBoundingClientRect())
+    const inside = boxes.every((b) => b.left >= r.left - 0.5 && b.right <= r.right + 0.5)
+    const overlap = boxes.some((a, i) => boxes.some((b, j) => i < j && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom))
+    return { inside, overlap }
+  })
+  expect(narrow).toEqual({ inside: true, overlap: false })
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 750))
   await row.getByRole('button', { name: 'Line thickness larger', exact: true }).click()
   await row.locator('[aria-label="Line style"]').getByRole('button', { name: 'Dashed', exact: true }).click()
   await expect(row.locator('.heading-styles__size')).toHaveText(['50%', '4 px'])
