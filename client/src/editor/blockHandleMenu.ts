@@ -151,8 +151,12 @@ function numberPanel(field: MenuNumberField, id: string, close: () => void): { p
   error.className = 'document-zoom__error'
   error.setAttribute('role', 'alert')
   error.textContent = field.error
+  // Typed into since the menu opened (YAZ-3222): the box starts with the current default for a field
+  // that follows it, and Enter on that untouched text is no pick — the field keeps following.
+  let edited = false
   input.addEventListener('focus', () => input.select())
   input.addEventListener('input', () => {
+    edited = true
     error.remove()
     input.setAttribute('aria-invalid', 'false')
     input.removeAttribute('aria-describedby')
@@ -161,6 +165,10 @@ function numberPanel(field: MenuNumberField, id: string, close: () => void): { p
     if (event.key === 'Enter') {
       event.preventDefault()
       event.stopPropagation()
+      if (!edited) {
+        close()
+        return
+      }
       const value = parseNumberField(field, input.value)
       if (value !== null) apply(value)
       else {

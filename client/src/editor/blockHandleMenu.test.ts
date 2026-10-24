@@ -300,6 +300,7 @@ describe('pickers (YAZ-3164 D3, condensed)', () => {
     valueOf(pickers(view)[0]).click()
     let box = popupOf(view)!.querySelector('input')!
     box.value = '60'
+    box.dispatchEvent(new Event('input', { bubbles: true }))
     enter(box)
     expect(run).toHaveBeenCalledExactlyOnceWith(60)
     expect(popupOf(view)).toBeNull()
@@ -307,6 +308,7 @@ describe('pickers (YAZ-3164 D3, condensed)', () => {
     valueOf(pickers(view)[0]).click()
     box = popupOf(view)!.querySelector('input')!
     box.value = '50%'
+    box.dispatchEvent(new Event('input', { bubbles: true }))
     enter(box)
     expect(run).toHaveBeenCalledTimes(1)
     expect(popupOf(view)).toBeNull()
@@ -319,6 +321,7 @@ describe('pickers (YAZ-3164 D3, condensed)', () => {
     valueOf(pickers(view)[0]).click()
     const box = popupOf(view)!.querySelector('input')!
     box.value = 'abc'
+    box.dispatchEvent(new Event('input', { bubbles: true }))
     enter(box)
     expect(run).not.toHaveBeenCalled()
     expect(popupOf(view)).not.toBeNull()
@@ -417,4 +420,24 @@ describe('pickers (YAZ-3164 D3, condensed)', () => {
     expect(rule?.[1]).toMatch(/width:\s*0;/)
     expect(rule?.[1]).toMatch(/min-width:\s*100%;/)
   })
+
+  it('YAZ-3222: Enter on an untouched box of a field that follows the default closes with no run; a typed value, even the default’s, is a pick (D9)', async () => {
+    const run = vi.fn()
+    const { view, item } = await mount(() => [field({ value: null, fallback: 45, run })])
+    contextmenu(item)
+    valueOf(pickers(view)[0]).click()
+    let box = popupOf(view)!.querySelector('input')!
+    expect(box.value).toBe('45%')
+    enter(box)
+    expect(run).not.toHaveBeenCalled()
+    expect(popupOf(view)).toBeNull()
+    contextmenu(item)
+    valueOf(pickers(view)[0]).click()
+    box = popupOf(view)!.querySelector('input')!
+    box.value = '45'
+    box.dispatchEvent(new Event('input', { bubbles: true }))
+    enter(box)
+    expect(run).toHaveBeenCalledExactlyOnceWith(45)
+  })
 })
+
