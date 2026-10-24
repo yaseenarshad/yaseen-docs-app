@@ -39,7 +39,7 @@ export type IpcPlaces = ShareIpcPlaces & { userData: string }
 export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces): { sync: GitSyncManager; secrets: Secrets } {
   const { userData } = places
   registerFsIpc(store, windows)
-  registerBoardIpc(userData)
+  registerBoardIpc(store, windows, userData)
   registerDialogIpc()
   registerWatchIpc()
   registerStateIpc(store)

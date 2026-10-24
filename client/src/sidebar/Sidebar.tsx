@@ -414,7 +414,7 @@ export function countChildren(nodes: readonly TreeNode[], dir: string): { notes:
 }
 
 /** The tabs' copy; the ORDER is `SIDEBAR_TABS`', so the default lens leads (YAZ-847) and Search stands right after it (YAZ-2638 D2). */
-const LENS_LABEL: Record<SidebarTab, string> = { files: 'Files', search: 'Search', focus: 'Focus', favorites: 'Favorites', sessions: 'Sessions' }
+const LENS_LABEL: Record<SidebarTab, string> = { files: 'Files', search: 'Search', focus: 'Focus', favorites: 'Favorites', sessions: 'Sessions', recents: 'Recents' }
 
 /** The keys of the search, as the empty Search tab lists them (YAZ-2662 D10, S59): the keycaps of a row, and what they do. */
 const SEARCH_KEYS: readonly (readonly [keys: readonly string[], does: string])[] = [

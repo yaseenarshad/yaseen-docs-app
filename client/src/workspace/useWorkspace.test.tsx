@@ -465,7 +465,7 @@ afterEach(() => {
 describe('bootTabs (rules 12/15)', () => {
   const seeded: AppState = {
     ...defaultAppState(),
-    folders: { '/v': { expanded: [], lastFile: '/v/last.md', folds: {}, baseGroups: {}, opens: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
+    folders: { '/v': { expanded: [], lastFile: '/v/last.md', folds: {}, baseGroups: {}, opens: {}, edits: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
   }
 
   it('restores the stored tabs with the identity file active; only the active tab mounts', async () => {

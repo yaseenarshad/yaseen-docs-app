@@ -10,6 +10,7 @@ import {
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FAVORITES_ORDER,
   MAX_FOLD_KEYS_PER_FILE,
+  MAX_EDITS,
   MAX_OPENS,
   MAX_RECENT_ROOTS,
   MAX_SESSIONS,
@@ -31,6 +32,7 @@ import {
   TOC_LINES,
   TOC_MAX_W,
   TOC_MIN_W,
+  addEdit,
   addOpen,
   addRecentRoot,
   cleanVaultKey,
@@ -120,6 +122,11 @@ export interface Store {
    * its vaults holds adds nothing.
    */
   upsertWindow(entry: Omit<WindowEntry, 'rightPanel' | 'roots'> & Partial<Pick<WindowEntry, 'rightPanel' | 'roots'>>, opened?: string | null, now?: number): void
+  /**
+   * A save the app made (YAZ-3235 D1): the vault of `roots` that holds `file` (the most specific) logs
+   * it in its save log. A save under EDIT_GAP_MS after the last logged one, or of a path no vault holds, commits nothing.
+   */
+  addEdit(roots: readonly string[], file: string, now?: number): void
   /** Several ids go in one commit (YAZ-2589 D3: the windows a launch does not bring back). */
   removeWindow(...ids: string[]): void
   /**
@@ -382,6 +389,16 @@ function sanitizeOpens(raw: unknown): Record<string, OpenStat> {
   return Object.fromEntries(out.slice(0, MAX_OPENS))
 }
 
+/** The save log (YAZ-3235 D1, S11): file → time. A wrong entry drops alone — a path that is not absolute, or a time that is not a finite number — and the log is cut at MAX_EDITS. */
+function sanitizeEdits(raw: unknown): Record<string, number> {
+  if (!isRecord(raw)) return {}
+  const out: Array<[string, number]> = []
+  for (const [file, time] of Object.entries(raw)) {
+    if (isAbsolute(file) && isFiniteNumber(time)) out.push([file, time])
+  }
+  return Object.fromEntries(out.slice(0, MAX_EDITS))
+}
+
 /** The table of contents sources (YAZ-2700 D14): page → `headings` or `bullets`. A wrong entry drops alone — a path that is not absolute, or any other value, `auto` among them: Auto is the absence of an entry. */
 function sanitizeTocSources(raw: unknown): Record<string, TocSource> {
   if (!isRecord(raw)) return {}
@@ -412,6 +429,7 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     folds: sanitizeKeyLists(raw.folds, MAX_FOLD_KEYS_PER_FILE),
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
     opens: sanitizeOpens(raw.opens),
+    edits: sanitizeEdits(raw.edits),
     tocSources: sanitizeTocSources(raw.tocSources),
     sectionIndents: sanitizeSwitches(raw.sectionIndents),
     tocSwitches: sanitizeSwitches(raw.tocSwitches),
@@ -733,6 +751,13 @@ export function createStore(filePath: string): Store {
       commit({ ...state, windows, folders })
     },
 
+    addEdit(roots, file, now = Date.now()) {
+      const vault = rootOfPath(roots, file)
+      if (vault === null) return
+      const edits = addEdit(folderOf(vault).edits, file, now)
+      if (edits !== null) commit({ ...state, folders: { ...state.folders, [vault]: { ...folderOf(vault), edits } } })
+    },
+
     removeWindow(...ids) {
       if (!state.windows.some((w) => ids.includes(w.id))) return
       commit({ ...state, windows: state.windows.filter((w) => !ids.includes(w.id)) })
@@ -797,6 +822,8 @@ export function createStore(filePath: string): Store {
             baseGroups: remapKeys(folder.baseGroups, remapBaseGroupKey),
             // The open history (YAZ-2663 S8) is keyed by page, as `folds` is: a renamed page keeps its uses.
             opens: remapKeys(folder.opens, remap),
+            // The save log (YAZ-3235 S5), keyed by file as well: a renamed file keeps its last save.
+            edits: remapKeys(folder.edits, remap),
             // And the table of contents source (YAZ-2700 D14), keyed the same way: the choice follows its note.
             tocSources: remapKeys(folder.tocSources, remap),
             // And the "Section indent" switch (YAZ-2709 D2), on the same terms.
@@ -892,6 +919,7 @@ export function createStore(filePath: string): Store {
               folds: dropKeys(folder.folds, gone),
               baseGroups: dropKeys(folder.baseGroups, baseGroupGone),
               opens: dropKeys(folder.opens, gone),
+              edits: dropKeys(folder.edits, gone),
               tocSources: dropKeys(folder.tocSources, gone),
               sectionIndents: dropKeys(folder.sectionIndents, gone),
               tocSwitches: dropKeys(folder.tocSwitches, gone),

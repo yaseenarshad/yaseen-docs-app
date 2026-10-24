@@ -921,16 +921,16 @@ export function mergeFavoritesOrder(stored: string[], roots: readonly string[], 
  * window that has none of its own. A state file that still names the retired `topics` lens reads
  * as the default one, and its two retired keys are ignored on load (`store.ts`).
  */
-export type SidebarLens = 'files' | 'focus' | 'favorites' | 'sessions'
-/** The tabs' order, left→right — independent of the default lens (🔒 D3, YAZ-1846). Sessions (YAZ-3147 D4) stands last, right of Favorites. */
-export const SIDEBAR_LENSES: readonly SidebarLens[] = ['files', 'focus', 'favorites', 'sessions']
+export type SidebarLens = 'files' | 'focus' | 'favorites' | 'sessions' | 'recents'
+/** The tabs' order, left→right — independent of the default lens (🔒 D3, YAZ-1846). Recents (YAZ-3235 D4) stands last, right of Sessions (YAZ-3147 D4). */
+export const SIDEBAR_LENSES: readonly SidebarLens[] = ['files', 'focus', 'favorites', 'sessions', 'recents']
 /** The lens a brand-new window, and a switch to a different vault, opens on (🔒 D1/D2, YAZ-1846). */
 export const DEFAULT_SIDEBAR_LENS: SidebarLens = 'files'
 export const isSidebarLens = (v: unknown): v is SidebarLens => SIDEBAR_LENSES.includes(v as SidebarLens)
 /** The tabs of the sidebar's row 1 (YAZ-2638 D2): the lenses, and Search — a tab that is never stored. */
 export type SidebarTab = SidebarLens | 'search'
 /** The order the tabs are drawn in: Search stands right after Files. */
-export const SIDEBAR_TABS: readonly SidebarTab[] = ['files', 'search', 'focus', 'favorites', 'sessions']
+export const SIDEBAR_TABS: readonly SidebarTab[] = ['files', 'search', 'focus', 'favorites', 'sessions', 'recents']
 
 /** `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. */
 export const SIDEBAR_MIN_W = 180
@@ -1598,6 +1598,25 @@ export function addOpen(opens: Record<string, OpenStat>, file: string, now: numb
   return next
 }
 
+/** A vault's save log keeps this many files at most (YAZ-3235 D1): the oldest saves go. */
+export const MAX_EDITS = 500
+/** A save this soon after the last logged save of the same file is not logged again (YAZ-3235 D1): one commit a minute while you type. */
+export const EDIT_GAP_MS = 60_000
+
+/**
+ * Pure: `edits` with `file` saved at `now` (YAZ-3235 D1); null when its last logged save is under
+ * EDIT_GAP_MS old, so the caller commits nothing. A clock that went back logs the save. Past
+ * MAX_EDITS the oldest saves of the OTHER files go: the file just saved stays.
+ */
+export function addEdit(edits: Readonly<Record<string, number>>, file: string, now: number): Record<string, number> | null {
+  const last = edits[file]
+  if (last !== undefined && now >= last && now - last < EDIT_GAP_MS) return null
+  const next = { ...edits, [file]: now }
+  const over = Object.keys(next).length - MAX_EDITS
+  if (over > 0) for (const path of Object.keys(next).filter((p) => p !== file).sort((a, b) => next[a] - next[b]).slice(0, over)) delete next[path]
+  return next
+}
+
 /**
  * View state that only means something inside that folder (the retired localStorage mdapp.expanded / lastFile / folds).
  * `expanded` is a SESSION list (YAZ-1642): shared by every window on the
@@ -1613,6 +1632,8 @@ export interface FolderState {
   baseGroups: Record<string, string[]>
   /** The open history (YAZ-2663 D1): page → how much it is used, and when it was last on show (max MAX_OPENS). The main process alone adds a use (`upsertWindow`). Persisted, per machine. */
   opens: Record<string, OpenStat>
+  /** The save log (YAZ-3235 D1): file → when the app last saved it, ms (max MAX_EDITS). The main process alone adds a save, in the save doors; a pull never writes it. Persisted, per machine. Additive: a file without it loads as `{}`. */
+  edits: Record<string, number>
   /** file → what its table of contents is built from (YAZ-2700 D14), for the notes where the reader chose. A note on Auto has NO entry. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   tocSources: Record<string, TocSource>
   /** file → the note's "Section indent" switch (YAZ-2709 D2), for the notes where the reader used it. A note with NO entry is off. `true` and `false` are both kept: a note the reader turned off stays apart from a note never touched, so a default for all notes can come later with no repair of this data. Keyed by page, as `tocSources` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
@@ -1730,7 +1751,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null }
 }
 
 /** One vault as the app lists it (YAZ-2556 D2): a row of the ⌘O panel, and of `yaseendocs vaults`. */

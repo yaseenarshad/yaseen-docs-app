@@ -885,3 +885,29 @@ describe('registerFsIpc', () => {
     })
   })
 })
+
+describe('the save log at the fs:write door (YAZ-3235 D1)', () => {
+  it('S1: a save that lands logs its note in the vault of the calling window; S9: a CONFLICT logs nothing; a path in no vault of the window logs nothing', async () => {
+    registerFsIpc(store, windows)
+    store.upsertWindow({ id: 'w-log', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'recents', bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    senderWinId = 'w-log'
+    const note = path.join(root, 'Logged.md')
+    const write = registered(CONTRACT.writeFile.channel)
+    const ok = (await write({ sender: {} }, { path: note, content: '# Logged\n' })) as { ok: true; value: { mtime: number } }
+    expect(ok.ok).toBe(true)
+    const logged = store.get().folders[root].edits[note]
+    expect(typeof logged).toBe('number')
+
+    const conflict = path.join(root, 'Conflict.md')
+    await writeFile(conflict, 'on disk')
+    expect((await write({ sender: {} }, { path: conflict, content: 'x', expectedMtime: 1 })).ok).toBe(false)
+    expect(store.get().folders[root].edits[conflict]).toBeUndefined()
+
+    senderWinId = undefined // Welcome, or a sender no window owns: no vault, no log
+    const other = path.join(root, 'Other.md')
+    expect((await write({ sender: {} }, { path: other, content: 'y' })).ok).toBe(true)
+    expect(store.get().folders[root].edits[other]).toBeUndefined()
+    senderWinId = 'w-log'
+  })
+})
+
