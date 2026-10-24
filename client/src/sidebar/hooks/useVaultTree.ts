@@ -14,6 +14,7 @@ import { storage } from '../../lib/storage'
 import { fetchTree, latestTree, onTree } from '../../lib/treeFeed'
 import { allDirs, ancestorDirs, copyDirs, favoriteOrder, favoriteRoots, otherFiles, treeHasPath, treeReducer } from '../../lib/treeState'
 import type { SidebarVault } from '../Sidebar'
+import { withMtime } from '../treeSort'
 
 const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
@@ -36,6 +37,15 @@ function walkOf(landed: TreeResponse | undefined): { dirs: string[]; files: stri
   let walk = walks.get(landed)
   if (walk === undefined) walks.set(landed, (walk = { dirs: allDirs(landed.tree), files: otherFiles(landed.tree) }))
   return walk
+}
+
+/** The trees with one file's time patched (YAZ-3227 D2): a new time adds no folder and no file, so the vault's walk carries over. */
+function withTime(trees: ReadonlyMap<string, TreeResponse>, vault: string, file: string, mtime: number): ReadonlyMap<string, TreeResponse> {
+  const next = withMtime(trees, vault, file, mtime)
+  const [was, now] = [trees.get(vault), next.get(vault)]
+  const walk = was === undefined ? undefined : walks.get(was)
+  if (now !== undefined && now !== was && walk !== undefined) walks.set(now, walk)
+  return next
 }
 
 /**
@@ -122,6 +132,8 @@ export function useVaultTree(
   onRootMissing: (root: string) => void,
   onFileMissing: () => void,
   onNotice: (message: string, kind?: NoticeKind) => void,
+  /** The shown tab sorts by Last updated (YAZ-3227 D2): each save puts its file's time into the tree. */
+  liveTimes = false,
 ) {
   // The window's vaults (YAZ-2602 D1), in the window's order. `root` is the FIRST.
   const roots = useSameList(vaults.map((vault) => vault.root))
@@ -129,8 +141,8 @@ export function useVaultTree(
   const names = useSameList(vaults.map((vault) => vault.name))
   const root = roots[0]
   // What the callbacks below ask at call time, so each keeps its identity under the memoised Tree (YAZ-2194).
-  const live = useRef({ roots, closedVaults, onSetVaultOpen, onRootMissing })
-  live.current = { roots, closedVaults, onSetVaultOpen, onRootMissing }
+  const live = useRef({ roots, closedVaults, onSetVaultOpen, onRootMissing, liveTimes })
+  live.current = { roots, closedVaults, onSetVaultOpen, onRootMissing, liveTimes }
   /** The vault that holds `path`, the most specific one; a path in no vault of the window gets the first. */
   const rootOf = useCallback((path: string): string => rootOfPath(live.current.roots, path) ?? live.current.roots[0], [])
 
@@ -266,7 +278,8 @@ export function useVaultTree(
       const burst = leadingTrailing(() => refresh(vault), WATCH_BURST_QUIET_MS)
       const offWatch = watches[at].subscribe((ev) => {
         if (ev.type === 'error') return setFailure(vault, ev.message)
-        if (ev.type === 'change') return
+        // A save moves no row by name; by Last updated it does (YAZ-3227 D2). Patch the one file's time, no walk.
+        if (ev.type === 'change') return live.current.liveTimes ? setTrees((prev) => withTime(prev, vault, ev.path, ev.mtime)) : undefined
         if (ev.type === 'ready') return burst.flush()
         burst.call()
       })
@@ -286,6 +299,10 @@ export function useVaultTree(
     })
     started.current = true
   }, [roots, watches, refresh, favorites, focus, setFailure])
+  // The tree's times are as old as its last walk (a save walks nothing): turning Last updated on walks each vault once.
+  useEffect(() => {
+    if (liveTimes) for (const vault of live.current.roots) refresh(vault)
+  }, [liveTimes, refresh])
   useEffect(
     () => () => {
       for (const feed of feeds.current.values()) feed.end()

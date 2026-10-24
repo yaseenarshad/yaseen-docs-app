@@ -60,9 +60,11 @@ import {
   type SettingsState,
   type Session,
   type SidebarLens,
+  type SidebarSort,
   type StartupWindows,
   type StoredTab,
   type TableOfContents,
+  type TabSort,
   type Theme,
   type TocLines,
   type TocSource,
@@ -208,6 +210,11 @@ const sanitizeCanvasPanel = (raw: unknown): CanvasPanelState => {
 export const isHeadingStyles = (v: unknown): v is HeadingStyles =>
   isRecord(v) && Object.entries(v).every(([key, style]) => (HEADING_KEYS as readonly string[]).includes(key) && isHeadingStyle(style))
 
+/** One tab's sort (YAZ-3227 D1): Files has no manual order. */
+const isTabSort = (v: unknown, manual: boolean): v is TabSort =>
+  isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual'))
+const isSidebarSort = (v: unknown): v is SidebarSort => isRecord(v) && isTabSort(v.files, false) && isTabSort(v.focus, true) && isTabSort(v.favorites, true)
+
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
 const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is SettingsState[K] } = {
   lineSpacing: isFiniteNumber,
@@ -223,6 +230,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   confirmRename: (v): v is boolean => typeof v === 'boolean',
   hoverPreview: (v): v is boolean => typeof v === 'boolean',
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
+  sidebarSort: isSidebarSort,
   startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
   sectionStep: (v): v is number => isFiniteNumber(v) && SECTION_STEPS.includes(v),
   sectionLines: (v): v is SectionLines => typeof v === 'string' && (SECTION_LINES as readonly string[]).includes(v),

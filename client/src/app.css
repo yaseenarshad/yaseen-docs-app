@@ -1389,6 +1389,8 @@ button {
 
 /* Expand / collapse all (YAZ-862) — the header collapse button's icon look, pushed to the far
    end of the lens row so it reads as chrome and not as a third tab. */
+/* The sort button (YAZ-3227 D5): the expand-all button's look, and it takes the push to the right when both show. */
+.sidebar__sort,
 .sidebar__expand-all {
   flex: none;
   margin-left: auto;
@@ -1396,6 +1398,11 @@ button {
   color: var(--fg-muted);
 }
 
+.sidebar__sort + .sidebar__expand-all {
+  margin-left: 0;
+}
+
+.sidebar__sort:hover,
 .sidebar__expand-all:hover {
   color: var(--fg);
   background: var(--bg-hover);

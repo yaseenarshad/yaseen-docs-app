@@ -1,8 +1,8 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { isBoard } from '@shared/fileKind'
-import { SIDEBAR_TABS, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type TreeNode, type UpdateState } from '@shared/types'
+import { SIDEBAR_TABS, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon, StackIcon } from '../views/view/icons'
+import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon, SortIcon, StackIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
@@ -17,6 +17,7 @@ import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
+import { sortSections } from './treeSort'
 import { folderShortcuts } from './folderShortcuts'
 import { datedSeed, targetDirFor, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
@@ -498,7 +499,13 @@ export function Sidebar({
   onHistoryFile,
   onShareFile,
 }: SidebarProps) {
-  const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
+  // The tab the sort button serves (YAZ-3227 D5): Files, Focus and Favorites. Search and Sessions have none.
+  const sortedTab: SortedTab | null = lens === 'files' || lens === 'focus' || lens === 'favorites' ? lens : null
+  const stored = sortedTab === null ? undefined : settings.sidebarSort[sortedTab]
+  // Each state broadcast hands over a new copy of the settings (YAZ-3237): the sort keeps its identity while its
+  // value stays, so the memoised levels (YAZ-2194) draw nothing again on a tab click or a window move.
+  const sort = useMemo<TabSort | undefined>(() => (stored === undefined ? undefined : { by: stored.by, reverse: stored.reverse }), [stored?.by, stored?.reverse])
+  const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice, sort?.by === 'updated')
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
@@ -513,6 +520,8 @@ export function Sidebar({
    */
   const vaultOf = useCallback((path: string): SidebarVault => vaultsRef.current.find((vault) => vault.root === rootOf(path)) ?? vaultsRef.current[0], [rootOf])
   const [menu, setMenu] = useState<MenuTargets | null>(null)
+  /** The sort menu (YAZ-3227 D4): the tab it sorts and where its button is, while it is open. */
+  const [sortMenu, setSortMenu] = useState<{ tab: SortedTab; x: number; y: number } | null>(null)
   /** A board's Info popover (YAZ-3028 D11): where the menu was, the board, and its file head once read (`fs:board-head`). */
   const [infoPopover, setInfoPopover] = useState<{ x: number; y: number; path: string; now: number; info: BoardHeadResponse | null } | null>(null)
   const infoPath = infoPopover?.path ?? null
@@ -1215,6 +1224,25 @@ export function Sidebar({
             {id === 'favorites' ? <HeartIcon /> : id === 'focus' ? <EyeIcon /> : id === 'search' ? <SearchIcon /> : id === 'sessions' ? <StackIcon /> : LENS_LABEL[id]}
           </button>
         ))}
+        {/* The sort button (YAZ-3227 D5): left of expand-all, on Files, Focus and Favorites. A second click closes its menu. */}
+        {sortedTab !== null && (
+          <button
+            type="button"
+            className="sidebar__sort"
+            aria-label="Sort"
+            title="Sort"
+            aria-haspopup="menu"
+            aria-expanded={sortMenu?.tab === sortedTab}
+            // The menu closes on any window mousedown; without this a second click would close and reopen it (the vault header's rule).
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect()
+              setSortMenu(sortMenu?.tab === sortedTab ? null : { tab: sortedTab, x: r.left, y: r.bottom + 4 })
+            }}
+          >
+            <SortIcon />
+          </button>
+        )}
         {/* One button for both directions AND every lens (⚡ YAZ-862, ⚡ YAZ-873): anything open
             collapses everything, and only a fully closed tree expands it. It acts on whichever
             lens is ACTIVE. Gone — not disabled — on the Search tab (YAZ-2638 D2: its folds are
@@ -1412,7 +1440,7 @@ export function Sidebar({
             {errorLines}
             {!loaded && favoriteNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
             {loaded && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
-            {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={reorder} copies />}
+            {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
           </>
         ) : lens === 'focus' ? (
           // The Focus tab (YAZ-2619 D2, D4): the focus lists of the window's vaults (kept in the vault, YAZ-2702) in their own order, each a full
@@ -1432,7 +1460,7 @@ export function Sidebar({
                     Clear
                   </button>
                 </div>
-                <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={reorder} copies />
+                <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />
               </>
             )}
           </>
@@ -1444,7 +1472,7 @@ export function Sidebar({
               <p className="sidebar__msg">No notes here.</p>
             )}
             {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3), and a vault row drags to reorder (YAZ-2631 D5). */}
-            {forest !== null && <Tree {...treeProps} nodes={forest} move={fileMove} reorder={multi ? reorder : undefined} />}
+            {forest !== null && <Tree {...treeProps} nodes={forest} move={fileMove} reorder={multi ? reorder : undefined} sort={sort} />}
           </>
         )}
       </div>
@@ -1452,6 +1480,15 @@ export function Sidebar({
         <SettingsButton onClick={onOpenSettings} />
         <UpdatePill update={update} onOpen={onOpenWhatsNew} />
       </div>
+      {/* The sort menu (YAZ-3227 D4): it sorts the tab it opened on, and a tab switch leaves it unmounted. */}
+      {sortMenu !== null && sortMenu.tab === sortedTab && sort !== undefined && (
+        <ContextMenu
+          x={sortMenu.x}
+          y={sortMenu.y}
+          sections={sortSections(sortMenu.tab, sort, (next) => onChangeSettings({ ...settings, sidebarSort: { ...settings.sidebarSort, [sortMenu.tab]: next } }))}
+          onClose={() => setSortMenu(null)}
+        />
+      )}
       {menu !== null && (
         <ContextMenu
           x={menu.x}
