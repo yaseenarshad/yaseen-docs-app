@@ -2175,12 +2175,18 @@ describe('the save log (YAZ-3235 D1)', () => {
     store.addEdit(['/v'], '/v/a.md', T + 30_000)
     store.addEdit(['/v'], '/else/d.md', T)
     store.addEdit([], '/v/a.md', T + EDIT_GAP_MS)
+    // A hidden file of the vault never draws a row, so it takes no place: a folder page's settings, the app's own folder.
+    store.addEdit(['/v'], '/v/docs/.folder.md', T)
+    store.addEdit(['/v'], '/v/.yaseendocs/x.md', T)
     expect(seen).toHaveLength(3)
     // The other fields of the vault stay as they were.
     expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: { '/v/a.md': T }, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null })
     await store.flush()
     expect((await onDisk()).folders['/v'].edits).toEqual({ '/v/a.md': T })
     expect(createStore(file).get().folders['/v'].edits).toEqual({ '/v/a.md': T })
+    // A dot in the path ABOVE the vault is not the vault's: its files log.
+    store.addEdit(['/u/.hidden/w'], '/u/.hidden/w/e.md', T)
+    expect(store.get().folders['/u/.hidden/w'].edits).toEqual({ '/u/.hidden/w/e.md': T })
   })
 
   it('S11: a state file with no `edits` loads with an empty log; a wrong entry drops alone; a long log is cut at MAX_EDITS', async () => {

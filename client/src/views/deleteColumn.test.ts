@@ -184,6 +184,8 @@ describe('deleteColumn', () => {
     // a note without the field is never even read
     expect(disk.get(B)).toBe(`---\ntitle: B\nin:\n  ${FOLDER_ID}:\n    owner: "[[Kim]]"\n---\n`)
     expect(vi.mocked(transformFile).mock.calls.map(([path]) => path)).toEqual([A, C])
+    // Quiet (YAZ-3235 D1): a column strip is a tidy-up of each note, not an edit the user made there.
+    expect(vi.mocked(transformFile).mock.calls.every(([, , quiet]) => quiet === true)).toBe(true)
   })
 
   it('S55 (YAZ-3076 D6): a read-only note loses the column too — a folder-wide action keeps the folder consistent, as a link rewrite does', async () => {

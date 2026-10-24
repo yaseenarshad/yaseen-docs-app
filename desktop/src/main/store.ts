@@ -126,7 +126,8 @@ export interface Store {
   upsertWindow(entry: Omit<WindowEntry, 'rightPanel' | 'roots'> & Partial<Pick<WindowEntry, 'rightPanel' | 'roots'>>, opened?: string | null, now?: number): void
   /**
    * A save the app made (YAZ-3235 D1): the vault of `roots` that holds `file` (the most specific) logs
-   * it in its save log. A save under EDIT_GAP_MS after the last logged one, or of a path no vault holds, commits nothing.
+   * it in its save log. A save under EDIT_GAP_MS after the last logged one, of a path no vault holds,
+   * or of a hidden file of the vault (a dot name inside it), commits nothing.
    */
   addEdit(roots: readonly string[], file: string, now?: number): void
   /** Several ids go in one commit (YAZ-2589 D3: the windows a launch does not bring back). */
@@ -761,7 +762,8 @@ export function createStore(filePath: string): Store {
 
     addEdit(roots, file, now = Date.now()) {
       const vault = rootOfPath(roots, file)
-      if (vault === null) return
+      // A hidden file of the vault (a dot name inside it, as `.folder.md` or `.yaseendocs/…`) never draws a row: it takes no place in the log.
+      if (vault === null || file.slice(vault.length).split('/').some((part) => part.startsWith('.'))) return
       const edits = addEdit(folderOf(vault).edits, file, now)
       if (edits !== null) commit({ ...state, folders: { ...state.folders, [vault]: { ...folderOf(vault), edits } } })
     },

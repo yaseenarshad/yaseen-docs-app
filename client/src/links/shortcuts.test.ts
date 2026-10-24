@@ -268,6 +268,10 @@ describe('adding a shortcut (YAZ-2290 D2)', () => {
     expect(id).toMatch(/^YAZ-[1-9]\d*$/)
     expect(disk.get(SETTINGS_FILE)).toBe(`---\nid: ${String(id)}\n---\n`)
     expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', id])
+    // The folder's id is quiet (YAZ-3235 D1): bookkeeping. The note's `also_in` is the user's shortcut: a save of the note.
+    const writes = vi.mocked(api.writeFile).mock.calls.map(([req]) => req)
+    expect(writes.filter((req) => req.path === SETTINGS_FILE).every((req) => req.quiet === true)).toBe(true)
+    expect(writes.filter((req) => req.path === NOTE).every((req) => req.quiet === undefined)).toBe(true)
     // One number, asked for the folder; the second pick found the id and took none.
     expect(vi.mocked(api.mintNoteId).mock.calls.slice(asked)).toEqual([[PROJECTS]])
   })
@@ -447,6 +451,7 @@ describe('a folder’s values leave the note when the note leaves the folder (D2
       await move('/vault/Projects/Deep/Deeper/N.md', '/vault/Projects/N.md', 'file', [holding('/vault/Projects/Deep/Deeper/N.md', DEEPER_ID, DEEP_ID, PROJECTS_ID, GONE_ID)])
       expect(inOf('/vault/Projects/N.md')).toEqual([PROJECTS_ID, GONE_ID])
       expect(api.writeFile).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(api.writeFile).mock.calls[0][0].quiet).toBe(true) // a tidy-up after the move (YAZ-3235 D1)
       put('/vault/Areas/M.md', PROJECTS_ID)
       await move('/vault/Projects/M.md', '/vault/Areas/M.md', 'file', [holding('/vault/Projects/M.md', PROJECTS_ID)])
       expect(disk.get('/vault/Areas/M.md')).toBe('---\n---\nBody\n') // nothing for Projects, nothing yet for Areas
