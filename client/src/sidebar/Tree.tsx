@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { TreeNode } from '@shared/types'
+import type { TabSort, TreeNode } from '@shared/types'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
 import type { EntryKind, MenuRow } from './createEntry'
@@ -9,6 +9,7 @@ import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { CloudOffIcon, DiagramBadge, LinkIcon, ShortcutIcon } from '../views/view/icons'
 import { TOO_LARGE_LABEL } from '../lib/syncAttention'
 import { RenameInline } from './RenameInline'
+import { sortLevel } from './treeSort'
 
 /** Inline "New note" / "New folder" input pending inside the tree (GRO-2022). */
 export interface PendingCreate {
@@ -70,9 +71,6 @@ export interface TreeReorder {
   drop: () => void
   end: () => void
 }
-
-/** A level's order as main sorts it (`fs/fsUtils.ts`): by name, case-insensitively. */
-const byName = (a: TreeNode, b: TreeNode): number => a.name.toLowerCase().localeCompare(b.name.toLowerCase())
 
 /** `label` with the typed text marked where it first sits (🔒 D5, YAZ-2620); a label that does not hold it (an alias or an id matched) is drawn plain. */
 function marked(label: string, needle: string | undefined) {
@@ -208,10 +206,12 @@ interface TreeProps {
    * click on it selects nothing, so ⌘C / ⌘X / ⌘V never act on the note from here.
    */
   shortcuts: ReadonlyMap<string, readonly TreeNode[]>
-  /** What each row is labelled with (YAZ-2420 🔒 D15): its title; a row the index does not hold shows its file name. The ORDER stays by file name. */
+  /** What each row is labelled with (YAZ-2420 🔒 D15): its title; a row the index does not hold shows its file name. Name sorts by this label (YAZ-3227 D8). */
   titles: PathTitles
   /** A tab whose top rows reorder (YAZ-2631 D3): they drag along the list instead of moving on disk. Without it no row reorders. The top level alone gets it, so a drag's line draws no level below again. */
   reorder?: TreeReorder
+  /** The tab's sort (YAZ-3227); absent on the Search tab, whose rows stand by name, A to Z. */
+  sort?: TabSort
   /**
    * Search only (🔒 D5, YAZ-2620): the matched rows and the typed text, lowercased. A row in `hits`
    * shows that text marked in its label; a row outside it — a parent of a match, or a row inside a
@@ -270,6 +270,7 @@ function TreeLevel({
   shortcuts,
   titles,
   reorder,
+  sort,
   marks,
   onLeaveToPage,
   top,
@@ -278,13 +279,15 @@ function TreeLevel({
   shareBadges,
   depth = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges }
+  const recurse = { vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges, sort }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !(isBoard(path) || isMarkdown(path)) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
-  // This folder's shortcuts stand among its FILES in the tree's own name order; dirs still lead, as main sorts a level.
+  // This folder's shortcuts stand among its FILES (YAZ-2290), and the tab's sort orders the level (YAZ-3227 D7).
+  // The top rows of a Manual list, and the vault rows, keep their own order; with no sort (Search) a level stands as it came.
   const here = shortcuts.get(dirPath)
-  const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
+  const keep = sort === undefined ? here === undefined : depth === 0 && (copies ? sort.by === 'manual' : vaultRows.size > 0)
+  const rows = keep ? nodes : sortLevel(here === undefined ? nodes : [...nodes, ...here], sort, (node) => pageLabel(node.path, node.type === 'dir', titles))
   const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
   // The top row a row stands under (YAZ-2845 D1): a top row is its own. It tells the copies of a row
   // that shows twice apart, and a right-click hands it to the menu, so an input mounts in that copy alone.
@@ -310,6 +313,9 @@ function TreeLevel({
   }
   // What a FILE row's drag does: reorder on a top row of a tree that reorders, else move on disk (E1b).
   const fileDrag: Pick<TreeFileMove, 'start' | 'end'> = rowReorder ?? move
+  // A top row of a SORTED Focus or Favorites list does not drag at all (YAZ-3227 D6): its drag would reorder, and
+  // the order is the sort's — it must not turn into a move on disk. A shortcut row never drags (YAZ-2290 D2).
+  const noDrag = (node: TreeNode): boolean => isShortcutRow(node) || (copies && depth === 0 && rowReorder === null)
   const dropEdge = (path: string) => (rowReorder?.over?.path === path ? ` tree__row--drop-${rowReorder.over.edge}` : '')
   // In a search tree (🔒 D5, YAZ-2620) a row the query did not match only gives a match its place.
   const context = (path: string) => (marks !== undefined && !marks.hits.has(path) ? ' tree__row--context' : '')
@@ -467,8 +473,8 @@ function TreeLevel({
               data-path={node.path}
               {...hoverOf(node.path)}
               // A shortcut row never drags (YAZ-2290 D2): the drag would move the note out of the folder it lives in.
-              draggable={!isShortcutRow(node)}
-              onDragStart={isShortcutRow(node) ? undefined : (e) => {
+              draggable={!noDrag(node)}
+              onDragStart={noDrag(node) ? undefined : (e) => {
                 if (e.dataTransfer) {
                   e.dataTransfer.effectAllowed = 'move'
                   e.dataTransfer.setData('text/plain', node.path)
