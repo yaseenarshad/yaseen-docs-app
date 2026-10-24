@@ -9,6 +9,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
+import { createFindChannel } from '../find/findChannel'
 import { THREAD_NODE_CLASS, THREAD_SEG_CLASS, THREAD_STOP_CLASS } from './bulletThreading'
 
 const OUTLINE = `Intro paragraph
@@ -119,5 +120,60 @@ describe('bullet threading: decoration reuse (YAZ-2131 4C)', () => {
     const onL2b = decorations()
     view.dispatch(view.state.tr.insertText('!'))
     expect(decorations()).not.toBe(onL2b)
+  })
+})
+
+/** CMD+F (YAZ-3166): after a query or a step the thread points at the active match, not the caret. */
+describe('bullet threading: the active match', () => {
+  const FRUIT = `Intro paragraph
+
+* L1 a
+  * L2 a
+    * L3 a apple
+  * L2 b
+* L1 b apple
+`
+
+  const mountFind = async () => {
+    const channel = createFindChannel()
+    const { crepe, root } = await mount(FRUIT, { find: channel })
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    caretIn(crepe, 'L2 b')
+    channel.open()
+    return { crepe, root, view, channel }
+  }
+  const thread = (root: HTMLElement) => ({
+    node: labelsWith(root, THREAD_NODE_CLASS),
+    seg: labelsWith(root, THREAD_SEG_CLASS),
+    stop: labelsWith(root, THREAD_STOP_CLASS),
+  })
+  const ON_L2B = { node: ['L1 a', 'L2 b'], seg: ['L2 a', 'L2 b'], stop: ['L2 b'] }
+  const ON_NESTED_APPLE = { node: ['L1 a', 'L2 a', 'L3 a apple'], seg: ['L2 a', 'L3 a apple'], stop: ['L2 a', 'L3 a apple'] }
+
+  it('follows the query and each step: a nested match gets the full path, a top-level match only its glyph', async () => {
+    const { root, channel } = await mountFind()
+    expect(thread(root)).toEqual(ON_L2B)
+    // The first match at or after the caret (L2 b) is the top-level one: no line, only the glyph.
+    channel.setQuery('apple')
+    expect(thread(root)).toEqual({ node: ['L1 b apple'], seg: [], stop: [] })
+    channel.next()
+    expect(thread(root)).toEqual(ON_NESTED_APPLE)
+  })
+
+  it('gives the thread back to the caret on a caret move and on an edit; the next step brings it back', async () => {
+    const { crepe, root, view, channel } = await mountFind()
+    channel.setQuery('apple')
+    channel.next()
+    expect(thread(root)).toEqual(ON_NESTED_APPLE)
+    // A real caret move: from L2 b to L2 a. (A selection set where the caret already is moves nothing, YAZ-3205.)
+    caretIn(crepe, 'L2 a')
+    expect(thread(root)).toEqual({ node: ['L1 a', 'L2 a'], seg: ['L2 a'], stop: ['L2 a'] })
+    channel.next()
+    expect(thread(root)).toEqual({ node: ['L1 b apple'], seg: [], stop: [] })
+    channel.prev()
+    expect(thread(root)).toEqual(ON_NESTED_APPLE)
+    // The caret is still in L2 a: typing there gives the thread back to it.
+    view.dispatch(view.state.tr.insertText('!'))
+    expect(thread(root)).toEqual({ node: ['L1 a', 'L2 a!'], seg: ['L2 a!'], stop: ['L2 a!'] })
   })
 })

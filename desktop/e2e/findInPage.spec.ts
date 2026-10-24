@@ -239,3 +239,126 @@ test.describe('folder tab: CMD+F belongs to the outline, the only editor it has'
     await expect(bar(win)).toHaveCount(0)
   })
 })
+
+test.describe('the bullet thread follows the active match (YAZ-3166)', () => {
+  const THREAD_FILE = 'Thread.md'
+  let userData: string
+  let vault: string
+  let app: ElectronApplication
+  let win: Page
+
+  /** Each nested list on the path stops at its path child; the deepest stop is the anchor's own bullet. */
+  const stop = (w: Page) => w.locator('.milkdown-list-item-block.outline-thread-stop')
+  /** The anchor bullet's own line: the deepest stop's first paragraph, not the bullets below it. */
+  const stopLine = (w: Page) => stop(w).last().locator('p').first()
+  const line = (w: Page, text: string) => w.locator('.editor-mount .ProseMirror p', { hasText: text })
+
+  test.beforeAll(async () => {
+    userData = await mkdtemp(path.join(tmpdir(), 'find-e2e-thread-'))
+    vault = await copyVault(await buildFixtureVault())
+    await writeFile(
+      path.join(vault, THREAD_FILE),
+      [
+        '# Thread',
+        '',
+        '- Alpha parent',
+        '  - Alpha child',
+        '    - The first zebra line',
+        '- Beta parent',
+        '  - Beta child',
+        '    - Beta grandchild',
+        '      - The second zebra line',
+        '- Gamma caret line',
+        '',
+      ].join('\n'),
+    )
+    app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, THREAD_FILE)) })
+    win = await appWindow(app, 'w1')
+    await expect(win.locator('.editor-mount .ProseMirror')).toBeVisible()
+  })
+
+  test.afterAll(async () => {
+    await quitApp(app)
+    await rm(userData, { recursive: true, force: true })
+    await rm(vault, { recursive: true, force: true })
+  })
+
+  test('each step moves the thread to the match, a click gives it back to the caret, and Esc lands on the match', async () => {
+    // The caret stands in a top-level bullet below both matches: a top-level item has no segment.
+    await line(win, 'Gamma caret line').click()
+    await expect(stop(win)).toHaveCount(0)
+
+    await win.keyboard.press('Meta+f')
+    await input(win).fill('zebra')
+    await expect(counter(win)).toHaveText('1 of 2')
+    await expect(stop(win)).toHaveCount(2)
+    await expect(stopLine(win)).toHaveText('The first zebra line')
+
+    await win.keyboard.press('Enter')
+    await expect(counter(win)).toHaveText('2 of 2')
+    await expect(stopLine(win)).toHaveText('The second zebra line')
+    await expect(win.locator('.outline-thread-node')).toHaveCount(4)
+    await shoot(win, 'find-thread-on-match')
+
+    // A click in the note moves the caret: the thread goes back to it, and the bar stays open.
+    await line(win, 'Alpha child').click()
+    await expect(stopLine(win)).toHaveText('Alpha child')
+    await expect(counter(win)).toHaveText('2 of 2')
+
+    // The next step brings it back to the match.
+    await win.getByRole('button', { name: 'Next match' }).click()
+    await expect(counter(win)).toHaveText('1 of 2')
+    await expect(stopLine(win)).toHaveText('The first zebra line')
+
+    // Esc puts the caret on the match, so the thread does not move.
+    await win.keyboard.press('Escape')
+    await expect(bar(win)).toHaveCount(0)
+    await expect(stopLine(win)).toHaveText('The first zebra line')
+  })
+
+  test("a click on the caret's own spot gives the thread back, though the caret does not move (YAZ-3200)", async () => {
+    // The caret at the END of a top-level line: its thread is the one glyph, with no stop.
+    const target = line(win, 'Gamma caret line')
+    const box = (await target.boundingBox())!
+    const atEnd = { position: { x: box.width - 4, y: box.height / 2 } }
+    await target.click(atEnd)
+    await expect(stop(win)).toHaveCount(0)
+
+    await win.keyboard.press('Meta+f')
+    await input(win).fill('zebra')
+    await expect(counter(win)).toHaveText('1 of 2')
+    await expect(stopLine(win)).toHaveText('The first zebra line')
+
+    // The same click again: ProseMirror sends no transaction, and the bar stays open.
+    await target.click(atEnd)
+    await expect(counter(win)).toHaveText('1 of 2')
+    await expect(stop(win)).toHaveCount(0)
+    await expect(win.locator('.outline-thread-node')).toHaveCount(1)
+    await win.keyboard.press('Escape')
+  })
+
+  test('a hover on the thread line keeps the thread on the match (YAZ-3205)', async () => {
+    await line(win, 'Gamma caret line').click()
+    await win.keyboard.press('Meta+f')
+    await input(win).fill('zebra')
+    await expect(counter(win)).toHaveText('1 of 2')
+    await expect(stopLine(win)).toHaveText('The first zebra line')
+
+    // The pointer rests on the guide line the thread draws (guideLines.ts hit-tests this strip); no click, no key.
+    const point = await win.evaluate(() => {
+      const list = Array.from(document.querySelectorAll('.editor-mount .ProseMirror ul')).find(
+        (ul) => ul.parentElement?.classList.contains('content-dom') && ul.querySelector('p')?.textContent === 'Alpha child',
+      )!
+      const rect = list.getBoundingClientRect()
+      const font = Number.parseFloat(getComputedStyle(list).fontSize) || 16
+      return { x: rect.left - ((2.15 * font) / 2 + 5), y: rect.top + 8 }
+    })
+    await win.mouse.move(point.x - 40, point.y)
+    await win.mouse.move(point.x, point.y, { steps: 5 })
+    // The fault is that something HAPPENS after the hover (the list redraws, then a selection update); give it the time.
+    await win.waitForTimeout(500)
+    await expect(counter(win)).toHaveText('1 of 2')
+    await expect(stopLine(win)).toHaveText('The first zebra line')
+    await win.keyboard.press('Escape')
+  })
+})
