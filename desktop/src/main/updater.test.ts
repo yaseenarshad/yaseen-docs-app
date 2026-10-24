@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UpdateState } from '@shared/types'
-import { compareVersions, createUpdater, newer, parseRequirement, pickAsset, SWAP_SCRIPT, type UpdaterHost } from './updater'
+import { compareVersions, createUpdater, newer, parseRequirement, pickAsset, shortVersion, SWAP_SCRIPT, type UpdaterHost } from './updater'
 
 const FEED = 'https://feed.test/releases'
 const REQ = 'identifier "com.yasinarshad.yaseendocs" and certificate leaf = H"0344c2f9faa1bce22513313ac09924367c5670fe"'
@@ -81,6 +81,23 @@ function fake(opts: { latest?: unknown; list?: unknown; requirement?: string | E
 
 /** The download runs after `check()` answers `downloading` (S6): wait for the state it ends in. */
 const until = (updater: { state(): UpdateState }, kind: UpdateState['kind']) => vi.waitFor(() => expect(updater.state().kind).toBe(kind))
+
+describe('two-number versions (2.1 on)', () => {
+  it('shortVersion drops a third number that is 0, and only that', () => {
+    expect(shortVersion('2.1.0')).toBe('2.1')
+    expect(shortVersion('v2.1.0')).toBe('2.1')
+    expect(shortVersion('v2.1')).toBe('2.1')
+    expect(shortVersion('2.0.2')).toBe('2.0.2')
+    expect(shortVersion('2.0.10')).toBe('2.0.10')
+    expect(shortVersion('10.20.0')).toBe('10.20')
+  })
+
+  it('a v2.1 tag is newer than 2.0.2, and the same as an app at 2.1.0: no download loop', () => {
+    expect(newer(shortVersion('v2.1'), '2.0.2')).toBe(true)
+    expect(newer(shortVersion('v2.1'), shortVersion('2.1.0'))).toBe(false)
+    expect(newer(shortVersion('v2.2'), shortVersion('2.1.0'))).toBe(true)
+  })
+})
 
 describe('newer / compareVersions', () => {
   it('compares x.y.z as numbers, ignores a leading v, and equal is not newer', () => {
