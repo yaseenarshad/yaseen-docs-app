@@ -10,6 +10,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { type CmdKey, commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import {
   isMarkSelectedCommand,
+  linkSchema,
   strongSchema,
   toggleEmphasisCommand,
   toggleInlineCodeCommand,
@@ -19,6 +20,7 @@ import {
 } from '@milkdown/kit/preset/commonmark'
 import { toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
 import { undo } from '@milkdown/kit/prose/history'
+import { AllSelection, NodeSelection } from '@milkdown/kit/prose/state'
 import { caretIn, endOf, md, mount, posOf, pressKey, runCommand, select, selection, unmountAll } from './marks/markTestKit'
 import { highlightSchema, rangeHasHighlight, setHighlightCommand } from './marks/highlight'
 import { setHeadingFoldAtSelection } from './outline/headingFolding'
@@ -124,12 +126,18 @@ describe('format commands over hidden lines (YAZ-3209 D1–D3)', () => {
     expect(md(crepe)).toBe('* ## A\n  * a1\n* B\n')
   })
 
-  it('S10: H1 / H2 / H3 / T over folded parents change the parents\' type only', async () => {
+  it('S10: H1 / H2 / H3 over folded parents change the parents\' type only', async () => {
     const crepe = await foldedParents()
     call(crepe, wrapInHeadingCommand, 3)
     expect(md(crepe)).toBe('* ### A\n  * a1\n  * a2\n* ### B\n  * b1\n')
+  })
+
+  it('S10: T over folded parents turns the parents to text; a hidden heading kid stays a heading', async () => {
+    const { crepe } = await mount('* ### A\n  * ### a1\n* ### B\n')
+    foldItem(crepe, 'A')
+    select(crepe, posOf(crepe, 'A'), endOf(crepe, 'B'))
     call(crepe, turnIntoTextCommand)
-    expect(md(crepe)).toBe(FOLDED)
+    expect(md(crepe)).toBe('* A\n  * ### a1\n* B\n')
   })
 
   it('S11: Mod-Enter over folded parents cycles the parents; hidden kids keep their state', async () => {
@@ -175,6 +183,18 @@ describe('format commands over hidden lines (YAZ-3209 D1–D3)', () => {
     expect(md(crepe)).toBe('* **P**\n  * **C**\n    * g1\n  * **D**\n')
   })
 
+  it('S17: ⌘A (select all) bolds the visible lines only, and Mod-Enter over it agrees', async () => {
+    const { crepe, view } = await mount('* A\n* B\n  * b1\n')
+    foldItem(crepe, 'B')
+    expect(pressKey(crepe, 'a', { mod: true })).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(AllSelection)
+    call(crepe, toggleStrongCommand)
+    expect(md(crepe)).toBe('* **A**\n* **B**\n  * b1\n')
+    expect(view.state.selection).toBeInstanceOf(AllSelection)
+    expect(pressKey(crepe, 'Enter', { mod: true })).toBe(true)
+    expect(md(crepe)).toBe('* [ ] **A**\n* [ ] **B**\n  * b1\n')
+  })
+
   it('S17: a selection that ends inside hidden lines changes the visible lines only', async () => {
     const { crepe } = await mount('* A\n* B\n  * b1\n')
     foldItem(crepe, 'B')
@@ -184,11 +204,45 @@ describe('format commands over hidden lines (YAZ-3209 D1–D3)', () => {
   })
 
   it('S18: at a caret, Bold still toggles the stored mark', async () => {
-    const { crepe } = await mount('* A\n  * a1\n')
+    const { crepe, view } = await mount('* A\n  * a1\n')
     foldItem(crepe, 'A')
     caretIn(crepe, 'A')
     expect(call(crepe, toggleStrongCommand)).toBe(true)
+    expect(view.state.storedMarks?.map((mark) => mark.type.name)).toEqual(['strong'])
     expect(md(crepe)).toBe('* A\n  * a1\n')
+  })
+
+  it('nothing visible selected (end of a folded line to the start of the next): the commands decline, nothing changes', async () => {
+    const crepe = await foldedParents()
+    select(crepe, endOf(crepe, 'A'), posOf(crepe, 'B'))
+    expect(call(crepe, toggleStrongCommand)).toBe(false)
+    expect(call(crepe, wrapInHeadingCommand, 2)).toBe(false)
+    expect(call(crepe, setHighlightCommand, null)).toBe(false)
+    expect(call(crepe, toggleInlineCodeCommand)).toBe(false)
+    expect(pressKey(crepe, 'b', { mod: true })).toBe(false)
+    expect(md(crepe)).toBe(FOLDED)
+  })
+
+  it('a node selection of a folded item (the block handle) bolds its own line only', async () => {
+    const { crepe, view } = await mount(FOLDED)
+    foldItem(crepe, 'A')
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, posOf(crepe, 'A') - 2)))
+    expect(pressKey(crepe, 'b', { mod: true })).toBe(true)
+    expect(md(crepe)).toBe('* **A**\n  * a1\n  * a2\n* B\n  * b1\n')
+  })
+
+  it('an empty line strictly inside the range changes type with the others; the touch on the next line does not', async () => {
+    const { crepe, view } = await mount('## X\n\nbody\n\n## W\n\n<br />\n\nY\n\nZ\n')
+    caretIn(crepe, 'X')
+    expect(runCommand(crepe, setHeadingFoldAtSelection(true))).toBe(true)
+    select(crepe, posOf(crepe, 'X'), posOf(crepe, 'Z'))
+    call(crepe, wrapInHeadingCommand, 3)
+    const types = (): string[] => {
+      const out: string[] = []
+      view.state.doc.forEach((node) => out.push(node.type.name === 'heading' ? `h${node.attrs.level}` : node.type.name))
+      return out
+    }
+    expect(types()).toEqual(['h3', 'paragraph', 'h3', 'h3', 'h3', 'paragraph'])
   })
 })
 
@@ -219,6 +273,13 @@ describe('the toolbar over hidden lines (YAZ-3209 D4)', () => {
     call(crepe, setHighlightCommand, null)
     expect(md(crepe)).toBe('* ==A==\n  * ==a1==\n* ==B==\n')
     expect(yellowLit(crepe)).toBe(true)
+  })
+
+  it('S19: the Link button keeps Milkdown\'s whole-range lit state — a link under the fold still lights it', async () => {
+    const { crepe } = await mount('* A\n  * [a1](https://example.com)\n* B\n')
+    foldItem(crepe, 'A')
+    select(crepe, posOf(crepe, 'A'), endOf(crepe, 'B'))
+    expect(crepe.editor.action((ctx) => ctx.get(commandsCtx).call(isMarkSelectedCommand.key, linkSchema.type(ctx)))).toBe(true)
   })
 
   it('S5 control: unfolded, the bold kid is visible, so Bold lights', async () => {

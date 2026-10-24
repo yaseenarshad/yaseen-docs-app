@@ -15,8 +15,9 @@
  *     `<u>` + children + `</u>`.
  *  2. `underlineSchema` ($markSchema): `parseDOM` u / `text-decoration: underline`, `toDOM` u,
  *     `parseMarkdown` from / `toMarkdown` to the `underline` mdast node.
- *  3. `underlineKeymap` ($shortcut): `Mod-u` = `toggleMark`. Not a Crepe feature — the feature
- *     allowlist is untouched and the toolbar does not get a button.
+ *  3. `underlineKeymap` ($shortcut): `Mod-u` = `toggleMark`, through `onVisibleLines` so a
+ *     selection over folded lines underlines the visible ones only (YAZ-3209). Not a Crepe
+ *     feature — the feature allowlist is untouched and the toolbar does not get a button.
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { toggleMark } from '@milkdown/kit/prose/commands'

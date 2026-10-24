@@ -397,7 +397,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listItemRoundTrip)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
-  // YAZ-3209: Bold, Italic, Strikethrough, code and H1-H3 / T over folded lines change the visible ones only.
+  // YAZ-3209: over hidden lines, Bold, Italic, Strikethrough, code and H1-H3 / T change the visible
+  // ones only, and the toolbar lights for visible lines only. After the presets, by `EditorViewReady`.
   crepe.editor.use(visibleFormatting)
   // Milkdown's empty-line plugin deletes every inline <br> on parse (YAZ-1452). Ours must run
   // first; re-registering Milkdown's AFTER keeps its id resolvable so empty paragraphs still

@@ -122,14 +122,18 @@ export const collapsedHeadingsHiding = (state: EditorState, pos: number): number
 }
 
 /**
- * Every block range a collapsed heading hides, gathered once — for a walk that tests many
- * positions (YAZ-3209 `visiblePieces`), where `collapsedHeadingsHiding` per position would rescan
- * the entries each time.
+ * The start of every block a collapsed heading hides (a section is a run of whole sibling blocks),
+ * gathered once — for a walk that tests many blocks (YAZ-3209 `eachVisibleTextblock`), where
+ * `collapsedHeadingsHiding` per position would rescan the entries each time.
  */
-export const collapsedSectionRanges = (state: EditorState): readonly { from: number; to: number }[] => {
+export const collapsedSectionBlocks = (state: EditorState): ReadonlySet<number> => {
   const foldingState = pluginKey.getState(state)
-  if (!foldingState || foldingState.collapsedHeadingPositions.size === 0) return []
-  return foldingState.entries.filter(({ headingPos }) => foldingState.collapsedHeadingPositions.has(headingPos)).flatMap(({ sectionBlockRanges }) => sectionBlockRanges)
+  const starts = new Set<number>()
+  if (!foldingState || foldingState.collapsedHeadingPositions.size === 0) return starts
+  for (const { headingPos, sectionBlockRanges } of foldingState.entries) {
+    if (foldingState.collapsedHeadingPositions.has(headingPos)) for (const { from } of sectionBlockRanges) starts.add(from)
+  }
+  return starts
 }
 
 /** Add this plugin's half of a document-wide fold-all transaction without dispatching it. */

@@ -17,15 +17,18 @@
  *  - `coveredLines` / `onCoveredLines` — the selection minus the zero-width touch on the line
  *    after or before, for commands that act on the lines under it: Tab, Shift-Tab, Mod-] / Mod-[,
  *    Mod-Enter (YAZ-3003).
+ *  - `eachVisibleTextblock` / `visibleRanges` / `onVisibleLines` — formatting and `Mod-Enter` over
+ *    a range that spans hidden lines act on the visible lines only (YAZ-3209, its own CONTRACTS row
+ *    after this one); `visibleFormatting.ts` routes Milkdown's format commands through them.
  *
  * Priority 100 (Crepe's keymaps are 50), like `outline/hotkeys.ts`; registered before
  * `outlinerKeymap` in `createCrepe.ts`.
  */
-import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
+import type { Mark, MarkType, Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, NodeSelection, Plugin, PluginKey, Selection, SelectionRange, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { liftTarget } from '@milkdown/kit/prose/transform'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
-import { collapsedHeadingsHiding, collapsedSectionRanges } from './outline/headingFolding'
+import { collapsedHeadingsHiding, collapsedSectionBlocks } from './outline/headingFolding'
 import { isListItem, LIST_NODE_NAMES } from './outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed } from './outline/outlineFolding'
 import { getZoomedItemPos } from './outline/zoom'
@@ -53,7 +56,7 @@ const edgeAt = ($head: ResolvedPos, dir: 1 | -1): Edge | null => {
  * section (`collapsedHeadingsHiding`). All three answer from plugin state, which is what their
  * `display: none` decorations are computed from — no DOM, no re-derived fold logic.
  */
-export const isHiddenTextblock = (state: EditorState, $pos: ResolvedPos): boolean => {
+const isHiddenTextblock = (state: EditorState, $pos: ResolvedPos): boolean => {
   const pos = $pos.pos
   const zoomed = getZoomedItemPos(state)
   if (zoomed !== null) {
@@ -105,13 +108,14 @@ export const coveredLines = (state: EditorState): Selection => {
 }
 
 /**
- * Run `cmd` with `sel` in place of the user's selection, then put the user's own anchor and head
- * back, mapped. The next ⇧↑ / ⇧↓ or Tab continues from the same range. One transaction, so one ⌘Z.
+ * Run `cmd` with `sel` in place of the user's selection, then put the user's own selection back,
+ * mapped — whatever its kind (text, node, all). The next ⇧↑ / ⇧↓ or Tab continues from the same
+ * range. One transaction, so one ⌘Z.
  */
 const runOn = (sel: Selection, cmd: Command): Command => (state, dispatch, view) => {
-  const { anchor, head } = state.selection
+  const own = state.selection
   const swapped = state.apply(state.tr.setSelection(sel))
-  const restore = (tr: Transaction) => tr.setSelection(TextSelection.create(tr.doc, tr.mapping.map(anchor), tr.mapping.map(head)))
+  const restore = (tr: Transaction) => tr.setSelection(own.map(tr.doc, tr.mapping))
   return cmd(swapped, dispatch && ((tr) => dispatch(restore(tr))), view)
 }
 
@@ -122,55 +126,83 @@ export const onCoveredLines = (cmd: Command): Command => (state, dispatch, view)
 }
 
 /**
- * The selection cut to its VISIBLE lines (YAZ-3209): one range per visible textblock it covers,
- * clipped to the selection, zero-width touches dropped. Null when the selection stays in one
- * textblock or no hidden line sits inside: callers keep the plain selection. Cached per state,
- * because the toolbar asks once per button on each update.
+ * Every VISIBLE textblock in `[from, to]`, in document order, with its parent and index (YAZ-3209).
+ * Returns whether a hidden line sits in the range. The ONE walk that commands acting on a range of
+ * lines share — formatting (`visiblePieces`) and `Mod-Enter` — so they agree on what is hidden.
  *
- * It answers `isHiddenTextblock`'s question without asking it per line — that rescans every fold
- * entry for each position, ~30 ms over 1,000 folded parents. A folded item is found on the walk
- * (one Set lookup) and its kids are skipped whole; folded heading sections and the zoom are read
- * once, before the walk. The pieces are plain numbers: `doc.resolve` scans a list's children, so
- * resolving each piece would make a 1,000-item selection quadratic. Only a command that runs
- * resolves them (`onVisibleLines`).
+ * It answers `isHiddenTextblock`'s question without asking it per line: that rescans every fold
+ * entry for each position, so a walk over 1,000 folded parents costs ~30 ms. Here a folded item is
+ * found on the way (one Set lookup) and its kids are skipped whole; a folded heading's section is
+ * a set of whole blocks, skipped by their start; the zoom is one range. Each check is O(1), so the
+ * walk costs the visible lines only.
  */
+export const eachVisibleTextblock = (
+  state: EditorState,
+  from: number,
+  to: number,
+  visit: (block: ProseNode, pos: number, parent: ProseNode, index: number) => void,
+): boolean => {
+  const zoomed = getZoomedItemPos(state)
+  const zoomEnd = zoomed === null ? 0 : zoomed + (state.doc.nodeAt(zoomed)?.nodeSize ?? 0)
+  const sections = collapsedSectionBlocks(state)
+  let hidden = false
+  const textblock = (block: ProseNode, pos: number, parent: ProseNode, index: number): void => {
+    if (zoomed !== null && !(pos > zoomed && pos < zoomEnd)) hidden = true
+    else visit(block, pos, parent, index)
+  }
+  state.doc.nodesBetween(from, to, (node, pos, parent, index) => {
+    if (sections.has(pos) || (zoomed !== null && (pos + node.nodeSize <= zoomed || pos >= zoomEnd))) {
+      hidden = true
+      return false
+    }
+    if (node.isTextblock) textblock(node, pos, parent!, index)
+    else if (isListItem(node) && isOutlineItemCollapsed(state, pos)) {
+      // A folded item: its own line, then its kids count as hidden when the range reaches them.
+      const first = node.firstChild
+      if (first?.isTextblock === true && pos + 1 < to) textblock(first, pos + 1, node, 0)
+      if (node.childCount > 1 && pos + 1 + (first?.nodeSize ?? 0) < to) hidden = true
+    } else return true
+    return false
+  })
+  return hidden
+}
+
+/** A visible piece of a selection: plain numbers, resolved only when a command runs (`VisibleLines`). */
 export interface Piece {
   readonly from: number
   readonly to: number
 }
-const piecesByState = new WeakMap<EditorState, readonly Piece[] | null>()
-const visiblePieces = (state: EditorState): readonly Piece[] | null => {
+
+/** A piece with its textblock and the block's content start, so a mark check stays inside the block. */
+interface BlockPiece extends Piece {
+  readonly block: ProseNode
+  readonly start: number
+}
+
+/**
+ * The selection cut to its VISIBLE lines (YAZ-3209): one piece per visible textblock it covers,
+ * clipped to the selection. A zero-width piece is kept only for an empty line strictly inside the
+ * range, so the touch on the line after (⇧↓) or before (⇧↑) stays out. Any one-range selection
+ * counts — text, node (the block handle), all (⌘A); a cell selection has its own ranges and is left
+ * alone. Null when nothing is hidden inside, or a text selection stays in one textblock: callers
+ * keep the plain selection. Cached per state, because the toolbar asks once per button on each
+ * update. The pieces are numbers: `doc.resolve` scans a list's children, so resolving each piece
+ * would make a 1,000-item selection quadratic.
+ */
+const piecesByState = new WeakMap<EditorState, readonly BlockPiece[] | null>()
+const visiblePieces = (state: EditorState): readonly BlockPiece[] | null => {
   if (piecesByState.has(state)) return piecesByState.get(state)!
   const sel = state.selection
-  let pieces: Piece[] | null = null
-  if (sel instanceof TextSelection && !sel.$from.sameParent(sel.$to)) {
-    const { doc } = state
-    const { from, to } = sel
-    const zoomed = getZoomedItemPos(state)
-    const zoomEnd = zoomed === null ? 0 : zoomed + (doc.nodeAt(zoomed)?.nodeSize ?? 0)
-    const sections = collapsedSectionRanges(state)
-    const found: Piece[] = []
-    let hidden = false
-    const visit = (block: ProseNode, pos: number): void => {
-      const outsideZoom = zoomed !== null && !(pos > zoomed && pos < zoomEnd)
-      if (outsideZoom || sections.some((range) => pos >= range.from && pos < range.to)) hidden = true
-      else {
-        const start = Math.max(from, pos + 1)
-        const end = Math.min(to, pos + 1 + block.content.size)
-        if (start < end) found.push({ from: start, to: end })
-      }
-    }
-    doc.nodesBetween(from, to, (node, pos) => {
-      if (node.isTextblock) visit(node, pos)
-      else if (isListItem(node) && isOutlineItemCollapsed(state, pos)) {
-        // A folded item: its own line, then its kids count as hidden when the range reaches them.
-        const first = node.firstChild
-        if (first?.isTextblock === true) visit(first, pos + 1)
-        if (node.childCount > 1 && pos + 1 + (first?.nodeSize ?? 0) < to) hidden = true
-      } else return true
-      return false
+  const { from, to } = sel
+  let pieces: BlockPiece[] | null = null
+  if (!sel.empty && sel.ranges.length === 1 && !(sel instanceof TextSelection && sel.$from.sameParent(sel.$to))) {
+    const found: BlockPiece[] = []
+    const hidden = eachVisibleTextblock(state, from, to, (block, pos) => {
+      const start = Math.max(from, pos + 1)
+      const end = Math.min(to, pos + 1 + block.content.size)
+      if (start < end || (block.content.size === 0 && pos + 1 > from && pos + 1 < to)) found.push({ from: start, to: end, block, start: pos + 1 })
     })
-    pieces = hidden ? found : null
+    if (hidden) pieces = found
   }
   piecesByState.set(state, pieces)
   return pieces
@@ -180,20 +212,40 @@ const visiblePieces = (state: EditorState): readonly Piece[] | null => {
 export const visibleRanges = (state: EditorState): readonly Piece[] =>
   visiblePieces(state) ?? state.selection.ranges.map((range) => ({ from: range.$from.pos, to: range.$to.pos }))
 
-/** A TextSelection whose `ranges` are the visible pieces, which `toggleMark` and `setBlockType` walk. Lives only inside `onVisibleLines`. */
+/**
+ * Whether a VISIBLE part of the selection carries `mark` — the toolbar's lit state (YAZ-3209 D4).
+ * Each piece is checked inside its own block: `doc.rangeHasMark` per piece would walk from the top
+ * of the document every time, ~14 ms for 1,000 folded H2 sections.
+ */
+export const visibleRangeHasMark = (state: EditorState, mark: Mark | MarkType): boolean => {
+  const pieces = visiblePieces(state)
+  if (pieces === null) return state.selection.ranges.some((range) => state.doc.rangeHasMark(range.$from.pos, range.$to.pos, mark))
+  return pieces.some(({ from, to, block, start }) => block.rangeHasMark(from - start, to - start, mark))
+}
+
+/**
+ * A TextSelection whose `ranges` are the visible pieces, which `toggleMark` and `setBlockType` walk.
+ * Its own anchor and head are the first piece's start and the last piece's end. Lives only inside
+ * `onVisibleLines`.
+ */
 class VisibleLines extends TextSelection {
-  constructor(sel: TextSelection, pieces: readonly Piece[]) {
-    super(sel.$anchor, sel.$head)
-    const { doc } = sel.$anchor
+  constructor(state: EditorState, pieces: readonly Piece[]) {
+    const { doc } = state
+    super(doc.resolve(pieces[0].from), doc.resolve(pieces[pieces.length - 1].to))
     ;(this as { ranges: readonly SelectionRange[] }).ranges = pieces.map(({ from, to }) => new SelectionRange(doc.resolve(from), doc.resolve(to)))
   }
 }
 
-/** Run a `toggleMark` / `setBlockType` command on the visible lines only (YAZ-3209). No hidden line inside: `cmd` as is. */
+/**
+ * Run a `toggleMark` / `setBlockType` command on the visible lines only (YAZ-3209). No hidden line
+ * inside: `cmd` as is. Nothing visible selected (end of a folded line to the start of the next):
+ * declines, so the key falls through and nothing changes.
+ */
 export const onVisibleLines = (cmd: Command): Command => (state, dispatch, view) => {
   const pieces = visiblePieces(state)
   if (pieces === null) return cmd(state, dispatch, view)
-  return runOn(new VisibleLines(state.selection as TextSelection, pieces), cmd)(state, dispatch, view)
+  if (pieces.length === 0) return false
+  return runOn(new VisibleLines(state, pieces), cmd)(state, dispatch, view)
 }
 
 /** Move the selection head to its own line's near edge, or one whole VISIBLE textblock in `dir` from an edge; anchor untouched (D2). */

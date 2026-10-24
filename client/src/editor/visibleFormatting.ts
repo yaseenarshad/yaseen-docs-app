@@ -1,7 +1,10 @@
 /**
- * Formatting acts on the lines you SEE (YAZ-3209). A selection over folded bullets or a folded
- * heading spans their hidden lines. Bold, Italic, Strikethrough, inline code and H1 / H2 / H3 / T
- * change only the visible ones. `⌘C` / `⌘X` still carry the hidden lines (YAZ-1734 D6, D7).
+ * Formatting acts on the lines you SEE (YAZ-3209). A selection over folded bullets, a folded
+ * heading, or out of the zoom spans hidden lines. Bold, Italic, Strikethrough, inline code and
+ * H1 / H2 / H3 / T change only the visible ones, and Crepe's toolbar lights Bold, Italic,
+ * Strikethrough and code only for a mark on a visible line. `⌘C` / `⌘X` still carry the hidden
+ * lines (YAZ-1734 D6, D7). Underline (`marks/underline.ts`), the swatches (`marks/highlight.ts`)
+ * and `Mod-Enter` (`outline/hotkeys.ts`) use the same helpers from `lineSelection.ts`.
  *
  * Milkdown's own commands are re-registered under their SAME keys, so Crepe's toolbar buttons and
  * every keymap that calls them by key follow with no other change. `EditorViewReady` comes after
@@ -12,6 +15,7 @@ import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import {
   inlineCodeSchema,
   isMarkSelectedCommand,
+  linkSchema,
   toggleEmphasisCommand,
   toggleInlineCodeCommand,
   toggleStrongCommand,
@@ -20,8 +24,8 @@ import {
 } from '@milkdown/kit/preset/commonmark'
 import { toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
 import type { MarkType } from '@milkdown/kit/prose/model'
-import type { Command, EditorState } from '@milkdown/kit/prose/state'
-import { onVisibleLines, visibleRanges } from './lineSelection'
+import type { Command } from '@milkdown/kit/prose/state'
+import { onVisibleLines, visibleRangeHasMark, visibleRanges } from './lineSelection'
 
 /** Re-register a `toggleMark` / `setBlockType` command wrapped: those walk `selection.ranges`, so `onVisibleLines` is enough. */
 const wrap = <T>(commands: CommandManager, key: CmdKey<T>): void => {
@@ -29,16 +33,13 @@ const wrap = <T>(commands: CommandManager, key: CmdKey<T>): void => {
   commands.create(key, (payload?: T) => onVisibleLines(run(payload)))
 }
 
-/** Whether a visible piece of the selection carries `type`. */
-const visibleHasMark = (state: EditorState, type: MarkType): boolean =>
-  visibleRanges(state).some(({ from, to }) => state.doc.rangeHasMark(from, to, type))
-
 /** Milkdown's inline code reads `from` / `to`. The same toggle, once per visible range: adding code drops the other marks, as Milkdown's does. */
 const toggleInlineCode = (code: MarkType): Command => (state, dispatch) => {
-  if (state.selection.empty) return false
-  const on = visibleHasMark(state, code)
+  const ranges = visibleRanges(state)
+  if (state.selection.empty || ranges.length === 0) return false
+  const on = visibleRangeHasMark(state, code)
   const tr = state.tr
-  for (const { from, to } of visibleRanges(state)) {
+  for (const { from, to } of ranges) {
     if (on) {
       tr.removeMark(from, to, code)
       continue
@@ -57,6 +58,10 @@ export const visibleFormatting: MilkdownPlugin = (ctx) => async () => {
   for (const { key } of [toggleStrongCommand, toggleEmphasisCommand, toggleStrikethroughCommand, turnIntoTextCommand]) wrap(commands, key)
   wrap(commands, wrapInHeadingCommand.key)
   commands.create(toggleInlineCodeCommand.key, () => toggleInlineCode(inlineCodeSchema.type(ctx)))
-  // The toolbar's lit state: a button lights for a mark on a VISIBLE line only.
-  commands.create(isMarkSelectedCommand.key, (type?: MarkType) => (state) => type !== undefined && visibleHasMark(state, type))
+  // The toolbar's lit state: a button lights for a mark on a VISIBLE line only. The Link button
+  // keeps Milkdown's whole-range answer: links are out of this rule (S19).
+  const isMarkSelected = commands.get(isMarkSelectedCommand.key)
+  commands.create(isMarkSelectedCommand.key, (type?: MarkType) =>
+    type === undefined || type === linkSchema.type(ctx) ? isMarkSelected(type) : (state) => visibleRangeHasMark(state, type),
+  )
 }
