@@ -257,6 +257,13 @@ describe('what a fold really hides (YAZ-3209 bugs 1B1, 1B2)', () => {
     expect(boldLit(crepe)).toBe(true)
   })
 
+  it('1B2: a bold visible second paragraph of a folded bullet lights Bold', async () => {
+    const { crepe } = await mount('* A\n\n  **second para**\n\n  * a1\n\n* B\n')
+    foldItem(crepe, 'A')
+    select(crepe, posOf(crepe, 'A'), endOf(crepe, 'B'))
+    expect(boldLit(crepe)).toBe(true)
+  })
+
   /** Zoom into Z, fold everything (P, Z's parent, too), then unfold Z: the zoom shows P's subtree expanded. */
   async function zoomedUnderFoldedParent(): Promise<Crepe> {
     const { crepe } = await mount('* P\n  * Z\n    * z1\n  * other\n* Q\n')
