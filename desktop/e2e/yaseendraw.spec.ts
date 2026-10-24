@@ -14,6 +14,9 @@
  *     Save stays disabled, nothing on disk moves: old drawings are untouched by the new engine
  *   4 Enter keeps the line format (YAZ-3177): a new line typed after the styled line is saved bold
  *     and underlined too — `lineBolds` / `lineUnderlines` grow to `[true, true]`
+ *   5 opening a text element's editor and leaving it with no edit leaves the modal clean: Save
+ *     stays disabled and ✕ closes without asking (YAZ-3210: the engine bumps the element's version
+ *     anyway); a real edit still marks it dirty
  *
  * Same harness as drawing.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `yaseendraw-` step screenshots).
@@ -218,5 +221,46 @@ test('step 4 — Enter keeps the line format: the new line is saved bold and und
     lineBolds: [true, true],
     lineUnderlines: [true, true],
   })
+})
+
+test('step 5 — the text editor left with no edit is not an edit; a typed letter is', async () => {
+  const before = await readSidecar(STYLED)
+  const editor = modal(win).locator('textarea.excalidraw-wysiwyg')
+  const confirm = modal(win).locator('.drawing-modal__confirm')
+  const close = () => modal(win).getByRole('button', { name: 'Close drawing' }).click()
+  /** Opens the modal, selects the one text element and opens its editor with Enter. */
+  const openEditor = async () => {
+    await previewOf(win, STYLED).click()
+    await expect(modal(win)).toBeVisible()
+    await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
+    const box = await modalCanvas(win).boundingBox()
+    if (box === null) throw new Error('the modal canvas has no box')
+    await win.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.8)
+    await win.keyboard.press('ControlOrMeta+a')
+    await win.keyboard.press('Enter')
+    await expect(editor).toBeFocused()
+  }
+
+  // In and out with Esc, nothing typed: clean, so ✕ just closes.
+  await openEditor()
+  await win.keyboard.press('Escape')
+  await expect(editor).toHaveCount(0)
+  await expect(saveButton(win)).toBeDisabled()
+  await close()
+  await expect(confirm).toHaveCount(0)
+  await expect(modal(win)).toHaveCount(0)
+
+  // One letter typed is an edit: Save wakes, and ✕ asks first.
+  await openEditor()
+  await win.keyboard.press('End')
+  await win.keyboard.type('!')
+  await win.keyboard.press('Escape')
+  await expect(editor).toHaveCount(0)
+  await expect(saveButton(win)).toBeEnabled()
+  await shoot(win, 'yaseendraw-06-typed-is-dirty')
+  await close()
+  await confirm.getByRole('button', { name: 'Discard' }).click()
+  await expect(modal(win)).toHaveCount(0)
+  expect(await readSidecar(STYLED)).toBe(before)
   await quitApp(app)
 })
