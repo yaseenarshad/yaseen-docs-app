@@ -16,7 +16,9 @@ const ENTRY = join(SOURCES, 'editor/lineNumbers/lineNumbers.worker.ts')
 
 let code
 beforeAll(async () => {
-  const built = await build({ configFile: false, logLevel: 'silent', build: { write: false, lib: { entry: ENTRY, formats: ['iife'], name: 'lineNumbersWorker' } } })
+  // `@shared` as the renderer build resolves it (`desktop/electron.vite.config.ts`): the line comment's values live there (YAZ-3208).
+  const shared = fileURLToPath(new URL('../shared', import.meta.url))
+  const built = await build({ configFile: false, logLevel: 'silent', resolve: { alias: { '@shared': shared } }, build: { write: false, lib: { entry: ENTRY, formats: ['iife'], name: 'lineNumbersWorker' } } })
   code = [built].flat()[0].output[0].code
 }, 120_000)
 
