@@ -535,6 +535,7 @@
    seven lines above keep their columns; a hairline sets it apart. */
 .line-defaults {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin-top: 10px;
@@ -542,16 +543,19 @@
   border-top: 1px solid var(--border);
 }
 
+/* "Line" and its preview never shrink (YAZ-3221): the label takes its own width, and the controls
+   take the rest and wrap inside it — on a narrow dialog the row wraps and they go under the label. */
 .line-defaults__label {
   display: flex;
-  flex: 1;
+  flex: none;
   align-items: center;
   gap: 10px;
-  min-width: 0;
   padding: 4px;
 }
 
 .line-defaults__controls {
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -564,9 +568,8 @@
 }
 
 .heading-styles__line-preview {
-  flex: 1;
-  min-width: 24px;
-  max-width: 120px;
+  flex: none;
+  width: 96px;
   height: var(--preview-thickness);
   --preview-color: color-mix(in srgb, var(--fg) var(--preview-darkness), transparent);
   background: var(--preview-color);

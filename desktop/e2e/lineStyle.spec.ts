@@ -241,6 +241,25 @@ test('step 9 — the vault\'s default line in Settings (YAZ-3208): a plain line 
   await win.getByRole('button', { name: 'Settings', exact: true }).click()
   const row = win.locator('.settings-dialog[role="dialog"] [data-setting="textFormatting"] .line-defaults[data-level="line"]')
   await expect(row.locator('.heading-styles__size')).toHaveText(['50%', '3 px'])
+  // YAZ-3221: "Line" fits, and the preview of the default line shows beside it — at least 48px wide and
+  // on top at its own centre, not under the darkness "−".
+  const fit = await row.evaluate((el) => {
+    // The row is below Heading 6: bring it into the dialog's view before asking what is on top.
+    el.scrollIntoView({ block: 'center' })
+    const name = el.querySelector<HTMLElement>('.heading-styles__name')!
+    const preview = el.querySelector<HTMLElement>('.heading-styles__line-preview')!
+    const step = el.querySelector<HTMLElement>('.heading-styles__step')!
+    const label = el.querySelector<HTMLElement>('.line-defaults__label')!.getBoundingClientRect()
+    const n = name.getBoundingClientRect()
+    const p = preview.getBoundingClientRect()
+    const s = step.getBoundingClientRect()
+    const onTop = document.elementFromPoint(p.left + p.width / 2, p.top + p.height / 2)
+    const apart = p.right <= s.left || p.left >= s.right || p.bottom <= s.top || p.top >= s.bottom
+    // The name stays inside its label box and ends before the preview starts.
+    return { previewWidth: p.width, onTop: onTop === preview ? true : `${onTop?.tagName}.${onTop?.className}`, apart, nameFits: n.right <= label.right + 0.5 && n.right <= p.left }
+  })
+  expect(fit.previewWidth).toBeGreaterThanOrEqual(48)
+  expect(fit).toMatchObject({ onTop: true, apart: true, nameFits: true })
   await row.getByRole('button', { name: 'Line thickness larger', exact: true }).click()
   await row.locator('[aria-label="Line style"]').getByRole('button', { name: 'Dashed', exact: true }).click()
   await expect(row.locator('.heading-styles__size')).toHaveText(['50%', '4 px'])
