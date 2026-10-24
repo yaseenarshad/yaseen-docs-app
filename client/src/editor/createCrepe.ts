@@ -188,6 +188,7 @@ import { underline } from './marks/underline'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
 import { inlineBreaks } from './inlineBreaks'
 import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
+import { visibleFormatting } from './visibleFormatting'
 import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
 import { multiBlockDrag } from './multiBlockDrag'
@@ -396,6 +397,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listItemRoundTrip)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
+  // YAZ-3209: Bold, Italic, Strikethrough, code and H1-H3 / T over folded lines change the visible ones only.
+  crepe.editor.use(visibleFormatting)
   // Milkdown's empty-line plugin deletes every inline <br> on parse (YAZ-1452). Ours must run
   // first; re-registering Milkdown's AFTER keeps its id resolvable so empty paragraphs still
   // serialise as `<br />`.

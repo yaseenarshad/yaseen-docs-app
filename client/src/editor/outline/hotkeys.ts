@@ -25,7 +25,7 @@ import { toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
 import type { NodeType } from '@milkdown/kit/prose/model'
 import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
-import { coveredLines } from '../lineSelection'
+import { coveredLines, isHiddenTextblock } from '../lineSelection'
 import { setOutlineFoldAtSelection, undoLastFold } from './outlineFolding'
 
 /** Priority above Crepe's list/table/base keymaps (default 50). */
@@ -44,6 +44,8 @@ const selectedItemPositions = (itemType: NodeType, state: EditorState): number[]
     if (node.type !== itemType) return true
     const first = node.firstChild
     if (!first) return true
+    // YAZ-3209: a hidden item keeps its state; only the lines you see cycle.
+    if (isHiddenTextblock(state, state.doc.resolve(pos + 2))) return true
     const firstStart = pos + 1
     const firstEnd = firstStart + first.nodeSize
     if (from <= firstEnd && to >= firstStart) positions.push(pos)

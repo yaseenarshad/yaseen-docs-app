@@ -22,6 +22,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { toggleMark } from '@milkdown/kit/prose/commands'
 import type { Command } from '@milkdown/kit/prose/state'
 import { $markSchema, $remark, $shortcut } from '@milkdown/kit/utils'
+import { onVisibleLines } from '../lineSelection'
 import type { Parent, PhrasingContent } from 'mdast'
 import type { Handle, Options as ToMarkdownOptions } from 'mdast-util-to-markdown'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
@@ -101,7 +102,7 @@ export const underlineSchema = $markSchema('underline', () => ({
 /** Priority above Crepe's keymaps (default 50), like the outliner keymaps. */
 const PRIORITY = 100
 
-const toggleUnderline = (ctx: Ctx): Command => toggleMark(underlineSchema.type(ctx))
+const toggleUnderline = (ctx: Ctx): Command => onVisibleLines(toggleMark(underlineSchema.type(ctx)))
 
 export const underlineKeymap = $shortcut((ctx: Ctx) => ({
   ToggleUnderline: { key: 'Mod-u', priority: PRIORITY, onRun: () => toggleUnderline(ctx) },
