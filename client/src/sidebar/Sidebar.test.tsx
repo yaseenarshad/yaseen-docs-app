@@ -11,7 +11,7 @@ import { StrictMode, act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { copyFoldKey } from '@shared/foldKey'
 import { parseFrontmatter } from '@shared/frontmatter'
-import { DEFAULT_SETTINGS, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type IndexRecord, type PasteResponse, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type IndexRecord, type PasteResponse, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
 import appCss from '../app.css?inline'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { EMPTY_SELECTION } from '../lib/selection'
@@ -1045,6 +1045,22 @@ describe('Sidebar tree refresh is coalesced (YAZ-2191)', () => {
     expect(bridge.tree.mock.calls.length).toBe(before + 1) // still inside the quiet window
     await wait(80)
     expect(bridge.tree.mock.calls.length).toBe(before + 2) // the trailing read
+  })
+
+  it('YAZ-3227 D2: under Last updated a `change` moves the saved note to the top with no read; turning it on reads the vault once', async () => {
+    const { watch, fire } = withWatcher()
+    const notes = [{ type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' }, { type: 'file', name: 'b.md', path: '/v/b.md', size: 1, mtime: 5, kind: 'markdown' }] as TreeNode[]
+    const { el, bridge, rerender } = await mount({ watch }, (b) => b.tree.mockResolvedValue({ root: '/v', tree: notes, generatedAt: 1 } as never))
+    const labels = () => [...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((n) => n.textContent)
+    expect(labels()).toEqual(['a', 'b']) // Name, A to Z
+    const before = bridge.tree.mock.calls.length
+    await rerender({ settings: { ...DEFAULT_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } } })
+    expect(bridge.tree.mock.calls.length).toBe(before + 1) // the one walk that makes the times fresh
+    expect(labels()).toEqual(['b', 'a'])
+    act(() => fire({ type: 'change', path: '/v/a.md', mtime: 9 }))
+    await wait(150)
+    expect(labels()).toEqual(['a', 'b'])
+    expect(bridge.tree.mock.calls.length).toBe(before + 1) // a save walks nothing
   })
 
   it('`ready` refreshes at once, and a `change` never refreshes', async () => {
@@ -4753,7 +4769,8 @@ describe('focus tab (YAZ-2619)', () => {
     expect(eye.title).toBe('Focus')
     expect(eye.className).toBe('sidebar__lens sidebar__lens--glyph sidebar__lens--active') // the accent rides on these two classes (app.css)
     expect(eye.getAttribute('aria-selected')).toBe('true')
-    expect(el.querySelectorAll('.sidebar__lenses button')).toHaveLength(6) // the tabs alone: no eye button at the far end, nothing to unfold
+    expect(el.querySelectorAll('.sidebar__lenses button')).toHaveLength(7) // the six tabs and the sort button (YAZ-3227 D5): no eye button at the far end, nothing to unfold
+    expect(el.querySelector('.sidebar__lenses .sidebar__sort')).not.toBeNull()
     expect(bodyMsg(el)).toBe(EMPTY)
     expect(countLine(el)).toBeNull()
     act(() => tabs[0].click())
@@ -5284,7 +5301,7 @@ describe('favorites (YAZ-1766)', () => {
   it('reorder is always on: a focus list in this window neither narrows the tab nor stops the drag (YAZ-2619 S39)', async () => {
     const { el, v, bridge } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects'], focus: ['/Notes'] })
     expect(topLabels(el)).toEqual(['Notes', 'Projects'])
-    expect(el.querySelectorAll('.sidebar__lenses button:not([role="tab"]):not(.sidebar__expand-all)')).toHaveLength(0) // no eye button
+    expect(el.querySelectorAll('.sidebar__lenses button:not([role="tab"]):not(.sidebar__expand-all):not(.sidebar__sort)')).toHaveLength(0) // no eye button
     drag(rowByPath(el, `${v}/Projects`), 'dragstart')
     drag(rowByPath(el, `${v}/Notes`), 'dragover', -1)
     expect(rowByPath(el, `${v}/Notes`)?.classList.contains('tree__row--drop-before')).toBe(true)
@@ -5681,6 +5698,67 @@ describe('favorites (YAZ-1766)', () => {
       await rerender({ lens: 'files' })
       expect(inputs(el)).toHaveLength(1)
       expect(el.querySelector('ul.tree[role="tree"] > li')?.contains(inputs(el)[0]!)).toBe(true)
+    })
+  })
+
+  describe('sort (YAZ-3227)', () => {
+    const sortButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__sort')
+    const openSort = (el: HTMLElement) => act(() => sortButton(el)?.click())
+    const items = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)
+    const withSort = (tab: 'files' | 'focus' | 'favorites', by: 'manual' | 'name' | 'updated', reverse = false) => ({ settings: { ...DEFAULT_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, [tab]: { by, reverse } } } })
+
+    it('D4, D5: the button stands left of expand-all on Files, Focus and Favorites only; Files offers no Manual; a pick saves the tab\'s sort', async () => {
+      const { el, props, rerender } = await mountVault({ lens: 'files' })
+      expect(sortButton(el)?.nextElementSibling?.classList.contains('sidebar__expand-all')).toBe(true)
+      openSort(el)
+      expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A'])
+      await act(async () => itemByLabel(el, 'Last updated')?.click())
+      expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } })
+      expect(items(el)).toEqual([]) // a pick closes the menu
+      for (const lens of ['search', 'sessions'] as const) {
+        await rerender({ lens })
+        expect(sortButton(el)).toBeNull()
+      }
+    })
+
+    it('D5: a second click on the button closes its menu', async () => {
+      const { el } = await mountVault({ lens: 'files' })
+      openSort(el)
+      expect(items(el)).not.toEqual([])
+      act(() => void sortButton(el)?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+      openSort(el)
+      expect(items(el)).toEqual([])
+    })
+
+    it('D6: Favorites under Manual keeps its drag order; under a sort the top rows sort, do not drag, and the saved order stays; Manual brings it back', async () => {
+      const { el, v, bridge, rerender } = await mountVault({ lens: 'favorites' }, { favorites: ['/top.md', '/Projects', '/Notes'] })
+      expect(topLabels(el)).toEqual(['top', 'Projects', 'Notes'])
+      openSort(el)
+      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated']) // no way group under Manual
+      closeMenu(el)
+      await rerender(withSort('favorites', 'name'))
+      expect(topLabels(el)).toEqual(['Notes', 'Projects', 'top']) // folders first, then files
+      expect(rowByPath(el, `${v}/top.md`)?.draggable).toBe(false)
+      expect(rowByPath(el, `${v}/Notes`)?.draggable).toBe(false)
+      expect(rowByPath(el, `${v}/Projects/p.md`)).toBeNull()
+      await rerender(withSort('favorites', 'name', true))
+      expect(topLabels(el)).toEqual(['Projects', 'Notes', 'top'])
+      expect(bridge.favorites.set).not.toHaveBeenCalled()
+      await rerender(withSort('favorites', 'manual'))
+      expect(topLabels(el)).toEqual(['top', 'Projects', 'Notes'])
+      expect(rowByPath(el, `${v}/top.md`)?.draggable).toBe(true)
+    })
+
+    it('D6: Focus offers Manual too, and a sort orders its top rows by the tab\'s own choice', async () => {
+      const { el, rerender } = await mountVault({ lens: 'focus' }, { focus: ['/top.md', '/Notes'] })
+      expect(topLabels(el)).toEqual(['top', 'Notes'])
+      openSort(el)
+      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated'])
+      closeMenu(el)
+      await rerender(withSort('favorites', 'name')) // another tab's sort leaves Focus as it is
+      expect(topLabels(el)).toEqual(['top', 'Notes'])
+      await rerender(withSort('focus', 'name'))
+      expect(topLabels(el)).toEqual(['Notes', 'top'])
     })
   })
 })
@@ -6942,6 +7020,12 @@ describe('the tree re-renders only the rows a change touches (YAZ-2194)', () => 
     expect(rendered()).toEqual([])
   })
 
+  it('a settings copy that changes no setting — a state:changed broadcast — re-renders no row at all (YAZ-3237)', async () => {
+    const { rerender } = await mountNested()
+    await rerender({ settings: structuredClone(DEFAULT_SETTINGS) })
+    expect(rendered()).toEqual([])
+  })
+
   it('an index snapshot that moves no shortcut — a save — re-renders no row at all (YAZ-2290 D2)', async () => {
     const indexSource = createWikilinkResolveSource()
     const records = NESTED.flatMap((node) => (node.type === 'dir' ? node.children.map((child) => indexRecord(child.path)) : []))
@@ -7050,11 +7134,11 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(row(el, HEALTH)?.querySelector('.shortcut-mark')).toBeNull() // where it lives, it is a plain file row
     })
 
-    it('E: shows the note\'s title, as its real row does, and still stands in file-name order (YAZ-2420 D15)', async () => {
+    it('E: shows the note\'s title, as its real row does, and stands in the order of the label it shows (YAZ-2420 D15, YAZ-3227 D8)', async () => {
       const { el, indexSource } = await mountLinked([PROJECTS_ID])
       act(() => indexSource.update(() => null, records([PROJECTS_ID]).map((r) => (r.path === HEALTH ? { ...r, title: 'Zz Top' } : r)), FOLDERS, true))
       expect(row(el, HEALTH)?.textContent).toBe('Zz Top')
-      expect([...(row(el, '/v/Projects')?.closest('li')?.querySelectorAll('.tree__row--file') ?? [])].map((r) => r.textContent)).toEqual(['Alpha', 'Zz Top', 'Zeta'])
+      expect([...(row(el, '/v/Projects')?.closest('li')?.querySelectorAll('.tree__row--file') ?? [])].map((r) => r.textContent)).toEqual(['Alpha', 'Zeta', 'Zz Top'])
     })
 
     it('a click opens the REAL note, exactly as a file row does', async () => {

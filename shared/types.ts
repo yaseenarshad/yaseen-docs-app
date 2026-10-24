@@ -931,6 +931,18 @@ export const isSidebarLens = (v: unknown): v is SidebarLens => SIDEBAR_LENSES.in
 export type SidebarTab = SidebarLens | 'search'
 /** The order the tabs are drawn in: Search stands right after Files. */
 export const SIDEBAR_TABS: readonly SidebarTab[] = ['files', 'search', 'focus', 'favorites', 'sessions', 'recents']
+/** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites; Files has none. */
+export type SortBy = 'manual' | 'name' | 'updated'
+/** One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first. */
+export interface TabSort {
+  by: SortBy
+  reverse: boolean
+}
+/** The tabs that sort (YAZ-3227 D5): Search, Sessions and Recents (YAZ-3235) have no sort. */
+export type SortedTab = 'files' | 'focus' | 'favorites'
+export type SidebarSort = Record<SortedTab, TabSort>
+/** Files by name, A to Z (as before YAZ-3227); Focus and Favorites in their own drag order (D6). */
+export const DEFAULT_SIDEBAR_SORT: SidebarSort = { files: { by: 'name', reverse: false }, focus: { by: 'manual', reverse: false }, favorites: { by: 'manual', reverse: false } }
 
 /** `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. */
 export const SIDEBAR_MIN_W = 180
@@ -1349,6 +1361,8 @@ export interface SettingsState {
   hoverPreview: boolean
   /** Comment stream order (YAZ-1515): how you READ, global, never part of a note. */
   commentsOrder: CommentsOrder
+  /** Each sidebar tab's sort (YAZ-3227 D1): how you READ, global to this Mac, never part of a vault. */
+  sidebarSort: SidebarSort
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
   /** Section indent (YAZ-2709): the width of one step in px, 24 | 30 | 36. On or off is per page (the page cog), never here. View-only. */
@@ -1493,6 +1507,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   confirmRename: true,
   hoverPreview: true,
   commentsOrder: 'oldest',
+  sidebarSort: DEFAULT_SIDEBAR_SORT,
   startupWindows: 'last',
   sectionStep: 30,
   sectionLines: 'always',
