@@ -17,8 +17,8 @@ const vault = (root: string): TreeResponse => ({
   })),
 })
 const roots = ['/a', '/b', '/c']
-// A full log in each vault: 500 notes, one save an hour apart, spread over 3 weeks.
-const log = (root: string, shift: number): Record<string, number> => Object.fromEntries(Array.from({ length: MAX_EDITS }, (_, i) => [`${root}/Folder ${i % 100}/Note ${(i * 7) % 100}.md`, T - (i * 3 + shift) * HOUR]))
+// A full log in each vault: 500 different notes, one save every 3 hours, spread over 2 months.
+const log = (root: string, shift: number): Record<string, number> => Object.fromEntries(Array.from({ length: MAX_EDITS }, (_, i) => [`${root}/Folder ${i % 100}/Note ${Math.floor(i / 100) * 17}.md`, T - (i * 3 + shift) * HOUR]))
 
 describe('Recents perf (YAZ-3235)', () => {
   it('the first list of 3 × 10,000 notes and 3 full logs is under 50 ms; a save (a new log, the same trees) is under 2 ms', () => {
@@ -27,6 +27,7 @@ describe('Recents perf (YAZ-3235)', () => {
     const t0 = performance.now()
     const files = recentFiles(trees, roots, edits)
     const cold = performance.now() - t0
+    expect(edits.every((e) => Object.keys(e).length === MAX_EDITS)).toBe(true)
     expect(files).toHaveLength(MAX_RECENTS)
     expect(cold).toBeLessThan(50)
 

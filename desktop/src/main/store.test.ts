@@ -2192,8 +2192,11 @@ describe('the save log (YAZ-3235 D1)', () => {
     }
     await seed(valid({ folders: { '/v': { edits: { '/v/a.md': T, '/v/b.md': 'x', 'rel/c.md': T, '/v/d.md': Number.NaN, '/v/e.md': null, '/v/f.md': T + 1 } } } }))
     expect(createStore(file).get().folders['/v'].edits).toEqual({ '/v/a.md': T, '/v/f.md': T + 1 })
-    await seed(valid({ folders: { '/v': { edits: Object.fromEntries(Array.from({ length: MAX_EDITS + 5 }, (_, i) => [`/v/n${i}.md`, T])) } } }))
-    expect(Object.keys(createStore(file).get().folders['/v'].edits)).toHaveLength(MAX_EDITS)
+    // A long log (only a hand-edited file) keeps its newest saves: the 5 oldest go, wherever they stand in the file.
+    await seed(valid({ folders: { '/v': { edits: Object.fromEntries(Array.from({ length: MAX_EDITS + 5 }, (_, i) => [`/v/n${i}.md`, T + ((i + 5) % (MAX_EDITS + 5))])) } } }))
+    const kept = createStore(file).get().folders['/v'].edits
+    expect(Object.keys(kept)).toHaveLength(MAX_EDITS)
+    expect(Math.min(...Object.values(kept))).toBe(T + 5)
   })
 
   it('S5, S6: renamePath moves the log of a renamed file and of each file under a renamed folder, with its time; removePath drops a deleted file, and a deleted folder by prefix', () => {

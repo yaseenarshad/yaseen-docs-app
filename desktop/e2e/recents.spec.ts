@@ -11,7 +11,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, fileRow, launchApp, lensTab, menuItem, readState, seededState, shoot } from './helpers'
+import { appWindow, confirmSheet, fileRow, launchApp, lensTab, menuItem, quitApp, readState, seededState, shoot } from './helpers'
 
 let userData: string
 let vault: string
@@ -76,4 +76,34 @@ test('a save puts the note at the top of Today with its time; "Show in sidebar" 
   await expect(fileRow(win, 'Plan')).toBeVisible()
   await expect(fileRow(win, 'Plan')).toHaveClass(/tree__row--active/)
   await shoot(win, 'recents-3-shown-in-files')
+})
+
+// YAZ-3246 (D1): a rename rewrites the links of the notes that point to it. Those are quiet writes:
+// the user did not edit those notes, so the save log and the Recents tab stay as they were.
+test('D1: a rename that rewrites the links of 3 notes logs none of them', async () => {
+  await quitApp(app)
+  const ud = await mkdtemp(path.join(tmpdir(), 'yaz3246-userdata-'))
+  const v = await mkdtemp(path.join(tmpdir(), 'yaz3246-vault-'))
+  try {
+    await mkdir(path.join(v, '.yaseendocs'), { recursive: true })
+    await writeFile(path.join(v, 'Target.md'), '# Target\n\ntarget body\n')
+    for (const n of ['A', 'B', 'C']) await writeFile(path.join(v, `${n}.md`), `# ${n}\n\nSee [[Target]].\n`)
+    const renamer = await launchApp({ userData: ud, seedState: seededState(v, null) })
+    const w = await appWindow(renamer, 'w1')
+    await fileRow(w, 'Target').click({ button: 'right' })
+    await menuItem(w, 'Rename').click()
+    await w.locator('.create-inline__input').fill('Target2')
+    await w.keyboard.press('Enter')
+    await expect(confirmSheet(w).locator('.confirm__text')).toHaveText("Rename 'Target' to 'Target2'? Links in 3 notes will be updated.")
+    await confirmSheet(w).locator('.confirm__btn', { hasText: 'Rename' }).click()
+    await expect.poll(async () => (await readFile(path.join(v, 'C.md'), 'utf8')).includes('[[Target2]]')).toBe(true)
+    await w.waitForTimeout(1500) // the store's debounced write
+    expect((await readState(ud)).folders[v]?.edits ?? {}).toEqual({})
+    await recentsTab(w).click()
+    await expect(w.locator('.sidebar__body')).toContainText('Files you edit show here.')
+    await shoot(w, 'recents-4-rename-logs-nothing')
+    await quitApp(renamer)
+  } finally {
+    await Promise.all([ud, v].map((dir) => rm(dir, { recursive: true, force: true })))
+  }
 })

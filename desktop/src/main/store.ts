@@ -397,14 +397,14 @@ function sanitizeOpens(raw: unknown): Record<string, OpenStat> {
   return Object.fromEntries(out.slice(0, MAX_OPENS))
 }
 
-/** The save log (YAZ-3235 D1, S11): file → time. A wrong entry drops alone — a path that is not absolute, or a time that is not a finite number — and the log is cut at MAX_EDITS. */
+/** The save log (YAZ-3235 D1, S11): file → time. A wrong entry drops alone — a path that is not absolute, or a time that is not a finite number — and the log is cut to its MAX_EDITS newest saves. */
 function sanitizeEdits(raw: unknown): Record<string, number> {
   if (!isRecord(raw)) return {}
   const out: Array<[string, number]> = []
   for (const [file, time] of Object.entries(raw)) {
     if (isAbsolute(file) && isFiniteNumber(time)) out.push([file, time])
   }
-  return Object.fromEntries(out.slice(0, MAX_EDITS))
+  return Object.fromEntries(out.sort((a, b) => b[1] - a[1]).slice(0, MAX_EDITS))
 }
 
 /** The table of contents sources (YAZ-2700 D14): page → `headings` or `bullets`. A wrong entry drops alone — a path that is not absolute, or any other value, `auto` among them: Auto is the absence of an entry. */
