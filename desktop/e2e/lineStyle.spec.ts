@@ -239,7 +239,7 @@ test('step 9 — the vault\'s default line in Settings (YAZ-3208): a plain line 
   expect(await look(0)).toEqual({ image: 'none', height: 15 })
 
   await win.getByRole('button', { name: 'Settings', exact: true }).click()
-  const row = win.locator('.settings-dialog[role="dialog"] [data-setting="textFormatting"] .heading-styles__line[data-level="line"]')
+  const row = win.locator('.settings-dialog[role="dialog"] [data-setting="textFormatting"] .line-defaults[data-level="line"]')
   await expect(row.locator('.heading-styles__size')).toHaveText(['50%', '3 px'])
   await row.getByRole('button', { name: 'Line thickness larger', exact: true }).click()
   await row.locator('[aria-label="Line style"]').getByRole('button', { name: 'Dashed', exact: true }).click()

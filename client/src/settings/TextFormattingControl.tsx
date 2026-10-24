@@ -62,8 +62,10 @@ export function TextFormattingControl({ vaults, initialRoot }: Props) {
         {HEADING_KEYS.map((key) => (
           <HeadingLine key={key} level={key} formatting={formatting} textSize={textSize} write={save} />
         ))}
-        <LineDefaultsLine formatting={formatting} write={save} />
       </div>
+      {/* Its own row, not a line of the grid above: its controls are wider than one column, and a
+          spanning item would widen the grid's columns and squeeze the seven names (YAZ-3213). */}
+      <LineDefaultsLine formatting={formatting} write={save} />
     </div>
   )
 }
@@ -195,13 +197,12 @@ function LineDefaultsLine({ formatting, write }: { formatting: TextFormatting; w
     '--preview-thickness': `${line.thickness}px`,
   } as CSSProperties
   return (
-    <div className="heading-styles__line" data-level="line">
-      <span className="heading-styles__label heading-styles__label--line">
+    <div className="line-defaults" data-level="line">
+      <span className="line-defaults__label">
         <span className="heading-styles__name">Line</span>
         <span className={`heading-styles__line-preview heading-styles__line-preview--${line.pattern}`} style={preview} aria-hidden="true" />
       </span>
-      {/* One box over the size, B/U and dots columns, so the six heading lines keep their columns. */}
-      <div className="heading-styles__line-controls">
+      <div className="line-defaults__controls">
         <Stepper name="Line darkness" size={line.darkness} min={DARKNESS_MIN} max={DARKNESS_MAX} unit="%"
           onStep={(delta) => write(withLineDefaults(formatting, { darkness: clamp(onGrid(line.darkness, delta, 5), DARKNESS_MIN, DARKNESS_MAX) }))} />
         <Stepper name="Line thickness" size={line.thickness} min={THICKNESS_MIN} max={THICKNESS_MAX}

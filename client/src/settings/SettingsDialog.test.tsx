@@ -504,7 +504,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       return { el: container, onChange, rerender: render }
     }
     const tf = (el: HTMLElement) => row(el, 'textFormatting') as HTMLElement
-    const line = (el: HTMLElement, level: string) => tf(el).querySelector<HTMLElement>(`.heading-styles__line[data-level="${level}"]`) as HTMLElement
+    const line = (el: HTMLElement, level: string) => tf(el).querySelector<HTMLElement>(`:is(.heading-styles__line, .line-defaults)[data-level="${level}"]`) as HTMLElement
     const button = (el: HTMLElement, level: string, name: string) => line(el, level).querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`) as HTMLButtonElement
     const sizes = (el: HTMLElement) => [...tf(el).querySelectorAll<HTMLElement>('.heading-styles__line')].map((l) => [l.dataset.level, l.querySelector('.heading-styles__size')?.textContent])
     const dots = (el: HTMLElement, level: string) => [...line(el, level).querySelectorAll<HTMLButtonElement>(`[role="group"][aria-label="Heading ${level.slice(1)} highlight"] button`)]
@@ -522,6 +522,8 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       const plain = vaultOf('/notes', 'Notes')
       const { el, rerender } = mountTf([plain])
       const lineRow = line(el, 'line')
+      // YAZ-3213: its own row under the grid, never a line of it, so the seven names keep their column.
+      expect(lineRow.closest('.heading-styles')).toBeNull()
       expect(lineRow.querySelector('.heading-styles__name')?.textContent).toBe('Line')
       expect([...lineRow.querySelectorAll('.heading-styles__size')].map((x) => x.textContent)).toEqual(['50%', '3 px'])
       expect([...lineRow.querySelectorAll('[aria-label="Line style"] button')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Solid', 'true'], ['Dotted', 'false'], ['Dashed', 'false']])
@@ -582,7 +584,6 @@ describe('SettingsDialog rows write through the popover contracts', () => {
         ['h4', '20 px'],
         ['h5', '18 px'],
         ['h6', '16 px'],
-        ['line', '50%'],
       ])
       expect(line(el, 'text').querySelector('.heading-styles__name')?.textContent).toBe('Text')
       // The Text line is size only (D14): "−" and "+", no B, U or dots.
@@ -618,7 +619,6 @@ describe('SettingsDialog rows write through the popover contracts', () => {
         ['h4', '23 px'],
         ['h5', '20 px'],
         ['h6', '18 px'],
-        ['line', '50%'],
       ])
       expect(resets(el)).toEqual(['Reset text', 'Reset heading 3'])
       // The first "+" of a heading with no size starts from the number it shows.

@@ -529,21 +529,38 @@
   grid-column: -2;
 }
 
-/* The Line line (YAZ-3208 D10): "Line" and a preview of the vault's default line, drawn as the
+/* The Line row (YAZ-3208 D10): "Line" and a preview of the vault's default line, drawn as the
    page draws it (editor/line/line.css): a share of the text colour, its thickness, and the dotted or
-   dashed tiles (5 × and 2 × the thickness). */
-.heading-styles__label--line {
+   dashed tiles (5 × and 2 × the thickness). A row of its own under the grid (YAZ-3213), so the
+   seven lines above keep their columns; a hairline sets it apart. */
+.line-defaults {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
 
-.heading-styles__line-controls {
-  grid-column: 2 / -2;
+.line-defaults__label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px;
+}
+
+.line-defaults__controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 12px;
+}
+
+/* The grid's Reset column is not here: the slot keeps its width and stands at the row's end. */
+.line-defaults .heading-styles__reset {
+  grid-column: auto;
 }
 
 .heading-styles__line-preview {
