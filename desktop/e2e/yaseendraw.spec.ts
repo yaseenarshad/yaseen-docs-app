@@ -14,7 +14,10 @@
  *     Save stays disabled, nothing on disk moves: old drawings are untouched by the new engine
  *   4 Enter keeps the line format (YAZ-3177): a new line typed after the styled line is saved bold
  *     and underlined too — `lineBolds` / `lineUnderlines` grow to `[true, true]`
- *   5 opening a text element's editor and leaving it with no edit leaves the modal clean: Save
+ *   5 in the text editor of a per-line bold element, a double click selects one word, a triple
+ *     click selects the line, and a drag after a double click keeps its range (YAZ-3175:
+ *     Chromium's pointerdown carries no click count)
+ *   6 opening a text element's editor and leaving it with no edit leaves the modal clean: Save
  *     stays disabled and ✕ closes without asking (YAZ-3210: the engine bumps the element's version
  *     anyway); a real edit still marks it dirty
  *
@@ -223,7 +226,54 @@ test('step 4 — Enter keeps the line format: the new line is saved bold and und
   })
 })
 
-test('step 5 — the text editor left with no edit is not an edit; a typed letter is', async () => {
+test('step 5 — a double click selects a word, a triple click the line, and a drag keeps its range', async () => {
+  const before = await readSidecar(STYLED)
+  await previewOf(win, STYLED).click()
+  await expect(modal(win)).toBeVisible()
+  const box = await modalCanvas(win).boundingBox()
+  if (box === null) throw new Error('the modal canvas has no box')
+  await win.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.8)
+  await win.keyboard.press('ControlOrMeta+a')
+  await win.keyboard.press('Enter')
+
+  // Per-line bold (`lineBolds`) turns on the fork's own caret layer, the path that counts clicks itself.
+  const editor = modal(win).locator('textarea.excalidraw-wysiwyg')
+  await expect(editor).toBeVisible()
+  const field = await editor.boundingBox()
+  if (field === null) throw new Error('the text editor has no box')
+  // Step 4 added a second line: aim at the middle of the first one.
+  const at = { x: field.x + 8, y: field.y + field.height / 4 }
+  const selection = () => editor.evaluate((t: HTMLTextAreaElement) => [t.selectionStart, t.selectionEnd])
+
+  await win.mouse.dblclick(at.x, at.y)
+  await expect.poll(selection).toEqual([0, 'styled'.length])
+  await win.mouse.click(at.x, at.y, { clickCount: 3 })
+  await expect.poll(selection).toEqual([0, 'styled-label'.length])
+  await shoot(win, 'yaseendraw-06-word-selected')
+
+  // A drag after a double click keeps the character range that the drag made (S7).
+  await win.waitForTimeout(700)
+  await win.mouse.move(at.x, at.y)
+  await win.mouse.down({ clickCount: 1 })
+  await win.mouse.up({ clickCount: 1 })
+  await win.mouse.down({ clickCount: 2 })
+  await win.mouse.move(field.x + field.width - 8, at.y, { steps: 8 })
+  const dragged = await selection()
+  expect(dragged[1]).toBeGreaterThan(dragged[0])
+  await win.mouse.up({ clickCount: 2 })
+  await expect.poll(selection).toEqual(dragged)
+
+  // Leave the editor with Esc, the modal with ✕ (the canvas keeps a second Esc). A selection is not
+  // an edit, so ✕ closes without asking (YAZ-3210) and nothing reaches the disk.
+  await win.keyboard.press('Escape')
+  await expect(editor).toHaveCount(0)
+  await modal(win).getByRole('button', { name: 'Close drawing' }).click()
+  await expect(modal(win).locator('.drawing-modal__confirm')).toHaveCount(0)
+  await expect(modal(win)).toHaveCount(0)
+  expect(await readSidecar(STYLED)).toBe(before)
+})
+
+test('step 6 — the text editor left with no edit is not an edit; a typed letter is', async () => {
   const before = await readSidecar(STYLED)
   const editor = modal(win).locator('textarea.excalidraw-wysiwyg')
   const confirm = modal(win).locator('.drawing-modal__confirm')
@@ -257,7 +307,7 @@ test('step 5 — the text editor left with no edit is not an edit; a typed lette
   await win.keyboard.press('Escape')
   await expect(editor).toHaveCount(0)
   await expect(saveButton(win)).toBeEnabled()
-  await shoot(win, 'yaseendraw-06-typed-is-dirty')
+  await shoot(win, 'yaseendraw-07-typed-is-dirty')
   await close()
   await confirm.getByRole('button', { name: 'Discard' }).click()
   await expect(modal(win)).toHaveCount(0)
