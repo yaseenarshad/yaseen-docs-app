@@ -903,6 +903,11 @@ describe('the save log at the fs:write door (YAZ-3235 D1)', () => {
     expect((await write({ sender: {} }, { path: conflict, content: 'x', expectedMtime: 1 })).ok).toBe(false)
     expect(store.get().folders[root].edits[conflict]).toBeUndefined()
 
+    // A tidy-up write the user did not make (a link rewrite after a rename, a column strip): `quiet` — the log skips it, the bytes land.
+    const tidied = path.join(root, 'Tidied.md')
+    expect((await write({ sender: {} }, { path: tidied, content: 'z', quiet: true })).ok).toBe(true)
+    expect(store.get().folders[root].edits[tidied]).toBeUndefined()
+
     senderWinId = undefined // Welcome, or a sender no window owns: no vault, no log
     const other = path.join(root, 'Other.md')
     expect((await write({ sender: {} }, { path: other, content: 'y' })).ok).toBe(true)

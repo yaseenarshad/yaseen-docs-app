@@ -286,7 +286,7 @@ export function useFileClipboard(
         if (before !== null) for (const { from, to, kind } of res.pasted) await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })
         else if (index.ids) {
           const [{ tree }, { folders }] = await Promise.all([fetchTree(vault), api.index(vault)])
-          for (const { to } of res.pasted) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(vault, path, folders)).catch(() => undefined)
+          for (const { to } of res.pasted) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(vault, path, folders), true).catch(() => undefined) // quiet (YAZ-3235 D1)
         }
         const first = res.failed[0]
         if (first === undefined) {

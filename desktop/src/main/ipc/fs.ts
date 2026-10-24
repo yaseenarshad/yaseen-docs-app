@@ -47,8 +47,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   handle(CONTRACT.readHeads, readHeads)
   handle(CONTRACT.readPdf, readPdf)
   handle(CONTRACT.readImage, readImage)
-  // A note's save goes in the save log (YAZ-3235 D1).
-  handleWithEvent(CONTRACT.writeFile, loggedSave(store, windows, writeFile))
+  // A note's save goes in the save log (YAZ-3235 D1); a quiet tidy-up write (`FileWriteRequest.quiet`) does not.
+  handleWithEvent(CONTRACT.writeFile, loggedSave(store, windows, writeFile, (req) => (req as { quiet?: unknown } | null)?.quiet !== true))
   const rootsOfSender = (e: IpcMainInvokeEvent): readonly string[] => senderRoots(store, windows, e)
   /**
    * Does what `req` names get IDs (YAZ-2523 🔒 V5)? Only when a vault of the calling window holds

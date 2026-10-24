@@ -28,6 +28,17 @@ beforeEach(() => {
   createFile.mockReset()
 })
 
+describe('transformFile quiet (YAZ-3235 D1)', () => {
+  it('a quiet tidy-up asks the door not to log it; a plain one sends no `quiet`', async () => {
+    readFile.mockResolvedValue(file('a\n', 100))
+    writeFile.mockResolvedValue({ path: PATH, mtime: 200, size: 2 })
+    await transformFile(PATH, () => 'b\n', true)
+    expect(writeFile).toHaveBeenLastCalledWith({ path: PATH, content: 'b\n', expectedMtime: 100, quiet: true })
+    await transformFile(PATH, () => 'c\n')
+    expect(writeFile).toHaveBeenLastCalledWith({ path: PATH, content: 'c\n', expectedMtime: 100 })
+  })
+})
+
 describe('writeProperty', () => {
   it('reads, rewrites one key and writes with the read mtime', async () => {
     readFile.mockResolvedValue(file('---\nstatus: draft\n---\nBody\n', 100))

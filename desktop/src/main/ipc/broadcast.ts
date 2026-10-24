@@ -22,12 +22,13 @@ export function senderRoots(store: Pick<Store, 'get'>, windows: Pick<WindowManag
 
 /**
  * A save door that logs its file in the save log once the save is on disk (YAZ-3235 D1): a save that
- * throws (a `CONFLICT`, a bad request) logs nothing. The vault is the caller's, as `rootOfPath` finds it.
+ * throws (a `CONFLICT`, a bad request) logs nothing, and neither does one that `logs` says no to (a
+ * quiet tidy-up write). The vault is the caller's, as `rootOfPath` finds it.
  */
-export function loggedSave<A extends unknown[], R extends { path: string }>(store: Pick<Store, 'get' | 'addEdit'>, windows: Pick<WindowManager, 'idFor'>, save: (...args: A) => Promise<R>) {
+export function loggedSave<A extends unknown[], R extends { path: string }>(store: Pick<Store, 'get' | 'addEdit'>, windows: Pick<WindowManager, 'idFor'>, save: (...args: A) => Promise<R>, logs: (...args: A) => boolean = () => true) {
   return async (e: IpcMainInvokeEvent, ...args: A): Promise<R> => {
     const saved = await save(...args)
-    store.addEdit(senderRoots(store, windows, e), saved.path)
+    if (logs(...args)) store.addEdit(senderRoots(store, windows, e), saved.path)
     return saved
   }
 }

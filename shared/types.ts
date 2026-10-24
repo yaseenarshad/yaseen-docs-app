@@ -588,6 +588,12 @@ export interface FileWriteRequest {
    * `BridgeError` whose code is `CONFLICT` (carrying the disk `mtime`) and does NOT write.
    */
   expectedMtime?: number
+  /**
+   * A tidy-up write that the user did not make on this file (YAZ-3235 D1): a link rewrite after a
+   * rename, a deleted column stripped from each note, stale folder values dropped after a move, a
+   * folder's id. The bytes land as for any write; the save log skips it, so Recents does not list it.
+   */
+  quiet?: boolean
 }
 
 export interface FileWriteResponse {

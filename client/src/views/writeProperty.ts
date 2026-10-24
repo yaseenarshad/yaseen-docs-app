@@ -29,8 +29,8 @@ export async function settleFileWrites(): Promise<void> {
  * Resolves with the bytes that are on disk afterwards — the transformed content, or the fresh
  * read when the transform was a no-op — so a caller can adopt exactly what landed (YAZ-1472).
  */
-export function transformFile(path: string, transform: ContentTransform): Promise<{ mtime: number; content: string }> {
-  return trackFileWrite(runTransform(path, transform))
+export function transformFile(path: string, transform: ContentTransform, quiet = false): Promise<{ mtime: number; content: string }> {
+  return trackFileWrite(runTransform(path, transform, quiet))
 }
 
 /** Puts `write` in the set `settleFileWrites` awaits until it settles; returns it unchanged. */
@@ -58,7 +58,8 @@ export async function readForWrite(path: string): Promise<Pick<FileResponse, 'co
   }
 }
 
-async function runTransform(path: string, transform: ContentTransform): Promise<{ mtime: number; content: string }> {
+/** `quiet`: a tidy-up the user did not make on this file (`FileWriteRequest.quiet`, YAZ-3235 D1) — the save log skips it. */
+async function runTransform(path: string, transform: ContentTransform, quiet: boolean): Promise<{ mtime: number; content: string }> {
   let file = await readForWrite(path)
   let retried = false
 
@@ -66,7 +67,7 @@ async function runTransform(path: string, transform: ContentTransform): Promise<
     const content = transform(file.content)
     if (content === file.content) return { mtime: file.mtime, content }
     try {
-      return { mtime: (await api.writeFile({ path, content, expectedMtime: file.mtime })).mtime, content }
+      return { mtime: (await api.writeFile({ path, content, expectedMtime: file.mtime, ...(quiet ? { quiet } : {}) })).mtime, content }
     } catch (err) {
       if (!(err instanceof BridgeRequestError) || err.code !== 'CONFLICT' || retried) throw err
       retried = true

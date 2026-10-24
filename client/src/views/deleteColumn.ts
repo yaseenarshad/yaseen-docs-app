@@ -167,7 +167,7 @@ export async function deleteColumn(key: string, host: DeleteColumnHost): Promise
   const { folderId } = host
   if (folderId === undefined) return // no id, no values
   const strip = notesHolding(host.records, folderId, key)
-  const results = await Promise.allSettled(strip.map((note) => transformFile(note.path, (content) => setFolderValue(content, folderId, bare, undefined))))
+  const results = await Promise.allSettled(strip.map((note) => transformFile(note.path, (content) => setFolderValue(content, folderId, bare, undefined), true))) // quiet: a tidy-up of each note (YAZ-3235 D1)
   const failed = results.flatMap((result, index) =>
     result.status === 'rejected' ? [{ note: strip[index]!, why: result.reason instanceof Error ? result.reason.message : String(result.reason) }] : [],
   )

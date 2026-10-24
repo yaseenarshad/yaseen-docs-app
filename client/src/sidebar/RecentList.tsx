@@ -101,7 +101,7 @@ export const RecentList = memo(function RecentList({ trees, roots, titles, activ
   }
   return (
     <>
-      {/* A plain list, not a `tree`: the sidebar's arrow keys walk file rows only, so the rows are buttons that Tab reaches. */}
+      {/* The tree's row styles, but no tree for the keys: the sidebar's arrow keys walk `[data-path]` rows only, so these rows are buttons that Tab reaches. */}
       <ul className="tree" aria-label="Recents">
         {days.map((day) => {
           const open = !shut.has(day.key)
