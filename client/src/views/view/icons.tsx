@@ -121,6 +121,14 @@ export const StackIcon = () => (
   </svg>
 )
 
+/** The Recents lens tab (YAZ-3235 D4): a clock face, its two hands — the files the app saved last. A glyph, like the Sessions stack. */
+export const ClockIcon = () => (
+  <svg {...svg} width={15} height={15} viewBox="0 0 24 24" strokeWidth={2} className="clock-icon">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </svg>
+)
+
 /** The shortcut mark (YAZ-2290 D2): a file manager's alias arrow, beside a note's name wherever it shows in a folder it does not live in — the tree row and every view's title. */
 export const ShortcutIcon = () => (
   <svg {...svg} width={11} height={11} className="shortcut-mark">

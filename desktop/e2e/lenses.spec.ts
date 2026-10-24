@@ -78,9 +78,9 @@ test('a state file with no lens boots on FILES (YAZ-1846 D1): the file tree', as
   await expectLens(win, 'Files')
   await expect(fileRow(win, 'Ideas')).toBeVisible()
   await expect(bodyMsg(win)).toHaveCount(0)
-  // Five tabs (Sessions last since YAZ-3147 D4), Search right after Files (YAZ-2638 S1), and Files has NO search bar (S6) — the
+  // Six tabs (Sessions since YAZ-3147 D4, Recents last since YAZ-3235 D4), Search right after Files (YAZ-2638 S1), and Files has NO search bar (S6) — the
   // "always visible, on every lens" rule of YAZ-739 / YAZ-797 is overturned.
-  await expect.poll(() => sidebarTabs(win).evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute('aria-label') ?? tab.textContent))).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions'])
+  await expect.poll(() => sidebarTabs(win).evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute('aria-label') ?? tab.textContent))).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions', 'Recents'])
   await expect(searchBar(win)).toHaveCount(0)
   await shoot(win, 'lens-01-files-default')
 })

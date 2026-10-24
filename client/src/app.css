@@ -2066,6 +2066,12 @@ button {
   color: var(--fg-muted);
 }
 
+/* A day heading of the Recents tab (YAZ-3235 D5): a dim, firmer row above the day's files. */
+.recents__day {
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
 /* The vault of a top row of the Focus and Favorites tabs (YAZ-2631 D4), where the window has two or
    more: very small and light, at the right edge, and never more than 40% of the row. */
 .tree__vault {
