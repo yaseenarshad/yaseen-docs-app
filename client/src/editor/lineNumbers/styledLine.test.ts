@@ -69,5 +69,11 @@ describe('line numbers with a styled line (S22)', () => {
     show(crepe, file)
     expect(words(root)).toEqual(['1:LINE', '3:<!--', '5:After'])
   })
-})
 
+  it('a comment on two lines in a quote: the editor joins it, so every block keeps its number', async () => {
+    const file = '> q\n>\n> ***\n>\n> <!-- line: darkness 80%,\n> thickness 6px -->\n\nAfter\n'
+    const { crepe, root } = await mount(file)
+    show(crepe, file)
+    expect(words(root)).toEqual(['1:q', '3:LINE', '8:After'])
+  })
+})

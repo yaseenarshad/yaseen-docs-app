@@ -250,3 +250,12 @@ describe('a styled line (YAZ-3204, rule 41)', () => {
     expect(blockLines('> ***\n\n<!-- line: darkness 50% -->\n').kinds).toBe('rp')
   })
 })
+
+describe('a styled line whose comment is on two lines (YAZ-3206)', () => {
+  it('reads the comment without the quote’s prefix, as the editor does, at the top level, in a quote and in a bullet', () => {
+    expect(blockLines('> q\n>\n> ***\n>\n> <!-- line: darkness 80%,\n> thickness 6px -->\n\nAfter\n')).toEqual({ lines: [1, 3, 8], ends: [1, 6, 8], kinds: 'prp' })
+    expect(blockLines('q\n\n***\n\n<!-- line: darkness 80%,\nthickness 6px -->\n\nAfter\n')).toEqual({ lines: [1, 3, 8], ends: [1, 6, 8], kinds: 'prp' })
+    expect(blockLines('- ***\n  <!-- line: darkness 80%,\n  thickness 6px -->\n- b\n')).toEqual({ lines: [1, 4], ends: [3, 4], kinds: 'rp' })
+    expect(blockLines('> ***\n> <!-- line: darkness 80%,\n> style wavy -->\n').kinds).toBe('rp')
+  })
+})

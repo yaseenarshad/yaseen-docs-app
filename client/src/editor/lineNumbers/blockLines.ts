@@ -25,6 +25,22 @@ const KIND: Record<string, string> = {
 }
 const LISTS = new Set(['listOrdered', 'listUnordered'])
 
+/**
+ * An HTML block's text as remark gives it to the editor: its `htmlFlowData` lines joined by a line
+ * break, so a container's prefix on a continuation line (a quote's `> `, YAZ-3206) is not in it.
+ * `index` is the block's enter event.
+ */
+function htmlText(events: ReturnType<typeof postprocess>, index: number, text: string): string {
+  const html = events[index][1]
+  const lines: string[] = []
+  for (let i = index + 1; i < events.length; i++) {
+    const [phase, token] = events[i]
+    if (token === html) break
+    if (phase === 'enter' && token.type === 'htmlFlowData') lines.push(text.slice(token.start.offset, token.end.offset))
+  }
+  return lines.join('\n')
+}
+
 /** Block structure only, from micromark's events: no syntax tree is built (YAZ-2643). */
 export function blockLines(text: string): BlockLines {
   const events = postprocess(parse({ extensions: [gfm()] }).document().write(preprocess()(text, undefined, true)))
@@ -47,7 +63,7 @@ export function blockLines(text: string): BlockLines {
     add(emptyItem, emptyItem, 'p')
     emptyItem = null
   }
-  for (const [phase, token] of events) {
+  for (const [index, [phase, token]] of events.entries()) {
     const { type } = token
     // A new list item, a list or a quote that opens or closes: the next block is no sibling of the line.
     if (LISTS.has(type) || type === 'blockQuote' || type === 'listItemPrefix') afterBreak = false
@@ -76,7 +92,7 @@ export function blockLines(text: string): BlockLines {
     // A fence that is never closed runs to the end of the text, and ends at the START of the line under its last one.
     const { start, end } = token
     const last = end.column === 1 && end.line > start.line ? end.line - 1 : end.line
-    if (afterBreak && type === 'htmlFlow' && parseLineComment(text.slice(start.offset, end.offset)) !== null) {
+    if (afterBreak && type === 'htmlFlow' && parseLineComment(htmlText(events, index, text)) !== null) {
       ends[ends.length - 1] = last
       afterBreak = false
       continue
