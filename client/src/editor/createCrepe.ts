@@ -70,10 +70,10 @@
  *    reuse Crepe's link-tooltip API, including one logical range when formatting splits the DOM
  *    anchor. Registered only when `opts.markdownLinkNav` supplies the host boundary.
  *  - Block handle menu (YAZ-726, `blockHandleMenu.ts`): right-click on the 6-dot handle opens a
- *    `.ctx-menu` popup; rows (or picker rows, YAZ-3164) are data from a provider; capture-suppresses Crepe's right-button
- *    mousedown/mouseup so the selection/focus don't jump. First row: Number children ↔ Bullet
- *    children (YAZ-729, `outline/numberChildrenRow.ts`), disabled when the item has no direct
- *    child list.
+ *    `.ctx-menu` popup; rows (or picker rows, YAZ-3164) are data from a provider;
+ *    capture-suppresses Crepe's right-button mousedown/mouseup so the selection/focus don't jump.
+ *    First row: Number children ↔ Bullet children (YAZ-729, `outline/numberChildrenRow.ts`),
+ *    disabled when the item has no direct child list.
  *  - Numbers are manual-only (YAZ-793/YAZ-1329): right-click Number children is the only editor
  *    conversion command. The `1. ` input rule, `Mod-Alt-7` keymap and slash-menu Ordered List row
  *    are removed; real ordered Markdown still parses, and `* 6) text` stays literal bullet text.
@@ -129,15 +129,16 @@
  *    Crepe's stock `<img>` — the folder outline (its bullets-only lock has no `image`) and the
  *    hover preview card (no root in reach) say so where they mount.
  *  - The line's style (YAZ-3164, `line/lineStyle.ts`): the `hr` node gains `darkness`, `thickness`,
- *    `pattern` and `width` (each null for its default) — the ONE exception to the images rule above, because
- *    Markdown has no carrier for them. A plain line stays `***`; a styled one is `***` then the
- *    next block `<!-- line: darkness 80%, thickness 6px, style dashed, length 40% -->`, only the parts that are
- *    not the default. A `$remark` plugin joins the line and its comment on load in every container;
- *    any other comment stays HTML, bytes untouched. The second node view (`line/lineView.ts`, on
- *    every editor) draws it from custom properties and gives a selected line a round end handle
- *    that drags its length: live while it moves, ONE `setNodeMarkup` on mouseup. The block handle
- *    menu of a line (`line/lineRows.ts`) adds "Line darkness", "Line thickness" and "Line style",
- *    one row each, whose value opens the presets (the zoom menu's shape) on a click.
+ *    `pattern` and `width` (each null for its default) — the ONE exception to the images rule
+ *    above, because Markdown has no carrier for them. A plain line stays `***`; a styled one is
+ *    `***` then the next block `<!-- line: darkness 80%, thickness 6px, style dashed, length 40%
+ *    -->`, only the parts that are not the default. A `$remark` plugin joins the line and its
+ *    comment on load in every container; any other comment stays HTML, bytes untouched. The second
+ *    node view (`line/lineView.ts`, on every editor) draws it from custom properties and gives a
+ *    selected line a round end handle that drags its length: live while it moves, ONE
+ *    `setNodeMarkup` on mouseup. The block handle menu of a line (`line/lineRows.ts`) adds "Line
+ *    darkness", "Line thickness" and "Line style", one row each, whose value opens the presets (the
+ *    zoom menu's shape) on a click.
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
  *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
@@ -410,7 +411,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listItemRoundTrip)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
-  // The line's darkness, thickness and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
+  // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
   // Milkdown's empty-line plugin deletes every inline <br> on parse (YAZ-1452). Ours must run
   // first; re-registering Milkdown's AFTER keeps its id resolvable so empty paragraphs still
@@ -459,7 +460,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // Numbers are manual-only (YAZ-793/YAZ-1329): only the explicit block-handle command creates
   // ordered children. Typing, slash-menu and keyboard conversion paths are all absent.
   void crepe.editor.remove([wrapInOrderedListInputRule, ...orderedListKeymap])
-  // A line's darkness and thickness pickers follow the first row (YAZ-3164 D3); every other block gets the rows of before.
+  // A line's darkness, thickness and style pickers follow the first row (YAZ-3164 D3); every other
+  // block gets the rows of before.
   crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...numberChildrenRow(view, target, ctx), ...lineRows(view, target, ctx)]))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs

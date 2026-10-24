@@ -60,6 +60,7 @@
 }
 
 .milkdown .ProseMirror .line-view[data-line-pattern='dotted'] > hr {
+  /* The dot is solid to 92% of its radius and fades out by 100%: a soft edge, so a small dot is round, not jagged. */
   background-image: radial-gradient(circle closest-side, var(--line-color) 92%, transparent 100%);
   background-size: calc(2 * var(--line-thickness, 3px)) 100%;
 }

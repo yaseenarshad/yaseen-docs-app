@@ -9,6 +9,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createBlockHandleMenu, parseNumberField, renderMenu, type MenuChoiceField, type MenuNumberField, type MenuRow, type RowProvider } from './blockHandleMenu'
 import { features } from './featureConfig'
+import appCss from '../app.css?inline'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -388,5 +389,11 @@ describe('pickers (YAZ-3164 D3, condensed)', () => {
     expect(parseNumberField(spec, ' 6px ')).toBe(6)
     expect(parseNumberField(spec, '6 px')).toBe(6)
     for (const bad of ['', '0', '25', '6%', '6.5', 'six', '-3', '1e1']) expect(parseNumberField(spec, bad), bad).toBeNull()
+  })
+
+  it('the menu keeps its width when a bad number’s message shows: the message wraps inside it', () => {
+    const rule = /\.ctx-menu--editor \.document-zoom__error\s*\{([^}]*)\}/.exec(appCss.replace(/\/\*[\s\S]*?\*\//g, ''))
+    expect(rule?.[1]).toMatch(/width:\s*0;/)
+    expect(rule?.[1]).toMatch(/min-width:\s*100%;/)
   })
 })

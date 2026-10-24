@@ -3,7 +3,7 @@
  * real createCrepe wiring: the handle is aimed by hand (jsdom lays nothing out), the menu opens on
  * a right-click, and the markdown is read after each pick. Pinned here, by scenario key: the menu
  * on a line (S40) and on other blocks (S41), a line in a bullet (S42), the closed rows (S80), a row
- * opened and closed (S81, S82), the style picker (S78), a
+ * opened (S81; its closing, S82, is `blockHandleMenu.test.ts`'s), the style picker (S78), a
  * typed value (S44), a bad value (S45), a preset (S46), the current value (S47), closing (S48),
  * back to the default (S49), undo (S50) and read-only (S51).
  */
@@ -134,6 +134,15 @@ describe('which blocks get the pickers', () => {
     expect(pickers(later.view)).toHaveLength(3)
   })
 
+  it('S41: a later paragraph of a bullet led by a line has its own handle, and its menu has no pickers', async () => {
+    const { crepe, view, item } = await mount('- ***\n\n  text after\n')
+    aim(view, nth(view, 'paragraph'))
+    rightClick(item)
+    expect(popupOf(view)!.querySelectorAll('.ctx-menu__item')).toHaveLength(1)
+    expect(popupOf(view)!.querySelector('.block-menu-picker')).toBeNull()
+    expect(getMarkdownForSave(crepe)).toBe('- ***\n\n  text after\n')
+  })
+
   it('targetLine: the line itself, a bullet led by a line, and nothing else', async () => {
     const { view } = await mount('* ---\n* text\n\n***\n')
     const doc = view.state.doc
@@ -143,6 +152,8 @@ describe('which blocks get the pickers', () => {
     expect(targetLine(doc, nth(view, 'paragraph', 0))).toBeNull()
     expect(targetLine(doc, nth(view, 'hr', 1))?.pos).toBe(nth(view, 'hr', 1))
     expect(targetLine(doc, -1)).toBeNull()
+    const led = await mount('- ***\n\n  text after\n')
+    expect(targetLine(led.view.state.doc, nth(led.view, 'paragraph'))).toBeNull()
   })
 
   it('S51: a read-only note shows no pickers', async () => {
@@ -178,14 +189,6 @@ describe('picking', () => {
     expect(pressed).toEqual([['false', ''], ['false', ''], ['true', '✓']])
   })
 
-  it('S82: a second click on the open value closes the row, and the menu stays', async () => {
-    const { view } = await openOnLine('***\n')
-    openRow(view, 2)
-    valueOf(view, 2).click()
-    expect(pickers(view)[2].querySelector<HTMLElement>('.block-menu-picker__panel')!.hidden).toBe(true)
-    expect(popupOf(view)).not.toBeNull()
-  })
-
   it('S78: "Line style" offers Solid (default), Dotted, Dashed with a sample each; a pick applies, closes, and one ⌘Z undoes it', async () => {
     const { crepe, view, item } = await openOnLine('a\n\n***\n\nb\n')
     const choices = presetButtons(view, 2)
@@ -209,14 +212,6 @@ describe('picking', () => {
     presetButtons(view, 2)[0].click()
     expect(getMarkdownForSave(crepe)).toBe('a\n\n***\n\nb\n')
     expect(view.state.doc.child(1).attrs.pattern).toBeNull()
-  })
-
-  it('S78: the current style closes the menu with no document change', async () => {
-    const { view } = await openOnLine('***\n<!-- line: style dotted -->\n')
-    const doc = view.state.doc
-    presetButtons(view, 2)[1].click()
-    expect(popupOf(view)).toBeNull()
-    expect(view.state.doc).toBe(doc)
   })
 
   it('S44: Enter applies a typed value and closes; the unit is optional', async () => {
@@ -269,10 +264,13 @@ describe('picking', () => {
     expect(getMarkdownForSave(crepe)).toBe('***\n\n<!-- line: thickness 6px -->\n')
   })
 
-  it('S47: the current value, typed or picked, closes the menu with no document change', async () => {
-    const { view, item } = await openOnLine('***\n<!-- line: darkness 100% -->\n')
+  it('S47, S78: the current value, typed, picked or chosen, closes the menu with no document change', async () => {
+    const { view, item } = await openOnLine('***\n<!-- line: darkness 100%, style dotted -->\n')
     const doc = view.state.doc
     presetButtons(view, 0)[2].click()
+    expect(popupOf(view)).toBeNull()
+    rightClick(item)
+    presetButtons(view, 2)[1].click()
     expect(popupOf(view)).toBeNull()
     rightClick(item)
     type(box(view, 1), '3')

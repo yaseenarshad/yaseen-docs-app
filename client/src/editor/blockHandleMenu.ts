@@ -292,7 +292,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           let popup: HTMLElement | null = null
 
           const close = () => {
-            // A number box had the focus: it goes back to the editor, not to the page.
+            // Something in the menu had the focus: it goes back to the editor, not to the page.
             const hadFocus = popup !== null && popup.contains(document.activeElement)
             popup?.remove()
             popup = null

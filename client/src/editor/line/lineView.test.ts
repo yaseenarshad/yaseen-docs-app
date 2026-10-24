@@ -9,13 +9,14 @@
  *
  * jsdom lays nothing out, so the wrapper's width is set by hand where the drag needs it.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { redo, undo } from '@milkdown/kit/prose/history'
 import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, setMarkdown } from '../createCrepe'
+import { showLineNumbers } from '../lineNumbers/lineNumbers'
 import { LINE_DRAGGING_CLASS, LINE_END_CLASS, LINE_SELECTED_CLASS, LINE_VIEW_CLASS } from './lineView'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
@@ -83,7 +84,7 @@ describe('rendering', () => {
     expect(wrapper.querySelector('hr')?.getAttribute('style')).toBeNull()
   })
 
-  it('S73–S76: a dotted or dashed line carries data-line-pattern on its wrapper; an undo of it takes the attribute away', async () => {
+  it('a dotted or dashed line carries data-line-pattern on its wrapper; a change of it moves or removes the attribute', async () => {
     const { root, view } = await mount('***\n<!-- line: thickness 6px, style dashed, length 40% -->\n')
     expect(wrapperOf(root).getAttribute('data-line-pattern')).toBe('dashed')
     expect(wrapperOf(root).style.getPropertyValue('--line-width')).toBe('40%')
@@ -246,6 +247,44 @@ describe('selection and the length handle', () => {
     Object.defineProperty(onLine, 'target', { value: wrapperOf(root).querySelector('hr') })
     expect(desc.stopEvent(onEnd)).toBe(true)
     expect(desc.stopEvent(onLine)).toBe(false)
+  })
+})
+
+describe('update and destroy', () => {
+  it('an update with the same attributes (a new line number) leaves the wrapper’s style alone', async () => {
+    const { crepe, root } = await mount('a\n\n***\n<!-- line: thickness 6px -->\n\nb\n')
+    const wrapper = wrapperOf(root)
+    const remove = vi.spyOn(wrapper.style, 'removeProperty')
+    const set = vi.spyOn(wrapper.style, 'setProperty')
+    showLineNumbers(crepe, { lines: [1, 3, 7], ends: [1, 5, 7], kinds: 'prp' })
+    expect(wrapper.dataset.line).toBe('3')
+    expect(remove).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+    expect(wrapper.style.getPropertyValue('--line-thickness')).toBe('6px')
+  })
+
+  it('an update mid-drag patches the other parts and keeps the live length', async () => {
+    const { root, view } = await mount('***\n')
+    rowWidth(root, 500)
+    drag(root, 500, [300], false)
+    expect(wrapperOf(root).style.getPropertyValue('--line-width')).toBe('60%')
+    view.dispatch(view.state.tr.setNodeMarkup(hrPos(view), undefined, { ...view.state.doc.child(0).attrs, thickness: 6 }))
+    expect(wrapperOf(root).style.getPropertyValue('--line-thickness')).toBe('6px')
+    expect(wrapperOf(root).style.getPropertyValue('--line-width')).toBe('60%')
+    document.dispatchEvent(new MouseEvent('mouseup', {}))
+    expect(view.state.doc.child(0).attrs.width).toBe(60)
+  })
+
+  it('a view destroyed mid-drag takes the drag’s listeners off', async () => {
+    const { crepe, root } = await mount('***\n')
+    rowWidth(root, 500)
+    drag(root, 500, [300], false)
+    const off = vi.spyOn(document, 'removeEventListener')
+    await crepe.destroy()
+    mounted.splice(mounted.findIndex((m) => m.crepe === crepe), 1)
+    root.remove()
+    expect(off.mock.calls.map(([type]) => type)).toEqual(expect.arrayContaining(['mousemove', 'mouseup', 'keydown']))
+    off.mockRestore()
   })
 })
 

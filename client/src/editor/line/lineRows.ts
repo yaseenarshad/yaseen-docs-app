@@ -3,12 +3,13 @@
  * 41): "Line darkness" (%) and "Line thickness" (px), number fields in the zoom menu's shape, and
  * "Line style" (YAZ-3198), a choice of Solid, Dotted and Dashed, each with a small sample (S78).
  *
- * They show only when the handle points at a line (S40, S42): the target is an `hr`, or it sits in
- * a bullet whose FIRST block is an `hr` (Crepe's handle stands for the bullet when its first block
- * is hovered). A line that is a LATER block of a bullet gets the pickers from its OWN 6-dot handle
- * (Crepe gives that block one); the bullet's own handle shows none (S42). A read-only editor shows no pickers (S51). Each pick is ONE `setNodeMarkup` (one ⌘Z,
- * S50); the default is stored as `null`, so it leaves the comment (S49); the current value never
- * runs (the menu's rule, S47).
+ * They show only when the handle points at a line (S40, S42): the probe's node is an `hr`, or a
+ * bullet whose FIRST block is an `hr` (Crepe's handle stands for the bullet when its first block is
+ * hovered). A line that is a LATER block of a bullet gets the pickers from its OWN 6-dot handle
+ * (Crepe gives that block one); the bullet's own handle shows none, and neither does any other
+ * block of that bullet (S41, S42). A read-only editor shows no pickers (S51). Each pick is ONE
+ * `setNodeMarkup` (one ⌘Z, S50); the default is stored as `null`, so it leaves the comment (S49);
+ * the current value never runs (the menu's rule, S47). The menu's close puts the focus back.
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -33,15 +34,8 @@ export function targetLine(doc: ProseNode, inside: number): { node: ProseNode; p
   if (inside < 0 || inside >= doc.content.size) return null
   const node = doc.nodeAt(inside)
   if (node?.type.name === 'hr') return { node, pos: inside }
-  if (node?.type.name === 'list_item') return node.firstChild?.type.name === 'hr' ? { node: node.firstChild, pos: inside + 1 } : null
-  const $pos = doc.resolve(inside)
-  for (let depth = $pos.depth; depth > 0; depth--) {
-    const item = $pos.node(depth)
-    if (item.type.name !== 'list_item') continue
-    const first = item.firstChild
-    return first?.type.name === 'hr' ? { node: first, pos: $pos.before(depth) + 1 } : null
-  }
-  return null
+  if (node?.type.name !== 'list_item' || node.firstChild?.type.name !== 'hr') return null
+  return { node: node.firstChild, pos: inside + 1 }
 }
 
 /**
@@ -51,8 +45,8 @@ export function targetLine(doc: ProseNode, inside: number): { node: ProseNode; p
 const setPart = (view: EditorView, pos: number, attr: keyof LineStyle, value: number | string, fallback: number | string) => {
   const node = view.state.doc.nodeAt(pos)
   if (node?.type.name !== 'hr') return
-  view.dispatch(closeHistory(view.state.tr).setNodeMarkup(pos, undefined, { ...node.attrs, [attr]: value === fallback ? null : value }))
-  view.focus()
+  const attrs = { ...node.attrs, [attr]: value === fallback ? null : value }
+  view.dispatch(closeHistory(view.state.tr).setNodeMarkup(pos, undefined, attrs))
 }
 
 /** The choice value of the default pattern: solid is `null` on the node and never written (S70). */

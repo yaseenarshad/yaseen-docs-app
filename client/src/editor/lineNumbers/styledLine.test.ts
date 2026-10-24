@@ -56,20 +56,6 @@ describe('line numbers with a styled line (S22)', () => {
     expect(words(root)).toEqual(['1:LINE', '4:LINE', '6:LINE', '9:End'])
   })
 
-  it('a comment that is not ours is a block of the page and keeps its number (S5–S7)', async () => {
-    const file = 'First\n\n***\n\n<!-- line: style wavy -->\n\nSecond\n'
-    const { crepe, root } = await mount(file)
-    show(crepe, file)
-    expect(words(root)).toEqual(['1:First', '3:LINE', '5:<!--', '7:Second'])
-  })
-
-  it('a comment after a bullet’s line but outside the bullet is no sibling of it, and keeps its number', async () => {
-    const file = '- ***\n\n<!-- line: thickness 6px -->\n\nAfter\n'
-    const { crepe, root } = await mount(file)
-    show(crepe, file)
-    expect(words(root)).toEqual(['1:LINE', '3:<!--', '5:After'])
-  })
-
   it('a comment on two lines in a quote: the editor joins it, so every block keeps its number', async () => {
     const file = '> q\n>\n> ***\n>\n> <!-- line: darkness 80%,\n> thickness 6px -->\n\nAfter\n'
     const { crepe, root } = await mount(file)

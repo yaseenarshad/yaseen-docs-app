@@ -330,7 +330,7 @@ describe('the line pattern (YAZ-3198, D7)', () => {
     expect(await save(`a\n\n***\n${comment}\n\nb\n`)).toBe(`a\n\n***\n\n${comment}\n\nb\n`)
   })
 
-  it('S72: an unknown pattern set on the node is drawn and saved as solid', async () => {
+  it('an unknown pattern value on the node (a paste, a transaction) is drawn and saved as solid', async () => {
     expect(await saveStyled({ pattern: 'wavy' })).toBe('a\n\n***\n\nb\n')
   })
 

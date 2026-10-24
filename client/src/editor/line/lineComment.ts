@@ -33,8 +33,8 @@ export interface LineStyle {
 
 export const PLAIN_LINE: LineStyle = { darkness: null, thickness: null, pattern: null, width: null }
 
-/** The number parts: the word in the comment, its unit, the attribute and its range. */
-const NUMBER_PARTS = [
+/** The number parts: the word in the comment, its unit, the attribute and its range. The one table of the ranges. */
+export const NUMBER_PARTS = [
   { word: 'darkness', unit: '%', attr: 'darkness', min: DARKNESS_MIN, max: DARKNESS_MAX, fallback: DARKNESS_DEFAULT },
   { word: 'thickness', unit: 'px', attr: 'thickness', min: THICKNESS_MIN, max: THICKNESS_MAX, fallback: THICKNESS_DEFAULT },
   { word: 'length', unit: '%', attr: 'width', min: MIN_LINE_WIDTH, max: LINE_WIDTH_MAX, fallback: LINE_WIDTH_DEFAULT },

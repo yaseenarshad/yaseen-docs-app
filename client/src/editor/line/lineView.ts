@@ -8,10 +8,11 @@
  * The wrapper is the block: it is as wide as the row, so a node decoration on it (the line number,
  * `data-line`) sits in the lane whatever the line's length. The values go to the custom properties
  * `--line-darkness`, `--line-thickness` and `--line-width` on the wrapper (`line.css` reads them),
- * and the pattern (YAZ-3164 D7) to its `data-line-pattern` attribute,
- * NEVER `style.width`: an inline width beats every stylesheet rule (rule 30's reason). No property
- * when the attribute is `null`, so the stylesheet's default takes over. `update()` patches the
- * properties in place; nothing here is ever rebuilt.
+ * and the pattern (YAZ-3164 D7) to its `data-line-pattern` attribute, NEVER `style.width`: an
+ * inline width beats every stylesheet rule (rule 30's reason). No property when the attribute is
+ * `null`, so the stylesheet's default takes over. `update()` patches the properties in place, and
+ * only when the attributes changed (a new line number is an update too); nothing here is ever
+ * rebuilt, and a drag's live `--line-width` is never put back under it.
  *
  * SELECTION: a click is ProseMirror's stock `NodeSelection` on the leaf. `selectNode` adds
  * `is-selected` only while `view.editable`, and the round end handle shows only then (S30, S38).
@@ -25,7 +26,7 @@
  * nothing (S36). The travel is a share of the wrapper's own on-screen width, so a document zoom
  * changes nothing (S28). `stopEvent` claims every event on the handle (no node drag, no caret
  * move); `ignoreMutation` answers false only to the `selection` pseudo-mutation, so a click still
- * selects the node. A read-only editor has no gesture.
+ * selects the node. A read-only editor has no gesture. `destroy()` ends a drag that is still running.
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -45,6 +46,8 @@ const PROPERTIES = ['--line-darkness', '--line-thickness', '--line-width']
 class LineNodeView implements NodeView {
   readonly dom: HTMLDivElement
   private readonly end: HTMLSpanElement
+  /** The running drag's end (its listeners off), or null: `patch` keeps the live length, `destroy` ends it. */
+  private drag: (() => void) | null = null
 
   constructor(
     private node: ProseNode,
@@ -61,11 +64,15 @@ class LineNodeView implements NodeView {
     this.patch()
   }
 
-  /** The node's style onto the wrapper: set parts as properties, the pattern as an attribute, everything else removed. */
+  /**
+   * The node's style onto the wrapper: set parts as properties, the pattern as an attribute,
+   * everything else removed — except the length while a drag holds it live.
+   */
   private patch(): void {
     const style = lineStyleOf(this.node)
-    for (const name of PROPERTIES) this.dom.style.removeProperty(name)
-    for (const [name, value] of lineStyleProperties(style)) this.dom.style.setProperty(name, value)
+    const keep = this.drag === null ? null : '--line-width'
+    for (const name of PROPERTIES) if (name !== keep) this.dom.style.removeProperty(name)
+    for (const [name, value] of lineStyleProperties(style)) if (name !== keep) this.dom.style.setProperty(name, value)
     if (style.pattern === null) this.dom.removeAttribute(PATTERN_ATTR)
     else this.dom.setAttribute(PATTERN_ATTR, style.pattern)
   }
@@ -84,6 +91,7 @@ class LineNodeView implements NodeView {
     let width = startWidth
     this.dom.classList.add(LINE_DRAGGING_CLASS)
     const end = (): void => {
+      this.drag = null
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
       document.removeEventListener('keydown', onKey, true)
@@ -111,6 +119,7 @@ class LineNodeView implements NodeView {
       end()
       this.dom.style.setProperty('--line-width', startStyle)
     }
+    this.drag = end
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
     document.addEventListener('keydown', onKey, true)
@@ -130,9 +139,15 @@ class LineNodeView implements NodeView {
 
   update(node: ProseNode): boolean {
     if (node.type !== this.node.type) return false
+    const same = node.sameMarkup(this.node)
     this.node = node
-    this.patch()
+    if (!same) this.patch()
     return true
+  }
+
+  /** A view that goes away mid-drag takes the drag's listeners with it. */
+  destroy(): void {
+    this.drag?.()
   }
 
   selectNode(): void {
