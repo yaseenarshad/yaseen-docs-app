@@ -235,3 +235,27 @@ describe('fileLines: the frontmatter above, and the blank lines the load adds', 
     expect(ends.map(toFileLine)).toEqual([4, 5, 7, 11])
   })
 })
+
+describe('a styled line (YAZ-3204, rule 41)', () => {
+  it('skips the line comment right after a thematic break, and the line ends on it', () => {
+    expect(blockLines('First\n\n***\n\n<!-- line: darkness 50% -->\n\nSecond\n')).toEqual({ lines: [1, 3, 7], ends: [1, 5, 7], kinds: 'prp' })
+    expect(blockLines('- a\n- ***\n  <!-- line: thickness 6px -->\n- b\n')).toEqual({ lines: [1, 2, 4], ends: [1, 3, 4], kinds: 'prp' })
+  })
+
+  it('keeps every other HTML block: not ours, not right after the line, or in another container', () => {
+    expect(blockLines('***\n\n<!-- line: style wavy -->\n').kinds).toBe('rp')
+    expect(blockLines('***\n\nText\n\n<!-- line: darkness 50% -->\n').kinds).toBe('rpp')
+    expect(blockLines('<!-- line: darkness 50% -->\n\n***\n').kinds).toBe('pr')
+    expect(blockLines('- ***\n- <!-- line: darkness 50% -->\n').kinds).toBe('rp')
+    expect(blockLines('> ***\n\n<!-- line: darkness 50% -->\n').kinds).toBe('rp')
+  })
+})
+
+describe('a styled line whose comment is on two lines (YAZ-3206)', () => {
+  it('reads the comment without the quote’s prefix, as the editor does, at the top level, in a quote and in a bullet', () => {
+    expect(blockLines('> q\n>\n> ***\n>\n> <!-- line: darkness 80%,\n> thickness 6px -->\n\nAfter\n')).toEqual({ lines: [1, 3, 8], ends: [1, 6, 8], kinds: 'prp' })
+    expect(blockLines('q\n\n***\n\n<!-- line: darkness 80%,\nthickness 6px -->\n\nAfter\n')).toEqual({ lines: [1, 3, 8], ends: [1, 6, 8], kinds: 'prp' })
+    expect(blockLines('- ***\n  <!-- line: darkness 80%,\n  thickness 6px -->\n- b\n')).toEqual({ lines: [1, 4], ends: [3, 4], kinds: 'rp' })
+    expect(blockLines('> ***\n> <!-- line: darkness 80%,\n> style wavy -->\n').kinds).toBe('rp')
+  })
+})

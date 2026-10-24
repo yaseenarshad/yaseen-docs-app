@@ -2300,6 +2300,63 @@ button {
   line-height: 1.3;
 }
 
+/* A picker in the block handle menu (YAZ-3164 D3, condensed in the guided test): one row, the name
+   left at the menu item's size and a value button right; its panel wears the zoom menu's classes at
+   that menu's 12px (the menu is mounted in the editor, whose text is 16px). Scoped under
+   `.ctx-menu--editor` so Crepe's `.milkdown button` reset does not win. */
+.ctx-menu--editor .document-zoom__custom,
+.ctx-menu--editor .document-zoom__presets {
+  font-size: 12px;
+}
+
+.ctx-menu--editor .block-menu-picker__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 3px 4px 3px 10px;
+  font-size: 13px;
+}
+
+.ctx-menu--editor .block-menu-picker__value {
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ctx-menu--editor .block-menu-picker__value:hover,
+.ctx-menu--editor .block-menu-picker__value[aria-expanded="true"] {
+  background: var(--bg-hover);
+}
+
+.ctx-menu--editor .block-menu-picker__value:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.ctx-menu--editor .block-menu-picker__panel {
+  padding: 2px 4px 6px 10px;
+}
+
+/* The red message of a bad number wraps inside the menu's width: `width: 0` keeps it out of the
+   menu's own size, `min-width: 100%` then fills the box's width, so the menu never grows when it shows. */
+.ctx-menu--editor .document-zoom__error {
+  width: 0;
+  min-width: 100%;
+}
+
+.ctx-menu--editor .block-menu-picker__sample {
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
 /* The "Read only" chip (YAZ-3076 D4): the cog's size and shape, in the accent's soft tone, because read
    only is not the usual state and must never be silent (S49). `flex: none`, so a narrow row squeezes
    nothing out of it. Its box opens under it, at the menus' place and with their frame. */
@@ -2579,15 +2636,16 @@ button {
   content: attr(data-line) '–' attr(data-line-end);
 }
 
-/* Three blocks clip what leaves their box, and the margin is outside it. A rule (the browser's own
-   `overflow: hidden`) and a code block give the clip up while the numbers show: a rule holds
-   nothing, and code wraps (YAZ-2270). The rule's number sits on the line itself. */
-.editor-host[data-line-numbers] .ProseMirror hr[data-line],
+/* Three blocks clip what leaves their box, and the margin is outside it. A rule and a code block
+   give the clip up while the numbers show: a rule holds nothing, and code wraps (YAZ-2270). The
+   rule's number is on its node view's wrapper (YAZ-3164 D2), which is as wide as the row whatever
+   the line's length, and sits at the middle of the line, a thick one too (S22). */
+.editor-host[data-line-numbers] .ProseMirror .line-view[data-line],
 .editor-host[data-line-numbers] .ProseMirror .milkdown-code-block[data-line] {
   overflow: visible;
 }
 
-.editor-host[data-line-numbers] .ProseMirror hr[data-line]::after {
+.editor-host[data-line-numbers] .ProseMirror .line-view[data-line]::after {
   top: 50%;
   padding-top: 0;
   transform: translateY(-50%);

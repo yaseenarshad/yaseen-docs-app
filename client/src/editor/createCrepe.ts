@@ -70,10 +70,10 @@
  *    reuse Crepe's link-tooltip API, including one logical range when formatting splits the DOM
  *    anchor. Registered only when `opts.markdownLinkNav` supplies the host boundary.
  *  - Block handle menu (YAZ-726, `blockHandleMenu.ts`): right-click on the 6-dot handle opens a
- *    `.ctx-menu` popup; rows are data from a provider; capture-suppresses Crepe's right-button
- *    mousedown/mouseup so the selection/focus don't jump. First row: Number children ↔ Bullet
- *    children (YAZ-729, `outline/numberChildrenRow.ts`), disabled when the item has no direct
- *    child list.
+ *    `.ctx-menu` popup; rows (or picker rows, YAZ-3164) are data from a provider;
+ *    capture-suppresses Crepe's right-button mousedown/mouseup so the selection/focus don't jump.
+ *    First row: Number children ↔ Bullet children (YAZ-729, `outline/numberChildrenRow.ts`),
+ *    disabled when the item has no direct child list.
  *  - Numbers are manual-only (YAZ-793/YAZ-1329): right-click Number children is the only editor
  *    conversion command. The `1. ` input rule, `Mod-Alt-7` keymap and slash-menu Ordered List row
  *    are removed; real ordered Markdown still parses, and `* 6) text` stays literal bullet text.
@@ -119,7 +119,8 @@
  *    explicit empty lines. Copy as chooses plain text or Markdown; saves stay intact (YAZ-1443).
  *  - Images (YAZ-1656, `image/imageView.ts`): the FIRST node view in the codebase, on the commonmark
  *    `image` node the schema already has — a node view is allowed ONLY on an existing node and
- *    never touches the serializer, so `![alt|300](src)` stays byte-identical. Vault-relative srcs
+ *    never touches the serializer (the line below is the one exception), so `![alt|300](src)`
+ *    stays byte-identical. Vault-relative srcs
  *    load through main's `app://vault/` protocol (`image/imageSrc.ts`); eight aspect-locked handles
  *    resize into Obsidian's `alt|width`; double-click opens the host's lightbox (`image/ImageModal`).
  *    Paste/drop of image BYTES writes `assets/images/<note>-<stamp>.<ext>` and inserts the node
@@ -127,6 +128,17 @@
  *    Registered only when `opts.image` supplies the root + note path; without it images render as
  *    Crepe's stock `<img>` — the folder outline (its bullets-only lock has no `image`) and the
  *    hover preview card (no root in reach) say so where they mount.
+ *  - The line's style (YAZ-3164, `line/lineStyle.ts`): the `hr` node gains `darkness`, `thickness`,
+ *    `pattern` and `width` (each null for its default) — the ONE exception to the images rule
+ *    above, because Markdown has no carrier for them. A plain line stays `***`; a styled one is
+ *    `***` then the next block `<!-- line: darkness 80%, thickness 6px, style dashed, length 40%
+ *    -->`, only the parts that are not the default. A `$remark` plugin joins the line and its
+ *    comment on load in every container; any other comment stays HTML, bytes untouched. The second
+ *    node view (`line/lineView.ts`, on every editor) draws it from custom properties and gives a
+ *    selected line a round end handle that drags its length: live while it moves, ONE
+ *    `setNodeMarkup` on mouseup. The block handle menu of a line (`line/lineRows.ts`) adds "Line
+ *    darkness", "Line thickness" and "Line style", one row each, whose value opens the presets (the
+ *    zoom menu's shape) on a click.
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
  *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
@@ -187,6 +199,9 @@ import {
 import { underline } from './marks/underline'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
 import { inlineBreaks } from './inlineBreaks'
+import { lineStyle } from './line/lineStyle'
+import { lineView } from './line/lineView'
+import { lineRows } from './line/lineRows'
 import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
 import { visibleFormatting } from './visibleFormatting'
 import { codeLines } from './lineNumbers/codeLines'
@@ -397,6 +412,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listItemRoundTrip)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
+  // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
+  crepe.editor.use(lineStyle)
   // YAZ-3209: over hidden lines, Bold, Italic, Strikethrough, code and H1-H3 / T change the visible
   // ones only, and the toolbar lights for visible lines only. After the presets, by `EditorViewReady`.
   crepe.editor.use(visibleFormatting)
@@ -438,6 +455,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     ctx.inject(imageOptionsCtx, opts.image ?? null)
   })
   if (opts.image !== undefined) crepe.editor.use(createImageView(opts.image))
+  // The line (YAZ-3164): its look and its length handle, on every editor — the line's style is in the schema.
+  crepe.editor.use(lineView)
   crepe.editor.use(outlinePaste)
   crepe.editor.use(clipboardPaste)
   crepe.editor.use(clipboardCopyOut)
@@ -445,7 +464,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // Numbers are manual-only (YAZ-793/YAZ-1329): only the explicit block-handle command creates
   // ordered children. Typing, slash-menu and keyboard conversion paths are all absent.
   void crepe.editor.remove([wrapInOrderedListInputRule, ...orderedListKeymap])
-  crepe.editor.use(createBlockHandleMenu(numberChildrenRow))
+  // A line's darkness, thickness and style pickers follow the first row (YAZ-3164 D3); every other
+  // block gets the rows of before.
+  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...numberChildrenRow(view, target, ctx), ...lineRows(view, target, ctx)]))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.

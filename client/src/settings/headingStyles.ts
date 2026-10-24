@@ -5,8 +5,11 @@
  * preview. `app.css` reads `--text-size` as the editor's base size, and each `h1`-`h6` rule and the
  * `.heading-text` spans of a heading read the `--hN-*` variables; `bullets.css` (the label row of a
  * bullet that starts with a heading) reads both. Each falls back to the look of 1.0.14. Only a
- * changed field gets a variable, so `{}` sets none.
+ * changed field gets a variable, so `{}` sets none. The vault's default line (YAZ-3208 D8) is
+ * `--line-default-darkness`, `--line-default-thickness` and `--line-default-pattern`, which
+ * `editor/line/line.css` falls back to for a line that follows the default.
  */
+import { DARKNESS_DEFAULT, PATTERN_DEFAULT, THICKNESS_DEFAULT, type LineDefaults } from '@shared/line'
 import { TEXT_DEFAULT_SIZE, type TextFormatting } from '@shared/textFormatting'
 import { HEADING_KEYS, type HeadingHighlight, type HeadingKey, type HeadingStyle, type HeadingStyles } from '@shared/types'
 
@@ -46,10 +49,40 @@ export function headingVars(styles: HeadingStyles): Record<string, string> {
   return vars
 }
 
-/** The custom properties of a vault's formatting: `--text-size` when the Text size is set, then the `--hN-*` variables. `{}` sets none. */
+/** The custom properties of a vault's default line (D8): only the fields it sets. */
+export function lineVars(line: LineDefaults | undefined): Record<string, string> {
+  const vars: Record<string, string> = {}
+  if (line?.darkness !== undefined) vars['--line-default-darkness'] = `${line.darkness}%`
+  if (line?.thickness !== undefined) vars['--line-default-thickness'] = `${line.thickness}px`
+  if (line?.pattern !== undefined) vars['--line-default-pattern'] = line.pattern
+  return vars
+}
+
+/** The custom properties of a vault's formatting: `--text-size` when the Text size is set, the `--hN-*` and the `--line-default-*` variables. `{}` sets none. */
 export function textVars(formatting: TextFormatting): Record<string, string> {
   const size = formatting.text?.size
-  return { ...(size !== undefined && { '--text-size': `${size}px` }), ...headingVars(formatting) }
+  return { ...(size !== undefined && { '--text-size': `${size}px` }), ...headingVars(formatting), ...lineVars(formatting.line) }
+}
+
+/** The default line as it draws (D10): the vault's fields over the app's 50%, 3px, solid. */
+export const lineDefaultsOf = (line: LineDefaults | undefined) => ({
+  darkness: line?.darkness ?? DARKNESS_DEFAULT,
+  thickness: line?.thickness ?? THICKNESS_DEFAULT,
+  pattern: line?.pattern ?? PATTERN_DEFAULT,
+})
+
+/**
+ * The formatting with the default line changed (D10). A field stepped back to the app's value
+ * leaves the key (solid is no `pattern` field), and a `line` with no field left leaves the file.
+ */
+export function withLineDefaults(formatting: TextFormatting, patch: { darkness?: number; thickness?: number; pattern?: 'solid' | 'dotted' | 'dashed' }): TextFormatting {
+  const merged = { ...lineDefaultsOf(formatting.line), ...patch }
+  const line: LineDefaults = {}
+  if (merged.darkness !== DARKNESS_DEFAULT) line.darkness = merged.darkness
+  if (merged.thickness !== THICKNESS_DEFAULT) line.thickness = merged.thickness
+  if (merged.pattern !== 'solid') line.pattern = merged.pattern
+  const { line: _line, ...rest } = formatting
+  return Object.keys(line).length === 0 ? rest : { ...rest, line }
 }
 
 /** Whether a level looks different from the app's own look: any stored field that is not a default. */

@@ -529,6 +529,60 @@
   grid-column: -2;
 }
 
+/* The Line row (YAZ-3208 D10): "Line" and a preview of the vault's default line, drawn as the
+   page draws it (editor/line/line.css): a share of the text colour, its thickness, and the dotted or
+   dashed tiles (5 × and 2 × the thickness). A row of its own under the grid (YAZ-3213), so the
+   seven lines above keep their columns; a hairline sets it apart. */
+.line-defaults {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* "Line" and its preview never shrink (YAZ-3221): the label takes its own width, and the controls
+   take the rest and wrap inside it — on a narrow dialog the row wraps and they go under the label. */
+.line-defaults__label {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 4px;
+}
+
+.line-defaults__controls {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+/* The grid's Reset column is not here: the slot keeps its width and stands at the row's end. */
+.line-defaults .heading-styles__reset {
+  grid-column: auto;
+}
+
+.heading-styles__line-preview {
+  flex: none;
+  width: 96px;
+  height: var(--preview-thickness);
+  --preview-color: color-mix(in srgb, var(--fg) var(--preview-darkness), transparent);
+  background: var(--preview-color);
+}
+
+.heading-styles__line-preview--dashed {
+  background: linear-gradient(to right, var(--preview-color) 60%, transparent 60%) 0 0 / calc(5 * var(--preview-thickness)) 100% repeat-x;
+}
+
+.heading-styles__line-preview--dotted {
+  background: radial-gradient(circle closest-side, var(--preview-color) 92%, transparent 100%) 0 0 / calc(2 * var(--preview-thickness)) 100% repeat-x;
+}
+
 /* ---------- hotkey reference (GRO-2067) — one table per Hotkeys group ---------- */
 
 .hotkeys__list {
