@@ -219,6 +219,17 @@ describe('the thread anchor', () => {
     expect(findThreadAnchor(view.state)).toBeNull()
   })
 
+  it('stays on the match when an update sets the same selection, like the redraw of a hover (YAZ-3205)', async () => {
+    const { view, channel } = await mountFind('apple one apple two')
+    channel.open()
+    channel.setQuery('apple')
+    const match = posOfText(view.state.doc, 'apple one')
+    expect(findThreadAnchor(view.state)).toBe(match)
+    // The caret does not move: a hover's class change makes ProseMirror read the DOM and set the selection it already has.
+    view.dispatch(view.state.tr.setSelection(view.state.selection))
+    expect(findThreadAnchor(view.state)).toBe(match)
+  })
+
   it('stays on the match through the reveal of a collapsed fold, and an edit gives it back', async () => {
     // The query is the first transaction: Milkdown's trailing paragraph (an appended doc change) rides on it.
     const { root, view, channel } = await mountFind('* Parent\n  * hidden apple\n* visible banana\n', {

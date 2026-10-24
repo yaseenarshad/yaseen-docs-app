@@ -275,8 +275,11 @@ const findPlugin = (channel: FindChannel) =>
             // An APPENDED doc change keeps it too: a real edit is the root transaction and clears it first, but
             // Milkdown's trailing paragraph can ride on find's own query, the first transaction after mount.
             const edited = transaction.docChanged && transaction.getMeta('appendedTransaction') === undefined
+            // The selection must really move: a hover's class change makes ProseMirror read the DOM and
+            // set the selection it already has, which is no caret move (YAZ-3205).
+            const caretMoved = !newState.selection.eq(oldState.selection)
             const onMatch =
-              meta?.type === 'query' || meta?.type === 'step' || (meta?.type !== 'release' && previous.onMatch && !transaction.selectionSet && !edited)
+              meta?.type === 'query' || meta?.type === 'step' || (meta?.type !== 'release' && previous.onMatch && !caretMoved && !edited)
             if (
               meta === undefined &&
               !recompute &&

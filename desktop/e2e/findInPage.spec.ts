@@ -336,4 +336,29 @@ test.describe('the bullet thread follows the active match (YAZ-3166)', () => {
     await expect(win.locator('.outline-thread-node')).toHaveCount(1)
     await win.keyboard.press('Escape')
   })
+
+  test('a hover on the thread line keeps the thread on the match (YAZ-3205)', async () => {
+    await line(win, 'Gamma caret line').click()
+    await win.keyboard.press('Meta+f')
+    await input(win).fill('zebra')
+    await expect(counter(win)).toHaveText('1 of 2')
+    await expect(stopLine(win)).toHaveText('The first zebra line')
+
+    // The pointer rests on the guide line the thread draws (guideLines.ts hit-tests this strip); no click, no key.
+    const point = await win.evaluate(() => {
+      const list = Array.from(document.querySelectorAll('.editor-mount .ProseMirror ul')).find(
+        (ul) => ul.parentElement?.classList.contains('content-dom') && ul.querySelector('p')?.textContent === 'Alpha child',
+      )!
+      const rect = list.getBoundingClientRect()
+      const font = Number.parseFloat(getComputedStyle(list).fontSize) || 16
+      return { x: rect.left - ((2.15 * font) / 2 + 5), y: rect.top + 8 }
+    })
+    await win.mouse.move(point.x - 40, point.y)
+    await win.mouse.move(point.x, point.y, { steps: 5 })
+    // The fault is that something HAPPENS after the hover (the list redraws, then a selection update); give it the time.
+    await win.waitForTimeout(500)
+    await expect(counter(win)).toHaveText('1 of 2')
+    await expect(stopLine(win)).toHaveText('The first zebra line')
+    await win.keyboard.press('Escape')
+  })
 })
