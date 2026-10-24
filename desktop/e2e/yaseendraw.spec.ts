@@ -17,6 +17,9 @@
  *   5 in the text editor of a per-line bold element, a double click selects one word, a triple
  *     click selects the line, and a drag after a double click keeps its range (YAZ-3175:
  *     Chromium's pointerdown carries no click count)
+ *   6 opening a text element's editor and leaving it with no edit leaves the modal clean: Save
+ *     stays disabled and ✕ closes without asking (YAZ-3210: the engine bumps the element's version
+ *     anyway); a real edit still marks it dirty
  *
  * Same harness as drawing.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `yaseendraw-` step screenshots).
@@ -260,12 +263,53 @@ test('step 5 — a double click selects a word, a triple click the line, and a d
   await win.mouse.up({ clickCount: 2 })
   await expect.poll(selection).toEqual(dragged)
 
-  // Leave the editor with Esc, the modal with ✕ (the canvas keeps a second Esc). Opening the editor
-  // already marks the modal dirty, so ✕ asks first: Discard. The selection wrote nothing to disk.
+  // Leave the editor with Esc, the modal with ✕ (the canvas keeps a second Esc). A selection is not
+  // an edit, so ✕ closes without asking (YAZ-3210) and nothing reaches the disk.
   await win.keyboard.press('Escape')
   await expect(editor).toHaveCount(0)
   await modal(win).getByRole('button', { name: 'Close drawing' }).click()
-  await modal(win).locator('.drawing-modal__confirm').getByRole('button', { name: 'Discard' }).click()
+  await expect(modal(win).locator('.drawing-modal__confirm')).toHaveCount(0)
+  await expect(modal(win)).toHaveCount(0)
+  expect(await readSidecar(STYLED)).toBe(before)
+})
+
+test('step 6 — the text editor left with no edit is not an edit; a typed letter is', async () => {
+  const before = await readSidecar(STYLED)
+  const editor = modal(win).locator('textarea.excalidraw-wysiwyg')
+  const confirm = modal(win).locator('.drawing-modal__confirm')
+  const close = () => modal(win).getByRole('button', { name: 'Close drawing' }).click()
+  /** Opens the modal, selects the one text element and opens its editor with Enter. */
+  const openEditor = async () => {
+    await previewOf(win, STYLED).click()
+    await expect(modal(win)).toBeVisible()
+    await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
+    const box = await modalCanvas(win).boundingBox()
+    if (box === null) throw new Error('the modal canvas has no box')
+    await win.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.8)
+    await win.keyboard.press('ControlOrMeta+a')
+    await win.keyboard.press('Enter')
+    await expect(editor).toBeFocused()
+  }
+
+  // In and out with Esc, nothing typed: clean, so ✕ just closes.
+  await openEditor()
+  await win.keyboard.press('Escape')
+  await expect(editor).toHaveCount(0)
+  await expect(saveButton(win)).toBeDisabled()
+  await close()
+  await expect(confirm).toHaveCount(0)
+  await expect(modal(win)).toHaveCount(0)
+
+  // One letter typed is an edit: Save wakes, and ✕ asks first.
+  await openEditor()
+  await win.keyboard.press('End')
+  await win.keyboard.type('!')
+  await win.keyboard.press('Escape')
+  await expect(editor).toHaveCount(0)
+  await expect(saveButton(win)).toBeEnabled()
+  await shoot(win, 'yaseendraw-07-typed-is-dirty')
+  await close()
+  await confirm.getByRole('button', { name: 'Discard' }).click()
   await expect(modal(win)).toHaveCount(0)
   expect(await readSidecar(STYLED)).toBe(before)
   await quitApp(app)

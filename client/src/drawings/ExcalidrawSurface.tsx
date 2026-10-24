@@ -15,7 +15,8 @@
  *
  * SNAPSHOTS, NOT A CONTROLLED SCENE: the surface stays UNCONTROLLED (the engine owns its undo,
  * selection and tool state) and reports outward through `onSnapshot`. A snapshot is a cheap
- * change KEY — `getSceneVersion`, the engine's own sum of element versions — plus two thunks that
+ * change KEY — the sum of element versions, each the version at which that element's CONTENT last
+ * moved (`contentVersion.ts`: the engine also bumps on writes that change nothing) — plus two thunks that
  * cost nothing until a save fires. The FIRST snapshot is emitted at mount, from the loaded scene,
  * BEFORE the engine's own first `onChange`, so the host always has a baseline to call "clean".
  * That baseline runs the disk elements through the engine's own `restoreElements()` first:
@@ -23,7 +24,7 @@
  * rounding values — YAZ-929), so only a restore-then-compare baseline agrees with the engine's
  * first `onChange`, and an untouched drawing never reads as dirty.
  *
- * ⚡ `getSceneVersion` IS A SUM, and a sum is not an identity: an undo that returns to the same
+ * ⚡ THE KEY IS A SUM, and a sum is not an identity: an undo that returns to the same
  * total reads CLEAN. Accepted on Draw's YAZ-1775: the failure mode is "a redundant save was
  * skipped", not "an edit was lost".
  *
@@ -68,6 +69,7 @@ import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type Eng
 import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs } from '@shared/types'
 import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
+import { contentVersion } from './contentVersion'
 import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
 import { openViewport, type DrawingScene } from './drawingScene'
 import { applyToolbarMode, loadExcalidraw, type ExcalidrawModule } from './engine'
@@ -227,6 +229,8 @@ export function ExcalidrawSurface({
   const engineRef = useRef<ExcalidrawModule | null>(null)
   /** The board's own appState edits (see the module doc), counted from the engine's first `onChange`. */
   const countEdits = useRef<ReturnType<typeof appStateEdits> | null>(null)
+  /** The elements' share of the key: a version bump that moved no content is not counted (YAZ-3210). */
+  const countVersion = useRef(contentVersion())
   const emitRef = useRef(onSnapshot)
   const failRef = useRef(onFailed)
   const apiRef = useRef(onApi)
@@ -416,7 +420,7 @@ export function ExcalidrawSurface({
         // The baseline, before the engine has said anything — through the engine's own restore,
         // because restored elements are what it mounts (see the module doc).
         const { elements, appState, files } = engineScene(openedOn.current.scene, prefsToAppState(openedOn.current.canvasPrefs))
-        emitRef.current(snapshotOf(mod, mod.restoreElements(elements, null) as ChangeArgs[0], appState, files, 0))
+        emitRef.current(snapshotOf(countVersion.current, mod, mod.restoreElements(elements, null) as ChangeArgs[0], appState, files, 0))
       },
       () => {
         if (live) failRef.current(ENGINE_LOAD_FAILED)
@@ -438,7 +442,7 @@ export function ExcalidrawSurface({
     (elements: ChangeArgs[0], appState: EngineAppState, files: ChangeArgs[2]) => {
       const mod = engineRef.current
       const edits = countEdits.current
-      if (mod !== null && edits !== null) emitRef.current(snapshotOf(mod, elements, appState, files, edits(appState as unknown as Record<string, unknown>)))
+      if (mod !== null && edits !== null) emitRef.current(snapshotOf(countVersion.current, mod, elements, appState, files, edits(appState as unknown as Record<string, unknown>)))
       if (withPanel) {
         // The canvas panel's open tab: the rail's emphasis, the triggers' opacity, and the memory
         // the hamburger opens on next time; and the selection gate of "Save selection".
@@ -493,10 +497,13 @@ export function ExcalidrawSurface({
         }),
       replaceScene: (next) => {
         const restored = mod.restoreElements(next.elements as ChangeArgs[0], null)
+        // A new scene, a new count: computed BEFORE the engine reports it, so its first `onChange` agrees.
+        countVersion.current = contentVersion()
+        const version = countVersion.current(restored)
         api.updateScene({ elements: restored })
         const entries = Object.values(next.files ?? {}) as Parameters<ImperativeApi['addFiles']>[0]
         if (entries.length > 0) api.addFiles(entries)
-        return mod.getSceneVersion(restored)
+        return version
       },
     })
   }, [withPanel, rail])
@@ -587,9 +594,16 @@ const BUSY_APP_STATE_KEYS = [
 ] as const
 
 /** One snapshot from the engine's own utilities; the only place they are called. */
-function snapshotOf(engine: ExcalidrawModule, elements: ChangeArgs[0], appState: EngineAppState, files: ChangeArgs[2], appStateEditCount: number): DrawingSnapshot {
+function snapshotOf(
+  countVersion: ReturnType<typeof contentVersion>,
+  engine: ExcalidrawModule,
+  elements: ChangeArgs[0],
+  appState: EngineAppState,
+  files: ChangeArgs[2],
+  appStateEditCount: number,
+): DrawingSnapshot {
   return {
-    version: engine.getSceneVersion(elements) + appStateEditCount,
+    version: countVersion(elements) + appStateEditCount,
     serialize: () => {
       // The engine's map, flattened to the two fields that cross the bridge: its `created` /
       // `lastRetrieved` bookkeeping is about this session, not about the file.
