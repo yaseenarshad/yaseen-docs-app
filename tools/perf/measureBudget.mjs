@@ -222,7 +222,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const out = arg('out', join(repo, 'desktop/out'))
   const share = arg('share', join(repo, 'share/dist/assets'))
   const app = outOnly ? null : arg('app', join(repo, 'desktop/dist-app/mac-arm64/Yaseen Docs.app'))
-  const dmg = outOnly ? null : arg('dmg', join(repo, `desktop/dist-app/Yaseen Docs-${version}-arm64.dmg`))
+  // The installer carries the short version when the third number is 0 (`2.1.0` → `Yaseen Docs-2.1-arm64.dmg`, tools/packDesktop.mjs).
+  const short = version.replace(/^(\d+\.\d+)\.0$/, '$1')
+  const dmg = outOnly ? null : arg('dmg', join(repo, `desktop/dist-app/Yaseen Docs-${short}-arm64.dmg`))
   const budget = JSON.parse(readFileSync(join(here, 'budget.json'), 'utf8'))
 
   const fails = [...checkOut(out), ...checkShare(share), ...(app ? checkApp(app) : [])]

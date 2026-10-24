@@ -8,6 +8,10 @@
  * reached electron-builder ("Invalid major number"). Reading the version here works on both.
  *
  * `--mac` then recompresses the dmg zlib → lzma (`lzmaDmg`, YAZ-2181).
+ *
+ * Two-number versions (YAZ-3209 release, 2.1 on): package.json keeps `2.1.0` (npm and
+ * electron-builder need three numbers), but a person sees `2.1` — the installer names and the
+ * Mac About box (`bundleShortVersion`) get the short form when the third number is 0.
  */
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -22,15 +26,22 @@ if (args.length === 0) {
   console.error('usage: node tools/packDesktop.mjs --mac | --win')
   process.exit(2)
 }
+const short = version.replace(/^(\d+\.\d+)\.0$/, '$1')
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-execFileSync(npm, ['exec', '-w', 'desktop', '--', 'electron-builder', ...args, `-c.extraMetadata.version=${version}`], {
+const named = [
+  `-c.extraMetadata.version=${version}`,
+  `-c.mac.bundleShortVersion=${short}`,
+  `-c.dmg.artifactName=\${productName}-${short}-arm64.dmg`,
+  `-c.nsis.artifactName=\${productName}-${short}-win-x64-setup.\${ext}`,
+]
+execFileSync(npm, ['exec', '-w', 'desktop', '--', 'electron-builder', ...args, ...named], {
   cwd: root,
   stdio: 'inherit',
   shell: process.platform === 'win32',
 })
 if (args.includes('--mac')) {
   const { build } = JSON.parse(readFileSync(join(root, 'desktop', 'package.json'), 'utf8'))
-  const dmg = dmgPath(join(root, 'desktop'), build, version)
+  const dmg = dmgPath(join(root, 'desktop'), build, short)
   lzmaDmg(dmg, `${build.productName}.app`)
   console.log(`lzma dmg: ${dmg}`)
 }

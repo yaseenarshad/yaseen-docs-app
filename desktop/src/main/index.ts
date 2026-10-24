@@ -32,7 +32,7 @@ import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
 import { initMint } from './vaultIndex/mint'
 import { createWindowManager } from './windows'
 import { createWindowOpenHandler } from './windowOpenPolicy'
-import { createUpdater, runFile, spawnDetached } from './updater'
+import { createUpdater, runFile, shortVersion, spawnDetached } from './updater'
 
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
 app.setName(APP_NAME)
@@ -167,7 +167,7 @@ const updater = createUpdater(
     userData: app.getPath('userData'),
     // `<bundle>/Contents/Resources/app.asar` in a packaged app; a dev run is `manual` before it matters.
     bundle: join(app.getAppPath(), '..', '..', '..'),
-    version: app.getVersion(),
+    version: shortVersion(app.getVersion()),
     platform: process.platform,
     isPackaged: app.isPackaged,
     feed: process.env.YASEEN_DOCS_UPDATE_FEED,
@@ -247,7 +247,7 @@ app.whenReady().then(() => {
       void updater.check().then(
         (s) => {
           if (s.kind === 'ready' || s.kind === 'manual') handlers.whatsNew()
-          else manager.linkNotice(s.kind === 'downloading' ? `Downloading Yaseen Docs ${s.version}…` : `Yaseen Docs ${app.getVersion()} is the newest version`)
+          else manager.linkNotice(s.kind === 'downloading' ? `Downloading Yaseen Docs ${s.version}…` : `Yaseen Docs ${shortVersion(app.getVersion())} is the newest version`)
         },
         () => manager.linkNotice("Can't check for updates. Try again later"),
       ),

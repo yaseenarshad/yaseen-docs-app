@@ -97,6 +97,15 @@ export function compareVersions(a: string, b: string): number {
 
 export const newer = (a: string, b: string): boolean => compareVersions(a, b) > 0
 
+/**
+ * The version a person sees: two numbers when the third is 0 (`2.1.0` → `2.1`), else as is
+ * (`2.0.2`). Releases are `2.1`, `2.2`, … from 2.1 on, tagged `v2.1`; package.json keeps `2.1.0`
+ * because npm and electron-builder need three numbers. Every version the updater holds — the
+ * app's own (`host.version`, made short at its source in index.ts), each tag, the markers — goes
+ * through this, so an equality check never sets `2.1` against `2.1.0`.
+ */
+export const shortVersion = (v: string): string => v.replace(/^v/, '').replace(/^(\d+\.\d+)\.0$/, '$1')
+
 /** The Mac `.dmg` with GitHub's `sha256:<hex>` digest; none → the release is not ready yet (S2). */
 export function pickAsset(release: GithubRelease): { url: string; sha256: string } | null {
   const asset = release.assets?.find((a) => a.name.endsWith('-arm64.dmg') && typeof a.digest === 'string' && a.digest.startsWith('sha256:'))
@@ -259,7 +268,7 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
 
   const runCheck = async (): Promise<UpdateState> => {
     const release = await getJson<GithubRelease>(`${feed}/latest`)
-    const version = release.tag_name.replace(/^v/, '')
+    const version = shortVersion(release.tag_name)
     // S1. A pre-release tag (`1.0.14-beta.1`) is never an update: `compareVersions` would rank it above 1.0.14.
     if (version.includes('-') || !newer(version, host.version)) return state
     if (version === refused) {
@@ -307,13 +316,13 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
       // here, on `ready` of the one primary instance, never at load: a second launch must not eat it.
       // Deleted either way. No broadcast: no window exists yet, and each reads `state()` on mount.
       try {
-        if (readFileSync(marker, 'utf8').trim() === host.version) state = { kind: 'updated', version: host.version }
+        if (shortVersion(readFileSync(marker, 'utf8').trim()) === host.version) state = { kind: 'updated', version: host.version }
         rmSync(marker, { force: true })
       } catch {
         // no marker: a plain launch
       }
       try {
-        const version = readFileSync(refusedFile, 'utf8').trim()
+        const version = shortVersion(readFileSync(refusedFile, 'utf8').trim())
         if (newer(version, host.version)) {
           refused = version
           state = { kind: 'manual', version }
@@ -339,7 +348,7 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
       // pre-release by name, as in the check, even when GitHub's flag says otherwise. The renderer picks the tags and the default (D10, D11).
       const releases = (await getJson<GithubRelease[]>(`${feed}?per_page=100`)).filter((r) => r.draft !== true && r.prerelease !== true && !r.tag_name.includes('-'))
       releases.sort((a, b) => compareVersions(b.tag_name, a.tag_name))
-      return { current: host.version, releases: releases.slice(0, 100).map((r) => ({ version: r.tag_name.replace(/^v/, ''), title: r.name ?? r.tag_name, date: r.published_at ?? '', body: r.body ?? '' })) }
+      return { current: host.version, releases: releases.slice(0, 100).map((r) => ({ version: shortVersion(r.tag_name), title: r.name ?? r.tag_name, date: r.published_at ?? '', body: r.body ?? '' })) }
     },
     installOnExit(reopen) {
       if (state.kind !== 'ready') return
