@@ -108,7 +108,7 @@ test('step 2 — the 6-dot menu of a line: type 80 + Enter sets the darkness on 
   await expect(menu(win).locator('.ctx-menu__item')).toHaveText(['Number children'])
   await expect(menu(win).locator('.ctx-menu__item')).toBeDisabled()
   await expect(pickers(win).locator('.block-menu-picker__label')).toHaveText(['Line darkness', 'Line thickness', 'Line style'])
-  await expect(pickers(win).locator('.block-menu-picker__value')).toHaveText(['50% ▾', '3px ▾', 'Solid ▾'])
+  await expect(pickers(win).locator('.block-menu-picker__value')).toHaveText(['Default (50%) ▾', 'Default (3px) ▾', 'Default (Solid) ▾'])
   await expect(menu(win).locator('.block-menu-picker__panel:visible')).toHaveCount(0)
   await expect(menu(win).locator(':focus')).toHaveCount(0)
   await shoot(win, 'lineStyle-02-menu')
@@ -125,7 +125,7 @@ test('step 2 — the 6-dot menu of a line: type 80 + Enter sets the darkness on 
 
 test('step 3 — the 6px preset makes the line 6px thick, on screen and on disk', async () => {
   await openLineMenu(win)
-  await expect(pickers(win).locator('.block-menu-picker__value')).toHaveText(['80% ▾', '3px ▾', 'Solid ▾'])
+  await expect(pickers(win).locator('.block-menu-picker__value')).toHaveText(['80% ▾', 'Default (3px) ▾', 'Default (Solid) ▾'])
   await valueButton(win, 1).click()
   await expect(box(win)).toHaveValue('3px')
   await preset(win, '6px').click()
@@ -138,8 +138,8 @@ test('step 3 — the 6px preset makes the line 6px thick, on screen and on disk'
 test('step 4 — the style picker makes the line dashed, in the darkness colour, in light and dark', async () => {
   await openLineMenu(win)
   await valueButton(win, 2).click()
-  await expect(preset(win, 'Solid (default)')).toHaveAttribute('aria-pressed', 'true')
-  await expect(menu(win).locator('.line-sample:visible')).toHaveCount(3)
+  await expect(preset(win, 'Default (Solid)')).toHaveAttribute('aria-pressed', 'true')
+  await expect(menu(win).locator('.line-sample:visible')).toHaveCount(4)
   await shoot(win, 'lineStyle-04-style-open')
   await preset(win, 'Dashed').click()
   await expect(menu(win)).toBeHidden()
