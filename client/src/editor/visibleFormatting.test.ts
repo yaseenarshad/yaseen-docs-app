@@ -246,6 +246,51 @@ describe('format commands over hidden lines (YAZ-3209 D1–D3)', () => {
   })
 })
 
+describe('what a fold really hides (YAZ-3209 bugs 1B1, 1B2)', () => {
+  it('1B2: a folded bullet\'s own second paragraph is visible — it takes the format; only the nested list is skipped', async () => {
+    const { crepe } = await mount('* A\n\n  second para\n\n  * a1\n\n* B\n')
+    foldItem(crepe, 'A')
+    select(crepe, posOf(crepe, 'A'), endOf(crepe, 'B'))
+    expect(boldLit(crepe)).toBe(false)
+    call(crepe, toggleStrongCommand)
+    expect(md(crepe)).toBe('* **A**\n\n  **second para**\n\n  * a1\n\n* **B**\n')
+    expect(boldLit(crepe)).toBe(true)
+  })
+
+  /** Zoom into Z, fold everything (P, Z's parent, too), then unfold Z: the zoom shows P's subtree expanded. */
+  async function zoomedUnderFoldedParent(): Promise<Crepe> {
+    const { crepe } = await mount('* P\n  * Z\n    * z1\n  * other\n* Q\n')
+    caretIn(crepe, 'Z')
+    expect(pressKey(crepe, '.', { mod: true })).toBe(true)
+    expect(pressKey(crepe, 'u', { mod: true, shift: true })).toBe(true)
+    caretIn(crepe, 'Z')
+    expect(pressKey(crepe, 'ArrowDown', { mod: true })).toBe(true)
+    return crepe
+  }
+
+  it('1B1: zoomed into a bullet whose parent is folded, Bold and the lit state work on the zoomed lines', async () => {
+    const crepe = await zoomedUnderFoldedParent()
+    select(crepe, posOf(crepe, 'Z'), endOf(crepe, 'z1'))
+    call(crepe, toggleStrongCommand)
+    expect(md(crepe)).toBe('* P\n  * **Z**\n    * **z1**\n  * other\n* Q\n')
+    expect(boldLit(crepe)).toBe(true)
+  })
+
+  it('1B1: … and Mod-Enter at a plain caret cycles the zoomed line', async () => {
+    const crepe = await zoomedUnderFoldedParent()
+    caretIn(crepe, 'z1')
+    expect(pressKey(crepe, 'Enter', { mod: true })).toBe(true)
+    expect(md(crepe)).toBe('* P\n  * Z\n    * [ ] z1\n  * other\n* Q\n')
+  })
+
+  it('1B1: … and ⇧↓ moves onto the zoomed kid, not past it (the YAZ-1734 walk has the same rule)', async () => {
+    const crepe = await zoomedUnderFoldedParent()
+    select(crepe, posOf(crepe, 'Z'))
+    expect(pressKey(crepe, 'ArrowDown', { shift: true })).toBe(true)
+    expect(selection(crepe).head).toBe(posOf(crepe, 'z1'))
+  })
+})
+
 describe('the toolbar over hidden lines (YAZ-3209 D4)', () => {
   it('S5: a hidden kid is bold, the parents are not — Bold is not lit, and the click bolds the parents', async () => {
     const { crepe } = await mount('* A\n  * **a1**\n* B\n')

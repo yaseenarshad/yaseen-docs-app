@@ -54,7 +54,9 @@ const edgeAt = ($head: ResolvedPos, dir: 1 | -1): Edge | null => {
  * zoom decorations hide every block off the root → item path, the ancestors' own text included),
  * inside a collapsed bullet's nested list (`collapsedItemsHiding`), or inside a collapsed heading's
  * section (`collapsedHeadingsHiding`). All three answer from plugin state, which is what their
- * `display: none` decorations are computed from — no DOM, no re-derived fold logic.
+ * `display: none` decorations are computed from — no DOM, no re-derived fold logic. A folded
+ * ANCESTOR of the zoomed item hides nothing: the zoom shows it expanded (zoom.css), so only a fold
+ * at or below the zoomed item counts (YAZ-3209 bug 1B1).
  */
 const isHiddenTextblock = (state: EditorState, $pos: ResolvedPos): boolean => {
   const pos = $pos.pos
@@ -63,7 +65,8 @@ const isHiddenTextblock = (state: EditorState, $pos: ResolvedPos): boolean => {
     const item = state.doc.nodeAt(zoomed)
     if (item !== null && !(pos > zoomed && pos < zoomed + item.nodeSize)) return true
   }
-  return collapsedItemsHiding(state, pos).length > 0 || collapsedHeadingsHiding(state, pos).length > 0
+  const folds = collapsedItemsHiding(state, pos)
+  return (zoomed === null ? folds.length > 0 : folds.some((itemPos) => itemPos >= zoomed)) || collapsedHeadingsHiding(state, pos).length > 0
 }
 
 /**
@@ -132,9 +135,11 @@ export const onCoveredLines = (cmd: Command): Command => (state, dispatch, view)
  *
  * It answers `isHiddenTextblock`'s question without asking it per line: that rescans every fold
  * entry for each position, so a walk over 1,000 folded parents costs ~30 ms. Here a folded item is
- * found on the way (one Set lookup) and its kids are skipped whole; a folded heading's section is
- * a set of whole blocks, skipped by their start; the zoom is one range. Each check is O(1), so the
- * walk costs the visible lines only.
+ * found on the way (one Set lookup) and its nested lists are skipped whole — only those: its own
+ * other blocks stay visible, as the fold shows them (bug 1B2), and a folded ancestor of the zoomed
+ * item hides nothing, as zoom.css shows it expanded (bug 1B1). A folded heading's section is a set
+ * of whole blocks, skipped by their start; the zoom is one range. Each check is O(1), so the walk
+ * costs the visible lines only.
  */
 export const eachVisibleTextblock = (
   state: EditorState,
@@ -145,24 +150,30 @@ export const eachVisibleTextblock = (
   const zoomed = getZoomedItemPos(state)
   const zoomEnd = zoomed === null ? 0 : zoomed + (state.doc.nodeAt(zoomed)?.nodeSize ?? 0)
   const sections = collapsedSectionBlocks(state)
+  // The starts of the nested lists that a folded item met on the way hides.
+  const foldedLists = new Set<number>()
   let hidden = false
   const textblock = (block: ProseNode, pos: number, parent: ProseNode, index: number): void => {
     if (zoomed !== null && !(pos > zoomed && pos < zoomEnd)) hidden = true
     else visit(block, pos, parent, index)
   }
   state.doc.nodesBetween(from, to, (node, pos, parent, index) => {
-    if (sections.has(pos) || (zoomed !== null && (pos + node.nodeSize <= zoomed || pos >= zoomEnd))) {
+    if (sections.has(pos) || foldedLists.has(pos) || (zoomed !== null && (pos + node.nodeSize <= zoomed || pos >= zoomEnd))) {
       hidden = true
       return false
     }
-    if (node.isTextblock) textblock(node, pos, parent!, index)
-    else if (isListItem(node) && isOutlineItemCollapsed(state, pos)) {
-      // A folded item: its own line, then its kids count as hidden when the range reaches them.
-      const first = node.firstChild
-      if (first?.isTextblock === true && pos + 1 < to) textblock(first, pos + 1, node, 0)
-      if (node.childCount > 1 && pos + 1 + (first?.nodeSize ?? 0) < to) hidden = true
-    } else return true
-    return false
+    if (node.isTextblock) {
+      textblock(node, pos, parent!, index)
+      return false
+    }
+    if (isListItem(node) && isOutlineItemCollapsed(state, pos)) {
+      node.forEach((child, offset) => {
+        const start = pos + 1 + offset
+        const holdsZoom = zoomed !== null && zoomed > start && zoomed < start + child.nodeSize
+        if (LIST_NODE_NAMES.has(child.type.name) && !holdsZoom) foldedLists.add(start)
+      })
+    }
+    return true
   })
   return hidden
 }

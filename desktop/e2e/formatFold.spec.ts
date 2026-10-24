@@ -1,7 +1,8 @@
 /**
  * Formatting acts on the lines you see (YAZ-3209): the REAL built app, the user flow from the
  * issue. Fold two parents → select both with the keyboard → press Bold on the selection toolbar →
- * the file on disk bolds the parents only → unfold, and the kids are still plain. The toolbar is
+ * the file on disk bolds the parents only → unfold, and the kids are as they were. The hidden kid
+ * is highlighted, so the yellow swatch must stay unlit over the folded parents (D4). The toolbar is
  * pressed here and not in the unit suite: under jsdom a pointerdown on the strip collapses the
  * selection first. Screenshots are the evidence (and the release notes' pictures).
  */
@@ -19,14 +20,14 @@ const BODY = `# Plan
 * Alpha parent
   * alpha-kid-e2e
 * Beta parent
-  * beta-kid-e2e
+  * ==beta-kid-e2e==
 `
 const BOLDED = `# Plan
 
 * **Alpha parent**
   * alpha-kid-e2e
 * **Beta parent**
-  * beta-kid-e2e
+  * ==beta-kid-e2e==
 `
 
 let userData: string
@@ -70,6 +71,8 @@ test('step 1 — fold both parents and select them with the keyboard', async () 
   await win.keyboard.press('Shift+ArrowDown')
   await win.keyboard.press('Shift+Meta+ArrowRight')
   await expect(win.locator('.milkdown-toolbar[data-show="true"]')).toBeVisible()
+  // The hidden kid is highlighted, but no VISIBLE line is: the yellow swatch stays unlit (D4, S12).
+  await expect(win.locator('.milkdown-toolbar [data-toolbar-item="highlight"]')).not.toHaveClass(/active/)
   await shoot(win, 'ff-01-folded-parents-selected')
 })
 
