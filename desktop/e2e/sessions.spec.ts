@@ -12,7 +12,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, launchApp, menuItem, quitApp, readState, seededState, shoot, tabsOf } from './helpers'
+import { activeTab, appWindow, launchApp, menuItem, quitApp, readState, seededState, wholeRow, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -50,7 +50,7 @@ test('save and close all tabs, name the session, restore it; a restore adds a va
   const beta = await note(a, 'Beta')
   const bravo = await note(b, 'Bravo')
   const charlie = await note(c, 'Charlie')
-  const state = seededState(a, beta)
+  const state = wholeRow(seededState(a, beta))
   state.windows[0] = { ...state.windows[0], roots: [a, b], tabs: [alpha, beta, bravo] }
   state.recents = [a, b, c].map((p) => ({ path: p, lastOpened: Date.now() }))
   // A session saved earlier: its vault is not in the window (S21), and one of its files is gone (S20).

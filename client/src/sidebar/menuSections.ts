@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds } from '../lib/notice'
 import type { MenuTargets } from './Sidebar'
@@ -39,6 +40,8 @@ interface MenuItemBase {
 export interface MenuAction extends MenuItemBase {
   onSelect: () => void
   children?: undefined
+  /** A glyph before the label (YAZ-3279: the tab row's menu). An SVG only, so `textContent` stays the bare label. Only a leaf draws one. */
+  icon?: ReactNode
   /** Rendered but inert — Paste with an empty clipboard, for discoverability (🔒 D5, YAZ-1674). Only a leaf can be. */
   disabled?: boolean
   /**

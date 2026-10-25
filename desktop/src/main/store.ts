@@ -6,6 +6,7 @@ import {
   CONTENT_WIDTHS,
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
+  DEFAULT_SIDEBAR_TABS,
   HEADING_KEYS,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FAVORITES_ORDER,
@@ -25,6 +26,8 @@ import {
   SIDEBAR_DEFAULT_W,
   SIDEBAR_MAX_W,
   SIDEBAR_MIN_W,
+  SIDEBAR_BUTTONS,
+  SIDEBAR_TABS,
   STARTUP_WINDOWS,
   TABLE_OF_CONTENTS,
   THEMES,
@@ -63,6 +66,7 @@ import {
   type Session,
   type SidebarLens,
   type SidebarSort,
+  type SidebarTabsPrefs,
   type StartupWindows,
   type StoredTab,
   type TableOfContents,
@@ -236,6 +240,33 @@ const isTabSort = (v: unknown, manual: boolean): v is TabSort =>
   isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual'))
 const isSidebarSort = (v: unknown): v is SidebarSort => isRecord(v) && isTabSort(v.files, false) && isTabSort(v.focus, true) && isTabSort(v.favorites, true)
 
+/** A list of known names, each once (YAZ-3273 D8). */
+const isNameSet = <T,>(v: unknown, known: readonly T[]): v is T[] => Array.isArray(v) && v.every((x) => known.includes(x as T)) && new Set(v).size === v.length
+/** The tab row (YAZ-3273 D8), strict — the IPC boundary's check: each tab once in `order`, `hidden` a part of it without `files`, `hiddenButtons` from `SIDEBAR_BUTTONS`. */
+const isSidebarTabs = (v: unknown): v is SidebarTabsPrefs =>
+  isRecord(v) &&
+  isNameSet(v.order, SIDEBAR_TABS) &&
+  v.order.length === SIDEBAR_TABS.length &&
+  isNameSet(v.hidden, SIDEBAR_TABS) &&
+  !v.hidden.includes('files') &&
+  isNameSet(v.hiddenButtons, SIDEBAR_BUTTONS)
+/** The names of `raw` that `known` has, each once, in their order: anything else is dropped. */
+const knownNames = <T,>(raw: unknown, known: readonly T[]): T[] => (Array.isArray(raw) ? [...new Set(raw.filter((x): x is T => known.includes(x as T)))] : [])
+/**
+ * The tab row's repair on load (YAZ-3273 D8, S29): unknown names and duplicates are dropped, a tab
+ * the order is missing goes at the end (a tab a later version adds lands there too), and `files`
+ * never stays hidden. A file without the key reads the default.
+ */
+export function sanitizeSidebarTabs(raw: unknown): SidebarTabsPrefs {
+  if (!isRecord(raw)) return DEFAULT_SIDEBAR_TABS
+  const order = knownNames(raw.order, SIDEBAR_TABS)
+  return {
+    order: [...order, ...SIDEBAR_TABS.filter((tab) => !order.includes(tab))],
+    hidden: knownNames(raw.hidden, SIDEBAR_TABS).filter((tab) => tab !== 'files'),
+    hiddenButtons: knownNames(raw.hiddenButtons, SIDEBAR_BUTTONS),
+  }
+}
+
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
 const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is SettingsState[K] } = {
   lineSpacing: isFiniteNumber,
@@ -252,6 +283,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   hoverPreview: (v): v is boolean => typeof v === 'boolean',
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
   sidebarSort: isSidebarSort,
+  sidebarTabs: isSidebarTabs,
   startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
   sectionStep: (v): v is number => isFiniteNumber(v) && SECTION_STEPS.includes(v),
   sectionLines: (v): v is SectionLines => typeof v === 'string' && (SECTION_LINES as readonly string[]).includes(v),
@@ -279,6 +311,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   // A store written before a canvas pref existed keeps every pref it does have, instead of resetting the lot.
   out.canvas = sanitizeCanvasPrefs(src.canvas)
   out.canvasPanel = sanitizeCanvasPanel(src.canvasPanel)
+  out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
   return out
 }
 

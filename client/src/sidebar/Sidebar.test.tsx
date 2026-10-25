@@ -11,7 +11,7 @@ import { StrictMode, act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { copyFoldKey } from '@shared/foldKey'
 import { parseFrontmatter } from '@shared/frontmatter'
-import { CLIP_CHANGED, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type ImportResponse, type IndexRecord, type PasteRequest, type PasteResponse, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
+import { CLIP_CHANGED, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type ImportResponse, type IndexRecord, type PasteRequest, type PasteResponse, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity, type SidebarTabsPrefs } from '@shared/types'
 import appCss from '../app.css?inline'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { EMPTY_SELECTION } from '../lib/selection'
@@ -5067,6 +5067,321 @@ describe('lens tabs (🔒 D4, YAZ-847; YAZ-2638 D2)', () => {
     await type(searchInput(el)!, 'a')
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+})
+
+describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)', () => {
+  const tabs = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__lenses[role="tablist"] [role="tab"]')]
+  const tabNames = (el: HTMLElement) => tabs(el).map((b) => b.textContent || b.getAttribute('aria-label'))
+  const more = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__more')
+  const items = (el: HTMLElement) => menuItems(el).map((b) => `${b.textContent}${b.disabled ? ' (off)' : ''}${b.dataset.hint === undefined ? '' : ` [${b.dataset.hint}]`}`)
+  const withTabs = (sidebarTabs: Partial<SidebarTabsPrefs>) => ({ settings: { ...DEFAULT_SETTINGS, sidebarTabs: { ...DEFAULT_SIDEBAR_TABS, ...sidebarTabs } } })
+  /** A mouse click: `detail` 1. `HTMLElement.click()` is 0, which is what Enter or Space make. */
+  const mouseClick = (b: Element | null) => act(() => void b?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })))
+  const rightClick = (target: Element | null) => {
+    const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 30 })
+    act(() => void target?.dispatchEvent(e))
+    return e
+  }
+  const key = (k: string) => act(() => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
+  const closeOverlay = (el: HTMLElement) => act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+
+  it('D8: the row draws the saved order, without the hidden tabs; a tab on the bar does not drag (D5, S27); with nothing off the bar there is no ⋯ (S1)', async () => {
+    const plain = await mount({ lens: 'files' })
+    expect(tabNames(plain.el)).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions', 'Recents'])
+    expect(more(plain.el)).toBeNull()
+    const { el } = await mount({ lens: 'files', ...withTabs({ order: ['recents', 'files', 'favorites', 'search', 'focus', 'sessions'], hidden: ['focus'] }) })
+    expect(tabNames(el)).toEqual(['Recents', 'Files', 'Favorites', 'Search', 'Sessions'])
+    expect(tabs(el).map((b) => b.draggable)).toEqual([false, false, false, false, false])
+    // ⋯ stands right of the last tab and left of Sort (D2, D7).
+    expect([...el.querySelectorAll('.sidebar__lenses > button')].slice(-3).map((b) => b.className)).toEqual(['sidebar__more', 'sidebar__sort', 'sidebar__expand-all'])
+  })
+
+  it('S12, S13: a click on ⋯ opens the menu of the hidden tabs below it; a click on a tab opens it and closes the menu; a second click on ⋯ closes it', async () => {
+    const { el, props } = await mount({ lens: 'files', ...withTabs({ hidden: ['focus', 'recents'] }) })
+    mouseClick(more(el))
+    expect(more(el)?.getAttribute('aria-expanded')).toBe('true')
+    expect(items(el)).toEqual(['Focus [hidden]', 'Recents [hidden]', 'Edit tab row…'])
+    act(() => itemByLabel(el, 'Recents')?.click())
+    expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('recents')
+    expect(items(el)).toEqual([])
+    mouseClick(more(el))
+    expect(items(el)).not.toEqual([])
+    mouseClick(more(el)) // the overlay takes a real press; the button's own toggle closes it too
+    expect(items(el)).toEqual([])
+  })
+
+  it('S6, S14: the open tab inside ⋯ lights it, and the row does not move', async () => {
+    const { el } = await mount({ lens: 'focus', ...withTabs({ hidden: ['focus'] }) })
+    expect(tabNames(el)).toEqual(['Files', 'Search', 'Favorites', 'Sessions', 'Recents'])
+    expect(more(el)?.className).toBe('sidebar__more sidebar__more--lit')
+    mouseClick(more(el))
+    expect(items(el)).toEqual(['Focus [open]', 'Edit tab row…'])
+  })
+
+  it('S7: the Search tab inside ⋯ still shows its bar, and ↑ from the bar goes to the lit ⋯ (YAZ-2663 D12)', async () => {
+    const { el } = await mount({ lens: 'search', ...withTabs({ hidden: ['search'] }) })
+    expect(more(el)?.classList.contains('sidebar__more--lit')).toBe(true)
+    act(() => searchInput(el)?.focus())
+    key('ArrowUp')
+    expect(document.activeElement).toBe(more(el))
+  })
+
+  it('S11: right-click on blank space in the row, or on a tab, opens the same menu', async () => {
+    const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
+    expect(rightClick(el.querySelector('.sidebar__lenses')).defaultPrevented).toBe(true)
+    expect(items(el)).toEqual(['Sessions [hidden]', 'Edit tab row…'])
+  })
+
+  it('S9, S10 (YAZ-3279): right-click on a tab puts "Hide <tab>" first; on Files it is off, "Files stays"; no Electron menu', async () => {
+    const { el, props } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
+    expect(rightClick(tabs(el)[1]).defaultPrevented).toBe(true)
+    expect(items(el)).toEqual(['Hide Search', 'Sessions [hidden]', 'Edit tab row…'])
+    closeOverlay(el)
+    rightClick(tabs(el)[0])
+    expect(items(el)).toEqual(['Hide Files (off) [Files stays]', 'Sessions [hidden]', 'Edit tab row…'])
+    act(() => itemByLabel(el, 'Hide Files')?.click())
+    expect(props.onChangeSettings).not.toHaveBeenCalled()
+    closeOverlay(el)
+    rightClick(tabs(el)[2])
+    act(() => itemByLabel(el, 'Hide Focus')?.click())
+    expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith(withTabs({ hidden: ['sessions', 'focus'] }).settings)
+  })
+
+  it('S9: with nothing off the bar, a right-click on a tab is "Hide <tab>" and "Edit tab row…"', async () => {
+    const { el } = await mount({ lens: 'files' })
+    rightClick(tabs(el)[3])
+    expect(items(el)).toEqual(['Hide Favorites', 'Edit tab row…'])
+  })
+
+  it('S17, S18, S26 (YAZ-3279): "Edit tab row…" opens the panel where the menu was, the right-clicked tab lit; a box writes the row through the settings and the panel stays; a press outside closes it', async () => {
+    const { el, props, rerender } = await mount({ lens: 'files' })
+    rightClick(tabs(el)[2])
+    act(() => itemByLabel(el, 'Edit tab row…')?.click())
+    expect(items(el)).toEqual([]) // the menu gave way to the panel
+    const panel = () => el.querySelector<HTMLElement>('.tab-row-panel[role="dialog"]')
+    expect([panel()?.style.left, panel()?.style.top]).toEqual(['40px', '30px'])
+    expect(panel()?.querySelector('.tab-row-panel__row--focus')?.getAttribute('data-tab')).toBe('focus')
+    act(() => panel()?.querySelector<HTMLButtonElement>('[aria-label="Show Recents"]')?.click())
+    const next = vi.mocked(props.onChangeSettings).mock.calls[0][0]
+    expect(next).toEqual(withTabs({ hidden: ['recents'] }).settings)
+    await rerender({ settings: next })
+    expect(tabNames(el)).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions']) // S18: it leaves the row at once
+    expect(panel()?.querySelector('[aria-label="Show Recents"]')?.getAttribute('aria-checked')).toBe('false')
+    act(() => void document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })))
+    expect(panel()).toBeNull()
+  })
+
+  it('S14 (YAZ-3279): "Hide" on the open tab: it goes into ⋯, stays open, and ⋯ lights', async () => {
+    const { el, props, rerender } = await mount({ lens: 'favorites' })
+    rightClick(tabs(el)[3])
+    act(() => itemByLabel(el, 'Hide Favorites')?.click())
+    const next = vi.mocked(props.onChangeSettings).mock.calls[0][0]
+    expect(next.sidebarTabs.hidden).toEqual(['favorites'])
+    await rerender({ settings: next })
+    expect(tabNames(el)).toEqual(['Files', 'Search', 'Focus', 'Sessions', 'Recents'])
+    expect(more(el)?.classList.contains('sidebar__more--lit')).toBe(true)
+    expect(props.onLensChange).not.toHaveBeenCalled()
+  })
+
+  it('D9, S15: a hidden Sort leaves the bar and ⋯ shows; "Sort…" opens the sort menu of the tab that shows; a hidden fold acts as the button does', async () => {
+    const { el, props } = await mount({ lens: 'files', ...withTabs({ hiddenButtons: ['sort', 'fold'] }) })
+    expect(el.querySelector('.sidebar__lenses .sidebar__sort')).toBeNull()
+    expect(el.querySelector('.sidebar__lenses .sidebar__expand-all')).toBeNull()
+    expect(tabNames(el)).toHaveLength(6)
+    mouseClick(more(el))
+    const fold = items(el)[1]
+    expect([items(el)[0], ['Expand all', 'Collapse all'].includes(fold)]).toEqual(['Sort…', true]) // the fold button's own label
+    act(() => itemByLabel(el, 'Sort…')?.click())
+    expect(menuItems(el).map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A'])
+    act(() => itemByLabel(el, 'Last updated')?.click())
+    expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...withTabs({ hiddenButtons: ['sort', 'fold'] }).settings, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } })
+    mouseClick(more(el))
+    act(() => itemByLabel(el, fold)?.click())
+    mouseClick(more(el))
+    expect(items(el)).toEqual(['Sort…', fold === 'Expand all' ? 'Collapse all' : 'Expand all', 'Edit tab row…']) // the fold ran, as the button's click does
+  })
+
+  it('S5: on Sessions neither Sort nor fold shows, so a hidden one is not in the menu either: no ⋯', async () => {
+    const { el } = await mount({ lens: 'sessions', ...withTabs({ hiddenButtons: ['sort', 'fold'] }) })
+    expect(more(el)).toBeNull()
+  })
+
+  it('S16: Enter on ⋯ puts the focus in the menu; ↑ ↓ walk its items, from the tabs with no room past the line to the hidden tabs; ← → and ↓ do nothing else; Esc closes it and the focus is back on ⋯', async () => {
+    const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['focus', 'sessions'] }) })
+    more(el)?.focus()
+    act(() => more(el)?.click()) // detail 0: a key
+    expect(document.activeElement?.textContent).toBe('Focus')
+    key('ArrowDown')
+    expect(document.activeElement?.textContent).toBe('Sessions')
+    key('ArrowDown')
+    key('ArrowDown')
+    expect(document.activeElement?.textContent).toBe('Edit tab row…') // stops at the end
+    key('ArrowUp')
+    key('ArrowUp')
+    key('ArrowUp')
+    expect(document.activeElement?.textContent).toBe('Focus') // back at the first item
+    key('ArrowRight')
+    key('ArrowLeft')
+    expect(document.activeElement?.textContent).toBe('Focus')
+    expect(el.querySelector('.tree__row:focus')).toBeNull()
+    key('Escape')
+    expect(items(el)).toEqual([])
+    expect(document.activeElement).toBe(more(el))
+  })
+
+  it('YAZ-2663 D12: ← and → walk the tabs on the bar only', async () => {
+    const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['search'] }) })
+    tabs(el)[0].focus()
+    key('ArrowRight')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Focus')
+    key('ArrowLeft')
+    key('ArrowLeft')
+    expect(document.activeElement?.textContent).toBe('Files')
+  })
+
+  it('YAZ-3300: ← on the lit ⋯, where ↑ from the search bar lands, goes to the last tab on the bar', async () => {
+    const { el } = await mount({ lens: 'search', ...withTabs({ hidden: ['search'] }) })
+    act(() => searchInput(el)?.focus())
+    key('ArrowUp')
+    expect(document.activeElement).toBe(more(el))
+    key('ArrowLeft')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Recents')
+  })
+
+  it('YAZ-3300: → on ⋯ stays in the row, as → on the last tab does; it does not leave for the page', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el } = await mount({ lens: 'search', onLeaveToPage, ...withTabs({ hidden: ['search'] }) })
+    act(() => searchInput(el)?.focus())
+    key('ArrowUp')
+    key('ArrowRight')
+    expect(onLeaveToPage).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(more(el))
+  })
+
+  it('YAZ-3278 S16: Shift+F10 on a tab opens its menu with the focus on the first item; Esc puts the focus back on the tab', async () => {
+    const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
+    tabs(el)[1].focus()
+    act(() => void tabs(el)[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })))
+    expect(items(el)).toEqual(['Hide Search', 'Sessions [hidden]', 'Edit tab row…'])
+    expect(document.activeElement?.textContent).toBe('Hide Search')
+    key('ArrowDown')
+    expect(document.activeElement?.textContent).toBe('Sessions')
+    key('Escape')
+    expect(items(el)).toEqual([])
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Search')
+  })
+
+  it('YAZ-3278 S16: the context-menu key on ⋯ opens the row menu with the focus on the first item, and ⋯ says it is open; Esc puts the focus back on ⋯', async () => {
+    const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
+    more(el)?.focus()
+    key('ContextMenu')
+    expect(items(el)).toEqual(['Sessions [hidden]', 'Edit tab row…'])
+    expect(more(el)?.getAttribute('aria-expanded')).toBe('true')
+    expect(document.activeElement?.textContent).toBe('Sessions')
+    key('Escape')
+    expect(document.activeElement).toBe(more(el))
+  })
+
+  const panelOf = (el: HTMLElement) => el.querySelector('.tab-row-panel')
+
+  it('YAZ-3279 S26: from ⋯ by the keyboard, the panel takes the focus, and Esc gives it back to ⋯', async () => {
+    const panel = panelOf
+    const a = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
+    more(a.el)?.focus()
+    act(() => more(a.el)?.click()) // detail 0: a key
+    key('End')
+    act(() => (document.activeElement as HTMLElement).click())
+    expect(panel(a.el)?.contains(document.activeElement)).toBe(true)
+    key('Escape')
+    expect(panel(a.el)).toBeNull()
+    expect(document.activeElement).toBe(more(a.el))
+  })
+
+  it('YAZ-3279 S26: the panel from a right-click on a tab gives the focus back to that tab when it closes', async () => {
+    const panel = panelOf
+    const b = await mount({ lens: 'files' })
+    rightClick(tabs(b.el)[2])
+    act(() => itemByLabel(b.el, 'Edit tab row…')?.click())
+    key('Escape')
+    expect(panel(b.el)).toBeNull()
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Focus')
+  })
+
+  it('YAZ-3279 S26: the panel from a right-click on blank space gives the focus to the tab that shows when it closes', async () => {
+    const c = await mount({ lens: 'favorites' })
+    rightClick(c.el.querySelector('.sidebar__lenses'))
+    act(() => itemByLabel(c.el, 'Edit tab row…')?.click())
+    key('Escape')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Favorites')
+  })
+
+  describe('the fit (D1, S2 to S5, S30)', () => {
+    // A fake layout: the row is `width` px wide, Files 47 px, a glyph 31 px, each button 30 px, no gap and no padding (no CSS in jsdom).
+    let width = 400
+    let observed: (() => void)[] = []
+    beforeEach(() => {
+      width = 400
+      observed = []
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(private cb: () => void) {}
+          observe() {
+            observed.push(this.cb)
+          }
+          disconnect() {
+            observed = observed.filter((cb) => cb !== this.cb)
+          }
+        },
+      )
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('sidebar__lenses') ? width : 0
+      })
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const w = this.matches('.sidebar__lens') ? (this.dataset.tab === 'files' ? 47 : 31) : this.matches('.sidebar__more, .sidebar__sort, .sidebar__expand-all') ? 30 : 0
+        return new DOMRect(0, 0, w, 20)
+      })
+    })
+    afterEach(() => vi.unstubAllGlobals())
+    const resize = (w: number) => {
+      width = w
+      act(() => [...new Set(observed)].forEach((cb) => cb()))
+    }
+
+    it('S2, S4, S6: narrow, the last tabs go into ⋯, first in its menu, and the open one lights it; wider, they come back in order', async () => {
+      const { el } = await mount({ lens: 'recents' })
+      expect(tabNames(el)).toHaveLength(6)
+      // Sort is not on Recents (S5): fold only, if it shows — here there is nothing to fold either.
+      resize(200) // 47 + 31 × 3 + 30 (⋯) = 170 fits; a fourth glyph does not
+      expect(tabNames(el)).toEqual(['Files', 'Search', 'Focus', 'Favorites'])
+      expect(more(el)?.className).toBe('sidebar__more sidebar__more--lit')
+      mouseClick(more(el))
+      expect(items(el)).toEqual(['Sessions', 'Recents [open]', 'Edit tab row…'])
+      closeOverlay(el)
+      resize(400)
+      expect(tabNames(el)).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions', 'Recents'])
+      expect(more(el)).toBeNull()
+    })
+
+    it('S5: on Files the fit counts Sort and fold, so fewer tabs fit than on Recents at the same width', async () => {
+      const files = await mount({ lens: 'files' })
+      resize(260) // 47 + 31 × n + 30 (⋯) + 60 ≤ 260 → n = 3
+      expect(tabNames(files.el)).toEqual(['Files', 'Search', 'Focus', 'Favorites'])
+      expect([...files.el.querySelectorAll('.sidebar__lenses > button')].slice(-3).map((b) => b.className)).toEqual(['sidebar__more', 'sidebar__sort', 'sidebar__expand-all'])
+    })
+
+    it('S30: a width change that keeps the count keeps the row as it is; the row is measured on each change', async () => {
+      const { el } = await mount({ lens: 'recents' })
+      resize(200)
+      const before = tabs(el)
+      const spy = vi.mocked(HTMLElement.prototype.getBoundingClientRect)
+      spy.mockClear()
+      resize(195)
+      resize(190)
+      expect(tabs(el)).toEqual(before) // the same four buttons: no tab came or went
+      expect(spy).toHaveBeenCalled()
+    })
   })
 })
 
