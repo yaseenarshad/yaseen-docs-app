@@ -964,6 +964,21 @@ button {
   background: var(--accent-soft);
 }
 
+/* The seconds left (YAZ-3303 D9): small, grey and steady-width, so it reads as a clock and never pulls the eye. */
+.link-notice__clock {
+  flex: none;
+  min-width: 2.2em;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--fg-muted);
+  opacity: 0.75;
+}
+
+.link-notice__clock::after {
+  content: attr(data-left);
+}
+
 .link-notice__close {
   flex: none;
   width: 22px;
@@ -971,6 +986,10 @@ button {
   padding: 0;
   color: var(--fg-muted);
   border-radius: 5px;
+}
+
+.link-notice__close::before {
+  content: '✕';
 }
 
 .link-notice__close:hover {

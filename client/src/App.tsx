@@ -23,9 +23,9 @@ import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './link
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument } from './lib/focusHandoff'
-import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, type DragOutAsk, type NamedItem, type Notice, type NoticeKind } from './lib/notice'
+import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, shows, unlessFailed, type DragOutAsk, type NamedItem, type Notice, type NoticeKind, type NoticeType } from './lib/notice'
 import { treeHasPath } from './lib/treeState'
-import { NoticeIcon } from './components/NoticeIcon'
+import { NoticeToast } from './components/NoticeToast'
 import { absFrom, dirname, relTo } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
@@ -278,16 +278,15 @@ export function App() {
   // it activates the file's tab when already open, else opens it in the PREVIEW tab (YAZ-2648 D1);
   // a link that could not open shows a transient notice — unobtrusive, never a dialog.
   const [notice, setNotice] = useState<Notice | null>(null)
-  // The one door every surface uses (D10 amended, YAZ-1674): text plus an optional glyph kind,
-  // `'info'` unless the caller names one — so nothing that already said `onNotice(text)` changed.
-  const notify = useCallback((text: string, icon: NoticeKind = 'info') => setNotice({ text, icon }), [])
-  useEffect(() => {
-    // A notice fades (LINK_NOTICE_MS); an Undo or a Redo fades later (YAZ-3255 D11); another action stays.
-    const ms = notice === null ? null : noticeMs(notice)
-    if (ms === null) return
-    const timer = setTimeout(() => setNotice(null), ms)
-    return () => clearTimeout(timer)
-  }, [notice])
+  // A toast of a type that Settings turned off never shows, and the toast on screen stays (YAZ-3303 D2).
+  const showNotice = useCallback((next: Notice) => {
+    if (shows(next, storage.getSettings())) setNotice(next)
+  }, [])
+  // The one door every surface uses (D10 amended, YAZ-1674): text, an optional glyph kind (`'info'`
+  // unless the caller names one) and an optional type (YAZ-3303 D2) — so `onNotice(text)` still works.
+  const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType) => showNotice({ text, icon, type }), [showNotice])
+  // The toast's clock is the toast's own (`NoticeToast`, YAZ-3303 D9): App only says how long and closes it.
+  const closeNotice = useCallback(() => setNotice(null), [])
   // The box after a drag out to Finder (YAZ-3254 D9B): its own slot, so the toast above never hides it.
   // It asks about the items of this window's vaults: another set of vaults ends the question (the rename door's effect).
   const [dragOutAsk, setDragOutAsk] = useState<DragOutAsk | null>(null)
@@ -1204,7 +1203,7 @@ export function App() {
       // see a clipboard land, so a copy needs its yes as much as its no.
       const copied = text.split('\n').length
       void navigator.clipboard.writeText(text).then(
-        () => notify(copied === 1 ? 'Copied path' : `Copied ${copied} paths`),
+        () => notify(copied === 1 ? 'Copied path' : `Copied ${copied} paths`, 'info', 'clipboard'),
         (error: unknown) => notify(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`),
       )
     }
@@ -1376,10 +1375,13 @@ export function App() {
   const replaying = useRef(false)
   // ⌘Z, ⌘⇧Z and the toast's buttons reach the newest undo and redo through this box.
   const moveReplay = useRef<{ undo: () => boolean; redo: () => boolean }>({ undo: () => false, redo: () => false })
-  /** A toast of a step that ⌘Z or ⌘⇧Z can take back (YAZ-3268 D18): its Undo or Redo, and it fades (6 s). */
-  const stepToast = useCallback((text: string, icon: NoticeKind, verb: 'undo' | 'redo'): void => {
-    setNotice({ text, icon, action: { label: verb === 'undo' ? 'Undo' : 'Redo', run: () => void moveReplay.current[verb](), fades: true } })
-  }, [])
+  /**
+   * A toast of a step that ⌘Z or ⌘⇧Z can take back (YAZ-3268 D18): its Undo or Redo, and it fades (at least 6 s).
+   * Its type is `undo` unless an item failed (YAZ-3303 D2): a skip shows even with those toasts off.
+   */
+  const stepToast = useCallback((text: string, icon: NoticeKind, verb: 'undo' | 'redo', failed: readonly unknown[] = []): void => {
+    showNotice({ text, icon, type: unlessFailed('undo', failed), action: { label: verb === 'undo' ? 'Undo' : 'Redo', run: () => void moveReplay.current[verb](), fades: true } })
+  }, [showNotice])
 
   /**
    * One rename or title edit, said: a refusal, or `Renamed to "Plan v2"` with Undo and the links that
@@ -1431,11 +1433,11 @@ export function App() {
    * A move gesture done (YAZ-3255 D10, D11): onto the undo list, and its toast with Undo — `runMoves`'s, a Paste of a Cut's, a move in from Finder's.
    * Every such gesture moved one item or more, so it plays the ONE land sound here (YAZ-3267 D15, S54).
    */
-  const recordMoves = useCallback((gesture: MovedGesture, text: string): void => {
+  const recordMoves = useCallback((gesture: MovedGesture, text: string, failed: readonly unknown[]): void => {
     moveHistory.current.push(gesture)
     playGestureSound('land')
-    setNotice({ text, icon: 'paste', action: { label: 'Undo', run: () => void moveReplay.current.undo(), fades: true } })
-  }, [])
+    stepToast(text, 'paste', 'undo', failed)
+  }, [stepToast])
   const vaultList = roots.join('\n')
   useLayoutEffect(() => {
     renameRootGeneration.current++
@@ -1445,7 +1447,7 @@ export function App() {
     // The undo list speaks for the vaults it was made in (audit 2): a vault that left takes its moves along.
     moveHistory.current = createMoveHistory()
     // A toast's Undo or Redo would reach the emptied list and do nothing: the text stays, the button goes.
-    setNotice((now) => (now?.action?.fades === true ? { text: now.text, icon: now.icon } : now))
+    setNotice((now) => (now?.action?.fades === true ? { text: now.text, icon: now.icon, type: now.type } : now))
   }, [vaultList])
 
   const catalogForRename = useCallback(async (oldPath: string, kind: TreeNode['type']): Promise<ViewOnlyCatalog | null | undefined> => {
@@ -1524,7 +1526,7 @@ export function App() {
       }
       if (record) {
         const text = movedNotice(names, failed, links)
-        if (done.moves.length > 0) recordMoves(done, text!)
+        if (done.moves.length > 0) recordMoves(done, text!, failed)
         else if (text !== null) notify(text, 'error')
       }
       return { ...done, failed, again, links, names }
@@ -1585,7 +1587,7 @@ export function App() {
     const text = stepNotice('undo', back.length === 0 ? null : `Put back ${namedItems(back.map((item) => ({ name: item.name, kind: item.type })))}`, failed)
     if (back.length === 0) return notify(text, 'error')
     playGestureSound('land')
-    stepToast(text, 'paste', 'redo')
+    stepToast(text, 'paste', 'redo', failed)
   }, [nameOf, notify, stepToast])
 
   /**
@@ -1617,7 +1619,7 @@ export function App() {
     const text = stepNotice('redo', went === 0 ? null : `Deleted ${namedItems(names)}`, failed)
     if (went === 0) return notify(text, 'error')
     playGestureSound('trash')
-    if (items.length > 0) stepToast(text, 'info', 'undo')
+    if (items.length > 0) stepToast(text, 'info', 'undo', failed)
     else notify(text)
   }, [nameOf, notify, stepToast])
 
@@ -1653,14 +1655,14 @@ export function App() {
         else {
           // One land sound for the undo, however many items moved back (YAZ-3267 D15, S54).
           playGestureSound('land')
-          setNotice({ text, icon: 'paste', action: { label: 'Redo', run: () => void moveReplay.current.redo(), fades: true } })
+          stepToast(text, 'paste', 'redo', back.failed)
         }
       } finally {
         replaying.current = false
       }
     })()
     return true
-  }, [runMoves, notify, replayRename, putBackStep])
+  }, [runMoves, notify, stepToast, replayRename, putBackStep])
 
   /**
    * ⌘⇧Z (YAZ-3255 D10 amended, S37): the newest undone gesture runs forward again through
@@ -1686,14 +1688,14 @@ export function App() {
         else {
           // One land sound for the redo (YAZ-3267 D15, S54).
           playGestureSound('land')
-          setNotice({ text, icon: 'paste', action: { label: 'Undo', run: () => void moveReplay.current.undo(), fades: true } })
+          stepToast(text, 'paste', 'undo', run.failed)
         }
       } finally {
         replaying.current = false
       }
     })()
     return true
-  }, [runMoves, notify, replayRename, deleteAgain])
+  }, [runMoves, notify, stepToast, replayRename, deleteAgain])
   moveReplay.current = { undo: undoMove, redo: redoMove }
 
   /**
@@ -1872,7 +1874,7 @@ export function App() {
     const items = went.flatMap((res) => (res.trashed == null ? [] : [{ path: res.path, trashed: res.trashed, type: res.kind, name: onDisk(res.path, res.kind).name }]))
     if (items.length === 0) return notify(text)
     moveHistory.current.push({ step: 'delete', items })
-    stepToast(text, 'info', 'undo')
+    stepToast(text, 'info', 'undo', failed)
   }, [nameOf, trashOne, notify, stepToast])
 
   /** The items still in their vault's tree, read fresh (S31): one another window moved or deleted is gone. */
@@ -2105,30 +2107,7 @@ export function App() {
               </button>
             </div>
           )}
-          {notice !== null && (
-            // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.
-            <div className={`link-notice${notice.action === undefined ? '' : ' link-notice--action'}`} role="status" data-icon={notice.icon}>
-              <NoticeIcon icon={notice.icon} />
-              <span className="link-notice__text">{notice.text}</span>
-              {notice.action !== undefined && (
-                <>
-                  <button
-                    type="button"
-                    className="link-notice__action"
-                    onClick={() => {
-                      notice.action?.run()
-                      setNotice(null)
-                    }}
-                  >
-                    {notice.action.label}
-                  </button>
-                  <button type="button" className="link-notice__close" aria-label="Dismiss" onClick={() => setNotice(null)}>
-                    ✕
-                  </button>
-                </>
-              )}
-            </div>
-          )}
+          {notice !== null && <NoticeToast notice={notice} ms={noticeMs(notice, settings.noticeLength)} onClose={closeNotice} />}
         </div>
       )}
       {share !== null && (

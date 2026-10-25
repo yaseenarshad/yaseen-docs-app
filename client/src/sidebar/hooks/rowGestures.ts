@@ -10,7 +10,7 @@ import { BETWEEN_VAULTS, CLIP_CHANGED, type FileClipState, type SidebarLens, typ
 import { api, BridgeRequestError } from '../../api'
 import { playGestureSound } from '../../lib/gestureSound'
 import type { MovedGesture } from '../../lib/moveHistory'
-import { gestureNotice, namedItems, onDisk, type NoticeKind } from '../../lib/notice'
+import { gestureNotice, namedItems, onDisk, unlessFailed, type NoticeKind, type NoticeType } from '../../lib/notice'
 import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
@@ -403,9 +403,9 @@ export function useFileClipboard(
   refresh: (root: string) => void,
   openTo: (file: string, top?: string) => void,
   clipboardRef: { current: SidebarClipboard | null },
-  onNotice: (message: string, kind?: NoticeKind) => void,
+  onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void,
   /** A Paste of a Cut, a move in from Finder (YAZ-3255 D10): App records it and says the toast with Undo. */
-  onMoved: (gesture: MovedGesture, text: string) => void,
+  onMoved: (gesture: MovedGesture, text: string, failed: readonly unknown[]) => void,
   /** ⌘⌫ (YAZ-3272 D20): the Sidebar's delete door — the question, then App's list delete door. */
   askDelete: (paths: string[]) => void,
 ) {
@@ -470,7 +470,7 @@ export function useFileClipboard(
     (paths: string[], op: 'copy' | 'cut') => {
       const what = namedItems(paths.map((path) => onDisk(path, dirs.includes(path) ? 'dir' : 'file')))
       api.file.clip({ paths, op }).then(
-        () => onNotice(op === 'cut' ? `Cut ${what}` : `Copied ${what}`, op),
+        () => onNotice(op === 'cut' ? `Cut ${what}` : `Copied ${what}`, op, 'clipboard'),
         (err: unknown) => onNotice(`Can't ${op}: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
     },
@@ -525,9 +525,10 @@ export function useFileClipboard(
         // a move plays it in App's `onMoved`, so the gesture has ONE sound (YAZ-3267 D15, S54).
         else if (gesture === null) {
           playGestureSound('land')
-          onNotice(text, 'paste')
+          // A paste that skipped an item has no type: it shows with Copy toasts off (YAZ-3303 D2).
+          onNotice(text, 'paste', unlessFailed('clipboard', res.failed))
         }
-        else onMoved(gesture, text)
+        else onMoved(gesture, text, res.failed)
       } catch (err: unknown) {
         // The clipboard changed after the read (YAZ-3266): nothing was pasted. Say so, and read it again for the menu's label.
         if (err instanceof BridgeRequestError && err.code === 'CONFLICT') {
@@ -664,9 +665,9 @@ export function useFileClipboard(
         // Copies only: the land sound is played here; with a move it is App's, in `onMoved` (YAZ-3267 D15, S54).
         else if (moved.length === 0) {
           playGestureSound('land')
-          onNotice(text, 'paste')
+          onNotice(text, 'paste', unlessFailed('clipboard', failed))
         }
-        else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }, text)
+        else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }, text, failed)
       } catch (err: unknown) {
         onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }

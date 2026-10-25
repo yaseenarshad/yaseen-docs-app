@@ -481,7 +481,7 @@ describe('Copy path / Copy N paths', () => {
     select(build({ copyPath: '/v' }, { onNotice }), 'Copy path')
     expect(writeText).toHaveBeenCalledExactlyOnceWith('/v')
     await Promise.resolve()
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Copied path')
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Copied path', 'info', 'clipboard')
   })
 
   it('Copy path reports a clipboard the OS refused', async () => {
@@ -500,7 +500,7 @@ describe('Copy path / Copy N paths', () => {
     select(build({ copyPaths: ['/v/sub', '/v/a.md'] }, { onNotice }), 'Copy 2 paths')
     expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/sub\n/v/a.md')
     await Promise.resolve()
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Copied 2 paths')
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Copied 2 paths', 'info', 'clipboard')
   })
 
   it('Copy N paths reports a refused clipboard too', async () => {

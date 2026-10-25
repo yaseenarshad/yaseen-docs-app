@@ -170,3 +170,26 @@ test('step 3 — Cut in A, Paste in B MOVES the file: source gone, bytes identic
   await winB.keyboard.press('Escape')
   await expect(menu(winB)).toHaveCount(0)
 })
+
+test('step 4 — Settings › Notifications: "Copy, cut or paste" Off silences the confirmations in both windows; a failed paste still says so (YAZ-3303 S14, S15, S27)', async () => {
+  // Window A turns the type off; window B reads the same setting (S27).
+  await winA.getByRole('button', { name: 'Settings', exact: true }).click()
+  await winA.locator('.settings-dialog .settings-nav__item', { hasText: /^Notifications$/ }).click()
+  await winA.locator('.settings-dialog [data-setting="noticeClipboard"]').getByRole('button', { name: 'Off', exact: true }).click()
+  await winA.keyboard.press('Escape')
+  for (const w of [winA, winB]) if ((await notice(w).count()) > 0) await notice(w).getByRole('button', { name: 'Dismiss' }).click()
+
+  // A Cut still clips (B's menu counts it), but no toast says so.
+  await fileRow(winA, 'Ideas').click({ button: 'right' })
+  await menuItem(winA, 'Cut').click()
+  await dirRow(winB, 'Projects').click({ button: 'right' })
+  await expect(menuItem(winB, 'Paste 1 item')).toBeVisible()
+  await expect(notice(winA)).toHaveCount(0)
+
+  // B's Projects already holds Ideas.md, so the move fails: that error is not a confirmation, and it shows.
+  await menuItem(winB, 'Paste 1 item').click()
+  await expect(notice(winB)).toContainText('already exists')
+  await expect(notice(winB)).toHaveAttribute('data-icon', 'error')
+  expect(await exists(path.join(vaultA, 'Ideas.md'))).toBe(true)
+  await shoot(winB, 'fileClipboard-04-notifications-off-error-shows')
+})

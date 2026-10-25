@@ -27,7 +27,7 @@ import { buildMenuSections } from './menuSections'
 import { RecentList } from './RecentList'
 import { SessionList } from './SessionList'
 import { ShortcutPicker } from './ShortcutPicker'
-import type { NoticeKind } from '../lib/notice'
+import type { NoticeKind, NoticeType } from '../lib/notice'
 import { dropOn, hasFiles, leftTarget, Tree, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
@@ -194,7 +194,7 @@ interface SidebarProps {
    * moved in (S40). App puts it on the window's undo list and says `text` with Undo (D11). Copies
    * are never handed here.
    */
-  onMoved: (gesture: MovedGesture, text: string) => void
+  onMoved: (gesture: MovedGesture, text: string, failed: readonly unknown[]) => void
   /**
    * Rows dragged out to Finder, and the drag ended outside the window with no drop inside it
    * (YAZ-3254 D9B, S26): App's box asks whether the vault keeps them. A cancelled drag looks the same (S29).
@@ -210,7 +210,7 @@ interface SidebarProps {
    */
   onDeleteEntries: (paths: string[]) => Promise<void>
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
-  onNotice: (message: string, kind?: NoticeKind) => void
+  onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void
   /**
    * ⌘K or a click on the Search tab asked for the search bar (YAZ-801, YAZ-2638 D2): App shows the
    * Search tab with it, and the bar focuses its input and selects its text. True at MOUNT is the

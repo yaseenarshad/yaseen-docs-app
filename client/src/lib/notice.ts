@@ -2,6 +2,7 @@
  * The window's one passive notice (E1, GRO-2171; restyled bottom-left in YAZ-1674). App owns the
  * toast; every surface reaches it through an `onNotice(text, icon?)` callback.
  */
+import type { NoticeLength, SettingsState } from '@shared/types'
 import { basename } from './paths'
 
 /** A can't-open-link notice (E1, GRO-2171) dismisses itself after this long. */
@@ -17,9 +18,26 @@ export const UNDO_NOTICE_MS = 6000
  */
 export type NoticeKind = 'copy' | 'cut' | 'paste' | 'favorite' | 'error' | 'info'
 
+/**
+ * The toasts that Settings › Notifications can turn off (YAZ-3303 D6). The code that sends a toast
+ * names its type; the icon cannot, because many failures wear `'info'`. A toast with no type always
+ * shows: an error, a skip, "See changes", a link that can't open.
+ */
+export type NoticeType = 'undo' | 'clipboard' | 'lists'
+
+const SWITCH = { undo: 'noticeUndo', clipboard: 'noticeClipboard', lists: 'noticeLists' } as const
+
+/** Whether the settings let this toast show (YAZ-3303 D2). Only an explicit Off hides it: a state without the field shows it. */
+export const shows = (notice: Notice, settings: SettingsState): boolean => notice.type === undefined || settings[SWITCH[notice.type]] !== false
+
+/** A gesture's type, or none when an item failed: a skip always shows (YAZ-3303 D2). */
+export const unlessFailed = (type: NoticeType, failed: readonly unknown[]): NoticeType | undefined => (failed.length === 0 ? type : undefined)
+
 export interface Notice {
   text: string
   icon: NoticeKind
+  /** What Settings › Notifications can turn off (YAZ-3303 D2). Absent: the toast always shows. */
+  type?: NoticeType
   /**
    * One button on the toast (YAZ-1897, ported by YAZ-3039: "See changes" after a merge). A notice
    * with an action is news to act on, so it stays until acted on or dismissed instead of fading
@@ -85,10 +103,18 @@ export function gestureNotice(done: string | null, failed: readonly string[], ca
   return `${done}, skipped ${failed.length}: ${failed[0]}`
 }
 
-/** How long a notice stays (D11): null while an action waits on the user; else the ms before it goes. */
-export function noticeMs(notice: Notice): number | null {
-  if (notice.action === undefined) return LINK_NOTICE_MS
-  return notice.action.fades === true ? UNDO_NOTICE_MS : null
+/** Settings › Notifications › Show for, in ms (YAZ-3303 D5). null: until closed. '4s' is `LINK_NOTICE_MS`, the length before 3303. */
+export const NOTICE_LENGTH_MS: Readonly<Record<NoticeLength, number | null>> = { '4s': LINK_NOTICE_MS, '8s': 8000, '15s': 15000, closed: null }
+
+/**
+ * How long a notice stays (D11, YAZ-3303 D5): null while an action waits on the user, or with "Until
+ * closed"; else the chosen length, and an Undo or a Redo at least `UNDO_NOTICE_MS`.
+ */
+export function noticeMs(notice: Notice, length: NoticeLength = '4s'): number | null {
+  if (notice.action !== undefined && notice.action.fades !== true) return null
+  const ms = NOTICE_LENGTH_MS[length]
+  if (ms === null || notice.action === undefined) return ms
+  return Math.max(ms, UNDO_NOTICE_MS)
 }
 
 /**

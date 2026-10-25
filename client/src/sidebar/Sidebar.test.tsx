@@ -1256,6 +1256,7 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     expect(props.onMoved).toHaveBeenLastCalledWith(
       { moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/sub/Plan.md', kind: 'file' }, { oldPath: '/Users/yasin/Downloads/Trip', newPath: '/v/sub/Trip', kind: 'dir' }], cleared: [] },
       'Moved 1 folder and 1 file (Plan.md, Trip) from Finder',
+      [],
     )
     expect(el.querySelector('.tree__row--drop')).toBeNull()
 
@@ -1270,7 +1271,7 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     await act(async () => {})
     expect(bridge.file.import).toHaveBeenLastCalledWith({ paths: ['/Users/yasin/Downloads/Plan.md'], targetDir: '/v' })
     // Copies are not moves (S18): only the moved item is for undo.
-    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 file (Plan.md), copied 1 folder and 1 file (Trip, Log.md) from another disk')
+    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 file (Plan.md), copied 1 folder and 1 file (Trip, Log.md) from another disk', [])
   })
 
   it('a clash is named and the rest moved (S19); items of another open vault say the cut-and-paste rule (S22)', async () => {
@@ -1282,7 +1283,7 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     })
     fire(dirRow(el), 'drop', finder('Plan.md', 'a.md'))
     await act(async () => {})
-    expect(props.onMoved).toHaveBeenLastCalledWith(expect.objectContaining({ cleared: [] }), 'Moved 1 file (Plan.md) from Finder, skipped 1: a.md — a file with this name already exists')
+    expect(props.onMoved).toHaveBeenLastCalledWith(expect.objectContaining({ cleared: [] }), 'Moved 1 file (Plan.md) from Finder, skipped 1: a.md — a file with this name already exists', expect.any(Array))
     bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [{ from: '/w/x.md', code: 'BAD_REQUEST', message: 'To move between vaults, use cut and paste' }] })
     fire(dirRow(el), 'drop', finder('x.md'))
     await act(async () => {})
@@ -5239,7 +5240,7 @@ describe('focus tab (YAZ-2619)', () => {
     expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`])
     expect(bridge.window.setIdentity).not.toHaveBeenCalled() // the list is the vault's (YAZ-2702 S1): the window's identity holds none
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('focus')
-    expect(props.onNotice).toHaveBeenLastCalledWith('Added to focus')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Added to focus', 'info', 'lists')
     expect(topLabels(el)).toEqual(EVERY_TOP_ROW) // App has not handed the lens back yet: this is still Files, and it is not narrowed
     await pick(el, `${v}/top.md`, 'Add to focus')
     expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`, `${v}/top.md`])
@@ -5261,7 +5262,7 @@ describe('focus tab (YAZ-2619)', () => {
     shiftClickRow(rowByPath(el, `${v}/Notes`))
     await pick(el, `${v}/Notes`, 'Add 3 to focus')
     expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Notes`, `${v}/Projects`, `${v}/top.md`]) // …panel order in
-    expect(props.onNotice).toHaveBeenLastCalledWith('Added 3 to focus')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Added 3 to focus', 'info', 'lists')
     // The tab change an add asks for ends the selection, as every tab change does (R12).
     expect(el.querySelectorAll('.tree__row--selected')).not.toHaveLength(0)
     await rerender({ lens: 'focus' })
@@ -5280,7 +5281,7 @@ describe('focus tab (YAZ-2619)', () => {
     shiftClickRow(rowByPath(el, `${v}/top.md`))
     await pick(el, `${v}/top.md`, 'Remove 3 from focus')
     expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects-Archive`])
-    expect(props.onNotice).toHaveBeenLastCalledWith('Removed 3 from focus')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Removed 3 from focus', 'info', 'lists')
     expect(props.onLensChange).not.toHaveBeenCalled()
   })
 
@@ -5288,7 +5289,7 @@ describe('focus tab (YAZ-2619)', () => {
     const { el, v, bridge, props, rerender } = await mountVault({}, { focus: ['/Projects', '/top.md'] })
     await pick(el, `${v}/top.md`, 'Remove from focus') // on Files (S5, S14)
     expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`])
-    expect(props.onNotice).toHaveBeenLastCalledWith('Removed from focus')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Removed from focus', 'info', 'lists')
     expect(props.onLensChange).not.toHaveBeenCalled()
     await rerender({ lens: 'focus' })
     expect(topLabels(el)).toEqual(['Projects'])
@@ -5677,7 +5678,7 @@ describe('favorites (YAZ-1766)', () => {
     expect(itemByLabel(el, 'New note')).toBeDefined()
     closeMenu(el)
     await pick(el, `${v}/Projects`, 'Add to favorites')
-    expect(props.onNotice).toHaveBeenCalledWith('Added to favorites', 'favorite')
+    expect(props.onNotice).toHaveBeenCalledWith('Added to favorites', 'favorite', 'lists')
     expect(bridge.favorites.set).toHaveBeenCalledWith(v, [`${v}/Projects`])
     expect(bridge.state.setFolder).not.toHaveBeenCalled() // vault content, not app state (D15)
     expect(bridge.focus.set).not.toHaveBeenCalled() // nor window identity
@@ -5707,7 +5708,7 @@ describe('favorites (YAZ-1766)', () => {
     expect(topLabels(el)).toEqual(['Projects', 'top'])
     await pick(el, `${v}/Projects`, 'Remove from favorites')
     expect(topLabels(el)).toEqual(['top'])
-    expect(props.onNotice).toHaveBeenCalledWith('Removed from favorites', 'favorite')
+    expect(props.onNotice).toHaveBeenCalledWith('Removed from favorites', 'favorite', 'lists')
     expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/top.md`])
   })
 
@@ -6930,7 +6931,7 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(selectedCount(el)).toBe(2)
     await act(async () => {})
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied 2 paths') // YAZ-1341: a copy SAYS SO
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied 2 paths', 'info', 'clipboard') // YAZ-1341: a copy SAYS SO
   })
 
   it('the singular "Copy path" confirms too — every copy speaks with the one voice (YAZ-1341)', async () => {
@@ -6939,7 +6940,7 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
     rightClick(rowByPath(el, '/v/a.md'))
     act(() => itemByLabel(el, 'Copy path')?.click())
     await act(async () => {})
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied path')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied path', 'info', 'clipboard')
   })
 
   it('"Open N in new tabs" background-opens every selected path and keeps the selection', async () => {
@@ -7364,7 +7365,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     rightClick(rowByPath(el, '/v/a.md'))
     await act(async () => itemByLabel(el, 'Cut')?.click())
     expect(bridge.file.clip).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md'], op: 'cut' })
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Cut 1 file (a.md)', 'cut') // names, as every gesture toast (YAZ-3305)
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Cut 1 file (a.md)', 'cut', 'clipboard') // names, as every gesture toast (YAZ-3305)
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
@@ -7376,7 +7377,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(itemByLabel(el, 'Cut 2 files')).toBeDefined()
     await act(async () => itemByLabel(el, 'Copy 2 files')?.click())
     expect(bridge.file.clip).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md', '/v/c.md'], op: 'copy' }) // …tree order out
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied 2 files (a.md, c.md)', 'copy') // names, in the order clipped (YAZ-3305)
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied 2 files (a.md, c.md)', 'copy', 'clipboard') // names, in the order clipped (YAZ-3305)
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(2)
   })
 
@@ -7390,7 +7391,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(paste?.disabled).toBe(false)
     await act(async () => paste?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/sub', 'copy', '/w/x.md', '/w/y.md'))
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 2 files (x.md, y.md)', 'paste')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 2 files (x.md, y.md)', 'paste', 'clipboard')
     expect(props.onMoved).not.toHaveBeenCalled() // a copy is not in the undo list (YAZ-3255 D10)
     expect(bridge.tree.mock.calls.length).toBe(treeReads + 1) // the explicit refresh: a copy broadcasts nothing
   })
@@ -7428,7 +7429,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v', 'cut', '/w/x.md', '/w/Note.md'))
     // A Paste of a Cut is a move gesture (YAZ-3255 S39): only what moved is in it.
-    expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: '/w/x.md', newPath: '/v/x.md', kind: 'file' }], cleared: [] }, 'Pasted 1 file (x.md), skipped 1: Note — already exists')
+    expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: '/w/x.md', newPath: '/v/x.md', kind: 'file' }], cleared: [] }, 'Pasted 1 file (x.md), skipped 1: Note — already exists', expect.any(Array))
     expect(props.onNotice).not.toHaveBeenCalled()
   })
 
@@ -7539,7 +7540,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
       expect(bridge.file.clipState.mock.calls.length).toBe(reads + 1) // read again at paste time
       expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/sub', expect: { op: 'cut', paths: [REPORT] } })
       // A move: on the undo list with its toast (App says it and plays the sound), never "Pasted" as a copy.
-      expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: REPORT, newPath: '/v/sub/report.pdf', kind: 'file' }], cleared: [] }, 'Pasted 1 file (report.pdf)')
+      expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: REPORT, newPath: '/v/sub/report.pdf', kind: 'file' }], cleared: [] }, 'Pasted 1 file (report.pdf)', [])
       expect(props.onNotice).not.toHaveBeenCalled()
       expect(bridge.app.sound).not.toHaveBeenCalled()
     })
@@ -8126,7 +8127,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         await act(async () => sheetBtn(el, 'Move')?.click())
         expect(disk.get('/v/Areas/Alpha.md')).toBe('---\n---\nBody\n')
         // The undo list gets the move and the blocks it cleared (YAZ-3255 S39), so an undo can put them back.
-        expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: ALPHA, newPath: '/v/Areas/Alpha.md', kind: 'file' }], cleared: [{ path: ALPHA, values: { [PROJECTS_ID]: { order: 1 } } }] }, 'Pasted 1 file (Alpha.md)')
+        expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: ALPHA, newPath: '/v/Areas/Alpha.md', kind: 'file' }], cleared: [{ path: ALPHA, values: { [PROJECTS_ID]: { order: 1 } } }] }, 'Pasted 1 file (Alpha.md)', [])
       })
 
       it('YAZ-3266: Move on the sheet pastes the clip the sheet asked about, never what the clipboard holds by then; another clip pushed while it stands closes it, the same one does not', async () => {
@@ -8735,7 +8736,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, `${b}/docs`))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(`${b}/docs`, 'copy', `${a}/a.md`))
-    expect(props.onNotice).toHaveBeenLastCalledWith('Pasted 1 file (a.md)', 'paste')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Pasted 1 file (a.md)', 'paste', 'clipboard')
     // The folder it landed in opens, and the tree and the index read are the target vault's alone.
     expect(isOpen(el, `${b}/docs`)).toBe('true')
     expect(bridge.tree.mock.calls.every(([root]) => root === b)).toBe(true)
@@ -8750,7 +8751,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, b))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(b, 'cut', `${a}/a.md`))
-    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: `${a}/a.md`, newPath: `${b}/a.md`, kind: 'file' }], cleared: [] }, 'Pasted 1 file (a.md)')
+    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: `${a}/a.md`, newPath: `${b}/a.md`, kind: 'file' }], cleared: [] }, 'Pasted 1 file (a.md)', [])
     expect(el.querySelector('.confirm')).toBeNull()
   })
 
@@ -9149,7 +9150,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(bridge.focus.set.mock.calls).toEqual([[b, [`${b}/b.md`]], [a, [`${a}/sub`]]])
     // With two vaults each add also gives the order across vaults, so a new item goes LAST on the tab (YAZ-2619 D1: the order added).
     expect(bridge.state.setFocusOrder.mock.calls).toEqual([[[a, b], [`${b}/b.md`]], [[a, b], [`${b}/b.md`, `${a}/sub`]]])
-    expect(props.onNotice).toHaveBeenLastCalledWith('Added to focus')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Added to focus', 'info', 'lists')
     // App has not handed the lens back yet: this is still Files — every vault, whole, and no row names a vault.
     expect(topLabels(el)).toEqual(['Notes', 'Work'])
     expect(el.querySelector('.tree__vault')).toBeNull()
@@ -9204,7 +9205,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     await choose(el, 'Add 2 to focus')
     // YAZ-2702 S2: one write for each vault, each with its own part of the selection.
     expect(bridge.focus.set.mock.calls).toEqual([[a, [`${a}/a.md`]], [b, [`${b}/docs`]]])
-    expect(props.onNotice).toHaveBeenLastCalledWith('Added 2 to focus')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Added 2 to focus', 'info', 'lists')
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('focus')
     // The folder opened in ITS vault, the second, as its own copy (YAZ-3131 S4): its open folders are stored under that vault (YAZ-2619 R4).
     expect(setFolderCalls(bridge)).toContainEqual([b, { expanded: [copyFoldKey(`${b}/docs`, `${b}/docs`)] }])
@@ -9214,7 +9215,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(focusItems(el)).toEqual(['Remove from focus'])
     await choose(el, 'Remove from focus')
     expect(bridge.focus.set).toHaveBeenLastCalledWith(b, [])
-    expect(props.onNotice).toHaveBeenLastCalledWith('Removed from focus')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Removed from focus', 'info', 'lists')
     expect(props.onLensChange).toHaveBeenCalledTimes(1) // a remove keeps the tab (YAZ-2619 R5)
 
     both()
@@ -9358,7 +9359,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, `${b}/b.md`))
     await choose(el, 'Add to favorites')
     expect(bridge.favorites.set.mock.calls).toEqual([[b, [`${b}/b.md`]]])
-    expect(props.onNotice).toHaveBeenLastCalledWith('Added to favorites', 'favorite')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Added to favorites', 'favorite', 'lists')
     // A row of the other vault reads its own vault's list: `a.md` is a favorite there.
     rightClick(rowByPath(el, `${a}/a.md`))
     expect(itemByLabel(el, 'Remove from favorites')).toBeDefined()
@@ -9373,13 +9374,13 @@ describe('several vaults in one window (YAZ-2602)', () => {
     // One of the three is a favorite already, so the item adds: each file gains its own vault's rows.
     await choose(el, 'Add 3 to favorites')
     expect(bridge.favorites.set.mock.calls).toEqual([[a, [`${a}/a.md`, `${a}/sub`]], [b, [`${b}/b.md`, `${b}/docs`]]])
-    expect(props.onNotice).toHaveBeenLastCalledWith('Added 3 to favorites', 'favorite')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Added 3 to favorites', 'favorite', 'lists')
 
     bridge.favorites.set.mockClear()
     rightClick(rowByPath(el, `${b}/docs`))
     await choose(el, 'Remove 3 from favorites')
     expect(bridge.favorites.set.mock.calls).toEqual([[a, [`${a}/a.md`]], [b, []]])
-    expect(props.onNotice).toHaveBeenLastCalledWith('Removed 3 from favorites', 'favorite')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Removed 3 from favorites', 'favorite', 'lists')
   })
 
   it('YAZ-2631 S4, S5, S9, S12, S15, R3, R4: a favorite drags to any place of the flat list, between the rows of either vault; a drag that keeps each vault\'s own order writes the order across vaults alone, and one that changes a vault\'s own order writes that vault\'s file too — with the favorite that draws no row still in it; a refused file write puts that vault\'s list back; another window\'s drag lands here', async () => {
@@ -9544,7 +9545,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, `${b}/b.md`))
     await choose(el, 'Add to favorites')
     expect(bridge.favorites.set.mock.calls).toEqual([[b, [`${b}/docs`, `${b}/b.md`]]])
-    expect(props.onNotice).toHaveBeenLastCalledWith('Added to favorites', 'favorite')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Added to favorites', 'favorite', 'lists')
   })
 
   it('YAZ-2631 R24: a reorder drag that lost its `dragend` on one tab moves nothing on the next — a file dropped on a vault row of Files hands App no order, and the line is gone', async () => {

@@ -8,7 +8,7 @@ import { copyFoldKey } from '@shared/foldKey'
 import { MAX_FOCUS, rootOfPath, stripSlash, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import type { WatchSource } from '../../hooks/useWatch'
-import type { NoticeKind } from '../../lib/notice'
+import type { NoticeKind, NoticeType } from '../../lib/notice'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../../lib/leadingTrailing'
 import { storage } from '../../lib/storage'
 import { fetchTree, latestTree, onTree } from '../../lib/treeFeed'
@@ -86,7 +86,7 @@ interface VaultLists {
  * write's echo, another window's, or a file that a sync brought. So two windows on one vault, and
  * two Macs, show one list.
  */
-function useVaultLists(kind: ListKind, live: { readonly current: { roots: readonly string[] } }, onNotice: (message: string, kind?: NoticeKind) => void): [ListsByRoot, VaultLists] {
+function useVaultLists(kind: ListKind, live: { readonly current: { roots: readonly string[] } }, onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void): [ListsByRoot, VaultLists] {
   const [byRoot, setByRoot] = useState<ListsByRoot>({})
   const held = useRef(byRoot)
   held.current = byRoot
@@ -131,7 +131,7 @@ export function useVaultTree(
   activeFile: string | null,
   onRootMissing: (root: string) => void,
   onFileMissing: () => void,
-  onNotice: (message: string, kind?: NoticeKind) => void,
+  onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void,
   /** The shown tab sorts by Last updated (YAZ-3227 D2): each save puts its file's time into the tree. */
   liveTimes = false,
 ) {
@@ -477,7 +477,7 @@ export function useVaultTree(
       const full = toggleIn(focus, paths, isOn, MAX_FOCUS)
       if (full === null) return onNotice('Focus is still loading. Try again.', 'error')
       const n = paths.length > 1 ? `${paths.length} ` : ''
-      if (isOn) return onNotice(`Removed ${n}from focus`)
+      if (isOn) return onNotice(`Removed ${n}from focus`, 'info', 'lists')
       // A folder joins open (R4) in its own copy only (YAZ-3131 S4): Files and the other copies keep their folds.
       dispatch({ type: 'open', dirs: paths.filter((path) => dirs.includes(path)).map((path) => copyFoldKey(path, path)) })
       if (full) return onNotice(`Focus limit reached: ${MAX_FOCUS} items`, 'error')
@@ -485,7 +485,7 @@ export function useVaultTree(
       // before the lists were the vaults': the order across vaults takes them. Favorites writes no order
       // on an add (YAZ-2631 R13), so there a new favorite stands with its vault.
       if (live.current.roots.length > 1) storage.setFocusOrder(live.current.roots.filter((vault) => focus.held.current[vault] !== undefined), [...focusList, ...paths.filter((p) => !focusList.includes(p))])
-      onNotice(`Added ${n}to focus`)
+      onNotice(`Added ${n}to focus`, 'info', 'lists')
     },
     [dirs, focus, focusList, toggleIn, onNotice],
   )
@@ -508,7 +508,7 @@ export function useVaultTree(
     (paths: string[], isOn: boolean) => {
       if (toggleIn(favorites, paths, isOn) === null) return onNotice('Favorites are still loading. Try again.', 'error')
       const n = paths.length > 1 ? `${paths.length} ` : ''
-      onNotice(isOn ? `Removed ${n}from favorites` : `Added ${n}to favorites`, 'favorite')
+      onNotice(isOn ? `Removed ${n}from favorites` : `Added ${n}to favorites`, 'favorite', 'lists')
     },
     [favorites, toggleIn, onNotice],
   )

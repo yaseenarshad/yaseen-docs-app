@@ -731,6 +731,63 @@ describe('App ⌘C / ⌘X / ⌘V file clipboard (YAZ-1674, D6 amended)', () => {
  * `role="status"` announcement stay the bare text. No kind → `'info'`, which is what every caller
  * that never changed gets.
  */
+describe('App Settings › Notifications (YAZ-3303)', () => {
+  const open = (settings: Partial<AppState['settings']>) => {
+    const state = defaultAppState()
+    state.settings = { ...state.settings, ...settings }
+    return mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+  }
+  const toast = (el: HTMLElement) => el.querySelector('.link-notice')
+  const gesture = { moves: [{ oldPath: '/v/a.md', newPath: '/v/sub/a.md', kind: 'file' as const }], cleared: [] }
+
+  it('D2: a typed toast whose switch is Off never shows, and the toast on screen stays; an untyped toast and an error show (S14, S15, S20, S22)', async () => {
+    const { el } = await open({ noticeClipboard: false, noticeLists: false })
+    act(() => captured.sidebar?.onNotice('Saved workspace "W"'))
+    act(() => captured.sidebar?.onNotice('Copied path', 'info', 'clipboard'))
+    act(() => captured.sidebar?.onNotice('Added to favorites', 'favorite', 'lists'))
+    expect(toast(el)?.textContent).toBe('Saved workspace "W"')
+    act(() => captured.sidebar?.onNotice("Couldn't paste: Plan — already exists", 'error'))
+    expect(toast(el)?.textContent).toBe("Couldn't paste: Plan — already exists")
+  })
+
+  it('D2: with "Move, rename or delete" Off, a move says nothing, and a move that skipped an item still shows with Undo (S17, S18)', async () => {
+    const { el } = await open({ noticeUndo: false })
+    act(() => captured.sidebar?.onMoved(gesture, 'Moved 1 file (a.md)', []))
+    expect(toast(el)).toBeNull()
+    act(() => captured.sidebar?.onMoved(gesture, 'Moved 1 file (a.md), skipped 1: b.md — already exists', ['b.md — already exists']))
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Moved 1 file (a.md), skipped 1: b.md — already exists')
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo')
+  })
+
+  it('D5: Show for 15 s keeps a plain toast 15 s (S5)', async () => {
+    const { el } = await open({ noticeLength: '15s' })
+    vi.useFakeTimers()
+    try {
+      act(() => captured.sidebar?.onNotice('Copied path', 'info', 'clipboard'))
+      act(() => vi.advanceTimersByTime(14_000))
+      expect(toast(el)?.textContent).toBe('Copied path')
+      act(() => vi.advanceTimersByTime(1_000))
+      expect(toast(el)).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('D5, D8: "Until closed" keeps a toast, with no count, until ✕ (S8, S13)', async () => {
+    const closed = await open({ noticeLength: 'closed' })
+    vi.useFakeTimers()
+    try {
+      act(() => captured.sidebar?.onNotice('Copied path', 'info', 'clipboard'))
+      act(() => vi.advanceTimersByTime(60_000))
+      expect(closed.el.querySelector('.link-notice__clock')).toBeNull()
+      act(() => closed.el.querySelector<HTMLButtonElement>('.link-notice__close')?.click())
+      expect(toast(closed.el)).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('App notice icon (D10 amended, YAZ-1674)', () => {
   const open = () => mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
 
