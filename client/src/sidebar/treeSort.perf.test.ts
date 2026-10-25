@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { TabSort, TreeNode, TreeResponse } from '@shared/types'
 import { pageLabel } from '../lib/pageLabel'
 import { sortLevel, withMtime } from './treeSort'
+import { timeMedian } from '../test-perf'
 
 // 100 folders × 10 subfolders × 10 notes = 10,000 notes, each with its own time; plus a level of 108 rows, the largest one a real vault has.
 const note = (path: string, mtime: number): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime, kind: 'markdown' })
@@ -37,9 +38,8 @@ describe('sidebar sort perf (YAZ-3227)', () => {
   it('a 108-row level sorts by name in well under 1 ms', () => {
     const level = Array.from({ length: 108 }, (_, i) => note(`/v/Phase ${(i * 37) % 108}.md`, i))
     sortLevel(level, { by: 'name', reverse: false }, label)
-    const t0 = performance.now()
-    for (let i = 0; i < 100; i++) sortLevel(level, { by: 'name', reverse: i % 2 === 1 }, label)
-    expect((performance.now() - t0) / 100).toBeLessThan(1)
+    const { median } = timeMedian(100, (i) => sortLevel(level, { by: 'name', reverse: i % 2 === 1 }, label))
+    expect(median).toBeLessThan(1)
   })
 
   it('every level of 10,000 notes, fully open, sorts by Last updated in under 50 ms — the folder times come once per tree', () => {
@@ -56,10 +56,8 @@ describe('sidebar sort perf (YAZ-3227)', () => {
 
   it('a save patches one time into 10,000 notes in under 1 ms', () => {
     let trees: ReadonlyMap<string, TreeResponse> = new Map([['/v', { root: '/v', tree: tree() } as TreeResponse]])
-    const t0 = performance.now()
-    for (let i = 0; i < 100; i++) trees = withMtime(trees, '/v', `/v/Folder ${i}/Sub 9/Note 9.md`, 20_000 + i)
-    const each = (performance.now() - t0) / 100
-    console.log(`withMtime 10k: ${(each * 1000).toFixed(0)} µs per save`)
+    const { median: each, worst } = timeMedian(100, (i) => (trees = withMtime(trees, '/v', `/v/Folder ${i}/Sub 9/Note 9.md`, 20_000 + i)))
+    console.log(`withMtime 10k: median ${(each * 1000).toFixed(0)} µs per save, worst ${(worst * 1000).toFixed(0)} µs of 100`)
     expect(each).toBeLessThan(1)
   })
 })

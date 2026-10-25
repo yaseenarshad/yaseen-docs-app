@@ -20,9 +20,16 @@ vi.mock('electron', () => ({
   // trash call is stubbed and the assertions are about the store repair and the broadcast.
   // `remove.test.ts` owns the disk-level behaviour.
   shell: { trashItem: vi.fn(async () => undefined) },
+  // fs:clip also writes the system clipboard (YAZ-3265 D13): a stand-in that holds no files, never the real one.
+  clipboard: { read: vi.fn(() => ''), writeBuffer: vi.fn() },
 }))
 // The favorites.json repair (YAZ-1766 6A, D13) rides the rename/delete handlers; `favorites.test.ts`
 // owns its disk behaviour, so here it is a mock whose failure must never fail the file op.
+// The home folder is the temp folder (YAZ-3268): a delete's look in `~/.Trash` never reads the real Trash. The mock trash moves nothing, so `trashed` is null.
+vi.mock('node:os', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:os')>()
+  return { ...real, homedir: () => real.tmpdir() }
+})
 vi.mock('../favorites', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
 // The focus list's repair (YAZ-2702 R10, R11) rides the same handlers, by the same rule; `focus.test.ts`
 // owns its disk behaviour. Mocked like favorites — the real module imports from the one mocked above.
@@ -34,6 +41,12 @@ function registered(channel: string): Handler {
   const call = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === channel)
   if (call === undefined) throw new Error(`no handler registered for ${channel}`)
   return call[1] as unknown as Handler
+}
+
+/** A paste request that names the clip main holds now: what a window that read `clip-state` at paste time confirms (YAZ-3266). */
+function pasteReq(targetDir: string) {
+  const clip = fileClip.get()
+  return { targetDir, expect: clip === null ? null : { op: clip.op, paths: clip.paths } }
 }
 
 /** A `BrowserWindow` stand-in: only what the broadcaster touches. */
@@ -69,7 +82,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
+    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.putBack.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -363,7 +376,7 @@ describe('registerFsIpc', () => {
     const call = (door: { channel: string }, ...args: unknown[]) => registered(door.channel)({ sender: {} }, ...args)
     const paste = (from: string, targetDir: string) => {
       fileClip.set({ op: 'copy', paths: [from] })
-      return call(CONTRACT.file.paste, { targetDir })
+      return call(CONTRACT.file.paste, pasteReq(targetDir))
     }
 
     it.each([
@@ -568,10 +581,11 @@ describe('registerFsIpc', () => {
       try {
         await call(CONTRACT.createFile, path.join(other, 'Out.md'))
         await call(CONTRACT.createDir, { path: path.join(other, 'Out') })
-        await paste(path.join(vault, 'Plans', 'Name.md'), other)
+        // A paste is the exception: it writes only into a vault of the calling window (the YAZ-3248 rulings).
+        expect(await paste(path.join(vault, 'Plans', 'Name.md'), other)).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'no vault of this window holds that folder', path: other } })
         senderWinId = undefined
         await call(CONTRACT.createFile, path.join(other, 'No window.md'))
-        expect(await vaultFiles(other)).toEqual({ 'Out.md': '', 'Out/': '', 'Name.md': NOTE, 'No window.md': '' })
+        expect(await vaultFiles(other)).toEqual({ 'Out.md': '', 'Out/': '', 'No window.md': '' })
       } finally {
         await close(vault, other)
       }
@@ -587,7 +601,7 @@ describe('registerFsIpc', () => {
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       senderWinId = undefined
       const res = await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })
-      expect(res).toEqual({ ok: true, value: { path: target, kind: 'file' } })
+      expect(res).toEqual({ ok: true, value: { path: target, kind: 'file', trashed: null } })
       // Store repaired in the SAME handler: the active file went, so the heir took over and
       // the SURVIVING tab is still there (the invariant removePath protects).
       expect(store.get().windows.find((win) => win.id === 'wd')).toMatchObject({ file: path.join(root, 'A.md'), tabs: [path.join(root, 'A.md')] })
@@ -616,7 +630,7 @@ describe('registerFsIpc', () => {
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       senderWinId = undefined
-      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: sub })).toEqual({ ok: true, value: { path: sub, kind: 'dir' } })
+      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: sub })).toEqual({ ok: true, value: { path: sub, kind: 'dir', trashed: null } })
       const other = store.get().windows.find((win) => win.id === 'w-other')
       expect(other?.root).toBe(sub) // deliberately NOT nulled here
       expect(other?.file).toBeNull() // the file under it went
@@ -662,7 +676,7 @@ describe('registerFsIpc', () => {
         expect(await registered(CONTRACT.file.rename.channel)({ sender: {} }, { oldPath: second, newPath: moved })).toEqual({ ok: true, value: { oldPath: second, newPath: moved, kind: 'dir' } })
         expect(rootsOfTwo()).toEqual([first, moved])
         // It may delete it too. The store leaves the list alone: the window that shows it sees the folder gone.
-        expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: moved })).toEqual({ ok: true, value: { path: moved, kind: 'dir' } })
+        expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: moved })).toEqual({ ok: true, value: { path: moved, kind: 'dir', trashed: null } })
         expect(rootsOfTwo()).toEqual([first, moved])
       } finally {
         senderWinId = undefined
@@ -705,7 +719,7 @@ describe('registerFsIpc', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
       vi.mocked(favorites.removePath).mockRejectedValueOnce(new Error('boom'))
       senderWinId = undefined
-      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })).toEqual({ ok: true, value: { path: target, kind: 'file' } })
+      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })).toEqual({ ok: true, value: { path: target, kind: 'file', trashed: null } })
       expect(vi.mocked(favorites.removePath)).toHaveBeenCalledWith(expect.arrayContaining([root]), target)
       expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onDeleted.channel, { path: target, kind: 'file' })
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('boom'))
@@ -741,8 +755,10 @@ describe('registerFsIpc', () => {
       await mkdir(dir)
       fileClip.set({ op: 'cut', paths: [oldPath] })
       vi.mocked(focus.renamePath).mockClear()
-      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: dir })).toMatchObject({ ok: true, value: { pasted: [{ from: oldPath, to: path.join(dir, 'focus-a.md') }] } })
+      senderWinId = 'w-focus' // a paste writes only into a vault of the calling window
+      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(dir))).toMatchObject({ ok: true, value: { pasted: [{ from: oldPath, to: path.join(dir, 'focus-a.md') }] } })
       expect(vi.mocked(focus.renamePath)).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining([root]), oldPath, path.join(dir, 'focus-a.md'))
+      senderWinId = undefined
       store.removeWindow('w-focus')
     })
 
@@ -756,7 +772,7 @@ describe('registerFsIpc', () => {
       vi.mocked(focus.removePath).mockClear()
       vi.mocked(focus.removePath).mockRejectedValueOnce(new Error('focus boom'))
       senderWinId = undefined
-      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })).toEqual({ ok: true, value: { path: target, kind: 'file' } })
+      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })).toEqual({ ok: true, value: { path: target, kind: 'file', trashed: null } })
       expect(vi.mocked(focus.removePath)).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining([root]), target)
       expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onDeleted.channel, { path: target, kind: 'file' })
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('focus boom'))
@@ -800,11 +816,13 @@ describe('registerFsIpc', () => {
       fileClip.clear()
     })
 
-    it('fs:paste with an empty clipboard is BAD_REQUEST "nothing to paste"', async () => {
+    it('fs:paste with an empty clipboard is CONFLICT: the clip the window confirmed is gone, so nothing is pasted (YAZ-3266)', async () => {
       fileClip.clear()
-      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root })).toEqual({
+      win('w-empty', null)
+      senderWinId = 'w-empty'
+      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root, expect: { op: 'copy', paths: [path.join(root, 'A.md')] } })).toEqual({
         ok: false,
-        error: { code: 'BAD_REQUEST', message: 'nothing to paste' },
+        error: { code: 'CONFLICT', message: 'The clipboard changed. Paste again.' },
       })
     })
 
@@ -818,14 +836,14 @@ describe('registerFsIpc', () => {
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       const before = store.get()
       // Into its own folder: Duplicate for free.
-      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root })
+      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(root))
       const copy = expect.stringMatching(/\/copy-src-copy-[a-z]{2,5}-\d+\.md$/)
       expect(res).toEqual({ ok: true, value: { pasted: [{ from: src, to: copy, kind: 'file' }], failed: [] } })
       expect(await readFile(src, 'utf8')).toBe('copy me')
       expect(store.get()).toBe(before) // nothing moved: no repair
       expect(w.webContents.send).not.toHaveBeenCalled() // no file:renamed, no clip:changed
       expect(fileClip.get()).toEqual({ op: 'copy', paths: [src] }) // a copy pastes again and again
-      const again = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root })
+      const again = await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(root))
       expect(again).toMatchObject({ ok: true, value: { pasted: [{ to: copy }] } })
       expect((await readdir(root)).filter((name) => name.startsWith('copy-src-copy-'))).toHaveLength(2)
     })
@@ -842,7 +860,7 @@ describe('registerFsIpc', () => {
       fileClip.set({ op: 'cut', paths: [a, b] })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
-      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: dir })
+      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(dir))
       const toA = path.join(dir, 'cut-a.md')
       const toB = path.join(dir, 'cut-b.md')
       expect(res).toEqual({ ok: true, value: { pasted: [{ from: a, to: toA, kind: 'file' }, { from: b, to: toB, kind: 'file' }], failed: [] } })
@@ -866,7 +884,7 @@ describe('registerFsIpc', () => {
       fileClip.set({ op: 'cut', paths: [src] })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
-      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: dir })
+      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(dir))
       expect(res).toEqual({ ok: true, value: { pasted: [], failed: [{ from: src, code: 'ALREADY_EXISTS', message: 'a file with this name already exists' }] } })
       expect(await readFile(path.join(dir, 'same.md'), 'utf8')).toBe('keep')
       expect(fileClip.get()).toEqual({ op: 'cut', paths: [src] })
@@ -876,7 +894,7 @@ describe('registerFsIpc', () => {
     it('a missing target folder is a whole-call BridgeError envelope: nothing pasted, clipboard kept', async () => {
       fileClip.set({ op: 'copy', paths: [path.join(root, 'A.md')] })
       const missing = path.join(root, 'no-such-dir')
-      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: missing })).toEqual({
+      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(missing))).toEqual({
         ok: false,
         error: { code: 'NOT_FOUND', message: 'path does not exist', path: missing },
       })

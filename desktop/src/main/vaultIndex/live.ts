@@ -258,6 +258,69 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   return { root, records, folders, generatedAt: Date.now(), ids, letters, ...((await planLeft(root)) && { unfinished: true as const }) }
 }
 
+/** `p` is under `root` (a vault is never its own record). */
+const inside = (root: string, p: string): boolean => p.startsWith(root + path.sep)
+
+/**
+ * An in-app move (`fs:rename`, and the `moveEntry` of a paste and an import), taken by each live
+ * index AT ONCE (YAZ-3258): the next `getIndex` holds the new paths, so the next move of a gesture
+ * and a quick ⌘Z read them (S3, S33). The watcher's echo comes later (0.3–4 s on NFS,
+ * docs/DEVELOPMENT.md) and scans the same files again, which changes nothing; only the echo runs the
+ * ID sweep and the diary, and keeps the list of folders, as for any add.
+ * A note is scanned at its new path: a rename can change its name, and so its title. A folder's notes
+ * keep their records with the new path and folder, as a move changes no byte of them; a folder's
+ * settings file is scanned, because the folder's name is its title. A folder that comes from outside
+ * every live index is walked. Never throws.
+ */
+export async function indexMoved(oldPath: string, newPath: string, kind: 'file' | 'dir'): Promise<void> {
+  const live = [...entries].filter(([root]) => inside(root, oldPath) || inside(root, newPath))
+  // A scan the watcher started lands first, so it cannot put back a path this takes away.
+  await Promise.all(live.map(([, entry]) => Promise.all([...entry.inFlight])))
+  const moved = new Map<string, IndexRecord>()
+  for (const [, entry] of live) {
+    for (const [p, r] of entry.records) {
+      if (p !== oldPath && !p.startsWith(oldPath + path.sep)) continue
+      moved.set(p, r)
+      entry.records.delete(p)
+    }
+  }
+  for (const [root, entry] of live) {
+    if (inside(root, newPath)) {
+      const scan = (p: string): Promise<void> => scanFile(root, p).then((r) => void entry.records.set(p, r), () => undefined)
+      if (kind === 'file') {
+        if (isMarkdown(newPath)) await scan(newPath)
+      } else if (moved.size === 0) {
+        const files: string[] = []
+        await walk(newPath, files).catch(() => undefined)
+        await Promise.all(files.map(scan))
+      } else {
+        for (const [p, r] of moved) {
+          const to = newPath + p.slice(oldPath.length)
+          if (r.name === FOLDER_SETTINGS_FILE) await scan(to)
+          else entry.records.set(to, { ...r, path: to, folder: path.relative(root, path.dirname(to)).split(path.sep).join('/') })
+        }
+      }
+    }
+    schedulePersist(root, entry.records)
+  }
+}
+
+/**
+ * A tidy-up write the app made itself (`FileWriteRequest.quiet`: a link rewrite, a folder's values),
+ * taken by each live index AT ONCE, as a move is (`indexMoved`): a quick ⌘Z finds the note whose link
+ * the move rewrote (S33). An edit the user made waits for the watcher: its echo tells the ID sweep the
+ * ID the note held before the edit (YAZ-2293 D4), and a scan here would hide it. Never throws.
+ */
+export async function indexWrote(p: string): Promise<void> {
+  if (!isMarkdown(p)) return
+  for (const [root, entry] of entries) {
+    if (!inside(root, p)) continue
+    await Promise.all([...entry.inFlight])
+    await scanFile(root, p).then((r) => void entry.records.set(p, r), () => undefined)
+    schedulePersist(root, entry.records)
+  }
+}
+
 /** The live index of `root`: built on the first call, with each scan the watcher has started already in it. */
 async function liveEntry(root: string): Promise<Entry> {
   let entry = entries.get(root)

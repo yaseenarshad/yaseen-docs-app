@@ -33,7 +33,8 @@ import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
 import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
 import { initMint, macId } from './vaultIndex/mint'
 import { createWindowManager } from './windows'
-import { createWindowOpenHandler } from './windowOpenPolicy'
+import { dropLanded } from './dragLanding'
+import { blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
 import { createUpdater, runFile, shortVersion, spawnDetached } from './updater'
 
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
@@ -120,6 +121,12 @@ const manager = createWindowManager(store, {
     // A hidden e2e window must never surface: `focus()` and `show()` would order it front.
     if (hiddenE2E) win.show = win.focus = () => {}
     win.webContents.setWindowOpenHandler(createWindowOpenHandler(openLink))
+    // A file dropped where nothing takes it never opens in the window (YAZ-3253 S21). When it is the
+    // drag out of another window, that window asks nothing (YAZ-3263): this drop fires no `drop` event.
+    win.webContents.on('will-navigate', (event, url) => {
+      const file = blockFileNavigation(event, url)
+      if (file !== null) dropLanded(win.webContents, [file])
+    })
     // Electron ships no default context menu (YAZ-672), so the spellchecker's squiggles would
     // otherwise be unactionable; the template itself is pure and lives in menu.ts.
     win.webContents.on('context-menu', (_event, params) =>

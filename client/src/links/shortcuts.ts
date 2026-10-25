@@ -231,10 +231,35 @@ function staleAfterMove({ root, oldPath, newPath, kind, records, folders }: Move
  * hold a stale block is decided on the snapshot — a rename, or a move under the same folders,
  * reads and writes nothing. A note that cannot be written keeps its blocks until a value of it is
  * next written.
+ *
+ * It answers what it cleared (YAZ-3250 D1), so an undo (YAZ-3255) can put it back: each written
+ * note's PRE-move path and the blocks it lost, by folder id, as the snapshot held them.
  */
-export async function dropFolderValuesAfterMove(move: Move & Snapshot): Promise<void> {
+export async function dropFolderValuesAfterMove(move: Move & Snapshot): Promise<ClearedValues[]> {
   const { after, stale } = staleAfterMove(move)
-  for (const { path } of stale) await transformFile(path, dropStaleFolderValues(move.root, path, after), true).catch(() => undefined) // quiet (YAZ-3235 D1)
+  const cleared: ClearedValues[] = []
+  for (const { record, path, kept } of stale) {
+    const written = await transformFile(path, dropStaleFolderValues(move.root, path, after), true).then(() => true, () => false) // quiet (YAZ-3235 D1)
+    const held = (record.properties[FOLDER_VALUES_KEY] ?? {}) as Record<string, unknown>
+    const stay = (kept[FOLDER_VALUES_KEY] ?? {}) as object
+    if (written) cleared.push({ path: record.path, values: Object.fromEntries(Object.entries(held).filter(([id]) => !Object.hasOwn(stay, id))) })
+  }
+  return cleared
+}
+
+/**
+ * The undo of a move (YAZ-3255 D10), as a change to the bytes about to be written: the blocks the
+ * move cleared (`ClearedValues.values`) come back, and only those. Every other block, and every
+ * other property, stays as it is now. Nothing to put back changes nothing.
+ */
+export function restoreFolderValues(values: Record<string, unknown>): ContentTransform {
+  return (content) => Object.entries(values).reduce((next, [id, block]) => setFrontmatterIn(next, [FOLDER_VALUES_KEY, id], block), content)
+}
+
+/** What one move cleared (D20) from one note: its path before the move, and the blocks it lost, by folder id. */
+export interface ClearedValues {
+  path: string
+  values: Record<string, unknown>
 }
 
 /** What a gesture would clear (D21): how many notes, and the folders whose values go — their directories, nearest to the note first. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import type { ViewSet } from './viewSchema'
+import { timeMedian } from '../test-perf'
 import { runView } from './engine'
 describe('perf (GRO-2133)', () => {
   function record(i: number): IndexRecord {
@@ -40,16 +41,14 @@ describe('perf (GRO-2133)', () => {
     }
     const go = () => runView(def, def.views[0], records, { root: '/vault' })
     go() // warm-up (JIT)
-    const t0 = performance.now()
-    const r = go()
-    const ms = performance.now() - t0
+    const { result: r, median: ms, worst } = timeMedian(7, go)
     expect(r.errors).toEqual([])
     expect(r.rows.length).toBeGreaterThan(0)
     expect(r.rows.length).toBeLessThan(1000)
     expect(r.groups).toHaveLength(7)
     expect(r.rows[0].values['formula.label']).toMatch(/dollars$/)
     // eslint-disable-next-line no-console
-    console.log(`engine perf: 1000 records in ${ms.toFixed(1)} ms (${r.rows.length} kept)`)
+    console.log(`engine perf: 1000 records, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7 (${r.rows.length} kept)`)
     // Runs in the `perf` project, alone on an idle pool (YAZ-740), so this is a real budget:
     // ~18 ms measured, 50 ms allowed. The grouping wave's first cut regressed this 4-6x and was
     // caught HERE — at 150 ms it would have shipped.
@@ -73,16 +72,14 @@ describe('perf (GRO-2133)', () => {
     }
     const go = () => runView(def, def.views[0], records, { root: '/vault' })
     go() // warm-up (JIT)
-    const t0 = performance.now()
-    const r = go()
-    const ms = performance.now() - t0
+    const { result: r, median: ms, worst } = timeMedian(7, go)
     expect(r.errors).toEqual([])
     expect(r.groups).toHaveLength(7)
     // No price equals a folder name and none is missing, so every row lands in exactly one child.
     expect(r.groups!.every(g => g.direct!.length === 0)).toBe(true)
     expect(r.groups!.every(g => g.children!.length === 39 && g.children!.reduce((n, c) => n + c.rows.length, 0) === g.rows.length)).toBe(true)
     // eslint-disable-next-line no-console
-    console.log(`engine perf: 1000 records, two levels in ${ms.toFixed(1)} ms (${r.rows.length} kept)`)
+    console.log(`engine perf: 1000 records, two levels, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7 (${r.rows.length} kept)`)
     // The inner level buckets each outer separately (YAZ-745), so the same budget must still hold.
     expect(ms).toBeLessThan(50)
   })

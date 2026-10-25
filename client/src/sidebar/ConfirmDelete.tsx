@@ -8,8 +8,16 @@ export interface DeleteTarget {
   kind: 'file' | 'dir'
   /** Notes and subfolders inside a folder target; ignored for a file. */
   children?: { notes: number; folders: number }
-  /** Notes whose `[[links]]` resolve to this target; omitted when the index was unavailable. */
+  /**
+   * Notes whose `[[links]]` resolve to this target; omitted when the index was unavailable. For two
+   * or more items: the notes outside them whose links reach any of them, each note once.
+   */
   backlinks?: number
+  /**
+   * Every item of a delete of the whole selection (YAZ-3272 D21), in the panel's order; `path` is the
+   * first. With two or more the sheet counts them; `kind` and `children` then speak for none.
+   */
+  paths?: string[]
 }
 
 const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`
@@ -22,20 +30,23 @@ const verb = (n: number, singular: string) => (n === 1 ? `${singular}s` : singul
  *  - an EMPTY folder does not print "0 notes and 0 folders";
  *  - a folder with only notes (or only subfolders) does not print the empty half;
  *  - zero backlinks prints NOTHING, not "0 notes link to this";
- *  - singular and plural both read correctly.
+ *  - singular and plural both read correctly;
+ *  - two or more items (YAZ-3272 D21) are counted, never named: "Delete 3 items? They move to the Trash."
  */
-export function deleteConfirmMessage({ path, kind, children, backlinks }: DeleteTarget, titles: PathTitles): string {
-  const name = pageLabel(path, kind === 'dir', titles)
+export function deleteConfirmMessage({ path, kind, children, backlinks, paths }: DeleteTarget, titles: PathTitles): string {
   const parts: string[] = []
-  if (kind === 'dir' && children !== undefined && children.notes + children.folders > 0) {
+  const many = paths !== undefined && paths.length >= 2
+  if (many) {
+    parts.push(`Delete ${paths.length} items? They move to the Trash.`)
+  } else if (kind === 'dir' && children !== undefined && children.notes + children.folders > 0) {
     const inside = [children.notes > 0 ? plural(children.notes, 'note') : null, children.folders > 0 ? plural(children.folders, 'folder') : null]
       .filter((p): p is string => p !== null)
       .join(' and ')
-    parts.push(`Delete "${name}"? ${inside} ${verb(children.notes + children.folders, 'move')} to the Trash.`)
+    parts.push(`Delete "${pageLabel(path, true, titles)}"? ${inside} ${verb(children.notes + children.folders, 'move')} to the Trash.`)
   } else {
-    parts.push(`Delete "${name}"? It moves to the Trash.`)
+    parts.push(`Delete "${pageLabel(path, kind === 'dir', titles)}"? It moves to the Trash.`)
   }
-  if (backlinks !== undefined && backlinks > 0) parts.push(`${plural(backlinks, 'note')} ${verb(backlinks, 'link')} to this.`)
+  if (backlinks !== undefined && backlinks > 0) parts.push(`${plural(backlinks, 'note')} ${verb(backlinks, 'link')} to ${many ? 'them' : 'this'}.`)
   return parts.join(' ')
 }
 
