@@ -20,7 +20,8 @@ const FOLDER = 'KPIs'
 
 async function pickContentWidth(win: Page, label: 'Narrow' | 'Medium' | 'Full'): Promise<void> {
   await win.getByRole('button', { name: 'Settings', exact: true }).click()
-  // The dialog opens on Appearance (YAZ-1679), where the row lives; `data-setting` addresses it.
+  // The dialog opens on General (YAZ-3276 D7); the row lives on Appearance, and `data-setting` addresses it.
+  await win.locator('.settings-dialog .settings-nav__item', { hasText: /^Appearance$/ }).click()
   const row = win.locator('.settings-dialog [data-setting="contentWidth"]')
   await row.getByRole('button', { name: label, exact: true }).click()
   await win.keyboard.press('Escape')

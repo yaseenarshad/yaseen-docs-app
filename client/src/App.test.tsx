@@ -4138,6 +4138,8 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   it('Settings › Text formatting lists the window\'s vaults by name (the folder name with none), starts on the active tab\'s vault, and a change writes only that vault\'s file (YAZ-3068 D15)', async () => {
     const { bridge, el, emitSettings } = await mount(defaultAppState(), { ...TWO, file: '/w/b.md' }, {}, NOTES)
     act(() => emitSettings())
+    // Settings opens on General (YAZ-3276 D7); Text formatting is on Appearance.
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Appearance')?.click())
     const select = el.querySelector<HTMLSelectElement>('[data-setting="textFormatting"] select[aria-label="Vault"]') as HTMLSelectElement
     expect([...select.options].map((o) => o.textContent)).toEqual(['v', 'w'])
     expect(select.value).toBe('1')

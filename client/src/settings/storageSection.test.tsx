@@ -18,6 +18,8 @@ vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: {
     storage: { stats: vi.fn(async () => STATS), shrink: vi.fn() },
+    // Settings opens on General (YAZ-3276 D7), whose Settings folder row asks main where the settings are.
+    state: { settingsFolder: vi.fn(async () => ({ folder: null, missing: false })), setSettingsFolder: vi.fn() },
   },
 }))
 
@@ -73,7 +75,7 @@ const row = (el: HTMLElement, id: string) => el.querySelector<HTMLElement>(`[dat
 describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
   it('is a standalone page under the divider, before Hotkeys — and absent with no vault', () => {
     const { el } = mount(STATS)
-    expect(navTitles(el)).toEqual(['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', 'Storage', 'Hotkeys'])
+    expect(navTitles(el)).toEqual(['General', 'Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', 'Storage', 'Hotkeys'])
     // Under the divider with Hotkeys, a reference page like it.
     expect(el.querySelector('.settings-nav__divider + .settings-nav__item')?.textContent).toBe('Storage')
     expect(row(el, 'storageGithub')).toBeNull()

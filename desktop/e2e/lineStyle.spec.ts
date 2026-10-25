@@ -239,6 +239,8 @@ test('step 9 — the vault\'s default line in Settings (YAZ-3208): a plain line 
   expect(await look(0)).toEqual({ image: 'none', height: 15 })
 
   await win.getByRole('button', { name: 'Settings', exact: true }).click()
+  // Settings opens on General (YAZ-3276 D7); Text formatting is on Appearance.
+  await win.locator('.settings-dialog .settings-nav__item', { hasText: /^Appearance$/ }).click()
   const row = win.locator('.settings-dialog[role="dialog"] [data-setting="textFormatting"] .line-defaults[data-level="line"]')
   await expect(row.locator('.heading-styles__size')).toHaveText(['50%', '3 px'])
   // YAZ-3221: "Line" fits, and the preview of the default line shows beside it — at least 48px wide and

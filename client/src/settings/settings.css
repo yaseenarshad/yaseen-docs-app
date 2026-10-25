@@ -410,6 +410,13 @@
   overflow-wrap: anywhere;
 }
 
+/* A path a row names but can't use now (Settings › General › Settings folder, YAZ-3276 D5): one red line above the buttons. */
+.settings__error {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
 /* ---------- text formatting (YAZ-3068; the lines are YAZ-3050 D6; TextFormattingControl.tsx) ---------- */
 
 /* The "Vault" dropdown (D15), above the lines, with the space of one line under it. */
