@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type SectionLines, type StartupWindows, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type SectionLines, type SidebarLineStyle, type StartupWindows, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -103,6 +103,12 @@ export const TOC_LINES_OPTIONS: readonly Option<TocLines>[] = [
   { label: 'On hover', value: 'hover' },
   { label: 'Always show', value: 'always' },
   { label: 'Never', value: 'off' },
+]
+
+/** The sidebar's level lines (YAZ-3309 D7, D8): plain grey lines, the default, or the thread to the row under the mouse. */
+export const SIDEBAR_LINE_STYLE_OPTIONS: readonly Option<SidebarLineStyle>[] = [
+  { label: 'Plain lines', value: 'plain' },
+  { label: 'Thread to the row', value: 'thread' },
 ]
 
 /** The On-first pair the guards use ("Confirm before deleting", GitHub sync): the safe answer leads. */

@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { createStore, isSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
 
@@ -392,6 +392,66 @@ describe('createStore: loading', () => {
     await store.flush()
     expect((await onDisk()).settings.tocLines).toBe('always')
     expect(createStore(file).get().settings.tocLines).toBe('always')
+  })
+
+  it("sidebarLines: an older file without the key loads with hover; the three values load as they are; anything else loads as hover, and fails the channel check; the TOC's own setting stays apart (YAZ-3309 D3)", async () => {
+    expect(DEFAULT_SETTINGS.sidebarLines).toBe('hover')
+    // A yaseendocs.json from before YAZ-3309: the missing field gets its default, and no other field changes.
+    const { sidebarLines: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: { ...legacySettings, tocLines: 'off' } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, tocLines: 'off' })
+    const loaded = async (sidebarLines: unknown): Promise<string> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, tocLines: 'always', sidebarLines } }))
+      const { settings } = createStore(file).get()
+      // One bad field costs that field only: the TOC's lines beside it load as stored (S11).
+      expect(settings.tocLines).toBe('always')
+      return settings.sidebarLines
+    }
+
+    for (const sidebarLines of TOC_LINES) expect(await loaded(sidebarLines)).toBe(sidebarLines)
+    for (const sidebarLines of ['sometimes', 'never', 'Always', '', null, false, 0, ['off']]) expect(await loaded(sidebarLines)).toBe('hover')
+
+    // `state.setSettings` is strict: a write with a value outside the three, or with no `sidebarLines`, is refused as a whole.
+    for (const sidebarLines of TOC_LINES) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarLines })).toBe(true)
+    for (const sidebarLines of ['sometimes', true, undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarLines })).toBe(false)
+    expect(isSettings(legacySettings)).toBe(false)
+    const store = createStore(file)
+    store.setSettings({ ...DEFAULT_SETTINGS, sidebarLines: 'off' })
+    await store.flush()
+    expect((await onDisk()).settings.sidebarLines).toBe('off')
+    expect(createStore(file).get().settings.sidebarLines).toBe('off')
+  })
+
+  it("sidebarLineStyle and sidebarThreadColor: an older file without them loads plain lines and the default colour; a bad style loads plain, a bad colour null, and each fails the channel check; good values stay (YAZ-3309 D8, D9)", async () => {
+    expect([DEFAULT_SETTINGS.sidebarLineStyle, DEFAULT_SETTINGS.sidebarThreadColor]).toEqual(['plain', null])
+    // A yaseendocs.json from before the thread style: the two missing fields get their defaults, and no other field changes.
+    const { sidebarLineStyle: _style, sidebarThreadColor: _colour, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: { ...legacySettings, sidebarLines: 'always', threadColor: '#ff0000' } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, sidebarLines: 'always', threadColor: '#ff0000' })
+    const loaded = async (sidebarLineStyle: unknown, sidebarThreadColor: unknown): Promise<[string, string | null]> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, sidebarLines: 'off', sidebarLineStyle, sidebarThreadColor } }))
+      const { settings } = createStore(file).get()
+      // One bad field costs that field only: Show beside them loads as stored.
+      expect(settings.sidebarLines).toBe('off')
+      return [settings.sidebarLineStyle, settings.sidebarThreadColor]
+    }
+
+    expect(await loaded('thread', '#00aa55')).toEqual(['thread', '#00aa55'])
+    expect(await loaded('plain', null)).toEqual(['plain', null])
+    for (const style of ['Thread', 'threads', 'bullet', '', null, true, 1]) expect((await loaded(style, null))[0]).toBe('plain')
+    for (const colour of ['red', '#fff', '#00aa5', '#00aa55ff', 'accent', '', 0, false]) expect((await loaded('thread', colour))[1]).toBeNull()
+
+    // `state.setSettings` is strict: a value outside the rules, or a write without the field, is refused as a whole.
+    for (const sidebarLineStyle of SIDEBAR_LINE_STYLES) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarLineStyle })).toBe(true)
+    for (const sidebarLineStyle of ['thread ', true, undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarLineStyle })).toBe(false)
+    for (const sidebarThreadColor of [null, '#00aa55']) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarThreadColor })).toBe(true)
+    for (const sidebarThreadColor of ['red', '', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarThreadColor })).toBe(false)
+    expect(isSettings(legacySettings)).toBe(false)
+    const store = createStore(file)
+    store.setSettings({ ...DEFAULT_SETTINGS, sidebarLineStyle: 'thread', sidebarThreadColor: '#123abc' })
+    await store.flush()
+    expect((await onDisk()).settings).toMatchObject({ sidebarLineStyle: 'thread', sidebarThreadColor: '#123abc' })
+    expect(createStore(file).get().settings).toMatchObject({ sidebarLineStyle: 'thread', sidebarThreadColor: '#123abc' })
   })
 
   it('the 1.0.15 heading styles (YAZ-3066 D11): the settings never hold them; a valid map is handed out once, then `{}`; a bad map is `{}`; the next write drops the key from the file', async () => {

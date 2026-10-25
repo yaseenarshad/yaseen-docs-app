@@ -226,7 +226,88 @@ test('step 5 — a nav click swaps the page: Sync, then Hotkeys under the divide
   await expect(dialog(win)).toHaveCount(0)
 })
 
-test('step 6 — a change survives close and reopen, and reached the state file', async () => {
+test('step 6 — Appearance › "Sidebar level lines" (YAZ-3309 D3, D6–D10): each choice reaches the state file and `.app`; the grey line below the open folder follows the mouse and the keyboard (S2, S3), and the thread the resting mouse', async () => {
+  // Projects/ open in Files: its nested level is the one that draws a line, below the folder's chevron.
+  const folder = win.locator('li[role="treeitem"]:has(> .tree__row--dir[data-path$="/Projects"])')
+  if ((await folder.getAttribute('aria-expanded')) !== 'true') await folder.locator('> .tree__row--dir').click()
+  await expect(folder).toHaveAttribute('aria-expanded', 'true')
+  const line = () => folder.locator('> ul.tree[role="group"]').evaluate((ul) => {
+    const before = getComputedStyle(ul, '::before')
+    return { opacity: before.opacity, left: before.left, width: before.width, pointerEvents: before.pointerEvents }
+  })
+  // Roadmap.md inside Projects/: with the thread, its li draws the piece from the folder's line down to its row.
+  const roadmap = folder.locator('> ul.tree[role="group"] > li:has(> .tree__row--file[data-path$="/Roadmap.md"])')
+  const thread = () => roadmap.evaluate((li) => {
+    const before = getComputedStyle(li, '::before')
+    return { content: before.content, opacity: before.opacity, zIndex: before.zIndex, pointerEvents: before.pointerEvents, radius: before.borderBottomLeftRadius }
+  })
+  const mouseOnNote = () => win.locator('.ProseMirror').hover()
+  const mouseOnTree = () => win.locator('.sidebar__body').hover()
+  const choose = async (id: 'sidebarLines' | 'sidebarLineStyle', label: string, value: string) => {
+    await cog(win).click()
+    await expect(dialog(win)).toBeVisible()
+    await navItem(win, 'Appearance').click()
+    await row(win, id).getByRole('button', { name: label, exact: true }).click()
+    await expect(row(win, id).getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect.poll(async () => (await readState(userData)).settings[id]).toBe(value)
+    await expect(win.locator('.app')).toHaveAttribute(id === 'sidebarLines' ? 'data-sidebar-lines' : 'data-sidebar-line-style', value)
+    await win.keyboard.press('Escape')
+    await expect(dialog(win)).toHaveCount(0)
+  }
+
+  await cog(win).click()
+  await expect(dialog(win)).toBeVisible()
+  await navItem(win, 'Appearance').click()
+  // Its own group on Appearance (D6); its rows and their defaults are SettingsDialog.test's.
+  await expect(row(win, 'sidebarLines').locator('xpath=ancestor::*[contains(@class, "settings-group")][1]').locator('.settings-group__title')).toHaveText('Sidebar level lines')
+  await shoot(win, 'settings-11-sidebar-level-lines-group')
+  await win.keyboard.press('Escape')
+  await expect(win.locator('.app')).toHaveAttribute('data-sidebar-lines', 'hover')
+  await expect(win.locator('.app')).toHaveAttribute('data-sidebar-line-style', 'plain')
+
+  // "On hover": the line shows while the mouse is over the list, and goes when it leaves. 1px at depth 1 * 14 + 1, no target.
+  await mouseOnTree()
+  await expect.poll(line).toEqual({ opacity: '1', left: '15px', width: '1px', pointerEvents: 'none' })
+  await mouseOnNote()
+  await expect.poll(async () => (await line()).opacity).toBe('0')
+  await shoot(win, 'settings-12-sidebar-lines-hover-out')
+  // S2: the keyboard in the tree, the mouse on the note: an arrow key moves the focus to a row, and the lines show.
+  const projects = folder.locator('> .tree__row--dir')
+  await projects.focus()
+  await win.keyboard.press('ArrowDown')
+  await expect(win.locator('.sidebar__body')).toHaveAttribute('data-key-focus', '')
+  await expect.poll(async () => (await line()).opacity).toBe('1')
+  // S3: a mouse click on a row is no keyboard focus: the mouse leaves, and the lines go.
+  await roadmap.locator('> .tree__row--file').click()
+  await mouseOnNote()
+  await expect(win.locator('.sidebar__body')).not.toHaveAttribute('data-key-focus', '')
+  await expect(win.locator('.sidebar__body')).not.toHaveAttribute('data-mouse-in', '')
+  await expect.poll(async () => (await line()).opacity).toBe('0')
+  // "Always show": with the mouse on the note.
+  await choose('sidebarLines', 'Always show', 'always')
+  await mouseOnNote()
+  await expect.poll(async () => (await line()).opacity).toBe('1')
+  await shoot(win, 'settings-13-sidebar-lines-always')
+
+  // "Thread to the row" (D7): the mouse rests on Roadmap, and the thread fades in over the grey line; off the row, it fades out.
+  await choose('sidebarLineStyle', 'Thread to the row', 'thread')
+  await roadmap.locator('> .tree__row--file').hover()
+  await expect.poll(thread).toEqual({ content: '""', opacity: '1', zIndex: '2', pointerEvents: 'none', radius: '6px' })
+  await shoot(win, 'settings-14-sidebar-thread')
+  await mouseOnNote()
+  await expect.poll(async () => (await thread()).opacity).toBe('0')
+  // "Never": no line and no thread, not even with the mouse on the row.
+  await choose('sidebarLines', 'Never', 'off')
+  await roadmap.locator('> .tree__row--file').hover()
+  await expect.poll(async () => (await line()).opacity).toBe('0')
+  // With "Never" the li draws no piece at all: its `::before` has no content.
+  await expect.poll(async () => (await thread()).content).toMatch(/^(none|normal)$/)
+  // Back to the defaults for the steps after this one.
+  await choose('sidebarLineStyle', 'Plain lines', 'plain')
+  await choose('sidebarLines', 'On hover', 'hover')
+})
+
+test('step 7 — a change survives close and reopen, and reached the state file', async () => {
   await cog(win).click()
   await expect(dialog(win)).toBeVisible()
   await navItem(win, 'Appearance').click()
@@ -243,7 +324,7 @@ test('step 6 — a change survives close and reopen, and reached the state file'
   await expect(row(win, 'contentWidth').getByRole('button', { name: 'Full', exact: true })).toHaveClass(/settings__option--active/)
   await expect(row(win, 'contentWidth').getByRole('button', { name: 'Narrow', exact: true })).not.toHaveClass(/settings__option--active/)
   await expect.poll(async () => (await readState(userData)).settings.contentWidth).toBe('full')
-  await shoot(win, 'settings-11-full-persisted')
+  await shoot(win, 'settings-15-full-persisted')
   await win.keyboard.press('Escape')
   await expect(dialog(win)).toHaveCount(0)
   await quitApp(app)

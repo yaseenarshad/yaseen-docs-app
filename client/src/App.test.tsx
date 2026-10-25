@@ -1154,6 +1154,40 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     expect(captured.editors.length).toBe(renders)
     expect([app.getAttribute('data-section-lines'), app.getAttribute('data-content-width')]).toEqual(['always', 'narrow'])
   })
+
+  it('hands the sidebar\'s "Level lines" choice to app.css as an attribute on the app container; another window\'s change lands live, apart from the TOC\'s, and no editor renders for it (YAZ-3309 D3)', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    expect(app.getAttribute('data-sidebar-lines')).toBe('hover')
+    const renders = captured.editors.length
+    for (const sidebarLines of ['always', 'off', 'hover'] as const) {
+      act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tocLines: 'off', sidebarLines } }))
+      expect(app.getAttribute('data-sidebar-lines')).toBe(sidebarLines)
+      expect(app.getAttribute('data-toc-lines')).toBe('off')
+    }
+    expect(captured.editors.length).toBe(renders)
+  })
+
+  it('hands the sidebar\'s line style to app.css as an attribute, and its own thread colour as `--sidebar-thread-color` only when one is set; another window\'s change lands live, and no editor renders for it (YAZ-3309 D7–D9)', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    const colour = () => app.style.getPropertyValue('--sidebar-thread-color')
+    // The defaults: plain lines, and no colour of its own, so app.css falls back to `--thread-color`, then the accent.
+    expect(app.getAttribute('data-sidebar-line-style')).toBe('plain')
+    expect(colour()).toBe('')
+    const renders = captured.editors.length
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarLineStyle: 'thread', sidebarThreadColor: '#00aa55', threadColor: '#ff0000' } }))
+    expect(app.getAttribute('data-sidebar-line-style')).toBe('thread')
+    expect(colour()).toBe('#00aa55')
+    // The editor's thread colour is its own variable, beside it.
+    expect(app.style.getPropertyValue('--thread-color')).toBe('#ff0000')
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarLineStyle: 'thread', threadColor: '#ff0000' } }))
+    expect(colour()).toBe('')
+    expect(app.style.getPropertyValue('--thread-color')).toBe('#ff0000')
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS } }))
+    expect(app.getAttribute('data-sidebar-line-style')).toBe('plain')
+    expect(captured.editors.length).toBe(renders)
+  })
 })
 
 describe('App sidebar resize (YAZ-738)', () => {

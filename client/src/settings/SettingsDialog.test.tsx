@@ -127,7 +127,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
 const GENERAL_ROWS = ['settingsFolder', 'startupWindows']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'diagramDarkColors']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'diagramDarkColors']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
 const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines']
@@ -256,9 +256,9 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(hints()).toEqual([])
 
     clickNav(el, 'Appearance')
-    // Appearance with no vault: Spacing, Comments, then draw.io diagrams (YAZ-3037). Text formatting needs a vault (YAZ-3068).
-    expect(groupTitles(el)).toEqual(['Spacing', 'Comments', 'draw.io diagrams'])
-    expect(hints()).toEqual([])
+    // Appearance with no vault: Spacing, Comments, Sidebar level lines (YAZ-3309 D6), then draw.io diagrams (YAZ-3037). Text formatting needs a vault (YAZ-3068).
+    expect(groupTitles(el)).toEqual(['Spacing', 'Comments', 'Sidebar level lines', 'draw.io diagrams'])
+    expect(hints()).toEqual(['A thin line below each open folder in the sidebar shows what is inside it.'])
     expect(row(el, 'commentsOrder')?.querySelector('.setting__label')?.textContent).toBe('Order')
     expect(row(el, 'commentsOrder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Comments')
     // It starts with an untitled group: Theme and Content width sit straight under the section title.
@@ -464,6 +464,42 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, confirmRename: false })
   })
 
+  it('Sidebar level lines (YAZ-3309 D6–D9): Show, Style and Thread colour in one group; each choice writes the whole object with only its own field changed (the group\'s place and hint: "group titles and hints render on their own page")', () => {
+    const { el, onChange } = mountOn('Appearance')
+    const group = row(el, 'sidebarLines')?.closest('.settings-group')
+    expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Sidebar level lines')
+    expect([...(group?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual(['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
+    expect(['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Show', 'Style', 'Thread colour'])
+    // Show: the TOC's three choices, On hover by default (D3).
+    expect(row(el, 'sidebarLines')?.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Level lines in the sidebar')
+    expect(rowButtons(el, 'sidebarLines').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On hover', 'true'], ['Always show', 'false'], ['Never', 'false']])
+    // Style: Plain lines by default (D8).
+    expect(rowButtons(el, 'sidebarLineStyle').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Plain lines', 'true'], ['Thread to the row', 'false']])
+    // Thread colour (D9): the swatch shows the Bullet threading default, and "Default" has nothing to clear.
+    const swatch = row(el, 'sidebarThreadColor')?.querySelector<HTMLInputElement>('input[type="color"]')
+    expect(swatch?.getAttribute('aria-label')).toBe('Sidebar thread colour')
+    expect(rowButtons(el, 'sidebarThreadColor').find((b) => b.textContent === 'Default')?.disabled).toBe(true)
+    act(() => rowButtons(el, 'sidebarLines')[2].click())
+    act(() => rowButtons(el, 'sidebarLineStyle')[1].click())
+    type(swatch!, '#00aa55')
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([
+      { ...DEFAULT_SETTINGS, sidebarLines: 'off' },
+      { ...DEFAULT_SETTINGS, sidebarLineStyle: 'thread' },
+      { ...DEFAULT_SETTINGS, sidebarThreadColor: '#00aa55' },
+    ])
+    unmount()
+    // Saved values come back; "Default" clears the colour alone; the TOC's and the editor's thread fields are their own.
+    const saved = mountOn('Appearance', { ...DEFAULT_SETTINGS, sidebarLines: 'always', sidebarLineStyle: 'thread', sidebarThreadColor: '#112233', tocLines: 'off', threadColor: '#ff0000' })
+    expect(rowButtons(saved.el, 'sidebarLines').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
+    expect(rowButtons(saved.el, 'sidebarLineStyle').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+    expect(row(saved.el, 'sidebarThreadColor')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#112233')
+    act(() => rowButtons(saved.el, 'sidebarThreadColor').find((b) => b.textContent === 'Default')?.click())
+    expect(saved.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarLines: 'always', sidebarLineStyle: 'thread', sidebarThreadColor: null, tocLines: 'off', threadColor: '#ff0000' })
+    unmount()
+    // With no colour of its own, the swatch shows the editor's thread colour, which the thread then uses.
+    expect(row(mountOn('Appearance', { ...DEFAULT_SETTINGS, threadColor: '#ff0000' }).el, 'sidebarThreadColor')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#ff0000')
+  })
+
   it('Section indent: two rows under Editor, in the last group of the page, after Bullet threading; each writes the whole object with only its field changed (YAZ-2709)', () => {
     const { el, onChange } = mountOn('Editor')
     const rows = ['sectionStep', 'sectionLines']
@@ -597,7 +633,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 
     it('one vault: the group "Text formatting" after Spacing, its hint, one bare row (no label on screen, no gap) and no dropdown; a Text line, then H1 to H6 at their rounded default sizes', () => {
       const { el } = mountTf([vaultOf('/notes', 'Notes')])
-      expect(groupTitles(el)).toEqual(['Spacing', 'Text formatting', 'Comments', 'draw.io diagrams'])
+      expect(groupTitles(el)).toEqual(['Spacing', 'Text formatting', 'Comments', 'Sidebar level lines', 'draw.io diagrams'])
       const group = tf(el).closest('.settings-group') as HTMLElement
       expect(group.querySelector('.settings-group__hint')?.textContent).toBe(TEXT_FORMATTING_HINT)
       // No "Vault: name" line: the dropdown replaces it (D15), and with one vault there is none.
@@ -941,11 +977,12 @@ describe('SettingsDialog search (D6)', () => {
   it('a titled group heads its hits with a breadcrumb, without repeating the group title below it', () => {
     const { el } = mount()
     // "threading" is in one group's title and in the hint of Section indent, which names that group: both groups' rows, each under its own breadcrumb (Table of contents, between them, has no hit).
+    // The sidebar's line style names bullet threading too (YAZ-3309 D7): its one row, under its own breadcrumb, first in registry order.
     type(searchInput(el), 'threading')
-    expect(headings(el)).toEqual(['Editor › Bullet threading', 'Editor › Section indent'])
+    expect(headings(el)).toEqual(['Appearance › Sidebar level lines', 'Editor › Bullet threading', 'Editor › Section indent'])
     expect(groupTitles(el)).toEqual([])
-    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([THREADING_HINT, SECTION_INDENT_HINT])
-    expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines'])
+    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual(['A thin line below each open folder in the sidebar shows what is inside it.', THREADING_HINT, SECTION_INDENT_HINT])
+    expect(rowIds(el)).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines'])
     // "guide lines" is the first group's hint alone: its three rows, under the one breadcrumb.
     type(searchInput(el), 'guide lines')
     expect(headings(el)).toEqual(['Editor › Bullet threading'])
@@ -960,9 +997,10 @@ describe('SettingsDialog search (D6)', () => {
     // group (by its hint: a note of bullets has one too, YAZ-2700 D14), the Section indent group (its hint names
     // Bullet threading) and, on the Hotkeys page, the two tables whose labels name a bullet — five
     // breadcrumbs, registry order, never rank.
+    // The sidebar's line style (YAZ-3309 D7) names bullet threading: it leads, on Appearance.
     type(searchInput(el), 'bullet')
-    expect(headings(el)).toEqual(['Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
-    expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines', 'hotkeys-keyboard', 'hotkeys-mouse'])
+    expect(headings(el)).toEqual(['Appearance › Sidebar level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
+    expect(rowIds(el)).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines', 'hotkeys-keyboard', 'hotkeys-mouse'])
     type(searchInput(el), 'spacing')
     expect(headings(el)).toEqual(['Appearance › Spacing'])
     expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap'])
@@ -1061,7 +1099,7 @@ describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () =>
     expect(row(el, 'ids')).toBeNull()
     expect(groupTitles(el)).not.toContain('This vault')
     type(searchInput(el), 'files & links')
-    expect(rowIds(el)).toEqual(['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation'])
+    expect(rowIds(el)).toEqual(FILES_ROWS)
   })
 
   it('a vault open: the row sits in Files & Links under "This vault", with its label and hint', () => {

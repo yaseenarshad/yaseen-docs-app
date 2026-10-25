@@ -978,6 +978,24 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     expect(props.onRenameFile).not.toHaveBeenCalled()
   })
 
+  it('bug YAZ-3342: a folder in inline rename marks its li `data-renaming` while the box shows, so the thread draws no coloured chevron over the box; Escape takes the mark away', async () => {
+    const { el } = await mount({ indexSource: titled() })
+    const li = () => dirRow(el)?.closest('li') ?? el.querySelector('.create-inline')?.closest('li')
+    expect(li()?.hasAttribute('data-renaming')).toBe(false)
+    act(() => void dirRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(input).not.toBeNull()
+    // The box is the folder's row: its li keeps `aria-expanded` (the folder still folds) and carries the mark.
+    expect(input?.closest('li')?.getAttribute('aria-expanded')).not.toBeNull()
+    expect(input?.closest('li')?.hasAttribute('data-renaming')).toBe(true)
+    expect(el.querySelectorAll('[data-renaming]')).toHaveLength(1)
+    act(() => input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    await act(async () => undefined)
+    expect(el.querySelector('.create-inline__input')).toBeNull()
+    expect(el.querySelectorAll('[data-renaming]')).toHaveLength(0)
+  })
+
   it('a NOTE row\'s "Rename" edits its TITLE the same way; a note with no title is prefilled with its file name, less the extension (YAZ-2420 D16)', async () => {
     const { props, el } = await mount({ indexSource: titled() })
     expect(await renameRow(el, fileRow(el), 'UP-002 - Ali')).toBe('UP-001 - Abdul')
@@ -5457,6 +5475,77 @@ describe('expand / collapse all (⚡ YAZ-862)', () => {
     const flat = await mountVault((v) => [note(`${v}/n.md`)])
     expect(flat.el.querySelector('.tree__row--file')).not.toBeNull()
     expect(allButton(flat.el)).toBeNull()
+  })
+
+  it('each open level carries its depth for the level line, the top level none; a fold takes the level away (YAZ-3309 D1)', async () => {
+    const { el } = await mountVault()
+    const depths = () => [...el.querySelectorAll<HTMLElement>('.tree[role="group"]')].map((ul) => ul.style.getPropertyValue('--tree-depth'))
+    expect(depths()).toEqual([])
+    act(() => allButton(el)?.click())
+    // docs/ (1) holding deep/ (2), then the empty notes/ (1): app.css draws each line at depth * 14 + 1 px.
+    expect(depths()).toEqual(['1', '2', '1'])
+    expect(el.querySelector('.tree[role="tree"]')?.getAttribute('style')).toBeNull()
+    act(() => dirRow(el, 1)?.click())
+    expect(depths()).toEqual(['1', '1'])
+  })
+
+  it('bug YAZ-3329: "On hover" is two attributes that the sidebar writes on the list, only when a value changes and only with that choice; the mouse and the keys inside the list render nothing again (YAZ-3309 D3)', async () => {
+    const { el, rerender } = await mountVault()
+    act(() => allButton(el)?.click())
+    const body = el.querySelector<HTMLElement>('.sidebar__body')!
+    const rows = [...el.querySelectorAll<HTMLButtonElement>('.tree__row')]
+    const marks = () => [body.hasAttribute('data-mouse-in'), body.hasAttribute('data-key-focus')]
+    // Only the list's own attributes change: no row renders again, and nothing else in the DOM moves.
+    labelRenders.names = []
+    const changes: string[] = []
+    const watch = new MutationObserver((records) => changes.push(...records.map((r) => (r.type === 'attributes' && r.target === body ? r.attributeName! : `${r.type} ${(r.target as Element).className}`))))
+    watch.observe(el, { attributes: true, childList: true, subtree: true, characterData: true })
+    const fire = (target: Element, type: 'mouseenter' | 'mouseleave') => act(() => void target.dispatchEvent(new MouseEvent(type)))
+
+    fire(body, 'mouseenter')
+    expect(marks()).toEqual([true, false])
+    fire(rows[1], 'mouseenter') // a row's own enter does not reach the list: no write
+    fire(body, 'mouseleave')
+    expect(marks()).toEqual([false, false])
+    // `:focus-visible` as Chromium has it when `focusin` runs (jsdom says no there): the focused row, unless a mouse click focused it.
+    const byMouse = new Set<Element>()
+    const matches = Element.prototype.matches
+    vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, selector: string) {
+      return selector === '.tree__row:focus-visible' ? this === document.activeElement && this.matches('.tree__row') && !byMouse.has(this) : matches.call(this, selector)
+    })
+    // The keyboard on a row, then from row to row: one write.
+    const focus = (row: HTMLElement) => act(() => row.focus())
+    focus(rows[0])
+    focus(rows[1])
+    focus(rows[2])
+    expect(marks()).toEqual([false, true])
+    // A row that a mouse click focuses is no keyboard focus (S3): the mark goes.
+    byMouse.add(rows[0])
+    focus(rows[0])
+    expect(marks()).toEqual([false, false])
+    focus(rows[1])
+    expect(marks()).toEqual([false, true])
+    // The focus leaves the list: the mark goes.
+    act(() => rows[1].blur())
+    expect(marks()).toEqual([false, false])
+    await act(async () => new Promise((r) => setTimeout(r, 0)))
+    watch.disconnect()
+    expect(changes).toEqual(['data-mouse-in', 'data-mouse-in', 'data-key-focus', 'data-key-focus', 'data-key-focus', 'data-key-focus'])
+    expect(labelRenders.names).toEqual([])
+
+    // "Always show" and "Never": nothing is written, and a mark that stood goes.
+    fire(body, 'mouseenter')
+    for (const sidebarLines of ['always', 'off'] as const) {
+      await rerender({ settings: { ...DEFAULT_SETTINGS, sidebarLines } })
+      expect(marks()).toEqual([false, false])
+      fire(body, 'mouseenter')
+      act(() => rows[2].focus())
+      expect(marks()).toEqual([false, false])
+      act(() => rows[2].blur())
+    }
+    await rerender({ settings: { ...DEFAULT_SETTINGS } })
+    fire(body, 'mouseenter')
+    expect(marks()).toEqual([true, false])
   })
 })
 

@@ -35,6 +35,10 @@ describe('settingCandidates', () => {
       'blockGap',
       'textFormatting',
       'commentsOrder',
+      // Appearance › Sidebar level lines (YAZ-3309 D6).
+      'sidebarLines',
+      'sidebarLineStyle',
+      'sidebarThreadColor',
       'diagramDarkColors',
       // Settings › Notifications (YAZ-3303), under Appearance.
       ...['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds'],
@@ -142,15 +146,26 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['settingsFolder', 'tableOfContents', 'tocLines', 'hotkeys-keyboard'])
   })
 
-  it('"Level lines" (YAZ-2762): its label and "hierarchy" find that row alone; "outline", "guide" and "hover" find it among the rows that share the word', () => {
-    for (const query of ['level lines', 'hierarchy']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['tocLines'])
+  it('"Level lines" (YAZ-2762, YAZ-3309 D6): the label of the TOC\'s row and the title of the sidebar\'s group find the TOC row and the three rows of the group; "hierarchy", "guide" and "hover" find the two Show rows among the rows that share the word', () => {
+    expect(ids(searchSettings(settingCandidates(ctx()), 'level lines'))).toEqual(['tocLines', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hierarchy'))).toEqual(['sidebarLines', 'tocLines'])
     // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
     expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkeys-drawio'])
     // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sectionLines', 'tocLines', 'hoverPreview'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['sidebarLines', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sidebarLines', 'sectionLines', 'tocLines', 'hoverPreview'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
+  })
+
+  it('the sidebar\'s level lines (YAZ-3309 D6, D7, D9, S12): "sidebar" finds the three rows of the group first; "folder", "tree" and "indent" find Show, not the TOC row; "thread" finds Style and Thread colour beside Bullet threading; "accent" finds the two colour pickers', () => {
+    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 3)).toEqual(['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
+    for (const query of ['folder', 'tree', 'indent']) {
+      expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('sidebarLines')
+      expect(ids(searchSettings(settingCandidates(ctx()), query))).not.toContain('tocLines')
+    }
+    expect(ids(searchSettings(settingCandidates(ctx()), 'thread'))).toEqual(['sidebarThreadColor', 'sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'accent'))).toEqual(['sidebarThreadColor', 'threadColor'])
   })
 
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {
@@ -158,9 +173,9 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['lineSpacing', 'blockGap'])
   })
 
-  it('matches on the group hint too: "guide lines" finds the three threading rows; "threading" finds them and the two Section indent rows, whose hint names Bullet threading', () => {
+  it('matches on the group hint too: "guide lines" finds the three threading rows; "threading" finds them and the two Section indent rows, whose hint names Bullet threading (and the line style of the sidebar, whose hint does too, YAZ-3309 D7)', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide lines'))).toEqual(['bulletThreading', 'threadWidth', 'threadColor'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'threading'))).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'threading'))).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines'])
   })
 
   it('the pre-redesign labels still match as keywords: "thread width", "comments order"', () => {

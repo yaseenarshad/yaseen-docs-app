@@ -18,6 +18,7 @@ import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
+import { levelLinesHover } from './levelLinesHover'
 import { sortSections } from './treeSort'
 import { ACTIVE_TAB_SELECTOR, SidebarTabs } from './SidebarTabs'
 import { folderShortcuts } from './folderShortcuts'
@@ -574,6 +575,10 @@ export function Sidebar({
   const bodyRef = useRef<HTMLDivElement>(null)
   /** The root header: it lights for a drop on the blank space too (YAZ-3247 D12). */
   const headerRef = useRef<HTMLDivElement>(null)
+  // "On hover" of the level lines (YAZ-3309 D3, bug YAZ-3329): two attributes on the list, written on the
+  // node and not through state, so no level of the tree renders again. Other choices write nothing.
+  const sidebarLines = settings.sidebarLines
+  useEffect(() => (sidebarLines === 'hover' && bodyRef.current !== null ? levelLinesHover(bodyRef.current) : undefined), [sidebarLines])
   // The folders' shortcut rows (YAZ-2290 D2), rebuilt once per index snapshot. A snapshot that moved
   // no shortcut keeps the Map it had, so a save elsewhere in the vault re-renders no tree level (YAZ-2194).
   // Each vault's folders by its OWN index (YAZ-2602 S30); the paths of two vaults never meet, so the

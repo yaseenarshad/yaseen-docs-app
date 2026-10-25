@@ -1471,6 +1471,12 @@ export interface SettingsState {
   tableOfContentsWidth: number
   /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
   tocLines: TocLines
+  /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
+  sidebarLines: TocLines
+  /** The sidebar tree (YAZ-3309 D7, D8): how its level lines look — `plain` grey lines (the default), or `thread`: the bullet-threading path to the row under the mouse. It travels with the settings folder. */
+  sidebarLineStyle: SidebarLineStyle
+  /** The sidebar tree (YAZ-3309 D9): the colour of its thread, `#rrggbb`; null = the Bullet threading colour, else the app accent. It travels with the settings folder. */
+  sidebarThreadColor: string | null
   /**
    * The canvas preferences every drawing, every window and every relaunch share (Draw's 🔒 YAZ-1775 D9,
    * YAZ-3028): seeded into a canvas at mount and kept in step with the engine both ways. See `CanvasPrefs`.
@@ -1528,6 +1534,10 @@ export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
 /** The table of contents (YAZ-2762): when its level lines show. */
 export type TocLines = 'hover' | 'always' | 'off'
 export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
+
+/** The sidebar tree (YAZ-3309 D7, D8): the look of its level lines. */
+export type SidebarLineStyle = 'plain' | 'thread'
+export const SIDEBAR_LINE_STYLES: readonly SidebarLineStyle[] = ['plain', 'thread']
 
 /** Heading styles (YAZ-3049 D5): the levels a style can change, in the order Settings shows them. Since 1.0.16 they are saved in each vault (`shared/textFormatting.ts`, YAZ-3066). */
 export const HEADING_KEYS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const
@@ -1631,6 +1641,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableOfContents: 'auto',
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
+  sidebarLines: 'hover',
+  sidebarLineStyle: 'plain',
+  sidebarThreadColor: null,
   canvas: DEFAULT_CANVAS_PREFS,
   diagramDarkColors: 'adapt',
   libraryFolder: null,
