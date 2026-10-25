@@ -1,3 +1,5 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { OpenLinkRequest } from '@shared/types'
 import { isExternalLinkProtocol } from './fs/openLink'
 
@@ -21,11 +23,17 @@ export function createWindowOpenHandler(open: LinkOpener) {
  * `will-navigate` listener stops exactly that. Only `file:`: the app's own pages are `app:` (or the
  * dev server's `http:`) and never navigate to a file, so nothing the app does is stopped. Main, not a
  * window-wide `drop` guard in the page: the editor's own image drop (YAZ-1656) keeps working untouched.
+ * Returns the dropped file's path, so main can tell a drag out of another window that landed here
+ * (YAZ-3263, `dropLanded`); null for any other navigation.
  */
-export function blockFileNavigation(event: { url?: string; preventDefault: () => void }, url?: string): void {
+export function blockFileNavigation(event: { url?: string; preventDefault: () => void }, url?: string): string | null {
   try {
-    if (new URL(event.url ?? url ?? '').protocol === 'file:') event.preventDefault()
+    const target = new URL(event.url ?? url ?? '')
+    if (target.protocol !== 'file:') return null
+    event.preventDefault()
+    return path.resolve(fileURLToPath(target))
   } catch {
     // Not a URL: Chromium fails such a navigation itself.
+    return null
   }
 }

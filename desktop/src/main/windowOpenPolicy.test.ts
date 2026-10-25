@@ -45,4 +45,10 @@ describe('blockFileNavigation (YAZ-3253 S21)', () => {
     expect([go('file:///Users/yasin/Downloads/Note.md'), go('file:///tmp/a%20b.pdf', true)]).toEqual([true, true])
     expect([go('app://yaseen/index.html?win=w1'), go('http://localhost:5173/'), go('not a url')]).toEqual([false, false, false])
   })
+
+  it("names the dropped file it stopped, so main can tell a drag out that landed in this window (YAZ-3263); null for every other navigation", () => {
+    const block = (url: string) => blockFileNavigation({ url, preventDefault: vi.fn() })
+    expect([block('file:///Users/yasin/vault/a%20b.md'), block('file:///Users/yasin/vault/Plans/')]).toEqual(['/Users/yasin/vault/a b.md', '/Users/yasin/vault/Plans'])
+    expect([block('app://yaseen/index.html'), block('not a url')]).toEqual([null, null])
+  })
 })

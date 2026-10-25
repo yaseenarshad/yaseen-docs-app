@@ -232,6 +232,54 @@ describe('fs:drag-out (YAZ-3254 D4)', () => {
   })
 })
 
+describe('a drag out that lands in another window of the app (YAZ-3263)', () => {
+  const PNG = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64')}`
+  /** A window's `webContents`, as main's doors see it in `e.sender`. */
+  const contents = (id: number) => ({ id, isDestroyed: () => false, send: vi.fn(), startDrag: vi.fn() })
+  const dragOut = (sender: ReturnType<typeof contents>, paths: string[]) => registered(CONTRACT.file.dragOut)({ sender }, { paths, icon: PNG })
+  const droppedHere = (sender: ReturnType<typeof contents>, paths: string[]) => registered(CONTRACT.file.droppedHere)({ sender }, { paths })
+  const landedIn = (sender: ReturnType<typeof contents>) => sender.send.mock.calls.filter(([channel]) => channel === CONTRACT.file.onDragLanded.channel).map(([, ev]) => ev)
+
+  it('window B takes a drop of the paths window A dragged out (refused there, S22): main tells window A, once, with its own paths; B is not told', async () => {
+    await layout()
+    const a = contents(1)
+    const b = contents(2)
+    const paths = [path.join(vault, 'Plans', 'Taken.md'), path.join(vault, 'Plans')]
+    await dragOut(a, paths)
+    expect(await droppedHere(b, [path.join(vault, 'Plans', 'Taken.md'), path.join(vault, 'Plans')])).toEqual({ ok: true, value: undefined })
+    expect(landedIn(a)).toEqual([{ paths }])
+    expect(landedIn(b)).toEqual([])
+    // The drag is told once: a second report of it tells nobody.
+    await droppedHere(b, paths)
+    expect(landedIn(a)).toHaveLength(1)
+  })
+
+  it('a drop of other paths, or a drop back in window A itself, tells nobody; a newer drag out replaces the older one', async () => {
+    await layout()
+    const a = contents(1)
+    const b = contents(2)
+    const note = path.join(vault, 'Plans', 'Taken.md')
+    await dragOut(a, [note])
+    await droppedHere(b, [path.join(finder, 'Note.md')]) // Finder's own items
+    await droppedHere(a, [note]) // A's own drop: A tells itself apart (S30)
+    expect(landedIn(a)).toEqual([])
+    await dragOut(b, [path.join(vault, 'Plans')])
+    await droppedHere(a, [note]) // the older drag is gone
+    expect(landedIn(a)).toEqual([])
+    await droppedHere(a, [path.join(vault, 'Plans')])
+    expect(landedIn(b)).toEqual([{ paths: [path.join(vault, 'Plans')] }])
+  })
+
+  it('refuses a request that is no list of absolute paths, and tells nobody', async () => {
+    await layout()
+    const a = contents(1)
+    const b = contents(2)
+    await dragOut(a, [path.join(vault, 'Plans', 'Taken.md')])
+    expect(await registered(CONTRACT.file.droppedHere)({ sender: b }, { paths: ['Plans/Taken.md'] })).toMatchObject({ ok: false })
+    expect(landedIn(a)).toEqual([])
+  })
+})
+
 describe('the index takes an in-app move and a tidy-up write at once (YAZ-3258, audit 1)', () => {
   const rename = (oldPath: string, newPath: string) => registered(CONTRACT.file.rename)({ sender: {} }, { oldPath, newPath })
   const write = (req: { path: string; content: string; quiet?: boolean }) => registered(CONTRACT.writeFile)({ sender: {} }, req)

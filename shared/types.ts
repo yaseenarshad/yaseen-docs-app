@@ -750,6 +750,9 @@ export interface ImportRequest {
   targetDir: string
 }
 
+/** The sentence a move between two vaults hears (YAZ-2602 R11): from the sidebar, App's door and main (`fs:import`, S22) alike. */
+export const BETWEEN_VAULTS = 'To move between vaults, use cut and paste'
+
 /**
  * Per-item outcome of a drop from Finder (YAZ-3253 D9A), in the order of `paths`. From the same
  * disk an item MOVES (`moved`, through the paste's move verb); from another disk (`EXDEV`) it is
@@ -757,9 +760,6 @@ export interface ImportRequest {
  * item stays (S19). An item inside another vault the app has open fails `BAD_REQUEST` "To move
  * between vaults, use cut and paste" (S22). A hidden item (its name starts with ".") is in no list (S20).
  */
-/** The sentence a move between two vaults hears (YAZ-2602 R11): from the sidebar, App's door and main (`fs:import`, S22) alike. */
-export const BETWEEN_VAULTS = 'To move between vaults, use cut and paste'
-
 export interface ImportResponse {
   moved: PasteResponse['pasted']
   copied: PasteResponse['pasted']
@@ -774,6 +774,20 @@ export interface ImportResponse {
 export interface DragOutRequest {
   paths: string[]
   icon: string
+}
+
+/**
+ * Files dropped anywhere in a window of the app (YAZ-3263): their absolute paths, as the preload's
+ * `file.pathFor` reads them. Main matches them to the last drag out of ANOTHER window: a drop in a
+ * window of the app is no copy to Finder, so that window's box must not ask.
+ */
+export interface DroppedHereRequest {
+  paths: string[]
+}
+
+/** `file:drag-landed`, to the ONE window whose drag out another window of the app took (YAZ-3263): the paths of that drag, as its `fs:drag-out` sent them. */
+export interface DragLandedEvent {
+  paths: string[]
 }
 
 // ---------- pickFolder() ----------

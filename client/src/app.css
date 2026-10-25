@@ -892,12 +892,28 @@ button {
    ("Copied path", "Pasted 2 items"), and a warning-coloured "yes" read wrong. The rename banner and the
    conflict bar keep amber: they ask for a decision. The tokens swap with the theme. */
 
-.link-notice {
+/* The bottom-left corner (YAZ-3262): ONE fixed column holds the box after a drag out and the toast.
+   The box comes first, so it always stands above the toast, whatever the height of the toast; two
+   fixed places drifted into each other once the toast wrapped. The column itself takes no pointer:
+   only its children do, so the empty band between them leaves the sidebar under it clickable. */
+.corner-notices {
   position: fixed;
   left: 16px;
   /* Above the sidebar footer (the settings button) at any window height — its own variable, see `.sidebar__footer`. */
   bottom: calc(var(--sidebar-footer-h) + 12px);
   z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.corner-notices > * {
+  pointer-events: auto;
+}
+
+.link-notice {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -964,14 +980,10 @@ button {
 
 /* ---------- the box after a drag out to Finder (YAZ-3254 D9B) ----------
    The toast's own language (surface, border, radius, shadow), so light and dark follow the same
-   tokens. It is a question, not news: it stays until answered, and it stands ABOVE the toast's
-   place, so a later toast shows under it and never hides it (S32). */
+   tokens. It is a question, not news: it stays until answered, and it stands ABOVE the toast in
+   `.corner-notices`, so a later toast shows under it and never hides it (S32). */
 
 .drag-out-ask {
-  position: fixed;
-  left: 16px;
-  bottom: calc(var(--sidebar-footer-h) + 60px);
-  z-index: 50;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1641,7 +1653,7 @@ button {
 
 /* The footer's ONE height (YAZ-1674): 6px + 6px padding around the 26px cog (5px + 16px svg + 5px)
    plus the 1px top border. Pinned as a variable so the bottom-left notice can sit ABOVE the row
-   (`.link-notice`'s `bottom`) without the two ever drifting apart. */
+   (`.corner-notices`'s `bottom`, YAZ-3262) without the two ever drifting apart. */
 :root {
   --sidebar-footer-h: 39px;
 }

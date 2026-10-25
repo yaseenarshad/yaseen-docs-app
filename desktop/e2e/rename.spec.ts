@@ -41,6 +41,7 @@ import {
   editorOf,
   fileRow,
   launchApp,
+  layer,
   quitApp,
   seededState,
   shoot,
@@ -59,6 +60,8 @@ const N_BODY = 'n-note-body'
 const M_BODY = 'm-note-body'
 /** YAZ-3247 seeds: Box/inner is linked by Q by path; P1 and P2 move as a selection; Dest takes them. */
 const INNER_BODY = 'inner-note-body'
+/** YAZ-3262 seeds, written in step 6c at the top of the tree: Aa/Out goes out to "Finder"; Aa/Zz1 and Aa/<long name> move onto Ab, which holds the long name already, so the toast wraps. */
+const LONG = 'Zz2 a note whose name is long enough to wrap the toast onto three lines'
 
 let userData: string
 let vaultSrc: string
@@ -91,6 +94,24 @@ async function dragRow(w: Page, row: Locator, target: Locator): Promise<void> {
   await target.dispatchEvent('drop')
   await w.mouse.move(to.x + to.width / 2, to.y + to.height / 2)
   await w.mouse.up()
+}
+
+/**
+ * A row drag that leaves the window (YAZ-3254 S26), as the sidebar sees one: the row's `dragstart`,
+ * then a `dragleave` with no `relatedTarget`, then the first pointer move with no button down. The
+ * button comes up over the empty editor, so no row takes a click.
+ */
+async function dragOutOfWindow(w: Page, row: Locator): Promise<void> {
+  const from = await row.boundingBox()
+  const rest = await layer(w).boundingBox()
+  if (from === null || rest === null) throw new Error('the row or the editor is not on screen')
+  await w.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await w.mouse.down()
+  await w.mouse.move(from.x + from.width / 2 + 12, from.y + from.height / 2 + 12, { steps: 4 })
+  await w.evaluate(() => void document.body.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: null })))
+  await w.mouse.move(rest.x + rest.width / 2, rest.y + rest.height - 20)
+  await w.mouse.up()
+  await w.mouse.move(rest.x + rest.width / 2 + 4, rest.y + rest.height - 24)
 }
 
 /** The paths of each row drag main was asked to start, in the hidden mode (YAZ-3258). */
@@ -308,6 +329,9 @@ test('step 6b — drag a folder, then a 2-row selection, onto a folder; ⌘Z put
   await expect.poll(() => readWhenReady(path.join(vault, 'Dest', 'Box', 'inner.md'))).toContain(INNER_BODY)
   await expect.poll(() => readWhenReady(path.join(vault, 'Q.md'))).toBe('# Q\n\nSee [[Dest/Box/inner]] here.\n')
   await expect(win.locator('.link-notice__text')).toHaveText('Moved 1 item. Updated links in 1 note')
+  // The tree has caught up: the dragged folder (still selected, S4) is no row at its old path, so the
+  // Shift-clicks below do not add a path that is gone, which the next drag out refuses (NOT_FOUND).
+  await expect(win.locator(`.tree__row[data-path="${path.join(vault, 'Box')}"]`)).toHaveCount(0)
 
   await fileRow(win, 'P1').click({ modifiers: ['Shift'] })
   await fileRow(win, 'P2').click({ modifiers: ['Shift'] })
@@ -330,6 +354,44 @@ test('step 6b — drag a folder, then a 2-row selection, onto a folder; ⌘Z put
   await expect.poll(() => readWhenReady(path.join(vault, 'Q.md'))).toBe('# Q\n\nSee [[Box/inner]] here.\n')
   await expect(win.locator('.link-notice__text')).toHaveText('Moved back 1 item')
   await shoot(win, 'rename-07b-drag-undo')
+})
+
+test('step 6c — the box after a drag out stands above a toast of three lines, in light and dark (YAZ-3262)', async () => {
+  await mkdir(path.join(vault, 'Aa'))
+  await mkdir(path.join(vault, 'Ab'))
+  await Promise.all([
+    writeFile(path.join(vault, 'Aa', 'Out.md'), '# Out\n\nout-body\n'),
+    writeFile(path.join(vault, 'Aa', 'Zz1.md'), '# Zz1\n\nz-one\n'),
+    writeFile(path.join(vault, 'Aa', `${LONG}.md`), `# ${LONG}\n\nlong-aa\n`),
+    writeFile(path.join(vault, 'Ab', `${LONG}.md`), `# ${LONG}\n\nlong-ab\n`),
+  ])
+  await dirRow(win, 'Aa').click() // expand: its rows stand at the top, clear of the toast's corner
+  await expect(fileRow(win, LONG)).toBeVisible()
+  await dragOutOfWindow(win, fileRow(win, 'Out'))
+  expect((await dragOuts()).at(-1)).toEqual([path.join(vault, 'Aa', 'Out.md')])
+  const ask = win.locator('.drag-out-ask')
+  await expect(ask).toHaveText(/^Copied 1 item to Finder\?/)
+
+  // Zz1 moves; the long name is taken on Ab, so it stays, and the toast names it with Undo.
+  await fileRow(win, 'Zz1').click()
+  await fileRow(win, LONG).click({ modifiers: ['Shift'] })
+  await dragRow(win, fileRow(win, 'Zz1'), dirRow(win, 'Ab'))
+  const toast = win.locator('.link-notice')
+  await expect(toast.locator('.link-notice__text')).toHaveText(`Moved 1 item, skipped 1: ${LONG} already exists`)
+  await expect(ask).toBeVisible() // a later toast does not hide the box (S32)
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await win.emulateMedia({ colorScheme })
+    const above = await ask.boundingBox()
+    const below = await toast.boundingBox()
+    if (above === null || below === null) throw new Error('the box or the toast is not on screen')
+    expect(below.height).toBeGreaterThan(55) // two lines or more: the case the fixed places broke
+    expect(above.y + above.height).toBeLessThanOrEqual(below.y)
+    await shoot(win, `rename-07c-box-above-toast-${colorScheme}`)
+  }
+  await win.emulateMedia({ colorScheme: null })
+  await ask.getByRole('button', { name: 'Keep in vault' }).click()
+  await expect(ask).toHaveCount(0)
+  await expect(readFile(path.join(vault, 'Aa', 'Out.md'), 'utf8')).resolves.toContain('out-body')
 })
 
 test('step 7 — renaming a folder onto an EXISTING folder is DECLINED with a passive notice; nothing moves', async () => {

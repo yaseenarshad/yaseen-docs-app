@@ -117,6 +117,8 @@ function installBridge() {
       pathFor: vi.fn((file: File) => `/Users/yasin/Downloads/${file.name}`),
       import: vi.fn(async (_req: { paths: string[]; targetDir: string }): Promise<ImportResponse> => ({ moved: [], copied: [], failed: [] })),
       dragOut: vi.fn(async (_req: { paths: string[]; icon: string }) => undefined),
+      // Main's word that this window's drag out landed in another window of the app (YAZ-3263).
+      onDragLanded: vi.fn((_listener: (ev: { paths: string[] }) => void) => () => undefined),
     },
     // The Favorites list (YAZ-1766 6A): `.yaseendocs/favorites.json` behind main; absolute paths both ways.
     // Empty by default; the favorites block seeds `get` and captures the `onChanged` listener.
@@ -1340,6 +1342,23 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     move(0)
     expect(props.onDraggedOut).toHaveBeenCalledOnce()
     expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
+  it('a drag out that another window of the app took (main pushes `file:drag-landed`) asks nothing; a push of another drag changes nothing (YAZ-3263)', async () => {
+    const { bridge, props, el } = await mount()
+    const landed = (paths: string[]) => act(() => (bridge.file.onDragLanded.mock.calls.at(-1)?.[0] as (ev: { paths: string[] }) => void)({ paths }))
+    const leave = () => act(() => void document.body.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: null })))
+    fire(fileRow(el), 'dragstart')
+    leave()
+    landed(['/v/a.md'])
+    move(0)
+    expect(props.onDraggedOut).not.toHaveBeenCalled()
+    // The next drag starts clean, and a push of other paths is not its own.
+    fire(fileRow(el), 'dragstart')
+    leave()
+    landed(['/v/sub'])
+    move(0)
+    expect(props.onDraggedOut).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
   })
 })
 

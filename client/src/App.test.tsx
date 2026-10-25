@@ -212,6 +212,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const linkTakeTab = new Set<(tab: MovedTab) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
   const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
+  const dragLanded = new Set<(ev: { paths: string[] }) => void>()
   const menuSub = (set: Set<() => void>) =>
     vi.fn((l: () => void) => {
       set.add(l)
@@ -347,6 +348,13 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         fileDeleted.add(l)
         return () => fileDeleted.delete(l)
       }),
+      // A drop in this window tells main its paths, and main says when this window's drag out landed in another window (YAZ-3263).
+      pathFor: vi.fn((file: File) => `/Users/yasin/Downloads/${file.name}`),
+      droppedHere: vi.fn(async (_req: { paths: string[] }) => undefined),
+      onDragLanded: vi.fn((l: (ev: { paths: string[] }) => void) => {
+        dragLanded.add(l)
+        return () => dragLanded.delete(l)
+      }),
     },
     // No declarations (GRO-2202): the sidebar reads them for "New ▸"; empty = no menu change.
     properties: {
@@ -422,6 +430,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
     emitTakeTab: (tab: MovedTab) => linkTakeTab.forEach((l) => l(tab)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
+    emitDragLanded: (paths: string[]) => dragLanded.forEach((l) => l({ paths })),
     emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
   }
 }
@@ -3188,6 +3197,17 @@ describe('App rename door (⚡ YAZ-888)', () => {
         expect((await press()).defaultPrevented).toBe(false)
         expect(bridge.file.rename).toHaveBeenCalledTimes(1)
       })
+
+      it('a toast on screen when the lists empty keeps its text and loses its dead Undo button (YAZ-3255 nit)', async () => {
+        const files: Disk = { [LOST]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, el, emitFileRenamed } = await mountTeam(files)
+        realDisk(bridge, files)
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' }]))
+        await settle()
+        expect(toast(el)).toEqual({ text: 'Moved 1 item', action: 'Undo' })
+        await act(async () => emitFileRenamed('/v', '/w', 'dir'))
+        expect(toast(el)).toEqual({ text: 'Moved 1 item', action: undefined })
+      })
     })
 
     it('"Ask before renaming" off: a move that would clear values still asks (YAZ-2420 3C1)', async () => {
@@ -5347,6 +5367,37 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     expect(bridge.file.delete).not.toHaveBeenCalled()
     await draggedOut('/v/A.md')
     await act(async () => emitFileRenamed('/v', '/w', 'dir'))
+    expect(box(el)).toBeNull()
+  })
+
+  it('a drop of files anywhere in the window tells main their paths, so the window they came from asks nothing (YAZ-3263); a drop with no files tells nothing', async () => {
+    const { bridge } = await mountVault()
+    const drop = (files: File[] | null) => {
+      const event = new Event('drop', { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'dataTransfer', { value: files === null ? null : { files, types: ['Files'] } })
+      act(() => void document.body.dispatchEvent(event))
+    }
+    drop([new File(['a'], 'A.md'), new File(['b'], 'B.md')])
+    expect(bridge.file.droppedHere).toHaveBeenLastCalledWith({ paths: ['/Users/yasin/Downloads/A.md', '/Users/yasin/Downloads/B.md'] })
+    // Counted from here: an App an earlier test left mounted shares `window` and the bridge.
+    const told = bridge.file.droppedHere.mock.calls.length
+    drop([])
+    drop(null)
+    expect(bridge.file.droppedHere).toHaveBeenCalledTimes(told)
+  })
+
+  it('main says the drag landed in another window of the app: the box of that drag closes, or never shows when the word comes during its read; a box of other items stays (YAZ-3263)', async () => {
+    const { el, emitDragLanded } = await mountVault()
+    await draggedOut('/v/A.md')
+    act(() => emitDragLanded(['/v/B.md']))
+    expect(boxText(el)).toBe('Copied 1 item to Finder? 1 note links to it.')
+    act(() => emitDragLanded(['/v/A.md']))
+    expect(box(el)).toBeNull()
+    // The word comes while the box reads the trees: it never shows.
+    await act(async () => {
+      captured.sidebar?.onDraggedOut(['/v/B.md', '/v/R.md'])
+      emitDragLanded(['/v/B.md', '/v/R.md'])
+    })
     expect(box(el)).toBeNull()
   })
 

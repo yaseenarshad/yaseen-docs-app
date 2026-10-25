@@ -293,7 +293,8 @@ export function useTreeDrag(
    * `dragleave` with no `relatedTarget` when it leaves. Only a drag that left, and did not drop
    * inside, ended outside the window, and App's box asks (D9B, S26). A cancelled drag outside looks
    * the same (S29). A drag that ends over a place that takes no drop, and a quick flick whose button
-   * came up before the OS drag began, never left: nothing asks (S30).
+   * came up before the OS drag began, never left: nothing asks (S30). A drag that another window of
+   * the app took left too, but main says so (`file:drag-landed`, YAZ-3263): it counts as a drop inside.
    */
   useEffect(() => {
     const marked = () => {
@@ -321,7 +322,11 @@ export function useTreeDrag(
     window.addEventListener('dragover', over, true)
     window.addEventListener('dragleave', left, true)
     window.addEventListener('mousemove', moved)
+    const offLanded = api.file.onDragLanded(({ paths }) => {
+      if (dragging.current.length > 0 && sameItems(dragging.current, paths)) droppedInside.current = true
+    })
     return () => {
+      offLanded()
       window.removeEventListener('drop', marked, true)
       window.removeEventListener('drop', dropped)
       window.removeEventListener('dragenter', over, true)

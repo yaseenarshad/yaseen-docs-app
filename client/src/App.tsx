@@ -1393,6 +1393,8 @@ export function App() {
     setDragOutAsk(null)
     // The undo list speaks for the vaults it was made in (audit 2): a vault that left takes its moves along.
     moveHistory.current = createMoveHistory()
+    // A toast's Undo or Redo would reach the emptied list and do nothing: the text stays, the button goes.
+    setNotice((now) => (now?.action?.fades === true ? { text: now.text, icon: now.icon } : now))
   }, [vaultList])
 
   const catalogForRename = useCallback(async (oldPath: string, kind: TreeNode['type']): Promise<ViewOnlyCatalog | null | undefined> => {
@@ -1698,15 +1700,20 @@ export function App() {
    * is left out (`stillThere`); with none left there is no box (S31). The count is of the notes
    * outside the items whose links reach any of them, off the window's own index snapshot
    * (`linkingNotes`, the rename sheet's count). A second drag out replaces the box (S32), and a change
-   * of the window's vaults during the read ends it.
+   * of the window's vaults during the read ends it. So does main's word that another window of the
+   * app took the drag (`file:drag-landed`, YAZ-3263): nothing went to Finder.
    */
   const dragOuts = useRef(0)
+  // The paths of the last drag out that main says landed in another window of the app (YAZ-3263).
+  const landedInApp = useRef<readonly string[]>([])
   const askAfterDragOut = useCallback(async (paths: string[]): Promise<void> => {
     // The newest drag out speaks: an older one whose tree read answers later says nothing.
     const turn = ++dragOuts.current
     const generation = renameRootGeneration.current
+    landedInApp.current = []
     const left = await stillThere(paths)
     if (left.length === 0 || turn !== dragOuts.current || generation !== renameRootGeneration.current) return
+    if (left.every((path) => landedInApp.current.includes(path))) return
     const inside = (path: string) => left.some((item) => path === item || path.startsWith(`${item}/`))
     const linking = new Set<string>()
     for (const path of left) {
@@ -1723,6 +1730,29 @@ export function App() {
    * sheet, since the box was the question (S27). The items are read again at the click, and one gone
    * since the box showed is skipped (audit 7). Not in the undo list: the Trash is its undo.
    */
+  /**
+   * A drag out that ended in a window of the app is no copy to Finder (YAZ-3263). Each drop here tells
+   * main its files' paths, at the capture phase, before any target takes or refuses it; main tells
+   * the window whose drag out they are. That window's sidebar asks nothing; a box that asked already,
+   * or whose read is under way, goes. A box of other items stays.
+   */
+  useEffect(() => {
+    const dropped = (e: DragEvent) => {
+      const files = e.dataTransfer?.files
+      if (files == null || files.length === 0) return
+      const paths = Array.from(files, (file) => api.file.pathFor(file)).filter((path) => path !== '')
+      if (paths.length > 0) void api.file.droppedHere({ paths }).catch(() => undefined)
+    }
+    window.addEventListener('drop', dropped, true)
+    const offLanded = api.file.onDragLanded(({ paths }) => {
+      landedInApp.current = paths
+      setDragOutAsk((now) => (now !== null && now.paths.every((path) => paths.includes(path)) ? null : now))
+    })
+    return () => {
+      window.removeEventListener('drop', dropped, true)
+      offLanded()
+    }
+  }, [])
   const removeDraggedOut = useCallback(async (): Promise<void> => {
     const ask = dragOutAsk
     setDragOutAsk(null)
@@ -1864,40 +1894,46 @@ export function App() {
   return (
     <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines}>
       {glow && <div className="window-glow" aria-hidden="true" />}
-      {notice !== null && (
-        // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.
-        <div className={`link-notice${notice.action === undefined ? '' : ' link-notice--action'}`} role="status" data-icon={notice.icon}>
-          <NoticeIcon icon={notice.icon} />
-          <span className="link-notice__text">{notice.text}</span>
-          {notice.action !== undefined && (
-            <>
-              <button
-                type="button"
-                className="link-notice__action"
-                onClick={() => {
-                  notice.action?.run()
-                  setNotice(null)
-                }}
-              >
-                {notice.action.label}
+      {(notice !== null || dragOutAsk !== null) && (
+        // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands
+        // above the toast, however many lines the toast wraps to. The column places; each child styles.
+        <div className="corner-notices">
+          {dragOutAsk !== null && (
+            // The box after a drag out to Finder (YAZ-3254 D9B): it stays until answered, and ✕ or Esc keeps everything (S28).
+            <div className="drag-out-ask" role="alertdialog" aria-labelledby="drag-out-ask-text">
+              <span id="drag-out-ask-text" className="drag-out-ask__text">{dragOutText(dragOutAsk)}</span>
+              <button type="button" className="drag-out-ask__remove" onClick={() => void removeDraggedOut()}>
+                Remove from vault
               </button>
-              <button type="button" className="link-notice__close" aria-label="Dismiss" onClick={() => setNotice(null)}>
+              <button type="button" className="drag-out-ask__close" aria-label="Keep in vault" onClick={() => setDragOutAsk(null)}>
                 ✕
               </button>
-            </>
+            </div>
           )}
-        </div>
-      )}
-      {dragOutAsk !== null && (
-        // The box after a drag out to Finder (YAZ-3254 D9B): it stays until answered, and ✕ or Esc keeps everything (S28).
-        <div className="drag-out-ask" role="alertdialog" aria-labelledby="drag-out-ask-text">
-          <span id="drag-out-ask-text" className="drag-out-ask__text">{dragOutText(dragOutAsk)}</span>
-          <button type="button" className="drag-out-ask__remove" onClick={() => void removeDraggedOut()}>
-            Remove from vault
-          </button>
-          <button type="button" className="drag-out-ask__close" aria-label="Keep in vault" onClick={() => setDragOutAsk(null)}>
-            ✕
-          </button>
+          {notice !== null && (
+            // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.
+            <div className={`link-notice${notice.action === undefined ? '' : ' link-notice--action'}`} role="status" data-icon={notice.icon}>
+              <NoticeIcon icon={notice.icon} />
+              <span className="link-notice__text">{notice.text}</span>
+              {notice.action !== undefined && (
+                <>
+                  <button
+                    type="button"
+                    className="link-notice__action"
+                    onClick={() => {
+                      notice.action?.run()
+                      setNotice(null)
+                    }}
+                  >
+                    {notice.action.label}
+                  </button>
+                  <button type="button" className="link-notice__close" aria-label="Dismiss" onClick={() => setNotice(null)}>
+                    ✕
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
       {share !== null && (

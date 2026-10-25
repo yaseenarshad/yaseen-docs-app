@@ -3,6 +3,7 @@ import path from 'node:path'
 import { nativeImage, screen, type IpcMainInvokeEvent } from 'electron'
 import { CONTRACT } from '@shared/ipc'
 import { BETWEEN_VAULTS, rootOfPath, type FileWriteRequest, type FileWriteResponse, type ImportResponse, type RenameFileResponse } from '@shared/types'
+import { dropLanded, rememberDragOut } from '../dragLanding'
 import * as favorites from '../favorites'
 import { fileClip } from '../fileClip'
 import * as focus from '../focus'
@@ -331,6 +332,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     const PNG = 'data:image/png;base64,'
     if (typeof icon !== 'string' || !icon.startsWith(PNG) || icon.length >= 64 * 1024) throw new BridgeFailure('BAD_REQUEST', "'icon' must be a PNG data URL under 64 KB")
     for (const file of files) await fsCall(file, () => stat(file))
+    // A drop of these paths in another window of the app tells this one (YAZ-3263): `fs:dropped-here`.
+    rememberDragOut(e.sender, files)
     if (process.env.YASEEN_DOCS_E2E_HIDDEN === '1') {
       const e2e = globalThis as { e2eDragOuts?: string[][] }
       ;(e2e.e2eDragOuts ??= []).push(files)
@@ -338,5 +341,13 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     }
     const { scaleFactor } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
     e.sender.startDrag({ file: files[0], files, icon: nativeImage.createFromBuffer(Buffer.from(icon.slice(PNG.length), 'base64'), { scaleFactor }) })
+  })
+  /**
+   * Files dropped anywhere in the calling window (YAZ-3263), reported when the drop fires: when they
+   * are the last drag out of ANOTHER window, that window hears `file:drag-landed` and asks nothing.
+   */
+  handleWithEvent(CONTRACT.file.droppedHere, async (e, req: unknown) => {
+    const { paths } = requireRequest(req)
+    dropLanded(e.sender, requireStringArray(paths, 'paths').map((p) => requireAbsPath(p, 'paths')))
   })
 }
