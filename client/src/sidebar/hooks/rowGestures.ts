@@ -5,11 +5,11 @@
  * along its tab's list.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
-import { isMarkdown } from '@shared/fileKind'
-import type { FileClipState, SidebarLens, SidebarTab, TreeNode } from '@shared/types'
+import { isMarkdown, isSkipped } from '@shared/fileKind'
+import { BETWEEN_VAULTS, type FileClipState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import type { MovedGesture } from '../../lib/moveHistory'
-import type { NoticeKind } from '../../lib/notice'
+import { countItems, gestureNotice, type NoticeKind } from '../../lib/notice'
 import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
@@ -20,7 +20,6 @@ import { createNote, folderPath } from '../../views/scaffold'
 import { transformFile } from '../../views/writeProperty'
 import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
 import { dragPill, pillLabel } from '../dragPill'
-import { countItems } from '../menuSections'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
 import type { PendingCreate, PendingRename, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
 
@@ -145,9 +144,6 @@ export function movesInto(dir: string, paths: readonly string[], folders: readon
 /** The same items, in any order: a drop of this window's own OS drag (YAZ-3254 D4), told apart by its paths. */
 const sameItems = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((path) => b.includes(path))
 
-/** The sentence a drag between vaults hears (YAZ-2602 R11), from the sidebar and from main (`fs:import`, S22) alike. */
-export const BETWEEN_VAULTS = 'To move between vaults, use cut and paste'
-
 /** The class a lit drop target wears (YAZ-3251 D2): the root header has its own. */
 const dropClass = (el: HTMLElement): string => (el.classList.contains('sidebar__header') ? 'sidebar__header--drop' : 'tree__row--drop')
 
@@ -179,6 +175,8 @@ export function useTreeDrag(
   const dragging = useRef<string[]>([])
   // A drop came inside the window while a row drag was in flight (S30): no box asks after it.
   const droppedInside = useRef(false)
+  // The row drag's OS drag left the window, and has not come back (S26; audit 4, 13): see the effect below.
+  const leftWindow = useRef(false)
   const lit = useRef<{ dir: string | null; el: HTMLElement | null }>({ dir: null, el: null })
   const spring = useRef<ReturnType<typeof setTimeout> | null>(null)
   // What the callbacks read at the moment of the gesture, so the `move` they make keeps ONE identity.
@@ -234,7 +232,6 @@ export function useTreeDrag(
       send(dir, paths)
     }
     return {
-      isDragging: () => dragging.current.length > 0,
       accepts,
       /**
        * Where every row drag to move begins (D5), and since YAZ-3254 D4 it is the OS drag: the Tree
@@ -246,6 +243,7 @@ export function useTreeDrag(
         const paths = dragSet(path, picked.paths, ordered, (p) => vaults.has(p))
         dragging.current = paths
         droppedInside.current = false
+        leftWindow.current = false
         // An unselected row first becomes the selection (S4), then goes alone.
         if (!picked.paths.has(path)) picked.set(path, top)
         if (paths.length === 0) return
@@ -267,7 +265,8 @@ export function useTreeDrag(
        * window of it: App's door, so links follow (S23). Anything else is Finder's: `fs:import` (S17).
        */
       dropFiles: (dir, files) => {
-        const paths = files.map((file) => api.file.pathFor(file)).filter((path) => path !== '')
+        // A hidden item is skipped with no notice, wherever it comes from (S20): main's own rule.
+        const paths = files.map((file) => api.file.pathFor(file)).filter((path) => path !== '' && !isSkipped(basename(path)))
         if (dragging.current.length > 0 && sameItems(dragging.current, paths)) return drop(dir)
         end()
         if (paths.length === 0) return
@@ -289,8 +288,12 @@ export function useTreeDrag(
    * After the OS drag (YAZ-3254 D4) no `dragend` comes back. A drop inside the window is marked in the
    * CAPTURE phase, so a drop a handler stops still counts (S30), and the drag clears once the drop's
    * targets ran. The first pointer move with no button down is the drag's end: the moves before the
-   * OS drag takes over still hold the button. With the drag still set and no drop inside, it ended
-   * outside the window, and App's box asks (D9B, S26). A cancelled drag looks the same (S29).
+   * OS drag takes over still hold the button. Where the drag ended is told by where it was last
+   * (audit 4, 13): the OS drag fires `dragenter` and `dragover` while it is over the window, and a
+   * `dragleave` with no `relatedTarget` when it leaves. Only a drag that left, and did not drop
+   * inside, ended outside the window, and App's box asks (D9B, S26). A cancelled drag outside looks
+   * the same (S29). A drag that ends over a place that takes no drop, and a quick flick whose button
+   * came up before the OS drag began, never left: nothing asks (S30).
    */
   useEffect(() => {
     const marked = () => {
@@ -299,19 +302,31 @@ export function useTreeDrag(
     const dropped = () => {
       if (dragging.current.length > 0) fileMove.end()
     }
+    const over = () => {
+      leftWindow.current = false
+    }
+    const left = (e: DragEvent) => {
+      if (e.relatedTarget === null) leftWindow.current = true
+    }
     const moved = (e: MouseEvent) => {
       if (e.buttons !== 0 || dragging.current.length === 0) return
       const paths = dragging.current
-      const outside = !droppedInside.current
+      const outside = leftWindow.current && !droppedInside.current
       fileMove.end()
       if (outside) live.current.finder.onDraggedOut(paths)
     }
     window.addEventListener('drop', marked, true)
     window.addEventListener('drop', dropped)
+    window.addEventListener('dragenter', over, true)
+    window.addEventListener('dragover', over, true)
+    window.addEventListener('dragleave', left, true)
     window.addEventListener('mousemove', moved)
     return () => {
       window.removeEventListener('drop', marked, true)
       window.removeEventListener('drop', dropped)
+      window.removeEventListener('dragenter', over, true)
+      window.removeEventListener('dragover', over, true)
+      window.removeEventListener('dragleave', left, true)
       window.removeEventListener('mousemove', moved)
     }
   }, [fileMove])
@@ -439,25 +454,25 @@ export function useFileClipboard(
         const res = await api.file.paste({ targetDir: dir })
         openTo(`${dir}/x`, top)
         refresh(vault)
-        // A Paste of a Cut is a move gesture (YAZ-3255 S39): its moves, and what D20 cleared, for the undo list.
-        const gesture: MovedGesture | null = before === null ? null : { moves: res.pasted.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }
-        if (before !== null) for (const { from, to, kind } of res.pasted) gesture!.cleared.push(...(await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })))
+        // What D20 cleared, for the undo list.
+        const cleared: MovedGesture['cleared'] = []
+        if (before !== null) for (const { from, to, kind } of res.pasted) cleared.push(...(await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })))
         else if (index.ids) {
           const [{ tree }, { folders }] = await Promise.all([fetchTree(vault), api.index(vault)])
           for (const { to } of res.pasted) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(vault, path, folders), true).catch(() => undefined) // quiet (YAZ-3235 D1)
         }
-        const first = res.failed[0]
+        // Each item that did not land, by its page name; the titles are read only when one did not.
+        const titles = res.failed.length === 0 ? undefined : pathTitles(index.records, index.folders)
+        const failed = titles === undefined ? [] : res.failed.map((f) => `${pageName(vault, f.from, titles)} — ${f.message}`)
+        // A Paste of a Cut is a move gesture (YAZ-3255 S39): its moves and what they cleared go on the undo list.
+        const gesture: MovedGesture | null = before === null ? null : { moves: res.pasted.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared }
+        const text = gestureNotice(res.pasted.length === 0 ? null : `Pasted ${countItems(res.pasted.length)}`, failed, "Couldn't paste")
+        // Nothing ran: EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
+        if (text === null) onNotice('Nothing to paste', 'info')
+        else if (res.pasted.length === 0) onNotice(text, 'error')
         // What landed is said with Undo when it was a move (D11).
-        const pasted = (text: string): void => (gesture === null ? onNotice(text, 'paste') : onMoved(gesture, text))
-        if (first === undefined) {
-          // Reachable only when EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
-          if (res.pasted.length === 0) onNotice('Nothing to paste', 'info')
-          else pasted(`Pasted ${countItems(res.pasted.length)}`)
-        } else {
-          const name = pageName(vault, first.from, pathTitles(index.records, index.folders))
-          if (res.pasted.length === 0) onNotice(`Couldn't paste: ${name} — ${first.message}`, 'error')
-          else pasted(`Pasted ${countItems(res.pasted.length)}, skipped ${res.failed.length}: ${name} — ${first.message}`)
-        }
+        else if (gesture === null) onNotice(text, 'paste')
+        else onMoved(gesture, text)
       } catch (err: unknown) {
         onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
@@ -555,18 +570,17 @@ export function useFileClipboard(
           refresh(vault)
         }
         const done =
-          copied.length === 0 ? `Moved ${countItems(moved.length)} from Finder`
+          moved.length + copied.length === 0 ? null
+          : copied.length === 0 ? `Moved ${countItems(moved.length)} from Finder`
           : moved.length === 0 ? `Copied ${countItems(copied.length)} from another disk`
           : `Moved ${countItems(moved.length)}, copied ${copied.length} from another disk`
-        const [first] = failed
-        const landed = (text: string): void => (moved.length === 0 ? onNotice(text, 'paste') : onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }, text))
-        if (first === undefined) {
-          // Every item hidden (S20): nothing landed, and nothing to say.
-          if (moved.length + copied.length > 0) landed(done)
-        } else if (moved.length + copied.length === 0) {
-          if (failed.every((f) => f.message === BETWEEN_VAULTS)) onNotice(BETWEEN_VAULTS, 'info')
-          else onNotice(`Couldn't move: ${basename(first.from)} — ${first.message}`, 'error')
-        } else landed(`${done}, skipped ${failed.length}: ${basename(first.from)} — ${first.message}`)
+        if (done === null && failed.length > 0 && failed.every((f) => f.message === BETWEEN_VAULTS)) return onNotice(BETWEEN_VAULTS, 'info')
+        const text = gestureNotice(done, failed.map((f) => `${basename(f.from)} — ${f.message}`), "Couldn't move")
+        // Every item hidden (S20): nothing landed, and nothing to say.
+        if (text === null) return
+        if (done === null) onNotice(text, 'error')
+        else if (moved.length === 0) onNotice(text, 'paste')
+        else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }, text)
       } catch (err: unknown) {
         onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }

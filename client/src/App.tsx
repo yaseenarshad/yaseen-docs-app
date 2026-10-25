@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isBoard, isViewOnly } from '@shared/fileKind'
 import type { TextFormatting } from '@shared/textFormatting'
-import { MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
+import { BETWEEN_VAULTS, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -18,11 +18,11 @@ import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename
 import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
 import { createMoveHistory, invertMoves, type MovedGesture } from './lib/moveHistory'
 import { transformFile } from './views/writeProperty'
-import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
+import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument } from './lib/focusHandoff'
-import { dragOutText, noticeMs, type DragOutAsk, type Notice, type NoticeKind } from './lib/notice'
+import { countItems, dragOutText, gestureNotice, noticeMs, type DragOutAsk, type Notice, type NoticeKind } from './lib/notice'
 import { treeHasPath } from './lib/treeState'
 import { NoticeIcon } from './components/NoticeIcon'
 import { absFrom, dirname, relTo } from './lib/paths'
@@ -49,7 +49,6 @@ import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { textVars } from './settings/headingStyles'
 import { plainEntryName } from './sidebar/createEntry'
-import { countItems } from './sidebar/menuSections'
 import { type SidebarClipboard, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
@@ -92,12 +91,23 @@ type RenameOutcome = { move: Move; cleared: ClearedValues[]; links: RenameRewrit
 const moveFailure = (name: string, err: unknown): string =>
   err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS' ? `${name} already exists` : `${name} — ${err instanceof Error ? err.message : String(err)}`
 
-/** What `runMoves` did: the gesture, and what it says (S11). */
-type MovesRun = MovedGesture & { failed: string[]; links: RenameRewriteSummary }
+/** What `runMoves` did: the gesture, and what it says (S11). `again`: how many of `failed` moved again (S36). */
+type MovesRun = MovedGesture & { failed: string[]; again: number; links: RenameRewriteSummary }
 
-/** Why one move of an undo or a redo did not run (YAZ-3255 S36): the item is gone, or its place is taken, so it changed again since. */
-const againFailure = (name: string, err: unknown): string =>
-  err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'ALREADY_EXISTS') ? `${name} moved again` : `${name} — ${err instanceof Error ? err.message : String(err)}`
+/** The item of an undo or a redo is gone, or its place is taken (YAZ-3255 S36): it changed again since. */
+const movedAgain = (err: unknown): boolean => err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'ALREADY_EXISTS')
+
+/** Why one move of an undo or a redo did not run (S36): it moved again, else main's own words. */
+const againFailure = (name: string, err: unknown): string => (movedAgain(err) ? `${name} moved again` : `${name} — ${err instanceof Error ? err.message : String(err)}`)
+
+/**
+ * A move over a vault's edge (YAZ-3255): it leaves the vault that holds it, or comes from no vault —
+ * an undo or a redo of a move in from Finder (S40), or of a Paste of a Cut between vaults.
+ */
+const overEdge = (roots: readonly string[], oldPath: string, newPath: string): boolean => {
+  const home = rootOfPath(roots, oldPath)
+  return home === null || rootOfPath(roots, newPath) !== home
+}
 
 /**
  * The toast of an undo or a redo (YAZ-3255 D11): "Moved back 2 items" (undo) or "Moved 2 items"
@@ -105,10 +115,10 @@ const againFailure = (name: string, err: unknown): string =>
  * failure when nothing moved.
  */
 export function replayNotice(verb: 'undo' | 'redo', moved: number, failed: readonly string[]): string {
-  const cannot = failed.length === 0 ? '' : `Can't ${verb}${failed.length === 1 ? '' : ` ${countItems(failed.length)}`}: ${failed[0]}`
-  if (moved === 0) return cannot
+  const cannot = gestureNotice(null, failed, `Can't ${verb}`)
+  if (moved === 0) return cannot ?? ''
   const head = verb === 'undo' ? `Moved back ${countItems(moved)}` : `Moved ${countItems(moved)}`
-  return cannot === '' ? head : `${head}. ${cannot}`
+  return cannot === null ? head : `${head}. ${cannot}`
 }
 
 /**
@@ -117,9 +127,8 @@ export function replayNotice(verb: 'undo' | 'redo', moved: number, failed: reado
  * followed are said after it, as a rename says them. Null when nothing ran at all.
  */
 export function movedNotice(moved: number, failed: readonly string[], links: RenameRewriteSummary): string | null {
-  if (moved === 0) return failed.length === 0 ? null : `Can't move${failed.length === 1 ? '' : ` ${countItems(failed.length)}`}: ${failed[0]}`
-  const head = failed.length === 0 ? `Moved ${countItems(moved)}` : `Moved ${countItems(moved)}, skipped ${failed.length}: ${failed[0]}`
-  return links.updated > 0 || links.skipped > 0 ? `${head}. ${renameNotice(links)}` : head
+  const text = gestureNotice(moved === 0 ? null : `Moved ${countItems(moved)}`, failed, "Can't move")
+  return moved > 0 && (links.updated > 0 || links.skipped > 0) ? `${text}. ${renameNotice(links)}` : text
 }
 
 // A workspace state change still re-renders App, but unchanged retained editors must not render
@@ -249,9 +258,17 @@ export function App() {
     return () => clearTimeout(timer)
   }, [notice])
   // The box after a drag out to Finder (YAZ-3254 D9B): its own slot, so the toast above never hides it.
+  // It asks about the items of this window's vaults: another set of vaults ends the question (the rename door's effect).
   const [dragOutAsk, setDragOutAsk] = useState<DragOutAsk | null>(null)
-  // It asks about the items of this window's vaults: another set of vaults ends the question.
-  useEffect(() => setDragOutAsk(null), [roots])
+  // Esc closes it and keeps the items, as ✕ does (audit 20), unless something else took the key.
+  useEffect(() => {
+    if (dragOutAsk === null) return
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape' && !e.defaultPrevented) setDragOutAsk(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [dragOutAsk])
   // One scope per vault (YAZ-2602 D1): the watcher, the link sources, the properties, the sync,
   // the review and the IDs answer of EACH vault, all loaded at once. They live in slots, a fixed
   // number of hook calls on every render, because a scope must exist in the first render: an
@@ -1273,8 +1290,7 @@ export function App() {
       // A move over a vault's edge (YAZ-3255): an undo or redo of a move in from Finder (S40), or of a
       // Paste of a Cut between vaults. The index cannot speak for the far side, so no link and no value
       // is written there, as the paste and the import write none; main's rename still repairs the tabs.
-      const home = rootOfPath(live.current.roots, oldPath)
-      if (to.title === undefined && (home === null || rootOfPath(live.current.roots, to.newPath) !== home)) {
+      if (to.title === undefined && overEdge(live.current.roots, oldPath, to.newPath)) {
         try {
           const { newPath, kind } = await api.file.rename({ oldPath, newPath: to.newPath })
           return { move: { oldPath, newPath, kind }, cleared: [], links: { updated: 0, skipped: 0 } }
@@ -1374,6 +1390,9 @@ export function App() {
     renameRootGeneration.current++
     setPendingRename(null)
     setPendingMoves(null)
+    setDragOutAsk(null)
+    // The undo list speaks for the vaults it was made in (audit 2): a vault that left takes its moves along.
+    moveHistory.current = createMoveHistory()
   }, [vaultList])
 
   const catalogForRename = useCallback(async (oldPath: string, kind: TreeNode['type']): Promise<ViewOnlyCatalog | null | undefined> => {
@@ -1404,10 +1423,11 @@ export function App() {
 
   /**
    * A list of moves through the pipeline one drag uses (YAZ-3250 D1), in the order given: each move
-   * reads its own catalog (`catalogForRename`) and runs its own rename (`applyRename`), so links,
-   * folder values and open tabs follow each one. A move that fails leaves the rest to run, and ONE
-   * notice says the whole list (S11). A change to the window's vaults stops what is left. It answers
-   * what moved and what D20 cleared.
+   * runs its own rename (`applyRename`), so links, folder values and open tabs follow each one. The
+   * file list of each vault (`catalogForRename`) is read once for the gesture, and each move puts its
+   * items at their new place in it (audit 6). A move over a vault's edge rewrites nothing and reads
+   * none (S40). A move that fails leaves the rest to run, and ONE notice says the whole list (S11). A
+   * change to the window's vaults stops what is left. It answers what moved and what D20 cleared.
    *
    * A move gesture goes on the window's undo list and says "Moved N items" with Undo (YAZ-3255 D10,
    * D11). An undo and a redo run through here too, with `record` off: they say their own toast, and
@@ -1418,11 +1438,14 @@ export function App() {
       const generation = renameRootGeneration.current
       const done: MovedGesture = { moves: [], cleared: [] }
       const failed: string[] = []
+      let again = 0
       const failure = record ? moveFailure : againFailure
       const links = { updated: 0, skipped: 0 }
+      const catalogs = new Map<string, ViewOnlyCatalog>()
       for (const { oldPath, newPath, kind } of moves) {
         if (generation !== renameRootGeneration.current) break
-        const catalog = await catalogForRename(oldPath, kind)
+        const home = overEdge(live.current.roots, oldPath, newPath) ? null : rootOfPath(live.current.roots, oldPath)
+        const catalog = home === null ? null : catalogs.get(home) ?? (await catalogForRename(oldPath, kind))
         if (generation !== renameRootGeneration.current) break
         if (catalog === undefined) {
           failed.push(`${nameOf(oldPath)} — couldn't load the current file list`)
@@ -1431,9 +1454,11 @@ export function App() {
         const out = await applyRename(oldPath, { newPath }, catalog)
         if (out === null) continue
         if ('error' in out) {
+          if (!record && movedAgain(out.error)) again++
           failed.push(failure(nameOf(oldPath), out.error))
           continue
         }
+        if (home !== null && catalog !== null) catalogs.set(home, movedCatalog(catalog, out.move.oldPath, out.move.newPath))
         done.moves.push(out.move)
         done.cleared.push(...out.cleared)
         links.updated += out.links.updated
@@ -1444,7 +1469,7 @@ export function App() {
         if (done.moves.length > 0) recordMoves(done, text!)
         else if (text !== null) notify(text, 'error')
       }
-      return { ...done, failed, links }
+      return { ...done, failed, again, links }
     },
     [catalogForRename, applyRename, nameOf, notify, recordMoves],
   )
@@ -1453,7 +1478,9 @@ export function App() {
    * ⌘Z (YAZ-3255 D10, S33): the newest gesture moves back, all its items, newest first, through
    * `runMoves` — so links follow — and then the folder values its moves cleared come back on each
    * note's path before the move (`restoreFolderValues`). What moved back goes on the redo list. One
-   * undo or redo runs at a time; a key during one is taken and does nothing. False with nothing to undo.
+   * that moved nothing stays on the undo list, so the next ⌘Z tries again — unless every item moved
+   * again (audit 21). One undo or redo runs at a time; a key during one is taken and does nothing.
+   * False with nothing to undo.
    */
   const undoMove = useCallback((): boolean => {
     if (replaying.current) return true
@@ -1467,6 +1494,7 @@ export function App() {
         const returned = (path: string): boolean => back.moves.some((move) => move.newPath === path || (move.kind === 'dir' && path.startsWith(`${move.newPath}/`)))
         for (const { path, values } of entry.cleared) if (returned(path)) await transformFile(path, restoreFolderValues(values), true).catch(() => undefined) // quiet (YAZ-3235 D1)
         if (back.moves.length > 0) moveHistory.current.undone({ moves: invertMoves(back.moves), cleared: [] })
+        else if (back.failed.length > back.again) moveHistory.current.redone(entry)
         const text = replayNotice('undo', back.moves.length, back.failed)
         // Nothing ran and nothing failed: the window's vaults changed under it, and there is nothing to say.
         if (back.moves.length === 0) {
@@ -1483,7 +1511,8 @@ export function App() {
   /**
    * ⌘⇧Z (YAZ-3255 D10 amended, S37): the newest undone gesture runs forward again through
    * `runMoves`, with no D21 sheet. Its moves clear the values again (D20), and the gesture goes back
-   * on the undo list with what it cleared this time. False with nothing to redo.
+   * on the undo list with what it cleared this time. One that moved nothing stays on the redo list,
+   * as an undo does (audit 21). False with nothing to redo.
    */
   const redoMove = useCallback((): boolean => {
     if (replaying.current) return true
@@ -1494,6 +1523,7 @@ export function App() {
       try {
         const run = await runMoves(entry.moves, { record: false })
         if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves, cleared: run.cleared })
+        else if (run.failed.length > run.again) moveHistory.current.undone(entry)
         const text = replayNotice('redo', run.moves.length, run.failed)
         if (run.moves.length === 0) {
           if (text !== '') notify(text, 'error')
@@ -1520,7 +1550,7 @@ export function App() {
       if (first === undefined) return
       const { root, wikilinks } = scopeOf(first.oldPath)
       if (root === null) return
-      if (moves.some((move) => scopeOf(move.oldPath).root !== root || scopeOf(move.newPath).root !== root)) return notify('To move between vaults, use cut and paste')
+      if (moves.some((move) => scopeOf(move.oldPath).root !== root || scopeOf(move.newPath).root !== root)) return notify(BETWEEN_VAULTS)
       const lost = valuesLeftBehind({ root, moves, records: wikilinks.records, folders: wikilinks.folders })
       if (lost.folders.length > 0) return setPendingMoves({ root, moves, lost })
       await runMoves(moves)
@@ -1651,25 +1681,32 @@ export function App() {
     }
   }, [nameOf])
 
+  /** The items still in their vault's tree, read fresh (S31): one another window moved or deleted is gone. */
+  const stillThere = useCallback(async (paths: readonly string[]): Promise<string[]> => {
+    const vaults = [...new Set(paths.flatMap((path) => scopeOf(path).root ?? []))]
+    const trees = new Map(await Promise.all(vaults.map(async (vault) => [vault, await fetchTree(vault).then(({ tree }) => tree, () => null)] as const)))
+    return paths.filter((path) => {
+      const vault = scopeOf(path).root
+      const tree = vault === null ? null : trees.get(vault)
+      return tree != null && treeHasPath(tree, path)
+    })
+  }, [scopeOf])
+
   /**
    * Rows dragged out to Finder ended outside the window (YAZ-3254 D9B, S26): Finder took copies, and
    * the box asks whether the vault keeps them. An item that is gone by now (another window moved it)
-   * is left out, read off a fresh tree of its vault; with none left there is no box (S31). The count
-   * is of the notes outside the items whose links reach any of them, off the window's own index
-   * snapshot (`linkingNotes`, the rename sheet's count). A second drag out replaces the box (S32).
+   * is left out (`stillThere`); with none left there is no box (S31). The count is of the notes
+   * outside the items whose links reach any of them, off the window's own index snapshot
+   * (`linkingNotes`, the rename sheet's count). A second drag out replaces the box (S32), and a change
+   * of the window's vaults during the read ends it.
    */
   const dragOuts = useRef(0)
   const askAfterDragOut = useCallback(async (paths: string[]): Promise<void> => {
     // The newest drag out speaks: an older one whose tree read answers later says nothing.
     const turn = ++dragOuts.current
-    const vaults = [...new Set(paths.flatMap((path) => scopeOf(path).root ?? []))]
-    const trees = new Map(await Promise.all(vaults.map(async (vault) => [vault, await fetchTree(vault).then(({ tree }) => tree, () => null)] as const)))
-    const left = paths.filter((path) => {
-      const vault = scopeOf(path).root
-      const tree = vault === null ? null : trees.get(vault)
-      return tree != null && treeHasPath(tree, path)
-    })
-    if (left.length === 0 || turn !== dragOuts.current) return
+    const generation = renameRootGeneration.current
+    const left = await stillThere(paths)
+    if (left.length === 0 || turn !== dragOuts.current || generation !== renameRootGeneration.current) return
     const inside = (path: string) => left.some((item) => path === item || path.startsWith(`${item}/`))
     const linking = new Set<string>()
     for (const path of left) {
@@ -1680,14 +1717,18 @@ export function App() {
       for (const note of linkingNotes({ ids: wikilinks.ids, root, oldPath: path, kind, records: wikilinks.records, folders: wikilinks.folders, dirs })) if (!inside(note)) linking.add(note)
     }
     setDragOutAsk({ paths: left, links: linking.size })
-  }, [scopeOf])
-  /** "Remove from vault": each item to the Trash through the delete door — the door AFTER the delete sheet, since the box was the question (S27). Not in the undo list: the Trash is its undo. */
+  }, [scopeOf, stillThere])
+  /**
+   * "Remove from vault": each item to the Trash through the delete door — the door AFTER the delete
+   * sheet, since the box was the question (S27). The items are read again at the click, and one gone
+   * since the box showed is skipped (audit 7). Not in the undo list: the Trash is its undo.
+   */
   const removeDraggedOut = useCallback(async (): Promise<void> => {
     const ask = dragOutAsk
     setDragOutAsk(null)
     if (ask === null) return
-    for (const path of ask.paths) await deleteFile(path)
-  }, [dragOutAsk, deleteFile])
+    for (const path of await stillThere(ask.paths)) await deleteFile(path)
+  }, [dragOutAsk, deleteFile, stillThere])
 
   /**
    * "Remove from this window" (YAZ-2602 D7): the vault leaves the window with its tabs and its
@@ -1848,9 +1889,9 @@ export function App() {
         </div>
       )}
       {dragOutAsk !== null && (
-        // The box after a drag out to Finder (YAZ-3254 D9B): it stays until answered, and ✕ keeps everything (S28).
-        <div className="drag-out-ask" role="status">
-          <span className="drag-out-ask__text">{dragOutText(dragOutAsk)}</span>
+        // The box after a drag out to Finder (YAZ-3254 D9B): it stays until answered, and ✕ or Esc keeps everything (S28).
+        <div className="drag-out-ask" role="alertdialog" aria-labelledby="drag-out-ask-text">
+          <span id="drag-out-ask-text" className="drag-out-ask__text">{dragOutText(dragOutAsk)}</span>
           <button type="button" className="drag-out-ask__remove" onClick={() => void removeDraggedOut()}>
             Remove from vault
           </button>

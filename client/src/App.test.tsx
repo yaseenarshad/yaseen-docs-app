@@ -2979,6 +2979,17 @@ describe('App rename door (⚡ YAZ-888)', () => {
         expect(notice(el)).toBe('Moved 2 items, skipped 1: Plain already exists')
       })
 
+      it('a drop of two folders reads the vault\u2019s file list once for the whole gesture (audit 6)', async () => {
+        const { bridge } = await mountTeam()
+        const reads = bridge.tree.mock.calls.length
+        await moveAll([
+          { oldPath: '/v/Team/Archive', newPath: '/v/Archive', kind: 'dir' },
+          { oldPath: '/v/Team/Other', newPath: '/v/Other', kind: 'dir' },
+        ])
+        expect(bridge.file.rename).toHaveBeenCalledTimes(2)
+        expect(bridge.tree.mock.calls.length - reads).toBe(1)
+      })
+
       it('a pending list is dropped when the window’s vaults change', async () => {
         const { bridge, el, emitFileRenamed } = await mountTeam()
         await moveAll([{ oldPath: NOOR, newPath: '/v/Team/Archive/Noor.md', kind: 'file' }, { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' }])
@@ -3127,6 +3138,55 @@ describe('App rename door (⚡ YAZ-888)', () => {
         await settle()
         expect(renames(bridge)).toEqual([[PLAN, DOWNLOADS], [DOWNLOADS, PLAN]])
         expect(toast(el)).toEqual({ text: 'Moved 1 item', action: 'Undo' })
+      })
+
+      it('a move in from Finder of a PDF: Undo and Redo move it too — a move over the vault\u2019s edge reads no file list (S37, S40, audit 3)', async () => {
+        const PDF = '/v/Team/Scan.pdf'
+        const DOWNLOADS = '/Users/yasin/Downloads/Scan.pdf'
+        const files: Disk = { [PDF]: { content: '%PDF', mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PDF, kind: 'file' }], cleared: [] }, 'Moved 1 item from Finder'))
+        await press()
+        expect(renames(bridge)).toEqual([[PDF, DOWNLOADS]])
+        expect(toast(el)).toEqual({ text: 'Moved back 1 item', action: 'Redo' })
+        await press(true)
+        expect(renames(bridge)).toEqual([[PDF, DOWNLOADS], [DOWNLOADS, PDF]])
+        expect(files[PDF]).toBeDefined()
+        expect(toast(el)).toEqual({ text: 'Moved 1 item', action: 'Undo' })
+      })
+
+      it('an undo or a redo that moves nothing for a passing reason keeps its gesture: the next key tries again (audit 21); one whose every item moved again does not', async () => {
+        const MOVED = '/v/Team/Archive/Lost.md'
+        const files: Disk = { [LOST]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: LOST, newPath: MOVED, kind: 'file' }]))
+        await settle()
+        bridge.file.rename.mockRejectedValueOnce({ code: 'IO_ERROR', message: 'the disk is busy', path: MOVED })
+        await press()
+        expect(toast(el).text).toBe("Can't undo: Lost — the disk is busy")
+        expect((await press()).defaultPrevented).toBe(true)
+        expect(files[LOST]).toBeDefined()
+        bridge.file.rename.mockRejectedValueOnce({ code: 'IO_ERROR', message: 'the disk is busy', path: LOST })
+        await press(true)
+        expect((await press(true)).defaultPrevented).toBe(true)
+        expect(files[MOVED]).toBeDefined()
+        delete files[MOVED] // another window moved it on
+        await press()
+        expect(toast(el).text).toBe("Can't undo: Lost moved again")
+        expect((await press()).defaultPrevented).toBe(false) // the gesture is gone: nothing is left to undo
+      })
+
+      it('the lists empty when the window\u2019s vaults change: ⌘Z then moves nothing (S42, audit 2)', async () => {
+        const files: Disk = { [LOST]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, emitFileRenamed } = await mountTeam(files)
+        realDisk(bridge, files)
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' }]))
+        await settle()
+        await act(async () => emitFileRenamed('/v', '/w', 'dir'))
+        expect((await press()).defaultPrevented).toBe(false)
+        expect(bridge.file.rename).toHaveBeenCalledTimes(1)
       })
     })
 
@@ -5266,6 +5326,27 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     await act(async () => button(el, 'Remove from vault')?.click())
     expect(bridge.file.delete.mock.calls.map(([req]) => req)).toEqual([{ path: '/v/A.md' }, { path: '/v/Docs' }])
     expect(el.querySelector('.confirm')).toBeNull()
+    expect(box(el)).toBeNull()
+  })
+
+  it('"Remove from vault" checks the items again at the click: one gone since the box showed is skipped (audit 7)', async () => {
+    const { bridge, el } = await mountVault()
+    await draggedOut('/v/A.md', '/v/B.md')
+    bridge.tree.mockResolvedValue({ root: '/v', tree: TREE.filter((node) => node.path !== '/v/B.md'), generatedAt: 2 })
+    await act(async () => button(el, 'Remove from vault')?.click())
+    expect(bridge.file.delete.mock.calls.map(([req]) => req)).toEqual([{ path: '/v/A.md' }])
+  })
+
+  it('the box is an alert dialog named by its question; Esc closes it and keeps the items; a change of the window\u2019s vaults closes it (audit 7, 20)', async () => {
+    const { bridge, el, emitFileRenamed } = await mountVault()
+    await draggedOut('/v/A.md')
+    expect(box(el)?.getAttribute('role')).toBe('alertdialog')
+    expect(el.querySelector(`#${box(el)?.getAttribute('aria-labelledby')}`)?.textContent).toBe('Copied 1 item to Finder? 1 note links to it.')
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(box(el)).toBeNull()
+    expect(bridge.file.delete).not.toHaveBeenCalled()
+    await draggedOut('/v/A.md')
+    await act(async () => emitFileRenamed('/v', '/w', 'dir'))
     expect(box(el)).toBeNull()
   })
 

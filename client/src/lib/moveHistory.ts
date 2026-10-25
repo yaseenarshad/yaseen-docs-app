@@ -23,23 +23,23 @@ export interface MovedGesture {
   cleared: ClearedValues[]
 }
 
-export interface MoveHistory<T> {
+export interface MoveHistory {
   /** A new gesture: on the undo list, and the redo list empties. */
-  push(entry: T): void
+  push(entry: MovedGesture): void
   /** The newest gesture to undo, taken off the list; undefined when there is none (S35). */
-  undo(): T | undefined
+  undo(): MovedGesture | undefined
   /** The newest gesture to redo, taken off the list; undefined when there is none. */
-  redo(): T | undefined
+  redo(): MovedGesture | undefined
   /** What an undo moved back: it goes on the redo list. */
-  undone(entry: T): void
+  undone(entry: MovedGesture): void
   /** What a redo moved again: it goes back on the undo list; the rest of the redo list stays. */
-  redone(entry: T): void
+  redone(entry: MovedGesture): void
 }
 
-export function createMoveHistory<T = MovedGesture>(limit: number = MOVE_HISTORY_LIMIT): MoveHistory<T> {
-  const undos: T[] = []
-  const redos: T[] = []
-  const keep = (list: T[], entry: T): void => {
+export function createMoveHistory(limit: number = MOVE_HISTORY_LIMIT): MoveHistory {
+  const undos: MovedGesture[] = []
+  const redos: MovedGesture[] = []
+  const keep = (list: MovedGesture[], entry: MovedGesture): void => {
     list.push(entry)
     if (list.length > limit) list.splice(0, list.length - limit)
   }

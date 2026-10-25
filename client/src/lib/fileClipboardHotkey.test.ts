@@ -58,6 +58,24 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     expect(fileClipboardVerb(event(document.body, { key: 'z' }))).toBeNull()
   })
 
+  it('⌘Z and ⌘⇧Z stay with every page, also where its own history is empty and it lets the key pass: a note page, a drawing, a diagram (audit 22)', () => {
+    const pages = ['data-page', 'editor--drawing', 'editor--diagram'].map((kind) => {
+      const page = document.createElement('section')
+      if (kind === 'data-page') page.setAttribute('data-page', 'note')
+      else page.className = `editor ${kind}`
+      const inside = document.createElement('canvas') // the drawing's canvas, a page's margin: focusable, not editable
+      inside.tabIndex = 0
+      page.append(inside)
+      document.body.append(page)
+      return inside
+    })
+    for (const target of pages) {
+      expect(fileClipboardVerb(event(target, { key: 'z' }))).toBeNull()
+      expect(fileClipboardVerb(event(target, { key: 'z', shiftKey: true }))).toBeNull()
+    }
+    expect(fileClipboardVerb(event(document.body, { key: 'z' }))).toBe('undo')
+  })
+
   it('leaves the editor its own copy/paste: a contenteditable target is never ours', () => {
     const editor = document.createElement('div')
     editor.setAttribute('contenteditable', 'true')

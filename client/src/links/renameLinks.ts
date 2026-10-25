@@ -72,7 +72,7 @@ import { flushRenamedPath } from '../lib/renameContinuity'
 import { basename, dirname, relTo, stripExt } from '../lib/paths'
 import { folderResolver, linkResolver } from './folderLinks'
 import { folderRecord, foldersByDir } from './shortcuts'
-import { buildViewOnlyCatalogFromEntries, type ViewOnlyCatalog } from './viewOnlyCatalog'
+import { movedCatalog, type ViewOnlyCatalog } from './viewOnlyCatalog'
 
 // The rewrite of ONE file's text is in `@shared/linkRewrite` (YAZ-2677): the main process changes
 // an ID to a new ID with the same parser. What a rename MOVED is decided here and handed to it.
@@ -269,12 +269,7 @@ export async function updateLinksAfterRename({ ids, root, oldPath, newPath, kind
         })
       : folders
   const postLink = linkResolver(postRecords, root, dirs.map(mapMoved), postFolders)
-  const postViewOnlyCatalog = viewOnlyCatalog === null || viewOnlyCatalog === undefined
-    ? null
-    : buildViewOnlyCatalogFromEntries(root, viewOnlyCatalog.entries.map((entry) => {
-        const path = mapMoved(entry.path)
-        return path === entry.path ? entry : { ...entry, path, name: basename(path) }
-      }))
+  const postViewOnlyCatalog = viewOnlyCatalog === null || viewOnlyCatalog === undefined ? null : movedCatalog(viewOnlyCatalog, oldPath, newPath)
   const id = (kind === 'dir' ? folderRecord(folders, oldPath) : records.find((r) => r.path === oldPath))?.id
   const newTarget: NewTarget = (target) => {
     const hit = resolveTargetPath(target) as string // non-null: `resolves` vetted this target

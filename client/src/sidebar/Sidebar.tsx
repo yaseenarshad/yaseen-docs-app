@@ -451,7 +451,7 @@ const SEARCH_KEYS: readonly (readonly [keys: readonly string[], does: string])[]
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
 /** The search tree's file move (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op and nothing is ever a drop target. */
-const INERT_MOVE: TreeFileMove = { isDragging: () => false, accepts: () => false, start: () => undefined, end: () => undefined, hover: () => undefined, leave: () => undefined, drop: () => undefined, dropFiles: () => undefined }
+const INERT_MOVE: TreeFileMove = { accepts: () => false, start: () => undefined, end: () => undefined, hover: () => undefined, leave: () => undefined, drop: () => undefined, dropFiles: () => undefined }
 
 /** What the search cuts before the tree has loaded, and its shortcut rows — none (S7, YAZ-2620): one object each, so the memoised tree sees no change (YAZ-2194). */
 const NO_NODES: readonly TreeNode[] = []

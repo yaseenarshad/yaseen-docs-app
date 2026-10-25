@@ -1,7 +1,8 @@
+import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { nativeImage, screen, type IpcMainInvokeEvent } from 'electron'
 import { CONTRACT } from '@shared/ipc'
-import { rootOfPath, type ImportResponse, type RenameFileResponse } from '@shared/types'
+import { BETWEEN_VAULTS, rootOfPath, type FileWriteRequest, type FileWriteResponse, type ImportResponse, type RenameFileResponse } from '@shared/types'
 import * as favorites from '../favorites'
 import { fileClip } from '../fileClip'
 import * as focus from '../focus'
@@ -9,7 +10,7 @@ import { readAsset, writeAsset } from '../fs/assets'
 import { copyEntry, importCopy, isCrossDevice, pasteEntries, type PasteOps } from '../fs/copy'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
-import { BridgeFailure, isSkipped, requireAbsPath } from '../fs/fsUtils'
+import { BridgeFailure, fsCall, isSkipped, requireAbsPath } from '../fs/fsUtils'
 import { readHeads } from '../fs/heads'
 import { readImage } from '../fs/image'
 import { openInDefaultApp } from '../fs/openDefault'
@@ -23,7 +24,7 @@ import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import { requireRequest, requireStringArray } from '../fs/validate'
 import type { Store } from '../store'
-import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, onIdFixes, saveIdsAnswer } from '../vaultIndex'
+import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
 import type { WindowManager } from '../windows'
@@ -49,7 +50,14 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   handle(CONTRACT.readPdf, readPdf)
   handle(CONTRACT.readImage, readImage)
   // A note's save goes in the save log (YAZ-3235 D1); a quiet tidy-up write (`FileWriteRequest.quiet`) does not.
-  handleWithEvent(CONTRACT.writeFile, loggedSave(store, windows, writeFile, (req) => (req as { quiet?: unknown } | null)?.quiet !== true))
+  // The index takes a quiet write at once (YAZ-3258): the link rewrite of a move, read by a quick ⌘Z.
+  const quiet = (req: unknown): boolean => (req as { quiet?: unknown } | null)?.quiet === true
+  const save = async (req: FileWriteRequest): Promise<FileWriteResponse> => {
+    const res = await writeFile(req)
+    if (quiet(req)) await indexWrote(res.path)
+    return res
+  }
+  handleWithEvent(CONTRACT.writeFile, loggedSave(store, windows, save, (req) => !quiet(req)))
   const rootsOfSender = (e: IpcMainInvokeEvent): readonly string[] => senderRoots(store, windows, e)
   /**
    * Does what `req` names get IDs (YAZ-2523 🔒 V5)? Only when a vault of the calling window holds
@@ -94,9 +102,11 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // In-app rename/move (Links E1 GRO-2194, E1b GRO-2241). The SAME handler repairs the
   // store — every stored path at or under the renamed entry follows (window roots/files/
   // tabs, recents, folder state) — and then pushes `file:renamed` to EVERY window so open
-  // tabs remap in place (a `dir` event remaps by prefix). The vault index needs no push:
-  // the shared watcher's unlink+add echo already heals it (no double-processing).
+  // tabs remap in place (a `dir` event remaps by prefix). The vault index takes the move FIRST
+  // (YAZ-3258), so a window that reads it after the push, and the next move of a gesture, see the
+  // new paths; the shared watcher's unlink+add echo comes later and changes nothing.
   const afterRename = async (res: RenameFileResponse): Promise<RenameFileResponse> => {
+    await indexMoved(res.oldPath, res.newPath, res.kind)
     store.renamePath(res.oldPath, res.newPath)
     await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     await repairFocus(focus.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
@@ -261,6 +271,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
    *  - an item inside another vault the app has open, in any window, fails "To move between
    *    vaults, use cut and paste" (S22; YAZ-2602 R11). One of the target's own vault is not
    *    refused here: the sidebar sends those through App's door, so links follow (S23);
+   *  - a folder that holds a vault open in any window fails: one vault cannot be inside another;
    *  - the rest run as a CUT through `moveEntry` (S17, S24). An item that fails `EXDEV` (another
    *    disk) runs again as a COPY under its own name (`importCopy`), as Finder copies (S18).
    *    Only `EXDEV`: a copy after any other failure would leave a second copy nobody asked for.
@@ -278,8 +289,10 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     const refused: ImportResponse['failed'] = []
     const free = items.filter((p) => {
       const owner = rootOfPath(open, p)
-      if (owner === null || owner === home) return true
-      refused.push({ from: p, code: 'BAD_REQUEST', message: 'To move between vaults, use cut and paste' })
+      // A folder that holds an open vault never moves in: one vault cannot be inside another (FEATURES).
+      if (owner === null && open.some((root) => root.startsWith(`${p}${path.sep}`))) refused.push({ from: p, code: 'BAD_REQUEST', message: 'it holds a vault that is open' })
+      else if (owner !== null && owner !== home) refused.push({ from: p, code: 'BAD_REQUEST', message: BETWEEN_VAULTS })
+      else return true
       return false
     })
     const otherDisk: string[] = []
@@ -300,10 +313,12 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     return { moved: cut.pasted, copied: copy.pasted, failed: failed.sort((a, b) => items.indexOf(a.from) - items.indexOf(b.from)) }
   })
   /**
-   * Rows dragged out to Finder (YAZ-3254 D4): every path absolute and inside a vault of the CALLING
-   * window, never a vault itself; the pill (D6) a PNG data URL under 64 KB. Then the OS drag, and
-   * Finder takes copies (the Finder test on YAZ-3248). The pill is drawn at the screen's pixel
-   * ratio, so it is read at the scale of the display under the pointer, where the drag begins.
+   * Rows dragged out to Finder (YAZ-3254 D4): every path absolute, there on disk, and inside a vault
+   * of the CALLING window, never a vault itself; the pill (D6) a PNG data URL under 64 KB. Then the
+   * OS drag, and Finder takes copies (the Finder test on YAZ-3248). The pill is drawn at the screen's
+   * pixel ratio, so it is read at the scale of the display under the pointer, where the drag begins.
+   * In the hidden e2e mode (`YASEEN_DOCS_E2E_HIDDEN`, YAZ-3028) the OS drag would take the real mouse
+   * of the person at the Mac: the paths go on `globalThis.e2eDragOuts` for the e2e to read instead.
    */
   handleWithEvent(CONTRACT.file.dragOut, async (e, req: unknown) => {
     const { paths, icon } = requireRequest(req)
@@ -315,6 +330,12 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     }
     const PNG = 'data:image/png;base64,'
     if (typeof icon !== 'string' || !icon.startsWith(PNG) || icon.length >= 64 * 1024) throw new BridgeFailure('BAD_REQUEST', "'icon' must be a PNG data URL under 64 KB")
+    for (const file of files) await fsCall(file, () => stat(file))
+    if (process.env.YASEEN_DOCS_E2E_HIDDEN === '1') {
+      const e2e = globalThis as { e2eDragOuts?: string[][] }
+      ;(e2e.e2eDragOuts ??= []).push(files)
+      return
+    }
     const { scaleFactor } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
     e.sender.startDrag({ file: files[0], files, icon: nativeImage.createFromBuffer(Buffer.from(icon.slice(PNG.length), 'base64'), { scaleFactor }) })
   })

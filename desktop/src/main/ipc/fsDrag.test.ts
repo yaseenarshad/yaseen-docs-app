@@ -10,6 +10,7 @@ import { BrowserWindow, ipcMain, nativeImage } from 'electron'
 import { CONTRACT, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import { fileClip } from '../fileClip'
+import { _evictAll, getIndex } from '../vaultIndex'
 import { registerFsIpc } from './fs'
 
 /** The items whose move fails as a move to another disk does (`EXDEV`): set per test. */
@@ -22,6 +23,8 @@ vi.mock('electron', () => ({
   nativeImage: { createFromBuffer: vi.fn((buffer: Buffer, options: { scaleFactor: number }) => ({ image: buffer.length, ...options })) },
   screen: { getCursorScreenPoint: () => ({ x: 0, y: 0 }), getDisplayNearestPoint: () => ({ scaleFactor: 2 }) },
 }))
+// No watcher echo, ever: what the index holds after a door answers is what the door gave it (YAZ-3258).
+vi.mock('../fs/watchers', () => ({ subscribe: vi.fn(() => () => undefined), activeWatcherRoots: () => [] }))
 vi.mock('../favorites', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
 vi.mock('../focus', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
 // Another disk, injected (D9A): `fs.rename` across volumes fails `EXDEV`; a temp folder is on one disk.
@@ -162,6 +165,21 @@ describe('fs:import (YAZ-3253 D3, D9A)', () => {
     expect(await importInto(['relative.md'], plans)).toMatchObject({ ok: false, error: { code: 'NOT_ABSOLUTE' } })
     expect(await readFile(path.join(finder, 'Taken.md'), 'utf8')).toBe('from finder')
   })
+  it('refuses a Finder folder that holds a vault open in any window, as one vault cannot be inside another; the rest move (audit 8)', async () => {
+    await layout()
+    store.upsertWindow({ ...entry, id: 'w-other', root: path.join(finder, 'Trip', 'Days') })
+    const plans = path.join(vault, 'Plans')
+    const res = await importInto([path.join(finder, 'Trip'), path.join(finder, 'Note.md')], plans)
+    expect(res).toEqual({
+      ok: true,
+      value: {
+        moved: [{ from: path.join(finder, 'Note.md'), to: path.join(plans, 'Note.md'), kind: 'file' }],
+        copied: [],
+        failed: [{ from: path.join(finder, 'Trip'), code: 'BAD_REQUEST', message: 'it holds a vault that is open' }],
+      },
+    })
+    expect(await readFile(path.join(finder, 'Trip', 'Days', 'one.md'), 'utf8')).toBe('day one')
+  })
 })
 
 describe('fs:drag-out (YAZ-3254 D4)', () => {
@@ -177,6 +195,27 @@ describe('fs:drag-out (YAZ-3254 D4)', () => {
     expect(nativeImage.createFromBuffer).toHaveBeenCalledOnce()
   })
 
+  it('in the hidden e2e mode it starts no OS drag, which would take the real mouse: it records the paths for the e2e instead (audit 5)', async () => {
+    await layout()
+    const startDrag = vi.fn()
+    const paths = [path.join(vault, 'Plans', 'Taken.md')]
+    vi.stubEnv('YASEEN_DOCS_E2E_HIDDEN', '1')
+    try {
+      expect(await registered(CONTRACT.file.dragOut)({ sender: { startDrag } }, { paths, icon: PNG })).toEqual({ ok: true, value: undefined })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+    expect(startDrag).not.toHaveBeenCalled()
+    expect((globalThis as { e2eDragOuts?: string[][] }).e2eDragOuts?.at(-1)).toEqual(paths)
+  })
+
+  it('refuses a path that does not exist, and starts no drag (audit 18)', async () => {
+    await layout()
+    const startDrag = vi.fn()
+    expect(await registered(CONTRACT.file.dragOut)({ sender: { startDrag } }, { paths: [path.join(vault, 'Plans', 'Gone.md')], icon: PNG })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } })
+    expect(startDrag).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['a relative path', () => ({ paths: ['Plans/Taken.md'], icon: PNG })],
     ['no path', () => ({ paths: [], icon: PNG })],
@@ -190,5 +229,52 @@ describe('fs:drag-out (YAZ-3254 D4)', () => {
     const startDrag = vi.fn()
     expect(await registered(CONTRACT.file.dragOut)({ sender: { startDrag } }, req())).toMatchObject({ ok: false, error: { code: expect.stringMatching(/^(BAD_REQUEST|NOT_ABSOLUTE)$/) } })
     expect(startDrag).not.toHaveBeenCalled()
+  })
+})
+
+describe('the index takes an in-app move and a tidy-up write at once (YAZ-3258, audit 1)', () => {
+  const rename = (oldPath: string, newPath: string) => registered(CONTRACT.file.rename)({ sender: {} }, { oldPath, newPath })
+  const write = (req: { path: string; content: string; quiet?: boolean }) => registered(CONTRACT.writeFile)({ sender: {} }, req)
+  const record = async (p: string) => (await getIndex(vault)).records.find((r) => r.path === p)
+  afterEach(() => _evictAll())
+
+  it('a note moved by `fs:rename` is at its new path in the next `getIndex`, with its links: the next move of a gesture finds it there (S3)', async () => {
+    await layout()
+    const x = path.join(vault, 'X.md')
+    await writeFile(x, 'See [[Plans/Y]].')
+    await getIndex(vault)
+    expect(await rename(x, path.join(vault, 'Plans', 'X.md'))).toMatchObject({ ok: true })
+    expect(await record(x)).toBeUndefined()
+    expect(await record(path.join(vault, 'Plans', 'X.md'))).toMatchObject({ folder: 'Plans', links: ['Plans/Y'] })
+  })
+
+  it("a folder moved by `fs:rename` takes its notes along, each with the new path and folder; a folder's settings file is read again (it is titled by its folder)", async () => {
+    await layout()
+    await mkdir(path.join(vault, 'Archive'))
+    await writeFile(path.join(vault, 'Plans', '.folder.md'), '---\nstatus: open\n---\n')
+    await getIndex(vault)
+    expect(await rename(path.join(vault, 'Plans'), path.join(vault, 'Archive', 'Done'))).toMatchObject({ ok: true })
+    const { records, folders } = await getIndex(vault)
+    expect(records.map((r) => [r.path, r.folder])).toEqual([[path.join(vault, 'Archive', 'Done', 'Taken.md'), 'Archive/Done']])
+    expect(folders.map((r) => [r.path, r.title])).toEqual([[path.join(vault, 'Archive', 'Done', '.folder.md'), 'Done']])
+  })
+
+  it('a Finder item moved in by `fs:import` is in the next `getIndex`, a folder with each note inside it', async () => {
+    await layout()
+    await getIndex(vault)
+    const plans = path.join(vault, 'Plans')
+    await registered(CONTRACT.file.import)({ sender: {} }, { paths: [path.join(finder, 'Note.md'), path.join(finder, 'Trip')], targetDir: plans })
+    expect((await getIndex(vault)).records.map((r) => r.path)).toEqual([path.join(plans, 'Note.md'), path.join(plans, 'Taken.md'), path.join(plans, 'Trip', 'Days', 'one.md')])
+  })
+
+  it("a quiet write (a link rewrite) is in the next `getIndex`: a quick ⌘Z finds the note that links to the new path (S33). A user's edit waits for the watcher", async () => {
+    await layout()
+    const z = path.join(vault, 'Z.md')
+    await writeFile(z, 'See [[Plans/Y]].')
+    await getIndex(vault)
+    expect(await write({ path: z, content: 'See [[Archive/Y]].', quiet: true })).toMatchObject({ ok: true })
+    expect(await record(z)).toMatchObject({ links: ['Archive/Y'] })
+    expect(await write({ path: z, content: 'See [[Elsewhere/Y]].' })).toMatchObject({ ok: true })
+    expect(await record(z)).toMatchObject({ links: ['Archive/Y'] })
   })
 })

@@ -3,7 +3,7 @@ import { link, open, readdir, readFile, rename, stat, unlink } from 'node:fs/pro
 import path from 'node:path'
 import { folderSettingsPath, type BridgeError, type FileKind, type TreeNode } from '@shared/types'
 import { ASSETS_DIR } from '@shared/drawingAssets'
-import { ATOMIC_TMP_HEX_LEN, fileKind, isAtomicTmp, isMarkdown, isSupportedFile } from '@shared/fileKind'
+import { ATOMIC_TMP_HEX_LEN, fileKind, isAtomicTmp, isMarkdown, isSkipped, isSupportedFile } from '@shared/fileKind'
 
 export { isMarkdown, isSupportedFile } from '@shared/fileKind'
 
@@ -55,10 +55,8 @@ export function requireTextReadableFile(p: string): Extract<FileKind, 'markdown'
   return kind
 }
 
-/** Dot-entries and node_modules are invisible to every call. */
-export function isSkipped(name: string): boolean {
-  return name.startsWith('.') || name === 'node_modules'
-}
+// Dot-entries and node_modules are invisible to every call: the rule lives in shared, so the sidebar skips them too (S20).
+export { isSkipped }
 
 /**
  * Every regular file in a vault, depth first — the ONE walk Settings › Storage uses (YAZ-1801 in

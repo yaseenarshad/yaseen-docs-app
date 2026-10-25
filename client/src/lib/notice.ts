@@ -28,6 +28,21 @@ export interface Notice {
   action?: { label: string; run: () => void; fades?: true }
 }
 
+/** "1 item" / "3 items" — the one spelling the menu's labels and the notices share. */
+export const countItems = (n: number) => (n === 1 ? '1 item' : `${n} items`)
+
+/**
+ * The one sentence of a gesture over many items (audit 9): a move, a paste, a drop from Finder, an
+ * undo. `done` says what landed ("Moved 2 items"), then how many did not and the first of them —
+ * "Moved 2 items, skipped 1: Plan already exists" (S11). With nothing landed (`done` null), the
+ * failure alone: "Can't move 2 items: Plan already exists". Null when nothing ran at all.
+ */
+export function gestureNotice(done: string | null, failed: readonly string[], cannot: string): string | null {
+  if (failed.length === 0) return done
+  if (done === null) return `${cannot}${failed.length === 1 ? '' : ` ${countItems(failed.length)}`}: ${failed[0]}`
+  return `${done}, skipped ${failed.length}: ${failed[0]}`
+}
+
 /** How long a notice stays (D11): null while an action waits on the user; else the ms before it goes. */
 export function noticeMs(notice: Notice): number | null {
   if (notice.action === undefined) return LINK_NOTICE_MS

@@ -17,12 +17,17 @@
  * PATHED link in a referencing note rewrites on disk while the bare link stays
  * BYTE-IDENTICAL (the LOCKED rule), and the open tab under the folder follows by prefix;
  * drag-a-file-row-onto-a-folder moves it (bare link unchanged, pathed link rewritten);
+ * a folder and a 2-row selection drag onto a folder, and ⌘Z puts each back with its links (YAZ-3247);
  * a folder rename onto an existing folder is DECLINED with a passive notice.
+ *
+ * A row drag to move is the OS drag (YAZ-3254 D4). The suite runs in the hidden mode
+ * (`YASEEN_DOCS_E2E_HIDDEN=1`, helpers.ts), where main starts NO OS drag — it would take the real
+ * mouse of the person at the Mac — and records the paths on `globalThis.e2eDragOuts` (YAZ-3258).
  *
  * Same harness as links.spec.ts (temp `--user-data-dir`, COPY of a generated fixture
  * vault, `rename-` step screenshots); serial by design — each step continues the last.
  */
-import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
+import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -52,6 +57,8 @@ const D_BODY = 'd-note-body'
 /** E1b seeds: Docs/N is referenced by R (pathed + bare); Target/M by S (pathed + bare). */
 const N_BODY = 'n-note-body'
 const M_BODY = 'm-note-body'
+/** YAZ-3247 seeds: Box/inner is linked by Q by path; P1 and P2 move as a selection; Dest takes them. */
+const INNER_BODY = 'inner-note-body'
 
 let userData: string
 let vaultSrc: string
@@ -66,6 +73,28 @@ async function startRename(w: Page, label: string): Promise<void> {
   await w.locator('.ctx-menu [role="menuitem"]', { hasText: 'Rename' }).click()
   await expect(w.locator('.create-inline__input')).toHaveValue(label)
 }
+
+/**
+ * A row drag as the app takes it (YAZ-3254 D4): the press and the first moves fire the row's
+ * `dragstart`, which stops the page's own drag and asks main for the OS drag (recorded, not started,
+ * in the hidden mode). The drop then lands on `target` as a drop in the window does, and the button
+ * comes up there, so no row takes a click.
+ */
+async function dragRow(w: Page, row: Locator, target: Locator): Promise<void> {
+  const from = await row.boundingBox()
+  const to = await target.boundingBox()
+  if (from === null || to === null) throw new Error('a row of the drag is not on screen')
+  await w.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await w.mouse.down()
+  await w.mouse.move(from.x + from.width / 2 + 12, from.y + from.height / 2 + 12, { steps: 4 })
+  await target.dispatchEvent('dragover')
+  await target.dispatchEvent('drop')
+  await w.mouse.move(to.x + to.width / 2, to.y + to.height / 2)
+  await w.mouse.up()
+}
+
+/** The paths of each row drag main was asked to start, in the hidden mode (YAZ-3258). */
+const dragOuts = (): Promise<string[][]> => app.evaluate(() => (globalThis as { e2eDragOuts?: string[][] }).e2eDragOuts ?? [])
 
 /** The folder-row variant (E1b): prefilled with the folder's title. */
 async function startRenameDir(w: Page, label: string): Promise<void> {
@@ -93,6 +122,8 @@ test.beforeAll(async () => {
   vault = await copyVault(vaultSrc)
   await mkdir(path.join(vault, 'Docs'), { recursive: true })
   await mkdir(path.join(vault, 'Target'), { recursive: true })
+  await mkdir(path.join(vault, 'Box'), { recursive: true })
+  await mkdir(path.join(vault, 'Dest'), { recursive: true })
   await Promise.all([
     writeFile(path.join(vault, 'A.md'), `# A\n\n${A_BODY}\n\nSee [[B]] and [[B|Bee]] here.\n\n![[B]]\n`),
     writeFile(path.join(vault, 'B.md'), `# B\n\n${B_BODY}\n`),
@@ -102,6 +133,10 @@ test.beforeAll(async () => {
     writeFile(path.join(vault, 'R.md'), '# R\n\nSee [[Docs/N]] and [[N]] here.\n'),
     writeFile(path.join(vault, 'Target', 'M.md'), `# M\n\n${M_BODY}\n`),
     writeFile(path.join(vault, 'S.md'), '# S\n\nSee [[Target/M]] and [[M]] here.\n'),
+    writeFile(path.join(vault, 'Box', 'inner.md'), `# inner\n\n${INNER_BODY}\n`),
+    writeFile(path.join(vault, 'Q.md'), '# Q\n\nSee [[Box/inner]] here.\n'),
+    writeFile(path.join(vault, 'P1.md'), '# P1\n\np-one\n'),
+    writeFile(path.join(vault, 'P2.md'), '# P2\n\np-two\n'),
   ])
 })
 
@@ -253,7 +288,9 @@ test('step 5 — folder rename via its context menu: disk moves, PATHED link rew
 test('step 6 — drag a file row onto a folder row: the file moves there, bare link unchanged, pathed link rewritten', async () => {
   await dirRow(win, 'Target').click() // expand to reveal M
   await expect(fileRow(win, 'M')).toBeVisible()
-  await fileRow(win, 'M').dragTo(dirRow(win, 'Notes'))
+  await dragRow(win, fileRow(win, 'M'), dirRow(win, 'Notes'))
+  // Main was asked for the OS drag of the one row, and in the hidden mode started none.
+  expect((await dragOuts()).at(-1)).toEqual([path.join(vault, 'Target', 'M.md')])
 
   // A MOVE keeps the name, so it stays SILENT (⚡ YAZ-888): no sheet, ever, on a drag.
   await expect(confirmSheet(win)).toHaveCount(0)
@@ -264,6 +301,35 @@ test('step 6 — drag a file row onto a folder row: the file moves there, bare l
   // A move says itself, then the links that followed it (YAZ-3250 D1).
   await expect(win.locator('.link-notice__text')).toHaveText('Moved 1 item. Updated links in 1 note') // the toast has Undo now (YAZ-3255 D11)
   await shoot(win, 'rename-07-drag-move')
+})
+
+test('step 6b — drag a folder, then a 2-row selection, onto a folder; ⌘Z puts each back, and the links follow back (YAZ-3247 S2, S3, S33)', async () => {
+  await dragRow(win, dirRow(win, 'Box'), dirRow(win, 'Dest'))
+  await expect.poll(() => readWhenReady(path.join(vault, 'Dest', 'Box', 'inner.md'))).toContain(INNER_BODY)
+  await expect.poll(() => readWhenReady(path.join(vault, 'Q.md'))).toBe('# Q\n\nSee [[Dest/Box/inner]] here.\n')
+  await expect(win.locator('.link-notice__text')).toHaveText('Moved 1 item. Updated links in 1 note')
+
+  await fileRow(win, 'P1').click({ modifiers: ['Shift'] })
+  await fileRow(win, 'P2').click({ modifiers: ['Shift'] })
+  await dragRow(win, fileRow(win, 'P1'), dirRow(win, 'Dest'))
+  expect((await dragOuts()).at(-1)).toEqual([path.join(vault, 'P1.md'), path.join(vault, 'P2.md')])
+  await expect.poll(() => readWhenReady(path.join(vault, 'Dest', 'P2.md'))).toContain('p-two')
+  await expect(win.locator('.link-notice__text')).toHaveText('Moved 2 items')
+  await expect(readFile(path.join(vault, 'Dest', 'P1.md'), 'utf8')).resolves.toContain('p-one')
+  // A drop inside the window: no box asks (S30).
+  await expect(win.locator('.drag-out-ask')).toHaveCount(0)
+
+  // ⌘Z at once, before the watcher has caught up: the newest gesture goes back first.
+  await win.keyboard.press('Meta+z')
+  await expect.poll(() => readWhenReady(path.join(vault, 'P1.md'))).toContain('p-one')
+  await expect(win.locator('.link-notice__text')).toHaveText('Moved back 2 items')
+  await expect(readFile(path.join(vault, 'P2.md'), 'utf8')).resolves.toContain('p-two')
+  await win.keyboard.press('Meta+z')
+  await expect.poll(() => readWhenReady(path.join(vault, 'Box', 'inner.md'))).toContain(INNER_BODY)
+  // Q's link follows the folder back: the index already held the rewritten link (YAZ-3258).
+  await expect.poll(() => readWhenReady(path.join(vault, 'Q.md'))).toBe('# Q\n\nSee [[Box/inner]] here.\n')
+  await expect(win.locator('.link-notice__text')).toHaveText('Moved back 1 item')
+  await shoot(win, 'rename-07b-drag-undo')
 })
 
 test('step 7 — renaming a folder onto an EXISTING folder is DECLINED with a passive notice; nothing moves', async () => {

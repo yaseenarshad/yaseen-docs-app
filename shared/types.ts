@@ -757,6 +757,9 @@ export interface ImportRequest {
  * item stays (S19). An item inside another vault the app has open fails `BAD_REQUEST` "To move
  * between vaults, use cut and paste" (S22). A hidden item (its name starts with ".") is in no list (S20).
  */
+/** The sentence a move between two vaults hears (YAZ-2602 R11): from the sidebar, App's door and main (`fs:import`, S22) alike. */
+export const BETWEEN_VAULTS = 'To move between vaults, use cut and paste'
+
 export interface ImportResponse {
   moved: PasteResponse['pasted']
   copied: PasteResponse['pasted']

@@ -20,7 +20,7 @@ const list = vi.mocked(api.share.list)
 let changed: () => void = () => {}
 
 const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 0, kind: 'drawing' })
-const MOVE: TreeFileMove = { isDragging: () => false, accepts: () => false, start: vi.fn(), end: vi.fn(), hover: vi.fn(), leave: vi.fn(), drop: vi.fn(), dropFiles: vi.fn() }
+const MOVE: TreeFileMove = { accepts: () => false, start: vi.fn(), end: vi.fn(), hover: vi.fn(), leave: vi.fn(), drop: vi.fn(), dropFiles: vi.fn() }
 const SELECTION: TreeSelection = { paths: new Set(), toggle: vi.fn(), set: vi.fn() }
 const NONE = new Map<string, never>()
 const VAULTS = ['/v']

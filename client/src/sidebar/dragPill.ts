@@ -25,11 +25,12 @@ function fit(ctx: CanvasRenderingContext2D, text: string, max: number): string {
 }
 
 /**
- * The pill for `label` as a PNG data URL. Only where a canvas engine draws: `OffscreenCanvas` is the
- * probe — Chromium has it, jsdom has neither it nor a 2D context — and anywhere else the blank pill.
+ * The pill for `label` as a PNG data URL, drawn on a page canvas. Only where a canvas engine draws:
+ * the probe is the 2D context that canvas draws with — Chromium has `CanvasRenderingContext2D`, jsdom
+ * has none (it would only log "not implemented") — and anywhere else the blank pill.
  */
 export function dragPill(label: string): string {
-  if (typeof OffscreenCanvas !== 'function') return BLANK_PILL
+  if (typeof CanvasRenderingContext2D !== 'function') return BLANK_PILL
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
   if (ctx === null) return BLANK_PILL

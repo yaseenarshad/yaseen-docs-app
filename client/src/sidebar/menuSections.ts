@@ -1,4 +1,5 @@
 import type { FileClipState } from '@shared/types'
+import { countItems } from '../lib/notice'
 import type { MenuTargets } from './Sidebar'
 
 /**
@@ -139,8 +140,6 @@ type Leaf = (t: MenuSectionTargets, h: MenuHandlers) => MenuAction | null
 
 /** Why a clipboard write failed, as the notices spell it — shared with the vault menu (YAZ-1798). */
 export const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
-/** "1 item" / "3 items" — the one spelling the menu's labels and the Sidebar's notices share. */
-export const countItems = (n: number) => (n === 1 ? '1 item' : `${n} items`)
 
 // ---- (1) Open / View: "Show in sidebar", a folder's Open, the plural open and the focus toggle — nothing here writes to disk ----
 

@@ -1001,7 +1001,7 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     expect(el.querySelector('.tree__row--drop')).toBeNull() // drag state cleared
   })
 
-  it('dropping on the ROOT HEADER targets the vault root — a no-op for a file already there; dragend abandons cleanly', async () => {
+  it('dropping on the ROOT HEADER targets the vault root — a no-op for a file already there; an abandoned drag ends cleanly at the first move with no button down (the OS drag sends no dragend)', async () => {
     const { props, el } = await mount()
     const header = el.querySelector<HTMLElement>('.sidebar__header')
     fire(fileRow(el), 'dragstart')
@@ -1010,9 +1010,10 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     fire(header, 'drop')
     expect(props.onRenameFile).not.toHaveBeenCalled() // `/v/a.md` already lives at the root
     fire(fileRow(el), 'dragstart')
-    fire(fileRow(el), 'dragend')
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { buttons: 0 })))
     fire(dirRow(el), 'drop')
     expect(props.onRenameFile).not.toHaveBeenCalled() // an abandoned drag drops nothing
+    expect(props.onDraggedOut).not.toHaveBeenCalled() // it never left the window
   })
 })
 
@@ -1146,6 +1147,39 @@ describe('the tree drag: folders, the selection, file-row drops, spring open (YA
     }
   })
 
+  it('the OS drag of a selection comes back as files, in any order: the same items are this window\u2019s own drag, and they move in on-screen order through onMoveEntries (S3 on the real drop path, audit 10)', async () => {
+    const { bridge, props, el } = await mountDrag()
+    for (const path of ['/v/b.md', '/v/Plans', '/v/a.md']) shiftClick(row(el, path))
+    fire(row(el, '/v/a.md'), 'dragstart')
+    expect(bridge.file.dragOut).toHaveBeenLastCalledWith({ paths: ['/v/Plans', '/v/a.md', '/v/b.md'], icon: expect.any(String) })
+    const back = ['/v/b.md', '/v/Plans', '/v/a.md']
+    bridge.file.pathFor.mockImplementation((file: File) => back.find((path) => path.endsWith(`/${file.name}`)) ?? '')
+    const drop = new MouseEvent('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: { types: ['Files'], files: back.map((path) => new File(['x'], path.slice(path.lastIndexOf('/') + 1))), dropEffect: 'none' } })
+    act(() => void row(el, '/v/Docs')?.dispatchEvent(drop))
+    expect(props.onMoveEntries).toHaveBeenCalledExactlyOnceWith([
+      { oldPath: '/v/Plans', newPath: '/v/Docs/Plans', kind: 'dir' },
+      { oldPath: '/v/a.md', newPath: '/v/Docs/a.md', kind: 'file' },
+      { oldPath: '/v/b.md', newPath: '/v/Docs/b.md', kind: 'file' },
+    ])
+    expect(bridge.file.import).not.toHaveBeenCalled()
+  })
+
+  it('the spring only opens: a closed folder that opened another way while the drag held over it stays open (audit 23)', async () => {
+    const { el } = await mountDrag()
+    vi.useFakeTimers()
+    try {
+      fire(row(el, '/v/a.md'), 'dragstart')
+      fire(row(el, '/v/Closed'), 'dragover')
+      act(() => row(el, '/v/Closed')?.click()) // opened by a click, inside the 700 ms
+      expect(row(el, '/v/Closed/c.md')).not.toBeNull()
+      act(() => void vi.advanceTimersByTime(700))
+      expect(row(el, '/v/Closed/c.md')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('a hover over many rows renders no row of any tree level (S14, D2)', async () => {
     const { el } = await mountDrag()
     fire(row(el, '/v/a.md'), 'dragstart')
@@ -1242,6 +1276,29 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     expect(bridge.file.import).not.toHaveBeenCalled()
   })
 
+  it('Finder items dropped on the root header of a one-vault window go to its root (audit 10)', async () => {
+    const { bridge, el } = await mount()
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [] })
+    const header = el.querySelector('.sidebar__header')
+    expect(fire(header, 'dragover', [])).toBe(true)
+    fire(header, 'drop', finder('Plan.md'))
+    await act(async () => {})
+    expect(bridge.file.import).toHaveBeenCalledExactlyOnceWith({ paths: ['/Users/yasin/Downloads/Plan.md'], targetDir: '/v' })
+  })
+
+  it('a hidden item is skipped with no notice, from Finder and from this vault alike (S20, audit 19)', async () => {
+    const { bridge, props, el } = await mount()
+    fire(dirRow(el), 'drop', own(bridge, '/v/a.md', '/v/.hidden.md'))
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/sub/a.md', 'file')
+    fire(dirRow(el), 'drop', own(bridge, '/v/.hidden.md'))
+    fire(dirRow(el), 'drop', finder('.DS_Store'))
+    await act(async () => {})
+    expect(props.onRenameFile).toHaveBeenCalledOnce()
+    expect(props.onMoveEntries).not.toHaveBeenCalled()
+    expect(bridge.file.import).not.toHaveBeenCalled()
+    expect(props.onNotice).not.toHaveBeenCalled()
+  })
+
   it('a row drag is the OS drag: dragstart is taken and dragOut gets the drag set and a pill; dropped back on a folder it moves in the app, and no box asks (D4, S30)', async () => {
     const { bridge, props, el } = await mount()
     expect(fire(fileRow(el), 'dragstart')).toBe(true)
@@ -1255,18 +1312,31 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     expect(props.onDraggedOut).not.toHaveBeenCalled()
   })
 
-  it('a drag that ends outside the window asks once, at the first move with no button down (S26); a drop anywhere inside asks nothing (S30)', async () => {
+  it('a drag that LEFT the window asks once, at the first move with no button down (S26, S29); one that ends over the window asks nothing, though no target took it (S30); a quick flick that never starts the OS drag asks nothing (audit 4, 13)', async () => {
     const { props, el } = await mount()
+    /** The OS drag over the window: Chromium fires `dragenter` and `dragover`; it left the window when a `dragleave` has no `relatedTarget`. */
+    const over = () => fire(document.body, 'dragover', [])
+    const leave = (relatedTarget: EventTarget | null = null) => act(() => void document.body.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget })))
     fire(fileRow(el), 'dragstart')
+    over()
+    leave()
     move(1) // the button is still down: the OS drag has not taken over yet
     expect(props.onDraggedOut).not.toHaveBeenCalled()
     move(0)
     expect(props.onDraggedOut).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
     move(0)
     expect(props.onDraggedOut).toHaveBeenCalledOnce()
-    // Dropped on a place that is no target (the editor, the tab bar): nothing moves, and no box.
+
+    // Out and back in, then it ends over the editor or the tab bar: no target took it, no `drop` came, and nothing asks.
     fire(fileRow(el), 'dragstart')
-    fire(document.body, 'drop', [])
+    leave()
+    fire(document.body, 'dragenter', [])
+    over()
+    leave(dirRow(el)) // a move from one element to another inside the window
+    move(0)
+    expect(props.onDraggedOut).toHaveBeenCalledOnce()
+    // The button came up before the OS drag began: no drag event at all, and nothing asks.
+    fire(fileRow(el), 'dragstart')
     move(0)
     expect(props.onDraggedOut).toHaveBeenCalledOnce()
     expect(props.onRenameFile).not.toHaveBeenCalled()
@@ -8222,6 +8292,24 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(header?.classList.contains('sidebar__header--drop')).toBe(false)
     fire(header, 'drop')
     expect(props.onRenameFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('a vault row in the selection never moves on disk (S8): the drag of a selected file leaves it out, and a drag of the vault row is its reorder, never the OS drag; Finder items dropped on a vault row go to that vault\u2019s root (audit 10)', async () => {
+    const { el, a, b, bridge } = await two()
+    shiftClick(rowByPath(el, b))
+    shiftClick(rowByPath(el, `${a}/a.md`))
+    expect(fire(rowByPath(el, `${a}/a.md`), 'dragstart').defaultPrevented).toBe(true)
+    expect(bridge.file.dragOut).toHaveBeenCalledExactlyOnceWith({ paths: [`${a}/a.md`], icon: expect.any(String) })
+    expect(fire(rowByPath(el, b), 'dragstart').defaultPrevented).toBe(false)
+    expect(bridge.file.dragOut).toHaveBeenCalledOnce()
+    fire(rowByPath(el, b), 'dragend')
+
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [] })
+    const drop = new MouseEvent('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: { types: ['Files'], files: [new File(['x'], 'Plan.md')], dropEffect: 'none' } })
+    act(() => void rowByPath(el, b)?.dispatchEvent(drop))
+    await act(async () => {})
+    expect(bridge.file.import).toHaveBeenCalledExactlyOnceWith({ paths: ['/Users/yasin/Downloads/Plan.md'], targetDir: b })
   })
 
   it('a Copy made in one vault pastes into a folder of the other, judged by the vault it lands in — as a paste from another window is (S46)', async () => {
