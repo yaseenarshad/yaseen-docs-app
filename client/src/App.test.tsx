@@ -57,7 +57,7 @@ interface SidebarStubProps {
   /** A drop of two or more rows (YAZ-3250 D1): the door for a list of moves. */
   onMoveEntries: (moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]) => Promise<void>
   /** A move the Sidebar made itself (YAZ-3255 D10): a Paste of a Cut, a Finder move-in. App records it and says it with Undo. */
-  onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]; cleared: { path: string; values: Record<string, unknown> }[] }, text: string, failed: readonly unknown[]) => void
+  onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]; cleared: { path: string; values: Record<string, unknown> }[] }, text: string, skipped: boolean) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteEntries: (paths: string[]) => Promise<void>
@@ -752,11 +752,18 @@ describe('App Settings › Notifications (YAZ-3303)', () => {
 
   it('D2: with "Move, rename or delete" Off, a move says nothing, and a move that skipped an item still shows with Undo (S17, S18)', async () => {
     const { el } = await open({ noticeUndo: false })
-    act(() => captured.sidebar?.onMoved(gesture, 'Moved 1 file (a.md)', []))
+    act(() => captured.sidebar?.onMoved(gesture, 'Moved 1 file (a.md)', false))
     expect(toast(el)).toBeNull()
-    act(() => captured.sidebar?.onMoved(gesture, 'Moved 1 file (a.md), skipped 1: b.md — already exists', ['b.md — already exists']))
+    act(() => captured.sidebar?.onMoved(gesture, 'Moved 1 file (a.md), skipped 1: b.md — already exists', true))
     expect(el.querySelector('.link-notice__text')?.textContent).toBe('Moved 1 file (a.md), skipped 1: b.md — already exists')
     expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo')
+  })
+
+  it('D2: with "Move, rename or delete" Off, a rename that fails still says why (S19)', async () => {
+    const { bridge, el } = await open({ noticeUndo: false, confirmRename: false })
+    bridge.file.rename.mockRejectedValueOnce({ code: 'ALREADY_EXISTS', message: 'path already exists', path: '/v/b.md' })
+    await act(async () => await captured.sidebar?.onRenameFile('/v/a.md', '/v/b.md', 'file'))
+    expect(toast(el)?.textContent).toMatch(/^Can't rename: .*already exists$/)
   })
 
   it('D5: Show for 15 s keeps a plain toast 15 s (S5)', async () => {
@@ -2897,6 +2904,20 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "B2". Updated links in 1 note')
   })
 
+  it('YAZ-3303 D2 (YAZ-3335): a rename whose link update skipped a note says so, also with "Move, rename or delete" Off', async () => {
+    for (const noticeUndo of [true, false]) {
+      const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+      const state = askOff()
+      state.settings = { ...state.settings, noticeUndo }
+      const { bridge, el } = await mount(state, identity(), files, feed)
+      bridge.writeFile.mockImplementation(async ({ path }: { path: string; content: string }) => Promise.reject({ code: 'IO', message: `busy ${path}` }))
+      await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
+      expect([noticeUndo, el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Renamed to "B2". Updated links in 0 notes; 1 skipped (unsaved changes)'])
+      act(() => root?.unmount())
+    }
+  })
+
   it('a MOVE stays silent: no sheet, the rename runs straight through', async () => {
     const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, feed)
     await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/Docs/B.md', 'file'))
@@ -3236,7 +3257,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         const files: Disk = { [ARCHIVED]: { content: `---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`, mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: NOOR, newPath: ARCHIVED, kind: 'file' }], cleared: [{ path: NOOR, values: { [HIRING]: { Status: 'Interview' } } }] }, 'Pasted 1 file (Noor.md)', []))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: NOOR, newPath: ARCHIVED, kind: 'file' }], cleared: [{ path: NOOR, values: { [HIRING]: { Status: 'Interview' } } }] }, 'Pasted 1 file (Noor.md)', false))
         expect(toast(el)).toEqual({ text: 'Pasted 1 file (Noor.md)', action: 'Undo' })
         await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
         await settle()
@@ -3251,7 +3272,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         const files: Disk = { [PLAN]: { content: 'Body\n', mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PLAN, kind: 'file' }], cleared: [] }, 'Moved 1 file (Plan.md) from Finder', []))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PLAN, kind: 'file' }], cleared: [] }, 'Moved 1 file (Plan.md) from Finder', false))
         expect(toast(el)).toEqual({ text: 'Moved 1 file (Plan.md) from Finder', action: 'Undo' })
         await press()
         expect(renames(bridge)).toEqual([[PLAN, DOWNLOADS]])
@@ -3270,7 +3291,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         const files: Disk = { [PDF]: { content: '%PDF', mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PDF, kind: 'file' }], cleared: [] }, 'Moved 1 file (Scan.pdf) from Finder', []))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PDF, kind: 'file' }], cleared: [] }, 'Moved 1 file (Scan.pdf) from Finder', false))
         await press()
         expect(renames(bridge)).toEqual([[PDF, DOWNLOADS]])
         expect(toast(el)).toEqual({ text: 'Moved back 1 file (Scan.pdf)', action: 'Redo' })
@@ -3320,7 +3341,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         bridge.file.rename.mockRejectedValue({ code: 'IO_ERROR', message: 'the disk is busy', path: LOST })
         await press()
         expect(bridge.app.sound).toHaveBeenCalledTimes(3)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Team/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 item from Finder', []))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Team/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 item from Finder', false))
         expect(bridge.app.sound.mock.calls).toEqual([['land'], ['land'], ['land'], ['land']])
       })
 

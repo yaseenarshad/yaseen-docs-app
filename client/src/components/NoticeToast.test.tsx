@@ -77,6 +77,18 @@ describe('NoticeToast (YAZ-3303)', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
+  it('a new toast that comes while the mouse holds the toast is held too (S12)', () => {
+    show({ text: 'Copied path', icon: 'info' }, 4000)
+    enter()
+    show({ text: 'Copied 2 paths', icon: 'info' }, 4000)
+    tick(60_000)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(toast().textContent).toBe('Copied 2 paths')
+    leave()
+    tick(4000)
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
   it('a new notice starts the clock again', () => {
     show({ text: 'Copied path', icon: 'info' }, 4000)
     tick(3000)

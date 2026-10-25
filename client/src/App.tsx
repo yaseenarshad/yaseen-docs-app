@@ -1377,10 +1377,11 @@ export function App() {
   const moveReplay = useRef<{ undo: () => boolean; redo: () => boolean }>({ undo: () => false, redo: () => false })
   /**
    * A toast of a step that ⌘Z or ⌘⇧Z can take back (YAZ-3268 D18): its Undo or Redo, and it fades (at least 6 s).
-   * Its type is `undo` unless an item failed (YAZ-3303 D2): a skip shows even with those toasts off.
+   * Its type is `undo` unless it `skipped` something — an item, or a note whose links could not be updated
+   * (YAZ-3303 D2, YAZ-3335): a skip shows even with those toasts off.
    */
-  const stepToast = useCallback((text: string, icon: NoticeKind, verb: 'undo' | 'redo', failed: readonly unknown[] = []): void => {
-    showNotice({ text, icon, type: unlessFailed('undo', failed), action: { label: verb === 'undo' ? 'Undo' : 'Redo', run: () => void moveReplay.current[verb](), fades: true } })
+  const stepToast = useCallback((text: string, icon: NoticeKind, verb: 'undo' | 'redo', skipped = false): void => {
+    showNotice({ text, icon, type: skipped ? undefined : 'undo', action: { label: verb === 'undo' ? 'Undo' : 'Redo', run: () => void moveReplay.current[verb](), fades: true } })
   }, [showNotice])
 
   /**
@@ -1403,7 +1404,7 @@ export function App() {
         return
       }
       moveHistory.current.push({ step: 'rename', path: out.move.newPath, from, to, type: out.move.kind })
-      stepToast(renamedNotice(`Renamed to "${to.title ?? nameOf(out.move.newPath)}"`, out.links), 'info', 'undo')
+      stepToast(renamedNotice(`Renamed to "${to.title ?? nameOf(out.move.newPath)}"`, out.links), 'info', 'undo', out.links.skipped > 0)
     },
     [applyRename, nameOf, notify, stepToast],
   )
@@ -1433,10 +1434,10 @@ export function App() {
    * A move gesture done (YAZ-3255 D10, D11): onto the undo list, and its toast with Undo — `runMoves`'s, a Paste of a Cut's, a move in from Finder's.
    * Every such gesture moved one item or more, so it plays the ONE land sound here (YAZ-3267 D15, S54).
    */
-  const recordMoves = useCallback((gesture: MovedGesture, text: string, failed: readonly unknown[]): void => {
+  const recordMoves = useCallback((gesture: MovedGesture, text: string, skipped: boolean): void => {
     moveHistory.current.push(gesture)
     playGestureSound('land')
-    stepToast(text, 'paste', 'undo', failed)
+    stepToast(text, 'paste', 'undo', skipped)
   }, [stepToast])
   const vaultList = roots.join('\n')
   useLayoutEffect(() => {
@@ -1526,7 +1527,7 @@ export function App() {
       }
       if (record) {
         const text = movedNotice(names, failed, links)
-        if (done.moves.length > 0) recordMoves(done, text!, failed)
+        if (done.moves.length > 0) recordMoves(done, text!, failed.length > 0 || links.skipped > 0)
         else if (text !== null) notify(text, 'error')
       }
       return { ...done, failed, again, links, names }
@@ -1560,7 +1561,7 @@ export function App() {
     if (verb === 'undo') moveHistory.current.undone(now)
     else moveHistory.current.redone(now)
     const shown = side.title ?? nameOf(out.move.newPath)
-    stepToast(renamedNotice(verb === 'undo' ? `Renamed back to "${shown}"` : `Renamed to "${shown}"`, out.links), 'info', verb === 'undo' ? 'redo' : 'undo')
+    stepToast(renamedNotice(verb === 'undo' ? `Renamed back to "${shown}"` : `Renamed to "${shown}"`, out.links), 'info', verb === 'undo' ? 'redo' : 'undo', out.links.skipped > 0)
   }, [nameOf, catalogForRename, applyRename, notify, stepToast])
 
   /**
@@ -1587,7 +1588,7 @@ export function App() {
     const text = stepNotice('undo', back.length === 0 ? null : `Put back ${namedItems(back.map((item) => ({ name: item.name, kind: item.type })))}`, failed)
     if (back.length === 0) return notify(text, 'error')
     playGestureSound('land')
-    stepToast(text, 'paste', 'redo', failed)
+    stepToast(text, 'paste', 'redo', failed.length > 0)
   }, [nameOf, notify, stepToast])
 
   /**
@@ -1619,7 +1620,7 @@ export function App() {
     const text = stepNotice('redo', went === 0 ? null : `Deleted ${namedItems(names)}`, failed)
     if (went === 0) return notify(text, 'error')
     playGestureSound('trash')
-    if (items.length > 0) stepToast(text, 'info', 'undo', failed)
+    if (items.length > 0) stepToast(text, 'info', 'undo', failed.length > 0)
     else notify(text, 'info', unlessFailed('undo', failed))
   }, [nameOf, notify, stepToast])
 
@@ -1655,7 +1656,7 @@ export function App() {
         else {
           // One land sound for the undo, however many items moved back (YAZ-3267 D15, S54).
           playGestureSound('land')
-          stepToast(text, 'paste', 'redo', back.failed)
+          stepToast(text, 'paste', 'redo', back.failed.length > 0 || back.links.skipped > 0)
         }
       } finally {
         replaying.current = false
@@ -1688,7 +1689,7 @@ export function App() {
         else {
           // One land sound for the redo (YAZ-3267 D15, S54).
           playGestureSound('land')
-          stepToast(text, 'paste', 'undo', run.failed)
+          stepToast(text, 'paste', 'undo', run.failed.length > 0 || run.links.skipped > 0)
         }
       } finally {
         replaying.current = false
@@ -1875,7 +1876,7 @@ export function App() {
     // No file ID from the Trash: no Undo, but still a delete's toast (YAZ-3303 D6).
     if (items.length === 0) return notify(text, 'info', unlessFailed('undo', failed))
     moveHistory.current.push({ step: 'delete', items })
-    stepToast(text, 'info', 'undo', failed)
+    stepToast(text, 'info', 'undo', failed.length > 0)
   }, [nameOf, trashOne, notify, stepToast])
 
   /** The items still in their vault's tree, read fresh (S31): one another window moved or deleted is gone. */

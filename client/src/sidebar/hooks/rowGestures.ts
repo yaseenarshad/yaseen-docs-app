@@ -405,7 +405,7 @@ export function useFileClipboard(
   clipboardRef: { current: SidebarClipboard | null },
   onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void,
   /** A Paste of a Cut, a move in from Finder (YAZ-3255 D10): App records it and says the toast with Undo. */
-  onMoved: (gesture: MovedGesture, text: string, failed: readonly unknown[]) => void,
+  onMoved: (gesture: MovedGesture, text: string, skipped: boolean) => void,
   /** ⌘⌫ (YAZ-3272 D20): the Sidebar's delete door — the question, then App's list delete door. */
   askDelete: (paths: string[]) => void,
 ) {
@@ -528,7 +528,7 @@ export function useFileClipboard(
           // A paste that skipped an item has no type: it shows with Copy toasts off (YAZ-3303 D2).
           onNotice(text, 'paste', unlessFailed('clipboard', res.failed))
         }
-        else onMoved(gesture, text, res.failed)
+        else onMoved(gesture, text, res.failed.length > 0)
       } catch (err: unknown) {
         // The clipboard changed after the read (YAZ-3266): nothing was pasted. Say so, and read it again for the menu's label.
         if (err instanceof BridgeRequestError && err.code === 'CONFLICT') {
@@ -667,7 +667,7 @@ export function useFileClipboard(
           playGestureSound('land')
           onNotice(text, 'paste', unlessFailed('clipboard', failed))
         }
-        else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }, text, failed)
+        else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }, text, failed.length > 0)
       } catch (err: unknown) {
         onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }

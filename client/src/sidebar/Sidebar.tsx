@@ -194,7 +194,7 @@ interface SidebarProps {
    * moved in (S40). App puts it on the window's undo list and says `text` with Undo (D11). Copies
    * are never handed here.
    */
-  onMoved: (gesture: MovedGesture, text: string, failed: readonly unknown[]) => void
+  onMoved: (gesture: MovedGesture, text: string, skipped: boolean) => void
   /**
    * Rows dragged out to Finder, and the drag ended outside the window with no drop inside it
    * (YAZ-3254 D9B, S26): App's box asks whether the vault keeps them. A cancelled drag looks the same (S29).
