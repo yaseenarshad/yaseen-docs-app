@@ -17,6 +17,7 @@ import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
 import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
 import { createMoveHistory, invertMoves, type MovedGesture } from './lib/moveHistory'
+import { playGestureSound } from './lib/gestureSound'
 import { transformFile } from './views/writeProperty'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
@@ -1380,9 +1381,13 @@ export function App() {
   const replaying = useRef(false)
   // ⌘Z, ⌘⇧Z and the toast's buttons reach the newest undo and redo through this box.
   const moveReplay = useRef<{ undo: () => boolean; redo: () => boolean }>({ undo: () => false, redo: () => false })
-  /** A move gesture done (YAZ-3255 D10, D11): onto the undo list, and its toast with Undo — `runMoves`'s, a Paste of a Cut's, a move in from Finder's. */
+  /**
+   * A move gesture done (YAZ-3255 D10, D11): onto the undo list, and its toast with Undo — `runMoves`'s, a Paste of a Cut's, a move in from Finder's.
+   * Every such gesture moved one item or more, so it plays the ONE land sound here (YAZ-3267 D15, S54).
+   */
   const recordMoves = useCallback((gesture: MovedGesture, text: string): void => {
     moveHistory.current.push(gesture)
+    playGestureSound('land')
     setNotice({ text, icon: 'paste', action: { label: 'Undo', run: () => void moveReplay.current.undo(), fades: true } })
   }, [])
   const vaultList = roots.join('\n')
@@ -1502,7 +1507,11 @@ export function App() {
         if (back.moves.length === 0) {
           if (text !== '') notify(text, 'error')
         }
-        else setNotice({ text, icon: 'paste', action: { label: 'Redo', run: () => void moveReplay.current.redo(), fades: true } })
+        else {
+          // One land sound for the undo, however many items moved back (YAZ-3267 D15, S54).
+          playGestureSound('land')
+          setNotice({ text, icon: 'paste', action: { label: 'Redo', run: () => void moveReplay.current.redo(), fades: true } })
+        }
       } finally {
         replaying.current = false
       }
@@ -1530,7 +1539,11 @@ export function App() {
         if (run.moves.length === 0) {
           if (text !== '') notify(text, 'error')
         }
-        else setNotice({ text, icon: 'paste', action: { label: 'Undo', run: () => void moveReplay.current.undo(), fades: true } })
+        else {
+          // One land sound for the redo (YAZ-3267 D15, S54).
+          playGestureSound('land')
+          setNotice({ text, icon: 'paste', action: { label: 'Undo', run: () => void moveReplay.current.undo(), fades: true } })
+        }
       } finally {
         replaying.current = false
       }
@@ -1668,10 +1681,14 @@ export function App() {
    *
    * Every failure lands in the passive notice, never a dialog; this promise never rejects back
    * into the caller, matching `onRenameFile`.
+   *
+   * `trashOne` is the one item, with no sound; it answers whether the Trash took it. A delete is ONE
+   * gesture, so it plays the trash sound once when the item went (YAZ-3267 D15, S55), never on a failure.
    */
-  const deleteFile = useCallback(async (path: string): Promise<void> => {
+  const trashOne = useCallback(async (path: string): Promise<boolean> => {
     try {
       await api.file.delete({ path })
+      return true
     } catch (err) {
       const name = nameOf(path)
       // A failed trash means NOTHING was deleted — say so, rather than a bare error string.
@@ -1680,8 +1697,12 @@ export function App() {
           ? `Can't move "${name}" to the Trash — nothing was deleted`
           : `Can't delete "${name}": ${err instanceof Error ? err.message : String(err)}`,
       )
+      return false
     }
   }, [nameOf])
+  const deleteFile = useCallback(async (path: string): Promise<void> => {
+    if (await trashOne(path)) playGestureSound('trash')
+  }, [trashOne])
 
   /** The items still in their vault's tree, read fresh (S31): one another window moved or deleted is gone. */
   const stillThere = useCallback(async (paths: readonly string[]): Promise<string[]> => {
@@ -1728,7 +1749,8 @@ export function App() {
   /**
    * "Remove from vault": each item to the Trash through the delete door — the door AFTER the delete
    * sheet, since the box was the question (S27). The items are read again at the click, and one gone
-   * since the box showed is skipped (audit 7). Not in the undo list: the Trash is its undo.
+   * since the box showed is skipped (audit 7). Not in the undo list: the Trash is its undo. The click
+   * is ONE gesture: one trash sound when one item or more went, none when none did (YAZ-3267 D15, S55).
    */
   /**
    * A drag out that ended in a window of the app is no copy to Finder (YAZ-3263). Each drop here tells
@@ -1757,8 +1779,10 @@ export function App() {
     const ask = dragOutAsk
     setDragOutAsk(null)
     if (ask === null) return
-    for (const path of await stillThere(ask.paths)) await deleteFile(path)
-  }, [dragOutAsk, deleteFile, stillThere])
+    let trashed = 0
+    for (const path of await stillThere(ask.paths)) if (await trashOne(path)) trashed++
+    if (trashed > 0) playGestureSound('trash')
+  }, [dragOutAsk, trashOne, stillThere])
 
   /**
    * "Remove from this window" (YAZ-2602 D7): the vault leaves the window with its tabs and its

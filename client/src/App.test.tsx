@@ -398,6 +398,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       backfill: vi.fn(async (_root?: string) => ({ letters: 'YAZ', notes: 0, stale: 0, old: 0 })),
       onChanged: vi.fn(() => () => undefined),
     },
+    // The sounds of a gesture (YAZ-3267 D15): App asks once per gesture that lands or trashes something.
+    app: { sound: vi.fn(async (_kind: 'land' | 'trash') => undefined) },
     // No update (YAZ-2976): App reads the state once and follows its pushes; nothing to show here.
     update: {
       state: vi.fn(async (): Promise<UpdateState> => ({ kind: 'idle' })),
@@ -2988,6 +2990,21 @@ describe('App rename door (⚡ YAZ-888)', () => {
         expect(notice(el)).toBe('Moved 2 items, skipped 1: Plain already exists')
       })
 
+      it('a move gesture that lands one or many items plays ONE land sound; one that moves nothing plays none (YAZ-3267 D15, S54, S56)', async () => {
+        const { bridge } = await mountTeam()
+        await moveAll([
+          { oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' },
+          { oldPath: NOOR, newPath: '/v/Team/Hiring/Sub/Noor.md', kind: 'file' },
+        ])
+        expect(bridge.app.sound.mock.calls).toEqual([['land']])
+        await act(async () => await captured.sidebar?.onRenameFile(PLAIN, '/v/Team/Archive/Plain.md', 'file'))
+        expect(bridge.app.sound.mock.calls).toEqual([['land'], ['land']])
+        bridge.file.rename.mockRejectedValue({ code: 'ALREADY_EXISTS', message: 'path already exists', path: '/v/Team/Archive/Lost.md' })
+        await moveAll([{ oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' }])
+        await moveAll([{ oldPath: PLAIN, newPath: PLAIN, kind: 'file' }]) // already there: no move (S7)
+        expect(bridge.app.sound).toHaveBeenCalledTimes(2)
+      })
+
       it('a drop of two folders reads the vault\u2019s file list once for the whole gesture (audit 6)', async () => {
         const { bridge } = await mountTeam()
         const reads = bridge.tree.mock.calls.length
@@ -3185,6 +3202,28 @@ describe('App rename door (⚡ YAZ-888)', () => {
         await press()
         expect(toast(el).text).toBe("Can't undo: Lost moved again")
         expect((await press()).defaultPrevented).toBe(false) // the gesture is gone: nothing is left to undo
+      })
+
+      it('an undo and a redo that move items play one land sound each; a Paste of a Cut or a move in from Finder plays one through App\u2019s door; one that moves nothing plays none (YAZ-3267 D15, S54, S56)', async () => {
+        const files: Disk = { [LOST]: { content: 'Body\n', mtime: 1 }, [PLAIN]: { content: 'Body\n', mtime: 1 } }
+        const { bridge } = await mountTeam(files)
+        realDisk(bridge, files)
+        await act(async () => await captured.sidebar?.onMoveEntries([
+          { oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' },
+          { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' },
+        ]))
+        await settle()
+        expect(bridge.app.sound.mock.calls).toEqual([['land']])
+        await press()
+        expect(bridge.app.sound.mock.calls).toEqual([['land'], ['land']])
+        await press(true)
+        expect(bridge.app.sound.mock.calls).toEqual([['land'], ['land'], ['land']])
+        // An undo that moves nothing: no sound.
+        bridge.file.rename.mockRejectedValue({ code: 'IO_ERROR', message: 'the disk is busy', path: LOST })
+        await press()
+        expect(bridge.app.sound).toHaveBeenCalledTimes(3)
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Team/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 item from Finder'))
+        expect(bridge.app.sound.mock.calls).toEqual([['land'], ['land'], ['land'], ['land']])
       })
 
       it('the lists empty when the window\u2019s vaults change: ⌘Z then moves nothing (S42, audit 2)', async () => {
@@ -3730,6 +3769,16 @@ describe('in-app delete (GRO-2272)', () => {
     await act(async () => b.emitFileDeleted('/v/x.md'))
     expect(b.bridge.index).not.toHaveBeenCalled()
     expect(b.bridge.file.rename).not.toHaveBeenCalled()
+  })
+
+  it('a delete that sends the item to the Trash plays ONE trash sound; one that fails plays none (YAZ-3267 D15, S55, S56)', async () => {
+    const files = { '/v/a.md': { content: '# a', mtime: 1 } }
+    const b = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, files)
+    await act(async () => await captured.sidebar?.onDeleteFile('/v/Docs'))
+    expect(b.bridge.app.sound.mock.calls).toEqual([['trash']])
+    b.bridge.file.delete.mockRejectedValueOnce({ code: 'IO_ERROR', message: 'trash failed', path: '/v/a.md' })
+    await act(async () => await captured.sidebar?.onDeleteFile('/v/a.md'))
+    expect(b.bridge.app.sound).toHaveBeenCalledTimes(1)
   })
 
   it('a delete for a path this window does not have open changes nothing', async () => {
@@ -5347,6 +5396,23 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     expect(bridge.file.delete.mock.calls.map(([req]) => req)).toEqual([{ path: '/v/A.md' }, { path: '/v/Docs' }])
     expect(el.querySelector('.confirm')).toBeNull()
     expect(box(el)).toBeNull()
+  })
+
+  it('"Remove from vault" of many items plays ONE trash sound; one where every item fails plays none (YAZ-3267 D15, S55, S56)', async () => {
+    const { bridge, el } = await mountVault()
+    await draggedOut('/v/A.md', '/v/Docs')
+    await act(async () => button(el, 'Remove from vault')?.click())
+    expect(bridge.file.delete).toHaveBeenCalledTimes(2)
+    expect(bridge.app.sound.mock.calls).toEqual([['trash']])
+    bridge.file.delete.mockRejectedValue({ code: 'IO_ERROR', message: 'trash failed', path: '/v/A.md' })
+    await draggedOut('/v/A.md', '/v/B.md')
+    await act(async () => button(el, 'Remove from vault')?.click())
+    expect(bridge.file.delete).toHaveBeenCalledTimes(4)
+    expect(bridge.app.sound).toHaveBeenCalledTimes(1)
+    // "Keep in vault" trashes nothing and plays nothing.
+    await draggedOut('/v/A.md')
+    await act(async () => button(el, 'Keep in vault')?.click())
+    expect(bridge.app.sound).toHaveBeenCalledTimes(1)
   })
 
   it('"Remove from vault" checks the items again at the click: one gone since the box showed is skipped (audit 7)', async () => {

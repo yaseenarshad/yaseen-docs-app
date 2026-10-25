@@ -134,6 +134,8 @@ function installBridge() {
       set: vi.fn(async (_root: string, _paths: readonly string[]) => undefined),
       onChanged: vi.fn((_listener: (change: { root: string }) => void) => () => undefined),
     },
+    // The sounds of a gesture (YAZ-3267 D15): a Paste of a Copy and a copy in from another disk ask here; a move asks through App (`onMoved`).
+    app: { sound: vi.fn(async (_kind: 'land' | 'trash') => undefined) },
     // Reveal in Finder (GRO-2274) goes through the shell namespace.
     shell: {
       reveal: vi.fn(async ({ path }: { path: string }) => ({ path })),
@@ -1276,6 +1278,29 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     fire(dirRow(el), 'drop', own(bridge, '/v/a.md'))
     expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/sub/a.md', 'file')
     expect(bridge.file.import).not.toHaveBeenCalled()
+  })
+
+  it('a Finder drop that copies in from another disk plays ONE land sound here; one that moves leaves the sound to App (onMoved); nothing landed or a refused drop plays none (YAZ-3267 D15, S54, S56)', async () => {
+    const { bridge, props, el } = await mount()
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [{ from: '/Volumes/USB/Trip', to: '/v/sub/Trip', kind: 'dir' }, { from: '/Volumes/USB/Log.md', to: '/v/sub/Log.md', kind: 'file' }], failed: [] })
+    fire(dirRow(el), 'drop', finder('Trip', 'Log.md'))
+    await act(async () => {})
+    expect(bridge.app.sound.mock.calls).toEqual([['land']])
+    bridge.file.import.mockResolvedValueOnce({ moved: [{ from: '/Users/yasin/Downloads/Plan.md', to: '/v/sub/Plan.md', kind: 'file' }], copied: [{ from: '/Volumes/USB/Log.md', to: '/v/sub/Log.md', kind: 'file' }], failed: [] })
+    fire(dirRow(el), 'drop', finder('Plan.md', 'Log.md'))
+    await act(async () => {})
+    expect(props.onMoved).toHaveBeenCalledTimes(1)
+    expect(bridge.app.sound).toHaveBeenCalledTimes(1)
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [{ from: '/Users/yasin/Downloads/a.md', code: 'ALREADY_EXISTS', message: 'a file with this name already exists' }] })
+    fire(dirRow(el), 'drop', finder('a.md'))
+    await act(async () => {})
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [{ from: '/w/x.md', code: 'BAD_REQUEST', message: 'To move between vaults, use cut and paste' }] })
+    fire(dirRow(el), 'drop', finder('x.md'))
+    await act(async () => {})
+    bridge.file.import.mockRejectedValueOnce({ code: 'IO_ERROR', message: 'disk gone' })
+    fire(dirRow(el), 'drop', finder('Plan.md'))
+    await act(async () => {})
+    expect(bridge.app.sound).toHaveBeenCalledTimes(1)
   })
 
   it('Finder items dropped on the root header of a one-vault window go to its root (audit 10)', async () => {
@@ -7191,6 +7216,31 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 2 items', 'paste')
     expect(props.onMoved).not.toHaveBeenCalled() // a copy is not in the undo list (YAZ-3255 D10)
     expect(bridge.tree.mock.calls.length).toBe(treeReads + 1) // the explicit refresh: a copy broadcasts nothing
+  })
+
+  it('a Paste of a Copy that lands items plays ONE land sound; a Paste of a Cut leaves it to App (onMoved); nothing pasted, a failure or a rejected paste plays none (YAZ-3267 D15, S54, S56)', async () => {
+    const { el, bridge, props } = await mount({}, withClipboard)
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [{ from: '/w/x.md', to: '/v/sub/x.md', kind: 'file' }, { from: '/w/y.md', to: '/v/sub/y.md', kind: 'file' }], failed: [] })
+    act(() => pushClip?.(clipOf('copy', '/w/x.md', '/w/y.md')))
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
+    expect(bridge.app.sound.mock.calls).toEqual([['land']])
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [], failed: [{ from: '/w/x.md', code: 'ALREADY_EXISTS', message: 'already exists' }] })
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [], failed: [] })
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
+    bridge.file.paste.mockRejectedValueOnce({ code: 'NOT_FOUND', message: 'target dir is gone' })
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
+    expect(bridge.app.sound).toHaveBeenCalledTimes(1)
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [{ from: '/w/x.md', to: '/v/x.md', kind: 'file' }], failed: [] })
+    act(() => pushClip?.(clipOf('cut', '/w/x.md')))
+    rightClick(rowByPath(el, '/v/a.md'))
+    await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    expect(props.onMoved).toHaveBeenCalledTimes(1)
+    expect(bridge.app.sound).toHaveBeenCalledTimes(1)
   })
 
   it('a FILE row pastes into its PARENT (the "New note" rule), and per-entry failures are counted and named', async () => {

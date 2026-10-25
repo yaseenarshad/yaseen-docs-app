@@ -790,6 +790,12 @@ export interface DragLandedEvent {
   paths: string[]
 }
 
+/**
+ * The sound of a gesture that succeeded (YAZ-3267 D15), as Finder plays it: `land` when items land
+ * (a paste, a drag-move, a Finder drop, an undo or a redo of a move), `trash` when items go to the Trash.
+ */
+export type GestureSound = 'land' | 'trash'
+
 // ---------- pickFolder() ----------
 
 /**

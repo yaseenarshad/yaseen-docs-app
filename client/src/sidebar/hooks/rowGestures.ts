@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Ref
 import { isMarkdown, isSkipped } from '@shared/fileKind'
 import { BETWEEN_VAULTS, type FileClipState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
+import { playGestureSound } from '../../lib/gestureSound'
 import type { MovedGesture } from '../../lib/moveHistory'
 import { countItems, gestureNotice, type NoticeKind } from '../../lib/notice'
 import { pageName, pathTitles } from '../../lib/pageLabel'
@@ -487,8 +488,12 @@ export function useFileClipboard(
         // Nothing ran: EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
         if (text === null) onNotice('Nothing to paste', 'info')
         else if (res.pasted.length === 0) onNotice(text, 'error')
-        // What landed is said with Undo when it was a move (D11).
-        else if (gesture === null) onNotice(text, 'paste')
+        // What landed is said with Undo when it was a move (D11). A copy plays its land sound here;
+        // a move plays it in App's `onMoved`, so the gesture has ONE sound (YAZ-3267 D15, S54).
+        else if (gesture === null) {
+          playGestureSound('land')
+          onNotice(text, 'paste')
+        }
         else onMoved(gesture, text)
       } catch (err: unknown) {
         onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
@@ -596,7 +601,11 @@ export function useFileClipboard(
         // Every item hidden (S20): nothing landed, and nothing to say.
         if (text === null) return
         if (done === null) onNotice(text, 'error')
-        else if (moved.length === 0) onNotice(text, 'paste')
+        // Copies only: the land sound is played here; with a move it is App's, in `onMoved` (YAZ-3267 D15, S54).
+        else if (moved.length === 0) {
+          playGestureSound('land')
+          onNotice(text, 'paste')
+        }
         else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }, text)
       } catch (err: unknown) {
         onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
