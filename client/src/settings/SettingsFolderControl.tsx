@@ -52,12 +52,15 @@ export function SettingsFolderControl() {
           Can't find this folder. This Mac uses its last settings. It reads the folder again when it comes back.
         </p>
       )}
-      <button type="button" className="settings__option" onClick={pick} disabled={picking} aria-label="Choose settings folder">
-        Choose…
-      </button>
-      <button type="button" className="settings__option" onClick={() => set(null)} disabled={status?.folder == null}>
-        Reset to default
-      </button>
+      {/* One row of normal-size buttons, as the Library folder row has: a wide row stretches each direct child (YAZ-3308). */}
+      <div className="settings__options" role="group" aria-label="Settings folder">
+        <button type="button" className="settings__option" onClick={pick} disabled={picking} aria-label="Choose settings folder">
+          Choose…
+        </button>
+        <button type="button" className="settings__option" onClick={() => set(null)} disabled={status?.folder == null}>
+          Reset to default
+        </button>
+      </div>
     </>
   )
 }
