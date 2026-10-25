@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { FileClipState } from '@shared/types'
-import { countItems, countKinds } from '../lib/notice'
+import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
 import type { MenuTargets } from './Sidebar'
 
 /**
@@ -96,7 +96,7 @@ export interface MenuHandlers {
    * The panel's passive notice (YAZ-1337): a clipboard write that never lands says so, the way
    * `PageContextMenu` reports it — a copy that quietly did nothing is the worst kind of no-op.
    */
-  onNotice: (message: string) => void
+  onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void
   onNewNote: () => void
   /** "New dated note" (YAZ-2242): a note born with today's `MM_DD- ` seed. Never hidden, same as `onNewNote`. */
   onNewDatedNote: () => void
@@ -242,7 +242,7 @@ const copyPaths: Leaf = (t, h) => {
     label: `Copy ${paths.length} paths`,
     onSelect: () => {
       void navigator.clipboard.writeText(paths.join('\n')).then(
-        () => h.onNotice(`Copied ${paths.length} paths`),
+        () => h.onNotice(`Copied ${paths.length} paths`, 'info', 'clipboard'),
         (error: unknown) => h.onNotice(`Can't copy paths: ${errorText(error)}`),
       )
     },
@@ -263,7 +263,7 @@ const copyPath: Leaf = (t, h) => {
     hint: '⌘⇧C',
     onSelect: () => {
       void navigator.clipboard.writeText(path).then(
-        () => h.onNotice('Copied path'),
+        () => h.onNotice('Copied path', 'info', 'clipboard'),
         (error: unknown) => h.onNotice(`Can't copy path: ${errorText(error)}`),
       )
     },

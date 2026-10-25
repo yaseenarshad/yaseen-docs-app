@@ -186,6 +186,20 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ contentWidth: 'narrow' })
   })
 
+  it('Settings › Notifications (YAZ-3303 D1): a file from before 3303 reads 4 s, every toast type on and the sounds on; each value survives; junk falls back field by field (S1, S2)', async () => {
+    const { noticeLength: _a, noticeUndo: _b, noticeClipboard: _c, noticeLists: _d, gestureSounds: _e, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ noticeLength: '4s', noticeUndo: true, noticeClipboard: true, noticeLists: true, gestureSounds: true })
+
+    for (const noticeLength of ['4s', '8s', '15s', 'closed']) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, noticeLength, noticeUndo: false, noticeClipboard: false, noticeLists: false, gestureSounds: false } }))
+      expect(createStore(file).get().settings).toMatchObject({ noticeLength, noticeUndo: false, noticeClipboard: false, noticeLists: false, gestureSounds: false })
+    }
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, noticeLength: '9s', noticeUndo: 'yes', noticeClipboard: false, gestureSounds: 0 } }))
+    expect(createStore(file).get().settings).toMatchObject({ noticeLength: '4s', noticeUndo: true, noticeClipboard: false, noticeLists: true, gestureSounds: true })
+  })
+
   it('commentsOrder: a pre-1515 file without the key sanitizes to oldest; both orders survive; junk falls back (YAZ-1515)', async () => {
     const { commentsOrder: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))

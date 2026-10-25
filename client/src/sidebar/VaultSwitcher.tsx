@@ -106,6 +106,7 @@ import { basename } from '../lib/paths'
 import { relativeTime } from '../lib/relativeTime'
 import { storage } from '../lib/storage'
 import { TextField } from '../views/view/TextField'
+import type { NoticeKind, NoticeType } from '../lib/notice'
 import { InfoIcon, TriangleIcon } from '../views/view/icons'
 import { ContextMenu } from './ContextMenu'
 import { buildVaultMenuSections, buildVaultSetMenuSections } from './vaultMenuSections'
@@ -126,8 +127,8 @@ export interface VaultSwitcherProps {
   /** The menu's OS verbs (D9): the Sidebar's own, stale-path notice included. */
   onReveal: (path: string) => void
   onOpenVsCode: (path: string) => void
-  /** The Sidebar's passive notice — the copies confirm through it (D9). */
-  onNotice: (message: string) => void
+  /** The Sidebar's passive notice — the copies confirm through it (D9), with their toast type (YAZ-3303 D2). */
+  onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void
 }
 
 /**

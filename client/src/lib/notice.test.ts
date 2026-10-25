@@ -1,6 +1,7 @@
 /** How long the toast stays (YAZ-3255 D11): a fading action toast goes after `UNDO_NOTICE_MS`; another action toast stays. */
 import { describe, expect, it } from 'vitest'
-import { countKinds, dragOutText, gestureNotice, LINK_NOTICE_MS, namedItems, NAMES_SHOWN, noticeMs, onDisk, UNDO_NOTICE_MS } from './notice'
+import { DEFAULT_SETTINGS } from '@shared/types'
+import { countKinds, dragOutText, gestureNotice, LINK_NOTICE_MS, namedItems, NAMES_SHOWN, noticeMs, onDisk, shows, UNDO_NOTICE_MS, unlessFailed, type Notice } from './notice'
 
 describe('noticeMs (YAZ-3255 D11)', () => {
   it('a plain notice fades after LINK_NOTICE_MS; an Undo or Redo toast after UNDO_NOTICE_MS (6 s); another action toast stays', () => {
@@ -9,6 +10,35 @@ describe('noticeMs (YAZ-3255 D11)', () => {
     expect(noticeMs({ text: 'Copied path', icon: 'info' })).toBe(LINK_NOTICE_MS)
     expect(noticeMs({ text: 'Moved 1 item', icon: 'paste', action: { label: 'Undo', run, fades: true } })).toBe(UNDO_NOTICE_MS)
     expect(noticeMs({ text: 'Merged', icon: 'info', action: { label: 'See changes', run } })).toBeNull()
+  })
+})
+
+describe('Settings › Notifications (YAZ-3303)', () => {
+  const run = () => undefined
+  const plain: Notice = { text: 'Copied path', icon: 'info' }
+  const undo: Notice = { text: 'Moved 1 file (a.md)', icon: 'paste', action: { label: 'Undo', run, fades: true } }
+  const merged: Notice = { text: 'Merged', icon: 'info', action: { label: 'See changes', run } }
+
+  it('D5: Show for sets the length; a toast with Undo stays at least 6 s; "Until closed" and "See changes" stay (S4 to S9)', () => {
+    expect([noticeMs(plain, '4s'), noticeMs(plain, '8s'), noticeMs(plain, '15s'), noticeMs(plain, 'closed')]).toEqual([LINK_NOTICE_MS, 8000, 15000, null])
+    expect([noticeMs(undo, '4s'), noticeMs(undo, '8s'), noticeMs(undo, '15s'), noticeMs(undo, 'closed')]).toEqual([UNDO_NOTICE_MS, 8000, 15000, null])
+    for (const length of ['4s', '8s', '15s', 'closed'] as const) expect(noticeMs(merged, length)).toBeNull()
+  })
+
+  it('D2: a typed toast shows only while its switch is not Off; an untyped toast always shows; a state without the field shows it', () => {
+    const off = { ...DEFAULT_SETTINGS, noticeUndo: false, noticeClipboard: false, noticeLists: false }
+    for (const type of ['undo', 'clipboard', 'lists'] as const) {
+      expect(shows({ ...plain, type }, DEFAULT_SETTINGS)).toBe(true)
+      expect(shows({ ...plain, type }, off)).toBe(false)
+    }
+    expect(shows({ text: "Can't copy path: denied", icon: 'info' }, off)).toBe(true)
+    const { noticeClipboard: _gone, ...older } = DEFAULT_SETTINGS
+    expect(shows({ ...plain, type: 'clipboard' }, older as typeof DEFAULT_SETTINGS)).toBe(true)
+  })
+
+  it('D2: a gesture that failed for an item has no type, so its skip always shows (S16, S18)', () => {
+    expect(unlessFailed('undo', [])).toBe('undo')
+    expect(unlessFailed('clipboard', ['Plan — already exists'])).toBeUndefined()
   })
 })
 

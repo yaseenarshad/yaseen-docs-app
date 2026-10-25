@@ -114,7 +114,7 @@ describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
     const writeText = installClipboard()
     const h = handlers()
     item(buildVaultMenuSections(target({ name: '🚀 Launch', renamed: true }), h), 'copy-name').onSelect()
-    await vi.waitFor(() => expect(h.onNotice).toHaveBeenCalledWith('Copied vault name'))
+    await vi.waitFor(() => expect(h.onNotice).toHaveBeenCalledWith('Copied vault name', 'info', 'clipboard'))
     expect(writeText).toHaveBeenCalledWith('🚀 Launch')
   })
 
@@ -122,7 +122,7 @@ describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
     const writeText = installClipboard()
     const h = handlers()
     item(buildVaultMenuSections(target({ isCurrent: true, name: 'Launch', renamed: true }), h), 'copy-path').onSelect()
-    await vi.waitFor(() => expect(h.onNotice).toHaveBeenCalledWith('Copied path'))
+    await vi.waitFor(() => expect(h.onNotice).toHaveBeenCalledWith('Copied path', 'info', 'clipboard'))
     expect(writeText).toHaveBeenCalledWith(OTHER)
   })
 

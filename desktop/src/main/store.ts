@@ -58,6 +58,7 @@ import {
   type FolderState,
   type HeadingStyles,
   type NewNoteLocation,
+  type NoticeLength,
   type OpenStat,
   type RecentRoots,
   type RightPanelIdentity,
@@ -78,6 +79,7 @@ import {
   type WindowBounds,
   type WindowEntry,
   DIAGRAM_DARK_COLORS,
+  NOTICE_LENGTHS,
   type DiagramDarkColors,
   DEFAULT_CANVAS_PANEL,
   isCanvasPanelTab,
@@ -297,6 +299,11 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   // `''` — an empty string would resolve to the process cwd, which is not a place for a user's library.
   libraryFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),
   canvasPanel: isCanvasPanel,
+  noticeLength: (v): v is NoticeLength => typeof v === 'string' && (NOTICE_LENGTHS as readonly string[]).includes(v),
+  noticeUndo: (v): v is boolean => typeof v === 'boolean',
+  noticeClipboard: (v): v is boolean => typeof v === 'boolean',
+  noticeLists: (v): v is boolean => typeof v === 'boolean',
+  gestureSounds: (v): v is boolean => typeof v === 'boolean',
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
