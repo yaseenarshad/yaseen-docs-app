@@ -70,6 +70,7 @@ npm run e2e       # Playwright-Electron suite (desktop/e2e/, 76 specs; `docs/REG
 npm run typecheck
 npm run build     # electron-vite build → desktop/out, then the share viewer → share/dist/assets
 npm run perf:budget:ci   # the size and integrity gate on desktop/out (what CI runs, after build)
+node tools/perf/sidebarLinesRecalc.mjs   # after build: the style cost of the sidebar's level lines per action at 10,207 open rows, headless Chromium, no window (local only, not in CI; YAZ-3329)
 npm run perf:budget      # the same + the packaged .app and DMG (after desktop:build)
 npm run perf -- all --runs 5 --app <after.app> --vs <before.app>   # local perf harness, A/B (tools/perf/README.md)
 ```

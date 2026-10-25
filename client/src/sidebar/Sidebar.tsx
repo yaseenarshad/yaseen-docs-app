@@ -15,6 +15,7 @@ import { ancestorDirs, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFil
 import { SEARCH_CAP } from '../search/searchCandidates'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
+import { levelLinesHover } from './levelLinesHover'
 import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
 import { sortSections } from './treeSort'
@@ -537,6 +538,10 @@ export function Sidebar({
   const focusedRevealId = useRef<number | null>(null)
   const [pendingReveal, setPendingReveal] = useState<SidebarRevealRequest | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  // "On hover" of the level lines (YAZ-3309 D3, bug YAZ-3329): two attributes on the list, written on the
+  // node and not through state, so no level of the tree renders again. Other choices write nothing.
+  const sidebarLines = settings.sidebarLines
+  useEffect(() => (sidebarLines === 'hover' && bodyRef.current !== null ? levelLinesHover(bodyRef.current) : undefined), [sidebarLines])
   // The folders' shortcut rows (YAZ-2290 D2), rebuilt once per index snapshot. A snapshot that moved
   // no shortcut keeps the Map it had, so a save elsewhere in the vault re-renders no tree level (YAZ-2194).
   // Each vault's folders by its OWN index (YAZ-2602 S30); the paths of two vaults never meet, so the

@@ -27,14 +27,15 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
     expect(rules.find((rule) => rule.selectors.includes(".tree[role='group']"))?.body).toMatch(/position:\s*relative;/)
   })
 
-  it('`data-sidebar-lines` on `.app` gates it: always; while the mouse is over the list or a row has keyboard focus; `off` has no rule', () => {
+  it('`data-sidebar-lines` on `.app` gates it: always; while the mouse is over the list or a row has keyboard focus (the attributes `data-mouse-in` and `data-key-focus` on the list); `off` has no rule', () => {
     // The thread's rules (below) read it too, only to turn off with "Never".
     const gated = rules.filter((rule) => rule.selectors.some((s) => s.includes('data-sidebar-lines') && !s.includes('data-sidebar-line-style')))
     expect(gated).toHaveLength(1)
     expect(gated[0].selectors).toEqual([
       `.app[data-sidebar-lines='always'] ${LINE}`,
-      `.app[data-sidebar-lines='hover'] .sidebar__body:hover ${LINE}`,
-      `.app[data-sidebar-lines='hover'] .sidebar__body:has(.tree__row:focus-visible) ${LINE}`,
+      // The two attributes that `levelLinesHover.ts` writes on the list (bug YAZ-3329).
+      `.app[data-sidebar-lines='hover'] .sidebar__body[data-mouse-in] ${LINE}`,
+      `.app[data-sidebar-lines='hover'] .sidebar__body[data-key-focus] ${LINE}`,
     ])
     expect(gated[0].body.trim()).toBe('opacity: 1;')
     expect(appCss).not.toMatch(/(?<!:not\()\[data-sidebar-lines='off'\]/)
@@ -45,7 +46,8 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
     const ON = `${STYLE}:not([data-sidebar-lines='off'])`
     const PIECE = `${ON} .sidebar__body .tree[role='group'] > li::before`
     const PIECE_HOVER = `${ON} .sidebar__body .tree[role='group'] > li:hover::before`
-    const CHEVRON = `${ON} .sidebar__body li[aria-expanded]:hover > .tree__row .tree__chevron::before`
+    const CHEVRON_REST = `${ON} .sidebar__body .tree > li[aria-expanded]::after`
+    const CHEVRON = `${ON} .sidebar__body .tree > li[aria-expanded]:hover::after`
     const THREAD = /var\(--sidebar-thread-color, var\(--thread-color, var\(--accent\)\)\)/
     /** The reduced-motion block of the thread, and the sheet without it. */
     const media = (() => {
@@ -85,7 +87,10 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
       expect(piece).toMatch(/border-bottom-left-radius:\s*6px;/)
       for (const side of ['border-left', 'border-bottom']) expect(piece).toMatch(new RegExp(`${side}:\\s*var\\(--thread-width, 2px\\) solid ${THREAD.source}`))
       expect(body(PIECE_HOVER)[0]).toMatch(/opacity:\s*1;/)
-      expect(body(CHEVRON)[0]).toMatch(new RegExp(`border-color:\\s*${THREAD.source}`))
+      for (const side of ['border-right', 'border-bottom']) expect(body(CHEVRON_REST)[0]).toMatch(new RegExp(`${side}:\\s*1\\.75px solid ${THREAD.source}`))
+      expect(body(CHEVRON_REST)[0]).toMatch(/opacity:\s*0;/)
+      expect(body(CHEVRON_REST)[0]).toMatch(/pointer-events:\s*none;/)
+      expect(body(CHEVRON)[0]).toMatch(/opacity:\s*1;/)
       // Each rule that draws (it sets a look, not only a width) is off with "Show: Never".
       for (const { selectors } of threadRules.filter((rule) => /content:|opacity:\s*1|border-color:/.test(rule.body))) for (const s of selectors) expect(s, s).toContain(ON)
     })
@@ -93,7 +98,8 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
     it('calm (D10): it shows after an 80ms rest and fades in over 140ms, fades out over 180ms with no wait; the wait is on `:hover` alone', () => {
       expect(body(PIECE)[0]).toMatch(/transition:\s*opacity 180ms ease;/)
       expect(body(PIECE_HOVER)[0]).toMatch(/transition:\s*opacity 140ms ease 80ms;/)
-      expect(body(CHEVRON)[0]).toMatch(/transition:\s*transform 0\.12s, border-color 140ms ease 80ms;/)
+      expect(body(CHEVRON_REST)[0]).toMatch(/transition:\s*transform 0\.12s;/)
+      expect(body(CHEVRON)[0]).toMatch(/transition:\s*transform 0\.12s, opacity 140ms ease 80ms;/)
       for (const { selectors } of threadRules.filter((rule) => /\b80ms\b/.test(rule.body))) for (const s of selectors) expect(s, s).toContain(':hover')
     })
 
@@ -109,6 +115,26 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
       for (const s of [PIECE, PIECE_HOVER, CHEVRON]) expect(appCss.indexOf(s), s).toBeLessThan(media.start)
     })
 
+    it('the coloured chevron is a copy of the grey one, laid exactly on it: the same box, border and turn, at the chevron\'s place in its row (D7, bug YAZ-3329)', () => {
+      const grey = rules.find((rule) => rule.selectors.includes('.tree__chevron::before'))!.body
+      const greyOpen = rules.find((rule) => rule.selectors.includes('.tree__chevron--open::before'))!.body
+      const px = (b: string, prop: string) => Number(new RegExp(`(?:^|[;\\s])${prop}:\\s*(-?[\\d.]+)px`).exec(b)?.[1])
+      const rest = body(CHEVRON_REST)[0]
+      const open = body(`${ON} .sidebar__body .tree > li[aria-expanded='true']::after`)[0]
+      for (const prop of ['width', 'height']) expect(px(rest, prop), prop).toBe(px(grey, prop))
+      expect(grey).toMatch(/border-right:\s*1\.75px solid/)
+      expect(grey).toMatch(/transform:\s*rotate\(-45deg\);/)
+      expect(rest).toMatch(/transform:\s*rotate\(-45deg\);/)
+      expect(greyOpen).toMatch(/transform:\s*rotate\(45deg\);/)
+      expect(open).toMatch(/transform:\s*rotate\(45deg\);/)
+      // A row is 13px * 1.5 + 2 * 3px = 25.5px high, its 14px chevron centred in it, 8 + depth * 14 px in.
+      const chevronTop = (25.5 - 14) / 2
+      expect(rest).toMatch(new RegExp(`left:\\s*calc\\(var\\(--tree-depth, 0\\) \\* 14px \\+ ${8 + px(grey, 'left')}px\\);`))
+      expect(px(rest, 'top')).toBe(chevronTop + px(grey, 'top'))
+      expect(px(open, 'top')).toBe(chevronTop + px(greyOpen, 'top'))
+      expect(rules.find((rule) => rule.selectors.includes('.tree__row'))?.body).toMatch(/padding:\s*3px 8px;[\s\S]*font-size:\s*13px;[\s\S]*line-height:\s*1\.5;/)
+    })
+
     it('the mouse alone draws it (D11): no thread rule reads keyboard focus, and no hover selector uses `:has(`', () => {
       for (const { selectors } of [...threadRules, ...media.block]) {
         for (const s of selectors) {
@@ -117,6 +143,23 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
         }
       }
     })
+  })
+
+  it('bug YAZ-3329: no level-line or thread rule puts a state on an ancestor of the rows: no `.sidebar__body:hover`, no `:has(`, and each `:hover` is on the element the rule styles', () => {
+    const ours = rules.flatMap((rule) => rule.selectors).filter((s) => s.includes("[role='group']") || s.includes('data-sidebar-line'))
+    expect(ours.length).toBeGreaterThan(10)
+    for (const s of ours) {
+      expect(s, s).not.toMatch(/\.sidebar__body:/)
+      expect(s, s).not.toContain(':has(')
+      // A state pseudo-class on an ancestor compound makes Chromium restyle, or search, all of that ancestor's subtree.
+      const ancestors = s.replace(/:not\([^)]*\)/g, '').split(/\s*[\s>+~]\s*/).slice(0, -1)
+      for (const compound of ancestors) expect(compound, s).not.toMatch(/:(hover|focus|focus-visible|focus-within|active)\b/)
+    }
+    // The "On hover" gates read the attributes that the sidebar writes.
+    expect(ours.filter((s) => s.includes("[data-sidebar-lines='hover']"))).toEqual([
+      `.app[data-sidebar-lines='hover'] .sidebar__body[data-mouse-in] ${LINE}`,
+      `.app[data-sidebar-lines='hover'] .sidebar__body[data-key-focus] ${LINE}`,
+    ])
   })
 
   it('Recents and Sessions nest a `.tree` with no role: no rule draws on a `.tree` inside a `.tree` (D4)', () => {

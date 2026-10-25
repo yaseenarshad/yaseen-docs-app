@@ -1917,7 +1917,10 @@ button {
    depth * 14 + 1 is the centre of the chevron that holds this level. The `role` keeps it to the
    tree's own levels: Recents and Sessions nest a `.tree` too, and get no line (D4). All grey (D2),
    and no target (D5): the click goes to the row below. `data-sidebar-lines` on `.app` says when it
-   shows (D3): always, while the mouse is over the list or a row has keyboard focus, or never. */
+   shows (D3): always, while the mouse is over the list or a row has keyboard focus, or never. The
+   last two are attributes that the sidebar writes on `.sidebar__body` (`levelLinesHover.ts`), not
+   `:hover` / `:has()` there: a state change on the list's own box made Chromium restyle every row
+   below it, 20 ms at each entry and exit at 10,000 open rows, also with "Never" (bug YAZ-3329). */
 .tree[role='group'] {
   position: relative;
 }
@@ -1936,8 +1939,8 @@ button {
 }
 
 .app[data-sidebar-lines='always'] .tree[role='group']::before,
-.app[data-sidebar-lines='hover'] .sidebar__body:hover .tree[role='group']::before,
-.app[data-sidebar-lines='hover'] .sidebar__body:has(.tree__row:focus-visible) .tree[role='group']::before {
+.app[data-sidebar-lines='hover'] .sidebar__body[data-mouse-in] .tree[role='group']::before,
+.app[data-sidebar-lines='hover'] .sidebar__body[data-key-focus] .tree[role='group']::before {
   opacity: 1;
 }
 
@@ -1990,10 +1993,40 @@ button {
   width: calc(9px + var(--thread-width, 2px) / 2);
 }
 
-/* The chevrons on the path take the thread colour (D7), as the bullets on the editor's path do. */
-.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body li[aria-expanded]:hover > .tree__row .tree__chevron::before {
-  border-color: var(--sidebar-thread-color, var(--thread-color, var(--accent)));
-  transition: transform 0.12s, border-color 140ms ease 80ms;
+/* The chevrons on the path take the thread colour (D7), as the bullets on the editor's path do. The coloured
+   arrow is the folder li's own `::after`, a copy of `.tree__chevron::before` laid exactly on it: a rule that
+   reached the chevron from `li:hover` made Chromium search the whole folder below it at each `:hover`
+   change, 10 ms for a move across top folders at 10,000 rows, in every style (bug YAZ-3329). Here a change
+   restyles that li alone. The chevron sits (25.5px - 14px) / 2 = 5.75px down its row and 8 + depth * 14 px
+   in; its arrow is 4px in and 3px down (1px open). */
+.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded] {
+  position: relative;
+}
+
+.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  left: calc(var(--tree-depth, 0) * 14px + 12px);
+  top: 8.75px;
+  width: 7px;
+  height: 7px;
+  border-right: 1.75px solid var(--sidebar-thread-color, var(--thread-color, var(--accent)));
+  border-bottom: 1.75px solid var(--sidebar-thread-color, var(--thread-color, var(--accent)));
+  transform: rotate(-45deg);
+  opacity: 0;
+  transition: transform 0.12s;
+  pointer-events: none;
+}
+
+.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']::after {
+  top: 6.75px;
+  transform: rotate(45deg);
+}
+
+.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]:hover::after {
+  opacity: 1;
+  transition: transform 0.12s, opacity 140ms ease 80ms;
 }
 
 /* Reduce motion (D10): no rest and no fade. The selectors of the three rules that fade, so this block wins by
@@ -2004,7 +2037,7 @@ button {
     transition: none;
   }
 
-  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body li[aria-expanded]:hover > .tree__row .tree__chevron::before {
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]:hover::after {
     transition: transform 0.12s;
   }
 }
