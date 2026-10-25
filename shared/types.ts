@@ -937,11 +937,9 @@ export const isSidebarLens = (v: unknown): v is SidebarLens => SIDEBAR_LENSES.in
 export type SidebarTab = SidebarLens | 'search'
 /** The order the tabs are drawn in: Search stands right after Files. */
 export const SIDEBAR_TABS: readonly SidebarTab[] = ['files', 'search', 'focus', 'favorites', 'sessions', 'recents']
-export const isSidebarTab = (v: unknown): v is SidebarTab => SIDEBAR_TABS.includes(v as SidebarTab)
 /** The buttons at the right end of the tab row that can leave the bar (YAZ-3273 D9, D10): Sort, Collapse all, and the ⋯ button itself. */
 export type SidebarButton = 'sort' | 'fold' | 'more'
 export const SIDEBAR_BUTTONS: readonly SidebarButton[] = ['sort', 'fold', 'more']
-export const isSidebarButton = (v: unknown): v is SidebarButton => SIDEBAR_BUTTONS.includes(v as SidebarButton)
 /**
  * The tab row as the reader set it (YAZ-3273 D8): `order` has each tab once, `hidden` the tabs that
  * live in the ⋯ menu — never `files` (D6) — and `hiddenButtons` the buttons that left the bar (D9, D10).

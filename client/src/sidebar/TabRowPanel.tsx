@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react'
 import { flushSync } from 'react-dom'
 import { DEFAULT_SIDEBAR_TABS, SIDEBAR_BUTTONS, type SidebarButton, type SidebarTab, type SidebarTabsPrefs } from '@shared/types'
-import { ChevronsIcon, ClockIcon, DragHandleIcon, EyeIcon, HeartIcon, MoreIcon, SearchIcon, SortIcon, StackIcon } from '../views/view/icons'
+import { ChevronsIcon, ClockIcon, DragHandleIcon, EyeIcon, FolderIcon, HeartIcon, MoreIcon, SearchIcon, SortIcon, StackIcon } from '../views/view/icons'
 import { moveTab, sameTabRow, TAB_LABEL, toggleButton, toggleTab } from './tabRow'
 
 /** A tab's face: Files is a word (YAZ-3273 D6); the others are glyphs (YAZ-2638 D2, YAZ-2619 D4, YAZ-1766 D1, YAZ-3147 D4, YAZ-3235 D4). */
@@ -9,9 +9,20 @@ export function TabFace({ tab }: { tab: SidebarTab }) {
   return tab === 'favorites' ? <HeartIcon /> : tab === 'focus' ? <EyeIcon /> : tab === 'search' ? <SearchIcon /> : tab === 'sessions' ? <StackIcon /> : tab === 'recents' ? <ClockIcon /> : <>{TAB_LABEL[tab]}</>
 }
 
+/**
+ * The glyph of a row in the row's menu and in this panel (YAZ-3279): a tab's face, a folder for Files
+ * (its tab is a word, D6), or a button's own glyph. One map, so the menu and the panel agree.
+ */
+export function rowGlyph(key: SidebarTab | SidebarButton): ReactElement {
+  if (key === 'files') return <FolderIcon size={15} />
+  if (key === 'sort') return <SortIcon />
+  if (key === 'fold') return <ChevronsIcon />
+  if (key === 'more') return <MoreIcon />
+  return <TabFace tab={key} />
+}
+
 /** The buttons at the right, as the panel names them (D9, D10). */
 const BUTTON_LABEL: Record<SidebarButton, string> = { sort: 'Sort', fold: 'Collapse all', more: 'More tabs (⋯)' }
-const BUTTON_ICON: Record<SidebarButton, () => ReactElement> = { sort: SortIcon, fold: ChevronsIcon, more: MoreIcon }
 
 /** A move of less than this many px is a press, not a drag (D5, S19). */
 const LIFT_PX = 3
@@ -56,7 +67,8 @@ export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }
   // The drag that is on, so Esc can put it back: its own cancel.
   const dragging = useRef<(() => void) | null>(null)
   // The glide of the last release, not yet written (YAZ-3301): its own commit, so a new press can finish it at once.
-  const settling = useRef<(() => void) | null>(null)
+  // `flush` draws the new order in the same frame; an unmount writes with no flush (React warns of a flushSync there).
+  const settling = useRef<((flush: boolean) => void) | null>(null)
   const latest = useRef({ prefs, onChange, onClose })
   latest.current = { prefs, onChange, onClose }
 
@@ -85,20 +97,23 @@ export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }
       e.preventDefault()
       e.stopPropagation()
     }
-    const onDown = (e: PointerEvent | MouseEvent): void => {
+    // `pointerdown` only: it also covers a press the system's pointer makes, and a `mousedown` after it would close the panel twice.
+    const onDown = (e: PointerEvent): void => {
       if (e.target instanceof Node && panelRef.current?.contains(e.target) === true) return
       latest.current.onClose()
     }
     const onBlur = (): void => latest.current.onClose()
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('pointerdown', onDown, true)
-    window.addEventListener('mousedown', onDown, true)
     window.addEventListener('blur', onBlur)
     return () => {
       window.removeEventListener('keydown', onKey, true)
       window.removeEventListener('pointerdown', onDown, true)
-      window.removeEventListener('mousedown', onDown, true)
       window.removeEventListener('blur', onBlur)
+      // The panel goes (a blur, S26) with a drag on: it ends, and its row's listeners go with it. In a glide, the
+      // timer goes and the drop that the release made is written now, so nothing fires after the panel is gone.
+      dragging.current?.()
+      settling.current?.(false)
     }
   }, [])
 
@@ -106,7 +121,7 @@ export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }
     if (!sameTabRow(next, latest.current.prefs)) latest.current.onChange(next)
   }
 
-  // The drag (D5): the lab's `openPanel` pointerdown / move / up, on the panel's own rows.
+  // The drag (D5, S19): pointerdown, move and up on the panel's own rows.
   const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     const target = e.target instanceof Element ? e.target : null
     const row = target?.closest<HTMLElement>('.tab-row-panel__row')
@@ -115,7 +130,7 @@ export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }
     e.preventDefault()
     // A press during the last drag's glide (YAZ-3301): that drop is written and drawn first, so this drag
     // reads the rows in their new order and places, and the glide's end does not wipe this drag's offsets.
-    settling.current?.()
+    settling.current?.(true)
     const rows = [...list.querySelectorAll<HTMLElement>('.tab-row-panel__row')]
     const from = rows.indexOf(row)
     // The tab, by its name: the drop moves THIS tab, even if the rows were drawn again under the drag.
@@ -169,16 +184,18 @@ export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }
       row.classList.add('tab-row-panel__row--settling')
       row.style.transform = `translateY(${tops[to] - tops[from]}px)`
       const landed = to
-      const commit = () => {
+      const commit = (flush: boolean) => {
         window.clearTimeout(timer)
         if (settling.current === commit) settling.current = null
         const { order } = latest.current.prefs
+        const drop = () => write({ ...latest.current.prefs, order: moveTab(order, order.indexOf(tab), landed) })
         // One frame: the rows are drawn in their new order and lose their offsets together, so nothing jumps.
-        flushSync(() => write({ ...latest.current.prefs, order: moveTab(order, order.indexOf(tab), landed) }))
+        if (flush) flushSync(drop)
+        else drop()
         clear()
       }
       settling.current = commit
-      const timer = window.setTimeout(commit, reducedMotion() ? 0 : SETTLE_MS)
+      const timer = window.setTimeout(() => commit(true), reducedMotion() ? 0 : SETTLE_MS)
     }
     // Esc during the drag (S21), or the system took the pointer: the row goes back, nothing is written.
     const cancel = () => {
@@ -216,7 +233,7 @@ export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }
               {shown(tab) ? '✓' : ''}
             </button>
             <span className="tab-row-panel__icon" aria-hidden="true">
-              {tab === 'files' ? null : <TabFace tab={tab} />}
+              {rowGlyph(tab)}
             </span>
             <span className="tab-row-panel__name">{TAB_LABEL[tab]}</span>
             {tab === 'files' && <span className="tab-row-panel__note">always shown</span>}
@@ -227,7 +244,6 @@ export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }
       <div className="tab-row-panel__head">Buttons at the right</div>
       {SIDEBAR_BUTTONS.map((button) => {
         const on = !prefs.hiddenButtons.includes(button)
-        const Icon = BUTTON_ICON[button]
         return (
           <div key={button} className="tab-row-panel__button-row" data-button={button}>
             <span className="tab-row-panel__grip" aria-hidden="true" />
@@ -235,7 +251,7 @@ export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }
               {on ? '✓' : ''}
             </button>
             <span className="tab-row-panel__icon" aria-hidden="true">
-              <Icon />
+              {rowGlyph(button)}
             </span>
             <span className="tab-row-panel__name">{BUTTON_LABEL[button]}</span>
           </div>

@@ -33,14 +33,14 @@ interface MenuItemBase {
   /** Right-aligned shortcut hint (⌘X …), drawn from `data-hint` by CSS — never part of the label. */
   hint?: string
   danger?: boolean
-  /** A glyph before the label (YAZ-3273: the tab row's menu). An SVG only, so `textContent` stays the bare label. */
-  icon?: ReactNode
 }
 
 /** A leaf: selecting it runs `onSelect`, then the whole menu closes. */
 export interface MenuAction extends MenuItemBase {
   onSelect: () => void
   children?: undefined
+  /** A glyph before the label (YAZ-3279: the tab row's menu). An SVG only, so `textContent` stays the bare label. Only a leaf draws one. */
+  icon?: ReactNode
   /** Rendered but inert — Paste with an empty clipboard, for discoverability (🔒 D5, YAZ-1674). Only a leaf can be. */
   disabled?: boolean
   /**

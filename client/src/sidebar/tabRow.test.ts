@@ -98,18 +98,18 @@ describe('fitTabs + rowLayout (YAZ-3273 D1 to D3, D7, D10)', () => {
   })
 })
 
-describe('tabRowSections (YAZ-3273 D4)', () => {
-  const handlers = () => ({ onOpen: vi.fn(), onSort: vi.fn(), onFold: vi.fn() })
+const handlers = () => ({ onHide: vi.fn(), onOpen: vi.fn(), onSort: vi.fn(), onFold: vi.fn(), onEdit: vi.fn() })
 
-  it('S9, S11: the tabs with no room, then the hidden tabs, in the row\'s order, with no group names (the demo); a hidden tab says "hidden", the open tab "open"; empty groups do not show', () => {
+describe('tabRowSections (YAZ-3273 D4)', () => {
+  it('S9, S11: the tabs with no room, then the hidden tabs, in the row\'s order, with no group names (YAZ-3279); a hidden tab says "hidden", the open tab "open"; empty groups do not show', () => {
     const p = prefs({ hidden: ['focus'] })
     const sections = tabRowSections(at(230, p, 'recents'), p, 'recents', BOTH, 'Collapse all', handlers())
-    expect(labels(sections)).toEqual([['Sessions', 'Recents'], ['Focus']])
+    expect(labels(sections)).toEqual([['Sessions', 'Recents'], ['Focus'], ['Edit tab row…']])
     const items = sections.flat() as MenuAction[]
     expect(items.find((item) => item.label === 'Focus')?.hint).toBe('hidden')
     expect(items.find((item) => item.label === 'Sessions')?.hint).toBeUndefined()
     expect(items.find((item) => item.label === 'Recents')?.hint).toBe('open')
-    expect(labels(tabRowSections(at(400), prefs(), 'files', BOTH, 'Collapse all', handlers()))).toEqual([]) // nothing to list: no menu
+    expect(labels(tabRowSections(at(400), prefs(), 'files', BOTH, 'Collapse all', handlers()))).toEqual([['Edit tab row…']]) // nothing off the bar: the door to the panel alone
   })
 
   it('S13: a click on a tab opens it', () => {
@@ -120,21 +120,18 @@ describe('tabRowSections (YAZ-3273 D4)', () => {
     expect(h.onOpen).toHaveBeenCalledExactlyOnceWith('recents')
   })
 
-  it('S15, D9: a hidden Sort or fold that this tab shows is in the menu with its own action, the fold under its current label; "Edit tab row…" only with a handler', () => {
+  it('S15, D9: a hidden Sort or fold that this tab shows is in the menu with its own action, the fold under its current label; "Edit tab row…" ends every menu (S17)', () => {
     const h = handlers()
     const p = prefs({ hiddenButtons: ['sort', 'fold'] })
     const sections = tabRowSections(at(400, p), p, 'files', BOTH, 'Expand all', h)
-    expect(labels(sections)).toEqual([['Sort…', 'Expand all']])
+    expect(labels(sections)).toEqual([['Sort…', 'Expand all'], ['Edit tab row…']])
     for (const item of sections.flat() as MenuAction[]) item.onSelect()
-    expect([h.onSort.mock.calls.length, h.onFold.mock.calls.length]).toEqual([1, 1])
-    expect(labels(tabRowSections(at(400, p, 'sessions', NONE), p, 'sessions', NONE, 'Collapse all', h))).toEqual([]) // Sessions shows neither (S5)
-    expect(labels(tabRowSections(at(400, p), p, 'files', BOTH, 'Collapse all', { ...h, onEdit: () => {} })).at(-1)).toEqual(['Edit tab row…'])
+    expect([h.onSort.mock.calls.length, h.onFold.mock.calls.length, h.onEdit.mock.calls.length]).toEqual([1, 1, 1])
+    expect(labels(tabRowSections(at(400, p, 'sessions', NONE), p, 'sessions', NONE, 'Collapse all', h))).toEqual([['Edit tab row…']]) // Sessions shows neither (S5)
   })
 })
 
 describe('the Hide row (YAZ-3279 D4, S9, S10)', () => {
-  const handlers = () => ({ onHide: vi.fn(), onOpen: vi.fn(), onSort: vi.fn(), onFold: vi.fn(), onEdit: vi.fn() })
-
   it('a right-clicked tab puts "Hide <tab>" first; blank space and ⋯ (no tab) have none', () => {
     const h = handlers()
     const p = prefs({ hidden: ['recents'] })

@@ -4554,7 +4554,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(items(el)).toEqual(['Sessions [hidden]', 'Edit tab row…'])
   })
 
-  it('S9, S10 (YAZ-3279): right-click on a tab puts "Hide <tab>" first; on Files it is off, "Files stays"; with nothing off the bar the menu is Hide and "Edit tab row…"; no Electron menu', async () => {
+  it('S9, S10 (YAZ-3279): right-click on a tab puts "Hide <tab>" first; on Files it is off, "Files stays"; no Electron menu', async () => {
     const { el, props } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
     expect(rightClick(tabs(el)[1]).defaultPrevented).toBe(true)
     expect(items(el)).toEqual(['Hide Search', 'Sessions [hidden]', 'Edit tab row…'])
@@ -4589,7 +4589,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     await rerender({ settings: next })
     expect(tabNames(el)).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions']) // S18: it leaves the row at once
     expect(panel()?.querySelector('[aria-label="Show Recents"]')?.getAttribute('aria-checked')).toBe('false')
-    act(() => void document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    act(() => void document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })))
     expect(panel()).toBeNull()
   })
 
@@ -4628,7 +4628,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(more(el)).toBeNull()
   })
 
-  it('S16: Enter on ⋯ puts the focus in the menu; ↑ ↓ walk its items and skip the group names; ← → and ↓ do nothing else; Esc closes it and the focus is back on ⋯', async () => {
+  it('S16: Enter on ⋯ puts the focus in the menu; ↑ ↓ walk its items, from the tabs with no room past the line to the hidden tabs; ← → and ↓ do nothing else; Esc closes it and the focus is back on ⋯', async () => {
     const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['focus', 'sessions'] }) })
     more(el)?.focus()
     act(() => more(el)?.click()) // detail 0: a key
@@ -4641,7 +4641,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     key('ArrowUp')
     key('ArrowUp')
     key('ArrowUp')
-    expect(document.activeElement?.textContent).toBe('Focus') // the group name is no stop
+    expect(document.activeElement?.textContent).toBe('Focus') // back at the first item
     key('ArrowRight')
     key('ArrowLeft')
     expect(document.activeElement?.textContent).toBe('Focus')
@@ -4661,7 +4661,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(document.activeElement?.textContent).toBe('Files')
   })
 
-  it('1A- (YAZ-2663 D12): ← on the lit ⋯, where ↑ from the search bar lands, goes to the last tab on the bar', async () => {
+  it('YAZ-3300: ← on the lit ⋯, where ↑ from the search bar lands, goes to the last tab on the bar', async () => {
     const { el } = await mount({ lens: 'search', ...withTabs({ hidden: ['search'] }) })
     act(() => searchInput(el)?.focus())
     key('ArrowUp')
@@ -4670,7 +4670,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Recents')
   })
 
-  it('1A- (YAZ-2663 D12): → on ⋯ stays in the row, as → on the last tab does; it does not leave for the page', async () => {
+  it('YAZ-3300: → on ⋯ stays in the row, as → on the last tab does; it does not leave for the page', async () => {
     const onLeaveToPage = vi.fn(() => true)
     const { el } = await mount({ lens: 'search', onLeaveToPage, ...withTabs({ hidden: ['search'] }) })
     act(() => searchInput(el)?.focus())
@@ -4680,7 +4680,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(document.activeElement).toBe(more(el))
   })
 
-  it('the Decision on YAZ-3278: Shift+F10 on a tab opens its menu with the focus on the first item; Esc puts the focus back on the tab', async () => {
+  it('YAZ-3278 S16: Shift+F10 on a tab opens its menu with the focus on the first item; Esc puts the focus back on the tab', async () => {
     const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
     tabs(el)[1].focus()
     act(() => void tabs(el)[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })))
@@ -4693,11 +4693,12 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Search')
   })
 
-  it('the Decision on YAZ-3278: the context-menu key on ⋯ opens the row menu with the focus on the first item; Esc puts the focus back on ⋯', async () => {
+  it('YAZ-3278 S16: the context-menu key on ⋯ opens the row menu with the focus on the first item, and ⋯ says it is open; Esc puts the focus back on ⋯', async () => {
     const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
     more(el)?.focus()
     key('ContextMenu')
     expect(items(el)).toEqual(['Sessions [hidden]', 'Edit tab row…'])
+    expect(more(el)?.getAttribute('aria-expanded')).toBe('true')
     expect(document.activeElement?.textContent).toBe('Sessions')
     key('Escape')
     expect(document.activeElement).toBe(more(el))
@@ -4705,7 +4706,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
 
   const panelOf = (el: HTMLElement) => el.querySelector('.tab-row-panel')
 
-  it('the Nit on YAZ-3279: from ⋯ by the keyboard, the panel takes the focus, and Esc gives it back to ⋯', async () => {
+  it('YAZ-3279 S26: from ⋯ by the keyboard, the panel takes the focus, and Esc gives it back to ⋯', async () => {
     const panel = panelOf
     const a = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
     more(a.el)?.focus()
@@ -4718,7 +4719,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(document.activeElement).toBe(more(a.el))
   })
 
-  it('the Nit on YAZ-3279: the panel from a right-click on a tab gives the focus back to that tab when it closes', async () => {
+  it('YAZ-3279 S26: the panel from a right-click on a tab gives the focus back to that tab when it closes', async () => {
     const panel = panelOf
     const b = await mount({ lens: 'files' })
     rightClick(tabs(b.el)[2])
@@ -4728,7 +4729,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Focus')
   })
 
-  it('the Nit on YAZ-3279: the panel from a right-click on blank space gives the focus to the tab that shows when it closes', async () => {
+  it('YAZ-3279 S26: the panel from a right-click on blank space gives the focus to the tab that shows when it closes', async () => {
     const c = await mount({ lens: 'favorites' })
     rightClick(c.el.querySelector('.sidebar__lenses'))
     act(() => itemByLabel(c.el, 'Edit tab row…')?.click())
@@ -4769,7 +4770,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
       act(() => [...new Set(observed)].forEach((cb) => cb()))
     }
 
-    it('S2, S4, S6: narrow, the last tabs go into ⋯ under "Not enough room" and the open one lights it; wider, they come back in order', async () => {
+    it('S2, S4, S6: narrow, the last tabs go into ⋯, first in its menu, and the open one lights it; wider, they come back in order', async () => {
       const { el } = await mount({ lens: 'recents' })
       expect(tabNames(el)).toHaveLength(6)
       // Sort is not on Recents (S5): fold only, if it shows — here there is nothing to fold either.

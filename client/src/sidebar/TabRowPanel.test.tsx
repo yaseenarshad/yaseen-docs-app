@@ -33,12 +33,12 @@ const pointer = (target: Element | null, type: string, clientY: number) => act((
 const key = (k: string) => act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
 
 describe('the panel', () => {
-  it('S17, D6: a row per tab in the row\'s order, each a grip, a box, the icon and the name; Files\' box is off, "always shown"; the right-clicked tab is lit', () => {
+  it('S17, D6: a row per tab in the row\'s order, each a grip, a box, the icon and the name — Files\' a folder, as in the menu; Files\' box is off, "always shown"; the right-clicked tab is lit', () => {
     const { el } = mount({ ...DEFAULT_SIDEBAR_TABS, order: ['recents', 'files', 'search', 'focus', 'favorites', 'sessions'], hidden: ['focus'] }, 'search')
     expect(el.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Edit tab row')
     expect(rows(el).map((r) => r.querySelector('.tab-row-panel__name')?.textContent)).toEqual(['Recents', 'Files', 'Search', 'Focus', 'Favorites', 'Sessions'])
     expect(rows(el).map((r) => r.querySelector('[role="checkbox"]')?.getAttribute('aria-checked'))).toEqual(['true', 'true', 'true', 'false', 'true', 'true'])
-    expect(rows(el).every((r) => r.querySelector('.tab-row-panel__grip') !== null)).toBe(true)
+    expect(rows(el).every((r) => r.querySelector('.tab-row-panel__grip') !== null && r.querySelector('.tab-row-panel__icon svg') !== null)).toBe(true)
     expect([box(el, 'Files')?.disabled, rows(el)[1].querySelector('.tab-row-panel__note')?.textContent]).toEqual([true, 'always shown'])
     expect(rows(el).filter((r) => r.classList.contains('tab-row-panel__row--focus')).map((r) => r.dataset.tab)).toEqual(['search'])
     expect([...el.querySelectorAll('.tab-row-panel__head')].map((h) => h.textContent)).toEqual(['Tabs · drag to reorder', 'Buttons at the right'])
@@ -78,9 +78,9 @@ describe('the panel', () => {
   it('S26: Esc, a press outside and the window losing focus close it; a press inside does not', () => {
     const { el, onClose } = mount()
     pointer(box(el, 'Focus'), 'pointerdown', 0)
-    act(() => void el.querySelector('.tab-row-panel__reset')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    pointer(el.querySelector('.tab-row-panel__reset'), 'pointerdown', 0)
     expect(onClose).not.toHaveBeenCalled()
-    act(() => void document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    pointer(document.body, 'pointerdown', 0)
     expect(onClose).toHaveBeenCalledTimes(1)
     act(() => void window.dispatchEvent(new Event('blur')))
     expect(onClose).toHaveBeenCalledTimes(2)
@@ -155,7 +155,7 @@ describe('the drag (D5, S19 to S21)', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('2A- a row grabbed during the 140 ms glide of the last drag is the row that moves', () => {
+  it('YAZ-3301 S19: a row grabbed during the 140 ms glide of the last drag is the row that moves', () => {
     const { el, onChange, rerender } = mount()
     const search = rows(el)[1]
     pointer(search, 'pointerdown', 100)
@@ -173,7 +173,7 @@ describe('the drag (D5, S19 to S21)', () => {
     expect((onChange.mock.calls[1][0] as SidebarTabsPrefs).order[0]).toBe('favorites')
   })
 
-  it('2A- a press during the glide writes the last drop at once, and only once; the new drag starts from the settled rows', () => {
+  it('YAZ-3301 S19: a press during the glide writes the last drop at once, and only once; the new drag starts from the settled rows', () => {
     const { el, onChange } = mount()
     const search = rows(el)[1]
     pointer(search, 'pointerdown', 100)
@@ -189,6 +189,36 @@ describe('the drag (D5, S19 to S21)', () => {
     expect(onChange).toHaveBeenCalledOnce() // the glide's own timer does not write it again
     pointer(favorites, 'pointermove', 160)
     expect(favorites.classList.contains('tab-row-panel__row--lifted')).toBe(true)
+  })
+
+  it('S26: the panel closing in the glide writes the drop at once, and its timer does not fire after', () => {
+    const { el, onChange } = mount()
+    const search = rows(el)[1]
+    pointer(search, 'pointerdown', 100)
+    pointer(search, 'pointermove', 150)
+    pointer(search, 'pointerup', 150) // the glide starts
+    const errors = vi.spyOn(console, 'error')
+    act(() => root?.unmount())
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SIDEBAR_TABS, order: ['files', 'focus', 'favorites', 'search', 'sessions', 'recents'] })
+    act(() => vi.advanceTimersByTime(500))
+    expect(onChange).toHaveBeenCalledOnce()
+    expect(errors.mock.calls.flat().filter((m) => String(m).includes('flushSync'))).toEqual([]) // no flushSync in the unmount
+    expect(search.style.transform).toBe('')
+  })
+
+  it('S26: the panel closing in a drag ends it: the row lets go of the pointer, and a later move or release does nothing', () => {
+    const { el, onChange } = mount()
+    const focus = rows(el)[2]
+    pointer(focus, 'pointerdown', 100)
+    pointer(focus, 'pointermove', 160)
+    expect(focus.classList.contains('tab-row-panel__row--lifted')).toBe(true)
+    act(() => root?.unmount())
+    expect([focus.classList.contains('tab-row-panel__row--lifted'), focus.style.transform]).toEqual([false, ''])
+    pointer(focus, 'pointermove', 200)
+    pointer(focus, 'pointerup', 200)
+    act(() => vi.advanceTimersByTime(500))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(focus.style.transform).toBe('')
   })
 
   it('a release with no move is no drag and writes nothing', () => {

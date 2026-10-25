@@ -129,10 +129,13 @@ export const ClockIcon = () => (
   </svg>
 )
 
-/** Files in the tab row's menu (YAZ-3273): its tab is a word, so the menu row gets a folder, at the tabs' 15px. */
-export const FolderIcon = () => (
-  <svg {...svg} width={15} height={15} viewBox="0 0 24 24" strokeWidth={2} className="folder-icon">
-    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+/**
+ * A folder outline: a `dir` row of the search results at 12px (🔒 D4, YAZ-1491), and Files in the tab
+ * row's menu and panel at the tabs' 15px (YAZ-3279), since its tab is a word. One glyph, two sizes.
+ */
+export const FolderIcon = ({ size, className }: { size: number; className?: string }) => (
+  <svg {...svg} width={size} height={size} className={className}>
+    <path d="M1.5 4.5a1 1 0 0 1 1-1h3.4l1.6 1.6h6a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" />
   </svg>
 )
 

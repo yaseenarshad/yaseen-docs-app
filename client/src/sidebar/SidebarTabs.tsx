@@ -1,8 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SidebarTab, SidebarTabsPrefs } from '@shared/types'
-import { ChevronsIcon, FolderIcon, MoreIcon, SortIcon } from '../views/view/icons'
+import { ChevronsIcon, MoreIcon, SortIcon } from '../views/view/icons'
 import { ContextMenu } from './ContextMenu'
-import { TabFace, TabRowPanel } from './TabRowPanel'
+import { rowGlyph, TabFace, TabRowPanel } from './TabRowPanel'
 import { fitTabs, onBar, rowLayout, TAB_LABEL, tabRowSections, toggleTab, type RowButtons } from './tabRow'
 
 /**
@@ -30,9 +30,6 @@ interface SidebarTabsProps {
   onFold: () => void
 }
 
-/** A glyph for a row of the menu: a tab's (Files' folder, since its tab is a word), Sort's or the fold button's. */
-const menuIcon = (key: SidebarTab | 'sort' | 'fold') => (key === 'sort' ? <SortIcon /> : key === 'fold' ? <ChevronsIcon /> : key === 'files' ? <FolderIcon /> : <TabFace tab={key} />)
-
 /** Where the focus goes back to when the menu or the panel closes: the ⋯ button, a tab, or (null) the tab that shows. */
 type FocusBack = 'more' | SidebarTab | null
 
@@ -41,9 +38,8 @@ interface RowMenu {
   x: number
   y: number
   tab: SidebarTab | null
-  fromMore: boolean
   keyboard: boolean
-  /** The button that opened it. */
+  /** The button that opened it: `'more'` is the ⋯ button's menu, by a click, a right-click or a key. */
   back: FocusBack
 }
 
@@ -113,7 +109,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
     return () => observer.disconnect()
   }, [measure, layout.row.join(), layout.moreShows, sortShows, foldShows])
 
-  // The menu from the keyboard (the Finding on YAZ-3278): `ContextMenu` has no ↑ ↓ walk, so the row adds
+  // The menu from the keyboard (YAZ-3278 S16): `ContextMenu` has no ↑ ↓ walk, so the row adds
   // one while its menu is open — ahead of every other key listener, so the window's arrows-from-nowhere
   // (YAZ-2663 D10) and the tabs' own walk do not also act. A key open puts the focus on the first item.
   const keyboardOpen = menu?.keyboard === true
@@ -140,8 +136,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
     return () => window.removeEventListener('keydown', onKey, true)
   }, [menu, keyboardOpen])
 
-  // The focus back on the row once the menu or the panel is gone (the Decision and the Nit on YAZ-3278, YAZ-3279):
-  // after the render, so a tab that "Hide" took off the bar, or a ⋯ that the panel took away, falls back to the tab that shows.
+  // The focus back on the row once the menu or the panel is gone (YAZ-3278 S16, YAZ-3279 S26): after the render, so a tab that "Hide" took off the bar, or a ⋯ that the panel took away, falls back to the tab that shows.
   const refocus = useRef<FocusBack | undefined>(undefined)
   useLayoutEffect(() => {
     const back = refocus.current
@@ -177,7 +172,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
     return r === undefined ? null : { x: r.left, y: r.bottom + 4 }
   }
   // The menu's rows, live while it stands: a resize or a tab switch redraws them.
-  const sectionsAt = ({ tab, keyboard, back, ...at }: RowMenu) =>
+  const sectionsAt = ({ x, y, tab, keyboard, back }: RowMenu) =>
     tabRowSections(
       layout,
       prefs,
@@ -189,13 +184,13 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
         onHide: (hidden) => onChangePrefs(toggleTab(prefs, hidden)),
         onOpen: onLensChange,
         // "Sort…" opens the sort menu at the ⋯ button (S15); with ⋯ off, where the menu was.
-        onSort: () => onSort(anchor() ?? at),
+        onSort: () => onSort(anchor() ?? { x, y }),
         onFold,
-        iconOf: menuIcon,
+        iconOf: rowGlyph,
         // "Edit tab row…" opens the panel where the menu was, the right-clicked tab lit (S17).
         onEdit: () => {
           toPanel.current = true
-          setPanel({ x: at.x, y: at.y, focus: tab, keyboard, back })
+          setPanel({ x, y, focus: tab, keyboard, back })
         },
       },
       tab,
@@ -225,7 +220,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
             e.preventDefault()
             const r = on!.getBoundingClientRect()
             const at = (tab?.dataset.tab as SidebarTab | undefined) ?? null
-            setMenu({ x: r.left, y: r.bottom + 4, tab: at, fromMore: false, keyboard: true, back: onMore ? 'more' : at })
+            setMenu({ x: r.left, y: r.bottom + 4, tab: at, keyboard: true, back: onMore ? 'more' : at })
             return
           }
           if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
@@ -245,7 +240,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
           // A `contextmenu` from the keyboard has no pointer type (Chromium): the menu then opens below the button, from a key.
           const keyboard = (e.nativeEvent as Partial<PointerEvent>).pointerType === ''
           const r = keyboard ? button?.getBoundingClientRect() : undefined
-          setMenu({ x: r?.left ?? e.clientX, y: r === undefined ? e.clientY : r.bottom + 4, tab, fromMore: false, keyboard, back: button === null ? null : button === moreRef.current ? 'more' : tab })
+          setMenu({ x: r?.left ?? e.clientX, y: r === undefined ? e.clientY : r.bottom + 4, tab, keyboard, back: button === null ? null : button === moreRef.current ? 'more' : tab })
         }}
       >
         {layout.row.map((id) => (
@@ -275,13 +270,13 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
             aria-label="More tabs"
             title="More tabs"
             aria-haspopup="menu"
-            aria-expanded={menu?.fromMore === true}
+            aria-expanded={menu?.back === 'more'}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
-              if (menu?.fromMore === true) return closeMenu()
+              if (menu?.back === 'more') return closeMenu()
               const r = e.currentTarget.getBoundingClientRect()
               // `detail` is 0 for Enter or Space: a key opened it (S16).
-              setMenu({ x: r.left, y: r.bottom + 4, tab: null, fromMore: true, keyboard: e.detail === 0, back: 'more' })
+              setMenu({ x: r.left, y: r.bottom + 4, tab: null, keyboard: e.detail === 0, back: 'more' })
             }}
           >
             <MoreIcon />
