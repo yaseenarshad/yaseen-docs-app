@@ -20,6 +20,8 @@ vi.mock('../api', async (importOriginal) => {
       drawing: { libraryFolder: vi.fn() },
       pickFolder: vi.fn(),
       secrets: { has: vi.fn(), set: vi.fn() },
+      // Settings opens on General (YAZ-3276 D7), whose Settings folder row asks main where the settings are.
+      state: { settingsFolder: vi.fn(async () => ({ folder: null, missing: false })), setSettingsFolder: vi.fn() },
     },
   }
 })
