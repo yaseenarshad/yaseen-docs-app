@@ -975,8 +975,27 @@ button {
   opacity: 0.75;
 }
 
+/* The count runs in CSS (YAZ-3303 D9): `--left` steps from the whole seconds down by one each second, and the
+   counter draws it. No JS tick renders anything. Held (no `--running`), it shows the full time and stops. */
+@property --left {
+  syntax: '<integer>';
+  inherits: false;
+  initial-value: 0;
+}
+
 .link-notice__clock::after {
-  content: attr(data-left);
+  counter-reset: left var(--left);
+  content: counter(left) 's';
+}
+
+.link-notice__clock--running {
+  animation: link-notice-count var(--count-ms) steps(var(--count-steps), end) forwards;
+}
+
+@keyframes link-notice-count {
+  to {
+    --left: 0;
+  }
 }
 
 .link-notice__close {

@@ -190,6 +190,11 @@ test('step 4 — Settings › Notifications: "Copy, cut or paste" Off silences t
   await menuItem(winB, 'Paste 1 item').click()
   await expect(notice(winB)).toContainText('already exists')
   await expect(notice(winB)).toHaveAttribute('data-icon', 'error')
+  // The count runs in CSS (YAZ-3303 D9): `--left` steps down from 4 (the default Show for) one second at a time.
+  const left = () => notice(winB).locator('.link-notice__clock').evaluate((el) => Number(getComputedStyle(el).getPropertyValue('--left')))
+  const first = await left()
+  expect(first).toBeGreaterThanOrEqual(3)
+  await expect.poll(left, { timeout: 3000 }).toBeLessThan(first)
   expect(await exists(path.join(vaultA, 'Ideas.md'))).toBe(true)
   await shoot(winB, 'fileClipboard-04-notifications-off-error-shows')
 })

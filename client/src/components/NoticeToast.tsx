@@ -1,33 +1,30 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import type { Notice } from '../lib/notice'
 import { NoticeIcon } from './NoticeIcon'
 
 /**
- * The window's one toast (E1, GRO-2171; bottom-left since YAZ-1674). It owns its own clock, so a tick
- * or a hover renders this toast and never App (YAZ-3303 D9):
+ * The window's one toast (E1, GRO-2171; bottom-left since YAZ-1674). It owns its own clock (YAZ-3303 D9):
  * - it goes after `ms` (`noticeMs`: Settings › Notifications › Show for, an Undo at least 6 s); null stays;
  * - the mouse on it holds it, and when the mouse leaves the full time starts again;
- * - a small grey count of the seconds left sits before ✕. CSS draws it from `data-left`, so it is not
- *   in the toast's text, and the live region never reads a number each second;
+ * - a small grey count of the seconds left sits before ✕. CSS counts it down (`.link-notice__clock--running`,
+ *   one step a second from `--left`): no JS tick, so nothing renders while it counts. A 250 ms interval that
+ *   rendered the count kept the app from quitting while a toast showed (YAZ-3341). The count
+ *   is drawn by CSS, so it is not in the toast's text, and the live region never reads a number each second;
  * - every toast has ✕ (YAZ-3303 D8): with "Until closed" it is the only way out. CSS draws the ✕ too, so the
  *   toast's text is its message (and its button's label), as before 3303.
  * A new notice (a new object) starts the clock again; the mouse that is on the toast still holds it.
  */
 export function NoticeToast({ notice, ms, onClose }: { notice: Notice; ms: number | null; onClose: () => void }) {
   const [held, setHeld] = useState(false)
-  const [left, setLeft] = useState(ms === null ? null : Math.ceil(ms / 1000))
+  // Each start of the clock gets a new count element, so its CSS countdown starts from the full time.
+  const [run, setRun] = useState(0)
   useEffect(() => {
-    setLeft(ms === null ? null : Math.ceil(ms / 1000))
     if (ms === null || held) return
-    const end = Date.now() + ms
-    // Each tick sets the whole seconds left: React bails out while the number is the same.
-    const tick = setInterval(() => setLeft(Math.max(1, Math.ceil((end - Date.now()) / 1000))), 250)
+    setRun((n) => n + 1)
     const timer = setTimeout(onClose, ms)
-    return () => {
-      clearInterval(tick)
-      clearTimeout(timer)
-    }
+    return () => clearTimeout(timer)
   }, [notice, ms, held, onClose])
+  const seconds = ms === null ? null : Math.ceil(ms / 1000)
   return (
     // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.
     <div
@@ -51,8 +48,14 @@ export function NoticeToast({ notice, ms, onClose }: { notice: Notice; ms: numbe
           {notice.action.label}
         </button>
       )}
-      {left !== null && (
-        <span className="link-notice__clock" aria-hidden="true" data-left={`${left}s`} />
+      {seconds !== null && (
+        <span
+          key={run}
+          className={`link-notice__clock${held ? '' : ' link-notice__clock--running'}`}
+          aria-hidden="true"
+          data-seconds={seconds}
+          style={{ '--left': seconds, '--count-steps': seconds, '--count-ms': `${ms}ms` } as CSSProperties}
+        />
       )}
       <button type="button" className="link-notice__close" aria-label="Dismiss" onClick={onClose} />
     </div>
