@@ -1497,6 +1497,16 @@ export interface SettingsState {
   libraryFolder: string | null
   /** The canvas panel's last tab and dock preference (YAZ-3038). See `CanvasPanelState`. */
   canvasPanel: CanvasPanelState
+  /** How long a toast stays (YAZ-3303 D5). A toast with Undo stays at least `UNDO_NOTICE_MS`. */
+  noticeLength: NoticeLength
+  /** The toasts of a move, a rename or a delete, with Undo (YAZ-3303 D6). Off: no toast; ⌘Z still works. */
+  noticeUndo: boolean
+  /** The toasts of Copy, Cut, Paste and "Copy path" (YAZ-3303 D6). */
+  noticeClipboard: boolean
+  /** The toasts of Favorites and Focus (YAZ-3303 D6). */
+  noticeLists: boolean
+  /** The land and trash sounds (YAZ-3267 D15, YAZ-3303 D7). macOS can still say no. */
+  gestureSounds: boolean
 }
 
 /**
@@ -1507,6 +1517,10 @@ export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder'
 
 export type DiagramDarkColors = 'adapt' | 'keep'
 export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
+
+/** How long a toast stays (YAZ-3303 D5): 4 s (the length before 3303), 8 s, 15 s, or until closed. */
+export type NoticeLength = '4s' | '8s' | '15s' | 'closed'
+export const NOTICE_LENGTHS: readonly NoticeLength[] = ['4s', '8s', '15s', 'closed']
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
 
@@ -1634,6 +1648,11 @@ export const DEFAULT_SETTINGS: SettingsState = {
   diagramDarkColors: 'adapt',
   libraryFolder: null,
   canvasPanel: DEFAULT_CANVAS_PANEL,
+  noticeLength: '4s',
+  noticeUndo: true,
+  noticeClipboard: true,
+  noticeLists: true,
+  gestureSounds: true,
 }
 
 export interface WindowBounds {

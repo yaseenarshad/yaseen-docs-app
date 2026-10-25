@@ -4,7 +4,7 @@
  * observable stubs; the bridge is the jsdom stub pattern (storage.test.ts), so the real
  * storage / api / hook modules run against it.
  */
-import { LINK_NOTICE_MS, type NoticeKind } from './lib/notice'
+import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -57,7 +57,7 @@ interface SidebarStubProps {
   /** A drop of two or more rows (YAZ-3250 D1): the door for a list of moves. */
   onMoveEntries: (moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]) => Promise<void>
   /** A move the Sidebar made itself (YAZ-3255 D10): a Paste of a Cut, a Finder move-in. App records it and says it with Undo. */
-  onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]; cleared: { path: string; values: Record<string, unknown> }[] }, text: string) => void
+  onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]; cleared: { path: string; values: Record<string, unknown> }[] }, text: string, skipped: boolean) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteEntries: (paths: string[]) => Promise<void>
@@ -95,7 +95,7 @@ interface SidebarStubProps {
    * writes it here; App only ever reads.
    */
   selectionRef: { current: ReadonlySet<string> }
-  onNotice: (message: string, icon?: NoticeKind) => void
+  onNotice: (message: string, icon?: NoticeKind, type?: NoticeType) => void
   /** ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App asks, the Sidebar (here a stub) answers. */
   clipboardRef: { current: { cutOrCopy: (op: 'copy' | 'cut') => boolean; paste: () => boolean; delete: () => boolean } | null }
   /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): the Inbox row and "Review this folder" exist only then. */
@@ -180,7 +180,7 @@ vi.mock('./sidebar/Sidebar', () => ({
   },
 }))
 
-import { App, MOVE_ROW_TITLE_MAX } from './App'
+import { App, MOVE_ROW_TITLE_MAX, replayNotice } from './App'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -731,6 +731,70 @@ describe('App ⌘C / ⌘X / ⌘V file clipboard (YAZ-1674, D6 amended)', () => {
  * `role="status"` announcement stay the bare text. No kind → `'info'`, which is what every caller
  * that never changed gets.
  */
+describe('App Settings › Notifications (YAZ-3303)', () => {
+  const open = (settings: Partial<AppState['settings']>) => {
+    const state = defaultAppState()
+    state.settings = { ...state.settings, ...settings }
+    return mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+  }
+  const toast = (el: HTMLElement) => el.querySelector('.link-notice')
+  const gesture = { moves: [{ oldPath: '/v/a.md', newPath: '/v/sub/a.md', kind: 'file' as const }], cleared: [] }
+
+  it('D2: a typed toast whose switch is Off never shows, and the toast on screen stays; an untyped toast and an error show (S14, S15, S20, S22)', async () => {
+    const { el } = await open({ noticeClipboard: false, noticeLists: false })
+    act(() => captured.sidebar?.onNotice('Saved workspace "W"'))
+    act(() => captured.sidebar?.onNotice('Copied path', 'info', 'clipboard'))
+    act(() => captured.sidebar?.onNotice('Added to favorites', 'favorite', 'lists'))
+    expect(toast(el)?.textContent).toBe('Saved workspace "W"')
+    act(() => captured.sidebar?.onNotice("Couldn't paste: Plan — already exists", 'error'))
+    expect(toast(el)?.textContent).toBe("Couldn't paste: Plan — already exists")
+  })
+
+  it('D2: with "Move, rename or delete" Off, a move says nothing, and a move that skipped an item still shows with Undo (S17, S18)', async () => {
+    const { el } = await open({ noticeUndo: false })
+    act(() => captured.sidebar?.onMoved(gesture, 'Moved 1 file (a.md)', false))
+    expect(toast(el)).toBeNull()
+    act(() => captured.sidebar?.onMoved(gesture, 'Moved 1 file (a.md), skipped 1: b.md — already exists', true))
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Moved 1 file (a.md), skipped 1: b.md — already exists')
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo')
+  })
+
+  it('D2: with "Move, rename or delete" Off, a rename that fails still says why (S19)', async () => {
+    const { bridge, el } = await open({ noticeUndo: false, confirmRename: false })
+    bridge.file.rename.mockRejectedValueOnce({ code: 'ALREADY_EXISTS', message: 'path already exists', path: '/v/b.md' })
+    await act(async () => await captured.sidebar?.onRenameFile('/v/a.md', '/v/b.md', 'file'))
+    expect(toast(el)?.textContent).toMatch(/^Can't rename: .*already exists$/)
+  })
+
+  it('D5: Show for 15 s keeps a plain toast 15 s (S5)', async () => {
+    const { el } = await open({ noticeLength: '15s' })
+    vi.useFakeTimers()
+    try {
+      act(() => captured.sidebar?.onNotice('Copied path', 'info', 'clipboard'))
+      act(() => vi.advanceTimersByTime(14_000))
+      expect(toast(el)?.textContent).toBe('Copied path')
+      act(() => vi.advanceTimersByTime(1_000))
+      expect(toast(el)).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('D5, D8: "Until closed" keeps a toast, with no count, until ✕ (S8, S13)', async () => {
+    const closed = await open({ noticeLength: 'closed' })
+    vi.useFakeTimers()
+    try {
+      act(() => captured.sidebar?.onNotice('Copied path', 'info', 'clipboard'))
+      act(() => vi.advanceTimersByTime(60_000))
+      expect(closed.el.querySelector('.link-notice__clock')).toBeNull()
+      act(() => closed.el.querySelector<HTMLButtonElement>('.link-notice__close')?.click())
+      expect(toast(closed.el)).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('App notice icon (D10 amended, YAZ-1674)', () => {
   const open = () => mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
 
@@ -2874,6 +2938,63 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "B2". Updated links in 1 note')
   })
 
+  it('YAZ-3303 D2 (YAZ-3335): a rename whose link update skipped a note says so, also with "Move, rename or delete" Off', async () => {
+    for (const noticeUndo of [true, false]) {
+      const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+      const state = askOff()
+      state.settings = { ...state.settings, noticeUndo }
+      const { bridge, el } = await mount(state, identity(), files, feed)
+      bridge.writeFile.mockImplementation(async ({ path }: { path: string; content: string }) => Promise.reject({ code: 'IO', message: `busy ${path}` }))
+      await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
+      expect([noticeUndo, el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Renamed to "B2". Updated links in 0 notes; 1 skipped (unsaved changes)'])
+      act(() => root?.unmount())
+    }
+  })
+
+  it('YAZ-3337: the toast of an undo or a redo of a move says the links that followed, and a note it skipped (replayNotice)', () => {
+    const n = [{ name: 'N.md', kind: 'file' as const }]
+    expect(replayNotice('undo', n, [], { updated: 0, skipped: 1 })).toBe('Moved back 1 file (N.md). Updated links in 0 notes; 1 skipped (unsaved changes)')
+    expect(replayNotice('redo', n, [], { updated: 1, skipped: 0 })).toBe('Moved 1 file (N.md). Updated links in 1 note')
+    expect(replayNotice('undo', n, [])).toBe('Moved back 1 file (N.md)')
+    expect(replayNotice('undo', [], ['N — moved again'], { updated: 0, skipped: 1 })).toBe("Can't undo: N — moved again")
+  })
+
+  it('YAZ-3303 D2 (YAZ-3337): an undo and a redo of a move whose link update skipped a note say so, also with "Move, rename or delete" Off', async () => {
+    const settle = () => act(async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0)) })
+    const key = (shiftKey: boolean) => act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: shiftKey ? 'Z' : 'z', metaKey: true, shiftKey, bubbles: true, cancelable: true })))
+    const busy = async ({ path }: { path: string; content: string }) => Promise.reject({ code: 'IO', message: `busy ${path}` })
+    for (const noticeUndo of [true, false]) {
+      // The redo: N goes out of Docs, back in (⌘Z), then out again (⌘⇧Z) while R cannot be written.
+      const files = { '/v/R.md': { content: 'See [[Docs/N]].\n', mtime: 1 } }
+      const state = askOff()
+      state.settings = { ...state.settings, noticeUndo }
+      const redo = await mount(state, identity(), files, feed)
+      await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/Docs/N.md', newPath: '/v/N.md', kind: 'file' }]))
+      key(false)
+      await settle()
+      files['/v/R.md'].content = 'See [[Docs/N]].\n'
+      redo.bridge.writeFile.mockImplementation(busy)
+      key(true)
+      await settle()
+      expect([noticeUndo, redo.el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Moved 1 file (N.md). Updated links in 0 notes; 1 skipped (unsaved changes)'])
+      act(() => root?.unmount())
+
+      // The undo: N goes from Docs to Other, then back (⌘Z) while R cannot be written. The index first
+      // holds the moved link, as the watcher gives it after the move.
+      const again = { '/v/R.md': { content: 'See [[Docs/N]].\n', mtime: 1 } }
+      const undo = await mount(state, identity(), again, feed)
+      await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/Docs/N.md', newPath: '/v/Other/N.md', kind: 'file' }]))
+      const moved = [record('/v/A.md', { links: ['B'] }), record('/v/B.md'), record('/v/R.md', { links: ['Other/N'] }), record('/v/Other/N.md')]
+      undo.bridge.index.mockResolvedValue({ root: '/v', records: moved, folders: [], generatedAt: 2, ids: true })
+      undo.bridge.writeFile.mockImplementation(busy)
+      key(false)
+      await settle()
+      expect([noticeUndo, undo.el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Moved back 1 file (N.md). Updated links in 0 notes; 1 skipped (unsaved changes)'])
+      act(() => root?.unmount())
+    }
+  })
+
   it('a MOVE stays silent: no sheet, the rename runs straight through', async () => {
     const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, feed)
     await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/Docs/B.md', 'file'))
@@ -3213,7 +3334,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         const files: Disk = { [ARCHIVED]: { content: `---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`, mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: NOOR, newPath: ARCHIVED, kind: 'file' }], cleared: [{ path: NOOR, values: { [HIRING]: { Status: 'Interview' } } }] }, 'Pasted 1 file (Noor.md)'))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: NOOR, newPath: ARCHIVED, kind: 'file' }], cleared: [{ path: NOOR, values: { [HIRING]: { Status: 'Interview' } } }] }, 'Pasted 1 file (Noor.md)', false))
         expect(toast(el)).toEqual({ text: 'Pasted 1 file (Noor.md)', action: 'Undo' })
         await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
         await settle()
@@ -3228,7 +3349,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         const files: Disk = { [PLAN]: { content: 'Body\n', mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PLAN, kind: 'file' }], cleared: [] }, 'Moved 1 file (Plan.md) from Finder'))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PLAN, kind: 'file' }], cleared: [] }, 'Moved 1 file (Plan.md) from Finder', false))
         expect(toast(el)).toEqual({ text: 'Moved 1 file (Plan.md) from Finder', action: 'Undo' })
         await press()
         expect(renames(bridge)).toEqual([[PLAN, DOWNLOADS]])
@@ -3247,7 +3368,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         const files: Disk = { [PDF]: { content: '%PDF', mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PDF, kind: 'file' }], cleared: [] }, 'Moved 1 file (Scan.pdf) from Finder'))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PDF, kind: 'file' }], cleared: [] }, 'Moved 1 file (Scan.pdf) from Finder', false))
         await press()
         expect(renames(bridge)).toEqual([[PDF, DOWNLOADS]])
         expect(toast(el)).toEqual({ text: 'Moved back 1 file (Scan.pdf)', action: 'Redo' })
@@ -3297,7 +3418,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         bridge.file.rename.mockRejectedValue({ code: 'IO_ERROR', message: 'the disk is busy', path: LOST })
         await press()
         expect(bridge.app.sound).toHaveBeenCalledTimes(3)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Team/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 item from Finder'))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Team/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 item from Finder', false))
         expect(bridge.app.sound.mock.calls).toEqual([['land'], ['land'], ['land'], ['land']])
       })
 
@@ -3528,6 +3649,19 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(bridge.app.sound.mock.calls).toEqual([['trash']])
       expect((await press()).defaultPrevented).toBe(false)
       expect(bridge.file.putBack).not.toHaveBeenCalled()
+    })
+
+    it('YAZ-3303 D6: with "Move, rename or delete" Off, a delete says nothing, with or without Undo; the sound still plays and ⌘Z still undoes (S17)', async () => {
+      const state = defaultAppState()
+      state.settings = { ...state.settings, noticeUndo: false }
+      const { bridge, el } = await mountVault(state)
+      bridge.file.delete.mockResolvedValueOnce({ path: '/v/B.md', kind: 'file', trashed: null })
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/B.md']))
+      expect(toast(el)).toEqual({ text: undefined, action: undefined })
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/Todo.md']))
+      expect(toast(el)).toEqual({ text: undefined, action: undefined })
+      expect(bridge.app.sound.mock.calls).toEqual([['trash'], ['trash']])
+      expect((await press()).defaultPrevented).toBe(true)
     })
 
     /** The list delete door (YAZ-3272 D21, S67): N items, ONE trash sound, ONE step, ONE toast. */

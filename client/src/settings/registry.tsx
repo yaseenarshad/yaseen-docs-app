@@ -37,6 +37,7 @@ import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
+import { NOTIFICATIONS_SECTION } from './notificationsSection'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
 import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
@@ -109,7 +110,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'general' | 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'appearance' | 'notifications' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -432,6 +433,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
     ],
   },
+  // YAZ-3303 D4: toasts and sounds, under Appearance.
+  NOTIFICATIONS_SECTION,
   {
     id: 'editor',
     title: 'Editor',

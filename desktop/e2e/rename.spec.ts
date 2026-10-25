@@ -352,7 +352,8 @@ test('step 6b — drag a folder, then a 2-row selection, onto a folder; ⌘Z put
   await expect.poll(() => readWhenReady(path.join(vault, 'Box', 'inner.md'))).toContain(INNER_BODY)
   // Q's link follows the folder back: the index already held the rewritten link (YAZ-3258).
   await expect.poll(() => readWhenReady(path.join(vault, 'Q.md'))).toBe('# Q\n\nSee [[Box/inner]] here.\n')
-  await expect(win.locator('.link-notice__text')).toHaveText('Moved back 1 folder (Box)')
+  // The undo says the links that followed, as the move's own toast does (YAZ-3337).
+  await expect(win.locator('.link-notice__text')).toHaveText('Moved back 1 folder (Box). Updated links in 1 note')
   await shoot(win, 'rename-07b-drag-undo')
 })
 

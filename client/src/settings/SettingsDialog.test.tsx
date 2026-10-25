@@ -128,6 +128,8 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 const GENERAL_ROWS = ['settingsFolder', 'startupWindows']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
 const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'diagramDarkColors']
+/** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
+const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
 const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
 const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents']
@@ -196,17 +198,17 @@ describe('SettingsDialog shell (D1)', () => {
 describe('SettingsDialog: a page for each section (YAZ-2709, amending the one long page)', () => {
   it('the nav: the settings pages (Review only with a vault, Sync only with the engine), a divider, then the Hotkeys reference page', () => {
     const { el } = mount()
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
     unmount()
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
-    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', '—', 'Hotkeys'])
+    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', '—', 'Hotkeys'])
     unmount()
     const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
-    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
+    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
   })
 
   it('the registry order once both YAZ-3028 halves land: canvas and images after Editor (YAZ-3037, YAZ-3038), storage and sharing after Sync (YAZ-3039, YAZ-3040), Hotkeys last', () => {
-    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'appearance', 'editor', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
+    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'appearance', 'notifications', 'editor', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
   })
 
   it('opens on General, the first page: the one section in the pane, anchored by id, with only its rows — no row of a later section is there (YAZ-3276 D7)', () => {
@@ -235,6 +237,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(seen).toEqual([
       page('General', 'settings-general', GENERAL_ROWS),
       page('Appearance', 'settings-appearance', APPEARANCE_ROWS),
+      page('Notifications', 'settings-notifications', NOTIFICATIONS_ROWS),
       page('Editor', 'settings-editor', EDITOR_ROWS),
       page('Excalidraw canvas', 'settings-canvas', CANVAS_ROWS),
       page('Images', 'settings-images', IMAGES_ROWS),
@@ -284,6 +287,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(notes).toEqual([
       ['General', []],
       ['Appearance', []],
+      ['Notifications', []],
       ['Editor', []],
       ['Excalidraw canvas', []],
       ['Images', []],
@@ -305,6 +309,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(lines(el)).toEqual([
       ['General', []],
       ['Appearance', []],
+      ['Notifications', []],
       ['Editor', []],
       ['Excalidraw canvas', []],
       ['Images', []],
@@ -339,7 +344,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Sync')
     expect(currentNav(el)).toBe('Sync')
     act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange }} onClose={onClose} />))
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
     expect(headings(el)).toEqual(['General'])
     expect(currentNav(el)).toBe('General')
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
@@ -848,7 +853,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
     const { el } = mount()
     expect(navByTitle(el, 'Review')).toBeUndefined()
     const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'baseDays')])
-    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Hotkeys'])
+    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Hotkeys'])
     for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 
@@ -1036,7 +1041,7 @@ describe('SettingsDialog search (D6)', () => {
     const { el, onClose } = mount()
     // As it opens: General (YAZ-3276 D7).
     type(searchInput(el), 'trash')
-    expect(rowIds(el)).toEqual(['confirmDelete', 'hotkeys-window']) // ⌘⌫'s row says "Trash" too (YAZ-3272 D20)
+    expect(rowIds(el)).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'hotkeys-window']) // ⌘⌫'s row says "Trash" too (YAZ-3272 D20)
     pressEscape(searchInput(el))
     expect(onClose).not.toHaveBeenCalled()
     expect(searchInput(el).value).toBe('')

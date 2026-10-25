@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type SectionLines, type SidebarLineStyle, type StartupWindows, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type SectionLines, type SidebarLineStyle, type StartupWindows, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -53,6 +53,14 @@ export const STARTUP_WINDOWS_OPTIONS: readonly Option<StartupWindows>[] = [
   { label: 'All vaults', value: 'all' },
   { label: 'Last vault', value: 'last' },
   { label: 'None', value: 'none' },
+]
+
+/** Settings › Notifications › Show for (YAZ-3303 D5): how long a toast stays. */
+export const NOTICE_LENGTH_OPTIONS: readonly Option<NoticeLength>[] = [
+  { label: '4 s', value: '4s' },
+  { label: '8 s', value: '8s' },
+  { label: '15 s', value: '15s' },
+  { label: 'Until closed', value: 'closed' },
 ]
 
 /** Google-Docs-style presets (GRO-2024 D4). blockGap is per-side padding: visual gap = 2×. */

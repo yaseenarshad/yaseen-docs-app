@@ -583,7 +583,7 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     pick('Copy vault name')
     await settle()
     expect(writeText).toHaveBeenCalledWith('Archive')
-    expect(props.onNotice).toHaveBeenCalledWith('Copied vault name')
+    expect(props.onNotice).toHaveBeenCalledWith('Copied vault name', 'info', 'clipboard')
   })
 
   it('Remove from recent vaults forgets the MRU entry and drops the row at once; the panel stays with the filter focused', () => {

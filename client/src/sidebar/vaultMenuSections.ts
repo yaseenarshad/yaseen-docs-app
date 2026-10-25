@@ -1,4 +1,5 @@
 import type { KeyedVault } from '@shared/types'
+import type { NoticeKind, NoticeType } from '../lib/notice'
 import { errorText, type MenuAction, type MenuSection } from './menuSections'
 
 /**
@@ -58,7 +59,7 @@ export interface VaultMenuHandlers {
   /** Forget the MRU entry (D3): no confirm, the folder on disk is untouched. */
   onRemove: (path: string) => void
   /** The sidebar's passive notice — every copy confirms or reports, the `menuSections` idiom (D9). */
-  onNotice: (message: string) => void
+  onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void
 }
 
 /**
@@ -79,7 +80,7 @@ const copyItem = (id: string, what: string, text: string, h: VaultMenuHandlers):
   label: `Copy ${what}`,
   onSelect: () => {
     void navigator.clipboard.writeText(text).then(
-      () => h.onNotice(`Copied ${what}`),
+      () => h.onNotice(`Copied ${what}`, 'info', 'clipboard'),
       (error: unknown) => h.onNotice(`Can't copy ${what}: ${errorText(error)}`),
     )
   },
