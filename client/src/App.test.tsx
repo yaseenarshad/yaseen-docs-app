@@ -2926,7 +2926,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(replayNotice('undo', [], ['N — moved again'], { updated: 0, skipped: 1 })).toBe("Can't undo: N — moved again")
   })
 
-  it('YAZ-3303 D2 (YAZ-3337): a redo of a move whose link update skipped a note says so, also with "Move, rename or delete" Off', async () => {
+  it('YAZ-3303 D2 (YAZ-3337): an undo and a redo of a move whose link update skipped a note say so, also with "Move, rename or delete" Off', async () => {
     const settle = () => act(async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0)) })
     const key = (shiftKey: boolean) => act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: shiftKey ? 'Z' : 'z', metaKey: true, shiftKey, bubbles: true, cancelable: true })))
     const busy = async ({ path }: { path: string; content: string }) => Promise.reject({ code: 'IO', message: `busy ${path}` })
@@ -2946,6 +2946,17 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect([noticeUndo, redo.el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Moved 1 file (N.md). Updated links in 0 notes; 1 skipped (unsaved changes)'])
       act(() => root?.unmount())
 
+      // The undo: N goes from Docs to Other, then back (⌘Z) while R cannot be written. The index first
+      // holds the moved link, as the watcher gives it after the move.
+      const again = { '/v/R.md': { content: 'See [[Docs/N]].\n', mtime: 1 } }
+      const undo = await mount(state, identity(), again, feed)
+      await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/Docs/N.md', newPath: '/v/Other/N.md', kind: 'file' }]))
+      const moved = [record('/v/A.md', { links: ['B'] }), record('/v/B.md'), record('/v/R.md', { links: ['Other/N'] }), record('/v/Other/N.md')]
+      undo.bridge.index.mockResolvedValue({ root: '/v', records: moved, folders: [], generatedAt: 2, ids: true })
+      undo.bridge.writeFile.mockImplementation(busy)
+      key(false)
+      await settle()
+      expect([noticeUndo, undo.el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Moved back 1 file (N.md). Updated links in 0 notes; 1 skipped (unsaved changes)'])
       act(() => root?.unmount())
     }
   })
