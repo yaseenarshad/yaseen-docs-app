@@ -3509,6 +3509,16 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect((await press()).defaultPrevented).toBe(false)
     })
 
+    it('a new file took the old name since: "Can’t undo: a file named Draft is there now", not "moved again" (YAZ-3268 nit 2)', async () => {
+      const { bridge, el } = await mount(askOff(), identity(), {}, feed)
+      await act(async () => await captured.sidebar?.onRenameFile('/v/Draft.md', '/v/Plan.md', 'file'))
+      expect(toast(el)).toEqual({ text: 'Renamed to "Plan"', action: 'Undo' })
+      bridge.file.rename.mockRejectedValueOnce({ code: 'ALREADY_EXISTS', message: 'a file with this name already exists', path: '/v/Draft.md' })
+      await press()
+      expect(toast(el)).toEqual({ text: "Can't undo: a file named Draft is there now", action: undefined })
+      expect(icon(el)).toBe('error')
+    })
+
     it('moves, deletes and renames mixed: ⌘Z takes them back newest first, one per press; ⌘⇧Z redoes them in order (S65)', async () => {
       const { bridge, el } = await mountVault(askOff())
       const log: string[] = []

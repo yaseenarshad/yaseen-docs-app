@@ -1,10 +1,11 @@
 /**
  * The doors of an undone delete (YAZ-3268 D16): `fs:delete` answers where the item went in the Trash,
  * and `fs:put-back` moves it back. Plain node, temp folders: the home folder, and so `~/.Trash`, is a
- * temp folder, and `shell.trashItem` moves the item there under a new name, as the real Trash can.
+ * temp folder, and `shell.trashItem` moves the item there under the name macOS gives a clash
+ * (`Plan.md 01-30-05-828.md`, the local time of the move), as the real Trash does.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain, shell } from 'electron'
@@ -38,6 +39,7 @@ const registered = (door: { channel: string }): Handler => {
 }
 
 let store: Store
+let given = ''
 let vault: string
 let trash: string
 const entry = { file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, bounds: { x: 0, y: 0, width: 800, height: 600 } }
@@ -51,8 +53,13 @@ beforeAll(async () => {
   store = createStore(path.join(home.dir, 'yaseendocs.json'))
   store.upsertWindow({ ...entry, id: 'w-this', root: vault })
   registerFsIpc(store, { idFor: () => 'w-this', vaultNotice: vi.fn() })
-  // The Trash held a note of this name already: the new one goes in under a new name.
-  vi.mocked(shell.trashItem).mockImplementation(async (p: string) => rename(p, path.join(trash, `${path.parse(p).name} 10.21.33${path.extname(p)}`)))
+  // The Trash held a note of this name already: the new one goes in under the clash name of its time.
+  vi.mocked(shell.trashItem).mockImplementation(async (p: string) => {
+    const d = new Date()
+    const two = (n: number) => String(n).padStart(2, '0')
+    given = `${path.basename(p)} ${two(d.getHours())}-${two(d.getMinutes())}-${two(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, '0')}${path.extname(p)}`
+    await rename(p, path.join(trash, given))
+  })
 })
 afterEach(() => _evictAll())
 afterAll(async () => {
@@ -69,7 +76,7 @@ describe('fs:delete, then fs:put-back (YAZ-3268 D16)', () => {
     await writeFile(plan, 'See [[Other]].')
     await getIndex(vault)
     const gone = await del(plan)
-    const trashed = path.join(trash, 'Plan 10.21.33.md')
+    const trashed = path.join(trash, given)
     expect(gone).toEqual({ ok: true, value: { path: plan, kind: 'file', trashed } })
     vi.mocked(BrowserWindow.getAllWindows).mockClear()
     expect(await putBack(trashed, plan)).toEqual({ ok: true, value: { path: plan, kind: 'file' } })
@@ -86,5 +93,24 @@ describe('fs:delete, then fs:put-back (YAZ-3268 D16)', () => {
     expect(await putBack(trashed, away)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
     expect(await putBack(trashed, vault)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
     expect((await stat(trashed)).isFile()).toBe(true)
+  })
+
+  it('never replaces a broken link with the old name, through the door: ALREADY_EXISTS, and the link and the entry stay (YAZ-3271)', async () => {
+    const trashed = path.join(trash, 'L.md')
+    await writeFile(trashed, 'the deleted note')
+    const to = path.join(vault, 'L.md')
+    await symlink(path.join(vault, 'nowhere.md'), to)
+    expect(await putBack(trashed, to)).toMatchObject({ ok: false, error: { code: 'ALREADY_EXISTS', path: to } })
+    expect((await lstat(to)).isSymbolicLink()).toBe(true)
+    expect(await readFile(trashed, 'utf8')).toBe('the deleted note')
+  })
+
+  it('an entry of a `.Trashes/<uid>` folder that is not the Trash of that disk is refused (YAZ-3268 nit 1)', async () => {
+    const fake = path.join(home.dir, 'other', '.Trashes', String(process.getuid?.() ?? 0))
+    await mkdir(fake, { recursive: true })
+    const trashed = path.join(fake, 'secret.md')
+    await writeFile(trashed, 's')
+    expect(await putBack(trashed, path.join(vault, 'secret.md'))).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    expect(await readFile(trashed, 'utf8')).toBe('s')
   })
 })

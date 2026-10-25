@@ -3,7 +3,7 @@
  * Plain node, temp folders: the home folder, and so `~/.Trash`, is a temp folder.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -11,6 +11,11 @@ const home = vi.hoisted(() => ({ dir: '' }))
 vi.mock('node:os', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:os')>()
   return { ...real, homedir: () => home.dir }
+})
+// `readdir` as a spy (YAZ-3270): the look for a trashed entry must never list the Trash.
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...real, readdir: vi.fn(real.readdir) }
 })
 
 import { findTrashed, putBack } from './trash'
@@ -81,6 +86,44 @@ describe('putBack (YAZ-3268 D16)', () => {
     }
     expect(await exists(outside)).toBe(true)
     expect(await exists(path.join(vault, 'Moved.md'))).toBe(false)
+  })
+
+  it('never overwrites a broken link with the old name: ALREADY_EXISTS, and the link and the entry stay (YAZ-3271, S60)', async () => {
+    const trashed = path.join(trash, 'L.md')
+    await writeFile(trashed, 'the deleted note')
+    const to = path.join(vault, 'L.md')
+    await symlink(path.join(vault, 'nowhere.md'), to)
+    const err = await failure(putBack({ trashed, path: to }))
+    expect([err.code, err.path]).toEqual(['ALREADY_EXISTS', to])
+    expect((await lstat(to)).isSymbolicLink()).toBe(true)
+    expect(await readFile(trashed, 'utf8')).toBe('the deleted note')
+  })
+
+  it('moves only an entry of the Trash of the old place\'s disk: a `.Trashes/<uid>` folder anywhere else is BAD_REQUEST, and nothing moves (YAZ-3268 nit 1)', async () => {
+    const fake = path.join(home.dir, 'other', '.Trashes', String(process.getuid?.() ?? 0))
+    await mkdir(fake, { recursive: true })
+    const trashed = path.join(fake, 'secret.md')
+    await writeFile(trashed, 's')
+    const to = path.join(vault, 'secret.md')
+    expect((await failure(putBack({ trashed, path: to }))).code).toBe('BAD_REQUEST')
+    expect(await exists(trashed)).toBe(true)
+    expect(await exists(to)).toBe(false)
+  })
+})
+
+describe('findTrashed never lists the Trash (YAZ-3270, D16b)', () => {
+  it('a big Trash: the own name and the clash names miss, so the answer is null, with no `readdir` and no look at each entry', async () => {
+    const big = path.join(home.dir, 'BigTrash')
+    await mkdir(big)
+    await Promise.all(Array.from({ length: 2_000 }, (_, i) => writeFile(path.join(big, `n${i}.md`), '')))
+    // The entry of this delete, under a name that is neither its own nor a clash name of this time.
+    const odd = path.join(big, 'Plan 10.21.33.md')
+    await writeFile(odd, 'this delete')
+    const { ino, dev } = await stat(odd)
+    vi.mocked(readdir).mockClear()
+    const t = Date.now()
+    expect(await findTrashed(big, 'Plan.md', ino, dev, t + 20, t)).toBeNull()
+    expect(readdir).not.toHaveBeenCalled()
   })
 })
 

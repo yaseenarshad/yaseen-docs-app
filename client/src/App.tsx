@@ -130,6 +130,14 @@ function stepNotice(verb: 'undo' | 'redo', head: string | null, failed: readonly
   return cannot === null ? head : `${head}. ${cannot}`
 }
 
+/**
+ * Why the undo or the redo of a rename did not run (YAZ-3268 nit 2): the name it goes to is taken now
+ * (`ALREADY_EXISTS`) — "a file named Draft is there now", as a delete's undo says it (S60); else as a
+ * move says it — "Plan moved again" (`NOT_FOUND`, S64), or main's own words.
+ */
+const renameReplayFailure = (name: string, taken: string, type: 'file' | 'dir', err: unknown): string =>
+  err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS' ? `a ${type === 'dir' ? 'folder' : 'file'} named ${taken} is there now` : againFailure(name, err)
+
 /** A rename's toast (YAZ-3268 D18): `Renamed to "Plan v2"` or `Renamed back to "Plan"`, then the links that followed, as a rename says them. */
 const renamedNotice = (head: string, links: RenameRewriteSummary): string => (links.updated > 0 || links.skipped > 0 ? `${head}. ${renameNotice(links)}` : head)
 
@@ -1516,7 +1524,8 @@ export function App() {
    * The undo or the redo of a rename (YAZ-3268 D17): the door again, with the input back (`from`) or
    * forward (`to`), straight into `applyRename` — no sheet, and nothing new on the list — so links
    * follow back (S62) and a title comes back as a title (S63). An item that changed since fails
-   * "Can't undo: Plan moved again" (S64), and the step goes; any other failure keeps it on its list.
+   * "Can't undo: Plan moved again" (S64), and one whose name a new file took "Can't undo: a file
+   * named Draft is there now" (nit 2); either way the step goes. Any other failure keeps it on its list.
    */
   const replayRename = useCallback(async (entry: RenameStep, verb: 'undo' | 'redo'): Promise<void> => {
     const side = verb === 'undo' ? entry.from : entry.to
@@ -1531,7 +1540,7 @@ export function App() {
     if (out === null) return // the window's vaults changed under it: the lists are empty now
     if ('error' in out) {
       if (!movedAgain(out.error)) keep()
-      return notify(stepNotice(verb, null, [againFailure(name, out.error)]), 'error')
+      return notify(stepNotice(verb, null, [renameReplayFailure(name, side.title ?? nameOf(side.newPath), entry.type, out.error)]), 'error')
     }
     const now: RenameStep = { ...entry, path: out.move.newPath }
     if (verb === 'undo') moveHistory.current.undone(now)

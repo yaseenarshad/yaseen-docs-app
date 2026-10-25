@@ -139,6 +139,15 @@ describe('removeEntry (GRO-2272 A1)', () => {
 describe('removeEntry finds the trashed entry by its file ID (YAZ-3268 D16)', () => {
   const trash = () => path.join(home.dir, '.Trash')
   const trashAs = (name: (p: string) => string) => trashItem.mockImplementation(async (p: string) => rename(p, path.join(trash(), name(p))))
+  /** The name macOS gives a clash (the guided test on YAZ-3268): `Twin.md 01-30-05-828.md`, the local time of the move. */
+  const clash = (p: string) => {
+    const d = new Date()
+    const two = (n: number) => String(n).padStart(2, '0')
+    const ext = path.extname(p)
+    return `${path.basename(p)} ${two(d.getHours())}-${two(d.getMinutes())}-${two(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, '0')}${ext}`
+  }
+  let given = ''
+  const trashAsClash = () => trashAs((from) => (given = clash(from)))
 
   it('under its own name: `trashed` is the entry in `~/.Trash`', async () => {
     const p = path.join(root, 'Gone.md')
@@ -151,15 +160,24 @@ describe('removeEntry finds the trashed entry by its file ID (YAZ-3268 D16)', ()
     await writeFile(path.join(trash(), 'Twin.md'), 'an older delete')
     const p = path.join(root, 'Twin.md')
     await writeFile(p, 'twin')
-    trashAs(() => 'Twin 10.21.33.md')
-    expect((await removeEntry({ path: p })).trashed).toBe(path.join(trash(), 'Twin 10.21.33.md'))
+    trashAsClash()
+    expect((await removeEntry({ path: p })).trashed).toBe(path.join(trash(), given))
   })
 
   it('a folder is found the same way', async () => {
+    await mkdir(path.join(trash(), 'GoneDir'), { recursive: true })
     const p = path.join(root, 'GoneDir')
     await mkdir(path.join(p, 'inner'), { recursive: true })
-    trashAs(() => 'GoneDir 2')
-    expect(await removeEntry({ path: p })).toEqual({ path: p, kind: 'dir', trashed: path.join(trash(), 'GoneDir 2') })
+    trashAsClash()
+    expect(await removeEntry({ path: p })).toEqual({ path: p, kind: 'dir', trashed: path.join(trash(), given) })
+  })
+
+  it('under a name of no shape it knows: `trashed` is null (no Undo), the Trash is never listed, and the delete stands (D16b, YAZ-3270)', async () => {
+    const p = path.join(root, 'Odd.md')
+    await writeFile(p, 'odd')
+    trashAs(() => 'Odd 10.21.33.md')
+    expect(await removeEntry({ path: p })).toEqual({ path: p, kind: 'file', trashed: null })
+    expect(await exists(path.join(trash(), 'Odd 10.21.33.md'))).toBe(true)
   })
 
   it('not in the Trash (another place took it): `trashed` is null, and the delete still stands (S61)', async () => {
