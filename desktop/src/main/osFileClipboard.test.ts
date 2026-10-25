@@ -61,12 +61,17 @@ describe('osFileClipboard (YAZ-3265 D13)', () => {
     expect(clipboard.read).not.toHaveBeenCalled()
   })
 
-  it('under the e2e harness (YASEEN_DOCS_E2E) the system clipboard is never touched: an in-memory pasteboard stands in', () => {
+  it('with YASEEN_DOCS_FAKE_CLIPBOARD (the e2e harness) the system clipboard is never touched: an in-memory pasteboard stands in; YASEEN_DOCS_E2E alone reaches the real one', () => {
     onPlatform('darwin')
-    vi.stubEnv('YASEEN_DOCS_E2E', '1')
+    vi.stubEnv('YASEEN_DOCS_FAKE_CLIPBOARD', '1')
     writeOsFiles(['/v/a b.md'])
     expect(readOsFiles()).toEqual(['/v/a b.md'])
     expect(clipboard.writeBuffer).not.toHaveBeenCalled()
     expect(clipboard.read).not.toHaveBeenCalled()
+    // A dev build run by hand keeps YASEEN_DOCS_E2E (no claim of the link handler) and still reads Finder's real clipboard.
+    vi.stubEnv('YASEEN_DOCS_FAKE_CLIPBOARD', '')
+    vi.stubEnv('YASEEN_DOCS_E2E', '1')
+    readOsFiles()
+    expect(clipboard.read).toHaveBeenCalledWith('NSFilenamesPboardType')
   })
 })

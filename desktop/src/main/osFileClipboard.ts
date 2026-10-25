@@ -6,9 +6,11 @@ import { clipboard } from 'electron'
  * Paste reads. The type is `NSFilenamesPboardType`, a plist array of paths. It carries MANY files;
  * `public.file-url` gives only the first (the "Clipboard test" on YAZ-3248), so it is not used.
  *
- * Off macOS both calls are no-ops: the app keeps its own clipboard only, as before. Under the e2e
- * harness (`YASEEN_DOCS_E2E`) an in-memory pasteboard stands in, so a test never writes the real
- * clipboard of the person at the Mac. A clipboard that fails is warned about and read as empty:
+ * Off macOS both calls are no-ops: the app keeps its own clipboard only, as before. With
+ * `YASEEN_DOCS_FAKE_CLIPBOARD=1` (the e2e harness sets it) an in-memory pasteboard stands in, so a
+ * test never writes the real clipboard of the person at the Mac. It is its own flag, not
+ * `YASEEN_DOCS_E2E`: a dev build run by hand for a guided test keeps that one (no claim of the
+ * machine's yaseendocs:// handler) and must still reach Finder's real clipboard. A clipboard that fails is warned about and read as empty:
  * the app's own clip (`fileClip`) always stands.
  */
 export const FILENAMES_TYPE = 'NSFilenamesPboardType'
@@ -37,7 +39,7 @@ export function parseFilenamesPlist(xml: string): string[] {
 
 /** The in-memory pasteboard of the e2e harness. */
 const e2e = globalThis as { e2eOsFiles?: string }
-const inE2E = (): boolean => process.env.YASEEN_DOCS_E2E === '1'
+const inE2E = (): boolean => process.env.YASEEN_DOCS_FAKE_CLIPBOARD === '1'
 
 /** The files on the system clipboard, absolute and in order; empty off macOS, when it holds no files (text, say), or when the read fails. */
 export function readOsFiles(): string[] {
