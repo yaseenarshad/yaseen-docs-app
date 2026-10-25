@@ -27,7 +27,7 @@ import { RecentList } from './RecentList'
 import { SessionList } from './SessionList'
 import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind } from '../lib/notice'
-import { leftTarget, Tree, type TreeFileMove } from './Tree'
+import { dropOn, hasFiles, leftTarget, Tree, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
@@ -188,6 +188,11 @@ interface SidebarProps {
    * A drop of one row still goes to `onRenameFile`. Never rejects.
    */
   onMoveEntries: (moves: Move[]) => Promise<void>
+  /**
+   * Rows dragged out to Finder, and the drag ended outside the window with no drop inside it
+   * (YAZ-3254 D9B, S26): App's box asks whether the vault keeps them. A cancelled drag looks the same (S29).
+   */
+  onDraggedOut: (paths: string[]) => void
   /** A title edit (YAZ-2420 🔒 D16), to the same door: the inline rename of a note or a folder. */
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>
   /**
@@ -489,6 +494,7 @@ export function Sidebar({
   onFileMissing,
   onRenameFile,
   onMoveEntries,
+  onDraggedOut,
   onRetitle,
   onDeleteFile,
   onNotice,
@@ -943,7 +949,7 @@ export function Sidebar({
     if (node !== null) openMenuAt(node, menuRequest.x, menuRequest.y, true)
   }, [menuRequest, forest, trees, favoritesByRoot, rootOf, onMenuConsumed, openMenuAt])
 
-  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice)
+  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice)
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
@@ -1074,7 +1080,8 @@ export function Sidebar({
   const orderRef = useRef<readonly string[]>([])
   orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : roots.map(stripSlash)
   const saveOrder = lens === 'favorites' ? saveFavoriteOrder : lens === 'focus' ? reorderFocus : onReorderVaults
-  const { fileMove, reorder } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows)
+  const finderDrag = useMemo(() => ({ nameOf, onImport: importFiles, onDraggedOut }), [nameOf, importFiles, onDraggedOut])
+  const { fileMove, reorder } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finderDrag)
 
   // YAZ-1801 D3 (YAZ-3039): every vault's held-back files as tree paths, one Set that keeps its
   // identity until a list really changes — the memoised levels compare it by identity.
@@ -1155,7 +1162,7 @@ export function Sidebar({
       <div
         className="sidebar__header"
         onDragOver={(e) => {
-          if (multi || !fileMove.accepts(root)) return
+          if (multi || !fileMove.accepts(root, hasFiles(e))) return
           e.preventDefault()
           if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
           fileMove.hover(root, e.currentTarget)
@@ -1165,7 +1172,7 @@ export function Sidebar({
         }}
         onDrop={(e) => {
           e.preventDefault()
-          if (!multi) fileMove.drop(root)
+          if (!multi) dropOn(fileMove, e, root)
         }}
       >
         {/* The vault switcher (YAZ-1767): the trigger is the header's top-left button (name + chevron,

@@ -14,13 +14,14 @@ import { requestZoom } from './editor/zoomRequest'
 import { requestBoardCommand } from './documents/boardCommand'
 import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
-import { countLinkReferences, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
+import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
 import { dropFolderValuesAfterMove, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
 import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument } from './lib/focusHandoff'
-import { LINK_NOTICE_MS, type Notice, type NoticeKind } from './lib/notice'
+import { dragOutText, LINK_NOTICE_MS, type DragOutAsk, type Notice, type NoticeKind } from './lib/notice'
+import { treeHasPath } from './lib/treeState'
 import { NoticeIcon } from './components/NoticeIcon'
 import { absFrom, dirname, relTo } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
@@ -234,6 +235,10 @@ export function App() {
     const timer = setTimeout(() => setNotice(null), LINK_NOTICE_MS)
     return () => clearTimeout(timer)
   }, [notice])
+  // The box after a drag out to Finder (YAZ-3254 D9B): its own slot, so the toast above never hides it.
+  const [dragOutAsk, setDragOutAsk] = useState<DragOutAsk | null>(null)
+  // It asks about the items of this window's vaults: another set of vaults ends the question.
+  useEffect(() => setDragOutAsk(null), [roots])
   // One scope per vault (YAZ-2602 D1): the watcher, the link sources, the properties, the sync,
   // the review and the IDs answer of EACH vault, all loaded at once. They live in slots, a fixed
   // number of hook calls on every render, because a scope must exist in the first render: an
@@ -1539,6 +1544,44 @@ export function App() {
   }, [nameOf])
 
   /**
+   * Rows dragged out to Finder ended outside the window (YAZ-3254 D9B, S26): Finder took copies, and
+   * the box asks whether the vault keeps them. An item that is gone by now (another window moved it)
+   * is left out, read off a fresh tree of its vault; with none left there is no box (S31). The count
+   * is of the notes outside the items whose links reach any of them, off the window's own index
+   * snapshot (`linkingNotes`, the rename sheet's count). A second drag out replaces the box (S32).
+   */
+  const dragOuts = useRef(0)
+  const askAfterDragOut = useCallback(async (paths: string[]): Promise<void> => {
+    // The newest drag out speaks: an older one whose tree read answers later says nothing.
+    const turn = ++dragOuts.current
+    const vaults = [...new Set(paths.flatMap((path) => scopeOf(path).root ?? []))]
+    const trees = new Map(await Promise.all(vaults.map(async (vault) => [vault, await fetchTree(vault).then(({ tree }) => tree, () => null)] as const)))
+    const left = paths.filter((path) => {
+      const vault = scopeOf(path).root
+      const tree = vault === null ? null : trees.get(vault)
+      return tree != null && treeHasPath(tree, path)
+    })
+    if (left.length === 0 || turn !== dragOuts.current) return
+    const inside = (path: string) => left.some((item) => path === item || path.startsWith(`${item}/`))
+    const linking = new Set<string>()
+    for (const path of left) {
+      const { root, wikilinks } = scopeOf(path)
+      if (root === null) continue
+      const dirs = vaultDirs(root)
+      const kind = dirs.includes(path) ? 'dir' : 'file'
+      for (const note of linkingNotes({ ids: wikilinks.ids, root, oldPath: path, kind, records: wikilinks.records, folders: wikilinks.folders, dirs })) if (!inside(note)) linking.add(note)
+    }
+    setDragOutAsk({ paths: left, links: linking.size })
+  }, [scopeOf])
+  /** "Remove from vault": each item to the Trash through the delete door — the door AFTER the delete sheet, since the box was the question (S27). Not in the undo list: the Trash is its undo. */
+  const removeDraggedOut = useCallback(async (): Promise<void> => {
+    const ask = dragOutAsk
+    setDragOutAsk(null)
+    if (ask === null) return
+    for (const path of ask.paths) await deleteFile(path)
+  }, [dragOutAsk, deleteFile])
+
+  /**
    * "Remove from this window" (YAZ-2602 D7): the vault leaves the window with its tabs and its
    * right-panel pages, each closed as its ✕ closes it — the editor unmounts, and its autosave saves
    * the buffer on the way out. Never the `retire…` helpers of a delete: they drop the buffer.
@@ -1696,6 +1739,18 @@ export function App() {
           )}
         </div>
       )}
+      {dragOutAsk !== null && (
+        // The box after a drag out to Finder (YAZ-3254 D9B): it stays until answered, and ✕ keeps everything (S28).
+        <div className="drag-out-ask" role="status">
+          <span className="drag-out-ask__text">{dragOutText(dragOutAsk)}</span>
+          <button type="button" className="drag-out-ask__remove" onClick={() => void removeDraggedOut()}>
+            Remove from vault
+          </button>
+          <button type="button" className="drag-out-ask__close" aria-label="Keep in vault" onClick={() => setDragOutAsk(null)}>
+            ✕
+          </button>
+        </div>
+      )}
       {share !== null && (
         <Suspense fallback={null}>
           <ShareDialog key={share.path} root={share.root} path={share.path} onClose={closeShare} onOpenSettings={openSharingSettings} />
@@ -1801,6 +1856,7 @@ export function App() {
           onMoveEntries={requestMoves}
           onRetitle={requestRetitle}
           onDeleteFile={deleteFile}
+          onDraggedOut={(paths) => void askAfterDragOut(paths)}
           onNotice={notify}
           // ⌘⇧C's box (🔒 D4, YAZ-1338): the panel keeps it current, the chord above reads it.
           selectionRef={sidebarSelection}

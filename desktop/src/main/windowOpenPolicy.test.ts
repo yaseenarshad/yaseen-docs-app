@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createWindowOpenHandler } from './windowOpenPolicy'
+import { blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
 
 describe('createWindowOpenHandler', () => {
   it.each(['https://example.com', 'http://example.com', 'mailto:yasin@example.com', 'tel:+14805551212', 'ftp://example.com/file']) (
@@ -32,5 +32,17 @@ describe('createWindowOpenHandler', () => {
 
     expect(handler({ url: 'https://example.com' } as never)).toEqual({ action: 'deny' })
     await expect(open.mock.results[0]?.value).rejects.toThrow('OS rejected')
+  })
+})
+
+describe('blockFileNavigation (YAZ-3253 S21)', () => {
+  it('stops the window from opening a dropped file, and lets every other navigation go', () => {
+    const go = (url: string, legacy = false) => {
+      const event = { ...(legacy ? {} : { url }), preventDefault: vi.fn() }
+      blockFileNavigation(event, legacy ? url : undefined)
+      return event.preventDefault.mock.calls.length === 1
+    }
+    expect([go('file:///Users/yasin/Downloads/Note.md'), go('file:///tmp/a%20b.pdf', true)]).toEqual([true, true])
+    expect([go('app://yaseen/index.html?win=w1'), go('http://localhost:5173/'), go('not a url')]).toEqual([false, false, false])
   })
 })

@@ -962,6 +962,61 @@ button {
   background: var(--bg-hover);
 }
 
+/* ---------- the box after a drag out to Finder (YAZ-3254 D9B) ----------
+   The toast's own language (surface, border, radius, shadow), so light and dark follow the same
+   tokens. It is a question, not news: it stays until answered, and it stands ABOVE the toast's
+   place, so a later toast shows under it and never hides it (S32). */
+
+.drag-out-ask {
+  position: fixed;
+  left: 16px;
+  bottom: calc(var(--sidebar-footer-h) + 60px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 440px;
+  padding: 8px 8px 8px 12px;
+  font-size: 12.5px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  animation: link-notice-in 120ms ease-out both;
+}
+
+.drag-out-ask__text {
+  white-space: normal;
+}
+
+.drag-out-ask__remove {
+  flex: none;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--danger);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.drag-out-ask__remove:hover {
+  background: var(--bg-hover);
+}
+
+.drag-out-ask__close {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--fg-muted);
+  border-radius: 5px;
+}
+
+.drag-out-ask__close:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
 @keyframes link-notice-in {
   from {
     opacity: 0;

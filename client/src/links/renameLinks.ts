@@ -230,9 +230,14 @@ function makeResolves({ ids, root, oldPath, kind, records, folders = [], dirs = 
  * banner's N; N === 0 → no banner, nothing happens at all (the locked ruling). For an external
  * rename pass a PRE-rename snapshot (`preRenameRecords` synthesises one).
  */
-export function countLinkReferences({ ids, root, oldPath, kind = 'file', records, folders = [], dirs, viewOnlyCatalog, title }: Omit<UpdateLinksOptions, 'newPath'>): number {
+export function countLinkReferences(opts: Omit<UpdateLinksOptions, 'newPath'>): number {
+  return linkingNotes(opts).length
+}
+
+/** The notes (and folder pages) whose links reach `oldPath`: the set `countLinkReferences` counts, by path — so a caller can join the sets of several items (YAZ-3254 D9B). */
+export function linkingNotes({ ids, root, oldPath, kind = 'file', records, folders = [], dirs, viewOnlyCatalog, title }: Omit<UpdateLinksOptions, 'newPath'>): string[] {
   const { resolves } = makeResolves({ ids, root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
-  return [...records, ...folders].filter(makeReferences(resolves)).length
+  return [...records, ...folders].filter(makeReferences(resolves)).map((record) => record.path)
 }
 
 /** Rewrite every referencing note on disk; see the module doc for the whole discipline. */

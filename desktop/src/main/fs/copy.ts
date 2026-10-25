@@ -192,6 +192,27 @@ export async function copyEntry(from: unknown, toDir: unknown, ids: IdDoor | nul
   })
 }
 
+/**
+ * Copies one item from Finder INTO `toDir` under its OWN name (YAZ-3253 D9A): the drop from another
+ * disk, where a move cannot go (`EXDEV`). The same bytes, as a move would leave them — no new id,
+ * no " copy" title, nothing reborn — and never over anything: a name already in `toDir` fails
+ * `ALREADY_EXISTS`, so the item stays in Finder (S19). The pre-check matters for a folder, which
+ * `fs.cp` would merge into one already there. A hidden source is refused, as `copyEntry`'s is.
+ */
+export async function importCopy(from: unknown, toDir: unknown): Promise<PastedEntry> {
+  const src = requireAbsPath(from, 'from')
+  const dir = requireAbsPath(toDir, 'toDir')
+  return fsCall(src, async () => {
+    const st = await stat(src) // missing source → ENOENT → NOT_FOUND
+    const kind = st.isDirectory() ? ('dir' as const) : ('file' as const)
+    if (isSkipped(path.basename(src))) throw new BridgeFailure('BAD_REQUEST', 'hidden entries cannot be copied', { path: src })
+    const to = path.join(dir, path.basename(src))
+    if (await taken(dir, path.basename(src))) throw new BridgeFailure('ALREADY_EXISTS', kind === 'dir' ? 'a folder with this name already exists' : 'a file with this name already exists', { path: to })
+    await copyBytes(src, to)
+    return { from: src, to, kind }
+  })
+}
+
 /** The two disk verbs a paste is made of; `ipc/fs.ts` hands in the production pair (copyEntry, and rename + its store/broadcast downstream). */
 export interface PasteOps {
   copy: (from: string, toDir: string) => Promise<PastedEntry>
@@ -199,7 +220,7 @@ export interface PasteOps {
 }
 
 /** Node's errno for a rename across volumes, whether raw or already carried through `fsCall`'s IO_ERROR mapping (its message keeps the `EXDEV:` prefix). */
-function isCrossDevice(err: unknown): boolean {
+export function isCrossDevice(err: unknown): boolean {
   if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'EXDEV') return true
   return err instanceof BridgeFailure && err.code === 'IO_ERROR' && err.message.startsWith('EXDEV')
 }

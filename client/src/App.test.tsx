@@ -59,6 +59,7 @@ interface SidebarStubProps {
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteFile: (path: string) => Promise<void>
+  onDraggedOut: (paths: string[]) => void
   pendingSearchFocus: boolean
   pendingSearchClear: boolean
   /** The sidebar put the caret in the bar (YAZ-801): App lowers the flag. */
@@ -5066,5 +5067,70 @@ describe('App sessions (YAZ-3147 D3, D5)', () => {
     // The vault's write, then ONE write of the strip (S27).
     expect((bridge.window.setIdentity.mock.calls as unknown as [object][]).filter(([patch]) => 'tabs' in patch)).toHaveLength(1)
     expect(noticeText(el)).toBe("1 tab did not open: the file is gone or its vault can't join")
+  })
+})
+
+/**
+ * Rows dragged out to Finder (YAZ-3254 D9B): Finder took copies, and App's box asks whether the vault
+ * keeps them. Its own slot, not the toast's; it stays until answered.
+ */
+describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
+  const record = (path: string, links: string[] = []): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    const rel = path.slice('/v/'.length)
+    return { path, name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', ext: 'md', size: 7, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links, embeds: [] }
+  }
+  /** A links to B; R links to Docs/N by path; B links to A, so A has a note that links to it only while B stays. */
+  const records = [record('/v/A.md', ['B']), record('/v/B.md', ['A']), record('/v/R.md', ['Docs/N']), record('/v/Docs/N.md')]
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const TREE: TreeNode[] = [{ type: 'dir', name: 'Docs', path: '/v/Docs', children: [file('/v/Docs/N.md')] }, file('/v/A.md'), file('/v/B.md'), file('/v/R.md')]
+  const mountVault = () =>
+    mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, (b) => {
+      b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true })
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+    })
+  const draggedOut = (...paths: string[]) => act(async () => void captured.sidebar?.onDraggedOut(paths))
+  const box = (el: HTMLElement) => el.querySelector('.drag-out-ask')
+  const boxText = (el: HTMLElement) => el.querySelector('.drag-out-ask__text')?.textContent
+  const button = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.drag-out-ask button')].find((b) => b.textContent === label || b.getAttribute('aria-label') === label)
+
+  it('asks with the count of the notes that link to the items (S26); a later toast does not hide it (S32); ✕ closes it and changes nothing (S28)', async () => {
+    const { bridge, el } = await mountVault()
+    await draggedOut('/v/B.md', '/v/Docs')
+    expect(boxText(el)).toBe('Copied 2 items to Finder? 2 notes link to them.')
+    expect(el.querySelector('.link-notice')).toBeNull() // its own slot, not the toast
+    act(() => captured.sidebar?.onNotice('Copied path'))
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Copied path')
+    expect(boxText(el)).toBe('Copied 2 items to Finder? 2 notes link to them.')
+    await act(async () => button(el, 'Keep in vault')?.click())
+    expect(box(el)).toBeNull()
+    expect(bridge.file.delete).not.toHaveBeenCalled()
+  })
+
+  it('one item says "it"; a second drag out replaces the box (S32); an item no note links to says no count', async () => {
+    const { el } = await mountVault()
+    await draggedOut('/v/B.md')
+    expect(boxText(el)).toBe('Copied 1 item to Finder? 1 note links to it.')
+    await draggedOut('/v/R.md')
+    expect(el.querySelectorAll('.drag-out-ask')).toHaveLength(1)
+    expect(boxText(el)).toBe('Copied 1 item to Finder?')
+  })
+
+  it('"Remove from vault" sends each item to the Trash through the delete door, with no second sheet (S27)', async () => {
+    const { bridge, el } = await mountVault()
+    await draggedOut('/v/A.md', '/v/Docs')
+    await act(async () => button(el, 'Remove from vault')?.click())
+    expect(bridge.file.delete.mock.calls.map(([req]) => req)).toEqual([{ path: '/v/A.md' }, { path: '/v/Docs' }])
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(box(el)).toBeNull()
+  })
+
+  it('an item that is gone before the box shows is left out; with none left there is no box (S31)', async () => {
+    const { el } = await mountVault()
+    await draggedOut('/v/gone.md', '/v/A.md')
+    expect(boxText(el)).toBe('Copied 1 item to Finder? 1 note links to it.')
+    await act(async () => button(el, 'Keep in vault')?.click())
+    await draggedOut('/v/gone.md')
+    expect(box(el)).toBeNull()
   })
 })

@@ -18,6 +18,7 @@ import { dropFolderValuesAfterMove, dropStaleFolderValues, valuesLeftBehind, typ
 import { createNote, folderPath } from '../../views/scaffold'
 import { transformFile } from '../../views/writeProperty'
 import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
+import { dragPill, pillLabel } from '../dragPill'
 import { countItems } from '../menuSections'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
 import type { PendingCreate, PendingRename, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
@@ -131,6 +132,21 @@ export function dragSet(path: string, selected: ReadonlySet<string>, ordered: ()
   return picked.filter((p) => !picked.some((other) => p.startsWith(`${other}/`)))
 }
 
+/** The moves that a drop of `paths` into `dir` makes: none for an item already there (S7), nor for a folder into itself or a folder inside it (S6). */
+export function movesInto(dir: string, paths: readonly string[], folders: readonly string[]): Move[] {
+  return paths.flatMap((oldPath): Move[] => {
+    const newPath = `${dir}/${basename(oldPath)}`
+    if (newPath === oldPath || dir === oldPath || dir.startsWith(`${oldPath}/`)) return []
+    return [{ oldPath, newPath, kind: folders.includes(oldPath) ? 'dir' : 'file' }]
+  })
+}
+
+/** The same items, in any order: a drop of this window's own OS drag (YAZ-3254 D4), told apart by its paths. */
+const sameItems = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((path) => b.includes(path))
+
+/** The sentence a drag between vaults hears (YAZ-2602 R11), from the sidebar and from main (`fs:import`, S22) alike. */
+export const BETWEEN_VAULTS = 'To move between vaults, use cut and paste'
+
 /** The class a lit drop target wears (YAZ-3251 D2): the root header has its own. */
 const dropClass = (el: HTMLElement): string => (el.classList.contains('sidebar__header') ? 'sidebar__header--drop' : 'tree__row--drop')
 
@@ -149,15 +165,24 @@ export function useTreeDrag(
   /** Every folder of the window, so a move names its kind; and the vault rows, which never move on disk. */
   dirs: readonly string[],
   vaultRows: ReadonlyMap<string, string>,
+  /**
+   * The drags with Finder (YAZ-3252): a row's name for the pill (D6), the door for Finder's items
+   * dropped into a folder (YAZ-3253 D3), and App's box for rows dragged out (YAZ-3254 D9B).
+   */
+  finder: { nameOf: (path: string) => string; onImport: (dir: string, paths: string[]) => void; onDraggedOut: (paths: string[]) => void },
 ) {
   // Drag-to-move (E1b; folders and the selection since YAZ-3251): the dragged paths and the lit
   // target live in REFS (D2), so a hover renders nothing — the lit row wears its class by DOM.
+  // Since YAZ-3254 D4 a row drag is the OS drag: no `dragend` comes back, so the ref also clears
+  // on a drop in the window and on the first pointer move after the drag (see the effect below).
   const dragging = useRef<string[]>([])
+  // A drop came inside the window while a row drag was in flight (S30): no box asks after it.
+  const droppedInside = useRef(false)
   const lit = useRef<{ dir: string | null; el: HTMLElement | null }>({ dir: null, el: null })
   const spring = useRef<ReturnType<typeof setTimeout> | null>(null)
   // What the callbacks read at the moment of the gesture, so the `move` they make keeps ONE identity.
-  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows })
-  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows }
+  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder })
+  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder }
   // Drag-to-reorder (YAZ-2631 D3), ONE state for the tab that is shown: the dragged top row + the hovered row and edge.
   const [reorderDragging, setReorderDragging] = useState<string | null>(null)
   const [reorderOver, setReorderOver] = useState<{ path: string; edge: 'before' | 'after' } | null>(null)
@@ -179,48 +204,77 @@ export function useTreeDrag(
         open()
       }, SPRING_MS)
     }
-    /** A drop lands here: never in a dragged folder, nor in a folder inside one (S6). */
-    const accepts = (dir: string) => dragging.current.length > 0 && !dragging.current.some((path) => dir === path || dir.startsWith(`${path}/`))
+    /**
+     * A drop lands here: never in a dragged folder, nor in a folder inside one (S6). With no row drag
+     * in flight, a drag from Finder (`files`: its `types` hold `Files`) lands in any folder (YAZ-3253).
+     */
+    const accepts = (dir: string, files = false) => (dragging.current.length > 0 ? !dragging.current.some((path) => dir === path || dir.startsWith(`${path}/`)) : files)
     const end = () => {
       dragging.current = []
       light(null, null)
     }
+    /** The moves into `dir`, through the door the context menu's rename uses for one row, and App's list door for more (YAZ-3250 D1): links follow. */
+    const send = (dir: string, paths: readonly string[]) => {
+      const { dirs: folders, onRenameFile: renameOne, onMoveEntries: moveAll } = live.current
+      const moves = movesInto(dir, paths, folders)
+      const [one] = moves
+      if (moves.length === 1) void renameOne(one.oldPath, one.newPath, one.kind)
+      else if (moves.length > 1) void moveAll(moves)
+    }
+    const drop = (dir: string) => {
+      const paths = dragging.current
+      const ok = accepts(dir)
+      end()
+      if (!ok) return
+      const { rootOf: vaultOf, onNotice: say } = live.current
+      // A drag moves inside ONE vault (YAZ-2602 R11): a folder, or a vault row, of a different vault refuses it (S9).
+      if (paths.some((path) => vaultOf(path) !== vaultOf(dir))) return say(BETWEEN_VAULTS)
+      // An item already in this folder is no move (S7).
+      send(dir, paths)
+    }
     return {
       isDragging: () => dragging.current.length > 0,
       accepts,
-      // Where every row drag begins (D5): YAZ-3254 makes this the OS drag, so it stays one function.
+      /**
+       * Where every row drag to move begins (D5), and since YAZ-3254 D4 it is the OS drag: the Tree
+       * stops the page's own drag, and main starts one that Finder takes (copies). The paths stay in
+       * the ref, so a drop back in this window is told apart by them (`dropFiles`).
+       */
       start: (path, top) => {
-        const { selection: picked, orderedSelectedPaths: ordered, vaultRows: vaults } = live.current
-        dragging.current = dragSet(path, picked.paths, ordered, (p) => vaults.has(p))
+        const { selection: picked, orderedSelectedPaths: ordered, vaultRows: vaults, finder: out, onNotice: say } = live.current
+        const paths = dragSet(path, picked.paths, ordered, (p) => vaults.has(p))
+        dragging.current = paths
+        droppedInside.current = false
         // An unselected row first becomes the selection (S4), then goes alone.
         if (!picked.paths.has(path)) picked.set(path, top)
+        if (paths.length === 0) return
+        api.file.dragOut({ paths, icon: dragPill(pillLabel(paths.map(out.nameOf))) }).catch((err: unknown) => {
+          // No OS drag started: nothing is in flight.
+          if (dragging.current === paths) end()
+          say(`Can't drag: ${err instanceof Error ? err.message : String(err)}`, 'error')
+        })
       },
       end,
       hover: light,
       leave: (dir) => {
         if (lit.current.dir === dir) light(null, null)
       },
-      drop: (dir) => {
-        const paths = dragging.current
-        const ok = accepts(dir)
+      drop,
+      /**
+       * Files dropped on a folder (YAZ-3253 D3). This window's own drag comes back as files (YAZ-3254
+       * D4): the same paths are a move in the app. Items all of the target's vault came from a second
+       * window of it: App's door, so links follow (S23). Anything else is Finder's: `fs:import` (S17).
+       */
+      dropFiles: (dir, files) => {
+        const paths = files.map((file) => api.file.pathFor(file)).filter((path) => path !== '')
+        if (dragging.current.length > 0 && sameItems(dragging.current, paths)) return drop(dir)
         end()
-        if (!ok) return
-        const { rootOf: vaultOf, onNotice: say, dirs: folders, onRenameFile: renameOne, onMoveEntries: moveAll } = live.current
-        // A drag moves inside ONE vault (YAZ-2602 R11): a folder, or a vault row, of a different vault refuses it (S9).
-        if (paths.some((path) => vaultOf(path) !== vaultOf(dir))) return say('To move between vaults, use cut and paste')
-        // An item already in this folder is no move (S7).
-        const moves = paths.flatMap((oldPath): Move[] => {
-          const newPath = `${dir}/${basename(oldPath)}`
-          return newPath === oldPath ? [] : [{ oldPath, newPath, kind: folders.includes(oldPath) ? 'dir' : 'file' }]
-        })
-        // The SAME door as the context menu's rename for one row — never-overwrite, every failure as a
-        // passive notice, link updates and the workspace remap ride it; App's list door for more (YAZ-3250 D1).
-        const [one] = moves
-        if (moves.length === 1) void renameOne(one.oldPath, one.newPath, one.kind)
-        else if (moves.length > 1) void moveAll(moves)
+        if (paths.length === 0) return
+        const { rootOf: vaultOf, finder: out } = live.current
+        const vault = vaultOf(dir)
+        if (paths.every((path) => path.startsWith(`${vault}/`))) return send(dir, paths)
+        out.onImport(dir, paths)
       },
-      // Finder's files dropped on a folder (D3): YAZ-3253 fills this in.
-      dropFiles: () => undefined,
     }
   }, [])
   // A spring left armed when the panel goes would open a folder of a tree that is gone.
@@ -230,6 +284,36 @@ export function useTreeDrag(
     },
     [],
   )
+  /**
+   * After the OS drag (YAZ-3254 D4) no `dragend` comes back. A drop inside the window is marked in the
+   * CAPTURE phase, so a drop a handler stops still counts (S30), and the drag clears once the drop's
+   * targets ran. The first pointer move with no button down is the drag's end: the moves before the
+   * OS drag takes over still hold the button. With the drag still set and no drop inside, it ended
+   * outside the window, and App's box asks (D9B, S26). A cancelled drag looks the same (S29).
+   */
+  useEffect(() => {
+    const marked = () => {
+      if (dragging.current.length > 0) droppedInside.current = true
+    }
+    const dropped = () => {
+      if (dragging.current.length > 0) fileMove.end()
+    }
+    const moved = (e: MouseEvent) => {
+      if (e.buttons !== 0 || dragging.current.length === 0) return
+      const paths = dragging.current
+      const outside = !droppedInside.current
+      fileMove.end()
+      if (outside) live.current.finder.onDraggedOut(paths)
+    }
+    window.addEventListener('drop', marked, true)
+    window.addEventListener('drop', dropped)
+    window.addEventListener('mousemove', moved)
+    return () => {
+      window.removeEventListener('drop', marked, true)
+      window.removeEventListener('drop', dropped)
+      window.removeEventListener('mousemove', moved)
+    }
+  }, [fileMove])
 
   const dropReorder = useCallback(() => {
     const from = reorderDragging
@@ -445,7 +529,43 @@ export function useFileClipboard(
     }
   }, [clipboardRef, menu, selection, vaultRows, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir, onNotice])
 
-  return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null) }
+  /**
+   * Finder's items dropped into `dir` (YAZ-3253 D3, D9A): `fs:import` moves them in, or copies them
+   * from another disk; the app clipboard is not touched. Then the paste's own steps: the folder
+   * opens, the tree reads again (the watcher's echo is a courtesy), and ONE notice counts what
+   * landed and names the first item that did not (S19). An item of another open vault says the rule
+   * of drags between vaults (S22). Items that come from outside every vault left no folder of it,
+   * so no values are cleared (D20). Copies are not moves: only `moved` is for undo (YAZ-3255).
+   */
+  const importFiles = useCallback(
+    async (dir: string, paths: string[]) => {
+      const { root: vault } = vaultOf(dir)
+      try {
+        const { moved, copied, failed } = await api.file.import({ paths, targetDir: dir })
+        if (moved.length + copied.length > 0) {
+          openTo(`${dir}/x`)
+          refresh(vault)
+        }
+        const done =
+          copied.length === 0 ? `Moved ${countItems(moved.length)} from Finder`
+          : moved.length === 0 ? `Copied ${countItems(copied.length)} from another disk`
+          : `Moved ${countItems(moved.length)}, copied ${copied.length} from another disk`
+        const [first] = failed
+        if (first === undefined) {
+          // Every item hidden (S20): nothing landed, and nothing to say.
+          if (moved.length + copied.length > 0) onNotice(done, 'paste')
+        } else if (moved.length + copied.length === 0) {
+          if (failed.every((f) => f.message === BETWEEN_VAULTS)) onNotice(BETWEEN_VAULTS, 'info')
+          else onNotice(`Couldn't move: ${basename(first.from)} — ${first.message}`, 'error')
+        } else onNotice(`${done}, skipped ${failed.length}: ${basename(first.from)} — ${first.message}`, 'paste')
+      } catch (err: unknown) {
+        onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      }
+    },
+    [vaultOf, refresh, openTo, onNotice],
+  )
+
+  return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null), importFiles }
 }
 
 export function useInlineEdits(

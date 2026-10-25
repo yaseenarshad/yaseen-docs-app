@@ -20,6 +20,8 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   ipcRenderer: { invoke: vi.fn(async () => ({ ok: true, value: undefined })), on: vi.fn(), send: vi.fn(), removeListener: vi.fn() },
   contextBridge: { exposeInMainWorld: vi.fn() },
+  // `file.pathFor` (YAZ-3253 D3) reads a path with no IPC: it reaches no channel.
+  webUtils: { getPathForFile: () => '' },
   BrowserWindow: { getAllWindows: () => [], fromWebContents: () => null },
   dialog: {},
   shell: {},

@@ -11,7 +11,7 @@ import { StrictMode, act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { copyFoldKey } from '@shared/foldKey'
 import { parseFrontmatter } from '@shared/frontmatter'
-import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type IndexRecord, type PasteResponse, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type ImportResponse, type IndexRecord, type PasteResponse, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
 import appCss from '../app.css?inline'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { EMPTY_SELECTION } from '../lib/selection'
@@ -113,6 +113,10 @@ function installBridge() {
       // Read ONCE on mount, so a window opened after a clip labels Paste from the start.
       clipState: vi.fn(async (): Promise<FileClipState> => null),
       onClipChanged: vi.fn((_listener: (state: FileClipState) => void) => () => undefined),
+      // Drags between Finder and the sidebar (YAZ-3253, YAZ-3254): a dropped File's path, the drop's import, and the OS drag out.
+      pathFor: vi.fn((file: File) => `/Users/yasin/Downloads/${file.name}`),
+      import: vi.fn(async (_req: { paths: string[]; targetDir: string }): Promise<ImportResponse> => ({ moved: [], copied: [], failed: [] })),
+      dragOut: vi.fn(async (_req: { paths: string[]; icon: string }) => undefined),
     },
     // The Favorites list (YAZ-1766 6A): `.yaseendocs/favorites.json` behind main; absolute paths both ways.
     // Empty by default; the favorites block seeds `get` and captures the `onChanged` listener.
@@ -250,6 +254,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onFileMissing: vi.fn(),
     onRenameFile: vi.fn(async () => undefined),
     onMoveEntries: vi.fn(async () => undefined),
+    onDraggedOut: vi.fn(),
     onRetitle: vi.fn(async () => undefined),
     onDeleteFile: vi.fn(async () => undefined),
     onNotice: vi.fn(),
@@ -1151,6 +1156,114 @@ describe('the tree drag: folders, the selection, file-row drops, spring open (YA
     fire(row(el, '/v/Plans'), 'dragover')
     expect(lit(el)).toEqual(['/v/Plans'])
     expect(labelRenders.names).toEqual([])
+  })
+})
+
+/**
+ * Drags between Finder and the sidebar (YAZ-3252): Finder's items move in (YAZ-3253 D3, D9A), and a
+ * row drag is the OS drag out (YAZ-3254 D4), which comes back as files when it drops inside.
+ */
+describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
+  const dirRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--dir')
+  const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  /** A drag event; with `files`, one from the OS (`types` holds `Files`). Answers whether a handler took it. */
+  const fire = (target: EventTarget | null | undefined, type: string, files?: File[]) => {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true })
+    if (files !== undefined) Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files, dropEffect: 'none' } })
+    act(() => void target?.dispatchEvent(event))
+    return event.defaultPrevented
+  }
+  /** The pointer moves; `buttons` 0 once the OS drag is over. */
+  const move = (buttons: number) => act(() => void window.dispatchEvent(new MouseEvent('mousemove', { buttons })))
+  const finder = (...names: string[]) => names.map((name) => new File(['x'], name))
+  /** Files whose paths are the vault's own: what the OS drag of this window's rows, or of a second window's, drops. */
+  const own = (bridge: ReturnType<typeof installBridge>, ...paths: string[]) => {
+    bridge.file.pathFor.mockImplementation((file: File) => paths.find((path) => path.endsWith(`/${file.name}`)) ?? '')
+    return paths.map((path) => new File(['x'], path.slice(path.lastIndexOf('/') + 1)))
+  }
+
+  it('Finder items dropped on a folder row go to fs:import; the folder opens, the tree reads again, and one toast says what moved (S17, S18)', async () => {
+    const { bridge, props, el } = await mount()
+    bridge.file.import.mockResolvedValueOnce({
+      moved: [{ from: '/Users/yasin/Downloads/Plan.md', to: '/v/sub/Plan.md', kind: 'file' }, { from: '/Users/yasin/Downloads/Trip', to: '/v/sub/Trip', kind: 'dir' }],
+      copied: [],
+      failed: [],
+    })
+    expect(fire(dirRow(el), 'dragover', [])).toBe(true)
+    expect(dirRow(el)?.classList.contains('tree__row--drop')).toBe(true)
+    const reads = bridge.tree.mock.calls.length
+    fire(dirRow(el), 'drop', finder('Plan.md', 'Trip'))
+    await act(async () => {})
+    expect(bridge.file.import).toHaveBeenCalledExactlyOnceWith({ paths: ['/Users/yasin/Downloads/Plan.md', '/Users/yasin/Downloads/Trip'], targetDir: '/v/sub' })
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+    expect(bridge.tree.mock.calls.length).toBeGreaterThan(reads)
+    expect(props.onNotice).toHaveBeenLastCalledWith('Moved 2 items from Finder', 'paste')
+    expect(el.querySelector('.tree__row--drop')).toBeNull()
+
+    // From another disk: some copied (S18). On a file row: its folder (D7) — here the vault root.
+    bridge.file.import.mockResolvedValueOnce({
+      moved: [{ from: '/Users/yasin/Downloads/Plan.md', to: '/v/Plan.md', kind: 'file' }],
+      copied: [{ from: '/Volumes/USB/Trip', to: '/v/Trip', kind: 'dir' }, { from: '/Volumes/USB/Log.md', to: '/v/Log.md', kind: 'file' }],
+      failed: [],
+    })
+    expect(fire(fileRow(el), 'dragover', [])).toBe(true)
+    fire(fileRow(el), 'drop', finder('Plan.md'))
+    await act(async () => {})
+    expect(bridge.file.import).toHaveBeenLastCalledWith({ paths: ['/Users/yasin/Downloads/Plan.md'], targetDir: '/v' })
+    expect(props.onNotice).toHaveBeenLastCalledWith('Moved 1 item, copied 2 from another disk', 'paste')
+  })
+
+  it('a clash is named and the rest moved (S19); items of another open vault say the cut-and-paste rule (S22)', async () => {
+    const { bridge, props, el } = await mount()
+    bridge.file.import.mockResolvedValueOnce({
+      moved: [{ from: '/Users/yasin/Downloads/Plan.md', to: '/v/sub/Plan.md', kind: 'file' }],
+      copied: [],
+      failed: [{ from: '/Users/yasin/Downloads/a.md', code: 'ALREADY_EXISTS', message: 'a file with this name already exists' }],
+    })
+    fire(dirRow(el), 'drop', finder('Plan.md', 'a.md'))
+    await act(async () => {})
+    expect(props.onNotice).toHaveBeenLastCalledWith('Moved 1 item from Finder, skipped 1: a.md — a file with this name already exists', 'paste')
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [{ from: '/w/x.md', code: 'BAD_REQUEST', message: 'To move between vaults, use cut and paste' }] })
+    fire(dirRow(el), 'drop', finder('x.md'))
+    await act(async () => {})
+    expect(props.onNotice).toHaveBeenLastCalledWith('To move between vaults, use cut and paste', 'info')
+  })
+
+  it("items of this vault dropped from a second window move through App's door, so links follow (S23)", async () => {
+    const { bridge, props, el } = await mount()
+    fire(dirRow(el), 'drop', own(bridge, '/v/a.md'))
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/sub/a.md', 'file')
+    expect(bridge.file.import).not.toHaveBeenCalled()
+  })
+
+  it('a row drag is the OS drag: dragstart is taken and dragOut gets the drag set and a pill; dropped back on a folder it moves in the app, and no box asks (D4, S30)', async () => {
+    const { bridge, props, el } = await mount()
+    expect(fire(fileRow(el), 'dragstart')).toBe(true)
+    expect(bridge.file.dragOut).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md'], icon: expect.stringMatching(/^data:image\/png;base64,/) })
+    // The OS drag comes back as files: the same paths are this window's own drag.
+    expect(fire(dirRow(el), 'dragover', [])).toBe(true)
+    fire(dirRow(el), 'drop', own(bridge, '/v/a.md'))
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/sub/a.md', 'file')
+    expect(bridge.file.import).not.toHaveBeenCalled()
+    move(0)
+    expect(props.onDraggedOut).not.toHaveBeenCalled()
+  })
+
+  it('a drag that ends outside the window asks once, at the first move with no button down (S26); a drop anywhere inside asks nothing (S30)', async () => {
+    const { props, el } = await mount()
+    fire(fileRow(el), 'dragstart')
+    move(1) // the button is still down: the OS drag has not taken over yet
+    expect(props.onDraggedOut).not.toHaveBeenCalled()
+    move(0)
+    expect(props.onDraggedOut).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
+    move(0)
+    expect(props.onDraggedOut).toHaveBeenCalledOnce()
+    // Dropped on a place that is no target (the editor, the tab bar): nothing moves, and no box.
+    fire(fileRow(el), 'dragstart')
+    fire(document.body, 'drop', [])
+    move(0)
+    expect(props.onDraggedOut).toHaveBeenCalledOnce()
+    expect(props.onRenameFile).not.toHaveBeenCalled()
   })
 })
 

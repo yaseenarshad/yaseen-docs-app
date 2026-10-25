@@ -31,10 +31,13 @@ favorites.set/2: invoke favorites:set ["a0","a1"]; => "answer"; !> {"code":"NOT_
 file.clip/1: invoke fs:clip ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.clipState/0: invoke fs:clip-state []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.delete/1: invoke fs:delete ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.dragOut/1: invoke fs:drag-out ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.import/1: invoke fs:import ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.onClipChanged/1: on clip:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off clip:changed
 file.onDeleted/1: on file:deleted -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:deleted
 file.onRenamed/1: on file:renamed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:renamed
 file.paste/1: invoke fs:paste ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.pathFor/1: (no IPC)
 file.rename/1: invoke fs:rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.repairRename/1: invoke file:repair-rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.retitle/1: invoke fs:retitle ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

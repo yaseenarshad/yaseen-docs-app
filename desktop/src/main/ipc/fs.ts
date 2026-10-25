@@ -1,15 +1,15 @@
 import path from 'node:path'
-import type { IpcMainInvokeEvent } from 'electron'
+import { nativeImage, screen, type IpcMainInvokeEvent } from 'electron'
 import { CONTRACT } from '@shared/ipc'
-import { rootOfPath, type RenameFileResponse } from '@shared/types'
+import { rootOfPath, type ImportResponse, type RenameFileResponse } from '@shared/types'
 import * as favorites from '../favorites'
 import { fileClip } from '../fileClip'
 import * as focus from '../focus'
 import { readAsset, writeAsset } from '../fs/assets'
-import { copyEntry, pasteEntries } from '../fs/copy'
+import { copyEntry, importCopy, isCrossDevice, pasteEntries, type PasteOps } from '../fs/copy'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
-import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
+import { BridgeFailure, isSkipped, requireAbsPath } from '../fs/fsUtils'
 import { readHeads } from '../fs/heads'
 import { readImage } from '../fs/image'
 import { openInDefaultApp } from '../fs/openDefault'
@@ -21,6 +21,7 @@ import { removeEntry } from '../fs/remove'
 import { retitle } from '../fs/retitle'
 import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
+import { requireRequest, requireStringArray } from '../fs/validate'
 import type { Store } from '../store'
 import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
@@ -103,6 +104,12 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
     return res
   }
+  /**
+   * The paste's move verb, hoisted (YAZ-3253 D9A): one entry renamed on disk, then the rename
+   * handler's whole downstream (store, favorites, focus and shares repair, `file:renamed` to every
+   * window). A Paste of a Cut and a drop from Finder move through it alike.
+   */
+  const moveEntry = async (from: string, to: string): Promise<RenameFileResponse> => afterRename(await renameFile({ oldPath: from, newPath: to }))
   handleWithEvent(CONTRACT.file.rename, async (e, req: unknown) => {
     // E1b: the calling window's own vault ROOT cannot be renamed — root identity is a
     // recents/vault-management question (which recents entry follows, what this window's
@@ -243,19 +250,72 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     const clip = fileClip.get()
     if (clip === null) throw new BridgeFailure('BAD_REQUEST', 'nothing to paste')
     const ids = await doorFor(e, req, 'targetDir')
-    const res = await pasteEntries(clip, req, {
-      copy: (from, toDir) => copyEntry(from, toDir, ids),
-      move: async (from, to) => {
-        const r = await renameFile({ oldPath: from, newPath: to })
-        store.renamePath(r.oldPath, r.newPath)
-        await repairFavorites(favorites.renamePath(rootsOf(store.get()), r.oldPath, r.newPath))
-        await repairFocus(focus.renamePath(rootsOf(store.get()), r.oldPath, r.newPath))
-        await repairShares(shareFsHooks.renamed(rootsOf(store.get()), r.oldPath, r.newPath))
-        broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: r.oldPath, newPath: r.newPath, kind: r.kind })
-        return r
-      },
-    })
+    const res = await pasteEntries(clip, req, { copy: (from, toDir) => copyEntry(from, toDir, ids), move: moveEntry })
     if (clip.op === 'cut' && res.pasted.length > 0) fileClip.clear()
     return res
+  })
+  /**
+   * A drop from Finder (YAZ-3253 D3, D9A): `pasteEntries` with an explicit list — the app clipboard
+   * is never read or written. Per item, in order, and one bad item never stops the rest:
+   *  - a hidden item (`isSkipped`: the tree's own rule) is left out with no row (S20);
+   *  - an item inside another vault the app has open, in any window, fails "To move between
+   *    vaults, use cut and paste" (S22; YAZ-2602 R11). One of the target's own vault is not
+   *    refused here: the sidebar sends those through App's door, so links follow (S23);
+   *  - the rest run as a CUT through `moveEntry` (S17, S24). An item that fails `EXDEV` (another
+   *    disk) runs again as a COPY under its own name (`importCopy`), as Finder copies (S18).
+   *    Only `EXDEV`: a copy after any other failure would leave a second copy nobody asked for.
+   * The target must be a folder in a vault of the calling window.
+   */
+  handleWithEvent(CONTRACT.file.import, async (e, req: unknown): Promise<ImportResponse> => {
+    const { paths, targetDir } = requireRequest(req)
+    const dir = requireAbsPath(targetDir, 'targetDir')
+    const home = rootOfPath(rootsOfSender(e), dir)
+    if (home === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that folder', { path: dir })
+    const items = requireStringArray(paths, 'paths')
+      .map((p) => requireAbsPath(p, 'paths'))
+      .filter((p) => !isSkipped(path.basename(p)))
+    const open = rootsOf(store.get())
+    const refused: ImportResponse['failed'] = []
+    const free = items.filter((p) => {
+      const owner = rootOfPath(open, p)
+      if (owner === null || owner === home) return true
+      refused.push({ from: p, code: 'BAD_REQUEST', message: 'To move between vaults, use cut and paste' })
+      return false
+    })
+    const otherDisk: string[] = []
+    const ops: PasteOps = {
+      copy: importCopy,
+      move: async (from, to) => {
+        try {
+          return await moveEntry(from, to)
+        } catch (err) {
+          if (isCrossDevice(err)) otherDisk.push(from)
+          throw err
+        }
+      },
+    }
+    const cut = await pasteEntries({ op: 'cut', paths: free }, { targetDir: dir }, ops)
+    const copy = otherDisk.length === 0 ? { pasted: [], failed: [] } : await pasteEntries({ op: 'copy', paths: otherDisk }, { targetDir: dir }, ops)
+    const failed = [...refused, ...cut.failed.filter((f) => !otherDisk.includes(f.from)), ...copy.failed]
+    return { moved: cut.pasted, copied: copy.pasted, failed: failed.sort((a, b) => items.indexOf(a.from) - items.indexOf(b.from)) }
+  })
+  /**
+   * Rows dragged out to Finder (YAZ-3254 D4): every path absolute and inside a vault of the CALLING
+   * window, never a vault itself; the pill (D6) a PNG data URL under 64 KB. Then the OS drag, and
+   * Finder takes copies (the Finder test on YAZ-3248). The pill is drawn at the screen's pixel
+   * ratio, so it is read at the scale of the display under the pointer, where the drag begins.
+   */
+  handleWithEvent(CONTRACT.file.dragOut, async (e, req: unknown) => {
+    const { paths, icon } = requireRequest(req)
+    const files = requireStringArray(paths, 'paths').map((p) => requireAbsPath(p, 'paths'))
+    if (files.length === 0) throw new BridgeFailure('BAD_REQUEST', 'nothing to drag')
+    const roots = rootsOfSender(e)
+    for (const file of files) {
+      if (roots.includes(file) || rootOfPath(roots, file) === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that path', { path: file })
+    }
+    const PNG = 'data:image/png;base64,'
+    if (typeof icon !== 'string' || !icon.startsWith(PNG) || icon.length >= 64 * 1024) throw new BridgeFailure('BAD_REQUEST', "'icon' must be a PNG data URL under 64 KB")
+    const { scaleFactor } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+    e.sender.startDrag({ file: files[0], files, icon: nativeImage.createFromBuffer(Buffer.from(icon.slice(PNG.length), 'base64'), { scaleFactor }) })
   })
 }

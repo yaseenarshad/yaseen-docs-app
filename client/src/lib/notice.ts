@@ -23,3 +23,22 @@ export interface Notice {
    */
   action?: { label: string; run: () => void }
 }
+
+/**
+ * The box after rows were dragged out to Finder (YAZ-3254 D9B): Finder took copies, and the box asks
+ * whether the vault keeps the items. Its own slot beside the toast, so a later toast does not hide it
+ * (S32); it stays until answered, and a second drag out replaces it. `links`: the notes outside the
+ * items that link to them, off the window's index snapshot.
+ */
+export interface DragOutAsk {
+  paths: string[]
+  links: number
+}
+
+/** "Copied 2 items to Finder? 3 notes link to them." — with no second sentence when no note links (one item: "1 note links to it"). The box asks; it does not claim (S29). */
+export function dragOutText({ paths, links }: DragOutAsk): string {
+  const items = paths.length === 1 ? '1 item' : `${paths.length} items`
+  const them = paths.length === 1 ? 'it' : 'them'
+  const notes = links === 1 ? '1 note links' : `${links} notes link`
+  return links > 0 ? `Copied ${items} to Finder? ${notes} to ${them}.` : `Copied ${items} to Finder?`
+}

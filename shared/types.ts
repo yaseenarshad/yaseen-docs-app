@@ -740,6 +740,39 @@ export interface PasteResponse {
   failed: { from: string; code: BridgeErrorCode; message: string }[]
 }
 
+/**
+ * Finder's items dropped on a folder of the sidebar (YAZ-3253 D3, D9A): absolute paths, as the
+ * preload's `file.pathFor` reads them, moved INTO `targetDir`, which must be in a vault of the
+ * calling window. The app clipboard is never read or written.
+ */
+export interface ImportRequest {
+  paths: string[]
+  targetDir: string
+}
+
+/**
+ * Per-item outcome of a drop from Finder (YAZ-3253 D9A), in the order of `paths`. From the same
+ * disk an item MOVES (`moved`, through the paste's move verb); from another disk (`EXDEV`) it is
+ * COPIED under its own name and stays in Finder (`copied`). A clash fails `ALREADY_EXISTS` and the
+ * item stays (S19). An item inside another vault the app has open fails `BAD_REQUEST` "To move
+ * between vaults, use cut and paste" (S22). A hidden item (its name starts with ".") is in no list (S20).
+ */
+export interface ImportResponse {
+  moved: PasteResponse['pasted']
+  copied: PasteResponse['pasted']
+  failed: PasteResponse['failed']
+}
+
+/**
+ * Rows dragged out of the sidebar (YAZ-3254 D4): each path absolute and inside a vault of the
+ * calling window (never a vault itself); `icon` the drag's pill (D6), a `data:image/png;base64,`
+ * URL under 64 KB. Main starts the OS drag (`webContents.startDrag`), and Finder takes copies.
+ */
+export interface DragOutRequest {
+  paths: string[]
+  icon: string
+}
+
 // ---------- pickFolder() ----------
 
 /**

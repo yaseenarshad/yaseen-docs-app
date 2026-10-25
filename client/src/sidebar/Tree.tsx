@@ -50,9 +50,9 @@ export interface PendingRename {
 export interface TreeFileMove {
   /** A row drag is in flight. */
   isDragging: () => boolean
-  /** A drop into `dir` would land: false for a dragged folder and for every folder inside it (S6). */
-  accepts: (dir: string) => boolean
-  /** A row drag begins (D5): the ONE place, which YAZ-3254 turns into the OS drag. `top`: the copy the row stands in (YAZ-3131). */
+  /** A drop into `dir` would land: false for a dragged folder and for every folder inside it (S6). `files`: the drag comes from the OS (YAZ-3253), which lands in any folder when no row drag is in flight. */
+  accepts: (dir: string, files?: boolean) => boolean
+  /** A row drag to move begins (D5): the ONE place, and the OS drag since YAZ-3254 D4. `top`: the copy the row stands in (YAZ-3131). */
   start: (path: string, top?: string) => void
   end: () => void
   /** The drag is over `dir`, whose row `el` lights (null: none does). `open` arms the spring of a closed folder (D8). */
@@ -60,9 +60,15 @@ export interface TreeFileMove {
   /** The pointer left a target for `dir`: its light goes, if it is the lit one. */
   leave: (dir: string) => void
   drop: (dir: string) => void
-  /** Files from Finder dropped into `dir` (D3): YAZ-3253 fills this in. */
+  /** Files dropped into `dir` (YAZ-3253 D3): Finder's, a second window's, or this window's own OS drag back (YAZ-3254 D4). */
   dropFiles: (dir: string, files: readonly File[]) => void
 }
+
+/** The drag comes from the OS — Finder, or a row's own OS drag (YAZ-3253, YAZ-3254 D4): its `types` hold `Files`. */
+export const hasFiles = (e: React.DragEvent): boolean => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+
+/** A drop on a target for `dir`: files go to `dropFiles`, anything else is the page's own row drag (jsdom's synthetic drags have no `dataTransfer`). */
+export const dropOn = (move: TreeFileMove, e: React.DragEvent, dir: string): void => (hasFiles(e) ? move.dropFiles(dir, Array.from(e.dataTransfer.files)) : move.drop(dir))
 
 /**
  * The pointer left a drop target (YAZ-3251 D2): a move into the target's own label or icon is no
@@ -337,9 +343,14 @@ function TreeLevel({
   // the order is the sort's — it must not turn into a move on disk. A shortcut row never drags (YAZ-2290 D2), and
   // a vault row moves nothing on disk (YAZ-3251 S8): it drags only where its tree reorders.
   const noDrag = (node: TreeNode): boolean => isShortcutRow(node) || (copies && depth === 0 && rowReorder === null) || (vaultRows.has(node.path) && rowReorder === null)
-  /** A row drag begins: the move or the reorder takes it (YAZ-3251 D5). */
+  /**
+   * A row drag begins: the move or the reorder takes it (YAZ-3251 D5). A move is the OS drag
+   * (YAZ-3254 D4): the page's own drag stops here, and `start` asks main for one Finder can take.
+   * A reorder stays the page's drag (S15): it never leaves the window.
+   */
   const dragStart = (node: TreeNode) => (e: React.DragEvent) => {
-    if (e.dataTransfer) {
+    if (rowDrag === move) e.preventDefault()
+    else if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move'
       e.dataTransfer.setData('text/plain', node.path)
     }
@@ -426,8 +437,8 @@ function TreeLevel({
                     rowReorder.hover(node.path, edgeOf(e))
                     return
                   }
-                  if (!move.accepts(node.path)) return
-                  e.preventDefault() // a dir row is a valid drop target while a row drag is in flight
+                  if (!move.accepts(node.path, hasFiles(e))) return
+                  e.preventDefault() // a dir row is a valid drop target while a row drag, or a drag from Finder, is in flight
                   if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
                   // A closed folder held under the drag opens (D8), under its own fold key.
                   move.hover(node.path, e.currentTarget, expanded.has(foldOf(node)) ? undefined : () => onToggle(foldOf(node)))
@@ -438,7 +449,7 @@ function TreeLevel({
                 onDrop={(e) => {
                   e.preventDefault()
                   if (rowReorder !== null && rowReorder.dragging !== null) rowReorder.drop()
-                  else move.drop(node.path)
+                  else dropOn(move, e, node.path)
                 }}
               >
                 <span className={`tree__chevron${expanded.has(foldOf(node)) ? ' tree__chevron--open' : ''}`} />
@@ -515,7 +526,7 @@ function TreeLevel({
                   rowReorder.hover(node.path, edgeOf(e))
                   return
                 }
-                if (!fileDrop || !move.accepts(dirPath)) return
+                if (!fileDrop || !move.accepts(dirPath, hasFiles(e))) return
                 e.preventDefault()
                 if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
                 move.hover(dirPath, folderRowOf(e.currentTarget))
@@ -529,7 +540,7 @@ function TreeLevel({
                   rowReorder.drop()
                 } else if (fileDrop) {
                   e.preventDefault()
-                  move.drop(dirPath)
+                  dropOn(move, e, dirPath)
                 }
               }}
             >
