@@ -18,7 +18,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return { ...real, readdir: vi.fn(real.readdir) }
 })
 
-import { findTrashed, putBack } from './trash'
+import { clashNames, findTrashed, putBack } from './trash'
 import { failure } from './testFixture'
 
 let vault: string
@@ -157,5 +157,15 @@ describe('findTrashed when the Trash renamed the entry and cannot be listed (YAZ
     const t = Date.now()
     await writeFile(path.join(trash, `Todo.md ${stamp(t + 5)}.md`), 'someone else')
     expect(await unlistable(() => findTrashed(trash, 'Todo.md', 1, 1, t + 50, t))).toBeNull()
+  })
+})
+
+describe('the clash-name look is bounded (YAZ-3268 round 2 nit)', () => {
+  it('a delete that took 30 s looks at no more than 5 s after it began, plus 1 s of slack each side', () => {
+    const t = new Date(2026, 9, 25, 1, 30, 5, 0).getTime()
+    const names = clashNames('Plan.md', t, t + 30_000)
+    // At 1 AM the 24-hour and the 12-hour hour are the same, so one name per millisecond.
+    expect(names.length).toBe(7_001)
+    expect(names[1_000]).toBe('Plan.md 01-30-05-000.md')
   })
 })

@@ -39,6 +39,8 @@ export async function trashFolderOf(p: string, dev: number, devOf: DevOf = stat)
 
 /** How far before the delete began, and after it ended, the Trash's time stamp of a clash may be. */
 const STAMP_SLACK_MS = 1_000
+/** The longest stretch after the delete began that the clash names are looked for in (checker nit, YAZ-3268 round 2). */
+const STAMP_WINDOW_MS = 5_000
 
 /**
  * The names the Trash gives an entry whose name it already holds (YAZ-3268, the guided test):
@@ -46,11 +48,14 @@ const STAMP_SLACK_MS = 1_000
  * the extension again. One name per millisecond from `since` to `now`, with slack; an hour of 24 and
  * of 12 where they differ. The file ID decides which, if any, is the entry.
  */
-function clashNames(name: string, since: number, now: number): string[] {
+export function clashNames(name: string, since: number, now: number): string[] {
   const ext = path.extname(name)
   const two = (n: number) => String(n).padStart(2, '0')
   const names: string[] = []
-  for (let t = since - STAMP_SLACK_MS; t <= now + STAMP_SLACK_MS; t++) {
+  // A move into the Trash of the same disk is one rename, done at the start of the call: a slow call
+  // (a big folder) looks no further than `STAMP_WINDOW_MS` after it began, so the look stays bounded.
+  const end = Math.min(now, since + STAMP_WINDOW_MS) + STAMP_SLACK_MS
+  for (let t = since - STAMP_SLACK_MS; t <= end; t++) {
     const d = new Date(t)
     const rest = `${two(d.getMinutes())}-${two(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, '0')}`
     for (const hour of new Set([d.getHours(), d.getHours() % 12 || 12])) names.push(`${name} ${two(hour)}-${rest}${ext}`)
