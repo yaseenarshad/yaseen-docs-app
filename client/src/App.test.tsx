@@ -4,7 +4,7 @@
  * observable stubs; the bridge is the jsdom stub pattern (storage.test.ts), so the real
  * storage / api / hook modules run against it.
  */
-import { LINK_NOTICE_MS, type NoticeKind } from './lib/notice'
+import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -57,7 +57,7 @@ interface SidebarStubProps {
   /** A drop of two or more rows (YAZ-3250 D1): the door for a list of moves. */
   onMoveEntries: (moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]) => Promise<void>
   /** A move the Sidebar made itself (YAZ-3255 D10): a Paste of a Cut, a Finder move-in. App records it and says it with Undo. */
-  onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]; cleared: { path: string; values: Record<string, unknown> }[] }, text: string) => void
+  onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]; cleared: { path: string; values: Record<string, unknown> }[] }, text: string, failed: readonly unknown[]) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteEntries: (paths: string[]) => Promise<void>
@@ -95,7 +95,7 @@ interface SidebarStubProps {
    * writes it here; App only ever reads.
    */
   selectionRef: { current: ReadonlySet<string> }
-  onNotice: (message: string, icon?: NoticeKind) => void
+  onNotice: (message: string, icon?: NoticeKind, type?: NoticeType) => void
   /** ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App asks, the Sidebar (here a stub) answers. */
   clipboardRef: { current: { cutOrCopy: (op: 'copy' | 'cut') => boolean; paste: () => boolean; delete: () => boolean } | null }
   /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): the Inbox row and "Review this folder" exist only then. */
@@ -3236,7 +3236,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         const files: Disk = { [ARCHIVED]: { content: `---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`, mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: NOOR, newPath: ARCHIVED, kind: 'file' }], cleared: [{ path: NOOR, values: { [HIRING]: { Status: 'Interview' } } }] }, 'Pasted 1 file (Noor.md)'))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: NOOR, newPath: ARCHIVED, kind: 'file' }], cleared: [{ path: NOOR, values: { [HIRING]: { Status: 'Interview' } } }] }, 'Pasted 1 file (Noor.md)', []))
         expect(toast(el)).toEqual({ text: 'Pasted 1 file (Noor.md)', action: 'Undo' })
         await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
         await settle()
@@ -3251,7 +3251,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         const files: Disk = { [PLAN]: { content: 'Body\n', mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PLAN, kind: 'file' }], cleared: [] }, 'Moved 1 file (Plan.md) from Finder'))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PLAN, kind: 'file' }], cleared: [] }, 'Moved 1 file (Plan.md) from Finder', []))
         expect(toast(el)).toEqual({ text: 'Moved 1 file (Plan.md) from Finder', action: 'Undo' })
         await press()
         expect(renames(bridge)).toEqual([[PLAN, DOWNLOADS]])
@@ -3270,7 +3270,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         const files: Disk = { [PDF]: { content: '%PDF', mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PDF, kind: 'file' }], cleared: [] }, 'Moved 1 file (Scan.pdf) from Finder'))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PDF, kind: 'file' }], cleared: [] }, 'Moved 1 file (Scan.pdf) from Finder', []))
         await press()
         expect(renames(bridge)).toEqual([[PDF, DOWNLOADS]])
         expect(toast(el)).toEqual({ text: 'Moved back 1 file (Scan.pdf)', action: 'Redo' })
@@ -3320,7 +3320,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         bridge.file.rename.mockRejectedValue({ code: 'IO_ERROR', message: 'the disk is busy', path: LOST })
         await press()
         expect(bridge.app.sound).toHaveBeenCalledTimes(3)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Team/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 item from Finder'))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Team/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 item from Finder', []))
         expect(bridge.app.sound.mock.calls).toEqual([['land'], ['land'], ['land'], ['land']])
       })
 
@@ -3551,6 +3551,19 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(bridge.app.sound.mock.calls).toEqual([['trash']])
       expect((await press()).defaultPrevented).toBe(false)
       expect(bridge.file.putBack).not.toHaveBeenCalled()
+    })
+
+    it('YAZ-3303 D6: with "Move, rename or delete" Off, a delete says nothing, with or without Undo; the sound still plays and ⌘Z still undoes (S17)', async () => {
+      const state = defaultAppState()
+      state.settings = { ...state.settings, noticeUndo: false }
+      const { bridge, el } = await mountVault(state)
+      bridge.file.delete.mockResolvedValueOnce({ path: '/v/B.md', kind: 'file', trashed: null })
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/B.md']))
+      expect(toast(el)).toEqual({ text: undefined, action: undefined })
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/Todo.md']))
+      expect(toast(el)).toEqual({ text: undefined, action: undefined })
+      expect(bridge.app.sound.mock.calls).toEqual([['trash'], ['trash']])
+      expect((await press()).defaultPrevented).toBe(true)
     })
 
     /** The list delete door (YAZ-3272 D21, S67): N items, ONE trash sound, ONE step, ONE toast. */

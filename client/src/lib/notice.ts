@@ -5,7 +5,7 @@
 import type { NoticeLength, SettingsState } from '@shared/types'
 import { basename } from './paths'
 
-/** A can't-open-link notice (E1, GRO-2171) dismisses itself after this long. */
+/** A plain notice goes after this long at the default Show for, "4 s" (E1, GRO-2171; YAZ-3303 D5). */
 export const LINK_NOTICE_MS = 4000
 
 /** A move's toast with Undo, and an undo's with Redo, fade after this long (YAZ-3255 D11). ⌘Z and ⌘⇧Z work after it too. */
@@ -41,8 +41,8 @@ export interface Notice {
   /**
    * One button on the toast (YAZ-1897, ported by YAZ-3039: "See changes" after a merge). A notice
    * with an action is news to act on, so it stays until acted on or dismissed instead of fading
-   * after `LINK_NOTICE_MS` — unless it `fades` (YAZ-3255 D11): the Undo of a move and the Redo of
-   * an undo are a chance, not news, and go after `UNDO_NOTICE_MS`.
+   * after Settings › Notifications › Show for (`noticeMs`) — unless it `fades` (YAZ-3255 D11): the Undo of a move and the Redo of
+   * an undo are a chance, not news, and go after Show for, at least `UNDO_NOTICE_MS`.
    */
   action?: { label: string; run: () => void; fades?: true }
 }

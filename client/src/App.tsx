@@ -1620,7 +1620,7 @@ export function App() {
     if (went === 0) return notify(text, 'error')
     playGestureSound('trash')
     if (items.length > 0) stepToast(text, 'info', 'undo', failed)
-    else notify(text)
+    else notify(text, 'info', unlessFailed('undo', failed))
   }, [nameOf, notify, stepToast])
 
   /**
@@ -1872,7 +1872,8 @@ export function App() {
     // By kind and by name on disk (YAZ-3293 D23), as Finder shows them.
     const text = gestureNotice(`Deleted ${namedItems(went.map((res) => onDisk(res.path, res.kind)))}`, failed, "Can't delete")!
     const items = went.flatMap((res) => (res.trashed == null ? [] : [{ path: res.path, trashed: res.trashed, type: res.kind, name: onDisk(res.path, res.kind).name }]))
-    if (items.length === 0) return notify(text)
+    // No file ID from the Trash: no Undo, but still a delete's toast (YAZ-3303 D6).
+    if (items.length === 0) return notify(text, 'info', unlessFailed('undo', failed))
     moveHistory.current.push({ step: 'delete', items })
     stepToast(text, 'info', 'undo', failed)
   }, [nameOf, trashOne, notify, stepToast])
