@@ -42,15 +42,49 @@ export async function trashFolderOf(p: string, dev: number, devOf: DevOf = stat)
 const isTrashFolder = (dir: string): boolean =>
   dir === path.join(homedir(), '.Trash') || (path.basename(dir) === String(process.getuid?.() ?? 0) && path.basename(path.dirname(dir)) === '.Trashes')
 
+/** How far before the delete began, and after it ended, the Trash's time stamp of a clash may be. */
+const STAMP_SLACK_MS = 1_000
+
+/**
+ * The names the Trash gives an entry whose name it already holds (YAZ-3268, the guided test):
+ * `Plan.md 01-30-05-828.md` — the name, a space, the local time of the move to the millisecond, and
+ * the extension again. One name per millisecond from `since` to `now`, with slack; an hour of 24 and
+ * of 12 where they differ. The file ID decides which, if any, is the entry.
+ */
+function clashNames(name: string, since: number, now: number): string[] {
+  const ext = path.extname(name)
+  const two = (n: number) => String(n).padStart(2, '0')
+  const names: string[] = []
+  for (let t = since - STAMP_SLACK_MS; t <= now + STAMP_SLACK_MS; t++) {
+    const d = new Date(t)
+    const rest = `${two(d.getMinutes())}-${two(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, '0')}`
+    for (const hour of new Set([d.getHours(), d.getHours() % 12 || 12])) names.push(`${name} ${two(hour)}-${rest}${ext}`)
+  }
+  return names
+}
+
 /**
  * The entry in `folder` with the file ID `ino` + `dev` (D16), or null. First `<folder>/<name>` (the
- * usual case, and the one that works without Full Disk Access); then each entry changed in the last
- * minute. Never throws: a Trash that cannot be read is an entry not found (S61).
+ * usual case, and the one that works without Full Disk Access); then the names the Trash gives a clash
+ * at the time of this delete (`since` to `now`), each by its exact name, which also works without it;
+ * last each entry changed in the last minute, which only Full Disk Access lets the app list. Never
+ * throws: a Trash that cannot be read is an entry not found (S61).
  */
-export async function findTrashed(folder: string, name: string, ino: number, dev: number, now: number = Date.now()): Promise<string | null> {
+export async function findTrashed(
+  folder: string,
+  name: string,
+  ino: number,
+  dev: number,
+  now: number = Date.now(),
+  since: number = now,
+): Promise<string | null> {
   const same = (s: { ino: number; dev: number } | null): boolean => s !== null && s.ino === ino && s.dev === dev
   const byName = path.join(folder, name)
   if (same(await lstat(byName).catch(() => null))) return byName
+  for (const clash of clashNames(name, since, now)) {
+    const p = path.join(folder, clash)
+    if (same(await lstat(p).catch(() => null))) return p
+  }
   const names = await readdir(folder).catch(() => [] as string[])
   for (const entry of names) {
     const p = path.join(folder, entry)

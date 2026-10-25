@@ -53,9 +53,11 @@ export async function removeEntry(req: unknown): Promise<DeleteResponse> {
     // The ID of the entry itself, a link's own and not its target's: the Trash takes the entry.
     const id = await lstat(p)
     // Electron resolves trashItem() and rejects on failure; either way nothing else runs here.
+    // `since`: a name the Trash gives a clash holds the time of the move (trash.ts).
+    const since = Date.now()
     await shell.trashItem(p)
     const trashed = await trashFolderOf(p, id.dev)
-      .then((folder) => findTrashed(folder, path.basename(p), id.ino, id.dev))
+      .then((folder) => findTrashed(folder, path.basename(p), id.ino, id.dev, Date.now(), since))
       .catch(() => null)
     return { path: p, kind, trashed }
   })

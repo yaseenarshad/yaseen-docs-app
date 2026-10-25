@@ -3,7 +3,7 @@
  * Plain node, temp folders: the home folder, and so `~/.Trash`, is a temp folder.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -13,7 +13,7 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...real, homedir: () => home.dir }
 })
 
-import { putBack } from './trash'
+import { findTrashed, putBack } from './trash'
 import { failure } from './testFixture'
 
 let vault: string
@@ -81,5 +81,38 @@ describe('putBack (YAZ-3268 D16)', () => {
     }
     expect(await exists(outside)).toBe(true)
     expect(await exists(path.join(vault, 'Moved.md'))).toBe(false)
+  })
+})
+
+describe('findTrashed when the Trash renamed the entry and cannot be listed (YAZ-3268 D16, guided test)', () => {
+  /** The Trash as macOS keeps it without Full Disk Access: an entry is reached by its exact name, the folder cannot be listed. */
+  const unlistable = async <T>(run: () => Promise<T>): Promise<T> => {
+    await chmod(trash, 0o333)
+    try {
+      return await run()
+    } finally {
+      await chmod(trash, 0o755)
+    }
+  }
+  /** "Plan.md 01-30-05-828.md": the name, a space, the local time to the millisecond, the extension (seen on Yasin's Mac). */
+  const stamp = (t: number) => {
+    const d = new Date(t)
+    const two = (n: number) => String(n).padStart(2, '0')
+    return `${two(d.getHours())}-${two(d.getMinutes())}-${two(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, '0')}`
+  }
+
+  it('finds it by the name the Trash gives a clash, and confirms it by its file ID, with no listing of the Trash', async () => {
+    const t = Date.now()
+    await writeFile(path.join(trash, 'Plan.md'), 'an older Plan')
+    const renamed = path.join(trash, `Plan.md ${stamp(t + 37)}.md`)
+    await writeFile(renamed, 'this delete')
+    const { ino, dev } = await stat(renamed)
+    expect(await unlistable(() => findTrashed(trash, 'Plan.md', ino, dev, t + 120, t))).toBe(renamed)
+  })
+
+  it('a name of that shape with another file ID is not it: null, and no Undo is offered (S61)', async () => {
+    const t = Date.now()
+    await writeFile(path.join(trash, `Todo.md ${stamp(t + 5)}.md`), 'someone else')
+    expect(await unlistable(() => findTrashed(trash, 'Todo.md', 1, 1, t + 50, t))).toBeNull()
   })
 })
