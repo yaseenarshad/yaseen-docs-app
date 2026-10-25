@@ -36,7 +36,8 @@ const bgOf = (page: Page): Promise<string> => page.evaluate(() => getComputedSty
 /** Open the settings dialog from the sidebar-footer cog and click one Theme option by its label. */
 async function pickAppearance(win: Page, label: 'System' | 'Light' | 'Dark'): Promise<void> {
   await win.getByRole('button', { name: 'Settings', exact: true }).click()
-  // The dialog opens on Appearance (YAZ-1679); the row is addressed by its `data-setting`.
+  // The dialog opens on General (YAZ-3276 D7); the row is on Appearance, addressed by its `data-setting`.
+  await win.locator('.settings-dialog .settings-nav__item', { hasText: /^Appearance$/ }).click()
   await win.locator('.settings-dialog [data-setting="theme"]').getByRole('button', { name: label, exact: true }).click()
   await win.keyboard.press('Escape') // close the dialog so screenshots show the app, not the modal
 }

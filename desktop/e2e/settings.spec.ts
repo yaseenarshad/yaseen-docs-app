@@ -17,8 +17,8 @@ import { appWindow, buildFixtureVault, clickMenuItem, copyVault, launchApp, quit
 
 test.describe.configure({ mode: 'serial' })
 
-/** The nav as the registry orders it (registry.tsx): five settings pages, a divider, the Hotkeys reference page. */
-const NAV_ORDER = ['Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Storage', 'Sharing', 'Hotkeys'] as const
+/** The nav as the registry orders it (registry.tsx): the settings pages (General first, YAZ-3276 D7), a divider, the reference pages. */
+const NAV_ORDER = ['General', 'Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Storage', 'Sharing', 'Hotkeys'] as const
 
 // ---------- the dialog's parts, by role and stable class only (never position) ----------
 
@@ -65,7 +65,7 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — the sidebar cog opens the dialog on the Appearance page: nav in registry order, divider before Hotkeys, Appearance current', async () => {
+test('step 1 — the sidebar cog opens the dialog on the General page: nav in registry order, divider before Hotkeys, General current', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, SEED_FILE)) })
   win = await appWindow(app, 'w1')
   await expect(win.locator('.ProseMirror')).toBeVisible() // the seeded note is open; the app is up
@@ -78,14 +78,18 @@ test('step 1 — the sidebar cog opens the dialog on the Appearance page: nav in
   // off under the divider — Sync is there because App always hands the engine over.
   await expect.poll(() => navSequence(win)).toEqual([...NAV_ORDER])
 
-  // Opening always starts at the first page, at its top: Appearance is the one current nav item,
+  // Opening always starts at the first page, at its top: General is the one current nav item,
   // and it is a `page` — the section the pane shows — like every item of the nav.
   expect(await paneScrollTop(win)).toBe(0)
-  await expect(navItem(win, 'Appearance')).toHaveAttribute('aria-current', 'page')
+  await expect(navItem(win, 'General')).toHaveAttribute('aria-current', 'page')
   await expect(dialog(win).locator('.settings-nav__item[aria-current]')).toHaveCount(1)
-  // ONE section to a page: the only heading is Appearance, and a row of a later section (Sync's) is not in the DOM.
-  await expect(headings(win)).toHaveText(['Appearance'])
-  await expect(row(win, 'theme')).toBeVisible()
+  // ONE section to a page: the only heading is General — its two rows, the settings folder (YAZ-3276 D7) and
+  // Reopen — and a row of a later section (Appearance's, Sync's) is not in the DOM.
+  await expect(headings(win)).toHaveText(['General'])
+  await expect(row(win, 'settingsFolder')).toBeVisible()
+  await expect(row(win, 'settingsFolder').getByTestId('settings-folder-path')).toHaveText('On this Mac only (default)')
+  await expect(row(win, 'startupWindows')).toBeVisible()
+  await expect(row(win, 'theme')).toHaveCount(0)
   await expect(row(win, 'githubSync')).toHaveCount(0)
   await shoot(win, 'settings-01-open-from-cog')
 
@@ -97,7 +101,7 @@ test('step 2 — Settings… in the app menu (⌘,) opens the same dialog, with 
   // The REAL menu path: the item by its stable id, focused on w1 so main's focused-window send lands here.
   await clickMenuItem(app, 'menu.app.settings', 'w1')
   await expect(dialog(win)).toBeVisible()
-  await expect(navItem(win, 'Appearance')).toHaveAttribute('aria-current', 'page')
+  await expect(navItem(win, 'General')).toHaveAttribute('aria-current', 'page')
   await shoot(win, 'settings-02-open-from-menu')
   await win.keyboard.press('Escape')
   await expect(dialog(win)).toHaveCount(0)
@@ -165,8 +169,8 @@ test('step 4 — Escape is two-stage (clear the search, then close); the × and 
   await win.keyboard.press('Escape')
   await expect(dialog(win)).toBeVisible()
   await expect(search(win)).toHaveValue('')
-  await expect(headings(win)).toHaveText(['Appearance'])
-  await expect(row(win, 'theme')).toBeVisible()
+  await expect(headings(win)).toHaveText(['General'])
+  await expect(row(win, 'settingsFolder')).toBeVisible()
   await shoot(win, 'settings-07-escape-cleared-search')
 
   // Second Escape, nothing to clear: the dialog closes.
@@ -225,6 +229,7 @@ test('step 5 — a nav click swaps the page: Sync, then Hotkeys under the divide
 test('step 6 — a change survives close and reopen, and reached the state file', async () => {
   await cog(win).click()
   await expect(dialog(win)).toBeVisible()
+  await navItem(win, 'Appearance').click()
   const width = row(win, 'contentWidth')
   await expect(width.getByRole('button', { name: 'Narrow', exact: true })).toHaveClass(/settings__option--active/) // the default
   await width.getByRole('button', { name: 'Full', exact: true }).click()
@@ -234,6 +239,7 @@ test('step 6 — a change survives close and reopen, and reached the state file'
 
   await cog(win).click()
   await expect(dialog(win)).toBeVisible()
+  await navItem(win, 'Appearance').click()
   await expect(row(win, 'contentWidth').getByRole('button', { name: 'Full', exact: true })).toHaveClass(/settings__option--active/)
   await expect(row(win, 'contentWidth').getByRole('button', { name: 'Narrow', exact: true })).not.toHaveClass(/settings__option--active/)
   await expect.poll(async () => (await readState(userData)).settings.contentWidth).toBe('full')

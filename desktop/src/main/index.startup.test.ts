@@ -73,6 +73,8 @@ const h = vi.hoisted(() => {
     handles: new Map<string, (...args: unknown[]) => Promise<unknown>>(),
     protocol: { registerSchemesAsPrivileged: vi.fn(log('registerSchemesAsPrivileged')), handle: vi.fn() },
     flushIndexCache: vi.fn(async () => void s.order.push('flushIndexCache')),
+    // The settings folder (YAZ-3276 D4) with no folder chosen: its first read is done at once, and quit has nothing to write.
+    settingsFolder: { ready: Promise.resolve(), missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined, flush: vi.fn(async () => undefined), close: async () => undefined },
     registerIpc: vi.fn(() => (s.order.push('registerIpc'), { sync: gitSync, secrets: {} })),
     registerClipboardIpc: vi.fn(log('registerClipboardIpc')),
     /** The Draw import's wiring (YAZ-3028 D6); `drawImport.test.ts` tests the import itself. */
@@ -101,6 +103,7 @@ vi.mock('./windows', () => ({ createWindowManager: () => h.manager }))
 // The diaries of links (YAZ-2677 R27) are flushed with the index cache, in the same step.
 vi.mock('./vaultIndex', () => ({ initIndexCache: vi.fn(), flushIndexCache: h.flushIndexCache, flushDiaries: vi.fn(async () => undefined) }))
 vi.mock('./ipc', () => ({ registerIpc: h.registerIpc }))
+vi.mock('./settingsFolder', () => ({ followSettingsFolder: () => h.settingsFolder }))
 vi.mock('./library/folder', () => ({ ensureLibraryFolder: vi.fn(async () => '/userData/library') }))
 vi.mock('./updater', async (importOriginal) => ({ shortVersion: (await importOriginal<typeof import('./updater')>()).shortVersion, createUpdater: h.createUpdater, runFile: vi.fn(), spawnDetached: vi.fn(), RELEASES_PAGE: 'https://github.com/yaseenarshad/yaseen-docs-app/releases/latest' }))
 vi.mock('./ipc/clipboard', () => ({ registerClipboardIpc: h.registerClipboardIpc }))

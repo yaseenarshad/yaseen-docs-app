@@ -1420,6 +1420,12 @@ export interface SettingsState {
   canvasPanel: CanvasPanelState
 }
 
+/**
+ * The settings that stay on this Mac when a settings folder is set (YAZ-3276 D1): a path, a panel memory
+ * and a drag width each fit one Mac only, like `AppState.sidebarWidth`. Every other field travels.
+ */
+export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth']
+
 export type DiagramDarkColors = 'adapt' | 'keep'
 export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
 
@@ -1782,11 +1788,19 @@ export interface AppState {
    * vault, so they do not sync. Additive within version 1, like `vaultSets`: a file without it loads as `[]`, and an old build drops the key.
    */
   sessions: Session[]
+  /**
+   * The settings folder (YAZ-3276 D2): an absolute path, or null for the default — `settings` above, on
+   * this Mac only. Per machine: the pointer never goes into the folder. `settings` stays the copy that a
+   * missing folder falls back on (D5). Additive within version 1: an old build drops the key.
+   */
+  settingsFolder: string | null
+  /** The time of the settings this Mac has now (YAZ-3276 D3): its own last change of a field that travels, or the `savedAt` of the folder file it took. 0 = none. */
+  settingsSavedAt: number
 }
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [] }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, settingsSavedAt: 0 }
 }
 
 export function defaultFolderState(): FolderState {

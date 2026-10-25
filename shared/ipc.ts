@@ -133,6 +133,10 @@ export const CONTRACT = {
   state: {
     get: invoke<[], AppState>('state:get', 0),
     setSettings: invoke<[settings: SettingsState], void>('state:set-settings', 1),
+    /** This Mac's settings folder (YAZ-3276 D2): the path, or null for this Mac only, and whether a chosen folder is missing now (D5). */
+    settingsFolder: invoke<[], { folder: string | null; missing: boolean }>('state:settings-folder', 0),
+    /** Point the settings at a folder, or null for this Mac only (YAZ-3276 D6): a folder with another Mac's file wins; an empty one takes this Mac's settings. */
+    setSettingsFolder: invoke<[folder: string | null], void>('state:set-settings-folder', 1),
     /** Clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by the main process. */
     setSidebarWidth: invoke<[width: number], void>('state:set-sidebar-width', 1),
     /** The Favorites order of the window's vaults (YAZ-2631 D1); main merges it into the one list. */
