@@ -1,20 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import type { ViewSet } from './viewSchema'
+import { timeMedian } from '../test-perf'
 import { runView } from './engine'
-/** Warm up (JIT), then time `go` 7 times; the median is the budget (YAZ-3328): one pass can stall on a busy CI runner. */
-function timed<T>(go: () => T): { r: T; ms: number; worst: number } {
-  go()
-  const runs: number[] = []
-  let r!: T
-  for (let i = 0; i < 7; i++) {
-    const t0 = performance.now()
-    r = go()
-    runs.push(performance.now() - t0)
-  }
-  return { r, ms: [...runs].sort((a, b) => a - b)[runs.length >> 1], worst: Math.max(...runs) }
-}
-
 describe('perf (GRO-2133)', () => {
   function record(i: number): IndexRecord {
     return {
@@ -52,7 +40,8 @@ describe('perf (GRO-2133)', () => {
       ],
     }
     const go = () => runView(def, def.views[0], records, { root: '/vault' })
-    const { r, ms, worst } = timed(go)
+    go() // warm-up (JIT)
+    const { result: r, median: ms, worst } = timeMedian(7, go)
     expect(r.errors).toEqual([])
     expect(r.rows.length).toBeGreaterThan(0)
     expect(r.rows.length).toBeLessThan(1000)
@@ -82,7 +71,8 @@ describe('perf (GRO-2133)', () => {
       ],
     }
     const go = () => runView(def, def.views[0], records, { root: '/vault' })
-    const { r, ms, worst } = timed(go)
+    go() // warm-up (JIT)
+    const { result: r, median: ms, worst } = timeMedian(7, go)
     expect(r.errors).toEqual([])
     expect(r.groups).toHaveLength(7)
     // No price equals a folder name and none is missing, so every row lands in exactly one child.

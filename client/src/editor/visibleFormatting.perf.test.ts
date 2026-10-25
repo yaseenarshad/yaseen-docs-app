@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { commandsCtx } from '@milkdown/kit/core'
 import { isMarkSelectedCommand, strongSchema } from '@milkdown/kit/preset/commonmark'
+import { median } from '../test-perf'
 import { endOf, mount, posOf, pressKey, select, unmountAll } from './marks/markTestKit'
 
 afterEach(unmountAll)
@@ -29,7 +30,7 @@ async function litCheck(markdown: string, first: string, last: string): Promise<
     expect(lit()).toBe(false)
     runs.push(performance.now() - start)
   }
-  return [[...runs].sort((a, b) => a - b)[runs.length >> 1], Math.max(...runs)]
+  return [median(runs), Math.max(...runs)]
 }
 
 describe('visibleFormatting', () => {
