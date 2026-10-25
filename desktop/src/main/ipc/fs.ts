@@ -2,7 +2,7 @@ import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { nativeImage, screen, type IpcMainInvokeEvent } from 'electron'
 import { CONTRACT } from '@shared/ipc'
-import { BETWEEN_VAULTS, rootOfPath, type FileWriteRequest, type FileWriteResponse, type ImportResponse, type RenameFileResponse } from '@shared/types'
+import { BETWEEN_VAULTS, CLIP_CHANGED, rootOfPath, type FileWriteRequest, type FileWriteResponse, type ImportResponse, type RenameFileResponse } from '@shared/types'
 import { dropLanded, rememberDragOut } from '../dragLanding'
 import * as favorites from '../favorites'
 import { fileClip, type FileClip } from '../fileClip'
@@ -237,6 +237,13 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   /** The paths the app last put on the system clipboard: still there, they are the app's own, never Finder's. */
   let wrote: readonly string[] = []
   const sameFiles = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((p) => b.includes(p))
+  const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((p, i) => p === b[i])
+  /** `fs:paste`'s `expect` (YAZ-3266): the verb and the paths the window confirmed. Required: a paste names the clip it is for. */
+  const requireExpect = (v: unknown): { op: 'copy' | 'cut'; paths: string[] } => {
+    const raw = typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : null
+    if (raw === null || (raw.op !== 'copy' && raw.op !== 'cut')) throw new BridgeFailure('BAD_REQUEST', "'expect' must be { op: 'copy' | 'cut', paths }")
+    return { op: raw.op, paths: requireStringArray(raw.paths, 'expect.paths') }
+  }
   // Cut / Copy is a pure clipboard write: nothing on disk is touched or even stat'ed, so there
   // is no store repair and no file push here — a path that goes stale before the paste is
   // reported per entry BY the paste. No vault-root guard either: Cut/Copy is offered on ROWS
@@ -289,9 +296,14 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // Finder's files (`clipNow`, YAZ-3265 D14) paste as a COPY under their OWN names, a clash under
   // the next free one (`importCopy`, never `copyEntry`, which builds a note's name); a folder comes
   // with its contents. The originals stay in Finder, and the app's own clip is not touched.
+  // The paste runs only the clip the window confirmed (`expect`, YAZ-3266): the system clipboard can change under the
+  // window with no event (text copied in a note), so the window reads `clipState` fresh at paste time and sends that
+  // answer. Another clip now — or none — pastes nothing and fails `CONFLICT`: the window's D21 sheet, D20 and undo
+  // record were decided for the clip it confirmed, never for whatever is current.
   handleWithEvent(CONTRACT.file.paste, async (e, req: unknown) => {
+    const expected = requireExpect(requireRequest(req).expect)
     const now = clipNow()
-    if (now === null) throw new BridgeFailure('BAD_REQUEST', 'nothing to paste')
+    if (now === null || now.clip.op !== expected.op || !sameOrder(now.clip.paths, expected.paths)) throw new BridgeFailure('CONFLICT', CLIP_CHANGED)
     if (now.finder) return pasteEntries(now.clip, req, { copy: (from, toDir) => importCopy(from, toDir, { freeName: true }), move: moveEntry })
     const { clip } = now
     const ids = await doorFor(e, req, 'targetDir')

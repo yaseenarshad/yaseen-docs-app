@@ -38,6 +38,12 @@ function registered(channel: string): Handler {
   return call[1] as unknown as Handler
 }
 
+/** A paste request that names the clip main holds now: what a window that read `clip-state` at paste time confirms (YAZ-3266). */
+function pasteReq(targetDir: string) {
+  const clip = fileClip.get()
+  return { targetDir, expect: clip === null ? null : { op: clip.op, paths: clip.paths } }
+}
+
 /** A `BrowserWindow` stand-in: only what the broadcaster touches. */
 function fakeWindow() {
   return {
@@ -365,7 +371,7 @@ describe('registerFsIpc', () => {
     const call = (door: { channel: string }, ...args: unknown[]) => registered(door.channel)({ sender: {} }, ...args)
     const paste = (from: string, targetDir: string) => {
       fileClip.set({ op: 'copy', paths: [from] })
-      return call(CONTRACT.file.paste, { targetDir })
+      return call(CONTRACT.file.paste, pasteReq(targetDir))
     }
 
     it.each([
@@ -743,7 +749,7 @@ describe('registerFsIpc', () => {
       await mkdir(dir)
       fileClip.set({ op: 'cut', paths: [oldPath] })
       vi.mocked(focus.renamePath).mockClear()
-      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: dir })).toMatchObject({ ok: true, value: { pasted: [{ from: oldPath, to: path.join(dir, 'focus-a.md') }] } })
+      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(dir))).toMatchObject({ ok: true, value: { pasted: [{ from: oldPath, to: path.join(dir, 'focus-a.md') }] } })
       expect(vi.mocked(focus.renamePath)).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining([root]), oldPath, path.join(dir, 'focus-a.md'))
       store.removeWindow('w-focus')
     })
@@ -802,11 +808,11 @@ describe('registerFsIpc', () => {
       fileClip.clear()
     })
 
-    it('fs:paste with an empty clipboard is BAD_REQUEST "nothing to paste"', async () => {
+    it('fs:paste with an empty clipboard is CONFLICT: the clip the window confirmed is gone, so nothing is pasted (YAZ-3266)', async () => {
       fileClip.clear()
-      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root })).toEqual({
+      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root, expect: { op: 'copy', paths: [path.join(root, 'A.md')] } })).toEqual({
         ok: false,
-        error: { code: 'BAD_REQUEST', message: 'nothing to paste' },
+        error: { code: 'CONFLICT', message: 'The clipboard changed. Paste again.' },
       })
     })
 
@@ -820,14 +826,14 @@ describe('registerFsIpc', () => {
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       const before = store.get()
       // Into its own folder: Duplicate for free.
-      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root })
+      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(root))
       const copy = expect.stringMatching(/\/copy-src-copy-[a-z]{2,5}-\d+\.md$/)
       expect(res).toEqual({ ok: true, value: { pasted: [{ from: src, to: copy, kind: 'file' }], failed: [] } })
       expect(await readFile(src, 'utf8')).toBe('copy me')
       expect(store.get()).toBe(before) // nothing moved: no repair
       expect(w.webContents.send).not.toHaveBeenCalled() // no file:renamed, no clip:changed
       expect(fileClip.get()).toEqual({ op: 'copy', paths: [src] }) // a copy pastes again and again
-      const again = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root })
+      const again = await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(root))
       expect(again).toMatchObject({ ok: true, value: { pasted: [{ to: copy }] } })
       expect((await readdir(root)).filter((name) => name.startsWith('copy-src-copy-'))).toHaveLength(2)
     })
@@ -844,7 +850,7 @@ describe('registerFsIpc', () => {
       fileClip.set({ op: 'cut', paths: [a, b] })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
-      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: dir })
+      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(dir))
       const toA = path.join(dir, 'cut-a.md')
       const toB = path.join(dir, 'cut-b.md')
       expect(res).toEqual({ ok: true, value: { pasted: [{ from: a, to: toA, kind: 'file' }, { from: b, to: toB, kind: 'file' }], failed: [] } })
@@ -868,7 +874,7 @@ describe('registerFsIpc', () => {
       fileClip.set({ op: 'cut', paths: [src] })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
-      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: dir })
+      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(dir))
       expect(res).toEqual({ ok: true, value: { pasted: [], failed: [{ from: src, code: 'ALREADY_EXISTS', message: 'a file with this name already exists' }] } })
       expect(await readFile(path.join(dir, 'same.md'), 'utf8')).toBe('keep')
       expect(fileClip.get()).toEqual({ op: 'cut', paths: [src] })
@@ -878,7 +884,7 @@ describe('registerFsIpc', () => {
     it('a missing target folder is a whole-call BridgeError envelope: nothing pasted, clipboard kept', async () => {
       fileClip.set({ op: 'copy', paths: [path.join(root, 'A.md')] })
       const missing = path.join(root, 'no-such-dir')
-      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: missing })).toEqual({
+      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(missing))).toEqual({
         ok: false,
         error: { code: 'NOT_FOUND', message: 'path does not exist', path: missing },
       })

@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { isMarkdown, isSkipped } from '@shared/fileKind'
-import { BETWEEN_VAULTS, type FileClipState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
+import { BETWEEN_VAULTS, CLIP_CHANGED, type FileClipState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import { playGestureSound } from '../../lib/gestureSound'
 import type { MovedGesture } from '../../lib/moveHistory'
@@ -397,40 +397,50 @@ export function useFileClipboard(
    * another window on another vault. Session-only, never persisted. A window opened AFTER a clip
    * reads the current state on mount (`clipState`), so its Paste is labelled from the start. It reads
    * again on each window focus (YAZ-3265 D13): back from a ⌘C in Finder, main answers Finder's files,
-   * and "Paste N items" counts them. A Paste of Finder's files is a copy: not on the undo list (D14).
+   * and "Paste N items" counts them. A Paste of Finder's files is a copy: not on the undo list (D14). This cached value
+   * only labels the menu and gates ⌘V: each paste reads the clip FRESH and pastes that one (YAZ-3266, `pasteInto`).
    */
   const [clip, setClip] = useState<FileClipState>(null)
-  // The paste of a Cut that would clear values, or of a Copy that would not keep them (YAZ-2420 3E1), waiting on its sheet (D21); null when it is closed.
-  const [pendingPaste, setPendingPaste] = useState<{ dir: string; top?: string; moves: Move[]; lost: LeftBehind; copy: boolean } | null>(null)
+  /**
+   * The paste of a Cut that would clear values, or of a Copy that would not keep them (YAZ-2420 3E1), waiting on its sheet
+   * (D21); null when it is closed. `clip` is the clip the sheet asks about: the one a fresh read confirmed (YAZ-3266), and
+   * the one its Move or Copy pastes — never whatever is on the clipboard by then.
+   */
+  const [pendingPaste, setPendingPaste] = useState<{ dir: string; top?: string; moves: Move[]; lost: LeftBehind; copy: boolean; clip: NonNullable<FileClipState> } | null>(null)
   // The sheet speaks for the clipboard it was asked about: another one ends the question.
-  useEffect(() => setPendingPaste(null), [clip])
+  useEffect(() => setPendingPaste((open) => (open === null || sameClip(open.clip, clip) ? open : null)), [clip])
+  /** Pushes seen so far: a read lands only when none came since it began (a push is newer than the read). */
+  const pushes = useRef(0)
+  /** False once unmounted: a read that answers late writes no state. */
+  const live = useRef(true)
+  /**
+   * Read main's clip now (`clipState`) and keep it, unless a push came while the read was in flight. The same clipboard
+   * keeps its value: a focus that changed nothing leaves an open Paste sheet open. Answers what main said.
+   */
+  const readClip = useCallback(async (): Promise<FileClipState> => {
+    const at = pushes.current
+    const state = await api.file.clipState()
+    if (live.current && pushes.current === at) setClip((was) => (sameClip(was, state) ? was : state))
+    return state
+  }, [])
   useEffect(() => {
     // Subscribe FIRST, then read: a push that lands while a read is in flight is newer than the
     // read and must win — each read counts the pushes and lands only when none came since it began.
-    let live = true
-    let pushes = 0
+    live.current = true
     const unsubscribe = api.file.onClipChanged((state) => {
-      pushes += 1
+      pushes.current += 1
       setClip(state)
     })
-    const read = () => {
-      const at = pushes
-      api.file.clipState().then(
-        (state) => {
-          // The same clipboard keeps its value: a focus that changed nothing leaves an open Paste sheet open.
-          if (live && pushes === at) setClip((was) => (sameClip(was, state) ? was : state))
-        },
-        () => undefined, // an empty clipboard is the honest fallback; the next push corrects it
-      )
-    }
+    // An empty clipboard is the honest fallback of a failed read; the next push corrects it.
+    const read = () => void readClip().catch(() => undefined)
     read()
     window.addEventListener('focus', read)
     return () => {
-      live = false
+      live.current = false
       unsubscribe()
       window.removeEventListener('focus', read)
     }
-  }, [])
+  }, [readClip])
 
   /**
    * Cut / Copy: hand the ordered paths to main (🔒 D1) and SAY SO — every clipboard write confirms
@@ -465,11 +475,13 @@ export function useFileClipboard(
    */
   const runPaste = useCallback(
     // `top`: the copy of Focus or Favorites the paste came from (YAZ-3131 S21), which opens the folder there too.
-    async (dir: string, top?: string) => {
+    // `confirmed`: the clip a fresh read answered (YAZ-3266). It decides D20, the undo record and the sound, and main
+    // pastes only it: another clip on the clipboard by now pastes nothing and fails `CONFLICT`.
+    async (dir: string, confirmed: NonNullable<FileClipState>, top?: string) => {
       const { root: vault, index } = vaultOf(dir)
       try {
-        const before = clip?.op === 'cut' ? { records: index.records, folders: index.folders } : null
-        const res = await api.file.paste({ targetDir: dir })
+        const before = confirmed.op === 'cut' ? { records: index.records, folders: index.folders } : null
+        const res = await api.file.paste({ targetDir: dir, expect: { op: confirmed.op, paths: confirmed.paths } })
         openTo(`${dir}/x`, top)
         refresh(vault)
         // What D20 cleared, for the undo list.
@@ -496,10 +508,14 @@ export function useFileClipboard(
         }
         else onMoved(gesture, text)
       } catch (err: unknown) {
-        onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
+        // The clipboard changed after the read (YAZ-3266): nothing was pasted. Say so, and read it again for the menu's label.
+        if (err instanceof BridgeRequestError && err.code === 'CONFLICT') {
+          onNotice(CLIP_CHANGED, 'info')
+          void readClip().catch(() => undefined)
+        } else onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
-    [vaultOf, refresh, openTo, onNotice, onMoved, clip],
+    [vaultOf, refresh, openTo, onNotice, onMoved, readClip],
   )
 
   /**
@@ -509,28 +525,39 @@ export function useFileClipboard(
    * one already there is no move (main skips a cut, D2; a copy beside its original leaves nothing
    * behind), and a folder is one the tree holds as a folder. A path outside this vault matches no
    * record, so it never asks: the index cannot speak for it.
+   * The clip is read FRESH first (YAZ-3266), never taken from the window's cached `clip`: the system clipboard can change
+   * with no event (text copied in a note), and main pastes what it holds at paste time. That one answer decides the
+   * sheet, D20, the undo record and the sound, and the paste carries it, so main runs that clip or nothing.
    */
   const pasteInto = useCallback(
-    (dir: string, top?: string) => {
-      if (clip !== null) {
-        const moves = clip.paths.flatMap((oldPath): Move[] => {
-          const newPath = `${dir}/${basename(oldPath)}`
-          return newPath === oldPath ? [] : [{ oldPath, newPath, kind: dirs.includes(oldPath) ? 'dir' : 'file' }]
-        })
-        const { root: vault, index } = vaultOf(dir)
-        const lost = valuesLeftBehind({ root: vault, moves, records: index.records, folders: index.folders })
-        if (lost.folders.length > 0) return setPendingPaste({ dir, top, moves, lost, copy: clip.op === 'copy' })
+    async (dir: string, top?: string) => {
+      let now: FileClipState
+      try {
+        now = await readClip()
+      } catch (err: unknown) {
+        return onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
-      void runPaste(dir, top)
+      if (now === null) return onNotice('Nothing to paste', 'info')
+      const moves = now.paths.flatMap((oldPath): Move[] => {
+        const newPath = `${dir}/${basename(oldPath)}`
+        return newPath === oldPath ? [] : [{ oldPath, newPath, kind: dirs.includes(oldPath) ? 'dir' : 'file' }]
+      })
+      const { root: vault, index } = vaultOf(dir)
+      const lost = valuesLeftBehind({ root: vault, moves, records: index.records, folders: index.folders })
+      if (lost.folders.length > 0) return setPendingPaste({ dir, top, moves, lost, copy: now.op === 'copy', clip: now })
+      await runPaste(dir, now, top)
     },
-    [vaultOf, clip, dirs, runPaste],
+    [vaultOf, dirs, runPaste, readClip, onNotice],
   )
 
-  /** The sheet's Move or Copy: the paste runs as it does unasked. Its Cancel only closes it — the clipboard stays as it was. */
+  /**
+   * The sheet's Move or Copy: the paste runs as it does unasked, for the clip the sheet asked about (YAZ-3266). Its
+   * Cancel only closes it — the clipboard stays as it was.
+   */
   const confirmPaste = useCallback(() => {
     if (pendingPaste === null) return
     setPendingPaste(null)
-    void runPaste(pendingPaste.dir, pendingPaste.top)
+    void runPaste(pendingPaste.dir, pendingPaste.clip, pendingPaste.top)
   }, [pendingPaste, runPaste])
 
   /**
@@ -564,7 +591,7 @@ export function useFileClipboard(
         const dir = pasteTargetDir()
         if (dir === null) onNotice('Select a vault or a folder first')
         // The copy of the first selected row (YAZ-3131 S21): the folder opens in that copy too.
-        else pasteInto(dir, selection.copies?.get(orderedSelectedPaths()[0] ?? ''))
+        else void pasteInto(dir, selection.copies?.get(orderedSelectedPaths()[0] ?? ''))
         return true
       },
     }

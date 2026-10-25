@@ -722,10 +722,19 @@ export interface FileClipRequest {
  */
 export type FileClipState = { count: number; op: 'copy' | 'cut'; paths: string[] } | null
 
-/** Paste the clipboard INTO this folder (D5: a dir row → itself, a file row → its parent, blank space → the vault root). Must exist — never created. */
+/**
+ * Paste the clipboard INTO this folder (D5: a dir row → itself, a file row → its parent, blank space → the vault root). Must exist — never created.
+ * `expect` is the clip the window confirmed with a fresh `clipState()` read at paste time (YAZ-3266): its verb and paths, as
+ * main answered them. Main pastes only that clip: when its own choice (`clipNow()`) differs, nothing is pasted and the paste
+ * fails `CONFLICT` with `CLIP_CHANGED`. So the window's D21 sheet, D20 and undo record always speak for the clip that ran.
+ */
 export interface PasteRequest {
   targetDir: string
+  expect: { op: 'copy' | 'cut'; paths: string[] }
 }
+
+/** `fs:paste`'s `CONFLICT` (YAZ-3266): the clipboard is not the one the window confirmed, so nothing was pasted. */
+export const CLIP_CHANGED = 'The clipboard changed. Paste again.'
 
 /**
  * Per-entry outcome of a paste (D3): every clipboard entry lands in exactly one of the two

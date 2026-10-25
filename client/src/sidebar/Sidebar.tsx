@@ -1574,7 +1574,9 @@ export function Sidebar({
               },
               onCut: (paths) => clipTo(paths, 'cut'),
               onCopy: (paths) => clipTo(paths, 'copy'),
-              onPaste: () => menu.targetDir !== null && pasteInto(menu.targetDir, menu.lens === 'files' ? undefined : (menu.top ?? undefined)),
+              onPaste: () => {
+                if (menu.targetDir !== null) void pasteInto(menu.targetDir, menu.lens === 'files' ? undefined : (menu.top ?? undefined))
+              },
               onNotice,
               onNewNote: viaTree(() => startCreate('file')),
               onNewDatedNote: viaTree(() => startCreate('file', datedSeed())),

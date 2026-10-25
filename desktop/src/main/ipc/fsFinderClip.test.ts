@@ -46,7 +46,15 @@ const registered = (door: { channel: string }): Handler => {
 }
 const clipState = () => registered(CONTRACT.file.clipState)({ sender: {} })
 const clip = (op: 'copy' | 'cut', ...paths: string[]) => registered(CONTRACT.file.clip)({ sender: {} }, { op, paths })
-const paste = (targetDir: string) => registered(CONTRACT.file.paste)({ sender: {} }, { targetDir })
+type Expect = { op: 'copy' | 'cut'; paths: string[] }
+/** `fs:paste` with the clip the window confirmed (YAZ-3266). */
+const pasteAs = (targetDir: string, expect: Expect) => registered(CONTRACT.file.paste)({ sender: {} }, { targetDir, expect })
+/** The window's paste (YAZ-3266): read `clip-state` fresh, then paste the clip that read confirmed. */
+const paste = async (targetDir: string) => {
+  const read = (await clipState()) as { ok: true; value: (Expect & { count: number }) | null }
+  if (read.value === null) throw new Error('nothing on the clipboard: the window pastes nothing')
+  return pasteAs(targetDir, { op: read.value.op, paths: read.value.paths })
+}
 
 /** Finder's Copy, as it writes the pasteboard: a plist of the paths. */
 const finderCopies = (...paths: string[]) => {
@@ -201,12 +209,56 @@ describe('copy and paste with Finder (YAZ-3265 D13, D14)', () => {
     expect(fileClip.get()).toBeNull()
     expect(board.get(TYPE)).toBeUndefined()
     expect(await clipState()).toEqual({ ok: true, value: null })
-    expect(await paste(vault)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST', message: 'nothing to paste' } })
+    // A window that still shows the spent cut pastes nothing: main has no clip to match it (YAZ-3266).
+    expect(await pasteAs(vault, { op: 'cut', paths: [pdf] })).toMatchObject({ ok: false, error: { code: 'CONFLICT', message: 'The clipboard changed. Paste again.' } })
   })
 
   it('a Finder Copy of hidden items only is nothing to paste', async () => {
     await layout()
     finderCopies(path.join(finder, '.DS_Store'))
     expect(await clipState()).toEqual({ ok: true, value: null })
+  })
+})
+
+describe('YAZ-3266 (checker 2C1): the window is not told when the clipboard changes under it', () => {
+  it("app Cut, then Finder Copy (the window reads it on focus), then text copied in the app: the paste must be what the window shows, or the window must hear of the change", async () => {
+    await layout()
+    const w = fakeWindow()
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+    const pdf = path.join(vault, 'report.pdf')
+    await clip('cut', pdf)
+    vi.mocked(w.webContents.send).mockClear()
+    finderCopies(path.join(finder, 'Note.md'))
+    // The window comes back from Finder: its focus read caches this answer.
+    const shown = await clipState()
+    expect(shown).toEqual({ ok: true, value: { count: 1, op: 'copy', paths: [path.join(finder, 'Note.md')] } })
+    // Text copied in the app's own editor: no focus event, and main pushes nothing.
+    textCopied()
+    const pushed = vi.mocked(w.webContents.send).mock.calls.length
+    // A paste that names what the window showed (YAZ-3266: `expect`, as a window that did not read again would send it).
+    const res = await pasteAs(path.join(vault, 'Plans'), { op: 'copy', paths: [path.join(finder, 'Note.md')] })
+    // The window shows a COPY of Note.md. It must not get a MOVE of report.pdf without being told.
+    const movedPdf = JSON.stringify(res).includes('report.pdf')
+    expect({ pushed, movedPdf }).not.toEqual({ pushed: 0, movedPdf: true })
+    // Nothing pasted: main says the clipboard changed, and report.pdf stays where it was.
+    expect(res).toEqual({ ok: false, error: { code: 'CONFLICT', message: 'The clipboard changed. Paste again.' } })
+    expect(await readdir(vault)).toContain('report.pdf')
+    expect(await readdir(path.join(vault, 'Plans'))).not.toContain('Note.md')
+    // The window reads again at paste time: main answers the app's cut, and the paste of THAT clip moves it.
+    expect(await clipState()).toEqual({ ok: true, value: { count: 1, op: 'cut', paths: [pdf] } })
+    expect(await pasteAs(path.join(vault, 'Plans'), { op: 'cut', paths: [pdf] })).toMatchObject({ ok: true, value: { pasted: [{ from: pdf, to: path.join(vault, 'Plans', 'report.pdf') }] } })
+  })
+
+  it('a paste with no `expect`, or a bad one, is refused: a paste names the clip it is for', async () => {
+    await layout()
+    const pdf = path.join(vault, 'report.pdf')
+    await clip('copy', pdf)
+    const door = registered(CONTRACT.file.paste)
+    expect(await door({ sender: {} }, { targetDir: vault })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    expect(await door({ sender: {} }, { targetDir: vault, expect: { op: 'move', paths: [pdf] } })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    expect(await door({ sender: {} }, { targetDir: vault, expect: { op: 'copy', paths: 'x' } })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    // The verb is part of the clip: a Copy is not the Cut the window confirmed.
+    expect(await pasteAs(path.join(vault, 'Plans'), { op: 'cut', paths: [pdf] })).toMatchObject({ ok: false, error: { code: 'CONFLICT' } })
+    expect(await readdir(path.join(vault, 'Plans'))).not.toContain('report.pdf')
   })
 })
