@@ -41,7 +41,7 @@ import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberContr
 import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS } from './options'
 
 export interface SettingsCtx {
   settings: SettingsState
@@ -364,6 +364,58 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
+        // YAZ-3309 D6: the sidebar tree's level lines, a group of its own on Appearance (it was under Files & Links).
+        // The rows take the shape of Editor › Bullet threading: Show, then how the line looks.
+        title: 'Sidebar level lines',
+        hint: 'A thin line below each open folder in the sidebar shows what is inside it.',
+        items: [
+          {
+            // YAZ-3309 D3: when the sidebar tree's level lines show, the three choices of the TOC's own (YAZ-2762).
+            id: 'sidebarLines',
+            label: 'Show',
+            keywords: ['sidebar', 'folder', 'tree', 'hierarchy', 'guide', 'indent', 'hover'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TOC_LINES_OPTIONS} value={settings.sidebarLines} onChange={(sidebarLines) => onChange({ ...settings, sidebarLines })} ariaLabel="Level lines in the sidebar" />
+            ),
+          },
+          {
+            // YAZ-3309 D7, D8: plain grey lines (the default), or the bullet-threading path to the row under the mouse.
+            id: 'sidebarLineStyle',
+            label: 'Style',
+            hint: 'Thread to the row colours the line from each open folder down to the row under the mouse, like bullet threading.',
+            keywords: ['sidebar', 'thread', 'bullet threading', 'path'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={SIDEBAR_LINE_STYLE_OPTIONS} value={settings.sidebarLineStyle} onChange={(sidebarLineStyle) => onChange({ ...settings, sidebarLineStyle })} ariaLabel="Sidebar line style" />
+            ),
+          },
+          {
+            // YAZ-3309 D9: a picker of its own; null = the Bullet threading colour (Settings › Editor), else the accent.
+            id: 'sidebarThreadColor',
+            label: 'Thread colour',
+            keywords: ['sidebar', 'color', 'accent'],
+            render: ({ settings, onChange }) => (
+              <>
+                <input
+                  type="color"
+                  className="settings__color"
+                  aria-label="Sidebar thread colour"
+                  value={settings.sidebarThreadColor ?? settings.threadColor ?? DEFAULT_THREAD_SWATCH}
+                  onChange={(e) => onChange({ ...settings, sidebarThreadColor: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className={`settings__option${settings.sidebarThreadColor === null ? ' settings__option--active' : ''}`}
+                  disabled={settings.sidebarThreadColor === null}
+                  onClick={() => onChange({ ...settings, sidebarThreadColor: null })}
+                >
+                  Default
+                </button>
+              </>
+            ),
+          },
+        ],
+      },
+      {
         // YAZ-3037 (Draw's 🔒 YAZ-1802 D16): the default for every diagram; a file that sets its own `adaptiveColors` keeps it.
         title: 'draw.io diagrams',
         items: [
@@ -523,16 +575,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['note', 'markdown', 'drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse'],
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreview} onChange={(hoverPreview) => onChange({ ...settings, hoverPreview })} ariaLabel="Preview on hover" />
-            ),
-          },
-          {
-            // YAZ-3309 D3: when the sidebar tree's level lines show, the three choices of the TOC's own (YAZ-2762).
-            id: 'sidebarLines',
-            label: 'Level lines',
-            hint: 'A thin line below each open folder in the sidebar shows what is inside it.',
-            keywords: ['sidebar', 'folder', 'tree', 'hierarchy', 'guide', 'indent', 'hover'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={TOC_LINES_OPTIONS} value={settings.sidebarLines} onChange={(sidebarLines) => onChange({ ...settings, sidebarLines })} ariaLabel="Level lines in the sidebar" />
             ),
           },
           {

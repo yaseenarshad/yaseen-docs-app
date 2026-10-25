@@ -1941,6 +1941,74 @@ button {
   opacity: 1;
 }
 
+/* Thread to the row (YAZ-3309 D7, D8): the bullet-threading look (bulletThreading.css) in the tree, by choice only.
+   Each li on the hover path (every ancestor li of the row under the mouse is `:hover`) draws one piece: a line
+   from far above it down to the middle of its own row, then an elbow into its chevron (folder) or its name (file).
+   Each nested level clips what pokes above its top, so the pieces join into one path, as in the editor. A row is
+   13px * 1.5 + 2 * 3px tall, so its middle is 12.75px down. Each level is its own stacking context, so the grey
+   line (z 1) stays over the row fills and the thread (z 2) over the grey line, without leaking out of the tree. */
+.app[data-sidebar-line-style='thread'] .tree[role='group'] {
+  z-index: 0;
+  overflow-y: clip;
+}
+
+.app[data-sidebar-line-style='thread'] .tree[role='group']::before {
+  z-index: 1;
+}
+
+.app[data-sidebar-line-style='thread'] .tree[role='group'] > li {
+  position: relative;
+}
+
+/* Calm, not jumpy (YAZ-3309 D10): each piece is always there, clear, and fades. It shows only once the mouse RESTS
+   on a row (the 80ms delay), so a fast sweep down the list draws nothing; it fades out at once, so the path never
+   lags. Only `:hover` draws it: the keyboard walk shows the grey lines alone (D11). "Show: Never" turns it off too. */
+.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li::before {
+  content: '';
+  opacity: 0;
+  transition: opacity 180ms ease;
+  position: absolute;
+  z-index: 2;
+  top: -100000px;
+  left: calc(var(--tree-depth) * 14px + 1px - var(--thread-width, 2px) / 2);
+  box-sizing: border-box;
+  width: calc(18px + var(--thread-width, 2px) / 2);
+  height: calc(100000px + 12.75px + var(--thread-width, 2px) / 2);
+  border-left: var(--thread-width, 2px) solid var(--sidebar-thread-color, var(--thread-color, var(--accent)));
+  border-bottom: var(--thread-width, 2px) solid var(--sidebar-thread-color, var(--thread-color, var(--accent)));
+  border-bottom-left-radius: 6px;
+  pointer-events: none;
+}
+
+.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li:hover::before {
+  opacity: 1;
+  transition: opacity 140ms ease 80ms;
+}
+
+/* A folder's elbow stops 2px short of its chevron; a file's, 3px short of its name. */
+.app[data-sidebar-line-style='thread'] .sidebar__body .tree[role='group'] > li[aria-expanded]::before {
+  width: calc(9px + var(--thread-width, 2px) / 2);
+}
+
+/* The chevrons on the path take the thread colour (D7), as the bullets on the editor's path do. */
+.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body li[aria-expanded]:hover > .tree__row .tree__chevron::before {
+  border-color: var(--sidebar-thread-color, var(--thread-color, var(--accent)));
+  transition: transform 0.12s, border-color 140ms ease 80ms;
+}
+
+/* Reduce motion (D10): no rest and no fade. The selectors of the three rules that fade, so this block wins by
+   coming last (a rule in `@media` gets no extra weight); the chevron keeps its turn and loses only its colour fade. */
+@media (prefers-reduced-motion: reduce) {
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li::before,
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li:hover::before {
+    transition: none;
+  }
+
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body li[aria-expanded]:hover > .tree__row .tree__chevron::before {
+    transition: transform 0.12s;
+  }
+}
+
 .tree__row {
   display: flex;
   align-items: center;
