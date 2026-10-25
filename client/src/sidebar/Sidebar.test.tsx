@@ -4680,6 +4680,62 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(document.activeElement).toBe(more(el))
   })
 
+  it('the Decision on YAZ-3278: Shift+F10 on a tab opens its menu with the focus on the first item; Esc puts the focus back on the tab', async () => {
+    const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
+    tabs(el)[1].focus()
+    act(() => void tabs(el)[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })))
+    expect(items(el)).toEqual(['Hide Search', 'Sessions [hidden]', 'Edit tab row…'])
+    expect(document.activeElement?.textContent).toBe('Hide Search')
+    key('ArrowDown')
+    expect(document.activeElement?.textContent).toBe('Sessions')
+    key('Escape')
+    expect(items(el)).toEqual([])
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Search')
+  })
+
+  it('the Decision on YAZ-3278: the context-menu key on ⋯ opens the row menu with the focus on the first item; Esc puts the focus back on ⋯', async () => {
+    const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
+    more(el)?.focus()
+    key('ContextMenu')
+    expect(items(el)).toEqual(['Sessions [hidden]', 'Edit tab row…'])
+    expect(document.activeElement?.textContent).toBe('Sessions')
+    key('Escape')
+    expect(document.activeElement).toBe(more(el))
+  })
+
+  const panelOf = (el: HTMLElement) => el.querySelector('.tab-row-panel')
+
+  it('the Nit on YAZ-3279: from ⋯ by the keyboard, the panel takes the focus, and Esc gives it back to ⋯', async () => {
+    const panel = panelOf
+    const a = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
+    more(a.el)?.focus()
+    act(() => more(a.el)?.click()) // detail 0: a key
+    key('End')
+    act(() => (document.activeElement as HTMLElement).click())
+    expect(panel(a.el)?.contains(document.activeElement)).toBe(true)
+    key('Escape')
+    expect(panel(a.el)).toBeNull()
+    expect(document.activeElement).toBe(more(a.el))
+  })
+
+  it('the Nit on YAZ-3279: the panel from a right-click on a tab gives the focus back to that tab when it closes', async () => {
+    const panel = panelOf
+    const b = await mount({ lens: 'files' })
+    rightClick(tabs(b.el)[2])
+    act(() => itemByLabel(b.el, 'Edit tab row…')?.click())
+    key('Escape')
+    expect(panel(b.el)).toBeNull()
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Focus')
+  })
+
+  it('the Nit on YAZ-3279: the panel from a right-click on blank space gives the focus to the tab that shows when it closes', async () => {
+    const c = await mount({ lens: 'favorites' })
+    rightClick(c.el.querySelector('.sidebar__lenses'))
+    act(() => itemByLabel(c.el, 'Edit tab row…')?.click())
+    key('Escape')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Favorites')
+  })
+
   describe('the fit (D1, S2 to S5, S30)', () => {
     // A fake layout: the row is `width` px wide, Files 47 px, a glyph 31 px, each button 30 px, no gap and no padding (no CSS in jsdom).
     let width = 400

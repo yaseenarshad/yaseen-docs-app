@@ -33,6 +33,9 @@ interface SidebarTabsProps {
 /** A glyph for a row of the menu: a tab's (Files' folder, since its tab is a word), Sort's or the fold button's. */
 const menuIcon = (key: SidebarTab | 'sort' | 'fold') => (key === 'sort' ? <SortIcon /> : key === 'fold' ? <ChevronsIcon /> : key === 'files' ? <FolderIcon /> : <TabFace tab={key} />)
 
+/** Where the focus goes back to when the menu or the panel closes: the ⋯ button, a tab, or (null) the tab that shows. */
+type FocusBack = 'more' | SidebarTab | null
+
 /** The row's menu (D4): where it opens, the tab right-clicked (null: the ⋯ button or blank space), and whether a key opened it. */
 interface RowMenu {
   x: number
@@ -40,7 +43,12 @@ interface RowMenu {
   tab: SidebarTab | null
   fromMore: boolean
   keyboard: boolean
+  /** The button that opened it. */
+  back: FocusBack
 }
+
+/** The context-menu key, or Shift+F10: the keyboard's right-click. */
+const isMenuKey = (e: { key: string; shiftKey: boolean; metaKey: boolean; ctrlKey: boolean; altKey: boolean }) => e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey)
 
 /**
  * The tab row (🔒 D4, YAZ-847; YAZ-2638 D2; YAZ-3273), chrome v2 ROW 1: the tabs in the reader's
@@ -60,7 +68,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
   const layout = rowLayout(prefs, lens, fit, buttons)
   const [menu, setMenu] = useState<RowMenu | null>(null)
   /** The Tab row panel (YAZ-3279 D4, S17): where the menu was, the tab right-clicked, and whether a key opened the menu. */
-  const [panel, setPanel] = useState<{ x: number; y: number; focus: SidebarTab | null; keyboard: boolean } | null>(null)
+  const [panel, setPanel] = useState<{ x: number; y: number; focus: SidebarTab | null; keyboard: boolean; back: FocusBack } | null>(null)
   // "Edit tab row…" hands the focus to the panel, not back to ⋯.
   const toPanel = useRef(false)
   const rowRef = useRef<HTMLDivElement>(null)
@@ -132,23 +140,44 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
     return () => window.removeEventListener('keydown', onKey, true)
   }, [menu, keyboardOpen])
 
+  // The focus back on the row once the menu or the panel is gone (the Decision and the Nit on YAZ-3278, YAZ-3279):
+  // after the render, so a tab that "Hide" took off the bar, or a ⋯ that the panel took away, falls back to the tab that shows.
+  const refocus = useRef<FocusBack | undefined>(undefined)
+  useLayoutEffect(() => {
+    const back = refocus.current
+    if (back === undefined || menu !== null || panel !== null) return
+    refocus.current = undefined
+    const row = rowRef.current
+    const button = back === 'more' ? moreRef.current : back === null ? null : row?.querySelector<HTMLElement>(`[data-tab="${back}"]`)
+    ;(button ?? row?.querySelector<HTMLElement>(ACTIVE_TAB_SELECTOR))?.focus()
+  }, [menu, panel])
+
   const openMenu = useRef(menu)
   openMenu.current = menu
   const closeMenu = useCallback(() => {
-    // A key opened it from ⋯: the focus goes back to that button.
-    if (!toPanel.current && openMenu.current?.keyboard === true && openMenu.current.fromMore) moreRef.current?.focus()
+    // A key opened it: the focus goes back to the button that opened it ("Edit tab row…" hands it to the panel).
+    const m = openMenu.current
+    if (!toPanel.current && m?.keyboard === true) refocus.current = m.back
     toPanel.current = false
     setMenu(null)
   }, [])
 
-  const closePanel = useCallback(() => setPanel(null), [])
+  const openPanel = useRef(panel)
+  openPanel.current = panel
+  const closePanel = useCallback(() => {
+    // The panel took the focus, or nothing holds it: it goes back to ⋯ or the right-clicked tab, else the tab that shows.
+    // A press outside on something that takes the focus still moves it there, after this.
+    const active = document.activeElement
+    if (active === null || active === document.body || active.closest('.tab-row-panel') !== null) refocus.current = openPanel.current?.back ?? null
+    setPanel(null)
+  }, [])
 
   const anchor = (): { x: number; y: number } | null => {
     const r = moreRef.current?.getBoundingClientRect()
     return r === undefined ? null : { x: r.left, y: r.bottom + 4 }
   }
   // The menu's rows, live while it stands: a resize or a tab switch redraws them.
-  const sectionsAt = (at: { x: number; y: number }, tab: SidebarTab | null, keyboard: boolean) =>
+  const sectionsAt = ({ tab, keyboard, back, ...at }: RowMenu) =>
     tabRowSections(
       layout,
       prefs,
@@ -166,7 +195,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
         // "Edit tab row…" opens the panel where the menu was, the right-clicked tab lit (S17).
         onEdit: () => {
           toPanel.current = true
-          setPanel({ ...at, focus: tab, keyboard })
+          setPanel({ x: at.x, y: at.y, focus: tab, keyboard, back })
         },
       },
       tab,
@@ -190,7 +219,16 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
           const on = e.target instanceof HTMLElement ? e.target : null
           const tab = on?.matches('.sidebar__lens') === true ? on : null
           const onMore = on !== null && on === moreRef.current
-          if ((tab === null && !onMore) || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+          if (tab === null && !onMore) return
+          // The context-menu key or Shift+F10 on a tab or on ⋯: the row's menu, as a right-click, with the focus on its first item.
+          if (isMenuKey(e)) {
+            e.preventDefault()
+            const r = on!.getBoundingClientRect()
+            const at = (tab?.dataset.tab as SidebarTab | undefined) ?? null
+            setMenu({ x: r.left, y: r.bottom + 4, tab: at, fromMore: false, keyboard: true, back: onMore ? 'more' : at })
+            return
+          }
+          if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
           if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
             const tabs = [...e.currentTarget.querySelectorAll<HTMLElement>('.sidebar__lens')]
             if (tab !== null) tabs[tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1)]?.focus()
@@ -202,8 +240,12 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
         // Right-click on a tab (S9) or on blank space in the row (S11): the row's menu. It always has "Edit tab row…".
         onContextMenu={(e) => {
           e.preventDefault()
-          const tab = e.target instanceof Element ? (e.target.closest<HTMLElement>('[data-tab]')?.dataset.tab as SidebarTab | undefined) : undefined
-          setMenu({ x: e.clientX, y: e.clientY, tab: tab ?? null, fromMore: false, keyboard: false })
+          const button = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-tab], .sidebar__more') : null
+          const tab = (button?.dataset.tab as SidebarTab | undefined) ?? null
+          // A `contextmenu` from the keyboard has no pointer type (Chromium): the menu then opens below the button, from a key.
+          const keyboard = (e.nativeEvent as Partial<PointerEvent>).pointerType === ''
+          const r = keyboard ? button?.getBoundingClientRect() : undefined
+          setMenu({ x: r?.left ?? e.clientX, y: r === undefined ? e.clientY : r.bottom + 4, tab, fromMore: false, keyboard, back: button === null ? null : button === moreRef.current ? 'more' : tab })
         }}
       >
         {layout.row.map((id) => (
@@ -239,7 +281,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
               if (menu?.fromMore === true) return closeMenu()
               const r = e.currentTarget.getBoundingClientRect()
               // `detail` is 0 for Enter or Space: a key opened it (S16).
-              setMenu({ x: r.left, y: r.bottom + 4, tab: null, fromMore: true, keyboard: e.detail === 0 })
+              setMenu({ x: r.left, y: r.bottom + 4, tab: null, fromMore: true, keyboard: e.detail === 0, back: 'more' })
             }}
           >
             <MoreIcon />
@@ -276,7 +318,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
       </div>
       {menu !== null && (
         <div ref={menuRef} className="sidebar__tabs-menu">
-          <ContextMenu x={menu.x} y={menu.y} sections={sectionsAt(menu, menu.tab, menu.keyboard)} onClose={closeMenu} />
+          <ContextMenu x={menu.x} y={menu.y} sections={sectionsAt(menu)} onClose={closeMenu} />
         </div>
       )}
       {panel !== null && <TabRowPanel x={panel.x} y={panel.y} prefs={prefs} focus={panel.focus} autoFocus={panel.keyboard} onChange={onChangePrefs} onClose={closePanel} />}
