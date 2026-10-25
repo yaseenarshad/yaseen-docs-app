@@ -87,6 +87,12 @@ describe('Settings › General › Settings folder', () => {
     expect(alert()).toBeNull()
   })
 
+  it('YAZ-3308: Choose… and Reset to default sit side by side in one row, so a wide row does not stretch each one to full width', async () => {
+    await mount()
+    const group = el.querySelector('[data-setting="settingsFolder"] .settings__options')
+    expect([...(group?.querySelectorAll('button') ?? [])].map((b) => b.textContent)).toEqual(['Choose…', 'Reset to default'])
+  })
+
   it('a bridge that cannot answer leaves "…", never a wrong path', async () => {
     settingsFolder.mockRejectedValue(new Error('no bridge'))
     await mount()

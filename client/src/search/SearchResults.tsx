@@ -8,6 +8,7 @@
  * right-click reports the row the same way (YAZ-2050).
  */
 import { useEffect, useRef } from 'react'
+import { FolderIcon } from '../views/view/icons'
 import type { SearchCandidate } from './searchCandidates'
 
 interface SearchResultsProps {
@@ -19,15 +20,6 @@ interface SearchResultsProps {
   onActivate: (row: SearchCandidate, background: boolean) => void
   /** A row was right-clicked (YAZ-2050): the Sidebar opens the SAME menu the row's tree row gets. */
   onRowContextMenu: (row: SearchCandidate, e: React.MouseEvent) => void
-}
-
-/** Small folder outline for a `dir` row (🔒 D4, YAZ-1491) — the `SidebarPanelIcon` idiom. */
-function FolderGlyph() {
-  return (
-    <svg className="search-results__glyph" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
-      <path d="M1.5 4.5a1 1 0 0 1 1-1h3.4l1.6 1.6h6a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" />
-    </svg>
-  )
 }
 
 export function SearchResults({ results, selected, onSelect, onActivate, onRowContextMenu }: SearchResultsProps) {
@@ -65,7 +57,7 @@ export function SearchResults({ results, selected, onSelect, onActivate, onRowCo
           }}
         >
           <span className="search-results__label">
-            {r.kind === 'dir' && <FolderGlyph />}
+            {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
             {r.label}
           </span>
           {r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}

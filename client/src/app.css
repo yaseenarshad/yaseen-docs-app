@@ -1406,16 +1406,22 @@ button {
 
 /* Lens tabs (YAZ-847) — chrome v2 ROW 1, under the header: Files, Search (YAZ-2638 D2), Focus, Favorites.
    The ViewsPane tab idiom (`.view-tab`, views.css): a transparent 2px bottom border on every tab,
-   accent on the active one, pulled down over the row's own hairline so the two read as one line. */
+   accent on the active one, pulled down over the row's own hairline so the two read as one line.
+   The row never grows past the sidebar (YAZ-3273 D1): the tabs that do not fit go into ⋯, so the clip
+   is only a guard against a measure that is off. `clip` on x alone, so the active tab's underline
+   still sits over the row's hairline. */
 .sidebar__lenses {
   flex: none;
   display: flex;
   gap: 2px;
+  min-width: 0;
   padding: 0 8px;
+  overflow-x: clip;
   border-bottom: 1px solid var(--border);
 }
 
 .sidebar__lens {
+  flex: none;
   padding: 5px 10px 6px;
   margin-bottom: -1px;
   font-size: 12.5px;
@@ -1469,10 +1475,168 @@ button {
   margin-left: 0;
 }
 
+/* "More tabs" (YAZ-3273 D2) shares the hover, and keeps it while its menu is open. */
 .sidebar__sort:hover,
-.sidebar__expand-all:hover {
+.sidebar__expand-all:hover,
+.sidebar__more:hover,
+.sidebar__more[aria-expanded='true'] {
   color: var(--fg);
   background: var(--bg-hover);
+}
+
+/* "More tabs" (YAZ-3273 D2): the sort button's look, right of the last tab — no push to the right, so
+   Sort and fold keep the right end (D7). Lit like an active glyph tab while the tab that shows is
+   inside it (D3): the accent colour and the accent underline over the row's hairline. */
+.sidebar__more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  margin-bottom: -1px;
+  color: var(--fg-muted);
+  border-bottom: 2px solid transparent;
+}
+
+.sidebar__more--lit,
+.sidebar__more--lit:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* The row's menu (YAZ-3273 D4) is a plain `ContextMenu`; this wrapper only scopes its keys. */
+.sidebar__tabs-menu {
+  display: contents;
+}
+
+/* The Tab row panel (YAZ-3273 D4, D5, D9, D10): the menu's surface (`.ctx-menu`), its own rows. Two
+   parts with a line between them — the tabs, which drag, and the buttons at the right, which do
+   not — then "Reset tab row". */
+.tab-row-panel {
+  min-width: 230px;
+  font-size: 13px;
+}
+
+.tab-row-panel__head {
+  padding: 4px 8px 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.tab-row-panel__list {
+  position: relative;
+}
+
+.tab-row-panel__row,
+.tab-row-panel__button-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--bg);
+}
+
+/* A row drags from anywhere but its box (D5): pointer events, so no touch scroll and no text selection. */
+.tab-row-panel__row {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.tab-row-panel__row:hover {
+  background: var(--bg-hover);
+}
+
+/* The tab that was right-clicked (S17): it keeps its light under the pointer. */
+.tab-row-panel__row--focus,
+.tab-row-panel__row--focus:hover {
+  background: var(--accent-soft);
+}
+
+.tab-row-panel__grip {
+  display: inline-flex;
+  width: 14px;
+  color: var(--fg-muted);
+}
+
+.tab-row-panel__row:hover .tab-row-panel__grip {
+  color: var(--fg);
+}
+
+.tab-row-panel__icon {
+  display: inline-flex;
+  width: 15px;
+  color: var(--fg-muted);
+}
+
+.tab-row-panel__note {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--fg-muted);
+}
+
+/* The box (`role="checkbox"`): ticked in the accent. Files' is off ("always shown", D6). */
+.tab-row-panel__check {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.tab-row-panel__check[aria-checked='true'] {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.tab-row-panel__check:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The lifted row (D5): it rides above the list with a shadow and an accent edge, and its empty slot is
+   the gap the others open. There is no drop line. */
+.tab-row-panel__row--lifted {
+  z-index: 2;
+  cursor: grabbing;
+  background: var(--bg);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22), 0 0 0 1.5px var(--accent);
+}
+
+.tab-row-panel__list--sorting {
+  cursor: grabbing;
+}
+
+.tab-row-panel__list--sorting .tab-row-panel__row:not(.tab-row-panel__row--lifted) {
+  pointer-events: none;
+}
+
+/* The others slide apart (160 ms) and the released row glides into its gap (140 ms); with reduce motion, nothing animates (S22). */
+@media (prefers-reduced-motion: no-preference) {
+  .tab-row-panel__list--sorting .tab-row-panel__row:not(.tab-row-panel__row--lifted, .tab-row-panel__row--settling) {
+    transition: transform 0.16s cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+
+  .tab-row-panel__row--settling {
+    z-index: 2;
+    transition:
+      transform 0.14s ease-out,
+      box-shadow 0.14s;
+  }
+}
+
+.tab-row-panel__sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
 
 /* The Focus tab's line above its list (YAZ-2619 D4): the count on the left, "Clear" on the right. */
@@ -1765,8 +1929,11 @@ button {
 }
 
 /* A flex row (🔒 D7, YAZ-1674): the label left, the shortcut hint — when the item has one —
-   pushed to the right edge. Every other menu's item is a single text child, unchanged by this. */
-.ctx-menu__item {
+   pushed to the right edge. Every other menu's item is a single text child, unchanged by this.
+   "Reset tab row" in the Tab row panel (YAZ-3279) looks like an item, but keeps its own class, so the
+   menu's walk and tests never count it. */
+.ctx-menu__item,
+.tab-row-panel__reset {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1818,13 +1985,26 @@ button {
   z-index: 41;
 }
 
-.ctx-menu__item:hover:not(:disabled) {
+.ctx-menu__item:hover:not(:disabled),
+.tab-row-panel__reset:hover {
   background: var(--accent-soft);
 }
 
 .ctx-menu__item:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* A row with a glyph (YAZ-3273): the glyph, then the label, the hint still at the right end. */
+.ctx-menu__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ctx-menu__label > svg {
+  flex: none;
+  opacity: 0.75;
 }
 
 /* Delete (GRO-2272): destructive, so it reads as such in BOTH themes — --danger is

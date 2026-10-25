@@ -281,6 +281,16 @@ export function seededState(vault: string, file: string | null): AppState {
 }
 
 /**
+ * A sidebar wide enough for the whole tab row (YAZ-3273 D1): at the default 260 px the last tabs of
+ * the row (Sessions, Recents) live in the ⋯ menu on Files. For the specs that read or click every tab.
+ */
+const WHOLE_ROW_W = 320
+export function wholeRow(state: AppState): AppState {
+  state.sidebarWidth = WHOLE_ROW_W
+  return state
+}
+
+/**
  * Opens each dir in `dirs`, outermost first, by the click a user makes — since YAZ-1642 the only
  * way a nested row gets on screen (a launch restores no open dirs and does not unfold the active
  * file's ancestors). A plain click TOGGLES, so an already-open dir is left alone.
