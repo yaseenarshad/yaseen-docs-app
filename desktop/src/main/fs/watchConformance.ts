@@ -61,6 +61,24 @@ export function describeWatchConformance(engine: string, { quietMs = QUIET_MS } 
     return { events, off, settled: () => settled(() => events.length, quietMs).then(() => events) }
   }
 
+  /**
+   * `n` writes about `gapMs` apart; returns the pauses, the gaps over 50 ms between two finished writes.
+   * A stalled CI runner makes them (8 chunks took 392 ms, not 240, YAZ-3328), and the engine may rightly
+   * take one for the quiet that ends a write: each pause may add one event, and without one there is none.
+   */
+  async function paced(n: number, gapMs: number, write: (i: number) => Promise<void>): Promise<number> {
+    let pauses = 0
+    let last = 0
+    for (let i = 0; i < n; i++) {
+      await write(i)
+      const now = performance.now()
+      if (i > 0 && now - last > 50) pauses++
+      last = now
+      await sleep(gapMs)
+    }
+    return pauses
+  }
+
   const at = (...parts: string[]) => path.join(root, ...parts)
   const mtimeOf = async (p: string) => (await stat(p)).mtimeMs
   /** Order-free view of a recording: `type path`, sorted. */
@@ -109,21 +127,23 @@ export function describeWatchConformance(engine: string, { quietMs = QUIET_MS } 
     it('a burst of saves to one note collapses to ONE `change` with the last mtime', async () => {
       const file = at('alpha', 'a.md')
       const w = await watching()
-      for (let i = 0; i < 5; i++) {
-        await writeFile(file, `save ${i}`)
-        await sleep(10)
-      }
-      expect(await w.settled()).toEqual([{ type: 'change', path: file, mtime: await mtimeOf(file) }])
+      const pauses = await paced(5, 10, (i) => writeFile(file, `save ${i}`))
+      const events = await w.settled()
+      expect(events.every((e) => e.type === 'change' && e.path === file)).toBe(true)
+      expect(events.at(-1)).toEqual({ type: 'change', path: file, mtime: await mtimeOf(file) })
+      expect(events.length).toBeLessThanOrEqual(1 + pauses)
     })
 
     it('a file written in slow chunks (a sync tool, a copy) is ONE `add`, once it is whole', async () => {
       const file = at('Zeta', 'slow.md')
       const w = await watching()
-      for (let i = 0; i < 8; i++) {
-        await appendFile(file, `chunk ${i}\n`)
-        await sleep(30)
-      }
-      expect(await w.settled()).toEqual([{ type: 'add', path: file, mtime: await mtimeOf(file) }])
+      const pauses = await paced(8, 30, (i) => appendFile(file, `chunk ${i}\n`))
+      const events = await w.settled()
+      const mtime = await mtimeOf(file)
+      expect(events[0]).toMatchObject({ type: 'add', path: file })
+      expect(events.slice(1).every((e) => e.type === 'change' && e.path === file)).toBe(true)
+      expect(events.at(-1)).toMatchObject({ path: file, mtime })
+      expect(events.length).toBeLessThanOrEqual(1 + pauses)
       await rm(file)
     })
 
