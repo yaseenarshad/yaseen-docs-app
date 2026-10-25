@@ -5,10 +5,10 @@ import { requireRequest } from './fs/validate'
 /**
  * The ONE app-wide file clipboard (YAZ-1674, D1): what Cut / Copy in ANY window's sidebar put
  * here, and what Paste in ANY window takes out. It lives in main — not in a renderer, which
- * cannot cross windows, and not on the OS clipboard, whose Electron file-list write is a
- * macOS-only `public.file-url` that is flaky for many files (Finder interop, Future YAZ-1707) — so
- * cutting in a window on vault A and pasting in a window on vault B is the same gesture as
- * pasting within one vault.
+ * cannot cross windows — so cutting in a window on vault A and pasting in a window on vault B is
+ * the same gesture as pasting within one vault. The OS clipboard cannot hold it whole (it has no
+ * cut), so `ipc/fs.ts` puts a copy of each clip there for Finder (`osFileClipboard.ts`, YAZ-3265
+ * D13) and takes Finder's files when they are the newer (`clipNow`).
  *
  * Session-only and NEVER persisted: a clipboard that survived a relaunch would offer a paste of
  * paths nobody remembers cutting. No Electron import, so it unit-tests in plain node; the IPC

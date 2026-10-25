@@ -46,6 +46,12 @@ describe('HOTKEYS source of truth', () => {
     // The ⌘W ladder swap (GRO-2232, locked): ⌘W closes the TAB, ⌘⇧W the window — never the reverse.
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘W')?.label).toMatch(/close tab/i)
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧W')?.label).toMatch(/close window/i)
+    // A move's undo (YAZ-3255 D10, audit 11): right after the file clipboard, and it says where a page keeps the keys.
+    expect(keys[keys.indexOf('⌘V') + 1]).toBe('⌘Z / ⌘⇧Z')
+    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘Z / ⌘⇧Z')?.label).toMatch(/undo.*redo.*move.*outside a note/i)
+    // ⌘⌫ (YAZ-3272 D20): right after the undo, which takes a delete back; plain ⌫ is not the key.
+    expect(keys[keys.indexOf('⌘Z / ⌘⇧Z') + 1]).toBe('⌘⌫')
+    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⌫')?.label).toMatch(/selected files and folders to the Trash.*outside a note/i)
   })
 
   it('covers the board keys from Draw (YAZ-3037): the menu\'s three board items and ⌘S, and the draw.io tables, between Window and Mouse', () => {

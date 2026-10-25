@@ -9,8 +9,9 @@ import { focusOpenDocument } from '../lib/focusHandoff'
 import { pageName, useAllPathTitles } from '../lib/pageLabel'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { countLinkReferences } from '../links/renameLinks'
-import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
+import { countLinkReferences, linkingNotes } from '../links/renameLinks'
+import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind, type Move } from '../links/shortcuts'
+import type { MovedGesture } from '../lib/moveHistory'
 import { ancestorDirs, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP } from '../search/searchCandidates'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -27,11 +28,11 @@ import { RecentList } from './RecentList'
 import { SessionList } from './SessionList'
 import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind } from '../lib/notice'
-import { Tree, type TreeFileMove } from './Tree'
+import { dropOn, hasFiles, leftTarget, Tree, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
-import { useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
+import { outermost, useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 import { HoverPreviewHost, useHoverPreview } from './HoverPreviewHost'
 import { useShareBadges } from '../share/useShareBadges'
@@ -182,14 +183,32 @@ interface SidebarProps {
    * closes.
    */
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>
+  /**
+   * A drop of two or more rows (YAZ-3250 D1): App's one door for a list of moves. D21 asks once for
+   * the whole list; then each move runs as one drag does, in order, and one notice says them all.
+   * A drop of one row still goes to `onRenameFile`. Never rejects.
+   */
+  onMoveEntries: (moves: Move[]) => Promise<void>
+  /**
+   * A move gesture the Sidebar made itself (YAZ-3255 D10): a Paste of a Cut (S39), or Finder items
+   * moved in (S40). App puts it on the window's undo list and says `text` with Undo (D11). Copies
+   * are never handed here.
+   */
+  onMoved: (gesture: MovedGesture, text: string) => void
+  /**
+   * Rows dragged out to Finder, and the drag ended outside the window with no drop inside it
+   * (YAZ-3254 D9B, S26): App's box asks whether the vault keeps them. A cancelled drag looks the same (S29).
+   */
+  onDraggedOut: (paths: string[]) => void
   /** A title edit (YAZ-2420 🔒 D16), to the same door: the inline rename of a note or a folder. */
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>
   /**
-   * Context-menu "Delete" confirmed (GRO-2272): App moves the entry to the system Trash and
-   * routes ANY failure to the passive notice — this promise never rejects, so the sheet just
-   * closes. No link rewriting happens downstream (LOCKED decision C).
+   * Delete confirmed (GRO-2272) — by the menu or by ⌘⌫ (YAZ-3272 D20): App's ONE list delete door
+   * moves every entry to the system Trash, in order, as one step of the undo list with one trash
+   * sound (D21), and routes ANY failure to the passive notice — this promise never rejects, so the
+   * sheet just closes. No link rewriting happens downstream (LOCKED decision C).
    */
-  onDeleteFile: (path: string) => Promise<void>
+  onDeleteEntries: (paths: string[]) => Promise<void>
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string, kind?: NoticeKind) => void
   /**
@@ -247,10 +266,12 @@ export interface SidebarMenuRequest {
   y: number
 }
 
-/** What App's ⌘C / ⌘X / ⌘V listener may ask of the mounted sidebar (D6 amended, YAZ-1674); each answers whether it acted. */
+/** What App's ⌘C / ⌘X / ⌘V / ⌘⌫ listener may ask of the mounted sidebar (D6 amended, YAZ-1674; YAZ-3272 D20); each answers whether it acted. */
 export interface SidebarClipboard {
   cutOrCopy: (op: 'copy' | 'cut') => boolean
   paste: () => boolean
+  /** ⌘⌫ (YAZ-3272 D20): the ordered selection to the delete door, which asks first. */
+  delete: () => boolean
 }
 
 /**
@@ -309,7 +330,7 @@ export interface MenuTargets {
   openTabPaths: string[] | null
   /**
    * "Cut" / "Copy" — the file-clipboard target (🔒 D5, YAZ-1674): the ORDERED 2+ selection when the
-   * right-clicked row is in one (`copyPaths`' plural rule — labels "Cut 3 items"), else the one
+   * right-clicked row is in one (`copyPaths`' plural rule — labels "Cut 1 folder and 2 files", YAZ-3293 D23), else the one
    * row, file or dir; null on blank space, which has nothing to clip. Its OWN field, per this
    * split's doctrine: `copyPaths` is null outside a plural gesture and `copyPath` falls back to
    * the vault root, and neither is what a Cut may name.
@@ -319,8 +340,18 @@ export interface MenuTargets {
   newWindowPath: string | null
   /** "Rename" — a concrete row only, NEVER blank space: the vault root is not renameable (E1b, GRO-2241). */
   renamePath: string | null
-  /** "Delete" — a concrete row only, NEVER blank space: there is no target, and main refuses the vault root (GRO-2272). */
-  deletePath: string | null
+  /**
+   * "Delete" — a concrete row only, NEVER blank space: there is no target, and main refuses the vault
+   * root (GRO-2272). The ordered 2+ selection when the row is in it (YAZ-3272 D21), less each row
+   * inside another of them (the folder carries it); else the one row. Null on a shortcut row, a
+   * vault row, and in a selection that holds a vault row (a vault is no file, S72).
+   */
+  deletePaths: string[] | null
+  /**
+   * The folders among the row's targets (YAZ-3293 D23): the row, or the selection that holds it. A
+   * counted label says the kinds by it — "Cut 1 folder and 2 files", "Delete 2 files". Empty on blank space.
+   */
+  folderPaths: string[]
   /** "Reveal in Finder" — the row, or the one vault's ROOT for blank space (GRO-2274); same target as `copyPath`. */
   revealPath: string | null
   /** "Open in VS Code" — the same target rule again (YAZ-963); its OWN field, per this split's whole point. */
@@ -355,7 +386,7 @@ export interface MenuTargets {
   shortcutDir: string | null
   /**
    * "Remove shortcut" — a SHORTCUT row only (YAZ-2290 E5): the note and the folder it stands in.
-   * Such a row has no `deletePath` (it is deleted from where it lives), no `renamePath` (the inline
+   * Such a row has no `deletePaths` (it is deleted from where it lives), no `renamePath` (the inline
    * input is the real row's) and no `clipPaths` (it is not a file in this folder), whatever the
    * selection holds.
    */
@@ -432,8 +463,11 @@ const SEARCH_KEYS: readonly (readonly [keys: readonly string[], does: string])[]
 /** Which note is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
-/** The search tree's file move (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op. */
-const INERT_MOVE: TreeFileMove = { dragging: null, dropDir: null, start: () => undefined, end: () => undefined, hover: () => undefined, drop: () => undefined }
+/** The search tree's file move (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op and nothing is ever a drop target. */
+/** The drag is over a row, not blank space (YAZ-3247 D12): a row that refused the drop keeps it refused. */
+const onRow = (e: React.DragEvent): boolean => e.target instanceof Element && e.target.closest('[role="treeitem"]') !== null
+
+const INERT_MOVE: TreeFileMove ={ accepts: () => false, start: () => undefined, end: () => undefined, hover: () => undefined, leave: () => undefined, drop: () => undefined, dropFiles: () => undefined }
 
 /** What the search cuts before the tree has loaded, and its shortcut rows — none (S7, YAZ-2620): one object each, so the memoised tree sees no change (YAZ-2194). */
 const NO_NODES: readonly TreeNode[] = []
@@ -482,8 +516,11 @@ export function Sidebar({
   onRootMissing,
   onFileMissing,
   onRenameFile,
+  onMoveEntries,
+  onMoved,
+  onDraggedOut,
   onRetitle,
-  onDeleteFile,
+  onDeleteEntries,
   onNotice,
   pendingSearchFocus,
   pendingSearchClear = false,
@@ -537,6 +574,8 @@ export function Sidebar({
   const focusedRevealId = useRef<number | null>(null)
   const [pendingReveal, setPendingReveal] = useState<SidebarRevealRequest | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  /** The root header: it lights for a drop on the blank space too (YAZ-3247 D12). */
+  const headerRef = useRef<HTMLDivElement>(null)
   // The folders' shortcut rows (YAZ-2290 D2), rebuilt once per index snapshot. A snapshot that moved
   // no shortcut keeps the Map it had, so a save elsewhere in the vault re-renders no tree level (YAZ-2194).
   // Each vault's folders by its OWN index (YAZ-2602 S30); the paths of two vaults never meet, so the
@@ -876,7 +915,7 @@ export function Sidebar({
         clipPaths: shortcutIn !== null || vaultRow !== null || holdsVault ? null : plural ?? (node === null ? null : [node.path]),
         newWindowPath: filePath,
         renamePath: shortcutIn !== null || vaultRow !== null ? null : node?.path ?? null,
-        deletePath: shortcutIn !== null || vaultRow !== null ? null : node?.path ?? null,
+        deletePaths: node === null || shortcutIn !== null || vaultRow !== null || holdsVault ? null : outermost(plural ?? [node.path]),
         revealPath: node?.path ?? blank,
         openVsCodePath: node?.path ?? blank,
         openDefaultPath: vaultRow !== null ? null : node?.path ?? blank,
@@ -900,9 +939,10 @@ export function Sidebar({
         removeVault: vaultRow,
         openAlone: vaultRow,
         infoPath: plural === null && shortcutIn === null && filePath !== null && isBoard(filePath) ? filePath : null,
+        folderPaths: node === null ? [] : (plural ?? [node.path]).filter((path) => (path === node.path ? node.type === 'dir' : dirs.includes(path))),
       })
     },
-    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState],
+    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState, dirs],
   )
   // A right-click on a Recents row (YAZ-3235 D7, S20): the one-row file menu, "Show in sidebar" first,
   // as a row of the new tab page. Through a ref, so the memo list does not draw again on each selection.
@@ -936,7 +976,70 @@ export function Sidebar({
     if (node !== null) openMenuAt(node, menuRequest.x, menuRequest.y, true)
   }, [menuRequest, forest, trees, favoritesByRoot, rootOf, onMenuConsumed, openMenuAt])
 
-  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice)
+  // ---- Delete (GRO-2272): context menu "Delete" or ⌘⌫ → confirm sheet → App trashes the entries ----
+
+  /**
+   * The delete door (GRO-2272; YAZ-3272 D20, D21): the menu's Delete and ⌘⌫ both ask here, with the
+   * row or the ordered selection. A row inside another of them is left out (the folder carries it).
+   * Counts for the sheet, computed ONCE when it opens rather than on every render.
+   *
+   * Both come from data already in hand — the loaded tree and the vault index — so the delete
+   * path makes no extra fetch. When the index is unavailable the backlink line is simply
+   * omitted (`backlinks: undefined`): a missing count must never block a delete. For two or more
+   * items the count is of the notes outside them whose links reach any of them, each note once
+   * (`linkingNotes`, as the drag-out box counts, YAZ-3254 D9B).
+   */
+  const askDelete = useCallback(
+    (picked: string[]) => {
+      const paths = outermost(picked)
+      const first = paths[0]
+      if (first === undefined) return
+      // The setting finally gates the sheet (YAZ-857 — it existed end-to-end but nothing read
+      // it): off → delete directly, exactly what "Don't ask me again" promised (S71).
+      if (!settings.confirmDelete) {
+        void onDeleteEntries(paths)
+        return
+      }
+      // The row's kind from the tree: ⌘⌫ has no menu to read it from.
+      const kindOf = (path: string): 'file' | 'dir' => findNode(forest ?? [], path)?.type ?? (menu?.rowKind === 'file' ? 'file' : 'dir')
+      const target: DeleteTarget = paths.length === 1 ? { path: first, kind: kindOf(first) } : { path: first, kind: kindOf(first), paths }
+      if (paths.length === 1 && target.kind === 'dir') target.children = countChildren(forest ?? [], first)
+      setConfirmingDelete(target)
+      // The index is only needed for the count, so it rides in asynchronously and the sheet
+      // opens immediately. Failure leaves the line out; it never blocks or spins. It is the index
+      // of the vault that holds the row: links stay inside a vault (YAZ-2602 R1).
+      const vaults = [...new Set(paths.map(rootOf))]
+      Promise.all(vaults.map((vault) => api.index(vault).then((index) => [vault, index] as const))).then(
+        (read) => {
+          const indexes = new Map(read)
+          const about = (path: string) => {
+            const vault = rootOf(path)
+            const { records, folders, ids } = indexes.get(vault)!
+            return { ids, root: vault, oldPath: path, kind: kindOf(path), records, folders, dirs: dirsOf(vault) }
+          }
+          const inside = (note: string) => paths.some((item) => note === item || note.startsWith(`${item}/`))
+          const n = paths.length === 1 ? countLinkReferences(about(first)) : new Set(paths.flatMap((path) => linkingNotes(about(path)).filter((note) => !inside(note)))).size
+          setConfirmingDelete((current) => (current === target ? { ...current, backlinks: n } : current))
+        },
+        () => undefined,
+      )
+    },
+    [menu, rootOf, forest, dirsOf, settings.confirmDelete, onDeleteEntries],
+  )
+
+  const confirmDelete = useCallback(
+    (dontAskAgain: boolean) => {
+      const target = confirmingDelete
+      setConfirmingDelete(null)
+      if (target === null) return
+      if (dontAskAgain) onChangeSettings({ ...settings, confirmDelete: false })
+      // Fire and forget: App owns the result and routes every failure to the passive notice.
+      void onDeleteEntries(target.paths ?? [target.path])
+    },
+    [confirmingDelete, onDeleteEntries, onChangeSettings, settings],
+  )
+
+  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete)
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
@@ -1009,54 +1112,6 @@ export function Sidebar({
     [onNotice, nameOf],
   )
 
-  // ---- Delete (GRO-2272): context menu "Delete" → confirm sheet → App trashes the entry ----
-
-  /**
-   * Counts for the sheet, computed ONCE when it opens rather than on every render.
-   *
-   * Both come from data already in hand — the loaded tree and the vault index — so the delete
-   * path makes no extra fetch. When the index is unavailable the backlink line is simply
-   * omitted (`backlinks: undefined`): a missing count must never block a delete.
-   */
-  const askDelete = useCallback(
-    (path: string) => {
-      // The setting finally gates the sheet (YAZ-857 — it existed end-to-end but nothing read
-      // it): off → delete directly, exactly what "Don't ask me again" promised.
-      if (!settings.confirmDelete) {
-        void onDeleteFile(path)
-        return
-      }
-      const kind: 'file' | 'dir' = menu?.rowKind === 'file' ? 'file' : 'dir'
-      const target: DeleteTarget = { path, kind }
-      if (kind === 'dir') target.children = countChildren(forest ?? [], path)
-      setConfirmingDelete(target)
-      // The index is only needed for the count, so it rides in asynchronously and the sheet
-      // opens immediately. Failure leaves the line out; it never blocks or spins. It is the index
-      // of the vault that holds the row: links stay inside a vault (YAZ-2602 R1).
-      const vault = rootOf(path)
-      api.index(vault).then(
-        ({ records, folders, ids }) => {
-          const n = countLinkReferences({ ids, root: vault, oldPath: path, kind, records, folders, dirs: dirsOf(vault) })
-          setConfirmingDelete((current) => (current !== null && current.path === path ? { ...current, backlinks: n } : current))
-        },
-        () => undefined,
-      )
-    },
-    [menu, rootOf, forest, dirsOf, settings.confirmDelete, onDeleteFile],
-  )
-
-  const confirmDelete = useCallback(
-    (dontAskAgain: boolean) => {
-      const target = confirmingDelete
-      setConfirmingDelete(null)
-      if (target === null) return
-      if (dontAskAgain) onChangeSettings({ ...settings, confirmDelete: false })
-      // Fire and forget: App owns the result and routes every failure to the passive notice.
-      void onDeleteFile(target.path)
-    },
-    [confirmingDelete, onDeleteFile, onChangeSettings, settings],
-  )
-
   // The row goes when the index says so, as it came; only a refusal is said.
   const removeShortcutRow = (path: string, dir: string): void =>
     void removeShortcut(dir, path, vaultOf(dir).index.folders, rootOf(dir)).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
@@ -1067,7 +1122,8 @@ export function Sidebar({
   const orderRef = useRef<readonly string[]>([])
   orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : roots.map(stripSlash)
   const saveOrder = lens === 'favorites' ? saveFavoriteOrder : lens === 'focus' ? reorderFocus : onReorderVaults
-  const { dragging, dropDir, setDropDir, dropOnDir, fileMove, reorder } = useTreeDrag(onRenameFile, orderRef, saveOrder, rootOf, onNotice)
+  const finderDrag = useMemo(() => ({ nameOf, onImport: importFiles, onDraggedOut }), [nameOf, importFiles, onDraggedOut])
+  const { fileMove, reorder } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finderDrag)
 
   // YAZ-1801 D3 (YAZ-3039): every vault's held-back files as tree paths, one Set that keeps its
   // identity until a list really changes — the memoised levels compare it by identity.
@@ -1140,24 +1196,29 @@ export function Sidebar({
       run(...args)
     }
 
+  // Blank space is one vault's root only in a window with one vault, and only on a tab that has a tree of it (YAZ-3247 D12).
+  const blankDrop = !multi && !searching && lens !== 'sessions' && lens !== 'recents'
+
   return (
     <aside ref={setAside} className="sidebar" style={{ width }}>
       {/* The root header doubles as the "move to the vault root" drop target (E1b) — of a window
-          with one vault. With two or more each vault's own row is that target (YAZ-2602 S14). */}
+          with one vault. With two or more each vault's own row is that target (YAZ-2602 S14). It
+          lights as a row does, by the drag's one `light()` (YAZ-3251 D2): no render. */}
       <div
-        className={`sidebar__header${!multi && dropDir === root ? ' sidebar__header--drop' : ''}`}
+        ref={headerRef}
+        className="sidebar__header"
         onDragOver={(e) => {
-          if (dragging === null || multi) return
+          if (multi || !fileMove.accepts(root, hasFiles(e))) return
           e.preventDefault()
           if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-          if (dropDir !== root) setDropDir(root)
+          fileMove.hover(root, e.currentTarget)
         }}
-        onDragLeave={() => {
-          if (!multi && dropDir === root) setDropDir(null)
+        onDragLeave={(e) => {
+          if (!multi && leftTarget(e)) fileMove.leave(root)
         }}
         onDrop={(e) => {
           e.preventDefault()
-          if (!multi) dropOnDir(root)
+          if (!multi) dropOn(fileMove, e, root)
         }}
       >
         {/* The vault switcher (YAZ-1767): the trigger is the header's top-left button (name + chevron,
@@ -1321,6 +1382,22 @@ export function Sidebar({
         className="sidebar__body"
         // The Sessions and Recents tabs have no vault behind their blank space either (YAZ-3147 D4, YAZ-3235 S20): their rows have their own menus.
         onContextMenu={(e) => (searching || lens === 'sessions' || lens === 'recents' ? e.preventDefault() : openMenu(null, e))}
+        // Blank space takes a drop for the vault ROOT, as its paste does, and the header lights (YAZ-3247 D12) — one
+        // vault only (YAZ-2602 S10). A row handles its own drop: a drag over a row reaches here only when the row refused it.
+        onDragOver={(e) => {
+          if (!blankDrop || onRow(e) || !fileMove.accepts(root, hasFiles(e))) return
+          e.preventDefault()
+          if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+          fileMove.hover(root, headerRef.current)
+        }}
+        onDragLeave={(e) => {
+          if (blankDrop && leftTarget(e)) fileMove.leave(root)
+        }}
+        onDrop={(e) => {
+          if (!blankDrop || onRow(e)) return
+          e.preventDefault()
+          dropOn(fileMove, e, root)
+        }}
         // Escape drops the multi-select (YAZ-1336) — and ONLY when there is one: with nothing
         // selected the key still belongs to everyone else listening for it, so this must neither
         // swallow it nor stop it travelling. An OPEN context menu owns the key outright
@@ -1526,7 +1603,9 @@ export function Sidebar({
               },
               onCut: (paths) => clipTo(paths, 'cut'),
               onCopy: (paths) => clipTo(paths, 'copy'),
-              onPaste: () => menu.targetDir !== null && pasteInto(menu.targetDir, menu.lens === 'files' ? undefined : (menu.top ?? undefined)),
+              onPaste: () => {
+                if (menu.targetDir !== null) void pasteInto(menu.targetDir, menu.lens === 'files' ? undefined : (menu.top ?? undefined))
+              },
               onNotice,
               onNewNote: viaTree(() => startCreate('file')),
               onNewDatedNote: viaTree(() => startCreate('file', datedSeed())),

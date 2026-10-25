@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { hasExactDirectoryEntry, renameFile, repairRename } from './rename'
 import { failure, makeFixture } from './testFixture'
@@ -34,6 +34,27 @@ describe('renameFile (Links E1, GRO-2194)', () => {
     expect(err.path).toBe(newPath)
     expect(await readFile(oldPath, 'utf8')).toBe('# b\n') // source untouched
     expect(await readFile(newPath, 'utf8')).toBe('# A\n') // target untouched
+  })
+
+  it('ALREADY_EXISTS on a broken link at the target — a link counts as taken even when what it points to is gone (YAZ-3271)', async () => {
+    const oldPath = path.join(root, 'LinkSource.md')
+    await writeFile(oldPath, 'mine')
+    const newPath = path.join(root, 'Dangling.md')
+    await symlink(path.join(root, 'nowhere.md'), newPath)
+    const err = await failure(renameFile({ oldPath, newPath }))
+    expect([err.code, err.path]).toEqual(['ALREADY_EXISTS', newPath])
+    expect((await lstat(newPath)).isSymbolicLink()).toBe(true)
+    expect(await readFile(oldPath, 'utf8')).toBe('mine')
+  })
+
+  it('a case-only rename of a link is still not a clash with itself (YAZ-3271)', async () => {
+    const target = path.join(root, 'LinkTarget.md')
+    await writeFile(target, 't')
+    const oldPath = path.join(root, 'CaseLink.md')
+    await symlink(target, oldPath)
+    const newPath = path.join(root, 'caselink.md')
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+    expect((await lstat(newPath)).isSymbolicLink()).toBe(true)
   })
 
   it('allows a case-only rename (the target stat hits the source itself on a case-insensitive fs)', async () => {

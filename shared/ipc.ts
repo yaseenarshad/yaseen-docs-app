@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -285,6 +285,8 @@ export const CONTRACT = {
     onRenamed: push<FileRenamedEvent>('file:renamed'),
     /** In-app delete (GRO-2272): to the SYSTEM TRASH only, never `fs.rm`; refuses dot-entries and the calling window's own root. Notes linking to it stay byte-identical. */
     delete: invoke<[req: DeleteRequest], DeleteResponse>('fs:delete', 1),
+    /** The Undo of a delete (YAZ-3268 D16): an entry of the Trash back to its old place in a vault of the calling window. Never overwrites (`ALREADY_EXISTS`); `NOT_FOUND` when the entry left the Trash. No push: the watcher's add fills the tree. */
+    putBack: invoke<[req: PutBackRequest], PutBackResponse>('fs:put-back', 1),
     /** Fired in every window after a successful delete. */
     onDeleted: push<FileDeletedEvent>('file:deleted'),
     /** Cut / Copy (YAZ-1674, D1): replace main's ONE app-wide clipboard with the ordered selection; nothing on disk is touched. */
@@ -293,6 +295,16 @@ export const CONTRACT = {
     paste: invoke<[req: PasteRequest], PasteResponse>('fs:paste', 1),
     /** The clipboard now, for a window that mounted after a clip: `{ count, op, paths }`, or null when empty. Never fails. */
     clipState: invoke<[], FileClipState>('fs:clip-state', 0),
+    /** Finder's items dropped on a folder (YAZ-3253 D3, D9A): each MOVES in through the paste's move verb, or from another disk is copied; the app clipboard is untouched. */
+    import: invoke<[req: ImportRequest], ImportResponse>('fs:import', 1),
+    /** Rows dragged out to Finder (YAZ-3254 D4): main checks each path is in a vault of the calling window, then starts the OS drag (`startDrag`). */
+    dragOut: invoke<[req: DragOutRequest], void>('fs:drag-out', 1),
+    /** Files dropped anywhere in this window (YAZ-3263): main tells the window whose drag out they are, if another, that the drag landed in the app. Never asks anything. */
+    droppedHere: invoke<[req: DroppedHereRequest], void>('fs:dropped-here', 1),
+    /** Fired in the ONE window whose drag out another window of the app took (YAZ-3263): no box asks after it. */
+    onDragLanded: push<DragLandedEvent>('file:drag-landed'),
+    /** Fired in the ONE window whose drag out it was, when the mouse button comes up after it (YAZ-3294 D24, macOS): the drag's end, at once. */
+    onDragEnded: push<DragEndedEvent>('file:drag-ended'),
     /** Fired in every window after every clipboard change (its own included); null = empty. */
     onClipChanged: push<FileClipState>('clip:changed'),
   },
@@ -436,6 +448,16 @@ export const CONTRACT = {
     /** Any status or shares.json change, in every window. */
     onChanged: push('share:changed'),
   },
+  /** App-level doors that belong to no vault. */
+  app: {
+    /**
+     * One sound for one gesture that succeeded (YAZ-3267 D15): `land` plays `Volume Mount.aif`, `trash`
+     * plays `drag to trash.aif`. Main answers at once and plays with `afplay` in a child process it
+     * does not wait for; a play that fails is ignored. Nothing plays off macOS, in the hidden e2e mode,
+     * with the fake clipboard, or when "Play user interface sound effects" is off. Never fails.
+     */
+    sound: invoke<[kind: GestureSound], void>('app:sound', 1),
+  },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {
     /** The current state; a window reads it once on mount, then follows `onState`. */
@@ -480,6 +502,10 @@ export type YaseenDocsApi = Bridge<typeof CONTRACT> & {
   window: {
     /** The close/quit flush handshake (GRO-2160): main holds the window until every listener settled (hard 5s cap in main). */
     onFlush(listener: () => Promise<void> | void): () => void
+  }
+  file: {
+    /** The path on disk of a `File` dropped from Finder (YAZ-3253 D3): `webUtils.getPathForFile`, since Electron removed `File.path`. Empty for a `File` made in JS. */
+    pathFor(file: File): string
   }
   menu: {
     /** First focused editor returning a string claims copy; empty means no selection. */

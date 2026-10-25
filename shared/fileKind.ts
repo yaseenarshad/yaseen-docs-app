@@ -23,6 +23,11 @@ export function fileKind(name: string): FileKind | null {
   return null
 }
 
+/** Dot-entries and node_modules are invisible to every call of main, and a drop skips them with no notice (YAZ-3253 S20). */
+export function isSkipped(name: string): boolean {
+  return name.startsWith('.') || name === 'node_modules'
+}
+
 export function isMarkdown(name: string): boolean {
   return fileKind(name) === 'markdown'
 }

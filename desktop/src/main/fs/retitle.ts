@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises'
+import { lstat, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
@@ -36,7 +36,7 @@ export async function retitle(root: string, req: unknown): Promise<RenameFileRes
   if (src.isDirectory()) {
     name = kebabTitle(title)
     if (name === '') throw new BridgeFailure('BAD_REQUEST', 'a folder name needs a letter or a digit', { path: p })
-    await requireFreeTarget(src, path.join(path.dirname(p), name))
+    await requireFreeTarget(src, path.join(path.dirname(p), name), await lstat(p))
     const file = folderSettingsPath(p)
     await writeTitle(file, await readPage(file), title)
   } else {
