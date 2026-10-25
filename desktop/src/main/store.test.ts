@@ -137,6 +137,8 @@ describe('createStore: loading', () => {
       favoritesOrder: ['/v/a.md', '/w/b.md'],
       focusOrder: ['/w/docs', '/v/sub'],
       sessions: [{ id: 's1', name: 'Work', tabs: [{ path: '/v/a.md', active: true }, { path: '/v/a.md', name: 'Copy' }], roots: ['/v'], lastUsed: 7 }],
+      settingsFolder: '/Sync/yaseen-docs-settings',
+      settingsSavedAt: 42,
     }
     await seed(state)
     expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], name: null, key: null } } })

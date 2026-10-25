@@ -35,12 +35,16 @@ function fakeWindow(opts: { destroyed?: boolean; wcDestroyed?: boolean } = {}) {
 let dir: string
 let store: Store
 const sender = { id: 1 }
+/** The settings folder's two answers that the doors use (YAZ-3276): a test sets them. */
+const folder = { missing: false, others: new Set<string>() }
 beforeEach(async () => {
   vi.mocked(ipcMain.handle).mockClear()
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([])
   dir = await mkdtemp(path.join(tmpdir(), 'yd-state-ipc-'))
   store = createStore(path.join(dir, 'yaseendocs.json'))
-  registerStateIpc(store)
+  folder.missing = false
+  folder.others = new Set()
+  registerStateIpc(store, { missing: () => folder.missing, hasOtherMacs: async (dir) => folder.others.has(dir) })
 })
 afterEach(async () => {
   await store.flush()
@@ -51,8 +55,41 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setSectionIndent.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel].sort(),
+      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setSectionIndent.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel].sort(),
     )
+  })
+
+  it('YAZ-3276 D6: a folder with another Mac\'s file wins (0); an empty one takes this Mac\'s settings (now); null keeps the settings', async () => {
+    const set = registered(CONTRACT.state.setSettingsFolder.channel)
+    const ask = registered(CONTRACT.state.settingsFolder.channel)
+    expect(await ask({ sender })).toEqual(ok({ folder: null, missing: false }))
+    store.setSettings({ ...DEFAULT_SETTINGS, theme: 'dark' }, 5)
+
+    // An empty folder: this Mac's settings get a time newer than any file can have.
+    const before = Date.now()
+    expect(await set({ sender }, '/Sync/empty')).toEqual(ok(undefined))
+    expect(store.get().settingsFolder).toBe('/Sync/empty')
+    expect(store.get().settingsSavedAt).toBeGreaterThanOrEqual(before)
+
+    // The same folder again is no change.
+    const savedAt = store.get().settingsSavedAt
+    expect(await set({ sender }, '/Sync/empty')).toEqual(ok(undefined))
+    expect(store.get().settingsSavedAt).toBe(savedAt)
+
+    // A folder that holds another Mac's file: 0, so that file is newer and wins.
+    folder.others.add('/Sync/shared')
+    expect(await set({ sender }, '/Sync/shared')).toEqual(ok(undefined))
+    expect(store.get().settingsSavedAt).toBe(0)
+    folder.missing = true
+    expect(await ask({ sender })).toEqual(ok({ folder: '/Sync/shared', missing: true }))
+
+    // Reset to default: the pointer goes, the settings stay.
+    expect(await set({ sender }, null)).toEqual(ok(undefined))
+    expect(store.get().settingsFolder).toBeNull()
+    expect(store.get().settings.theme).toBe('dark')
+
+    expect(await set({ sender }, 'relative/folder')).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await set({ sender }, 42)).toEqual(bad('NOT_ABSOLUTE'))
   })
 
   it('state:get answers the current state', async () => {

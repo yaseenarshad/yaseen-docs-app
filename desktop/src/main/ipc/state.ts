@@ -3,6 +3,7 @@ import { isRecord } from '@shared/guards'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { requireStringArray } from '../fs/validate'
+import type { SettingsFolder } from '../settingsFolder'
 import { isSettings, type Store } from '../store'
 import { broadcastAll } from './broadcast'
 import { handle } from './envelope'
@@ -30,11 +31,19 @@ function requireFolderPatch(raw: unknown): FolderPatch {
 }
 
 /** The `state.*` half of `window.yaseenDocs` over the main-owned store (GRO-2159). */
-export function registerStateIpc(store: Store): void {
+export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs'>): void {
   handle(CONTRACT.state.get, async () => store.get())
   handle(CONTRACT.state.setSettings, async (settings: unknown) => {
     if (!isSettings(settings)) throw new BridgeFailure('BAD_REQUEST', "'settings' must be a complete SettingsState")
     store.setSettings(settings)
+  })
+  handle(CONTRACT.state.settingsFolder, async () => ({ folder: store.get().settingsFolder, missing: settingsFolder.missing() }))
+  // YAZ-3276 D6: a folder with another Mac's file wins (0 is older than every file); an empty folder takes
+  // this Mac's settings (now is newer than none). Null keeps the settings and never deletes this Mac's file.
+  handle(CONTRACT.state.setSettingsFolder, async (folder: unknown) => {
+    const next = folder === null ? null : requireAbsPath(folder, 'folder')
+    if (next === store.get().settingsFolder) return
+    store.setSettingsFolder(next, next !== null && (await settingsFolder.hasOtherMacs(next)) ? 0 : Date.now())
   })
   handle(CONTRACT.state.setSidebarWidth, async (width: unknown) => {
     if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")
