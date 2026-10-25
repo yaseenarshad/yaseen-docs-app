@@ -22,7 +22,7 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   clipPaths: null,
   newWindowPath: null,
   renamePath: null,
-  deletePath: null,
+  deletePaths: null,
   revealPath: null,
   openVsCodePath: null,
   openDefaultPath: null,
@@ -139,7 +139,7 @@ const FILE_ROW: Partial<MenuSectionTargets> = {
   clipPaths: ['/v/Note.md'],
   newWindowPath: '/v/Note.md',
   renamePath: '/v/Note.md',
-  deletePath: '/v/Note.md',
+  deletePaths: ['/v/Note.md'],
   revealPath: '/v/Note.md',
   openVsCodePath: '/v/Note.md',
   openDefaultPath: '/v/Note.md',
@@ -525,11 +525,22 @@ describe('Rename / Delete', () => {
   it('each hands the caller its own target', () => {
     const onRename = vi.fn()
     const onDelete = vi.fn()
-    const sections = build({ renamePath: '/v/sub', deletePath: '/v/sub' }, { onRename, onDelete })
+    const sections = build({ renamePath: '/v/sub', deletePaths: ['/v/sub'] }, { onRename, onDelete })
     select(sections, 'Rename')
     select(sections, 'Delete')
     expect(onRename).toHaveBeenCalledExactlyOnceWith('/v/sub')
-    expect(onDelete).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(onDelete).toHaveBeenCalledExactlyOnceWith(['/v/sub'])
+  })
+
+  /** The whole selection (YAZ-3272 D21, S70): "Delete N items" for 2 or more, as "Cut N items", and every path goes to the one door. */
+  it('a 2+ selection counts the items — "Delete 3 items" — and hands the whole ordered list', () => {
+    const onDelete = vi.fn()
+    const paths = ['/v/a.md', '/v/sub', '/v/c.md']
+    const sections = build({ ...FILE_ROW, deletePaths: paths }, { onDelete })
+    expect(labelsOf(sections)).toContain('Delete 3 items')
+    expect(labelsOf(sections)).not.toContain('Delete')
+    select(sections, 'Delete 3 items')
+    expect(onDelete).toHaveBeenCalledExactlyOnceWith(paths)
   })
 })
 
@@ -636,7 +647,7 @@ describe('Add note shortcut item (YAZ-2290 D2)', () => {
  */
 describe('a shortcut row (YAZ-2290 E5)', () => {
   /** What the Sidebar pins for one: the file row's targets, minus Delete, Rename and the clip. */
-  const SHORTCUT_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, clipPaths: null, renamePath: null, deletePath: null, removeShortcut: { path: '/v/Note.md', dir: '/v/Projects' } }
+  const SHORTCUT_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, clipPaths: null, renamePath: null, deletePaths: null, removeShortcut: { path: '/v/Note.md', dir: '/v/Projects' } }
 
   it('"Remove shortcut" stands LAST and alone where Delete would — no Delete, and nothing flagged danger', () => {
     const sections = build(SHORTCUT_ROW)
@@ -765,7 +776,7 @@ describe('Open by itself (YAZ-2858 D4, S15, S16)', () => {
 
 /** "Info" (YAZ-3028 D11, Draw's 🔒 YAZ-1835 D6): one drawing or diagram row, directly above Delete. */
 describe('Info item (YAZ-3028 D11)', () => {
-  const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/Flow.drawio', deletePath: '/v/Flow.drawio', renamePath: '/v/Flow.drawio', infoPath: '/v/Flow.drawio' }
+  const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/Flow.drawio', deletePaths: ['/v/Flow.drawio'], renamePath: '/v/Flow.drawio', infoPath: '/v/Flow.drawio' }
 
   it('is absent on a note, a folder, blank space and a selection — every menu without a target', () => {
     expect(labelsOf(build(FILE_ROW))).not.toContain('Info')
@@ -784,7 +795,7 @@ describe('Info item (YAZ-3028 D11)', () => {
 
 /** "Version history" (YAZ-1897 D4, YAZ-3039): Info's gate, just above Info. */
 describe('Version history item (YAZ-3039)', () => {
-  const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/B.excalidraw', deletePath: '/v/B.excalidraw', renamePath: '/v/B.excalidraw', infoPath: '/v/B.excalidraw' }
+  const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/B.excalidraw', deletePaths: ['/v/B.excalidraw'], renamePath: '/v/B.excalidraw', infoPath: '/v/B.excalidraw' }
 
   it('is absent on a note and on blank space, and on a board row hands the caller the board', () => {
     expect(labelsOf(build(FILE_ROW))).not.toContain('Version history')
@@ -797,7 +808,7 @@ describe('Version history item (YAZ-3039)', () => {
 
 /** "Share" (YAZ-3040, Draw's YAZ-1799 D6): Info's gate, at the top of the Delete group. */
 describe('Share item (YAZ-3040)', () => {
-  const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/Flow.drawio', deletePath: '/v/Flow.drawio', renamePath: '/v/Flow.drawio', infoPath: '/v/Flow.drawio' }
+  const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/Flow.drawio', deletePaths: ['/v/Flow.drawio'], renamePath: '/v/Flow.drawio', infoPath: '/v/Flow.drawio' }
 
   it('is absent on a note and on blank space, and on a board row hands the caller the board', () => {
     expect(labelsOf(build(FILE_ROW))).not.toContain('Share')

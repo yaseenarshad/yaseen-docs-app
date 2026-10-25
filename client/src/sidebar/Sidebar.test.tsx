@@ -275,7 +275,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onMoved: vi.fn(),
     onDraggedOut: vi.fn(),
     onRetitle: vi.fn(async () => undefined),
-    onDeleteFile: vi.fn(async () => undefined),
+    onDeleteEntries: vi.fn(async () => undefined),
     onNotice: vi.fn(),
     pendingSearchFocus: false,
     onSearchFocusHandled: vi.fn(),
@@ -874,7 +874,7 @@ describe('Sidebar view-only file routing (YAZ-1301)', () => {
 
     act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     act(() => itemByLabel(el, 'Delete')?.click())
-    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith(path)
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith([path])
   })
 })
 
@@ -1746,6 +1746,9 @@ describe('blank-space copy path (GRO-2273)', () => {
  */
 describe('delete (GRO-2272)', () => {
   const openOn = async (selector: string, over: Partial<SidebarProps> = {}) => {
+    // A second mount in one test unmounts the first: a panel left mounted keeps its window listeners for the tests after it.
+    act(() => root?.unmount())
+    container?.remove()
     const m = await mount(over)
     act(() => void m.el.querySelector(selector)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     return m
@@ -1774,21 +1777,21 @@ describe('delete (GRO-2272)', () => {
     const { el, props } = await openOn('.tree__row--file')
     act(() => itemByLabel(el, 'Delete')?.click())
     expect(sheet(el)).not.toBeNull()
-    expect(props.onDeleteFile).not.toHaveBeenCalled()
+    expect(props.onDeleteEntries).not.toHaveBeenCalled()
   })
 
-  it('confirming calls onDeleteFile with the absolute path', async () => {
+  it('confirming calls onDeleteEntries with the absolute path', async () => {
     const { el, props } = await openOn('.tree__row--file')
     act(() => itemByLabel(el, 'Delete')?.click())
     await act(async () => sheetBtn(el, 'Delete')?.click())
-    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
   })
 
   it('cancelling calls nothing and closes the sheet', async () => {
     const { el, props } = await openOn('.tree__row--file')
     act(() => itemByLabel(el, 'Delete')?.click())
     await act(async () => sheetBtn(el, 'Cancel')?.click())
-    expect(props.onDeleteFile).not.toHaveBeenCalled()
+    expect(props.onDeleteEntries).not.toHaveBeenCalled()
     expect(sheet(el)).toBeNull()
   })
 
@@ -1797,7 +1800,7 @@ describe('delete (GRO-2272)', () => {
     act(() => itemByLabel(el, 'Delete')?.click())
     expect(sheet(el)?.textContent).toContain('"sub"')
     await act(async () => sheetBtn(el, 'Delete')?.click())
-    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/sub'])
   })
 
   it('"Don\'t ask me again" persists confirmDelete: false through onChangeSettings', async () => {
@@ -1806,14 +1809,14 @@ describe('delete (GRO-2272)', () => {
     act(() => void el.querySelector<HTMLInputElement>('.confirm__ask input')?.click())
     await act(async () => sheetBtn(el, 'Delete')?.click())
     expect(props.onChangeSettings).toHaveBeenCalledWith(expect.objectContaining({ confirmDelete: false }))
-    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
   })
 
   it('confirmDelete: false deletes DIRECTLY — no sheet at all (YAZ-857: the setting finally gates)', async () => {
     const { el, props } = await openOn('.tree__row--file', { settings: { ...DEFAULT_SETTINGS, confirmDelete: false } })
     act(() => itemByLabel(el, 'Delete')?.click())
     expect(sheet(el)).toBeNull()
-    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
   })
 
   it('shows the backlink count when notes link to the target', async () => {
@@ -1865,7 +1868,127 @@ describe('delete (GRO-2272)', () => {
     await act(async () => itemByLabel(m.el, 'Delete')?.click())
     expect(sheet(m.el)).not.toBeNull()
     await act(async () => sheetBtn(m.el, 'Delete')?.click())
-    expect(m.props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(m.props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
+  })
+})
+
+/**
+ * ⌘⌫ and the whole selection (YAZ-3272 D20, D21): App's window listener asks the handle's `delete`;
+ * the RULES are here — a selection, no open menu, no vault row. The menu's Delete takes the ordered
+ * selection when the row is in it, and a row inside a selected folder is left out (the folder carries it).
+ */
+describe('delete the whole selection with ⌘⌫ and the menu (YAZ-3272)', () => {
+  const NESTED: TreeNode[] = [
+    { type: 'dir', name: 'sub', path: '/v/sub', children: [{ type: 'file', name: 'inner.md', path: '/v/sub/inner.md', size: 1, mtime: 1, kind: 'markdown' }] },
+    { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+    { type: 'file', name: 'c.md', path: '/v/c.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+  const withTree = (bridge: ReturnType<typeof installBridge>) => void bridge.tree.mockResolvedValue({ root: '/v', tree: NESTED, generatedAt: 1 })
+  const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  const shiftClickRow = (row: HTMLElement | null) => act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+  const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  const sheetText = (el: HTMLElement) => el.querySelector('.confirm .confirm__text')?.textContent ?? null
+  const enter = () => act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })))
+  const mountWith = (over: Partial<SidebarProps> = {}) => {
+    const clipboardRef: SidebarProps['clipboardRef'] = { current: null }
+    return mount({ clipboardRef, ...over }, withTree).then((m) => ({ ...m, clipboardRef }))
+  }
+
+  it('S66: one row selected, ⌘⌫ asks about that row; Enter deletes it', async () => {
+    const { el, props, clipboardRef } = await mountWith()
+    act(() => rowByPath(el, '/v/a.md')?.click())
+    let acted = false
+    act(() => void (acted = clipboardRef.current?.delete() ?? false))
+    expect(acted).toBe(true)
+    expect(sheetText(el)).toBe('Delete "a"? It moves to the Trash.')
+    expect(props.onDeleteEntries).not.toHaveBeenCalled()
+    await act(async () => enter())
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
+  })
+
+  it('S67: three rows selected, ⌘⌫ asks ONCE for all three, in the panel’s order; Enter hands the list to the one door', async () => {
+    const { el, props, clipboardRef } = await mountWith()
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    shiftClickRow(rowByPath(el, '/v/sub'))
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    act(() => void clipboardRef.current?.delete())
+    expect(sheetText(el)).toBe('Delete 3 items? They move to the Trash.')
+    await act(async () => enter())
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/sub', '/v/a.md', '/v/c.md'])
+  })
+
+  it('a row inside a selected folder is left out: the folder carries it', async () => {
+    const { el, props, clipboardRef } = await mountWith()
+    // → opens the folder and ← folds it again at the end: the open folders of `/v` outlive this test.
+    const arrow = (key: string) => act(() => void rowByPath(el, '/v/sub')?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
+    arrow('ArrowRight')
+    shiftClickRow(rowByPath(el, '/v/sub'))
+    shiftClickRow(rowByPath(el, '/v/sub/inner.md'))
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(3)
+    act(() => void clipboardRef.current?.delete())
+    expect(sheetText(el)).toBe('Delete 2 items? They move to the Trash.')
+    await act(async () => enter())
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/sub', '/v/c.md'])
+    arrow('ArrowLeft')
+  })
+
+  it('S70: the menu of a selected row of 3 says "Delete 3 items" and takes the selection; a row outside it is deleted alone', async () => {
+    const { el, props } = await mountWith()
+    shiftClickRow(rowByPath(el, '/v/sub'))
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    rightClick(rowByPath(el, '/v/a.md'))
+    expect(itemByLabel(el, 'Delete')).toBeUndefined()
+    await act(async () => itemByLabel(el, 'Delete 3 items')?.click())
+    expect(sheetText(el)).toBe('Delete 3 items? They move to the Trash.')
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Delete')?.click())
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/sub', '/v/a.md', '/v/c.md'])
+
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Delete')?.click())
+    expect(sheetText(el)).toBe('Delete "sub"? 1 note moves to the Trash.')
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+  })
+
+  it('S71: with "Ask before deleting" off, ⌘⌫ deletes at once — no sheet', async () => {
+    const { el, props, clipboardRef } = await mountWith({ settings: { ...DEFAULT_SETTINGS, confirmDelete: false } })
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    act(() => void clipboardRef.current?.delete())
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md', '/v/c.md'])
+  })
+
+  it('S72: nothing selected, or an open context menu: the handle answers false and asks nothing', async () => {
+    const { el, props, clipboardRef } = await mountWith()
+    expect(clipboardRef.current?.delete()).toBe(false)
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    rightClick(rowByPath(el, '/v/a.md'))
+    expect(clipboardRef.current?.delete()).toBe(false)
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(props.onDeleteEntries).not.toHaveBeenCalled()
+  })
+
+  it('the links count of N items is of the notes outside them, each note once', async () => {
+    const rec = (base: string, links: string[] = []) => ({
+      path: `/v/${base}.md`, name: `${base}.md`, basename: base, title: base, folder: '', ext: 'md',
+      size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links, embeds: [],
+    })
+    // `hub` links to both items: one note. `c` links to `a`, but `c` goes too: not counted.
+    const records = [rec('a'), rec('c', ['a']), rec('hub', ['a', 'c'])]
+    const m = await mountWith()
+    m.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true } as never)
+    shiftClickRow(rowByPath(m.el, '/v/a.md'))
+    shiftClickRow(rowByPath(m.el, '/v/c.md'))
+    await act(async () => void m.clipboardRef.current?.delete())
+    await act(async () => undefined)
+    expect(sheetText(m.el)).toBe('Delete 2 items? They move to the Trash. 1 note links to them.')
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
   })
 })
 
@@ -7841,7 +7964,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       rightClick(shortcutRow(el))
       await act(async () => itemByLabel(el, 'Remove shortcut')?.click())
       expect(disk.get(HEALTH)).toBe('---\n---\nBody\n')
-      expect(props.onDeleteFile).not.toHaveBeenCalled()
+      expect(props.onDeleteEntries).not.toHaveBeenCalled()
       act(() => indexSource.update(() => null, records(), FOLDERS, true))
       expect(shortcutRow(el)).toBeNull()
       expect(row(el, HEALTH)).not.toBeNull() // the note is where it lives
@@ -8490,6 +8613,23 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(bridge.file.clip).not.toHaveBeenCalled()
     await act(async () => void clipboardRef.current?.paste())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(b, 'copy', '/elsewhere/x.md'))
+  })
+
+  it('a vault is no file: with a vault row in the selection ⌘⌫ deletes nothing and the menu offers no Delete; rows of two vaults delete together (YAZ-3272 S72, D21)', async () => {
+    const clipboardRef = { current: null as SidebarClipboard | null }
+    const { el, a, b, props } = await two({ clipboardRef })
+    shiftClick(rowByPath(el, `${a}/a.md`))
+    shiftClick(rowByPath(el, b))
+    expect(clipboardRef.current?.delete()).toBe(false)
+    rightClick(rowByPath(el, `${a}/a.md`))
+    expect(itemByLabel(el, 'Delete')).toBeUndefined()
+    expect(itemByLabel(el, 'Delete 2 items')).toBeUndefined()
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    shiftClick(rowByPath(el, b)) // out of the selection again
+    shiftClick(rowByPath(el, `${b}/b.md`))
+    act(() => void clipboardRef.current?.delete())
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((btn) => btn.textContent === 'Delete')?.click())
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith([`${a}/a.md`, `${b}/b.md`])
   })
 
   it('a file dropped on its own vault\'s row moves to that vault\'s root — the row shows the fill of a drop folder, never the line of a reorder; a drop on a folder or the row of a different vault is refused with a notice; no drop of a file reorders the vaults; the header is no drop target (S14, S45, R11; YAZ-2631 S50)', async () => {

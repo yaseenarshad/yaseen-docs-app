@@ -40,7 +40,7 @@ export const VIEW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: 'Esc', label: 'Cancel a card drag' },
 ]
 
-/** App/window shortcuts: menu-owned B3/Tabs/⌘K/⌘, (YAZ-1679), renderer-owned ⌘B (YAZ-1280), ⌘⇧C (YAZ-1338), the sidebar's ⌘X / ⌘C / ⌘V (YAZ-1674), a move's ⌘Z / ⌘⇧Z (YAZ-3255) and a review session's keys (YAZ-2322), plus Open Recent's open-beside gesture. */
+/** App/window shortcuts: menu-owned B3/Tabs/⌘K/⌘, (YAZ-1679), renderer-owned ⌘B (YAZ-1280), ⌘⇧C (YAZ-1338), the sidebar's ⌘X / ⌘C / ⌘V (YAZ-1674), a move's ⌘Z / ⌘⇧Z (YAZ-3255), the selection's ⌘⌫ (YAZ-3272) and a review session's keys (YAZ-2322), plus Open Recent's open-beside gesture. */
 export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧N', label: 'New window — same folder and tabs' },
   { keys: '⌘⇧O', label: 'Open folder…' },
@@ -57,7 +57,10 @@ export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘X / ⌘C', label: 'Cut / copy the selected files and folders — pastes in any window, on any vault' },
   { keys: '⌘V', label: 'Paste beside the first selected row — into a folder, next to a file, or into the vault root with none' },
   // A move's undo list (YAZ-3255 D10): per window, the last 20 moves — a drag, a Paste of a Cut, a drop from Finder.
-  { keys: '⌘Z / ⌘⇧Z', label: 'Undo / redo the last move of files and folders — outside a note, a drawing, a diagram or a field, which keep their own' },
+  // YAZ-3268 D17: a delete and a rename are steps of the same list.
+  { keys: '⌘Z / ⌘⇧Z', label: 'Undo / redo the last move, delete or rename of files and folders — outside a note, a drawing, a diagram or a field, which keep their own' },
+  // ⌘⌫ (YAZ-3272 D20): Finder's Move to Trash, on the undo's boundary; a plain ⌫ deletes nothing.
+  { keys: '⌘⌫', label: 'Move the selected files and folders to the Trash — asks first unless "Confirm before deleting" is off; outside a note, a drawing, a diagram or a field, which keep their own' },
   { keys: '⌘W', label: 'Close tab — on the last tab it empties the window, then closes it' },
   { keys: '⌘⇧W', label: 'Close window' },
   { keys: '⌃Tab / ⌃⇧Tab', label: 'Next / previous tab' },

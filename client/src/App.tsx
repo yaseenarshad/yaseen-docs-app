@@ -1216,6 +1216,9 @@ export function App() {
    * editor or a modal keeps the key, so text copy/paste is untouched), and a handle the Sidebar
    * fills and empties. The RULES are the Sidebar's — target, order, the clipboard gate — so
    * this only asks, and swallows the key exactly when a verb says it acted.
+   *
+   * ⌘⌫ (YAZ-3272 D20) is the handle's `delete`: the sidebar asks its delete door for the ordered
+   * selection. No selection, an open menu or a vault row in it: the key passes through (S72).
    */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -1230,7 +1233,7 @@ export function App() {
       }
       const clipboard = sidebarClipboard.current
       if (clipboard === null) return
-      const acted = verb === 'paste' ? clipboard.paste() : clipboard.cutOrCopy(verb)
+      const acted = verb === 'paste' ? clipboard.paste() : verb === 'delete' ? clipboard.delete() : clipboard.cutOrCopy(verb)
       if (!acted) return
       event.preventDefault()
       event.stopPropagation()
@@ -1809,38 +1812,46 @@ export function App() {
    * Every failure lands in the passive notice, never a dialog; this promise never rejects back
    * into the caller, matching `onRenameFile`.
    *
-   * `trashOne` is the one item, with no sound; it answers what the Trash took, or null. A delete is ONE
-   * gesture, so it plays the trash sound once when the item went (YAZ-3267 D15, S55), never on a failure.
+   * `trashOne` is the one item, with no sound; it answers what the Trash took, or why it did not. A delete is ONE
+   * gesture, so it plays the trash sound once when an item went (YAZ-3267 D15, S55), never on a failure.
    *
    * A delete is ONE step of the undo list too (YAZ-3268 D17, D19): one item or many (`trashMany`),
    * each item with its place in the Trash. The toast says "Deleted Plan" or "Deleted N items" with
    * Undo; an item main did not find in the Trash has no Undo (S61), and with none found the toast has no button.
+   *
+   * `trashMany` is the ONE list delete door (YAZ-3272 D21): the sidebar's Delete and ⌘⌫ of N rows, and
+   * "Remove from vault". A failure on one item does not stop the rest, and ONE notice counts both:
+   * "Deleted 2 items, skipped 1: B was not moved to the Trash", or "Can't delete 2 items: …" when
+   * none went. One item that fails says main's reason, as before.
    */
-  const trashOne = useCallback(async (path: string): Promise<DeleteResponse | null> => {
+  const trashOne = useCallback(async (path: string, name: string): Promise<DeleteResponse | string> => {
     try {
       return await api.file.delete({ path })
     } catch (err) {
-      const name = nameOf(path)
       // A failed trash means NOTHING was deleted — say so, rather than a bare error string.
-      notify(
-        err instanceof BridgeRequestError && err.code === 'IO_ERROR'
-          ? `Can't move "${name}" to the Trash — nothing was deleted`
-          : `Can't delete "${name}": ${err instanceof Error ? err.message : String(err)}`,
-      )
-      return null
+      return err instanceof BridgeRequestError && err.code === 'IO_ERROR'
+        ? `Can't move "${name}" to the Trash — nothing was deleted`
+        : `Can't delete "${name}": ${err instanceof Error ? err.message : String(err)}`
     }
-  }, [nameOf])
+  }, [])
   const trashMany = useCallback(async (paths: readonly string[]): Promise<void> => {
     // The names before the delete, while the index still has the pages.
     const names = new Map(paths.map((path) => [path, nameOf(path)]))
     const went: DeleteResponse[] = []
     const failed: string[] = []
+    let reason = ''
     for (const path of paths) {
-      const res = await trashOne(path)
-      if (res === null) failed.push(`${names.get(path)} was not moved to the Trash`)
-      else went.push(res)
+      const res = await trashOne(path, names.get(path)!)
+      if (typeof res !== 'string') went.push(res)
+      else {
+        reason = res
+        failed.push(`${names.get(path)} was not moved to the Trash`)
+      }
     }
-    if (went.length === 0) return
+    if (went.length === 0) {
+      if (failed.length > 0) notify(paths.length === 1 ? reason : gestureNotice(null, failed, "Can't delete")!)
+      return
+    }
     playGestureSound('trash')
     const text = gestureNotice(went.length === 1 && paths.length === 1 ? `Deleted ${names.get(went[0].path)}` : `Deleted ${countItems(went.length)}`, failed, "Can't delete")!
     const items = went.flatMap((res) => (res.trashed == null ? [] : [{ path: res.path, trashed: res.trashed, type: res.kind }]))
@@ -1848,7 +1859,6 @@ export function App() {
     moveHistory.current.push({ step: 'delete', items })
     stepToast(text, 'info', 'undo')
   }, [nameOf, trashOne, notify, stepToast])
-  const deleteFile = useCallback((path: string): Promise<void> => trashMany([path]), [trashMany])
 
   /** The items still in their vault's tree, read fresh (S31): one another window moved or deleted is gone. */
   const stillThere = useCallback(async (paths: readonly string[]): Promise<string[]> => {
@@ -2209,7 +2219,7 @@ export function App() {
           onMoveEntries={requestMoves}
           onMoved={recordMoves}
           onRetitle={requestRetitle}
-          onDeleteFile={deleteFile}
+          onDeleteEntries={trashMany}
           onDraggedOut={(paths) => void askAfterDragOut(paths)}
           onNotice={notify}
           // ⌘⇧C's box (🔒 D4, YAZ-1338): the panel keeps it current, the chord above reads it.

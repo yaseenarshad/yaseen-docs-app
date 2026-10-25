@@ -116,7 +116,8 @@ describe('searchSettings', () => {
     // "dark" is also the draw.io row's word (YAZ-3037).
     expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['theme', 'diagramDarkColors'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'readable line'))).toEqual(['contentWidth'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'trash'))).toEqual(['confirmDelete'])
+    // "trash" is also the word of ⌘⌫ in the Window hotkeys (YAZ-3272 D20).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'trash'))).toEqual(['confirmDelete', 'hotkeys-window'])
   })
 
   it('matches on the section title, returning every row of that section', () => {

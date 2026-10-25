@@ -60,7 +60,7 @@ interface SidebarStubProps {
   onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]; cleared: { path: string; values: Record<string, unknown> }[] }, text: string) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
-  onDeleteFile: (path: string) => Promise<void>
+  onDeleteEntries: (paths: string[]) => Promise<void>
   onDraggedOut: (paths: string[]) => void
   pendingSearchFocus: boolean
   pendingSearchClear: boolean
@@ -97,7 +97,7 @@ interface SidebarStubProps {
   selectionRef: { current: ReadonlySet<string> }
   onNotice: (message: string, icon?: NoticeKind) => void
   /** ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App asks, the Sidebar (here a stub) answers. */
-  clipboardRef: { current: { cutOrCopy: (op: 'copy' | 'cut') => boolean; paste: () => boolean } | null }
+  clipboardRef: { current: { cutOrCopy: (op: 'copy' | 'cut') => boolean; paste: () => boolean; delete: () => boolean } | null }
   /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): the Inbox row and "Review this folder" exist only then. */
   upkeep: boolean
   /** The Inbox row (YAZ-2322): App counts what is due and owns the one review session. */
@@ -613,7 +613,7 @@ describe('App ⌘⇧C copy path (YAZ-1338)', () => {
  */
 describe('App ⌘C / ⌘X / ⌘V file clipboard (YAZ-1674, D6 amended)', () => {
   const chord = (key: string, over: KeyboardEventInit = {}) => new KeyboardEvent('keydown', { key, metaKey: true, bubbles: true, cancelable: true, ...over })
-  const handle = () => ({ cutOrCopy: vi.fn((_op: 'copy' | 'cut') => true), paste: vi.fn(() => true) })
+  const handle = () => ({ cutOrCopy: vi.fn((_op: 'copy' | 'cut') => true), paste: vi.fn(() => true), delete: vi.fn(() => true) })
   const arm = (h: ReturnType<typeof handle>) => {
     const ref = captured.sidebar?.clipboardRef
     expect(ref).toBeDefined()
@@ -661,7 +661,7 @@ describe('App ⌘C / ⌘X / ⌘V file clipboard (YAZ-1674, D6 amended)', () => {
 
   it('Shift or ⌥ held is not ours (⌘⇧C is Copy path), and a handle that declines leaves the key alone', async () => {
     const { el } = await open()
-    const h = { cutOrCopy: vi.fn(() => false), paste: vi.fn(() => false) }
+    const h = { cutOrCopy: vi.fn(() => false), paste: vi.fn(() => false), delete: vi.fn(() => false) }
     arm(h)
     const shifted = chord('c', { shiftKey: true })
     const alted = chord('v', { altKey: true })
@@ -684,6 +684,42 @@ describe('App ⌘C / ⌘X / ⌘V file clipboard (YAZ-1674, D6 amended)', () => {
     const ev = chord('v')
     act(() => void el.querySelector('.app')?.dispatchEvent(ev))
     expect(ev.defaultPrevented).toBe(false)
+  })
+
+  /** ⌘⌫ (YAZ-3272 D20): the same window listener and boundary; the Sidebar's handle holds the rules (a selection, no menu, no vault row). */
+  it('⌘⌫ asks the handle to delete and is swallowed when it acted (S66); plain ⌫ asks nothing (S68); a note, a field and a declining handle keep the key (S69, S72)', async () => {
+    const { el } = await open()
+    const h = handle()
+    arm(h)
+    const plain = chord('Backspace', { metaKey: false })
+    act(() => void document.body.dispatchEvent(plain))
+    expect(h.delete).not.toHaveBeenCalled()
+    expect(plain.defaultPrevented).toBe(false)
+
+    const editable = document.createElement('div')
+    editable.setAttribute('contenteditable', 'true')
+    const input = document.createElement('input')
+    el.querySelector('.app')?.append(editable, input)
+    const inEditor = chord('Backspace')
+    const inField = chord('Backspace')
+    act(() => {
+      editable.dispatchEvent(inEditor)
+      input.dispatchEvent(inField)
+    })
+    expect(h.delete).not.toHaveBeenCalled()
+    expect([inEditor, inField].map((e) => e.defaultPrevented)).toEqual([false, false])
+
+    const key = chord('Backspace')
+    act(() => void document.body.dispatchEvent(key))
+    expect(h.delete).toHaveBeenCalledTimes(1)
+    expect(key.defaultPrevented).toBe(true)
+    expect(h.cutOrCopy).not.toHaveBeenCalled()
+
+    h.delete.mockReturnValue(false)
+    const declined = chord('Backspace')
+    act(() => void document.body.dispatchEvent(declined))
+    expect(h.delete).toHaveBeenCalledTimes(2)
+    expect(declined.defaultPrevented).toBe(false)
   })
 })
 
@@ -2533,7 +2569,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     await act(async () => void captured.sidebar?.onRenameFile(ABDUL, '/v/renamed.md', 'file'))
     expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'UP-001 - Abdul' to 'renamed'? No other notes link to it.")
     bridge.file.delete.mockRejectedValueOnce(new Error('boom'))
-    await act(async () => void captured.sidebar?.onDeleteFile(ABDUL))
+    await act(async () => void captured.sidebar?.onDeleteEntries([ABDUL]))
     expect(el.querySelector('.link-notice')?.textContent).toBe('Can\'t move "UP-001 - Abdul" to the Trash — nothing was deleted')
   })
 
@@ -3390,7 +3426,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
 
     it('a Delete, then ⌘Z: the item comes back from the Trash, "Put back 1 item" with Redo and the land sound; ⌘⇧Z deletes it again and the next Undo uses its new place in the Trash (S58, D18)', async () => {
       const { bridge, el } = await mountVault()
-      await act(async () => await captured.sidebar?.onDeleteFile('/v/B.md'))
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/B.md']))
       expect(toast(el)).toEqual({ text: 'Deleted B', action: 'Undo' })
       expect(bridge.app.sound.mock.calls).toEqual([['trash']])
 
@@ -3423,7 +3459,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
 
     it('the Trash was emptied since: "Can’t undo: B is no longer in the Trash" (S59); a new file has the old name: that item stays in the Trash and the rest come back (S60)', async () => {
       const { bridge, el } = await mountVault()
-      await act(async () => await captured.sidebar?.onDeleteFile('/v/B.md'))
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/B.md']))
       bridge.file.putBack.mockRejectedValueOnce({ code: 'NOT_FOUND', message: 'it is no longer in the Trash', path: `${TRASH}/B.md 1` })
       await press()
       expect(toast(el)).toEqual({ text: "Can't undo: B is no longer in the Trash", action: undefined })
@@ -3445,11 +3481,43 @@ describe('App rename door (⚡ YAZ-888)', () => {
     it('an item not found in the Trash at delete time: the delete still worked, with no Undo button, and ⌘Z has nothing to undo (S61)', async () => {
       const { bridge, el } = await mountVault()
       bridge.file.delete.mockResolvedValueOnce({ path: '/v/B.md', kind: 'file', trashed: null })
-      await act(async () => await captured.sidebar?.onDeleteFile('/v/B.md'))
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/B.md']))
       expect(toast(el)).toEqual({ text: 'Deleted B', action: undefined })
       expect(bridge.app.sound.mock.calls).toEqual([['trash']])
       expect((await press()).defaultPrevented).toBe(false)
       expect(bridge.file.putBack).not.toHaveBeenCalled()
+    })
+
+    /** The list delete door (YAZ-3272 D21, S67): N items, ONE trash sound, ONE step, ONE toast. */
+    it('a Delete of 3 items: each to the Trash in order, one trash sound, "Deleted 3 items" with Undo; one ⌘Z puts all 3 back (S67)', async () => {
+      const { bridge, el } = await mountVault()
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/A.md', '/v/B.md', '/v/Docs']))
+      expect(bridge.file.delete.mock.calls.map(([req]) => req.path)).toEqual(['/v/A.md', '/v/B.md', '/v/Docs'])
+      expect(bridge.app.sound.mock.calls).toEqual([['trash']])
+      expect(toast(el)).toEqual({ text: 'Deleted 3 items', action: 'Undo' })
+      await press()
+      expect(putBacks(bridge)).toEqual([[`${TRASH}/Docs 3`, '/v/Docs'], [`${TRASH}/B.md 2`, '/v/B.md'], [`${TRASH}/A.md 1`, '/v/A.md']])
+      expect(toast(el)).toEqual({ text: 'Put back 3 items', action: 'Redo' })
+      expect((await press()).defaultPrevented).toBe(false) // one step, and it is undone
+    })
+
+    it('a failure on one item does not stop the rest, and one notice counts both; with every item failed, one notice counts them and no sound plays', async () => {
+      const { bridge, el } = await mountVault()
+      const refuse = (path: string) => ({ code: 'IO_ERROR', message: 'the Trash refused it', path })
+      bridge.file.delete.mockImplementationOnce(async ({ path }: { path: string }) => ({ path, kind: 'file' as const, trashed: `${TRASH}/A.md` }))
+      bridge.file.delete.mockImplementationOnce(async ({ path }: { path: string }) => Promise.reject(refuse(path)))
+      bridge.file.delete.mockImplementationOnce(async ({ path }: { path: string }) => ({ path, kind: 'file' as const, trashed: `${TRASH}/R.md` }))
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/A.md', '/v/B.md', '/v/R.md']))
+      expect(bridge.file.delete).toHaveBeenCalledTimes(3)
+      expect(toast(el)).toEqual({ text: 'Deleted 2 items, skipped 1: B was not moved to the Trash', action: 'Undo' })
+      expect(bridge.app.sound.mock.calls).toEqual([['trash']])
+      await press()
+      expect(putBacks(bridge)).toEqual([[`${TRASH}/R.md`, '/v/R.md'], [`${TRASH}/A.md`, '/v/A.md']])
+
+      bridge.file.delete.mockImplementation(async ({ path }: { path: string }) => Promise.reject(refuse(path)))
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/A.md', '/v/B.md']))
+      expect(toast(el)).toEqual({ text: "Can't delete 2 items: A was not moved to the Trash", action: undefined })
+      expect(bridge.app.sound.mock.calls).toEqual([['trash'], ['land']]) // no trash sound for nothing deleted
     })
 
     it('a rename, then ⌘Z: the old name comes back through the door with no sheet, and the links follow back; no sound (S62, D18)', async () => {
@@ -3536,7 +3604,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       })
       await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/R.md', newPath: '/v/Docs/R.md', kind: 'file' }]))
       await settle()
-      await act(async () => await captured.sidebar?.onDeleteFile('/v/A.md'))
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/A.md']))
       await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
       await settle()
       log.length = 0
@@ -3988,10 +4056,10 @@ describe('in-app delete (GRO-2272)', () => {
   it('a delete that sends the item to the Trash plays ONE trash sound; one that fails plays none (YAZ-3267 D15, S55, S56)', async () => {
     const files = { '/v/a.md': { content: '# a', mtime: 1 } }
     const b = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, files)
-    await act(async () => await captured.sidebar?.onDeleteFile('/v/Docs'))
+    await act(async () => await captured.sidebar?.onDeleteEntries(['/v/Docs']))
     expect(b.bridge.app.sound.mock.calls).toEqual([['trash']])
     b.bridge.file.delete.mockRejectedValueOnce({ code: 'IO_ERROR', message: 'trash failed', path: '/v/a.md' })
-    await act(async () => await captured.sidebar?.onDeleteFile('/v/a.md'))
+    await act(async () => await captured.sidebar?.onDeleteEntries(['/v/a.md']))
     expect(b.bridge.app.sound).toHaveBeenCalledTimes(1)
   })
 

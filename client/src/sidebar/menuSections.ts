@@ -117,7 +117,8 @@ export interface MenuHandlers {
   /** "Remove shortcut" on a shortcut row (YAZ-2290 E5): the note, and the folder it stops appearing in. */
   onRemoveShortcut: (path: string, dir: string) => void
   onRename: (path: string) => void
-  onDelete: (path: string) => void
+  /** Delete (GRO-2272): the row, or the ordered 2+ selection that holds it (YAZ-3272 D21); the caller asks first. */
+  onDelete: (paths: string[]) => void
   /** "Add vault to this window ▸" (YAZ-2602 D2): a known vault's path; the caller checks it and says why it cannot be added. */
   onAddVault: (path: string) => void
   /** Its "Open folder…" (S3): the system picker, and the picked folder is added. */
@@ -426,12 +427,13 @@ const openIn: Item = (t, h) => {
  * Rename, which is the misclick pair that matters most; 🔒 D7 now puts a whole group ("Open in ▸")
  * and two separators between them.
  * Delete opens the confirm sheet; it must NEVER delete directly. Null on blank space: no target,
- * and main refuses the vault root anyway.
+ * and main refuses the vault root anyway. Inside a 2+ selection it takes the whole ordered selection
+ * and counts it — "Delete 3 items" (YAZ-3272 D21, S70), as Cut does; else the one row and the bare verb.
  */
 const del: Leaf = (t, h) => {
-  const path = t.deletePath
-  if (path === null) return null
-  return { id: 'delete', label: 'Delete', danger: true, onSelect: () => h.onDelete(path) }
+  const paths = t.deletePaths
+  if (paths === null) return null
+  return { id: 'delete', label: paths.length >= 2 ? `Delete ${paths.length} items` : 'Delete', danger: true, onSelect: () => h.onDelete(paths) }
 }
 
 /**

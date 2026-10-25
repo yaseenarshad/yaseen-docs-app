@@ -76,6 +76,40 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     expect(fileClipboardVerb(event(document.body, { key: 'z' }))).toBe('undo')
   })
 
+  /** ⌘⌫ deletes the selection (YAZ-3272 D20): Finder's Move to Trash. A plain ⌫ is no verb, and every owner of ⌘Z keeps ⌘⌫ too (S68, S69). */
+  it('maps ⌘⌫ to delete on ordinary chrome; plain ⌫, ⌘⇧⌫, ⌥⌘⌫, ⌃⌫ and the forward Delete key are no verb (S68)', () => {
+    expect(fileClipboardVerb(event(document.body, { key: 'Backspace' }))).toBe('delete')
+    expect(fileClipboardVerb(event(document.body, { key: 'Backspace', metaKey: false }))).toBeNull()
+    expect(fileClipboardVerb(event(document.body, { key: 'Backspace', shiftKey: true }))).toBeNull()
+    expect(fileClipboardVerb(event(document.body, { key: 'Backspace', altKey: true }))).toBeNull()
+    expect(fileClipboardVerb(event(document.body, { key: 'Backspace', metaKey: false, ctrlKey: true }))).toBeNull()
+    expect(fileClipboardVerb(event(document.body, { key: 'Delete' }))).toBeNull()
+    expect(fileClipboardVerb(event(document.body, { key: 'Backspace', repeat: true }))).toBeNull() // a held ⌘⌫ asks once
+  })
+
+  it('⌘⌫ stays with the editor, a field, an open sheet, a note page, a drawing and a diagram (S69)', () => {
+    const editor = document.createElement('div')
+    editor.setAttribute('contenteditable', 'true')
+    const input = document.createElement('input')
+    document.body.append(editor, input)
+    const pages = ['data-page', 'editor--drawing', 'editor--diagram'].map((kind) => {
+      const page = document.createElement('section')
+      if (kind === 'data-page') page.setAttribute('data-page', 'note')
+      else page.className = `editor ${kind}`
+      const inside = document.createElement('canvas')
+      inside.tabIndex = 0
+      page.append(inside)
+      document.body.append(page)
+      return inside
+    })
+    for (const target of [editor, input, ...pages]) expect(fileClipboardVerb(event(target, { key: 'Backspace' }))).toBeNull()
+    expect(fileClipboardVerb(event(document.body, { key: 'Backspace' }))).toBe('delete')
+    const sheet = document.createElement('div')
+    sheet.setAttribute('aria-modal', 'true')
+    document.body.append(sheet)
+    expect(fileClipboardVerb(event(document.body, { key: 'Backspace' }))).toBeNull()
+  })
+
   it('leaves the editor its own copy/paste: a contenteditable target is never ours', () => {
     const editor = document.createElement('div')
     editor.setAttribute('contenteditable', 'true')

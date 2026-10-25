@@ -129,8 +129,12 @@ export const SPRING_MS = 700
  * selection holds one (YAZ-2290 D2).
  */
 export function dragSet(path: string, selected: ReadonlySet<string>, ordered: () => string[], fixed: (path: string) => boolean): string[] {
-  const picked = (selected.has(path) ? ordered() : [path]).filter((p) => !fixed(p))
-  return picked.filter((p) => !picked.some((other) => p.startsWith(`${other}/`)))
+  return outermost((selected.has(path) ? ordered() : [path]).filter((p) => !fixed(p)))
+}
+
+/** The paths, in their order, less each one inside another of them: the folder carries it (YAZ-3251 S5; a delete too, YAZ-3272 D21). */
+export function outermost(paths: readonly string[]): string[] {
+  return paths.filter((p) => !paths.some((other) => p.startsWith(`${other}/`)))
 }
 
 /** The moves that a drop of `paths` into `dir` makes: none for an item already there (S7), nor for a folder into itself or a folder inside it (S6). */
@@ -390,6 +394,8 @@ export function useFileClipboard(
   onNotice: (message: string, kind?: NoticeKind) => void,
   /** A Paste of a Cut, a move in from Finder (YAZ-3255 D10): App records it and says the toast with Undo. */
   onMoved: (gesture: MovedGesture, text: string) => void,
+  /** ⌘⌫ (YAZ-3272 D20): the Sidebar's delete door — the question, then App's list delete door. */
+  askDelete: (paths: string[]) => void,
 ) {
   /**
    * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op, paths }` or null, pushed to every
@@ -578,12 +584,22 @@ export function useFileClipboard(
    * Rewritten whenever a rule input changes, emptied on unmount (`selectionRef`'s idiom) — a
    * collapsed sidebar has no tree to paste into or read an order from. A selection that holds a
    * vault row has no Cut and no Copy (YAZ-2602 S18): a vault is not a file to clip.
+   *
+   * ⌘⌫ (YAZ-3272 D20) is the third verb, on Cut's rules: a selection, no open menu, no vault row in it
+   * (a vault is no file, S72). It asks the delete door for the ordered selection, as the menu's Delete does.
    */
   useEffect(() => {
+    /** Cut, Copy and Delete act on a selection with no vault row in it, while no context menu stands. */
+    const onSelection = (): boolean => menu === null && selection.paths.size > 0 && ![...selection.paths].some((path) => vaultRows.has(path))
     clipboardRef.current = {
       cutOrCopy: (op) => {
-        if (menu !== null || selection.paths.size === 0 || [...selection.paths].some((path) => vaultRows.has(path))) return false
+        if (!onSelection()) return false
         clipTo(orderedSelectedPaths(), op)
+        return true
+      },
+      delete: () => {
+        if (!onSelection()) return false
+        askDelete(orderedSelectedPaths())
         return true
       },
       paste: () => {
@@ -598,7 +614,7 @@ export function useFileClipboard(
     return () => {
       clipboardRef.current = null
     }
-  }, [clipboardRef, menu, selection, vaultRows, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir, onNotice])
+  }, [clipboardRef, menu, selection, vaultRows, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir, onNotice, askDelete])
 
   /**
    * Finder's items dropped into `dir` (YAZ-3253 D3, D9A): `fs:import` moves them in, or copies them

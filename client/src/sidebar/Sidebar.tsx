@@ -9,7 +9,7 @@ import { focusOpenDocument } from '../lib/focusHandoff'
 import { pageName, useAllPathTitles } from '../lib/pageLabel'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { countLinkReferences } from '../links/renameLinks'
+import { countLinkReferences, linkingNotes } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind, type Move } from '../links/shortcuts'
 import type { MovedGesture } from '../lib/moveHistory'
 import { ancestorDirs, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
@@ -32,7 +32,7 @@ import { dropOn, hasFiles, leftTarget, Tree, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
-import { useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
+import { outermost, useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 import { HoverPreviewHost, useHoverPreview } from './HoverPreviewHost'
 import { useShareBadges } from '../share/useShareBadges'
@@ -203,11 +203,12 @@ interface SidebarProps {
   /** A title edit (YAZ-2420 🔒 D16), to the same door: the inline rename of a note or a folder. */
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>
   /**
-   * Context-menu "Delete" confirmed (GRO-2272): App moves the entry to the system Trash and
-   * routes ANY failure to the passive notice — this promise never rejects, so the sheet just
-   * closes. No link rewriting happens downstream (LOCKED decision C).
+   * Delete confirmed (GRO-2272) — by the menu or by ⌘⌫ (YAZ-3272 D20): App's ONE list delete door
+   * moves every entry to the system Trash, in order, as one step of the undo list with one trash
+   * sound (D21), and routes ANY failure to the passive notice — this promise never rejects, so the
+   * sheet just closes. No link rewriting happens downstream (LOCKED decision C).
    */
-  onDeleteFile: (path: string) => Promise<void>
+  onDeleteEntries: (paths: string[]) => Promise<void>
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string, kind?: NoticeKind) => void
   /**
@@ -265,10 +266,12 @@ export interface SidebarMenuRequest {
   y: number
 }
 
-/** What App's ⌘C / ⌘X / ⌘V listener may ask of the mounted sidebar (D6 amended, YAZ-1674); each answers whether it acted. */
+/** What App's ⌘C / ⌘X / ⌘V / ⌘⌫ listener may ask of the mounted sidebar (D6 amended, YAZ-1674; YAZ-3272 D20); each answers whether it acted. */
 export interface SidebarClipboard {
   cutOrCopy: (op: 'copy' | 'cut') => boolean
   paste: () => boolean
+  /** ⌘⌫ (YAZ-3272 D20): the ordered selection to the delete door, which asks first. */
+  delete: () => boolean
 }
 
 /**
@@ -337,8 +340,13 @@ export interface MenuTargets {
   newWindowPath: string | null
   /** "Rename" — a concrete row only, NEVER blank space: the vault root is not renameable (E1b, GRO-2241). */
   renamePath: string | null
-  /** "Delete" — a concrete row only, NEVER blank space: there is no target, and main refuses the vault root (GRO-2272). */
-  deletePath: string | null
+  /**
+   * "Delete" — a concrete row only, NEVER blank space: there is no target, and main refuses the vault
+   * root (GRO-2272). The ordered 2+ selection when the row is in it (YAZ-3272 D21), less each row
+   * inside another of them (the folder carries it); else the one row. Null on a shortcut row, a
+   * vault row, and in a selection that holds a vault row (a vault is no file, S72).
+   */
+  deletePaths: string[] | null
   /** "Reveal in Finder" — the row, or the one vault's ROOT for blank space (GRO-2274); same target as `copyPath`. */
   revealPath: string | null
   /** "Open in VS Code" — the same target rule again (YAZ-963); its OWN field, per this split's whole point. */
@@ -373,7 +381,7 @@ export interface MenuTargets {
   shortcutDir: string | null
   /**
    * "Remove shortcut" — a SHORTCUT row only (YAZ-2290 E5): the note and the folder it stands in.
-   * Such a row has no `deletePath` (it is deleted from where it lives), no `renamePath` (the inline
+   * Such a row has no `deletePaths` (it is deleted from where it lives), no `renamePath` (the inline
    * input is the real row's) and no `clipPaths` (it is not a file in this folder), whatever the
    * selection holds.
    */
@@ -507,7 +515,7 @@ export function Sidebar({
   onMoved,
   onDraggedOut,
   onRetitle,
-  onDeleteFile,
+  onDeleteEntries,
   onNotice,
   pendingSearchFocus,
   pendingSearchClear = false,
@@ -902,7 +910,7 @@ export function Sidebar({
         clipPaths: shortcutIn !== null || vaultRow !== null || holdsVault ? null : plural ?? (node === null ? null : [node.path]),
         newWindowPath: filePath,
         renamePath: shortcutIn !== null || vaultRow !== null ? null : node?.path ?? null,
-        deletePath: shortcutIn !== null || vaultRow !== null ? null : node?.path ?? null,
+        deletePaths: node === null || shortcutIn !== null || vaultRow !== null || holdsVault ? null : outermost(plural ?? [node.path]),
         revealPath: node?.path ?? blank,
         openVsCodePath: node?.path ?? blank,
         openDefaultPath: vaultRow !== null ? null : node?.path ?? blank,
@@ -962,7 +970,70 @@ export function Sidebar({
     if (node !== null) openMenuAt(node, menuRequest.x, menuRequest.y, true)
   }, [menuRequest, forest, trees, favoritesByRoot, rootOf, onMenuConsumed, openMenuAt])
 
-  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved)
+  // ---- Delete (GRO-2272): context menu "Delete" or ⌘⌫ → confirm sheet → App trashes the entries ----
+
+  /**
+   * The delete door (GRO-2272; YAZ-3272 D20, D21): the menu's Delete and ⌘⌫ both ask here, with the
+   * row or the ordered selection. A row inside another of them is left out (the folder carries it).
+   * Counts for the sheet, computed ONCE when it opens rather than on every render.
+   *
+   * Both come from data already in hand — the loaded tree and the vault index — so the delete
+   * path makes no extra fetch. When the index is unavailable the backlink line is simply
+   * omitted (`backlinks: undefined`): a missing count must never block a delete. For two or more
+   * items the count is of the notes outside them whose links reach any of them, each note once
+   * (`linkingNotes`, as the drag-out box counts, YAZ-3254 D9B).
+   */
+  const askDelete = useCallback(
+    (picked: string[]) => {
+      const paths = outermost(picked)
+      const first = paths[0]
+      if (first === undefined) return
+      // The setting finally gates the sheet (YAZ-857 — it existed end-to-end but nothing read
+      // it): off → delete directly, exactly what "Don't ask me again" promised (S71).
+      if (!settings.confirmDelete) {
+        void onDeleteEntries(paths)
+        return
+      }
+      // The row's kind from the tree: ⌘⌫ has no menu to read it from.
+      const kindOf = (path: string): 'file' | 'dir' => findNode(forest ?? [], path)?.type ?? (menu?.rowKind === 'file' ? 'file' : 'dir')
+      const target: DeleteTarget = paths.length === 1 ? { path: first, kind: kindOf(first) } : { path: first, kind: kindOf(first), paths }
+      if (paths.length === 1 && target.kind === 'dir') target.children = countChildren(forest ?? [], first)
+      setConfirmingDelete(target)
+      // The index is only needed for the count, so it rides in asynchronously and the sheet
+      // opens immediately. Failure leaves the line out; it never blocks or spins. It is the index
+      // of the vault that holds the row: links stay inside a vault (YAZ-2602 R1).
+      const vaults = [...new Set(paths.map(rootOf))]
+      Promise.all(vaults.map((vault) => api.index(vault).then((index) => [vault, index] as const))).then(
+        (read) => {
+          const indexes = new Map(read)
+          const about = (path: string) => {
+            const vault = rootOf(path)
+            const { records, folders, ids } = indexes.get(vault)!
+            return { ids, root: vault, oldPath: path, kind: kindOf(path), records, folders, dirs: dirsOf(vault) }
+          }
+          const inside = (note: string) => paths.some((item) => note === item || note.startsWith(`${item}/`))
+          const n = paths.length === 1 ? countLinkReferences(about(first)) : new Set(paths.flatMap((path) => linkingNotes(about(path)).filter((note) => !inside(note)))).size
+          setConfirmingDelete((current) => (current === target ? { ...current, backlinks: n } : current))
+        },
+        () => undefined,
+      )
+    },
+    [menu, rootOf, forest, dirsOf, settings.confirmDelete, onDeleteEntries],
+  )
+
+  const confirmDelete = useCallback(
+    (dontAskAgain: boolean) => {
+      const target = confirmingDelete
+      setConfirmingDelete(null)
+      if (target === null) return
+      if (dontAskAgain) onChangeSettings({ ...settings, confirmDelete: false })
+      // Fire and forget: App owns the result and routes every failure to the passive notice.
+      void onDeleteEntries(target.paths ?? [target.path])
+    },
+    [confirmingDelete, onDeleteEntries, onChangeSettings, settings],
+  )
+
+  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete)
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
@@ -1033,54 +1104,6 @@ export function Sidebar({
       })
     },
     [onNotice, nameOf],
-  )
-
-  // ---- Delete (GRO-2272): context menu "Delete" → confirm sheet → App trashes the entry ----
-
-  /**
-   * Counts for the sheet, computed ONCE when it opens rather than on every render.
-   *
-   * Both come from data already in hand — the loaded tree and the vault index — so the delete
-   * path makes no extra fetch. When the index is unavailable the backlink line is simply
-   * omitted (`backlinks: undefined`): a missing count must never block a delete.
-   */
-  const askDelete = useCallback(
-    (path: string) => {
-      // The setting finally gates the sheet (YAZ-857 — it existed end-to-end but nothing read
-      // it): off → delete directly, exactly what "Don't ask me again" promised.
-      if (!settings.confirmDelete) {
-        void onDeleteFile(path)
-        return
-      }
-      const kind: 'file' | 'dir' = menu?.rowKind === 'file' ? 'file' : 'dir'
-      const target: DeleteTarget = { path, kind }
-      if (kind === 'dir') target.children = countChildren(forest ?? [], path)
-      setConfirmingDelete(target)
-      // The index is only needed for the count, so it rides in asynchronously and the sheet
-      // opens immediately. Failure leaves the line out; it never blocks or spins. It is the index
-      // of the vault that holds the row: links stay inside a vault (YAZ-2602 R1).
-      const vault = rootOf(path)
-      api.index(vault).then(
-        ({ records, folders, ids }) => {
-          const n = countLinkReferences({ ids, root: vault, oldPath: path, kind, records, folders, dirs: dirsOf(vault) })
-          setConfirmingDelete((current) => (current !== null && current.path === path ? { ...current, backlinks: n } : current))
-        },
-        () => undefined,
-      )
-    },
-    [menu, rootOf, forest, dirsOf, settings.confirmDelete, onDeleteFile],
-  )
-
-  const confirmDelete = useCallback(
-    (dontAskAgain: boolean) => {
-      const target = confirmingDelete
-      setConfirmingDelete(null)
-      if (target === null) return
-      if (dontAskAgain) onChangeSettings({ ...settings, confirmDelete: false })
-      // Fire and forget: App owns the result and routes every failure to the passive notice.
-      void onDeleteFile(target.path)
-    },
-    [confirmingDelete, onDeleteFile, onChangeSettings, settings],
   )
 
   // The row goes when the index says so, as it came; only a refusal is said.

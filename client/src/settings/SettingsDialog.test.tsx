@@ -971,7 +971,7 @@ describe('SettingsDialog search (D6)', () => {
     const { el, onClose } = mount()
     // As it opens: Appearance.
     type(searchInput(el), 'trash')
-    expect(rowIds(el)).toEqual(['confirmDelete'])
+    expect(rowIds(el)).toEqual(['confirmDelete', 'hotkeys-window']) // ⌘⌫'s row says "Trash" too (YAZ-3272 D20)
     pressEscape(searchInput(el))
     expect(onClose).not.toHaveBeenCalled()
     expect(searchInput(el).value).toBe('')
