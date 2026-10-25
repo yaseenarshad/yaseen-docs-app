@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FileValue, type FileRecordLike, type Scope, compile, evaluate, isTruthy } from './index'
+import { timeMedian } from '../../test-perf'
 
 /** 1000 records × a 5-clause filter + 3 formulas must stay well under a frame (GRO-2131). */
 const FILTER = 'file.ext == "md" && status != "done" && file.hasTag("book") && price > 10 && file.inFolder("Library")'
@@ -51,13 +52,11 @@ describe('perf', () => {
       return kept
     }
     run() // warm-up (JIT)
-    const t0 = performance.now()
-    const kept = run()
-    const ms = performance.now() - t0
+    const { result: kept, median: ms, worst } = timeMedian(7, run)
     expect(kept).toBeGreaterThan(0)
     expect(kept).toBeLessThan(1000)
     // eslint-disable-next-line no-console
-    console.log(`perf: 1000 records in ${ms.toFixed(1)} ms (${kept} kept)`)
+    console.log(`perf: 1000 records, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7 (${kept} kept)`)
     // Runs in the `perf` project, alone on an idle pool (YAZ-740), so this is a real budget:
     // ~7 ms measured, 50 ms allowed. A 3x algorithmic regression fails it; a busy machine cannot.
     expect(ms).toBeLessThan(50)
