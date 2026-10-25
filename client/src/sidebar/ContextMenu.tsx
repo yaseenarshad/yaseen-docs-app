@@ -71,7 +71,14 @@ function ActionButton({ item, onClose, onMouseEnter }: { item: MenuAction; onClo
         onClose()
       }}
     >
-      {item.label}
+      {item.icon === undefined ? (
+        item.label
+      ) : (
+        <span className="ctx-menu__label">
+          {item.icon}
+          {item.label}
+        </span>
+      )}
     </button>
   )
 }

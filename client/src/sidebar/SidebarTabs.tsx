@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SidebarTab, SidebarTabsPrefs } from '@shared/types'
-import { ChevronsIcon, MoreIcon, SortIcon } from '../views/view/icons'
+import { ChevronsIcon, FolderIcon, MoreIcon, SortIcon } from '../views/view/icons'
 import { ContextMenu } from './ContextMenu'
 import { TabFace, TabRowPanel } from './TabRowPanel'
 import { fitTabs, onBar, rowLayout, TAB_LABEL, tabRowSections, toggleTab, type RowButtons } from './tabRow'
@@ -29,6 +29,9 @@ interface SidebarTabsProps {
   foldLabel: string
   onFold: () => void
 }
+
+/** A glyph for a row of the menu: a tab's (Files' folder, since its tab is a word), Sort's or the fold button's. */
+const menuIcon = (key: SidebarTab | 'sort' | 'fold') => (key === 'sort' ? <SortIcon /> : key === 'fold' ? <ChevronsIcon /> : key === 'files' ? <FolderIcon /> : <TabFace tab={key} />)
 
 /** The row's menu (D4): where it opens, the tab right-clicked (null: the ⋯ button or blank space), and whether a key opened it. */
 interface RowMenu {
@@ -159,6 +162,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
         // "Sort…" opens the sort menu at the ⋯ button (S15); with ⋯ off, where the menu was.
         onSort: () => onSort(anchor() ?? at),
         onFold,
+        iconOf: menuIcon,
         // "Edit tab row…" opens the panel where the menu was, the right-clicked tab lit (S17).
         onEdit: () => {
           toPanel.current = true

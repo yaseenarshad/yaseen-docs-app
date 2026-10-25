@@ -101,15 +101,13 @@ describe('fitTabs + rowLayout (YAZ-3273 D1 to D3, D7, D10)', () => {
 describe('tabRowSections (YAZ-3273 D4)', () => {
   const handlers = () => ({ onOpen: vi.fn(), onSort: vi.fn(), onFold: vi.fn() })
 
-  it('S9, S11: "Not enough room", then "Hidden", each under its name, in the row\'s order; the open tab says so; empty groups do not show', () => {
+  it('S9, S11: the tabs with no room, then the hidden tabs, in the row\'s order, with no group names (the demo); a hidden tab says "hidden", the open tab "open"; empty groups do not show', () => {
     const p = prefs({ hidden: ['focus'] })
     const sections = tabRowSections(at(230, p, 'recents'), p, 'recents', BOTH, 'Collapse all', handlers())
-    expect(labels(sections)).toEqual([
-      ['Not enough room', 'Sessions', 'Recents'],
-      ['Hidden', 'Focus'],
-    ])
+    expect(labels(sections)).toEqual([['Sessions', 'Recents'], ['Focus']])
     const items = sections.flat() as MenuAction[]
-    expect(items.filter((item) => item.disabled === true).map((item) => item.label)).toEqual(['Not enough room', 'Hidden']) // the group names do nothing
+    expect(items.find((item) => item.label === 'Focus')?.hint).toBe('hidden')
+    expect(items.find((item) => item.label === 'Sessions')?.hint).toBeUndefined()
     expect(items.find((item) => item.label === 'Recents')?.hint).toBe('open')
     expect(labels(tabRowSections(at(400), prefs(), 'files', BOTH, 'Collapse all', handlers()))).toEqual([]) // nothing to list: no menu
   })
@@ -140,8 +138,8 @@ describe('the Hide row (YAZ-3279 D4, S9, S10)', () => {
   it('a right-clicked tab puts "Hide <tab>" first; blank space and ⋯ (no tab) have none', () => {
     const h = handlers()
     const p = prefs({ hidden: ['recents'] })
-    expect(labels(tabRowSections(at(400, p), p, 'files', BOTH, 'Collapse all', h, 'focus'))).toEqual([['Hide Focus'], ['Hidden', 'Recents'], ['Edit tab row…']])
-    expect(labels(tabRowSections(at(400, p), p, 'files', BOTH, 'Collapse all', h, null))).toEqual([['Hidden', 'Recents'], ['Edit tab row…']])
+    expect(labels(tabRowSections(at(400, p), p, 'files', BOTH, 'Collapse all', h, 'focus'))).toEqual([['Hide Focus'], ['Recents'], ['Edit tab row…']])
+    expect(labels(tabRowSections(at(400, p), p, 'files', BOTH, 'Collapse all', h, null))).toEqual([['Recents'], ['Edit tab row…']])
     const hide = tabRowSections(at(400, p), p, 'files', BOTH, 'Collapse all', h, 'focus')[0][0] as MenuAction
     hide.onSelect()
     expect(h.onHide).toHaveBeenCalledExactlyOnceWith('focus')
@@ -154,7 +152,7 @@ describe('the Hide row (YAZ-3279 D4, S9, S10)', () => {
 
   it('a tab that is hidden already (the open tab with ⋯ off) has no Hide row', () => {
     const p = prefs({ hidden: ['focus'], hiddenButtons: ['more'] })
-    expect(labels(tabRowSections(at(400, p, 'focus'), p, 'focus', BOTH, 'Collapse all', handlers(), 'focus'))[0]).toEqual(['Hidden', 'Focus'])
+    expect(labels(tabRowSections(at(400, p, 'focus'), p, 'focus', BOTH, 'Collapse all', handlers(), 'focus'))[0]).toEqual(['Focus'])
   })
 })
 

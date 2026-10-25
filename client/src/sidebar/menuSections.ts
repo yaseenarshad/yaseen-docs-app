@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { FileClipState } from '@shared/types'
 import type { MenuTargets } from './Sidebar'
 
@@ -32,6 +33,8 @@ interface MenuItemBase {
   /** Right-aligned shortcut hint (⌘X …), drawn from `data-hint` by CSS — never part of the label. */
   hint?: string
   danger?: boolean
+  /** A glyph before the label (YAZ-3273: the tab row's menu). An SVG only, so `textContent` stays the bare label. */
+  icon?: ReactNode
 }
 
 /** A leaf: selecting it runs `onSelect`, then the whole menu closes. */

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { SidebarButton, SidebarTab, SidebarTabsPrefs } from '@shared/types'
 import type { MenuAction, MenuSection } from './menuSections'
 
@@ -128,14 +129,14 @@ export interface TabRowHandlers {
   onFold: () => void
   /** "Edit tab row…": the Tab row panel (YAZ-3279). Absent, the menu has no such row. */
   onEdit?: () => void
+  /** A row's glyph (Yaseen in the demo: "can we also ahve the icons show so its easy to go quick?"): a tab's, or a button's. */
+  iconOf?: (key: SidebarTab | Exclude<SidebarButton, 'more'>) => ReactNode
 }
 
-/** A group's name (D4): an item that is off, so `ContextMenu` draws it muted and a click does nothing (the Decision on YAZ-3278). */
-const heading = (id: string, label: string): MenuAction => ({ id, label, disabled: true, onSelect: () => {} })
 
 /**
  * The menu of the row (D4, S9 to S13, S15) as `ContextMenu` sections: "Hide <tab>" when a tab was
- * right-clicked — off on Files, "Files stays" (S10) — then "Not enough room", "Hidden", the buttons
+ * right-clicked — off on Files, "Files stays" (S10) — then the tabs with no room, the hidden tabs (each with the hint "hidden"), the buttons
  * that left the bar ("Sort…", the fold button's label), then "Edit tab row…". The ⋯ button and
  * blank space open it without the Hide row (S11, S12). Empty groups do not show (`ContextMenu`
  * skips them). The open tab says so in its hint, as in the lab.
@@ -147,12 +148,15 @@ export function tabRowSections(layout: RowLayout, prefs: SidebarTabsPrefs, lens:
     tab === null || onHide === undefined || prefs.hidden.includes(tab)
       ? []
       : [{ id: 'tabrow-hide', label: `Hide ${TAB_LABEL[tab]}`, disabled: tab === 'files', hint: tab === 'files' ? 'Files stays' : undefined, onSelect: () => onHide(tab) }]
-  const tabItem = (tab: SidebarTab): MenuAction => ({ id: `tabrow-open-${tab}`, label: TAB_LABEL[tab], hint: tab === lens ? 'open' : undefined, onSelect: () => handlers.onOpen(tab) })
-  const over = layout.over.length > 0 ? [heading('tabrow-over', 'Not enough room'), ...layout.over.map(tabItem)] : []
-  const hidden = layout.hidden.length > 0 ? [heading('tabrow-hidden', 'Hidden'), ...layout.hidden.map(tabItem)] : []
+  const icon = handlers.iconOf
+  // No group names (Yaseen in the demo: "should we even have it take a row for hidden or just directly go into reecnts?"):
+  // the tabs come first, a line parts the two groups, and a hidden tab says so in its hint.
+  const tabItem = (tab: SidebarTab, note?: string): MenuAction => ({ id: `tabrow-open-${tab}`, label: TAB_LABEL[tab], icon: icon?.(tab), hint: tab === lens ? 'open' : note, onSelect: () => handlers.onOpen(tab) })
+  const over = layout.over.map((tab) => tabItem(tab))
+  const hidden = layout.hidden.map((tab) => tabItem(tab, 'hidden'))
   const offBar: MenuAction[] = []
-  if (buttons.sort && prefs.hiddenButtons.includes('sort')) offBar.push({ id: 'tabrow-sort', label: 'Sort…', onSelect: handlers.onSort })
-  if (buttons.fold && prefs.hiddenButtons.includes('fold')) offBar.push({ id: 'tabrow-fold', label: foldLabel, onSelect: handlers.onFold })
+  if (buttons.sort && prefs.hiddenButtons.includes('sort')) offBar.push({ id: 'tabrow-sort', label: 'Sort…', icon: icon?.('sort'), onSelect: handlers.onSort })
+  if (buttons.fold && prefs.hiddenButtons.includes('fold')) offBar.push({ id: 'tabrow-fold', label: foldLabel, icon: icon?.('fold'), onSelect: handlers.onFold })
   const edit = handlers.onEdit === undefined ? [] : [{ id: 'tabrow-edit', label: 'Edit tab row…', onSelect: handlers.onEdit }]
   return [hide, over, hidden, offBar, edit]
 }

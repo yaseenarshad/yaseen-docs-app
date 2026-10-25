@@ -129,6 +129,13 @@ export const ClockIcon = () => (
   </svg>
 )
 
+/** Files in the tab row's menu (YAZ-3273): its tab is a word, so the menu row gets a folder, at the tabs' 15px. */
+export const FolderIcon = () => (
+  <svg {...svg} width={15} height={15} viewBox="0 0 24 24" strokeWidth={2} className="folder-icon">
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+  </svg>
+)
+
 /** The tab row's "More tabs" button (YAZ-3273 D2): three dots, filled, at the tabs' 15px. */
 export const MoreIcon = () => (
   <svg {...svg} width={15} height={15}>

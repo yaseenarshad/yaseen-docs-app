@@ -4522,7 +4522,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     const { el, props } = await mount({ lens: 'files', ...withTabs({ hidden: ['focus', 'recents'] }) })
     mouseClick(more(el))
     expect(more(el)?.getAttribute('aria-expanded')).toBe('true')
-    expect(items(el)).toEqual(['Hidden (off)', 'Focus', 'Recents', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Focus [hidden]', 'Recents [hidden]', 'Edit tab row…'])
     act(() => itemByLabel(el, 'Recents')?.click())
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('recents')
     expect(items(el)).toEqual([])
@@ -4537,7 +4537,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(tabNames(el)).toEqual(['Files', 'Search', 'Favorites', 'Sessions', 'Recents'])
     expect(more(el)?.className).toBe('sidebar__more sidebar__more--lit')
     mouseClick(more(el))
-    expect(items(el)).toEqual(['Hidden (off)', 'Focus [open]', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Focus [open]', 'Edit tab row…'])
   })
 
   it('S7: the Search tab inside ⋯ still shows its bar, and ↑ from the bar goes to the lit ⋯ (YAZ-2663 D12)', async () => {
@@ -4551,16 +4551,16 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
   it('S11: right-click on blank space in the row, or on a tab, opens the same menu', async () => {
     const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
     expect(rightClick(el.querySelector('.sidebar__lenses')).defaultPrevented).toBe(true)
-    expect(items(el)).toEqual(['Hidden (off)', 'Sessions', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Sessions [hidden]', 'Edit tab row…'])
   })
 
   it('S9, S10 (YAZ-3279): right-click on a tab puts "Hide <tab>" first; on Files it is off, "Files stays"; with nothing off the bar the menu is Hide and "Edit tab row…"; no Electron menu', async () => {
     const { el, props } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
     expect(rightClick(tabs(el)[1]).defaultPrevented).toBe(true)
-    expect(items(el)).toEqual(['Hide Search', 'Hidden (off)', 'Sessions', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Hide Search', 'Sessions [hidden]', 'Edit tab row…'])
     closeOverlay(el)
     rightClick(tabs(el)[0])
-    expect(items(el)).toEqual(['Hide Files (off) [Files stays]', 'Hidden (off)', 'Sessions', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Hide Files (off) [Files stays]', 'Sessions [hidden]', 'Edit tab row…'])
     act(() => itemByLabel(el, 'Hide Files')?.click())
     expect(props.onChangeSettings).not.toHaveBeenCalled()
     closeOverlay(el)
@@ -4702,7 +4702,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
       expect(tabNames(el)).toEqual(['Files', 'Search', 'Focus', 'Favorites'])
       expect(more(el)?.className).toBe('sidebar__more sidebar__more--lit')
       mouseClick(more(el))
-      expect(items(el)).toEqual(['Not enough room (off)', 'Sessions', 'Recents [open]', 'Edit tab row…'])
+      expect(items(el)).toEqual(['Sessions', 'Recents [open]', 'Edit tab row…'])
       closeOverlay(el)
       resize(400)
       expect(tabNames(el)).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions', 'Recents'])

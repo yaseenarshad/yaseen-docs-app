@@ -1939,6 +1939,18 @@ button {
   cursor: default;
 }
 
+/* A row with a glyph (YAZ-3273): the glyph, then the label, the hint still at the right end. */
+.ctx-menu__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ctx-menu__label > svg {
+  flex: none;
+  opacity: 0.75;
+}
+
 /* Delete (GRO-2272): destructive, so it reads as such in BOTH themes — --danger is
    defined for light and dark alike, so no hard-coded hex here. */
 .ctx-menu__item--danger {
