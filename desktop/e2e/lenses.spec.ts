@@ -15,7 +15,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AppState, WindowEntry } from '../../shared/types'
-import { appWindow, buildFixtureVault, clickMenuItem, copyVault, editorOf, fileRow, launchApp, lensTab, quitApp, readState, searchBar, searchTab, SEED_BODY, SEED_FILE, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, clickMenuItem, copyVault, editorOf, fileRow, launchApp, lensTab, quitApp, readState, searchBar, searchTab, SEED_BODY, SEED_FILE, seededState, wholeRow, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -51,7 +51,7 @@ async function expectLens(w: Page, lens: 'Files'): Promise<void> {
  * default. `JSON.stringify` drops `undefined`, so the key never reaches disk.
  */
 function preLensState(vaultPath: string, file: string): AppState {
-  const state = seededState(vaultPath, file)
+  const state = wholeRow(seededState(vaultPath, file))
   delete (state.windows[0] as Partial<WindowEntry>).sidebarLens
   return state
 }

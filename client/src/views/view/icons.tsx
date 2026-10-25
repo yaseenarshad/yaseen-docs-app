@@ -129,6 +129,17 @@ export const ClockIcon = () => (
   </svg>
 )
 
+/** The tab row's "More tabs" button (YAZ-3273 D2): three dots, filled, at the tabs' 15px. */
+export const MoreIcon = () => (
+  <svg {...svg} width={15} height={15}>
+    <g fill="currentColor" stroke="none">
+      <circle cx="3.5" cy="8" r="1.1" />
+      <circle cx="8" cy="8" r="1.1" />
+      <circle cx="12.5" cy="8" r="1.1" />
+    </g>
+  </svg>
+)
+
 /** The shortcut mark (YAZ-2290 D2): a file manager's alias arrow, beside a note's name wherever it shows in a folder it does not live in — the tree row and every view's title. */
 export const ShortcutIcon = () => (
   <svg {...svg} width={11} height={11} className="shortcut-mark">

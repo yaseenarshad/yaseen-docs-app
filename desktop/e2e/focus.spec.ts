@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, tabsOf, appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, extraWindow, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, SEED_FILE, seededState, shoot, topLabels, windowCount, winParam } from './helpers'
+import { activeTab, tabsOf, appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, extraWindow, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, SEED_FILE, seededState, wholeRow, shoot, topLabels, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -70,7 +70,7 @@ test.afterAll(async () => {
 // ---------------------------------------------------------------- add a folder
 
 test('step 1 — "Add to focus" on a folder shows the Focus tab with the folder as an open top row, leaves the Files tab whole and writes the list to the VAULT\'s focus file, not to the state file', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, SEED_FILE)) })
+  app = await launchApp({ userData, seedState: wholeRow(seededState(vault, path.join(vault, SEED_FILE))) })
   win = await appWindow(app, 'w1')
   await expect(fileRow(win, 'Ideas')).toBeVisible()
   expect(await focusListOnDisk()).toBeNull() // a read creates nothing (YAZ-2702 R6): no focus file until the first add

@@ -1339,16 +1339,22 @@ button {
 
 /* Lens tabs (YAZ-847) — chrome v2 ROW 1, under the header: Files, Search (YAZ-2638 D2), Focus, Favorites.
    The ViewsPane tab idiom (`.view-tab`, views.css): a transparent 2px bottom border on every tab,
-   accent on the active one, pulled down over the row's own hairline so the two read as one line. */
+   accent on the active one, pulled down over the row's own hairline so the two read as one line.
+   The row never grows past the sidebar (YAZ-3273 D1): the tabs that do not fit go into ⋯, so the clip
+   is only a guard against a measure that is off. `clip` on x alone, so the active tab's underline
+   still sits over the row's hairline. */
 .sidebar__lenses {
   flex: none;
   display: flex;
   gap: 2px;
+  min-width: 0;
   padding: 0 8px;
+  overflow-x: clip;
   border-bottom: 1px solid var(--border);
 }
 
 .sidebar__lens {
+  flex: none;
   padding: 5px 10px 6px;
   margin-bottom: -1px;
   font-size: 12.5px;
@@ -1406,6 +1412,36 @@ button {
 .sidebar__expand-all:hover {
   color: var(--fg);
   background: var(--bg-hover);
+}
+
+/* "More tabs" (YAZ-3273 D2): the sort button's look, right of the last tab — no push to the right, so
+   Sort and fold keep the right end (D7). Lit like an active glyph tab while the tab that shows is
+   inside it (D3): the accent colour and the accent underline over the row's hairline. */
+.sidebar__more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  margin-bottom: -1px;
+  color: var(--fg-muted);
+  border-bottom: 2px solid transparent;
+}
+
+.sidebar__more:hover,
+.sidebar__more[aria-expanded='true'] {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.sidebar__more--lit,
+.sidebar__more--lit:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* The row's menu (YAZ-3273 D4) is a plain `ContextMenu`; this wrapper only scopes its keys. */
+.sidebar__tabs-menu {
+  display: contents;
 }
 
 /* The Focus tab's line above its list (YAZ-2619 D4): the count on the left, "Clear" on the right. */

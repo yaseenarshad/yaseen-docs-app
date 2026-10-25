@@ -3,9 +3,9 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, EDIT_GAP_MS, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
-import { createStore, isSettings, normalizeTabStrip, sanitizeSettings } from './store'
+import { createStore, isSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -214,6 +214,33 @@ describe('createStore: loading', () => {
       expect(createStore(file).get().settings.sidebarSort).toEqual(DEFAULT_SIDEBAR_SORT)
       expect(isSettings({ ...DEFAULT_SETTINGS, sidebarSort: bad })).toBe(false) // the IPC boundary refuses it too
     }
+  })
+
+  it('sidebarTabs (YAZ-3273 D8, S29): a file without the key reads the default; a set row survives a restart; the repair drops unknown names and duplicates, puts missing tabs at the end and never keeps Files hidden', async () => {
+    const { sidebarTabs: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.sidebarTabs).toEqual(DEFAULT_SIDEBAR_TABS)
+
+    const set = { order: ['search', 'files', 'recents', 'focus', 'favorites', 'sessions'], hidden: ['focus', 'sessions'], hiddenButtons: ['fold', 'more'] }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, sidebarTabs: set } }))
+    expect(createStore(file).get().settings.sidebarTabs).toEqual(set)
+    expect(isSettings({ ...DEFAULT_SETTINGS, sidebarTabs: set })).toBe(true)
+
+    // The repair, field by field (S29).
+    const repaired: [unknown, unknown][] = [
+      [{ order: ['recents', 'topics', 'recents', 'files'], hidden: ['files', 'focus', 'focus', 'nope'], hiddenButtons: ['sort', 'sort', 'zoom'] }, { order: ['recents', 'files', 'search', 'focus', 'favorites', 'sessions'], hidden: ['focus'], hiddenButtons: ['sort'] }],
+      [{ order: 'files', hidden: null }, DEFAULT_SIDEBAR_TABS],
+      [{ hidden: ['search'] }, { ...DEFAULT_SIDEBAR_TABS, hidden: ['search'] }],
+      ['files', DEFAULT_SIDEBAR_TABS],
+    ]
+    for (const [bad, fixed] of repaired) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, sidebarTabs: bad } }))
+      expect(createStore(file).get().settings.sidebarTabs).toEqual(fixed)
+      expect(sanitizeSidebarTabs(bad)).toEqual(fixed)
+      expect(isSettings({ ...DEFAULT_SETTINGS, sidebarTabs: bad })).toBe(false) // the IPC boundary refuses it whole
+    }
+    // The boundary is strict where the loader repairs: a missing tab, Files hidden, a duplicate.
+    for (const bad of [{ ...set, order: set.order.slice(1) }, { ...set, hidden: ['files'] }, { ...set, hiddenButtons: ['more', 'more'] }, { ...set, order: [...set.order, 'files'] }]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarTabs: bad })).toBe(false)
   })
 
   it('section indent: a file from before YAZ-2709 sanitizes to 30px, always; every listed value survives; junk falls back', async () => {
