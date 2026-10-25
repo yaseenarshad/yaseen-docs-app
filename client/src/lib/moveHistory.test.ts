@@ -11,7 +11,7 @@ const name = (entry: MovedGesture | undefined): string | undefined => entry?.mov
 
 describe('createMoveHistory (YAZ-3255 D10)', () => {
   it('undo takes the newest gesture; undone puts it on the redo list; redo takes it back; redone puts it on the undo list again', () => {
-    const history = createMoveHistory(20)
+    const history = createMoveHistory<MovedGesture>(20)
     expect(history.undo()).toBeUndefined() // nothing to undo (S35)
     history.push(gesture('a'))
     history.push(gesture('b'))
@@ -27,7 +27,7 @@ describe('createMoveHistory (YAZ-3255 D10)', () => {
   })
 
   it('a new move empties the redo list (S38)', () => {
-    const history = createMoveHistory(20)
+    const history = createMoveHistory<MovedGesture>(20)
     history.push(gesture('a'))
     history.undone(history.undo()!)
     history.push(gesture('b'))
@@ -36,7 +36,7 @@ describe('createMoveHistory (YAZ-3255 D10)', () => {
   })
 
   it('more than 20 gestures: the oldest leaves the list (S41), and a redone gesture keeps the limit too', () => {
-    const history = createMoveHistory(20)
+    const history = createMoveHistory<MovedGesture>(20)
     for (let i = 1; i <= 21; i++) history.push(gesture(String(i)))
     const undone: string[] = []
     for (let entry = history.undo(); entry !== undefined; entry = history.undo()) undone.push(name(entry)!)

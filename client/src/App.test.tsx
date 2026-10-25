@@ -343,7 +343,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         return () => fileRenamed.delete(l)
       }),
       // In-app delete (GRO-2272): the invoke plus the push every window receives.
-      delete: vi.fn(async ({ path }: { path: string }) => ({ path, kind: 'file' as const })),
+      delete: vi.fn(async ({ path }: { path: string }) => ({ path, kind: 'file' as 'file' | 'dir', trashed: null as string | null })),
+      // The Undo of a delete (YAZ-3268 D16): the Trash entry goes back to its old place.
+      putBack: vi.fn(async ({ path }: { trashed: string; path: string }) => ({ path, kind: 'file' as 'file' | 'dir' })),
       onDeleted: vi.fn((l: (ev: { path: string; kind: 'file' | 'dir' }) => void) => {
         fileDeleted.add(l)
         return () => fileDeleted.delete(l)
@@ -2796,7 +2798,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
     expect(files['/v/A.md'].content).toBe('See [[B2]].\n')
-    expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 note')
+    // The toast says the rename with its Undo (YAZ-3268 D18), then the links that followed.
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "B2". Updated links in 1 note')
   })
 
   it('a MOVE stays silent: no sheet, the rename runs straight through', async () => {
@@ -3290,7 +3293,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(bridge.file.rename).not.toHaveBeenCalled()
       expect(files['/v/A.md'].content).toBe('See [[UP-001 - Abdul]].\n')
       expect(files['/v/ById.md'].content).toBe(`See [[${ID}]].\n`)
-      expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 note')
+      // The toast says the rename with its Undo (YAZ-3268 D18), then the links that followed.
+      expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "UP-001 - Abdul". Updated links in 1 note')
     })
 
     it('"Ask before renaming" off: a title edit runs with no sheet, and the links that spelled the old title still follow (YAZ-2420 3C1)', async () => {
@@ -3300,7 +3304,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(el.querySelector('.confirm')).toBeNull()
       expect(bridge.file.retitle).toHaveBeenCalledExactlyOnceWith({ path: ABDUL, title: 'UP-001 - Abdul' })
       expect(files['/v/A.md'].content).toBe('See [[UP-001 - Abdul]].\n')
-      expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 note')
+      // The toast says the rename with its Undo (YAZ-3268 D18), then the links that followed.
+      expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "UP-001 - Abdul". Updated links in 1 note')
     })
 
     it('the page title commits through the same door as the sidebar', async () => {
@@ -3340,6 +3345,205 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => sheetBtn(el, 'Rename')?.click())
       expect(el.querySelector('.link-notice')?.textContent).toBe(notice)
       expect(files['/v/A.md'].content).toBe('See [[Abdul]].\n')
+    })
+  })
+
+  /**
+   * ⌘Z and ⌘⇧Z of a delete and a rename (YAZ-3268 D17–D19): one undo list with the moves, newest
+   * first. A delete goes back from the Trash through `fs:put-back`; a rename goes back through the
+   * door with no sheet, so links follow back.
+   */
+  describe('undo and redo a delete and a rename (YAZ-3268)', () => {
+    const chord = (shiftKey = false) => new KeyboardEvent('keydown', { key: shiftKey ? 'Z' : 'z', metaKey: true, shiftKey, bubbles: true, cancelable: true })
+    const settle = () => act(async () => {
+      for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    const press = async (shiftKey = false) => {
+      const event = chord(shiftKey)
+      act(() => void document.body.dispatchEvent(event))
+      await settle()
+      return event
+    }
+    const toast = (el: HTMLElement) => ({ text: el.querySelector('.link-notice__text')?.textContent, action: el.querySelector('.link-notice__action')?.textContent })
+    const icon = (el: HTMLElement) => el.querySelector('.link-notice')?.getAttribute('data-icon')
+    const clickToast = async (el: HTMLElement) => {
+      await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+      await settle()
+    }
+    const TRASH = '/Users/yasin/.Trash'
+    type Bridge = ReturnType<typeof installBridge>['bridge']
+    /** The Trash as main answers it: each delete lands under a new name, so a second delete of one item has a new `trashed`. */
+    const trashing = (bridge: Bridge) => {
+      let n = 0
+      bridge.file.delete.mockImplementation(async ({ path }: { path: string }) => ({ path, kind: path.endsWith('.md') ? ('file' as const) : ('dir' as const), trashed: `${TRASH}/${path.slice(path.lastIndexOf('/') + 1)} ${++n}` }))
+    }
+    const putBacks = (bridge: Bridge) => bridge.file.putBack.mock.calls.map(([req]) => [req.trashed, req.path])
+    const renames = (bridge: Bridge) => bridge.file.rename.mock.calls.map(([req]) => [req.oldPath, req.newPath])
+    const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+    const TREE: TreeNode[] = [{ type: 'dir', name: 'Docs', path: '/v/Docs', children: [file('/v/Docs/N.md')] }, file('/v/A.md'), file('/v/B.md'), file('/v/R.md')]
+    const mountVault = (state: AppState = defaultAppState()) =>
+      mount(state, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        trashing(b.bridge)
+      })
+
+    it('a Delete, then ⌘Z: the item comes back from the Trash, "Put back 1 item" with Redo and the land sound; ⌘⇧Z deletes it again and the next Undo uses its new place in the Trash (S58, D18)', async () => {
+      const { bridge, el } = await mountVault()
+      await act(async () => await captured.sidebar?.onDeleteFile('/v/B.md'))
+      expect(toast(el)).toEqual({ text: 'Deleted B', action: 'Undo' })
+      expect(bridge.app.sound.mock.calls).toEqual([['trash']])
+
+      const undo = await press()
+      expect(undo.defaultPrevented).toBe(true)
+      expect(putBacks(bridge)).toEqual([[`${TRASH}/B.md 1`, '/v/B.md']])
+      expect(toast(el)).toEqual({ text: 'Put back 1 item', action: 'Redo' })
+      expect(icon(el)).toBe('paste')
+      expect(bridge.app.sound.mock.calls).toEqual([['trash'], ['land']])
+
+      await press(true)
+      expect(bridge.file.delete.mock.calls.map(([req]) => req)).toEqual([{ path: '/v/B.md' }, { path: '/v/B.md' }])
+      expect(toast(el)).toEqual({ text: 'Deleted B', action: 'Undo' })
+      expect(bridge.app.sound.mock.calls).toEqual([['trash'], ['land'], ['trash']])
+      await clickToast(el)
+      expect(putBacks(bridge)).toEqual([[`${TRASH}/B.md 1`, '/v/B.md'], [`${TRASH}/B.md 2`, '/v/B.md']])
+    })
+
+    it('"Remove from vault" of many items is ONE step: one ⌘Z puts every item back (S58, D19)', async () => {
+      const { bridge, el } = await mountVault()
+      await act(async () => void captured.sidebar?.onDraggedOut(['/v/A.md', '/v/Docs']))
+      await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.drag-out-ask button')].find((b) => b.textContent === 'Remove from vault')?.click())
+      await settle()
+      expect(toast(el)).toEqual({ text: 'Deleted 2 items', action: 'Undo' })
+      await press()
+      expect(putBacks(bridge)).toEqual([[`${TRASH}/Docs 2`, '/v/Docs'], [`${TRASH}/A.md 1`, '/v/A.md']])
+      expect(toast(el)).toEqual({ text: 'Put back 2 items', action: 'Redo' })
+      expect((await press()).defaultPrevented).toBe(false) // one step, and it is undone
+    })
+
+    it('the Trash was emptied since: "Can’t undo: B is no longer in the Trash" (S59); a new file has the old name: that item stays in the Trash and the rest come back (S60)', async () => {
+      const { bridge, el } = await mountVault()
+      await act(async () => await captured.sidebar?.onDeleteFile('/v/B.md'))
+      bridge.file.putBack.mockRejectedValueOnce({ code: 'NOT_FOUND', message: 'it is no longer in the Trash', path: `${TRASH}/B.md 1` })
+      await press()
+      expect(toast(el)).toEqual({ text: "Can't undo: B is no longer in the Trash", action: undefined })
+      expect(icon(el)).toBe('error')
+      expect(bridge.app.sound.mock.calls).toEqual([['trash']]) // nothing came back: no land sound
+
+      await act(async () => void captured.sidebar?.onDraggedOut(['/v/A.md', '/v/R.md']))
+      await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.drag-out-ask button')].find((b) => b.textContent === 'Remove from vault')?.click())
+      await settle()
+      bridge.file.putBack.mockImplementation(async ({ path }: { trashed: string; path: string }) => {
+        if (path === '/v/A.md') throw { code: 'ALREADY_EXISTS', message: 'a file with this name already exists', path }
+        return { path, kind: 'file' as const }
+      })
+      await press()
+      expect(putBacks(bridge).slice(1)).toEqual([[`${TRASH}/R.md 3`, '/v/R.md'], [`${TRASH}/A.md 2`, '/v/A.md']])
+      expect(toast(el)).toEqual({ text: "Put back 1 item. Can't undo: a file named A is there now", action: 'Redo' })
+    })
+
+    it('an item not found in the Trash at delete time: the delete still worked, with no Undo button, and ⌘Z has nothing to undo (S61)', async () => {
+      const { bridge, el } = await mountVault()
+      bridge.file.delete.mockResolvedValueOnce({ path: '/v/B.md', kind: 'file', trashed: null })
+      await act(async () => await captured.sidebar?.onDeleteFile('/v/B.md'))
+      expect(toast(el)).toEqual({ text: 'Deleted B', action: undefined })
+      expect(bridge.app.sound.mock.calls).toEqual([['trash']])
+      expect((await press()).defaultPrevented).toBe(false)
+      expect(bridge.file.putBack).not.toHaveBeenCalled()
+    })
+
+    it('a rename, then ⌘Z: the old name comes back through the door with no sheet, and the links follow back; no sound (S62, D18)', async () => {
+      const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+      const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)
+      await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      await settle()
+      expect(files['/v/A.md'].content).toBe('See [[B2]].\n')
+      expect(toast(el)).toEqual({ text: 'Renamed to "B2". Updated links in 1 note', action: 'Undo' })
+      // The index as it stands after the rename: A links to B2.
+      bridge.index.mockResolvedValue({ root: '/v', records: [record('/v/A.md', { links: ['B2'] }), record('/v/B2.md'), record('/v/R.md', { links: ['Docs/N'] }), record('/v/Docs/N.md')], folders: [], generatedAt: 2, ids: true })
+
+      const undo = await press()
+      expect(undo.defaultPrevented).toBe(true)
+      expect(el.querySelector('.confirm')).toBeNull() // no sheet on an undo
+      expect(renames(bridge)).toEqual([['/v/B.md', '/v/B2.md'], ['/v/B2.md', '/v/B.md']])
+      expect(files['/v/A.md'].content).toBe('See [[B]].\n')
+      expect(toast(el)).toEqual({ text: 'Renamed back to "B". Updated links in 1 note', action: 'Redo' })
+
+      bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 3, ids: true })
+      await press(true)
+      expect(el.querySelector('.confirm')).toBeNull()
+      expect(renames(bridge)).toEqual([['/v/B.md', '/v/B2.md'], ['/v/B2.md', '/v/B.md'], ['/v/B.md', '/v/B2.md']])
+      expect(files['/v/A.md'].content).toBe('See [[B2]].\n')
+      expect(toast(el)).toEqual({ text: 'Renamed to "B2". Updated links in 1 note', action: 'Undo' })
+      expect(bridge.app.sound).not.toHaveBeenCalled()
+    })
+
+    it('a title edit in an ID vault, then ⌘Z: the old title comes back through `retitle`, with no sheet (S63)', async () => {
+      const ID = 'k3m9x2pq7abc'
+      const ABDUL = `/v/abdul-${ID}.md`
+      const RENAMED = `/v/up-001-abdul-${ID}.md`
+      const { bridge, el } = await mount(askOff(), { ...identity(), file: ABDUL, tabs: [ABDUL] }, {}, (b) => {
+        b.bridge.index.mockResolvedValue({ root: '/v', records: [record(ABDUL, { id: ID, title: 'Abdul', properties: { id: ID, title: 'Abdul' } })], folders: [], generatedAt: 1, ids: true })
+        b.bridge.file.retitle.mockImplementation(async ({ path, title }: { path: string; title: string }) => ({ oldPath: path, newPath: title === 'Abdul' ? ABDUL : RENAMED, kind: 'file' }))
+      })
+      await act(async () => void captured.editorRetitle?.(ABDUL, 'UP-001 - Abdul', 'file'))
+      await settle()
+      expect(toast(el)).toEqual({ text: 'Renamed to "UP-001 - Abdul"', action: 'Undo' })
+      await press()
+      expect(bridge.file.retitle.mock.calls.map(([req]) => req)).toEqual([{ path: ABDUL, title: 'UP-001 - Abdul' }, { path: RENAMED, title: 'Abdul' }])
+      expect(toast(el)).toEqual({ text: 'Renamed back to "Abdul"', action: 'Redo' })
+      await clickToast(el)
+      expect(bridge.file.retitle.mock.calls.at(-1)?.[0]).toEqual({ path: ABDUL, title: 'UP-001 - Abdul' })
+      expect(toast(el)).toEqual({ text: 'Renamed to "UP-001 - Abdul"', action: 'Undo' })
+    })
+
+    it('the renamed item changed again since: "Can’t undo: Plan moved again", and the step is gone (S64)', async () => {
+      const { bridge, el } = await mount(askOff(), identity(), {}, feed)
+      await act(async () => await captured.sidebar?.onRenameFile('/v/Draft.md', '/v/Plan.md', 'file'))
+      expect(toast(el)).toEqual({ text: 'Renamed to "Plan"', action: 'Undo' })
+      bridge.file.rename.mockRejectedValueOnce({ code: 'NOT_FOUND', message: 'path does not exist', path: '/v/Plan.md' })
+      await press()
+      expect(toast(el)).toEqual({ text: "Can't undo: Plan moved again", action: undefined })
+      expect(icon(el)).toBe('error')
+      expect((await press()).defaultPrevented).toBe(false)
+    })
+
+    it('moves, deletes and renames mixed: ⌘Z takes them back newest first, one per press; ⌘⇧Z redoes them in order (S65)', async () => {
+      const { bridge, el } = await mountVault(askOff())
+      const log: string[] = []
+      bridge.file.rename.mockImplementation(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => {
+        log.push(`rename ${oldPath} ${newPath}`)
+        return { oldPath, newPath, kind: 'file' }
+      })
+      bridge.file.delete.mockImplementation(async ({ path }: { path: string }) => {
+        log.push(`delete ${path}`)
+        return { path, kind: 'file' as const, trashed: `${TRASH}/${path.slice(3)}` }
+      })
+      bridge.file.putBack.mockImplementation(async ({ trashed, path }: { trashed: string; path: string }) => {
+        log.push(`put back ${trashed} ${path}`)
+        return { path, kind: 'file' as const }
+      })
+      await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/R.md', newPath: '/v/Docs/R.md', kind: 'file' }]))
+      await settle()
+      await act(async () => await captured.sidebar?.onDeleteFile('/v/A.md'))
+      await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
+      await settle()
+      log.length = 0
+      await press()
+      await press()
+      await press()
+      expect(log).toEqual(['rename /v/B2.md /v/B.md', `put back ${TRASH}/A.md /v/A.md`, 'rename /v/Docs/R.md /v/R.md'])
+      expect(toast(el)).toEqual({ text: 'Moved back 1 item', action: 'Redo' })
+      expect((await press()).defaultPrevented).toBe(false)
+      log.length = 0
+      await press(true)
+      await press(true)
+      await press(true)
+      expect(log).toEqual(['rename /v/R.md /v/Docs/R.md', 'delete /v/A.md', 'rename /v/B.md /v/B2.md'])
+      expect(toast(el)).toMatchObject({ action: 'Undo' })
+      expect(toast(el).text).toMatch(/^Renamed to "B2"/)
+      expect((await press(true)).defaultPrevented).toBe(false)
     })
   })
 
@@ -4618,7 +4822,8 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(files['/w/C.md'].content).toBe('See [[B2]].\n')
     expect(files['/w/D.md'].content).toBe('And [[B2]].\n')
     expect(files['/v/A.md'].content).toBe('See [[B]].\n')
-    expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 2 notes')
+    // The toast says the rename with its Undo (YAZ-3268 D18), then the links that followed.
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "B2". Updated links in 2 notes')
   })
 
   it('a rename that waits for its answer is dropped when the list of vaults changes', async () => {

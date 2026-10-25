@@ -200,7 +200,7 @@ test('step 1 — rename B via the context menu: disk file renamed, tab and title
   await expect(editorOf(win)).toContainText(B_BODY)
   await expect.poll(() => win.title()).toContain('B2')
   // ONE passive summary notice: exactly one referencing note was rewritten.
-  await expect(win.locator('.link-notice')).toHaveText('Updated links in 1 note')
+  await expect(win.locator('.link-notice__text')).toHaveText('Renamed to "B2". Updated links in 1 note') // with Undo (YAZ-3268 D18)
   await shoot(win, 'rename-02-renamed')
 })
 
@@ -302,7 +302,7 @@ test('step 5 — folder rename via its context menu: disk moves, PATHED link rew
   await expect(activeTab(win)).toHaveAttribute('title', path.join(vault, 'Notes', 'N.md'))
   await expect(editorOf(win)).toContainText(N_BODY)
   await expect.poll(() => win.title()).toContain('N')
-  await expect(win.locator('.link-notice')).toHaveText('Updated links in 1 note')
+  await expect(win.locator('.link-notice__text')).toHaveText('Renamed to "Notes". Updated links in 1 note') // with Undo (YAZ-3268 D18)
   await shoot(win, 'rename-06-folder-renamed')
 })
 

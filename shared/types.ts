@@ -2288,6 +2288,23 @@ export interface DeleteRequest {
 export interface DeleteResponse {
   path: string
   kind: 'file' | 'dir'
+  /**
+   * Where the entry is in the Trash now (YAZ-3268 D16), found by its file ID (`ino` + `dev`), also
+   * under a name the Trash gave it. Null when main did not find it: then the delete has no Undo (S61).
+   */
+  trashed: string | null
+}
+
+/** The Undo of a delete (YAZ-3268 D16): `trashed` (a `DeleteResponse.trashed`) goes back to `path`, its old place. */
+export interface PutBackRequest {
+  trashed: string
+  path: string
+}
+
+/** What came back from the Trash (YAZ-3268 D16), and where it is now. */
+export interface PutBackResponse {
+  path: string
+  kind: 'file' | 'dir'
 }
 
 /** `file:deleted` — pushed to EVERY window after a successful delete (GRO-2272). */

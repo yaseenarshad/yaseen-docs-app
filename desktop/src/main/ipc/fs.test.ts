@@ -25,6 +25,11 @@ vi.mock('electron', () => ({
 }))
 // The favorites.json repair (YAZ-1766 6A, D13) rides the rename/delete handlers; `favorites.test.ts`
 // owns its disk behaviour, so here it is a mock whose failure must never fail the file op.
+// The home folder is the temp folder (YAZ-3268): a delete's look in `~/.Trash` never reads the real Trash. The mock trash moves nothing, so `trashed` is null.
+vi.mock('node:os', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:os')>()
+  return { ...real, homedir: () => real.tmpdir() }
+})
 vi.mock('../favorites', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
 // The focus list's repair (YAZ-2702 R10, R11) rides the same handlers, by the same rule; `focus.test.ts`
 // owns its disk behaviour. Mocked like favorites — the real module imports from the one mocked above.
@@ -77,7 +82,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
+    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.putBack.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -595,7 +600,7 @@ describe('registerFsIpc', () => {
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       senderWinId = undefined
       const res = await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })
-      expect(res).toEqual({ ok: true, value: { path: target, kind: 'file' } })
+      expect(res).toEqual({ ok: true, value: { path: target, kind: 'file', trashed: null } })
       // Store repaired in the SAME handler: the active file went, so the heir took over and
       // the SURVIVING tab is still there (the invariant removePath protects).
       expect(store.get().windows.find((win) => win.id === 'wd')).toMatchObject({ file: path.join(root, 'A.md'), tabs: [path.join(root, 'A.md')] })
@@ -624,7 +629,7 @@ describe('registerFsIpc', () => {
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       senderWinId = undefined
-      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: sub })).toEqual({ ok: true, value: { path: sub, kind: 'dir' } })
+      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: sub })).toEqual({ ok: true, value: { path: sub, kind: 'dir', trashed: null } })
       const other = store.get().windows.find((win) => win.id === 'w-other')
       expect(other?.root).toBe(sub) // deliberately NOT nulled here
       expect(other?.file).toBeNull() // the file under it went
@@ -670,7 +675,7 @@ describe('registerFsIpc', () => {
         expect(await registered(CONTRACT.file.rename.channel)({ sender: {} }, { oldPath: second, newPath: moved })).toEqual({ ok: true, value: { oldPath: second, newPath: moved, kind: 'dir' } })
         expect(rootsOfTwo()).toEqual([first, moved])
         // It may delete it too. The store leaves the list alone: the window that shows it sees the folder gone.
-        expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: moved })).toEqual({ ok: true, value: { path: moved, kind: 'dir' } })
+        expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: moved })).toEqual({ ok: true, value: { path: moved, kind: 'dir', trashed: null } })
         expect(rootsOfTwo()).toEqual([first, moved])
       } finally {
         senderWinId = undefined
@@ -713,7 +718,7 @@ describe('registerFsIpc', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
       vi.mocked(favorites.removePath).mockRejectedValueOnce(new Error('boom'))
       senderWinId = undefined
-      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })).toEqual({ ok: true, value: { path: target, kind: 'file' } })
+      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })).toEqual({ ok: true, value: { path: target, kind: 'file', trashed: null } })
       expect(vi.mocked(favorites.removePath)).toHaveBeenCalledWith(expect.arrayContaining([root]), target)
       expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onDeleted.channel, { path: target, kind: 'file' })
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('boom'))
@@ -764,7 +769,7 @@ describe('registerFsIpc', () => {
       vi.mocked(focus.removePath).mockClear()
       vi.mocked(focus.removePath).mockRejectedValueOnce(new Error('focus boom'))
       senderWinId = undefined
-      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })).toEqual({ ok: true, value: { path: target, kind: 'file' } })
+      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })).toEqual({ ok: true, value: { path: target, kind: 'file', trashed: null } })
       expect(vi.mocked(focus.removePath)).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining([root]), target)
       expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onDeleted.channel, { path: target, kind: 'file' })
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('focus boom'))

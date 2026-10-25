@@ -1,8 +1,9 @@
 import { shell } from 'electron'
-import { stat } from 'node:fs/promises'
+import { lstat, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { DeleteResponse } from '@shared/types'
 import { BridgeFailure, fsCall, isSkipped, requireAbsPath } from './fsUtils'
+import { findTrashed, trashFolderOf } from './trash'
 import { requireRequest } from './validate'
 
 /**
@@ -32,6 +33,11 @@ import { requireRequest } from './validate'
  * app's then-chokidar options in the GRO-2275 scope pass, and pinned for every engine by
  * `watchConformance.ts` (YAZ-2192). The tree and the vault index therefore heal themselves and
  * need no push, exactly as rename relies on.
+ *
+ * Where the entry went (YAZ-3268 D16): its file ID (`ino` + `dev`) is noted BEFORE the trash, then
+ * the entry with that ID is looked for in the Trash of its disk (`trash.ts`), also under a name the
+ * Trash gave it. `trashed` is that path, the Undo's `fs:put-back` source; null when it was not found
+ * (S61): the delete stands, with no Undo. The look never fails the delete.
  */
 export async function removeEntry(req: unknown): Promise<DeleteResponse> {
   const p = requireAbsPath(requireRequest(req).path, 'path')
@@ -44,8 +50,13 @@ export async function removeEntry(req: unknown): Promise<DeleteResponse> {
     if (isSkipped(path.basename(p))) {
       throw new BridgeFailure('BAD_REQUEST', 'hidden entries cannot be deleted', { path: p })
     }
+    // The ID of the entry itself, a link's own and not its target's: the Trash takes the entry.
+    const id = await lstat(p)
     // Electron resolves trashItem() and rejects on failure; either way nothing else runs here.
     await shell.trashItem(p)
-    return { path: p, kind }
+    const trashed = await trashFolderOf(p, id.dev)
+      .then((folder) => findTrashed(folder, path.basename(p), id.ino, id.dev))
+      .catch(() => null)
+    return { path: p, kind, trashed }
   })
 }

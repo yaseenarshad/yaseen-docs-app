@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isBoard, isViewOnly } from '@shared/fileKind'
 import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
+import { BETWEEN_VAULTS, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -16,7 +16,7 @@ import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
 import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
-import { createMoveHistory, invertMoves, type MovedGesture } from './lib/moveHistory'
+import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { transformFile } from './views/writeProperty'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
@@ -116,10 +116,28 @@ const overEdge = (roots: readonly string[], oldPath: string, newPath: string): b
  * failure when nothing moved.
  */
 export function replayNotice(verb: 'undo' | 'redo', moved: number, failed: readonly string[]): string {
+  return stepNotice(verb, moved === 0 ? null : verb === 'undo' ? `Moved back ${countItems(moved)}` : `Moved ${countItems(moved)}`, failed)
+}
+
+/**
+ * The toast of an undo or a redo of any step (YAZ-3268 D18): what it did (`head`, null when nothing
+ * ran), then the first item that did not go — "Put back 1 item. Can't undo: a file named Plan is
+ * there now" (S60). Only the failure when nothing ran.
+ */
+function stepNotice(verb: 'undo' | 'redo', head: string | null, failed: readonly string[]): string {
   const cannot = gestureNotice(null, failed, `Can't ${verb}`)
-  if (moved === 0) return cannot ?? ''
-  const head = verb === 'undo' ? `Moved back ${countItems(moved)}` : `Moved ${countItems(moved)}`
+  if (head === null) return cannot ?? ''
   return cannot === null ? head : `${head}. ${cannot}`
+}
+
+/** A rename's toast (YAZ-3268 D18): `Renamed to "Plan v2"` or `Renamed back to "Plan"`, then the links that followed, as a rename says them. */
+const renamedNotice = (head: string, links: RenameRewriteSummary): string => (links.updated > 0 || links.skipped > 0 ? `${head}. ${renameNotice(links)}` : head)
+
+/** Why one item of a delete's undo stayed in the Trash (S59, S60): it left the Trash, or its old name is taken; else main's own words. */
+const putBackFailure = (name: string, item: DeleteStep['items'][number], err: unknown): string => {
+  if (err instanceof BridgeRequestError && err.code === 'NOT_FOUND' && err.path === item.trashed) return `${name} is no longer in the Trash`
+  if (err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS') return `a ${item.type === 'dir' ? 'folder' : 'file'} named ${name} is there now`
+  return `${name} — ${err instanceof Error ? err.message : String(err)}`
 }
 
 /**
@@ -1338,9 +1356,26 @@ export function App() {
     [scopeOf],
   )
 
-  /** One rename or title edit, said: a refusal, or the links that followed. A move says itself (`runMoves`). */
+  // The window's undo list (YAZ-3255 D10; YAZ-3268 D17): moves, renames and deletes, per window, for the session only (S42).
+  const moveHistory = useRef(createMoveHistory())
+  const replaying = useRef(false)
+  // ⌘Z, ⌘⇧Z and the toast's buttons reach the newest undo and redo through this box.
+  const moveReplay = useRef<{ undo: () => boolean; redo: () => boolean }>({ undo: () => false, redo: () => false })
+  /** A toast of a step that ⌘Z or ⌘⇧Z can take back (YAZ-3268 D18): its Undo or Redo, and it fades (6 s). */
+  const stepToast = useCallback((text: string, icon: NoticeKind, verb: 'undo' | 'redo'): void => {
+    setNotice({ text, icon, action: { label: verb === 'undo' ? 'Undo' : 'Redo', run: () => void moveReplay.current[verb](), fades: true } })
+  }, [])
+
+  /**
+   * One rename or title edit, said: a refusal, or `Renamed to "Plan v2"` with Undo and the links that
+   * followed. A move says itself (`runMoves`). Every rename through the door ends here — the sidebar,
+   * the page title, a table's Name cell — so each goes on the undo list (YAZ-3268 D17, D19): the
+   * door's input forward, and back (the old path, or the old title in a vault that uses IDs). No sound (D18).
+   */
   const renameFile = useCallback(
     async (oldPath: string, to: RenameTo, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<void> => {
+      // The title before the edit, read while the index still has the page.
+      const from: RenameTo = to.title === undefined ? { newPath: oldPath } : { title: nameOf(oldPath) }
       const out = await applyRename(oldPath, to, viewOnlyCatalog)
       if (out === null) return
       if ('error' in out) {
@@ -1350,9 +1385,10 @@ export function App() {
         notify(exists ? `${cannot}: "${to.title ?? nameOf(to.newPath)}" already exists` : `${cannot}: ${err instanceof Error ? err.message : String(err)}`)
         return
       }
-      if (out.links.updated > 0 || out.links.skipped > 0) notify(renameNotice(out.links))
+      moveHistory.current.push({ step: 'rename', path: out.move.newPath, from, to, type: out.move.kind })
+      stepToast(renamedNotice(`Renamed to "${to.title ?? nameOf(out.move.newPath)}"`, out.links), 'info', 'undo')
     },
-    [applyRename, nameOf, notify],
+    [applyRename, nameOf, notify, stepToast],
   )
 
   /**
@@ -1376,11 +1412,6 @@ export function App() {
   // A move gesture waiting on its D21 sheet (YAZ-3250 D1): one sheet for the whole list, one row or many.
   const [pendingMoves, setPendingMoves] = useState<{ root: string; moves: Move[]; lost: LeftBehind } | null>(null)
   const renameRootGeneration = useRef(0)
-  // The window's undo list for moves (YAZ-3255 D10): per window, for the session only (S42).
-  const moveHistory = useRef(createMoveHistory())
-  const replaying = useRef(false)
-  // ⌘Z, ⌘⇧Z and the toast's buttons reach the newest undo and redo through this box.
-  const moveReplay = useRef<{ undo: () => boolean; redo: () => boolean }>({ undo: () => false, redo: () => false })
   /**
    * A move gesture done (YAZ-3255 D10, D11): onto the undo list, and its toast with Undo — `runMoves`'s, a Paste of a Cut's, a move in from Finder's.
    * Every such gesture moved one item or more, so it plays the ONE land sound here (YAZ-3267 D15, S54).
@@ -1482,6 +1513,90 @@ export function App() {
   )
 
   /**
+   * The undo or the redo of a rename (YAZ-3268 D17): the door again, with the input back (`from`) or
+   * forward (`to`), straight into `applyRename` — no sheet, and nothing new on the list — so links
+   * follow back (S62) and a title comes back as a title (S63). An item that changed since fails
+   * "Can't undo: Plan moved again" (S64), and the step goes; any other failure keeps it on its list.
+   */
+  const replayRename = useCallback(async (entry: RenameStep, verb: 'undo' | 'redo'): Promise<void> => {
+    const side = verb === 'undo' ? entry.from : entry.to
+    const name = entry.to.title ?? nameOf(entry.path)
+    const keep = (): void => (verb === 'undo' ? moveHistory.current.redone(entry) : moveHistory.current.undone(entry))
+    const catalog = await catalogForRename(entry.path, entry.type)
+    if (catalog === undefined) {
+      keep()
+      return notify(stepNotice(verb, null, [`${name} — couldn't load the current file list`]), 'error')
+    }
+    const out = await applyRename(entry.path, side, catalog)
+    if (out === null) return // the window's vaults changed under it: the lists are empty now
+    if ('error' in out) {
+      if (!movedAgain(out.error)) keep()
+      return notify(stepNotice(verb, null, [againFailure(name, out.error)]), 'error')
+    }
+    const now: RenameStep = { ...entry, path: out.move.newPath }
+    if (verb === 'undo') moveHistory.current.undone(now)
+    else moveHistory.current.redone(now)
+    const shown = side.title ?? nameOf(out.move.newPath)
+    stepToast(renamedNotice(verb === 'undo' ? `Renamed back to "${shown}"` : `Renamed to "${shown}"`, out.links), 'info', verb === 'undo' ? 'redo' : 'undo')
+  }, [nameOf, catalogForRename, applyRename, notify, stepToast])
+
+  /**
+   * The undo of a delete (YAZ-3268 D17, S58): each item from the Trash back to its old place
+   * (`fs:put-back`), newest first. One that left the Trash (S59) or whose name is taken (S60) stays
+   * there, and the rest come back. What came back goes on the redo list; "Put back N items" with Redo
+   * and the land sound (D18).
+   */
+  const putBackStep = useCallback(async (entry: DeleteStep): Promise<void> => {
+    const back: DeleteStep['items'] = []
+    const failed: string[] = []
+    let gone = 0
+    for (const item of [...entry.items].reverse()) {
+      try {
+        await api.file.putBack({ trashed: item.trashed, path: item.path })
+        back.unshift(item)
+      } catch (err) {
+        if (movedAgain(err)) gone++
+        failed.push(putBackFailure(nameOf(item.path), item, err))
+      }
+    }
+    if (back.length > 0) moveHistory.current.undone({ step: 'delete', items: back })
+    else if (failed.length > gone) moveHistory.current.redone(entry)
+    const text = stepNotice('undo', back.length === 0 ? null : `Put back ${countItems(back.length)}`, failed)
+    if (back.length === 0) return notify(text, 'error')
+    playGestureSound('land')
+    stepToast(text, 'paste', 'redo')
+  }, [nameOf, notify, stepToast])
+
+  /**
+   * The redo of a delete (YAZ-3268 D17): each item to the Trash again, through the delete door. The
+   * new places in the Trash go on the undo list; an item that was not found there has no Undo again
+   * (S61). The trash sound, as a delete plays it (D18).
+   */
+  const deleteAgain = useCallback(async (entry: DeleteStep): Promise<void> => {
+    const items: DeleteStep['items'] = []
+    const failed: string[] = []
+    let went = 0
+    let again = 0
+    for (const item of entry.items) {
+      try {
+        const res = await api.file.delete({ path: item.path })
+        went++
+        if (res.trashed != null) items.push({ path: res.path, trashed: res.trashed, type: res.kind })
+      } catch (err) {
+        if (movedAgain(err)) again++
+        failed.push(againFailure(nameOf(item.path), err))
+      }
+    }
+    if (items.length > 0) moveHistory.current.redone({ step: 'delete', items })
+    else if (went === 0 && failed.length > again) moveHistory.current.undone(entry)
+    const text = stepNotice('redo', went === 0 ? null : went === 1 && entry.items.length === 1 ? `Deleted ${nameOf(entry.items[0].path)}` : `Deleted ${countItems(went)}`, failed)
+    if (went === 0) return notify(text, 'error')
+    playGestureSound('trash')
+    if (items.length > 0) stepToast(text, 'info', 'undo')
+    else notify(text)
+  }, [nameOf, notify, stepToast])
+
+  /**
    * ⌘Z (YAZ-3255 D10, S33): the newest gesture moves back, all its items, newest first, through
    * `runMoves` — so links follow — and then the folder values its moves cleared come back on each
    * note's path before the move (`restoreFolderValues`). What moved back goes on the redo list. One
@@ -1496,6 +1611,8 @@ export function App() {
     replaying.current = true
     void (async () => {
       try {
+        // A rename or a delete (YAZ-3268 D17): the same list, newest first (S65).
+        if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'undo') : putBackStep(entry))
         const back = await runMoves(invertMoves(entry.moves), { record: false })
         // Only a note whose move went back gets its blocks: its path is the move's own, or under a folder that went back.
         const returned = (path: string): boolean => back.moves.some((move) => move.newPath === path || (move.kind === 'dir' && path.startsWith(`${move.newPath}/`)))
@@ -1517,7 +1634,7 @@ export function App() {
       }
     })()
     return true
-  }, [runMoves, notify])
+  }, [runMoves, notify, replayRename, putBackStep])
 
   /**
    * ⌘⇧Z (YAZ-3255 D10 amended, S37): the newest undone gesture runs forward again through
@@ -1532,6 +1649,7 @@ export function App() {
     replaying.current = true
     void (async () => {
       try {
+        if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'redo') : deleteAgain(entry))
         const run = await runMoves(entry.moves, { record: false })
         if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves, cleared: run.cleared })
         else if (run.failed.length > run.again) moveHistory.current.undone(entry)
@@ -1549,7 +1667,7 @@ export function App() {
       }
     })()
     return true
-  }, [runMoves, notify])
+  }, [runMoves, notify, replayRename, deleteAgain])
   moveReplay.current = { undo: undoMove, redo: redoMove }
 
   /**
@@ -1682,13 +1800,16 @@ export function App() {
    * Every failure lands in the passive notice, never a dialog; this promise never rejects back
    * into the caller, matching `onRenameFile`.
    *
-   * `trashOne` is the one item, with no sound; it answers whether the Trash took it. A delete is ONE
+   * `trashOne` is the one item, with no sound; it answers what the Trash took, or null. A delete is ONE
    * gesture, so it plays the trash sound once when the item went (YAZ-3267 D15, S55), never on a failure.
+   *
+   * A delete is ONE step of the undo list too (YAZ-3268 D17, D19): one item or many (`trashMany`),
+   * each item with its place in the Trash. The toast says "Deleted Plan" or "Deleted N items" with
+   * Undo; an item main did not find in the Trash has no Undo (S61), and with none found the toast has no button.
    */
-  const trashOne = useCallback(async (path: string): Promise<boolean> => {
+  const trashOne = useCallback(async (path: string): Promise<DeleteResponse | null> => {
     try {
-      await api.file.delete({ path })
-      return true
+      return await api.file.delete({ path })
     } catch (err) {
       const name = nameOf(path)
       // A failed trash means NOTHING was deleted — say so, rather than a bare error string.
@@ -1697,12 +1818,28 @@ export function App() {
           ? `Can't move "${name}" to the Trash — nothing was deleted`
           : `Can't delete "${name}": ${err instanceof Error ? err.message : String(err)}`,
       )
-      return false
+      return null
     }
   }, [nameOf])
-  const deleteFile = useCallback(async (path: string): Promise<void> => {
-    if (await trashOne(path)) playGestureSound('trash')
-  }, [trashOne])
+  const trashMany = useCallback(async (paths: readonly string[]): Promise<void> => {
+    // The names before the delete, while the index still has the pages.
+    const names = new Map(paths.map((path) => [path, nameOf(path)]))
+    const went: DeleteResponse[] = []
+    const failed: string[] = []
+    for (const path of paths) {
+      const res = await trashOne(path)
+      if (res === null) failed.push(`${names.get(path)} was not moved to the Trash`)
+      else went.push(res)
+    }
+    if (went.length === 0) return
+    playGestureSound('trash')
+    const text = gestureNotice(went.length === 1 && paths.length === 1 ? `Deleted ${names.get(went[0].path)}` : `Deleted ${countItems(went.length)}`, failed, "Can't delete")!
+    const items = went.flatMap((res) => (res.trashed == null ? [] : [{ path: res.path, trashed: res.trashed, type: res.kind }]))
+    if (items.length === 0) return notify(text)
+    moveHistory.current.push({ step: 'delete', items })
+    stepToast(text, 'info', 'undo')
+  }, [nameOf, trashOne, notify, stepToast])
+  const deleteFile = useCallback((path: string): Promise<void> => trashMany([path]), [trashMany])
 
   /** The items still in their vault's tree, read fresh (S31): one another window moved or deleted is gone. */
   const stillThere = useCallback(async (paths: readonly string[]): Promise<string[]> => {
@@ -1749,8 +1886,8 @@ export function App() {
   /**
    * "Remove from vault": each item to the Trash through the delete door — the door AFTER the delete
    * sheet, since the box was the question (S27). The items are read again at the click, and one gone
-   * since the box showed is skipped (audit 7). Not in the undo list: the Trash is its undo. The click
-   * is ONE gesture: one trash sound when one item or more went, none when none did (YAZ-3267 D15, S55).
+   * since the box showed is skipped (audit 7). The click is ONE step of the undo list (YAZ-3268 D19),
+   * and ONE gesture: one trash sound when one item or more went, none when none did (YAZ-3267 D15, S55).
    */
   /**
    * A drag out that ended in a window of the app is no copy to Finder (YAZ-3263). Each drop here tells
@@ -1779,10 +1916,8 @@ export function App() {
     const ask = dragOutAsk
     setDragOutAsk(null)
     if (ask === null) return
-    let trashed = 0
-    for (const path of await stillThere(ask.paths)) if (await trashOne(path)) trashed++
-    if (trashed > 0) playGestureSound('trash')
-  }, [dragOutAsk, trashOne, stillThere])
+    await trashMany(await stillThere(ask.paths))
+  }, [dragOutAsk, trashMany, stillThere])
 
   /**
    * "Remove from this window" (YAZ-2602 D7): the vault leaves the window with its tabs and its

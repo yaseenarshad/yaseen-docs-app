@@ -21,6 +21,7 @@ import { clearOsFiles, readOsFiles, writeOsFiles } from '../osFileClipboard'
 import { readPdf } from '../fs/pdf'
 import { renameFile, repairRename } from '../fs/rename'
 import { removeEntry } from '../fs/remove'
+import { putBack } from '../fs/trash'
 import { retitle } from '../fs/retitle'
 import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
@@ -211,6 +212,20 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     await repairFocus(focus.removePath(rootsOf(store.get()), res.path))
     await repairShares(shareFsHooks.deleted(rootsOf(store.get()), res.path))
     broadcastAll(CONTRACT.file.onDeleted.channel, { path: res.path, kind: res.kind })
+    return res
+  })
+  // The Undo of a delete (YAZ-3268 D16): the Trash entry back to its old place, which must be in a
+  // vault of the calling window and never a vault itself. An ADD, and an add needs no store repair
+  // (the delete removed the stored paths already) and no push: the watcher's `add`/`addDir` echo puts
+  // it back in the tree, as for a copy. The index takes it at once (`indexMoved`, as a move does), so
+  // a quick ⌘Z or ⌘⇧Z after it, and its links, read the item where it is.
+  handleWithEvent(CONTRACT.file.putBack, async (e, req: unknown) => {
+    const to = requireAbsPath(requireRequest(req).path, 'path')
+    const home = rootOfPath(rootsOfSender(e), to)
+    if (home === null || home === to) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that path', { path: to })
+    const trashed = requireAbsPath(requireRequest(req).trashed, 'trashed')
+    const res = await putBack(req)
+    await indexMoved(trashed, res.path, res.kind)
     return res
   })
   // External-rename repair (Links E1c, GRO-2242): the entry ALREADY moved on disk (an external
