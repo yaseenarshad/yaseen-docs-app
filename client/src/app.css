@@ -1408,8 +1408,11 @@ button {
   margin-left: 0;
 }
 
+/* "More tabs" (YAZ-3273 D2) shares the hover, and keeps it while its menu is open. */
 .sidebar__sort:hover,
-.sidebar__expand-all:hover {
+.sidebar__expand-all:hover,
+.sidebar__more:hover,
+.sidebar__more[aria-expanded='true'] {
   color: var(--fg);
   background: var(--bg-hover);
 }
@@ -1425,12 +1428,6 @@ button {
   margin-bottom: -1px;
   color: var(--fg-muted);
   border-bottom: 2px solid transparent;
-}
-
-.sidebar__more:hover,
-.sidebar__more[aria-expanded='true'] {
-  color: var(--fg);
-  background: var(--bg-hover);
 }
 
 .sidebar__more--lit,
@@ -1485,8 +1482,9 @@ button {
   background: var(--bg-hover);
 }
 
-/* The tab that was right-clicked (S17). */
-.tab-row-panel__row--focus {
+/* The tab that was right-clicked (S17): it keeps its light under the pointer. */
+.tab-row-panel__row--focus,
+.tab-row-panel__row--focus:hover {
   background: var(--accent-soft);
 }
 
@@ -1556,11 +1554,11 @@ button {
 
 /* The others slide apart (160 ms) and the released row glides into its gap (140 ms); with reduce motion, nothing animates (S22). */
 @media (prefers-reduced-motion: no-preference) {
-  .tab-row-panel__list--sorting .tab-row-panel__row:not(.tab-row-panel__row--lifted) {
+  .tab-row-panel__list--sorting .tab-row-panel__row:not(.tab-row-panel__row--lifted, .tab-row-panel__row--settling) {
     transition: transform 0.16s cubic-bezier(0.2, 0.7, 0.3, 1);
   }
 
-  .tab-row-panel__list .tab-row-panel__row.tab-row-panel__row--settling {
+  .tab-row-panel__row--settling {
     z-index: 2;
     transition:
       transform 0.14s ease-out,
@@ -1572,19 +1570,6 @@ button {
   height: 1px;
   margin: 4px 6px;
   background: var(--border);
-}
-
-.tab-row-panel__reset {
-  display: block;
-  width: 100%;
-  padding: 6px 10px;
-  border-radius: 5px;
-  font-size: 13px;
-  text-align: left;
-}
-
-.tab-row-panel__reset:hover {
-  background: var(--accent-soft);
 }
 
 /* The Focus tab's line above its list (YAZ-2619 D4): the count on the left, "Clear" on the right. */
@@ -1877,8 +1862,11 @@ button {
 }
 
 /* A flex row (🔒 D7, YAZ-1674): the label left, the shortcut hint — when the item has one —
-   pushed to the right edge. Every other menu's item is a single text child, unchanged by this. */
-.ctx-menu__item {
+   pushed to the right edge. Every other menu's item is a single text child, unchanged by this.
+   "Reset tab row" in the Tab row panel (YAZ-3279) looks like an item, but keeps its own class, so the
+   menu's walk and tests never count it. */
+.ctx-menu__item,
+.tab-row-panel__reset {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1930,7 +1918,8 @@ button {
   z-index: 41;
 }
 
-.ctx-menu__item:hover:not(:disabled) {
+.ctx-menu__item:hover:not(:disabled),
+.tab-row-panel__reset:hover {
   background: var(--accent-soft);
 }
 
