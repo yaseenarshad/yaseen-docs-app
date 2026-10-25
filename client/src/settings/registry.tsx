@@ -38,6 +38,7 @@ import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
+import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
@@ -108,7 +109,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -250,6 +251,43 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
 }
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
+  {
+    // YAZ-3276 D7: the settings about the app as a whole, first, so Settings opens here. Two rows: YAZ-2589 kept
+    // its one row off a page of its own, and the settings folder is the second.
+    id: 'general',
+    title: 'General',
+    groups: [
+      {
+        title: 'Settings folder',
+        items: [
+          {
+            // `wide`: the row's content is a path, which is long. The pointer is this Mac's, so the control asks main.
+            id: 'settingsFolder',
+            label: 'Settings folder',
+            hint: 'Pick a folder that syncs to your other Macs. Each Mac then uses the same settings. The library folder, the canvas panel and the table of contents width stay on this Mac.',
+            keywords: ['sync', 'macs', 'preferences', 'folder', 'location'],
+            wide: true,
+            render: () => <SettingsFolderControl />,
+          },
+        ],
+      },
+      {
+        // YAZ-2589 D2, A3; under Files & Links until YAZ-3276 D7 made the General page.
+        title: 'When the app starts',
+        items: [
+          {
+            id: 'startupWindows',
+            label: 'Reopen',
+            hint: 'A vault that you open from a link or a launcher always opens alone.',
+            keywords: ['startup', 'launch', 'restore', 'windows', 'quit'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={STARTUP_WINDOWS_OPTIONS} value={settings.startupWindows} onChange={(startupWindows) => onChange({ ...settings, startupWindows })} ariaLabel="Windows to reopen when the app starts" />
+            ),
+          },
+        ],
+      },
+    ],
+  },
   {
     id: 'appearance',
     title: 'Appearance',
@@ -494,21 +532,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // A plain label-left / dropdown-right row, until the folder input needs the width.
             wide: ({ settings }) => settings.newNoteLocation === 'folder',
             render: ({ settings, onChange }) => <NewNoteLocationControl settings={settings} onChange={onChange} />,
-          },
-        ],
-      },
-      {
-        // YAZ-2589 D2, A3: one row, in its own group here; no settings section for one row.
-        title: 'When the app starts',
-        items: [
-          {
-            id: 'startupWindows',
-            label: 'Reopen',
-            hint: 'A vault that you open from a link or a launcher always opens alone.',
-            keywords: ['startup', 'launch', 'restore', 'windows', 'quit'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={STARTUP_WINDOWS_OPTIONS} value={settings.startupWindows} onChange={(startupWindows) => onChange({ ...settings, startupWindows })} ariaLabel="Windows to reopen when the app starts" />
-            ),
           },
         ],
       },

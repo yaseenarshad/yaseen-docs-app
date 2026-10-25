@@ -93,7 +93,8 @@ test('step 1 — "Heading 2 larger" three times: the H2 of the open note is 29px
 
   await settingsCog(win).click()
   await expect(dialog(win)).toBeVisible()
-  // The dialog opens on Appearance, and the Text formatting group is on it; one vault, so no "Vault" dropdown.
+  // The dialog opens on General (YAZ-3276 D7); the Text formatting group is on Appearance. One vault, so no "Vault" dropdown.
+  await dialog(win).locator('.settings-nav__item', { hasText: /^Appearance$/ }).click()
   await expect(headingRow(win)).toBeVisible()
   await expect(headingRow(win).locator('select[aria-label="Vault"]')).toHaveCount(0)
   const h2Line = headingRow(win).locator('.heading-styles__line[data-level="h2"]')

@@ -1,6 +1,7 @@
 import { CONTRACT } from '@shared/ipc'
 import type { GitSyncManager } from '../git/manager'
 import type { Secrets } from '../secrets'
+import type { SettingsFolder } from '../settingsFolder'
 import type { Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { resolveLibraryFolder } from '../library/folder'
@@ -33,17 +34,18 @@ import { registerWindowIpc } from './window'
  * `places` is passed in rather than read from `app`, so every module under `main/` stays Electron-free
  * and testable against a temp dir. `userData` (YAZ-3038, YAZ-3040) is the default root of the canvas
  * panel's library folder and where `secrets.json`, `sharing.json` and `media-cache/` live; the rest
- * (`ShareIpcPlaces`, YAZ-3040) is where the share viewer's files are.
+ * (`ShareIpcPlaces`, YAZ-3040) is where the share viewer's files are. `settingsFolder` (YAZ-3276) is the
+ * one `followSettingsFolder` of `main/index.ts`: the Settings row asks it whether the folder is missing.
  */
 export type IpcPlaces = ShareIpcPlaces & { userData: string }
 
-export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces): { sync: GitSyncManager; secrets: Secrets } {
+export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets } {
   const { userData } = places
   registerFsIpc(store, windows)
   registerBoardIpc(store, windows, userData)
   registerDialogIpc()
   registerWatchIpc()
-  registerStateIpc(store)
+  registerStateIpc(store, settingsFolder)
   registerVaultConfigIpc(store)
   registerFavoritesIpc(store)
   registerFocusIpc(store)

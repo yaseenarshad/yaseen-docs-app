@@ -83,6 +83,7 @@ import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
+import { travellingChanged, travels } from '@shared/settingsSync'
 import { atomicWrite } from './fs/fsUtils'
 
 /**
@@ -100,7 +101,19 @@ export interface Store {
    * The state never holds them, so the next write drops the key from the file.
    */
   takeLegacyHeadingStyles(): HeadingStyles
-  setSettings(settings: SettingsState): void
+  /** A change on this Mac. A change of a field that travels sets `settingsSavedAt` to `now`, or just above the time it had when that is later (YAZ-3276 D3, YAZ-3299); one of a local field does not. */
+  setSettings(settings: SettingsState, now?: number): void
+  /**
+   * Point the settings at a folder, or null for this Mac only (YAZ-3276 D2). `savedAt` is D6: 0 when the
+   * folder holds another Mac's file (so it wins), now when it is empty (so this Mac's settings go in).
+   * The settings stay as they are. The same folder again is no change.
+   */
+  setSettingsFolder(folder: string | null, savedAt: number): void
+  /**
+   * The settings of another Mac's newer file (YAZ-3276 D3), and its `savedAt`. Only fields that travel are
+   * taken. A field that the file lacks, or that this build can't read and can't repair, keeps this Mac's value.
+   */
+  applyFolderSettings(incoming: Partial<Record<keyof SettingsState, unknown>>, savedAt: number): void
   setSidebarWidth(width: number): void
   /** What a window hands in for the vaults `roots` (YAZ-2631 R5): after a drag on its Favorites tab, its favorites in the new order; after a remove, the stored order without the removed paths (R23). Merged into the one order across vaults (`mergeFavoritesOrder`). The same order is no commit. */
   setFavoritesOrder(roots: readonly string[], paths: readonly string[]): void
@@ -266,6 +279,41 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   // A store written before a canvas pref existed keeps every pref it does have, instead of resetting the lot.
   out.canvas = sanitizeCanvasPrefs(src.canvas)
   out.canvasPanel = sanitizeCanvasPanel(src.canvasPanel)
+  return out
+}
+
+/**
+ * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,
+ * or that the file lacks, keeps THIS Mac's value — never the default: a newer build's field must not reset a
+ * setting here. One level down too (YAZ-3298): a field that is an object (`canvas`) is laid over this Mac's
+ * object, `sanitizeSettings` repairs it (so a repair such as `sanitizeCanvasPrefs` still runs), and each part
+ * that the file lacks or that the repair had to change keeps this Mac's part. A field with no repair by part
+ * (`sidebarSort`) that the repair resets as a whole keeps this Mac's whole field (YAZ-3302).
+ */
+export function mergeFolderSettings(current: SettingsState, incoming: Partial<Record<keyof SettingsState, unknown>>): SettingsState {
+  const isObject = (v: unknown): v is Record<string, unknown> => isRecord(v) && !Array.isArray(v)
+  const taken = Object.fromEntries(
+    Object.entries(incoming)
+      .filter(([key]) => travels(key) && (SETTINGS_KEYS as string[]).includes(key))
+      .map(([key, value]) => {
+        const here = current[key as keyof SettingsState]
+        return [key, isObject(value) && isObject(here) ? { ...here, ...value } : value]
+      }),
+  )
+  const out = sanitizeSettings({ ...current, ...taken })
+  for (const key of Object.keys(taken) as Array<keyof SettingsState>) {
+    const value: unknown = taken[key]
+    const here: unknown = current[key]
+    const got: unknown = out[key]
+    if (!SETTINGS_FIELD_OK[key](value) && JSON.stringify(got) === JSON.stringify(DEFAULT_SETTINGS[key])) {
+      // No repair for this field (`sidebarSort`): the whole field fell back to the default, so all of it stays this Mac's (YAZ-3302).
+      Object.assign(out, { [key]: here })
+    } else if (isObject(value) && isObject(here) && isObject(got)) {
+      // A field with a repair by part (`canvas`): each part the repair changed keeps this Mac's part (YAZ-3298).
+      const kept = Object.fromEntries(Object.entries(got).map(([part, v]) => [part, JSON.stringify(v) === JSON.stringify(value[part]) ? v : (here[part] ?? v)]))
+      Object.assign(out, { [key]: kept })
+    }
+  }
   return out
 }
 
@@ -555,6 +603,9 @@ function sanitizeState(raw: unknown): AppState | null {
     favoritesOrder: sanitizeOrder(raw.favoritesOrder),
     focusOrder: sanitizeOrder(raw.focusOrder),
     sessions: sanitizeSessions(raw.sessions),
+    // YAZ-3276 D2: absent, or not an absolute path, is the default (this file). An old build drops both keys.
+    settingsFolder: typeof raw.settingsFolder === 'string' && isAbsolute(raw.settingsFolder) ? raw.settingsFolder : null,
+    settingsSavedAt: isFiniteNumber(raw.settingsSavedAt) && raw.settingsSavedAt >= 0 ? raw.settingsSavedAt : 0,
   }
 }
 
@@ -670,8 +721,21 @@ export function createStore(filePath: string): Store {
       return legacy
     },
 
-    setSettings(settings) {
-      commit({ ...state, settings: sanitizeSettings(settings) })
+    setSettings(settings, now = Date.now()) {
+      const next = sanitizeSettings(settings)
+      // Never back in time (YAZ-3299): after a file from a Mac whose clock runs ahead, this Mac's next change
+      // must still be the newest, or that older file wins again at the next read.
+      const savedAt = travellingChanged(state.settings, next) ? Math.max(now, state.settingsSavedAt + 1) : state.settingsSavedAt
+      commit({ ...state, settings: next, settingsSavedAt: savedAt })
+    },
+
+    setSettingsFolder(folder, savedAt) {
+      if (folder === state.settingsFolder) return
+      commit({ ...state, settingsFolder: folder, settingsSavedAt: savedAt })
+    },
+
+    applyFolderSettings(incoming, savedAt) {
+      commit({ ...state, settings: mergeFolderSettings(state.settings, incoming), settingsSavedAt: savedAt })
     },
 
     setSidebarWidth(width) {

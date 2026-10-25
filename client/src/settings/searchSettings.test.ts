@@ -26,6 +26,9 @@ const tiers: SettingHit[] = (['width of the thread', 'width', 'content width'] a
 describe('settingCandidates', () => {
   it('covers every setting of every available section, one candidate each, in registry order', () => {
     expect(ids(settingCandidates(ctx()))).toEqual([
+      // General (YAZ-3276 D7): the settings folder, then Reopen, moved here from Files & Links.
+      'settingsFolder',
+      'startupWindows',
       'theme',
       'contentWidth',
       'lineSpacing',
@@ -49,7 +52,6 @@ describe('settingCandidates', () => {
       'confirmRename',
       'hoverPreview',
       'newNoteLocation',
-      'startupWindows',
       'ids',
       'duplicates',
       'idLetters',
@@ -78,8 +80,8 @@ describe('settingCandidates', () => {
     const storage: SettingsCtx['storage'] = { stats: null, failed: false, refresh: () => undefined, shrink: async () => ({ shrunk: 0, skipped: 0, bytesMoved: 0 }), lastShrink: null }
     const sharing: SettingsCtx['sharing'] = { root: '/v', status: null, rows: null, listError: null, now: 0, refresh: () => undefined, show: () => undefined }
     const sectionsOf = (c: SettingsCtx) => [...new Set(settingCandidates(c).map((h) => h.section.id))]
-    expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), storage, sharing })).toEqual(['appearance', 'editor', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
-    expect(sectionsOf(ctx())).toEqual(['appearance', 'editor', 'canvas', 'images', 'files', 'hotkeys'])
+    expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), storage, sharing })).toEqual(['general', 'appearance', 'editor', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
+    expect(sectionsOf(ctx())).toEqual(['general', 'appearance', 'editor', 'canvas', 'images', 'files', 'hotkeys'])
   })
 
   it('a candidate carries label, hint, keywords, group title and section title, case-folded in `lower`', () => {
@@ -121,7 +123,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation', 'startupWindows', 'ids', 'duplicates', 'idLetters', 'oldIds'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation', 'ids', 'duplicates', 'idLetters', 'oldIds'])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
@@ -133,7 +135,8 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'jump'))).toEqual(['tableOfContents'])
     // The words the app already uses for the bullet features and the fold keys: the row is one of the answers.
     for (const query of ['outline', 'headings']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('tableOfContents')
-    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['tableOfContents', 'tocLines', 'hotkeys-keyboard'])
+    // The settings folder's hint names the table of contents width, which stays on this Mac (YAZ-3276 D7); General comes first.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['settingsFolder', 'tableOfContents', 'tocLines', 'hotkeys-keyboard'])
   })
 
   it('"Level lines" (YAZ-2762): its label and "hierarchy" find that row alone; "outline", "guide" and "hover" find it among the rows that share the word', () => {

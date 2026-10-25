@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell } from 'electron'
 import { existsSync, statSync } from 'node:fs'
+import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileKind } from '@shared/fileKind'
@@ -23,13 +24,14 @@ import { openLink } from './fs/openLink'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
+import { followSettingsFolder } from './settingsFolder'
 import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
 import { runQuitSequence } from './quitSequence'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
 import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
-import { initMint } from './vaultIndex/mint'
+import { initMint, macId } from './vaultIndex/mint'
 import { createWindowManager } from './windows'
 import { dropLanded } from './dragLanding'
 import { blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
@@ -97,6 +99,8 @@ const store = createStore(join(app.getPath('userData'), STATE_FILE))
 initIndexCache(join(app.getPath('userData'), 'index-cache'))
 /** This Mac's ID for the count files (YAZ-2677 R13) is kept in userData, never in a vault. */
 initMint(app.getPath('userData'))
+/** The settings folder (YAZ-3276 D4): after `initMint`, because this Mac's file is named by its Mac ID. Idle while `settingsFolder` is null, the default. */
+const settingsFolder = followSettingsFolder(store, { macId: () => macId(), host: hostname() })
 
 /** Window lifecycle (GRO-2160) lives in windows.ts; this host is its Electron-only half. */
 /**
@@ -286,7 +290,7 @@ app.whenReady().then(() => {
     drawioDir: DRAWIO_DIR,
     fontsDir: excalidrawFontsDir({ isPackaged: app.isPackaged, mainDir: __dirname, appPath: app.getAppPath(), exists: existsSync }),
     isPackaged: app.isPackaged,
-  })
+  }, settingsFolder)
   // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
   // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
   void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'))
@@ -324,8 +328,12 @@ app.whenReady().then(() => {
     const link = parseFileLink(url)
     return (link === null ? null : manager.rootFor(link.path, link.root)) ?? []
   })
-  manager.restore(asked.length > 0 ? asked : store.get().settings.startupWindows)
-  links.flush()
+  // The first window waits for the settings folder's first read (YAZ-3276 D4), so a theme that the other Mac
+  // changed shows no flash. At most 500 ms: a slow or lost folder never holds up a launch. No folder: at once.
+  void Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]).then(() => {
+    manager.restore(asked.length > 0 ? asked : store.get().settings.startupWindows)
+    links.flush()
+  })
 })
 
 // Quit: `runQuitSequence` owns the order (renderers first, YAZ-1081 D2) and `windows[]` is kept, so
@@ -337,7 +345,8 @@ app.on('before-quit', (event) => {
   quitting = true
   void runQuitSequence({
     flushWindows: () => manager.flushAllForQuit(),
-    flushStore: () => store.flush(),
+    // The settings folder's pending write (YAZ-3276 D4) goes with the state file's.
+    flushStore: () => Promise.all([store.flush(), settingsFolder.flush()]).then(() => undefined),
     // The index cache's pending persist, and each vault's diary of links to the IDs this Mac made (YAZ-2677 R27): neither flush throws.
     flushIndex: () => Promise.all([flushIndexCache(), flushDiaries()]).then(() => undefined),
     flushSync: () => gitSync?.flushForQuit(),
