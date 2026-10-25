@@ -45,6 +45,17 @@ describe('deleteConfirmMessage', () => {
     expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { notes: 0, folders: 3 } }, NONE)).toBe('Delete "Docs"? 3 folders move to the Trash.')
   })
 
+  /** The whole selection (YAZ-3272 D21): the sheet counts N items, and the links count is of the notes outside them, each counted once. */
+  it('two or more items: "Delete 3 items? They move to the Trash.", with the links count when the index gave it', () => {
+    const items = ['/v/a.md', '/v/Docs', '/v/c.md']
+    expect(deleteConfirmMessage({ path: items[0]!, kind: 'file', paths: items }, NONE)).toBe('Delete 3 items? They move to the Trash.')
+    expect(deleteConfirmMessage({ path: items[0]!, kind: 'file', paths: items, backlinks: 0 }, NONE)).toBe('Delete 3 items? They move to the Trash.')
+    expect(deleteConfirmMessage({ path: items[0]!, kind: 'file', paths: items, backlinks: 1 }, NONE)).toBe('Delete 3 items? They move to the Trash. 1 note links to them.')
+    expect(deleteConfirmMessage({ path: items[0]!, kind: 'file', paths: items, backlinks: 4 }, NONE)).toBe('Delete 3 items? They move to the Trash. 4 notes link to them.')
+    // One path in the list is the one-item sheet.
+    expect(deleteConfirmMessage({ path: '/v/Roadmap.md', kind: 'file', paths: ['/v/Roadmap.md'] }, NONE)).toBe('Delete "Roadmap"? It moves to the Trash.')
+  })
+
   it('an EMPTY folder never prints "0 notes and 0 folders"', () => {
     expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { notes: 0, folders: 0 } }, NONE)).toBe('Delete "Docs"? It moves to the Trash.')
   })

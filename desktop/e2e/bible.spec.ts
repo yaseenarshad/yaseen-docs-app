@@ -296,7 +296,7 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
   await confirmRename(win, `Rename 'Win Rate' to '${RENAMED}'? Links in 4 notes will be updated.`)
 
   // Four referencing notes: two through frontmatter relations, two through body prose.
-  await expect(win.locator('.link-notice')).toHaveText('Updated links in 4 notes')
+  await expect(win.locator('.link-notice__text')).toHaveText(`Renamed to "${RENAMED}". Updated links in 4 notes`) // with Undo (YAZ-3268 D18)
   await expect(activeTab(win)).toHaveText(RENAMED)
 
   const crmHygiene = path.join('Problems', 'CRM Hygiene.md')
@@ -343,7 +343,7 @@ test('step 6 — renaming a FOLDER: the links to it INSIDE folder_settings follo
   // TWO files, and both are folder settings files: the two that name Roles ONLY from inside
   // `folder_settings`, which the index never extracted as links. The three notes in the
   // folder link to each other by BARE name, which a folder rename leaves byte-identical (E1b).
-  await expect(win.locator('.link-notice')).toHaveText('Updated links in 2 notes')
+  await expect(win.locator('.link-notice__text')).toHaveText(`Renamed to "${ROLES_RENAMED}". Updated links in 2 notes`) // with Undo (YAZ-3268 D18)
 
   // A column `target` on ANOTHER folder, its column's other keys intact …
   const problems = path.join('Problems', '.folder.md')

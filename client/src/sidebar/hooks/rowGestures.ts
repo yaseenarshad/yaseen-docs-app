@@ -1,13 +1,16 @@
 /**
  * What the rows do (YAZ-2202, moved out of `Sidebar.tsx` as-is): the multi-select both trees share,
- * the file clipboard, the inline create and rename inputs, and the two drags — a file onto a folder
- * (a move on disk) and a top row along its tab's list.
+ * the file clipboard, the inline create and rename inputs, and the two drags — a row, or the
+ * selection, onto a folder (a move on disk; folders and the selection since YAZ-3251) and a top row
+ * along its tab's list.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
-import { isMarkdown } from '@shared/fileKind'
-import type { FileClipState, SidebarLens, SidebarTab, TreeNode } from '@shared/types'
+import { isMarkdown, isSkipped } from '@shared/fileKind'
+import { BETWEEN_VAULTS, CLIP_CHANGED, type FileClipState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
-import type { NoticeKind } from '../../lib/notice'
+import { playGestureSound } from '../../lib/gestureSound'
+import type { MovedGesture } from '../../lib/moveHistory'
+import { gestureNotice, namedItems, onDisk, type NoticeKind } from '../../lib/notice'
 import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
@@ -17,7 +20,7 @@ import { dropFolderValuesAfterMove, dropStaleFolderValues, valuesLeftBehind, typ
 import { createNote, folderPath } from '../../views/scaffold'
 import { transformFile } from '../../views/writeProperty'
 import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
-import { countItems } from '../menuSections'
+import { dragPill, pillLabel } from '../dragPill'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
 import type { PendingCreate, PendingRename, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
 
@@ -115,52 +118,240 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
   return { selectedPaths, dispatchSelection, orderedSelectedPaths, selection }
 }
 
+/** How long a drag holds over a closed folder before it opens (YAZ-3251 D8). */
+export const SPRING_MS = 700
+
+/**
+ * What a row drag carries (YAZ-3251 D5, Finder's rule): a selected row takes the whole selection,
+ * in on-screen order (`ordered`); any other row goes alone. A row inside another row that goes is
+ * left out — the folder carries it (S5) — and a row that never moves on disk (`fixed`: a vault
+ * row) stays (S8). A shortcut row never starts a drag, and a click on one selects nothing, so no
+ * selection holds one (YAZ-2290 D2).
+ */
+export function dragSet(path: string, selected: ReadonlySet<string>, ordered: () => string[], fixed: (path: string) => boolean): string[] {
+  return outermost((selected.has(path) ? ordered() : [path]).filter((p) => !fixed(p)))
+}
+
+/** The paths, in their order, less each one inside another of them: the folder carries it (YAZ-3251 S5; a delete too, YAZ-3272 D21). */
+export function outermost(paths: readonly string[]): string[] {
+  return paths.filter((p) => !paths.some((other) => p.startsWith(`${other}/`)))
+}
+
+/** The moves that a drop of `paths` into `dir` makes: none for an item already there (S7), nor for a folder into itself or a folder inside it (S6). */
+export function movesInto(dir: string, paths: readonly string[], folders: readonly string[]): Move[] {
+  return paths.flatMap((oldPath): Move[] => {
+    const newPath = `${dir}/${basename(oldPath)}`
+    if (newPath === oldPath || dir === oldPath || dir.startsWith(`${oldPath}/`)) return []
+    return [{ oldPath, newPath, kind: folders.includes(oldPath) ? 'dir' : 'file' }]
+  })
+}
+
+/** The same items, in any order: a drop of this window's own OS drag (YAZ-3254 D4), told apart by its paths. */
+const sameItems = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((path) => b.includes(path))
+
+/** The class a lit drop target wears (YAZ-3251 D2): the root header has its own. */
+const dropClass = (el: HTMLElement): string => (el.classList.contains('sidebar__header') ? 'sidebar__header--drop' : 'tree__row--drop')
+
 export function useTreeDrag(
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
+  /** A drop of two or more rows (YAZ-3250 D1): App's door for a list of moves. */
+  onMoveEntries: (moves: Move[]) => Promise<void>,
   /** The list the shown tab's top rows reorder, and its writer (YAZ-2631 D3). */
   orderRef: RefObject<readonly string[]>,
   saveOrder: (next: string[]) => void,
   rootOf: (path: string) => string,
   onNotice: (message: string, kind?: NoticeKind) => void,
+  /** What a drag carries (D5): the selection, in on-screen order, and its `set`. */
+  selection: TreeSelection,
+  orderedSelectedPaths: () => string[],
+  /** Every folder of the window, so a move names its kind; and the vault rows, which never move on disk. */
+  dirs: readonly string[],
+  vaultRows: ReadonlyMap<string, string>,
+  /**
+   * The drags with Finder (YAZ-3252): a row's name for the pill (D6), the door for Finder's items
+   * dropped into a folder (YAZ-3253 D3), and App's box for rows dragged out (YAZ-3254 D9B).
+   */
+  finder: { nameOf: (path: string) => string; onImport: (dir: string, paths: string[]) => void; onDraggedOut: (paths: string[]) => void },
 ) {
-  // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
-  const [dragging, setDragging] = useState<string | null>(null)
-  const [dropDir, setDropDir] = useState<string | null>(null)
+  // Drag-to-move (E1b; folders and the selection since YAZ-3251): the dragged paths and the lit
+  // target live in REFS (D2), so a hover renders nothing — the lit row wears its class by DOM.
+  // Since YAZ-3254 D4 a row drag is the OS drag: no `dragend` comes back, so the ref also clears
+  // on a drop in the window and on the first pointer move after the drag (see the effect below).
+  const dragging = useRef<string[]>([])
+  // A drop came inside the window while a row drag was in flight (S30): no box asks after it.
+  const droppedInside = useRef(false)
+  // The row drag's OS drag left the window, and has not come back (S26; audit 4, 13): see the effect below.
+  const leftWindow = useRef(false)
+  const lit = useRef<{ dir: string | null; el: HTMLElement | null }>({ dir: null, el: null })
+  const spring = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // What the callbacks read at the moment of the gesture, so the `move` they make keeps ONE identity.
+  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder })
+  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder }
   // Drag-to-reorder (YAZ-2631 D3), ONE state for the tab that is shown: the dragged top row + the hovered row and edge.
   const [reorderDragging, setReorderDragging] = useState<string | null>(null)
   const [reorderOver, setReorderOver] = useState<{ path: string; edge: 'before' | 'after' } | null>(null)
 
-  const dropOnDir = useCallback(
-    (dir: string) => {
-      const path = dragging
-      setDragging(null)
-      setDropDir(null)
-      if (path === null) return
-      // A drag moves inside ONE vault (YAZ-2602 R11): a folder, or a vault row, of a different vault refuses it.
-      if (rootOf(path) !== rootOf(dir)) return onNotice('To move between vaults, use cut and paste')
-      const target = `${dir}/${basename(path)}`
-      if (target === path) return // dropped into its own folder: nothing to do
-      // The SAME rename flow as the context menu — never-overwrite and every failure as a
-      // passive notice come with it; link updates and the workspace remap ride the same pipeline.
-      void onRenameFile(path, target, 'file')
-    },
-    [dragging, onRenameFile, rootOf, onNotice],
-  )
-
-  const fileMove: TreeFileMove = useMemo(
-    () => ({
-      dragging,
-      dropDir,
-      start: setDragging,
-      end: () => {
-        setDragging(null)
-        setDropDir(null)
+  const fileMove: TreeFileMove = useMemo(() => {
+    /**
+     * The ONE place the lit target changes (D2): the old target loses its class, the new one gains
+     * it, and a spring armed for the old one is cleared (D8). `open` arms a new one: a closed folder.
+     */
+    const light = (dir: string | null, el: HTMLElement | null, open?: () => void) => {
+      const now = lit.current
+      if (now.dir === dir && now.el === el) return
+      now.el?.classList.remove(dropClass(now.el))
+      el?.classList.add(dropClass(el))
+      lit.current = { dir, el }
+      if (spring.current !== null) clearTimeout(spring.current)
+      spring.current = open === undefined ? null : setTimeout(() => {
+        spring.current = null
+        open()
+      }, SPRING_MS)
+    }
+    /**
+     * A drop lands here: never in a dragged folder, nor in a folder inside one (S6). With no row drag
+     * in flight, a drag from Finder (`files`: its `types` hold `Files`) lands in any folder (YAZ-3253).
+     */
+    const accepts = (dir: string, files = false) => (dragging.current.length > 0 ? !dragging.current.some((path) => dir === path || dir.startsWith(`${path}/`)) : files)
+    const end = () => {
+      dragging.current = []
+      light(null, null)
+    }
+    /** The moves into `dir`, through the door the context menu's rename uses for one row, and App's list door for more (YAZ-3250 D1): links follow. */
+    const send = (dir: string, paths: readonly string[]) => {
+      const { dirs: folders, onRenameFile: renameOne, onMoveEntries: moveAll } = live.current
+      const moves = movesInto(dir, paths, folders)
+      const [one] = moves
+      if (moves.length === 1) void renameOne(one.oldPath, one.newPath, one.kind)
+      else if (moves.length > 1) void moveAll(moves)
+    }
+    const drop = (dir: string) => {
+      const paths = dragging.current
+      const ok = accepts(dir)
+      end()
+      if (!ok) return
+      const { rootOf: vaultOf, onNotice: say } = live.current
+      // A drag moves inside ONE vault (YAZ-2602 R11): a folder, or a vault row, of a different vault refuses it (S9).
+      if (paths.some((path) => vaultOf(path) !== vaultOf(dir))) return say(BETWEEN_VAULTS)
+      // An item already in this folder is no move (S7).
+      send(dir, paths)
+    }
+    return {
+      accepts,
+      /**
+       * Where every row drag to move begins (D5), and since YAZ-3254 D4 it is the OS drag: the Tree
+       * stops the page's own drag, and main starts one that Finder takes (copies). The paths stay in
+       * the ref, so a drop back in this window is told apart by them (`dropFiles`).
+       */
+      start: (path, top) => {
+        const { selection: picked, orderedSelectedPaths: ordered, vaultRows: vaults, finder: out, onNotice: say } = live.current
+        const paths = dragSet(path, picked.paths, ordered, (p) => vaults.has(p))
+        dragging.current = paths
+        droppedInside.current = false
+        leftWindow.current = false
+        // An unselected row first becomes the selection (S4), then goes alone.
+        if (!picked.paths.has(path)) picked.set(path, top)
+        if (paths.length === 0) return
+        api.file.dragOut({ paths, icon: dragPill(pillLabel(paths.map(out.nameOf))) }).catch((err: unknown) => {
+          // No OS drag started: nothing is in flight.
+          if (dragging.current === paths) end()
+          say(`Can't drag: ${err instanceof Error ? err.message : String(err)}`, 'error')
+        })
       },
-      hover: setDropDir,
-      drop: dropOnDir,
-    }),
-    [dragging, dropDir, dropOnDir],
+      end,
+      hover: light,
+      leave: (dir) => {
+        if (lit.current.dir === dir) light(null, null)
+      },
+      drop,
+      /**
+       * Files dropped on a folder (YAZ-3253 D3). This window's own drag comes back as files (YAZ-3254
+       * D4): the same paths are a move in the app. Items all of the target's vault came from a second
+       * window of it: App's door, so links follow (S23). Anything else is Finder's: `fs:import` (S17).
+       */
+      dropFiles: (dir, files) => {
+        // A hidden item is skipped with no notice, wherever it comes from (S20): main's own rule.
+        const paths = files.map((file) => api.file.pathFor(file)).filter((path) => path !== '' && !isSkipped(basename(path)))
+        if (dragging.current.length > 0 && sameItems(dragging.current, paths)) return drop(dir)
+        end()
+        if (paths.length === 0) return
+        const { rootOf: vaultOf, finder: out } = live.current
+        const vault = vaultOf(dir)
+        if (paths.every((path) => path.startsWith(`${vault}/`))) return send(dir, paths)
+        out.onImport(dir, paths)
+      },
+    }
+  }, [])
+  // A spring left armed when the panel goes would open a folder of a tree that is gone.
+  useEffect(
+    () => () => {
+      if (spring.current !== null) clearTimeout(spring.current)
+    },
+    [],
   )
+  /**
+   * After the OS drag (YAZ-3254 D4) no `dragend` comes back. A drop inside the window is marked in the
+   * CAPTURE phase, so a drop a handler stops still counts (S30), and the drag clears once the drop's
+   * targets ran. The first pointer move with no button down is the drag's end: the moves before the
+   * OS drag takes over still hold the button. Where the drag ended is told by where it was last
+   * (audit 4, 13): the OS drag fires `dragenter` and `dragover` while it is over the window, and a
+   * `dragleave` with no `relatedTarget` when it leaves. Only a drag that left, and did not drop
+   * inside, ended outside the window, and App's box asks (D9B, S26). A cancelled drag outside looks
+   * the same (S29). A drag that ends over a place that takes no drop, and a quick flick whose button
+   * came up before the OS drag began, never left: nothing asks (S30). A drag that another window of
+   * the app took left too, but main says so (`file:drag-landed`, YAZ-3263): it counts as a drop inside.
+   *
+   * On macOS main also watches the button (YAZ-3294 D24): at the release it pushes `file:drag-ended`
+   * with the drag's paths, and that ends the drag at once, the pointer still over Finder (S80). The
+   * first move stays the fallback (S82). One end per drag: whichever comes first; the other finds
+   * no drag and does nothing. A push of other paths is no end of this drag.
+   */
+  useEffect(() => {
+    const marked = () => {
+      if (dragging.current.length > 0) droppedInside.current = true
+    }
+    const dropped = () => {
+      if (dragging.current.length > 0) fileMove.end()
+    }
+    const over = () => {
+      leftWindow.current = false
+    }
+    const left = (e: DragEvent) => {
+      if (e.relatedTarget === null) leftWindow.current = true
+    }
+    const ended = () => {
+      const paths = dragging.current
+      const outside = leftWindow.current && !droppedInside.current
+      fileMove.end()
+      if (outside) live.current.finder.onDraggedOut(paths)
+    }
+    const moved = (e: MouseEvent) => {
+      if (e.buttons !== 0 || dragging.current.length === 0) return
+      ended()
+    }
+    window.addEventListener('drop', marked, true)
+    window.addEventListener('drop', dropped)
+    window.addEventListener('dragenter', over, true)
+    window.addEventListener('dragover', over, true)
+    window.addEventListener('dragleave', left, true)
+    window.addEventListener('mousemove', moved)
+    const offLanded = api.file.onDragLanded(({ paths }) => {
+      if (dragging.current.length > 0 && sameItems(dragging.current, paths)) droppedInside.current = true
+    })
+    const offEnded = api.file.onDragEnded(({ paths }) => {
+      if (dragging.current.length > 0 && sameItems(dragging.current, paths)) ended()
+    })
+    return () => {
+      offLanded()
+      offEnded()
+      window.removeEventListener('drop', marked, true)
+      window.removeEventListener('drop', dropped)
+      window.removeEventListener('dragenter', over, true)
+      window.removeEventListener('dragover', over, true)
+      window.removeEventListener('dragleave', left, true)
+      window.removeEventListener('mousemove', moved)
+    }
+  }, [fileMove])
 
   const dropReorder = useCallback(() => {
     const from = reorderDragging
@@ -192,8 +383,11 @@ export function useTreeDrag(
     [reorderDragging, reorderOver, dropReorder],
   )
 
-  return { dragging, dropDir, setDropDir, dropOnDir, fileMove, reorder }
+  return { fileMove, reorder }
 }
+
+/** Two answers about the clipboard that say the same: the verb and the paths, in order. */
+const sameClip = (a: FileClipState, b: FileClipState): boolean => a === b || (a !== null && b !== null && a.op === b.op && a.paths.length === b.paths.length && a.paths.every((p, i) => p === b.paths[i]))
 
 export function useFileClipboard(
   /** The first vault's root: where ⌘V pastes with no selection, in a window with one vault. */
@@ -210,53 +404,77 @@ export function useFileClipboard(
   openTo: (file: string, top?: string) => void,
   clipboardRef: { current: SidebarClipboard | null },
   onNotice: (message: string, kind?: NoticeKind) => void,
+  /** A Paste of a Cut, a move in from Finder (YAZ-3255 D10): App records it and says the toast with Undo. */
+  onMoved: (gesture: MovedGesture, text: string) => void,
+  /** ⌘⌫ (YAZ-3272 D20): the Sidebar's delete door — the question, then App's list delete door. */
+  askDelete: (paths: string[]) => void,
 ) {
   /**
    * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op, paths }` or null, pushed to every
    * window on every change, so a menu opened here can label "Paste N items" for a copy made in
    * another window on another vault. Session-only, never persisted. A window opened AFTER a clip
-   * reads the current state ONCE on mount (`clipState`), so its Paste is labelled from the start.
+   * reads the current state on mount (`clipState`), so its Paste is labelled from the start. It reads
+   * again on each window focus (YAZ-3265 D13): back from a ⌘C in Finder, main answers Finder's files,
+   * and "Paste N items" counts them. A Paste of Finder's files is a copy: not on the undo list (D14). This cached value
+   * only labels the menu and gates ⌘V: each paste reads the clip FRESH and pastes that one (YAZ-3266, `pasteInto`).
    */
   const [clip, setClip] = useState<FileClipState>(null)
-  // The paste of a Cut that would clear values, or of a Copy that would not keep them (YAZ-2420 3E1), waiting on its sheet (D21); null when it is closed.
-  const [pendingPaste, setPendingPaste] = useState<{ dir: string; top?: string; moves: Move[]; lost: LeftBehind; copy: boolean } | null>(null)
+  /**
+   * The paste of a Cut that would clear values, or of a Copy that would not keep them (YAZ-2420 3E1), waiting on its sheet
+   * (D21); null when it is closed. `clip` is the clip the sheet asks about: the one a fresh read confirmed (YAZ-3266), and
+   * the one its Move or Copy pastes — never whatever is on the clipboard by then.
+   */
+  const [pendingPaste, setPendingPaste] = useState<{ dir: string; top?: string; moves: Move[]; lost: LeftBehind; copy: boolean; clip: NonNullable<FileClipState> } | null>(null)
   // The sheet speaks for the clipboard it was asked about: another one ends the question.
-  useEffect(() => setPendingPaste(null), [clip])
+  useEffect(() => setPendingPaste((open) => (open === null || sameClip(open.clip, clip) ? open : null)), [clip])
+  /** Pushes seen so far: a read lands only when none came since it began (a push is newer than the read). */
+  const pushes = useRef(0)
+  /** False once unmounted: a read that answers late writes no state. */
+  const live = useRef(true)
+  /**
+   * Read main's clip now (`clipState`) and keep it, unless a push came while the read was in flight. The same clipboard
+   * keeps its value: a focus that changed nothing leaves an open Paste sheet open. Answers what main said.
+   */
+  const readClip = useCallback(async (): Promise<FileClipState> => {
+    const at = pushes.current
+    const state = await api.file.clipState()
+    if (live.current && pushes.current === at) setClip((was) => (sameClip(was, state) ? was : state))
+    return state
+  }, [])
   useEffect(() => {
-    // Subscribe FIRST, then read: a push that lands while the read is in flight is newer than the
-    // read and must win — the read only fills a window nothing has pushed to yet.
-    let live = true
-    let pushed = false
+    // Subscribe FIRST, then read: a push that lands while a read is in flight is newer than the
+    // read and must win — each read counts the pushes and lands only when none came since it began.
+    live.current = true
     const unsubscribe = api.file.onClipChanged((state) => {
-      pushed = true
+      pushes.current += 1
       setClip(state)
     })
-    api.file.clipState().then(
-      (state) => {
-        if (live && !pushed) setClip(state)
-      },
-      () => undefined, // an empty clipboard is the honest fallback; the next push corrects it
-    )
+    // An empty clipboard is the honest fallback of a failed read; the next push corrects it.
+    const read = () => void readClip().catch(() => undefined)
+    read()
+    window.addEventListener('focus', read)
     return () => {
-      live = false
+      live.current = false
       unsubscribe()
+      window.removeEventListener('focus', read)
     }
-  }, [])
+  }, [readClip])
 
   /**
    * Cut / Copy: hand the ordered paths to main (🔒 D1) and SAY SO — every clipboard write confirms
    * (YAZ-1341), and a refusal is reported, never swallowed. The selection stands: acting on it is
-   * not the same as ending it (YAZ-1337).
+   * not the same as ending it (YAZ-1337). It says the items by kind and names them, as every gesture
+   * toast does: "Cut 1 folder and 2 files (Projects, Todo.md, Plan.md)" (YAZ-3293 D23, YAZ-3305).
    */
   const clipTo = useCallback(
     (paths: string[], op: 'copy' | 'cut') => {
-      const what = countItems(paths.length)
+      const what = namedItems(paths.map((path) => onDisk(path, dirs.includes(path) ? 'dir' : 'file')))
       api.file.clip({ paths, op }).then(
         () => onNotice(op === 'cut' ? `Cut ${what}` : `Copied ${what}`, op),
         (err: unknown) => onNotice(`Can't ${op}: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
     },
-    [onNotice],
+    [onNotice, dirs],
   )
 
   /**
@@ -276,33 +494,49 @@ export function useFileClipboard(
    */
   const runPaste = useCallback(
     // `top`: the copy of Focus or Favorites the paste came from (YAZ-3131 S21), which opens the folder there too.
-    async (dir: string, top?: string) => {
+    // `confirmed`: the clip a fresh read answered (YAZ-3266). It decides D20, the undo record and the sound, and main
+    // pastes only it: another clip on the clipboard by now pastes nothing and fails `CONFLICT`.
+    async (dir: string, confirmed: NonNullable<FileClipState>, top?: string) => {
       const { root: vault, index } = vaultOf(dir)
       try {
-        const before = clip?.op === 'cut' ? { records: index.records, folders: index.folders } : null
-        const res = await api.file.paste({ targetDir: dir })
+        const before = confirmed.op === 'cut' ? { records: index.records, folders: index.folders } : null
+        const res = await api.file.paste({ targetDir: dir, expect: { op: confirmed.op, paths: confirmed.paths } })
         openTo(`${dir}/x`, top)
         refresh(vault)
-        if (before !== null) for (const { from, to, kind } of res.pasted) await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })
+        // What D20 cleared, for the undo list.
+        const cleared: MovedGesture['cleared'] = []
+        if (before !== null) for (const { from, to, kind } of res.pasted) cleared.push(...(await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })))
         else if (index.ids) {
           const [{ tree }, { folders }] = await Promise.all([fetchTree(vault), api.index(vault)])
           for (const { to } of res.pasted) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(vault, path, folders), true).catch(() => undefined) // quiet (YAZ-3235 D1)
         }
-        const first = res.failed[0]
-        if (first === undefined) {
-          // Reachable only when EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
-          if (res.pasted.length === 0) onNotice('Nothing to paste', 'info')
-          else onNotice(`Pasted ${countItems(res.pasted.length)}`, 'paste')
-        } else {
-          const name = pageName(vault, first.from, pathTitles(index.records, index.folders))
-          if (res.pasted.length === 0) onNotice(`Couldn't paste: ${name} — ${first.message}`, 'error')
-          else onNotice(`Pasted ${countItems(res.pasted.length)}, skipped ${res.failed.length}: ${name} — ${first.message}`, 'paste')
+        // Each item that did not land, by its page name; the titles are read only when one did not.
+        const titles = res.failed.length === 0 ? undefined : pathTitles(index.records, index.folders)
+        const failed = titles === undefined ? [] : res.failed.map((f) => `${pageName(vault, f.from, titles)} — ${f.message}`)
+        // A Paste of a Cut is a move gesture (YAZ-3255 S39): its moves and what they cleared go on the undo list.
+        const gesture: MovedGesture | null = before === null ? null : { moves: res.pasted.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared }
+        // What landed, by kind and by its name on disk (YAZ-3293 D23): a copy may have a new free name.
+        const pasted = res.pasted.map(({ to, kind }) => onDisk(to, kind))
+        const text = gestureNotice(res.pasted.length === 0 ? null : `Pasted ${namedItems(pasted)}`, failed, "Couldn't paste")
+        // Nothing ran: EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
+        if (text === null) onNotice('Nothing to paste', 'info')
+        else if (res.pasted.length === 0) onNotice(text, 'error')
+        // What landed is said with Undo when it was a move (D11). A copy plays its land sound here;
+        // a move plays it in App's `onMoved`, so the gesture has ONE sound (YAZ-3267 D15, S54).
+        else if (gesture === null) {
+          playGestureSound('land')
+          onNotice(text, 'paste')
         }
+        else onMoved(gesture, text)
       } catch (err: unknown) {
-        onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
+        // The clipboard changed after the read (YAZ-3266): nothing was pasted. Say so, and read it again for the menu's label.
+        if (err instanceof BridgeRequestError && err.code === 'CONFLICT') {
+          onNotice(CLIP_CHANGED, 'info')
+          void readClip().catch(() => undefined)
+        } else onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
-    [vaultOf, refresh, openTo, onNotice, clip],
+    [vaultOf, refresh, openTo, onNotice, onMoved, readClip],
   )
 
   /**
@@ -312,28 +546,39 @@ export function useFileClipboard(
    * one already there is no move (main skips a cut, D2; a copy beside its original leaves nothing
    * behind), and a folder is one the tree holds as a folder. A path outside this vault matches no
    * record, so it never asks: the index cannot speak for it.
+   * The clip is read FRESH first (YAZ-3266), never taken from the window's cached `clip`: the system clipboard can change
+   * with no event (text copied in a note), and main pastes what it holds at paste time. That one answer decides the
+   * sheet, D20, the undo record and the sound, and the paste carries it, so main runs that clip or nothing.
    */
   const pasteInto = useCallback(
-    (dir: string, top?: string) => {
-      if (clip !== null) {
-        const moves = clip.paths.flatMap((oldPath): Move[] => {
-          const newPath = `${dir}/${basename(oldPath)}`
-          return newPath === oldPath ? [] : [{ oldPath, newPath, kind: dirs.includes(oldPath) ? 'dir' : 'file' }]
-        })
-        const { root: vault, index } = vaultOf(dir)
-        const lost = valuesLeftBehind({ root: vault, moves, records: index.records, folders: index.folders })
-        if (lost.folders.length > 0) return setPendingPaste({ dir, top, moves, lost, copy: clip.op === 'copy' })
+    async (dir: string, top?: string) => {
+      let now: FileClipState
+      try {
+        now = await readClip()
+      } catch (err: unknown) {
+        return onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
-      void runPaste(dir, top)
+      if (now === null) return onNotice('Nothing to paste', 'info')
+      const moves = now.paths.flatMap((oldPath): Move[] => {
+        const newPath = `${dir}/${basename(oldPath)}`
+        return newPath === oldPath ? [] : [{ oldPath, newPath, kind: dirs.includes(oldPath) ? 'dir' : 'file' }]
+      })
+      const { root: vault, index } = vaultOf(dir)
+      const lost = valuesLeftBehind({ root: vault, moves, records: index.records, folders: index.folders })
+      if (lost.folders.length > 0) return setPendingPaste({ dir, top, moves, lost, copy: now.op === 'copy', clip: now })
+      await runPaste(dir, now, top)
     },
-    [vaultOf, clip, dirs, runPaste],
+    [vaultOf, dirs, runPaste, readClip, onNotice],
   )
 
-  /** The sheet's Move or Copy: the paste runs as it does unasked. Its Cancel only closes it — the clipboard stays as it was. */
+  /**
+   * The sheet's Move or Copy: the paste runs as it does unasked, for the clip the sheet asked about (YAZ-3266). Its
+   * Cancel only closes it — the clipboard stays as it was.
+   */
   const confirmPaste = useCallback(() => {
     if (pendingPaste === null) return
     setPendingPaste(null)
-    void runPaste(pendingPaste.dir, pendingPaste.top)
+    void runPaste(pendingPaste.dir, pendingPaste.clip, pendingPaste.top)
   }, [pendingPaste, runPaste])
 
   /**
@@ -354,12 +599,22 @@ export function useFileClipboard(
    * Rewritten whenever a rule input changes, emptied on unmount (`selectionRef`'s idiom) — a
    * collapsed sidebar has no tree to paste into or read an order from. A selection that holds a
    * vault row has no Cut and no Copy (YAZ-2602 S18): a vault is not a file to clip.
+   *
+   * ⌘⌫ (YAZ-3272 D20) is the third verb, on Cut's rules: a selection, no open menu, no vault row in it
+   * (a vault is no file, S72). It asks the delete door for the ordered selection, as the menu's Delete does.
    */
   useEffect(() => {
+    /** Cut, Copy and Delete act on a selection with no vault row in it, while no context menu stands. */
+    const onSelection = (): boolean => menu === null && selection.paths.size > 0 && ![...selection.paths].some((path) => vaultRows.has(path))
     clipboardRef.current = {
       cutOrCopy: (op) => {
-        if (menu !== null || selection.paths.size === 0 || [...selection.paths].some((path) => vaultRows.has(path))) return false
+        if (!onSelection()) return false
         clipTo(orderedSelectedPaths(), op)
+        return true
+      },
+      delete: () => {
+        if (!onSelection()) return false
+        askDelete(orderedSelectedPaths())
         return true
       },
       paste: () => {
@@ -367,16 +622,59 @@ export function useFileClipboard(
         const dir = pasteTargetDir()
         if (dir === null) onNotice('Select a vault or a folder first')
         // The copy of the first selected row (YAZ-3131 S21): the folder opens in that copy too.
-        else pasteInto(dir, selection.copies?.get(orderedSelectedPaths()[0] ?? ''))
+        else void pasteInto(dir, selection.copies?.get(orderedSelectedPaths()[0] ?? ''))
         return true
       },
     }
     return () => {
       clipboardRef.current = null
     }
-  }, [clipboardRef, menu, selection, vaultRows, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir, onNotice])
+  }, [clipboardRef, menu, selection, vaultRows, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir, onNotice, askDelete])
 
-  return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null) }
+  /**
+   * Finder's items dropped into `dir` (YAZ-3253 D3, D9A): `fs:import` moves them in, or copies them
+   * from another disk; the app clipboard is not touched. Then the paste's own steps: the folder
+   * opens, the tree reads again (the watcher's echo is a courtesy), and ONE notice counts what
+   * landed and names the first item that did not (S19). An item of another open vault says the rule
+   * of drags between vaults (S22). Items that come from outside every vault left no folder of it,
+   * so no values are cleared (D20). Copies are not moves: only `moved` goes on the undo list, and
+   * its toast has Undo (YAZ-3255 S18, S40).
+   */
+  const importFiles = useCallback(
+    async (dir: string, paths: string[]) => {
+      const { root: vault } = vaultOf(dir)
+      try {
+        const { moved, copied, failed } = await api.file.import({ paths, targetDir: dir })
+        if (moved.length + copied.length > 0) {
+          openTo(`${dir}/x`)
+          refresh(vault)
+        }
+        // What landed, by kind and by name on disk (YAZ-3293 D23).
+        const named = (items: typeof moved) => namedItems(items.map(({ to, kind }) => onDisk(to, kind)))
+        const done =
+          moved.length + copied.length === 0 ? null
+          : copied.length === 0 ? `Moved ${named(moved)} from Finder`
+          : moved.length === 0 ? `Copied ${named(copied)} from another disk`
+          : `Moved ${named(moved)}, copied ${named(copied)} from another disk`
+        if (done === null && failed.length > 0 && failed.every((f) => f.message === BETWEEN_VAULTS)) return onNotice(BETWEEN_VAULTS, 'info')
+        const text = gestureNotice(done, failed.map((f) => `${basename(f.from)} — ${f.message}`), "Couldn't move")
+        // Every item hidden (S20): nothing landed, and nothing to say.
+        if (text === null) return
+        if (done === null) onNotice(text, 'error')
+        // Copies only: the land sound is played here; with a move it is App's, in `onMoved` (YAZ-3267 D15, S54).
+        else if (moved.length === 0) {
+          playGestureSound('land')
+          onNotice(text, 'paste')
+        }
+        else onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }, text)
+      } catch (err: unknown) {
+        onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      }
+    },
+    [vaultOf, refresh, openTo, onNotice, onMoved],
+  )
+
+  return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null), importFiles }
 }
 
 export function useInlineEdits(

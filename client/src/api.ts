@@ -58,6 +58,7 @@ export const api: YaseenDocsApi = {
   ...bridge,
   watch: (root, listener) => window.yaseenDocs.watch(root, listener),
   window: { ...bridge.window, onFlush: (listener) => window.yaseenDocs.window.onFlush(listener) },
+  file: { ...bridge.file, pathFor: (file) => window.yaseenDocs.file.pathFor(file) },
   menu: {
     ...bridge.menu,
     onCopyAs: (listener) => window.yaseenDocs.menu.onCopyAs(listener),

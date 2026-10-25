@@ -34,11 +34,12 @@ export async function launchApp({ userData, seedState, env = {} }: LaunchOptions
     await writeFile(path.join(userData, 'yaseendocs.json'), JSON.stringify(seedState, null, 2))
   }
   // YASEEN_DOCS_E2E: the dev binary must not claim the machine's yaseendocs:// handler (YAZ-2168).
+  // YASEEN_DOCS_FAKE_CLIPBOARD: Finder's file clipboard is an in-memory one, never the real one (YAZ-3265).
   // YASEEN_DOCS_USER_DATA_DIR is pinned to the same temp profile: main applies it over
   // --user-data-dir, so one inherited from the calling shell would point the app at another profile.
   return _electron.launch({
     args: [MAIN_ENTRY, `--user-data-dir=${userData}`],
-    env: { ...process.env, ...env, YASEEN_DOCS_E2E: '1', YASEEN_DOCS_E2E_HIDDEN: process.env.YASEEN_DOCS_E2E_HIDDEN ?? '1', YASEEN_DOCS_USER_DATA_DIR: userData },
+    env: { ...process.env, ...env, YASEEN_DOCS_E2E: '1', YASEEN_DOCS_FAKE_CLIPBOARD: '1', YASEEN_DOCS_E2E_HIDDEN: process.env.YASEEN_DOCS_E2E_HIDDEN ?? '1', YASEEN_DOCS_USER_DATA_DIR: userData },
   })
 }
 

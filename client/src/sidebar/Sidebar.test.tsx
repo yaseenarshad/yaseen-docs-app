@@ -11,7 +11,7 @@ import { StrictMode, act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { copyFoldKey } from '@shared/foldKey'
 import { parseFrontmatter } from '@shared/frontmatter'
-import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type IndexRecord, type PasteResponse, type SidebarTab, type SidebarTabsPrefs, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
+import { CLIP_CHANGED, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type ImportResponse, type IndexRecord, type PasteRequest, type PasteResponse, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity, type SidebarTabsPrefs } from '@shared/types'
 import appCss from '../app.css?inline'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { EMPTY_SELECTION } from '../lib/selection'
@@ -82,6 +82,19 @@ const TREE: TreeNode[] = [
 ]
 
 /** Just the bridge surface the Sidebar tree touches (the jsdom stub pattern, App.test.tsx). */
+/**
+ * A clipboard push, as main sends it (YAZ-3266): main's `clipState` answers the same clip from then on, so the fresh
+ * read a paste makes confirms what was pushed.
+ */
+function pushed(bridge: { file: { clipState: ReturnType<typeof vi.fn> } }, listener: (state: FileClipState) => void) {
+  return (state: FileClipState) => {
+    bridge.file.clipState.mockResolvedValue(state)
+    listener(state)
+  }
+}
+/** A paste into `targetDir` that names the clip the window confirmed (YAZ-3266: `expect`): exactly this verb and these paths, in clipboard order. */
+const into = (targetDir: string, op: 'copy' | 'cut', ...paths: string[]) => ({ targetDir, expect: { op, paths } })
+
 function installBridge() {
   const bridge = {
     tree: vi.fn(async (root: string) => ({ root, tree: TREE, generatedAt: 1 })),
@@ -109,10 +122,19 @@ function installBridge() {
     // wants to PUSH a state captures the listener through `mockImplementation`.
     file: {
       clip: vi.fn(async (_req: FileClipRequest) => undefined),
-      paste: vi.fn(async (_req: { targetDir: string }): Promise<PasteResponse> => ({ pasted: [], failed: [] })),
-      // Read ONCE on mount, so a window opened after a clip labels Paste from the start.
+      paste: vi.fn(async (_req: PasteRequest): Promise<PasteResponse> => ({ pasted: [], failed: [] })),
+      // Read on mount, so a window opened after a clip labels Paste from the start; on focus; and FRESH at each paste
+      // (YAZ-3266). A test that pushes a clip makes this answer it too (`pushed`), as main does.
       clipState: vi.fn(async (): Promise<FileClipState> => null),
       onClipChanged: vi.fn((_listener: (state: FileClipState) => void) => () => undefined),
+      // Drags between Finder and the sidebar (YAZ-3253, YAZ-3254): a dropped File's path, the drop's import, and the OS drag out.
+      pathFor: vi.fn((file: File) => `/Users/yasin/Downloads/${file.name}`),
+      import: vi.fn(async (_req: { paths: string[]; targetDir: string }): Promise<ImportResponse> => ({ moved: [], copied: [], failed: [] })),
+      dragOut: vi.fn(async (_req: { paths: string[]; icon: string }) => undefined),
+      // Main's word that this window's drag out landed in another window of the app (YAZ-3263).
+      onDragLanded: vi.fn((_listener: (ev: { paths: string[] }) => void) => () => undefined),
+      // Main's word that the mouse button came up after this window's drag out (YAZ-3294 D24).
+      onDragEnded: vi.fn((_listener: (ev: { paths: string[] }) => void) => () => undefined),
     },
     // The Favorites list (YAZ-1766 6A): `.yaseendocs/favorites.json` behind main; absolute paths both ways.
     // Empty by default; the favorites block seeds `get` and captures the `onChanged` listener.
@@ -128,6 +150,8 @@ function installBridge() {
       set: vi.fn(async (_root: string, _paths: readonly string[]) => undefined),
       onChanged: vi.fn((_listener: (change: { root: string }) => void) => () => undefined),
     },
+    // The sounds of a gesture (YAZ-3267 D15): a Paste of a Copy and a copy in from another disk ask here; a move asks through App (`onMoved`).
+    app: { sound: vi.fn(async (_kind: 'land' | 'trash') => undefined) },
     // Reveal in Finder (GRO-2274) goes through the shell namespace.
     shell: {
       reveal: vi.fn(async ({ path }: { path: string }) => ({ path })),
@@ -249,8 +273,11 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onRootMissing: vi.fn(),
     onFileMissing: vi.fn(),
     onRenameFile: vi.fn(async () => undefined),
+    onMoveEntries: vi.fn(async () => undefined),
+    onMoved: vi.fn(),
+    onDraggedOut: vi.fn(),
     onRetitle: vi.fn(async () => undefined),
-    onDeleteFile: vi.fn(async () => undefined),
+    onDeleteEntries: vi.fn(async () => undefined),
     onNotice: vi.fn(),
     pendingSearchFocus: false,
     onSearchFocusHandled: vi.fn(),
@@ -849,7 +876,7 @@ describe('Sidebar view-only file routing (YAZ-1301)', () => {
 
     act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     act(() => itemByLabel(el, 'Delete')?.click())
-    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith(path)
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith([path])
   })
 })
 
@@ -983,7 +1010,8 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
 
   it('dragging a file row onto a folder row moves it there (onRenameFile old→new parent); the target highlights while hovered; no top row of Files reorders (YAZ-2631 S38)', async () => {
     const { props, el } = await mount()
-    expect([dirRow(el)?.draggable, fileRow(el)?.draggable]).toEqual([false, true])
+    // A folder row drags too since YAZ-3251 D5: to move on disk, never to reorder.
+    expect([dirRow(el)?.draggable, fileRow(el)?.draggable]).toEqual([true, true])
     fire(fileRow(el), 'dragstart')
     fire(dirRow(el), 'dragover')
     expect(dirRow(el)?.classList.contains('tree__row--drop')).toBe(true)
@@ -993,7 +1021,7 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     expect(el.querySelector('.tree__row--drop')).toBeNull() // drag state cleared
   })
 
-  it('dropping on the ROOT HEADER targets the vault root — a no-op for a file already there; dragend abandons cleanly', async () => {
+  it('dropping on the ROOT HEADER targets the vault root — a no-op for a file already there; an abandoned drag ends cleanly at the first move with no button down (the OS drag sends no dragend)', async () => {
     const { props, el } = await mount()
     const header = el.querySelector<HTMLElement>('.sidebar__header')
     fire(fileRow(el), 'dragstart')
@@ -1002,9 +1030,437 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     fire(header, 'drop')
     expect(props.onRenameFile).not.toHaveBeenCalled() // `/v/a.md` already lives at the root
     fire(fileRow(el), 'dragstart')
-    fire(fileRow(el), 'dragend')
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { buttons: 0 })))
     fire(dirRow(el), 'drop')
     expect(props.onRenameFile).not.toHaveBeenCalled() // an abandoned drag drops nothing
+    expect(props.onDraggedOut).not.toHaveBeenCalled() // it never left the window
+  })
+})
+
+/**
+ * The tree drag (YAZ-3251): a folder drags, a selection drags as one (D5), a file row takes the
+ * drop for its folder (D7), a closed folder springs open (D8), and a hover renders nothing (D2).
+ */
+describe('the tree drag: folders, the selection, file-row drops, spring open (YAZ-3251)', () => {
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  /** `Docs` holds `Inner` (open) and a note; `Plans` is open; `Closed` is closed; two notes at the top. */
+  const DRAG_TREE: TreeNode[] = [
+    { type: 'dir', name: 'Docs', path: '/v/Docs', children: [{ type: 'dir', name: 'Inner', path: '/v/Docs/Inner', children: [file('/v/Docs/Inner/deep.md')] }, file('/v/Docs/n.md')] },
+    { type: 'dir', name: 'Plans', path: '/v/Plans', children: [file('/v/Plans/p.md')] },
+    { type: 'dir', name: 'Closed', path: '/v/Closed', children: [file('/v/Closed/c.md')] },
+    file('/v/a.md'),
+    file('/v/b.md'),
+  ]
+  const mountDrag = async () => {
+    vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/Docs', '/v/Docs/Inner', '/v/Plans'])
+    return mount({}, (bridge) => bridge.tree.mockResolvedValue({ root: '/v', tree: DRAG_TREE, generatedAt: 1 }))
+  }
+  const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  /** A synthetic drag event (jsdom has no DragEvent, and the handlers guard `dataTransfer`); answers whether a handler took it. */
+  const fire = (target: Element | null | undefined, type: string) => {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true })
+    act(() => void target?.dispatchEvent(event))
+    return event.defaultPrevented
+  }
+  const shiftClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+  const lit = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.tree__row--drop, .sidebar__header--drop')].map((node) => node.dataset.path ?? 'header')
+  const selected = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.tree__row--selected')].map((node) => node.dataset.path)
+
+  it('a folder row drags onto a folder: the target lights by its class alone, and one row goes through onRenameFile as a folder (S2)', async () => {
+    const { props, el } = await mountDrag()
+    expect(row(el, '/v/Plans')?.draggable).toBe(true)
+    fire(row(el, '/v/Plans'), 'dragstart')
+    expect(fire(row(el, '/v/Docs'), 'dragover')).toBe(true)
+    expect(lit(el)).toEqual(['/v/Docs'])
+    fire(row(el, '/v/Docs'), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/Plans', '/v/Docs/Plans', 'dir')
+    expect(props.onMoveEntries).not.toHaveBeenCalled()
+    expect(lit(el)).toEqual([])
+  })
+
+  it('a selected row takes the whole selection in on-screen order, through onMoveEntries (S3); an unselected row becomes the selection and goes alone (S4)', async () => {
+    const { props, el } = await mountDrag()
+    for (const path of ['/v/b.md', '/v/Plans', '/v/a.md']) shiftClick(row(el, path))
+    fire(row(el, '/v/a.md'), 'dragstart')
+    fire(row(el, '/v/Docs'), 'dragover')
+    fire(row(el, '/v/Docs'), 'drop')
+    expect(props.onMoveEntries).toHaveBeenCalledExactlyOnceWith([
+      { oldPath: '/v/Plans', newPath: '/v/Docs/Plans', kind: 'dir' },
+      { oldPath: '/v/a.md', newPath: '/v/Docs/a.md', kind: 'file' },
+      { oldPath: '/v/b.md', newPath: '/v/Docs/b.md', kind: 'file' },
+    ])
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+
+    fire(row(el, '/v/Closed'), 'dragstart')
+    expect(selected(el)).toEqual(['/v/Closed'])
+    fire(row(el, '/v/Docs'), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/Closed', '/v/Docs/Closed', 'dir')
+  })
+
+  it('a row inside a dragged folder is left out — the folder carries it (S5); the folder, and every row inside it, take no drop and do not light (S6)', async () => {
+    const { props, el } = await mountDrag()
+    shiftClick(row(el, '/v/Docs'))
+    shiftClick(row(el, '/v/Docs/n.md'))
+    for (const target of ['/v/Docs', '/v/Docs/Inner', '/v/Docs/n.md', '/v/Docs/Inner/deep.md']) {
+      fire(row(el, '/v/Docs'), 'dragstart')
+      expect(fire(row(el, target), 'dragover')).toBe(false)
+      expect(lit(el)).toEqual([])
+      fire(row(el, target), 'drop')
+    }
+    expect([props.onRenameFile, props.onMoveEntries].map((door) => vi.mocked(door).mock.calls.length)).toEqual([0, 0])
+    fire(row(el, '/v/Docs'), 'dragstart')
+    fire(row(el, '/v/Plans'), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/Docs', '/v/Plans/Docs', 'dir')
+  })
+
+  it('an item already in the drop folder is no move (S7): alone it asks nothing; beside another, the other goes alone', async () => {
+    const { props, el } = await mountDrag()
+    fire(row(el, '/v/Docs/n.md'), 'dragstart')
+    fire(row(el, '/v/Docs'), 'drop')
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+    shiftClick(row(el, '/v/Docs/n.md'))
+    shiftClick(row(el, '/v/a.md'))
+    fire(row(el, '/v/a.md'), 'dragstart')
+    fire(row(el, '/v/Docs'), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/Docs/a.md', 'file')
+    expect(props.onMoveEntries).not.toHaveBeenCalled()
+  })
+
+  it('a file row takes the drop for its folder and lights that folder’s row; at the top of a one-vault window it lights the header (S12)', async () => {
+    const { props, el } = await mountDrag()
+    fire(row(el, '/v/a.md'), 'dragstart')
+    expect(fire(row(el, '/v/Plans/p.md'), 'dragover')).toBe(true)
+    expect(lit(el)).toEqual(['/v/Plans'])
+    fire(row(el, '/v/Plans/p.md'), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/Plans/a.md', 'file')
+    expect(lit(el)).toEqual([])
+
+    fire(row(el, '/v/Plans/p.md'), 'dragstart')
+    fire(row(el, '/v/b.md'), 'dragover')
+    expect(lit(el)).toEqual(['header'])
+    fire(row(el, '/v/b.md'), 'drop')
+    expect(props.onRenameFile).toHaveBeenLastCalledWith('/v/Plans/p.md', '/v/p.md', 'file')
+  })
+
+  it('a drag that holds 700 ms over a closed folder opens it, and it stays open; one that moves away first opens nothing (S13)', async () => {
+    const { el } = await mountDrag()
+    vi.useFakeTimers()
+    try {
+      fire(row(el, '/v/a.md'), 'dragstart')
+      fire(row(el, '/v/Closed'), 'dragover')
+      act(() => void vi.advanceTimersByTime(600))
+      fire(row(el, '/v/Closed'), 'dragleave')
+      fire(row(el, '/v/Plans'), 'dragover')
+      act(() => void vi.advanceTimersByTime(1000))
+      expect(row(el, '/v/Closed/c.md')).toBeNull()
+
+      fire(row(el, '/v/Plans'), 'dragleave')
+      fire(row(el, '/v/Closed'), 'dragover')
+      act(() => void vi.advanceTimersByTime(699))
+      expect(row(el, '/v/Closed/c.md')).toBeNull()
+      act(() => void vi.advanceTimersByTime(1))
+      expect(row(el, '/v/Closed/c.md')).not.toBeNull()
+      fire(row(el, '/v/a.md'), 'dragend')
+      expect(row(el, '/v/Closed/c.md')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('the OS drag of a selection comes back as files, in any order: the same items are this window\u2019s own drag, and they move in on-screen order through onMoveEntries (S3 on the real drop path, audit 10)', async () => {
+    const { bridge, props, el } = await mountDrag()
+    for (const path of ['/v/b.md', '/v/Plans', '/v/a.md']) shiftClick(row(el, path))
+    fire(row(el, '/v/a.md'), 'dragstart')
+    expect(bridge.file.dragOut).toHaveBeenLastCalledWith({ paths: ['/v/Plans', '/v/a.md', '/v/b.md'], icon: expect.any(String) })
+    const back = ['/v/b.md', '/v/Plans', '/v/a.md']
+    bridge.file.pathFor.mockImplementation((file: File) => back.find((path) => path.endsWith(`/${file.name}`)) ?? '')
+    const drop = new MouseEvent('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: { types: ['Files'], files: back.map((path) => new File(['x'], path.slice(path.lastIndexOf('/') + 1))), dropEffect: 'none' } })
+    act(() => void row(el, '/v/Docs')?.dispatchEvent(drop))
+    expect(props.onMoveEntries).toHaveBeenCalledExactlyOnceWith([
+      { oldPath: '/v/Plans', newPath: '/v/Docs/Plans', kind: 'dir' },
+      { oldPath: '/v/a.md', newPath: '/v/Docs/a.md', kind: 'file' },
+      { oldPath: '/v/b.md', newPath: '/v/Docs/b.md', kind: 'file' },
+    ])
+    expect(bridge.file.import).not.toHaveBeenCalled()
+  })
+
+  it('the spring only opens: a closed folder that opened another way while the drag held over it stays open (audit 23)', async () => {
+    const { el } = await mountDrag()
+    vi.useFakeTimers()
+    try {
+      fire(row(el, '/v/a.md'), 'dragstart')
+      fire(row(el, '/v/Closed'), 'dragover')
+      act(() => row(el, '/v/Closed')?.click()) // opened by a click, inside the 700 ms
+      expect(row(el, '/v/Closed/c.md')).not.toBeNull()
+      act(() => void vi.advanceTimersByTime(700))
+      expect(row(el, '/v/Closed/c.md')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a hover over many rows renders no row of any tree level (S14, D2)', async () => {
+    const { el } = await mountDrag()
+    fire(row(el, '/v/a.md'), 'dragstart')
+    labelRenders.names = []
+    for (const target of ['/v/Docs', '/v/Docs/Inner', '/v/Docs/Inner/deep.md', '/v/Docs/n.md', '/v/Plans', '/v/Plans/p.md', '/v/b.md', '/v/Docs', '/v/Plans']) {
+      fire(row(el, target), 'dragover')
+      fire(row(el, target), 'dragleave')
+    }
+    fire(row(el, '/v/Plans'), 'dragover')
+    expect(lit(el)).toEqual(['/v/Plans'])
+    expect(labelRenders.names).toEqual([])
+  })
+})
+
+/**
+ * Drags between Finder and the sidebar (YAZ-3252): Finder's items move in (YAZ-3253 D3, D9A), and a
+ * row drag is the OS drag out (YAZ-3254 D4), which comes back as files when it drops inside.
+ */
+describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
+  const dirRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--dir')
+  const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  /** A drag event; with `files`, one from the OS (`types` holds `Files`). Answers whether a handler took it. */
+  const fire = (target: EventTarget | null | undefined, type: string, files?: File[]) => {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true })
+    if (files !== undefined) Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files, dropEffect: 'none' } })
+    act(() => void target?.dispatchEvent(event))
+    return event.defaultPrevented
+  }
+  /** The pointer moves; `buttons` 0 once the OS drag is over. */
+  const move = (buttons: number) => act(() => void window.dispatchEvent(new MouseEvent('mousemove', { buttons })))
+  const finder = (...names: string[]) => names.map((name) => new File(['x'], name))
+  /** Files whose paths are the vault's own: what the OS drag of this window's rows, or of a second window's, drops. */
+  const own = (bridge: ReturnType<typeof installBridge>, ...paths: string[]) => {
+    bridge.file.pathFor.mockImplementation((file: File) => paths.find((path) => path.endsWith(`/${file.name}`)) ?? '')
+    return paths.map((path) => new File(['x'], path.slice(path.lastIndexOf('/') + 1)))
+  }
+
+  it('Finder items dropped on a folder row go to fs:import; the folder opens, the tree reads again, and one toast says what moved (S17, S18)', async () => {
+    const { bridge, props, el } = await mount()
+    bridge.file.import.mockResolvedValueOnce({
+      moved: [{ from: '/Users/yasin/Downloads/Plan.md', to: '/v/sub/Plan.md', kind: 'file' }, { from: '/Users/yasin/Downloads/Trip', to: '/v/sub/Trip', kind: 'dir' }],
+      copied: [],
+      failed: [],
+    })
+    expect(fire(dirRow(el), 'dragover', [])).toBe(true)
+    expect(dirRow(el)?.classList.contains('tree__row--drop')).toBe(true)
+    const reads = bridge.tree.mock.calls.length
+    fire(dirRow(el), 'drop', finder('Plan.md', 'Trip'))
+    await act(async () => {})
+    expect(bridge.file.import).toHaveBeenCalledExactlyOnceWith({ paths: ['/Users/yasin/Downloads/Plan.md', '/Users/yasin/Downloads/Trip'], targetDir: '/v/sub' })
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+    expect(bridge.tree.mock.calls.length).toBeGreaterThan(reads)
+    // A move gesture for the undo list (YAZ-3255 S40): App records it and says the toast with Undo.
+    expect(props.onMoved).toHaveBeenLastCalledWith(
+      { moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/sub/Plan.md', kind: 'file' }, { oldPath: '/Users/yasin/Downloads/Trip', newPath: '/v/sub/Trip', kind: 'dir' }], cleared: [] },
+      'Moved 1 folder and 1 file (Plan.md, Trip) from Finder',
+    )
+    expect(el.querySelector('.tree__row--drop')).toBeNull()
+
+    // From another disk: some copied (S18). On a file row: its folder (D7) — here the vault root.
+    bridge.file.import.mockResolvedValueOnce({
+      moved: [{ from: '/Users/yasin/Downloads/Plan.md', to: '/v/Plan.md', kind: 'file' }],
+      copied: [{ from: '/Volumes/USB/Trip', to: '/v/Trip', kind: 'dir' }, { from: '/Volumes/USB/Log.md', to: '/v/Log.md', kind: 'file' }],
+      failed: [],
+    })
+    expect(fire(fileRow(el), 'dragover', [])).toBe(true)
+    fire(fileRow(el), 'drop', finder('Plan.md'))
+    await act(async () => {})
+    expect(bridge.file.import).toHaveBeenLastCalledWith({ paths: ['/Users/yasin/Downloads/Plan.md'], targetDir: '/v' })
+    // Copies are not moves (S18): only the moved item is for undo.
+    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 file (Plan.md), copied 1 folder and 1 file (Trip, Log.md) from another disk')
+  })
+
+  it('a clash is named and the rest moved (S19); items of another open vault say the cut-and-paste rule (S22)', async () => {
+    const { bridge, props, el } = await mount()
+    bridge.file.import.mockResolvedValueOnce({
+      moved: [{ from: '/Users/yasin/Downloads/Plan.md', to: '/v/sub/Plan.md', kind: 'file' }],
+      copied: [],
+      failed: [{ from: '/Users/yasin/Downloads/a.md', code: 'ALREADY_EXISTS', message: 'a file with this name already exists' }],
+    })
+    fire(dirRow(el), 'drop', finder('Plan.md', 'a.md'))
+    await act(async () => {})
+    expect(props.onMoved).toHaveBeenLastCalledWith(expect.objectContaining({ cleared: [] }), 'Moved 1 file (Plan.md) from Finder, skipped 1: a.md — a file with this name already exists')
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [{ from: '/w/x.md', code: 'BAD_REQUEST', message: 'To move between vaults, use cut and paste' }] })
+    fire(dirRow(el), 'drop', finder('x.md'))
+    await act(async () => {})
+    expect(props.onNotice).toHaveBeenLastCalledWith('To move between vaults, use cut and paste', 'info')
+  })
+
+  it("items of this vault dropped from a second window move through App's door, so links follow (S23)", async () => {
+    const { bridge, props, el } = await mount()
+    fire(dirRow(el), 'drop', own(bridge, '/v/a.md'))
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/sub/a.md', 'file')
+    expect(bridge.file.import).not.toHaveBeenCalled()
+  })
+
+  it('a Finder drop that copies in from another disk plays ONE land sound here; one that moves leaves the sound to App (onMoved); nothing landed or a refused drop plays none (YAZ-3267 D15, S54, S56)', async () => {
+    const { bridge, props, el } = await mount()
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [{ from: '/Volumes/USB/Trip', to: '/v/sub/Trip', kind: 'dir' }, { from: '/Volumes/USB/Log.md', to: '/v/sub/Log.md', kind: 'file' }], failed: [] })
+    fire(dirRow(el), 'drop', finder('Trip', 'Log.md'))
+    await act(async () => {})
+    expect(bridge.app.sound.mock.calls).toEqual([['land']])
+    bridge.file.import.mockResolvedValueOnce({ moved: [{ from: '/Users/yasin/Downloads/Plan.md', to: '/v/sub/Plan.md', kind: 'file' }], copied: [{ from: '/Volumes/USB/Log.md', to: '/v/sub/Log.md', kind: 'file' }], failed: [] })
+    fire(dirRow(el), 'drop', finder('Plan.md', 'Log.md'))
+    await act(async () => {})
+    expect(props.onMoved).toHaveBeenCalledTimes(1)
+    expect(bridge.app.sound).toHaveBeenCalledTimes(1)
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [{ from: '/Users/yasin/Downloads/a.md', code: 'ALREADY_EXISTS', message: 'a file with this name already exists' }] })
+    fire(dirRow(el), 'drop', finder('a.md'))
+    await act(async () => {})
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [{ from: '/w/x.md', code: 'BAD_REQUEST', message: 'To move between vaults, use cut and paste' }] })
+    fire(dirRow(el), 'drop', finder('x.md'))
+    await act(async () => {})
+    bridge.file.import.mockRejectedValueOnce({ code: 'IO_ERROR', message: 'disk gone' })
+    fire(dirRow(el), 'drop', finder('Plan.md'))
+    await act(async () => {})
+    expect(bridge.app.sound).toHaveBeenCalledTimes(1)
+  })
+
+  it('Finder items dropped on the root header of a one-vault window go to its root (audit 10)', async () => {
+    const { bridge, el } = await mount()
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [] })
+    const header = el.querySelector('.sidebar__header')
+    expect(fire(header, 'dragover', [])).toBe(true)
+    fire(header, 'drop', finder('Plan.md'))
+    await act(async () => {})
+    expect(bridge.file.import).toHaveBeenCalledExactlyOnceWith({ paths: ['/Users/yasin/Downloads/Plan.md'], targetDir: '/v' })
+  })
+
+  it('the blank space below the rows takes a drop for the vault root, and the header lights: Finder items and rows alike (D12, S43)', async () => {
+    const { bridge, props, el } = await mount()
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [] })
+    const blank = el.querySelector('.sidebar__body')
+    expect(fire(blank, 'dragover', [])).toBe(true)
+    expect(el.querySelector('.sidebar__header')?.classList.contains('sidebar__header--drop')).toBe(true)
+    fire(blank, 'drop', finder('Plan.md'))
+    await act(async () => {})
+    expect(bridge.file.import).toHaveBeenCalledExactlyOnceWith({ paths: ['/Users/yasin/Downloads/Plan.md'], targetDir: '/v' })
+    expect(el.querySelector('.sidebar__header--drop')).toBeNull()
+    // A row of this vault, from a folder, lands at the top level through the rename door.
+    fire(blank, 'drop', own(bridge, '/v/sub/b.md'))
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/sub/b.md', '/v/b.md', 'file')
+  })
+
+  it('a row that refuses a drop keeps it refused: the blank space under it does not take it (D12)', async () => {
+    const { el } = await mount()
+    fire(dirRow(el), 'dragstart')
+    // A folder dragged over itself: its row refuses, and the event reaches the blank space below.
+    expect(fire(dirRow(el), 'dragover')).toBe(false)
+    expect(el.querySelector('.sidebar__header--drop')).toBeNull()
+  })
+
+  it('a hidden item is skipped with no notice, from Finder and from this vault alike (S20, audit 19)', async () => {
+    const { bridge, props, el } = await mount()
+    fire(dirRow(el), 'drop', own(bridge, '/v/a.md', '/v/.hidden.md'))
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/sub/a.md', 'file')
+    fire(dirRow(el), 'drop', own(bridge, '/v/.hidden.md'))
+    fire(dirRow(el), 'drop', finder('.DS_Store'))
+    await act(async () => {})
+    expect(props.onRenameFile).toHaveBeenCalledOnce()
+    expect(props.onMoveEntries).not.toHaveBeenCalled()
+    expect(bridge.file.import).not.toHaveBeenCalled()
+    expect(props.onNotice).not.toHaveBeenCalled()
+  })
+
+  it('a row drag is the OS drag: dragstart is taken and dragOut gets the drag set and a pill; dropped back on a folder it moves in the app, and no box asks (D4, S30)', async () => {
+    const { bridge, props, el } = await mount()
+    expect(fire(fileRow(el), 'dragstart')).toBe(true)
+    expect(bridge.file.dragOut).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md'], icon: expect.stringMatching(/^data:image\/png;base64,/) })
+    // The OS drag comes back as files: the same paths are this window's own drag.
+    expect(fire(dirRow(el), 'dragover', [])).toBe(true)
+    fire(dirRow(el), 'drop', own(bridge, '/v/a.md'))
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/sub/a.md', 'file')
+    expect(bridge.file.import).not.toHaveBeenCalled()
+    move(0)
+    expect(props.onDraggedOut).not.toHaveBeenCalled()
+  })
+
+  it('a drag that LEFT the window asks once, at the first move with no button down (S26, S29); one that ends over the window asks nothing, though no target took it (S30); a quick flick that never starts the OS drag asks nothing (audit 4, 13)', async () => {
+    const { props, el } = await mount()
+    /** The OS drag over the window: Chromium fires `dragenter` and `dragover`; it left the window when a `dragleave` has no `relatedTarget`. */
+    const over = () => fire(document.body, 'dragover', [])
+    const leave = (relatedTarget: EventTarget | null = null) => act(() => void document.body.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget })))
+    fire(fileRow(el), 'dragstart')
+    over()
+    leave()
+    move(1) // the button is still down: the OS drag has not taken over yet
+    expect(props.onDraggedOut).not.toHaveBeenCalled()
+    move(0)
+    expect(props.onDraggedOut).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
+    move(0)
+    expect(props.onDraggedOut).toHaveBeenCalledOnce()
+
+    // Out and back in, then it ends over the editor or the tab bar: no target took it, no `drop` came, and nothing asks.
+    fire(fileRow(el), 'dragstart')
+    leave()
+    fire(document.body, 'dragenter', [])
+    over()
+    leave(dirRow(el)) // a move from one element to another inside the window
+    move(0)
+    expect(props.onDraggedOut).toHaveBeenCalledOnce()
+    // The button came up before the OS drag began: no drag event at all, and nothing asks.
+    fire(fileRow(el), 'dragstart')
+    move(0)
+    expect(props.onDraggedOut).toHaveBeenCalledOnce()
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
+  it('a drag out that another window of the app took (main pushes `file:drag-landed`) asks nothing; a push of another drag changes nothing (YAZ-3263)', async () => {
+    const { bridge, props, el } = await mount()
+    const landed = (paths: string[]) => act(() => (bridge.file.onDragLanded.mock.calls.at(-1)?.[0] as (ev: { paths: string[] }) => void)({ paths }))
+    const leave = () => act(() => void document.body.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: null })))
+    fire(fileRow(el), 'dragstart')
+    leave()
+    landed(['/v/a.md'])
+    move(0)
+    expect(props.onDraggedOut).not.toHaveBeenCalled()
+    // The next drag starts clean, and a push of other paths is not its own.
+    fire(fileRow(el), 'dragstart')
+    leave()
+    landed(['/v/sub'])
+    move(0)
+    expect(props.onDraggedOut).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
+  })
+  it('main\'s `file:drag-ended` at the release ends the drag: a drag that left asks at once, with the pointer still over Finder; the later move asks nothing more (YAZ-3294 D24, S80)', async () => {
+    const { bridge, props, el } = await mount()
+    const ended = (paths: string[]) => act(() => (bridge.file.onDragEnded.mock.calls.at(-1)?.[0] as (ev: { paths: string[] }) => void)({ paths }))
+    const leave = () => act(() => void document.body.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: null })))
+    fire(fileRow(el), 'dragstart')
+    leave()
+    ended(['/v/a.md'])
+    expect(props.onDraggedOut).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
+    move(0)
+    expect(props.onDraggedOut).toHaveBeenCalledOnce()
+    // A push of other paths is not this drag's end: the pointer's return still ends it (S82's fallback).
+    fire(fileRow(el), 'dragstart')
+    leave()
+    ended(['/v/sub'])
+    expect(props.onDraggedOut).toHaveBeenCalledOnce()
+    move(0)
+    expect(props.onDraggedOut).toHaveBeenCalledTimes(2)
+    // The move first, then the push: one end per drag, and the push is ignored.
+    fire(fileRow(el), 'dragstart')
+    leave()
+    move(0)
+    ended(['/v/a.md'])
+    expect(props.onDraggedOut).toHaveBeenCalledTimes(3)
+  })
+
+  it('a push of the release after a drop back inside the window asks nothing (YAZ-3294 S81)', async () => {
+    const { bridge, props, el } = await mount()
+    const ended = (paths: string[]) => act(() => (bridge.file.onDragEnded.mock.calls.at(-1)?.[0] as (ev: { paths: string[] }) => void)({ paths }))
+    const leave = () => act(() => void document.body.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: null })))
+    fire(fileRow(el), 'dragstart')
+    leave()
+    expect(fire(dirRow(el), 'dragover', [])).toBe(true)
+    fire(dirRow(el), 'drop', own(bridge, '/v/a.md'))
+    ended(['/v/a.md'])
+    move(0)
+    expect(props.onDraggedOut).not.toHaveBeenCalled()
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/sub/a.md', 'file')
   })
 })
 
@@ -1330,6 +1786,9 @@ describe('blank-space copy path (GRO-2273)', () => {
  */
 describe('delete (GRO-2272)', () => {
   const openOn = async (selector: string, over: Partial<SidebarProps> = {}) => {
+    // A second mount in one test unmounts the first: a panel left mounted keeps its window listeners for the tests after it.
+    act(() => root?.unmount())
+    container?.remove()
     const m = await mount(over)
     act(() => void m.el.querySelector(selector)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     return m
@@ -1358,21 +1817,21 @@ describe('delete (GRO-2272)', () => {
     const { el, props } = await openOn('.tree__row--file')
     act(() => itemByLabel(el, 'Delete')?.click())
     expect(sheet(el)).not.toBeNull()
-    expect(props.onDeleteFile).not.toHaveBeenCalled()
+    expect(props.onDeleteEntries).not.toHaveBeenCalled()
   })
 
-  it('confirming calls onDeleteFile with the absolute path', async () => {
+  it('confirming calls onDeleteEntries with the absolute path', async () => {
     const { el, props } = await openOn('.tree__row--file')
     act(() => itemByLabel(el, 'Delete')?.click())
     await act(async () => sheetBtn(el, 'Delete')?.click())
-    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
   })
 
   it('cancelling calls nothing and closes the sheet', async () => {
     const { el, props } = await openOn('.tree__row--file')
     act(() => itemByLabel(el, 'Delete')?.click())
     await act(async () => sheetBtn(el, 'Cancel')?.click())
-    expect(props.onDeleteFile).not.toHaveBeenCalled()
+    expect(props.onDeleteEntries).not.toHaveBeenCalled()
     expect(sheet(el)).toBeNull()
   })
 
@@ -1381,7 +1840,7 @@ describe('delete (GRO-2272)', () => {
     act(() => itemByLabel(el, 'Delete')?.click())
     expect(sheet(el)?.textContent).toContain('"sub"')
     await act(async () => sheetBtn(el, 'Delete')?.click())
-    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/sub'])
   })
 
   it('"Don\'t ask me again" persists confirmDelete: false through onChangeSettings', async () => {
@@ -1390,14 +1849,14 @@ describe('delete (GRO-2272)', () => {
     act(() => void el.querySelector<HTMLInputElement>('.confirm__ask input')?.click())
     await act(async () => sheetBtn(el, 'Delete')?.click())
     expect(props.onChangeSettings).toHaveBeenCalledWith(expect.objectContaining({ confirmDelete: false }))
-    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
   })
 
   it('confirmDelete: false deletes DIRECTLY — no sheet at all (YAZ-857: the setting finally gates)', async () => {
     const { el, props } = await openOn('.tree__row--file', { settings: { ...DEFAULT_SETTINGS, confirmDelete: false } })
     act(() => itemByLabel(el, 'Delete')?.click())
     expect(sheet(el)).toBeNull()
-    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
   })
 
   it('shows the backlink count when notes link to the target', async () => {
@@ -1449,7 +1908,127 @@ describe('delete (GRO-2272)', () => {
     await act(async () => itemByLabel(m.el, 'Delete')?.click())
     expect(sheet(m.el)).not.toBeNull()
     await act(async () => sheetBtn(m.el, 'Delete')?.click())
-    expect(m.props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(m.props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
+  })
+})
+
+/**
+ * ⌘⌫ and the whole selection (YAZ-3272 D20, D21): App's window listener asks the handle's `delete`;
+ * the RULES are here — a selection, no open menu, no vault row. The menu's Delete takes the ordered
+ * selection when the row is in it, and a row inside a selected folder is left out (the folder carries it).
+ */
+describe('delete the whole selection with ⌘⌫ and the menu (YAZ-3272)', () => {
+  const NESTED: TreeNode[] = [
+    { type: 'dir', name: 'sub', path: '/v/sub', children: [{ type: 'file', name: 'inner.md', path: '/v/sub/inner.md', size: 1, mtime: 1, kind: 'markdown' }] },
+    { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+    { type: 'file', name: 'c.md', path: '/v/c.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+  const withTree = (bridge: ReturnType<typeof installBridge>) => void bridge.tree.mockResolvedValue({ root: '/v', tree: NESTED, generatedAt: 1 })
+  const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  const shiftClickRow = (row: HTMLElement | null) => act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+  const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  const sheetText = (el: HTMLElement) => el.querySelector('.confirm .confirm__text')?.textContent ?? null
+  const enter = () => act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })))
+  const mountWith = (over: Partial<SidebarProps> = {}) => {
+    const clipboardRef: SidebarProps['clipboardRef'] = { current: null }
+    return mount({ clipboardRef, ...over }, withTree).then((m) => ({ ...m, clipboardRef }))
+  }
+
+  it('S66: one row selected, ⌘⌫ asks about that row; Enter deletes it', async () => {
+    const { el, props, clipboardRef } = await mountWith()
+    act(() => rowByPath(el, '/v/a.md')?.click())
+    let acted = false
+    act(() => void (acted = clipboardRef.current?.delete() ?? false))
+    expect(acted).toBe(true)
+    expect(sheetText(el)).toBe('Delete "a"? It moves to the Trash.')
+    expect(props.onDeleteEntries).not.toHaveBeenCalled()
+    await act(async () => enter())
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
+  })
+
+  it('S67: three rows selected, ⌘⌫ asks ONCE for all three, in the panel’s order; Enter hands the list to the one door', async () => {
+    const { el, props, clipboardRef } = await mountWith()
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    shiftClickRow(rowByPath(el, '/v/sub'))
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    act(() => void clipboardRef.current?.delete())
+    expect(sheetText(el)).toBe('Delete 3 items? They move to the Trash.')
+    await act(async () => enter())
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/sub', '/v/a.md', '/v/c.md'])
+  })
+
+  it('a row inside a selected folder is left out: the folder carries it', async () => {
+    const { el, props, clipboardRef } = await mountWith()
+    // → opens the folder and ← folds it again at the end: the open folders of `/v` outlive this test.
+    const arrow = (key: string) => act(() => void rowByPath(el, '/v/sub')?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
+    arrow('ArrowRight')
+    shiftClickRow(rowByPath(el, '/v/sub'))
+    shiftClickRow(rowByPath(el, '/v/sub/inner.md'))
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(3)
+    act(() => void clipboardRef.current?.delete())
+    expect(sheetText(el)).toBe('Delete 2 items? They move to the Trash.')
+    await act(async () => enter())
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/sub', '/v/c.md'])
+    arrow('ArrowLeft')
+  })
+
+  it('S70: the menu of a selected row of 3 says "Delete 1 folder and 2 files" (YAZ-3293 D23) and takes the selection; a row outside it is deleted alone', async () => {
+    const { el, props } = await mountWith()
+    shiftClickRow(rowByPath(el, '/v/sub'))
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    rightClick(rowByPath(el, '/v/a.md'))
+    expect(itemByLabel(el, 'Delete')).toBeUndefined()
+    await act(async () => itemByLabel(el, 'Delete 1 folder and 2 files')?.click())
+    expect(sheetText(el)).toBe('Delete 3 items? They move to the Trash.')
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Delete')?.click())
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/sub', '/v/a.md', '/v/c.md'])
+
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Delete')?.click())
+    expect(sheetText(el)).toBe('Delete "sub"? 1 note moves to the Trash.')
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+  })
+
+  it('S71: with "Ask before deleting" off, ⌘⌫ deletes at once — no sheet', async () => {
+    const { el, props, clipboardRef } = await mountWith({ settings: { ...DEFAULT_SETTINGS, confirmDelete: false } })
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    act(() => void clipboardRef.current?.delete())
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith(['/v/a.md', '/v/c.md'])
+  })
+
+  it('S72: nothing selected, or an open context menu: the handle answers false and asks nothing', async () => {
+    const { el, props, clipboardRef } = await mountWith()
+    expect(clipboardRef.current?.delete()).toBe(false)
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    rightClick(rowByPath(el, '/v/a.md'))
+    expect(clipboardRef.current?.delete()).toBe(false)
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(props.onDeleteEntries).not.toHaveBeenCalled()
+  })
+
+  it('the links count of N items is of the notes outside them, each note once', async () => {
+    const rec = (base: string, links: string[] = []) => ({
+      path: `/v/${base}.md`, name: `${base}.md`, basename: base, title: base, folder: '', ext: 'md',
+      size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links, embeds: [],
+    })
+    // `hub` links to both items: one note. `c` links to `a`, but `c` goes too: not counted.
+    const records = [rec('a'), rec('c', ['a']), rec('hub', ['a', 'c'])]
+    const m = await mountWith()
+    m.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true } as never)
+    shiftClickRow(rowByPath(m.el, '/v/a.md'))
+    shiftClickRow(rowByPath(m.el, '/v/c.md'))
+    await act(async () => void m.clipboardRef.current?.delete())
+    await act(async () => undefined)
+    expect(sheetText(m.el)).toBe('Delete 2 items? They move to the Trash. 1 note links to them.')
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
   })
 })
 
@@ -5266,14 +5845,15 @@ describe('focus tab (YAZ-2619)', () => {
     expect(props.onRenameFile).not.toHaveBeenCalled()
   })
 
-  it('YAZ-2631 S30, S32, S33, S34, S39: below the top rows nothing reorders — a file inside a focused folder drags into a folder and moves on disk, and finds no place on a top file row; a folder there does not drag; a reorder drag finds no place on a deeper row; an item that shows on both levels does each', async () => {
+  it('YAZ-2631 S30, S32, S33, S34, S39: below the top rows nothing reorders — a file inside a focused folder drags into a folder and moves on disk, and finds no place on a top file row; a folder there drags only to move on disk (YAZ-3251 D5); a reorder drag finds no place on a deeper row; an item that shows on both levels does each', async () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'focus' }, { focus: ['/Projects', '/Projects/p.md', '/Notes', '/top.md'] })
     const [projects, p, notes, top, alpha] = [`${v}/Projects`, `${v}/Projects/p.md`, `${v}/Notes`, `${v}/top.md`, `${v}/Projects/Alpha`]
     act(() => rowByPath(el, projects)?.click())
     // S39: the item stands inside its focused folder, and again as a top row.
     const twice = () => rowsByPath(el, p)
     expect(twice().map((row) => row.closest('ul')?.getAttribute('role'))).toEqual(['group', 'tree'])
-    expect([...twice(), rowByPath(el, alpha)].map((row) => row?.draggable)).toEqual([true, true, false]) // S32
+    // S32: a folder below the top rows does not reorder; since YAZ-3251 D5 it drags to move on disk.
+    expect([...twice(), rowByPath(el, alpha)].map((row) => row?.draggable)).toEqual([true, true, true])
     // S30: from inside the folder it moves on disk, into a top folder or a deeper one — the fill, and no line.
     drag(twice()[0], 'dragstart')
     drag(rowByPath(el, notes), 'dragover', -1)
@@ -5540,12 +6120,12 @@ describe('favorites (YAZ-1766)', () => {
     expect(rowByPath(el, `${v}/Projects/Alpha`)?.querySelector('.tree__mark')).not.toBeNull()
   })
 
-  it('top rows drag to reorder: a line on the hovered edge, the new order written to the vault\'s file, and nothing moved on disk — a top file over a top folder too; below them a folder does not drag; the drag draws the top rows alone; one vault writes no order across vaults and names no vault (YAZ-2631 S1, S29, S32, R4)', async () => {
+  it('top rows drag to reorder: a line on the hovered edge, the new order written to the vault\'s file, and nothing moved on disk — a top file over a top folder too; below them a folder drags only to move on disk (YAZ-3251 D5); the drag draws the top rows alone; one vault writes no order across vaults and names no vault (YAZ-2631 S1, S29, S32, R4)', async () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects', '/top.md'] })
     expect(rowByPath(el, `${v}/Notes`)?.getAttribute('draggable')).toBe('true')
     expect(rowByPath(el, `${v}/top.md`)?.getAttribute('draggable')).toBe('true')
     act(() => rowByPath(el, `${v}/Projects`)?.click())
-    expect(rowByPath(el, `${v}/Projects/Alpha`)?.getAttribute('draggable')).toBe('false')
+    expect(rowByPath(el, `${v}/Projects/Alpha`)?.getAttribute('draggable')).toBe('true') // it moves on disk too (YAZ-3251 D5)
     expect(rowByPath(el, `${v}/Projects/p.md`)?.getAttribute('draggable')).toBe('true') // it moves on disk
     labelRenders.names = []
     drag(rowByPath(el, `${v}/top.md`), 'dragstart')
@@ -5912,13 +6492,13 @@ describe('favorites (YAZ-1766)', () => {
       const open = (copy: number) => rowsByPath(el, gtm)[copy]?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
       expect([open(0), open(1)]).toEqual(['false', 'false'])
       const listener = bridge.file.onClipChanged.mock.calls.at(-1)?.[0] as ((state: FileClipState) => void) | undefined
-      act(() => listener?.({ count: 1, op: 'copy', paths: ['/w/x.md'] }))
+      act(() => (listener === undefined ? undefined : pushed(bridge, listener)({ count: 1, op: 'copy', paths: ['/w/x.md'] })))
       // ⌘V: pick GTM alone in copy B (two plain clicks: it opens and closes again), then paste.
       act(() => rowsByPath(el, gtm)[1]?.click())
       act(() => rowsByPath(el, gtm)[1]?.click())
       expect([open(0), open(1)]).toEqual(['false', 'false'])
       await act(async () => void clipboardRef.current?.paste())
-      expect(bridge.file.paste).toHaveBeenLastCalledWith({ targetDir: gtm })
+      expect(bridge.file.paste).toHaveBeenLastCalledWith(into(gtm, 'copy', '/w/x.md'))
       expect([open(0), open(1)]).toEqual(['false', 'true'])
       // The menu's Paste on copy A opens copy A.
       rightClick(rowsByPath(el, gtm)[0] ?? null)
@@ -7058,7 +7638,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
   const withClipboard = (bridge: ReturnType<typeof installBridge>) => {
     bridge.tree.mockResolvedValue({ root: '/v', tree: MULTI_TREE, generatedAt: 1 })
     bridge.file.onClipChanged.mockImplementation((listener) => {
-      pushClip = listener
+      pushClip = pushed(bridge, listener)
       return () => undefined
     })
   }
@@ -7099,19 +7679,19 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     rightClick(rowByPath(el, '/v/a.md'))
     await act(async () => itemByLabel(el, 'Cut')?.click())
     expect(bridge.file.clip).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md'], op: 'cut' })
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Cut 1 item', 'cut')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Cut 1 file (a.md)', 'cut') // names, as every gesture toast (YAZ-3305)
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('inside a 2-selection the items count it — "Copy 2 items" — and clip the ORDERED selection, which stands', async () => {
+  it('inside a 2-selection the items count it by kind — "Copy 2 files" (YAZ-3293 D23) — and clip the ORDERED selection, which stands', async () => {
     const { el, bridge, props } = await mount({}, withClipboard)
     shiftClickRow(rowByPath(el, '/v/c.md')) // click order c → a…
     shiftClickRow(rowByPath(el, '/v/a.md'))
     rightClick(rowByPath(el, '/v/a.md'))
-    expect(itemByLabel(el, 'Cut 2 items')).toBeDefined()
-    await act(async () => itemByLabel(el, 'Copy 2 items')?.click())
+    expect(itemByLabel(el, 'Cut 2 files')).toBeDefined()
+    await act(async () => itemByLabel(el, 'Copy 2 files')?.click())
     expect(bridge.file.clip).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md', '/v/c.md'], op: 'copy' }) // …tree order out
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied 2 items', 'copy')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied 2 files (a.md, c.md)', 'copy') // names, in the order clipped (YAZ-3305)
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(2)
   })
 
@@ -7124,9 +7704,35 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     const paste = itemByLabel(el, 'Paste 2 items')
     expect(paste?.disabled).toBe(false)
     await act(async () => paste?.click())
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/sub' })
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 2 items', 'paste')
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/sub', 'copy', '/w/x.md', '/w/y.md'))
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 2 files (x.md, y.md)', 'paste')
+    expect(props.onMoved).not.toHaveBeenCalled() // a copy is not in the undo list (YAZ-3255 D10)
     expect(bridge.tree.mock.calls.length).toBe(treeReads + 1) // the explicit refresh: a copy broadcasts nothing
+  })
+
+  it('a Paste of a Copy that lands items plays ONE land sound; a Paste of a Cut leaves it to App (onMoved); nothing pasted, a failure or a rejected paste plays none (YAZ-3267 D15, S54, S56)', async () => {
+    const { el, bridge, props } = await mount({}, withClipboard)
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [{ from: '/w/x.md', to: '/v/sub/x.md', kind: 'file' }, { from: '/w/y.md', to: '/v/sub/y.md', kind: 'file' }], failed: [] })
+    act(() => pushClip?.(clipOf('copy', '/w/x.md', '/w/y.md')))
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
+    expect(bridge.app.sound.mock.calls).toEqual([['land']])
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [], failed: [{ from: '/w/x.md', code: 'ALREADY_EXISTS', message: 'already exists' }] })
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [], failed: [] })
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
+    bridge.file.paste.mockRejectedValueOnce({ code: 'NOT_FOUND', message: 'target dir is gone' })
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
+    expect(bridge.app.sound).toHaveBeenCalledTimes(1)
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [{ from: '/w/x.md', to: '/v/x.md', kind: 'file' }], failed: [] })
+    act(() => pushClip?.(clipOf('cut', '/w/x.md')))
+    rightClick(rowByPath(el, '/v/a.md'))
+    await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    expect(props.onMoved).toHaveBeenCalledTimes(1)
+    expect(bridge.app.sound).toHaveBeenCalledTimes(1)
   })
 
   it('a FILE row pastes into its PARENT (the "New note" rule), and per-entry failures are counted and named', async () => {
@@ -7135,8 +7741,10 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     act(() => pushClip?.(clipOf('cut', '/w/x.md', '/w/Note.md')))
     rightClick(rowByPath(el, '/v/a.md'))
     await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v' })
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 1 item, skipped 1: Note — already exists', 'paste')
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v', 'cut', '/w/x.md', '/w/Note.md'))
+    // A Paste of a Cut is a move gesture (YAZ-3255 S39): only what moved is in it.
+    expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: '/w/x.md', newPath: '/v/x.md', kind: 'file' }], cleared: [] }, 'Pasted 1 file (x.md), skipped 1: Note — already exists')
+    expect(props.onNotice).not.toHaveBeenCalled()
   })
 
   it('E: a paste that fails names the note by its title (YAZ-2420 D14)', async () => {
@@ -7186,6 +7794,110 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(itemByLabel(el, 'Paste 3 items')).toBeDefined()
   })
 
+  it("S53: back from Finder, the window's focus reads the clipboard again, so Paste counts Finder's files; unmounted, it stops listening (YAZ-3265 D13)", async () => {
+    const added = vi.spyOn(window, 'addEventListener')
+    const removed = vi.spyOn(window, 'removeEventListener')
+    const focusHandlers = (spy: typeof added | typeof removed) => spy.mock.calls.filter(([type]) => type === 'focus').map(([, handler]) => handler)
+    const { el, bridge } = await mount({}, withClipboard)
+    expect(focusHandlers(added).length).toBeGreaterThan(0)
+    rightClick(rowByPath(el, '/v/sub'))
+    expect(itemByLabel(el, 'Paste')?.disabled).toBe(true)
+    // ⌘C on two files in Finder: main's clip-state now answers them.
+    bridge.file.clipState.mockResolvedValue(clipOf('copy', '/Users/me/Downloads/a.pdf', '/Users/me/Downloads/b.md'))
+    await act(async () => void window.dispatchEvent(new Event('focus')))
+    rightClick(rowByPath(el, '/v/sub'))
+    expect(itemByLabel(el, 'Paste 2 items')?.disabled).toBe(false)
+    // Unmounted, it stops listening: every focus handler it added goes.
+    act(() => root?.unmount())
+    root = null
+    expect(focusHandlers(removed)).toEqual(expect.arrayContaining(focusHandlers(added)))
+    added.mockRestore()
+    removed.mockRestore()
+  })
+
+  it('a push that lands while a focus read is in flight WINS over the read (YAZ-3265 D13)', async () => {
+    const { el, bridge } = await mount({}, withClipboard)
+    let settle: ((state: FileClipState) => void) | null = null
+    bridge.file.clipState.mockImplementation(() => new Promise((resolve) => (settle = resolve)))
+    await act(async () => void window.dispatchEvent(new Event('focus')))
+    act(() => pushClip?.(clipOf('cut', '/w/x.md', '/w/y.md', '/w/z.md')))
+    await act(async () => settle?.(clipOf('copy', '/w/x.md')))
+    rightClick(rowByPath(el, '/v/sub'))
+    expect(itemByLabel(el, 'Paste 3 items')).toBeDefined()
+  })
+
+  /**
+   * YAZ-3266 (checker 2C1): the window's cached clip can be old — text copied in a note changes the system clipboard with
+   * no event. So a paste reads `clipState` FRESH and uses that one answer for D21, D20, the undo record and the sound; the
+   * paste names it (`expect`), and main pastes that clip or nothing (`CONFLICT`).
+   */
+  describe('YAZ-3266: a paste reads the clipboard fresh and names the clip it confirmed', () => {
+    const REPORT = '/w/report.pdf'
+    const NOTE = '/Users/me/Downloads/Note.md'
+    /** App ⌘X, then ⌘C in Finder and back (the focus read caches Finder's file): the menu says "Paste 1 item" for Note.md. */
+    const finderShown = async () => {
+      const mounted = await mount({}, withClipboard)
+      act(() => pushClip?.(clipOf('cut', REPORT)))
+      mounted.bridge.file.clipState.mockResolvedValue(clipOf('copy', NOTE))
+      await act(async () => void window.dispatchEvent(new Event('focus')))
+      return mounted
+    }
+
+    it("the window shows Finder's copy, then text copied in a note makes main answer the app's cut: the paste runs that cut as a move, with Undo (S39)", async () => {
+      const { el, bridge, props } = await finderShown()
+      // Text copied in a note: no focus event, no push. Only main's answer changes.
+      bridge.file.clipState.mockResolvedValue(clipOf('cut', REPORT))
+      bridge.file.paste.mockResolvedValueOnce({ pasted: [{ from: REPORT, to: '/v/sub/report.pdf', kind: 'file' }], failed: [] })
+      const reads = bridge.file.clipState.mock.calls.length
+      rightClick(rowByPath(el, '/v/sub'))
+      await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+      expect(bridge.file.clipState.mock.calls.length).toBe(reads + 1) // read again at paste time
+      expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/sub', expect: { op: 'cut', paths: [REPORT] } })
+      // A move: on the undo list with its toast (App says it and plays the sound), never "Pasted" as a copy.
+      expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: REPORT, newPath: '/v/sub/report.pdf', kind: 'file' }], cleared: [] }, 'Pasted 1 file (report.pdf)')
+      expect(props.onNotice).not.toHaveBeenCalled()
+      expect(bridge.app.sound).not.toHaveBeenCalled()
+    })
+
+    it('⌘V goes through the same fresh read', async () => {
+      const clipboardRef = box()
+      const { el, bridge } = await mount({ clipboardRef }, withClipboard)
+      act(() => pushClip?.(clipOf('copy', NOTE)))
+      bridge.file.clipState.mockResolvedValue(clipOf('cut', REPORT))
+      act(() => rowByPath(el, '/v/sub')?.click())
+      await act(async () => void clipboardRef.current?.paste())
+      expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/sub', expect: { op: 'cut', paths: [REPORT] } })
+    })
+
+    it('the clipboard changes between the read and the paste: main pastes nothing (CONFLICT), the notice says so, nothing is a move, and the label reads again', async () => {
+      const { el, bridge, props } = await finderShown()
+      bridge.file.paste.mockRejectedValueOnce({ code: 'CONFLICT', message: CLIP_CHANGED })
+      rightClick(rowByPath(el, '/v/sub'))
+      await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+      expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/sub', expect: { op: 'copy', paths: [NOTE] } })
+      expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('The clipboard changed. Paste again.', 'info')
+      expect(props.onMoved).not.toHaveBeenCalled()
+      expect(bridge.app.sound).not.toHaveBeenCalled()
+      const reads = bridge.file.clipState.mock.calls.length
+      bridge.file.clipState.mockResolvedValue(clipOf('cut', REPORT))
+      bridge.file.paste.mockRejectedValueOnce({ code: 'CONFLICT', message: CLIP_CHANGED })
+      rightClick(rowByPath(el, '/v/sub'))
+      await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+      expect(bridge.file.clipState.mock.calls.length).toBe(reads + 2) // the paste's read, and the read after the CONFLICT
+    })
+
+    it('nothing on the clipboard by paste time: "Nothing to paste", and no paste is sent', async () => {
+      const { el, bridge, props } = await finderShown()
+      bridge.file.clipState.mockResolvedValue(null)
+      rightClick(rowByPath(el, '/v/sub'))
+      await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+      expect(bridge.file.paste).not.toHaveBeenCalled()
+      expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Nothing to paste', 'info')
+      rightClick(rowByPath(el, '/v/sub'))
+      expect(itemByLabel(el, 'Paste')?.disabled).toBe(true) // the label learned it too
+    })
+  })
+
   // ---- The chords' handle (D6 amended): App's window listener asks these; the RULES are here ----
 
   /** A box App would hold; the Sidebar fills it every render and empties it on unmount. */
@@ -7219,14 +7931,14 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(bridge.file.paste).not.toHaveBeenCalled()
     act(() => pushClip?.(clipOf('copy', '/w/x.md')))
     await act(async () => void verb(clipboardRef, 'paste'))
-    expect(bridge.file.paste).toHaveBeenLastCalledWith({ targetDir: '/v' })
+    expect(bridge.file.paste).toHaveBeenLastCalledWith(into('/v', 'copy', '/w/x.md'))
     shiftClickRow(rowByPath(el, '/v/sub'))
     await act(async () => void verb(clipboardRef, 'paste'))
-    expect(bridge.file.paste).toHaveBeenLastCalledWith({ targetDir: '/v/sub' })
+    expect(bridge.file.paste).toHaveBeenLastCalledWith(into('/v/sub', 'copy', '/w/x.md'))
     act(() => void body(el)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     shiftClickRow(rowByPath(el, '/v/a.md'))
     await act(async () => void verb(clipboardRef, 'paste'))
-    expect(bridge.file.paste).toHaveBeenLastCalledWith({ targetDir: '/v' })
+    expect(bridge.file.paste).toHaveBeenLastCalledWith(into('/v', 'copy', '/w/x.md'))
     expect(bridge.file.paste).toHaveBeenCalledTimes(3)
   })
 
@@ -7268,7 +7980,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     act(() => pushClip?.(clipOf('copy', '/w/x.md')))
     act(() => rowByPath(el, '/v/sub')?.click())
     await act(async () => void verb(clipboardRef, 'paste'))
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/sub' })
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/sub', 'copy', '/w/x.md'))
     act(() => rowByPath(el, '/v/sub')?.click()) // fold it back the way it was found
   })
 
@@ -7283,7 +7995,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     act(() => void body(el)?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })))
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
     await act(async () => void verb(clipboardRef, 'paste'))
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v' })
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v', 'copy', '/w/x.md'))
     act(() => rowByPath(el, '/v/sub')?.click()) // fold it back the way it was found
   })
 
@@ -7607,7 +8319,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       rightClick(shortcutRow(el))
       await act(async () => itemByLabel(el, 'Remove shortcut')?.click())
       expect(disk.get(HEALTH)).toBe('---\n---\nBody\n')
-      expect(props.onDeleteFile).not.toHaveBeenCalled()
+      expect(props.onDeleteEntries).not.toHaveBeenCalled()
       act(() => indexSource.update(() => null, records(), FOLDERS, true))
       expect(shortcutRow(el)).toBeNull()
       expect(row(el, HEALTH)).not.toBeNull() // the note is where it lives
@@ -7691,7 +8403,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         const mounted = await mountLinked(undefined, over, (b) => {
           b.tree.mockResolvedValue({ root: '/v', tree: WITH_SUB, generatedAt: 1 })
           b.file.onClipChanged.mockImplementation((listener) => {
-            pushClip = listener
+            pushClip = pushed(b, listener)
             return () => undefined
           })
         })
@@ -7717,17 +8429,38 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         expect(bridge.file.clip).not.toHaveBeenCalled() // this window cut nothing: the paths are main's
         await act(async () => sheetBtn(el, 'Move')?.click())
         expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
+        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'cut', ALPHA))
       })
 
       it('a note Cut and Pasted into another folder leaves the old folder’s values behind in that move (D20)', async () => {
-        const { el, disk, bridge, writeFile, paste } = await mountCut()
+        const { el, disk, bridge, writeFile, paste, props } = await mountCut()
         disk.set('/v/Areas/Alpha.md', HELD) // where the paste lands it
         bridge.file.paste.mockResolvedValue({ pasted: [{ from: ALPHA, to: '/v/Areas/Alpha.md', kind: 'file' }], failed: [] })
         await paste('cut', [ALPHA])
         expect(writeFile).not.toHaveBeenCalled()
         await act(async () => sheetBtn(el, 'Move')?.click())
         expect(disk.get('/v/Areas/Alpha.md')).toBe('---\n---\nBody\n')
+        // The undo list gets the move and the blocks it cleared (YAZ-3255 S39), so an undo can put them back.
+        expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: ALPHA, newPath: '/v/Areas/Alpha.md', kind: 'file' }], cleared: [{ path: ALPHA, values: { [PROJECTS_ID]: { order: 1 } } }] }, 'Pasted 1 file (Alpha.md)')
+      })
+
+      it('YAZ-3266: Move on the sheet pastes the clip the sheet asked about, never what the clipboard holds by then; another clip pushed while it stands closes it, the same one does not', async () => {
+        const { el, bridge, clip, paste } = await mountCut()
+        await paste('cut', [ALPHA])
+        expect(el.querySelector('.confirm')).not.toBeNull()
+        // The same clip pushed again (another window's echo): the question stands.
+        clip('cut', ALPHA)
+        expect(el.querySelector('.confirm')).not.toBeNull()
+        // Text copied in a note while the sheet stands: no event, main now answers another clip. Move still names the cut it asked about.
+        bridge.file.clipState.mockResolvedValue({ count: 1, op: 'copy', paths: ['/Users/me/Downloads/Note.md'] })
+        await act(async () => sheetBtn(el, 'Move')?.click())
+        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas', expect: { op: 'cut', paths: [ALPHA] } })
+        // Another clip pushed while a sheet stands ends the question: nothing is pasted.
+        await paste('cut', [ALPHA])
+        expect(el.querySelector('.confirm')).not.toBeNull()
+        clip('copy', '/Users/me/Downloads/Note.md')
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.paste).toHaveBeenCalledTimes(1)
       })
 
       it('several items: ONE sheet for all of them', async () => {
@@ -7737,7 +8470,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         expect(sheetText(el)).toBe("Move 3 items to 'Areas'? 2 notes will lose their values for Projects.")
         expect(bridge.file.paste).not.toHaveBeenCalled()
         await act(async () => sheetBtn(el, 'Move')?.click())
-        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
+        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'cut', ALPHA, ZETA, '/v/top.md'))
       })
 
       it('Cancel: nothing is pasted and the cut stays on the clipboard', async () => {
@@ -7779,7 +8512,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
           indexed(bridge)
           await act(async () => sheetBtn(el, 'Copy')?.click())
           expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
+          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'copy', ALPHA))
           expect(disk.get(COPY)).toBe('---\n---\nBody\n')
           expect(disk.get(ALPHA)).toBe(HELD)
           expect(writeFile).toHaveBeenCalledTimes(1)
@@ -7804,7 +8537,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
           indexed(bridge)
           await paste('copy', [ALPHA], '/v/Projects')
           expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Projects' })
+          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Projects', 'copy', ALPHA))
           expect(bridge.readFile).toHaveBeenCalledWith(SAME)
           expect(disk.get(SAME)).toBe(HELD)
           expect(writeFile).not.toHaveBeenCalled()
@@ -7840,7 +8573,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
           bridge.index.mockClear()
           await paste('copy', [ALPHA])
           expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
+          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'copy', ALPHA))
           expect(bridge.index).not.toHaveBeenCalled()
           expect(bridge.readFile).not.toHaveBeenCalledWith(PLAIN)
           expect(writeFile).not.toHaveBeenCalled()
@@ -7852,7 +8585,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
           await paste('copy', ['/v/top.md'])
           await paste('copy', ['/w/Projects/Alpha.md'])
           expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste.mock.calls).toEqual([[{ targetDir: '/v/Areas' }], [{ targetDir: '/v/Areas' }]])
+          expect(bridge.file.paste.mock.calls).toEqual([[into('/v/Areas', 'copy', '/v/top.md')], [into('/v/Areas', 'copy', '/w/Projects/Alpha.md')]])
         })
       })
 
@@ -7869,7 +8602,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         await paste('cut', [ALPHA], SUB) // Projects still shows it
         await paste('cut', [ALPHA], '/v/Projects') // where it already is: main skips it, so it is no move
         expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.paste.mock.calls).toEqual([[{ targetDir: '/v/Areas' }], [{ targetDir: SUB }], [{ targetDir: '/v/Projects' }]])
+        expect(bridge.file.paste.mock.calls).toEqual([[into('/v/Areas', 'cut', '/v/top.md')], [into(SUB, 'cut', ALPHA)], [into('/v/Projects', 'cut', ALPHA)]])
       })
 
       it('an item already in the folder is not counted among the moves', async () => {
@@ -8059,7 +8792,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
   const clipboard = (bridge: Bridge) => {
     const held: { push: ((state: FileClipState) => void) | null } = { push: null }
     bridge.file.onClipChanged.mockImplementation((listener) => {
-      held.push = listener
+      held.push = pushed(bridge, listener)
       return () => undefined
     })
     return held
@@ -8234,7 +8967,24 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(clipboardRef.current?.cutOrCopy('copy')).toBe(false)
     expect(bridge.file.clip).not.toHaveBeenCalled()
     await act(async () => void clipboardRef.current?.paste())
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: b })
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(b, 'copy', '/elsewhere/x.md'))
+  })
+
+  it('a vault is no file: with a vault row in the selection ⌘⌫ deletes nothing and the menu offers no Delete; rows of two vaults delete together (YAZ-3272 S72, D21)', async () => {
+    const clipboardRef = { current: null as SidebarClipboard | null }
+    const { el, a, b, props } = await two({ clipboardRef })
+    shiftClick(rowByPath(el, `${a}/a.md`))
+    shiftClick(rowByPath(el, b))
+    expect(clipboardRef.current?.delete()).toBe(false)
+    rightClick(rowByPath(el, `${a}/a.md`))
+    expect(itemByLabel(el, 'Delete')).toBeUndefined()
+    expect(itemByLabel(el, 'Delete 1 folder and 1 file')).toBeUndefined()
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    shiftClick(rowByPath(el, b)) // out of the selection again
+    shiftClick(rowByPath(el, `${b}/b.md`))
+    act(() => void clipboardRef.current?.delete())
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((btn) => btn.textContent === 'Delete')?.click())
+    expect(props.onDeleteEntries).toHaveBeenCalledExactlyOnceWith([`${a}/a.md`, `${b}/b.md`])
   })
 
   it('a file dropped on its own vault\'s row moves to that vault\'s root — the row shows the fill of a drop folder, never the line of a reorder; a drop on a folder or the row of a different vault is refused with a notice; no drop of a file reorders the vaults; the header is no drop target (S14, S45, R11; YAZ-2631 S50)', async () => {
@@ -8268,6 +9018,24 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(props.onRenameFile).toHaveBeenCalledTimes(1)
   })
 
+  it('a vault row in the selection never moves on disk (S8): the drag of a selected file leaves it out, and a drag of the vault row is its reorder, never the OS drag; Finder items dropped on a vault row go to that vault\u2019s root (audit 10)', async () => {
+    const { el, a, b, bridge } = await two()
+    shiftClick(rowByPath(el, b))
+    shiftClick(rowByPath(el, `${a}/a.md`))
+    expect(fire(rowByPath(el, `${a}/a.md`), 'dragstart').defaultPrevented).toBe(true)
+    expect(bridge.file.dragOut).toHaveBeenCalledExactlyOnceWith({ paths: [`${a}/a.md`], icon: expect.any(String) })
+    expect(fire(rowByPath(el, b), 'dragstart').defaultPrevented).toBe(false)
+    expect(bridge.file.dragOut).toHaveBeenCalledOnce()
+    fire(rowByPath(el, b), 'dragend')
+
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [] })
+    const drop = new MouseEvent('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: { types: ['Files'], files: [new File(['x'], 'Plan.md')], dropEffect: 'none' } })
+    act(() => void rowByPath(el, b)?.dispatchEvent(drop))
+    await act(async () => {})
+    expect(bridge.file.import).toHaveBeenCalledExactlyOnceWith({ paths: ['/Users/yasin/Downloads/Plan.md'], targetDir: b })
+  })
+
   it('a Copy made in one vault pastes into a folder of the other, judged by the vault it lands in — as a paste from another window is (S46)', async () => {
     let held: ReturnType<typeof clipboard> | undefined
     const { el, a, b, props, bridge } = await two({}, (bridge) => void (held = clipboard(bridge)))
@@ -8281,8 +9049,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     bridge.index.mockClear()
     rightClick(rowByPath(el, `${b}/docs`))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: `${b}/docs` })
-    expect(props.onNotice).toHaveBeenLastCalledWith('Pasted 1 item', 'paste')
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(`${b}/docs`, 'copy', `${a}/a.md`))
+    expect(props.onNotice).toHaveBeenLastCalledWith('Pasted 1 file (a.md)', 'paste')
     // The folder it landed in opens, and the tree and the index read are the target vault's alone.
     expect(isOpen(el, `${b}/docs`)).toBe('true')
     expect(bridge.tree.mock.calls.every(([root]) => root === b)).toBe(true)
@@ -8296,8 +9064,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     bridge.file.paste.mockResolvedValueOnce({ pasted: [{ from: `${a}/a.md`, to: `${b}/a.md`, kind: 'file' }], failed: [] })
     rightClick(rowByPath(el, b))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: b })
-    expect(props.onNotice).toHaveBeenLastCalledWith('Pasted 1 item', 'paste')
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(b, 'cut', `${a}/a.md`))
+    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: `${a}/a.md`, newPath: `${b}/a.md`, kind: 'file' }], cleared: [] }, 'Pasted 1 file (a.md)')
     expect(el.querySelector('.confirm')).toBeNull()
   })
 
@@ -8387,7 +9155,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     const at = pair()
     const plain = at.b.replace('/work', '/plain')
     const { el, props } = await mountVaults([vault(at.a, 'Notes'), vault(plain, 'Plain'), vault(at.b, 'Work')])
-    expect([at.a, plain, at.b, `${at.a}/sub`].map((row) => rowByPath(el, row)?.draggable)).toEqual([true, true, true, false])
+    // A folder below a vault row drags to move on disk (YAZ-3251 D5), never to reorder.
+    expect([at.a, plain, at.b, `${at.a}/sub`].map((row) => rowByPath(el, row)?.draggable)).toEqual([true, true, true, true])
     const dragTo = (from: string, to: string, edge: 'before' | 'after') => {
       drag(rowByPath(el, from), 'dragstart')
       drag(rowByPath(el, to), 'dragover', edge === 'before' ? -1 : 1)
@@ -8504,7 +9273,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     // Without the vault row the same two vaults give the plural items back.
     shiftClick(rowByPath(el, b))
     rightClick(rowByPath(el, `${b}/b.md`))
-    expect(topItems(el)).toEqual(expect.arrayContaining(['Open 2 in new tabs', 'Add 2 to focus', 'Cut 2 items', 'Copy 2 items', 'Copy 2 paths', 'Add 2 to favorites']))
+    expect(topItems(el)).toEqual(expect.arrayContaining(['Open 2 in new tabs', 'Add 2 to focus', 'Cut 1 folder and 1 file', 'Copy 1 folder and 1 file', 'Copy 2 paths', 'Add 2 to favorites']))
   })
 
   it('a row is its own vault\'s: "Open in ▸ New window" opens that vault alone, and the delete count comes from that vault\'s index (S33)', async () => {

@@ -1,5 +1,5 @@
 import type { Stats } from 'node:fs'
-import { readdir, rename, stat } from 'node:fs/promises'
+import { lstat, readdir, rename, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { RenameFileResponse } from '@shared/types'
 import { canRenameWithoutConversion } from '@shared/fileKind'
@@ -39,7 +39,8 @@ export async function hasExactDirectoryEntry(
  * createFile's never-overwrite rule); an external writer landing on the target in the
  * microseconds between check and rename is out of reach, exactly like any external edit.
  * A case-only rename on a case-insensitive fs stats the SOURCE at the target path — same
- * inode is not a collision.
+ * inode is not a collision. The target is looked at with `lstat`, so a link there, even a
+ * broken one, is taken (YAZ-3271); the source's own entry (its `lstat`) is the one compared.
  */
 export async function renameFile(req: unknown): Promise<RenameFileResponse> {
   const { oldPath, newPath } = requireRequest(req)
@@ -65,16 +66,21 @@ export async function renameFile(req: unknown): Promise<RenameFileResponse> {
     const parent = await stat(parentP).catch(() => null)
     if (parent === null) throw new BridgeFailure('NOT_FOUND', 'the target folder does not exist', { path: parentP })
     if (!parent.isDirectory()) throw new BridgeFailure('NOT_A_DIRECTORY', 'the target parent is not a folder', { path: parentP })
-    await requireFreeTarget(src, newP)
+    await requireFreeTarget(src, newP, await lstat(oldP))
     await rename(oldP, newP)
     return { oldPath: oldP, newPath: newP, kind }
   })
 }
 
-/** The never-overwrite pre-check above, for `src` landing on `newP`: `ALREADY_EXISTS` unless nothing is there, or `src` itself is (a case-only rename). */
-export async function requireFreeTarget(src: Stats, newP: string): Promise<void> {
-  const dst = await stat(newP).catch(() => null)
-  if (dst !== null && !(dst.ino === src.ino && dst.dev === src.dev)) {
+/**
+ * The never-overwrite pre-check above, for `src` landing on `newP`: `ALREADY_EXISTS` unless nothing is
+ * there, or the source's own entry is (a case-only rename). `lstat`, never `stat`: `stat` follows a link,
+ * so a broken link at `newP` looked free and `rename` replaced it (YAZ-3271). `entry`: the file ID of the
+ * source's own entry, when `src` followed a link (a link's own ID is what `lstat(newP)` sees).
+ */
+export async function requireFreeTarget(src: Stats, newP: string, entry: { ino: number; dev: number } = src): Promise<void> {
+  const dst = await lstat(newP).catch(() => null)
+  if (dst !== null && !(dst.ino === entry.ino && dst.dev === entry.dev)) {
     throw new BridgeFailure('ALREADY_EXISTS', src.isDirectory() ? 'a folder with this name already exists' : 'a file with this name already exists', { path: newP })
   }
 }
