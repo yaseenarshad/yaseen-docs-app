@@ -155,6 +155,42 @@ describe('the drag (D5, S19 to S21)', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
+  it('2A- a row grabbed during the 140 ms glide of the last drag is the row that moves', () => {
+    const { el, onChange, rerender } = mount()
+    const search = rows(el)[1]
+    pointer(search, 'pointerdown', 100)
+    pointer(search, 'pointermove', 150) // Search down past Focus and Favorites
+    pointer(search, 'pointerup', 150) // the glide starts; nothing is written yet
+    const favorites = el.querySelector<HTMLElement>('.tab-row-panel__row[data-tab="favorites"]')!
+    pointer(favorites, 'pointerdown', 200) // the reader grabs Favorites at once
+    act(() => vi.advanceTimersByTime(140)) // the first drag writes
+    const first = onChange.mock.calls[0][0] as SidebarTabsPrefs
+    expect(first.order).toEqual(['files', 'focus', 'favorites', 'search', 'sessions', 'recents'])
+    rerender(first) // App draws the new order
+    pointer(favorites, 'pointermove', 100) // Favorites up, to the top
+    pointer(favorites, 'pointerup', 100)
+    act(() => vi.advanceTimersByTime(140))
+    expect((onChange.mock.calls[1][0] as SidebarTabsPrefs).order[0]).toBe('favorites')
+  })
+
+  it('2A- a press during the glide writes the last drop at once, and only once; the new drag starts from the settled rows', () => {
+    const { el, onChange } = mount()
+    const search = rows(el)[1]
+    pointer(search, 'pointerdown', 100)
+    pointer(search, 'pointermove', 150)
+    pointer(search, 'pointerup', 150)
+    expect(onChange).not.toHaveBeenCalled() // the glide is on
+    const favorites = el.querySelector<HTMLElement>('.tab-row-panel__row[data-tab="favorites"]')!
+    pointer(favorites, 'pointerdown', 200)
+    expect(onChange).toHaveBeenCalledOnce() // the press finished the glide
+    expect(rows(el).map((r) => r.style.transform)).toEqual(['', '', '', '', '', ''])
+    expect(el.querySelector('.tab-row-panel__row--settling')).toBeNull()
+    act(() => vi.advanceTimersByTime(500))
+    expect(onChange).toHaveBeenCalledOnce() // the glide's own timer does not write it again
+    pointer(favorites, 'pointermove', 160)
+    expect(favorites.classList.contains('tab-row-panel__row--lifted')).toBe(true)
+  })
+
   it('a release with no move is no drag and writes nothing', () => {
     const { el, onChange } = mount()
     pointer(rows(el)[3], 'pointerdown', 100)

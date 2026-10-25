@@ -55,6 +55,8 @@ export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }
   const [pos, setPos] = useState({ left: x, top: y })
   // The drag that is on, so Esc can put it back: its own cancel.
   const dragging = useRef<(() => void) | null>(null)
+  // The glide of the last release, not yet written (YAZ-3301): its own commit, so a new press can finish it at once.
+  const settling = useRef<(() => void) | null>(null)
   const latest = useRef({ prefs, onChange, onClose })
   latest.current = { prefs, onChange, onClose }
 
@@ -111,8 +113,13 @@ export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }
     const list = listRef.current
     if (row == null || list === null || e.button !== 0 || target?.closest('.tab-row-panel__check') != null || dragging.current !== null) return
     e.preventDefault()
+    // A press during the last drag's glide (YAZ-3301): that drop is written and drawn first, so this drag
+    // reads the rows in their new order and places, and the glide's end does not wipe this drag's offsets.
+    settling.current?.()
     const rows = [...list.querySelectorAll<HTMLElement>('.tab-row-panel__row')]
     const from = rows.indexOf(row)
+    // The tab, by its name: the drop moves THIS tab, even if the rows were drawn again under the drag.
+    const tab = row.dataset.tab as SidebarTab
     const tops = rows.map((r) => r.offsetTop)
     const h = row.offsetHeight
     const y0 = e.clientY
@@ -161,16 +168,17 @@ export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }
       row.classList.remove('tab-row-panel__row--lifted')
       row.classList.add('tab-row-panel__row--settling')
       row.style.transform = `translateY(${tops[to] - tops[from]}px)`
-      const order = latest.current.prefs.order
       const landed = to
-      window.setTimeout(
-        () => {
-          // One frame: the rows are drawn in their new order and lose their offsets together, so nothing jumps.
-          flushSync(() => write({ ...latest.current.prefs, order: moveTab(order, from, landed) }))
-          clear()
-        },
-        reducedMotion() ? 0 : SETTLE_MS,
-      )
+      const commit = () => {
+        window.clearTimeout(timer)
+        if (settling.current === commit) settling.current = null
+        const { order } = latest.current.prefs
+        // One frame: the rows are drawn in their new order and lose their offsets together, so nothing jumps.
+        flushSync(() => write({ ...latest.current.prefs, order: moveTab(order, order.indexOf(tab), landed) }))
+        clear()
+      }
+      settling.current = commit
+      const timer = window.setTimeout(commit, reducedMotion() ? 0 : SETTLE_MS)
     }
     // Esc during the drag (S21), or the system took the pointer: the row goes back, nothing is written.
     const cancel = () => {
