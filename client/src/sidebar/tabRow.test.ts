@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SIDEBAR_TABS, type SidebarTab, type SidebarTabsPrefs } from '@shared/types'
 import type { MenuAction, MenuSection } from './menuSections'
-import { fitCount, fitTabs, rowLayout, shownTabs, tabRowSections, type RowButtons } from './tabRow'
+import { fitCount, fitTabs, moveTab, rowLayout, sameTabRow, shownTabs, tabRowSections, toggleButton, toggleTab, type RowButtons } from './tabRow'
 
 // Widths as the app draws them, each with the row's 2 px gap: Files a word, the five glyphs alike, Sort and fold 30 px.
 const W: Record<SidebarTab, number> = { files: 49, search: 33, focus: 33, favorites: 33, sessions: 33, recents: 33 }
@@ -131,5 +131,59 @@ describe('tabRowSections (YAZ-3273 D4)', () => {
     expect([h.onSort.mock.calls.length, h.onFold.mock.calls.length]).toEqual([1, 1])
     expect(labels(tabRowSections(at(400, p, 'sessions', NONE), p, 'sessions', NONE, 'Collapse all', h))).toEqual([]) // Sessions shows neither (S5)
     expect(labels(tabRowSections(at(400, p), p, 'files', BOTH, 'Collapse all', { ...h, onEdit: () => {} })).at(-1)).toEqual(['Edit tab row…'])
+  })
+})
+
+describe('the Hide row (YAZ-3279 D4, S9, S10)', () => {
+  const handlers = () => ({ onHide: vi.fn(), onOpen: vi.fn(), onSort: vi.fn(), onFold: vi.fn(), onEdit: vi.fn() })
+
+  it('a right-clicked tab puts "Hide <tab>" first; blank space and ⋯ (no tab) have none', () => {
+    const h = handlers()
+    const p = prefs({ hidden: ['recents'] })
+    expect(labels(tabRowSections(at(400, p), p, 'files', BOTH, 'Collapse all', h, 'focus'))).toEqual([['Hide Focus'], ['Hidden', 'Recents'], ['Edit tab row…']])
+    expect(labels(tabRowSections(at(400, p), p, 'files', BOTH, 'Collapse all', h, null))).toEqual([['Hidden', 'Recents'], ['Edit tab row…']])
+    const hide = tabRowSections(at(400, p), p, 'files', BOTH, 'Collapse all', h, 'focus')[0][0] as MenuAction
+    hide.onSelect()
+    expect(h.onHide).toHaveBeenCalledExactlyOnceWith('focus')
+  })
+
+  it('S10: on Files it is off, with the hint "Files stays"', () => {
+    const files = tabRowSections(at(400), prefs(), 'files', BOTH, 'Collapse all', handlers(), 'files')[0][0] as MenuAction
+    expect([files.label, files.disabled, files.hint]).toEqual(['Hide Files', true, 'Files stays'])
+  })
+
+  it('a tab that is hidden already (the open tab with ⋯ off) has no Hide row', () => {
+    const p = prefs({ hidden: ['focus'], hiddenButtons: ['more'] })
+    expect(labels(tabRowSections(at(400, p, 'focus'), p, 'focus', BOTH, 'Collapse all', handlers(), 'focus'))[0]).toEqual(['Hidden', 'Focus'])
+  })
+})
+
+describe('moveTab, toggleTab, toggleButton (YAZ-3279 D5, D8, D9, D10)', () => {
+  const ORDER: SidebarTab[] = ['files', 'search', 'focus', 'favorites', 'sessions', 'recents']
+
+  it('moveTab moves one tab down or up and keeps every tab once; out of range or no move keeps the order', () => {
+    expect(moveTab(ORDER, 1, 3)).toEqual(['files', 'focus', 'favorites', 'search', 'sessions', 'recents'])
+    expect(moveTab(ORDER, 5, 0)).toEqual(['recents', 'files', 'search', 'focus', 'favorites', 'sessions'])
+    expect(moveTab(ORDER, 0, 5)).toEqual(['search', 'focus', 'favorites', 'sessions', 'recents', 'files'])
+    for (const [from, to] of [[2, 2], [-1, 2], [2, 6]]) expect(moveTab(ORDER, from, to)).toEqual(ORDER)
+  })
+
+  it('toggleTab hides and shows a tab, and never hides Files (D6, D8)', () => {
+    expect(toggleTab(prefs(), 'focus').hidden).toEqual(['focus'])
+    expect(toggleTab(prefs({ hidden: ['focus', 'recents'] }), 'focus').hidden).toEqual(['recents'])
+    const p = prefs()
+    expect(toggleTab(p, 'files')).toBe(p)
+    expect(toggleTab(p, 'search').order).toBe(p.order) // the order is untouched
+  })
+
+  it('toggleButton takes Sort, fold or ⋯ off the bar and puts it back', () => {
+    expect(toggleButton(prefs(), 'sort').hiddenButtons).toEqual(['sort'])
+    expect(toggleButton(prefs({ hiddenButtons: ['sort', 'more'] }), 'more').hiddenButtons).toEqual(['sort'])
+  })
+
+  it('sameTabRow: the same order, and the same tabs and buttons off the bar in any order', () => {
+    expect(sameTabRow(prefs({ hidden: ['focus', 'search'] }), prefs({ hidden: ['search', 'focus'] }))).toBe(true)
+    expect(sameTabRow(prefs(), prefs({ order: moveTab(ORDER, 0, 1) }))).toBe(false)
+    expect(sameTabRow(prefs(), prefs({ hiddenButtons: ['fold'] }))).toBe(false)
   })
 })

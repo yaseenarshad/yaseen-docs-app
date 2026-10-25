@@ -761,6 +761,10 @@ export function Sidebar({
     dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !bodyDirs.includes(d)) : [...new Set([...expanded, ...bodyDirs])] })
   }
   const foldAll = useCallback(() => foldRef.current(), [])
+  // A new tab row (YAZ-3279): one write, over the settings of the moment.
+  const settingsRef = useRef({ settings, onChangeSettings })
+  settingsRef.current = { settings, onChangeSettings }
+  const changeTabs = useCallback((next: SettingsState['sidebarTabs']) => settingsRef.current.onChangeSettings({ ...settingsRef.current.settings, sidebarTabs: next }), [])
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
   // The copy the open page lights in (YAZ-3131 Decision 3, S12, S13): where it was clicked, else the
@@ -1218,6 +1222,7 @@ export function Sidebar({
         lens={lens}
         onLensChange={onLensChange}
         prefs={tabPrefs}
+        onChangePrefs={changeTabs}
         sortShows={sortedTab !== null}
         sortOpen={sortMenu !== null && sortMenu.tab === sortedTab}
         onSort={openSort}

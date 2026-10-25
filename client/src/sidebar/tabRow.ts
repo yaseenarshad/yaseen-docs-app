@@ -92,8 +92,35 @@ export function rowLayout(prefs: SidebarTabsPrefs, lens: SidebarTab, fit: number
   return { row, over, hidden, moreShows, moreLit: moreShows && !row.includes(lens) }
 }
 
-/** What the menu's rows do (D4): open a tab, the hidden buttons' own actions, and the door to the Tab row panel. */
+/** `order` with the tab at `from` moved to `to` (D5): the panel's drag. Out of range, or no move, gives `order` itself. */
+export function moveTab(order: readonly SidebarTab[], from: number, to: number): SidebarTab[] {
+  if (from === to || from < 0 || to < 0 || from >= order.length || to >= order.length) return [...order]
+  const next = order.filter((_, i) => i !== from)
+  next.splice(to, 0, order[from])
+  return next
+}
+
+/** Show or hide a tab (D4, S18). Files never hides (D6, D8): `prefs` itself. A tab that shows again keeps its place in the order. */
+export function toggleTab(prefs: SidebarTabsPrefs, tab: SidebarTab): SidebarTabsPrefs {
+  if (tab === 'files') return prefs
+  return { ...prefs, hidden: prefs.hidden.includes(tab) ? prefs.hidden.filter((t) => t !== tab) : [...prefs.hidden, tab] }
+}
+
+/** Put a button on the bar, or take it off (D9, D10, S23, S24). */
+export function toggleButton(prefs: SidebarTabsPrefs, button: SidebarButton): SidebarTabsPrefs {
+  return { ...prefs, hiddenButtons: prefs.hiddenButtons.includes(button) ? prefs.hiddenButtons.filter((b) => b !== button) : [...prefs.hiddenButtons, button] }
+}
+
+/** Two rows are the same: the same order, and the same tabs and buttons off the bar in any order. A change that changes nothing writes nothing. */
+export function sameTabRow(a: SidebarTabsPrefs, b: SidebarTabsPrefs): boolean {
+  const sameSet = <T,>(x: readonly T[], y: readonly T[]) => x.length === y.length && x.every((v) => y.includes(v))
+  return a.order.length === b.order.length && a.order.every((tab, i) => tab === b.order[i]) && sameSet(a.hidden, b.hidden) && sameSet(a.hiddenButtons, b.hiddenButtons)
+}
+
+/** What the menu's rows do (D4): hide the right-clicked tab, open a tab, the hidden buttons' own actions, and the door to the Tab row panel. */
 export interface TabRowHandlers {
+  /** "Hide <tab>" (YAZ-3279, S9). Absent, the menu has no Hide row. */
+  onHide?: (tab: SidebarTab) => void
   onOpen: (tab: SidebarTab) => void
   /** "Sort…": the sort menu, at the ⋯ button (S15). */
   onSort: () => void
@@ -107,12 +134,19 @@ export interface TabRowHandlers {
 const heading = (id: string, label: string): MenuAction => ({ id, label, disabled: true, onSelect: () => {} })
 
 /**
- * The menu of the row (D4, S9 to S13, S15) as `ContextMenu` sections: "Not enough room", "Hidden",
- * the buttons that left the bar ("Sort…", the fold button's label), then "Edit tab row…". The ⋯
- * button and blank space open the same one. Empty groups do not show (`ContextMenu` skips them).
- * The open tab says so in its hint, as in the lab.
+ * The menu of the row (D4, S9 to S13, S15) as `ContextMenu` sections: "Hide <tab>" when a tab was
+ * right-clicked — off on Files, "Files stays" (S10) — then "Not enough room", "Hidden", the buttons
+ * that left the bar ("Sort…", the fold button's label), then "Edit tab row…". The ⋯ button and
+ * blank space open it without the Hide row (S11, S12). Empty groups do not show (`ContextMenu`
+ * skips them). The open tab says so in its hint, as in the lab.
  */
-export function tabRowSections(layout: RowLayout, prefs: SidebarTabsPrefs, lens: SidebarTab, buttons: RowButtons, foldLabel: string, handlers: TabRowHandlers): MenuSection[] {
+export function tabRowSections(layout: RowLayout, prefs: SidebarTabsPrefs, lens: SidebarTab, buttons: RowButtons, foldLabel: string, handlers: TabRowHandlers, tab: SidebarTab | null = null): MenuSection[] {
+  // A tab that is hidden already (the open tab with ⋯ off, D10) has nothing to hide.
+  const onHide = handlers.onHide
+  const hide: MenuAction[] =
+    tab === null || onHide === undefined || prefs.hidden.includes(tab)
+      ? []
+      : [{ id: 'tabrow-hide', label: `Hide ${TAB_LABEL[tab]}`, disabled: tab === 'files', hint: tab === 'files' ? 'Files stays' : undefined, onSelect: () => onHide(tab) }]
   const tabItem = (tab: SidebarTab): MenuAction => ({ id: `tabrow-open-${tab}`, label: TAB_LABEL[tab], hint: tab === lens ? 'open' : undefined, onSelect: () => handlers.onOpen(tab) })
   const over = layout.over.length > 0 ? [heading('tabrow-over', 'Not enough room'), ...layout.over.map(tabItem)] : []
   const hidden = layout.hidden.length > 0 ? [heading('tabrow-hidden', 'Hidden'), ...layout.hidden.map(tabItem)] : []
@@ -120,5 +154,5 @@ export function tabRowSections(layout: RowLayout, prefs: SidebarTabsPrefs, lens:
   if (buttons.sort && prefs.hiddenButtons.includes('sort')) offBar.push({ id: 'tabrow-sort', label: 'Sort…', onSelect: handlers.onSort })
   if (buttons.fold && prefs.hiddenButtons.includes('fold')) offBar.push({ id: 'tabrow-fold', label: foldLabel, onSelect: handlers.onFold })
   const edit = handlers.onEdit === undefined ? [] : [{ id: 'tabrow-edit', label: 'Edit tab row…', onSelect: handlers.onEdit }]
-  return [over, hidden, offBar, edit]
+  return [hide, over, hidden, offBar, edit]
 }
