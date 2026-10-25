@@ -6,6 +6,9 @@
 /** A can't-open-link notice (E1, GRO-2171) dismisses itself after this long. */
 export const LINK_NOTICE_MS = 4000
 
+/** A move's toast with Undo, and an undo's with Redo, fade after this long (YAZ-3255 D11). ⌘Z and ⌘⇧Z work after it too. */
+export const UNDO_NOTICE_MS = 6000
+
 /**
  * The toast's glyph (D10 amended, YAZ-1674): what KIND of thing just happened, drawn before the
  * text. `'info'` unless the caller names a kind; the file clipboard's confirmations name their
@@ -19,9 +22,16 @@ export interface Notice {
   /**
    * One button on the toast (YAZ-1897, ported by YAZ-3039: "See changes" after a merge). A notice
    * with an action is news to act on, so it stays until acted on or dismissed instead of fading
-   * after `LINK_NOTICE_MS`.
+   * after `LINK_NOTICE_MS` — unless it `fades` (YAZ-3255 D11): the Undo of a move and the Redo of
+   * an undo are a chance, not news, and go after `UNDO_NOTICE_MS`.
    */
-  action?: { label: string; run: () => void }
+  action?: { label: string; run: () => void; fades?: true }
+}
+
+/** How long a notice stays (D11): null while an action waits on the user; else the ms before it goes. */
+export function noticeMs(notice: Notice): number | null {
+  if (notice.action === undefined) return LINK_NOTICE_MS
+  return notice.action.fades === true ? UNDO_NOTICE_MS : null
 }
 
 /**

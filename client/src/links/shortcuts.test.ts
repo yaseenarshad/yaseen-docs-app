@@ -31,9 +31,9 @@ vi.mock('../api', async (importOriginal) => {
 })
 
 import { alsoIn } from '@shared/alsoIn'
-import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { parseFrontmatter, setFrontmatterIn, splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../api'
-import { addShortcut, dropFolderValuesAfterMove, dropStaleFolderValues, folderRows, foldersById, foldersShowing, isShortcut, removeShortcut, rowsByFolder, valuesLeftBehind, valuesLeftByShortcut, type Move } from './shortcuts'
+import { addShortcut, dropFolderValuesAfterMove, dropStaleFolderValues, folderRows, foldersById, foldersShowing, isShortcut, removeShortcut, restoreFolderValues, rowsByFolder, valuesLeftBehind, valuesLeftByShortcut, type Move } from './shortcuts'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -457,6 +457,27 @@ describe('a folder’s values leave the note when the note leaves the folder (D2
       put('/vault/Areas/M.md', PROJECTS_ID)
       await move('/vault/Projects/M.md', '/vault/Areas/M.md', 'file', [holding('/vault/Projects/M.md', PROJECTS_ID)])
       expect(disk.get('/vault/Areas/M.md')).toBe('---\n---\nBody\n') // nothing for Projects, nothing yet for Areas
+    })
+
+    /** Undo of a move (YAZ-3255 D10): the blocks the move cleared come back, and only those; a redo clears them again. */
+    it('the values round trip: a move clears, `restoreFolderValues` puts back exactly the cleared blocks after the move back, and the move again clears them again', async () => {
+      const DEEPER = '/vault/Projects/Deep/Deeper/N.md'
+      put('/vault/Projects/N.md', DEEPER_ID, DEEP_ID, PROJECTS_ID)
+      const [cleared] = await move(DEEPER, '/vault/Projects/N.md', 'file', [holding(DEEPER, DEEPER_ID, DEEP_ID, PROJECTS_ID)])
+      expect(inOf('/vault/Projects/N.md')).toEqual([PROJECTS_ID])
+      // The move back, then the blocks come back on the note's path before the move. A block it gained meanwhile stays.
+      disk.set(DEEPER, setFrontmatterIn(disk.get('/vault/Projects/N.md')!, ['in', GONE_ID], { order: 2 }))
+      disk.delete('/vault/Projects/N.md')
+      disk.set(DEEPER, restoreFolderValues(cleared.values)(disk.get(DEEPER)!))
+      expect(inOf(DEEPER).sort()).toEqual([DEEPER_ID, DEEP_ID, PROJECTS_ID, GONE_ID].sort())
+      expect(parseFrontmatter(splitFrontmatter(disk.get(DEEPER)!).frontmatter).properties.in).toMatchObject({ [DEEPER_ID]: { order: 1 }, [DEEP_ID]: { order: 1 }, [GONE_ID]: { order: 2 } })
+      // Redo: the same move clears the same blocks again.
+      disk.set('/vault/Projects/N.md', disk.get(DEEPER)!)
+      const [again] = await move(DEEPER, '/vault/Projects/N.md', 'file', [holding(DEEPER, DEEPER_ID, DEEP_ID, PROJECTS_ID)])
+      expect(again.values).toEqual(cleared.values)
+      expect(inOf('/vault/Projects/N.md').sort()).toEqual([PROJECTS_ID, GONE_ID].sort())
+      // Nothing cleared: nothing changes.
+      expect(restoreFolderValues({})('---\n---\nBody\n')).toBe('---\n---\nBody\n')
     })
 
     it('a note moved out of a folder and back: that folder’s columns are empty for it', async () => {

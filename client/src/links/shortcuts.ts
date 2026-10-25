@@ -247,6 +247,15 @@ export async function dropFolderValuesAfterMove(move: Move & Snapshot): Promise<
   return cleared
 }
 
+/**
+ * The undo of a move (YAZ-3255 D10), as a change to the bytes about to be written: the blocks the
+ * move cleared (`ClearedValues.values`) come back, and only those. Every other block, and every
+ * other property, stays as it is now. Nothing to put back changes nothing.
+ */
+export function restoreFolderValues(values: Record<string, unknown>): ContentTransform {
+  return (content) => Object.entries(values).reduce((next, [id, block]) => setFrontmatterIn(next, [FOLDER_VALUES_KEY, id], block), content)
+}
+
 /** What one move cleared (D20) from one note: its path before the move, and the blocks it lost, by folder id. */
 export interface ClearedValues {
   path: string

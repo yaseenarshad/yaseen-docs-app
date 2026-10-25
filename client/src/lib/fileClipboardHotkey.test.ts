@@ -35,6 +35,29 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     expect(fileClipboardVerb(event(document.body, over))).toBeNull()
   })
 
+  /** ⌘Z and ⌘⇧Z undo and redo a move (YAZ-3255 D10): the same boundary, so the editor, a field and a sheet keep their own undo (S34). */
+  it('maps ⌘Z to undo and ⌘⇧Z to redo on ordinary chrome; Shift is part of each chord, never merely tolerated', () => {
+    expect(fileClipboardVerb(event(document.body, { key: 'z' }))).toBe('undo')
+    expect(fileClipboardVerb(event(document.body, { key: 'Z', shiftKey: true }))).toBe('redo')
+    expect(fileClipboardVerb(event(document.body, { key: 'z', altKey: true }))).toBeNull()
+    expect(fileClipboardVerb(event(document.body, { key: 'v', shiftKey: true }))).toBeNull() // ⌘⇧V is no verb of ours
+  })
+
+  it('⌘Z and ⌘⇧Z stay with the editor, a field and an open sheet (S34)', () => {
+    const editor = document.createElement('div')
+    editor.setAttribute('contenteditable', 'true')
+    const input = document.createElement('input')
+    document.body.append(editor, input)
+    for (const target of [editor, input]) {
+      expect(fileClipboardVerb(event(target, { key: 'z' }))).toBeNull()
+      expect(fileClipboardVerb(event(target, { key: 'z', shiftKey: true }))).toBeNull()
+    }
+    const sheet = document.createElement('div')
+    sheet.setAttribute('aria-modal', 'true')
+    document.body.append(sheet)
+    expect(fileClipboardVerb(event(document.body, { key: 'z' }))).toBeNull()
+  })
+
   it('leaves the editor its own copy/paste: a contenteditable target is never ours', () => {
     const editor = document.createElement('div')
     editor.setAttribute('contenteditable', 'true')

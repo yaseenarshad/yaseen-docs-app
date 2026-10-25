@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Ref
 import { isMarkdown } from '@shared/fileKind'
 import type { FileClipState, SidebarLens, SidebarTab, TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
+import type { MovedGesture } from '../../lib/moveHistory'
 import type { NoticeKind } from '../../lib/notice'
 import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
@@ -363,6 +364,8 @@ export function useFileClipboard(
   openTo: (file: string, top?: string) => void,
   clipboardRef: { current: SidebarClipboard | null },
   onNotice: (message: string, kind?: NoticeKind) => void,
+  /** A Paste of a Cut, a move in from Finder (YAZ-3255 D10): App records it and says the toast with Undo. */
+  onMoved: (gesture: MovedGesture, text: string) => void,
 ) {
   /**
    * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op, paths }` or null, pushed to every
@@ -436,26 +439,30 @@ export function useFileClipboard(
         const res = await api.file.paste({ targetDir: dir })
         openTo(`${dir}/x`, top)
         refresh(vault)
-        if (before !== null) for (const { from, to, kind } of res.pasted) await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })
+        // A Paste of a Cut is a move gesture (YAZ-3255 S39): its moves, and what D20 cleared, for the undo list.
+        const gesture: MovedGesture | null = before === null ? null : { moves: res.pasted.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }
+        if (before !== null) for (const { from, to, kind } of res.pasted) gesture!.cleared.push(...(await dropFolderValuesAfterMove({ root: vault, oldPath: from, newPath: to, kind, ...before })))
         else if (index.ids) {
           const [{ tree }, { folders }] = await Promise.all([fetchTree(vault), api.index(vault)])
           for (const { to } of res.pasted) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(vault, path, folders), true).catch(() => undefined) // quiet (YAZ-3235 D1)
         }
         const first = res.failed[0]
+        // What landed is said with Undo when it was a move (D11).
+        const pasted = (text: string): void => (gesture === null ? onNotice(text, 'paste') : onMoved(gesture, text))
         if (first === undefined) {
           // Reachable only when EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
           if (res.pasted.length === 0) onNotice('Nothing to paste', 'info')
-          else onNotice(`Pasted ${countItems(res.pasted.length)}`, 'paste')
+          else pasted(`Pasted ${countItems(res.pasted.length)}`)
         } else {
           const name = pageName(vault, first.from, pathTitles(index.records, index.folders))
           if (res.pasted.length === 0) onNotice(`Couldn't paste: ${name} — ${first.message}`, 'error')
-          else onNotice(`Pasted ${countItems(res.pasted.length)}, skipped ${res.failed.length}: ${name} — ${first.message}`, 'paste')
+          else pasted(`Pasted ${countItems(res.pasted.length)}, skipped ${res.failed.length}: ${name} — ${first.message}`)
         }
       } catch (err: unknown) {
         onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
-    [vaultOf, refresh, openTo, onNotice, clip],
+    [vaultOf, refresh, openTo, onNotice, onMoved, clip],
   )
 
   /**
@@ -535,7 +542,8 @@ export function useFileClipboard(
    * opens, the tree reads again (the watcher's echo is a courtesy), and ONE notice counts what
    * landed and names the first item that did not (S19). An item of another open vault says the rule
    * of drags between vaults (S22). Items that come from outside every vault left no folder of it,
-   * so no values are cleared (D20). Copies are not moves: only `moved` is for undo (YAZ-3255).
+   * so no values are cleared (D20). Copies are not moves: only `moved` goes on the undo list, and
+   * its toast has Undo (YAZ-3255 S18, S40).
    */
   const importFiles = useCallback(
     async (dir: string, paths: string[]) => {
@@ -551,18 +559,19 @@ export function useFileClipboard(
           : moved.length === 0 ? `Copied ${countItems(copied.length)} from another disk`
           : `Moved ${countItems(moved.length)}, copied ${copied.length} from another disk`
         const [first] = failed
+        const landed = (text: string): void => (moved.length === 0 ? onNotice(text, 'paste') : onMoved({ moves: moved.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared: [] }, text))
         if (first === undefined) {
           // Every item hidden (S20): nothing landed, and nothing to say.
-          if (moved.length + copied.length > 0) onNotice(done, 'paste')
+          if (moved.length + copied.length > 0) landed(done)
         } else if (moved.length + copied.length === 0) {
           if (failed.every((f) => f.message === BETWEEN_VAULTS)) onNotice(BETWEEN_VAULTS, 'info')
           else onNotice(`Couldn't move: ${basename(first.from)} — ${first.message}`, 'error')
-        } else onNotice(`${done}, skipped ${failed.length}: ${basename(first.from)} — ${first.message}`, 'paste')
+        } else landed(`${done}, skipped ${failed.length}: ${basename(first.from)} — ${first.message}`)
       } catch (err: unknown) {
         onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
-    [vaultOf, refresh, openTo, onNotice],
+    [vaultOf, refresh, openTo, onNotice, onMoved],
   )
 
   return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null), importFiles }

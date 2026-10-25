@@ -11,6 +11,7 @@ import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind, type Move } from '../links/shortcuts'
+import type { MovedGesture } from '../lib/moveHistory'
 import { ancestorDirs, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP } from '../search/searchCandidates'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -188,6 +189,12 @@ interface SidebarProps {
    * A drop of one row still goes to `onRenameFile`. Never rejects.
    */
   onMoveEntries: (moves: Move[]) => Promise<void>
+  /**
+   * A move gesture the Sidebar made itself (YAZ-3255 D10): a Paste of a Cut (S39), or Finder items
+   * moved in (S40). App puts it on the window's undo list and says `text` with Undo (D11). Copies
+   * are never handed here.
+   */
+  onMoved: (gesture: MovedGesture, text: string) => void
   /**
    * Rows dragged out to Finder, and the drag ended outside the window with no drop inside it
    * (YAZ-3254 D9B, S26): App's box asks whether the vault keeps them. A cancelled drag looks the same (S29).
@@ -494,6 +501,7 @@ export function Sidebar({
   onFileMissing,
   onRenameFile,
   onMoveEntries,
+  onMoved,
   onDraggedOut,
   onRetitle,
   onDeleteFile,
@@ -949,7 +957,7 @@ export function Sidebar({
     if (node !== null) openMenuAt(node, menuRequest.x, menuRequest.y, true)
   }, [menuRequest, forest, trees, favoritesByRoot, rootOf, onMenuConsumed, openMenuAt])
 
-  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice)
+  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved)
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click

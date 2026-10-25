@@ -56,6 +56,8 @@ interface SidebarStubProps {
   onRenameFile: (oldPath: string, newPath: string, kind: 'file' | 'dir') => Promise<void>
   /** A drop of two or more rows (YAZ-3250 D1): the door for a list of moves. */
   onMoveEntries: (moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]) => Promise<void>
+  /** A move the Sidebar made itself (YAZ-3255 D10): a Paste of a Cut, a Finder move-in. App records it and says it with Undo. */
+  onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]; cleared: { path: string; values: Record<string, unknown> }[] }, text: string) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteFile: (path: string) => Promise<void>
@@ -2792,7 +2794,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/Docs/B.md' })
     // A drag of one row is a move gesture of one (YAZ-3250 D1): its toast says so.
-    expect(el.querySelector('.link-notice')?.textContent).toBe('Moved 1 item')
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Moved 1 item')
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo') // YAZ-3255 D11
   })
 
   /** The app asks before a move that clears values (D21): the door's other question, of a MOVE. */
@@ -2922,7 +2925,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       const PLAIN = '/v/Team/Hiring/Plain.md'
       const LOST = '/v/Team/Hiring/Lost.md'
       const moveAll = (moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]) => act(async () => await captured.sidebar?.onMoveEntries(moves))
-      const notice = (el: HTMLElement) => el.querySelector('.link-notice')?.textContent
+      const notice = (el: HTMLElement) => el.querySelector('.link-notice__text')?.textContent
 
       it('nothing to clear: no sheet, each item moves in the order given, an item already in its folder is no move (S7), and one toast says how many moved (S1, S3)', async () => {
         const { bridge, el } = await mountTeam()
@@ -2983,6 +2986,147 @@ describe('App rename door (⚡ YAZ-888)', () => {
         await act(async () => emitFileRenamed('/v', '/w', 'dir'))
         expect(el.querySelector('.confirm')).toBeNull()
         expect(bridge.file.rename).not.toHaveBeenCalled()
+      })
+    })
+
+    /** Undo and redo a move (YAZ-3255 D10, D11; S33 to S42): App's per-window list, through the same door. */
+    describe('undo and redo a move (YAZ-3255)', () => {
+      const ARCHIVED = '/v/Team/Archive/Noor.md'
+      const PLAIN = '/v/Team/Hiring/Plain.md'
+      const LOST = '/v/Team/Hiring/Lost.md'
+      const chord = (shiftKey = false) => new KeyboardEvent('keydown', { key: shiftKey ? 'Z' : 'z', metaKey: true, shiftKey, bubbles: true, cancelable: true })
+      /** Let every await of a move list run out. */
+      const settle = () => act(async () => {
+        for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      const press = async (shiftKey = false, target: EventTarget = document.body) => {
+        const event = chord(shiftKey)
+        act(() => void target.dispatchEvent(event))
+        await settle()
+        return event
+      }
+      const toast = (el: HTMLElement) => ({ text: el.querySelector('.link-notice__text')?.textContent, action: el.querySelector('.link-notice__action')?.textContent })
+      const renames = (bridge: ReturnType<typeof installBridge>['bridge']) => bridge.file.rename.mock.calls.map(([req]) => [req.oldPath, req.newPath])
+      type Disk = Record<string, { content: string; mtime: number }>
+      /** The disk as main moves it: an item that is gone fails NOT_FOUND, a taken place ALREADY_EXISTS (S36). */
+      const realDisk = (bridge: ReturnType<typeof installBridge>['bridge'], files: Disk) =>
+        bridge.file.rename.mockImplementation(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => {
+          if (files[oldPath] === undefined) throw { code: 'NOT_FOUND', message: 'path does not exist', path: oldPath }
+          if (files[newPath] !== undefined) throw { code: 'ALREADY_EXISTS', message: 'path already exists', path: newPath }
+          files[newPath] = files[oldPath]
+          delete files[oldPath]
+          return { oldPath, newPath, kind: 'file' }
+        })
+
+      it('a drag, then ⌘Z: it moves back, the cleared values come back, and the toast says "Moved back 1 item" with Redo; ⌘⇧Z moves it again with no sheet and clears them again (S33, S37, D11)', async () => {
+        const files: Disk = { [NOOR]: { content: held, mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        await drag(NOOR, ARCHIVED)
+        await act(async () => sheetBtn(el, 'Move')?.click())
+        await settle()
+        expect(files[ARCHIVED].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(toast(el)).toEqual({ text: 'Moved 1 item', action: 'Undo' })
+
+        const undo = await press()
+        expect(undo.defaultPrevented).toBe(true)
+        expect(renames(bridge)).toEqual([[NOOR, ARCHIVED], [ARCHIVED, NOOR]])
+        expect(files[NOOR].content).toBe(held) // the Hiring block is back, and only it
+        expect(toast(el)).toEqual({ text: 'Moved back 1 item', action: 'Redo' })
+        expect(el.querySelector('.link-notice')?.getAttribute('data-icon')).toBe('paste')
+
+        const redo = await press(true)
+        expect(redo.defaultPrevented).toBe(true)
+        expect(el.querySelector('.confirm')).toBeNull() // no D21 sheet on redo
+        expect(renames(bridge)).toEqual([[NOOR, ARCHIVED], [ARCHIVED, NOOR], [NOOR, ARCHIVED]])
+        expect(files[ARCHIVED].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(toast(el)).toEqual({ text: 'Moved 1 item', action: 'Undo' })
+
+        // The redone gesture is on the undo list again, with what it cleared this time: the toast's Undo puts it back.
+        await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+        await settle()
+        expect(files[NOOR].content).toBe(held)
+        expect(toast(el)).toEqual({ text: 'Moved back 1 item', action: 'Redo' })
+      })
+
+      it('an item that moved again does not move back: "Can\u2019t undo: Plain moved again", and the rest move back; redo moves only what moved back (S36)', async () => {
+        const files: Disk = { [LOST]: { content: 'Body\n', mtime: 1 }, [PLAIN]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        await act(async () => await captured.sidebar?.onMoveEntries([
+          { oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' },
+          { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' },
+        ]))
+        await settle()
+        expect(toast(el).text).toBe('Moved 2 items')
+        delete files['/v/Team/Archive/Plain.md'] // another window moved it on
+
+        await press()
+        // Newest first: Plain, then Lost.
+        expect(renames(bridge).slice(2)).toEqual([['/v/Team/Archive/Plain.md', PLAIN], ['/v/Team/Archive/Lost.md', LOST]])
+        expect(files[LOST]).toBeDefined()
+        expect(toast(el)).toEqual({ text: "Moved back 1 item. Can't undo: Plain moved again", action: 'Redo' })
+
+        await press(true)
+        expect(renames(bridge).slice(4)).toEqual([[LOST, '/v/Team/Archive/Lost.md']])
+        expect(toast(el)).toEqual({ text: 'Moved 1 item', action: 'Undo' })
+      })
+
+      it('with nothing to undo or redo the key passes through (S35); the editor keeps ⌘Z (S34); a new move empties the redo list (S38)', async () => {
+        const files: Disk = { [LOST]: { content: 'Body\n', mtime: 1 }, [PLAIN]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        expect((await press()).defaultPrevented).toBe(false)
+        expect((await press(true)).defaultPrevented).toBe(false)
+        expect(bridge.file.rename).not.toHaveBeenCalled()
+
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' }]))
+        await settle()
+        const editor = document.createElement('div')
+        editor.setAttribute('contenteditable', 'true')
+        el.querySelector('.app')?.append(editor)
+        expect((await press(false, editor)).defaultPrevented).toBe(false)
+        expect(bridge.file.rename).toHaveBeenCalledTimes(1)
+
+        await press()
+        expect(files[LOST]).toBeDefined()
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' }]))
+        await settle()
+        const calls = bridge.file.rename.mock.calls.length
+        expect((await press(true)).defaultPrevented).toBe(false) // the undone Lost move is no longer there to redo
+        expect(bridge.file.rename).toHaveBeenCalledTimes(calls)
+      })
+
+      it('a Paste of a Cut is in the list: its Undo moves it back and puts back what it cleared (S39)', async () => {
+        const files: Disk = { [ARCHIVED]: { content: `---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`, mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: NOOR, newPath: ARCHIVED, kind: 'file' }], cleared: [{ path: NOOR, values: { [HIRING]: { Status: 'Interview' } } }] }, 'Pasted 1 item'))
+        expect(toast(el)).toEqual({ text: 'Pasted 1 item', action: 'Undo' })
+        await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+        await settle()
+        expect(renames(bridge)).toEqual([[ARCHIVED, NOOR]])
+        expect(files[NOOR].content).toBe(held)
+        expect(toast(el)).toEqual({ text: 'Moved back 1 item', action: 'Redo' })
+      })
+
+      it('a move in from Finder: Undo puts the items back in their Finder folder through the same door, and Redo moves them in again (S40)', async () => {
+        const PLAN = '/v/Team/Plan.md'
+        const DOWNLOADS = '/Users/yasin/Downloads/Plan.md'
+        const files: Disk = { [PLAN]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PLAN, kind: 'file' }], cleared: [] }, 'Moved 1 item from Finder'))
+        expect(toast(el)).toEqual({ text: 'Moved 1 item from Finder', action: 'Undo' })
+        await press()
+        expect(renames(bridge)).toEqual([[PLAN, DOWNLOADS]])
+        expect(files[DOWNLOADS]).toBeDefined()
+        expect(bridge.writeFile).not.toHaveBeenCalled() // outside the vault: no link and no value is written
+        expect(toast(el)).toEqual({ text: 'Moved back 1 item', action: 'Redo' })
+        await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+        await settle()
+        expect(renames(bridge)).toEqual([[PLAN, DOWNLOADS], [DOWNLOADS, PLAN]])
+        expect(toast(el)).toEqual({ text: 'Moved 1 item', action: 'Undo' })
       })
     })
 
