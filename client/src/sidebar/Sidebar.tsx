@@ -451,7 +451,10 @@ const SEARCH_KEYS: readonly (readonly [keys: readonly string[], does: string])[]
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
 /** The search tree's file move (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op and nothing is ever a drop target. */
-const INERT_MOVE: TreeFileMove = { accepts: () => false, start: () => undefined, end: () => undefined, hover: () => undefined, leave: () => undefined, drop: () => undefined, dropFiles: () => undefined }
+/** The drag is over a row, not blank space (YAZ-3247 D12): a row that refused the drop keeps it refused. */
+const onRow = (e: React.DragEvent): boolean => e.target instanceof Element && e.target.closest('[role="treeitem"]') !== null
+
+const INERT_MOVE: TreeFileMove ={ accepts: () => false, start: () => undefined, end: () => undefined, hover: () => undefined, leave: () => undefined, drop: () => undefined, dropFiles: () => undefined }
 
 /** What the search cuts before the tree has loaded, and its shortcut rows — none (S7, YAZ-2620): one object each, so the memoised tree sees no change (YAZ-2194). */
 const NO_NODES: readonly TreeNode[] = []
@@ -558,6 +561,8 @@ export function Sidebar({
   const focusedRevealId = useRef<number | null>(null)
   const [pendingReveal, setPendingReveal] = useState<SidebarRevealRequest | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  /** The root header: it lights for a drop on the blank space too (YAZ-3247 D12). */
+  const headerRef = useRef<HTMLDivElement>(null)
   // The folders' shortcut rows (YAZ-2290 D2), rebuilt once per index snapshot. A snapshot that moved
   // no shortcut keeps the Map it had, so a save elsewhere in the vault re-renders no tree level (YAZ-2194).
   // Each vault's folders by its OWN index (YAZ-2602 S30); the paths of two vaults never meet, so the
@@ -1162,12 +1167,16 @@ export function Sidebar({
       run(...args)
     }
 
+  // Blank space is one vault's root only in a window with one vault, and only on a tab that has a tree of it (YAZ-3247 D12).
+  const blankDrop = !multi && !searching && lens !== 'sessions' && lens !== 'recents'
+
   return (
     <aside ref={setAside} className="sidebar" style={{ width }}>
       {/* The root header doubles as the "move to the vault root" drop target (E1b) — of a window
           with one vault. With two or more each vault's own row is that target (YAZ-2602 S14). It
           lights as a row does, by the drag's one `light()` (YAZ-3251 D2): no render. */}
       <div
+        ref={headerRef}
         className="sidebar__header"
         onDragOver={(e) => {
           if (multi || !fileMove.accepts(root, hasFiles(e))) return
@@ -1344,6 +1353,22 @@ export function Sidebar({
         className="sidebar__body"
         // The Sessions and Recents tabs have no vault behind their blank space either (YAZ-3147 D4, YAZ-3235 S20): their rows have their own menus.
         onContextMenu={(e) => (searching || lens === 'sessions' || lens === 'recents' ? e.preventDefault() : openMenu(null, e))}
+        // Blank space takes a drop for the vault ROOT, as its paste does, and the header lights (YAZ-3247 D12) — one
+        // vault only (YAZ-2602 S10). A row handles its own drop: a drag over a row reaches here only when the row refused it.
+        onDragOver={(e) => {
+          if (!blankDrop || onRow(e) || !fileMove.accepts(root, hasFiles(e))) return
+          e.preventDefault()
+          if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+          fileMove.hover(root, headerRef.current)
+        }}
+        onDragLeave={(e) => {
+          if (blankDrop && leftTarget(e)) fileMove.leave(root)
+        }}
+        onDrop={(e) => {
+          if (!blankDrop || onRow(e)) return
+          e.preventDefault()
+          dropOn(fileMove, e, root)
+        }}
         // Escape drops the multi-select (YAZ-1336) — and ONLY when there is one: with nothing
         // selected the key still belongs to everyone else listening for it, so this must neither
         // swallow it nor stop it travelling. An OPEN context menu owns the key outright

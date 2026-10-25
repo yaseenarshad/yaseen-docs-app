@@ -1288,6 +1288,29 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     expect(bridge.file.import).toHaveBeenCalledExactlyOnceWith({ paths: ['/Users/yasin/Downloads/Plan.md'], targetDir: '/v' })
   })
 
+  it('the blank space below the rows takes a drop for the vault root, and the header lights: Finder items and rows alike (D12, S43)', async () => {
+    const { bridge, props, el } = await mount()
+    bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [] })
+    const blank = el.querySelector('.sidebar__body')
+    expect(fire(blank, 'dragover', [])).toBe(true)
+    expect(el.querySelector('.sidebar__header')?.classList.contains('sidebar__header--drop')).toBe(true)
+    fire(blank, 'drop', finder('Plan.md'))
+    await act(async () => {})
+    expect(bridge.file.import).toHaveBeenCalledExactlyOnceWith({ paths: ['/Users/yasin/Downloads/Plan.md'], targetDir: '/v' })
+    expect(el.querySelector('.sidebar__header--drop')).toBeNull()
+    // A row of this vault, from a folder, lands at the top level through the rename door.
+    fire(blank, 'drop', own(bridge, '/v/sub/b.md'))
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/sub/b.md', '/v/b.md', 'file')
+  })
+
+  it('a row that refuses a drop keeps it refused: the blank space under it does not take it (D12)', async () => {
+    const { el } = await mount()
+    fire(dirRow(el), 'dragstart')
+    // A folder dragged over itself: its row refuses, and the event reaches the blank space below.
+    expect(fire(dirRow(el), 'dragover')).toBe(false)
+    expect(el.querySelector('.sidebar__header--drop')).toBeNull()
+  })
+
   it('a hidden item is skipped with no notice, from Finder and from this vault alike (S20, audit 19)', async () => {
     const { bridge, props, el } = await mount()
     fire(dirRow(el), 'drop', own(bridge, '/v/a.md', '/v/.hidden.md'))
