@@ -198,14 +198,24 @@ export async function copyEntry(from: unknown, toDir: unknown, ids: IdDoor | nul
  * no " copy" title, nothing reborn — and never over anything: a name already in `toDir` fails
  * `ALREADY_EXISTS`, so the item stays in Finder (S19). The pre-check matters for a folder, which
  * `fs.cp` would merge into one already there. A hidden source is refused, as `copyEntry`'s is.
+ *
+ * `freeName: true` is a Paste of Finder's files (YAZ-3265 D14): a clash takes Finder's next free
+ * name (`Report copy.pdf`, `freeName`) in place of the refusal; the name is still the item's own,
+ * never one built from a note's title and id. A folder into itself is refused, as `copyEntry`'s is.
  */
-export async function importCopy(from: unknown, toDir: unknown): Promise<PastedEntry> {
+export async function importCopy(from: unknown, toDir: unknown, options: { freeName?: boolean } = {}): Promise<PastedEntry> {
   const src = requireAbsPath(from, 'from')
   const dir = requireAbsPath(toDir, 'toDir')
   return fsCall(src, async () => {
     const st = await stat(src) // missing source → ENOENT → NOT_FOUND
     const kind = st.isDirectory() ? ('dir' as const) : ('file' as const)
     if (isSkipped(path.basename(src))) throw new BridgeFailure('BAD_REQUEST', 'hidden entries cannot be copied', { path: src })
+    if (kind === 'dir' && (dir === src || dir.startsWith(`${src}${path.sep}`))) throw new BridgeFailure('BAD_REQUEST', 'a folder cannot be copied inside itself', { path: dir })
+    if (options.freeName === true) {
+      const to = path.join(dir, await freeName(dir, path.basename(src), kind))
+      await copyBytes(src, to)
+      return { from: src, to, kind }
+    }
     const to = path.join(dir, path.basename(src))
     if (await taken(dir, path.basename(src))) throw new BridgeFailure('ALREADY_EXISTS', kind === 'dir' ? 'a folder with this name already exists' : 'a file with this name already exists', { path: to })
     await copyBytes(src, to)

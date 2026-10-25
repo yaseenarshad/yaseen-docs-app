@@ -5,7 +5,7 @@ import { CONTRACT } from '@shared/ipc'
 import { BETWEEN_VAULTS, rootOfPath, type FileWriteRequest, type FileWriteResponse, type ImportResponse, type RenameFileResponse } from '@shared/types'
 import { dropLanded, rememberDragOut } from '../dragLanding'
 import * as favorites from '../favorites'
-import { fileClip } from '../fileClip'
+import { fileClip, type FileClip } from '../fileClip'
 import * as focus from '../focus'
 import { readAsset, writeAsset } from '../fs/assets'
 import { copyEntry, importCopy, isCrossDevice, pasteEntries, type PasteOps } from '../fs/copy'
@@ -17,6 +17,7 @@ import { readImage } from '../fs/image'
 import { openInDefaultApp } from '../fs/openDefault'
 import { openInVsCode } from '../fs/openInVsCode'
 import { openLink } from '../fs/openLink'
+import { clearOsFiles, readOsFiles, writeOsFiles } from '../osFileClipboard'
 import { readPdf } from '../fs/pdf'
 import { renameFile, repairRename } from '../fs/rename'
 import { removeEntry } from '../fs/remove'
@@ -233,17 +234,45 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // that is how a menu on vault B learns "Paste 3 items" after a cut on vault A.
   // Subscribed once for the process's life — `registerFsIpc` runs once, so there is nothing to unsubscribe.
   fileClip.onChange((state) => broadcastAll(CONTRACT.file.onClipChanged.channel, state))
+  /** The paths the app last put on the system clipboard: still there, they are the app's own, never Finder's. */
+  let wrote: readonly string[] = []
+  const sameFiles = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((p) => b.includes(p))
   // Cut / Copy is a pure clipboard write: nothing on disk is touched or even stat'ed, so there
   // is no store repair and no file push here — a path that goes stale before the paste is
   // reported per entry BY the paste. No vault-root guard either: Cut/Copy is offered on ROWS
   // only, never on blank space, and a window's own root is never a row of its tree (D5/D6; see CONTRACTS).
+  // The app's Cut / Copy also goes on the macOS system clipboard (YAZ-3265 D13), so Finder's Paste
+  // takes a copy of it. Finder cannot take a cut from another app: the cut still waits for an in-app paste.
   handle(CONTRACT.file.clip, async (req: unknown) => {
     fileClip.set(req)
+    const set = fileClip.get()
+    if (set !== null) {
+      writeOsFiles(set.paths)
+      wrote = set.paths
+    }
   })
+  /**
+   * The clip a Paste takes NOW (YAZ-3265 D13): the newer of the app's own and the system clipboard's.
+   * No files there (text copied since), or the files the app put there (they equal its clip, or a cut
+   * that pasted already) → the app's clip, as before this issue. Other files, copied in Finder since →
+   * those, as a COPY (D14). A hidden item is left out with no notice (the tree's rule, S20, S52).
+   */
+  const clipNow = (): { clip: FileClip; finder: boolean } | null => {
+    const own = fileClip.get()
+    const os = readOsFiles()
+      .map((p) => path.resolve(p))
+      .filter((p) => !isSkipped(path.basename(p)))
+    if (os.length === 0 || sameFiles(os, wrote) || (own !== null && sameFiles(os, own.paths))) return own === null ? null : { clip: own, finder: false }
+    return { clip: { op: 'copy', paths: [...new Set(os)] }, finder: true }
+  }
   // A window opened AFTER a clip missed the push: it reads the current state once on mount,
-  // then `clip:changed` carries the rest (the same catch-up read `github.status` offers).
-  handle(CONTRACT.file.clipState, async () => fileClip.state())
-  // Paste (D2–D4). Per entry, in clipboard order, and one bad entry never stops the rest:
+  // then `clip:changed` carries the rest (the same catch-up read `github.status` offers). It reads
+  // again on focus (YAZ-3265 D13): back from Finder, "Paste N items" counts Finder's files.
+  handle(CONTRACT.file.clipState, async () => {
+    const now = clipNow()
+    return now === null ? null : { count: now.clip.paths.length, op: now.clip.op, paths: now.clip.paths }
+  })
+  // Paste (D2–D4) of the clip `clipNow` picks. Per entry, in clipboard order, and one bad entry never stops the rest:
   //  - a COPY is `copyEntry` (a note or a folder under its own built name, YAZ-2420 🔒 D21; any
   //    other file, and every entry where the target's vault does not use IDs (YAZ-2523 🔒 V3),
   //    `fs.cp` under Finder's next free name, D3/D4) with deliberately NO
@@ -257,12 +286,21 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // A cut pastes ONCE: the clipboard clears when at least one entry landed (a cut whose every
   // entry failed stays, so the user can fix the cause and paste again); a copy is kept and
   // pastes again and again (D2).
+  // Finder's files (`clipNow`, YAZ-3265 D14) paste as a COPY under their OWN names, a clash under
+  // the next free one (`importCopy`, never `copyEntry`, which builds a note's name); a folder comes
+  // with its contents. The originals stay in Finder, and the app's own clip is not touched.
   handleWithEvent(CONTRACT.file.paste, async (e, req: unknown) => {
-    const clip = fileClip.get()
-    if (clip === null) throw new BridgeFailure('BAD_REQUEST', 'nothing to paste')
+    const now = clipNow()
+    if (now === null) throw new BridgeFailure('BAD_REQUEST', 'nothing to paste')
+    if (now.finder) return pasteEntries(now.clip, req, { copy: (from, toDir) => importCopy(from, toDir, { freeName: true }), move: moveEntry })
+    const { clip } = now
     const ids = await doorFor(e, req, 'targetDir')
     const res = await pasteEntries(clip, req, { copy: (from, toDir) => copyEntry(from, toDir, ids), move: moveEntry })
-    if (clip.op === 'cut' && res.pasted.length > 0) fileClip.clear()
+    if (clip.op === 'cut' && res.pasted.length > 0) {
+      fileClip.clear()
+      // The cut is spent: its old paths leave the system clipboard too, unless something was copied there since.
+      clearOsFiles(clip.paths)
+    }
     return res
   })
   /**

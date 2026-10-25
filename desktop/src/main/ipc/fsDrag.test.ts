@@ -22,6 +22,8 @@ vi.mock('electron', () => ({
   shell: { trashItem: vi.fn(async () => undefined) },
   nativeImage: { createFromBuffer: vi.fn((buffer: Buffer, options: { scaleFactor: number }) => ({ image: buffer.length, ...options })) },
   screen: { getCursorScreenPoint: () => ({ x: 0, y: 0 }), getDisplayNearestPoint: () => ({ scaleFactor: 2 }) },
+  // The system clipboard (YAZ-3265 D13): a stand-in that holds no files, never the real one.
+  clipboard: { read: vi.fn(() => ''), writeBuffer: vi.fn() },
 }))
 // No watcher echo, ever: what the index holds after a door answers is what the door gave it (YAZ-3258).
 vi.mock('../fs/watchers', () => ({ subscribe: vi.fn(() => () => undefined), activeWatcherRoots: () => [] }))

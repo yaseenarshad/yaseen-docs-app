@@ -7252,6 +7252,38 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(itemByLabel(el, 'Paste 3 items')).toBeDefined()
   })
 
+  it("S53: back from Finder, the window's focus reads the clipboard again, so Paste counts Finder's files; unmounted, it stops listening (YAZ-3265 D13)", async () => {
+    const added = vi.spyOn(window, 'addEventListener')
+    const removed = vi.spyOn(window, 'removeEventListener')
+    const focusHandlers = (spy: typeof added | typeof removed) => spy.mock.calls.filter(([type]) => type === 'focus').map(([, handler]) => handler)
+    const { el, bridge } = await mount({}, withClipboard)
+    expect(focusHandlers(added).length).toBeGreaterThan(0)
+    rightClick(rowByPath(el, '/v/sub'))
+    expect(itemByLabel(el, 'Paste')?.disabled).toBe(true)
+    // ⌘C on two files in Finder: main's clip-state now answers them.
+    bridge.file.clipState.mockResolvedValue(clipOf('copy', '/Users/me/Downloads/a.pdf', '/Users/me/Downloads/b.md'))
+    await act(async () => void window.dispatchEvent(new Event('focus')))
+    rightClick(rowByPath(el, '/v/sub'))
+    expect(itemByLabel(el, 'Paste 2 items')?.disabled).toBe(false)
+    // Unmounted, it stops listening: every focus handler it added goes.
+    act(() => root?.unmount())
+    root = null
+    expect(focusHandlers(removed)).toEqual(expect.arrayContaining(focusHandlers(added)))
+    added.mockRestore()
+    removed.mockRestore()
+  })
+
+  it('a push that lands while a focus read is in flight WINS over the read (YAZ-3265 D13)', async () => {
+    const { el, bridge } = await mount({}, withClipboard)
+    let settle: ((state: FileClipState) => void) | null = null
+    bridge.file.clipState.mockImplementation(() => new Promise((resolve) => (settle = resolve)))
+    await act(async () => void window.dispatchEvent(new Event('focus')))
+    act(() => pushClip?.(clipOf('cut', '/w/x.md', '/w/y.md', '/w/z.md')))
+    await act(async () => settle?.(clipOf('copy', '/w/x.md')))
+    rightClick(rowByPath(el, '/v/sub'))
+    expect(itemByLabel(el, 'Paste 3 items')).toBeDefined()
+  })
+
   // ---- The chords' handle (D6 amended): App's window listener asks these; the RULES are here ----
 
   /** A box App would hold; the Sidebar fills it every render and empties it on unmount. */

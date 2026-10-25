@@ -369,6 +369,9 @@ export function useTreeDrag(
   return { fileMove, reorder }
 }
 
+/** Two answers about the clipboard that say the same: the verb and the paths, in order. */
+const sameClip = (a: FileClipState, b: FileClipState): boolean => a === b || (a !== null && b !== null && a.op === b.op && a.paths.length === b.paths.length && a.paths.every((p, i) => p === b.paths[i]))
+
 export function useFileClipboard(
   /** The first vault's root: where ⌘V pastes with no selection, in a window with one vault. */
   root: string,
@@ -391,7 +394,9 @@ export function useFileClipboard(
    * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op, paths }` or null, pushed to every
    * window on every change, so a menu opened here can label "Paste N items" for a copy made in
    * another window on another vault. Session-only, never persisted. A window opened AFTER a clip
-   * reads the current state ONCE on mount (`clipState`), so its Paste is labelled from the start.
+   * reads the current state on mount (`clipState`), so its Paste is labelled from the start. It reads
+   * again on each window focus (YAZ-3265 D13): back from a ⌘C in Finder, main answers Finder's files,
+   * and "Paste N items" counts them. A Paste of Finder's files is a copy: not on the undo list (D14).
    */
   const [clip, setClip] = useState<FileClipState>(null)
   // The paste of a Cut that would clear values, or of a Copy that would not keep them (YAZ-2420 3E1), waiting on its sheet (D21); null when it is closed.
@@ -399,23 +404,30 @@ export function useFileClipboard(
   // The sheet speaks for the clipboard it was asked about: another one ends the question.
   useEffect(() => setPendingPaste(null), [clip])
   useEffect(() => {
-    // Subscribe FIRST, then read: a push that lands while the read is in flight is newer than the
-    // read and must win — the read only fills a window nothing has pushed to yet.
+    // Subscribe FIRST, then read: a push that lands while a read is in flight is newer than the
+    // read and must win — each read counts the pushes and lands only when none came since it began.
     let live = true
-    let pushed = false
+    let pushes = 0
     const unsubscribe = api.file.onClipChanged((state) => {
-      pushed = true
+      pushes += 1
       setClip(state)
     })
-    api.file.clipState().then(
-      (state) => {
-        if (live && !pushed) setClip(state)
-      },
-      () => undefined, // an empty clipboard is the honest fallback; the next push corrects it
-    )
+    const read = () => {
+      const at = pushes
+      api.file.clipState().then(
+        (state) => {
+          // The same clipboard keeps its value: a focus that changed nothing leaves an open Paste sheet open.
+          if (live && pushes === at) setClip((was) => (sameClip(was, state) ? was : state))
+        },
+        () => undefined, // an empty clipboard is the honest fallback; the next push corrects it
+      )
+    }
+    read()
+    window.addEventListener('focus', read)
     return () => {
       live = false
       unsubscribe()
+      window.removeEventListener('focus', read)
     }
   }, [])
 

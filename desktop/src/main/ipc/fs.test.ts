@@ -20,6 +20,8 @@ vi.mock('electron', () => ({
   // trash call is stubbed and the assertions are about the store repair and the broadcast.
   // `remove.test.ts` owns the disk-level behaviour.
   shell: { trashItem: vi.fn(async () => undefined) },
+  // fs:clip also writes the system clipboard (YAZ-3265 D13): a stand-in that holds no files, never the real one.
+  clipboard: { read: vi.fn(() => ''), writeBuffer: vi.fn() },
 }))
 // The favorites.json repair (YAZ-1766 6A, D13) rides the rename/delete handlers; `favorites.test.ts`
 // owns its disk behaviour, so here it is a mock whose failure must never fail the file op.
