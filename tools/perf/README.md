@@ -1,6 +1,6 @@
 # tools/perf
 
-Two tools (YAZ-2131): a size and integrity gate that CI runs, and a local perf harness that drives the real app.
+Three tools: a size and integrity gate that CI runs and a local perf harness that drives the real app (YAZ-2131), and a local headless probe of the sidebar's level lines (YAZ-3329).
 
 | File | What |
 |---|---|
@@ -9,7 +9,7 @@ Two tools (YAZ-2131): a size and integrity gate that CI runs, and a local perf h
 | `baseline.json` | FROZEN v0.9.27 @ 63aeeea numbers: `size` from the gate, `perf` from the harness. Never edited |
 | `run.mjs`, `scenarios/`, `lib/`, `genVault.mjs` | `npm run perf`: the harness |
 | `runs/` | the raw before/after A/B and budget JSON behind the 7A ratchet (YAZ-2204) |
-| `sidebarLinesRecalc.mjs` | `node tools/perf/sidebarLinesRecalc.mjs` after `npm run build`: the style and layout cost of the sidebar's level lines and thread for each action, at 10,207 open rows, in headless Chromium (no window). Local only, not in CI (YAZ-3329) |
+| `sidebarLinesRecalc.mjs` | `node tools/perf/sidebarLinesRecalc.mjs` after `npm run build`: the style and layout cost of the sidebar's level lines and thread for each action, at 10,207 open rows, in headless Chromium (no window), with the real `levelLinesHover.ts`. It also checks what jsdom cannot see (the keyboard and the mouse marks, S2, S3, D11, the rename chevron of YAZ-3342) and exits 1 if a check fails. Local only, not in CI (YAZ-3329) |
 
 ## The harness
 

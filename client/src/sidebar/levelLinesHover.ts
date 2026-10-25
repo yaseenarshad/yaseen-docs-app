@@ -1,9 +1,8 @@
 /**
  * "On hover" of the sidebar's level lines (YAZ-3309 D3), as two attributes on `.sidebar__body` that
- * app.css reads (bug YAZ-3329). A `:hover` or a `:has(:focus-visible)` on the list made Chromium restyle
- * every row below it at each entry, each exit and each key: 20 ms at 10,000 open rows. An attribute is
- * written only when its value changes, so the mouse inside the list and the arrow keys inside the tree
- * write nothing.
+ * app.css reads. Never `:hover`, `:focus…` or `:has()` on the list: a state change on an ancestor of
+ * the rows makes Chromium restyle every row below it (bug YAZ-3329). An attribute is written only when
+ * its value changes, so the mouse inside the list and the arrow keys inside the tree write nothing.
  *
  * - `data-mouse-in`: the mouse is over the list. `mouseenter` / `mouseleave`, not the pointer events:
  *   Chromium sends `pointerleave` when a drag starts, and the lines must not hide during a drag (S7).

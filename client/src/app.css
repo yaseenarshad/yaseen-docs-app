@@ -1984,10 +1984,8 @@ button {
    depth * 14 + 1 is the centre of the chevron that holds this level. The `role` keeps it to the
    tree's own levels: Recents and Sessions nest a `.tree` too, and get no line (D4). All grey (D2),
    and no target (D5): the click goes to the row below. `data-sidebar-lines` on `.app` says when it
-   shows (D3): always, while the mouse is over the list or a row has keyboard focus, or never. The
-   last two are attributes that the sidebar writes on `.sidebar__body` (`levelLinesHover.ts`), not
-   `:hover` / `:has()` there: a state change on the list's own box made Chromium restyle every row
-   below it, 20 ms at each entry and exit at 10,000 open rows, also with "Never" (bug YAZ-3329). */
+   shows (D3). "On hover" reads two attributes that `levelLinesHover.ts` writes on `.sidebar__body`:
+   no rule here puts `:hover`, `:focus…` or `:has()` on an ancestor of the rows (bug YAZ-3329). */
 .tree[role='group'] {
   position: relative;
 }
@@ -2016,7 +2014,12 @@ button {
    from far above it down to the middle of its own row, then an elbow into its chevron (folder) or its name (file).
    Each nested level clips what pokes above its top, so the pieces join into one path, as in the editor. A row is
    13px * 1.5 + 2 * 3px tall, so its middle is 12.75px down. Each level is its own stacking context, so the grey
-   line (z 1) stays over the row fills and the thread (z 2) over the grey line, without leaking out of the tree. */
+   line (z 1) stays over the row fills and the thread (z 2) over the grey line, without leaking out of the tree.
+   `--sidebar-thread` is its colour (D9): its own, else Bullet threading's, else the accent. */
+.app[data-sidebar-line-style='thread'] {
+  --sidebar-thread: var(--sidebar-thread-color, var(--thread-color, var(--accent)));
+}
+
 .app[data-sidebar-line-style='thread'] .tree[role='group'] {
   z-index: 0;
   overflow-y: clip;
@@ -2026,7 +2029,8 @@ button {
   z-index: 1;
 }
 
-.app[data-sidebar-line-style='thread'] .tree[role='group'] > li {
+/* Each li of the tree holds its piece (`::before`) and, for a folder, its coloured chevron (`::after`). */
+.app[data-sidebar-line-style='thread'] .tree[role='tree'] li {
   position: relative;
 }
 
@@ -2040,12 +2044,12 @@ button {
   position: absolute;
   z-index: 2;
   top: -100000px;
-  left: calc(var(--tree-depth) * 14px + 1px - var(--thread-width, 2px) / 2);
+  left: calc(var(--tree-depth) * 14px + 1px - var(--thread-width) / 2);
   box-sizing: border-box;
-  width: calc(18px + var(--thread-width, 2px) / 2);
-  height: calc(100000px + 12.75px + var(--thread-width, 2px) / 2);
-  border-left: var(--thread-width, 2px) solid var(--sidebar-thread-color, var(--thread-color, var(--accent)));
-  border-bottom: var(--thread-width, 2px) solid var(--sidebar-thread-color, var(--thread-color, var(--accent)));
+  width: calc(18px + var(--thread-width) / 2);
+  height: calc(100000px + 12.75px + var(--thread-width) / 2);
+  border-left: var(--thread-width) solid var(--sidebar-thread);
+  border-bottom: var(--thread-width) solid var(--sidebar-thread);
   border-bottom-left-radius: 6px;
   pointer-events: none;
 }
@@ -2055,22 +2059,22 @@ button {
   transition: opacity 140ms ease 80ms;
 }
 
-/* A folder's elbow stops 2px short of its chevron; a file's, 3px short of its name. */
+/* A folder's elbow stops 2px short of its chevron; a file's, 3px short of its name. A folder in inline rename
+   has no chevron: its elbow stops 2px short of the input, which starts where the chevron did (bug YAZ-3342). */
 .app[data-sidebar-line-style='thread'] .sidebar__body .tree[role='group'] > li[aria-expanded]::before {
-  width: calc(9px + var(--thread-width, 2px) / 2);
+  width: calc(9px + var(--thread-width) / 2);
+}
+
+.app[data-sidebar-line-style='thread'] .sidebar__body .tree[role='group'] > li[data-renaming]::before {
+  width: calc(5px + var(--thread-width) / 2);
 }
 
 /* The chevrons on the path take the thread colour (D7), as the bullets on the editor's path do. The coloured
-   arrow is the folder li's own `::after`, a copy of `.tree__chevron::before` laid exactly on it: a rule that
-   reached the chevron from `li:hover` made Chromium search the whole folder below it at each `:hover`
-   change, 10 ms for a move across top folders at 10,000 rows, in every style (bug YAZ-3329). Here a change
-   restyles that li alone. The chevron sits (25.5px - 14px) / 2 = 5.75px down its row and 8 + depth * 14 px
-   in; its arrow is 4px in and 3px down (1px open). */
-.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded] {
-  position: relative;
-}
-
-.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]::after {
+   arrow is the folder li's own `::after`, a copy of `.tree__chevron::before` laid exactly on it, so a `:hover`
+   change restyles that li alone (bug YAZ-3329). The chevron sits (25.5px - 14px) / 2 = 5.75px down its row and
+   8 + depth * 14 px in; its arrow is 4px in and 3px down (1px open). A folder in inline rename (`data-renaming`,
+   Tree.tsx) has no chevron, so it has no copy either (bug YAZ-3342). */
+.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]:not([data-renaming])::after {
   content: '';
   position: absolute;
   z-index: 2;
@@ -2078,33 +2082,35 @@ button {
   top: 8.75px;
   width: 7px;
   height: 7px;
-  border-right: 1.75px solid var(--sidebar-thread-color, var(--thread-color, var(--accent)));
-  border-bottom: 1.75px solid var(--sidebar-thread-color, var(--thread-color, var(--accent)));
+  border-right: 1.75px solid var(--sidebar-thread);
+  border-bottom: 1.75px solid var(--sidebar-thread);
   transform: rotate(-45deg);
   opacity: 0;
   transition: transform 0.12s;
   pointer-events: none;
 }
 
-.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']::after {
+.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming])::after {
   top: 6.75px;
   transform: rotate(45deg);
 }
 
-.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]:hover::after {
+.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]:not([data-renaming]):hover::after {
   opacity: 1;
   transition: transform 0.12s, opacity 140ms ease 80ms;
 }
 
-/* Reduce motion (D10): no rest and no fade. The selectors of the three rules that fade, so this block wins by
-   coming last (a rule in `@media` gets no extra weight); the chevron keeps its turn and loses only its colour fade. */
+/* Reduce motion (D10): no rest and no fade, for the grey lines too, as toc.css does for its own. The selectors of
+   the rules that fade, so this block wins by coming last (a rule in `@media` gets no extra weight); the chevron
+   keeps its turn and loses only its colour fade. */
 @media (prefers-reduced-motion: reduce) {
+  .tree[role='group']::before,
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li::before,
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li:hover::before {
     transition: none;
   }
 
-  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]:hover::after {
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]:not([data-renaming]):hover::after {
     transition: transform 0.12s;
   }
 }

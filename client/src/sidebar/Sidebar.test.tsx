@@ -978,6 +978,24 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     expect(props.onRenameFile).not.toHaveBeenCalled()
   })
 
+  it('bug YAZ-3342: a folder in inline rename marks its li `data-renaming` while the box shows, so the thread draws no coloured chevron over the box; Escape takes the mark away', async () => {
+    const { el } = await mount({ indexSource: titled() })
+    const li = () => dirRow(el)?.closest('li') ?? el.querySelector('.create-inline')?.closest('li')
+    expect(li()?.hasAttribute('data-renaming')).toBe(false)
+    act(() => void dirRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(input).not.toBeNull()
+    // The box is the folder's row: its li keeps `aria-expanded` (the folder still folds) and carries the mark.
+    expect(input?.closest('li')?.getAttribute('aria-expanded')).not.toBeNull()
+    expect(input?.closest('li')?.hasAttribute('data-renaming')).toBe(true)
+    expect(el.querySelectorAll('[data-renaming]')).toHaveLength(1)
+    act(() => input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    await act(async () => undefined)
+    expect(el.querySelector('.create-inline__input')).toBeNull()
+    expect(el.querySelectorAll('[data-renaming]')).toHaveLength(0)
+  })
+
   it('a NOTE row\'s "Rename" edits its TITLE the same way; a note with no title is prefilled with its file name, less the extension (YAZ-2420 D16)', async () => {
     const { props, el } = await mount({ indexSource: titled() })
     expect(await renameRow(el, fileRow(el), 'UP-002 - Ali')).toBe('UP-001 - Abdul')

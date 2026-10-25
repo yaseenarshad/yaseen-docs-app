@@ -8,22 +8,44 @@ const rulesOf = (css: string): { selectors: string[]; body: string }[] =>
 describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () => {
   const rules = rulesOf(appCss)
   const LINE = ".tree[role='group']::before"
+  /** The reduced-motion block of the lines and the thread, and the sheet without it. */
+  const media = (() => {
+    const start = [...appCss.matchAll(/@media \(prefers-reduced-motion: reduce\) \{/g)].map((m) => m.index).find((i) => appCss.slice(i, i + 400).includes('data-sidebar-line-style'))
+    expect(start).toBeDefined()
+    let depth = 0
+    let end = start!
+    for (let i = appCss.indexOf('{', start); i < appCss.length; i++) {
+      if (appCss[i] === '{') depth++
+      if (appCss[i] === '}' && --depth === 0) {
+        end = i + 1
+        break
+      }
+    }
+    return { start: start!, block: rulesOf(appCss.slice(appCss.indexOf('{', start) + 1, end - 1)), rest: rulesOf(appCss.slice(0, start) + appCss.slice(end)) }
+  })()
+  const body = (selector: string) => media.rest.filter((rule) => rule.selectors.includes(selector)).map((rule) => rule.body)
+  /** A rule's number in px, for example `top: 8.75px`. */
+  const px = (b: string, prop: string) => Number(new RegExp(`(?:^|[;\\s])${prop}:\\s*(-?[\\d.]+)px`).exec(b)?.[1])
+  // The row and the chevron, read from the sheet: the copy and the elbow follow them (audit item 12).
+  const rowBody = body('.tree__row')[0]
+  const rowHeight = px(rowBody, 'font-size') * Number(/line-height:\s*([\d.]+);/.exec(rowBody)?.[1]) + 2 * Number(/padding:\s*([\d.]+)px/.exec(rowBody)?.[1])
+  const chevronTop = (rowHeight - px(body('.tree__chevron')[0], 'height')) / 2
 
   it('one 1px grey line on each nested level of the tree, below the chevron of its folder, hidden until a gate shows it, and no target for the mouse', () => {
-    const line = rules.filter((rule) => rule.selectors.includes(LINE))
+    const line = body(LINE).filter((b) => /content:/.test(b))
     expect(line).toHaveLength(1)
-    const [{ body }] = line
-    expect(body).toMatch(/content:\s*'';/)
-    expect(body).toMatch(/position:\s*absolute;/)
-    expect(body).toMatch(/top:\s*0;/)
-    expect(body).toMatch(/bottom:\s*0;/)
+    const [lineBody] = line
+    expect(lineBody).toMatch(/content:\s*'';/)
+    expect(lineBody).toMatch(/position:\s*absolute;/)
+    expect(lineBody).toMatch(/top:\s*0;/)
+    expect(lineBody).toMatch(/bottom:\s*0;/)
     // A row's indent is 8 + depth * 14 px and its chevron 14 px wide: depth * 14 + 1 is the chevron's centre.
-    expect(body).toMatch(/left:\s*calc\(var\(--tree-depth\) \* 14px \+ 1px\);/)
-    expect(body).toMatch(/width:\s*1px;/)
-    expect(body).toMatch(/background:\s*var\(--border\);/)
-    expect(body).toMatch(/opacity:\s*0;/)
-    expect(body).toMatch(/transition:\s*opacity 160ms ease;/)
-    expect(body).toMatch(/pointer-events:\s*none;/)
+    expect(lineBody).toMatch(/left:\s*calc\(var\(--tree-depth\) \* 14px \+ 1px\);/)
+    expect(lineBody).toMatch(/width:\s*1px;/)
+    expect(lineBody).toMatch(/background:\s*var\(--border\);/)
+    expect(lineBody).toMatch(/opacity:\s*0;/)
+    expect(lineBody).toMatch(/transition:\s*opacity 160ms ease;/)
+    expect(lineBody).toMatch(/pointer-events:\s*none;/)
     expect(rules.find((rule) => rule.selectors.includes(".tree[role='group']"))?.body).toMatch(/position:\s*relative;/)
   })
 
@@ -46,25 +68,11 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
     const ON = `${STYLE}:not([data-sidebar-lines='off'])`
     const PIECE = `${ON} .sidebar__body .tree[role='group'] > li::before`
     const PIECE_HOVER = `${ON} .sidebar__body .tree[role='group'] > li:hover::before`
-    const CHEVRON_REST = `${ON} .sidebar__body .tree > li[aria-expanded]::after`
-    const CHEVRON = `${ON} .sidebar__body .tree > li[aria-expanded]:hover::after`
-    const THREAD = /var\(--sidebar-thread-color, var\(--thread-color, var\(--accent\)\)\)/
-    /** The reduced-motion block of the thread, and the sheet without it. */
-    const media = (() => {
-      const start = [...appCss.matchAll(/@media \(prefers-reduced-motion: reduce\) \{/g)].map((m) => m.index).find((i) => appCss.slice(i, i + 400).includes('data-sidebar-line-style'))
-      expect(start).toBeDefined()
-      let depth = 0
-      let end = start!
-      for (let i = appCss.indexOf('{', start); i < appCss.length; i++) {
-        if (appCss[i] === '{') depth++
-        if (appCss[i] === '}' && --depth === 0) {
-          end = i + 1
-          break
-        }
-      }
-      return { start: start!, block: rulesOf(appCss.slice(appCss.indexOf('{', start) + 1, end - 1)), rest: rulesOf(appCss.slice(0, start) + appCss.slice(end)) }
-    })()
-    const body = (selector: string) => media.rest.filter((rule) => rule.selectors.includes(selector)).map((rule) => rule.body)
+    const CHEVRON_REST = `${ON} .sidebar__body .tree > li[aria-expanded]:not([data-renaming])::after`
+    const CHEVRON_OPEN = `${ON} .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming])::after`
+    const CHEVRON = `${ON} .sidebar__body .tree > li[aria-expanded]:not([data-renaming]):hover::after`
+    // One custom property holds the colour chain of D9: its own, else Bullet threading's, else the accent.
+    const THREAD = /var\(--sidebar-thread\)/
     const threadRules = media.rest.filter((rule) => rule.selectors.some((s) => s.includes('data-sidebar-line-style')))
 
     it('each nested level clips what pokes above its top and is its own stacking context; the grey line is z 1, the thread z 2; every rule waits for the style `thread`', () => {
@@ -74,25 +82,32 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
       expect(group).toMatch(/z-index:\s*0;/)
       expect(group).toMatch(/overflow-y:\s*clip;/)
       expect(body(`${STYLE} .tree[role='group']::before`)[0]).toMatch(/z-index:\s*1;/)
-      expect(body(`${STYLE} .tree[role='group'] > li`)[0]).toMatch(/position:\s*relative;/)
+      // One rule makes each li of the tree hold its pieces; Recents and Sessions have no `role='tree'`.
+      expect(body(`${STYLE} .tree[role='tree'] li`)[0]).toMatch(/position:\s*relative;/)
+      expect(body(STYLE)[0]).toMatch(/--sidebar-thread:\s*var\(--sidebar-thread-color, var\(--thread-color, var\(--accent\)\)\);/)
     })
 
-    it('one piece for each li on the hover path: z 2 over the grey line, no target, the thread colour with its two fallbacks, the editor\'s width, a 6px elbow; "Never" turns it off', () => {
+    it('one piece for each li on the hover path: z 2 over the grey line, no target, the thread colour, the editor\'s width, a 6px elbow at the middle of its row; "Never" turns it off', () => {
       const [piece] = body(PIECE)
       expect(piece).toMatch(/z-index:\s*2;/)
       expect(piece).toMatch(/pointer-events:\s*none;/)
       expect(piece).toMatch(/opacity:\s*0;/)
       expect(piece).toMatch(/position:\s*absolute;/)
-      expect(piece).toMatch(/left:\s*calc\(var\(--tree-depth\) \* 14px \+ 1px - var\(--thread-width, 2px\) \/ 2\);/)
+      expect(piece).toMatch(/left:\s*calc\(var\(--tree-depth\) \* 14px \+ 1px - var\(--thread-width\) \/ 2\);/)
+      // The elbow is at the middle of its own row (audit item 12): the height reaches down to it.
+      expect(piece).toMatch(new RegExp(`height:\\s*calc\\(100000px \\+ ${rowHeight / 2}px \\+ var\\(--thread-width\\) / 2\\);`))
+      expect(piece).toMatch(/top:\s*-100000px;/)
       expect(piece).toMatch(/border-bottom-left-radius:\s*6px;/)
-      for (const side of ['border-left', 'border-bottom']) expect(piece).toMatch(new RegExp(`${side}:\\s*var\\(--thread-width, 2px\\) solid ${THREAD.source}`))
+      for (const side of ['border-left', 'border-bottom']) expect(piece).toMatch(new RegExp(`${side}:\\s*var\\(--thread-width\\) solid ${THREAD.source}`))
+      // No fallback for the width: App always sets `--thread-width` on `.app` (audit item 5).
+      expect(appCss).not.toMatch(/var\(--thread-width,/)
       expect(body(PIECE_HOVER)[0]).toMatch(/opacity:\s*1;/)
       for (const side of ['border-right', 'border-bottom']) expect(body(CHEVRON_REST)[0]).toMatch(new RegExp(`${side}:\\s*1\\.75px solid ${THREAD.source}`))
       expect(body(CHEVRON_REST)[0]).toMatch(/opacity:\s*0;/)
       expect(body(CHEVRON_REST)[0]).toMatch(/pointer-events:\s*none;/)
       expect(body(CHEVRON)[0]).toMatch(/opacity:\s*1;/)
       // Each rule that draws (it sets a look, not only a width) is off with "Show: Never".
-      for (const { selectors } of threadRules.filter((rule) => /content:|opacity:\s*1|border-color:/.test(rule.body))) for (const s of selectors) expect(s, s).toContain(ON)
+      for (const { selectors } of threadRules.filter((rule) => /content:|opacity:\s*1/.test(rule.body))) for (const s of selectors) expect(s, s).toContain(ON)
     })
 
     it('calm (D10): it shows after an 80ms rest and fades in over 140ms, fades out over 180ms with no wait; the wait is on `:hover` alone', () => {
@@ -103,36 +118,49 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
       for (const { selectors } of threadRules.filter((rule) => /\b80ms\b/.test(rule.body))) for (const s of selectors) expect(s, s).toContain(':hover')
     })
 
-    it('Reduce motion (D10): the block names every selector of a rule that fades, so it wins by coming last, and it fades nothing; the chevron keeps its turn', () => {
-      const fades = threadRules.filter((rule) => /transition:[^;]*\d+ms/.test(rule.body))
-      expect(fades.length).toBe(3)
+    it('Reduce motion (D10): the block names every selector of a rule that fades, the grey line\'s too (as toc.css does), so it wins by coming last, and it fades nothing; the chevron keeps its turn', () => {
+      const fades = [...threadRules, ...media.rest.filter((rule) => rule.selectors.includes(LINE))].filter((rule) => /transition:[^;]*\d+ms/.test(rule.body))
+      expect(fades.length).toBe(4)
       const inBlock = media.block.flatMap((rule) => rule.selectors)
       for (const { selectors } of fades) for (const s of selectors) expect(inBlock, s).toContain(s)
       for (const rule of media.block) expect(rule.body, rule.selectors.join()).not.toMatch(/\d+ms/)
       expect(media.block.find((rule) => rule.selectors.includes(PIECE))?.body).toMatch(/transition:\s*none;/)
+      expect(media.block.find((rule) => rule.selectors.includes(LINE))?.body).toMatch(/transition:\s*none;/)
       expect(media.block.find((rule) => rule.selectors.includes(CHEVRON))?.body).toMatch(/transition:\s*transform 0\.12s;/)
       // The block comes after each rule it must beat (their first place in the sheet).
-      for (const s of [PIECE, PIECE_HOVER, CHEVRON]) expect(appCss.indexOf(s), s).toBeLessThan(media.start)
+      for (const s of [LINE, PIECE, PIECE_HOVER, CHEVRON]) expect(appCss.indexOf(s), s).toBeLessThan(media.start)
     })
 
     it('the coloured chevron is a copy of the grey one, laid exactly on it: the same box, border and turn, at the chevron\'s place in its row (D7, bug YAZ-3329)', () => {
       const grey = rules.find((rule) => rule.selectors.includes('.tree__chevron::before'))!.body
       const greyOpen = rules.find((rule) => rule.selectors.includes('.tree__chevron--open::before'))!.body
-      const px = (b: string, prop: string) => Number(new RegExp(`(?:^|[;\\s])${prop}:\\s*(-?[\\d.]+)px`).exec(b)?.[1])
       const rest = body(CHEVRON_REST)[0]
-      const open = body(`${ON} .sidebar__body .tree > li[aria-expanded='true']::after`)[0]
+      const open = body(CHEVRON_OPEN)[0]
       for (const prop of ['width', 'height']) expect(px(rest, prop), prop).toBe(px(grey, prop))
       expect(grey).toMatch(/border-right:\s*1\.75px solid/)
       expect(grey).toMatch(/transform:\s*rotate\(-45deg\);/)
       expect(rest).toMatch(/transform:\s*rotate\(-45deg\);/)
       expect(greyOpen).toMatch(/transform:\s*rotate\(45deg\);/)
       expect(open).toMatch(/transform:\s*rotate\(45deg\);/)
-      // A row is 13px * 1.5 + 2 * 3px = 25.5px high, its 14px chevron centred in it, 8 + depth * 14 px in.
-      const chevronTop = (25.5 - 14) / 2
+      // The chevron is centred in its row (both read from the sheet), 8 + depth * 14 px in.
+      expect([rowHeight, chevronTop]).toEqual([25.5, 5.75])
       expect(rest).toMatch(new RegExp(`left:\\s*calc\\(var\\(--tree-depth, 0\\) \\* 14px \\+ ${8 + px(grey, 'left')}px\\);`))
       expect(px(rest, 'top')).toBe(chevronTop + px(grey, 'top'))
       expect(px(open, 'top')).toBe(chevronTop + px(greyOpen, 'top'))
-      expect(rules.find((rule) => rule.selectors.includes('.tree__row'))?.body).toMatch(/padding:\s*3px 8px;[\s\S]*font-size:\s*13px;[\s\S]*line-height:\s*1\.5;/)
+    })
+
+    it('bug YAZ-3342: a folder in inline rename (`li[data-renaming]`, its row is the input) draws no coloured chevron, and its elbow stops 2px short of the input, as a folder\'s stops short of its chevron', () => {
+      const afters = threadRules.filter((rule) => rule.selectors.some((s) => s.endsWith('::after')))
+      expect(afters.length).toBe(3)
+      for (const { selectors } of [...afters, ...media.block.filter((rule) => rule.selectors.some((s) => s.endsWith('::after')))]) for (const s of selectors) expect(s, s).toContain(':not([data-renaming])')
+      // The input starts where the chevron did, 8 + depth * 14 px in; the piece starts at depth * 14 + 1 - width / 2.
+      const folder = body(`${STYLE} .sidebar__body .tree[role='group'] > li[aria-expanded]::before`)[0]
+      const renaming = body(`${STYLE} .sidebar__body .tree[role='group'] > li[data-renaming]::before`)[0]
+      const reach = (b: string) => 1 + Number(/width:\s*calc\(([\d.]+)px \+ var\(--thread-width\) \/ 2\);/.exec(b)?.[1])
+      expect(reach(folder)).toBe(8 + px(body('.tree__chevron::before')[0], 'left') - 2)
+      expect(reach(renaming)).toBe(8 - 2)
+      // It comes after the folder's rule, so it wins on the same li.
+      expect(appCss.indexOf("li[data-renaming]::before")).toBeGreaterThan(appCss.indexOf("li[aria-expanded]::before"))
     })
 
     it('the mouse alone draws it (D11): no thread rule reads keyboard focus, and no hover selector uses `:has(`', () => {

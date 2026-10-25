@@ -226,7 +226,7 @@ test('step 5 — a nav click swaps the page: Sync, then Hotkeys under the divide
   await expect(dialog(win)).toHaveCount(0)
 })
 
-test('step 6 — Appearance › "Sidebar level lines" (YAZ-3309 D3, D6–D10): Show is On hover and Style is Plain lines by default; each choice reaches the state file and `.app`; the grey line below the open folder and the thread to the row under the mouse follow them', async () => {
+test('step 6 — Appearance › "Sidebar level lines" (YAZ-3309 D3, D6–D10): each choice reaches the state file and `.app`; the grey line below the open folder follows the mouse and the keyboard (S2, S3), and the thread the resting mouse', async () => {
   // Projects/ open in Files: its nested level is the one that draws a line, below the folder's chevron.
   const folder = win.locator('li[role="treeitem"]:has(> .tree__row--dir[data-path$="/Projects"])')
   if ((await folder.getAttribute('aria-expanded')) !== 'true') await folder.locator('> .tree__row--dir').click()
@@ -258,19 +258,9 @@ test('step 6 — Appearance › "Sidebar level lines" (YAZ-3309 D3, D6–D10): S
   await cog(win).click()
   await expect(dialog(win)).toBeVisible()
   await navItem(win, 'Appearance').click()
-  // Its own group (D6), between Comments and draw.io diagrams; Files & Links has no such row.
-  const group = row(win, 'sidebarLines').locator('xpath=ancestor::*[contains(@class, "settings-group")][1]')
-  await expect(group.locator('.settings-group__title')).toHaveText('Sidebar level lines')
-  await expect(group.locator('[data-setting]')).toHaveCount(3)
-  await expect(group.locator('.setting__label')).toHaveText(['Show', 'Style', 'Thread colour'])
-  await expect(row(win, 'sidebarLines').getByRole('button')).toHaveText(['On hover', 'Always show', 'Never'])
-  await expect(row(win, 'sidebarLines').getByRole('button', { name: 'On hover', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await expect(row(win, 'sidebarLineStyle').getByRole('button')).toHaveText(['Plain lines', 'Thread to the row'])
-  await expect(row(win, 'sidebarLineStyle').getByRole('button', { name: 'Plain lines', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await expect(row(win, 'sidebarThreadColor').getByRole('button', { name: 'Default', exact: true })).toBeDisabled()
+  // Its own group on Appearance (D6); its rows and their defaults are SettingsDialog.test's.
+  await expect(row(win, 'sidebarLines').locator('xpath=ancestor::*[contains(@class, "settings-group")][1]').locator('.settings-group__title')).toHaveText('Sidebar level lines')
   await shoot(win, 'settings-11-sidebar-level-lines-group')
-  await navItem(win, 'Files & Links').click()
-  await expect(row(win, 'sidebarLines')).toHaveCount(0)
   await win.keyboard.press('Escape')
   await expect(win.locator('.app')).toHaveAttribute('data-sidebar-lines', 'hover')
   await expect(win.locator('.app')).toHaveAttribute('data-sidebar-line-style', 'plain')
@@ -281,6 +271,18 @@ test('step 6 — Appearance › "Sidebar level lines" (YAZ-3309 D3, D6–D10): S
   await mouseOnNote()
   await expect.poll(async () => (await line()).opacity).toBe('0')
   await shoot(win, 'settings-12-sidebar-lines-hover-out')
+  // S2: the keyboard in the tree, the mouse on the note: an arrow key moves the focus to a row, and the lines show.
+  const projects = folder.locator('> .tree__row--dir')
+  await projects.focus()
+  await win.keyboard.press('ArrowDown')
+  await expect(win.locator('.sidebar__body')).toHaveAttribute('data-key-focus', '')
+  await expect.poll(async () => (await line()).opacity).toBe('1')
+  // S3: a mouse click on a row is no keyboard focus: the mouse leaves, and the lines go.
+  await roadmap.locator('> .tree__row--file').click()
+  await mouseOnNote()
+  await expect(win.locator('.sidebar__body')).not.toHaveAttribute('data-key-focus', '')
+  await expect(win.locator('.sidebar__body')).not.toHaveAttribute('data-mouse-in', '')
+  await expect.poll(async () => (await line()).opacity).toBe('0')
   // "Always show": with the mouse on the note.
   await choose('sidebarLines', 'Always show', 'always')
   await mouseOnNote()

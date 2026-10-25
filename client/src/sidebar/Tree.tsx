@@ -319,6 +319,8 @@ function TreeLevel({
   // that shows twice apart, and a right-click hands it to the menu, so an input mounts in that copy alone.
   const topOf = (node: TreeNode): string => top ?? node.path
   const inCopy = (want: string | null, node: TreeNode): boolean => want === null || want === topOf(node)
+  /** A folder row that is the inline rename input now (E1b, GRO-2241). */
+  const renamesHere = (node: TreeNode): boolean => renaming !== null && renaming.path === node.path && inCopy(renaming.top, node)
   /** The key this folder row folds under: its copy's own in Focus and Favorites (YAZ-3131), else its path. */
   const foldOf = (node: TreeNode): string => (copies ? copyFoldKey(topOf(node), node.path) : node.path)
   /** The copy a click picks in (YAZ-3131): only a tree of copies records one. */
@@ -386,7 +388,8 @@ function TreeLevel({
       )}
       {rows.map((node) =>
         node.type === 'dir' ? (
-          <li key={node.path} role="treeitem" aria-expanded={expanded.has(foldOf(node))} aria-selected={isActive(node) || isSelected(node)}>
+          // `data-renaming`: the row is the input, so app.css draws no coloured chevron on it (YAZ-3309 D7, bug YAZ-3342).
+          <li key={node.path} role="treeitem" aria-expanded={expanded.has(foldOf(node))} aria-selected={isActive(node) || isSelected(node)} data-renaming={renamesHere(node) ? '' : undefined}>
             {renaming !== null && renaming.path === node.path && inCopy(renaming.top, node) ? (
               // Inline FOLDER rename (E1b, GRO-2241): same idiom as files, and what it edits is
               // the folder's TITLE (YAZ-2420 🔒 D16).

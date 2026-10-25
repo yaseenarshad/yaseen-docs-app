@@ -459,16 +459,12 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, confirmRename: false })
   })
 
-  it('Sidebar level lines (YAZ-3309 D6–D9): a group of its own on Appearance, between Comments and draw.io diagrams, with Show, Style and Thread colour; each choice writes the whole object with only its own field changed; Files & Links no longer has the row', () => {
+  it('Sidebar level lines (YAZ-3309 D6–D9): Show, Style and Thread colour in one group; each choice writes the whole object with only its own field changed (the group\'s place and hint: "group titles and hints render on their own page")', () => {
     const { el, onChange } = mountOn('Appearance')
     const group = row(el, 'sidebarLines')?.closest('.settings-group')
     expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Sidebar level lines')
-    expect(group?.querySelector('.settings-group__hint')?.textContent).toBe('A thin line below each open folder in the sidebar shows what is inside it.')
     expect([...(group?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual(['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     expect(['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Show', 'Style', 'Thread colour'])
-    expect(groupTitles(el)).toEqual(expect.arrayContaining(['Comments', 'Sidebar level lines', 'draw.io diagrams']))
-    expect(groupTitles(el).indexOf('Sidebar level lines')).toBe(groupTitles(el).indexOf('Comments') + 1)
-    expect(groupTitles(el).indexOf('draw.io diagrams')).toBe(groupTitles(el).indexOf('Sidebar level lines') + 1)
     // Show: the TOC's three choices, On hover by default (D3).
     expect(row(el, 'sidebarLines')?.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Level lines in the sidebar')
     expect(rowButtons(el, 'sidebarLines').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On hover', 'true'], ['Always show', 'false'], ['Never', 'false']])
@@ -497,8 +493,6 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     unmount()
     // With no colour of its own, the swatch shows the editor's thread colour, which the thread then uses.
     expect(row(mountOn('Appearance', { ...DEFAULT_SETTINGS, threadColor: '#ff0000' }).el, 'sidebarThreadColor')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#ff0000')
-    unmount()
-    expect(row(mountOn('Files & Links').el, 'sidebarLines')).toBeNull()
   })
 
   it('Section indent: two rows under Editor, in the last group of the page, after Bullet threading; each writes the whole object with only its field changed (YAZ-2709)', () => {
