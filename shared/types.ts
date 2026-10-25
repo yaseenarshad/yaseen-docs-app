@@ -1381,6 +1381,8 @@ export interface SettingsState {
   tableOfContentsWidth: number
   /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
   tocLines: TocLines
+  /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
+  sidebarLines: TocLines
   /**
    * The canvas preferences every drawing, every window and every relaunch share (Draw's 🔒 YAZ-1775 D9,
    * YAZ-3028): seeded into a canvas at mount and kept in step with the engine both ways. See `CanvasPrefs`.
@@ -1526,6 +1528,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableOfContents: 'auto',
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
+  sidebarLines: 'hover',
   canvas: DEFAULT_CANVAS_PREFS,
   diagramDarkColors: 'adapt',
   libraryFolder: null,

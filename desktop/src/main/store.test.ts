@@ -353,6 +353,34 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings.tocLines).toBe('always')
   })
 
+  it("sidebarLines: an older file without the key loads with hover; the three values load as they are; anything else loads as hover, and fails the channel check; the TOC's own setting stays apart (YAZ-3309 D3)", async () => {
+    expect(DEFAULT_SETTINGS.sidebarLines).toBe('hover')
+    // A yaseendocs.json from before YAZ-3309: the missing field gets its default, and no other field changes.
+    const { sidebarLines: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: { ...legacySettings, tocLines: 'off' } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, tocLines: 'off' })
+    const loaded = async (sidebarLines: unknown): Promise<string> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, tocLines: 'always', sidebarLines } }))
+      const { settings } = createStore(file).get()
+      // One bad field costs that field only: the TOC's lines beside it load as stored (S11).
+      expect(settings.tocLines).toBe('always')
+      return settings.sidebarLines
+    }
+
+    for (const sidebarLines of TOC_LINES) expect(await loaded(sidebarLines)).toBe(sidebarLines)
+    for (const sidebarLines of ['sometimes', 'never', 'Always', '', null, false, 0, ['off']]) expect(await loaded(sidebarLines)).toBe('hover')
+
+    // `state.setSettings` is strict: a write with a value outside the three, or with no `sidebarLines`, is refused as a whole.
+    for (const sidebarLines of TOC_LINES) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarLines })).toBe(true)
+    for (const sidebarLines of ['sometimes', true, undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarLines })).toBe(false)
+    expect(isSettings(legacySettings)).toBe(false)
+    const store = createStore(file)
+    store.setSettings({ ...DEFAULT_SETTINGS, sidebarLines: 'off' })
+    await store.flush()
+    expect((await onDisk()).settings.sidebarLines).toBe('off')
+    expect(createStore(file).get().settings.sidebarLines).toBe('off')
+  })
+
   it('the 1.0.15 heading styles (YAZ-3066 D11): the settings never hold them; a valid map is handed out once, then `{}`; a bad map is `{}`; the next write drops the key from the file', async () => {
     expect(Object.keys(DEFAULT_SETTINGS)).not.toContain('headingStyles')
     const legacy = { h1: { size: 25 }, h2: { size: 21, underline: true }, h3: { size: 18 }, h4: { size: 15, highlight: 'yellow' } }

@@ -1034,6 +1034,19 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     expect(captured.editors.length).toBe(renders)
     expect([app.getAttribute('data-section-lines'), app.getAttribute('data-content-width')]).toEqual(['always', 'narrow'])
   })
+
+  it('hands the sidebar\'s "Level lines" choice to app.css as an attribute on the app container; another window\'s change lands live, apart from the TOC\'s, and no editor renders for it (YAZ-3309 D3)', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    expect(app.getAttribute('data-sidebar-lines')).toBe('hover')
+    const renders = captured.editors.length
+    for (const sidebarLines of ['always', 'off', 'hover'] as const) {
+      act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tocLines: 'off', sidebarLines } }))
+      expect(app.getAttribute('data-sidebar-lines')).toBe(sidebarLines)
+      expect(app.getAttribute('data-toc-lines')).toBe('off')
+    }
+    expect(captured.editors.length).toBe(renders)
+  })
 })
 
 describe('App sidebar resize (YAZ-738)', () => {

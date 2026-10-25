@@ -65,6 +65,13 @@ describe('the rules (D3)', () => {
     expect(out.sidebarSort).toEqual(here.sidebarSort)
   })
 
+  it("YAZ-3309: the sidebar's level lines travel; a file without them, or with a value this build can't read, keeps this Mac's (D3, S10)", () => {
+    const here: SettingsState = { ...DEFAULT_SETTINGS, sidebarLines: 'always' }
+    expect(mergeFolderSettings(here, { sidebarLines: 'off' }).sidebarLines).toBe('off')
+    expect(mergeFolderSettings(here, { theme: 'dark' }).sidebarLines).toBe('always')
+    expect(mergeFolderSettings(here, { sidebarLines: 'sometimes' }).sidebarLines).toBe('always')
+  })
+
   it("YAZ-3298: a canvas pref this build can't read, or that the file lacks, keeps this Mac's value (D3)", () => {
     const here: SettingsState = { ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, writingStrokeWidth: 7, toolLock: false } }
     const newer = mergeFolderSettings(here, { canvas: { ...DEFAULT_SETTINGS.canvas, toolLock: true, writingStrokeWidth: 'thick' } })

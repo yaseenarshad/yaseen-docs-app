@@ -51,6 +51,7 @@ describe('settingCandidates', () => {
       'confirmDelete',
       'confirmRename',
       'hoverPreview',
+      'sidebarLines',
       'newNoteLocation',
       'ids',
       'duplicates',
@@ -122,7 +123,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation', 'ids', 'duplicates', 'idLetters', 'oldIds'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'hoverPreview', 'sidebarLines', 'newNoteLocation', 'ids', 'duplicates', 'idLetters', 'oldIds'])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
@@ -138,15 +139,22 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['settingsFolder', 'tableOfContents', 'tocLines', 'hotkeys-keyboard'])
   })
 
-  it('"Level lines" (YAZ-2762): its label and "hierarchy" find that row alone; "outline", "guide" and "hover" find it among the rows that share the word', () => {
-    for (const query of ['level lines', 'hierarchy']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['tocLines'])
+  it('"Level lines" (YAZ-2762, YAZ-3309): its label and "hierarchy" find the two rows, the TOC\'s and the sidebar\'s; "outline", "guide" and "hover" find them among the rows that share the word', () => {
+    for (const query of ['level lines', 'hierarchy']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['tocLines', 'sidebarLines'])
     // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
     expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkeys-drawio'])
     // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sectionLines', 'tocLines', 'hoverPreview'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines', 'sidebarLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sectionLines', 'tocLines', 'hoverPreview', 'sidebarLines'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
+  })
+
+  it('the sidebar\'s "Level lines" (YAZ-3309 S12): "sidebar", "folder", "tree" and "indent" find it among the rows that share the word; the TOC\'s row is not one of them', () => {
+    for (const query of ['sidebar', 'folder', 'tree', 'indent']) {
+      expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('sidebarLines')
+      expect(ids(searchSettings(settingCandidates(ctx()), query))).not.toContain('tocLines')
+    }
   })
 
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {

@@ -1561,7 +1561,7 @@ export function App() {
   }
 
   return (
-    <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines}>
+    <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-sidebar-lines={settings.sidebarLines}>
       {glow && <div className="window-glow" aria-hidden="true" />}
       {notice !== null && (
         // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.

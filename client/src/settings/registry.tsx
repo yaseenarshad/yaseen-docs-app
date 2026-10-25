@@ -526,6 +526,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
+            // YAZ-3309 D3: when the sidebar tree's level lines show, the three choices of the TOC's own (YAZ-2762).
+            id: 'sidebarLines',
+            label: 'Level lines',
+            hint: 'A thin line below each open folder in the sidebar shows what is inside it.',
+            keywords: ['sidebar', 'folder', 'tree', 'hierarchy', 'guide', 'indent', 'hover'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TOC_LINES_OPTIONS} value={settings.sidebarLines} onChange={(sidebarLines) => onChange({ ...settings, sidebarLines })} ariaLabel="Level lines in the sidebar" />
+            ),
+          },
+          {
             id: 'newNoteLocation',
             label: 'Default location for new notes',
             keywords: ['folder', 'wikilink'],

@@ -226,7 +226,59 @@ test('step 5 — a nav click swaps the page: Sync, then Hotkeys under the divide
   await expect(dialog(win)).toHaveCount(0)
 })
 
-test('step 6 — a change survives close and reopen, and reached the state file', async () => {
+test('step 6 — Files & Links › "Level lines" (YAZ-3309 D3): On hover by default; each choice reaches the state file and `.app`, and the grey line below the open folder follows it', async () => {
+  // Projects/ open in Files: its nested level is the one that draws a line, below the folder's chevron.
+  const folder = win.locator('li[role="treeitem"]:has(> .tree__row--dir[data-path$="/Projects"])')
+  if ((await folder.getAttribute('aria-expanded')) !== 'true') await folder.locator('> .tree__row--dir').click()
+  await expect(folder).toHaveAttribute('aria-expanded', 'true')
+  const line = () => folder.locator('> ul.tree[role="group"]').evaluate((ul) => {
+    const before = getComputedStyle(ul, '::before')
+    return { opacity: before.opacity, left: before.left, width: before.width, pointerEvents: before.pointerEvents }
+  })
+  const mouseOnNote = () => win.locator('.ProseMirror').hover()
+  const mouseOnTree = () => win.locator('.sidebar__body').hover()
+  const choose = async (label: 'On hover' | 'Always show' | 'Never', value: 'hover' | 'always' | 'off') => {
+    await cog(win).click()
+    await expect(dialog(win)).toBeVisible()
+    await navItem(win, 'Files & Links').click()
+    await expect(row(win, 'sidebarLines').getByRole('button', { name: label, exact: true })).toBeVisible()
+    await row(win, 'sidebarLines').getByRole('button', { name: label, exact: true }).click()
+    await expect(row(win, 'sidebarLines').getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect.poll(async () => (await readState(userData)).settings.sidebarLines).toBe(value)
+    await expect(win.locator('.app')).toHaveAttribute('data-sidebar-lines', value)
+    await win.keyboard.press('Escape')
+    await expect(dialog(win)).toHaveCount(0)
+  }
+
+  await cog(win).click()
+  await expect(dialog(win)).toBeVisible()
+  await navItem(win, 'Files & Links').click()
+  await expect(row(win, 'sidebarLines').locator('.setting__label')).toHaveText('Level lines')
+  await expect(row(win, 'sidebarLines').getByRole('button')).toHaveText(['On hover', 'Always show', 'Never'])
+  await expect(row(win, 'sidebarLines').getByRole('button', { name: 'On hover', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await win.keyboard.press('Escape')
+  await expect(win.locator('.app')).toHaveAttribute('data-sidebar-lines', 'hover')
+
+  // "On hover": the line shows while the mouse is over the list, and goes when it leaves. 1px at depth 1 * 14 + 1, no target.
+  await mouseOnTree()
+  await expect.poll(line).toEqual({ opacity: '1', left: '15px', width: '1px', pointerEvents: 'none' })
+  await mouseOnNote()
+  await expect.poll(async () => (await line()).opacity).toBe('0')
+  await shoot(win, 'settings-11-sidebar-lines-hover-out')
+  // "Always show": with the mouse on the note.
+  await choose('Always show', 'always')
+  await mouseOnNote()
+  await expect.poll(async () => (await line()).opacity).toBe('1')
+  await shoot(win, 'settings-12-sidebar-lines-always')
+  // "Never": not even with the mouse on the list.
+  await choose('Never', 'off')
+  await mouseOnTree()
+  await expect.poll(async () => (await line()).opacity).toBe('0')
+  // Back to the default for the steps after this one.
+  await choose('On hover', 'hover')
+})
+
+test('step 7 — a change survives close and reopen, and reached the state file', async () => {
   await cog(win).click()
   await expect(dialog(win)).toBeVisible()
   await navItem(win, 'Appearance').click()
@@ -243,7 +295,7 @@ test('step 6 — a change survives close and reopen, and reached the state file'
   await expect(row(win, 'contentWidth').getByRole('button', { name: 'Full', exact: true })).toHaveClass(/settings__option--active/)
   await expect(row(win, 'contentWidth').getByRole('button', { name: 'Narrow', exact: true })).not.toHaveClass(/settings__option--active/)
   await expect.poll(async () => (await readState(userData)).settings.contentWidth).toBe('full')
-  await shoot(win, 'settings-11-full-persisted')
+  await shoot(win, 'settings-13-full-persisted')
   await win.keyboard.press('Escape')
   await expect(dialog(win)).toHaveCount(0)
   await quitApp(app)

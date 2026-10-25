@@ -1912,6 +1912,35 @@ button {
   padding: 0;
 }
 
+/* Level lines (YAZ-3309 D1): one grey line below the chevron of each open folder, down past every
+   row inside it. A row's indent is 8 + depth * 14 px and its chevron is 14 px wide, so
+   depth * 14 + 1 is the centre of the chevron that holds this level. The `role` keeps it to the
+   tree's own levels: Recents and Sessions nest a `.tree` too, and get no line (D4). All grey (D2),
+   and no target (D5): the click goes to the row below. `data-sidebar-lines` on `.app` says when it
+   shows (D3): always, while the mouse is over the list or a row has keyboard focus, or never. */
+.tree[role='group'] {
+  position: relative;
+}
+
+.tree[role='group']::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--tree-depth) * 14px + 1px);
+  width: 1px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+
+.app[data-sidebar-lines='always'] .tree[role='group']::before,
+.app[data-sidebar-lines='hover'] .sidebar__body:hover .tree[role='group']::before,
+.app[data-sidebar-lines='hover'] .sidebar__body:has(.tree__row:focus-visible) .tree[role='group']::before {
+  opacity: 1;
+}
+
 .tree__row {
   display: flex;
   align-items: center;

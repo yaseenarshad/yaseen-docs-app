@@ -4563,6 +4563,18 @@ describe('expand / collapse all (⚡ YAZ-862)', () => {
     expect(flat.el.querySelector('.tree__row--file')).not.toBeNull()
     expect(allButton(flat.el)).toBeNull()
   })
+
+  it('each open level carries its depth for the level line, the top level none; a fold takes the level away (YAZ-3309 D1)', async () => {
+    const { el } = await mountVault()
+    const depths = () => [...el.querySelectorAll<HTMLElement>('.tree[role="group"]')].map((ul) => ul.style.getPropertyValue('--tree-depth'))
+    expect(depths()).toEqual([])
+    act(() => allButton(el)?.click())
+    // docs/ (1) holding deep/ (2), then the empty notes/ (1): app.css draws each line at depth * 14 + 1 px.
+    expect(depths()).toEqual(['1', '2', '1'])
+    expect(el.querySelector('.tree[role="tree"]')?.getAttribute('style')).toBeNull()
+    act(() => dirRow(el, 1)?.click())
+    expect(depths()).toEqual(['1', '1'])
+  })
 })
 
 /**

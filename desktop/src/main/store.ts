@@ -258,6 +258,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableOfContents: (v): v is TableOfContents => typeof v === 'string' && (TABLE_OF_CONTENTS as readonly string[]).includes(v),
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
+  sidebarLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
   // The canvas prefs (YAZ-3028, Draw's 🔒 YAZ-1775 D9): strict here, the IPC boundary's check; `sanitizeSettings` repairs them field by field.
   canvas: isCanvasPrefs,
   diagramDarkColors: (v): v is DiagramDarkColors => typeof v === 'string' && (DIAGRAM_DARK_COLORS as readonly string[]).includes(v),

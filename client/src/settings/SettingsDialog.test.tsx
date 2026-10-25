@@ -135,7 +135,7 @@ const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents'
 const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
-const FILES_ROWS = ['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation']
+const FILES_ROWS = ['confirmDelete', 'confirmRename', 'hoverPreview', 'sidebarLines', 'newNoteLocation']
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 const HOTKEY_ROWS = ['hotkeys-keyboard', 'hotkeys-views', 'hotkeys-window', 'hotkeys-canvas', 'hotkeys-drawio', 'hotkeys-mouse']
 const THREADING_HINT = 'Guide lines that connect nested bullets.'
@@ -457,6 +457,26 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(rowButtons(el, 'confirmRename').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
     act(() => rowButtons(el, 'confirmRename')[1].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, confirmRename: false })
+  })
+
+  it('Level lines of the sidebar: the row right after "Preview on hover", On hover · Always show · Never, On hover by default; each choice writes the whole object with only `sidebarLines` changed, and the TOC row keeps its own (YAZ-3309 D3)', () => {
+    const { el, onChange } = mountOn('Files & Links')
+    // Right below "Preview on hover", the other sidebar row.
+    expect(rowIds(el)).toEqual(['confirmDelete', 'confirmRename', 'hoverPreview', 'sidebarLines', 'newNoteLocation'])
+    expect(row(el, 'sidebarLines')?.querySelector('.setting__label')?.textContent).toBe('Level lines')
+    expect(row(el, 'sidebarLines')?.querySelector('.setting__hint')?.textContent).toBe('A thin line below each open folder in the sidebar shows what is inside it.')
+    expect(row(el, 'sidebarLines')?.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Level lines in the sidebar')
+    expect(rowButtons(el, 'sidebarLines').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On hover', 'true'], ['Always show', 'false'], ['Never', 'false']])
+    act(() => rowButtons(el, 'sidebarLines')[1].click())
+    act(() => rowButtons(el, 'sidebarLines')[2].click())
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([
+      { ...DEFAULT_SETTINGS, sidebarLines: 'always' },
+      { ...DEFAULT_SETTINGS, sidebarLines: 'off' },
+    ])
+    unmount()
+    // A saved "Always show" comes back pressed; the TOC's "Never" beside it is a field of its own (S11).
+    const saved = mountOn('Files & Links', { ...DEFAULT_SETTINGS, sidebarLines: 'always', tocLines: 'off' })
+    expect(rowButtons(saved.el, 'sidebarLines').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
   })
 
   it('Section indent: two rows under Editor, in the last group of the page, after Bullet threading; each writes the whole object with only its field changed (YAZ-2709)', () => {
@@ -1056,7 +1076,7 @@ describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () =>
     expect(row(el, 'ids')).toBeNull()
     expect(groupTitles(el)).not.toContain('This vault')
     type(searchInput(el), 'files & links')
-    expect(rowIds(el)).toEqual(['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation'])
+    expect(rowIds(el)).toEqual(FILES_ROWS)
   })
 
   it('a vault open: the row sits in Files & Links under "This vault", with its label and hint', () => {

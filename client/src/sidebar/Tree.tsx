@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, type CSSProperties } from 'react'
 import type { TabSort, TreeNode } from '@shared/types'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
@@ -325,7 +325,8 @@ function TreeLevel({
   return (
     // The arrows are the whole tree's, taken once at its top (YAZ-2662 D11) — not a search tree's, whose keys are the search bar's.
     // A held Enter is stopped there too, in each tree.
-    <ul className="tree" role={depth === 0 ? 'tree' : 'group'} onKeyDownCapture={depth === 0 ? heldEnter : undefined} onKeyDown={depth === 0 && marks === undefined ? (e) => rowArrows(e, onToggle, onLeaveToPage) : undefined}>
+    // A nested level carries its depth (YAZ-3309): app.css draws its level line below the chevron of the folder that holds it.
+    <ul className="tree" role={depth === 0 ? 'tree' : 'group'} style={depth > 0 ? ({ '--tree-depth': depth } as CSSProperties) : undefined} onKeyDownCapture={depth === 0 ? heldEnter : undefined} onKeyDown={depth === 0 && marks === undefined ? (e) => rowArrows(e, onToggle, onLeaveToPage) : undefined}>
       {pending !== null && createsHere && (
         <li>
           <CreateInline
