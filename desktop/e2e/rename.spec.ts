@@ -320,7 +320,7 @@ test('step 6 — drag a file row onto a folder row: the file moves there, bare l
   // S.md pinned WHOLE: [[Target/M]] → [[Notes/M]]; the bare [[M]] still resolves — unchanged.
   await expect.poll(() => readWhenReady(path.join(vault, 'S.md'))).toBe('# S\n\nSee [[Notes/M]] and [[M]] here.\n')
   // A move says itself, then the links that followed it (YAZ-3250 D1).
-  await expect(win.locator('.link-notice__text')).toHaveText('Moved 1 item. Updated links in 1 note') // the toast has Undo now (YAZ-3255 D11)
+  await expect(win.locator('.link-notice__text')).toHaveText('Moved 1 item (M). Updated links in 1 note') // the toast has Undo now (YAZ-3255 D11)
   await shoot(win, 'rename-07-drag-move')
 })
 
@@ -328,7 +328,7 @@ test('step 6b — drag a folder, then a 2-row selection, onto a folder; ⌘Z put
   await dragRow(win, dirRow(win, 'Box'), dirRow(win, 'Dest'))
   await expect.poll(() => readWhenReady(path.join(vault, 'Dest', 'Box', 'inner.md'))).toContain(INNER_BODY)
   await expect.poll(() => readWhenReady(path.join(vault, 'Q.md'))).toBe('# Q\n\nSee [[Dest/Box/inner]] here.\n')
-  await expect(win.locator('.link-notice__text')).toHaveText('Moved 1 item. Updated links in 1 note')
+  await expect(win.locator('.link-notice__text')).toHaveText('Moved 1 item (Box). Updated links in 1 note')
   // The tree has caught up: the dragged folder (still selected, S4) is no row at its old path, so the
   // Shift-clicks below do not add a path that is gone, which the next drag out refuses (NOT_FOUND).
   await expect(win.locator(`.tree__row[data-path="${path.join(vault, 'Box')}"]`)).toHaveCount(0)
@@ -338,7 +338,7 @@ test('step 6b — drag a folder, then a 2-row selection, onto a folder; ⌘Z put
   await dragRow(win, fileRow(win, 'P1'), dirRow(win, 'Dest'))
   expect((await dragOuts()).at(-1)).toEqual([path.join(vault, 'P1.md'), path.join(vault, 'P2.md')])
   await expect.poll(() => readWhenReady(path.join(vault, 'Dest', 'P2.md'))).toContain('p-two')
-  await expect(win.locator('.link-notice__text')).toHaveText('Moved 2 items')
+  await expect(win.locator('.link-notice__text')).toHaveText('Moved 2 items (P1, P2)')
   await expect(readFile(path.join(vault, 'Dest', 'P1.md'), 'utf8')).resolves.toContain('p-one')
   // A drop inside the window: no box asks (S30).
   await expect(win.locator('.drag-out-ask')).toHaveCount(0)
@@ -346,13 +346,13 @@ test('step 6b — drag a folder, then a 2-row selection, onto a folder; ⌘Z put
   // ⌘Z at once, before the watcher has caught up: the newest gesture goes back first.
   await win.keyboard.press('Meta+z')
   await expect.poll(() => readWhenReady(path.join(vault, 'P1.md'))).toContain('p-one')
-  await expect(win.locator('.link-notice__text')).toHaveText('Moved back 2 items')
+  await expect(win.locator('.link-notice__text')).toHaveText('Moved back 2 items (P1, P2)')
   await expect(readFile(path.join(vault, 'P2.md'), 'utf8')).resolves.toContain('p-two')
   await win.keyboard.press('Meta+z')
   await expect.poll(() => readWhenReady(path.join(vault, 'Box', 'inner.md'))).toContain(INNER_BODY)
   // Q's link follows the folder back: the index already held the rewritten link (YAZ-3258).
   await expect.poll(() => readWhenReady(path.join(vault, 'Q.md'))).toBe('# Q\n\nSee [[Box/inner]] here.\n')
-  await expect(win.locator('.link-notice__text')).toHaveText('Moved back 1 item')
+  await expect(win.locator('.link-notice__text')).toHaveText('Moved back 1 item (Box)')
   await shoot(win, 'rename-07b-drag-undo')
 })
 
@@ -370,14 +370,14 @@ test('step 6c — the box after a drag out stands above a toast of three lines, 
   await dragOutOfWindow(win, fileRow(win, 'Out'))
   expect((await dragOuts()).at(-1)).toEqual([path.join(vault, 'Aa', 'Out.md')])
   const ask = win.locator('.drag-out-ask')
-  await expect(ask).toHaveText(/^Copied 1 item to Finder\?/)
+  await expect(ask).toHaveText(/^Copied 1 item \(Out\) to Finder\?/)
 
   // Zz1 moves; the long name is taken on Ab, so it stays, and the toast names it with Undo.
   await fileRow(win, 'Zz1').click()
   await fileRow(win, LONG).click({ modifiers: ['Shift'] })
   await dragRow(win, fileRow(win, 'Zz1'), dirRow(win, 'Ab'))
   const toast = win.locator('.link-notice')
-  await expect(toast.locator('.link-notice__text')).toHaveText(`Moved 1 item, skipped 1: ${LONG} already exists`)
+  await expect(toast.locator('.link-notice__text')).toHaveText(`Moved 1 item (Zz1), skipped 1: ${LONG} already exists`)
   await expect(ask).toBeVisible() // a later toast does not hide the box (S32)
   for (const colorScheme of ['light', 'dark'] as const) {
     await win.emulateMedia({ colorScheme })

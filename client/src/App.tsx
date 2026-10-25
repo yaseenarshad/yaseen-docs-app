@@ -23,7 +23,7 @@ import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './link
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument } from './lib/focusHandoff'
-import { countItems, dragOutText, gestureNotice, noticeMs, type DragOutAsk, type Notice, type NoticeKind } from './lib/notice'
+import { dragOutText, gestureNotice, namedItems, noticeMs, type DragOutAsk, type Notice, type NoticeKind } from './lib/notice'
 import { treeHasPath } from './lib/treeState'
 import { NoticeIcon } from './components/NoticeIcon'
 import { absFrom, dirname, relTo } from './lib/paths'
@@ -92,8 +92,11 @@ type RenameOutcome = { move: Move; cleared: ClearedValues[]; links: RenameRewrit
 const moveFailure = (name: string, err: unknown): string =>
   err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS' ? `${name} already exists` : `${name} — ${err instanceof Error ? err.message : String(err)}`
 
-/** What `runMoves` did: the gesture, and what it says (S11). `again`: how many of `failed` moved again (S36). */
-type MovesRun = MovedGesture & { failed: string[]; again: number; links: RenameRewriteSummary }
+/**
+ * What `runMoves` did: the gesture, and what it says (S11). `again`: how many of `failed` moved again (S36).
+ * `names`: each item that moved, by the name its toast says (YAZ-3274 D22), in the order of `moves`.
+ */
+type MovesRun = MovedGesture & { failed: string[]; again: number; links: RenameRewriteSummary; names: string[] }
 
 /** The item of an undo or a redo is gone, or its place is taken (YAZ-3255 S36): it changed again since. */
 const movedAgain = (err: unknown): boolean => err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'ALREADY_EXISTS')
@@ -111,18 +114,18 @@ const overEdge = (roots: readonly string[], oldPath: string, newPath: string): b
 }
 
 /**
- * The toast of an undo or a redo (YAZ-3255 D11): "Moved back 2 items" (undo) or "Moved 2 items"
- * (redo), then the first item that did not move — "Can't undo: Plan moved again" (S36). Only the
- * failure when nothing moved.
+ * The toast of an undo or a redo (YAZ-3255 D11): "Moved back 2 items (Todo, Plan)" (undo) or "Moved 2
+ * items (Todo, Plan)" (redo), by the names of what moved (YAZ-3274 D22), then the first item that did
+ * not move — "Can't undo: Plan moved again" (S36). Only the failure when nothing moved.
  */
-export function replayNotice(verb: 'undo' | 'redo', moved: number, failed: readonly string[]): string {
-  return stepNotice(verb, moved === 0 ? null : verb === 'undo' ? `Moved back ${countItems(moved)}` : `Moved ${countItems(moved)}`, failed)
+export function replayNotice(verb: 'undo' | 'redo', moved: readonly string[], failed: readonly string[]): string {
+  return stepNotice(verb, moved.length === 0 ? null : verb === 'undo' ? `Moved back ${namedItems(moved)}` : `Moved ${namedItems(moved)}`, failed)
 }
 
 /**
  * The toast of an undo or a redo of any step (YAZ-3268 D18): what it did (`head`, null when nothing
- * ran), then the first item that did not go — "Put back 1 item. Can't undo: a file named Plan is
- * there now" (S60). Only the failure when nothing ran.
+ * ran), then the first item that did not go — "Put back 1 item (Todo). Can't undo: a file named Plan
+ * is there now" (S60). Only the failure when nothing ran.
  */
 function stepNotice(verb: 'undo' | 'redo', head: string | null, failed: readonly string[]): string {
   const cannot = gestureNotice(null, failed, `Can't ${verb}`)
@@ -149,13 +152,14 @@ const putBackFailure = (name: string, item: DeleteStep['items'][number], err: un
 }
 
 /**
- * The ONE notice of a move gesture (YAZ-3250 D1, D11): how many moved, and the first that did not,
- * as the paste says it — "Moved 2 items, skipped 1: Plan already exists" (S11). The links that
- * followed are said after it, as a rename says them. Null when nothing ran at all.
+ * The ONE notice of a move gesture (YAZ-3250 D1, D11): what moved, by name (YAZ-3274 D22), and the
+ * first that did not, as the paste says it — "Moved 2 items (Todo, Plan), skipped 1: Plan already
+ * exists" (S11). The links that followed are said after it, as a rename says them. Null when nothing
+ * ran at all.
  */
-export function movedNotice(moved: number, failed: readonly string[], links: RenameRewriteSummary): string | null {
-  const text = gestureNotice(moved === 0 ? null : `Moved ${countItems(moved)}`, failed, "Can't move")
-  return moved > 0 && (links.updated > 0 || links.skipped > 0) ? `${text}. ${renameNotice(links)}` : text
+export function movedNotice(moved: readonly string[], failed: readonly string[], links: RenameRewriteSummary): string | null {
+  const text = gestureNotice(moved.length === 0 ? null : `Moved ${namedItems(moved)}`, failed, "Can't move")
+  return moved.length > 0 && (links.updated > 0 || links.skipped > 0) ? `${text}. ${renameNotice(links)}` : text
 }
 
 // A workspace state change still re-renders App, but unchanged retained editors must not render
@@ -1486,6 +1490,7 @@ export function App() {
     async (moves: readonly Move[], { record = true }: { record?: boolean } = {}): Promise<MovesRun> => {
       const generation = renameRootGeneration.current
       const done: MovedGesture = { moves: [], cleared: [] }
+      const names: string[] = []
       const failed: string[] = []
       let again = 0
       const failure = record ? moveFailure : againFailure
@@ -1496,29 +1501,32 @@ export function App() {
         const home = overEdge(live.current.roots, oldPath, newPath) ? null : rootOfPath(live.current.roots, oldPath)
         const catalog = home === null ? null : catalogs.get(home) ?? (await catalogForRename(oldPath, kind))
         if (generation !== renameRootGeneration.current) break
+        // The name before the move, while the index still has the item at its old place (YAZ-3274 D22).
+        const name = nameOf(oldPath)
         if (catalog === undefined) {
-          failed.push(`${nameOf(oldPath)} — couldn't load the current file list`)
+          failed.push(`${name} — couldn't load the current file list`)
           continue
         }
         const out = await applyRename(oldPath, { newPath }, catalog)
         if (out === null) continue
         if ('error' in out) {
           if (!record && movedAgain(out.error)) again++
-          failed.push(failure(nameOf(oldPath), out.error))
+          failed.push(failure(name, out.error))
           continue
         }
         if (home !== null && catalog !== null) catalogs.set(home, movedCatalog(catalog, out.move.oldPath, out.move.newPath))
         done.moves.push(out.move)
+        names.push(name)
         done.cleared.push(...out.cleared)
         links.updated += out.links.updated
         links.skipped += out.links.skipped
       }
       if (record) {
-        const text = movedNotice(done.moves.length, failed, links)
+        const text = movedNotice(names, failed, links)
         if (done.moves.length > 0) recordMoves(done, text!)
         else if (text !== null) notify(text, 'error')
       }
-      return { ...done, failed, again, links }
+      return { ...done, failed, again, links, names }
     },
     [catalogForRename, applyRename, nameOf, notify, recordMoves],
   )
@@ -1573,7 +1581,7 @@ export function App() {
     }
     if (back.length > 0) moveHistory.current.undone({ step: 'delete', items: back })
     else if (failed.length > gone) moveHistory.current.redone(entry)
-    const text = stepNotice('undo', back.length === 0 ? null : `Put back ${countItems(back.length)}`, failed)
+    const text = stepNotice('undo', back.length === 0 ? null : `Put back ${namedItems(back.map((item) => item.name))}`, failed)
     if (back.length === 0) return notify(text, 'error')
     playGestureSound('land')
     stepToast(text, 'paste', 'redo')
@@ -1589,11 +1597,15 @@ export function App() {
     const failed: string[] = []
     let went = 0
     let again = 0
+    const names: string[] = []
     for (const item of entry.items) {
+      // The name the delete saw (YAZ-3274 D22): the index may not have the item back yet.
+      const { name } = item
       try {
         const res = await api.file.delete({ path: item.path })
         went++
-        if (res.trashed != null) items.push({ path: res.path, trashed: res.trashed, type: res.kind })
+        names.push(name)
+        if (res.trashed != null) items.push({ path: res.path, trashed: res.trashed, type: res.kind, name })
       } catch (err) {
         if (movedAgain(err)) again++
         failed.push(againFailure(nameOf(item.path), err))
@@ -1601,7 +1613,7 @@ export function App() {
     }
     if (items.length > 0) moveHistory.current.redone({ step: 'delete', items })
     else if (went === 0 && failed.length > again) moveHistory.current.undone(entry)
-    const text = stepNotice('redo', went === 0 ? null : went === 1 && entry.items.length === 1 ? `Deleted ${nameOf(entry.items[0].path)}` : `Deleted ${countItems(went)}`, failed)
+    const text = stepNotice('redo', went === 0 ? null : `Deleted ${namedItems(names)}`, failed)
     if (went === 0) return notify(text, 'error')
     playGestureSound('trash')
     if (items.length > 0) stepToast(text, 'info', 'undo')
@@ -1631,7 +1643,8 @@ export function App() {
         for (const { path, values } of entry.cleared) if (returned(path)) await transformFile(path, restoreFolderValues(values), true).catch(() => undefined) // quiet (YAZ-3235 D1)
         if (back.moves.length > 0) moveHistory.current.undone({ moves: invertMoves(back.moves), cleared: [] })
         else if (back.failed.length > back.again) moveHistory.current.redone(entry)
-        const text = replayNotice('undo', back.moves.length, back.failed)
+        // The names in the order of the gesture it undoes, as its own toast said them (YAZ-3274 D22): the moves ran newest first.
+        const text = replayNotice('undo', [...back.names].reverse(), back.failed)
         // Nothing ran and nothing failed: the window's vaults changed under it, and there is nothing to say.
         if (back.moves.length === 0) {
           if (text !== '') notify(text, 'error')
@@ -1665,7 +1678,7 @@ export function App() {
         const run = await runMoves(entry.moves, { record: false })
         if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves, cleared: run.cleared })
         else if (run.failed.length > run.again) moveHistory.current.undone(entry)
-        const text = replayNotice('redo', run.moves.length, run.failed)
+        const text = replayNotice('redo', run.names, run.failed)
         if (run.moves.length === 0) {
           if (text !== '') notify(text, 'error')
         }
@@ -1853,8 +1866,8 @@ export function App() {
       return
     }
     playGestureSound('trash')
-    const text = gestureNotice(went.length === 1 && paths.length === 1 ? `Deleted ${names.get(went[0].path)}` : `Deleted ${countItems(went.length)}`, failed, "Can't delete")!
-    const items = went.flatMap((res) => (res.trashed == null ? [] : [{ path: res.path, trashed: res.trashed, type: res.kind }]))
+    const text = gestureNotice(`Deleted ${namedItems(went.map((res) => names.get(res.path) ?? nameOf(res.path)))}`, failed, "Can't delete")!
+    const items = went.flatMap((res) => (res.trashed == null ? [] : [{ path: res.path, trashed: res.trashed, type: res.kind, name: names.get(res.path) ?? nameOf(res.path) }]))
     if (items.length === 0) return notify(text)
     moveHistory.current.push({ step: 'delete', items })
     stepToast(text, 'info', 'undo')
@@ -1900,8 +1913,8 @@ export function App() {
       const kind = dirs.includes(path) ? 'dir' : 'file'
       for (const note of linkingNotes({ ids: wikilinks.ids, root, oldPath: path, kind, records: wikilinks.records, folders: wikilinks.folders, dirs })) if (!inside(note)) linking.add(note)
     }
-    setDragOutAsk({ paths: left, links: linking.size })
-  }, [scopeOf, stillThere])
+    setDragOutAsk({ paths: left, names: left.map(nameOf), links: linking.size })
+  }, [scopeOf, stillThere, nameOf])
   /**
    * "Remove from vault": each item to the Trash through the delete door — the door AFTER the delete
    * sheet, since the box was the question (S27). The items are read again at the click, and one gone

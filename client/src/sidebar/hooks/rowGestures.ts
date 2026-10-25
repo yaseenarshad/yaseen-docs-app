@@ -10,8 +10,8 @@ import { BETWEEN_VAULTS, CLIP_CHANGED, type FileClipState, type SidebarLens, typ
 import { api, BridgeRequestError } from '../../api'
 import { playGestureSound } from '../../lib/gestureSound'
 import type { MovedGesture } from '../../lib/moveHistory'
-import { countItems, gestureNotice, type NoticeKind } from '../../lib/notice'
-import { pageName, pathTitles } from '../../lib/pageLabel'
+import { countItems, gestureNotice, namedItems, type NoticeKind } from '../../lib/notice'
+import { pageLabel, pageName, pathTitles, type PathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
 import { fetchTree } from '../../lib/treeFeed'
@@ -396,6 +396,8 @@ export function useFileClipboard(
   onMoved: (gesture: MovedGesture, text: string) => void,
   /** ⌘⌫ (YAZ-3272 D20): the Sidebar's delete door — the question, then App's list delete door. */
   askDelete: (paths: string[]) => void,
+  /** The window's titles (YAZ-2420 🔒 D14): a gesture's toast names its items as the rows do (YAZ-3274 D22). */
+  windowTitles: PathTitles,
 ) {
   /**
    * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op, paths }` or null, pushed to every
@@ -502,7 +504,9 @@ export function useFileClipboard(
         const failed = titles === undefined ? [] : res.failed.map((f) => `${pageName(vault, f.from, titles)} — ${f.message}`)
         // A Paste of a Cut is a move gesture (YAZ-3255 S39): its moves and what they cleared go on the undo list.
         const gesture: MovedGesture | null = before === null ? null : { moves: res.pasted.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared }
-        const text = gestureNotice(res.pasted.length === 0 ? null : `Pasted ${countItems(res.pasted.length)}`, failed, "Couldn't paste")
+        // What landed, by the names the rows showed for it (YAZ-3274 D22).
+        const pasted = res.pasted.map(({ from, kind }) => pageLabel(from, kind === 'dir', windowTitles))
+        const text = gestureNotice(res.pasted.length === 0 ? null : `Pasted ${namedItems(pasted)}`, failed, "Couldn't paste")
         // Nothing ran: EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
         if (text === null) onNotice('Nothing to paste', 'info')
         else if (res.pasted.length === 0) onNotice(text, 'error')
@@ -521,7 +525,7 @@ export function useFileClipboard(
         } else onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
-    [vaultOf, refresh, openTo, onNotice, onMoved, readClip],
+    [vaultOf, refresh, openTo, onNotice, onMoved, readClip, windowTitles],
   )
 
   /**
@@ -634,11 +638,13 @@ export function useFileClipboard(
           openTo(`${dir}/x`)
           refresh(vault)
         }
+        // What landed, by name (YAZ-3274 D22): the index has no title for it yet, so the rows show its file name.
+        const named = (items: typeof moved) => namedItems(items.map(({ to, kind }) => pageLabel(to, kind === 'dir', windowTitles)))
         const done =
           moved.length + copied.length === 0 ? null
-          : copied.length === 0 ? `Moved ${countItems(moved.length)} from Finder`
-          : moved.length === 0 ? `Copied ${countItems(copied.length)} from another disk`
-          : `Moved ${countItems(moved.length)}, copied ${copied.length} from another disk`
+          : copied.length === 0 ? `Moved ${named(moved)} from Finder`
+          : moved.length === 0 ? `Copied ${named(copied)} from another disk`
+          : `Moved ${named(moved)}, copied ${named(copied)} from another disk`
         if (done === null && failed.length > 0 && failed.every((f) => f.message === BETWEEN_VAULTS)) return onNotice(BETWEEN_VAULTS, 'info')
         const text = gestureNotice(done, failed.map((f) => `${basename(f.from)} — ${f.message}`), "Couldn't move")
         // Every item hidden (S20): nothing landed, and nothing to say.
@@ -654,7 +660,7 @@ export function useFileClipboard(
         onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
-    [vaultOf, refresh, openTo, onNotice, onMoved],
+    [vaultOf, refresh, openTo, onNotice, onMoved, windowTitles],
   )
 
   return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null), importFiles }

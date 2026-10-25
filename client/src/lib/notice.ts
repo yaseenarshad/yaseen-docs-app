@@ -31,9 +31,23 @@ export interface Notice {
 /** "1 item" / "3 items" — the one spelling the menu's labels and the notices share. */
 export const countItems = (n: number) => (n === 1 ? '1 item' : `${n} items`)
 
+/** How many names a gesture's toast shows before " + N more" (YAZ-3274 D22). */
+export const NAMES_SHOWN = 3
+
+/**
+ * The items of a gesture by name (YAZ-3274 D22): the count, then the first `NAMES_SHOWN` names in
+ * brackets, in the order of the gesture — "1 item (Todo)", "3 items (Todo, Plan, Budget)", "12 items
+ * (Todo, Plan, Budget + 9 more)" (S73–S75). The names are the ones the sidebar shows.
+ */
+export function namedItems(names: readonly string[]): string {
+  if (names.length === 0) return countItems(0)
+  const more = names.length > NAMES_SHOWN ? ` + ${names.length - NAMES_SHOWN} more` : ''
+  return `${countItems(names.length)} (${names.slice(0, NAMES_SHOWN).join(', ')}${more})`
+}
+
 /**
  * The one sentence of a gesture over many items (audit 9): a move, a paste, a drop from Finder, an
- * undo. `done` says what landed ("Moved 2 items"), then how many did not and the first of them —
+ * undo. `done` says what landed ("Moved 2 items (Todo, Plan)", `namedItems`), then how many did not and the first of them —
  * "Moved 2 items, skipped 1: Plan already exists" (S11). With nothing landed (`done` null), the
  * failure alone: "Can't move 2 items: Plan already exists". Null when nothing ran at all.
  */
@@ -57,12 +71,14 @@ export function noticeMs(notice: Notice): number | null {
  */
 export interface DragOutAsk {
   paths: string[]
+  /** Each path's name as the sidebar shows it, in the order of `paths` (YAZ-3274 D22). */
+  names: string[]
   links: number
 }
 
-/** "Copied 2 items to Finder? 3 notes link to them." — with no second sentence when no note links (one item: "1 note links to it"). The box asks; it does not claim (S29). */
-export function dragOutText({ paths, links }: DragOutAsk): string {
-  const items = paths.length === 1 ? '1 item' : `${paths.length} items`
+/** "Copied 2 items (Todo, Plan) to Finder? 3 notes link to them." — with no second sentence when no note links (one item: "1 note links to it"). The box asks; it does not claim (S29). */
+export function dragOutText({ paths, names, links }: DragOutAsk): string {
+  const items = namedItems(names)
   const them = paths.length === 1 ? 'it' : 'them'
   const notes = links === 1 ? '1 note links' : `${links} notes link`
   return links > 0 ? `Copied ${items} to Finder? ${notes} to ${them}.` : `Copied ${items} to Finder?`

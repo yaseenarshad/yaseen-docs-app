@@ -109,7 +109,7 @@ test('step 1 — Copy in window A (vault A) pastes into a folder of window B (va
   await expect(menuItem(winB, 'Paste 1 item')).toBeVisible()
   await shoot(winB, 'fileClipboard-01b-paste-label-in-b')
   await menuItem(winB, 'Paste 1 item').click()
-  await expect(notice(winB)).toContainText('Pasted 1 item')
+  await expect(notice(winB)).toContainText('Pasted 1 item (Ideas)')
 
   // `Projects` holds no Ideas.md, so the copy keeps its name, and its bytes are the source's.
   await expect.poll(copies).toEqual(['Ideas.md'])
@@ -151,7 +151,7 @@ test('step 3 — Cut in A, Paste in B MOVES the file: source gone, bytes identic
 
   await dirRow(winB, 'Projects').click({ button: 'right' })
   await menuItem(winB, 'Paste 1 item').click()
-  await expect(notice(winB)).toContainText('Pasted 1 item')
+  await expect(notice(winB)).toContainText('Pasted 1 item (Mover)')
 
   const moved = path.join(vaultB, 'Projects', MOVER)
   await expect.poll(() => exists(moved)).toBe(true)

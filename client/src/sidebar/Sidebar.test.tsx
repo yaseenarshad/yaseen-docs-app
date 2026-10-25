@@ -1253,7 +1253,7 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     // A move gesture for the undo list (YAZ-3255 S40): App records it and says the toast with Undo.
     expect(props.onMoved).toHaveBeenLastCalledWith(
       { moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/sub/Plan.md', kind: 'file' }, { oldPath: '/Users/yasin/Downloads/Trip', newPath: '/v/sub/Trip', kind: 'dir' }], cleared: [] },
-      'Moved 2 items from Finder',
+      'Moved 2 items (Plan, Trip) from Finder',
     )
     expect(el.querySelector('.tree__row--drop')).toBeNull()
 
@@ -1268,7 +1268,7 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     await act(async () => {})
     expect(bridge.file.import).toHaveBeenLastCalledWith({ paths: ['/Users/yasin/Downloads/Plan.md'], targetDir: '/v' })
     // Copies are not moves (S18): only the moved item is for undo.
-    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 item, copied 2 from another disk')
+    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 item (Plan), copied 2 items (Trip, Log) from another disk')
   })
 
   it('a clash is named and the rest moved (S19); items of another open vault say the cut-and-paste rule (S22)', async () => {
@@ -1280,7 +1280,7 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     })
     fire(dirRow(el), 'drop', finder('Plan.md', 'a.md'))
     await act(async () => {})
-    expect(props.onMoved).toHaveBeenLastCalledWith(expect.objectContaining({ cleared: [] }), 'Moved 1 item from Finder, skipped 1: a.md — a file with this name already exists')
+    expect(props.onMoved).toHaveBeenLastCalledWith(expect.objectContaining({ cleared: [] }), 'Moved 1 item (Plan) from Finder, skipped 1: a.md — a file with this name already exists')
     bridge.file.import.mockResolvedValueOnce({ moved: [], copied: [], failed: [{ from: '/w/x.md', code: 'BAD_REQUEST', message: 'To move between vaults, use cut and paste' }] })
     fire(dirRow(el), 'drop', finder('x.md'))
     await act(async () => {})
@@ -7350,7 +7350,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(paste?.disabled).toBe(false)
     await act(async () => paste?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/sub', 'copy', '/w/x.md', '/w/y.md'))
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 2 items', 'paste')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 2 items (x, y)', 'paste')
     expect(props.onMoved).not.toHaveBeenCalled() // a copy is not in the undo list (YAZ-3255 D10)
     expect(bridge.tree.mock.calls.length).toBe(treeReads + 1) // the explicit refresh: a copy broadcasts nothing
   })
@@ -7388,7 +7388,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v', 'cut', '/w/x.md', '/w/Note.md'))
     // A Paste of a Cut is a move gesture (YAZ-3255 S39): only what moved is in it.
-    expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: '/w/x.md', newPath: '/v/x.md', kind: 'file' }], cleared: [] }, 'Pasted 1 item, skipped 1: Note — already exists')
+    expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: '/w/x.md', newPath: '/v/x.md', kind: 'file' }], cleared: [] }, 'Pasted 1 item (x), skipped 1: Note — already exists')
     expect(props.onNotice).not.toHaveBeenCalled()
   })
 
@@ -7499,7 +7499,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
       expect(bridge.file.clipState.mock.calls.length).toBe(reads + 1) // read again at paste time
       expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/sub', expect: { op: 'cut', paths: [REPORT] } })
       // A move: on the undo list with its toast (App says it and plays the sound), never "Pasted" as a copy.
-      expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: REPORT, newPath: '/v/sub/report.pdf', kind: 'file' }], cleared: [] }, 'Pasted 1 item')
+      expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: REPORT, newPath: '/v/sub/report.pdf', kind: 'file' }], cleared: [] }, 'Pasted 1 item (report.pdf)')
       expect(props.onNotice).not.toHaveBeenCalled()
       expect(bridge.app.sound).not.toHaveBeenCalled()
     })
@@ -8086,7 +8086,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         await act(async () => sheetBtn(el, 'Move')?.click())
         expect(disk.get('/v/Areas/Alpha.md')).toBe('---\n---\nBody\n')
         // The undo list gets the move and the blocks it cleared (YAZ-3255 S39), so an undo can put them back.
-        expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: ALPHA, newPath: '/v/Areas/Alpha.md', kind: 'file' }], cleared: [{ path: ALPHA, values: { [PROJECTS_ID]: { order: 1 } } }] }, 'Pasted 1 item')
+        expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: ALPHA, newPath: '/v/Areas/Alpha.md', kind: 'file' }], cleared: [{ path: ALPHA, values: { [PROJECTS_ID]: { order: 1 } } }] }, 'Pasted 1 item (Alpha)')
       })
 
       it('YAZ-3266: Move on the sheet pastes the clip the sheet asked about, never what the clipboard holds by then; another clip pushed while it stands closes it, the same one does not', async () => {
@@ -8695,7 +8695,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, `${b}/docs`))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(`${b}/docs`, 'copy', `${a}/a.md`))
-    expect(props.onNotice).toHaveBeenLastCalledWith('Pasted 1 item', 'paste')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Pasted 1 item (a)', 'paste')
     // The folder it landed in opens, and the tree and the index read are the target vault's alone.
     expect(isOpen(el, `${b}/docs`)).toBe('true')
     expect(bridge.tree.mock.calls.every(([root]) => root === b)).toBe(true)
@@ -8710,7 +8710,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, b))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(b, 'cut', `${a}/a.md`))
-    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: `${a}/a.md`, newPath: `${b}/a.md`, kind: 'file' }], cleared: [] }, 'Pasted 1 item')
+    expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: `${a}/a.md`, newPath: `${b}/a.md`, kind: 'file' }], cleared: [] }, 'Pasted 1 item (a)')
     expect(el.querySelector('.confirm')).toBeNull()
   })
 

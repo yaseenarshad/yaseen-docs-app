@@ -1033,7 +1033,7 @@ export function Sidebar({
     [confirmingDelete, onDeleteEntries, onChangeSettings, settings],
   )
 
-  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete)
+  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete, titles)
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click

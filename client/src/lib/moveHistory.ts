@@ -43,7 +43,8 @@ export interface RenameStep {
 /** A delete (D17): each item that went, with its place in the Trash (`DeleteResponse.trashed`). One Delete or one "Remove from vault" is one step. */
 export interface DeleteStep {
   step: 'delete'
-  items: { path: string; trashed: string; type: 'file' | 'dir' }[]
+  /** `name`: the item as the sidebar showed it at the delete, for the toast of its undo (YAZ-3274 D22): the index no longer has it then. */
+  items: { path: string; trashed: string; type: 'file' | 'dir'; name: string }[]
 }
 
 /** One entry of the undo list (D17): a move gesture (as YAZ-3255 built it), a rename or a delete. */
