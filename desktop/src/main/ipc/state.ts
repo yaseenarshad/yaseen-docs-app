@@ -45,8 +45,9 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
     if (next === store.get().settingsFolder) return
     store.setSettingsFolder(next, next !== null && (await settingsFolder.hasOtherMacs(next)) ? 0 : Date.now())
     // The row asks `state.settingsFolder` right after this answers: wait for the new folder's first read,
-    // so `missing` is that folder's, not the old one's (YAZ-3297).
-    await settingsFolder.settled()
+    // so `missing` is that folder's, not the old one's (YAZ-3297). At most 2 s: a network folder that hangs
+    // must not hang the door; the row then shows what is known, and the next open shows the rest.
+    await Promise.race([settingsFolder.settled(), new Promise((done) => setTimeout(done, 2000))])
   })
   handle(CONTRACT.state.setSidebarWidth, async (width: unknown) => {
     if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")

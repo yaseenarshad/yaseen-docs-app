@@ -63,6 +63,8 @@ export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'ap
   let lastText: string | null = null
   /** The `settingsSavedAt` this module already acted on: a store change that keeps it is no new save. */
   let savedAt = store.get().settingsSavedAt
+  /** After `close()`: a read or a write still in the chain starts no new retry. */
+  let closed = false
   /** Reads and writes in order, so a write never races a read of the same folder. */
   let chain: Promise<void> = Promise.resolve()
 
@@ -74,7 +76,7 @@ export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'ap
       (err: unknown) => {
         missing = folder !== null
         console.warn(`[settings] the settings folder ${folder ?? ''} could not be used: ${String(err)}`)
-        if (missing && retry === null) {
+        if (missing && retry === null && !closed) {
           retry = setTimeout(() => {
             retry = null
             void run(pull)
@@ -167,6 +169,7 @@ export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'ap
       return run(push)
     },
     async close() {
+      closed = true
       off()
       if (timer !== null) clearTimeout(timer)
       if (retry !== null) clearTimeout(retry)

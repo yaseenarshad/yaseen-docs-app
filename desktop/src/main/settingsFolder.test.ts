@@ -59,6 +59,12 @@ describe('the rules (D3)', () => {
     expect(out).not.toHaveProperty('notAField')
   })
 
+  it("YAZ-3302: a sidebar sort this build can't read keeps this Mac's whole sort (D3)", () => {
+    const here: SettingsState = { ...DEFAULT_SETTINGS, sidebarSort: { files: { by: 'updated', reverse: true }, focus: { by: 'name', reverse: false }, favorites: { by: 'name', reverse: true } } }
+    const out = mergeFolderSettings(here, { sidebarSort: { files: { by: 'created', reverse: false }, focus: { by: 'manual', reverse: false }, favorites: { by: 'updated', reverse: false } } })
+    expect(out.sidebarSort).toEqual(here.sidebarSort)
+  })
+
   it("YAZ-3298: a canvas pref this build can't read, or that the file lacks, keeps this Mac's value (D3)", () => {
     const here: SettingsState = { ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, writingStrokeWidth: 7, toolLock: false } }
     const newer = mergeFolderSettings(here, { canvas: { ...DEFAULT_SETTINGS.canvas, toolLock: true, writingStrokeWidth: 'thick' } })

@@ -287,7 +287,8 @@ export function sanitizeSettings(raw: unknown): SettingsState {
  * or that the file lacks, keeps THIS Mac's value — never the default: a newer build's field must not reset a
  * setting here. One level down too (YAZ-3298): a field that is an object (`canvas`) is laid over this Mac's
  * object, `sanitizeSettings` repairs it (so a repair such as `sanitizeCanvasPrefs` still runs), and each part
- * that the file lacks or that the repair had to change keeps this Mac's part.
+ * that the file lacks or that the repair had to change keeps this Mac's part. A field with no repair by part
+ * (`sidebarSort`) that the repair resets as a whole keeps this Mac's whole field (YAZ-3302).
  */
 export function mergeFolderSettings(current: SettingsState, incoming: Partial<Record<keyof SettingsState, unknown>>): SettingsState {
   const isObject = (v: unknown): v is Record<string, unknown> => isRecord(v) && !Array.isArray(v)
@@ -304,11 +305,13 @@ export function mergeFolderSettings(current: SettingsState, incoming: Partial<Re
     const value: unknown = taken[key]
     const here: unknown = current[key]
     const got: unknown = out[key]
-    if (isObject(value) && isObject(here) && isObject(got)) {
+    if (!SETTINGS_FIELD_OK[key](value) && JSON.stringify(got) === JSON.stringify(DEFAULT_SETTINGS[key])) {
+      // No repair for this field (`sidebarSort`): the whole field fell back to the default, so all of it stays this Mac's (YAZ-3302).
+      Object.assign(out, { [key]: here })
+    } else if (isObject(value) && isObject(here) && isObject(got)) {
+      // A field with a repair by part (`canvas`): each part the repair changed keeps this Mac's part (YAZ-3298).
       const kept = Object.fromEntries(Object.entries(got).map(([part, v]) => [part, JSON.stringify(v) === JSON.stringify(value[part]) ? v : (here[part] ?? v)]))
       Object.assign(out, { [key]: kept })
-    } else if (!SETTINGS_FIELD_OK[key](value) && JSON.stringify(got) === JSON.stringify(DEFAULT_SETTINGS[key])) {
-      Object.assign(out, { [key]: here })
     }
   }
   return out
