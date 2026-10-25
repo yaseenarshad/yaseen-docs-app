@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url'
  * runs this project only after `client` and `desktop` (both group 0) have finished, and
  * `fileParallelism: false` runs its files one at a time — so every budget is measured on an
  * idle pool and can stay tight enough to catch a real algorithmic regression. A busy machine
- * used to fail a 7 ms test against a 50 ms budget purely through scheduling.
+ * used to fail a 7 ms test against a 50 ms budget purely through scheduling. Each budget holds the
+ * MEDIAN of several runs (`src/test-perf.ts`, YAZ-3328): the CI runner still stalls at random.
  *
  * Written out in full rather than `mergeConfig`-ed from the client config: mergeConfig
  * CONCATENATES `include` arrays, which silently re-ran the whole client suite in here.

@@ -22,12 +22,14 @@ vi.mock('node:fs', async (importOriginal) => {
   }) as typeof fs.watch
   return { ...fs, default: { ...fs, watch }, watch }
 })
-/** Every path handed to a watcher's `add`, which then does its real work. */
+/** Every path handed to a watcher's `add`, which then does its real work; and the last engine made. */
 const added = vi.hoisted(() => [] as string[])
+const engines = vi.hoisted(() => ({ last: null as null | { emit(event: string, ...args: unknown[]): boolean } }))
 vi.mock('./fs/treeWatcher', async (importOriginal) => {
   const engine = await importOriginal<typeof import('./fs/treeWatcher')>()
   const watchTree: typeof engine.watchTree = (...args) => {
     const w = engine.watchTree(...args)
+    engines.last = w as unknown as typeof engines.last
     const add = w.add.bind(w)
     w.add = (p) => void (added.push(p), add(p))
     return w
@@ -62,12 +64,27 @@ async function watchJson(dir: string, opts: { depth?: number; alsoWatch?: (dir: 
 }
 
 describe('createWatchedFolder', () => {
-  it('announces outside changes once, debounced, and ignores irrelevant paths', async () => {
+  it('announces outside changes once each, and ignores irrelevant paths', async () => {
     await watchJson(base)
     await Promise.all([writeFile(path.join(base, 'a.json'), '{}'), writeFile(path.join(base, 'b.json'), '{}'), writeFile(path.join(base, 'a.json.tmp'), 'x')])
-    await until(() => calls.length > 0)
+    await until(() => calls.flat().length >= 2)
     await sleep(QUIET_MS)
-    expect(calls).toEqual([[path.join(base, 'a.json'), path.join(base, 'b.json')]])
+    // One notice or two: FSEvents may hand the two files over in batches further apart than the
+    // debounce (a CI runner did, YAZ-3328). The debounce itself is pinned exactly below.
+    expect(calls.flat().sort()).toEqual([path.join(base, 'a.json'), path.join(base, 'b.json')])
+  })
+
+  it('debounces a burst of engine events into one notice, relevant paths only', async () => {
+    await watchJson(base)
+    const [a, b] = [path.join(base, 'a.json'), path.join(base, 'b.json')]
+    engines.last!.emit('add', a)
+    engines.last!.emit('change', b)
+    engines.last!.emit('add', path.join(base, 'a.json.tmp'))
+    engines.last!.emit('unlink', a)
+    expect(calls).toEqual([]) // nothing before the 50 ms quiet
+    await until(() => calls.length > 0)
+    await sleep(200)
+    expect(calls).toEqual([[a, b]])
   })
 
   describe('under the polling fallback', { timeout: 20_000 }, () => {
