@@ -36,7 +36,7 @@ let dir: string
 let store: Store
 const sender = { id: 1 }
 /** The settings folder's two answers that the doors use (YAZ-3276): a test sets them. */
-const folder = { missing: false, others: new Set<string>() }
+const folder = { missing: false, others: new Set<string>(), settled: async (): Promise<void> => undefined }
 beforeEach(async () => {
   vi.mocked(ipcMain.handle).mockClear()
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([])
@@ -44,7 +44,8 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   folder.missing = false
   folder.others = new Set()
-  registerStateIpc(store, { missing: () => folder.missing, hasOtherMacs: async (dir) => folder.others.has(dir) })
+  folder.settled = async () => undefined
+  registerStateIpc(store, { missing: () => folder.missing, hasOtherMacs: async (dir) => folder.others.has(dir), settled: () => folder.settled() })
 })
 afterEach(async () => {
   await store.flush()
@@ -87,6 +88,17 @@ describe('registerStateIpc', () => {
     expect(await set({ sender }, null)).toEqual(ok(undefined))
     expect(store.get().settingsFolder).toBeNull()
     expect(store.get().settings.theme).toBe('dark')
+
+    // YAZ-3297: the door answers only after the new folder's first read, so the row then asks for ITS `missing`.
+    let done = (): void => undefined
+    folder.settled = () => new Promise<void>((resolve) => (done = resolve))
+    let answered = false
+    const choosing = set({ sender }, '/Sync/next').then(() => (answered = true))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(answered).toBe(false)
+    done()
+    await choosing
+    expect(answered).toBe(true)
 
     expect(await set({ sender }, 'relative/folder')).toEqual(bad('NOT_ABSOLUTE'))
     expect(await set({ sender }, 42)).toEqual(bad('NOT_ABSOLUTE'))

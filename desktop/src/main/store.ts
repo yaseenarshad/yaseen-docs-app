@@ -101,7 +101,7 @@ export interface Store {
    * The state never holds them, so the next write drops the key from the file.
    */
   takeLegacyHeadingStyles(): HeadingStyles
-  /** A change on this Mac. A change of a field that travels sets `settingsSavedAt` to `now` (YAZ-3276 D3); one of a local field does not. */
+  /** A change on this Mac. A change of a field that travels sets `settingsSavedAt` to `now`, or just above the time it had when that is later (YAZ-3276 D3, YAZ-3299); one of a local field does not. */
   setSettings(settings: SettingsState, now?: number): void
   /**
    * Point the settings at a folder, or null for this Mac only (YAZ-3276 D2). `savedAt` is D6: 0 when the
@@ -283,15 +283,33 @@ export function sanitizeSettings(raw: unknown): SettingsState {
 }
 
 /**
- * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). `sanitizeSettings` repairs what it
- * can (a `canvas` with a pref missing keeps the rest). A value that it can't read and that falls back to
- * the default keeps this Mac's value instead: a field from a newer build must not reset a setting here.
+ * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,
+ * or that the file lacks, keeps THIS Mac's value — never the default: a newer build's field must not reset a
+ * setting here. One level down too (YAZ-3298): a field that is an object (`canvas`) is laid over this Mac's
+ * object, `sanitizeSettings` repairs it (so a repair such as `sanitizeCanvasPrefs` still runs), and each part
+ * that the file lacks or that the repair had to change keeps this Mac's part.
  */
 export function mergeFolderSettings(current: SettingsState, incoming: Partial<Record<keyof SettingsState, unknown>>): SettingsState {
-  const taken = Object.fromEntries(Object.entries(incoming).filter(([key]) => travels(key) && (SETTINGS_KEYS as string[]).includes(key)))
+  const isObject = (v: unknown): v is Record<string, unknown> => isRecord(v) && !Array.isArray(v)
+  const taken = Object.fromEntries(
+    Object.entries(incoming)
+      .filter(([key]) => travels(key) && (SETTINGS_KEYS as string[]).includes(key))
+      .map(([key, value]) => {
+        const here = current[key as keyof SettingsState]
+        return [key, isObject(value) && isObject(here) ? { ...here, ...value } : value]
+      }),
+  )
   const out = sanitizeSettings({ ...current, ...taken })
   for (const key of Object.keys(taken) as Array<keyof SettingsState>) {
-    if (!SETTINGS_FIELD_OK[key](taken[key]) && JSON.stringify(out[key]) === JSON.stringify(DEFAULT_SETTINGS[key])) Object.assign(out, { [key]: current[key] })
+    const value: unknown = taken[key]
+    const here: unknown = current[key]
+    const got: unknown = out[key]
+    if (isObject(value) && isObject(here) && isObject(got)) {
+      const kept = Object.fromEntries(Object.entries(got).map(([part, v]) => [part, JSON.stringify(v) === JSON.stringify(value[part]) ? v : (here[part] ?? v)]))
+      Object.assign(out, { [key]: kept })
+    } else if (!SETTINGS_FIELD_OK[key](value) && JSON.stringify(got) === JSON.stringify(DEFAULT_SETTINGS[key])) {
+      Object.assign(out, { [key]: here })
+    }
   }
   return out
 }
@@ -702,7 +720,10 @@ export function createStore(filePath: string): Store {
 
     setSettings(settings, now = Date.now()) {
       const next = sanitizeSettings(settings)
-      commit({ ...state, settings: next, settingsSavedAt: travellingChanged(state.settings, next) ? now : state.settingsSavedAt })
+      // Never back in time (YAZ-3299): after a file from a Mac whose clock runs ahead, this Mac's next change
+      // must still be the newest, or that older file wins again at the next read.
+      const savedAt = travellingChanged(state.settings, next) ? Math.max(now, state.settingsSavedAt + 1) : state.settingsSavedAt
+      commit({ ...state, settings: next, settingsSavedAt: savedAt })
     },
 
     setSettingsFolder(folder, savedAt) {

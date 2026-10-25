@@ -10,8 +10,9 @@
  *    A read writes this Mac's file too when this Mac is newer than every file: an empty folder (D6), or
  *    an edit made while the folder was missing (D5). It never writes to mirror a file it just took.
  *  - MISSING (D5). A read or a write that fails sets `missing`; the store keeps its settings, and edits
- *    still move `settingsSavedAt`. The watcher waits for a folder that is gone; the next read that works
- *    clears `missing`. A launch reads again, so a change made before a quit is sent then at the latest.
+ *    still move `settingsSavedAt`. The watcher never announces the folder itself, so a folder that comes
+ *    back with the same files makes no event (YAZ-3296): while `missing`, one timer reads again every
+ *    `retryMs`. The first read that works clears `missing` and sends what this Mac changed meanwhile.
  *
  * Electron-free (like `store.ts`): the Mac ID and the host name come in, so tests run two "Macs" on one folder.
  */
@@ -24,6 +25,8 @@ import { createWatchedFolder, type WatchedFolder } from './watchedFolder'
 
 /** The same wait as the store's own write (`WRITE_DEBOUNCE_MS`): a burst of changes is one file write. */
 const WRITE_DEBOUNCE_MS = 150
+/** While the folder is missing, a read this often (D5, YAZ-3296): one `readdir` of one folder, so 5 s costs nothing. */
+const RETRY_MS = 5000
 
 export interface SettingsFolder {
   /** The first read. `index.ts` waits for it (at most 500 ms) before the first window; with no folder it is done at once. */
@@ -32,6 +35,8 @@ export interface SettingsFolder {
   missing(): boolean
   /** True when `folder` holds a file of another Mac (D6). A folder that can't be read holds none. */
   hasOtherMacs(folder: string): Promise<boolean>
+  /** The reads and writes asked for so far are done: after a choice, `missing` is the new folder's (YAZ-3297). */
+  settled(): Promise<void>
   /** The pending write, at once (quit). */
   flush(): Promise<void>
   /** Stop following the store and the folder (tests; the app keeps one for its life). */
@@ -44,6 +49,7 @@ export interface SettingsFolderDeps {
   /** The host name, written in the file for a person who reads the folder. */
   host: string
   debounceMs?: number
+  retryMs?: number
 }
 
 export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'applyFolderSettings'>, deps: SettingsFolderDeps): SettingsFolder {
@@ -51,6 +57,8 @@ export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'ap
   let watcher: WatchedFolder | null = null
   let missing = false
   let timer: ReturnType<typeof setTimeout> | null = null
+  /** The one read that waits while the folder is missing (D5): at most one, gone with the folder or the pointer. */
+  let retry: ReturnType<typeof setTimeout> | null = null
   /** The text of this Mac's last write to `folder`; null after a re-point, so the new folder gets a file. */
   let lastText: string | null = null
   /** The `settingsSavedAt` this module already acted on: a store change that keeps it is no new save. */
@@ -66,6 +74,12 @@ export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'ap
       (err: unknown) => {
         missing = folder !== null
         console.warn(`[settings] the settings folder ${folder ?? ''} could not be used: ${String(err)}`)
+        if (missing && retry === null) {
+          retry = setTimeout(() => {
+            retry = null
+            void run(pull)
+          }, deps.retryMs ?? RETRY_MS)
+        }
       },
     ))
 
@@ -106,11 +120,13 @@ export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'ap
 
   function point(): Promise<void> {
     if (timer !== null) clearTimeout(timer)
-    timer = null
+    if (retry !== null) clearTimeout(retry)
+    timer = retry = null
+    // A new folder starts clean; its first read says whether it is missing (YAZ-3297).
+    missing = false
     if (folder === null) {
       void watcher?.close()
       watcher = null
-      missing = false
       return chain
     }
     if (watcher === null) {
@@ -143,6 +159,7 @@ export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'ap
     ready: point(),
     missing: () => missing,
     hasOtherMacs: (dir) => others(dir).then((files) => files.length > 0, () => false),
+    settled: () => chain,
     flush() {
       if (timer === null) return chain
       clearTimeout(timer)
@@ -152,7 +169,8 @@ export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'ap
     async close() {
       off()
       if (timer !== null) clearTimeout(timer)
-      timer = null
+      if (retry !== null) clearTimeout(retry)
+      timer = retry = null
       await chain
       await watcher?.close()
       watcher = null

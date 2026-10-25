@@ -74,7 +74,7 @@ const h = vi.hoisted(() => {
     protocol: { registerSchemesAsPrivileged: vi.fn(log('registerSchemesAsPrivileged')), handle: vi.fn() },
     flushIndexCache: vi.fn(async () => void s.order.push('flushIndexCache')),
     // The settings folder (YAZ-3276 D4) with no folder chosen: its first read is done at once, and quit has nothing to write.
-    settingsFolder: { ready: Promise.resolve(), missing: () => false, hasOtherMacs: async () => false, flush: vi.fn(async () => undefined), close: async () => undefined },
+    settingsFolder: { ready: Promise.resolve(), missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined, flush: vi.fn(async () => undefined), close: async () => undefined },
     registerIpc: vi.fn(() => (s.order.push('registerIpc'), { sync: gitSync, secrets: {} })),
     registerClipboardIpc: vi.fn(log('registerClipboardIpc')),
     /** The Draw import's wiring (YAZ-3028 D6); `drawImport.test.ts` tests the import itself. */

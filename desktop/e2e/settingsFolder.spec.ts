@@ -113,7 +113,15 @@ test('step 3 — a folder that went away: the settings stay and the row says so;
   expect(await bgOf(win)).toBe(DARK_BG) // the last settings, not the defaults
   await shoot(win, 'settings-folder-04-missing')
 
+  // YAZ-3296: the folder comes back with the same files, while the app runs. Within the retry (5 s) the app
+  // reads it again, the line goes, and this Mac's file gets the change it made while the folder was gone.
+  await closeSettings(win)
   await rename(away, folder)
+  await expect
+    .poll(async () => (JSON.parse(await readFile(path.join(folder, (await ownFiles(folder))[0]), 'utf8')) as { settings: Record<string, unknown> }).settings.contentWidth, { timeout: 15_000 })
+    .toBe('full')
+  await openSettings(win)
+  await expect(folderRow(win).getByRole('alert')).toHaveCount(0)
   await folderRow(win).getByRole('button', { name: 'Reset to default', exact: true }).click()
   await expect(folderRow(win).getByTestId('settings-folder-path')).toHaveText('On this Mac only (default)')
   await expect(folderRow(win).getByRole('alert')).toHaveCount(0)

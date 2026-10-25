@@ -3,7 +3,7 @@
  * — two stores with two Mac IDs — on one real temp folder with the real watcher. Each `it` is one story
  * of the approved behavior (D1, D3, D4, D5, D6 on YAZ-3277).
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -58,6 +58,14 @@ describe('the rules (D3)', () => {
     expect(out.tableOfContentsWidth).toBe(250)
     expect(out).not.toHaveProperty('notAField')
   })
+
+  it("YAZ-3298: a canvas pref this build can't read, or that the file lacks, keeps this Mac's value (D3)", () => {
+    const here: SettingsState = { ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, writingStrokeWidth: 7, toolLock: false } }
+    const newer = mergeFolderSettings(here, { canvas: { ...DEFAULT_SETTINGS.canvas, toolLock: true, writingStrokeWidth: 'thick' } })
+    expect(newer.canvas).toMatchObject({ toolLock: true, writingStrokeWidth: 7 })
+    const { writingStrokeWidth: _lacks, ...older } = { ...DEFAULT_SETTINGS.canvas, toolLock: true }
+    expect(mergeFolderSettings(here, { canvas: older }).canvas).toMatchObject({ toolLock: true, writingStrokeWidth: 7 })
+  })
 })
 
 describe('two Macs on one folder (D4, D5, D6)', () => {
@@ -80,7 +88,7 @@ describe('two Macs on one folder (D4, D5, D6)', () => {
   /** One Mac: its own state file, its Mac ID, the folder module as `index.ts` makes it. */
   function mac(id: string) {
     const store = createStore(path.join(root, id, 'yaseendocs.json'))
-    const settingsFolder = followSettingsFolder(store, { macId: async () => id, host: `Mac ${id}`, debounceMs: 0 })
+    const settingsFolder = followSettingsFolder(store, { macId: async () => id, host: `Mac ${id}`, debounceMs: 0, retryMs: 100 })
     stores.push(store)
     open.push(settingsFolder)
     return { store, settingsFolder, own: path.join(folder, settingsFileName(id)) }
@@ -152,6 +160,48 @@ describe('two Macs on one folder (D4, D5, D6)', () => {
     expect(again.missing()).toBe(false)
     expect(await read(a.own)).toMatchObject({ savedAt: 700, settings: { theme: 'dark' } })
     await until(() => b.store.get().settings.theme === 'dark', 5000)
+  })
+
+  it('YAZ-3296: the folder comes back while the app runs — no relaunch — and the edit made meanwhile reaches it (D5)', async () => {
+    const a = mac(A)
+    a.store.setSettingsFolder(folder, 100)
+    await until(() => existsSync(a.own))
+    const b = mac(B)
+    b.store.setSettingsFolder(folder, 0)
+    await b.settingsFolder.settled()
+
+    const away = path.join(root, 'moved')
+    await rename(folder, away)
+    a.store.setSettings({ ...a.store.get().settings, theme: 'dark' }, 700)
+    await until(() => a.settingsFolder.missing())
+    await rename(away, folder) // the same files come back: no file event at all
+    await until(() => !a.settingsFolder.missing(), 5000)
+    expect(await read(a.own)).toMatchObject({ savedAt: 700, settings: { theme: 'dark' } })
+    await until(() => b.store.get().settings.theme === 'dark', 5000)
+  })
+
+  it('YAZ-3297: right after a choice, `missing` is the NEW folder\'s: a good folder after a missing one answers false, and the reverse', async () => {
+    const a = mac(A)
+    a.store.setSettingsFolder(path.join(root, 'gone'), 100)
+    await until(() => a.settingsFolder.missing())
+    a.store.setSettingsFolder(folder, Date.now())
+    await a.settingsFolder.settled()
+    expect(a.settingsFolder.missing()).toBe(false)
+    a.store.setSettingsFolder(path.join(root, 'also-gone'), 100)
+    await a.settingsFolder.settled()
+    expect(a.settingsFolder.missing()).toBe(true)
+  })
+
+  it("YAZ-3299: a file from a Mac whose clock runs ahead never wins over this Mac's later edit", async () => {
+    const a = mac(A)
+    a.store.setSettingsFolder(folder, 100)
+    await until(() => existsSync(a.own))
+    const ahead = Date.now() + 60_000
+    await writeFile(path.join(folder, settingsFileName(B)), settingsFileText('B', ahead, { ...DEFAULT_SETTINGS, theme: 'dark' }))
+    await until(() => a.store.get().settings.theme === 'dark')
+    a.store.setSettings({ ...a.store.get().settings, contentWidth: 'full' })
+    expect(a.store.get().settingsSavedAt).toBeGreaterThan(ahead)
+    await vi.waitFor(async () => expect((await read(a.own))?.settings.contentWidth).toBe('full'), { timeout: 3000 })
   })
 
   it('Reset to default keeps the settings and leaves the file; the watcher stops', async () => {

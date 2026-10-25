@@ -38,7 +38,7 @@ import { registerWindowIpc } from './window'
  */
 export type IpcPlaces = ShareIpcPlaces & { userData: string }
 
-export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs'>): { sync: GitSyncManager; secrets: Secrets } {
+export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets } {
   const { userData } = places
   registerFsIpc(store, windows)
   registerBoardIpc(store, windows, userData)

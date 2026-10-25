@@ -31,7 +31,7 @@ function requireFolderPatch(raw: unknown): FolderPatch {
 }
 
 /** The `state.*` half of `window.yaseenDocs` over the main-owned store (GRO-2159). */
-export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs'>): void {
+export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): void {
   handle(CONTRACT.state.get, async () => store.get())
   handle(CONTRACT.state.setSettings, async (settings: unknown) => {
     if (!isSettings(settings)) throw new BridgeFailure('BAD_REQUEST', "'settings' must be a complete SettingsState")
@@ -44,6 +44,9 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
     const next = folder === null ? null : requireAbsPath(folder, 'folder')
     if (next === store.get().settingsFolder) return
     store.setSettingsFolder(next, next !== null && (await settingsFolder.hasOtherMacs(next)) ? 0 : Date.now())
+    // The row asks `state.settingsFolder` right after this answers: wait for the new folder's first read,
+    // so `missing` is that folder's, not the old one's (YAZ-3297).
+    await settingsFolder.settled()
   })
   handle(CONTRACT.state.setSidebarWidth, async (width: unknown) => {
     if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")
