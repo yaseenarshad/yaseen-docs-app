@@ -116,10 +116,12 @@ const overEdge = (roots: readonly string[], oldPath: string, newPath: string): b
 /**
  * The toast of an undo or a redo (YAZ-3255 D11): "Moved back 2 files (Todo.md, Plan.md)" (undo) or
  * "Moved 2 files (Todo.md, Plan.md)" (redo), by the kinds and the names on disk of what moved (YAZ-3293 D23), then the first item that did
- * not move — "Can't undo: Plan moved again" (S36). Only the failure when nothing moved.
+ * not move — "Can't undo: Plan moved again" (S36). Only the failure when nothing moved. The links that followed
+ * are said after what moved, as the move's own toast says them (YAZ-3337): a note skipped there is never silent.
  */
-export function replayNotice(verb: 'undo' | 'redo', moved: readonly NamedItem[], failed: readonly string[]): string {
-  return stepNotice(verb, moved.length === 0 ? null : verb === 'undo' ? `Moved back ${namedItems(moved)}` : `Moved ${namedItems(moved)}`, failed)
+export function replayNotice(verb: 'undo' | 'redo', moved: readonly NamedItem[], failed: readonly string[], links: RenameRewriteSummary = { updated: 0, skipped: 0 }): string {
+  const head = moved.length === 0 ? null : renamedNotice(verb === 'undo' ? `Moved back ${namedItems(moved)}` : `Moved ${namedItems(moved)}`, links)
+  return stepNotice(verb, head, failed)
 }
 
 /**
@@ -1648,7 +1650,7 @@ export function App() {
         if (back.moves.length > 0) moveHistory.current.undone({ moves: invertMoves(back.moves), cleared: [] })
         else if (back.failed.length > back.again) moveHistory.current.redone(entry)
         // The names in the order of the gesture it undoes, as its own toast said them (YAZ-3274 D22): the moves ran newest first.
-        const text = replayNotice('undo', [...back.names].reverse(), back.failed)
+        const text = replayNotice('undo', [...back.names].reverse(), back.failed, back.links)
         // Nothing ran and nothing failed: the window's vaults changed under it, and there is nothing to say.
         if (back.moves.length === 0) {
           if (text !== '') notify(text, 'error')
@@ -1682,7 +1684,7 @@ export function App() {
         const run = await runMoves(entry.moves, { record: false })
         if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves, cleared: run.cleared })
         else if (run.failed.length > run.again) moveHistory.current.undone(entry)
-        const text = replayNotice('redo', run.names, run.failed)
+        const text = replayNotice('redo', run.names, run.failed, run.links)
         if (run.moves.length === 0) {
           if (text !== '') notify(text, 'error')
         }

@@ -180,7 +180,7 @@ vi.mock('./sidebar/Sidebar', () => ({
   },
 }))
 
-import { App, MOVE_ROW_TITLE_MAX } from './App'
+import { App, MOVE_ROW_TITLE_MAX, replayNotice } from './App'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -2914,6 +2914,38 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
       expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
       expect([noticeUndo, el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Renamed to "B2". Updated links in 0 notes; 1 skipped (unsaved changes)'])
+      act(() => root?.unmount())
+    }
+  })
+
+  it('YAZ-3337: the toast of an undo or a redo of a move says the links that followed, and a note it skipped (replayNotice)', () => {
+    const n = [{ name: 'N.md', kind: 'file' as const }]
+    expect(replayNotice('undo', n, [], { updated: 0, skipped: 1 })).toBe('Moved back 1 file (N.md). Updated links in 0 notes; 1 skipped (unsaved changes)')
+    expect(replayNotice('redo', n, [], { updated: 1, skipped: 0 })).toBe('Moved 1 file (N.md). Updated links in 1 note')
+    expect(replayNotice('undo', n, [])).toBe('Moved back 1 file (N.md)')
+    expect(replayNotice('undo', [], ['N — moved again'], { updated: 0, skipped: 1 })).toBe("Can't undo: N — moved again")
+  })
+
+  it('YAZ-3303 D2 (YAZ-3337): a redo of a move whose link update skipped a note says so, also with "Move, rename or delete" Off', async () => {
+    const settle = () => act(async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0)) })
+    const key = (shiftKey: boolean) => act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: shiftKey ? 'Z' : 'z', metaKey: true, shiftKey, bubbles: true, cancelable: true })))
+    const busy = async ({ path }: { path: string; content: string }) => Promise.reject({ code: 'IO', message: `busy ${path}` })
+    for (const noticeUndo of [true, false]) {
+      // The redo: N goes out of Docs, back in (⌘Z), then out again (⌘⇧Z) while R cannot be written.
+      const files = { '/v/R.md': { content: 'See [[Docs/N]].\n', mtime: 1 } }
+      const state = askOff()
+      state.settings = { ...state.settings, noticeUndo }
+      const redo = await mount(state, identity(), files, feed)
+      await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/Docs/N.md', newPath: '/v/N.md', kind: 'file' }]))
+      key(false)
+      await settle()
+      files['/v/R.md'].content = 'See [[Docs/N]].\n'
+      redo.bridge.writeFile.mockImplementation(busy)
+      key(true)
+      await settle()
+      expect([noticeUndo, redo.el.querySelector('.link-notice__text')?.textContent]).toEqual([noticeUndo, 'Moved 1 file (N.md). Updated links in 0 notes; 1 skipped (unsaved changes)'])
+      act(() => root?.unmount())
+
       act(() => root?.unmount())
     }
   })
