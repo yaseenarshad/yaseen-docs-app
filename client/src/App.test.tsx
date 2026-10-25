@@ -54,9 +54,14 @@ interface SidebarStubProps {
   onOpenWhatsNew: () => void
   /** The ONE rename door (⚡ YAZ-888): the inline rename AND the drag-move both arrive through it. */
   onRenameFile: (oldPath: string, newPath: string, kind: 'file' | 'dir') => Promise<void>
+  /** A drop of two or more rows (YAZ-3250 D1): the door for a list of moves. */
+  onMoveEntries: (moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]) => Promise<void>
+  /** A move the Sidebar made itself (YAZ-3255 D10): a Paste of a Cut, a Finder move-in. App records it and says it with Undo. */
+  onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]; cleared: { path: string; values: Record<string, unknown> }[] }, text: string) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
-  onDeleteFile: (path: string) => Promise<void>
+  onDeleteEntries: (paths: string[]) => Promise<void>
+  onDraggedOut: (paths: string[]) => void
   pendingSearchFocus: boolean
   pendingSearchClear: boolean
   /** The sidebar put the caret in the bar (YAZ-801): App lowers the flag. */
@@ -92,7 +97,7 @@ interface SidebarStubProps {
   selectionRef: { current: ReadonlySet<string> }
   onNotice: (message: string, icon?: NoticeKind) => void
   /** ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App asks, the Sidebar (here a stub) answers. */
-  clipboardRef: { current: { cutOrCopy: (op: 'copy' | 'cut') => boolean; paste: () => boolean } | null }
+  clipboardRef: { current: { cutOrCopy: (op: 'copy' | 'cut') => boolean; paste: () => boolean; delete: () => boolean } | null }
   /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): the Inbox row and "Review this folder" exist only then. */
   upkeep: boolean
   /** The Inbox row (YAZ-2322): App counts what is due and owns the one review session. */
@@ -207,6 +212,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const linkTakeTab = new Set<(tab: MovedTab) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
   const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
+  const dragLanded = new Set<(ev: { paths: string[] }) => void>()
   const menuSub = (set: Set<() => void>) =>
     vi.fn((l: () => void) => {
       set.add(l)
@@ -337,11 +343,22 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         return () => fileRenamed.delete(l)
       }),
       // In-app delete (GRO-2272): the invoke plus the push every window receives.
-      delete: vi.fn(async ({ path }: { path: string }) => ({ path, kind: 'file' as const })),
+      delete: vi.fn(async ({ path }: { path: string }) => ({ path, kind: 'file' as 'file' | 'dir', trashed: null as string | null })),
+      // The Undo of a delete (YAZ-3268 D16): the Trash entry goes back to its old place.
+      putBack: vi.fn(async ({ path }: { trashed: string; path: string }) => ({ path, kind: 'file' as 'file' | 'dir' })),
       onDeleted: vi.fn((l: (ev: { path: string; kind: 'file' | 'dir' }) => void) => {
         fileDeleted.add(l)
         return () => fileDeleted.delete(l)
       }),
+      // A drop in this window tells main its paths, and main says when this window's drag out landed in another window (YAZ-3263).
+      pathFor: vi.fn((file: File) => `/Users/yasin/Downloads/${file.name}`),
+      droppedHere: vi.fn(async (_req: { paths: string[] }) => undefined),
+      onDragLanded: vi.fn((l: (ev: { paths: string[] }) => void) => {
+        dragLanded.add(l)
+        return () => dragLanded.delete(l)
+      }),
+      // The mouse button's release after a drag out (YAZ-3294 D24): the sidebar's to hear.
+      onDragEnded: vi.fn((_l: (ev: { paths: string[] }) => void) => () => undefined),
     },
     // No declarations (GRO-2202): the sidebar reads them for "New ▸"; empty = no menu change.
     properties: {
@@ -385,6 +402,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       backfill: vi.fn(async (_root?: string) => ({ letters: 'YAZ', notes: 0, stale: 0, old: 0 })),
       onChanged: vi.fn(() => () => undefined),
     },
+    // The sounds of a gesture (YAZ-3267 D15): App asks once per gesture that lands or trashes something.
+    app: { sound: vi.fn(async (_kind: 'land' | 'trash') => undefined) },
     // No update (YAZ-2976): App reads the state once and follows its pushes; nothing to show here.
     update: {
       state: vi.fn(async (): Promise<UpdateState> => ({ kind: 'idle' })),
@@ -417,6 +436,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
     emitTakeTab: (tab: MovedTab) => linkTakeTab.forEach((l) => l(tab)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
+    emitDragLanded: (paths: string[]) => dragLanded.forEach((l) => l({ paths })),
     emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
   }
 }
@@ -595,7 +615,7 @@ describe('App ⌘⇧C copy path (YAZ-1338)', () => {
  */
 describe('App ⌘C / ⌘X / ⌘V file clipboard (YAZ-1674, D6 amended)', () => {
   const chord = (key: string, over: KeyboardEventInit = {}) => new KeyboardEvent('keydown', { key, metaKey: true, bubbles: true, cancelable: true, ...over })
-  const handle = () => ({ cutOrCopy: vi.fn((_op: 'copy' | 'cut') => true), paste: vi.fn(() => true) })
+  const handle = () => ({ cutOrCopy: vi.fn((_op: 'copy' | 'cut') => true), paste: vi.fn(() => true), delete: vi.fn(() => true) })
   const arm = (h: ReturnType<typeof handle>) => {
     const ref = captured.sidebar?.clipboardRef
     expect(ref).toBeDefined()
@@ -643,7 +663,7 @@ describe('App ⌘C / ⌘X / ⌘V file clipboard (YAZ-1674, D6 amended)', () => {
 
   it('Shift or ⌥ held is not ours (⌘⇧C is Copy path), and a handle that declines leaves the key alone', async () => {
     const { el } = await open()
-    const h = { cutOrCopy: vi.fn(() => false), paste: vi.fn(() => false) }
+    const h = { cutOrCopy: vi.fn(() => false), paste: vi.fn(() => false), delete: vi.fn(() => false) }
     arm(h)
     const shifted = chord('c', { shiftKey: true })
     const alted = chord('v', { altKey: true })
@@ -666,6 +686,42 @@ describe('App ⌘C / ⌘X / ⌘V file clipboard (YAZ-1674, D6 amended)', () => {
     const ev = chord('v')
     act(() => void el.querySelector('.app')?.dispatchEvent(ev))
     expect(ev.defaultPrevented).toBe(false)
+  })
+
+  /** ⌘⌫ (YAZ-3272 D20): the same window listener and boundary; the Sidebar's handle holds the rules (a selection, no menu, no vault row). */
+  it('⌘⌫ asks the handle to delete and is swallowed when it acted (S66); plain ⌫ asks nothing (S68); a note, a field and a declining handle keep the key (S69, S72)', async () => {
+    const { el } = await open()
+    const h = handle()
+    arm(h)
+    const plain = chord('Backspace', { metaKey: false })
+    act(() => void document.body.dispatchEvent(plain))
+    expect(h.delete).not.toHaveBeenCalled()
+    expect(plain.defaultPrevented).toBe(false)
+
+    const editable = document.createElement('div')
+    editable.setAttribute('contenteditable', 'true')
+    const input = document.createElement('input')
+    el.querySelector('.app')?.append(editable, input)
+    const inEditor = chord('Backspace')
+    const inField = chord('Backspace')
+    act(() => {
+      editable.dispatchEvent(inEditor)
+      input.dispatchEvent(inField)
+    })
+    expect(h.delete).not.toHaveBeenCalled()
+    expect([inEditor, inField].map((e) => e.defaultPrevented)).toEqual([false, false])
+
+    const key = chord('Backspace')
+    act(() => void document.body.dispatchEvent(key))
+    expect(h.delete).toHaveBeenCalledTimes(1)
+    expect(key.defaultPrevented).toBe(true)
+    expect(h.cutOrCopy).not.toHaveBeenCalled()
+
+    h.delete.mockReturnValue(false)
+    const declined = chord('Backspace')
+    act(() => void document.body.dispatchEvent(declined))
+    expect(h.delete).toHaveBeenCalledTimes(2)
+    expect(declined.defaultPrevented).toBe(false)
   })
 })
 
@@ -2549,7 +2605,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     await act(async () => void captured.sidebar?.onRenameFile(ABDUL, '/v/renamed.md', 'file'))
     expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'UP-001 - Abdul' to 'renamed'? No other notes link to it.")
     bridge.file.delete.mockRejectedValueOnce(new Error('boom'))
-    await act(async () => void captured.sidebar?.onDeleteFile(ABDUL))
+    await act(async () => void captured.sidebar?.onDeleteEntries([ABDUL]))
     expect(el.querySelector('.link-notice')?.textContent).toBe('Can\'t move "UP-001 - Abdul" to the Trash — nothing was deleted')
   })
 
@@ -2814,14 +2870,18 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
     expect(files['/v/A.md'].content).toBe('See [[B2]].\n')
-    expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 note')
+    // The toast says the rename with its Undo (YAZ-3268 D18), then the links that followed.
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "B2". Updated links in 1 note')
   })
 
   it('a MOVE stays silent: no sheet, the rename runs straight through', async () => {
-    const { bridge, el } = await mount(defaultAppState(), identity(), {}, feed)
+    const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, feed)
     await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/Docs/B.md', 'file'))
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/Docs/B.md' })
+    // A drag of one row is a move gesture of one (YAZ-3250 D1): its toast says so.
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Moved 1 file (B.md)')
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo') // YAZ-3255 D11
   })
 
   /** The app asks before a move that clears values (D21): the door's other question, of a MOVE. */
@@ -2946,6 +3006,324 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
     })
 
+    /** One door for a list of moves (YAZ-3250 D1): one D21 sheet for the whole list, then each move as one drag runs. */
+    describe('a list of moves (YAZ-3250 D1)', () => {
+      const PLAIN = '/v/Team/Hiring/Plain.md'
+      const LOST = '/v/Team/Hiring/Lost.md'
+      const moveAll = (moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]) => act(async () => await captured.sidebar?.onMoveEntries(moves))
+      const notice = (el: HTMLElement) => el.querySelector('.link-notice__text')?.textContent
+
+      it('nothing to clear: no sheet, each item moves in the order given, an item already in its folder is no move (S7), and one toast says how many moved (S1, S3)', async () => {
+        const { bridge, el } = await mountTeam()
+        await moveAll([
+          { oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' },
+          { oldPath: PLAIN, newPath: PLAIN, kind: 'file' },
+          { oldPath: NOOR, newPath: '/v/Team/Hiring/Sub/Noor.md', kind: 'file' },
+          { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' },
+        ])
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.rename.mock.calls.map(([req]) => req.oldPath)).toEqual([LOST, NOOR, PLAIN])
+        expect(notice(el)).toBe('Moved 3 files (Lost.md, Noor.md, Plain.md)')
+        expect(el.querySelector('.link-notice')?.getAttribute('data-icon')).toBe('paste')
+      })
+
+      it('a list that clears values asks ONCE for the whole list; Cancel moves nothing (S10); Move runs every move and clears the values in its move (D20)', async () => {
+        const files = moved()
+        const { bridge, el } = await mountTeam(files)
+        const list = [
+          { oldPath: NOOR, newPath: '/v/Team/Archive/Noor.md', kind: 'file' as const },
+          { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' as const },
+        ]
+        await moveAll(list)
+        expect(el.querySelectorAll('.confirm')).toHaveLength(1)
+        expect(sheetText(el)).toBe("Move 2 items to 'Archive'? 1 note will lose its values for Hiring.")
+        await act(async () => sheetBtn(el, 'Cancel')?.click())
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.rename).not.toHaveBeenCalled()
+        expect(bridge.writeFile).not.toHaveBeenCalled()
+
+        await moveAll(list)
+        await act(async () => sheetBtn(el, 'Move')?.click())
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.rename.mock.calls.map(([req]) => req)).toEqual(list.map(({ oldPath, newPath }) => ({ oldPath, newPath })))
+        expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(notice(el)).toBe('Moved 2 files (Noor.md, Plain.md)')
+      })
+
+      it('a name that already exists: that item stays, the rest move, and ONE notice names it (S11)', async () => {
+        const { bridge, el } = await mountTeam()
+        bridge.file.rename.mockImplementation(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => {
+          if (oldPath === PLAIN) throw { code: 'ALREADY_EXISTS', message: 'path already exists', path: newPath }
+          return { oldPath, newPath }
+        })
+        await moveAll([
+          { oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' },
+          { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' },
+          { oldPath: NOOR, newPath: '/v/Team/Hiring/Sub/Noor.md', kind: 'file' },
+        ])
+        expect(bridge.file.rename).toHaveBeenCalledTimes(3)
+        expect(notice(el)).toBe('Moved 2 files (Lost.md, Noor.md), skipped 1: Plain already exists')
+      })
+
+      it('a move gesture that lands one or many items plays ONE land sound; one that moves nothing plays none (YAZ-3267 D15, S54, S56)', async () => {
+        const { bridge } = await mountTeam()
+        await moveAll([
+          { oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' },
+          { oldPath: NOOR, newPath: '/v/Team/Hiring/Sub/Noor.md', kind: 'file' },
+        ])
+        expect(bridge.app.sound.mock.calls).toEqual([['land']])
+        await act(async () => await captured.sidebar?.onRenameFile(PLAIN, '/v/Team/Archive/Plain.md', 'file'))
+        expect(bridge.app.sound.mock.calls).toEqual([['land'], ['land']])
+        bridge.file.rename.mockRejectedValue({ code: 'ALREADY_EXISTS', message: 'path already exists', path: '/v/Team/Archive/Lost.md' })
+        await moveAll([{ oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' }])
+        await moveAll([{ oldPath: PLAIN, newPath: PLAIN, kind: 'file' }]) // already there: no move (S7)
+        expect(bridge.app.sound).toHaveBeenCalledTimes(2)
+      })
+
+      it('a drop of two folders reads the vault\u2019s file list once for the whole gesture (audit 6)', async () => {
+        const { bridge } = await mountTeam()
+        const reads = bridge.tree.mock.calls.length
+        await moveAll([
+          { oldPath: '/v/Team/Archive', newPath: '/v/Archive', kind: 'dir' },
+          { oldPath: '/v/Team/Other', newPath: '/v/Other', kind: 'dir' },
+        ])
+        expect(bridge.file.rename).toHaveBeenCalledTimes(2)
+        expect(bridge.tree.mock.calls.length - reads).toBe(1)
+      })
+
+      it('a pending list is dropped when the window’s vaults change', async () => {
+        const { bridge, el, emitFileRenamed } = await mountTeam()
+        await moveAll([{ oldPath: NOOR, newPath: '/v/Team/Archive/Noor.md', kind: 'file' }, { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' }])
+        expect(el.querySelector('.confirm')).not.toBeNull()
+        await act(async () => emitFileRenamed('/v', '/w', 'dir'))
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.rename).not.toHaveBeenCalled()
+      })
+    })
+
+    /** Undo and redo a move (YAZ-3255 D10, D11; S33 to S42): App's per-window list, through the same door. */
+    describe('undo and redo a move (YAZ-3255)', () => {
+      const ARCHIVED = '/v/Team/Archive/Noor.md'
+      const PLAIN = '/v/Team/Hiring/Plain.md'
+      const LOST = '/v/Team/Hiring/Lost.md'
+      const chord = (shiftKey = false) => new KeyboardEvent('keydown', { key: shiftKey ? 'Z' : 'z', metaKey: true, shiftKey, bubbles: true, cancelable: true })
+      /** Let every await of a move list run out. */
+      const settle = () => act(async () => {
+        for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      const press = async (shiftKey = false, target: EventTarget = document.body) => {
+        const event = chord(shiftKey)
+        act(() => void target.dispatchEvent(event))
+        await settle()
+        return event
+      }
+      const toast = (el: HTMLElement) => ({ text: el.querySelector('.link-notice__text')?.textContent, action: el.querySelector('.link-notice__action')?.textContent })
+      const renames = (bridge: ReturnType<typeof installBridge>['bridge']) => bridge.file.rename.mock.calls.map(([req]) => [req.oldPath, req.newPath])
+      type Disk = Record<string, { content: string; mtime: number }>
+      /** The disk as main moves it: an item that is gone fails NOT_FOUND, a taken place ALREADY_EXISTS (S36). */
+      const realDisk = (bridge: ReturnType<typeof installBridge>['bridge'], files: Disk) =>
+        bridge.file.rename.mockImplementation(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => {
+          if (files[oldPath] === undefined) throw { code: 'NOT_FOUND', message: 'path does not exist', path: oldPath }
+          if (files[newPath] !== undefined) throw { code: 'ALREADY_EXISTS', message: 'path already exists', path: newPath }
+          files[newPath] = files[oldPath]
+          delete files[oldPath]
+          return { oldPath, newPath, kind: 'file' }
+        })
+
+      it('a drag, then ⌘Z: it moves back, the cleared values come back, and the toast says "Moved back 1 file (Noor.md)" with Redo; ⌘⇧Z moves it again with no sheet and clears them again (S33, S37, D11)', async () => {
+        const files: Disk = { [NOOR]: { content: held, mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        await drag(NOOR, ARCHIVED)
+        await act(async () => sheetBtn(el, 'Move')?.click())
+        await settle()
+        expect(files[ARCHIVED].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(toast(el)).toEqual({ text: 'Moved 1 file (Noor.md)', action: 'Undo' })
+
+        const undo = await press()
+        expect(undo.defaultPrevented).toBe(true)
+        expect(renames(bridge)).toEqual([[NOOR, ARCHIVED], [ARCHIVED, NOOR]])
+        expect(files[NOOR].content).toBe(held) // the Hiring block is back, and only it
+        expect(toast(el)).toEqual({ text: 'Moved back 1 file (Noor.md)', action: 'Redo' })
+        expect(el.querySelector('.link-notice')?.getAttribute('data-icon')).toBe('paste')
+
+        const redo = await press(true)
+        expect(redo.defaultPrevented).toBe(true)
+        expect(el.querySelector('.confirm')).toBeNull() // no D21 sheet on redo
+        expect(renames(bridge)).toEqual([[NOOR, ARCHIVED], [ARCHIVED, NOOR], [NOOR, ARCHIVED]])
+        expect(files[ARCHIVED].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(toast(el)).toEqual({ text: 'Moved 1 file (Noor.md)', action: 'Undo' })
+
+        // The redone gesture is on the undo list again, with what it cleared this time: the toast's Undo puts it back.
+        await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+        await settle()
+        expect(files[NOOR].content).toBe(held)
+        expect(toast(el)).toEqual({ text: 'Moved back 1 file (Noor.md)', action: 'Redo' })
+      })
+
+      it('an item that moved again does not move back: "Can\u2019t undo: Plain moved again", and the rest move back; redo moves only what moved back (S36)', async () => {
+        const files: Disk = { [LOST]: { content: 'Body\n', mtime: 1 }, [PLAIN]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        await act(async () => await captured.sidebar?.onMoveEntries([
+          { oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' },
+          { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' },
+        ]))
+        await settle()
+        expect(toast(el).text).toBe('Moved 2 files (Lost.md, Plain.md)')
+        delete files['/v/Team/Archive/Plain.md'] // another window moved it on
+
+        await press()
+        // Newest first: Plain, then Lost.
+        expect(renames(bridge).slice(2)).toEqual([['/v/Team/Archive/Plain.md', PLAIN], ['/v/Team/Archive/Lost.md', LOST]])
+        expect(files[LOST]).toBeDefined()
+        expect(toast(el)).toEqual({ text: "Moved back 1 file (Lost.md). Can't undo: Plain moved again", action: 'Redo' })
+
+        await press(true)
+        expect(renames(bridge).slice(4)).toEqual([[LOST, '/v/Team/Archive/Lost.md']])
+        expect(toast(el)).toEqual({ text: 'Moved 1 file (Lost.md)', action: 'Undo' })
+      })
+
+      it('with nothing to undo or redo the key passes through (S35); the editor keeps ⌘Z (S34); a new move empties the redo list (S38)', async () => {
+        const files: Disk = { [LOST]: { content: 'Body\n', mtime: 1 }, [PLAIN]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        expect((await press()).defaultPrevented).toBe(false)
+        expect((await press(true)).defaultPrevented).toBe(false)
+        expect(bridge.file.rename).not.toHaveBeenCalled()
+
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' }]))
+        await settle()
+        const editor = document.createElement('div')
+        editor.setAttribute('contenteditable', 'true')
+        el.querySelector('.app')?.append(editor)
+        expect((await press(false, editor)).defaultPrevented).toBe(false)
+        expect(bridge.file.rename).toHaveBeenCalledTimes(1)
+
+        await press()
+        expect(files[LOST]).toBeDefined()
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' }]))
+        await settle()
+        const calls = bridge.file.rename.mock.calls.length
+        expect((await press(true)).defaultPrevented).toBe(false) // the undone Lost move is no longer there to redo
+        expect(bridge.file.rename).toHaveBeenCalledTimes(calls)
+      })
+
+      it('a Paste of a Cut is in the list: its Undo moves it back and puts back what it cleared (S39)', async () => {
+        const files: Disk = { [ARCHIVED]: { content: `---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`, mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: NOOR, newPath: ARCHIVED, kind: 'file' }], cleared: [{ path: NOOR, values: { [HIRING]: { Status: 'Interview' } } }] }, 'Pasted 1 file (Noor.md)'))
+        expect(toast(el)).toEqual({ text: 'Pasted 1 file (Noor.md)', action: 'Undo' })
+        await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+        await settle()
+        expect(renames(bridge)).toEqual([[ARCHIVED, NOOR]])
+        expect(files[NOOR].content).toBe(held)
+        expect(toast(el)).toEqual({ text: 'Moved back 1 file (Noor.md)', action: 'Redo' })
+      })
+
+      it('a move in from Finder: Undo puts the items back in their Finder folder through the same door, and Redo moves them in again (S40)', async () => {
+        const PLAN = '/v/Team/Plan.md'
+        const DOWNLOADS = '/Users/yasin/Downloads/Plan.md'
+        const files: Disk = { [PLAN]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PLAN, kind: 'file' }], cleared: [] }, 'Moved 1 file (Plan.md) from Finder'))
+        expect(toast(el)).toEqual({ text: 'Moved 1 file (Plan.md) from Finder', action: 'Undo' })
+        await press()
+        expect(renames(bridge)).toEqual([[PLAN, DOWNLOADS]])
+        expect(files[DOWNLOADS]).toBeDefined()
+        expect(bridge.writeFile).not.toHaveBeenCalled() // outside the vault: no link and no value is written
+        expect(toast(el)).toEqual({ text: 'Moved back 1 file (Plan.md)', action: 'Redo' })
+        await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+        await settle()
+        expect(renames(bridge)).toEqual([[PLAN, DOWNLOADS], [DOWNLOADS, PLAN]])
+        expect(toast(el)).toEqual({ text: 'Moved 1 file (Plan.md)', action: 'Undo' })
+      })
+
+      it('a move in from Finder of a PDF: Undo and Redo move it too — a move over the vault\u2019s edge reads no file list (S37, S40, audit 3)', async () => {
+        const PDF = '/v/Team/Scan.pdf'
+        const DOWNLOADS = '/Users/yasin/Downloads/Scan.pdf'
+        const files: Disk = { [PDF]: { content: '%PDF', mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PDF, kind: 'file' }], cleared: [] }, 'Moved 1 file (Scan.pdf) from Finder'))
+        await press()
+        expect(renames(bridge)).toEqual([[PDF, DOWNLOADS]])
+        expect(toast(el)).toEqual({ text: 'Moved back 1 file (Scan.pdf)', action: 'Redo' })
+        await press(true)
+        expect(renames(bridge)).toEqual([[PDF, DOWNLOADS], [DOWNLOADS, PDF]])
+        expect(files[PDF]).toBeDefined()
+        expect(toast(el)).toEqual({ text: 'Moved 1 file (Scan.pdf)', action: 'Undo' })
+      })
+
+      it('an undo or a redo that moves nothing for a passing reason keeps its gesture: the next key tries again (audit 21); one whose every item moved again does not', async () => {
+        const MOVED = '/v/Team/Archive/Lost.md'
+        const files: Disk = { [LOST]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, el } = await mountTeam(files)
+        realDisk(bridge, files)
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: LOST, newPath: MOVED, kind: 'file' }]))
+        await settle()
+        bridge.file.rename.mockRejectedValueOnce({ code: 'IO_ERROR', message: 'the disk is busy', path: MOVED })
+        await press()
+        expect(toast(el).text).toBe("Can't undo: Lost — the disk is busy")
+        expect((await press()).defaultPrevented).toBe(true)
+        expect(files[LOST]).toBeDefined()
+        bridge.file.rename.mockRejectedValueOnce({ code: 'IO_ERROR', message: 'the disk is busy', path: LOST })
+        await press(true)
+        expect((await press(true)).defaultPrevented).toBe(true)
+        expect(files[MOVED]).toBeDefined()
+        delete files[MOVED] // another window moved it on
+        await press()
+        expect(toast(el).text).toBe("Can't undo: Lost moved again")
+        expect((await press()).defaultPrevented).toBe(false) // the gesture is gone: nothing is left to undo
+      })
+
+      it('an undo and a redo that move items play one land sound each; a Paste of a Cut or a move in from Finder plays one through App\u2019s door; one that moves nothing plays none (YAZ-3267 D15, S54, S56)', async () => {
+        const files: Disk = { [LOST]: { content: 'Body\n', mtime: 1 }, [PLAIN]: { content: 'Body\n', mtime: 1 } }
+        const { bridge } = await mountTeam(files)
+        realDisk(bridge, files)
+        await act(async () => await captured.sidebar?.onMoveEntries([
+          { oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' },
+          { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' },
+        ]))
+        await settle()
+        expect(bridge.app.sound.mock.calls).toEqual([['land']])
+        await press()
+        expect(bridge.app.sound.mock.calls).toEqual([['land'], ['land']])
+        await press(true)
+        expect(bridge.app.sound.mock.calls).toEqual([['land'], ['land'], ['land']])
+        // An undo that moves nothing: no sound.
+        bridge.file.rename.mockRejectedValue({ code: 'IO_ERROR', message: 'the disk is busy', path: LOST })
+        await press()
+        expect(bridge.app.sound).toHaveBeenCalledTimes(3)
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Team/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 item from Finder'))
+        expect(bridge.app.sound.mock.calls).toEqual([['land'], ['land'], ['land'], ['land']])
+      })
+
+      it('the lists empty when the window\u2019s vaults change: ⌘Z then moves nothing (S42, audit 2)', async () => {
+        const files: Disk = { [LOST]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, emitFileRenamed } = await mountTeam(files)
+        realDisk(bridge, files)
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' }]))
+        await settle()
+        await act(async () => emitFileRenamed('/v', '/w', 'dir'))
+        expect((await press()).defaultPrevented).toBe(false)
+        expect(bridge.file.rename).toHaveBeenCalledTimes(1)
+      })
+
+      it('a toast on screen when the lists empty keeps its text and loses its dead Undo button (YAZ-3255 nit)', async () => {
+        const files: Disk = { [LOST]: { content: 'Body\n', mtime: 1 } }
+        const { bridge, el, emitFileRenamed } = await mountTeam(files)
+        realDisk(bridge, files)
+        await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' }]))
+        await settle()
+        expect(toast(el)).toEqual({ text: 'Moved 1 file (Lost.md)', action: 'Undo' })
+        await act(async () => emitFileRenamed('/v', '/w', 'dir'))
+        expect(toast(el)).toEqual({ text: 'Moved 1 file (Lost.md)', action: undefined })
+      })
+    })
+
     it('"Ask before renaming" off: a move that would clear values still asks (YAZ-2420 3C1)', async () => {
       const { bridge, el } = await mount(askOff(), identity(), moved(), (b) => b.bridge.index.mockResolvedValue(snapshot()))
       await drag(NOOR, '/v/Team/Archive/Noor.md')
@@ -2987,7 +3365,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(bridge.file.rename).not.toHaveBeenCalled()
       expect(files['/v/A.md'].content).toBe('See [[UP-001 - Abdul]].\n')
       expect(files['/v/ById.md'].content).toBe(`See [[${ID}]].\n`)
-      expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 note')
+      // The toast says the rename with its Undo (YAZ-3268 D18), then the links that followed.
+      expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "UP-001 - Abdul". Updated links in 1 note')
     })
 
     it('"Ask before renaming" off: a title edit runs with no sheet, and the links that spelled the old title still follow (YAZ-2420 3C1)', async () => {
@@ -2997,7 +3376,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(el.querySelector('.confirm')).toBeNull()
       expect(bridge.file.retitle).toHaveBeenCalledExactlyOnceWith({ path: ABDUL, title: 'UP-001 - Abdul' })
       expect(files['/v/A.md'].content).toBe('See [[UP-001 - Abdul]].\n')
-      expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 note')
+      // The toast says the rename with its Undo (YAZ-3268 D18), then the links that followed.
+      expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "UP-001 - Abdul". Updated links in 1 note')
     })
 
     it('the page title commits through the same door as the sidebar', async () => {
@@ -3037,6 +3417,253 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => sheetBtn(el, 'Rename')?.click())
       expect(el.querySelector('.link-notice')?.textContent).toBe(notice)
       expect(files['/v/A.md'].content).toBe('See [[Abdul]].\n')
+    })
+  })
+
+  /**
+   * ⌘Z and ⌘⇧Z of a delete and a rename (YAZ-3268 D17–D19): one undo list with the moves, newest
+   * first. A delete goes back from the Trash through `fs:put-back`; a rename goes back through the
+   * door with no sheet, so links follow back.
+   */
+  describe('undo and redo a delete and a rename (YAZ-3268)', () => {
+    const chord = (shiftKey = false) => new KeyboardEvent('keydown', { key: shiftKey ? 'Z' : 'z', metaKey: true, shiftKey, bubbles: true, cancelable: true })
+    const settle = () => act(async () => {
+      for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    const press = async (shiftKey = false) => {
+      const event = chord(shiftKey)
+      act(() => void document.body.dispatchEvent(event))
+      await settle()
+      return event
+    }
+    const toast = (el: HTMLElement) => ({ text: el.querySelector('.link-notice__text')?.textContent, action: el.querySelector('.link-notice__action')?.textContent })
+    const icon = (el: HTMLElement) => el.querySelector('.link-notice')?.getAttribute('data-icon')
+    const clickToast = async (el: HTMLElement) => {
+      await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+      await settle()
+    }
+    const TRASH = '/Users/yasin/.Trash'
+    type Bridge = ReturnType<typeof installBridge>['bridge']
+    /** The Trash as main answers it: each delete lands under a new name, so a second delete of one item has a new `trashed`. */
+    const trashing = (bridge: Bridge) => {
+      let n = 0
+      bridge.file.delete.mockImplementation(async ({ path }: { path: string }) => ({ path, kind: path.endsWith('.md') ? ('file' as const) : ('dir' as const), trashed: `${TRASH}/${path.slice(path.lastIndexOf('/') + 1)} ${++n}` }))
+    }
+    const putBacks = (bridge: Bridge) => bridge.file.putBack.mock.calls.map(([req]) => [req.trashed, req.path])
+    const renames = (bridge: Bridge) => bridge.file.rename.mock.calls.map(([req]) => [req.oldPath, req.newPath])
+    const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+    const TREE: TreeNode[] = [{ type: 'dir', name: 'Docs', path: '/v/Docs', children: [file('/v/Docs/N.md')] }, file('/v/A.md'), file('/v/B.md'), file('/v/R.md')]
+    const mountVault = (state: AppState = defaultAppState()) =>
+      mount(state, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        trashing(b.bridge)
+      })
+
+    it('S66 (YAZ-3272, as D23 of YAZ-3293 words it): one row deleted says "Deleted 1 file (Todo.md)" with Undo, by its kind and its name on disk', async () => {
+      const { el } = await mountVault()
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/Todo.md']))
+      expect(toast(el)).toEqual({ text: 'Deleted 1 file (Todo.md)', action: 'Undo' })
+    })
+
+    it('a Delete, then ⌘Z: the item comes back from the Trash, "Put back 1 file (B.md)" with Redo and the land sound; ⌘⇧Z deletes it again and the next Undo uses its new place in the Trash (S58, D18)', async () => {
+      const { bridge, el } = await mountVault()
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/B.md']))
+      expect(toast(el)).toEqual({ text: 'Deleted 1 file (B.md)', action: 'Undo' })
+      expect(bridge.app.sound.mock.calls).toEqual([['trash']])
+
+      const undo = await press()
+      expect(undo.defaultPrevented).toBe(true)
+      expect(putBacks(bridge)).toEqual([[`${TRASH}/B.md 1`, '/v/B.md']])
+      expect(toast(el)).toEqual({ text: 'Put back 1 file (B.md)', action: 'Redo' })
+      expect(icon(el)).toBe('paste')
+      expect(bridge.app.sound.mock.calls).toEqual([['trash'], ['land']])
+
+      await press(true)
+      expect(bridge.file.delete.mock.calls.map(([req]) => req)).toEqual([{ path: '/v/B.md' }, { path: '/v/B.md' }])
+      expect(toast(el)).toEqual({ text: 'Deleted 1 file (B.md)', action: 'Undo' })
+      expect(bridge.app.sound.mock.calls).toEqual([['trash'], ['land'], ['trash']])
+      await clickToast(el)
+      expect(putBacks(bridge)).toEqual([[`${TRASH}/B.md 1`, '/v/B.md'], [`${TRASH}/B.md 2`, '/v/B.md']])
+    })
+
+    it('"Remove from vault" of many items is ONE step: one ⌘Z puts every item back (S58, D19)', async () => {
+      const { bridge, el } = await mountVault()
+      await act(async () => void captured.sidebar?.onDraggedOut(['/v/A.md', '/v/Docs']))
+      await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.drag-out-ask button')].find((b) => b.textContent === 'Remove from vault')?.click())
+      await settle()
+      expect(toast(el)).toEqual({ text: 'Deleted 1 folder and 1 file (A.md, Docs)', action: 'Undo' })
+      await press()
+      expect(putBacks(bridge)).toEqual([[`${TRASH}/Docs 2`, '/v/Docs'], [`${TRASH}/A.md 1`, '/v/A.md']])
+      expect(toast(el)).toEqual({ text: 'Put back 1 folder and 1 file (A.md, Docs)', action: 'Redo' })
+      expect((await press()).defaultPrevented).toBe(false) // one step, and it is undone
+    })
+
+    it('the Trash was emptied since: "Can’t undo: B is no longer in the Trash" (S59); a new file has the old name: that item stays in the Trash and the rest come back (S60)', async () => {
+      const { bridge, el } = await mountVault()
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/B.md']))
+      bridge.file.putBack.mockRejectedValueOnce({ code: 'NOT_FOUND', message: 'it is no longer in the Trash', path: `${TRASH}/B.md 1` })
+      await press()
+      expect(toast(el)).toEqual({ text: "Can't undo: B is no longer in the Trash", action: undefined })
+      expect(icon(el)).toBe('error')
+      expect(bridge.app.sound.mock.calls).toEqual([['trash']]) // nothing came back: no land sound
+
+      await act(async () => void captured.sidebar?.onDraggedOut(['/v/A.md', '/v/R.md']))
+      await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.drag-out-ask button')].find((b) => b.textContent === 'Remove from vault')?.click())
+      await settle()
+      bridge.file.putBack.mockImplementation(async ({ path }: { trashed: string; path: string }) => {
+        if (path === '/v/A.md') throw { code: 'ALREADY_EXISTS', message: 'a file with this name already exists', path }
+        return { path, kind: 'file' as const }
+      })
+      await press()
+      expect(putBacks(bridge).slice(1)).toEqual([[`${TRASH}/R.md 3`, '/v/R.md'], [`${TRASH}/A.md 2`, '/v/A.md']])
+      expect(toast(el)).toEqual({ text: "Put back 1 file (R.md). Can't undo: a file named A is there now", action: 'Redo' })
+    })
+
+    it('an item not found in the Trash at delete time: the delete still worked, with no Undo button, and ⌘Z has nothing to undo (S61)', async () => {
+      const { bridge, el } = await mountVault()
+      bridge.file.delete.mockResolvedValueOnce({ path: '/v/B.md', kind: 'file', trashed: null })
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/B.md']))
+      expect(toast(el)).toEqual({ text: 'Deleted 1 file (B.md)', action: undefined })
+      expect(bridge.app.sound.mock.calls).toEqual([['trash']])
+      expect((await press()).defaultPrevented).toBe(false)
+      expect(bridge.file.putBack).not.toHaveBeenCalled()
+    })
+
+    /** The list delete door (YAZ-3272 D21, S67): N items, ONE trash sound, ONE step, ONE toast. */
+    it('a Delete of 3 items: each to the Trash in order, one trash sound, "Deleted 1 folder and 2 files (A.md, B.md, Docs)" with Undo; one ⌘Z puts all 3 back (S67)', async () => {
+      const { bridge, el } = await mountVault()
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/A.md', '/v/B.md', '/v/Docs']))
+      expect(bridge.file.delete.mock.calls.map(([req]) => req.path)).toEqual(['/v/A.md', '/v/B.md', '/v/Docs'])
+      expect(bridge.app.sound.mock.calls).toEqual([['trash']])
+      expect(toast(el)).toEqual({ text: 'Deleted 1 folder and 2 files (A.md, B.md, Docs)', action: 'Undo' })
+      await press()
+      expect(putBacks(bridge)).toEqual([[`${TRASH}/Docs 3`, '/v/Docs'], [`${TRASH}/B.md 2`, '/v/B.md'], [`${TRASH}/A.md 1`, '/v/A.md']])
+      expect(toast(el)).toEqual({ text: 'Put back 1 folder and 2 files (A.md, B.md, Docs)', action: 'Redo' })
+      expect((await press()).defaultPrevented).toBe(false) // one step, and it is undone
+    })
+
+    it('a failure on one item does not stop the rest, and one notice counts both; with every item failed, one notice counts them and no sound plays', async () => {
+      const { bridge, el } = await mountVault()
+      const refuse = (path: string) => ({ code: 'IO_ERROR', message: 'the Trash refused it', path })
+      bridge.file.delete.mockImplementationOnce(async ({ path }: { path: string }) => ({ path, kind: 'file' as const, trashed: `${TRASH}/A.md` }))
+      bridge.file.delete.mockImplementationOnce(async ({ path }: { path: string }) => Promise.reject(refuse(path)))
+      bridge.file.delete.mockImplementationOnce(async ({ path }: { path: string }) => ({ path, kind: 'file' as const, trashed: `${TRASH}/R.md` }))
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/A.md', '/v/B.md', '/v/R.md']))
+      expect(bridge.file.delete).toHaveBeenCalledTimes(3)
+      expect(toast(el)).toEqual({ text: 'Deleted 2 files (A.md, R.md), skipped 1: B was not moved to the Trash', action: 'Undo' })
+      expect(bridge.app.sound.mock.calls).toEqual([['trash']])
+      await press()
+      expect(putBacks(bridge)).toEqual([[`${TRASH}/R.md`, '/v/R.md'], [`${TRASH}/A.md`, '/v/A.md']])
+
+      bridge.file.delete.mockImplementation(async ({ path }: { path: string }) => Promise.reject(refuse(path)))
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/A.md', '/v/B.md']))
+      expect(toast(el)).toEqual({ text: "Can't delete 2 items: A was not moved to the Trash", action: undefined })
+      expect(bridge.app.sound.mock.calls).toEqual([['trash'], ['land']]) // no trash sound for nothing deleted
+    })
+
+    it('a rename, then ⌘Z: the old name comes back through the door with no sheet, and the links follow back; no sound (S62, D18)', async () => {
+      const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+      const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)
+      await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      await settle()
+      expect(files['/v/A.md'].content).toBe('See [[B2]].\n')
+      expect(toast(el)).toEqual({ text: 'Renamed to "B2". Updated links in 1 note', action: 'Undo' })
+      // The index as it stands after the rename: A links to B2.
+      bridge.index.mockResolvedValue({ root: '/v', records: [record('/v/A.md', { links: ['B2'] }), record('/v/B2.md'), record('/v/R.md', { links: ['Docs/N'] }), record('/v/Docs/N.md')], folders: [], generatedAt: 2, ids: true })
+
+      const undo = await press()
+      expect(undo.defaultPrevented).toBe(true)
+      expect(el.querySelector('.confirm')).toBeNull() // no sheet on an undo
+      expect(renames(bridge)).toEqual([['/v/B.md', '/v/B2.md'], ['/v/B2.md', '/v/B.md']])
+      expect(files['/v/A.md'].content).toBe('See [[B]].\n')
+      expect(toast(el)).toEqual({ text: 'Renamed back to "B". Updated links in 1 note', action: 'Redo' })
+
+      bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 3, ids: true })
+      await press(true)
+      expect(el.querySelector('.confirm')).toBeNull()
+      expect(renames(bridge)).toEqual([['/v/B.md', '/v/B2.md'], ['/v/B2.md', '/v/B.md'], ['/v/B.md', '/v/B2.md']])
+      expect(files['/v/A.md'].content).toBe('See [[B2]].\n')
+      expect(toast(el)).toEqual({ text: 'Renamed to "B2". Updated links in 1 note', action: 'Undo' })
+      expect(bridge.app.sound).not.toHaveBeenCalled()
+    })
+
+    it('a title edit in an ID vault, then ⌘Z: the old title comes back through `retitle`, with no sheet (S63)', async () => {
+      const ID = 'k3m9x2pq7abc'
+      const ABDUL = `/v/abdul-${ID}.md`
+      const RENAMED = `/v/up-001-abdul-${ID}.md`
+      const { bridge, el } = await mount(askOff(), { ...identity(), file: ABDUL, tabs: [ABDUL] }, {}, (b) => {
+        b.bridge.index.mockResolvedValue({ root: '/v', records: [record(ABDUL, { id: ID, title: 'Abdul', properties: { id: ID, title: 'Abdul' } })], folders: [], generatedAt: 1, ids: true })
+        b.bridge.file.retitle.mockImplementation(async ({ path, title }: { path: string; title: string }) => ({ oldPath: path, newPath: title === 'Abdul' ? ABDUL : RENAMED, kind: 'file' }))
+      })
+      await act(async () => void captured.editorRetitle?.(ABDUL, 'UP-001 - Abdul', 'file'))
+      await settle()
+      expect(toast(el)).toEqual({ text: 'Renamed to "UP-001 - Abdul"', action: 'Undo' })
+      await press()
+      expect(bridge.file.retitle.mock.calls.map(([req]) => req)).toEqual([{ path: ABDUL, title: 'UP-001 - Abdul' }, { path: RENAMED, title: 'Abdul' }])
+      expect(toast(el)).toEqual({ text: 'Renamed back to "Abdul"', action: 'Redo' })
+      await clickToast(el)
+      expect(bridge.file.retitle.mock.calls.at(-1)?.[0]).toEqual({ path: ABDUL, title: 'UP-001 - Abdul' })
+      expect(toast(el)).toEqual({ text: 'Renamed to "UP-001 - Abdul"', action: 'Undo' })
+    })
+
+    it('the renamed item changed again since: "Can’t undo: Plan moved again", and the step is gone (S64)', async () => {
+      const { bridge, el } = await mount(askOff(), identity(), {}, feed)
+      await act(async () => await captured.sidebar?.onRenameFile('/v/Draft.md', '/v/Plan.md', 'file'))
+      expect(toast(el)).toEqual({ text: 'Renamed to "Plan"', action: 'Undo' })
+      bridge.file.rename.mockRejectedValueOnce({ code: 'NOT_FOUND', message: 'path does not exist', path: '/v/Plan.md' })
+      await press()
+      expect(toast(el)).toEqual({ text: "Can't undo: Plan moved again", action: undefined })
+      expect(icon(el)).toBe('error')
+      expect((await press()).defaultPrevented).toBe(false)
+    })
+
+    it('a new file took the old name since: "Can’t undo: a file named Draft is there now", not "moved again" (YAZ-3268 nit 2)', async () => {
+      const { bridge, el } = await mount(askOff(), identity(), {}, feed)
+      await act(async () => await captured.sidebar?.onRenameFile('/v/Draft.md', '/v/Plan.md', 'file'))
+      expect(toast(el)).toEqual({ text: 'Renamed to "Plan"', action: 'Undo' })
+      bridge.file.rename.mockRejectedValueOnce({ code: 'ALREADY_EXISTS', message: 'a file with this name already exists', path: '/v/Draft.md' })
+      await press()
+      expect(toast(el)).toEqual({ text: "Can't undo: a file named Draft is there now", action: undefined })
+      expect(icon(el)).toBe('error')
+    })
+
+    it('moves, deletes and renames mixed: ⌘Z takes them back newest first, one per press; ⌘⇧Z redoes them in order (S65)', async () => {
+      const { bridge, el } = await mountVault(askOff())
+      const log: string[] = []
+      bridge.file.rename.mockImplementation(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => {
+        log.push(`rename ${oldPath} ${newPath}`)
+        return { oldPath, newPath, kind: 'file' }
+      })
+      bridge.file.delete.mockImplementation(async ({ path }: { path: string }) => {
+        log.push(`delete ${path}`)
+        return { path, kind: 'file' as const, trashed: `${TRASH}/${path.slice(3)}` }
+      })
+      bridge.file.putBack.mockImplementation(async ({ trashed, path }: { trashed: string; path: string }) => {
+        log.push(`put back ${trashed} ${path}`)
+        return { path, kind: 'file' as const }
+      })
+      await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/R.md', newPath: '/v/Docs/R.md', kind: 'file' }]))
+      await settle()
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/A.md']))
+      await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
+      await settle()
+      log.length = 0
+      await press()
+      await press()
+      await press()
+      expect(log).toEqual(['rename /v/B2.md /v/B.md', `put back ${TRASH}/A.md /v/A.md`, 'rename /v/Docs/R.md /v/R.md'])
+      expect(toast(el)).toEqual({ text: 'Moved back 1 file (R.md)', action: 'Redo' })
+      expect((await press()).defaultPrevented).toBe(false)
+      log.length = 0
+      await press(true)
+      await press(true)
+      await press(true)
+      expect(log).toEqual(['rename /v/R.md /v/Docs/R.md', 'delete /v/A.md', 'rename /v/B.md /v/B2.md'])
+      expect(toast(el)).toMatchObject({ action: 'Undo' })
+      expect(toast(el).text).toMatch(/^Renamed to "B2"/)
+      expect((await press(true)).defaultPrevented).toBe(false)
     })
   })
 
@@ -3466,6 +4093,16 @@ describe('in-app delete (GRO-2272)', () => {
     await act(async () => b.emitFileDeleted('/v/x.md'))
     expect(b.bridge.index).not.toHaveBeenCalled()
     expect(b.bridge.file.rename).not.toHaveBeenCalled()
+  })
+
+  it('a delete that sends the item to the Trash plays ONE trash sound; one that fails plays none (YAZ-3267 D15, S55, S56)', async () => {
+    const files = { '/v/a.md': { content: '# a', mtime: 1 } }
+    const b = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, files)
+    await act(async () => await captured.sidebar?.onDeleteEntries(['/v/Docs']))
+    expect(b.bridge.app.sound.mock.calls).toEqual([['trash']])
+    b.bridge.file.delete.mockRejectedValueOnce({ code: 'IO_ERROR', message: 'trash failed', path: '/v/a.md' })
+    await act(async () => await captured.sidebar?.onDeleteEntries(['/v/a.md']))
+    expect(b.bridge.app.sound).toHaveBeenCalledTimes(1)
   })
 
   it('a delete for a path this window does not have open changes nothing', async () => {
@@ -4307,7 +4944,8 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(files['/w/C.md'].content).toBe('See [[B2]].\n')
     expect(files['/w/D.md'].content).toBe('And [[B2]].\n')
     expect(files['/v/A.md'].content).toBe('See [[B]].\n')
-    expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 2 notes')
+    // The toast says the rename with its Undo (YAZ-3268 D18), then the links that followed.
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Renamed to "B2". Updated links in 2 notes')
   })
 
   it('a rename that waits for its answer is dropped when the list of vaults changes', async () => {
@@ -5029,5 +5667,139 @@ describe('App sessions (YAZ-3147 D3, D5)', () => {
     // The vault's write, then ONE write of the strip (S27).
     expect((bridge.window.setIdentity.mock.calls as unknown as [object][]).filter(([patch]) => 'tabs' in patch)).toHaveLength(1)
     expect(noticeText(el)).toBe("1 tab did not open: the file is gone or its vault can't join")
+  })
+})
+
+/**
+ * Rows dragged out to Finder (YAZ-3254 D9B): Finder took copies, and App's box asks whether the vault
+ * keeps them. Its own slot, not the toast's; it stays until answered.
+ */
+describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
+  const record = (path: string, links: string[] = []): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    const rel = path.slice('/v/'.length)
+    return { path, name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', ext: 'md', size: 7, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links, embeds: [] }
+  }
+  /** A links to B; R links to Docs/N by path; B links to A, so A has a note that links to it only while B stays. */
+  const records = [record('/v/A.md', ['B']), record('/v/B.md', ['A']), record('/v/R.md', ['Docs/N']), record('/v/Docs/N.md')]
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const TREE: TreeNode[] = [{ type: 'dir', name: 'Docs', path: '/v/Docs', children: [file('/v/Docs/N.md')] }, file('/v/A.md'), file('/v/B.md'), file('/v/R.md')]
+  const mountVault = () =>
+    mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, (b) => {
+      b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true })
+      b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+    })
+  const draggedOut = (...paths: string[]) => act(async () => void captured.sidebar?.onDraggedOut(paths))
+  const box = (el: HTMLElement) => el.querySelector('.drag-out-ask')
+  const boxText = (el: HTMLElement) => el.querySelector('.drag-out-ask__text')?.textContent
+  const button = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.drag-out-ask button')].find((b) => b.textContent === label || b.getAttribute('aria-label') === label)
+
+  it('asks with the count of the notes that link to the items (S26); a later toast does not hide it (S32); ✕ closes it and changes nothing (S28)', async () => {
+    const { bridge, el } = await mountVault()
+    await draggedOut('/v/B.md', '/v/Docs')
+    expect(boxText(el)).toBe('Copied 1 folder and 1 file (B.md, Docs) to Finder? 2 notes link to them.')
+    expect(el.querySelector('.link-notice')).toBeNull() // its own slot, not the toast
+    act(() => captured.sidebar?.onNotice('Copied path'))
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Copied path')
+    expect(boxText(el)).toBe('Copied 1 folder and 1 file (B.md, Docs) to Finder? 2 notes link to them.')
+    await act(async () => button(el, 'Keep in vault')?.click())
+    expect(box(el)).toBeNull()
+    expect(bridge.file.delete).not.toHaveBeenCalled()
+  })
+
+  it('one item says "it"; a second drag out replaces the box (S32); an item no note links to says no count', async () => {
+    const { el } = await mountVault()
+    await draggedOut('/v/B.md')
+    expect(boxText(el)).toBe('Copied 1 file (B.md) to Finder? 1 note links to it.')
+    await draggedOut('/v/R.md')
+    expect(el.querySelectorAll('.drag-out-ask')).toHaveLength(1)
+    expect(boxText(el)).toBe('Copied 1 file (R.md) to Finder?')
+  })
+
+  it('"Remove from vault" sends each item to the Trash through the delete door, with no second sheet (S27)', async () => {
+    const { bridge, el } = await mountVault()
+    await draggedOut('/v/A.md', '/v/Docs')
+    await act(async () => button(el, 'Remove from vault')?.click())
+    expect(bridge.file.delete.mock.calls.map(([req]) => req)).toEqual([{ path: '/v/A.md' }, { path: '/v/Docs' }])
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(box(el)).toBeNull()
+  })
+
+  it('"Remove from vault" of many items plays ONE trash sound; one where every item fails plays none (YAZ-3267 D15, S55, S56)', async () => {
+    const { bridge, el } = await mountVault()
+    await draggedOut('/v/A.md', '/v/Docs')
+    await act(async () => button(el, 'Remove from vault')?.click())
+    expect(bridge.file.delete).toHaveBeenCalledTimes(2)
+    expect(bridge.app.sound.mock.calls).toEqual([['trash']])
+    bridge.file.delete.mockRejectedValue({ code: 'IO_ERROR', message: 'trash failed', path: '/v/A.md' })
+    await draggedOut('/v/A.md', '/v/B.md')
+    await act(async () => button(el, 'Remove from vault')?.click())
+    expect(bridge.file.delete).toHaveBeenCalledTimes(4)
+    expect(bridge.app.sound).toHaveBeenCalledTimes(1)
+    // "Keep in vault" trashes nothing and plays nothing.
+    await draggedOut('/v/A.md')
+    await act(async () => button(el, 'Keep in vault')?.click())
+    expect(bridge.app.sound).toHaveBeenCalledTimes(1)
+  })
+
+  it('"Remove from vault" checks the items again at the click: one gone since the box showed is skipped (audit 7)', async () => {
+    const { bridge, el } = await mountVault()
+    await draggedOut('/v/A.md', '/v/B.md')
+    bridge.tree.mockResolvedValue({ root: '/v', tree: TREE.filter((node) => node.path !== '/v/B.md'), generatedAt: 2 })
+    await act(async () => button(el, 'Remove from vault')?.click())
+    expect(bridge.file.delete.mock.calls.map(([req]) => req)).toEqual([{ path: '/v/A.md' }])
+  })
+
+  it('the box is an alert dialog named by its question; Esc closes it and keeps the items; a change of the window\u2019s vaults closes it (audit 7, 20)', async () => {
+    const { bridge, el, emitFileRenamed } = await mountVault()
+    await draggedOut('/v/A.md')
+    expect(box(el)?.getAttribute('role')).toBe('alertdialog')
+    expect(el.querySelector(`#${box(el)?.getAttribute('aria-labelledby')}`)?.textContent).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(box(el)).toBeNull()
+    expect(bridge.file.delete).not.toHaveBeenCalled()
+    await draggedOut('/v/A.md')
+    await act(async () => emitFileRenamed('/v', '/w', 'dir'))
+    expect(box(el)).toBeNull()
+  })
+
+  it('a drop of files anywhere in the window tells main their paths, so the window they came from asks nothing (YAZ-3263); a drop with no files tells nothing', async () => {
+    const { bridge } = await mountVault()
+    const drop = (files: File[] | null) => {
+      const event = new Event('drop', { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'dataTransfer', { value: files === null ? null : { files, types: ['Files'] } })
+      act(() => void document.body.dispatchEvent(event))
+    }
+    drop([new File(['a'], 'A.md'), new File(['b'], 'B.md')])
+    expect(bridge.file.droppedHere).toHaveBeenLastCalledWith({ paths: ['/Users/yasin/Downloads/A.md', '/Users/yasin/Downloads/B.md'] })
+    // Counted from here: an App an earlier test left mounted shares `window` and the bridge.
+    const told = bridge.file.droppedHere.mock.calls.length
+    drop([])
+    drop(null)
+    expect(bridge.file.droppedHere).toHaveBeenCalledTimes(told)
+  })
+
+  it('main says the drag landed in another window of the app: the box of that drag closes, or never shows when the word comes during its read; a box of other items stays (YAZ-3263)', async () => {
+    const { el, emitDragLanded } = await mountVault()
+    await draggedOut('/v/A.md')
+    act(() => emitDragLanded(['/v/B.md']))
+    expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
+    act(() => emitDragLanded(['/v/A.md']))
+    expect(box(el)).toBeNull()
+    // The word comes while the box reads the trees: it never shows.
+    await act(async () => {
+      captured.sidebar?.onDraggedOut(['/v/B.md', '/v/R.md'])
+      emitDragLanded(['/v/B.md', '/v/R.md'])
+    })
+    expect(box(el)).toBeNull()
+  })
+
+  it('an item that is gone before the box shows is left out; with none left there is no box (S31)', async () => {
+    const { el } = await mountVault()
+    await draggedOut('/v/gone.md', '/v/A.md')
+    expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
+    await act(async () => button(el, 'Keep in vault')?.click())
+    await draggedOut('/v/gone.md')
+    expect(box(el)).toBeNull()
   })
 })

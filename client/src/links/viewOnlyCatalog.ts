@@ -51,3 +51,12 @@ export function buildViewOnlyCatalogFromEntries(root: string, source: readonly V
   const candidates = entries.map((entry) => ({ ...nameCandidate(names.get(entry.path) as string), path: entry.path }))
   return { root, entries, candidates, resolve }
 }
+
+/** `catalog` after a move of `oldPath`, a file or a folder: each entry at or under it at its new place, and the rest as they were. */
+export function movedCatalog(catalog: ViewOnlyCatalog, oldPath: string, newPath: string): ViewOnlyCatalog {
+  return buildViewOnlyCatalogFromEntries(catalog.root, catalog.entries.map((entry) => {
+    if (entry.path !== oldPath && !entry.path.startsWith(`${oldPath}/`)) return entry
+    const path = newPath + entry.path.slice(oldPath.length)
+    return { ...entry, path, name: path.slice(path.lastIndexOf('/') + 1) }
+  }))
+}

@@ -12,6 +12,7 @@ const exposed: Record<string, unknown> = {}
 vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: (name: string, value: unknown) => void (exposed[name] = value) },
   ipcRenderer: { invoke: vi.fn(), on: vi.fn(), send: vi.fn(), removeListener: vi.fn() },
+  webUtils: { getPathForFile: (file: unknown) => `path of ${String(file)}` },
 }))
 vi.spyOn(crypto, 'randomUUID').mockReturnValue('0-0-0-0-0')
 

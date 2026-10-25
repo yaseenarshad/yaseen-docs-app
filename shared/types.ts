@@ -722,10 +722,19 @@ export interface FileClipRequest {
  */
 export type FileClipState = { count: number; op: 'copy' | 'cut'; paths: string[] } | null
 
-/** Paste the clipboard INTO this folder (D5: a dir row → itself, a file row → its parent, blank space → the vault root). Must exist — never created. */
+/**
+ * Paste the clipboard INTO this folder (D5: a dir row → itself, a file row → its parent, blank space → the vault root). Must exist — never created.
+ * `expect` is the clip the window confirmed with a fresh `clipState()` read at paste time (YAZ-3266): its verb and paths, as
+ * main answered them. Main pastes only that clip: when its own choice (`clipNow()`) differs, nothing is pasted and the paste
+ * fails `CONFLICT` with `CLIP_CHANGED`. So the window's D21 sheet, D20 and undo record always speak for the clip that ran.
+ */
 export interface PasteRequest {
   targetDir: string
+  expect: { op: 'copy' | 'cut'; paths: string[] }
 }
+
+/** `fs:paste`'s `CONFLICT` (YAZ-3266): the clipboard is not the one the window confirmed, so nothing was pasted. */
+export const CLIP_CHANGED = 'The clipboard changed. Paste again.'
 
 /**
  * Per-entry outcome of a paste (D3): every clipboard entry lands in exactly one of the two
@@ -739,6 +748,70 @@ export interface PasteResponse {
   pasted: { from: string; to: string; kind: 'file' | 'dir' }[]
   failed: { from: string; code: BridgeErrorCode; message: string }[]
 }
+
+/**
+ * Finder's items dropped on a folder of the sidebar (YAZ-3253 D3, D9A): absolute paths, as the
+ * preload's `file.pathFor` reads them, moved INTO `targetDir`, which must be in a vault of the
+ * calling window. The app clipboard is never read or written.
+ */
+export interface ImportRequest {
+  paths: string[]
+  targetDir: string
+}
+
+/** The sentence a move between two vaults hears (YAZ-2602 R11): from the sidebar, App's door and main (`fs:import`, S22) alike. */
+export const BETWEEN_VAULTS = 'To move between vaults, use cut and paste'
+
+/**
+ * Per-item outcome of a drop from Finder (YAZ-3253 D9A), in the order of `paths`. From the same
+ * disk an item MOVES (`moved`, through the paste's move verb); from another disk (`EXDEV`) it is
+ * COPIED under its own name and stays in Finder (`copied`). A clash fails `ALREADY_EXISTS` and the
+ * item stays (S19). An item inside another vault the app has open fails `BAD_REQUEST` "To move
+ * between vaults, use cut and paste" (S22). A hidden item (its name starts with ".") is in no list (S20).
+ */
+export interface ImportResponse {
+  moved: PasteResponse['pasted']
+  copied: PasteResponse['pasted']
+  failed: PasteResponse['failed']
+}
+
+/**
+ * Rows dragged out of the sidebar (YAZ-3254 D4): each path absolute and inside a vault of the
+ * calling window (never a vault itself); `icon` the drag's pill (D6), a `data:image/png;base64,`
+ * URL under 64 KB. Main starts the OS drag (`webContents.startDrag`), and Finder takes copies.
+ */
+export interface DragOutRequest {
+  paths: string[]
+  icon: string
+}
+
+/**
+ * Files dropped anywhere in a window of the app (YAZ-3263): their absolute paths, as the preload's
+ * `file.pathFor` reads them. Main matches them to the last drag out of ANOTHER window: a drop in a
+ * window of the app is no copy to Finder, so that window's box must not ask.
+ */
+export interface DroppedHereRequest {
+  paths: string[]
+}
+
+/** `file:drag-landed`, to the ONE window whose drag out another window of the app took (YAZ-3263): the paths of that drag, as its `fs:drag-out` sent them. */
+export interface DragLandedEvent {
+  paths: string[]
+}
+
+/**
+ * `file:drag-ended`, to the ONE window whose `fs:drag-out` started the drag (YAZ-3294 D24): the mouse
+ * button came up. The paths of that drag, as its `fs:drag-out` sent them. macOS only.
+ */
+export interface DragEndedEvent {
+  paths: string[]
+}
+
+/**
+ * The sound of a gesture that succeeded (YAZ-3267 D15), as Finder plays it: `land` when items land
+ * (a paste, a drag-move, a Finder drop, an undo or a redo of a move), `trash` when items go to the Trash.
+ */
+export type GestureSound = 'land' | 'trash'
 
 // ---------- pickFolder() ----------
 
@@ -2248,6 +2321,23 @@ export interface DeleteRequest {
 
 /** In-app delete (GRO-2272): what moved to the system Trash. */
 export interface DeleteResponse {
+  path: string
+  kind: 'file' | 'dir'
+  /**
+   * Where the entry is in the Trash now (YAZ-3268 D16), found by its file ID (`ino` + `dev`), also
+   * under a name the Trash gave it. Null when main did not find it: then the delete has no Undo (S61).
+   */
+  trashed: string | null
+}
+
+/** The Undo of a delete (YAZ-3268 D16): `trashed` (a `DeleteResponse.trashed`) goes back to `path`, its old place. */
+export interface PutBackRequest {
+  trashed: string
+  path: string
+}
+
+/** What came back from the Trash (YAZ-3268 D16), and where it is now. */
+export interface PutBackResponse {
   path: string
   kind: 'file' | 'dir'
 }

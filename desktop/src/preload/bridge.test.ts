@@ -10,6 +10,7 @@ import { SPECIAL } from '@shared/ipc'
 vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: vi.fn() },
   ipcRenderer: { invoke: vi.fn(), on: vi.fn(), send: vi.fn(), removeListener: vi.fn() },
+  webUtils: { getPathForFile: vi.fn((file: { name: string }) => `/Users/yasin/Downloads/${file.name}`) },
 }))
 
 describe('preload bridge specials', () => {
@@ -81,6 +82,16 @@ describe('preload bridge specials', () => {
     expect(b).toHaveBeenCalledTimes(2)
     offB()
     expect(ipcRenderer.send).toHaveBeenCalledWith(SPECIAL.watchUnsubscribe, idB)
+  })
+
+  it('file.pathFor reads a dropped File\'s path through webUtils, with no IPC (YAZ-3253 D3)', async () => {
+    const { ipcRenderer, webUtils } = await import('electron')
+    const { bridge } = await import('./index')
+    vi.mocked(ipcRenderer.invoke).mockClear()
+    const file = { name: 'Note.md' } as unknown as File
+    expect(bridge.file.pathFor(file)).toBe('/Users/yasin/Downloads/Note.md')
+    expect(webUtils.getPathForFile).toHaveBeenCalledExactlyOnceWith(file)
+    expect(ipcRenderer.invoke).not.toHaveBeenCalled()
   })
 
   it('acks app:flush only after every onFlush listener settled (GRO-2160 close handshake)', async () => {

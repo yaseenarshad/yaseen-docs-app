@@ -72,7 +72,7 @@ import { flushRenamedPath } from '../lib/renameContinuity'
 import { basename, dirname, relTo, stripExt } from '../lib/paths'
 import { folderResolver, linkResolver } from './folderLinks'
 import { folderRecord, foldersByDir } from './shortcuts'
-import { buildViewOnlyCatalogFromEntries, type ViewOnlyCatalog } from './viewOnlyCatalog'
+import { movedCatalog, type ViewOnlyCatalog } from './viewOnlyCatalog'
 
 // The rewrite of ONE file's text is in `@shared/linkRewrite` (YAZ-2677): the main process changes
 // an ID to a new ID with the same parser. What a rename MOVED is decided here and handed to it.
@@ -230,9 +230,14 @@ function makeResolves({ ids, root, oldPath, kind, records, folders = [], dirs = 
  * banner's N; N === 0 → no banner, nothing happens at all (the locked ruling). For an external
  * rename pass a PRE-rename snapshot (`preRenameRecords` synthesises one).
  */
-export function countLinkReferences({ ids, root, oldPath, kind = 'file', records, folders = [], dirs, viewOnlyCatalog, title }: Omit<UpdateLinksOptions, 'newPath'>): number {
+export function countLinkReferences(opts: Omit<UpdateLinksOptions, 'newPath'>): number {
+  return linkingNotes(opts).length
+}
+
+/** The notes (and folder pages) whose links reach `oldPath`: the set `countLinkReferences` counts, by path — so a caller can join the sets of several items (YAZ-3254 D9B). */
+export function linkingNotes({ ids, root, oldPath, kind = 'file', records, folders = [], dirs, viewOnlyCatalog, title }: Omit<UpdateLinksOptions, 'newPath'>): string[] {
   const { resolves } = makeResolves({ ids, root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
-  return [...records, ...folders].filter(makeReferences(resolves)).length
+  return [...records, ...folders].filter(makeReferences(resolves)).map((record) => record.path)
 }
 
 /** Rewrite every referencing note on disk; see the module doc for the whole discipline. */
@@ -264,12 +269,7 @@ export async function updateLinksAfterRename({ ids, root, oldPath, newPath, kind
         })
       : folders
   const postLink = linkResolver(postRecords, root, dirs.map(mapMoved), postFolders)
-  const postViewOnlyCatalog = viewOnlyCatalog === null || viewOnlyCatalog === undefined
-    ? null
-    : buildViewOnlyCatalogFromEntries(root, viewOnlyCatalog.entries.map((entry) => {
-        const path = mapMoved(entry.path)
-        return path === entry.path ? entry : { ...entry, path, name: basename(path) }
-      }))
+  const postViewOnlyCatalog = viewOnlyCatalog === null || viewOnlyCatalog === undefined ? null : movedCatalog(viewOnlyCatalog, oldPath, newPath)
   const id = (kind === 'dir' ? folderRecord(folders, oldPath) : records.find((r) => r.path === oldPath))?.id
   const newTarget: NewTarget = (target) => {
     const hit = resolveTargetPath(target) as string // non-null: `resolves` vetted this target
