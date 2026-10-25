@@ -32,8 +32,16 @@ describe('Recents perf (YAZ-3235)', () => {
     expect(cold).toBeLessThan(50)
 
     // A save: one log is a new object; the trees are the same objects, so their file sets are not read again.
-    const t1 = performance.now()
-    for (let i = 0; i < 100; i++) recentDays(recentFiles(trees, roots, [{ ...edits[0], '/a/Folder 0/Note 0.md': T + i }, edits[1], edits[2]]), new Date(T))
-    expect((performance.now() - t1) / 100).toBeLessThan(2)
+    // The median of 100 saves is the budget (YAZ-3328): one GC pause on a CI runner tipped the mean of
+    // 100 over 2 ms, while re-reading the trees costs every save ~10x that and still fails here.
+    const saves = Array.from({ length: 100 }, (_, i) => [{ ...edits[0], '/a/Folder 0/Note 0.md': T + i }, edits[1], edits[2]])
+    const runs = saves.map((logs) => {
+      const t1 = performance.now()
+      recentDays(recentFiles(trees, roots, logs), new Date(T))
+      return performance.now() - t1
+    })
+    const median = [...runs].sort((a, b) => a - b)[runs.length >> 1]
+    console.log(`recents perf: cold ${cold.toFixed(1)} ms, a save median ${median.toFixed(2)} ms, worst ${Math.max(...runs).toFixed(2)} ms of 100`)
+    expect(median).toBeLessThan(2)
   })
 })
