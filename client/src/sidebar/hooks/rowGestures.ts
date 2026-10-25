@@ -10,7 +10,7 @@ import { BETWEEN_VAULTS, CLIP_CHANGED, type FileClipState, type SidebarLens, typ
 import { api, BridgeRequestError } from '../../api'
 import { playGestureSound } from '../../lib/gestureSound'
 import type { MovedGesture } from '../../lib/moveHistory'
-import { countKinds, gestureNotice, namedItems, onDisk, type NoticeKind } from '../../lib/notice'
+import { gestureNotice, namedItems, onDisk, type NoticeKind } from '../../lib/notice'
 import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
@@ -463,12 +463,12 @@ export function useFileClipboard(
   /**
    * Cut / Copy: hand the ordered paths to main (🔒 D1) and SAY SO — every clipboard write confirms
    * (YAZ-1341), and a refusal is reported, never swallowed. The selection stands: acting on it is
-   * not the same as ending it (YAZ-1337). It says the items by kind, as the menu's label does:
-   * "Cut 1 folder and 2 files" (YAZ-3293 D23).
+   * not the same as ending it (YAZ-1337). It says the items by kind and names them, as every gesture
+   * toast does: "Cut 1 folder and 2 files (Projects, Todo.md, Plan.md)" (YAZ-3293 D23, YAZ-3305).
    */
   const clipTo = useCallback(
     (paths: string[], op: 'copy' | 'cut') => {
-      const what = countKinds(paths.map((path) => ({ kind: dirs.includes(path) ? 'dir' : 'file' })))
+      const what = namedItems(paths.map((path) => onDisk(path, dirs.includes(path) ? 'dir' : 'file')))
       api.file.clip({ paths, op }).then(
         () => onNotice(op === 'cut' ? `Cut ${what}` : `Copied ${what}`, op),
         (err: unknown) => onNotice(`Can't ${op}: ${err instanceof Error ? err.message : String(err)}`, 'error'),

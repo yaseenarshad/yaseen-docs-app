@@ -79,5 +79,17 @@ describe('whenMouseUp (YAZ-3294 D24)', () => {
     new Function('ObjC', '$', 'delay', MOUSE_UP_SCRIPT)(ObjC, $, delay)
     expect(waits).toBe(0)
   })
+
+  it('the script waits while a button is down and ends when it comes up (checker gap, YAZ-3294)', () => {
+    // The stand-in bridge reports a button down for 3 polls, then up — each a wrapper, as osascript gives it.
+    let waits = 0
+    const $ = { NSEvent: { get pressedMouseButtons() { return new String(waits < 3 ? '1' : '0') } } }
+    const ObjC = { import: () => undefined }
+    const delay = () => {
+      if (++waits > 10) throw new Error('the script does not end when the button comes up')
+    }
+    new Function('ObjC', '$', 'delay', MOUSE_UP_SCRIPT)(ObjC, $, delay)
+    expect(waits).toBe(3)
+  })
 })
 

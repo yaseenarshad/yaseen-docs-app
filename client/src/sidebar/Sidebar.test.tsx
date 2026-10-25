@@ -7364,7 +7364,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     rightClick(rowByPath(el, '/v/a.md'))
     await act(async () => itemByLabel(el, 'Cut')?.click())
     expect(bridge.file.clip).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md'], op: 'cut' })
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Cut 1 file', 'cut')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Cut 1 file (a.md)', 'cut') // names, as every gesture toast (YAZ-3305)
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
@@ -7376,7 +7376,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(itemByLabel(el, 'Cut 2 files')).toBeDefined()
     await act(async () => itemByLabel(el, 'Copy 2 files')?.click())
     expect(bridge.file.clip).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md', '/v/c.md'], op: 'copy' }) // …tree order out
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied 2 files', 'copy')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied 2 files (a.md, c.md)', 'copy') // names, in the order clipped (YAZ-3305)
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(2)
   })
 
