@@ -1,4 +1,5 @@
 import type { FileClipState } from '@shared/types'
+import { countItems, countKinds } from '../lib/notice'
 import type { MenuTargets } from './Sidebar'
 
 /**
@@ -116,7 +117,8 @@ export interface MenuHandlers {
   /** "Remove shortcut" on a shortcut row (YAZ-2290 E5): the note, and the folder it stops appearing in. */
   onRemoveShortcut: (path: string, dir: string) => void
   onRename: (path: string) => void
-  onDelete: (path: string) => void
+  /** Delete (GRO-2272): the row, or the ordered 2+ selection that holds it (YAZ-3272 D21); the caller asks first. */
+  onDelete: (paths: string[]) => void
   /** "Add vault to this window ▸" (YAZ-2602 D2): a known vault's path; the caller checks it and says why it cannot be added. */
   onAddVault: (path: string) => void
   /** Its "Open folder…" (S3): the system picker, and the picked folder is added. */
@@ -139,8 +141,6 @@ type Leaf = (t: MenuSectionTargets, h: MenuHandlers) => MenuAction | null
 
 /** Why a clipboard write failed, as the notices spell it — shared with the vault menu (YAZ-1798). */
 export const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
-/** "1 item" / "3 items" — the one spelling the menu's labels and the Sidebar's notices share. */
-export const countItems = (n: number) => (n === 1 ? '1 item' : `${n} items`)
 
 // ---- (1) Open / View: "Show in sidebar", a folder's Open, the plural open and the focus toggle — nothing here writes to disk ----
 
@@ -193,15 +193,18 @@ const focus: Leaf = (t, h) => {
 
 // ---- (2) Clipboard: the file clipboard (YAZ-1674), then the text clipboard ----
 
+/** A counted label's items by kind (YAZ-3293 D23): "1 folder and 2 files", off the targets' `folderPaths`. */
+const kindsOf = (t: MenuSectionTargets, paths: readonly string[]) => countKinds(paths.map((path) => ({ kind: t.folderPaths.includes(path) ? 'dir' : 'file' })))
+
 /**
  * Cut / Copy (🔒 D5, YAZ-1674): ONE rule, two verbs — any ROW, file or dir, both lenses; hidden on
  * blank space (there is nothing to clip). Inside a 2+ selection the target is the ORDERED
- * selection and the label counts it; else the one row and the bare verb.
+ * selection and the label counts it by kind ("Cut 1 folder and 2 files", YAZ-3293 D23); else the one row and the bare verb.
  */
 const clipVerb = (id: string, verb: string, hint: string, pick: (h: MenuHandlers) => (paths: string[]) => void): Leaf => (t, h) => {
   const paths = t.clipPaths
   if (paths === null) return null
-  return { id, label: paths.length >= 2 ? `${verb} ${paths.length} items` : verb, hint, onSelect: () => pick(h)(paths) }
+  return { id, label: paths.length >= 2 ? `${verb} ${kindsOf(t, paths)}` : verb, hint, onSelect: () => pick(h)(paths) }
 }
 const cut = clipVerb('cut', 'Cut', '⌘X', (h) => h.onCut)
 const copy = clipVerb('copy', 'Copy', '⌘C', (h) => h.onCopy)
@@ -209,7 +212,8 @@ const copy = clipVerb('copy', 'Copy', '⌘C', (h) => h.onCopy)
 /**
  * Paste (🔒 D5, YAZ-1674): offered wherever "New folder" is, and
  * DISABLED — not hidden — while the clipboard is empty, so the verb is discoverable before the
- * first Cut or Copy. With something clipped the label counts it: "Paste 1 item", "Paste 3 items".
+ * first Cut or Copy. With something clipped the label counts it: "Paste 1 item", "Paste 3 items" — not by kind:
+ * main's clip state has no kinds, and a clip of another window holds paths this tree may not (YAZ-3293).
  * Withheld on a SHORTCUT row with Cut and Copy (YAZ-2290 E5): the row is not a file in this folder.
  * And where there is no folder to paste into: blank space under two or more vaults (YAZ-2602 S10).
  */
@@ -427,12 +431,13 @@ const openIn: Item = (t, h) => {
  * Rename, which is the misclick pair that matters most; 🔒 D7 now puts a whole group ("Open in ▸")
  * and two separators between them.
  * Delete opens the confirm sheet; it must NEVER delete directly. Null on blank space: no target,
- * and main refuses the vault root anyway.
+ * and main refuses the vault root anyway. Inside a 2+ selection it takes the whole ordered selection
+ * and counts it by kind — "Delete 2 files" (YAZ-3272 D21, S70; YAZ-3293 D23), as Cut does; else the one row and the bare verb.
  */
 const del: Leaf = (t, h) => {
-  const path = t.deletePath
-  if (path === null) return null
-  return { id: 'delete', label: 'Delete', danger: true, onSelect: () => h.onDelete(path) }
+  const paths = t.deletePaths
+  if (paths === null) return null
+  return { id: 'delete', label: paths.length >= 2 ? `Delete ${kindsOf(t, paths)}` : 'Delete', danger: true, onSelect: () => h.onDelete(paths) }
 }
 
 /**

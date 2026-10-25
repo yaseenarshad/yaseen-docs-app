@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { ClipboardPasteRequest, PropertiesResponse, WatchEvent } from '@shared/types'
 import { type Bridge, CONTRACT, type Envelope, isLeaf, SPECIAL, type YaseenDocsApi } from '@shared/ipc'
 
@@ -111,6 +111,8 @@ const api: YaseenDocsApi = {
     setBaseGroups: (root, key, collapsed) => call(CONTRACT.state.setBaseGroups.channel, root, key, [...collapsed]),
   },
   window: { ...generated.window, onFlush: (listener) => listen(flushListeners, listener) },
+  // A dropped Finder file's path (YAZ-3253 D3): Electron removed `File.path`; no IPC, the preload reads it.
+  file: { ...generated.file, pathFor: (file) => webUtils.getPathForFile(file) },
   menu: {
     ...generated.menu,
     onCopyAs: (listener) => listen(copyListeners, listener),

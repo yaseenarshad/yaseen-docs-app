@@ -5,6 +5,7 @@ exports[`window.yaseenDocs is exactly this surface (YAZ-2200) 1`] = `
 on app:flush
 on menu:paste-as
 on menu:copy-as
+app.sound/1: invoke app:sound ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 boardHead/1: invoke fs:board-head ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 coldDiff/1: invoke fs:cold-diff ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.delete/1: invoke components:delete ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -31,10 +32,17 @@ favorites.set/2: invoke favorites:set ["a0","a1"]; => "answer"; !> {"code":"NOT_
 file.clip/1: invoke fs:clip ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.clipState/0: invoke fs:clip-state []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.delete/1: invoke fs:delete ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.dragOut/1: invoke fs:drag-out ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.droppedHere/1: invoke fs:dropped-here ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.import/1: invoke fs:import ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.onClipChanged/1: on clip:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off clip:changed
 file.onDeleted/1: on file:deleted -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:deleted
+file.onDragEnded/1: on file:drag-ended -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:drag-ended
+file.onDragLanded/1: on file:drag-landed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:drag-landed
 file.onRenamed/1: on file:renamed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:renamed
 file.paste/1: invoke fs:paste ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.pathFor/1: (no IPC)
+file.putBack/1: invoke fs:put-back ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.rename/1: invoke fs:rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.repairRename/1: invoke file:repair-rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.retitle/1: invoke fs:retitle ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
