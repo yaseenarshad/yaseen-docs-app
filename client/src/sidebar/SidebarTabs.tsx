@@ -183,14 +183,19 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
         // and stop at both ends; Enter shows the tab (the button's own click), and ↓ on a tab that does
         // not show asks for it too. ↓ on the tab that shows goes into its rows, or into the search bar:
         // that is the window's listener in Sidebar. ↑ has nowhere to go. The keys are taken, so → goes
-        // to no page from here.
+        // to no page from here. The ⋯ button is the walk's end past the last tab (YAZ-3300): ↑ from the
+        // search bar lands on it when it is lit, so ← goes to the last tab, → stays, ↑ has nowhere to go,
+        // and ↓ is the window's, as on the tab that shows.
         onKeyDown={(e) => {
-          const tab = e.target instanceof HTMLElement && e.target.matches('.sidebar__lens') ? e.target : null
-          if (tab === null || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+          const on = e.target instanceof HTMLElement ? e.target : null
+          const tab = on?.matches('.sidebar__lens') === true ? on : null
+          const onMore = on !== null && on === moreRef.current
+          if ((tab === null && !onMore) || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
           if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
             const tabs = [...e.currentTarget.querySelectorAll<HTMLElement>('.sidebar__lens')]
-            tabs[tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1)]?.focus()
-          } else if (e.key === 'ArrowDown' && tab.getAttribute('aria-selected') !== 'true') tab.click()
+            if (tab !== null) tabs[tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1)]?.focus()
+            else if (e.key === 'ArrowLeft') tabs.at(-1)?.focus()
+          } else if (e.key === 'ArrowDown' && tab !== null && tab.getAttribute('aria-selected') !== 'true') tab.click()
           else if (e.key !== 'ArrowUp') return
           e.preventDefault()
         }}

@@ -4661,6 +4661,25 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(document.activeElement?.textContent).toBe('Files')
   })
 
+  it('1A- (YAZ-2663 D12): ← on the lit ⋯, where ↑ from the search bar lands, goes to the last tab on the bar', async () => {
+    const { el } = await mount({ lens: 'search', ...withTabs({ hidden: ['search'] }) })
+    act(() => searchInput(el)?.focus())
+    key('ArrowUp')
+    expect(document.activeElement).toBe(more(el))
+    key('ArrowLeft')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Recents')
+  })
+
+  it('1A- (YAZ-2663 D12): → on ⋯ stays in the row, as → on the last tab does; it does not leave for the page', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el } = await mount({ lens: 'search', onLeaveToPage, ...withTabs({ hidden: ['search'] }) })
+    act(() => searchInput(el)?.focus())
+    key('ArrowUp')
+    key('ArrowRight')
+    expect(onLeaveToPage).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(more(el))
+  })
+
   describe('the fit (D1, S2 to S5, S30)', () => {
     // A fake layout: the row is `width` px wide, Files 47 px, a glyph 31 px, each button 30 px, no gap and no padding (no CSS in jsdom).
     let width = 400
