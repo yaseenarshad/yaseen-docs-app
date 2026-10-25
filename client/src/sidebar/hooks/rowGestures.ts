@@ -1,7 +1,8 @@
 /**
  * What the rows do (YAZ-2202, moved out of `Sidebar.tsx` as-is): the multi-select both trees share,
- * the file clipboard, the inline create and rename inputs, and the two drags — a file onto a folder
- * (a move on disk) and a top row along its tab's list.
+ * the file clipboard, the inline create and rename inputs, and the two drags — a row, or the
+ * selection, onto a folder (a move on disk; folders and the selection since YAZ-3251) and a top row
+ * along its tab's list.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { isMarkdown } from '@shared/fileKind'
@@ -115,51 +116,119 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
   return { selectedPaths, dispatchSelection, orderedSelectedPaths, selection }
 }
 
+/** How long a drag holds over a closed folder before it opens (YAZ-3251 D8). */
+export const SPRING_MS = 700
+
+/**
+ * What a row drag carries (YAZ-3251 D5, Finder's rule): a selected row takes the whole selection,
+ * in on-screen order (`ordered`); any other row goes alone. A row inside another row that goes is
+ * left out — the folder carries it (S5) — and a row that never moves on disk (`fixed`: a vault
+ * row) stays (S8). A shortcut row never starts a drag, and a click on one selects nothing, so no
+ * selection holds one (YAZ-2290 D2).
+ */
+export function dragSet(path: string, selected: ReadonlySet<string>, ordered: () => string[], fixed: (path: string) => boolean): string[] {
+  const picked = (selected.has(path) ? ordered() : [path]).filter((p) => !fixed(p))
+  return picked.filter((p) => !picked.some((other) => p.startsWith(`${other}/`)))
+}
+
+/** The class a lit drop target wears (YAZ-3251 D2): the root header has its own. */
+const dropClass = (el: HTMLElement): string => (el.classList.contains('sidebar__header') ? 'sidebar__header--drop' : 'tree__row--drop')
+
 export function useTreeDrag(
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
+  /** A drop of two or more rows (YAZ-3250 D1): App's door for a list of moves. */
+  onMoveEntries: (moves: Move[]) => Promise<void>,
   /** The list the shown tab's top rows reorder, and its writer (YAZ-2631 D3). */
   orderRef: RefObject<readonly string[]>,
   saveOrder: (next: string[]) => void,
   rootOf: (path: string) => string,
   onNotice: (message: string, kind?: NoticeKind) => void,
+  /** What a drag carries (D5): the selection, in on-screen order, and its `set`. */
+  selection: TreeSelection,
+  orderedSelectedPaths: () => string[],
+  /** Every folder of the window, so a move names its kind; and the vault rows, which never move on disk. */
+  dirs: readonly string[],
+  vaultRows: ReadonlyMap<string, string>,
 ) {
-  // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
-  const [dragging, setDragging] = useState<string | null>(null)
-  const [dropDir, setDropDir] = useState<string | null>(null)
+  // Drag-to-move (E1b; folders and the selection since YAZ-3251): the dragged paths and the lit
+  // target live in REFS (D2), so a hover renders nothing — the lit row wears its class by DOM.
+  const dragging = useRef<string[]>([])
+  const lit = useRef<{ dir: string | null; el: HTMLElement | null }>({ dir: null, el: null })
+  const spring = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // What the callbacks read at the moment of the gesture, so the `move` they make keeps ONE identity.
+  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows })
+  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows }
   // Drag-to-reorder (YAZ-2631 D3), ONE state for the tab that is shown: the dragged top row + the hovered row and edge.
   const [reorderDragging, setReorderDragging] = useState<string | null>(null)
   const [reorderOver, setReorderOver] = useState<{ path: string; edge: 'before' | 'after' } | null>(null)
 
-  const dropOnDir = useCallback(
-    (dir: string) => {
-      const path = dragging
-      setDragging(null)
-      setDropDir(null)
-      if (path === null) return
-      // A drag moves inside ONE vault (YAZ-2602 R11): a folder, or a vault row, of a different vault refuses it.
-      if (rootOf(path) !== rootOf(dir)) return onNotice('To move between vaults, use cut and paste')
-      const target = `${dir}/${basename(path)}`
-      if (target === path) return // dropped into its own folder: nothing to do
-      // The SAME rename flow as the context menu — never-overwrite and every failure as a
-      // passive notice come with it; link updates and the workspace remap ride the same pipeline.
-      void onRenameFile(path, target, 'file')
-    },
-    [dragging, onRenameFile, rootOf, onNotice],
-  )
-
-  const fileMove: TreeFileMove = useMemo(
-    () => ({
-      dragging,
-      dropDir,
-      start: setDragging,
-      end: () => {
-        setDragging(null)
-        setDropDir(null)
+  const fileMove: TreeFileMove = useMemo(() => {
+    /**
+     * The ONE place the lit target changes (D2): the old target loses its class, the new one gains
+     * it, and a spring armed for the old one is cleared (D8). `open` arms a new one: a closed folder.
+     */
+    const light = (dir: string | null, el: HTMLElement | null, open?: () => void) => {
+      const now = lit.current
+      if (now.dir === dir && now.el === el) return
+      now.el?.classList.remove(dropClass(now.el))
+      el?.classList.add(dropClass(el))
+      lit.current = { dir, el }
+      if (spring.current !== null) clearTimeout(spring.current)
+      spring.current = open === undefined ? null : setTimeout(() => {
+        spring.current = null
+        open()
+      }, SPRING_MS)
+    }
+    /** A drop lands here: never in a dragged folder, nor in a folder inside one (S6). */
+    const accepts = (dir: string) => dragging.current.length > 0 && !dragging.current.some((path) => dir === path || dir.startsWith(`${path}/`))
+    const end = () => {
+      dragging.current = []
+      light(null, null)
+    }
+    return {
+      isDragging: () => dragging.current.length > 0,
+      accepts,
+      // Where every row drag begins (D5): YAZ-3254 makes this the OS drag, so it stays one function.
+      start: (path, top) => {
+        const { selection: picked, orderedSelectedPaths: ordered, vaultRows: vaults } = live.current
+        dragging.current = dragSet(path, picked.paths, ordered, (p) => vaults.has(p))
+        // An unselected row first becomes the selection (S4), then goes alone.
+        if (!picked.paths.has(path)) picked.set(path, top)
       },
-      hover: setDropDir,
-      drop: dropOnDir,
-    }),
-    [dragging, dropDir, dropOnDir],
+      end,
+      hover: light,
+      leave: (dir) => {
+        if (lit.current.dir === dir) light(null, null)
+      },
+      drop: (dir) => {
+        const paths = dragging.current
+        const ok = accepts(dir)
+        end()
+        if (!ok) return
+        const { rootOf: vaultOf, onNotice: say, dirs: folders, onRenameFile: renameOne, onMoveEntries: moveAll } = live.current
+        // A drag moves inside ONE vault (YAZ-2602 R11): a folder, or a vault row, of a different vault refuses it (S9).
+        if (paths.some((path) => vaultOf(path) !== vaultOf(dir))) return say('To move between vaults, use cut and paste')
+        // An item already in this folder is no move (S7).
+        const moves = paths.flatMap((oldPath): Move[] => {
+          const newPath = `${dir}/${basename(oldPath)}`
+          return newPath === oldPath ? [] : [{ oldPath, newPath, kind: folders.includes(oldPath) ? 'dir' : 'file' }]
+        })
+        // The SAME door as the context menu's rename for one row — never-overwrite, every failure as a
+        // passive notice, link updates and the workspace remap ride it; App's list door for more (YAZ-3250 D1).
+        const [one] = moves
+        if (moves.length === 1) void renameOne(one.oldPath, one.newPath, one.kind)
+        else if (moves.length > 1) void moveAll(moves)
+      },
+      // Finder's files dropped on a folder (D3): YAZ-3253 fills this in.
+      dropFiles: () => undefined,
+    }
+  }, [])
+  // A spring left armed when the panel goes would open a folder of a tree that is gone.
+  useEffect(
+    () => () => {
+      if (spring.current !== null) clearTimeout(spring.current)
+    },
+    [],
   )
 
   const dropReorder = useCallback(() => {
@@ -192,7 +261,7 @@ export function useTreeDrag(
     [reorderDragging, reorderOver, dropReorder],
   )
 
-  return { dragging, dropDir, setDropDir, dropOnDir, fileMove, reorder }
+  return { fileMove, reorder }
 }
 
 export function useFileClipboard(

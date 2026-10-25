@@ -10,7 +10,7 @@ import { pageName, useAllPathTitles } from '../lib/pageLabel'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences } from '../links/renameLinks'
-import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
+import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind, type Move } from '../links/shortcuts'
 import { ancestorDirs, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP } from '../search/searchCandidates'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -27,7 +27,7 @@ import { RecentList } from './RecentList'
 import { SessionList } from './SessionList'
 import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind } from '../lib/notice'
-import { Tree, type TreeFileMove } from './Tree'
+import { leftTarget, Tree, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
@@ -182,6 +182,12 @@ interface SidebarProps {
    * closes.
    */
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>
+  /**
+   * A drop of two or more rows (YAZ-3250 D1): App's one door for a list of moves. D21 asks once for
+   * the whole list; then each move runs as one drag does, in order, and one notice says them all.
+   * A drop of one row still goes to `onRenameFile`. Never rejects.
+   */
+  onMoveEntries: (moves: Move[]) => Promise<void>
   /** A title edit (YAZ-2420 🔒 D16), to the same door: the inline rename of a note or a folder. */
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>
   /**
@@ -432,8 +438,8 @@ const SEARCH_KEYS: readonly (readonly [keys: readonly string[], does: string])[]
 /** Which note is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
-/** The search tree's file move (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op. */
-const INERT_MOVE: TreeFileMove = { dragging: null, dropDir: null, start: () => undefined, end: () => undefined, hover: () => undefined, drop: () => undefined }
+/** The search tree's file move (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op and nothing is ever a drop target. */
+const INERT_MOVE: TreeFileMove = { isDragging: () => false, accepts: () => false, start: () => undefined, end: () => undefined, hover: () => undefined, leave: () => undefined, drop: () => undefined, dropFiles: () => undefined }
 
 /** What the search cuts before the tree has loaded, and its shortcut rows — none (S7, YAZ-2620): one object each, so the memoised tree sees no change (YAZ-2194). */
 const NO_NODES: readonly TreeNode[] = []
@@ -482,6 +488,7 @@ export function Sidebar({
   onRootMissing,
   onFileMissing,
   onRenameFile,
+  onMoveEntries,
   onRetitle,
   onDeleteFile,
   onNotice,
@@ -1067,7 +1074,7 @@ export function Sidebar({
   const orderRef = useRef<readonly string[]>([])
   orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : roots.map(stripSlash)
   const saveOrder = lens === 'favorites' ? saveFavoriteOrder : lens === 'focus' ? reorderFocus : onReorderVaults
-  const { dragging, dropDir, setDropDir, dropOnDir, fileMove, reorder } = useTreeDrag(onRenameFile, orderRef, saveOrder, rootOf, onNotice)
+  const { fileMove, reorder } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows)
 
   // YAZ-1801 D3 (YAZ-3039): every vault's held-back files as tree paths, one Set that keeps its
   // identity until a list really changes — the memoised levels compare it by identity.
@@ -1143,21 +1150,22 @@ export function Sidebar({
   return (
     <aside ref={setAside} className="sidebar" style={{ width }}>
       {/* The root header doubles as the "move to the vault root" drop target (E1b) — of a window
-          with one vault. With two or more each vault's own row is that target (YAZ-2602 S14). */}
+          with one vault. With two or more each vault's own row is that target (YAZ-2602 S14). It
+          lights as a row does, by the drag's one `light()` (YAZ-3251 D2): no render. */}
       <div
-        className={`sidebar__header${!multi && dropDir === root ? ' sidebar__header--drop' : ''}`}
+        className="sidebar__header"
         onDragOver={(e) => {
-          if (dragging === null || multi) return
+          if (multi || !fileMove.accepts(root)) return
           e.preventDefault()
           if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-          if (dropDir !== root) setDropDir(root)
+          fileMove.hover(root, e.currentTarget)
         }}
-        onDragLeave={() => {
-          if (!multi && dropDir === root) setDropDir(null)
+        onDragLeave={(e) => {
+          if (!multi && leftTarget(e)) fileMove.leave(root)
         }}
         onDrop={(e) => {
           e.preventDefault()
-          if (!multi) dropOnDir(root)
+          if (!multi) fileMove.drop(root)
         }}
       >
         {/* The vault switcher (YAZ-1767): the trigger is the header's top-left button (name + chevron,

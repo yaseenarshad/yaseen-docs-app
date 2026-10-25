@@ -14,8 +14,8 @@ import { requestZoom } from './editor/zoomRequest'
 import { requestBoardCommand } from './documents/boardCommand'
 import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
-import { countLinkReferences, renameNotice, updateLinksAfterRename } from './links/renameLinks'
-import { dropFolderValuesAfterMove, valuesLeftBehind, type LeftBehind } from './links/shortcuts'
+import { countLinkReferences, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
+import { dropFolderValuesAfterMove, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
 import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
@@ -46,6 +46,7 @@ import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { textVars } from './settings/headingStyles'
 import { plainEntryName } from './sidebar/createEntry'
+import { countItems } from './sidebar/menuSections'
 import { type SidebarClipboard, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
@@ -80,6 +81,34 @@ const OVERVIEW_CLOSED = { phase: 'closed', from: null } as const
 export const MOVE_ROW_TITLE_MAX = 40
 /** The longest a window glows with no word from main (YAZ-3091 D8): only a lost "off" ever reaches it. */
 export const GLOW_MAX_MS = 10_000
+
+/**
+ * What one move gesture did (YAZ-3250 D1): the moves main made, in order, and the folder values D20
+ * cleared on the way. One drag of one row or of many is one gesture; the undo list (YAZ-3255)
+ * records one of these for each.
+ */
+export interface MovedGesture {
+  moves: Move[]
+  cleared: ClearedValues[]
+}
+
+/** One rename through the pipeline (`applyRename`): what it did, or why main refused it. */
+type RenameOutcome = { move: Move; cleared: ClearedValues[]; links: RenameRewriteSummary } | { error: unknown }
+
+/** Why one move of a list did not run (S11): a name that is taken, else main's own words. */
+const moveFailure = (name: string, err: unknown): string =>
+  err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS' ? `${name} already exists` : `${name} — ${err instanceof Error ? err.message : String(err)}`
+
+/**
+ * The ONE notice of a move gesture (YAZ-3250 D1, D11): how many moved, and the first that did not,
+ * as the paste says it — "Moved 2 items, skipped 1: Plan already exists" (S11). The links that
+ * followed are said after it, as a rename says them. Null when nothing ran at all.
+ */
+export function movedNotice(moved: number, failed: readonly string[], links: RenameRewriteSummary): string | null {
+  if (moved === 0) return failed.length === 0 ? null : `Can't move${failed.length === 1 ? '' : ` ${countItems(failed.length)}`}: ${failed[0]}`
+  const head = failed.length === 0 ? `Moved ${countItems(moved)}` : `Moved ${countItems(moved)}, skipped ${failed.length}: ${failed[0]}`
+  return links.updated > 0 || links.skipped > 0 ? `${head}. ${renameNotice(links)}` : head
+}
 
 // A workspace state change still re-renders App, but unchanged retained editors must not render
 // with it: a folder's Board runs layout animation after every render, so an unrelated right
@@ -1207,11 +1236,11 @@ export function App() {
    * in place of `file.rename`, and answers with the path it built; and the link rewrite is told
    * the new title, so a link that spelled the old one follows it.
    */
-  const renameFile = useCallback(
-    async (oldPath: string, to: RenameTo, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<void> => {
+  const applyRename = useCallback(
+    async (oldPath: string, to: RenameTo, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<RenameOutcome | null> => {
       // The index, the folders and the links are the ones of the vault that holds the path (YAZ-2602 S30).
       const r = scopeOf(oldPath).root
-      if (r === null) return
+      if (r === null) return null
       // (a) our own unsaved buffers travel WITH the file(s). The kind is unknown until the
       // rename answers, so both run — each is a no-op for the other kind.
       await flushRenamedPath(oldPath)
@@ -1230,14 +1259,11 @@ export function App() {
       let kind: 'file' | 'dir'
       try {
         ;({ newPath, kind } = to.title === undefined ? await api.file.rename({ oldPath, newPath: to.newPath }) : await api.file.retitle({ path: oldPath, title: to.title }))
-      } catch (err) {
-        const exists = err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS'
-        const cannot = to.title === undefined ? "Can't rename" : "Can't change the title"
-        notify(exists ? `${cannot}: "${to.title ?? nameOf(to.newPath)}" already exists` : `${cannot}: ${err instanceof Error ? err.message : String(err)}`)
-        return
+      } catch (error) {
+        return { error }
       }
       // A note that left a folder leaves that folder's values behind (D20).
-      await dropFolderValuesAfterMove({ root: r, oldPath, newPath, kind, records, folders })
+      const cleared = await dropFolderValuesAfterMove({ root: r, oldPath, newPath, kind, records, folders })
       const hasMovedViewFile = viewOnlyCatalog?.entries.some((entry) =>
         kind === 'dir' ? entry.path.startsWith(`${oldPath}/`) : entry.path === oldPath,
       ) ?? false
@@ -1253,9 +1279,26 @@ export function App() {
         title: to.title,
         ...(hasMovedViewFile ? { viewOnlyCatalog } : {}),
       })
-      if (summary.updated > 0 || summary.skipped > 0) notify(renameNotice(summary))
+      return { move: { oldPath, newPath, kind }, cleared, links: summary }
     },
-    [scopeOf, nameOf, notify],
+    [scopeOf],
+  )
+
+  /** One rename or title edit, said: a refusal, or the links that followed. A move says itself (`runMoves`). */
+  const renameFile = useCallback(
+    async (oldPath: string, to: RenameTo, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<void> => {
+      const out = await applyRename(oldPath, to, viewOnlyCatalog)
+      if (out === null) return
+      if ('error' in out) {
+        const err = out.error
+        const exists = err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS'
+        const cannot = to.title === undefined ? "Can't rename" : "Can't change the title"
+        notify(exists ? `${cannot}: "${to.title ?? nameOf(to.newPath)}" already exists` : `${cannot}: ${err instanceof Error ? err.message : String(err)}`)
+        return
+      }
+      if (out.links.updated > 0 || out.links.skipped > 0) notify(renameNotice(out.links))
+    },
+    [applyRename, nameOf, notify],
   )
 
   /**
@@ -1275,12 +1318,15 @@ export function App() {
    * The chosen snapshot is pinned through confirmation, and a change to the window's vaults
    * cancels the request.
    */
-  const [pendingRename, setPendingRename] = useState<({ root: string; oldPath: string; kind: 'file' | 'dir'; viewOnlyCatalog: ViewOnlyCatalog | null } & ({ to: RenameTo; count: number } | { to: { newPath: string }; lost: LeftBehind })) | null>(null)
+  const [pendingRename, setPendingRename] = useState<{ root: string; oldPath: string; kind: 'file' | 'dir'; viewOnlyCatalog: ViewOnlyCatalog | null; to: RenameTo; count: number } | null>(null)
+  // A move gesture waiting on its D21 sheet (YAZ-3250 D1): one sheet for the whole list, one row or many.
+  const [pendingMoves, setPendingMoves] = useState<{ root: string; moves: Move[]; lost: LeftBehind } | null>(null)
   const renameRootGeneration = useRef(0)
   const vaultList = roots.join('\n')
   useLayoutEffect(() => {
     renameRootGeneration.current++
     setPendingRename(null)
+    setPendingMoves(null)
   }, [vaultList])
 
   const catalogForRename = useCallback(async (oldPath: string, kind: TreeNode['type']): Promise<ViewOnlyCatalog | null | undefined> => {
@@ -1309,18 +1355,81 @@ export function App() {
     }
   }, [scopeOf, nameOf, notify])
 
+  /**
+   * A list of moves through the pipeline one drag uses (YAZ-3250 D1), in the order given: each move
+   * reads its own catalog (`catalogForRename`) and runs its own rename (`applyRename`), so links,
+   * folder values and open tabs follow each one. A move that fails leaves the rest to run, and ONE
+   * notice says the whole list (S11). A change to the window's vaults stops what is left. It answers
+   * what moved and what D20 cleared, for the undo list (YAZ-3255).
+   */
+  const runMoves = useCallback(
+    async (moves: readonly Move[]): Promise<MovedGesture> => {
+      const generation = renameRootGeneration.current
+      const done: MovedGesture = { moves: [], cleared: [] }
+      const failed: string[] = []
+      const links = { updated: 0, skipped: 0 }
+      for (const { oldPath, newPath, kind } of moves) {
+        if (generation !== renameRootGeneration.current) break
+        const catalog = await catalogForRename(oldPath, kind)
+        if (generation !== renameRootGeneration.current) break
+        if (catalog === undefined) {
+          failed.push(`${nameOf(oldPath)} — couldn't load the current file list`)
+          continue
+        }
+        const out = await applyRename(oldPath, { newPath }, catalog)
+        if (out === null) continue
+        if ('error' in out) {
+          failed.push(moveFailure(nameOf(oldPath), out.error))
+          continue
+        }
+        done.moves.push(out.move)
+        done.cleared.push(...out.cleared)
+        links.updated += out.links.updated
+        links.skipped += out.links.skipped
+      }
+      const text = movedNotice(done.moves.length, failed, links)
+      if (text !== null) notify(text, done.moves.length === 0 ? 'error' : 'paste')
+      return done
+    },
+    [catalogForRename, applyRename, nameOf, notify],
+  )
+
+  /**
+   * The door for a list of moves (YAZ-3250 D1): a drop of two or more rows, and the pure move one
+   * drag makes (`requestRename`). D21 asks ONCE for the whole list, judged on the window's own
+   * snapshot (`valuesLeftBehind`); a list that clears nothing runs at once. A move into the folder
+   * the item is already in is no move (S7). All moves stay in one vault (YAZ-2602 R11).
+   */
+  const requestMoves = useCallback(
+    async (list: readonly Move[]): Promise<void> => {
+      const moves = list.filter((move) => move.newPath !== move.oldPath)
+      const first = moves[0]
+      if (first === undefined) return
+      const { root, wikilinks } = scopeOf(first.oldPath)
+      if (root === null) return
+      if (moves.some((move) => scopeOf(move.oldPath).root !== root || scopeOf(move.newPath).root !== root)) return notify('To move between vaults, use cut and paste')
+      const lost = valuesLeftBehind({ root, moves, records: wikilinks.records, folders: wikilinks.folders })
+      if (lost.folders.length > 0) return setPendingMoves({ root, moves, lost })
+      await runMoves(moves)
+    },
+    [scopeOf, runMoves, notify],
+  )
+
+  /** The move sheet's Move: the list runs as it does unasked, unless its vault left the window. Its Cancel moves nothing (S10). */
+  const confirmMoves = useCallback(() => {
+    if (pendingMoves === null) return
+    setPendingMoves(null)
+    if (pendingMoves.root === scopeOf(pendingMoves.moves[0].oldPath).root) void runMoves(pendingMoves.moves)
+  }, [pendingMoves, scopeOf, runMoves])
+
   const requestRename = useCallback(
     async (oldPath: string, to: RenameTo, kind: TreeNode['type']): Promise<void> => {
       const { root, wikilinks } = scopeOf(oldPath)
       if (root === null) return
+      // A MOVE keeps the name: it is the list door's, a list of one (YAZ-3250 D1).
+      if (to.title === undefined && !isNameChange(oldPath, to.newPath)) return requestMoves([{ oldPath, newPath: to.newPath, kind }])
       const catalog = await catalogForRename(oldPath, kind)
       if (catalog === undefined) return
-      if (to.title === undefined && !isNameChange(oldPath, to.newPath)) {
-        const lost = valuesLeftBehind({ root, moves: [{ oldPath, newPath: to.newPath, kind }], records: wikilinks.records, folders: wikilinks.folders })
-        if (lost.folders.length === 0) return renameFile(oldPath, to, catalog)
-        setPendingRename({ root, oldPath, to, kind, lost, viewOnlyCatalog: catalog })
-        return
-      }
       if (!settings.confirmRename) return renameFile(oldPath, to, catalog)
       const records = wikilinks.records
       const hasMovedViewFile = catalog?.entries.some((entry) =>
@@ -1337,7 +1446,7 @@ export function App() {
         viewOnlyCatalog: catalog,
       })
     },
-    [scopeOf, catalogForRename, renameFile, settings.confirmRename],
+    [scopeOf, catalogForRename, renameFile, requestMoves, settings.confirmRename],
   )
   // The door's two spellings, as the surfaces hold them: a path the gesture built, or a title typed.
   const requestPathRename = useCallback((oldPath: string, newPath: string, kind: TreeNode['type']) => requestRename(oldPath, { newPath }, kind), [requestRename])
@@ -1361,7 +1470,7 @@ export function App() {
   )
 
   // `dontAskAgain` is the box of the rename sheet (YAZ-2690 D2): the rename runs, and "Ask before
-  // renaming" goes off. The move sheet has no box and passes nothing.
+  // renaming" goes off. A move has its own sheet (`confirmMoves`).
   const confirmRename = useCallback((dontAskAgain = false) => {
     if (pendingRename === null) return
     if (pendingRename.root !== scopeOf(pendingRename.oldPath).root) {
@@ -1689,6 +1798,7 @@ export function App() {
           onRootMissing={dropVault}
           onFileMissing={onFileMissing}
           onRenameFile={requestPathRename}
+          onMoveEntries={requestMoves}
           onRetitle={requestRetitle}
           onDeleteFile={deleteFile}
           onNotice={notify}
@@ -1904,20 +2014,19 @@ export function App() {
       {/* The name-change confirm (⚡ YAZ-888): App's, not the sidebar's, because the door is
           App's — the title and the tree both reach it, and one sheet answers for both. A move
           that would clear a folder's values asks through its own sheet (D21). */}
-      {pendingRename !== null &&
-        ('lost' in pendingRename ? (
-          <ConfirmMove moves={[{ oldPath: pendingRename.oldPath, newPath: pendingRename.to.newPath, kind: pendingRename.kind }]} lost={pendingRename.lost} titles={titles} onConfirm={() => confirmRename()} onCancel={() => setPendingRename(null)} />
-        ) : (
-          <ConfirmRename
-            oldPath={pendingRename.oldPath}
-            {...pendingRename.to}
-            kind={pendingRename.kind}
-            count={pendingRename.count}
-            titles={titles}
-            onConfirm={confirmRename}
-            onCancel={() => setPendingRename(null)}
-          />
-        ))}
+      {pendingRename !== null && (
+        <ConfirmRename
+          oldPath={pendingRename.oldPath}
+          {...pendingRename.to}
+          kind={pendingRename.kind}
+          count={pendingRename.count}
+          titles={titles}
+          onConfirm={confirmRename}
+          onCancel={() => setPendingRename(null)}
+        />
+      )}
+      {/* The move sheet (D21) asks once for a whole move gesture, one row or many (YAZ-3250 D1). */}
+      {pendingMoves !== null && <ConfirmMove moves={pendingMoves.moves} lost={pendingMoves.lost} titles={titles} onConfirm={confirmMoves} onCancel={() => setPendingMoves(null)} />}
       {/* "Kill all tabs" asks first (YAZ-2739 D3): the focus starts on Cancel, as on every sheet that takes something away. */}
       {killAsk && (
         <ConfirmSheet

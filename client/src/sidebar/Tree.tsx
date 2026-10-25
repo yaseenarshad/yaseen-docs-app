@@ -40,26 +40,46 @@ export interface PendingRename {
 }
 
 /**
- * Drag a FILE row onto a FOLDER row to move it there (E1b, GRO-2241). The TabBar's HTML5
- * drag idiom: component state carries the payload (`dataTransfer` is guarded — jsdom's
- * synthetic drags have none), a highlight class marks the hovered drop target. FILE rows
- * only — no multi-select, no folder dragging (Future note in GRO-2241).
+ * Drag a row onto a FOLDER to move it there (E1b, GRO-2241): a file, a folder, or the selection
+ * (YAZ-3251 D5). The TabBar's HTML5 drag idiom (`dataTransfer` is guarded — jsdom's synthetic drags
+ * have none). The drag lives in refs, not React state (D2): this object keeps ONE identity for the
+ * Sidebar's life, so `sameLevel` sees no change and a hover renders no level; the lit target wears
+ * its class by DOM. A file row takes the drop for its folder (D7), and a closed folder held under a
+ * drag opens (D8).
  */
 export interface TreeFileMove {
-  /** The dragged FILE row's path; null when no drag is in flight. */
-  dragging: string | null
-  /** The dir currently highlighted as the drop target (a dir row's path, or the root for the header). */
-  dropDir: string | null
-  start: (path: string) => void
+  /** A row drag is in flight. */
+  isDragging: () => boolean
+  /** A drop into `dir` would land: false for a dragged folder and for every folder inside it (S6). */
+  accepts: (dir: string) => boolean
+  /** A row drag begins (D5): the ONE place, which YAZ-3254 turns into the OS drag. `top`: the copy the row stands in (YAZ-3131). */
+  start: (path: string, top?: string) => void
   end: () => void
-  hover: (dir: string | null) => void
+  /** The drag is over `dir`, whose row `el` lights (null: none does). `open` arms the spring of a closed folder (D8). */
+  hover: (dir: string | null, el: HTMLElement | null, open?: () => void) => void
+  /** The pointer left a target for `dir`: its light goes, if it is the lit one. */
+  leave: (dir: string) => void
   drop: (dir: string) => void
+  /** Files from Finder dropped into `dir` (D3): YAZ-3253 fills this in. */
+  dropFiles: (dir: string, files: readonly File[]) => void
+}
+
+/**
+ * The pointer left a drop target (YAZ-3251 D2): a move into the target's own label or icon is no
+ * leave, so the light and a closed folder's spring (D8) hold. With no `relatedTarget` it is a leave.
+ */
+export const leftTarget = (e: React.DragEvent): boolean => !(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))
+
+/** The row that lights for a drop on a file row (YAZ-3251 D7): its folder's row, or at the top of a one-vault window the root header. */
+function folderRowOf(row: HTMLElement): HTMLElement | null {
+  const folder = row.closest('ul.tree')?.parentElement?.querySelector<HTMLElement>(':scope > .tree__row--dir')
+  return folder ?? row.closest('.sidebar')?.querySelector<HTMLElement>('.sidebar__header') ?? null
 }
 
 /**
  * Drag a TOP row to reorder (YAZ-1766 D4; one rule for every tab, YAZ-2631 D3): the SAME HTML5 idiom
  * as `TreeFileMove`, but a separate mechanism — it rewrites the tab's LIST and never touches disk.
- * On the top rows only, a file or a folder: a deeper file row still moves on disk, and a deeper folder row does not drag.
+ * On the top rows only, a file or a folder: a deeper row, file or folder, still moves on disk (YAZ-3251 D5).
  */
 export interface TreeReorder {
   /** The dragged top row's path; null when no drag is in flight. */
@@ -194,7 +214,7 @@ interface TreeProps {
   pending: PendingCreate | null
   /** The one row (file or dir) currently renamed inline (E1/E1b); null when none. */
   renaming: PendingRename | null
-  /** File drag-to-move state + callbacks (E1b); owned by the Sidebar. */
+  /** Drag-to-move (E1b; folders and the selection, YAZ-3251); owned by the Sidebar, one identity for its life. */
   move: TreeFileMove
   /** Multi-select state + gestures (YAZ-1336); owned by the Sidebar, shared with the Favorites tab. The search tree hands in its one highlighted match in this shape instead (YAZ-2620). */
   selection: TreeSelection
@@ -311,11 +331,26 @@ function TreeLevel({
     const name = depth > 0 ? undefined : [...vaultRows].find(([row]) => path.startsWith(`${row}/`))?.[1]
     return name !== undefined && <span className="tree__vault">{name}</span>
   }
-  // What a FILE row's drag does: reorder on a top row of a tree that reorders, else move on disk (E1b).
-  const fileDrag: Pick<TreeFileMove, 'start' | 'end'> = rowReorder ?? move
+  // What a row's drag does: reorder on a top row of a tree that reorders, else move on disk (E1b; a folder too, YAZ-3251 D5).
+  const rowDrag: Pick<TreeFileMove, 'start' | 'end'> = rowReorder ?? move
   // A top row of a SORTED Focus or Favorites list does not drag at all (YAZ-3227 D6): its drag would reorder, and
-  // the order is the sort's — it must not turn into a move on disk. A shortcut row never drags (YAZ-2290 D2).
-  const noDrag = (node: TreeNode): boolean => isShortcutRow(node) || (copies && depth === 0 && rowReorder === null)
+  // the order is the sort's — it must not turn into a move on disk. A shortcut row never drags (YAZ-2290 D2), and
+  // a vault row moves nothing on disk (YAZ-3251 S8): it drags only where its tree reorders.
+  const noDrag = (node: TreeNode): boolean => isShortcutRow(node) || (copies && depth === 0 && rowReorder === null) || (vaultRows.has(node.path) && rowReorder === null)
+  /** A row drag begins: the move or the reorder takes it (YAZ-3251 D5). */
+  const dragStart = (node: TreeNode) => (e: React.DragEvent) => {
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', node.path)
+    }
+    rowDrag.start(node.path, copyOf(node))
+  }
+  /**
+   * A file row takes the drop for its folder (YAZ-3251 D7) — the folder it is drawn in, so a
+   * shortcut row's is the folder it stands in. A top row of Focus or Favorites stands in no folder
+   * on show, and above the vault rows no folder stands: those take none.
+   */
+  const fileDrop = dirPath !== '' && !(copies && depth === 0)
   const dropEdge = (path: string) => (rowReorder?.over?.path === path ? ` tree__row--drop-${rowReorder.over.edge}` : '')
   // In a search tree (🔒 D5, YAZ-2620) a row the query did not match only gives a match its place.
   const context = (path: string) => (marks !== undefined && !marks.hits.has(path) ? ' tree__row--context' : '')
@@ -348,7 +383,7 @@ function TreeLevel({
               <button
                 type="button"
                 // The folder itself is a tab (YAZ-2290 D3), so its row is the active one while that tab is.
-                className={`tree__row tree__row--dir${vaultRows.has(node.path) ? ' tree__row--vault' : ''}${isActive(node) ? ' tree__row--active' : ''}${isSelected(node) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}${dropEdge(node.path)}${context(node.path)}`}
+                className={`tree__row tree__row--dir${vaultRows.has(node.path) ? ' tree__row--vault' : ''}${isActive(node) ? ' tree__row--active' : ''}${isSelected(node) ? ' tree__row--selected' : ''}${dropEdge(node.path)}${context(node.path)}`}
                 style={{ paddingLeft: 8 + depth * 14 }}
                 // Read by `flashTreeRows` (a Files reveal of a FOLDER, YAZ-1491) and by
                 // `orderedSelection`, which puts a selected folder in on-screen order (YAZ-1578).
@@ -382,25 +417,23 @@ function TreeLevel({
                   onOpenFile(node.path, copyOf(node))
                 }}
                 onContextMenu={(e) => onNodeContextMenu({ ...node, top: topOf(node) }, e)}
-                draggable={rowReorder !== null}
-                onDragStart={rowReorder === null ? undefined : (e) => {
-                  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-                  rowReorder.start(node.path)
-                }}
-                onDragEnd={rowReorder?.end}
+                draggable={!noDrag(node)}
+                onDragStart={noDrag(node) ? undefined : dragStart(node)}
+                onDragEnd={noDrag(node) ? undefined : rowDrag.end}
                 onDragOver={(e) => {
                   if (rowReorder !== null && rowReorder.dragging !== null) {
                     e.preventDefault()
                     rowReorder.hover(node.path, edgeOf(e))
                     return
                   }
-                  if (move.dragging === null) return
-                  e.preventDefault() // a dir row is a valid drop target while a file drag is in flight
+                  if (!move.accepts(node.path)) return
+                  e.preventDefault() // a dir row is a valid drop target while a row drag is in flight
                   if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-                  if (move.dropDir !== node.path) move.hover(node.path)
+                  // A closed folder held under the drag opens (D8), under its own fold key.
+                  move.hover(node.path, e.currentTarget, expanded.has(foldOf(node)) ? undefined : () => onToggle(foldOf(node)))
                 }}
-                onDragLeave={() => {
-                  if (move.dropDir === node.path) move.hover(null)
+                onDragLeave={(e) => {
+                  if (leftTarget(e)) move.leave(node.path)
                 }}
                 onDrop={(e) => {
                   e.preventDefault()
@@ -474,22 +507,30 @@ function TreeLevel({
               {...hoverOf(node.path)}
               // A shortcut row never drags (YAZ-2290 D2): the drag would move the note out of the folder it lives in.
               draggable={!noDrag(node)}
-              onDragStart={noDrag(node) ? undefined : (e) => {
-                if (e.dataTransfer) {
-                  e.dataTransfer.effectAllowed = 'move'
-                  e.dataTransfer.setData('text/plain', node.path)
+              onDragStart={noDrag(node) ? undefined : dragStart(node)}
+              onDragEnd={noDrag(node) ? undefined : rowDrag.end}
+              onDragOver={(e) => {
+                if (rowReorder !== null && rowReorder.dragging !== null) {
+                  e.preventDefault()
+                  rowReorder.hover(node.path, edgeOf(e))
+                  return
                 }
-                fileDrag.start(node.path)
-              }}
-              onDragEnd={fileDrag.end}
-              onDragOver={rowReorder === null ? undefined : (e) => {
-                if (rowReorder.dragging === null) return
+                if (!fileDrop || !move.accepts(dirPath)) return
                 e.preventDefault()
-                rowReorder.hover(node.path, edgeOf(e))
+                if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+                move.hover(dirPath, folderRowOf(e.currentTarget))
               }}
-              onDrop={rowReorder === null ? undefined : (e) => {
-                e.preventDefault()
-                rowReorder.drop()
+              onDragLeave={fileDrop ? (e) => {
+                if (leftTarget(e)) move.leave(dirPath)
+              } : undefined}
+              onDrop={(e) => {
+                if (rowReorder !== null && rowReorder.dragging !== null) {
+                  e.preventDefault()
+                  rowReorder.drop()
+                } else if (fileDrop) {
+                  e.preventDefault()
+                  move.drop(dirPath)
+                }
               }}
             >
               <span className="tree__label">

@@ -54,6 +54,8 @@ interface SidebarStubProps {
   onOpenWhatsNew: () => void
   /** The ONE rename door (⚡ YAZ-888): the inline rename AND the drag-move both arrive through it. */
   onRenameFile: (oldPath: string, newPath: string, kind: 'file' | 'dir') => Promise<void>
+  /** A drop of two or more rows (YAZ-3250 D1): the door for a list of moves. */
+  onMoveEntries: (moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]) => Promise<void>
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteFile: (path: string) => Promise<void>
@@ -2784,10 +2786,12 @@ describe('App rename door (⚡ YAZ-888)', () => {
   })
 
   it('a MOVE stays silent: no sheet, the rename runs straight through', async () => {
-    const { bridge, el } = await mount(defaultAppState(), identity(), {}, feed)
+    const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, feed)
     await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/Docs/B.md', 'file'))
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/Docs/B.md' })
+    // A drag of one row is a move gesture of one (YAZ-3250 D1): its toast says so.
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Moved 1 item')
   })
 
   /** The app asks before a move that clears values (D21): the door's other question, of a MOVE. */
@@ -2910,6 +2914,75 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await drag(NOOR, '/v/Team/Archive/Noor.md')
       expect(el.querySelector('.confirm')).toBeNull()
       expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+    })
+
+    /** One door for a list of moves (YAZ-3250 D1): one D21 sheet for the whole list, then each move as one drag runs. */
+    describe('a list of moves (YAZ-3250 D1)', () => {
+      const PLAIN = '/v/Team/Hiring/Plain.md'
+      const LOST = '/v/Team/Hiring/Lost.md'
+      const moveAll = (moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]) => act(async () => await captured.sidebar?.onMoveEntries(moves))
+      const notice = (el: HTMLElement) => el.querySelector('.link-notice')?.textContent
+
+      it('nothing to clear: no sheet, each item moves in the order given, an item already in its folder is no move (S7), and one toast says how many moved (S1, S3)', async () => {
+        const { bridge, el } = await mountTeam()
+        await moveAll([
+          { oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' },
+          { oldPath: PLAIN, newPath: PLAIN, kind: 'file' },
+          { oldPath: NOOR, newPath: '/v/Team/Hiring/Sub/Noor.md', kind: 'file' },
+          { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' },
+        ])
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.rename.mock.calls.map(([req]) => req.oldPath)).toEqual([LOST, NOOR, PLAIN])
+        expect(notice(el)).toBe('Moved 3 items')
+        expect(el.querySelector('.link-notice')?.getAttribute('data-icon')).toBe('paste')
+      })
+
+      it('a list that clears values asks ONCE for the whole list; Cancel moves nothing (S10); Move runs every move and clears the values in its move (D20)', async () => {
+        const files = moved()
+        const { bridge, el } = await mountTeam(files)
+        const list = [
+          { oldPath: NOOR, newPath: '/v/Team/Archive/Noor.md', kind: 'file' as const },
+          { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' as const },
+        ]
+        await moveAll(list)
+        expect(el.querySelectorAll('.confirm')).toHaveLength(1)
+        expect(sheetText(el)).toBe("Move 2 items to 'Archive'? 1 note will lose its values for Hiring.")
+        await act(async () => sheetBtn(el, 'Cancel')?.click())
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.rename).not.toHaveBeenCalled()
+        expect(bridge.writeFile).not.toHaveBeenCalled()
+
+        await moveAll(list)
+        await act(async () => sheetBtn(el, 'Move')?.click())
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.rename.mock.calls.map(([req]) => req)).toEqual(list.map(({ oldPath, newPath }) => ({ oldPath, newPath })))
+        expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(notice(el)).toBe('Moved 2 items')
+      })
+
+      it('a name that already exists: that item stays, the rest move, and ONE notice names it (S11)', async () => {
+        const { bridge, el } = await mountTeam()
+        bridge.file.rename.mockImplementation(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => {
+          if (oldPath === PLAIN) throw { code: 'ALREADY_EXISTS', message: 'path already exists', path: newPath }
+          return { oldPath, newPath }
+        })
+        await moveAll([
+          { oldPath: LOST, newPath: '/v/Team/Archive/Lost.md', kind: 'file' },
+          { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' },
+          { oldPath: NOOR, newPath: '/v/Team/Hiring/Sub/Noor.md', kind: 'file' },
+        ])
+        expect(bridge.file.rename).toHaveBeenCalledTimes(3)
+        expect(notice(el)).toBe('Moved 2 items, skipped 1: Plain already exists')
+      })
+
+      it('a pending list is dropped when the window’s vaults change', async () => {
+        const { bridge, el, emitFileRenamed } = await mountTeam()
+        await moveAll([{ oldPath: NOOR, newPath: '/v/Team/Archive/Noor.md', kind: 'file' }, { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' }])
+        expect(el.querySelector('.confirm')).not.toBeNull()
+        await act(async () => emitFileRenamed('/v', '/w', 'dir'))
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.rename).not.toHaveBeenCalled()
+      })
     })
 
     it('"Ask before renaming" off: a move that would clear values still asks (YAZ-2420 3C1)', async () => {

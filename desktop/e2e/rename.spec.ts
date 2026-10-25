@@ -261,7 +261,8 @@ test('step 6 — drag a file row onto a folder row: the file moves there, bare l
   await expect(readFile(path.join(vault, 'Target', 'M.md'), 'utf8')).rejects.toThrow()
   // S.md pinned WHOLE: [[Target/M]] → [[Notes/M]]; the bare [[M]] still resolves — unchanged.
   await expect.poll(() => readWhenReady(path.join(vault, 'S.md'))).toBe('# S\n\nSee [[Notes/M]] and [[M]] here.\n')
-  await expect(win.locator('.link-notice')).toHaveText('Updated links in 1 note')
+  // A move says itself, then the links that followed it (YAZ-3250 D1).
+  await expect(win.locator('.link-notice')).toHaveText('Moved 1 item. Updated links in 1 note')
   await shoot(win, 'rename-07-drag-move')
 })
 

@@ -249,6 +249,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onRootMissing: vi.fn(),
     onFileMissing: vi.fn(),
     onRenameFile: vi.fn(async () => undefined),
+    onMoveEntries: vi.fn(async () => undefined),
     onRetitle: vi.fn(async () => undefined),
     onDeleteFile: vi.fn(async () => undefined),
     onNotice: vi.fn(),
@@ -983,7 +984,8 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
 
   it('dragging a file row onto a folder row moves it there (onRenameFile old→new parent); the target highlights while hovered; no top row of Files reorders (YAZ-2631 S38)', async () => {
     const { props, el } = await mount()
-    expect([dirRow(el)?.draggable, fileRow(el)?.draggable]).toEqual([false, true])
+    // A folder row drags too since YAZ-3251 D5: to move on disk, never to reorder.
+    expect([dirRow(el)?.draggable, fileRow(el)?.draggable]).toEqual([true, true])
     fire(fileRow(el), 'dragstart')
     fire(dirRow(el), 'dragover')
     expect(dirRow(el)?.classList.contains('tree__row--drop')).toBe(true)
@@ -1005,6 +1007,150 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     fire(fileRow(el), 'dragend')
     fire(dirRow(el), 'drop')
     expect(props.onRenameFile).not.toHaveBeenCalled() // an abandoned drag drops nothing
+  })
+})
+
+/**
+ * The tree drag (YAZ-3251): a folder drags, a selection drags as one (D5), a file row takes the
+ * drop for its folder (D7), a closed folder springs open (D8), and a hover renders nothing (D2).
+ */
+describe('the tree drag: folders, the selection, file-row drops, spring open (YAZ-3251)', () => {
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  /** `Docs` holds `Inner` (open) and a note; `Plans` is open; `Closed` is closed; two notes at the top. */
+  const DRAG_TREE: TreeNode[] = [
+    { type: 'dir', name: 'Docs', path: '/v/Docs', children: [{ type: 'dir', name: 'Inner', path: '/v/Docs/Inner', children: [file('/v/Docs/Inner/deep.md')] }, file('/v/Docs/n.md')] },
+    { type: 'dir', name: 'Plans', path: '/v/Plans', children: [file('/v/Plans/p.md')] },
+    { type: 'dir', name: 'Closed', path: '/v/Closed', children: [file('/v/Closed/c.md')] },
+    file('/v/a.md'),
+    file('/v/b.md'),
+  ]
+  const mountDrag = async () => {
+    vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/Docs', '/v/Docs/Inner', '/v/Plans'])
+    return mount({}, (bridge) => bridge.tree.mockResolvedValue({ root: '/v', tree: DRAG_TREE, generatedAt: 1 }))
+  }
+  const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  /** A synthetic drag event (jsdom has no DragEvent, and the handlers guard `dataTransfer`); answers whether a handler took it. */
+  const fire = (target: Element | null | undefined, type: string) => {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true })
+    act(() => void target?.dispatchEvent(event))
+    return event.defaultPrevented
+  }
+  const shiftClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+  const lit = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.tree__row--drop, .sidebar__header--drop')].map((node) => node.dataset.path ?? 'header')
+  const selected = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.tree__row--selected')].map((node) => node.dataset.path)
+
+  it('a folder row drags onto a folder: the target lights by its class alone, and one row goes through onRenameFile as a folder (S2)', async () => {
+    const { props, el } = await mountDrag()
+    expect(row(el, '/v/Plans')?.draggable).toBe(true)
+    fire(row(el, '/v/Plans'), 'dragstart')
+    expect(fire(row(el, '/v/Docs'), 'dragover')).toBe(true)
+    expect(lit(el)).toEqual(['/v/Docs'])
+    fire(row(el, '/v/Docs'), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/Plans', '/v/Docs/Plans', 'dir')
+    expect(props.onMoveEntries).not.toHaveBeenCalled()
+    expect(lit(el)).toEqual([])
+  })
+
+  it('a selected row takes the whole selection in on-screen order, through onMoveEntries (S3); an unselected row becomes the selection and goes alone (S4)', async () => {
+    const { props, el } = await mountDrag()
+    for (const path of ['/v/b.md', '/v/Plans', '/v/a.md']) shiftClick(row(el, path))
+    fire(row(el, '/v/a.md'), 'dragstart')
+    fire(row(el, '/v/Docs'), 'dragover')
+    fire(row(el, '/v/Docs'), 'drop')
+    expect(props.onMoveEntries).toHaveBeenCalledExactlyOnceWith([
+      { oldPath: '/v/Plans', newPath: '/v/Docs/Plans', kind: 'dir' },
+      { oldPath: '/v/a.md', newPath: '/v/Docs/a.md', kind: 'file' },
+      { oldPath: '/v/b.md', newPath: '/v/Docs/b.md', kind: 'file' },
+    ])
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+
+    fire(row(el, '/v/Closed'), 'dragstart')
+    expect(selected(el)).toEqual(['/v/Closed'])
+    fire(row(el, '/v/Docs'), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/Closed', '/v/Docs/Closed', 'dir')
+  })
+
+  it('a row inside a dragged folder is left out — the folder carries it (S5); the folder, and every row inside it, take no drop and do not light (S6)', async () => {
+    const { props, el } = await mountDrag()
+    shiftClick(row(el, '/v/Docs'))
+    shiftClick(row(el, '/v/Docs/n.md'))
+    for (const target of ['/v/Docs', '/v/Docs/Inner', '/v/Docs/n.md', '/v/Docs/Inner/deep.md']) {
+      fire(row(el, '/v/Docs'), 'dragstart')
+      expect(fire(row(el, target), 'dragover')).toBe(false)
+      expect(lit(el)).toEqual([])
+      fire(row(el, target), 'drop')
+    }
+    expect([props.onRenameFile, props.onMoveEntries].map((door) => vi.mocked(door).mock.calls.length)).toEqual([0, 0])
+    fire(row(el, '/v/Docs'), 'dragstart')
+    fire(row(el, '/v/Plans'), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/Docs', '/v/Plans/Docs', 'dir')
+  })
+
+  it('an item already in the drop folder is no move (S7): alone it asks nothing; beside another, the other goes alone', async () => {
+    const { props, el } = await mountDrag()
+    fire(row(el, '/v/Docs/n.md'), 'dragstart')
+    fire(row(el, '/v/Docs'), 'drop')
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+    shiftClick(row(el, '/v/Docs/n.md'))
+    shiftClick(row(el, '/v/a.md'))
+    fire(row(el, '/v/a.md'), 'dragstart')
+    fire(row(el, '/v/Docs'), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/Docs/a.md', 'file')
+    expect(props.onMoveEntries).not.toHaveBeenCalled()
+  })
+
+  it('a file row takes the drop for its folder and lights that folder’s row; at the top of a one-vault window it lights the header (S12)', async () => {
+    const { props, el } = await mountDrag()
+    fire(row(el, '/v/a.md'), 'dragstart')
+    expect(fire(row(el, '/v/Plans/p.md'), 'dragover')).toBe(true)
+    expect(lit(el)).toEqual(['/v/Plans'])
+    fire(row(el, '/v/Plans/p.md'), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/Plans/a.md', 'file')
+    expect(lit(el)).toEqual([])
+
+    fire(row(el, '/v/Plans/p.md'), 'dragstart')
+    fire(row(el, '/v/b.md'), 'dragover')
+    expect(lit(el)).toEqual(['header'])
+    fire(row(el, '/v/b.md'), 'drop')
+    expect(props.onRenameFile).toHaveBeenLastCalledWith('/v/Plans/p.md', '/v/p.md', 'file')
+  })
+
+  it('a drag that holds 700 ms over a closed folder opens it, and it stays open; one that moves away first opens nothing (S13)', async () => {
+    const { el } = await mountDrag()
+    vi.useFakeTimers()
+    try {
+      fire(row(el, '/v/a.md'), 'dragstart')
+      fire(row(el, '/v/Closed'), 'dragover')
+      act(() => void vi.advanceTimersByTime(600))
+      fire(row(el, '/v/Closed'), 'dragleave')
+      fire(row(el, '/v/Plans'), 'dragover')
+      act(() => void vi.advanceTimersByTime(1000))
+      expect(row(el, '/v/Closed/c.md')).toBeNull()
+
+      fire(row(el, '/v/Plans'), 'dragleave')
+      fire(row(el, '/v/Closed'), 'dragover')
+      act(() => void vi.advanceTimersByTime(699))
+      expect(row(el, '/v/Closed/c.md')).toBeNull()
+      act(() => void vi.advanceTimersByTime(1))
+      expect(row(el, '/v/Closed/c.md')).not.toBeNull()
+      fire(row(el, '/v/a.md'), 'dragend')
+      expect(row(el, '/v/Closed/c.md')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a hover over many rows renders no row of any tree level (S14, D2)', async () => {
+    const { el } = await mountDrag()
+    fire(row(el, '/v/a.md'), 'dragstart')
+    labelRenders.names = []
+    for (const target of ['/v/Docs', '/v/Docs/Inner', '/v/Docs/Inner/deep.md', '/v/Docs/n.md', '/v/Plans', '/v/Plans/p.md', '/v/b.md', '/v/Docs', '/v/Plans']) {
+      fire(row(el, target), 'dragover')
+      fire(row(el, target), 'dragleave')
+    }
+    fire(row(el, '/v/Plans'), 'dragover')
+    expect(lit(el)).toEqual(['/v/Plans'])
+    expect(labelRenders.names).toEqual([])
   })
 })
 
@@ -4951,14 +5097,15 @@ describe('focus tab (YAZ-2619)', () => {
     expect(props.onRenameFile).not.toHaveBeenCalled()
   })
 
-  it('YAZ-2631 S30, S32, S33, S34, S39: below the top rows nothing reorders — a file inside a focused folder drags into a folder and moves on disk, and finds no place on a top file row; a folder there does not drag; a reorder drag finds no place on a deeper row; an item that shows on both levels does each', async () => {
+  it('YAZ-2631 S30, S32, S33, S34, S39: below the top rows nothing reorders — a file inside a focused folder drags into a folder and moves on disk, and finds no place on a top file row; a folder there drags only to move on disk (YAZ-3251 D5); a reorder drag finds no place on a deeper row; an item that shows on both levels does each', async () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'focus' }, { focus: ['/Projects', '/Projects/p.md', '/Notes', '/top.md'] })
     const [projects, p, notes, top, alpha] = [`${v}/Projects`, `${v}/Projects/p.md`, `${v}/Notes`, `${v}/top.md`, `${v}/Projects/Alpha`]
     act(() => rowByPath(el, projects)?.click())
     // S39: the item stands inside its focused folder, and again as a top row.
     const twice = () => rowsByPath(el, p)
     expect(twice().map((row) => row.closest('ul')?.getAttribute('role'))).toEqual(['group', 'tree'])
-    expect([...twice(), rowByPath(el, alpha)].map((row) => row?.draggable)).toEqual([true, true, false]) // S32
+    // S32: a folder below the top rows does not reorder; since YAZ-3251 D5 it drags to move on disk.
+    expect([...twice(), rowByPath(el, alpha)].map((row) => row?.draggable)).toEqual([true, true, true])
     // S30: from inside the folder it moves on disk, into a top folder or a deeper one — the fill, and no line.
     drag(twice()[0], 'dragstart')
     drag(rowByPath(el, notes), 'dragover', -1)
@@ -5225,12 +5372,12 @@ describe('favorites (YAZ-1766)', () => {
     expect(rowByPath(el, `${v}/Projects/Alpha`)?.querySelector('.tree__mark')).not.toBeNull()
   })
 
-  it('top rows drag to reorder: a line on the hovered edge, the new order written to the vault\'s file, and nothing moved on disk — a top file over a top folder too; below them a folder does not drag; the drag draws the top rows alone; one vault writes no order across vaults and names no vault (YAZ-2631 S1, S29, S32, R4)', async () => {
+  it('top rows drag to reorder: a line on the hovered edge, the new order written to the vault\'s file, and nothing moved on disk — a top file over a top folder too; below them a folder drags only to move on disk (YAZ-3251 D5); the drag draws the top rows alone; one vault writes no order across vaults and names no vault (YAZ-2631 S1, S29, S32, R4)', async () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects', '/top.md'] })
     expect(rowByPath(el, `${v}/Notes`)?.getAttribute('draggable')).toBe('true')
     expect(rowByPath(el, `${v}/top.md`)?.getAttribute('draggable')).toBe('true')
     act(() => rowByPath(el, `${v}/Projects`)?.click())
-    expect(rowByPath(el, `${v}/Projects/Alpha`)?.getAttribute('draggable')).toBe('false')
+    expect(rowByPath(el, `${v}/Projects/Alpha`)?.getAttribute('draggable')).toBe('true') // it moves on disk too (YAZ-3251 D5)
     expect(rowByPath(el, `${v}/Projects/p.md`)?.getAttribute('draggable')).toBe('true') // it moves on disk
     labelRenders.names = []
     drag(rowByPath(el, `${v}/top.md`), 'dragstart')
@@ -8072,7 +8219,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     const at = pair()
     const plain = at.b.replace('/work', '/plain')
     const { el, props } = await mountVaults([vault(at.a, 'Notes'), vault(plain, 'Plain'), vault(at.b, 'Work')])
-    expect([at.a, plain, at.b, `${at.a}/sub`].map((row) => rowByPath(el, row)?.draggable)).toEqual([true, true, true, false])
+    // A folder below a vault row drags to move on disk (YAZ-3251 D5), never to reorder.
+    expect([at.a, plain, at.b, `${at.a}/sub`].map((row) => rowByPath(el, row)?.draggable)).toEqual([true, true, true, true])
     const dragTo = (from: string, to: string, edge: 'before' | 'after') => {
       drag(rowByPath(el, from), 'dragstart')
       drag(rowByPath(el, to), 'dragover', edge === 'before' ? -1 : 1)
