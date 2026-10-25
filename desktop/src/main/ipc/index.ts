@@ -1,11 +1,9 @@
 import { CONTRACT } from '@shared/ipc'
-import type { GestureSound } from '@shared/types'
 import type { GitSyncManager } from '../git/manager'
 import type { Secrets } from '../secrets'
 import type { Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { resolveLibraryFolder } from '../library/folder'
-import { playSound } from '../sounds'
 import { registerBoardIpc } from './board'
 import { registerComponentsIpc } from './components'
 import { registerDialogIpc } from './dialog'
@@ -19,6 +17,7 @@ import { registerMediaStudioIpc } from './mediaStudio'
 import { registerPropertiesIpc } from './properties'
 import { registerSecretsIpc } from './secrets'
 import { registerShareIpc, type ShareIpcPlaces } from './share'
+import { registerSoundIpc } from './sound'
 import { registerStateIpc } from './state'
 import { registerStorageIpc } from './storage'
 import { registerVaultConfigIpc } from './vaultConfig'
@@ -51,8 +50,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerPropertiesIpc(store)
   registerWindowIpc(store, windows)
   registerStorageIpc()
-  // One sound for one gesture that succeeded (YAZ-3267 D15): answered at once, never waited for, never a failure.
-  handle(CONTRACT.app.sound, async (kind: unknown) => playSound(kind as GestureSound))
+  registerSoundIpc()
   // THE one secrets instance (YAZ-3028): `secrets.set`/`has` for the renderer, `read` for main's own callers.
   // It is threaded into the Image Studio's providers (a Pixabay request is built without the key ever leaving
   // main; YAZ-3038) and into sharing (the Cloudflare token and the upload password; YAZ-3040).

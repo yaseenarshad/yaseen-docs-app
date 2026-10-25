@@ -89,6 +89,9 @@ describe('playSound (YAZ-3267 D15)', () => {
     setting('1')
     playSound('constructor' as never)
     playSound('poof' as never)
+    // Not a string: an array of one kind is not that kind (the YAZ-3248 rulings).
+    playSound(['land'] as never)
+    playSound({ toString: () => 'trash' } as never)
     expect(exec).not.toHaveBeenCalled()
   })
 

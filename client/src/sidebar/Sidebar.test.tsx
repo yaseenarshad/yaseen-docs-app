@@ -92,8 +92,8 @@ function pushed(bridge: { file: { clipState: ReturnType<typeof vi.fn> } }, liste
     listener(state)
   }
 }
-/** A paste into `targetDir` that names the clip the window confirmed (YAZ-3266: `expect`). */
-const into = (targetDir: string) => ({ targetDir, expect: { op: expect.stringMatching(/^(copy|cut)$/), paths: expect.any(Array) } })
+/** A paste into `targetDir` that names the clip the window confirmed (YAZ-3266: `expect`): exactly this verb and these paths, in clipboard order. */
+const into = (targetDir: string, op: 'copy' | 'cut', ...paths: string[]) => ({ targetDir, expect: { op, paths } })
 
 function installBridge() {
   const bridge = {
@@ -6020,7 +6020,7 @@ describe('favorites (YAZ-1766)', () => {
       act(() => rowsByPath(el, gtm)[1]?.click())
       expect([open(0), open(1)]).toEqual(['false', 'false'])
       await act(async () => void clipboardRef.current?.paste())
-      expect(bridge.file.paste).toHaveBeenLastCalledWith(into(gtm))
+      expect(bridge.file.paste).toHaveBeenLastCalledWith(into(gtm, 'copy', '/w/x.md'))
       expect([open(0), open(1)]).toEqual(['false', 'true'])
       // The menu's Paste on copy A opens copy A.
       rightClick(rowsByPath(el, gtm)[0] ?? null)
@@ -7226,7 +7226,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     const paste = itemByLabel(el, 'Paste 2 items')
     expect(paste?.disabled).toBe(false)
     await act(async () => paste?.click())
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/sub'))
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/sub', 'copy', '/w/x.md', '/w/y.md'))
     expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 2 items', 'paste')
     expect(props.onMoved).not.toHaveBeenCalled() // a copy is not in the undo list (YAZ-3255 D10)
     expect(bridge.tree.mock.calls.length).toBe(treeReads + 1) // the explicit refresh: a copy broadcasts nothing
@@ -7263,7 +7263,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     act(() => pushClip?.(clipOf('cut', '/w/x.md', '/w/Note.md')))
     rightClick(rowByPath(el, '/v/a.md'))
     await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v'))
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v', 'cut', '/w/x.md', '/w/Note.md'))
     // A Paste of a Cut is a move gesture (YAZ-3255 S39): only what moved is in it.
     expect(props.onMoved).toHaveBeenCalledExactlyOnceWith({ moves: [{ oldPath: '/w/x.md', newPath: '/v/x.md', kind: 'file' }], cleared: [] }, 'Pasted 1 item, skipped 1: Note — already exists')
     expect(props.onNotice).not.toHaveBeenCalled()
@@ -7453,14 +7453,14 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(bridge.file.paste).not.toHaveBeenCalled()
     act(() => pushClip?.(clipOf('copy', '/w/x.md')))
     await act(async () => void verb(clipboardRef, 'paste'))
-    expect(bridge.file.paste).toHaveBeenLastCalledWith(into('/v'))
+    expect(bridge.file.paste).toHaveBeenLastCalledWith(into('/v', 'copy', '/w/x.md'))
     shiftClickRow(rowByPath(el, '/v/sub'))
     await act(async () => void verb(clipboardRef, 'paste'))
-    expect(bridge.file.paste).toHaveBeenLastCalledWith(into('/v/sub'))
+    expect(bridge.file.paste).toHaveBeenLastCalledWith(into('/v/sub', 'copy', '/w/x.md'))
     act(() => void body(el)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     shiftClickRow(rowByPath(el, '/v/a.md'))
     await act(async () => void verb(clipboardRef, 'paste'))
-    expect(bridge.file.paste).toHaveBeenLastCalledWith(into('/v'))
+    expect(bridge.file.paste).toHaveBeenLastCalledWith(into('/v', 'copy', '/w/x.md'))
     expect(bridge.file.paste).toHaveBeenCalledTimes(3)
   })
 
@@ -7502,7 +7502,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     act(() => pushClip?.(clipOf('copy', '/w/x.md')))
     act(() => rowByPath(el, '/v/sub')?.click())
     await act(async () => void verb(clipboardRef, 'paste'))
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/sub'))
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/sub', 'copy', '/w/x.md'))
     act(() => rowByPath(el, '/v/sub')?.click()) // fold it back the way it was found
   })
 
@@ -7517,7 +7517,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     act(() => void body(el)?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })))
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
     await act(async () => void verb(clipboardRef, 'paste'))
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v'))
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v', 'copy', '/w/x.md'))
     act(() => rowByPath(el, '/v/sub')?.click()) // fold it back the way it was found
   })
 
@@ -7951,7 +7951,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         expect(bridge.file.clip).not.toHaveBeenCalled() // this window cut nothing: the paths are main's
         await act(async () => sheetBtn(el, 'Move')?.click())
         expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas'))
+        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'cut', ALPHA))
       })
 
       it('a note Cut and Pasted into another folder leaves the old folder’s values behind in that move (D20)', async () => {
@@ -7992,7 +7992,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         expect(sheetText(el)).toBe("Move 3 items to 'Areas'? 2 notes will lose their values for Projects.")
         expect(bridge.file.paste).not.toHaveBeenCalled()
         await act(async () => sheetBtn(el, 'Move')?.click())
-        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas'))
+        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'cut', ALPHA, ZETA, '/v/top.md'))
       })
 
       it('Cancel: nothing is pasted and the cut stays on the clipboard', async () => {
@@ -8034,7 +8034,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
           indexed(bridge)
           await act(async () => sheetBtn(el, 'Copy')?.click())
           expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas'))
+          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'copy', ALPHA))
           expect(disk.get(COPY)).toBe('---\n---\nBody\n')
           expect(disk.get(ALPHA)).toBe(HELD)
           expect(writeFile).toHaveBeenCalledTimes(1)
@@ -8059,7 +8059,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
           indexed(bridge)
           await paste('copy', [ALPHA], '/v/Projects')
           expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Projects'))
+          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Projects', 'copy', ALPHA))
           expect(bridge.readFile).toHaveBeenCalledWith(SAME)
           expect(disk.get(SAME)).toBe(HELD)
           expect(writeFile).not.toHaveBeenCalled()
@@ -8095,7 +8095,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
           bridge.index.mockClear()
           await paste('copy', [ALPHA])
           expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas'))
+          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into('/v/Areas', 'copy', ALPHA))
           expect(bridge.index).not.toHaveBeenCalled()
           expect(bridge.readFile).not.toHaveBeenCalledWith(PLAIN)
           expect(writeFile).not.toHaveBeenCalled()
@@ -8107,7 +8107,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
           await paste('copy', ['/v/top.md'])
           await paste('copy', ['/w/Projects/Alpha.md'])
           expect(el.querySelector('.confirm')).toBeNull()
-          expect(bridge.file.paste.mock.calls).toEqual([[into('/v/Areas')], [into('/v/Areas')]])
+          expect(bridge.file.paste.mock.calls).toEqual([[into('/v/Areas', 'copy', '/v/top.md')], [into('/v/Areas', 'copy', '/w/Projects/Alpha.md')]])
         })
       })
 
@@ -8124,7 +8124,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         await paste('cut', [ALPHA], SUB) // Projects still shows it
         await paste('cut', [ALPHA], '/v/Projects') // where it already is: main skips it, so it is no move
         expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.paste.mock.calls).toEqual([[into('/v/Areas')], [into(SUB)], [into('/v/Projects')]])
+        expect(bridge.file.paste.mock.calls).toEqual([[into('/v/Areas', 'cut', '/v/top.md')], [into(SUB, 'cut', ALPHA)], [into('/v/Projects', 'cut', ALPHA)]])
       })
 
       it('an item already in the folder is not counted among the moves', async () => {
@@ -8489,7 +8489,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(clipboardRef.current?.cutOrCopy('copy')).toBe(false)
     expect(bridge.file.clip).not.toHaveBeenCalled()
     await act(async () => void clipboardRef.current?.paste())
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(b))
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(b, 'copy', '/elsewhere/x.md'))
   })
 
   it('a file dropped on its own vault\'s row moves to that vault\'s root — the row shows the fill of a drop folder, never the line of a reorder; a drop on a folder or the row of a different vault is refused with a notice; no drop of a file reorders the vaults; the header is no drop target (S14, S45, R11; YAZ-2631 S50)', async () => {
@@ -8554,7 +8554,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     bridge.index.mockClear()
     rightClick(rowByPath(el, `${b}/docs`))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(`${b}/docs`))
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(`${b}/docs`, 'copy', `${a}/a.md`))
     expect(props.onNotice).toHaveBeenLastCalledWith('Pasted 1 item', 'paste')
     // The folder it landed in opens, and the tree and the index read are the target vault's alone.
     expect(isOpen(el, `${b}/docs`)).toBe('true')
@@ -8569,7 +8569,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     bridge.file.paste.mockResolvedValueOnce({ pasted: [{ from: `${a}/a.md`, to: `${b}/a.md`, kind: 'file' }], failed: [] })
     rightClick(rowByPath(el, b))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
-    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(b))
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith(into(b, 'cut', `${a}/a.md`))
     expect(props.onMoved).toHaveBeenLastCalledWith({ moves: [{ oldPath: `${a}/a.md`, newPath: `${b}/a.md`, kind: 'file' }], cleared: [] }, 'Pasted 1 item')
     expect(el.querySelector('.confirm')).toBeNull()
   })

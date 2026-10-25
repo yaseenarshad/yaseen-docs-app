@@ -35,7 +35,7 @@ export function uiSoundsOn(err: Pick<ExecFileException, 'code'> | null, stdout: 
 export function playSound(kind: GestureSound): void {
   if (process.platform !== 'darwin') return
   if (process.env.YASEEN_DOCS_E2E_HIDDEN === '1' || process.env.YASEEN_DOCS_FAKE_CLIPBOARD === '1') return
-  if (!Object.hasOwn(SOUND_FILES, kind)) return
+  if (typeof kind !== 'string' || !Object.hasOwn(SOUND_FILES, kind)) return
   const file = SOUND_FILES[kind]
   try {
     execFile('/usr/bin/defaults', SETTING, (err, stdout) => {

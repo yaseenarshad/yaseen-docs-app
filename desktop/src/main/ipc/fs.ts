@@ -315,8 +315,13 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // window with no event (text copied in a note), so the window reads `clipState` fresh at paste time and sends that
   // answer. Another clip now — or none — pastes nothing and fails `CONFLICT`: the window's D21 sheet, D20 and undo
   // record were decided for the clip it confirmed, never for whatever is current.
+  // The target must be a folder in a vault of the CALLING window, as `fs:import` and `fs:drag-out` check
+  // theirs (the YAZ-3248 rulings): a door never writes where its window has no vault.
   handleWithEvent(CONTRACT.file.paste, async (e, req: unknown) => {
-    const expected = requireExpect(requireRequest(req).expect)
+    const { targetDir, expect: confirmed } = requireRequest(req)
+    const dir = requireAbsPath(targetDir, 'targetDir')
+    if (rootOfPath(rootsOfSender(e), dir) === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that folder', { path: dir })
+    const expected = requireExpect(confirmed)
     const now = clipNow()
     if (now === null || now.clip.op !== expected.op || !sameOrder(now.clip.paths, expected.paths)) throw new BridgeFailure('CONFLICT', CLIP_CHANGED)
     if (now.finder) return pasteEntries(now.clip, req, { copy: (from, toDir) => importCopy(from, toDir, { freeName: true }), move: moveEntry })

@@ -581,10 +581,11 @@ describe('registerFsIpc', () => {
       try {
         await call(CONTRACT.createFile, path.join(other, 'Out.md'))
         await call(CONTRACT.createDir, { path: path.join(other, 'Out') })
-        await paste(path.join(vault, 'Plans', 'Name.md'), other)
+        // A paste is the exception: it writes only into a vault of the calling window (the YAZ-3248 rulings).
+        expect(await paste(path.join(vault, 'Plans', 'Name.md'), other)).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'no vault of this window holds that folder', path: other } })
         senderWinId = undefined
         await call(CONTRACT.createFile, path.join(other, 'No window.md'))
-        expect(await vaultFiles(other)).toEqual({ 'Out.md': '', 'Out/': '', 'Name.md': NOTE, 'No window.md': '' })
+        expect(await vaultFiles(other)).toEqual({ 'Out.md': '', 'Out/': '', 'No window.md': '' })
       } finally {
         await close(vault, other)
       }
@@ -754,8 +755,10 @@ describe('registerFsIpc', () => {
       await mkdir(dir)
       fileClip.set({ op: 'cut', paths: [oldPath] })
       vi.mocked(focus.renamePath).mockClear()
+      senderWinId = 'w-focus' // a paste writes only into a vault of the calling window
       expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, pasteReq(dir))).toMatchObject({ ok: true, value: { pasted: [{ from: oldPath, to: path.join(dir, 'focus-a.md') }] } })
       expect(vi.mocked(focus.renamePath)).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining([root]), oldPath, path.join(dir, 'focus-a.md'))
+      senderWinId = undefined
       store.removeWindow('w-focus')
     })
 
@@ -815,6 +818,8 @@ describe('registerFsIpc', () => {
 
     it('fs:paste with an empty clipboard is CONFLICT: the clip the window confirmed is gone, so nothing is pasted (YAZ-3266)', async () => {
       fileClip.clear()
+      win('w-empty', null)
+      senderWinId = 'w-empty'
       expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root, expect: { op: 'copy', paths: [path.join(root, 'A.md')] } })).toEqual({
         ok: false,
         error: { code: 'CONFLICT', message: 'The clipboard changed. Paste again.' },

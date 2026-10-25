@@ -262,3 +262,50 @@ describe('YAZ-3266 (checker 2C1): the window is not told when the clipboard chan
     expect(await readdir(path.join(vault, 'Plans'))).not.toContain('report.pdf')
   })
 })
+
+describe('the paste target (checker nit, YAZ-3248 rulings): a paste writes only into a vault of the calling window', () => {
+  it("a target no vault of the calling window holds is BAD_REQUEST: Finder's files and the app's own clip paste nothing there, and both clips stay", async () => {
+    await layout()
+    const outside = await mkdtemp(path.join(base, 'outside-'))
+    // Finder's files, into a folder of no vault, and into Finder's own folder.
+    finderCopies(path.join(finder, 'Note.md'))
+    for (const target of [outside, finder]) {
+      expect(await paste(target)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST', path: target } })
+    }
+    expect(await readdir(outside)).toEqual([])
+    expect((await readdir(finder)).sort()).toEqual(['.DS_Store', 'Note.md', 'Taken.md', 'Trip'])
+    // The app's own Copy and Cut, into the same folder.
+    const pdf = path.join(vault, 'report.pdf')
+    for (const op of ['copy', 'cut'] as const) {
+      await clip(op, pdf)
+      expect(await paste(outside)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST', path: outside } })
+      expect(fileClip.get()).toEqual({ op, paths: [pdf] })
+    }
+    expect(await readdir(outside)).toEqual([])
+    expect(await readFile(pdf, 'utf8')).toBe('pdf')
+    // The vault is this window's: a sender that no window owns, or a window of another vault, pastes nothing into it.
+    for (const id of [undefined, 'w-other']) {
+      if (id !== undefined) store.upsertWindow({ ...entry, id, root: outside })
+      senderWinId = id
+      expect(await paste(path.join(vault, 'Plans'))).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    }
+    store.removeWindow('w-other')
+    expect(await readdir(path.join(vault, 'Plans'))).not.toContain('report.pdf')
+    // A target that is not an absolute path is refused before the vault check.
+    senderWinId = 'w-this'
+    expect(await registered(CONTRACT.file.paste)({ sender: {} }, { targetDir: 42, expect: { op: 'cut', paths: [pdf] } })).toMatchObject({ ok: false, error: { code: 'NOT_ABSOLUTE' } })
+    expect(await readFile(pdf, 'utf8')).toBe('pdf')
+  })
+
+  it("a target in the window's vault, its root, or its second vault still pastes", async () => {
+    await layout()
+    const second = await mkdtemp(path.join(base, 'second-'))
+    store.upsertWindow({ ...entry, id: 'w-this', root: vault, roots: [vault, second] })
+    finderCopies(path.join(finder, 'Note.md'))
+    for (const target of [vault, path.join(vault, 'Plans'), second]) {
+      expect(await paste(target)).toMatchObject({ ok: true, value: { pasted: [{ to: path.join(target, 'Note.md') }], failed: [] } })
+    }
+    await clip('cut', path.join(vault, 'report.pdf'))
+    expect(await paste(path.join(vault, 'Plans', 'Trip'))).toMatchObject({ ok: true, value: { pasted: [{ to: path.join(vault, 'Plans', 'Trip', 'report.pdf') }] } })
+  })
+})
