@@ -101,7 +101,7 @@ test('step 1 — Copy in window A (vault A) pastes into a folder of window B (va
   await expect(menuItem(winA, 'Cut')).toBeVisible()
   await menuItem(winA, 'Copy').click()
   await expect(menu(winA)).toHaveCount(0)
-  await expect(notice(winA)).toContainText('Copied 1 item')
+  await expect(notice(winA)).toContainText('Copied 1 file')
   await shoot(winA, 'fileClipboard-01a-copied-in-a')
 
   // Window B, on ANOTHER vault: the folder menu already counts the other window's clip.
@@ -109,7 +109,7 @@ test('step 1 — Copy in window A (vault A) pastes into a folder of window B (va
   await expect(menuItem(winB, 'Paste 1 item')).toBeVisible()
   await shoot(winB, 'fileClipboard-01b-paste-label-in-b')
   await menuItem(winB, 'Paste 1 item').click()
-  await expect(notice(winB)).toContainText('Pasted 1 item (Ideas)')
+  await expect(notice(winB)).toContainText('Pasted 1 file (Ideas.md)')
 
   // `Projects` holds no Ideas.md, so the copy keeps its name, and its bytes are the source's.
   await expect.poll(copies).toEqual(['Ideas.md'])
@@ -145,13 +145,13 @@ test('step 2 — ⌘V pastes into the SELECTED folder, again and again: each cop
 test('step 3 — Cut in A, Paste in B MOVES the file: source gone, bytes identical, clipboard spent', async () => {
   await fileRow(winA, 'Mover').click({ button: 'right' })
   await menuItem(winA, 'Cut').click()
-  await expect(notice(winA)).toContainText('Cut 1 item')
+  await expect(notice(winA)).toContainText('Cut 1 file')
   // Cut touches nothing on disk until the paste (🔒 D2): the file is still exactly where it was.
   expect(await exists(path.join(vaultA, MOVER))).toBe(true)
 
   await dirRow(winB, 'Projects').click({ button: 'right' })
   await menuItem(winB, 'Paste 1 item').click()
-  await expect(notice(winB)).toContainText('Pasted 1 item (Mover)')
+  await expect(notice(winB)).toContainText('Pasted 1 file (Mover.md)')
 
   const moved = path.join(vaultB, 'Projects', MOVER)
   await expect.poll(() => exists(moved)).toBe(true)

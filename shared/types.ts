@@ -800,6 +800,14 @@ export interface DragLandedEvent {
 }
 
 /**
+ * `file:drag-ended`, to the ONE window whose `fs:drag-out` started the drag (YAZ-3294 D24): the mouse
+ * button came up. The paths of that drag, as its `fs:drag-out` sent them. macOS only.
+ */
+export interface DragEndedEvent {
+  paths: string[]
+}
+
+/**
  * The sound of a gesture that succeeded (YAZ-3267 D15), as Finder plays it: `land` when items land
  * (a paste, a drag-move, a Finder drop, an undo or a redo of a move), `trash` when items go to the Trash.
  */

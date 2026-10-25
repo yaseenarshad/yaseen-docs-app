@@ -23,7 +23,7 @@ import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './link
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument } from './lib/focusHandoff'
-import { dragOutText, gestureNotice, namedItems, noticeMs, type DragOutAsk, type Notice, type NoticeKind } from './lib/notice'
+import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, type DragOutAsk, type NamedItem, type Notice, type NoticeKind } from './lib/notice'
 import { treeHasPath } from './lib/treeState'
 import { NoticeIcon } from './components/NoticeIcon'
 import { absFrom, dirname, relTo } from './lib/paths'
@@ -94,9 +94,9 @@ const moveFailure = (name: string, err: unknown): string =>
 
 /**
  * What `runMoves` did: the gesture, and what it says (S11). `again`: how many of `failed` moved again (S36).
- * `names`: each item that moved, by the name its toast says (YAZ-3274 D22), in the order of `moves`.
+ * `names`: each item that moved, by its kind and its name on disk (YAZ-3293 D23), in the order of `moves`.
  */
-type MovesRun = MovedGesture & { failed: string[]; again: number; links: RenameRewriteSummary; names: string[] }
+type MovesRun = MovedGesture & { failed: string[]; again: number; links: RenameRewriteSummary; names: NamedItem[] }
 
 /** The item of an undo or a redo is gone, or its place is taken (YAZ-3255 S36): it changed again since. */
 const movedAgain = (err: unknown): boolean => err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'ALREADY_EXISTS')
@@ -114,17 +114,17 @@ const overEdge = (roots: readonly string[], oldPath: string, newPath: string): b
 }
 
 /**
- * The toast of an undo or a redo (YAZ-3255 D11): "Moved back 2 items (Todo, Plan)" (undo) or "Moved 2
- * items (Todo, Plan)" (redo), by the names of what moved (YAZ-3274 D22), then the first item that did
+ * The toast of an undo or a redo (YAZ-3255 D11): "Moved back 2 files (Todo.md, Plan.md)" (undo) or
+ * "Moved 2 files (Todo.md, Plan.md)" (redo), by the kinds and the names on disk of what moved (YAZ-3293 D23), then the first item that did
  * not move — "Can't undo: Plan moved again" (S36). Only the failure when nothing moved.
  */
-export function replayNotice(verb: 'undo' | 'redo', moved: readonly string[], failed: readonly string[]): string {
+export function replayNotice(verb: 'undo' | 'redo', moved: readonly NamedItem[], failed: readonly string[]): string {
   return stepNotice(verb, moved.length === 0 ? null : verb === 'undo' ? `Moved back ${namedItems(moved)}` : `Moved ${namedItems(moved)}`, failed)
 }
 
 /**
  * The toast of an undo or a redo of any step (YAZ-3268 D18): what it did (`head`, null when nothing
- * ran), then the first item that did not go — "Put back 1 item (Todo). Can't undo: a file named Plan
+ * ran), then the first item that did not go — "Put back 1 file (Todo.md). Can't undo: a file named Plan
  * is there now" (S60). Only the failure when nothing ran.
  */
 function stepNotice(verb: 'undo' | 'redo', head: string | null, failed: readonly string[]): string {
@@ -152,12 +152,12 @@ const putBackFailure = (name: string, item: DeleteStep['items'][number], err: un
 }
 
 /**
- * The ONE notice of a move gesture (YAZ-3250 D1, D11): what moved, by name (YAZ-3274 D22), and the
- * first that did not, as the paste says it — "Moved 2 items (Todo, Plan), skipped 1: Plan already
- * exists" (S11). The links that followed are said after it, as a rename says them. Null when nothing
+ * The ONE notice of a move gesture (YAZ-3250 D1, D11): what moved, by kind and by name on disk (YAZ-3293
+ * D23), and the first that did not, as the paste says it — "Moved 2 files (Todo.md, Plan.md), skipped
+ * 1: Plan already exists" (S11). The links that followed are said after it, as a rename says them. Null when nothing
  * ran at all.
  */
-export function movedNotice(moved: readonly string[], failed: readonly string[], links: RenameRewriteSummary): string | null {
+export function movedNotice(moved: readonly NamedItem[], failed: readonly string[], links: RenameRewriteSummary): string | null {
   const text = gestureNotice(moved.length === 0 ? null : `Moved ${namedItems(moved)}`, failed, "Can't move")
   return moved.length > 0 && (links.updated > 0 || links.skipped > 0) ? `${text}. ${renameNotice(links)}` : text
 }
@@ -1490,7 +1490,7 @@ export function App() {
     async (moves: readonly Move[], { record = true }: { record?: boolean } = {}): Promise<MovesRun> => {
       const generation = renameRootGeneration.current
       const done: MovedGesture = { moves: [], cleared: [] }
-      const names: string[] = []
+      const names: NamedItem[] = []
       const failed: string[] = []
       let again = 0
       const failure = record ? moveFailure : againFailure
@@ -1516,7 +1516,8 @@ export function App() {
         }
         if (home !== null && catalog !== null) catalogs.set(home, movedCatalog(catalog, out.move.oldPath, out.move.newPath))
         done.moves.push(out.move)
-        names.push(name)
+        // By kind and by name on disk (YAZ-3293 D23): a move keeps the item's file name.
+        names.push(onDisk(oldPath, kind))
         done.cleared.push(...out.cleared)
         links.updated += out.links.updated
         links.skipped += out.links.skipped
@@ -1563,7 +1564,7 @@ export function App() {
   /**
    * The undo of a delete (YAZ-3268 D17, S58): each item from the Trash back to its old place
    * (`fs:put-back`), newest first. One that left the Trash (S59) or whose name is taken (S60) stays
-   * there, and the rest come back. What came back goes on the redo list; "Put back N items" with Redo
+   * there, and the rest come back. What came back goes on the redo list; "Put back 2 files (Todo.md, Plan.md)" with Redo
    * and the land sound (D18).
    */
   const putBackStep = useCallback(async (entry: DeleteStep): Promise<void> => {
@@ -1581,7 +1582,7 @@ export function App() {
     }
     if (back.length > 0) moveHistory.current.undone({ step: 'delete', items: back })
     else if (failed.length > gone) moveHistory.current.redone(entry)
-    const text = stepNotice('undo', back.length === 0 ? null : `Put back ${namedItems(back.map((item) => item.name))}`, failed)
+    const text = stepNotice('undo', back.length === 0 ? null : `Put back ${namedItems(back.map((item) => ({ name: item.name, kind: item.type })))}`, failed)
     if (back.length === 0) return notify(text, 'error')
     playGestureSound('land')
     stepToast(text, 'paste', 'redo')
@@ -1597,14 +1598,14 @@ export function App() {
     const failed: string[] = []
     let went = 0
     let again = 0
-    const names: string[] = []
+    const names: NamedItem[] = []
     for (const item of entry.items) {
-      // The name the delete saw (YAZ-3274 D22): the index may not have the item back yet.
+      // The name on disk the delete saw (YAZ-3274 D22, YAZ-3293 D23), with its kind.
       const { name } = item
       try {
         const res = await api.file.delete({ path: item.path })
         went++
-        names.push(name)
+        names.push({ name, kind: item.type })
         if (res.trashed != null) items.push({ path: res.path, trashed: res.trashed, type: res.kind, name })
       } catch (err) {
         if (movedAgain(err)) again++
@@ -1829,12 +1830,12 @@ export function App() {
    * gesture, so it plays the trash sound once when an item went (YAZ-3267 D15, S55), never on a failure.
    *
    * A delete is ONE step of the undo list too (YAZ-3268 D17, D19): one item or many (`trashMany`),
-   * each item with its place in the Trash. The toast says "Deleted Plan" or "Deleted N items" with
+   * each item with its place in the Trash. The toast says "Deleted 1 file (Plan.md)" or "Deleted 1 folder and 2 files (…)" with
    * Undo; an item main did not find in the Trash has no Undo (S61), and with none found the toast has no button.
    *
    * `trashMany` is the ONE list delete door (YAZ-3272 D21): the sidebar's Delete and ⌘⌫ of N rows, and
    * "Remove from vault". A failure on one item does not stop the rest, and ONE notice counts both:
-   * "Deleted 2 items, skipped 1: B was not moved to the Trash", or "Can't delete 2 items: …" when
+   * "Deleted 2 files (A.md, C.md), skipped 1: B was not moved to the Trash", or "Can't delete 2 items: …" when
    * none went. One item that fails says main's reason, as before.
    */
   const trashOne = useCallback(async (path: string, name: string): Promise<DeleteResponse | string> => {
@@ -1866,8 +1867,9 @@ export function App() {
       return
     }
     playGestureSound('trash')
-    const text = gestureNotice(`Deleted ${namedItems(went.map((res) => names.get(res.path) ?? nameOf(res.path)))}`, failed, "Can't delete")!
-    const items = went.flatMap((res) => (res.trashed == null ? [] : [{ path: res.path, trashed: res.trashed, type: res.kind, name: names.get(res.path) ?? nameOf(res.path) }]))
+    // By kind and by name on disk (YAZ-3293 D23), as Finder shows them.
+    const text = gestureNotice(`Deleted ${namedItems(went.map((res) => onDisk(res.path, res.kind)))}`, failed, "Can't delete")!
+    const items = went.flatMap((res) => (res.trashed == null ? [] : [{ path: res.path, trashed: res.trashed, type: res.kind, name: onDisk(res.path, res.kind).name }]))
     if (items.length === 0) return notify(text)
     moveHistory.current.push({ step: 'delete', items })
     stepToast(text, 'info', 'undo')
@@ -1906,15 +1908,17 @@ export function App() {
     if (left.every((path) => landedInApp.current.includes(path))) return
     const inside = (path: string) => left.some((item) => path === item || path.startsWith(`${item}/`))
     const linking = new Set<string>()
+    const kinds: DragOutAsk['kinds'] = []
     for (const path of left) {
       const { root, wikilinks } = scopeOf(path)
-      if (root === null) continue
-      const dirs = vaultDirs(root)
+      const dirs = root === null ? [] : vaultDirs(root)
       const kind = dirs.includes(path) ? 'dir' : 'file'
+      kinds.push(kind)
+      if (root === null) continue
       for (const note of linkingNotes({ ids: wikilinks.ids, root, oldPath: path, kind, records: wikilinks.records, folders: wikilinks.folders, dirs })) if (!inside(note)) linking.add(note)
     }
-    setDragOutAsk({ paths: left, names: left.map(nameOf), links: linking.size })
-  }, [scopeOf, stillThere, nameOf])
+    setDragOutAsk({ paths: left, kinds, links: linking.size })
+  }, [scopeOf, stillThere])
   /**
    * "Remove from vault": each item to the Trash through the delete door — the door AFTER the delete
    * sheet, since the box was the question (S27). The items are read again at the click, and one gone

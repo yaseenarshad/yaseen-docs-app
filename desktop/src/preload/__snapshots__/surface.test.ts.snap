@@ -37,6 +37,7 @@ file.droppedHere/1: invoke fs:dropped-here ["a0"]; => "answer"; !> {"code":"NOT_
 file.import/1: invoke fs:import ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.onClipChanged/1: on clip:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off clip:changed
 file.onDeleted/1: on file:deleted -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:deleted
+file.onDragEnded/1: on file:drag-ended -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:drag-ended
 file.onDragLanded/1: on file:drag-landed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:drag-landed
 file.onRenamed/1: on file:renamed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:renamed
 file.paste/1: invoke fs:paste ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

@@ -1,6 +1,6 @@
 /** How long the toast stays (YAZ-3255 D11): a fading action toast goes after `UNDO_NOTICE_MS`; another action toast stays. */
 import { describe, expect, it } from 'vitest'
-import { dragOutText, gestureNotice, LINK_NOTICE_MS, namedItems, NAMES_SHOWN, noticeMs, UNDO_NOTICE_MS } from './notice'
+import { countKinds, dragOutText, gestureNotice, LINK_NOTICE_MS, namedItems, NAMES_SHOWN, noticeMs, onDisk, UNDO_NOTICE_MS } from './notice'
 
 describe('noticeMs (YAZ-3255 D11)', () => {
   it('a plain notice fades after LINK_NOTICE_MS; an Undo or Redo toast after UNDO_NOTICE_MS (6 s); another action toast stays', () => {
@@ -22,23 +22,47 @@ describe('gestureNotice (audit 9): the one sentence of a gesture over many items
   })
 })
 
-describe('namedItems (YAZ-3274 D22): the items of a gesture by name', () => {
-  it('1 item names it (S73); 2 or 3 name them all (S74); more than 3 name the first 3, then how many more (S75)', () => {
+describe('namedItems (YAZ-3274 D22, YAZ-3293 D23): the items of a gesture by kind, then by name on disk', () => {
+  const file = (name: string) => ({ name, kind: 'file' as const })
+  const folder = (name: string) => ({ name, kind: 'dir' as const })
+
+  it('1 folder says "1 folder" and its name (S76); notes say "files" with the extension (S77)', () => {
     expect(NAMES_SHOWN).toBe(3)
-    expect(namedItems(['Todo'])).toBe('1 item (Todo)')
-    expect(namedItems(['Todo', 'Plan'])).toBe('2 items (Todo, Plan)')
-    expect(namedItems(['Todo', 'Plan', 'Budget'])).toBe('3 items (Todo, Plan, Budget)')
-    expect(namedItems(['Todo', 'Plan', 'Budget', 'Trip'])).toBe('4 items (Todo, Plan, Budget + 1 more)')
-    const twelve = ['Todo', 'Plan', 'Budget', ...Array.from({ length: 9 }, (_, i) => `Note ${i + 1}`)]
-    expect(namedItems(twelve)).toBe('12 items (Todo, Plan, Budget + 9 more)')
+    expect(namedItems([folder('Projects')])).toBe('1 folder (Projects)')
+    expect(namedItems([file('Todo.md')])).toBe('1 file (Todo.md)')
+    expect(namedItems([file('Todo.md'), file('Plan.md')])).toBe('2 files (Todo.md, Plan.md)')
+    expect(namedItems([folder('Projects'), folder('Trips')])).toBe('2 folders (Projects, Trips)')
   })
 
-  it('a toast keeps the names in the order of the gesture, and the failure part as gestureNotice says it', () => {
-    expect(gestureNotice(`Moved ${namedItems(['Plan', 'Todo'])}`, ['Budget already exists'], "Can't move")).toBe('Moved 2 items (Plan, Todo), skipped 1: Budget already exists')
+  it('a mix says the folders first, then the files; the names keep the order of the gesture (S78)', () => {
+    expect(namedItems([folder('Projects'), file('Todo.md'), file('Plan.md')])).toBe('1 folder and 2 files (Projects, Todo.md, Plan.md)')
+    expect(namedItems([file('Todo.md'), folder('Projects')])).toBe('1 folder and 1 file (Todo.md, Projects)')
+    expect(namedItems([folder('A'), folder('B'), file('c.md')])).toBe('2 folders and 1 file (A, B, c.md)')
   })
 
-  it('the drag-out box names the items it asks about (YAZ-3254 S29)', () => {
-    expect(dragOutText({ paths: ['/v/Todo.md'], names: ['Todo'], links: 0 })).toBe('Copied 1 item (Todo) to Finder?')
-    expect(dragOutText({ paths: ['/v/A.md', '/v/B.md', '/v/C.md', '/v/D.md'], names: ['Todo', 'Plan', 'Budget', 'Trip'], links: 2 })).toBe('Copied 4 items (Todo, Plan, Budget + 1 more) to Finder? 2 notes link to them.')
+  it('more than 3 name the first 3, then how many more (S79)', () => {
+    const twelve = 'abcdefghijkl'.split('').map((letter) => file(`${letter}.md`))
+    expect(namedItems(twelve)).toBe('12 files (a.md, b.md, c.md + 9 more)')
+    expect(namedItems([file('Todo.md'), file('Plan.md'), folder('Budget'), file('Trip.md')])).toBe('1 folder and 3 files (Todo.md, Plan.md, Budget + 1 more)')
+  })
+
+  it('countKinds is the kinds alone, as the menu labels and the Cut and Copy toasts say them', () => {
+    expect(countKinds([{ kind: 'file' }, { kind: 'file' }])).toBe('2 files')
+    expect(countKinds([{ kind: 'dir' }, { kind: 'file' }, { kind: 'file' }])).toBe('1 folder and 2 files')
+    expect(countKinds([{ kind: 'dir' }])).toBe('1 folder')
+  })
+
+  it('onDisk names an item as Finder does: the last part of its path, with the extension', () => {
+    expect(onDisk('/v/Plans/Todo.md', 'file')).toEqual({ name: 'Todo.md', kind: 'file' })
+    expect(onDisk('/v/Projects', 'dir')).toEqual({ name: 'Projects', kind: 'dir' })
+  })
+
+  it('a toast keeps the failure part as gestureNotice says it', () => {
+    expect(gestureNotice(`Moved ${namedItems([file('Plan.md'), file('Todo.md')])}`, ['Budget already exists'], "Can't move")).toBe('Moved 2 files (Plan.md, Todo.md), skipped 1: Budget already exists')
+  })
+
+  it('the drag-out box names the items it asks about by kind and by name on disk (S76)', () => {
+    expect(dragOutText({ paths: ['/v/Projects'], kinds: ['dir'], links: 0 })).toBe('Copied 1 folder (Projects) to Finder?')
+    expect(dragOutText({ paths: ['/v/A.md', '/v/B.md', '/v/C', '/v/D.md'], kinds: ['file', 'file', 'dir', 'file'], links: 2 })).toBe('Copied 1 folder and 3 files (A.md, B.md, C + 1 more) to Finder? 2 notes link to them.')
   })
 })

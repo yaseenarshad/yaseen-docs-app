@@ -45,6 +45,8 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   showPath: null,
   // "Info" (YAZ-3028 D11): null is every row that is not one drawing or diagram.
   infoPath: null,
+  // The folders among the targets (YAZ-3293 D23): none is a selection of files.
+  folderPaths: [],
   clip: null,
   ...over,
 })
@@ -427,12 +429,13 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(sections[1].map((i) => i.label)).toEqual(['Cut', 'Copy', 'Paste'])
   })
 
-  it('a 2+ selection counts: "Cut 3 items" / "Copy 3 items", handing the ORDERED list as given', () => {
+  it('a 2+ selection counts by kind (YAZ-3293 D23): "Cut 1 folder and 2 files" / "Copy 1 folder and 2 files", handing the ORDERED list as given', () => {
     const onCut = vi.fn()
     const onCopy = vi.fn()
-    const sections = build({ clipPaths: ['/v/sub', '/v/a.md', '/v/b.md'] }, { onCut, onCopy })
-    select(sections, 'Cut 3 items')
-    select(sections, 'Copy 3 items')
+    const sections = build({ clipPaths: ['/v/sub', '/v/a.md', '/v/b.md'], folderPaths: ['/v/sub'] }, { onCut, onCopy })
+    select(sections, 'Cut 1 folder and 2 files')
+    select(sections, 'Copy 1 folder and 2 files')
+    expect(labelsOf(build({ clipPaths: ['/v/a.md', '/v/b.md'] }))).toEqual(expect.arrayContaining(['Cut 2 files', 'Copy 2 files']))
     expect(onCut).toHaveBeenCalledExactlyOnceWith(['/v/sub', '/v/a.md', '/v/b.md'])
     expect(onCopy).toHaveBeenCalledExactlyOnceWith(['/v/sub', '/v/a.md', '/v/b.md'])
   })
@@ -532,14 +535,15 @@ describe('Rename / Delete', () => {
     expect(onDelete).toHaveBeenCalledExactlyOnceWith(['/v/sub'])
   })
 
-  /** The whole selection (YAZ-3272 D21, S70): "Delete N items" for 2 or more, as "Cut N items", and every path goes to the one door. */
-  it('a 2+ selection counts the items — "Delete 3 items" — and hands the whole ordered list', () => {
+  /** The whole selection (YAZ-3272 D21, S70): "Delete N …" for 2 or more, by kind as Cut says it (YAZ-3293 D23), and every path goes to the one door. */
+  it('a 2+ selection counts the items by kind — "Delete 1 folder and 2 files", "Delete 2 files" — and hands the whole ordered list', () => {
     const onDelete = vi.fn()
     const paths = ['/v/a.md', '/v/sub', '/v/c.md']
-    const sections = build({ ...FILE_ROW, deletePaths: paths }, { onDelete })
-    expect(labelsOf(sections)).toContain('Delete 3 items')
+    const sections = build({ ...FILE_ROW, deletePaths: paths, folderPaths: ['/v/sub'] }, { onDelete })
+    expect(labelsOf(sections)).toContain('Delete 1 folder and 2 files')
     expect(labelsOf(sections)).not.toContain('Delete')
-    select(sections, 'Delete 3 items')
+    expect(labelsOf(build({ ...FILE_ROW, deletePaths: ['/v/a.md', '/v/c.md'] }))).toContain('Delete 2 files')
+    select(sections, 'Delete 1 folder and 2 files')
     expect(onDelete).toHaveBeenCalledExactlyOnceWith(paths)
   })
 })

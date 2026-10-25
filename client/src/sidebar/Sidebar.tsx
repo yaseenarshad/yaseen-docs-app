@@ -330,7 +330,7 @@ export interface MenuTargets {
   openTabPaths: string[] | null
   /**
    * "Cut" / "Copy" — the file-clipboard target (🔒 D5, YAZ-1674): the ORDERED 2+ selection when the
-   * right-clicked row is in one (`copyPaths`' plural rule — labels "Cut 3 items"), else the one
+   * right-clicked row is in one (`copyPaths`' plural rule — labels "Cut 1 folder and 2 files", YAZ-3293 D23), else the one
    * row, file or dir; null on blank space, which has nothing to clip. Its OWN field, per this
    * split's doctrine: `copyPaths` is null outside a plural gesture and `copyPath` falls back to
    * the vault root, and neither is what a Cut may name.
@@ -347,6 +347,11 @@ export interface MenuTargets {
    * vault row, and in a selection that holds a vault row (a vault is no file, S72).
    */
   deletePaths: string[] | null
+  /**
+   * The folders among the row's targets (YAZ-3293 D23): the row, or the selection that holds it. A
+   * counted label says the kinds by it — "Cut 1 folder and 2 files", "Delete 2 files". Empty on blank space.
+   */
+  folderPaths: string[]
   /** "Reveal in Finder" — the row, or the one vault's ROOT for blank space (GRO-2274); same target as `copyPath`. */
   revealPath: string | null
   /** "Open in VS Code" — the same target rule again (YAZ-963); its OWN field, per this split's whole point. */
@@ -934,9 +939,10 @@ export function Sidebar({
         removeVault: vaultRow,
         openAlone: vaultRow,
         infoPath: plural === null && shortcutIn === null && filePath !== null && isBoard(filePath) ? filePath : null,
+        folderPaths: node === null ? [] : (plural ?? [node.path]).filter((path) => (path === node.path ? node.type === 'dir' : dirs.includes(path))),
       })
     },
-    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState],
+    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState, dirs],
   )
   // A right-click on a Recents row (YAZ-3235 D7, S20): the one-row file menu, "Show in sidebar" first,
   // as a row of the new tab page. Through a ref, so the memo list does not draw again on each selection.
@@ -1033,7 +1039,7 @@ export function Sidebar({
     [confirmingDelete, onDeleteEntries, onChangeSettings, settings],
   )
 
-  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete, titles)
+  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete)
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click

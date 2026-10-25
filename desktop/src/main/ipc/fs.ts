@@ -4,6 +4,7 @@ import { nativeImage, screen, type IpcMainInvokeEvent } from 'electron'
 import { CONTRACT } from '@shared/ipc'
 import { BETWEEN_VAULTS, CLIP_CHANGED, rootOfPath, type FileWriteRequest, type FileWriteResponse, type ImportResponse, type RenameFileResponse } from '@shared/types'
 import { dropLanded, rememberDragOut } from '../dragLanding'
+import { whenMouseUp } from '../dragWatch'
 import * as favorites from '../favorites'
 import { fileClip, type FileClip } from '../fileClip'
 import * as focus from '../focus'
@@ -390,6 +391,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
    * pixel ratio, so it is read at the scale of the display under the pointer, where the drag begins.
    * In the hidden e2e mode (`YASEEN_DOCS_E2E_HIDDEN`, YAZ-3028) the OS drag would take the real mouse
    * of the person at the Mac: the paths go on `globalThis.e2eDragOuts` for the e2e to read instead.
+   * After the OS drag main watches the mouse button (YAZ-3294 D24, `../dragWatch`): at the release
+   * the calling window hears `file:drag-ended` with the drag's paths, so its box asks at once.
    */
   handleWithEvent(CONTRACT.file.dragOut, async (e, req: unknown) => {
     const { paths, icon } = requireRequest(req)
@@ -411,6 +414,10 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     }
     const { scaleFactor } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
     e.sender.startDrag({ file: files[0], files, icon: nativeImage.createFromBuffer(Buffer.from(icon.slice(PNG.length), 'base64'), { scaleFactor }) })
+    const sender = e.sender
+    whenMouseUp(() => {
+      if (!sender.isDestroyed()) sender.send(CONTRACT.file.onDragEnded.channel, { paths: files })
+    })
   })
   /**
    * Files dropped anywhere in the calling window (YAZ-3263), reported when the drop fires: when they

@@ -11,6 +11,7 @@ import { CONTRACT, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import { fileClip } from '../fileClip'
 import { _evictAll, getIndex } from '../vaultIndex'
+import { whenMouseUp } from '../dragWatch'
 import { registerFsIpc } from './fs'
 
 /** The items whose move fails as a move to another disk does (`EXDEV`): set per test. */
@@ -25,6 +26,8 @@ vi.mock('electron', () => ({
   // The system clipboard (YAZ-3265 D13): a stand-in that holds no files, never the real one.
   clipboard: { read: vi.fn(() => ''), writeBuffer: vi.fn() },
 }))
+// The mouse-button watch (YAZ-3294 D24) never runs `osascript` here: each test ends it by hand.
+vi.mock('../dragWatch', () => ({ whenMouseUp: vi.fn() }))
 // No watcher echo, ever: what the index holds after a door answers is what the door gave it (YAZ-3258).
 vi.mock('../fs/watchers', () => ({ subscribe: vi.fn(() => () => undefined), activeWatcherRoots: () => [] }))
 vi.mock('../favorites', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
@@ -197,8 +200,32 @@ describe('fs:drag-out (YAZ-3254 D4)', () => {
     expect(nativeImage.createFromBuffer).toHaveBeenCalledOnce()
   })
 
-  it('in the hidden e2e mode it starts no OS drag, which would take the real mouse: it records the paths for the e2e instead (audit 5)', async () => {
+  it('after the OS drag it watches the mouse button ONCE; at the release the calling window, and no other, hears `file:drag-ended` with its paths (YAZ-3294 D24, S80)', async () => {
     await layout()
+    vi.mocked(whenMouseUp).mockClear()
+    const order: string[] = []
+    const sender = { id: 1, isDestroyed: () => false, send: vi.fn(), startDrag: vi.fn(() => order.push('drag')) }
+    const otherWindow = { id: 2, isDestroyed: () => false, send: vi.fn(), startDrag: vi.fn() }
+    vi.mocked(whenMouseUp).mockImplementation(() => void order.push('watch'))
+    const paths = [path.join(vault, 'Plans', 'Taken.md'), path.join(vault, 'Plans')]
+    await registered(CONTRACT.file.dragOut)({ sender }, { paths, icon: PNG })
+    expect(order).toEqual(['drag', 'watch'])
+    expect(sender.send).not.toHaveBeenCalled()
+    const released = vi.mocked(whenMouseUp).mock.calls[0][0]
+    released()
+    expect(sender.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.file.onDragEnded.channel, { paths })
+    expect(otherWindow.send).not.toHaveBeenCalled()
+    // A window closed before the release hears nothing.
+    vi.mocked(whenMouseUp).mockClear()
+    const closed = { ...sender, isDestroyed: () => true, send: vi.fn() }
+    await registered(CONTRACT.file.dragOut)({ sender: closed }, { paths, icon: PNG })
+    vi.mocked(whenMouseUp).mock.calls[0][0]()
+    expect(closed.send).not.toHaveBeenCalled()
+  })
+
+  it('in the hidden e2e mode it starts no OS drag, which would take the real mouse: it records the paths for the e2e instead (audit 5), and watches no button', async () => {
+    await layout()
+    vi.mocked(whenMouseUp).mockClear()
     const startDrag = vi.fn()
     const paths = [path.join(vault, 'Plans', 'Taken.md')]
     vi.stubEnv('YASEEN_DOCS_E2E_HIDDEN', '1')
@@ -208,6 +235,7 @@ describe('fs:drag-out (YAZ-3254 D4)', () => {
       vi.unstubAllEnvs()
     }
     expect(startDrag).not.toHaveBeenCalled()
+    expect(whenMouseUp).not.toHaveBeenCalled()
     expect((globalThis as { e2eDragOuts?: string[][] }).e2eDragOuts?.at(-1)).toEqual(paths)
   })
 
@@ -229,8 +257,10 @@ describe('fs:drag-out (YAZ-3254 D4)', () => {
   ])('refuses %s and starts no drag', async (_, req) => {
     await layout()
     const startDrag = vi.fn()
+    vi.mocked(whenMouseUp).mockClear()
     expect(await registered(CONTRACT.file.dragOut)({ sender: { startDrag } }, req())).toMatchObject({ ok: false, error: { code: expect.stringMatching(/^(BAD_REQUEST|NOT_ABSOLUTE)$/) } })
     expect(startDrag).not.toHaveBeenCalled()
+    expect(whenMouseUp).not.toHaveBeenCalled()
   })
 })
 

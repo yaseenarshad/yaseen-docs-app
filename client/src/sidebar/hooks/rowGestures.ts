@@ -10,8 +10,8 @@ import { BETWEEN_VAULTS, CLIP_CHANGED, type FileClipState, type SidebarLens, typ
 import { api, BridgeRequestError } from '../../api'
 import { playGestureSound } from '../../lib/gestureSound'
 import type { MovedGesture } from '../../lib/moveHistory'
-import { countItems, gestureNotice, namedItems, type NoticeKind } from '../../lib/notice'
-import { pageLabel, pageName, pathTitles, type PathTitles } from '../../lib/pageLabel'
+import { countKinds, gestureNotice, namedItems, onDisk, type NoticeKind } from '../../lib/notice'
+import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
 import { fetchTree } from '../../lib/treeFeed'
@@ -300,6 +300,11 @@ export function useTreeDrag(
    * the same (S29). A drag that ends over a place that takes no drop, and a quick flick whose button
    * came up before the OS drag began, never left: nothing asks (S30). A drag that another window of
    * the app took left too, but main says so (`file:drag-landed`, YAZ-3263): it counts as a drop inside.
+   *
+   * On macOS main also watches the button (YAZ-3294 D24): at the release it pushes `file:drag-ended`
+   * with the drag's paths, and that ends the drag at once, the pointer still over Finder (S80). The
+   * first move stays the fallback (S82). One end per drag: whichever comes first; the other finds
+   * no drag and does nothing. A push of other paths is no end of this drag.
    */
   useEffect(() => {
     const marked = () => {
@@ -314,12 +319,15 @@ export function useTreeDrag(
     const left = (e: DragEvent) => {
       if (e.relatedTarget === null) leftWindow.current = true
     }
-    const moved = (e: MouseEvent) => {
-      if (e.buttons !== 0 || dragging.current.length === 0) return
+    const ended = () => {
       const paths = dragging.current
       const outside = leftWindow.current && !droppedInside.current
       fileMove.end()
       if (outside) live.current.finder.onDraggedOut(paths)
+    }
+    const moved = (e: MouseEvent) => {
+      if (e.buttons !== 0 || dragging.current.length === 0) return
+      ended()
     }
     window.addEventListener('drop', marked, true)
     window.addEventListener('drop', dropped)
@@ -330,8 +338,12 @@ export function useTreeDrag(
     const offLanded = api.file.onDragLanded(({ paths }) => {
       if (dragging.current.length > 0 && sameItems(dragging.current, paths)) droppedInside.current = true
     })
+    const offEnded = api.file.onDragEnded(({ paths }) => {
+      if (dragging.current.length > 0 && sameItems(dragging.current, paths)) ended()
+    })
     return () => {
       offLanded()
+      offEnded()
       window.removeEventListener('drop', marked, true)
       window.removeEventListener('drop', dropped)
       window.removeEventListener('dragenter', over, true)
@@ -396,8 +408,6 @@ export function useFileClipboard(
   onMoved: (gesture: MovedGesture, text: string) => void,
   /** ⌘⌫ (YAZ-3272 D20): the Sidebar's delete door — the question, then App's list delete door. */
   askDelete: (paths: string[]) => void,
-  /** The window's titles (YAZ-2420 🔒 D14): a gesture's toast names its items as the rows do (YAZ-3274 D22). */
-  windowTitles: PathTitles,
 ) {
   /**
    * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op, paths }` or null, pushed to every
@@ -453,17 +463,18 @@ export function useFileClipboard(
   /**
    * Cut / Copy: hand the ordered paths to main (🔒 D1) and SAY SO — every clipboard write confirms
    * (YAZ-1341), and a refusal is reported, never swallowed. The selection stands: acting on it is
-   * not the same as ending it (YAZ-1337).
+   * not the same as ending it (YAZ-1337). It says the items by kind, as the menu's label does:
+   * "Cut 1 folder and 2 files" (YAZ-3293 D23).
    */
   const clipTo = useCallback(
     (paths: string[], op: 'copy' | 'cut') => {
-      const what = countItems(paths.length)
+      const what = countKinds(paths.map((path) => ({ kind: dirs.includes(path) ? 'dir' : 'file' })))
       api.file.clip({ paths, op }).then(
         () => onNotice(op === 'cut' ? `Cut ${what}` : `Copied ${what}`, op),
         (err: unknown) => onNotice(`Can't ${op}: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
     },
-    [onNotice],
+    [onNotice, dirs],
   )
 
   /**
@@ -504,8 +515,8 @@ export function useFileClipboard(
         const failed = titles === undefined ? [] : res.failed.map((f) => `${pageName(vault, f.from, titles)} — ${f.message}`)
         // A Paste of a Cut is a move gesture (YAZ-3255 S39): its moves and what they cleared go on the undo list.
         const gesture: MovedGesture | null = before === null ? null : { moves: res.pasted.map(({ from, to, kind }) => ({ oldPath: from, newPath: to, kind })), cleared }
-        // What landed, by the names the rows showed for it (YAZ-3274 D22).
-        const pasted = res.pasted.map(({ from, kind }) => pageLabel(from, kind === 'dir', windowTitles))
+        // What landed, by kind and by its name on disk (YAZ-3293 D23): a copy may have a new free name.
+        const pasted = res.pasted.map(({ to, kind }) => onDisk(to, kind))
         const text = gestureNotice(res.pasted.length === 0 ? null : `Pasted ${namedItems(pasted)}`, failed, "Couldn't paste")
         // Nothing ran: EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
         if (text === null) onNotice('Nothing to paste', 'info')
@@ -525,7 +536,7 @@ export function useFileClipboard(
         } else onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
-    [vaultOf, refresh, openTo, onNotice, onMoved, readClip, windowTitles],
+    [vaultOf, refresh, openTo, onNotice, onMoved, readClip],
   )
 
   /**
@@ -638,8 +649,8 @@ export function useFileClipboard(
           openTo(`${dir}/x`)
           refresh(vault)
         }
-        // What landed, by name (YAZ-3274 D22): the index has no title for it yet, so the rows show its file name.
-        const named = (items: typeof moved) => namedItems(items.map(({ to, kind }) => pageLabel(to, kind === 'dir', windowTitles)))
+        // What landed, by kind and by name on disk (YAZ-3293 D23).
+        const named = (items: typeof moved) => namedItems(items.map(({ to, kind }) => onDisk(to, kind)))
         const done =
           moved.length + copied.length === 0 ? null
           : copied.length === 0 ? `Moved ${named(moved)} from Finder`
@@ -660,7 +671,7 @@ export function useFileClipboard(
         onNotice(`Can't move: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
-    [vaultOf, refresh, openTo, onNotice, onMoved, windowTitles],
+    [vaultOf, refresh, openTo, onNotice, onMoved],
   )
 
   return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null), importFiles }
