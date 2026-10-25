@@ -1010,6 +1010,21 @@ export const isSidebarLens = (v: unknown): v is SidebarLens => SIDEBAR_LENSES.in
 export type SidebarTab = SidebarLens | 'search'
 /** The order the tabs are drawn in: Search stands right after Files. */
 export const SIDEBAR_TABS: readonly SidebarTab[] = ['files', 'search', 'focus', 'favorites', 'sessions', 'recents']
+/** The buttons at the right end of the tab row that can leave the bar (YAZ-3273 D9, D10): Sort, Collapse all, and the ⋯ button itself. */
+export type SidebarButton = 'sort' | 'fold' | 'more'
+export const SIDEBAR_BUTTONS: readonly SidebarButton[] = ['sort', 'fold', 'more']
+/**
+ * The tab row as the reader set it (YAZ-3273 D8): `order` has each tab once, `hidden` the tabs that
+ * live in the ⋯ menu — never `files` (D6) — and `hiddenButtons` the buttons that left the bar (D9, D10).
+ * Global to this Mac, like `sidebarSort`; the loader repairs it (`sanitizeSidebarTabs`, `store.ts`).
+ */
+export interface SidebarTabsPrefs {
+  order: SidebarTab[]
+  hidden: SidebarTab[]
+  hiddenButtons: SidebarButton[]
+}
+/** The `SIDEBAR_TABS` order, nothing hidden: the row before YAZ-3273. */
+export const DEFAULT_SIDEBAR_TABS: SidebarTabsPrefs = { order: [...SIDEBAR_TABS], hidden: [], hiddenButtons: [] }
 /** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites; Files has none. */
 export type SortBy = 'manual' | 'name' | 'updated'
 /** One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first. */
@@ -1442,6 +1457,8 @@ export interface SettingsState {
   commentsOrder: CommentsOrder
   /** Each sidebar tab's sort (YAZ-3227 D1): how you READ, global to this Mac, never part of a vault. */
   sidebarSort: SidebarSort
+  /** The tab row's order, its hidden tabs and its hidden buttons (YAZ-3273 D8): global to this Mac, never part of a vault. */
+  sidebarTabs: SidebarTabsPrefs
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
   /** Section indent (YAZ-2709): the width of one step in px, 24 | 30 | 36. On or off is per page (the page cog), never here. View-only. */
@@ -1607,6 +1624,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   hoverPreview: true,
   commentsOrder: 'oldest',
   sidebarSort: DEFAULT_SIDEBAR_SORT,
+  sidebarTabs: DEFAULT_SIDEBAR_TABS,
   startupWindows: 'last',
   sectionStep: 30,
   sectionLines: 'always',

@@ -11,7 +11,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, confirmSheet, fileRow, launchApp, lensTab, menuItem, quitApp, readState, seededState, shoot } from './helpers'
+import { appWindow, confirmSheet, fileRow, launchApp, lensTab, menuItem, quitApp, readState, seededState, wholeRow, shoot } from './helpers'
 
 let userData: string
 let vault: string
@@ -42,7 +42,7 @@ test('a save puts the note at the top of Today with its time; "Show in sidebar" 
   await writeFile(old, 'old body\n')
   const now = new Date()
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12).getTime()
-  const state = seededState(vault, plan)
+  const state = wholeRow(seededState(vault, plan))
   // A save of yesterday, logged before this run.
   state.folders[vault].edits = { [old]: yesterday }
   app = await launchApp({ userData, seedState: state })
@@ -88,7 +88,7 @@ test('D1: a rename that rewrites the links of 3 notes logs none of them', async 
     await mkdir(path.join(v, '.yaseendocs'), { recursive: true })
     await writeFile(path.join(v, 'Target.md'), '# Target\n\ntarget body\n')
     for (const n of ['A', 'B', 'C']) await writeFile(path.join(v, `${n}.md`), `# ${n}\n\nSee [[Target]].\n`)
-    const renamer = await launchApp({ userData: ud, seedState: seededState(v, null) })
+    const renamer = await launchApp({ userData: ud, seedState: wholeRow(seededState(v, null)) })
     const w = await appWindow(renamer, 'w1')
     await fileRow(w, 'Target').click({ button: 'right' })
     await menuItem(w, 'Rename').click()

@@ -42,7 +42,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, clickMenuItem, copyVault, dirRow, editorOf, expandDirs, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, previewTab, searchBar, searchTab, seedFocus, seededState, shoot, showSearchTab, tabsOf, topLabels } from './helpers'
+import { activeTab, appWindow, clickMenuItem, copyVault, dirRow, editorOf, expandDirs, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, previewTab, searchBar, searchTab, seedFocus, seededState, wholeRow, shoot, showSearchTab, tabsOf, topLabels } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -188,7 +188,7 @@ test.afterAll(async () => {
 // ---------------------------------------------------------------- YAZ-802 / 803 / 2620: find and open
 
 test('step 1 — ⌘K shows the Search tab, its bar, one line of help and the keys of the search; a typed title cuts the tree down to the matches and their parents; Enter opens the BEST match in the PREVIEW tab', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Roles', 'CEO.md')) })
+  app = await launchApp({ userData, seedState: wholeRow(seededState(vault, path.join(vault, 'Roles', 'CEO.md'))) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(CEO_BODY)
   await expect(tabsOf(win)).toHaveCount(1)
@@ -507,7 +507,7 @@ test('step 9 — ⌘K, a query: the match of a pinned folder shows FIRST, under 
   await mkdir(path.join(vault, '.yaseendocs'), { recursive: true })
   await writeFile(path.join(vault, '.yaseendocs', 'favorites.json'), JSON.stringify({ version: 1, favorites: ['Funnel Stages'] }))
   await seedFocus(vault, ['Funnel Stages'])
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Roles', 'CEO.md')) })
+  app = await launchApp({ userData, seedState: wholeRow(seededState(vault, path.join(vault, 'Roles', 'CEO.md'))) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(CEO_BODY)
   await expect(tabsOf(win)).toHaveText(['CEO'])

@@ -1,8 +1,8 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { isBoard } from '@shared/fileKind'
-import { SIDEBAR_TABS, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
+import { stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { ChevronsIcon, ClockIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon, SortIcon, StackIcon } from '../views/view/icons'
+import { SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
@@ -19,6 +19,7 @@ import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
 import { sortSections } from './treeSort'
+import { ACTIVE_TAB_SELECTOR, SidebarTabs } from './SidebarTabs'
 import { folderShortcuts } from './folderShortcuts'
 import { datedSeed, targetDirFor, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
@@ -446,9 +447,6 @@ export function countChildren(nodes: readonly TreeNode[], dir: string): { notes:
   return { notes, folders }
 }
 
-/** The tabs' copy; the ORDER is `SIDEBAR_TABS`', so the default lens leads (YAZ-847) and Search stands right after it (YAZ-2638 D2). */
-const LENS_LABEL: Record<SidebarTab, string> = { files: 'Files', search: 'Search', focus: 'Focus', favorites: 'Favorites', sessions: 'Sessions', recents: 'Recents' }
-
 /** The keys of the search, as the empty Search tab lists them (YAZ-2662 D10, S59): the keycaps of a row, and what they do. */
 const SEARCH_KEYS: readonly (readonly [keys: readonly string[], does: string])[] = [
   [['↑', '↓'], 'Move'],
@@ -785,6 +783,27 @@ export function Sidebar({
   const foldVaults = multi && lens === 'files'
   const anyExpanded = bodyDirs.some((d) => expanded.includes(d)) || (foldVaults && roots.some((vault) => !closedVaults.includes(vault)))
   const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
+  // The tab row (YAZ-3273 D8): like the sort, it keeps its identity while its value stays, so the memoised row draws nothing again on a broadcast.
+  const storedTabs = settings.sidebarTabs
+  const tabPrefs = useMemo(() => storedTabs, [storedTabs.order.join(), storedTabs.hidden.join(), storedTabs.hiddenButtons.join()])
+  // The row's doors to the sort menu and the fold (YAZ-3227 D4, YAZ-862; YAZ-3273 S15): stable, read through refs, so the row stays drawn.
+  const sortedTabRef = useRef(sortedTab)
+  sortedTabRef.current = sortedTab
+  const openSort = useCallback((at: { x: number; y: number } | null) => {
+    const tab = sortedTabRef.current
+    setSortMenu(at === null || tab === null ? null : { tab, ...at })
+  }, [])
+  const foldRef = useRef(() => {})
+  foldRef.current = () => {
+    if (foldVaults) for (const vault of roots) onSetVaultOpen(vault, !anyExpanded)
+    // Only the active lens' dirs move (YAZ-1605): a fold the tab does not show is exactly as it was.
+    dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !bodyDirs.includes(d)) : [...new Set([...expanded, ...bodyDirs])] })
+  }
+  const foldAll = useCallback(() => foldRef.current(), [])
+  // A new tab row (YAZ-3279): one write, over the settings of the moment.
+  const settingsRef = useRef({ settings, onChangeSettings })
+  settingsRef.current = { settings, onChangeSettings }
+  const changeTabs = useCallback((next: SettingsState['sidebarTabs']) => settingsRef.current.onChangeSettings({ ...settingsRef.current.settings, sidebarTabs: next }), [])
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
   // The copy the open page lights in (YAZ-3131 Decision 3, S12, S13): where it was clicked, else the
@@ -1257,84 +1276,21 @@ export function Sidebar({
           </button>
         )
       })}
-      {/* The tabs (🔒 D4, YAZ-847; YAZ-2638 D2) — chrome v2 ROW 1: Files (the file explorer), Search,
-          Focus, Favorites. Search is a tab of its own, and switching tabs never touches its query.
-          `role="tab"` + `aria-selected` only — no `aria-controls`/`tabpanel`: the one body below is
-          every tab's. */}
-      <div
-        className="sidebar__lenses"
-        role="tablist"
-        aria-label="Sidebar lens"
-        // The tabs from the keyboard (YAZ-2663 D12): ← and → move between the tab buttons and stop at
-        // both ends; Enter shows the tab (the button's own click), and ↓ on a tab that does not show
-        // asks for it too. ↓ on the tab that shows goes into its rows, or into the search bar: that is
-        // the window's listener above. ↑ has nowhere to go. The keys are taken, so → goes to no page from here.
-        onKeyDown={(e) => {
-          const tab = e.target instanceof HTMLElement && e.target.matches('.sidebar__lens') ? e.target : null
-          if (tab === null || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            const tabs = [...e.currentTarget.querySelectorAll<HTMLElement>('.sidebar__lens')]
-            tabs[tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1)]?.focus()
-          } else if (e.key === 'ArrowDown' && tab.getAttribute('aria-selected') !== 'true') tab.click()
-          else if (e.key !== 'ArrowUp') return
-          e.preventDefault()
-        }}
-      >
-        {SIDEBAR_TABS.map((id) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={lens === id}
-            className={`sidebar__lens${id !== 'files' ? ' sidebar__lens--glyph' : ''}${lens === id ? ' sidebar__lens--active' : ''}`}
-            onClick={() => onLensChange(id)}
-            // Search, Focus, Favorites, Sessions and Recents are glyphs, not words (YAZ-2638 D2, YAZ-2619 D4, YAZ-1766 D1, YAZ-3147 D4, YAZ-3235 D4): the label lives in `title` + `aria-label`.
-            title={id !== 'files' ? LENS_LABEL[id] : undefined}
-            aria-label={id !== 'files' ? LENS_LABEL[id] : undefined}
-          >
-            {id === 'favorites' ? <HeartIcon /> : id === 'focus' ? <EyeIcon /> : id === 'search' ? <SearchIcon /> : id === 'sessions' ? <StackIcon /> : id === 'recents' ? <ClockIcon /> : LENS_LABEL[id]}
-          </button>
-        ))}
-        {/* The sort button (YAZ-3227 D5): left of expand-all, on Files, Focus and Favorites. A second click closes its menu. */}
-        {sortedTab !== null && (
-          <button
-            type="button"
-            className="sidebar__sort"
-            aria-label="Sort"
-            title="Sort"
-            aria-haspopup="menu"
-            aria-expanded={sortMenu?.tab === sortedTab}
-            // The menu closes on any window mousedown; without this a second click would close and reopen it (the vault header's rule).
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect()
-              setSortMenu(sortMenu?.tab === sortedTab ? null : { tab: sortedTab, x: r.left, y: r.bottom + 4 })
-            }}
-          >
-            <SortIcon />
-          </button>
-        )}
-        {/* One button for both directions AND every lens (⚡ YAZ-862, ⚡ YAZ-873): anything open
-            collapses everything, and only a fully closed tree expands it. It acts on whichever
-            lens is ACTIVE. Gone — not disabled — on the Search tab (YAZ-2638 D2: its folds are
-            the search's own) and whenever the active reading has nothing to
-            unfold: no folder, and no vault row. */}
-        {!searching && (bodyDirs.length > 0 || foldVaults) && (
-          <button
-            type="button"
-            className="sidebar__expand-all"
-            aria-label={allLabel}
-            title={allLabel}
-            onClick={() => {
-              if (foldVaults) for (const vault of roots) onSetVaultOpen(vault, !anyExpanded)
-              // Only the active lens' dirs move (YAZ-1605): a fold the tab does not show is exactly as it was.
-              dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !bodyDirs.includes(d)) : [...new Set([...expanded, ...bodyDirs])] })
-            }}
-          >
-            <ChevronsIcon />
-          </button>
-        )}
-      </div>
+      {/* The tabs (🔒 D4, YAZ-847; YAZ-2638 D2) — chrome v2 ROW 1 — in the reader's order, with the ⋯
+          button for the tabs that do not fit or are hidden (YAZ-3273). Search is a tab of its own, and
+          switching tabs never touches its query. */}
+      <SidebarTabs
+        lens={lens}
+        onLensChange={onLensChange}
+        prefs={tabPrefs}
+        onChangePrefs={changeTabs}
+        sortShows={sortedTab !== null}
+        sortOpen={sortMenu !== null && sortMenu.tab === sortedTab}
+        onSort={openSort}
+        foldShows={!searching && (bodyDirs.length > 0 || foldVaults)}
+        foldLabel={allLabel}
+        onFold={foldAll}
+      />
       {/* The search bar (YAZ-739 A-, chrome v2 row 2), on the Search tab only (YAZ-2638 D2): the
           tab carries the magnifier, so the bar has none. With text typed the body below is the
           results (YAZ-803); the text stays while a different tab shows. */}
@@ -1358,7 +1314,7 @@ export function Sidebar({
               if (out && onLeaveToPage?.() === true) e.preventDefault()
               // ↑ with no row above the highlight goes to the tab button of Search (D12): from there ← and → reach Files, Focus and Favorites.
               else if (e.key === 'ArrowUp' && plain && atTop) {
-                e.currentTarget.closest('.sidebar')?.querySelector<HTMLElement>('.sidebar__lens--active')?.focus()
+                e.currentTarget.closest('.sidebar')?.querySelector<HTMLElement>(ACTIVE_TAB_SELECTOR)?.focus()
                 e.preventDefault()
               } else searchKeyDown(e)
             }}
@@ -1419,7 +1375,7 @@ export function Sidebar({
           // ↑ on the FIRST row goes to the tab button of the tab that shows (YAZ-2663 D12). The tree
           // took the key already and had no row above to go to, so the focus is still on this row.
           if (e.key === 'ArrowUp' && !searching && on !== null && document.activeElement === on && on === e.currentTarget.querySelector('.tree__row[data-path]') && !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)) {
-            e.currentTarget.closest('.sidebar')?.querySelector<HTMLElement>('.sidebar__lens--active')?.focus()
+            e.currentTarget.closest('.sidebar')?.querySelector<HTMLElement>(ACTIVE_TAB_SELECTOR)?.focus()
             e.preventDefault()
             return
           }

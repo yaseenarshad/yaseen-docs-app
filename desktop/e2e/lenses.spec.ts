@@ -15,11 +15,13 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AppState, WindowEntry } from '../../shared/types'
-import { appWindow, buildFixtureVault, clickMenuItem, copyVault, editorOf, fileRow, launchApp, lensTab, quitApp, readState, searchBar, searchTab, SEED_BODY, SEED_FILE, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, clickMenuItem, copyVault, editorOf, fileRow, launchApp, lensTab, menuItem, quitApp, readState, searchBar, searchTab, SEED_BODY, SEED_FILE, seededState, wholeRow, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
 let userData: string
+/** The profile of the tab row's test (YAZ-3283): its own, so the seed of the narrow sidebar meets no earlier quit. */
+let rowData: string
 let vaultSrc: string
 let vault: string
 let app: ElectronApplication
@@ -51,7 +53,7 @@ async function expectLens(w: Page, lens: 'Files'): Promise<void> {
  * default. `JSON.stringify` drops `undefined`, so the key never reaches disk.
  */
 function preLensState(vaultPath: string, file: string): AppState {
-  const state = seededState(vaultPath, file)
+  const state = wholeRow(seededState(vaultPath, file))
   delete (state.windows[0] as Partial<WindowEntry>).sidebarLens
   return state
 }
@@ -60,13 +62,14 @@ function preLensState(vaultPath: string, file: string): AppState {
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'lenses-userdata-'))
+  rowData = await mkdtemp(path.join(tmpdir(), 'lenses-tabrow-userdata-'))
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
 })
 
 test.afterAll(async () => {
   await app?.close().catch(() => undefined)
-  await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
+  await Promise.all([userData, rowData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
 // ---------------------------------------------------------------- the default
@@ -157,5 +160,82 @@ test('the Search tab is never stored (YAZ-2638 S15): a window that quits on it s
   await expect(searchBar(win)).toHaveCount(0)
   await expect(bodyMsg(win)).toHaveText(FOCUS_EMPTY)
   await shoot(win, 'lens-03-restarts-on-last-lens')
+  await quitApp(app)
+})
+
+// ---------------------------------------------------------------- the tab row (YAZ-3273, YAZ-3283)
+
+/** The ⋯ button of the row (D2), lit when the tab that shows is inside it (D3). */
+const moreButton = (w: Page) => w.locator('.sidebar__lenses .sidebar__more')
+/** The Tab row panel (YAZ-3279 D4) and its rows, in the order drawn. */
+const rowPanel = (w: Page) => w.locator('.tab-row-panel[role="dialog"]')
+const panelOrder = (w: Page) => rowPanel(w).locator('.tab-row-panel__row').evaluateAll((rows) => rows.map((row) => (row as HTMLElement).dataset.tab))
+/** The tabs on the bar, by name, and whether ⋯ shows and is lit: the whole row as the reader sees it. */
+const barRow = (w: Page) =>
+  w.locator('.sidebar__lenses').evaluate((row) => ({
+    tabs: Array.from(row.querySelectorAll<HTMLElement>('[role="tab"]'), (tab) => tab.dataset.tab),
+    more: row.querySelector('.sidebar__more')?.className ?? null,
+  }))
+
+test('the tab row at 200 px (YAZ-3283): Recents from ⋯, "Hide Focus", Favorites dragged to the top in the panel; after a relaunch the row is the same', async () => {
+  const seed = seededState(vault, path.join(vault, SEED_FILE))
+  seed.sidebarWidth = 200
+  app = await launchApp({ userData: rowData, seedState: seed })
+  win = await appWindow(app, 'w1')
+  await expectLens(win, 'Files')
+
+  // A narrow sidebar: the row fits, and the tabs past its right end are in ⋯ (D1, D2). Recents is one of them.
+  await expect(moreButton(win)).toBeVisible()
+  await expect(win.locator('.sidebar__lenses [role="tab"][data-tab="recents"]')).toHaveCount(0)
+  await moreButton(win).click()
+  await menuItem(win, 'Recents').click()
+  await expect(menuItem(win, 'Recents')).toHaveCount(0)
+  // Recents shows from inside ⋯: ⋯ lights, and the row does not move (D3, S6).
+  await expect(moreButton(win)).toHaveClass(/sidebar__more--lit/)
+  await shoot(win, 'lens-04-recents-from-more')
+
+  // Right-click Focus → "Hide Focus" (D4, S9): Focus leaves the bar.
+  const focus = win.locator('.sidebar__lenses [role="tab"][data-tab="focus"]')
+  await expect(focus).toBeVisible()
+  await focus.click({ button: 'right' })
+  await menuItem(win, 'Hide Focus').click()
+  await expect(focus).toHaveCount(0)
+
+  // "Edit tab row…" (S17), then Favorites dragged to the top with real pointer moves (D5, S19).
+  await lensTab(win, 'Files').click({ button: 'right' })
+  await menuItem(win, 'Edit tab row…').click()
+  await expect(rowPanel(win)).toBeVisible()
+  expect(await panelOrder(win)).toEqual(['files', 'search', 'focus', 'favorites', 'sessions', 'recents'])
+  await expect(rowPanel(win).locator('[role="checkbox"][aria-label="Show Focus"]')).toHaveAttribute('aria-checked', 'false')
+  // The grab is on the name: a press on the box does not drag (S20).
+  const grab = await rowPanel(win).locator('.tab-row-panel__row[data-tab="favorites"] .tab-row-panel__name').boundingBox()
+  const top = await rowPanel(win).locator('.tab-row-panel__row[data-tab="files"]').boundingBox()
+  if (grab === null || top === null) throw new Error('the panel has no rows on screen')
+  const x = grab.x + grab.width / 2
+  await win.mouse.move(x, grab.y + grab.height / 2)
+  await win.mouse.down()
+  await win.mouse.move(x, top.y, { steps: 12 })
+  await win.mouse.up()
+  // One write, after the glide (140 ms): the panel draws the new order.
+  await expect.poll(() => panelOrder(win)).toEqual(['favorites', 'files', 'search', 'focus', 'sessions', 'recents'])
+  await shoot(win, 'lens-05-tab-row-panel')
+  await win.keyboard.press('Escape')
+  await expect(rowPanel(win)).toHaveCount(0)
+
+  // The bar: Favorites first, no Focus, Recents still open from the lit ⋯.
+  const before = await barRow(win)
+  expect(before.tabs[0]).toBe('favorites')
+  expect(before.tabs).not.toContain('focus')
+  expect(before.more).toContain('sidebar__more--lit')
+
+  // The row is in the settings on disk (D8), and a relaunch on the same profile draws the same row.
+  await quitApp(app)
+  const { settings } = await readState(rowData)
+  expect(settings.sidebarTabs).toEqual({ order: ['favorites', 'files', 'search', 'focus', 'sessions', 'recents'], hidden: ['focus'], hiddenButtons: [] })
+  app = await launchApp({ userData: rowData }) // NO re-seed: the row is whatever the app wrote
+  win = await appWindow(app, 'w1')
+  await expect(moreButton(win)).toBeVisible()
+  await expect.poll(() => barRow(win)).toEqual(before)
+  await shoot(win, 'lens-06-tab-row-after-relaunch')
   await quitApp(app)
 })
