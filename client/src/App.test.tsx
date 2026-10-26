@@ -180,7 +180,8 @@ vi.mock('./sidebar/Sidebar', () => ({
   },
 }))
 
-import { App, MOVE_ROW_TITLE_MAX, preloadTabBoard, replayNotice } from './App'
+import { App, preloadTabBoard, replayNotice } from './App'
+import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 

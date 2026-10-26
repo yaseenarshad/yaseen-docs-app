@@ -5,7 +5,7 @@
 import { rootOfPath, type StoredTab, type TabRef } from '@shared/types'
 import { pageName, type PathTitles } from '../lib/pageLabel'
 
-/** The longest page title a window's label keeps whole, in characters (YAZ-3104). */
+/** The longest page title a window's label keeps whole, in characters (YAZ-3104): a long page name cannot widen the "Move to ▸" flyout. The tab count after it is never cut. */
 export const MOVE_ROW_TITLE_MAX = 40
 
 /** A window as its label reads it: a `WindowEntry` of the state, or this window's live tabs in the same shape. */
@@ -38,11 +38,4 @@ export const windowLabel = (w: WindowShape, titles: PathTitles): string => w.nam
 /** A tab of a window's strip by its path and copy (YAZ-3343 D1): `copy` 0 is the first tab of the path. */
 export function tabOfRef<T extends { path: string }>(tabs: readonly T[], ref: TabRef): T | undefined {
   return tabs.filter((t) => t.path === ref.path)[ref.copy]
-}
-
-/** The ref of the tab `id` (YAZ-3343 D1): its path, and its place among the tabs of that path. */
-export function refOfTab(tabs: readonly { id: string; path: string }[], id: string): TabRef | null {
-  const tab = tabs.find((t) => t.id === id)
-  if (tab === undefined) return null
-  return { path: tab.path, copy: tabs.filter((t) => t.path === tab.path).findIndex((t) => t.id === id) }
 }

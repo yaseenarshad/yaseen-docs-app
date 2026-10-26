@@ -67,7 +67,7 @@ const HEADS: Record<string, string> = {
 }
 
 async function mount(over: Partial<TabOverviewProps> = {}) {
-  const props: TabOverviewProps = { roots: ['/v', '/w'], vaultNames: ['Notes', 'Work'], tabs: TABS, active: '/v/a.md', preview: '/w/x.md', titles: new Map(), windowId: 'me', onOpen: vi.fn(), onCloseTabs: vi.fn(), onDismiss: vi.fn(), onMoveToRight: vi.fn(), onShowInSidebar: vi.fn(), ...over }
+  const props: TabOverviewProps = { roots: ['/v', '/w'], vaultNames: ['Notes', 'Work'], tabs: TABS, active: '/v/a.md', preview: '/w/x.md', titles: new Map(), windowId: 'me', onOpen: vi.fn(), onCloseTabs: vi.fn(), onDismiss: vi.fn(), onMoveToRight: vi.fn(), onShowInSidebar: vi.fn(), onDropToWindow: vi.fn(), onMoveTab: vi.fn(), onMoveToNewWindowQuietly: vi.fn(), ...over }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -405,13 +405,11 @@ describe('TabOverview', () => {
   it('demo feedback: "Move to new window" on a card is QUIET from the board — this window\'s by its quiet door, another\'s by asking that window; the new window\'s frame stands right of its source\'s', async () => {
     canvas = { allWindows: true, snap: false, cards: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
-    const onMoveToNewWindow = vi.fn()
     const onMoveToNewWindowQuietly = vi.fn()
-    const { el, again } = await mount({ onMoveToNewWindow, onMoveToNewWindowQuietly })
+    const { el, again } = await mount({ onMoveToNewWindowQuietly })
     rightClick(page(el, '/v/a.md'))
     act(() => menuItem(el, 'Move to new window')?.click())
     expect(onMoveToNewWindowQuietly).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/a.md')
-    expect(onMoveToNewWindow).not.toHaveBeenCalled()
     rightClick(page(el, 'w2\n/w/z.md\n0'))
     act(() => menuItem(el, 'Move to new window')?.click())
     expect(api.window.popOutTab).toHaveBeenCalledExactlyOnceWith('w2', { path: '/w/z.md', copy: 0 })
@@ -712,7 +710,7 @@ describe('TabOverview', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/v/b.md' }, { id: 't3', path: '/v/a.md' }]
-    await act(async () => root?.render(<IdTabOverview roots={['/v']} vaultNames={['Notes']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} onOpen={vi.fn()} onCloseTabs={vi.fn()} onDismiss={vi.fn()} />))
+    await act(async () => root?.render(<IdTabOverview roots={['/v']} vaultNames={['Notes']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={vi.fn()} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
     const el = container
     const face = (id: string) => [page(el, id)?.querySelector('.taboverview__title')?.textContent, page(el, id)?.querySelector('.taboverview__pagename')?.textContent ?? null, page(el, id)?.querySelector('.taboverview__copy')?.textContent ?? null]
     expect(face('t1')).toEqual(['Outline', 'Page: Plan', '1 of 2'])
@@ -724,9 +722,8 @@ describe('TabOverview', () => {
   it('YAZ-3343 D8, D2, D3, D10: "Show all windows" — a switch, stored; one frame per window, this one first; another window\'s cards go to it, close there, and have their own three-item menu; Kill all hands App the other windows\' tabs', async () => {
     names.set('w2', 'Research')
     others = [other('w2', ['/w'], [{ path: '/w/y.md' }, { path: '/w/z.md', active: true }, { path: '/w/y.md', name: 'Second' }]), other('w3', ['/v'], [])]
-    const onCloseNow = vi.fn()
     const onKillAll = vi.fn()
-    const { el, props, again } = await mount({ onCloseNow, onKillAll })
+    const { el, props, again } = await mount({ onKillAll })
     const toggle = el.querySelector<HTMLInputElement>('[role="switch"]')!
     expect([toggle.closest('label')?.textContent, toggle.getAttribute('aria-checked'), el.querySelectorAll('.taboverview__frame').length]).toEqual(['Show all windows', 'false', 0])
     // Off: this window's cards only.
@@ -748,7 +745,7 @@ describe('TabOverview', () => {
     // A click goes to it in its window — and this board stays open (demo feedback); its ✕ closes it there.
     act(() => theirs[1].click())
     expect(api.window.focusTab).toHaveBeenCalledExactlyOnceWith('w2', { path: '/w/z.md', copy: 0 })
-    expect([onCloseNow.mock.calls.length, vi.mocked(props.onDismiss).mock.calls.length]).toEqual([0, 0])
+    expect(props.onDismiss).not.toHaveBeenCalled()
     expect(props.onOpen).not.toHaveBeenCalled()
     act(() => theirs[2].querySelector<HTMLButtonElement>('.taboverview__close')!.click())
     act(() => theirs[2].querySelector<HTMLButtonElement>('.taboverview__close')!.click())
@@ -781,11 +778,10 @@ describe('TabOverview', () => {
   it('YAZ-3343 D13: a card dropped in another window\'s frame moves there — this window\'s by App\'s door, another\'s by main — and its place there is stored; a window with no vault of the page refuses it, and the card slides back', async () => {
     canvas = { allWindows: true, snap: false, cards: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
-    const onMoveToWindow = vi.fn()
     const onDropToWindow = vi.fn()
     const onMoveTab = vi.fn()
     const onNotice = vi.fn()
-    const { el } = await mount({ onMoveToWindow, onDropToWindow, onMoveTab, onNotice })
+    const { el } = await mount({ onDropToWindow, onMoveTab, onNotice })
     /** The client point inside a frame: the camera stands at the padding, zoom 1. */
     const inside = (win: string) => ({ x: BOARD.padX + Number.parseFloat(frame(el, win).style.left) + 30, y: BOARD.padTop + Number.parseFloat(frame(el, win).style.top) + 30 })
 
@@ -795,7 +791,7 @@ describe('TabOverview', () => {
     dragTo(a, to.x, to.y)
     expect(onNotice).toHaveBeenCalledExactlyOnceWith("Can't move here — that window doesn't have this tab's vault.")
     expect([a.style.transform, a.dataset.sliding]).toEqual(['', ''])
-    expect(onMoveToWindow).not.toHaveBeenCalled()
+    expect(onDropToWindow).not.toHaveBeenCalled()
     expect(storage.setTabCanvas).not.toHaveBeenCalled()
 
     // x.md is of /w: it goes to w2, and arrives as the next copy of its path there, where it was dropped.
@@ -805,7 +801,6 @@ describe('TabOverview', () => {
     dragTo(x, to.x, to.y)
     // The drop's own door, the quiet one (demo feedback): "Move to ▸" is the menu's.
     expect(onDropToWindow).toHaveBeenCalledExactlyOnceWith('w2', '/w/x.md', '/w/x.md')
-    expect(onMoveToWindow).not.toHaveBeenCalled()
     // It ARRIVES inside w2's frame (demo bug: never at the raw drop point): w2's card frozen, the arrival in a new row under it.
     const [wy] = [placeOf(page(el, 'w2\n/w/y.md\n0')!)]
     expect(storage.setTabCanvas).toHaveBeenCalledExactlyOnceWith({ set: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: wy[0], y: wy[1] }, { win: 'w2', path: '/w/x.md', copy: 0, by: 'window', x: wy[0], y: wy[1] + BOARD.pageH + BOARD.pageGap }] })
@@ -885,9 +880,9 @@ describe('TabOverview', () => {
   it('demo feedback: ⌘-click picks as Shift does; dragging a picked card carries every picked card, of any window, by the same delta — no render while it moves, ONE write and ONE render on the drop, and no tab changes window', async () => {
     canvas = { allWindows: true, snap: false, cards: [] }
     others = [other('w2', ['/w', '/v'], [{ path: '/w/y.md', active: true }])]
-    const onMoveToWindow = vi.fn()
+    const onDropToWindow = vi.fn()
     const onMoveTab = vi.fn()
-    const { el, props, commits } = await mount({ onMoveToWindow, onMoveTab })
+    const { el, props, commits } = await mount({ onDropToWindow, onMoveTab })
     const ids = ['/v/a.md', 'w2\n/w/y.md\n0']
     const placeAt = (id: string) => placeOf(page(el, id)!)
     const before = ids.map(placeAt)
@@ -906,7 +901,7 @@ describe('TabOverview', () => {
     pointer(window, 'pointerup', target.x, target.y)
     expect(commits.n).toBe(1)
     expect(storage.setTabCanvas).toHaveBeenCalledExactlyOnceWith({ set: [{ win: 'me', path: '/v/a.md', copy: 0, by: 'window', x: before[0][0] + target.x, y: before[0][1] + target.y }, { win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: before[1][0] + target.x, y: before[1][1] + target.y }] })
-    expect([onMoveToWindow, onMoveTab, api.window.moveTab].map((door) => vi.mocked(door).mock.calls.length)).toEqual([0, 0, 0])
+    expect([onDropToWindow, onMoveTab].map((door) => vi.mocked(door).mock.calls.length)).toEqual([0, 0])
     expect(ids.map(placeAt)).toEqual(before.map(([x, y]) => [x + target.x, y + target.y]))
   })
 
@@ -946,7 +941,7 @@ describe('TabOverview', () => {
     expect(menuItem(el, 'Close all tabs')).toBeDefined()
     act(() => menuItem(el, 'Close all tabs')?.click())
     act(() => menuItem(el, 'Click again to close 2 tabs')?.click())
-    expect(onCloseWindow).toHaveBeenLastCalledWith({ win: 'w2', mine: false, label: 'y + 1 more tab', refs: [{ path: '/w/y.md', copy: 0 }, { path: '/w/z.md', copy: 0 }], whole: false })
+    expect(onCloseWindow).toHaveBeenLastCalledWith({ win: 'w2', mine: false, refs: [{ path: '/w/y.md', copy: 0 }, { path: '/w/z.md', copy: 0 }], whole: false })
     expect(el.querySelector('.ctx-menu')).toBeNull()
     ctx(frame(el, 'me'))
     act(() => menuItem(el, 'Close window')?.click())
@@ -1089,7 +1084,7 @@ describe('TabOverview', () => {
     const { el, props } = await mount({ reviewState: (path) => (path === '/v/a.md' ? false : null), onSetReview: vi.fn() })
     rightClick(page(el, '/v/a.md'))
     // `TabMenu`, the one the strip's tabs open: the same items in the same order.
-    expect(menuItems(el)).toEqual(['Go to tab', 'Move to', 'Show in sidebar', 'Copy path', 'Turn review on', 'Reveal in Finder', 'Open in VS Code', 'Close tab'])
+    expect(menuItems(el)).toEqual(['Go to tab', 'Move to new window', 'Move to', 'Show in sidebar', 'Copy path', 'Turn review on', 'Reveal in Finder', 'Open in VS Code', 'Close tab'])
     key(el, 'Escape')
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(props.onDismiss).not.toHaveBeenCalled()
@@ -1120,7 +1115,7 @@ describe('TabOverview', () => {
   })
 
   it('YAZ-2940 D5, S5: a page\'s menu has "Duplicate tab" right after "Move to new window"; a click copies that tab by id and leaves the board open', async () => {
-    const { el, props } = await mount({ onMoveToNewWindow: vi.fn(), onDuplicate: vi.fn() })
+    const { el, props } = await mount({ onDuplicate: vi.fn() })
     rightClick(page(el, '/v/Projects/plan.md'))
     expect(menuItems(el).slice(0, 4)).toEqual(['Go to tab', 'Move to new window', 'Duplicate tab', 'Move to'])
     act(() => menuItem(el, 'Duplicate tab')?.click())
@@ -1132,13 +1127,14 @@ describe('TabOverview', () => {
 
   it('YAZ-3091 D3, S17: a page\'s "Move to ▸" lists the windows asked for ITS page, a line, then "Right panel"; a window row moves that tab by id and leaves the board open', async () => {
     const onMoveTargets = vi.fn((path: string) => (path.startsWith('/w/') ? [] : [{ id: 'w2', label: 'Notes — plan · 3 tabs' }]))
-    const { el, props } = await mount({ onMoveTargets, onMoveToWindow: vi.fn() })
+    const { el, props } = await mount({ onMoveTargets })
     rightClick(page(el, '/v/Projects/plan.md'))
     expect(onMoveTargets).toHaveBeenLastCalledWith('/v/Projects/plan.md')
     act(() => menuItem(el, 'Move to')?.click())
     expect([...el.querySelectorAll('.ctx-menu__sub [role="group"]')].map((g) => g.textContent)).toEqual(['Notes — plan · 3 tabs', 'Right panel'])
     act(() => menuItem(el, 'Notes — plan · 3 tabs')?.click())
-    expect(props.onMoveToWindow).toHaveBeenCalledExactlyOnceWith('w2', '/v/Projects/plan.md', '/v/Projects/plan.md')
+    // Quiet from the board (D20): the drop's door.
+    expect(props.onDropToWindow).toHaveBeenCalledExactlyOnceWith('w2', '/v/Projects/plan.md', '/v/Projects/plan.md')
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(props.onDismiss).not.toHaveBeenCalled()
     // A page of a vault no other window shows: only "Right panel" (S1, S3).
@@ -1166,7 +1162,7 @@ describe('TabOverview', () => {
     expect(props.onCloseTabs).toHaveBeenLastCalledWith(['/v/Projects/report.pdf', '/w/x.md', '/v/Projects/Alpha', '/v/Projects/Alpha/2026-10-08.md'])
     expect(bar()).toBeNull()
     rightClick(page(el, '/w/x.md'))
-    expect(menuItems(el).slice(0, 2)).toEqual(['Go to tab', 'Move to'])
+    expect(menuItems(el).slice(0, 3)).toEqual(['Go to tab', 'Move to new window', 'Move to'])
     key(el, 'Escape') // the menu's
 
     shiftClick(page(el, '/v/a.md'))
@@ -1424,7 +1420,7 @@ describe('TabOverview display name (YAZ-2949 D4, D5)', () => {
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/w/x.md' }]
     const onOpen = vi.fn()
-    await act(async () => root?.render(<IdTabOverview roots={['/v', '/w']} vaultNames={['Notes', 'Work']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} onOpen={onOpen} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onSetName={onSetName} />))
+    await act(async () => root?.render(<IdTabOverview roots={['/v', '/w']} vaultNames={['Notes', 'Work']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={onOpen} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onSetName={onSetName} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
     const el = container
     const card = page(el, 't1')!
     expect(card.querySelector('.taboverview__title')?.textContent).toBe('Outline')

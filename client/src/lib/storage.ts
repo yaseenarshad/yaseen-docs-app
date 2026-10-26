@@ -192,6 +192,8 @@ export const storage = {
    * page's vault. Read only while a tab menu is open, never a render trigger; main checks the target again.
    */
   getOtherWindows: (): WindowEntry[] => state.windows.filter((w) => w.id !== identity.id),
+  /** This window's id (`WindowEntry.id`), from the identity `init()` loaded: the tab board keys its stored places by it (YAZ-3343 D1). */
+  getWindowId: (): string => identity.id,
 
   /**
    * A window's name (YAZ-3343 D14), off the cache; this window's when `id` is left out. `undefined` = no name:

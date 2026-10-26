@@ -8,7 +8,7 @@
  * properties, and the layout reads the same numbers. So what the layout computes is what the
  * browser shows, and the board never has to measure the cards it placed (YAZ-3343 D4).
  */
-import { canvasCardKey, rootOfPath, stripSlash, type CanvasCard, type CanvasLayout } from '@shared/types'
+import { canvasCardKey, rootOfPath, stripSlash, type CanvasCard, type CanvasLayout, type TabRef } from '@shared/types'
 import { dirname, relTo } from '../lib/paths'
 
 /**
@@ -97,6 +97,12 @@ export function copiesOf(tabs: readonly { path: string }[]): { copy: number[]; c
     return n
   })
   return { copy, count }
+}
+
+/** Each tab's ref in its window (YAZ-3343 D1): its path and its copy number, in strip order. */
+export function refsOf(tabs: readonly { path: string }[]): TabRef[] {
+  const { copy } = copiesOf(tabs)
+  return tabs.map(({ path }, i) => ({ path, copy: copy[i] }))
 }
 
 /**

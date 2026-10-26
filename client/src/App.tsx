@@ -55,8 +55,7 @@ import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import type { MoveTarget } from './tabs/TabMenu'
 import { setBoardHighlight } from './tabs/boardHighlight'
-import { useThisWindowId } from './tabs/thisWindow'
-import { MOVE_ROW_TITLE_MAX, tabOfRef, windowLabel } from './tabs/windowLabel'
+import { tabOfRef, windowLabel } from './tabs/windowLabel'
 import { useUpdate } from './update/useUpdate'
 import { RightPanel } from './right-panel/RightPanel'
 import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
@@ -108,8 +107,6 @@ function syncHash(path: string | null): void {
 
 /** No tab board (YAZ-2648): one object, so closing a board that is closed is no state change. */
 const OVERVIEW_CLOSED = { phase: 'closed', from: null } as const
-/** "Move to ▸": a window row's page name is cut to this many characters (YAZ-3104), so a long page name cannot widen the flyout over the tab menu. The tab count after it is never cut. One spelling with the board's frames (YAZ-3343 D14). */
-export { MOVE_ROW_TITLE_MAX }
 /** The longest a window glows with no word from main (YAZ-3091 D8): only a lost "off" ever reaches it. */
 export const GLOW_MAX_MS = 10_000
 
@@ -1203,8 +1200,6 @@ export function App() {
     else setReview(tab.path, action.on)
   }, [duplicateTab, setTabName, showInSidebar, setReview])
   useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere })
-  /** This window's id (YAZ-3343 D1): the board's stored places are keyed by it. */
-  const windowId = useThisWindowId()
   /** Another window's card dropped in a frame on this board (YAZ-3343 D13): that window sends it, quietly (`sendTabHere` there). */
   const moveBoardTab = useCallback((from: string, to: string, ref: TabRef) => {
     api.window.moveTab(from, to, ref).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
@@ -1232,8 +1227,6 @@ export function App() {
     if (ask.whole) api.window.closeOther(ask.win).catch(failed)
     else api.window.closeTabs(ask.win, ask.refs).catch(failed)
   }, [closeBlank, closeUnderOverview, notify])
-  /** A card of another window was opened (YAZ-3343 D3): the board goes at once, with no zoom, as after a sidebar click. */
-  const closeOverviewNow = useCallback(() => setOverview(OVERVIEW_CLOSED), [])
   // The board's chunk loads while the window is idle (D4), so the first open has nothing to wait for.
   useEffect(() => {
     const load = (): void => void preloadTabBoard().catch(() => undefined)
@@ -2500,14 +2493,13 @@ export function App() {
                 active={activeTab}
                 preview={preview}
                 titles={titles}
-                windowId={windowId}
+                windowId={storage.getWindowId()}
                 darkColors={settings.diagramDarkColors}
                 leaving={overview.phase === 'leaving'}
                 onLeft={leftOverview}
                 onOpen={leaveOverview}
                 onCloseTabs={closeUnderOverview}
                 onDismiss={leaveOverviewForOpenPage}
-                onCloseNow={closeOverviewNow}
                 onKillAll={askKillAll}
                 onMoveTab={moveBoardTab}
                 onCloseWindow={closeBoardWindow}
@@ -2515,9 +2507,7 @@ export function App() {
                 onOpenTabHere={openBackground}
                 // A page's menu is a tab's menu: the strip's own doors. A reveal in the sidebar leaves the board open beside it.
                 onMoveToRight={movePageToRight}
-                onMoveToNewWindow={movePageToNewWindow}
                 onMoveTargets={moveTargets}
-                onMoveToWindow={movePageToWindow}
                 onDropToWindow={movePageToWindowQuietly}
                 onMoveToNewWindowQuietly={movePageToNewWindowQuietly}
                 // The sidebar's own preview panel beside a card (demo feedback): the setting gates the hover, never Space.
