@@ -6065,6 +6065,8 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
   it('the box is an alert dialog named by its question; Esc closes it and keeps the items; a change of the window\u2019s vaults closes it (audit 7, 20)', async () => {
     const { bridge, el, emitFileRenamed } = await mountVault()
     await draggedOut('/v/A.md')
+    // The box waits for the link count; a slow CI runner can take a few more ticks to show it.
+    await vi.waitFor(() => expect(box(el)).not.toBeNull())
     expect(box(el)?.getAttribute('role')).toBe('alertdialog')
     expect(el.querySelector(`#${box(el)?.getAttribute('aria-labelledby')}`)?.textContent).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
