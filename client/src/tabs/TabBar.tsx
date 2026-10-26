@@ -90,6 +90,14 @@ export interface TabBarProps {
    */
   reviewState?: (path: string) => boolean | null
   onSetReview?: (path: string, on: boolean) => void
+  /**
+   * Focus and Favorites on a tab (YAZ-3264 D2), the sidebar row's items: where a path stands in the
+   * two lists — null hides both items — and the two toggles. App's lists (D1), so they work with the
+   * sidebar hidden; a toggle only toasts (D3).
+   */
+  listState?: (path: string) => { focus: boolean; favorite: boolean } | null
+  onToggleFocus?: (paths: string[], isOn: boolean) => void
+  onToggleFavorite?: (paths: string[], isOn: boolean) => void
 }
 
 /** How long a tab slides open or shut, in ms (YAZ-2656 D12). The row hands it to the stylesheet as `--tab-slide-ms`, so the slide and the ghost's timer take the same time. */
@@ -134,14 +142,14 @@ const Chevron = ({ d }: { d: string }) => (
  * (YAZ-2655): it stands outside the scroller, so it is on show however far the strip scrolled.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview }: TabBarProps) {
+export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
   // and since YAZ-963 that row's OS actions too (Reveal in Finder, Open in VS Code). The items are
   // `TabMenu`'s, which the board's pages open too (YAZ-2648). The note's review state (YAZ-2322)
   // is read when the menu opens, so the review item is about the tab that was right-clicked; a
-  // null state hides it.
+  // null state hides it. Focus and Favorites (YAZ-3264 D2) are read the same way.
   const [menu, setMenu] = useState<TabMenuAt | null>(null)
   /** The tab whose name is a field (YAZ-2949 D4), by id, or null. */
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -387,7 +395,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
                 // A right-click in the name's field is the field's own (YAZ-2949): no tab menu over it.
                 if (id === renaming) return
                 e.preventDefault()
-                setMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null, named: name !== undefined })
+                setMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null, named: name !== undefined, lists: listState?.(path) ?? null })
               }}
             >
               {id === renaming ? (
@@ -447,7 +455,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
         </button>
       )}
       <div className="tabbar-tail" {...endSlot} />
-      {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} moveTargets={onMoveTargets?.(menu.path)} onMoveToWindow={onMoveToWindow} onHighlightWindow={onHighlightWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
+      {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} moveTargets={onMoveTargets?.(menu.path)} onMoveToWindow={onMoveToWindow} onHighlightWindow={onHighlightWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onToggleFocus={onToggleFocus} onToggleFavorite={onToggleFavorite} onNotice={onNotice} />}
       {/* The grid button's menu: the two saves of a session (YAZ-3147 D5), a line, then "Kill all tabs". With no tab
           there is nothing to save or close, and each item is grey like any item that cannot be used (S4). */}
       {gridMenu !== null && (
