@@ -126,7 +126,7 @@ export function useVaultTree(
   const filesByVault = useMemo(() => roots.map((vault) => walkOf(trees.get(vault)).files), [trees, roots])
   // The Focus tab's rows (YAZ-2619 D2), off the live trees, in the order of `focusList` (App's, YAZ-3264 D1),
   // never the tree's. An item this Mac has no file for draws no row and STAYS in the list (YAZ-2702 S13).
-  const { focusList, favoritesByRoot, favoritePaths, clearFocus, toggleFavorite, reorderFocus, saveFavoriteOrder } = lists
+  const { focusList, favoritesByRoot, favoritePaths, clearFocus, toggleFavorite, reorderFocus, saveFavoriteOrder, toggleFocus: toggleListFocus } = lists
   const focusNodes = useMemo(() => (forest === null ? [] : favoriteRoots(forest, focusList)), [forest, focusList])
   // Each copy folds on its own (YAZ-3131 Decision 2), so the tab's expand-all set is its copies' keys.
   const focusDirs = useMemo(() => copyDirs(focusNodes), [focusNodes])
@@ -321,11 +321,12 @@ export function useVaultTree(
    */
   const toggleFocus = useCallback(
     (paths: string[], isOn: boolean) => {
-      if (!lists.toggleFocus(paths, isOn) || isOn) return
+      if (!toggleListFocus(paths, isOn) || isOn) return
       // A folder joins open (R4) in its own copy only (YAZ-3131 S4): Files and the other copies keep their folds.
       dispatch({ type: 'open', dirs: paths.filter((path) => dirs.includes(path)).map((path) => copyFoldKey(path, path)) })
     },
-    [dirs, lists],
+    // The toggle alone, not `lists`: a Favorites change must not give the memoised Tree (YAZ-2194) a new handler.
+    [dirs, toggleListFocus],
   )
 
   // Stable for the per-level memoised Tree (YAZ-2194). A vault row is open unless the user closed
