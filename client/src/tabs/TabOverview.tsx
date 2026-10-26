@@ -6,7 +6,7 @@ import { isFolderPath, pageLabel, useLatestTrees, type PathTitles } from '../lib
 import { storage } from '../lib/storage'
 import type { Tab } from '../workspace/useWorkspace'
 import type { ListState } from '../lists/useVaultListsHere'
-import { arrivalIn, BOARD, buildBoard, cellKey, copiesOf, dropOutcome, fieldOf, frameDrop, layoutCanvas, nearest, placeCard, refsOf, storedAt, tidyFrame, tidyGroup, withoutTitle, type BoardPage, type BoardTab, type CanvasPlan, type Field, type FrameInput, type Island, type Rect, type Way } from './board'
+import { arrivalIn, BOARD, buildBoard, cellKey, copiesOf, departureFrom, dropOutcome, fieldOf, frameDrop, layoutCanvas, nearest, placeCard, refsOf, storedAt, tidyFrame, tidyGroup, withoutTitle, type BoardPage, type BoardTab, type CanvasPlan, type Field, type FrameInput, type Island, type Rect, type Way } from './board'
 import { setBoardHighlight } from './boardHighlight'
 import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
 import { TabNameField } from './TabNameField'
@@ -483,8 +483,9 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const anyMenu = pageMenu !== null || islandMenu !== null || pickMenu !== null || frameMenu !== null
 
   // What the doors below read when they run: a ref, so the handlers of the cards and of the window keep one identity.
-  const live = useRef({ plan, info, byWin, current, picked, pick, allCards, renaming, layout, allWindows, view, armed })
-  live.current = { plan, info, byWin, current, picked, pick, allCards, renaming, layout, allWindows, view, armed }
+  const filtered = terms.length > 0
+  const live = useRef({ plan, info, byWin, current, picked, pick, allCards, renaming, layout, allWindows, view, armed, filtered })
+  live.current = { plan, info, byWin, current, picked, pick, allCards, renaming, layout, allWindows, view, armed, filtered }
 
   // The doors of a card. Each closes over `live`, so `actions` is ONE object for the board's life.
   const openCard = (id: string): void => {
@@ -499,9 +500,21 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (card.mine) onDropToWindow(to, card.page.path, card.page.id)
     else onMoveTab(card.win, to, card.ref)
   }
+  /**
+   * Tabs that LEAVE their windows from the board (YAZ-3376, S16): the write that keeps every other card and frame where
+   * it stands (`departureFrom`). None while a filter is typed: that layout is the filter's, as the repair's is.
+   */
+  const leave = (ids: readonly string[], arrival: readonly CanvasCard[] = []): void => {
+    const { plan: now, layout: by, filtered: typed } = live.current
+    const patch = by === 'window' && !typed ? departureFrom(now, new Set(ids)) : null
+    // One may arrive too (D13, D20): ONE write, the arrival last. Nothing to store, no write.
+    if (patch !== null) storage.setTabCanvas({ ...patch, set: [...(patch.set ?? []), ...arrival] })
+    else if (arrival.length > 0) storage.setTabCanvas({ set: [...arrival] })
+  }
   /** Close cards of any window (D3, D10): this window's by its own door, another's by asking it, grouped per window. */
   const closeCards = (ids: readonly string[]): void => {
     const { info: cards } = live.current
+    leave(ids)
     const mine = ids.filter((id) => cards.get(id)?.mine === true)
     if (mine.length > 0) onCloseTabs(mine)
     const per = new Map<string, TabRef[]>()
@@ -552,7 +565,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       const copy = wins.get(outcome.to)?.tabs.filter((t) => t.path === card.page.path).length ?? 0
       const set = arrivalIn(now, outcome.to, { path: card.page.path, copy }, { where: posOf })
       const arrive = set[set.length - 1]
-      storage.setTabCanvas({ set })
+      leave([g.id], set)
       setGhosts((held) => new Map(held).set(g.id, { x: arrive.x, y: arrive.y }))
       sendCard(card, outcome.to)
       return
@@ -1079,6 +1092,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const closeWindow = (win: string, whole: boolean): void => {
     const w = byWin.get(win)
     if (w === undefined) return
+    leave(w.tabs.map((t) => t.id))
     onCloseWindow?.({ win, mine: w.mine, refs: refsOf(w.tabs), whole })
   }
   /**
@@ -1125,6 +1139,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (card === undefined) return
     known.current = new Set([windowId, ...others.map((w) => w.id)])
     popping.current = { from: card.win, path }
+    leave([id])
     if (card.mine) onMoveToNewWindowQuietly(path, id)
     else api.window.popOutTab(card.win, card.ref).catch(() => onNotice?.("Can't move that tab: its window is closed"))
   }
@@ -1300,7 +1315,8 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const card = info.get(id)
     const target = byWin.get(to)
     if (card === undefined) return
-    if (target !== undefined && plan.frames.some((f) => f.win === to)) storage.setTabCanvas({ set: arrivalIn(plan, to, { path: card.page.path, copy: target.tabs.filter((t) => t.path === card.page.path).length }, { where: posOf }) })
+    const arrival = target !== undefined && plan.frames.some((f) => f.win === to) ? arrivalIn(plan, to, { path: card.page.path, copy: target.tabs.filter((t) => t.path === card.page.path).length }, { where: posOf }) : []
+    leave([id], arrival)
     setRinged(null)
     sendCard(card, to)
   }
