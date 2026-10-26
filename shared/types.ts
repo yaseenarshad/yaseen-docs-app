@@ -1916,7 +1916,7 @@ export interface AppState {
 
 /** At most this many moved cards are kept (YAZ-3343 D1), last moved first: about 60 KB of the state file. */
 export const MAX_CANVAS_CARDS = 500
-/** At most this many stored window frames (YAZ-3343, demo bug: an empty frame must drag freely too). */
+/** At most this many stored window frames (YAZ-3343 D16: an empty frame drags freely too). */
 export const MAX_CANVAS_FRAMES = 100
 
 /** Where a window's frame stands on the board's 'window' layout (YAZ-3343): its label row's top-left, in world px. */
@@ -1936,7 +1936,7 @@ export interface TabRef {
 }
 
 /**
- * A tab action ANOTHER window's board asks of this window's tab (YAZ-3343, demo feedback: one card menu for every card):
+ * A tab action ANOTHER window's board asks of this window's tab (YAZ-3343 D31: one card menu for every card):
  * the owner runs it itself. `show-in-sidebar` also raises the owner.
  */
 export type TabAction = { kind: 'duplicate' } | { kind: 'set-name'; name: string | null } | { kind: 'show-in-sidebar' } | { kind: 'set-review'; on: boolean }
@@ -1983,7 +1983,7 @@ export interface TabCanvasPatch {
   forget?: Array<TabRef & { win: string; by: CanvasLayout }>
 }
 
-/** "Show all windows" is ON by default (Yaseen's demo feedback on YAZ-3343): a stored `false` stays off. */
+/** "Show all windows" is ON by default (YAZ-3343 D19): a stored `false` stays off. */
 export function defaultTabCanvas(): TabCanvasState {
   return { allWindows: true, snap: true, cards: [], frames: [] }
 }
@@ -2531,7 +2531,7 @@ export interface WindowIdentity {
   /** Which sidebar lens this window shows (YAZ-847, per window since YAZ-1628). */
   sidebarLens: SidebarLens
   /**
-   * The page view the active tab starts with (YAZ-2951 D5): set by ⌘⇧N or "Move to new window",
+   * The page view the active tab starts with (YAZ-2951 D2): set by "Move to new window" (⌘⇧N copies none since YAZ-3343 D35),
    * given out by the FIRST `window:identity` of the new window only (S17). Never stored.
    */
   startView?: StartView
@@ -2543,7 +2543,7 @@ export interface WindowIdentity {
 }
 
 /**
- * How a page looks now (YAZ-2951 D1): what "Duplicate tab", ⌘⇧N and "Move to new window" give the
+ * How a page looks now (YAZ-2951 D1): what "Duplicate tab" and "Move to new window" give the
  * copy. Read once, on the action (`client/src/lib/pageView.ts`). Never stored (CONTRACTS rule 12).
  */
 export interface PageView {
@@ -2557,7 +2557,7 @@ export interface PageView {
   magnification: number
 }
 
-/** A page view for one file: what a new window starts its active tab with (YAZ-2951 D5). Never stored. */
+/** A page view for one file: what a popped-out window starts its active tab with (YAZ-2951 D2). Never stored. */
 export interface StartView {
   path: string
   view: PageView
@@ -2572,9 +2572,10 @@ export interface PopOutCarry {
   /** The tab's display name (YAZ-2949 D7), if it has one: main stores it with the new window's tab (YAZ-3057 D3). */
   name?: string
   /**
-   * A QUIET move (YAZ-3343 D13, Yaseen's demo feedback): a card dropped in another window's frame on the tab board.
-   * Main does not raise the target, and the target adds the tab in the background: its page on show stays. "Move to ▸"
-   * sends none, and raises and shows the tab as before. "Move to new window" ignores it.
+   * A QUIET move (YAZ-3343 D20): a move FROM THE TAB BOARD — a card dropped in another window's frame, its "Move to ▸",
+   * a search pick. Main does not raise the target, and the target adds the tab in the background: its page on show
+   * stays. "Move to ▸" from the tab strip sends none, and raises and shows the tab as before. With "Move to new
+   * window" from the board, the new window is HIDDEN until the board shows it (D23, D37).
    */
   background?: true
 }

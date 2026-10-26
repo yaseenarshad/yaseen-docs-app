@@ -671,11 +671,7 @@ export function readCanvasCard(raw: unknown): CanvasCard | null {
 }
 
 /**
- * The tab board's canvas on load (YAZ-3343 D1), lenient like the windows: a missing or junk value is the default,
- * a bad card drops alone, a card of a window the file does not have drops too, and the list is cut at MAX_CANVAS_CARDS.
- */
-/**
- * The stored cards of window `w` whose tab it still has (YAZ-3343, demo bug): (path, copy) with copy below the number
+ * The stored cards of window `w` whose tab it still has (YAZ-3343 D28): (path, copy) with copy below the number
  * of its tabs of that path. A tab that left — or a copy that closed — leaves no card behind. `canvas` itself when
  * nothing goes, so a caller's commit changes nothing there.
  */
@@ -692,12 +688,16 @@ export function readCanvasFrame(raw: unknown): CanvasFrame | null {
   return { win: raw.win, x: raw.x, y: raw.y }
 }
 
+/**
+ * The tab board's canvas on load (YAZ-3343 D1), lenient like the windows: a missing or junk value is the default,
+ * a bad card drops alone, a card of a window the file does not have drops too, and the list is cut at MAX_CANVAS_CARDS.
+ */
 export function sanitizeTabCanvas(raw: unknown, windows: readonly WindowEntry[]): TabCanvasState {
   if (!isRecord(raw)) return defaultTabCanvas()
   const cards = Array.isArray(raw.cards) ? raw.cards.map(readCanvasCard).filter((c): c is CanvasCard => c !== null) : []
   const frames = Array.isArray(raw.frames) ? raw.frames.map(readCanvasFrame).filter((f): f is CanvasFrame => f !== null) : []
   // The good cards laid on an empty canvas by the patch rule: each key once (the first: last moved first), windows the file has, the cap.
-  // The switch is on unless the file says `false` (demo feedback: "show all windows" by default); junk is the default.
+  // The switch is on unless the file says `false` ("Show all windows" by default, D19); junk is the default.
   return applyTabCanvasPatch(defaultTabCanvas(), { allWindows: raw.allWindows !== false, snap: raw.snap !== false, set: cards, setFrames: frames }, new Set(windows.map((w) => w.id)))
 }
 
@@ -948,7 +948,7 @@ export function createStore(filePath: string): Store {
       // The use goes in the commit of the window (YAZ-2663 R2): one write, one broadcast. Its vault is the one of the window that holds the page.
       const vault = opened === null ? null : rootOfPath(normalized.roots, opened)
       const folders = opened === null || vault === null ? state.folders : { ...state.folders, [vault]: { ...folderOf(vault), opens: addOpen(folderOf(vault).opens, opened, now) } }
-      // The board's places of tabs this window no longer has go in the same commit (demo bug: stale cards shared cells).
+      // The board's places of tabs this window no longer has go in the same commit (D28): a stale card would take a cell.
       commit({ ...state, windows, folders, tabCanvas: pruneCanvas(state.tabCanvas, normalized) })
     },
 

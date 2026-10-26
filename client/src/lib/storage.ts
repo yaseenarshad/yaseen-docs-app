@@ -288,14 +288,14 @@ export const storage = {
   /** Valid AT BOOT only (like `getFile`): the renderer owns tab state after boot (Tabs I2, GRO-2234). */
   getTabs: (): string[] => identity.tabs,
   /**
+   * This window was opened EMPTY on purpose (YAZ-3343 D22, D35): the tab board's "New window", or ⌘⇧N. Main says so
+   * in its first identity; it boots with no tab, never on the vault's last file.
+   */
+  isEmptyByChoice: (): boolean => identity.file === null && identity.startEmpty === true,
+  /**
    * The tabs with their copies, display names and active copy (YAZ-3057): boot only, like `getTabs`.
    * A window that stores no strip gives its plain `tabs`, one entry per path.
    */
-  /**
-   * This window was opened EMPTY on purpose (YAZ-3343, demo bug "why do 2 tabs open?"): the tab board's "New window".
-   * Main says so in its first identity; it boots with no tab, never on the vault's last file.
-   */
-  isEmptyByChoice: (): boolean => identity.file === null && identity.startEmpty === true,
   getTabStrip: (): StoredTab[] => identity.tabStrip?.map((t) => ({ ...t })) ?? identity.tabs.map((path) => ({ path })),
 
   /** Durable right-panel identity at boot; clone the ordered list so callers cannot mutate the cache. */
