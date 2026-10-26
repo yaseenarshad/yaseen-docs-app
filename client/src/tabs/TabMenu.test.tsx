@@ -108,3 +108,52 @@ describe('TabMenu "Move to ▸" (YAZ-3091 D3)', () => {
     expect(item(el, 'Move to')).toBeUndefined()
   })
 })
+
+describe('TabMenu Focus and Favorites (YAZ-3264 D2)', () => {
+  const lists = (over: Partial<TabMenuProps> = {}, state: TabMenuAt['lists'] = { focus: false, favorite: false }) => all({ menu: at({ lists: state }), onToggleFocus: vi.fn(), onToggleFavorite: vi.fn(), ...over })
+
+  it('S1: "Add to focus" right after "Show in sidebar", "Add to favorites" first in the last group', () => {
+    expect(groups(mount(lists()))).toEqual([
+      ['Move to new window', 'Duplicate tab', 'Move to'],
+      ['Show in sidebar', 'Add to focus', 'Copy path'],
+      ['Set display name', 'Turn review on'],
+      ['Add to favorites', 'Reveal in Finder', 'Open in VS Code'],
+    ])
+  })
+
+  it('D6: the two items carry their sidebar tab\'s glyph, the eye and the heart; the other rows have none', () => {
+    const el = mount(lists())
+    const withGlyph = [...el.querySelectorAll('.ctx-menu__item')].filter((b) => b.querySelector('svg') !== null).map((b) => b.textContent)
+    expect(withGlyph).toEqual(['Add to focus', 'Add to favorites'])
+    expect(el.querySelector('.ctx-menu')?.classList.contains('ctx-menu--glyphs')).toBe(true)
+  })
+
+  it('S2, S14: a page in a list reads "Remove from …", and each item toggles the path with the state the menu read', () => {
+    const props = lists({}, { focus: true, favorite: true })
+    let el = mount(props)
+    expect([groups(el)[1][1], groups(el)[3][0]]).toEqual(['Remove from focus', 'Remove from favorites'])
+    act(() => item(el, 'Remove from focus')?.click())
+    expect(props.onToggleFocus).toHaveBeenCalledExactlyOnceWith(['/v/a.md'], true)
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+    act(() => root?.unmount())
+    el = mount(props)
+    act(() => item(el, 'Remove from favorites')?.click())
+    expect(props.onToggleFavorite).toHaveBeenCalledExactlyOnceWith(['/v/a.md'], true)
+    act(() => root?.unmount())
+    const off = lists()
+    el = mount(off)
+    act(() => item(el, 'Add to favorites')?.click())
+    expect(off.onToggleFavorite).toHaveBeenCalledExactlyOnceWith(['/v/a.md'], false)
+  })
+
+  it('S7, S8: absent or null state hides both items, as does a menu with no toggle door', () => {
+    const labels = (props: TabMenuProps) => {
+      const flat = groups(mount(props)).flat()
+      act(() => root?.unmount())
+      return flat.filter((label) => label?.includes('focus') === true || label?.includes('favorites') === true)
+    }
+    expect(labels(lists({}, null))).toEqual([])
+    expect(labels(lists({ menu: at() }))).toEqual([])
+    expect(labels(lists({ onToggleFocus: undefined, onToggleFavorite: undefined }))).toEqual([])
+  })
+})

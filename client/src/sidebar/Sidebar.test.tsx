@@ -69,6 +69,8 @@ vi.mock('./folderShortcuts', async (importOriginal) => {
 
 import { testDoor } from '../testNoteIds'
 import { PREVIEW_FOLLOW_MS } from './hooks/useSidebarSearch'
+import { useSameList } from './hooks/useVaultTree'
+import { useVaultListsHere } from '../lists/useVaultListsHere'
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -168,23 +170,25 @@ let container: HTMLElement | null = null
 /** The mounted panel's tab switch, as App does it (YAZ-2638 D2): the same Sidebar, a new `lens`. Null between tests. */
 let showTab: ((lens: SidebarTab) => void) | null = null
 
-type PanelProps = Parameters<typeof Sidebar>[0]
+/** The panel's props but `lists`: the harness holds the window's Focus and Favorites, as App does (YAZ-3264 D1). */
+type PanelProps = Omit<Parameters<typeof Sidebar>[0], 'lists'>
 /** App's half of the preview panel of the search (YAZ-2662 D5), of the mounted panel: the path on show, and App's ✕. Null between tests. */
 let previewPanel: { path: string | null; close: () => void } | null = null
 /**
  * The Sidebar as App mounts it for the preview panel: the path that `onPreview` names is App's
  * state, handed back as `previewPath` in the same pass. The ✕ of the panel clears that state with
- * no word from the Sidebar.
+ * no word from the Sidebar. The window's Focus and Favorites are App's too (YAZ-3264 D1).
  */
 function WithPreview(props: PanelProps) {
   const [path, setPath] = useState<string | null>(null)
   const { onPreview } = props
+  const lists = useVaultListsHere(useSameList(props.vaults.map((vault) => vault.root)), props.onNotice)
   const show = useCallback((next: string | null) => {
     setPath(next)
     onPreview(next)
   }, [onPreview])
   previewPanel = { path, close: () => setPath(null) }
-  return <Sidebar {...props} previewPath={path} onPreview={show} />
+  return <Sidebar {...props} lists={lists} previewPath={path} onPreview={show} />
 }
 type Vault = PanelProps['vaults'][number]
 /** A vault's own review facts (YAZ-2602 R5): upkeep on or off, what is due, whether its review is open; and the Inbox row's click. */

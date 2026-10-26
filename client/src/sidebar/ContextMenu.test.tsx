@@ -142,6 +142,18 @@ describe('item rendering', () => {
   })
 })
 
+describe('glyphs line up (YAZ-3264 D6)', () => {
+  it('a glyph on one row marks the menu, so the rows without one keep an empty slot; with no glyph the menu is plain', () => {
+    let el = mount(0, 0, [[item('Open'), item('Add to focus', { icon: <svg /> })], [parent('Open in', [[item('Finder')]])]])
+    expect(menu(el).classList.contains('ctx-menu--glyphs')).toBe(true)
+    // The label stays the whole text of the row: the glyph has none.
+    expect(labelsOf(el)).toEqual(['Open', 'Add to focus', 'Open in'])
+    act(() => root?.unmount())
+    el = mount(0, 0)
+    expect(menu(el).classList.contains('ctx-menu--glyphs')).toBe(false)
+  })
+})
+
 describe('selecting and closing', () => {
   it('a click runs onSelect THEN onClose, once each (🔒 D8)', () => {
     const calls: string[] = []
