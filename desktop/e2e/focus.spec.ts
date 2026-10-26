@@ -265,10 +265,11 @@ test('step 4d — a page clicked in copy 1, a fold click, another tab, then its 
   await expect(plan.nth(1)).not.toHaveClass(/tree__row--active/)
 })
 
-test('step 4e — a double click opens the FOLDER page of archive in copy 1: its row lights in copy 1 (Decision 3)', async () => {
+test('step 4e — "Open folder page" opens the FOLDER page of archive in copy 1: its row lights in copy 1 (Decision 3; YAZ-3377 D2)', async () => {
   const archive = dirRow(win, 'archive') // 0: inside Projects, 1: the top row
   await expect(archive).toHaveCount(2)
-  await archive.nth(1).dblclick()
+  await archive.nth(1).click({ button: 'right' })
+  await menuItem(win, 'Open folder page').click()
   await expect(activeTab(win)).toHaveText(/archive/)
   await expect(archive).toHaveCount(2)
   await shoot(win, 'focus-4e-folder-page')

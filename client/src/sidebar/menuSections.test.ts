@@ -338,17 +338,17 @@ describe('"Open in ▸" (D7 amended)', () => {
   })
 })
 
-describe('Open item (YAZ-2290 D3)', () => {
+describe('"Open folder page" item (YAZ-2290 D3, YAZ-3377 D2)', () => {
   it('is absent without a target — a file row, blank space, a 2+ selection', () => {
-    expect(itemOf(build(FILE_ROW), 'Open')).toBeUndefined()
-    expect(itemOf(build(BLANK), 'Open')).toBeUndefined()
+    expect(itemOf(build(FILE_ROW), 'Open folder page')).toBeUndefined()
+    expect(itemOf(build(BLANK), 'Open folder page')).toBeUndefined()
   })
 
   it('a folder row: it LEADS the menu, above Focus, and hands the caller the folder', () => {
     const onOpen = vi.fn()
     const sections = build({ openPath: '/v/Projects', focusPaths: ['/v/Projects'] }, { onOpen })
-    expect(sections[0].map((i) => i.label)).toEqual(['Open', 'Add to focus'])
-    select(sections, 'Open')
+    expect(sections[0].map((i) => i.label)).toEqual(['Open folder page', 'Add to focus'])
+    select(sections, 'Open folder page')
     expect(onOpen).toHaveBeenCalledExactlyOnceWith('/v/Projects')
   })
 })
@@ -366,12 +366,12 @@ describe('"Show in sidebar" item (YAZ-2638 D1, D3)', () => {
     expect(itemOf(build(BLANK), 'Show in sidebar')).toBeUndefined()
   })
 
-  it('S26, S27, S34: with a target it is the FIRST item of the menu — before "Add to focus" on a file row, before "Open" on a folder row — and the rest of the menu is as it was', () => {
+  it('S26, S27, S34: with a target it is the FIRST item of the menu — before "Add to focus" on a file row, before "Open folder page" on a folder row — and the rest of the menu is as it was', () => {
     const file = build({ ...FILE_ROW, showPath: '/v/Note.md' })
     expect(file[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Add to focus'])
     expect(labelsOf(file)).toEqual(['Show in sidebar', ...labelsOf(build(FILE_ROW))])
     const folder = build({ openPath: '/v/Projects', focusPaths: ['/v/Projects'], showPath: '/v/Projects' })
-    expect(folder[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Open', 'Add to focus'])
+    expect(folder[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Open folder page', 'Add to focus'])
     // A vault row of a search (S26) has no Open and no focus item: the item is the Open group's one item.
     const vault = build({ removeVault: '/v', showPath: '/v' })
     expect(vault[0].map((i) => i.label)).toEqual(['Show in sidebar'])
