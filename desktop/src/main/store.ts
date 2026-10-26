@@ -27,6 +27,8 @@ import {
   SIDEBAR_LINE_STYLES,
   SIDEBAR_MAX_W,
   SIDEBAR_MIN_W,
+  SIDEBAR_ZOOM_MAX,
+  SIDEBAR_ZOOM_MIN,
   SIDEBAR_BUTTONS,
   SIDEBAR_TABS,
   STARTUP_WINDOWS,
@@ -333,6 +335,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   noticeClipboard: (v): v is boolean => typeof v === 'boolean',
   noticeLists: (v): v is boolean => typeof v === 'boolean',
   gestureSounds: (v): v is boolean => typeof v === 'boolean',
+  sidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -348,6 +351,8 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.canvas = sanitizeCanvasPrefs(src.canvas)
   out.canvasPanel = sanitizeCanvasPanel(src.canvasPanel)
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
+  // YAZ-3389: a number off the steps is clamped to 50–200, not reset; missing or not a number reads 100.
+  if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
   return out
 }
 

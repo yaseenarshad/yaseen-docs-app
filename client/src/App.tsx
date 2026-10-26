@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isBoard, isViewOnly } from '@shared/fileKind'
 import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode } from '@shared/types'
+import { BETWEEN_VAULTS, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -470,6 +470,17 @@ export function App() {
     storage.setSettings(next)
     setSettings(next)
   }, [])
+
+  // ⌘+ / ⌘− / ⌘0 that no note claimed step the sidebar zoom (YAZ-3389), over the settings of the moment.
+  const zoom = useCallback(
+    (step: ZoomStep) =>
+      requestZoom(step, () => {
+        const now = storage.getSettings()
+        const sidebarZoom = step === 0 ? 100 : stepSidebarZoom(now.sidebarZoom, step)
+        if (sidebarZoom !== now.sidebarZoom) changeSettings({ ...now, sidebarZoom })
+      }),
+    [changeSettings],
+  )
 
   /** A lens tab click (YAZ-847): write through to this window's identity, then mirror it locally. */
   const changeLens = useCallback((next: SidebarTab) => {
@@ -1301,7 +1312,7 @@ export function App() {
     onTabOverview: toggleOverview,
     onNewTab: newTab,
     onNewWindow: newWindow,
-    onZoom: requestZoom,
+    onZoom: zoom,
     onWhatsNew: openWhatsNew,
     onExportImage: exportImage,
     onExportDrawing: reviewer === null ? exportDrawing : review.skip,

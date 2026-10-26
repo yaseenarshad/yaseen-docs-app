@@ -261,8 +261,6 @@ export const CONTRACT = {
     removeSession: invoke<[id: string], void>('window:remove-session', 1),
     /** Close THIS window through the REAL close path, so the flush handshake runs (GRO-2232). */
     closeSelf: invoke<[], void>('window:close-self', 0),
-    /** App-wide zoom for THIS window (YAZ-1710): what the stock `zoomIn` / `zoomOut` / `resetZoom` roles did — level ± 0.5, or back to 0. */
-    zoom: invoke<[step: ZoomStep], void>('window:zoom', 1),
   },
   /** Menu gestures from the main process (B3, GRO-2161; tabs GRO-2232): main sends them to the focused window only. */
   menu: {

@@ -25,6 +25,7 @@ import { folderShortcuts } from './folderShortcuts'
 import { datedSeed, targetDirFor, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
+import { SidebarZoom } from './SidebarZoom'
 import { buildMenuSections } from './menuSections'
 import { RecentList } from './RecentList'
 import { SessionList } from './SessionList'
@@ -813,6 +814,7 @@ export function Sidebar({
   const settingsRef = useRef({ settings, onChangeSettings })
   settingsRef.current = { settings, onChangeSettings }
   const changeTabs = useCallback((next: SettingsState['sidebarTabs']) => settingsRef.current.onChangeSettings({ ...settingsRef.current.settings, sidebarTabs: next }), [])
+  const changeZoom = useCallback((sidebarZoom: number) => settingsRef.current.onChangeSettings({ ...settingsRef.current.settings, sidebarZoom }), [])
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
   // The copy the open page lights in (YAZ-3131 Decision 3, S12, S13): where it was clicked, else the
@@ -1345,6 +1347,8 @@ export function Sidebar({
       <div
         ref={bodyRef}
         className="sidebar__body"
+        // The sidebar zoom (YAZ-3389): only the lists scale; the header, the tab row and the footer never do.
+        style={{ '--sidebar-zoom': settings.sidebarZoom / 100 } as CSSProperties}
         // The Sessions and Recents tabs have no vault behind their blank space either (YAZ-3147 D4, YAZ-3235 S20): their rows have their own menus.
         onContextMenu={(e) => (searching || lens === 'sessions' || lens === 'recents' ? e.preventDefault() : openMenu(null, e))}
         // Blank space takes a drop for the vault ROOT, as its paste does, and the header lights (YAZ-3247 D12) — one
@@ -1533,6 +1537,8 @@ export function Sidebar({
       </div>
       <div className="sidebar__footer">
         <SettingsButton onClick={onOpenSettings} />
+        {/* The zoom of the lists above (YAZ-3389), one value for every window. */}
+        <SidebarZoom value={settings.sidebarZoom} onChange={changeZoom} />
         <UpdatePill update={update} onOpen={onOpenWhatsNew} />
       </div>
       {/* The sort menu (YAZ-3227 D4): it sorts the tab it opened on, and a tab switch leaves it unmounted. */}

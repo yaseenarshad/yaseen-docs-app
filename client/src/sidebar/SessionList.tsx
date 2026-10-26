@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { MAX_VAULT_NAME, cleanVaultName, rootOfPath, type Session } from '@shared/types'
 import { api } from '../api'
 import { ConfirmSheet } from '../components/ConfirmSheet'
@@ -122,25 +123,31 @@ export const SessionList = memo(function SessionList({ titles, onOpenFile, onRes
           ))}
         </ul>
       )}
-      {menu !== null && target !== undefined && <ContextMenu x={menu.x} y={menu.y} sections={sections(target, menu.tab)} onClose={() => setMenu(null)} />}
-      {deleting !== null && (
-        <ConfirmSheet
-          labelId="confirm-delete-session-text"
-          text={
-            <>
-              <strong>Delete &quot;{deleting.name}&quot;?</strong>
-              <br />
-              Your files and open tabs do not change.
-            </>
-          }
-          confirmLabel="Delete"
-          danger
-          onConfirm={() => {
-            setDeleting(null)
-            void api.window.removeSession(deleting.id).catch(failed('delete'))
-          }}
-          onCancel={() => setDeleting(null)}
-        />
+      {/* On the page, not in the list (YAZ-3389): the list zooms with the sidebar zoom, and a menu or a sheet never does. */}
+      {createPortal(
+        <>
+          {menu !== null && target !== undefined && <ContextMenu x={menu.x} y={menu.y} sections={sections(target, menu.tab)} onClose={() => setMenu(null)} />}
+          {deleting !== null && (
+            <ConfirmSheet
+              labelId="confirm-delete-session-text"
+              text={
+                <>
+                  <strong>Delete &quot;{deleting.name}&quot;?</strong>
+                  <br />
+                  Your files and open tabs do not change.
+                </>
+              }
+              confirmLabel="Delete"
+              danger
+              onConfirm={() => {
+                setDeleting(null)
+                void api.window.removeSession(deleting.id).catch(failed('delete'))
+              }}
+              onCancel={() => setDeleting(null)}
+            />
+          )}
+        </>,
+        document.body,
       )}
     </>
   )

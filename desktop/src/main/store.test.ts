@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, stepSidebarZoom, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { createStore, isSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
 
@@ -335,6 +335,41 @@ describe('createStore: loading', () => {
     // `state.setSettings` is strict: a write with a width outside the limits is refused as a whole.
     for (const width of [160, 480]) expect(isSettings({ ...DEFAULT_SETTINGS, tableOfContentsWidth: width })).toBe(true)
     for (const width of [159, 481, NaN, '200', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, tableOfContentsWidth: width })).toBe(false)
+  })
+
+  it('sidebarZoom (YAZ-3389): an older file without the key loads at 100; junk loads at 100; a number off the steps is clamped to 50–200; the channel takes 50–200 only', async () => {
+    expect(DEFAULT_SETTINGS.sidebarZoom).toBe(100)
+    const { sidebarZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
+    const loaded = async (sidebarZoom: unknown): Promise<number> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', sidebarZoom } }))
+      const { settings } = createStore(file).get()
+      expect(settings.theme).toBe('dark') // one bad field costs that field only
+      return settings.sidebarZoom
+    }
+    for (const zoom of [50, 90, 125, 200, 110]) expect(await loaded(zoom)).toBe(zoom)
+    for (const zoom of ['125', null, true, {}]) expect(await loaded(zoom)).toBe(100)
+    expect(await loaded(10)).toBe(50)
+    expect(await loaded(-3)).toBe(50)
+    expect(await loaded(500)).toBe(200)
+    for (const zoom of [NaN, Infinity]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarZoom: zoom }).sidebarZoom).toBe(100)
+
+    for (const zoom of [50, 125, 200]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarZoom: zoom })).toBe(true)
+    for (const zoom of [49, 201, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarZoom: zoom })).toBe(false)
+  })
+
+  it('stepSidebarZoom (YAZ-3389): one step each way along 50–200, an off-step value snaps to the next step that way, a wall stays put', () => {
+    const walk = (from: number, dir: 1 | -1): number[] => {
+      const out = [from]
+      while (out.length < 20 && stepSidebarZoom(out[out.length - 1], dir) !== out[out.length - 1]) out.push(stepSidebarZoom(out[out.length - 1], dir))
+      return out
+    }
+    expect(walk(50, 1)).toEqual([...SIDEBAR_ZOOM_STEPS])
+    expect(walk(200, -1)).toEqual([...SIDEBAR_ZOOM_STEPS].reverse())
+    expect([stepSidebarZoom(110, 1), stepSidebarZoom(110, -1)]).toEqual([125, 100])
+    expect([stepSidebarZoom(60, 1), stepSidebarZoom(60, -1)]).toEqual([75, 50])
+    expect([stepSidebarZoom(50, -1), stepSidebarZoom(200, 1)]).toEqual([50, 200])
   })
 
   it('canvas and diagramDarkColors (YAZ-3037 done-when): a yaseendocs.json from before YAZ-3028 loads with the defaults; a file with some canvas prefs keeps them', async () => {

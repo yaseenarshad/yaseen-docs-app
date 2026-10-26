@@ -142,6 +142,9 @@ const manager = createWindowManager(store, {
         copyImage: () => win.webContents.copyImageAt(params.x, params.y),
         revealImage: (src) => void revealVaultImage(src, (file) => revealItem({ path: file })),
       })).popup({ window: win }))
+    // The window itself never zooms (YAZ-3389: the sidebar's lists and each note zoom, the frame does not).
+    // Chromium keeps a zoom per origin, so a ⌘+ from before that decision would stay forever: back to 0.
+    win.webContents.on('did-finish-load', () => win.webContents.setZoomLevel(0))
     // `<renderer>?win=<id>` so the renderer can ask `window.identity()` who it is.
     const url = new URL(process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html')
     url.searchParams.set('win', entry.id)

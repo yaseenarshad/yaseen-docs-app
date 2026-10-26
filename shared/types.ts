@@ -1507,6 +1507,12 @@ export interface SettingsState {
   noticeLists: boolean
   /** The land and trash sounds (YAZ-3267 D15, YAZ-3303 D7). macOS can still say no. */
   gestureSounds: boolean
+  /**
+   * The zoom of the sidebar's lists in percent (YAZ-3389): the tree, the search results and every other
+   * tab's list, never the sidebar's header, tab row or footer. One value for every window. The steps are
+   * `SIDEBAR_ZOOM_STEPS`; a stored value is kept within 50–200 (`SIDEBAR_ZOOM_MIN` / `_MAX`).
+   */
+  sidebarZoom: number
 }
 
 /**
@@ -1653,6 +1659,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   noticeClipboard: true,
   noticeLists: true,
   gestureSounds: true,
+  sidebarZoom: 100,
 }
 
 export interface WindowBounds {
@@ -2600,6 +2607,20 @@ export interface ClipboardPasteRequest {
 
 /** One ⌘+ / ⌘− / ⌘0 press: up, down, or back to the default (YAZ-1710). */
 export type ZoomStep = -1 | 0 | 1
+
+/** The sidebar zoom's steps in percent (YAZ-3389): the footer's − / + and an unclaimed ⌘− / ⌘+ walk them. */
+export const SIDEBAR_ZOOM_STEPS = [50, 75, 90, 100, 125, 150, 200] as const
+export const SIDEBAR_ZOOM_MIN = SIDEBAR_ZOOM_STEPS[0]
+export const SIDEBAR_ZOOM_MAX = SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]
+
+/**
+ * One sidebar zoom step (YAZ-3389): the next step in `direction`. A value between two steps snaps to
+ * the next one that way; at a wall (50% down, 200% up) the value comes back unchanged.
+ */
+export function stepSidebarZoom(percent: number, direction: 1 | -1): number {
+  const next = direction === 1 ? SIDEBAR_ZOOM_STEPS.find((p) => p > percent) : [...SIDEBAR_ZOOM_STEPS].reverse().find((p) => p < percent)
+  return next ?? percent
+}
 
 /**
  * The updater's state (YAZ-2976), owned by main and pushed to every window. `downloading` and `ready`

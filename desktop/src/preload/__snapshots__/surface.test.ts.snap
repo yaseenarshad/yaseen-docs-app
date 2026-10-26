@@ -195,7 +195,6 @@ window.setRoots/2: invoke window:set-roots ["a0","a1"]; => "answer"; !> {"code":
 window.setSessionTabs/2: invoke window:set-session-tabs ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.showWindow/1: invoke window:show ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.tabAction/3: invoke window:tab-action ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-window.zoom/1: invoke window:zoom ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 writeAsset/1: invoke fs:write-asset ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 writeFile/1: invoke fs:write ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}"
 `;
