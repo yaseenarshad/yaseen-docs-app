@@ -27,7 +27,7 @@ vi.mock('../api', async (importOriginal) => ({
     boardHead: vi.fn().mockResolvedValue({ mtime: 1 }),
   },
 }))
-// The sidebar's preview panels (demo feedback: one preview look): stand-ins that say which file they show.
+// The sidebar's preview panels (D18: one preview look): stand-ins that say which file they show.
 vi.mock('../sidebar/NotePreview', () => ({ default: ({ name }: { name: string }) => <div className="note-preview" aria-label={`Preview of ${name}`} /> }))
 vi.mock('../sidebar/BoardPreview', () => ({ default: ({ node }: { node: { path: string } }) => <div className="board-preview" aria-label={`Preview of ${node.path}`} /> }))
 import { api } from '../api'
@@ -232,7 +232,7 @@ describe('TabOverview', () => {
     key(el, 'Enter')
     expect(props.onOpen).toHaveBeenCalledExactlyOnceWith('/v/Projects/report.pdf')
 
-    // Two clicks (demo feedback): the first arms a red "Close", the second closes.
+    // Two clicks (D27): the first arms a red "Close", the second closes.
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Close plan"]')?.click())
     expect([el.querySelector('[aria-label="Close plan"]')?.textContent, vi.mocked(props.onCloseTabs).mock.calls.length]).toEqual(['Close', 0])
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Close plan"]')?.click())
@@ -270,7 +270,7 @@ describe('TabOverview', () => {
         // The toolbar has the bottom row: no card under it at the fit.
         expect(y0 + (cy + BOARD.pageH) * z0).toBeLessThanOrEqual(600 - TOOLBAR_INSET)
       }
-      // ONE toolbar bottom left (demo feedback): the switch, Tidy up, then the camera's controls.
+      // ONE toolbar bottom left (D24): the switch, Tidy up, then the camera's controls.
       expect([...el.querySelectorAll('.taboverview__zoom button, .taboverview__zoom [role="switch"]')].map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['Show all windows', 'Tidy up', 'Zoom out', 'Reset zoom', 'Zoom in', 'Fit all tabs', 'Snap to grid'])
       expect(el.querySelector('.taboverview__top [role="switch"]')).toBeNull()
       const cards = el.querySelectorAll('.taboverview__page').length
@@ -770,7 +770,7 @@ describe('TabOverview', () => {
     ])
     expect(readHeads.mock.calls.at(-1)).toEqual([['/w/y.md', '/w/z.md']])
 
-    // A click goes to it in its window — and this board stays open (demo feedback); its ✕ closes it there.
+    // A click goes to it in its window — and this board stays open (D32); its ✕ closes it there.
     act(() => theirs[1].click())
     expect(api.window.focusTab).toHaveBeenCalledExactlyOnceWith('w2', { path: '/w/z.md', copy: 0 })
     expect(props.onDismiss).not.toHaveBeenCalled()
@@ -780,7 +780,7 @@ describe('TabOverview', () => {
     expect(api.window.closeTabs).toHaveBeenCalledExactlyOnceWith('w2', [{ path: '/w/y.md', copy: 1 }])
     expect(props.onCloseTabs).not.toHaveBeenCalled()
     rightClick(theirs[0])
-    // ONE menu for every card (demo feedback): "Go to tab", the strip's own items, "Close tab".
+    // ONE menu for every card (D31): "Go to tab", the strip's own items, "Close tab".
     expect(menuItems(el)).toEqual(['Go to tab', 'Move to new window', 'Duplicate tab', 'Move to', 'Show in sidebar', 'Copy path', 'Set display name', 'Reveal in Finder', 'Open in VS Code', 'Close tab'])
     act(() => menuItem(el, 'Close tab')?.click())
     expect(api.window.closeTabs).toHaveBeenLastCalledWith('w2', [{ path: '/w/y.md', copy: 0 }])
@@ -827,9 +827,9 @@ describe('TabOverview', () => {
     const [fromX, fromY] = placeOf(x)
     const from = { left: fromX, top: fromY }
     dragTo(x, to.x, to.y)
-    // The drop's own door, the quiet one (demo feedback): "Move to ▸" is the menu's.
+    // The drop's own door, the quiet one (D20): "Move to ▸" is the menu's.
     expect(onDropToWindow).toHaveBeenCalledExactlyOnceWith('w2', '/w/x.md', '/w/x.md')
-    // It ARRIVES inside w2's frame (demo bug: never at the raw drop point): w2's card frozen, the arrival in a new row under it.
+    // It ARRIVES inside w2's frame (D28: never at the raw drop point): w2's card frozen, the arrival in a new row under it.
     const [wy] = [placeOf(page(el, 'w2\n/w/y.md\n0')!)]
     expect(storage.setTabCanvas).toHaveBeenCalledExactlyOnceWith({ set: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: wy[0], y: wy[1] }, { win: 'w2', path: '/w/x.md', copy: 0, by: 'window', x: wy[0], y: wy[1] + BOARD.pageH + BOARD.pageGap }] })
     void from
@@ -955,7 +955,7 @@ describe('TabOverview', () => {
     expect(box('w2')).toEqual([fx, fy])
     // This window's card is untouched.
     expect(canvas.cards.find((c) => c.win === 'me')).toMatchObject({ x: 900, y: 900 })
-    // The closes take two clicks IN the menu (demo feedback): the first turns the item red and keeps the menu open.
+    // The closes take two clicks IN the menu (D21): the first turns the item red and keeps the menu open.
     ctx(frame(el, 'w2'))
     act(() => menuItem(el, 'Close all tabs')?.click())
     expect(onCloseWindow).not.toHaveBeenCalled()
@@ -1060,7 +1060,7 @@ describe('TabOverview', () => {
     act(() => menuItem(el, 'Open tabs here…')?.click())
     expect(el.querySelector('.taboverview__search')?.getAttribute('aria-label')).toBe('Open tabs in y')
     act(() => void el.querySelector<HTMLInputElement>('.taboverview__search input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-    // A double click on empty canvas does nothing (demo feedback: too easy): the menu is the one way.
+    // A double click on empty canvas does nothing (D22: too easy): the menu is the one way.
     act(() => void body(el).dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 10, clientY: 10 })))
     await settled()
     expect(onNewWindow).toHaveBeenCalledTimes(1)

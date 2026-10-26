@@ -133,7 +133,7 @@ describe('the tab board: its canvas and window names (YAZ-3343 D1, D14)', () => 
   const card = { win: 'w2', path: '/v/a.md', copy: 0, by: 'window' as const, x: 5, y: 6 }
 
   it('getTabCanvas is the default without one; setTabCanvas applies main\'s rule in the cache at once and sends the patch; a no-op sends nothing; a broadcast of the same canvas keeps the snapshot', async () => {
-    // "Show all windows" is on by default (demo feedback).
+    // "Show all windows" is on by default (D19).
     expect(storage.getTabCanvas()).toEqual({ allWindows: true, snap: true, cards: [], frames: [] })
     expect(storage.getTabCanvas()).toBe(storage.getTabCanvas())
     const state = { ...defaultAppState(), windows: [entry('w1'), entry('w2')] }

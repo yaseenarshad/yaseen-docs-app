@@ -936,7 +936,7 @@ button {
   opacity: 0.8;
 }
 
-/* The message WRAPS to three lines at most, then "…" (YAZ-3343, demo feedback); cut, its `title` holds it whole. A
+/* The message WRAPS to three lines at most, then "…" (YAZ-3343 D36); cut, its `title` holds it whole. A
    short one is one line, as before. Its first line sits in the middle of the 22 px buttons beside it. */
 .link-notice__text {
   display: -webkit-box;

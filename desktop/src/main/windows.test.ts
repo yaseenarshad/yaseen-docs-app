@@ -1147,7 +1147,7 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(entry.id).not.toBe('w1')
     expect(entry.root).toBe('/v')
     expect(entry.file).toBeNull()
-    expect(entry.tabs).toEqual([]) // no tab: it boots on the blank tab (YAZ-3343, demo feedback)
+    expect(entry.tabs).toEqual([]) // no tab: it boots on the blank tab (YAZ-3343 D35)
     expect(entry.rightPanel.items).toEqual([])
     expect(entry.sidebarCollapsed).toBe(true)
     expect(entry.sidebarLens).toBe('focus') // the lens comes along too (YAZ-1628) — copied, not the Files default (YAZ-1846 G)
@@ -1278,7 +1278,7 @@ describe('createWindowManager: moveTo hands a tab to an open window (YAZ-3091 D1
     expect([made.win.showCount, made.win.focusCount]).toEqual([0, 0])
     expect(manager.hiddenWindows()).toEqual([id])
     expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.window.onHiddenWindows.channel, [id])
-    // Its FIRST identity says it opened empty (demo bug, "why do 2 tabs open?"), and only that one.
+    // Its FIRST identity says it opened empty (D22: it boots with no tab), and only that one.
     expect([manager.takeStartEmpty(id), manager.takeStartEmpty(id), manager.takeStartEmpty('w1')]).toEqual([true, false, false])
   })
 

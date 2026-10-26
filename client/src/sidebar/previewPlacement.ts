@@ -37,7 +37,7 @@ export type PreviewAnchor = RefObject<HTMLElement | null> | { rect: AnchorRect }
 const BESIDE_MAX_W = 520
 
 /**
- * Where the panel goes beside a CARD of the tab board (YAZ-3343, Yaseen's demo feedback): right of the card with
+ * Where the panel goes beside a CARD of the tab board (YAZ-3343 D18): right of the card with
  * the sidebar's gap, or left of it when the window has no room there; centred on the card and kept inside the
  * window. The same shapes as beside the sidebar. Null when the window leaves no room at all.
  */
