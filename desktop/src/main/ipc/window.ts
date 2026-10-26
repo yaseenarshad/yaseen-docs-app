@@ -1,10 +1,10 @@
 import { existsSync } from 'node:fs'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, rootOfPath, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type StoredTab, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, rootOfPath, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
-import { normalizeRightPanel, normalizeTabs, readStoredTab, type Store } from '../store'
+import { normalizeRightPanel, normalizeTabs, readStoredTab, readTabRef, type Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { handle, handleWithEvent } from './envelope'
 
@@ -100,13 +100,25 @@ function optionalPopOutCarry(v: unknown): PopOutCarry {
   // The tab's display name (YAZ-2949 D7) is only a label: cleaned like a vault's name, and a blank or
   // non-string name is no name — never an error.
   const name = cleanVaultName(v.name)
-  return { ...(view === undefined ? {} : { view }), ...(name === null ? {} : { name }) }
+  // A quiet move (YAZ-3343 D13): only `true` is one; anything else is the ordinary move.
+  return { ...(view === undefined ? {} : { view }), ...(name === null ? {} : { name }), ...(v.background === true ? { background: true as const } : {}) }
 }
 
-/** A saved set's or a session's `id` or `name` (YAZ-2602 D8, YAZ-3147 D2): a string; the store decides what it names. */
-function requireString(v: unknown, param: 'id' | 'name'): string {
+/** A saved set's or a session's `id` or `name` (YAZ-2602 D8, YAZ-3147 D2), or a window id `to` / `from` (YAZ-3343): a string; the store decides what it names. */
+function requireString(v: unknown, param: 'id' | 'name' | 'to' | 'from'): string {
   if (typeof v !== 'string') throw new BridgeFailure('BAD_REQUEST', `'${param}' must be a string`)
   return v
+}
+
+/** The most tabs one `window:close-tabs` call names (YAZ-3343 D3): far more than a window holds, so a junk list is refused whole. */
+export const MAX_CLOSE_REFS = 1000
+
+/** A tab of a window named without its id (YAZ-3343 D3): `{ path, copy }`, an absolute path and a whole copy number from 0. */
+function requireTabRef(v: unknown, param: string): TabRef {
+  if (isRecord(v)) requireAbsPath(v.path, `${param}.path`)
+  const ref = readTabRef(v)
+  if (ref === null) throw new BridgeFailure('BAD_REQUEST', `'${param}' must be { path, copy } with an absolute path and a whole copy number from 0`)
+  return ref
 }
 
 /**
@@ -126,11 +138,13 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   }
 
   handleWithEvent(CONTRACT.window.identity, async (e): Promise<WindowIdentity> => {
-    const { id, root, roots, file, tabs, tabStrip, rightPanel, sidebarCollapsed, sidebarLens } = entryFor(e)
+    const { id, root, roots, file, tabs, tabStrip, name, rightPanel, sidebarCollapsed, sidebarLens } = entryFor(e)
     // A new window's page view goes out with its FIRST identity only (YAZ-2951 S17): a reload starts fresh.
     const startView = windows.takeStartView(id)
+    // A window the tab board opened empty (YAZ-3343) says so once: it boots with no tab.
+    const startEmpty = windows.takeStartEmpty(id)
     // The copies and display names (YAZ-3057) go out with EVERY identity read: a reload keeps them, as a restart does.
-    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}) }
+    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(startEmpty ? { startEmpty: true as const } : {}) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
@@ -144,6 +158,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const rightPanel = optionalRightPanel(patch)
     const sidebarCollapsed = optionalSidebarCollapsed(patch)
     const sidebarLens = optionalSidebarLens(patch)
+    // A `name` in the patch is an unknown key and is ignored: a window is named through `window:set-name` alone (YAZ-3343 D14).
     const entry = entryFor(e)
     // The tabs invariant holds on the entry AS WRITTEN (GRO-2232): the loader's repair rule,
     // applied to whichever of `file` / `tabs` the patch left untouched.
@@ -190,9 +205,9 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     windows.openWindow({ root: optionalPath(opts, 'root') ?? null, file: optionalPath(opts, 'file') ?? null })
   })
 
-  // `window:duplicate` (⌘⇧N, YAZ-2951 D5): the window asks after it saved its page, with the page view of the tab on show.
-  handleWithEvent(CONTRACT.window.duplicate, async (e, view: unknown) => {
-    windows.duplicateWindow(entryFor(e), optionalPageView(view))
+  // `window:duplicate` (⌘⇧N): a window on the caller's vaults with no tab (YAZ-3343 replaced YAZ-2951 D5's copy of the tabs and page view).
+  handleWithEvent(CONTRACT.window.duplicate, async (e) => {
+    windows.duplicateWindow(entryFor(e))
   })
 
   // `window:pop-out` (YAZ-2933 D1): a tab's "Move to new window". Main copies the CALLER's window, so the
@@ -208,16 +223,123 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // that closed, or that shows no vault of the page, refuses, and the source keeps its tab.
   handleWithEvent(CONTRACT.window.moveTo, async (e, to: unknown, path: unknown, carry: unknown) => {
     const from = entryFor(e)
-    const id = requireString(to, 'id')
+    const id = requireString(to, 'to')
     const target = requireAbsPath(path, 'path')
     if (id === from.id) throw new BridgeFailure('BAD_REQUEST', 'a tab cannot move to its own window')
     if (!windows.moveTo(id, target, optionalPopOutCarry(carry))) throw new BridgeFailure('NOT_FOUND', 'that window is closed or shows no vault of this page')
   })
 
+  // The tab board's doors to other windows (YAZ-3343 D3): `window:focus-tab` raises `to` and makes its tab active,
+  // `window:close-tabs` has `to` close tabs. The board handles its OWN window's tabs itself, so the caller as the
+  // target is a bad request; a window that closed is NOT_FOUND, as `window:move-to` says it.
+  handleWithEvent(CONTRACT.window.focusTab, async (e, to: unknown, ref: unknown) => {
+    const from = entryFor(e)
+    const id = requireString(to, 'to')
+    const tab = requireTabRef(ref, 'ref')
+    if (id === from.id) throw new BridgeFailure('BAD_REQUEST', 'the board shows its own window: it needs no door')
+    if (!windows.focusTab(id, tab)) throw new BridgeFailure('NOT_FOUND', 'that window is closed')
+  })
+  handleWithEvent(CONTRACT.window.closeTabs, async (e, to: unknown, refs: unknown) => {
+    const from = entryFor(e)
+    const id = requireString(to, 'to')
+    if (!Array.isArray(refs) || refs.length > MAX_CLOSE_REFS) throw new BridgeFailure('BAD_REQUEST', `'refs' must be an array of at most ${MAX_CLOSE_REFS} { path, copy }`)
+    const tabs = refs.map((ref, i) => requireTabRef(ref, `refs[${i}]`))
+    if (id === from.id) throw new BridgeFailure('BAD_REQUEST', 'the board shows its own window: it needs no door')
+    if (!windows.closeTabs(id, tabs)) throw new BridgeFailure('NOT_FOUND', 'that window is closed')
+  })
+
+  // `window:move-tab` (YAZ-3343 D13): a card dropped in another window's frame. Window `from` — the caller or any
+  // other — sends its tab on to `to` through `link:send-tab`; main checks both windows and `to`'s vaults first, as
+  // `window:move-to` does, and `move-to` checks again when the tab goes.
+  handleWithEvent(CONTRACT.window.moveTab, async (e, from: unknown, to: unknown, ref: unknown) => {
+    entryFor(e)
+    const source = requireString(from, 'from')
+    const target = requireString(to, 'to')
+    const tab = requireTabRef(ref, 'ref')
+    if (source === target) throw new BridgeFailure('BAD_REQUEST', 'a tab cannot move to its own window')
+    if (!windows.moveTab(source, target, tab)) throw new BridgeFailure('NOT_FOUND', 'a window is closed, or that window shows no vault of this page')
+  })
+
+  // `window:close-other` (YAZ-3343 D21): a frame's "Close window" on the tab board. The window's REAL close, so
+  // its flush handshake runs; the caller closes itself with `close-self`.
+  handleWithEvent(CONTRACT.window.closeOther, async (e, id: unknown) => {
+    const from = entryFor(e)
+    const target = requireString(id, 'id')
+    if (target === from.id) throw new BridgeFailure('BAD_REQUEST', 'a window closes itself with window:close-self')
+    if (!windows.closeOther(target)) throw new BridgeFailure('NOT_FOUND', 'that window is closed')
+  })
+
+  // `window:open-behind` (YAZ-3343 D22, D23): "New window" from the tab board's empty canvas — the CALLER's vaults,
+  // no tab, hidden. Main names the vaults, so the renderer never hands a list of them.
+  handleWithEvent(CONTRACT.window.openBehind, async (e) => windows.openBehind(entryFor(e)))
+
+  // `window:set-roots` (YAZ-3343 D22): the vault chip on an empty frame. Any window may ask; only a live window
+  // with no tab takes it, and switches itself (`link:set-roots`).
+  handleWithEvent(CONTRACT.window.setRoots, async (e, id: unknown, roots: unknown) => {
+    entryFor(e)
+    const target = requireString(id, 'id')
+    const next = optionalRoots({ roots })
+    if (next === undefined || next.length === 0) throw new BridgeFailure('BAD_REQUEST', "'roots' must hold at least one absolute path")
+    if (!windows.setRoots(target, next)) throw new BridgeFailure('NOT_FOUND', 'that window is closed, or it has tabs')
+  })
+
+  // `window:pop-out-tab` (YAZ-3343 D37): "Move to new window" on another window's card. That window does it
+  // itself, so its unsaved text is saved first; the caller's own cards use `window:pop-out` with `background`.
+  handleWithEvent(CONTRACT.window.popOutTab, async (e, from: unknown, ref: unknown) => {
+    const caller = entryFor(e)
+    const source = requireString(from, 'from')
+    const tab = requireTabRef(ref, 'ref')
+    if (source === caller.id) throw new BridgeFailure('BAD_REQUEST', 'a window pops out its own tab with window:pop-out')
+    if (!windows.popOutTab(source, tab)) throw new BridgeFailure('NOT_FOUND', 'that window is closed')
+  })
+
+  // `window:show` / `window:hidden-windows-now` / `window:minimized-windows-now` (YAZ-3343 D23): the tab board's hidden and minimized windows.
+  handleWithEvent(CONTRACT.window.showWindow, async (e, id: unknown) => {
+    entryFor(e)
+    if (!windows.showWindow(requireString(id, 'id'))) throw new BridgeFailure('NOT_FOUND', 'that window is closed')
+  })
+  handleWithEvent(CONTRACT.window.hiddenWindows, async (e) => {
+    entryFor(e)
+    return windows.hiddenWindows()
+  })
+  handleWithEvent(CONTRACT.window.minimizedWindows, async (e) => {
+    entryFor(e)
+    return windows.minimizedWindows()
+  })
+
+  // `window:highlight-tab` (YAZ-3343 D33): the board's highlight on another window's card lights that tab there.
+  handleWithEvent(CONTRACT.window.highlightTab, async (e, to: unknown, ref: unknown) => {
+    entryFor(e)
+    windows.highlightTab(requireString(to, 'to'), ref === null ? null : requireTabRef(ref, 'ref'))
+  })
+
+  // `window:tab-action` (YAZ-3343 D31): a card menu's tab action on another window's card; that window runs it.
+  handleWithEvent(CONTRACT.window.tabAction, async (e, to: unknown, ref: unknown, action: unknown) => {
+    entryFor(e)
+    const target = requireString(to, 'to')
+    const tab = requireTabRef(ref, 'ref')
+    if (!isRecord(action)) throw new BridgeFailure('BAD_REQUEST', "'action' must be an object")
+    let clean: TabAction
+    if (action.kind === 'duplicate' || action.kind === 'show-in-sidebar') clean = { kind: action.kind }
+    else if (action.kind === 'set-name' && (action.name === null || typeof action.name === 'string')) clean = { kind: 'set-name', name: action.name === null ? null : cleanVaultName(action.name) }
+    else if (action.kind === 'set-review' && typeof action.on === 'boolean') clean = { kind: 'set-review', on: action.on }
+    else throw new BridgeFailure('BAD_REQUEST', "'action' must be duplicate, set-name, show-in-sidebar or set-review")
+    if (!windows.tabAction(target, tab, clean)) throw new BridgeFailure('NOT_FOUND', 'that window is closed')
+  })
+
+  // `window:set-name` (YAZ-3343 D14): any window may name any OPEN window, or with null (or a name that is empty
+  // once cleaned) give it back its automatic label. The store cleans the name as a vault's.
+  handleWithEvent(CONTRACT.window.setName, async (e, id: unknown, name: unknown) => {
+    entryFor(e)
+    const target = requireString(id, 'id')
+    if (name !== null && typeof name !== 'string') throw new BridgeFailure('BAD_REQUEST', "'name' must be a string or null")
+    if (!windows.setName(target, name)) throw new BridgeFailure('NOT_FOUND', 'that window is closed')
+  })
+
   // `window:highlight` (YAZ-3091 D8): the "Move to ▸" row under the pointer lights up its window. Main takes the
   // CALLER from the sender, so a window can only light another window for its own menu.
   handleWithEvent(CONTRACT.window.highlight, async (e, to: unknown) => {
-    windows.highlight(entryFor(e).id, to === null ? null : requireString(to, 'id'))
+    windows.highlight(entryFor(e).id, to === null ? null : requireString(to, 'to'))
   })
 
   // `window:open-recent` (YAZ-1767 D1): the vault switcher's door — an absolute path in, and the

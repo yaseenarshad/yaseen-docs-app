@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { createStore, isSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
 
@@ -139,6 +139,7 @@ describe('createStore: loading', () => {
       sessions: [{ id: 's1', name: 'Work', tabs: [{ path: '/v/a.md', active: true }, { path: '/v/a.md', name: 'Copy' }], roots: ['/v'], lastUsed: 7 }],
       settingsFolder: '/Sync/yaseen-docs-settings',
       settingsSavedAt: 42,
+      tabCanvas: { allWindows: true, snap: true, cards: [{ win: 'w1', path: '/v/a.md', copy: 0, by: 'folder', x: 10, y: -20.5 }], frames: [] },
     }
     await seed(state)
     expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], name: null, key: null } } })
@@ -2317,5 +2318,137 @@ describe('the save log (YAZ-3235 D1)', () => {
     store.removePath('/v/papers/b.md')
     store.removePath('/v/papers/sub')
     expect(store.get().folders['/v'].edits).toEqual({ '/v/papers/a2.md': T, '/v/x.md': T + 3 })
+  })
+})
+
+describe('the tab board canvas and window names (YAZ-3343 D1, D14)', () => {
+  it('YAZ-3343 D28: a stored card whose tab left its window is PRUNED when that window\'s tabs change — from the demo\'s state: two stale cards sharing cells with live ones; idempotent', async () => {
+    const strip = (paths: string[]) => paths.map((path) => ({ path }))
+    const roadmap: WindowEntry = { ...win('demo-a'), root: '/v', roots: ['/v'], file: '/v/Roadmap.md', tabs: ['/v/Roadmap.md', '/v/Note 08.md', '/v/Wireframe.md'], tabStrip: [{ path: '/v/Roadmap.md', name: 'Plan' }, ...strip(['/v/Note 08.md', '/v/Wireframe.md'])] }
+    const card = (path: string, copy: number, x: number, y: number): CanvasCard => ({ win: 'demo-a', path, copy, by: 'window', x, y })
+    await seed(valid({
+      windows: [roadmap],
+      tabCanvas: { allWindows: true, cards: [card('/v/Note 08.md', 0, 1266, 142), card('/v/Roadmap.md', 1, 1266, 142), card('/v/Wireframe.md', 0, 1266, 248), card('/v/Note 03.md', 0, 1266, 248), card('/v/Roadmap.md', 0, 1036, 142)] },
+    }))
+    const store = createStore(file)
+    // The window writes its tabs (unchanged): the two cards of tabs it no longer has go — a second copy of Roadmap, and Note 03.
+    store.upsertWindow({ ...roadmap })
+    expect(store.get().tabCanvas.cards.map((c) => [c.path, c.copy])).toEqual([['/v/Note 08.md', 0], ['/v/Wireframe.md', 0], ['/v/Roadmap.md', 0]])
+    const held = store.get().tabCanvas
+    store.upsertWindow({ ...roadmap })
+    expect(store.get().tabCanvas).toBe(held)
+  })
+
+  it('YAZ-3343 D16: frame places are stored per window (the last set wins), loaded leniently, cut at MAX_CANVAS_FRAMES, and go with their window', async () => {
+    await seed(valid({ windows: [win('w1'), win('w2')], tabCanvas: { allWindows: true, cards: [], frames: [{ win: 'w1', x: 10, y: 20 }, { win: 'w1', x: 1, y: 1 }, { win: 'gone', x: 0, y: 0 }, { win: 'w2', x: 'far', y: 0 }, null] } }))
+    const store = createStore(file)
+    expect(store.get().tabCanvas.frames).toEqual([{ win: 'w1', x: 10, y: 20 }])
+    store.setTabCanvas({ setFrames: [{ win: 'w2', x: 5, y: 6 }] })
+    expect(store.get().tabCanvas.frames).toEqual([{ win: 'w2', x: 5, y: 6 }, { win: 'w1', x: 10, y: 20 }])
+    store.setTabCanvas({ forgetFrames: ['w1'] })
+    expect(store.get().tabCanvas.frames).toEqual([{ win: 'w2', x: 5, y: 6 }])
+    store.removeWindow('w2')
+    expect(store.get().tabCanvas.frames).toEqual([])
+  })
+
+  const card = (win: string, path: string, x = 0, extra: Partial<CanvasCard> = {}): CanvasCard => ({ win, path, copy: 0, by: 'folder', x, y: 0, ...extra })
+
+  it('D1 load: a missing key is the default, a bad card drops alone, a card of a window the file lacks drops, duplicates keep the first, the list is cut at MAX_CANVAS_CARDS', async () => {
+    await seed(valid({ windows: [win('w1')] }))
+    expect(createStore(file).get().tabCanvas).toEqual(defaultTabCanvas())
+    await seed(valid({ tabCanvas: 'junk' }))
+    expect(createStore(file).get().tabCanvas).toEqual(defaultTabCanvas())
+    const good = card('w1', '/v/a.md', 1)
+    await seed(valid({
+      windows: [win('w1')],
+      tabCanvas: {
+        allWindows: 'yes',
+        cards: [good, card('w1', '/v/a.md', 99), card('w2', '/v/b.md'), { ...good, path: 'rel.md' }, { ...good, copy: -1 }, { ...good, copy: 1.5 }, { ...good, by: 'grid' }, { ...good, x: 'far' }, { ...good, win: '' }, null, card('w1', '/v/a.md', 2, { copy: 1 }), card('w1', '/v/a.md', 3, { by: 'window' })],
+      },
+    }))
+    // A switch that is not `false` is the default, ON (D19); a stored `false` stays off.
+    expect(createStore(file).get().tabCanvas).toEqual({ allWindows: true, snap: true, cards: [good, card('w1', '/v/a.md', 2, { copy: 1 }), card('w1', '/v/a.md', 3, { by: 'window' })], frames: [] })
+    expect(defaultTabCanvas().allWindows).toBe(true)
+    await seed(valid({ windows: [win('w1')], tabCanvas: { allWindows: false, snap: true, cards: [] } }))
+    expect(createStore(file).get().tabCanvas).toEqual({ allWindows: false, snap: true, cards: [], frames: [] })
+    await seed(valid({ windows: [win('w1')], tabCanvas: { cards: [] } }))
+    expect(createStore(file).get().tabCanvas.allWindows).toBe(true)
+    await seed(valid({ windows: [win('w1')], tabCanvas: { allWindows: true, snap: true, cards: Array.from({ length: MAX_CANVAS_CARDS + 5 }, (_, i) => card('w1', `/v/${i}.md`, i)) } }))
+    const loaded = createStore(file).get().tabCanvas
+    expect(loaded.allWindows).toBe(true)
+    expect(loaded.cards).toHaveLength(MAX_CANVAS_CARDS)
+    expect(loaded.cards[0].path).toBe('/v/0.md')
+  })
+
+  it('D1 setTabCanvas: one commit per patch; set replaces its key and moves to the front; forget drops; allWindows sets; a no-op or an unknown window commits nothing', () => {
+    const store = createStore(file)
+    store.upsertWindow(win('w1'))
+    store.upsertWindow(win('w2'))
+    const commits = vi.fn()
+    store.onChange(commits)
+    store.setTabCanvas({ set: [card('w1', '/v/a.md', 1), card('w1', '/v/b.md', 2)] })
+    store.setTabCanvas({ set: [card('w2', '/v/c.md', 3)] })
+    expect(store.get().tabCanvas.cards.map((c) => c.path)).toEqual(['/v/c.md', '/v/a.md', '/v/b.md'])
+    // The same key again: replaced, frontmost; the other layout is a card of its own.
+    store.setTabCanvas({ set: [card('w1', '/v/b.md', 9), card('w1', '/v/b.md', 7, { by: 'window' })] })
+    expect(store.get().tabCanvas.cards).toEqual([card('w1', '/v/b.md', 9), card('w1', '/v/b.md', 7, { by: 'window' }), card('w2', '/v/c.md', 3), card('w1', '/v/a.md', 1)])
+    // forget and allWindows in ONE commit.
+    commits.mockClear()
+    store.setTabCanvas({ allWindows: true, forget: [{ win: 'w1', path: '/v/b.md', copy: 0, by: 'folder' }, { win: 'w2', path: '/v/c.md', copy: 0, by: 'folder' }] })
+    expect(commits).toHaveBeenCalledTimes(1)
+    expect(store.get().tabCanvas).toEqual({ allWindows: true, snap: true, cards: [card('w1', '/v/b.md', 7, { by: 'window' }), card('w1', '/v/a.md', 1)], frames: [] })
+    // Nothing changes: the same switch, the frontmost card where it is, a forget of no card, a card of no window.
+    commits.mockClear()
+    store.setTabCanvas({ allWindows: true })
+    store.setTabCanvas({ set: [card('w1', '/v/b.md', 7, { by: 'window' })] })
+    store.setTabCanvas({ forget: [{ win: 'w9', path: '/v/a.md', copy: 0, by: 'folder' }] })
+    store.setTabCanvas({ set: [card('w9', '/v/z.md')] })
+    store.setTabCanvas({})
+    expect(commits).not.toHaveBeenCalled()
+    // The cap: last moved first, the oldest goes.
+    store.setTabCanvas({ set: Array.from({ length: MAX_CANVAS_CARDS }, (_, i) => card('w2', `/v/n${i}.md`, i)) })
+    expect(store.get().tabCanvas.cards).toHaveLength(MAX_CANVAS_CARDS)
+    expect(store.get().tabCanvas.cards.some((c) => c.path === '/v/a.md')).toBe(false)
+  })
+
+  it('D1 repairs: a rename moves card paths (a folder by prefix), a delete drops them, a removed window takes its cards; nothing referenced, no commit', () => {
+    const store = createStore(file)
+    store.upsertWindow(win('w1', { root: '/v', file: '/v/d/a.md', tabs: ['/v/d/a.md', '/v/b.md'] }))
+    store.upsertWindow(win('w2', { root: '/v', file: '/v/b.md', tabs: ['/v/b.md'] }))
+    store.setTabCanvas({ set: [card('w1', '/v/d/a.md', 1), card('w1', '/v/b.md', 2, { copy: 1 }), card('w2', '/v/b.md', 3)] })
+    store.renamePath('/v/d', '/v/e')
+    store.renamePath('/v/b.md', '/v/c.md')
+    expect(store.get().tabCanvas.cards).toEqual([card('w1', '/v/e/a.md', 1), card('w1', '/v/c.md', 2, { copy: 1 }), card('w2', '/v/c.md', 3)])
+    store.removePath('/v/e')
+    expect(store.get().tabCanvas.cards).toEqual([card('w1', '/v/c.md', 2, { copy: 1 }), card('w2', '/v/c.md', 3)])
+    store.removeWindow('w1')
+    expect(store.get().tabCanvas.cards).toEqual([card('w2', '/v/c.md', 3)])
+    const commits = vi.fn()
+    store.onChange(commits)
+    store.renamePath('/v/none.md', '/v/x.md')
+    store.removePath('/v/none.md')
+    store.removeWindow('w1')
+    expect(commits).not.toHaveBeenCalled()
+  })
+
+  it('D14 names: cleaned like a vault name on load and on set; null or blank removes the key; an unknown id is false; set-identity writes keep it', async () => {
+    await seed(valid({ windows: [{ ...win('w1'), name: '  Writing  ' }, { ...win('w2'), name: '   ' }, { ...win('w3'), name: 42 }, { ...win('w4'), name: 'x'.repeat(MAX_VAULT_NAME + 10) }] }))
+    const store = createStore(file)
+    expect(store.get().windows.map((w) => w.name)).toEqual(['Writing', undefined, undefined, 'x'.repeat(MAX_VAULT_NAME)])
+    expect(store.get().windows[1]).not.toHaveProperty('name')
+    const commits = vi.fn()
+    store.onChange(commits)
+    expect(store.setWindowName('w1', 'Writing')).toBe(true) // the same name: no commit
+    expect(commits).not.toHaveBeenCalled()
+    expect(store.setWindowName('w2', '  Research ')).toBe(true)
+    expect(store.get().windows[1].name).toBe('Research')
+    // A window write that does not name it (bounds, set-identity) keeps the name.
+    store.upsertWindow({ ...store.get().windows[1], bounds: { ...bounds, x: 50 } })
+    expect(store.get().windows[1].name).toBe('Research')
+    expect(store.setWindowName('w2', '  ')).toBe(true)
+    expect(store.get().windows[1]).not.toHaveProperty('name')
+    expect(store.setWindowName('w1', null)).toBe(true)
+    expect(store.get().windows[0]).not.toHaveProperty('name')
+    expect(store.setWindowName('nope', 'Name')).toBe(false)
   })
 })

@@ -86,6 +86,14 @@ import {
   DEFAULT_CANVAS_PANEL,
   isCanvasPanelTab,
   type CanvasPanelState,
+  applyTabCanvasPatch,
+  defaultTabCanvas,
+  type CanvasCard,
+  type CanvasFrame,
+  type CanvasLayout,
+  type TabCanvasPatch,
+  type TabCanvasState,
+  type TabRef,
 } from '@shared/types'
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
@@ -151,14 +159,29 @@ export interface Store {
    * or of a hidden file of the vault (a dot name inside it), commits nothing.
    */
   addEdit(roots: readonly string[], file: string, now?: number): void
-  /** Several ids go in one commit (YAZ-2589 D3: the windows a launch does not bring back). */
+  /** Several ids go in one commit (YAZ-2589 D3: the windows a launch does not bring back). Their moved cards on the tab board go in the same commit (YAZ-3343 D1). */
   removeWindow(...ids: string[]): void
+  /**
+   * Name a stored window (YAZ-3343 D14), cleaned like a vault's name (`cleanVaultName`); null, or a name that is
+   * empty once cleaned, removes the key and the window goes back to its automatic label. False, and no commit:
+   * an unknown `id`. The same name again is no commit. The window manager checks that the window is live.
+   */
+  setWindowName(id: string, name: string | null): boolean
+  /**
+   * One change to the tab board's canvas (YAZ-3343 D1), in ONE commit, by `applyTabCanvasPatch` (the renderer's cache
+   * applies the same rule): `allWindows` sets the switch, each card of `set` replaces the card with its (win, path,
+   * copy, by) and goes to the front, `forget` drops cards by the same key. A card of a window the state does not have
+   * is not stored (it would be an orphan: `removeWindow` already ran). The list is cut at MAX_CANVAS_CARDS. A patch
+   * that changes nothing commits nothing.
+   */
+  setTabCanvas(patch: TabCanvasPatch): void
   /**
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`), recents, each
    * folder-state key and its `expanded`/`lastFile`/fold keys/
    * baseGroups keys (`<basePath>::<view>`)/open history (YAZ-2663 S8)/table of contents sources (YAZ-2700 D14)/section indent switches (YAZ-2709 D2)/table of contents switches (YAZ-2950), the vaults of each saved set (YAZ-2602 S71), and the
-   * Favorites order and the focus order across vaults (YAZ-2631 R6; YAZ-2702 Decision 3). The focus
+   * Favorites order and the focus order across vaults (YAZ-2631 R6; YAZ-2702 Decision 3), and the paths of the
+   * tab board's moved cards (YAZ-3343 D1). The focus
    * LIST is not here: it is in the vault, and `focus.ts` repairs it (YAZ-2702 R10).
    * A dir remaps by prefix — everything at or under it follows,
    * including a window ROOTED at the renamed folder. One commit; a no-op when nothing
@@ -174,6 +197,7 @@ export interface Store {
    * `expanded` / `lastFile` / fold keys / `baseGroups` keys
    * (`<basePath>::<view>`) / open history entries (YAZ-2663 S8) / table of contents sources / section indent switches / table of contents switches go too. A saved set loses the vault, and a set with fewer than two
    * vaults left is removed (YAZ-2602 S71). The Favorites order and the focus order across vaults lose the entry (YAZ-2631 R6; YAZ-2702 Decision 3).
+   * A moved card on the tab board whose path went is dropped (YAZ-3343 D1).
    * A window's `root` is deliberately LEFT ALONE: the renderer's existing `onRootMissing`
    * probe owns that repair (it also drops the dead MRU entry), and nulling it here would
    * race it. One commit; a no-op when nothing references the path.
@@ -369,7 +393,7 @@ export const isWindowBounds = (v: unknown): v is WindowBounds =>
   isRecord(v) && isFiniteNumber(v.x) && isFiniteNumber(v.y) && isFiniteNumber(v.width) && isFiniteNumber(v.height)
 
 /** Core v1 shape; additive window-identity fields are repaired separately. */
-type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { roots?: unknown; tabs?: unknown; tabStrip?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown }
+type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { roots?: unknown; tabs?: unknown; tabStrip?: unknown; name?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown }
 const isStoredWindowEntry = (v: unknown): v is StoredWindowEntry =>
   isRecord(v) && typeof v.id === 'string' && isStringOrNull(v.root) && isStringOrNull(v.file) && isWindowBounds(v.bounds)
 
@@ -466,7 +490,9 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
     // vault's now, in the vault. The entry is built from the fields below alone, so the next write drops the key.
     // The vault list (YAZ-2602 S74) reads with the `tabs` rule: a junk ELEMENT drops and the rest stay, and a missing list repairs from `root`.
     const roots = normalizeRoots(Array.isArray(w.roots) ? w.roots.filter((r): r is string => typeof r === 'string' && isAbsolute(r)) : [], w.root)
-    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, ...(tabStrip === undefined ? {} : { tabStrip }), rightPanel, sidebarCollapsed, sidebarLens, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
+    // The window's name (YAZ-3343 D14) reads like a vault's: a junk or blank name is no name, never a bad entry.
+    const name = cleanVaultName(w.name)
+    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, ...(tabStrip === undefined ? {} : { tabStrip }), ...(name === null ? {} : { name }), rightPanel, sidebarCollapsed, sidebarLens, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
   }
   return out
 }
@@ -622,6 +648,59 @@ function sanitizeSessions(raw: unknown): Session[] {
 /** An order across vaults — `favoritesOrder` (YAZ-2631 D1) and `focusOrder` (YAZ-2702 Decision 3): absolute paths, cut at the limit; a missing or junk list is empty. */
 const sanitizeOrder = (raw: unknown): string[] => (isStringArray(raw) ? raw.filter(isAbsolute).slice(0, MAX_FAVORITES_ORDER) : [])
 
+const isCanvasLayout = (v: unknown): v is CanvasLayout => v === 'folder' || v === 'window'
+
+/** A tab named without its id (YAZ-3343): an absolute path and a copy that is a whole number from 0. Null for anything else. */
+export function readTabRef(raw: unknown): TabRef | null {
+  if (!isRecord(raw) || typeof raw.path !== 'string' || !isAbsolute(raw.path) || !Number.isInteger(raw.copy) || (raw.copy as number) < 0) return null
+  return { path: raw.path, copy: raw.copy as number }
+}
+
+/** A card's key alone, as `TabCanvasPatch.forget` names it (YAZ-3343 D9): a tab, a window id that is not empty, a layout. Null for anything else. */
+export function readCanvasKey(raw: unknown): (TabRef & { win: string; by: CanvasLayout }) | null {
+  const ref = readTabRef(raw)
+  if (ref === null || !isRecord(raw) || typeof raw.win !== 'string' || raw.win === '' || !isCanvasLayout(raw.by)) return null
+  return { win: raw.win, ...ref, by: raw.by }
+}
+
+/** One moved card (YAZ-3343 D1): its key and finite world coordinates. A fresh object, so nothing aliases the caller's. Null for anything else. */
+export function readCanvasCard(raw: unknown): CanvasCard | null {
+  const key = readCanvasKey(raw)
+  if (key === null || !isRecord(raw) || !isFiniteNumber(raw.x) || !isFiniteNumber(raw.y)) return null
+  return { ...key, x: raw.x, y: raw.y }
+}
+
+/**
+ * The stored cards of window `w` whose tab it still has (YAZ-3343 D28): (path, copy) with copy below the number
+ * of its tabs of that path. A tab that left — or a copy that closed — leaves no card behind. `canvas` itself when
+ * nothing goes, so a caller's commit changes nothing there.
+ */
+export function pruneCanvas(canvas: TabCanvasState, w: WindowEntry): TabCanvasState {
+  const count = new Map<string, number>()
+  for (const t of w.tabStrip ?? w.tabs.map((path) => ({ path }))) count.set(t.path, (count.get(t.path) ?? 0) + 1)
+  const cards = canvas.cards.filter((c) => c.win !== w.id || c.copy < (count.get(c.path) ?? 0))
+  return cards.length === canvas.cards.length ? canvas : { ...canvas, cards }
+}
+
+/** One stored frame (YAZ-3343): a window id and finite world coordinates. A fresh object; null for anything else. */
+export function readCanvasFrame(raw: unknown): CanvasFrame | null {
+  if (!isRecord(raw) || typeof raw.win !== 'string' || raw.win === '' || !isFiniteNumber(raw.x) || !isFiniteNumber(raw.y)) return null
+  return { win: raw.win, x: raw.x, y: raw.y }
+}
+
+/**
+ * The tab board's canvas on load (YAZ-3343 D1), lenient like the windows: a missing or junk value is the default,
+ * a bad card drops alone, a card of a window the file does not have drops too, and the list is cut at MAX_CANVAS_CARDS.
+ */
+export function sanitizeTabCanvas(raw: unknown, windows: readonly WindowEntry[]): TabCanvasState {
+  if (!isRecord(raw)) return defaultTabCanvas()
+  const cards = Array.isArray(raw.cards) ? raw.cards.map(readCanvasCard).filter((c): c is CanvasCard => c !== null) : []
+  const frames = Array.isArray(raw.frames) ? raw.frames.map(readCanvasFrame).filter((f): f is CanvasFrame => f !== null) : []
+  // The good cards laid on an empty canvas by the patch rule: each key once (the first: last moved first), windows the file has, the cap.
+  // The switch is on unless the file says `false` ("Show all windows" by default, D19); junk is the default.
+  return applyTabCanvasPatch(defaultTabCanvas(), { allWindows: raw.allWindows !== false, snap: raw.snap !== false, set: cards, setFrames: frames }, new Set(windows.map((w) => w.id)))
+}
+
 /** The file's shape: each folder bucket minus its session field (YAZ-1642) — what a relaunch restores, nothing more. */
 function toDisk(state: AppState): unknown {
   const folders = Object.fromEntries(Object.entries(state.folders).map(([root, { expanded: _e, ...kept }]) => [root, kept]))
@@ -637,12 +716,13 @@ function sanitizeState(raw: unknown): AppState | null {
   // windows without a valid lens of their own; a pre-847 file has none at all, and missing or
   // junk both read as the default. The returned state omits the old key too.
   const legacySidebarLens: SidebarLens = isSidebarLens(raw.sidebarLens) ? raw.sidebarLens : DEFAULT_SIDEBAR_LENS
+  const windows = sanitizeWindows(raw.windows, legacySidebarCollapsed, legacySidebarLens)
   return {
     version: 1,
     settings: sanitizeSettings(raw.settings),
     sidebarWidth: isFiniteNumber(raw.sidebarWidth) ? clampSidebarWidth(raw.sidebarWidth) : SIDEBAR_DEFAULT_W,
     recents: isRecentRoots(raw.recents) ? raw.recents.slice(0, MAX_RECENT_ROOTS) : [],
-    windows: sanitizeWindows(raw.windows, legacySidebarCollapsed, legacySidebarLens),
+    windows,
     folders: sanitizeFolders(raw.folders),
     vaultSets: sanitizeVaultSets(raw.vaultSets),
     favoritesOrder: sanitizeOrder(raw.favoritesOrder),
@@ -651,6 +731,8 @@ function sanitizeState(raw: unknown): AppState | null {
     // YAZ-3276 D2: absent, or not an absolute path, is the default (this file). An old build drops both keys.
     settingsFolder: typeof raw.settingsFolder === 'string' && isAbsolute(raw.settingsFolder) ? raw.settingsFolder : null,
     settingsSavedAt: isFiniteNumber(raw.settingsSavedAt) && raw.settingsSavedAt >= 0 ? raw.settingsSavedAt : 0,
+    // YAZ-3343 D1: absent is the default; an old build drops the key.
+    tabCanvas: sanitizeTabCanvas(raw.tabCanvas, windows),
   }
 }
 
@@ -866,7 +948,8 @@ export function createStore(filePath: string): Store {
       // The use goes in the commit of the window (YAZ-2663 R2): one write, one broadcast. Its vault is the one of the window that holds the page.
       const vault = opened === null ? null : rootOfPath(normalized.roots, opened)
       const folders = opened === null || vault === null ? state.folders : { ...state.folders, [vault]: { ...folderOf(vault), opens: addOpen(folderOf(vault).opens, opened, now) } }
-      commit({ ...state, windows, folders })
+      // The board's places of tabs this window no longer has go in the same commit (D28): a stale card would take a cell.
+      commit({ ...state, windows, folders, tabCanvas: pruneCanvas(state.tabCanvas, normalized) })
     },
 
     addEdit(roots, file, now = Date.now()) {
@@ -879,7 +962,29 @@ export function createStore(filePath: string): Store {
 
     removeWindow(...ids) {
       if (!state.windows.some((w) => ids.includes(w.id))) return
-      commit({ ...state, windows: state.windows.filter((w) => !ids.includes(w.id)) })
+      // The moved cards of a window that goes go with it (YAZ-3343 D1): an id is never used again.
+      const cards = state.tabCanvas.cards.filter((c) => !ids.includes(c.win))
+      // Its frame's place too (YAZ-3343).
+      const held = state.tabCanvas.frames
+      const frames = held.filter((f) => !ids.includes(f.win))
+      const tabCanvas = cards.length === state.tabCanvas.cards.length && frames.length === held.length ? state.tabCanvas : { ...state.tabCanvas, cards, frames }
+      commit({ ...state, windows: state.windows.filter((w) => !ids.includes(w.id)), tabCanvas })
+    },
+
+    setWindowName(id, raw) {
+      const entry = state.windows.find((w) => w.id === id)
+      if (entry === undefined) return false
+      const name = cleanVaultName(raw)
+      if ((entry.name ?? null) === name) return true
+      const { name: _old, ...rest } = entry
+      const next: WindowEntry = name === null ? rest : { ...rest, name }
+      commit({ ...state, windows: state.windows.map((w) => (w === entry ? next : w)) })
+      return true
+    },
+
+    setTabCanvas(patch) {
+      const tabCanvas = applyTabCanvasPatch(state.tabCanvas, patch, new Set(state.windows.map((w) => w.id)))
+      if (tabCanvas !== state.tabCanvas) commit({ ...state, tabCanvas })
     },
 
     renamePath(oldPath, newPath) {
@@ -962,8 +1067,10 @@ export function createStore(filePath: string): Store {
         const tabs = s.tabs.map((t) => ({ ...t, path: remap(t.path) }))
         return { ...s, tabs, roots: sessionRoots(tabs, s.roots.map(remap)) }
       })
+      // A moved card on the tab board follows its tab's file, as a session's tab does (YAZ-3343 D1).
+      const tabCanvas = { ...state.tabCanvas, cards: state.tabCanvas.cards.map((c) => ({ ...c, path: remap(c.path) })) }
       if (!changed) return
-      commit({ ...state, windows, recents, folders, vaultSets, favoritesOrder, focusOrder, sessions })
+      commit({ ...state, windows, recents, folders, vaultSets, favoritesOrder, focusOrder, sessions, tabCanvas })
     },
 
     removePath(deleted) {
@@ -1057,8 +1164,12 @@ export function createStore(filePath: string): Store {
         changed = true
         return { ...s, tabs, roots: sessionRoots(tabs, s.roots) }
       })
+      // A moved card whose file went is dropped (YAZ-3343 D1); its tab is gone from its window too.
+      const cards = state.tabCanvas.cards.filter((c) => !gone(c.path))
+      if (cards.length !== state.tabCanvas.cards.length) changed = true
+      const tabCanvas = { ...state.tabCanvas, cards }
       if (!changed) return
-      commit({ ...state, windows, recents, folders, vaultSets, favoritesOrder, focusOrder, sessions })
+      commit({ ...state, windows, recents, folders, vaultSets, favoritesOrder, focusOrder, sessions, tabCanvas })
     },
 
     saveVaultSet(rawName, rawRoots, now = Date.now()) {

@@ -21,7 +21,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, dragAbove, extraWindow, fileRow, launchApp, menuItem, quitApp, readState, SEED_FILE, seededState, shoot, topLabels, windowCount, winParam } from './helpers'
+import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, dragAbove, extraWindow, fileRow, launchApp, menuItem, quitApp, readState, searchBar, SEED_FILE, seededState, shoot, topLabels, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -115,11 +115,15 @@ test('step 2 — dragging the folder row above the file row rewrites the stored 
 // ---------------------------------------------------------------- a second window, and remove
 
 test('step 3 — a second window on the vault shows the same list, and sees a removal made in the first', async () => {
-  // ⌘⇧N (menu.file.new-window) duplicates the window — lens included, so the copy opens on ♥ too.
+  // ⌘⇧N (menu.file.new-window) opens a window on the same vault — lens included — on the blank tab, whose caret is in
+  // the search (YAZ-3343 D35). The ♥ tab is its stored lens, one click away.
   await clickMenuItem(app, 'menu.file.new-window', 'w1')
   const dup = await extraWindow(app, ['w1'])
   const dupId = winParam(dup)!
   expect(await windowCount(app)).toBe(2)
+  await expect(searchBar(dup)).toBeFocused()
+  await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === dupId)?.sidebarLens).toBe('favorites')
+  await heartTab(dup).click()
   await expect(heartTab(dup)).toHaveAttribute('aria-selected', 'true')
   await expect(topLabels(dup)).toHaveText(['Projects', 'Ideas'])
 

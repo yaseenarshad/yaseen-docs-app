@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -139,6 +139,8 @@ export const CONTRACT = {
     setSettingsFolder: invoke<[folder: string | null], void>('state:set-settings-folder', 1),
     /** Clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by the main process. */
     setSidebarWidth: invoke<[width: number], void>('state:set-sidebar-width', 1),
+    /** The tab board's canvas (YAZ-3343 D1): the switch, moved cards, forgotten cards (Tidy up). Sent on a drop or a click, never on each pointer move. */
+    setTabCanvas: invoke<[patch: TabCanvasPatch], void>('state:set-tab-canvas', 1),
     /** The Favorites order of the window's vaults (YAZ-2631 D1); main merges it into the one list. */
     setFavoritesOrder: invoke<[roots: readonly string[], paths: readonly string[]], void>('state:set-favorites-order', 2),
     /** The focus order of the window's vaults (YAZ-2702 Decision 3); main merges it into the one list, as it does the Favorites order. */
@@ -168,8 +170,8 @@ export const CONTRACT = {
     /** Record this window's folder/file/tabs and chrome; main re-enforces the tabs invariant (GRO-2232). */
     setIdentity: invoke<[patch: Partial<Omit<WindowIdentity, 'id'>>], void>('window:set-identity', 1),
     open: invoke<[opts: OpenWindowOptions], void>('window:open', 1),
-    /** `⌘⇧N`: same folder, same file, new window (GRO-2167); its active tab starts with `view` (YAZ-2951 D5). */
-    duplicate: invoke<[view?: PageView], void>('window:duplicate', 1),
+    /** `⌘⇧N` (GRO-2167): a new window on the same vaults, with NO tab — the blank tab and the search (YAZ-3343 replaced YAZ-2951 D5's copy). */
+    duplicate: invoke<[], void>('window:duplicate', 0),
     /**
      * A tab's "Move to new window" (YAZ-2933): a new window on the caller's vaults with only `path` in it, sidebar hidden.
      * `carry` is what the tab takes along, handed to the new window once and never stored: its page view
@@ -181,6 +183,44 @@ export const CONTRACT = {
      * Main checks that `to` is live and shows a vault of `path`, raises it, and pushes `link:take-tab` to it.
      */
     moveTo: invoke<[to: string, path: string, carry?: PopOutCarry], void>('window:move-to', 3),
+    /** A card of another window on the tab board (YAZ-3343 D3): raise `to` and make its tab `ref` active. */
+    focusTab: invoke<[to: string, ref: TabRef], void>('window:focus-tab', 2),
+    /** The ✕ of another window's cards, and Kill all with "Show all windows" on (YAZ-3343 D3, D10): window `to` closes these tabs itself. */
+    closeTabs: invoke<[to: string, refs: readonly TabRef[]], void>('window:close-tabs', 2),
+    /**
+     * A card dropped in another window's frame (YAZ-3343 D13): window `from` sends its tab `ref` to the window `to`, as "Move to ▸" does.
+     * Main checks that both are live and that `to` shows a vault of the page; `from` may be the caller.
+     */
+    moveTab: invoke<[from: string, to: string, ref: TabRef], void>('window:move-tab', 3),
+    /** A window frame's name on the tab board (YAZ-3343 D14): name the open window `id`, or `null` to go back to its automatic label. Any window can name any open window. */
+    setName: invoke<[id: string, name: string | null], void>('window:set-name', 2),
+    /**
+     * "Close window" in a frame's menu on the tab board (YAZ-3343 D21): the open window `id` closes by its REAL
+     * close, so its flush handshake saves its unsaved text first. Never the caller (it has `close-self`).
+     */
+    closeOther: invoke<[id: string], void>('window:close-other', 1),
+    /**
+     * "New window" from the tab board's empty canvas (YAZ-3343 D22, D23): a window on the CALLER's vaults with no tab,
+     * HIDDEN until the user shows it from the board (the board keeps the focus). Answers the new window's id.
+     */
+    openBehind: invoke<[], string>('window:open-behind', 0),
+    /**
+     * The vault chip on an EMPTY window's frame on the tab board (YAZ-3343 D22): window `id` — live, with NO
+     * tab — shows these vaults instead. Main checks and pushes `link:set-roots`; that window switches itself.
+     */
+    setRoots: invoke<[id: string, roots: readonly string[]], void>('window:set-roots', 2),
+    /** "Move to new window" on ANOTHER window's card of the tab board (YAZ-3343 D37): window `from` moves its tab `ref` to a new window itself, quietly (its text saved first). */
+    popOutTab: invoke<[from: string, ref: TabRef], void>('window:pop-out-tab', 2),
+    /** A frame's "Show window" on the tab board (YAZ-3343): a window the board made, still hidden, shows and takes the focus. */
+    showWindow: invoke<[id: string], void>('window:show', 1),
+    /** A card menu's tab action on ANOTHER window's card (YAZ-3343): window `to` runs `action` on its tab `ref` itself. */
+    tabAction: invoke<[to: string, ref: TabRef, action: TabAction], void>('window:tab-action', 3),
+    /** The tab board's highlight on ANOTHER window's card (YAZ-3343 D33): window `to` lights that tab in its strip; `null` puts it out. A glance: dropped for a window that is not live. */
+    highlightTab: invoke<[to: string, ref: TabRef | null], void>('window:highlight-tab', 2),
+    /** The windows the tab board made that are still hidden (YAZ-3343), read when a board opens. */
+    hiddenWindows: invoke<[], string[]>('window:hidden-windows-now', 0),
+    /** The windows minimized in the Dock now (YAZ-3343 D23): the board tags their frames. */
+    minimizedWindows: invoke<[], string[]>('window:minimized-windows-now', 0),
     /**
      * A "Move to ▸" row under the pointer or the keyboard (YAZ-3091 D8): the open window `to` glows, so you see which
      * window the row means; `null` puts it out. Main keeps one lit window per caller and puts it out when either closes.
@@ -188,6 +228,10 @@ export const CONTRACT = {
     highlight: invoke<[to: string | null], void>('window:highlight', 1),
     /** This window glows (`true`) or stops (`false`) because a "Move to ▸" row of another window points at it (YAZ-3091 D8). */
     onGlow: push<boolean>('window:glow'),
+    /** The windows the tab board made that are still HIDDEN (YAZ-3343), to every window on each change: the board tags their frames. */
+    onHiddenWindows: push<string[]>('window:hidden-windows'),
+    /** The windows minimized in the Dock (YAZ-3343), to every window on each change. */
+    onMinimizedWindows: push<string[]>('window:minimized-windows'),
     /** The vault switcher's one door (YAZ-1767 🔒 D1, D9): raise that vault's windows or open a new one on its last file; `false` = the folder is gone and was pruned from the MRU. */
     openRecent: invoke<[path: string], boolean>('window:open-recent', 1),
     /** "Open by itself" (YAZ-2858 D1): raise the window that shows ONLY this vault, else open a new one on its last file; a workspace window that shows it does not count and does not change. `false` = the folder is gone and was pruned from the MRU. */
@@ -246,7 +290,7 @@ export const CONTRACT = {
     onTabOverview: push('menu:tab-overview'),
     /** File › New Tab (⌘T): show the one blank tab, with the caret in the sidebar's search bar (YAZ-2655 D10, D11). */
     onNewTab: push('menu:new-tab'),
-    /** File › New Window (⌘⇧N): the window saves its page, reads its page view, then calls `window.duplicate` (YAZ-2951 D5). */
+    /** File › New Window (⌘⇧N): the focused window calls `window.duplicate`, which opens a window on its vaults with no tab (YAZ-3343 D35). */
     onNewWindow: push('menu:new-window'),
     /** Help › What's New… (YAZ-2976 D8): the window opens its "What's new" window. */
     onWhatsNew: push('menu:whats-new'),
@@ -268,6 +312,20 @@ export const CONTRACT = {
     onOpenFile: push<string>('link:open-file'),
     /** Another window moved a tab here (YAZ-3091 D1, D5): add it as a new active tab with its name and page view. */
     onTakeTab: push<MovedTab>('link:take-tab'),
+    /** Another window's tab board picked a tab of this window (YAZ-3343 D3): make it active (it is copy `ref.copy` of `ref.path`). */
+    onFocusTab: push<TabRef>('link:focus-tab'),
+    /** Another window's tab board closed tabs of this window (YAZ-3343 D3, D10). */
+    onCloseTabs: push<TabRef[]>('link:close-tabs'),
+    /** Another window's tab board moved this window's tab `ref` to the window `to` (YAZ-3343 D13): save it, send it with `window:move-to`, close it here. */
+    onSendTab: push<{ to: string; ref: TabRef }>('link:send-tab'),
+    /** A tab board's vault chip picked this EMPTY window's vaults (YAZ-3343): show them, if it still has no tab. */
+    onSetRoots: push<string[]>('link:set-roots'),
+    /** A tab board of another window asked this one to move its tab `ref` to a new window, quietly (YAZ-3343): save it, pop it out behind. */
+    onPopOutTab: push<TabRef>('link:pop-out-tab'),
+    /** Another window's board highlights this window's tab `ref` (YAZ-3343): light it in the strip; `null` puts it out. */
+    onHighlightTab: push<TabRef | null>('link:highlight-tab'),
+    /** Another window's board asks a tab action of this window's tab `ref` (YAZ-3343): run it here. */
+    onTabAction: push<{ ref: TabRef; action: TabAction }>('link:tab-action'),
     /** A link could not be opened (bad URL, unsupported, missing or non-regular file): show `message` unobtrusively. */
     onNotice: push<string>('link:notice'),
     /** This window's three listeners above are on (YAZ-2589 A2): main sends the pushes it held while the page loaded. */

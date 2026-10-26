@@ -6,11 +6,11 @@
  * The Sidebar decides WHEN (the dwell and every close); this decides WHAT, and `previewPlacement`
  * WHERE. A note's panel (`NotePreview`, YAZ-3075 D2) takes the same box, in its taller `'note'` shape.
  */
-import { useEffect, useState, type RefObject } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { basename, boardFolder } from '../lib/paths'
 import { boardPreviews } from './boardPreviewCache'
-import { usePlacement } from './previewPlacement'
+import { usePlacement, type PreviewAnchor } from './previewPlacement'
 import './boardPreview.css'
 
 interface BoardPreviewProps {
@@ -19,8 +19,8 @@ interface BoardPreviewProps {
   node: { path: string }
   /** `boardPreviewKey(root, node, theme, darkColors)` — a new key (a save, a theme flip) swaps the picture in place. */
   cacheKey: string
-  /** The `<aside className="sidebar">` the panel sits beside. */
-  anchor: RefObject<HTMLElement | null>
+  /** What the panel sits beside: the `<aside className="sidebar">`, or a card of the tab board (YAZ-3343). */
+  anchor: PreviewAnchor
 }
 
 export default function BoardPreview({ root, node, cacheKey, anchor }: BoardPreviewProps) {

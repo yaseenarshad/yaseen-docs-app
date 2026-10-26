@@ -915,7 +915,8 @@ button {
 
 .link-notice {
   display: flex;
-  align-items: center;
+  /* The count, ✕ and an action stay on the message's FIRST line when it wraps (YAZ-3343). */
+  align-items: flex-start;
   gap: 8px;
   max-width: 360px;
   padding: 8px 12px;
@@ -928,17 +929,28 @@ button {
   animation: link-notice-in 120ms ease-out both;
 }
 
-/* The glyph (D10 amended): 16px, `currentColor`, never shrinks against a long line. */
+/* The glyph (D10 amended): 16px, `currentColor`, never shrinks against a long line. Centred on the first line. */
 .link-notice__icon {
   flex: none;
+  margin-top: 3px;
   opacity: 0.8;
 }
 
-/* The text is its own box so a long line ellipsises — on the flex container it never would. */
+/* The message WRAPS to three lines at most, then "…" (YAZ-3343 D36); cut, its `title` holds it whole. A
+   short one is one line, as before. Its first line sits in the middle of the 22 px buttons beside it. */
 .link-notice__text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding-top: 2px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.link-notice__clock {
+  line-height: 22px;
 }
 
 /* A notice with a button (YAZ-1897 "See changes", YAZ-3039) is news to act on: it wraps instead of

@@ -344,15 +344,17 @@
   }
 }
 
-/* ---------- tab board (YAZ-2648 D5–D8) ---------- */
+/* ---------- tab board (YAZ-2648 D5–D8, the canvas of YAZ-3343) ---------- */
 
-/* Every open tab as a small page, over the stack while it shows: the layers under it are hidden,
-   never unmounted, so each page keeps its scroll, caret and undo. The filter box stays put; the
-   islands scroll. Every length of the board is a custom property TabOverview.tsx sets from
-   `board.ts`, where the stack rule reads the same numbers. */
+/* Every open tab as a card on a canvas, over the stack while it shows: the layers under it are
+   hidden, never unmounted, so each page keeps its scroll, caret and undo. The top row stays put;
+   the camera moves the world under it. Every length of the board is a custom property
+   TabOverview.tsx sets from `board.ts`, where the layout reads the same numbers. */
 .taboverview {
   position: absolute;
   inset: 0;
+  /* The toolbar reads the board's own width (a container query), not the window's: the sidebar takes some. */
+  container: taboverview / inline-size;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -384,9 +386,9 @@
   }
 }
 
-/* The top row (YAZ-2739): the filter box in the middle column, "Kill all tabs" at the end of the
-   last. The side columns are always equal, and never narrower than the button, so the box stays
-   in the middle of the board; in a narrow board it is the box that gives way. */
+/* The top row (YAZ-2739, YAZ-3343 D8): the filter box in the middle column; at the end of the last,
+   "Show all windows", "Tidy up" and "Kill all tabs". The side columns are always equal, so the box
+   stays in the middle of the board; in a narrow board it is the box that gives way. */
 .taboverview__top {
   flex: none;
   display: grid;
@@ -417,37 +419,190 @@
   color: var(--fg-muted);
 }
 
-/* "Kill all tabs" (YAZ-2739), top right of the board. Its look is the confirm sheet's danger
-   button (`confirm__btn--danger`, app.css): the same red says the same thing in both places. */
-.taboverview__kill {
+.taboverview__actions {
   grid-column: 3;
   justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
-/* The board's area: what the stack rule measures. Its box is the window's to size, never the
-   pages' — the gutter is kept whether it scrolls or not — so stacking cannot change it. */
+/* "Kill all tabs" (YAZ-2739) and "Tidy up" (YAZ-3343 D9): the confirm sheet's buttons (`confirm__btn`,
+   app.css), the danger one red: the same colour says the same thing in both places. */
+.taboverview__kill,
+.taboverview__tidy {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* "Show all windows" (D8): a checkbox drawn as a small switch. The box itself is there for the keys and a reader. */
+.taboverview__switch {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.taboverview__switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.taboverview__switch-track {
+  position: relative;
+  width: 26px;
+  height: 15px;
+  border-radius: 8px;
+  background: var(--border);
+  transition: background 120ms ease;
+}
+
+.taboverview__switch-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--bg);
+  transition: transform 120ms ease;
+}
+
+.taboverview__switch input:checked + .taboverview__switch-track {
+  background: var(--accent);
+}
+
+.taboverview__switch input:checked + .taboverview__switch-track::after {
+  transform: translateX(11px);
+}
+
+.taboverview__switch input:focus-visible + .taboverview__switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* THE VIEWPORT (YAZ-3343 D4): the canvas's window. It never scrolls: the camera moves the world in it. */
 .taboverview__body {
+  position: relative;
   flex: 1;
   min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-  padding: var(--tab-pad);
+  overflow: hidden;
   user-select: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+.taboverview__body:active {
+  cursor: grabbing;
 }
 
 .taboverview__msg {
-  margin: 48px auto;
+  position: absolute;
+  top: 48px;
+  right: 0;
+  left: 0;
+  margin: 0;
   color: var(--fg-muted);
   text-align: center;
+  pointer-events: none;
 }
 
-.taboverview__vault + .taboverview__vault {
-  margin-top: var(--tab-island-gap);
+/* The world: every frame, group and card at its place in px at zoom 1. ONE transform, the camera's, set
+   straight from the board's ref (D4); `data-glide` eases a button's zoom and an arrow's pan. */
+.taboverview__world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+
+.taboverview__world[data-glide] {
+  transition: transform 180ms cubic-bezier(0.3, 0, 0.2, 1);
+}
+
+/* A window's frame (D8): a thin accent-tinted border round its groups, its label above it. */
+.taboverview__frame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--accent-soft) 35%, transparent);
+}
+
+.taboverview__frame--mine {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+}
+
+/* The frame a "Move to ▸" row points at (D31): an accent ring, as the real window glows. */
+.taboverview__frame--ringed {
+  box-shadow: 0 0 0 3px var(--accent);
+}
+
+.taboverview__frame-label {
+  position: absolute;
+  bottom: 100%;
+  left: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 8px);
+  height: var(--tab-frame-label-h);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.taboverview__frame-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A window the board made and keeps hidden until it is shown (D23): muted. */
+.taboverview__frame-hidden {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
+/* The window's vault or workspace (D34): muted, small; it gives way before the window's name does. */
+.taboverview__frame-vault {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taboverview__frame-here {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--accent);
 }
 
 /* A vault's name, only where the window has two or more (D7). */
 .taboverview__vault-name {
+  position: absolute;
   height: var(--tab-vault-h);
   font-size: 14px;
   font-weight: 600;
@@ -458,31 +613,23 @@
   white-space: nowrap;
 }
 
-/* Islands stand side by side and wrap, each as big as its pages. */
-.taboverview__islands {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--tab-island-gap);
-}
-
-/* One folder's pages: a soft region, no border. */
+/* One folder's group: a soft region round ALL its cards, moved ones too (board.ts › layoutCanvas). No
+   z-index and no transform: it makes no stacking context, so every card stands above every group. */
 .taboverview__island {
-  flex: none;
+  position: absolute;
   box-sizing: border-box;
   padding: var(--tab-island-pad);
   border-radius: 14px;
   background: var(--bg-side);
 }
 
-/* The label row never widens its island: the pages set the width, the label gives way inside it. */
+/* The label row never widens its group: the cards set the width, the label gives way inside it. */
 .taboverview__island-head {
   display: flex;
   align-items: flex-start;
   gap: 6px;
   box-sizing: border-box;
-  width: 0;
-  min-width: 100%;
+  width: 100%;
   height: var(--tab-label-h);
   font-size: 13px;
   line-height: 18px;
@@ -538,87 +685,203 @@
   background: var(--bg-hover);
 }
 
-.taboverview__pages {
-  display: grid;
-  grid-auto-rows: var(--tab-page-h);
-  gap: var(--tab-page-gap);
-}
-
-/* A page: a small sheet, 3:4, the title and the note's first lines on it. It lifts under the pointer. */
+/* A card (D15): short and wide, its title row, a "Page: …"
+   line when named, two lines of the note — at its place in its group. It lifts under the pointer. */
 .taboverview__page {
-  position: relative;
-  display: block;
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
   width: var(--tab-page-w);
   height: var(--tab-page-h);
-  padding: 14px 14px 12px;
+  /* Balanced (D15): the lines sit in the middle of the card, no empty band below. */
+  justify-content: center;
+  padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   overflow: hidden;
   text-align: left;
   cursor: pointer;
-  transition: transform 120ms ease;
+  transition:
+    transform 120ms ease,
+    rotate 120ms ease,
+    box-shadow 120ms ease;
 }
 
-.taboverview__page:hover,
-.taboverview__stack:hover .taboverview__page {
-  transform: translateY(-3px);
+.taboverview__page:hover {
+  transform: translateY(-2px);
 }
 
-/* The highlight: the page Enter opens. The pointer and the arrows move the same one. */
+/* A folder group or a whole window frame held by the pointer (D16): it, its
+   groups and its cards follow by transform, over everything else, until the drop stores every card's place. */
+.taboverview__island,
+.taboverview__frame,
+.taboverview__frame-label {
+  cursor: grab;
+}
+
+.taboverview__island[data-lifted],
+.taboverview__frame[data-lifted] {
+  z-index: 2;
+  cursor: grabbing;
+}
+
+.taboverview__island[data-lifted] {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+}
+
+/* A card held by the pointer (D12): it follows with its own transform, tilted a little, over everything, with
+   no lag. Let go, it settles: the tilt and the shadow ease back in 120ms (the place itself is already right). */
+.taboverview__page[data-lifted] {
+  z-index: 3;
+  rotate: 2deg;
+  transition: none;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
+  cursor: grabbing;
+}
+
+/* A drop another window refused (D13): the card slides back to its place. */
+.taboverview__page[data-sliding] {
+  z-index: 3;
+  transition: transform 200ms cubic-bezier(0.3, 0, 0.2, 1);
+}
+
+/* The highlight: the card Enter opens. The pointer and the arrows move the same one. */
 .taboverview__page--current {
   border-color: var(--fg-muted);
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12);
 }
 
-/* The active tab's page wears the board's own mark (R32): an accent line along its foot. */
-.taboverview__page--active::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 2px;
-  background: var(--accent);
+/* Each window's ACTIVE tab (D33): the strip's active pill — an accent fill and an
+   accent edge all round, in both themes. The highlight keeps its own darker edge and shadow over it. */
+.taboverview__page--active {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+}
+
+.taboverview__page--active.taboverview__page--current {
+  border-color: var(--fg-muted);
 }
 
 .taboverview__title {
   display: -webkit-box;
+  flex: none;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   overflow: hidden;
-  font-size: 15px;
+  /* The title reads at a glance (D15): one line, cut with an ellipsis. */
+  font-size: 18px;
   font-weight: 600;
-  line-height: 20px;
+  line-height: 22px;
   color: var(--fg);
   overflow-wrap: anywhere;
+}
+
+/* A copy's card keeps the top-right corner for its "1 of 2" (D11). */
+.taboverview__page--copy .taboverview__title {
+  padding-right: 42px;
 }
 
 .taboverview__page--preview .taboverview__title {
   font-style: italic;
 }
 
-/* The note's first lines (D6): plain text, the note's own line breaks kept, cut at a whole line —
-   as many as the page holds under a title of two lines. */
+/* A window frame's card says its folder (D17: no folder boxes inside frames): grey, one line, under
+   its title; its text then keeps one line, so the card stays a card. */
+.taboverview__folder {
+  flex: none;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 15px;
+  color: var(--fg-muted);
+  opacity: 0.8;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Under a folder line and a "Page:" line the note keeps one line; the card is 96 px. */
+.taboverview__page--framed .taboverview__pagename + .taboverview__lines {
+  -webkit-line-clamp: 1;
+}
+
+/* Zoomed far out (camera's `data-far`, zoom < 0.6): the title alone, which still reads. */
+.taboverview[data-far] .taboverview__lines,
+.taboverview[data-far] .taboverview__pagename,
+.taboverview[data-far] .taboverview__folder {
+  display: none;
+}
+
+/* Under a display name, the page's own name (D11): muted, one line. */
+.taboverview__pagename {
+  flex: none;
+  margin-top: 1px;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 15px;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "1 of 2" (D11): which copy of the path this card is. The ✕ takes the corner while it shows. */
+.taboverview__copy {
+  position: absolute;
+  top: 11px;
+  right: 8px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--fg-muted);
+  background: var(--bg-hover);
+  white-space: nowrap;
+}
+
+.taboverview__page:hover .taboverview__copy,
+.taboverview__page--current .taboverview__copy {
+  visibility: hidden;
+}
+
+/* The note's first lines (D6): plain text, the note's own line breaks kept, two at most on a card — the
+   preview panel is the place to read (D18). */
 .taboverview__lines {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 10;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  margin-top: 8px;
-  font-size: 12.5px;
-  line-height: 19px;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 16px;
   color: var(--fg-muted);
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
 
-/* The strip's ✕, shown the way the strip shows it: on the page under the pointer or the highlight. */
+/* A drawing's picture (YAZ-3343 D6), a strip under its name: the whole board, contained. */
+.taboverview__shot {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  margin-top: 3px;
+  align-items: center;
+  justify-content: center;
+}
+
+.taboverview__picture {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* The strip's ✕, shown the way the strip shows it: on the card under the pointer or the highlight. */
 .taboverview__close {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 9px;
+  right: 6px;
   padding: 3px 5px;
   font-size: 12px;
   line-height: 1;
@@ -633,38 +896,57 @@
   visibility: visible;
 }
 
-/* A stack: an island that shows its pages as one, fanned, while the board would not fit (`stackedIslands`).
-   Its top page is a page; one or two sheets fan out behind it. A click spreads it. */
-.taboverview__stack {
-  position: relative;
-  display: block;
-  width: calc(var(--tab-page-w) + var(--tab-fan-x));
-  height: var(--tab-page-h);
+/* An armed ✕ (D27): a small red Close in its place, on show until it is clicked again or let go. */
+.taboverview .taboverview__close--armed,
+.taboverview .taboverview__close--armed:hover,
+.taboverview .taboverview__close--armed:focus-visible,
+.taboverview .taboverview__close--armed:active {
+  visibility: visible;
+  opacity: 1;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--danger);
 }
 
-/* A stack is one page high: its sheets fan up into the gap under the island's label. */
-.taboverview__stack .taboverview__page,
-.taboverview__sheet {
+/* A frame menu's close clicked once (D21): red AT ONCE, and under the pointer, focus and a press too — the
+   menu's own hover must not win. The danger token of Kill all's button (`confirm__btn--danger`), in both themes. */
+.ctx-menu .ctx-menu__item.taboverview__armed,
+.ctx-menu .ctx-menu__item.taboverview__armed:hover:not(:disabled),
+.ctx-menu .ctx-menu__item.taboverview__armed:focus-visible,
+.ctx-menu .ctx-menu__item.taboverview__armed:active {
+  color: #fff;
+  background: var(--danger);
+}
+
+/* A close of the pick bar clicked once (D27): red, as an armed ✕, under the pointer too. It keeps its label and its
+   width, so no button of the bar moves (YAZ-3374); what the next click does stands in a red hint above it. */
+.taboverview__pick button.taboverview__armed,
+.taboverview__pick button.taboverview__armed:hover,
+.taboverview__pick button.taboverview__armed:focus-visible {
+  color: #fff;
+  background: var(--danger);
+}
+
+.taboverview__pick-hint {
   position: absolute;
-  top: 0;
-  left: 0;
-}
-
-.taboverview__sheet {
-  box-sizing: border-box;
-  width: var(--tab-page-w);
-  height: var(--tab-page-h);
-  border: 1px solid var(--border);
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
   border-radius: 6px;
-  background: var(--bg);
-  transform: translate(calc(var(--tab-fan-x) / 2), calc(var(--tab-fan-y) / -2)) rotate(2deg);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #fff;
+  background: var(--danger);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
 }
 
-.taboverview__sheet--far {
-  transform: translate(var(--tab-fan-x), calc(var(--tab-fan-y) * -1)) rotate(4deg);
-}
-
-/* A picked page (shift-click): the accent, as an outline. The highlight keeps its shadow under it. */
+/* A picked card (shift-click): the accent, as an outline. The highlight keeps its shadow under it. */
 .taboverview__page--picked {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent);
@@ -676,15 +958,169 @@
     0 3px 12px rgba(0, 0, 0, 0.12);
 }
 
-.taboverview__page--dragging {
+/* The board's toolbar (D24), bottom left as on Excalidraw: ONE row at every common width — the fit keeps the cards
+   above it (`TOOLBAR_INSET`), and the pick bar stands over it. */
+.taboverview__zoom {
+  position: absolute;
+  left: 16px;
+  bottom: 14px;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+}
+
+/* A narrow board: the switch says its name in its tooltip only. */
+@container taboverview (max-width: 640px) {
+  .taboverview__switch-text {
+    display: none;
+  }
+}
+
+/* The switch and Tidy up joined the camera's controls (D24): the same compact family. */
+.taboverview__zoom .taboverview__switch,
+.taboverview__zoom .taboverview__tidy {
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.taboverview__zoom .taboverview__tidy {
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+.taboverview__zoom .taboverview__tidy:disabled {
   opacity: 0.5;
 }
 
-/* The pick's bar, bottom left, only while pages are picked: a count and what can be done with them. */
+.taboverview__toolbar-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+}
+
+.taboverview__zoom-pill,
+.taboverview__zoom-fit {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.taboverview__zoom-pill {
+  display: flex;
+  padding: 3px;
+  border-radius: 10px;
+}
+
+.taboverview__zoom button {
+  min-width: 28px;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--fg-muted);
+}
+
+.taboverview__zoom .taboverview__zoom-percent {
+  min-width: 48px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.taboverview__zoom .taboverview__zoom-fit {
+  height: 34px;
+  min-width: 34px;
+  border-radius: 10px;
+}
+
+.taboverview__zoom button:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.taboverview__zoom .taboverview__snap--on,
+.taboverview__zoom .taboverview__snap--on:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* "Open tabs here…" (D22): the app's search over the board, beside its window's frame. */
+.taboverview__search {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 360px;
+  max-height: min(480px, calc(100% - 24px));
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.taboverview__search .search-results {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.taboverview__search-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.taboverview__search-head b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taboverview__search-close {
+  margin-left: auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.taboverview__search-close:hover {
+  background: var(--bg-hover);
+}
+
+/* An empty frame's vault chip (D22): which vaults the window shows, and a way to switch while it is empty. */
+.taboverview__vault-chip {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--fg-muted);
+  background: var(--bg);
+}
+
+.taboverview__vault-chip:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+/* The pick's bar, middle, over the toolbar's row (so the two never meet), only while cards are picked: a count and what can be done with them. */
 .taboverview__pick {
   position: absolute;
-  bottom: 14px;
-  left: 16px;
+  bottom: 58px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 2px;
@@ -702,6 +1138,7 @@
 }
 
 .taboverview__pick button {
+  position: relative;
   padding: 3px 8px;
   border-radius: 5px;
 }
@@ -710,89 +1147,9 @@
   background: var(--bg-hover);
 }
 
-/* The drop area along the right edge, on show only while a page is dragged: the page opens in
-   the right panel. An accent tint and one line of words. */
-.taboverview__drop {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  width: 148px;
-  padding: 0 16px;
-  border: 1px dashed var(--accent);
-  border-radius: 12px;
-  background: var(--accent-soft);
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--fg-muted);
-  text-align: center;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease;
-}
-
-.taboverview__drop--on {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.taboverview__drop--over {
-  border-style: solid;
-  color: var(--fg);
-}
-
-/* The peek: the highlighted page at a size to read, in the middle of the board, while Space is
-   held. It grows and shrinks by transform and opacity; hidden, it takes no pointer and no reader. */
-.taboverview__peek {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  box-sizing: border-box;
-  width: min(540px, calc(100% - 64px));
-  height: min(720px, calc(100% - 40px));
-  padding: 34px 38px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
-  overflow: hidden;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translate(-50%, -50%) scale(0.4);
-  transition:
-    transform 150ms ease,
-    opacity 150ms ease,
-    visibility 0s linear 150ms;
-}
-
-.taboverview__peek--on {
-  opacity: 1;
-  visibility: visible;
-  transform: translate(-50%, -50%);
-  transition-delay: 0s;
-}
-
-.taboverview__peek .taboverview__title {
-  -webkit-line-clamp: 3;
-  font-size: 24px;
-  line-height: 30px;
-}
-
-.taboverview__peek .taboverview__lines {
-  -webkit-line-clamp: 22;
-  margin-top: 16px;
-  font-size: 16px;
-  line-height: 25px;
-  color: var(--fg);
-}
-
 /* No motion asked for: the board and the page change places at once (App skips the way out too),
-   the peek and the drop area are there or not, and no tab of the strip slides (TabBar makes no ghost). */
+   the camera jumps, a refused card is back at once, and no tab of the
+   strip slides (TabBar makes no ghost). */
 @media (prefers-reduced-motion: reduce) {
   .taboverview[data-zoom],
   .tabstack__layer--zoom-out,
@@ -801,8 +1158,10 @@
   }
 
   .taboverview__page,
-  .taboverview__peek,
-  .taboverview__drop {
+  .taboverview__page[data-sliding],
+  .taboverview__world[data-glide],
+  .taboverview__switch-track,
+  .taboverview__switch-track::after {
     transition: none;
   }
 

@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, clickMenuItem, confirmSheet, editorOf, extraWindow, fileRow, idOf, launchApp, lensTab, linkPicker, menuItem, only, quitApp, searchBar, seededState, shoot, showSearchTab } from './helpers'
+import { activeTab, appWindow, clickMenuItem, confirmSheet, editorOf, extraWindow, fileRow, idOf, launchApp, lensTab, linkPicker, menuItem, only, openFromBlankTab, quitApp, searchBar, seededState, shoot, showSearchTab } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -307,10 +307,13 @@ test('step 8 — "Change letters" in one window: a second window on the vault op
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Hub.md')) })
   win = await appWindow(app, 'w1')
   await expect(linkIn(win, 'Fresh idea')).toBeVisible()
-  // ⌘⇧N: a second window on the same vault, on the same note.
+  // ⌘⇧N: a second window on the same vault, on the blank tab (YAZ-3343 D35); the search there opens the same note.
   await clickMenuItem(app, 'menu.file.new-window', 'w1')
   const other = await extraWindow(app, ['w1'])
+  await openFromBlankTab(other, 'Hub')
   await expect(linkIn(other, 'Fresh idea')).toBeVisible()
+  // Back to its Files tab: the file that comes below is found by its row there.
+  await lensTab(other, 'Files').click()
 
   const number = numberOf(freshId, LETTERS)
   await openSettings(win)
