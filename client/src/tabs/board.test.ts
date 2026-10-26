@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { applyTabCanvasPatch, type CanvasCard, type CanvasFrame } from '@shared/types'
-import { arrivalIn, BOARD, buildBoard, CELL, cellKey, colsFor, fieldOf, frameDrop, freeFramePosition, nearestOk, placeCard, dropOutcome, frameAt, islandBox, islandCols, layoutCanvas, nearest, snapPoint, withoutTitle, type FrameInput, type VaultIslands } from './board'
+import { arrivalIn, BOARD, buildBoard, CELL, cellKey, colsFor, departureFrom, fieldOf, frameDrop, freeFramePosition, nearestOk, placeCard, dropOutcome, frameAt, islandBox, islandCols, layoutCanvas, nearest, snapPoint, withoutTitle, type FrameInput, type VaultIslands } from './board'
 
 const name = (path: string): string => path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
 /** Tabs by path: with no copies, a tab's id here is its path (YAZ-2940 D1). */
@@ -409,6 +409,71 @@ describe('the placement rules of a drop (YAZ-3343 D26, D28, D30)', () => {
     const a = plan.frames[0]
     const moved = { x: a.x + move.dx, y: a.y + move.dy }
     expect(moved.x + a.w + BOARD.apart <= b.x || b.x + b.w + BOARD.apart <= moved.x || moved.y + a.h + BOARD.apart <= b.y - BOARD.frameLabelH || b.y + b.h + BOARD.apart <= moved.y - BOARD.frameLabelH).toBe(true)
+  })
+})
+
+describe('departureFrom — a tab that LEAVES a window from the board (YAZ-3376, S16, D16, S45)', () => {
+  /** A window's frame from its strip: copies counted in strip order, ids as another window's (`win\npath\ncopy`). */
+  const win = (id: string, paths: readonly string[]): FrameInput => {
+    const seen = new Map<string, number>()
+    const tabs = paths.map((path) => {
+      const copy = seen.get(path) ?? 0
+      seen.set(path, copy + 1)
+      return { id: `${id}\n${path}\n${copy}`, path }
+    })
+    return { win: id, vaults: buildBoard(tabs, ['/v'], ['Notes'], name).map((v) => ({ ...v, named: false })) }
+  }
+  const SIX = ['/v/a.md', '/v/b.md', '/v/c.md', '/v/d.md', '/v/e.md', '/v/f.md']
+  /** The canvas after `patch`, laid out again over the strips after the leave, as main prunes it (`pruneCanvas`). */
+  const next = (wins: readonly FrameInput[], patch: Parameters<typeof applyTabCanvasPatch>[1], aspect?: number) => {
+    const state = applyTabCanvasPatch({ allWindows: true, snap: true, cards: [], frames: [] }, patch, new Set(wins.map((w) => w.win)))
+    const count = new Map<string, number>()
+    for (const w of wins) for (const v of w.vaults) for (const i of v.islands) for (const p of i.pages) count.set(`${w.win}\0${p.path}`, (count.get(`${w.win}\0${p.path}`) ?? 0) + 1)
+    const cards = state.cards.filter((c) => c.copy < (count.get(`${c.win}\0${c.path}`) ?? 0))
+    return layoutCanvas(wins, { by: 'window', wrapW: 5000, stored: cards, anchors: new Map(state.frames.map((f) => [f.win, f])), aspect })
+  }
+  const spot = (plan: ReturnType<typeof layoutCanvas>, id: string) => {
+    const c = plan.cards.get(id)
+    return c === undefined ? undefined : [c.x, c.y]
+  }
+
+  for (const aspect of [undefined, 16 / 9]) {
+    it(`a move of B to another frame — the drop, "Move to": every card that stays keeps its place, in every frame (aspect ${aspect ?? 'none'})`, () => {
+      const plan = layoutCanvas([win('s', SIX), win('t', ['/v/x.md']), win('u', ['/v/y.md', '/v/z.md'])], { by: 'window', wrapW: 5000, stored: [], aspect })
+      const out = departureFrom(plan, new Set(['s\n/v/b.md\n0']))!
+      // The cards that stay in s, where they stand; B's place is forgotten (S45); every frame stands where it is.
+      expect(out.set!.map((c) => c.path)).toEqual(SIX.filter((p) => p !== '/v/b.md'))
+      expect(out.forget).toEqual([{ win: 's', path: '/v/b.md', copy: 0, by: 'window' }])
+      expect(out.setFrames!.map((f) => f.win)).toEqual(['s', 't', 'u'])
+      const arrival = arrivalIn(plan, 't', { path: '/v/b.md', copy: 0 }, { where: (id) => plan.cards.get(id) })
+      const after = next([win('s', SIX.filter((p) => p !== '/v/b.md')), win('t', ['/v/x.md', '/v/b.md']), win('u', ['/v/y.md', '/v/z.md'])], { ...out, set: [...out.set!, ...arrival] }, aspect)
+      for (const id of [...plan.cards.keys()].filter((id) => id !== 's\n/v/b.md\n0')) expect([id, spot(after, id)]).toEqual([id, spot(plan, id)])
+      expect(spot(after, 't\n/v/b.md\n0')).toEqual([arrival.at(-1)!.x, arrival.at(-1)!.y])
+      expect(after.repair).toBeNull()
+    })
+  }
+
+  it('a close, of one card or of several in two windows: the rest stay; with no stored place, the copy that stays is stored under its NEW copy number, and the old one is forgotten', () => {
+    const plan = layoutCanvas([win('s', ['/v/p.md', '/v/q.md', '/v/p.md', '/v/r.md', '/v/p.md']), win('t', ['/v/x.md', '/v/w.md'])], { by: 'window', wrapW: 5000, stored: [] })
+    // The FIRST p closes: the second is copy 0 after, the third copy 1.
+    const out = departureFrom(plan, new Set(['s\n/v/p.md\n0', 't\n/v/x.md\n0']))!
+    expect(out.set!.filter((c) => c.path === '/v/p.md')).toEqual([
+      { win: 's', path: '/v/p.md', copy: 0, by: 'window', x: spot(plan, 's\n/v/p.md\n1')![0], y: spot(plan, 's\n/v/p.md\n1')![1] },
+      { win: 's', path: '/v/p.md', copy: 1, by: 'window', x: spot(plan, 's\n/v/p.md\n2')![0], y: spot(plan, 's\n/v/p.md\n2')![1] },
+    ])
+    expect(out.forget).toEqual([{ win: 's', path: '/v/p.md', copy: 2, by: 'window' }, { win: 't', path: '/v/x.md', copy: 0, by: 'window' }])
+    const after = next([win('s', ['/v/q.md', '/v/p.md', '/v/r.md', '/v/p.md']), win('t', ['/v/w.md'])], out)
+    expect(['s\n/v/q.md\n0', 's\n/v/p.md\n0', 's\n/v/r.md\n0', 's\n/v/p.md\n1', 't\n/v/w.md\n0'].map((id) => spot(after, id))).toEqual(['s\n/v/q.md\n0', 's\n/v/p.md\n1', 's\n/v/r.md\n0', 's\n/v/p.md\n2', 't\n/v/w.md\n0'].map((id) => spot(plan, id)))
+  })
+
+  it('a card the user moved is not written again unless its copy number changes; a placed frame is not written; nothing leaves, or the folder layout: null', () => {
+    const free = layoutCanvas([win('s', ['/v/a.md', '/v/b.md', '/v/c.md'])], { by: 'window', wrapW: 5000, stored: [] })
+    const a = free.cards.get('s\n/v/a.md\n0')!
+    const plan = layoutCanvas([win('s', ['/v/a.md', '/v/b.md', '/v/c.md'])], { by: 'window', wrapW: 5000, stored: [{ win: 's', path: '/v/c.md', copy: 0, by: 'window', x: 900, y: 600 }], anchors: new Map([['s', { x: 0, y: 0 }]]) })
+    expect(departureFrom(plan, new Set(['s\n/v/b.md\n0']))).toEqual({ set: [{ win: 's', path: '/v/a.md', copy: 0, by: 'window', x: a.x, y: a.y }], forget: [{ win: 's', path: '/v/b.md', copy: 0, by: 'window' }] })
+    expect(departureFrom(plan, new Set())).toBeNull()
+    expect(departureFrom(plan, new Set(['nobody']))).toBeNull()
+    expect(departureFrom(layoutCanvas([win('s', ['/v/a.md'])], { by: 'folder', wrapW: 5000, stored: [] }), new Set(['s\n/v/a.md\n0']))).toBeNull()
   })
 })
 
