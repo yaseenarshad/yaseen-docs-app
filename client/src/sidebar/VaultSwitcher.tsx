@@ -129,6 +129,12 @@ export interface VaultSwitcherProps {
   onOpenVsCode: (path: string) => void
   /** The Sidebar's passive notice — the copies confirm through it (D9), with their toast type (YAZ-3303 D2). */
   onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void
+  /**
+   * A Files window (YAZ-3357, demo feedback: "switch the vault … not open the vault, just make it a file window vault change"):
+   * a click or ⏎ on a vault row — ⇧ and ⌥ too — switches THIS window to that vault in place (`onOpenHere`), and a workspace
+   * row to its vaults (`onOpenSetHere`). Nothing is raised and no window opens. The menu keeps its explicit doors.
+   */
+  onOpenSetHere?: (id: string) => Promise<boolean>
 }
 
 /**
@@ -191,7 +197,7 @@ export function defaultHighlight(matches: readonly { path: string }[], query: st
 /** The trigger's text (YAZ-2602 S15): one vault's name; two joined with " + "; more as the first two, then "+ N more". */
 export const vaultsLabel = (names: readonly string[]): string => (names.length <= 2 ? names.join(' + ') : `${names[0]} + ${names[1]} + ${names.length - 2} more`)
 
-export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onReveal, onOpenVsCode, onNotice }: VaultSwitcherProps) {
+export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onReveal, onOpenVsCode, onNotice, onOpenSetHere }: VaultSwitcherProps) {
   // The first vault: the one a window with one vault has, and so the one the trigger's own menu and rename are about.
   const root = roots[0]
   const multi = roots.length > 1
@@ -480,12 +486,19 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
     // A workspace has no "open here" (YAZ-2602 S65): ⇧ or not, it opens through its one door.
     const set = sets[index]
     if (set !== undefined) {
-      if (!missing.has(set.id)) chooseSet(set.id)
+      if (missing.has(set.id)) return
+      // A Files window takes the workspace's vaults itself (YAZ-3357).
+      if (onOpenSetHere !== undefined) settle(set.id, onOpenSetHere(set.id), 'openSetHere')
+      else chooseSet(set.id)
       return
     }
     const row = matches[index - first]
     if (row === undefined || missing.has(row.path)) return
-    if (alone) chooseAlone(row.path)
+    // A Files window switches to the vault in place (YAZ-3357), whatever the key; on the vault it shows alone, it only closes.
+    if (onOpenSetHere !== undefined) {
+      if (roots.length === 1 && roots[0] === row.path) closePanel()
+      else settle(row.path, onOpenHere(row.path), 'openHere')
+    } else if (alone) chooseAlone(row.path)
     else if (here && !roots.includes(row.path)) settle(row.path, onOpenHere(row.path), 'openHere')
     else choose(row.path)
   }
@@ -689,6 +702,11 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
             menuTarget(vaultMenu.path),
             {
               onOpenAlone: chooseAlone,
+              // YAZ-3357 D5: a Files window on this vault, beside this window; the panel closes, as for any window that opens.
+              onOpenFilesWindow: (path) => {
+                closePanel()
+                api.window.openFiles(path).catch((err: unknown) => onNotice(`Can't open a Files window: ${err instanceof Error ? err.message : String(err)}`))
+              },
               onOpenHere: (path) => settle(path, onOpenHere(path), 'openHere'),
               // A refusal keeps the panel up, and the row as it is: App's notice has said why (YAZ-2602 S4 to S7).
               onAddHere: (path) => void onAddHere(path).then((added) => (added ? closePanel() : inputRef.current?.focus()), () => undefined),

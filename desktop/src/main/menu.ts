@@ -21,6 +21,8 @@ export interface MenuHandlers {
   newTab(): void
   /** File › New Window (⌘⇧N, D6): ask the focused window for its copy (YAZ-2951 D5) — it saves its page, then calls `window:duplicate` with its page view. */
   newWindow(): void
+  /** File › New Files Window (⌘⇧F, YAZ-3357 D5): main opens a Files window on the focused window's vaults, flush left of it. */
+  newFilesWindow(): void
   /** File › Switch Vault… (⌘O, YAZ-1767 D8): the focused window's renderer opens its sidebar vault switcher. */
   switchVault(): void
   /** File › Open Folder… (⌘⇧O): the focused window's renderer runs its pick-folder flow. */
@@ -139,6 +141,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }: M
         // ⌘T is New Tab (YAZ-2655 D10): the renderer owns the tabs, so the gesture goes to the focused window's renderer.
         { id: 'menu.file.new-tab', label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: () => handlers.newTab() },
         { id: 'menu.file.new-window', label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: () => handlers.newWindow() },
+        // ⌘⇧F is free (YAZ-3357 D5): the find bar's ⌘F and a drawing's ⌘F both refuse Shift.
+        { id: 'menu.file.new-files-window', label: 'New Files Window', accelerator: 'CmdOrCtrl+Shift+F', click: () => handlers.newFilesWindow() },
         { type: 'separator' },
         // ⌘O opens the sidebar header's vault switcher (YAZ-1767 D8): the renderer owns the panel,
         // so the gesture goes to the focused window's renderer like Search Vault does.
@@ -351,7 +355,7 @@ export interface MenuHost {
   checkForUpdates(): void
 }
 
-type MenuWindows = Pick<WindowManager, 'openRecentBeside' | 'linkNotice'>
+type MenuWindows = Pick<WindowManager, 'openRecentBeside' | 'linkNotice' | 'idFor' | 'openFilesWindow'>
 
 export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHandlers {
   return {
@@ -366,6 +370,12 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
       // Through the window first (YAZ-2951 D5): it saves its page, reads its page view, then calls
       // `window:duplicate`. A window whose page does not answer opens nothing (S14).
       host.focusedWebContents()?.send(CONTRACT.menu.onNewWindow.channel)
+    },
+    newFilesWindow() {
+      // Straight to main (YAZ-3357 D5): the focused window is only the source of the vaults and the place. With
+      // none, or the Welcome window, there is no vault to show, and the window in front says so.
+      const target = host.focusedWebContents()
+      if (!windows.openFilesWindow(target === undefined ? undefined : windows.idFor(target), null)) windows.linkNotice('Open a vault first: a Files window shows the vaults of a window')
     },
     switchVault() {
       host.focusedWebContents()?.send(CONTRACT.menu.onSwitchVault.channel)

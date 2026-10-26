@@ -32,7 +32,7 @@ import { createStore, type Store } from '../lib/store'
 import { useAppliedTheme } from '../lib/theme'
 import { findNode } from '../lib/treeState'
 import { boardPreviewKey } from './boardPreviewKey'
-import type { PreviewAnchor } from './previewPlacement'
+import type { AnchorRect, PreviewAnchor, PreviewPopup } from './previewPlacement'
 
 const BoardPreview = lazy(() => import('./BoardPreview'))
 /**
@@ -115,10 +115,33 @@ interface HoverPreviewHostProps {
   diagramDarkColors: DiagramDarkColors
   /** The sidebar, which the panel sits beside. */
   anchor: RefObject<HTMLElement | null>
+  /** A Files window's (YAZ-3357 D9): the floating popup the panel goes in, beside its row, or `'overlay'` where there is none. */
+  float?: PreviewPopup | 'overlay'
   onClose: () => void
 }
 
-export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, nameOf, textVarsOf, enabled, diagramDarkColors, anchor, onClose }: HoverPreviewHostProps) {
+/**
+ * The row of `path` a Files window's floating preview stands beside (YAZ-3357 D9): the one under the pointer, else the one
+ * with the keyboard focus, else the first; with none on show, the middle of the sidebar. In this page's coordinates.
+ */
+export function previewRowRect(aside: HTMLElement | null, path: string): AnchorRect {
+  const rows = aside === null ? [] : [...aside.querySelectorAll<HTMLElement>(`[data-path="${CSS.escape(path)}"]`)]
+  const row = rows.find((el) => el.matches(':hover')) ?? rows.find((el) => el === document.activeElement) ?? rows[0]
+  const rect = (row ?? aside)?.getBoundingClientRect()
+  if (rect === undefined) return { left: 0, top: window.innerHeight / 2, right: 0, bottom: window.innerHeight / 2 }
+  return row === undefined ? { left: rect.left, top: rect.top + rect.height / 2, right: rect.right, bottom: rect.top + rect.height / 2 } : { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+}
+
+/** What a shown preview sits beside: the sidebar, or a Files window's popup or overlay (YAZ-3357 D9). One object per shown path. */
+export function useFloatAnchor(anchor: RefObject<HTMLElement | null>, float: PreviewPopup | 'overlay' | undefined, path: string | null): PreviewAnchor {
+  return useMemo<PreviewAnchor>(() => {
+    if (float === undefined || path === null) return anchor
+    if (float === 'overlay') return { overlay: true }
+    return { popup: float, rect: previewRowRect(anchor.current, path) }
+  }, [anchor, float, path])
+}
+
+export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, nameOf, textVarsOf, enabled, diagramDarkColors, anchor, float, onClose }: HoverPreviewHostProps) {
   const { path, shown } = useSyncExternalStore(hover.subscribe, hover.getState)
   const node = useMemo(() => {
     if (path === null || forest === null) return null
@@ -131,6 +154,7 @@ export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, 
   // Escape closes the preview — and ONLY while one shows, so the key is otherwise untouched for the
   // selection, the menus and the canvas. Capture phase, so it wins before the body's own Escape.
   const visible = shown && node !== null && enabled
+  const placeBy = useFloatAnchor(anchor, float, visible ? node.path : null)
   useEffect(() => {
     if (!visible) return
     const onKey = (e: KeyboardEvent) => {
@@ -144,7 +168,7 @@ export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, 
     return () => document.removeEventListener('keydown', onKey, true)
   }, [visible, onClose])
   if (!visible) return null
-  return <PreviewPanel key={node.path} path={node.path} root={rootOf(node.path)} name={nameOf(node.path)} wikilinks={wikilinksOf(node.path)} textVars={textVarsOf(node.path)} knownMtime={node.mtime} watch={watchOf?.(node.path)} diagramDarkColors={diagramDarkColors} anchor={anchor} />
+  return <PreviewPanel key={node.path} path={node.path} root={rootOf(node.path)} name={nameOf(node.path)} wikilinks={wikilinksOf(node.path)} textVars={textVarsOf(node.path)} knownMtime={node.mtime} watch={watchOf?.(node.path)} diagramDarkColors={diagramDarkColors} anchor={placeBy} />
 }
 
 export interface PreviewPanelProps {
@@ -212,4 +236,13 @@ export function PreviewPanel({ path, root, name, wikilinks, textVars, knownMtime
       <BoardPreview root={root} node={node} cacheKey={boardPreviewKey(root, { path, mtime }, theme, diagramDarkColors)} anchor={anchor} />
     </Suspense>
   )
+}
+
+/**
+ * Space on a row of a Files window (YAZ-3357 D9): the same panel as the hover's, in the floating popup beside the row
+ * (or over the window's lower part where there is no popup), instead of the search's panel over a page the window does not have.
+ */
+export function FloatingPreview({ aside, float, ...panel }: Omit<PreviewPanelProps, 'anchor'> & { aside: RefObject<HTMLElement | null>; float: PreviewPopup | 'overlay' }) {
+  const anchor = useFloatAnchor(aside, float, panel.path)
+  return <PreviewPanel {...panel} anchor={anchor} />
 }

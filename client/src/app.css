@@ -1196,6 +1196,15 @@ button {
   user-select: none;
 }
 
+/* A Files window (YAZ-3357 D1, D8) is only the sidebar: it fills the window, with no edge to drag. While Tabs Mission
+   Control shows, the window is wide and the sidebar keeps its narrow width (set on it), the board right of it. */
+.app--files:not(.app--files-board) > .sidebar {
+  flex: 1 1 auto;
+  width: auto !important;
+  min-width: 0;
+  border-right: none;
+}
+
 /* The drag-to-resize edge (YAZ-738): sits over the sidebar's border, hit area wider than the line. */
 .sidebar-resize {
   flex: none;
@@ -3131,4 +3140,43 @@ button {
 }
 @media (prefers-reduced-motion: reduce) {
   .window-glow { animation: none; }
+}
+
+/* The Files window chip (YAZ-3357, demo feedback): which kind of window this is, quiet beside the cog; a click offers "Turn into normal window". */
+.sidebar__files-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sidebar__files-chip:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+.sidebar__files-chip svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.sidebar__files-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The chip clicked once (demo feedback, Mission Control's two-click close): red "Make full window" until the second click. */
+.sidebar__files-chip--armed,
+.sidebar__files-chip--armed:hover {
+  border-color: var(--danger);
+  color: #fff;
+  background: var(--danger);
+  font-weight: 600;
 }

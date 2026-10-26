@@ -1,3 +1,4 @@
+import { rendererUrlFor } from './rendererUrl'
 import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { hostname } from 'node:os'
@@ -5,7 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileKind } from '@shared/fileKind'
 import { fileLink, isAppLink, parseFileLink } from '@shared/links'
-import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
+import { FILES_PREVIEW_FRAME, type ClipboardPasteRequest, type WindowEntry } from '@shared/types'
 import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { APP_SCHEME } from './appScheme'
@@ -51,7 +52,7 @@ app.on('second-instance', (_event, argv) => {
     for (const url of urls) links.push(url)
     return // routing focuses (or opens) the right window itself
   }
-  const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+  const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !previewPopups.has(w))
   if (win === undefined) return
   if (win.isMinimized()) win.restore()
   win.focus()
@@ -109,6 +110,14 @@ const settingsFolder = followSettingsFolder(store, { macId: () => macId(), host:
  */
 const hiddenE2E = process.env.YASEEN_DOCS_E2E_HIDDEN === '1'
 
+/**
+ * The floating preview popup of each Files window (YAZ-3357 D9), by the Files window's `webContents.id`: made by its
+ * page with `window.open`, the one popup `createWindowOpenHandler` allows, kept until that window closes. A popup is
+ * no window of the app's own: the menu, a second launch and the manager never pick it.
+ */
+const previewByOwner = new Map<number, BrowserWindow>()
+const previewPopups = new WeakSet<BrowserWindow>()
+
 const manager = createWindowManager(store, {
   create(entry: WindowEntry, opts?: { hidden: true }) {
     const hidden = opts?.hidden === true
@@ -122,7 +131,27 @@ const manager = createWindowManager(store, {
     })
     // A hidden e2e window must never surface: `focus()` and `show()` would order it front.
     if (hiddenE2E) win.show = win.focus = () => {}
-    win.webContents.setWindowOpenHandler(createWindowOpenHandler(openLink))
+    win.webContents.setWindowOpenHandler(createWindowOpenHandler(openLink, entry.kind === 'files'))
+    // The Files window's preview popup (YAZ-3357 D9): parented to it, so it moves and closes with it; deaf to the
+    // mouse, so the pointer stays on the rows; and it makes no popup of its own.
+    const ownerId = win.webContents.id
+    win.webContents.on('did-create-window', (child, details) => {
+      if (details.frameName !== FILES_PREVIEW_FRAME || entry.kind !== 'files') return void child.destroy()
+      previewByOwner.get(ownerId)?.destroy()
+      previewByOwner.set(ownerId, child)
+      previewPopups.add(child)
+      child.setParentWindow(win)
+      child.setIgnoreMouseEvents(true)
+      child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+      child.on('closed', () => {
+        if (previewByOwner.get(ownerId) === child) previewByOwner.delete(ownerId)
+      })
+    })
+    win.on('closed', () => {
+      const popup = previewByOwner.get(ownerId)
+      previewByOwner.delete(ownerId)
+      if (popup !== undefined && !popup.isDestroyed()) popup.destroy()
+    })
     // A file dropped where nothing takes it never opens in the window (YAZ-3253 S21). When it is the
     // drag out of another window, that window asks nothing (YAZ-3263): this drop fires no `drop` event.
     win.webContents.on('will-navigate', (event, url) => {
@@ -143,8 +172,12 @@ const manager = createWindowManager(store, {
         revealImage: (src) => void revealVaultImage(src, (file) => revealItem({ path: file })),
       })).popup({ window: win }))
     // `<renderer>?win=<id>` so the renderer can ask `window.identity()` who it is.
-    const url = new URL(process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html')
+    // A Files window loads from an origin of its own (YAZ-3357), so its zoom is its own: Chromium keeps one per origin.
+    const files = entry.kind === 'files'
+    const url = rendererUrlFor(process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html', files)
     url.searchParams.set('win', entry.id)
+    // Its zoom as stored, on each load: ⌘⇧F starts it above its source, ⌘+ / ⌘− change it (`setFilesZoom`).
+    if (files) win.webContents.on('did-finish-load', () => win.webContents.setZoomLevel(store.get().windows.find((w) => w.id === entry.id)?.zoom ?? 0))
     void win.loadURL(url.toString())
     return win
   },
@@ -168,6 +201,14 @@ const manager = createWindowManager(store, {
     } catch {
       return false
     }
+  },
+  // A Files window's preview (YAZ-3357 D9): moved, then shown INACTIVE — the Files window keeps the keyboard. Hidden, never closed.
+  showPreview(win, bounds) {
+    const popup = previewByOwner.get(win.webContents.id)
+    if (popup === undefined || popup.isDestroyed()) return
+    if (bounds === null) return void popup.hide()
+    popup.setBounds(bounds)
+    if (!hiddenE2E && !popup.isVisible()) popup.showInactive()
   },
 })
 
@@ -244,7 +285,7 @@ app.whenReady().then(() => {
   // `focusedWebContents` resolves through pickMenuTargetWindow (GRO-2197): macOS reports no
   // focused window while the app is not frontmost, and a menu action must never silently no-op
   // — so the last-focused live window (tracked below) is the documented fallback target.
-  const menuTarget = () => pickMenuTargetWindow(BrowserWindow.getFocusedWindow(), BrowserWindow.getAllWindows(), lastFocusedWcId)?.webContents
+  const menuTarget = () => pickMenuTargetWindow(BrowserWindow.getFocusedWindow(), BrowserWindow.getAllWindows().filter((w) => !previewPopups.has(w)), lastFocusedWcId)?.webContents
   registerClipboardIpc(manager, {
     target: menuTarget,
     writeText: (text) => clipboard.writeText(text),

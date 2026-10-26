@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { basename, boardFolder } from '../lib/paths'
 import { boardPreviews } from './boardPreviewCache'
-import { usePlacement, type PreviewAnchor } from './previewPlacement'
+import { portalTarget, usePlacement, type PreviewAnchor } from './previewPlacement'
 import './boardPreview.css'
 
 interface BoardPreviewProps {
@@ -62,6 +62,7 @@ export default function BoardPreview({ root, node, cacheKey, anchor }: BoardPrev
         {message !== null && <p className="board-preview__msg">{message}</p>}
       </div>
     </div>,
-    document.body,
+    // The page's body, or a Files window's floating popup (YAZ-3357 D9).
+    portalTarget(anchor),
   )
 }

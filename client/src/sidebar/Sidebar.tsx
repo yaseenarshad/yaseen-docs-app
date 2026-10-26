@@ -2,7 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import { isBoard } from '@shared/fileKind'
 import { stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { SidebarPanelIcon } from '../views/view/icons'
+import { GridIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
@@ -37,6 +37,7 @@ import { useSameList, useVaultTree } from './hooks/useVaultTree'
 import { outermost, useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 import { HoverPreviewHost, useHoverPreview } from './HoverPreviewHost'
+import type { PreviewPopup } from './previewPlacement'
 import { useShareBadges } from '../share/useShareBadges'
 import { pageHoldsKeys } from '../lib/readOnlyCaret'
 
@@ -166,10 +167,24 @@ interface SidebarProps {
   onOpenWhatsNew: () => void
   /** The Sessions tab's "Restore session" (YAZ-3147 D3): App adds the session's tabs to this window. */
   onRestoreSession: (id: string) => void
-  /** The Sessions tab's "Save open tabs" (D5): App saves this window's tabs as a new session. */
-  onSaveSession: () => void
-  /** The Sessions tab's "Update with open tabs" (S28): App saves this window's tabs into that session. */
-  onUpdateSession: (id: string) => void
+  /** The Sessions tab's "Save open tabs" (D5): App saves this window's tabs as a new session. Absent in a Files window (YAZ-3357 D8). */
+  onSaveSession?: () => void
+  /** The Sessions tab's "Update with open tabs" (S28): App saves this window's tabs into that session. Absent in a Files window. */
+  onUpdateSession?: (id: string) => void
+  /**
+   * A Files window (YAZ-3357 D8): the header's "Hide sidebar" button is "Show all tabs" instead, and opens Tabs Mission
+   * Control. Absent in a normal window.
+   */
+  onShowAllTabs?: () => void
+  /** A Files window (YAZ-3357): the vault switcher switches THIS window in place, and a workspace row through this. */
+  onOpenSetHere?: (id: string) => Promise<boolean>
+  /**
+   * A Files window (YAZ-3357, demo feedback): the footer's "Files window" chip says what this window is, and its one item
+   * turns it into a normal window where it stands. Absent = a normal window, with no chip.
+   */
+  onToNormalWindow?: () => void
+  /** A Files window's hover preview (YAZ-3357 D9): its floating popup, or `'overlay'` where there is none. Absent: beside the sidebar. */
+  previewFloat?: PreviewPopup | 'overlay'
   /** A save just made this session (YAZ-3147 D5): the Sessions tab opens its name field once; then `onSessionNameConsumed`. */
   sessionNameRequest: string | null
   onSessionNameConsumed: () => void
@@ -510,6 +525,10 @@ export function Sidebar({
   onRestoreSession,
   onSaveSession,
   onUpdateSession,
+  onShowAllTabs,
+  onOpenSetHere,
+  onToNormalWindow,
+  previewFloat,
   sessionNameRequest,
   onSessionNameConsumed,
   onRootMissing,
@@ -559,6 +578,27 @@ export function Sidebar({
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   /** The sort menu (YAZ-3227 D4): the tab it sorts and where its button is, while it is open. */
   const [sortMenu, setSortMenu] = useState<{ tab: SortedTab; x: number; y: number } | null>(null)
+  /**
+   * The Files window chip, clicked once (YAZ-3357, demo feedback: "a two click … kinda how in mission control we have for closing
+   * a tab"): red "Make full window" until the second click converts, or a move off, Esc or a press elsewhere lets it go.
+   */
+  const [chipArmed, setChipArmed] = useState(false)
+  useEffect(() => {
+    if (!chipArmed) return
+    const disarm = (e: Event): void => {
+      if (e instanceof KeyboardEvent && e.key !== 'Escape') return
+      if (e instanceof MouseEvent && e.target instanceof Element && e.target.closest('.sidebar__files-chip') !== null) return
+      setChipArmed(false)
+    }
+    window.addEventListener('keydown', disarm, true)
+    window.addEventListener('mousedown', disarm, true)
+    window.addEventListener('blur', disarm)
+    return () => {
+      window.removeEventListener('keydown', disarm, true)
+      window.removeEventListener('mousedown', disarm, true)
+      window.removeEventListener('blur', disarm)
+    }
+  }, [chipArmed])
   /** A board's Info popover (YAZ-3028 D11): where the menu was, the board, and its file head once read (`fs:board-head`). */
   const [infoPopover, setInfoPopover] = useState<{ x: number; y: number; path: string; now: number; info: BoardHeadResponse | null } | null>(null)
   const infoPath = infoPopover?.path ?? null
@@ -1258,10 +1298,18 @@ export function Sidebar({
           onReveal={reveal}
           onOpenVsCode={openVsCode}
           onNotice={onNotice}
+          onOpenSetHere={onOpenSetHere}
         />
-        <button type="button" className="sidebar__collapse" onClick={onCollapse} title="Hide sidebar" aria-label="Hide sidebar">
-          <SidebarPanelIcon />
-        </button>
+        {onShowAllTabs !== undefined ? (
+          // A Files window is only the sidebar (YAZ-3357 D8): there is nothing to hide it for, and the board is its way to the tabs.
+          <button type="button" className="sidebar__collapse" onClick={onShowAllTabs} title="Show all tabs (⌘⇧M)" aria-label="Show all tabs">
+            <GridIcon />
+          </button>
+        ) : (
+          <button type="button" className="sidebar__collapse" onClick={onCollapse} title="Hide sidebar" aria-label="Hide sidebar">
+            <SidebarPanelIcon />
+          </button>
+        )}
       </div>
       {/* The Inbox (YAZ-2322), with upkeep on: above the tabs, so it shows on every tab — the Search tab too.
           One row per vault that has upkeep on (YAZ-2602 R5), in vault order; two or more say whose each is. */}
@@ -1529,6 +1577,23 @@ export function Sidebar({
       </div>
       <div className="sidebar__footer">
         <SettingsButton onClick={onOpenSettings} />
+        {onToNormalWindow !== undefined && (
+          // Which kind of window this is (YAZ-3357, demo feedback), quiet beside the cog. Two clicks make it a full window.
+          <button
+            type="button"
+            className={`sidebar__files-chip${chipArmed ? ' sidebar__files-chip--armed' : ''}`}
+            title={chipArmed ? 'Click again to make this a full window, with tabs and pages' : 'Files window: just the sidebar. Click twice to make it a full window'}
+            onMouseLeave={() => setChipArmed(false)}
+            onClick={() => {
+              if (!chipArmed) return setChipArmed(true)
+              setChipArmed(false)
+              onToNormalWindow()
+            }}
+          >
+            {!chipArmed && <SidebarPanelIcon />}
+            <span>{chipArmed ? 'Make full window' : 'Files window'}</span>
+          </button>
+        )}
         <UpdatePill update={update} onOpen={onOpenWhatsNew} />
       </div>
       {/* The sort menu (YAZ-3227 D4): it sorts the tab it opened on, and a tab switch leaves it unmounted. */}
@@ -1608,7 +1673,7 @@ export function Sidebar({
           </Suspense>
         </ContextMenuSurface>
       )}
-      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} nameOf={nameOf} textVarsOf={textVarsFor} enabled={settings.hoverPreview && !searching} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} onClose={closePreview} />
+      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} nameOf={nameOf} textVarsOf={textVarsFor} enabled={settings.hoverPreview && !searching} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} float={previewFloat} onClose={closePreview} />
       {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
       {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} copy={pendingPaste.copy} lost={pendingPaste.lost} titles={titles} onConfirm={confirmPaste} onCancel={cancelPaste} />}
       {confirmingShortcut !== null && (

@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isBoard, isViewOnly } from '@shared/fileKind'
 import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode } from '@shared/types'
+import { BETWEEN_VAULTS, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type FilesAction } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -38,7 +38,10 @@ import { noteBoardRenamed, noteBoardSaved } from './share/liveShare'
 import { useSharing } from './share/useSharing'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
-import { windowTitle } from './lib/windowTitle'
+import { filesWindowTitle, windowTitle } from './lib/windowTitle'
+import { askFromFiles, filesClickHow } from './lib/filesWindow'
+import { FloatingPreview } from './sidebar/HoverPreviewHost'
+import { filesPreviewPopup } from './sidebar/previewPopup'
 import { isFolderPath, pageName, pathTitles, useAllPathTitles } from './lib/pageLabel'
 import { fetchTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
@@ -101,6 +104,19 @@ function TabBoard(props: ComponentProps<BoardModule['TabOverview']>) {
 }
 
 /** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
+/** Runs `then` once the window has its new size (YAZ-3357 D3): on its next resize, or after 150 ms when none comes (a size that did not change). */
+function afterResize(then: () => void): void {
+  let done = false
+  const go = (): void => {
+    if (done) return
+    done = true
+    window.removeEventListener('resize', go)
+    then()
+  }
+  window.addEventListener('resize', go)
+  setTimeout(go, 150)
+}
+
 function syncHash(path: string | null): void {
   history.replaceState(null, '', fileHash(path) || location.pathname + location.search)
 }
@@ -236,6 +252,13 @@ function bootStartView(tab: string | null, file: string | null): Map<string, Pag
 }
 
 export function App() {
+  /**
+   * A Files window (YAZ-3357 D1): only the sidebar. Its clicks go to a normal window (`askFromFiles`), it has no tab
+   * strip, no editor and no right panel, and Tabs Mission Control opens beside the sidebar. Fixed for the window's life.
+   */
+  const [filesWindow] = useState(storage.isFilesWindow)
+  /** Its hover and Space preview (D9): the ONE floating popup, made once here; where it cannot be made, the panel over the window's lower part. */
+  const [previewFloat] = useState(() => (!filesWindow ? undefined : filesPreviewPopup.open() ? filesPreviewPopup : ('overlay' as const)))
   // The vaults this window shows (YAZ-2602 D1), in the order they were added, or the order a drag
   // of a vault row gave them (YAZ-2631 D5). `root` is the FIRST: null is the Welcome window.
   const [roots, setRoots] = useState<string[]>(storage.getRoots)
@@ -404,6 +427,8 @@ export function App() {
   const rightOverlay = overlayAt(visibleSidebarWidth)
 
   const toggleSidebar = useCallback(() => {
+    // A Files window IS the sidebar (YAZ-3357 D8): ⌘B and View › Toggle Sidebar never hide it.
+    if (filesWindow) return
     const next = !sidebarCollapsedRef.current
     sidebarCollapsedRef.current = next
     storage.setSidebarCollapsed(next)
@@ -563,7 +588,10 @@ export function App() {
   // A named window leads with its name (YAZ-3343 D14): any window can name this one, so the title follows the state too.
   useEffect(() => {
     const sync = (): void => {
-      document.title = windowTitle(activeName, pageOnShow, pathTitles(activeLinks.records, activeLinks.folders), pageOnShow !== null && isFolderPath(activeRoot, pageOnShow), storage.windowName())
+      // A Files window is "Files — <vault>" (YAZ-3357 D4): it has no page on show.
+      document.title = filesWindow
+        ? filesWindowTitle(live.current.roots.map((vault) => storage.vaultName(vault)))
+        : windowTitle(activeName, pageOnShow, pathTitles(activeLinks.records, activeLinks.folders), pageOnShow !== null && isFolderPath(activeRoot, pageOnShow), storage.windowName())
     }
     sync()
     const offIndex = activeLinks.subscribe(sync)
@@ -574,7 +602,7 @@ export function App() {
       offTree?.()
       offState()
     }
-  }, [activeName, pageOnShow, activeRoot, activeLinks])
+  }, [activeName, pageOnShow, activeRoot, activeLinks, roots, filesWindow])
 
   /**
    * Switch this window to `path` in place (C3, GRO-2165) — the WELCOME window, and the vault menu's
@@ -597,8 +625,8 @@ export function App() {
     setSidebarLens(storage.getSidebarLens()) // the vault lands on Files (🔒 D2, YAZ-1846)
     setSidebarRevealRequest(null)
     setRoots(storage.getRoots()) // that ONE vault: every other vault of the window leaves (YAZ-2602 S61)
-    // The folder's remembered file becomes the sole restored tab (D6); reset mirrors it down.
-    resetTabs(path, storage.getLastFile(path))
+    // The folder's remembered file becomes the sole restored tab (D6); reset mirrors it down. A Files window has no tab (YAZ-3357 D1).
+    resetTabs(path, filesWindow ? null : storage.getLastFile(path))
     return true
   }, [resetTabs])
 
@@ -610,12 +638,37 @@ export function App() {
    * in its label and calls `openRoot` directly.
    */
   const openVault = useCallback((path: string): void => {
-    if (root === null) {
+    // A Files window changes its own vault too (YAZ-3357, demo feedback): Open Folder… and Open Recent open no window.
+    if (root === null || filesWindow) {
       void openRoot(path)
       return
     }
     void api.window.openRecent(path).catch((err: unknown) => console.error('[open-vault] openRecent failed:', err))
-  }, [root, openRoot])
+  }, [root, openRoot, filesWindow])
+  /**
+   * A workspace row in a Files window's vault switcher (YAZ-3357, demo feedback): THIS window takes the workspace's vaults,
+   * the ones still on disk, in its order. Nothing opens or is raised. `false` = none is left (the row greys, as `openSet`'s).
+   */
+  const openSetHere = useCallback(async (id: string): Promise<boolean> => {
+    const set = storage.getVaultSets().find((s) => s.id === id)
+    if (set === undefined) return false
+    const found: string[] = []
+    for (const vault of set.roots) {
+      try {
+        await api.tree(vault)
+        found.push(vault)
+      } catch {
+        // A folder that is gone is left out, and named below.
+      }
+    }
+    if (found.length === 0) return false
+    const gone = set.roots.filter((vault) => !found.includes(vault))
+    if (gone.length > 0) notify(`Not found: ${gone.map(storage.vaultName).join(', ')}`)
+    storage.setRoots(found)
+    for (const vault of found) storage.pushRecentRoot(vault)
+    setRoots(storage.getRoots())
+    return true
+  }, [notify])
 
   const { pick, picking } = usePickFolder({ onPicked: openVault })
 
@@ -1005,8 +1058,11 @@ export function App() {
   const killAllTabs = useCallback(() => {
     const others = killAsked.current?.others ?? []
     setKillAsk(null)
-    closeBlank()
-    closeUnderOverview(now.current.tabs.map((t) => t.id))
+    // A Files window has no tabs (YAZ-3357 D8): Kill all is the other windows', and its board stays open.
+    if (!filesWindow) {
+      closeBlank()
+      closeUnderOverview(now.current.tabs.map((t) => t.id))
+    }
     for (const { win, refs } of others) api.window.closeTabs(win, refs).catch(() => notify("Can't close the tabs of a window that closed"))
   }, [closeBlank, closeUnderOverview, notify])
   /**
@@ -1202,7 +1258,10 @@ export function App() {
     else if (action.kind === 'show-in-sidebar') showInSidebar(tab.path)
     else setReview(tab.path, action.on)
   }, [duplicateTab, setTabName, showInSidebar, setReview])
-  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere })
+  /** A Files window's click, run here (YAZ-3357 D2): set further down, where every door it calls is made. Main holds the push until `link.ready`. */
+  const fromFiles = useRef<(action: FilesAction) => void>(() => undefined)
+  const openFromFiles = useCallback((action: FilesAction) => fromFiles.current(action), [])
+  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
   /** This window's id (YAZ-3343 D1): the board's stored places are keyed by it. */
   const windowId = useThisWindowId()
   /** Another window's card dropped in a frame on this board (YAZ-3343 D13): that window sends it, quietly (`sendTabHere` there). */
@@ -1303,7 +1362,8 @@ export function App() {
     onNextTab: toNextTab,
     onPrevTab: toPrevTab,
     onTabOverview: toggleOverview,
-    onNewTab: newTab,
+    // ⌘T in a Files window (YAZ-3357 D8) opens a new normal window, as ⌘⇧N: there is no strip for a tab.
+    onNewTab: filesWindow ? newWindow : newTab,
     onNewWindow: newWindow,
     onZoom: requestZoom,
     onWhatsNew: openWhatsNew,
@@ -1399,6 +1459,26 @@ export function App() {
     const vault = scopeOf(p).root
     return vault === null ? p : relTo(vault, p)
   }, [scopeOf])
+  // What a Files window asks of THIS window (YAZ-3357 D2): the same doors its own sidebar uses. An Inbox opens its
+  // review; one that is open already stays open (the Files window cannot see it, so a click must never close it).
+  fromFiles.current = (action: FilesAction): void => {
+    switch (action.kind) {
+      case 'open':
+        return (action.how === 'keep' ? openKeptPage : action.how === 'background' ? openBackground : openPage)(action.path)
+      case 'history':
+        return openHistory(action.path)
+      case 'share':
+        return openShare(action.path)
+      case 'review':
+        return startReview(scopeOf(action.dir), relLabel(action.dir))
+      case 'session':
+        return restoreSavedSession(action.id)
+      case 'inbox': {
+        const at = live.current.roots.indexOf(action.root)
+        if (at !== -1 && live.current.vaults[at].review.session === null) startReview(live.current.vaults[at])
+      }
+    }
+  }
 
   // In-app rename (Links E1 GRO-2194, folders E1b GRO-2241). `file:renamed` reaches EVERY
   // window (originator included): BEFORE the workspace remap unmounts the old-path editor(s), a
@@ -2215,6 +2295,95 @@ export function App() {
   /** The tab whose layer shows: the active one, none under the blank tab, and the reviewed note's during a review. */
   const shown = session === null ? (pageOnShow === null ? null : activeTab) : reviewLayer
 
+  /**
+   * A Files window's sidebar doors (YAZ-3357 D2, D7): each sends ONE message to main, which runs it in a normal window.
+   * A click previews (Enter keeps, `filesClickHow`), a double click keeps, ⌘-click opens a background tab. Null in a normal window.
+   */
+  const filesDoors = useMemo(() => {
+    if (!filesWindow) return null
+    const ask = (action: FilesAction): void => askFromFiles(action, notify)
+    return {
+      open: (path: string) => ask({ kind: 'open', path, how: filesClickHow() }),
+      keep: (path: string) => ask({ kind: 'open', path, how: 'keep' }),
+      background: (path: string) => ask({ kind: 'open', path, how: 'background' }),
+      history: (path: string) => ask({ kind: 'history', path }),
+      share: (path: string) => ask({ kind: 'share', path }),
+      review: (dir: string) => ask({ kind: 'review', dir }),
+      inbox: (root: string) => ask({ kind: 'inbox', root }),
+      session: (id: string) => ask({ kind: 'session', id }),
+    }
+  }, [filesWindow, notify])
+  /**
+   * Tabs Mission Control in a Files window (YAZ-3357 D3, D8): it stands right of the sidebar, and main makes the window wide
+   * for it. The board shows only once the window IS wide, and stays until it is narrow again (demo feedback, "it flashes then
+   * is slow"): it never lays out in the narrow window, and the sidebar never stretches across the wide one.
+   */
+  const filesWant = filesWindow && overview.phase !== 'closed'
+  const [filesBoard, setFilesBoard] = useState(false)
+  /** The sidebar's width while the window is wide (or on its way): the narrow width just before it grew. */
+  const filesNarrowW = useRef(windowWidth)
+  if (!filesBoard && !filesWant) filesNarrowW.current = windowWidth
+  useEffect(() => {
+    if (!filesWindow || filesWant === filesBoard) return
+    let live = true
+    const settle = (): void => {
+      if (live) setFilesBoard(filesWant)
+    }
+    api.window.filesWide(filesWant).then(
+      () => afterResize(settle),
+      (err: unknown) => {
+        console.error('[files-window] wide failed:', err)
+        settle()
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [filesWindow, filesWant, filesBoard])
+
+  /** The tab board (YAZ-2648 D5), in the tab stack's place — or, in a Files window, right of the sidebar (YAZ-3357 D8). */
+  const tabBoard = () => (
+    <TabBoard
+      roots={roots}
+      vaultNames={vaults.map((vault, i) => vault.name ?? storage.vaultName(roots[i]))}
+      tabs={tabs}
+      active={activeTab}
+      preview={preview}
+      titles={titles}
+      windowId={windowId}
+      darkColors={settings.diagramDarkColors}
+      leaving={overview.phase === 'leaving'}
+      onLeft={leftOverview}
+      onOpen={leaveOverview}
+      onCloseTabs={closeUnderOverview}
+      onDismiss={leaveOverviewForOpenPage}
+      onCloseNow={closeOverviewNow}
+      onKillAll={askKillAll}
+      onMoveTab={moveBoardTab}
+      onCloseWindow={closeBoardWindow}
+      onNewWindow={openWindowBehind}
+      onOpenTabHere={openBackground}
+      // A page's menu is a tab's menu: the strip's own doors. A reveal in the sidebar leaves the board open beside it.
+      onMoveToRight={movePageToRight}
+      onMoveToNewWindow={movePageToNewWindow}
+      onMoveTargets={moveTargets}
+      onMoveToWindow={movePageToWindow}
+      onDropToWindow={movePageToWindowQuietly}
+      onMoveToNewWindowQuietly={movePageToNewWindowQuietly}
+      // The sidebar's own preview panel beside a card (demo feedback): the setting gates the hover, never Space.
+      hoverPreview={settings.hoverPreview}
+      previewScope={boardPreviewScope}
+      onHighlightWindow={highlightWindow}
+      onDuplicate={duplicateTab}
+      onSetName={setTabName}
+      onShowInSidebar={showInSidebar}
+      onNotice={notify}
+      reviewState={reviewState}
+      onSetReview={setReview}
+      filesWindow={filesWindow}
+    />
+  )
+
   const dropOnMain = (page: PageDrag, at: number): void => {
     if (page.owner === 'right') transferRightToMain(page.path, at)
   }
@@ -2231,7 +2400,7 @@ export function App() {
   }
 
   return (
-    <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle}>
       {glow && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands
@@ -2308,7 +2477,7 @@ export function App() {
           )}
         </div>
       )}
-      {root !== null && !sidebarCollapsed && (
+      {root !== null && (filesWindow || !sidebarCollapsed) && (
         <Sidebar
           // Keyed on one vault of the window (YAZ-2631 D5): a vault that joins, leaves behind it or moves does not remount the panel.
           key={sidebarKey.current}
@@ -2323,9 +2492,10 @@ export function App() {
           onReorderVaults={reorderVaults}
           // Under the blank tab no row is the open one (YAZ-2655): every row opens, the one of the tab that was active too.
           activeFile={pageOnShow}
-          onOpenFile={openPage}
-          onKeepFile={openKeptPage}
-          onOpenFileBackground={openBackground}
+          // A Files window's rows open in a normal window (YAZ-3357 D2): its own doors, never this window's tabs.
+          onOpenFile={filesDoors?.open ?? openPage}
+          onKeepFile={filesDoors?.keep ?? openKeptPage}
+          onOpenFileBackground={filesDoors?.background ?? openBackground}
           onRevealInFiles={revealInFiles}
           previewPath={previewShown}
           onPreview={setPreviewPath}
@@ -2346,9 +2516,13 @@ export function App() {
           onOpenSettings={openSettings}
           update={update}
           onOpenWhatsNew={openWhatsNew}
-          onRestoreSession={restoreSavedSession}
-          onSaveSession={saveOpenTabs}
-          onUpdateSession={updateSession}
+          onRestoreSession={filesDoors?.session ?? restoreSavedSession}
+          // A Files window has no tabs to save (YAZ-3357 D8).
+          onSaveSession={filesWindow ? undefined : saveOpenTabs}
+          onUpdateSession={filesWindow ? undefined : updateSession}
+          onShowAllTabs={filesWindow ? toggleOverview : undefined}
+          // While the board shows (wide), the hover preview stands beside the sidebar over the board, as in a normal window.
+          previewFloat={filesBoard ? undefined : previewFloat}
           sessionNameRequest={sessionNameRequest}
           onSessionNameConsumed={clearSessionNameRequest}
           onRootMissing={dropVault}
@@ -2372,22 +2546,40 @@ export function App() {
           switcherOpenRequest={switcherRequest.key === sidebarKey.current ? switcherRequest.seq : 0}
           // The vault menu's "Open in this window" (YAZ-1798 D8/D11): the one deliberate in-place switch.
           onOpenVaultHere={openRoot}
+          onOpenSetHere={filesWindow ? openSetHere : undefined}
+          onToNormalWindow={filesWindow ? () => void api.window.filesToNormal().catch((err: unknown) => notify(`Can't make this a full window: ${err instanceof Error ? err.message : String(err)}`)) : undefined}
           // On the sidebar itself (YAZ-2194): stamped on .app as an inherited variable, every resize
           // move restyled the whole window, every mounted tab included.
-          width={sidebarWidth}
+          // A Files window's sidebar fills it (app.css); while its board shows, it keeps the narrow width (YAZ-3357 D3).
+          width={filesWindow ? filesNarrowW.current : sidebarWidth}
           asideRef={sidebarRef}
-          onHistoryFile={openHistory}
-          onShareFile={openShare}
+          onHistoryFile={filesDoors?.history ?? openHistory}
+          onShareFile={filesDoors?.share ?? openShare}
           // The menu names the folder by its absolute path; a session takes it relative to the vault that holds it.
-          onReviewFolder={(dir) => startReview(scopeOf(dir), relLabel(dir))}
+          onReviewFolder={filesDoors?.review ?? ((dir) => startReview(scopeOf(dir), relLabel(dir)))}
           reviewState={reviewState}
           onSetReview={setReview}
           // An Inbox row (YAZ-2322), one per vault with upkeep on (YAZ-2602 R5): it opens ITS vault's review, and closes it when it is the one open.
-          onInbox={toggleInbox}
+          onInbox={filesDoors?.inbox ?? toggleInbox}
         />
       )}
-      {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}
-      {root === null ? (
+      {root !== null && !sidebarCollapsed && !filesWindow && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}
+      {filesWindow && root !== null ? (
+        // A Files window (YAZ-3357 D1, D8): the sidebar alone, and Tabs Mission Control right of it while it shows. The
+        // index bridges stay: the sidebar's titles, search and shortcut rows read what they feed.
+        <>
+          {scopes.map((vault) => vault.root !== null && <WikilinkIndexBridge key={vault.root} root={vault.root} watch={vault.watch} source={vault.wikilinks} candidates={vault.wikilinkCandidates} viewOnly={vault.viewOnlyLinks} onSnapshot={vault.onSnapshot} />)}
+          {filesBoard && (
+            <div className="workspace">
+              <div className="tabstack">{tabBoard()}</div>
+            </div>
+          )}
+          {/* Space on a row (D9): the hover's panel, floating beside the window. */}
+          {previewShown !== null && previewFloat !== undefined && (
+            <FloatingPreview key={previewShown} aside={sidebarRef} float={previewFloat} path={previewShown} root={scopeOf(previewShown).root ?? ''} name={nameOf(previewShown)} wikilinks={scopeOf(previewShown).wikilinks} textVars={textVarsFor(previewShown)} watch={scopeOf(previewShown).watch} diagramDarkColors={settings.diagramDarkColors} />
+          )}
+        </>
+      ) : root === null ? (
         <section className="editor">
           {/* No dialog opens by itself (C2, GRO-2164): the Welcome screen offers recents + Open folder…. */}
           <Welcome recents={storage.getRecentRoots()} onOpenRecent={openRoot} onPickFolder={pick} picking={picking} />
@@ -2492,53 +2684,14 @@ export function App() {
                 )
               ))}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}
-            {overview.phase !== 'closed' && session === null && (
-              <TabBoard
-                roots={roots}
-                vaultNames={vaults.map((vault, i) => vault.name ?? storage.vaultName(roots[i]))}
-                tabs={tabs}
-                active={activeTab}
-                preview={preview}
-                titles={titles}
-                windowId={windowId}
-                darkColors={settings.diagramDarkColors}
-                leaving={overview.phase === 'leaving'}
-                onLeft={leftOverview}
-                onOpen={leaveOverview}
-                onCloseTabs={closeUnderOverview}
-                onDismiss={leaveOverviewForOpenPage}
-                onCloseNow={closeOverviewNow}
-                onKillAll={askKillAll}
-                onMoveTab={moveBoardTab}
-                onCloseWindow={closeBoardWindow}
-                onNewWindow={openWindowBehind}
-                onOpenTabHere={openBackground}
-                // A page's menu is a tab's menu: the strip's own doors. A reveal in the sidebar leaves the board open beside it.
-                onMoveToRight={movePageToRight}
-                onMoveToNewWindow={movePageToNewWindow}
-                onMoveTargets={moveTargets}
-                onMoveToWindow={movePageToWindow}
-                onDropToWindow={movePageToWindowQuietly}
-                onMoveToNewWindowQuietly={movePageToNewWindowQuietly}
-                // The sidebar's own preview panel beside a card (demo feedback): the setting gates the hover, never Space.
-                hoverPreview={settings.hoverPreview}
-                previewScope={boardPreviewScope}
-                onHighlightWindow={highlightWindow}
-                onDuplicate={duplicateTab}
-                onSetName={setTabName}
-                onShowInSidebar={showInSidebar}
-                onNotice={notify}
-                reviewState={reviewState}
-                onSetReview={setReview}
-              />
-            )}
+            {overview.phase !== 'closed' && session === null && tabBoard()}
             {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
             {panelPath !== null && <QuickLook path={panelPath} title={nameOf(panelPath)} watch={scopeOf(panelPath).watch} wikilinks={scopeOf(panelPath).wikilinks} root={scopeOf(panelPath).root} darkColors={settings.diagramDarkColors} style={textVarsFor(panelPath)} onClose={closePreview} />}
           </div>
           {session !== null && session.path !== null && <ReviewAnswers onKeep={review.keep} onSkip={review.skip} />}
         </div>
       )}
-      {root !== null && rightPanel.open && (
+      {root !== null && rightPanel.open && !filesWindow && (
         <RightPanel
           roots={roots}
           titles={titles}
@@ -2576,7 +2729,7 @@ export function App() {
           </div>
         </RightPanel>
       )}
-      {root !== null && !rightPanel.open && (
+      {root !== null && !rightPanel.open && !filesWindow && (
         <button type="button" className="right-panel-reopen" aria-label="Show right panel" title="Show right panel" onClick={() => setRightOpen(true)}>
           ‹
         </button>

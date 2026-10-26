@@ -11,6 +11,9 @@ import { errorText, type MenuAction, type MenuSection } from './menuSections'
  *   Set shortcut ▸ · Copy vault name, Copy path · Reveal in Finder, Open in VS Code ·
  *   Remove from recent vaults
  *
+ * "Open in Files window" (YAZ-3357 D5), hint ⌘⇧F, follows "Open by itself" on every vault: a window that is only
+ * the sidebar, on this vault, flush left of this window. Only where the caller can open one (`onOpenFilesWindow`).
+ *
  * "Open by itself" (YAZ-2858 D2), hint ⌥⏎, opens the vault alone in its own window — main raises
  * the window that already shows it alone. It stands first on each vault, the vaults of a workspace
  * window too (S11), and hides only on the vault this window shows alone: there it would do nothing (S10).
@@ -44,6 +47,8 @@ export interface VaultMenuTarget {
 export interface VaultMenuHandlers {
   /** "Open by itself" (YAZ-2858 D2): main's `window.openAlone` — the window with the vault alone, raised or new. */
   onOpenAlone: (path: string) => void
+  /** "Open in Files window" (YAZ-3357 D5): main's `window.openFiles` on the vault. Absent: no such item. */
+  onOpenFilesWindow?: (path: string) => void
   /** Switch THIS window to the vault in place (D8, D11) — the one deliberate overwrite; every plain gesture opens beside. */
   onOpenHere: (path: string) => void
   /** Add the vault to THIS window, beside the vaults it shows (YAZ-2602 D2). */
@@ -95,6 +100,7 @@ export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, ren
   return [
     [
       ...(isAloneHere ? [] : [{ id: 'open-alone', label: 'Open by itself', hint: '⌥⏎', onSelect: () => h.onOpenAlone(path) }]),
+      ...(h.onOpenFilesWindow === undefined ? [] : [{ id: 'open-files-window', label: 'Open in Files window', hint: '⌘⇧F', onSelect: () => h.onOpenFilesWindow?.(path) }]),
       ...(isCurrent
         ? []
         : [

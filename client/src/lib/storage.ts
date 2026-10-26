@@ -191,7 +191,12 @@ export const storage = {
    * The app's other windows (YAZ-3091 D2), off the cache: a tab's "Move to ▸" lists the ones that show its
    * page's vault. Read only while a tab menu is open, never a render trigger; main checks the target again.
    */
-  getOtherWindows: (): WindowEntry[] => state.windows.filter((w) => w.id !== identity.id),
+  getOtherWindows: (): WindowEntry[] => state.windows.filter((w) => w.id !== identity.id && w.kind !== 'files'),
+  /**
+   * This window is a Files window (YAZ-3357 D1): only the sidebar, no tabs. Fixed for the window's life, so a render may
+   * read it. A Files window is never one of `getOtherWindows` (D2): no "Move to ▸" row, no frame on a board, no Kill all.
+   */
+  isFilesWindow: (): boolean => identity.kind === 'files',
 
   /**
    * A window's name (YAZ-3343 D14), off the cache; this window's when `id` is left out. `undefined` = no name:

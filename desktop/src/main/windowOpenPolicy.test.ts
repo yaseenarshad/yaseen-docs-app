@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
+import { FILES_PREVIEW_FRAME } from '@shared/types'
+import { FILES_PREVIEW_OPTIONS, blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
 
 describe('createWindowOpenHandler', () => {
   it.each(['https://example.com', 'http://example.com', 'mailto:yasin@example.com', 'tel:+14805551212', 'ftp://example.com/file']) (
@@ -32,6 +33,24 @@ describe('createWindowOpenHandler', () => {
 
     expect(handler({ url: 'https://example.com' } as never)).toEqual({ action: 'deny' })
     await expect(open.mock.results[0]?.value).rejects.toThrow('OS rejected')
+  })
+})
+
+describe('the Files window preview popup (YAZ-3357 D9)', () => {
+  it('a Files window may open exactly about:blank in the preview frame, frameless, clear, unfocusable and hidden', () => {
+    const open = vi.fn(async () => undefined)
+    const answer = createWindowOpenHandler(open, true)({ url: 'about:blank', frameName: FILES_PREVIEW_FRAME } as never)
+    expect(answer).toEqual({ action: 'allow', overrideBrowserWindowOptions: FILES_PREVIEW_OPTIONS })
+    expect(FILES_PREVIEW_OPTIONS).toMatchObject({ frame: false, transparent: true, hasShadow: false, focusable: false, show: false, skipTaskbar: true, resizable: false })
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a normal window', false, 'about:blank', FILES_PREVIEW_FRAME],
+    ['another frame name', true, 'about:blank', 'other'],
+    ['another URL', true, 'app://yaseen/index.html', FILES_PREVIEW_FRAME],
+  ])('denies %s', (_what, files, url, frameName) => {
+    expect(createWindowOpenHandler(vi.fn(async () => undefined), files)({ url, frameName } as never)).toEqual({ action: 'deny' })
   })
 })
 

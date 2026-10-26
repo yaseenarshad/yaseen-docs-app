@@ -58,6 +58,12 @@ let manager: {
   vaultNotice: ReturnType<typeof vi.fn>
   takeStartView: ReturnType<typeof vi.fn<(id: string) => StartView | undefined>>
   takeStartEmpty: ReturnType<typeof vi.fn<(id: string) => boolean>>
+  openFilesWindow: ReturnType<typeof vi.fn<(from: string | undefined, root: string | null) => boolean>>
+  openFromFiles: ReturnType<typeof vi.fn<(from: string, action: unknown) => boolean>>
+  filesWide: ReturnType<typeof vi.fn<(id: string, open: boolean) => boolean>>
+  filesPreview: ReturnType<typeof vi.fn<(id: string, req: unknown) => boolean>>
+  setFilesZoom: ReturnType<typeof vi.fn<(id: string, level: number) => void>>
+  filesToNormal: ReturnType<typeof vi.fn<(id: string) => boolean>>
 }
 /** `event.sender` stand-ins: webContents 1 is registered as window w1, webContents 9 is unknown. */
 const sender = { id: 1 }
@@ -69,7 +75,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false) }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(), filesToNormal: vi.fn(() => true) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -91,7 +97,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes, `link:ready` and the paste fallback (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -507,6 +513,34 @@ describe('registerWindowIpc', () => {
       expect(await remove({ sender }, a.id)).toEqual(ok(undefined))
       expect(store.get().sessions).toEqual([])
     })
+  })
+
+  it('the Files window doors (YAZ-3357): kind on the identity; open-from-files only from a Files window, its action checked against the window\'s vaults; wide and preview take checked values', async () => {
+    const files: WindowEntry = { ...entry, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), kind: 'files' }
+    store.upsertWindow(files)
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok(expect.objectContaining({ kind: 'files' })))
+    const fromFiles = registered(CONTRACT.window.openFromFiles.channel)
+    expect(await fromFiles({ sender }, { kind: 'open', path: '/v/a.md', how: 'keep' })).toEqual(ok(undefined))
+    expect(manager.openFromFiles).toHaveBeenCalledExactlyOnceWith('w1', { kind: 'open', path: '/v/a.md', how: 'keep' })
+    expect(await fromFiles({ sender }, { kind: 'session', id: 's1', extra: 1 })).toEqual(ok(undefined))
+    expect(manager.openFromFiles).toHaveBeenLastCalledWith('w1', { kind: 'session', id: 's1' })
+    expect(await fromFiles({ sender }, { kind: 'open', path: '/elsewhere/a.md', how: 'keep' })).toEqual(bad('BAD_REQUEST'))
+    expect(await fromFiles({ sender }, { kind: 'open', path: '/v/a.md', how: 'tab' })).toEqual(bad('BAD_REQUEST'))
+    expect(await fromFiles({ sender }, { kind: 'delete', path: '/v/a.md' })).toEqual(bad('BAD_REQUEST'))
+    expect(manager.openFromFiles).toHaveBeenCalledTimes(2)
+    expect(await registered(CONTRACT.window.filesWide.channel)({ sender }, true)).toEqual(ok(undefined))
+    expect(manager.filesWide).toHaveBeenCalledExactlyOnceWith('w1', true)
+    expect(await registered(CONTRACT.window.filesWide.channel)({ sender }, 'yes')).toEqual(bad('BAD_REQUEST'))
+    const preview = registered(CONTRACT.window.filesPreview.channel)
+    expect(await preview({ sender }, { width: 400, height: 300, top: 10, bottom: 30 })).toEqual(ok(undefined))
+    expect(await preview({ sender }, null)).toEqual(ok(undefined))
+    expect(manager.filesPreview.mock.calls).toEqual([['w1', { width: 400, height: 300, top: 10, bottom: 30 }], ['w1', null]])
+    expect(await preview({ sender }, { width: 0, height: 300, top: 0, bottom: 0 })).toEqual(bad('BAD_REQUEST'))
+    // A normal window has no such door.
+    store.upsertWindow(entry)
+    expect(await fromFiles({ sender }, { kind: 'open', path: '/v/a.md', how: 'keep' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.window.openFiles.channel)({ sender }, null)).toEqual(ok(undefined))
+    expect(manager.openFilesWindow).toHaveBeenCalledExactlyOnceWith('w1', null)
   })
 
   it('window:duplicate hands the caller entry to the manager; unknown callers are rejected', async () => {

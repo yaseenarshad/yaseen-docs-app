@@ -108,6 +108,11 @@ export interface TabOverviewProps {
   hoverPreview?: boolean
   /** What the preview panel needs of a page's vault (its links, text formatting, watch feed): App's. Absent, no panel. */
   previewScope?: (path: string) => PreviewScope
+  /**
+   * The board of a Files window (YAZ-3357 D8): it always shows every window, with no switch, and the Files window is no
+   * frame (it has no tabs). Kill all closes the other windows' tabs.
+   */
+  filesWindow?: boolean
 }
 
 /** The sizes of `board.ts`, handed to the stylesheet: the layout and the cards read the same numbers. */
@@ -331,7 +336,7 @@ type Gesture =
  * others. "Kill all tabs" (YAZ-2739), at the end of the top row, is about every tab the board is about,
  * whatever the filter shows; the board only asks: App owns the sheet and the close.
  */
-export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId = '', darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onCloseNow, onKillAll, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere }: TabOverviewProps) {
+export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId = '', darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onCloseNow, onKillAll, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, filesWindow = false }: TabOverviewProps) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState<string | null>(active)
   /** The viewport's box, measured when the board mounts and when the window resizes it. Null until then. */
@@ -412,7 +417,8 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   // THE DATA. The canvas — the switch and the moved cards — is the state file's (D1); the other windows
   // are read off the state only while the switch is on (D2).
   const canvas = useSyncExternalStore(storage.subscribe, storage.getTabCanvas)
-  const allWindows = canvas.allWindows
+  // A Files window's board shows every window (YAZ-3357 D8): it has no tabs of its own to show.
+  const allWindows = filesWindow || canvas.allWindows
   /** "Snap to grid" (demo feedback): a stored canvas from before the switch has none, and is on. */
   const snapOn = canvas.snap !== false
   const layout: CanvasLayout = allWindows ? 'window' : 'folder'
@@ -432,7 +438,8 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const model = useMemo(() => {
     const strip: StoredTab[] = tabs.map((t) => ({ path: t.path, ...(t.name === undefined ? {} : { name: t.name }), ...(t.id === active ? { active: true as const } : {}) }))
     const mineAuto = autoWindowLabel({ file: tabs.find((t) => t.id === active)?.path ?? null, tabs: tabs.map((t) => t.path), tabStrip: strip, roots }, titles)
-    const windows: BoardWindow[] = [{ win: windowId, mine: true, roots, tabs, active, label: myName ?? mineAuto, auto: mineAuto, named: myName !== undefined }]
+    // A Files window is no frame (YAZ-3357 D8): the board starts with the other windows.
+    const windows: BoardWindow[] = filesWindow ? [] : [{ win: windowId, mine: true, roots, tabs, active, label: myName ?? mineAuto, auto: mineAuto, named: myName !== undefined }]
     for (const w of others) {
       const { tabs: wTabs, active: wActive } = stripOf(w)
       const auto = autoWindowLabel(w, titles)
@@ -452,7 +459,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     })
     return { windows, frames, info, byWin: new Map(windows.map((w) => [w.win, w])) }
     // `labelOf` reads `roots`, `titles` and the trees, all of them deps.
-  }, [tabs, active, others, roots, vaultNames, titles, termsKey, windowId, myName, trees])
+  }, [tabs, active, others, roots, vaultNames, titles, termsKey, windowId, myName, trees, filesWindow])
   const wrapW = view !== null && view.w > 0 ? view.w - 2 * BOARD.padX : Infinity
   /** Where frames stand (demo bug: an empty frame drags freely too): the stored ones, and the board's own until they are stored. */
   const frameAnchors = useMemo(() => {
@@ -1812,11 +1819,14 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       {/* The camera's controls (D7), bottom left as on Excalidraw: a pill "− 100% +" — the percent resets to 100% — and "Fit all tabs" beside it. */}
       {/* ONE toolbar, bottom left (demo feedback): the switch, Tidy up, then the camera's controls. */}
       <div className="taboverview__zoom" role="toolbar" aria-label="Board">
-        <label className="taboverview__switch">
-          <input type="checkbox" role="switch" aria-checked={allWindows} checked={allWindows} onChange={toggleAllWindows} />
-          <span className="taboverview__switch-track" aria-hidden />
-          <span>Show all windows</span>
-        </label>
+        {/* A Files window's board always shows every window (YAZ-3357 D8): no switch. */}
+        {!filesWindow && (
+          <label className="taboverview__switch">
+            <input type="checkbox" role="switch" aria-checked={allWindows} checked={allWindows} onChange={toggleAllWindows} />
+            <span className="taboverview__switch-track" aria-hidden />
+            <span>Show all windows</span>
+          </label>
+        )}
         <button type="button" className="taboverview__tidy" disabled={movedShown.length === 0 && placedFrames.length === 0} onClick={tidyUp}>
           Tidy up
         </button>

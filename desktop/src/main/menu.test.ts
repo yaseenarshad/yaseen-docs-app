@@ -15,6 +15,7 @@ const noopHandlers = (): MenuHandlers => ({
   pasteAs: vi.fn(),
   newTab: vi.fn(),
   newWindow: vi.fn(),
+  newFilesWindow: vi.fn(),
   switchVault: vi.fn(),
   openFolder: vi.fn(),
   openRecent: vi.fn(),
@@ -94,6 +95,12 @@ describe('buildMenuTemplate', () => {
     expect(newWindow?.accelerator).toBe('CmdOrCtrl+Shift+N')
     click(newWindow)
     expect(handlers.newWindow).toHaveBeenCalledTimes(1)
+
+    // ⌘⇧F (YAZ-3357 D5): New Files Window, right after New Window.
+    const newFiles = file[file.indexOf(newWindow as MenuItemConstructorOptions) + 1]
+    expect([newFiles.id, newFiles.label, newFiles.accelerator]).toEqual(['menu.file.new-files-window', 'New Files Window', 'CmdOrCtrl+Shift+F'])
+    click(newFiles)
+    expect(handlers.newFilesWindow).toHaveBeenCalledTimes(1)
 
     // ⌘O is Switch Vault… (YAZ-1767 D8): directly ABOVE Open Folder…, into the focused renderer.
     const switchVault = file.find((i) => i.label === 'Switch Vault…')
@@ -498,7 +505,7 @@ const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', roots: ['/vaults/n
 
 /** `folderExists` is the open-recent door's answer: `false` = the folder is gone (the door pruned it from the recents). */
 function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, folderExists = true) {
-  const windows = { duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => folderExists), linkNotice: vi.fn() }
+  const windows = { duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => folderExists), linkNotice: vi.fn(), idFor: vi.fn((wc: { id: number }) => (wc.id === 7 ? 'w1' : undefined)), openFilesWindow: vi.fn((from: string | undefined) => from !== undefined) }
   const host: MenuHost = {
     focusedWebContents: () => focused,
     readClipboardText: vi.fn(() => '# Clipboard\n\nText'),
@@ -540,6 +547,19 @@ describe('createMenuHandlers', () => {
     handlers.newWindow()
     expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.menu.onNewWindow.channel)
     expect(windows.duplicateWindow).not.toHaveBeenCalled() // main no longer copies the window by itself
+  })
+
+  it('newFilesWindow (⌘⇧F, YAZ-3357 D5) goes straight to main with the focused window as the source; with no window it says why', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers, windows } = makeHandlers(wc)
+    handlers.newFilesWindow()
+    expect(windows.openFilesWindow).toHaveBeenCalledExactlyOnceWith('w1', null)
+    expect(wc.send).not.toHaveBeenCalled()
+    expect(windows.linkNotice).not.toHaveBeenCalled()
+    const none = makeHandlers(undefined)
+    none.handlers.newFilesWindow()
+    expect(none.windows.openFilesWindow).toHaveBeenCalledExactlyOnceWith(undefined, null)
+    expect(none.windows.linkNotice).toHaveBeenCalledTimes(1)
   })
 
   it('newWindow with no window at all is a no-op', () => {

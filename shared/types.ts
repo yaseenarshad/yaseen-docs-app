@@ -1672,6 +1672,55 @@ export interface StoredTab {
 }
 
 /**
+ * A window's kind (YAZ-3357 D1): `'files'` is a Files window, a window that is ONLY the sidebar — the vault
+ * switcher, the lenses, the search and the tree — with no tab strip, no editor and no right panel. A click
+ * in it opens the page in a normal window (`FilesAction`). Absent = a normal window.
+ */
+export type WindowKind = 'files'
+
+/** The width of a Files window that has no source window to take the sidebar's width from (YAZ-3357 D6). */
+export const FILES_WINDOW_DEFAULT_W = 280
+/** The height of a Files window that has no source window (YAZ-3357 D6). */
+export const FILES_WINDOW_DEFAULT_H = 800
+/** How wide a Files window grows while Tabs Mission Control shows in it (YAZ-3357 D3); clamped to the screen. */
+export const FILES_WINDOW_WIDE_W = 1200
+/** How far above its source window a new Files window is zoomed (YAZ-3357, demo feedback "maybe like 20% bigger"): one Chromium level, ×1.2. */
+export const FILES_WINDOW_ZOOM_UP = 1
+/** The zoom levels a Files window keeps: ⌘− and ⌘+ as far as Chromium goes in steps of 0.5. */
+export const FILES_WINDOW_ZOOM_MIN = -8
+export const FILES_WINDOW_ZOOM_MAX = 9
+/**
+ * The frame name of a Files window's ONE floating preview popup (YAZ-3357 D9): `window.open('about:blank', this)`.
+ * Main allows exactly this name with `about:blank`, from a Files window only; every other popup is denied.
+ */
+export const FILES_PREVIEW_FRAME = 'yaseen-files-preview'
+
+/** How a page opens from a Files window (YAZ-3357 D7): a click previews, a double click or Enter keeps, ⌘-click opens a background tab. */
+export type FilesOpenHow = 'preview' | 'keep' | 'background'
+
+/**
+ * What a Files window asks of a normal window (YAZ-3357 D2), through ONE door (`window:open-from-files`): main picks
+ * the window and pushes the action to it (`link:open-from-files`), and that window runs its own callback for it.
+ */
+export type FilesAction =
+  | { kind: 'open'; path: string; how: FilesOpenHow }
+  | { kind: 'history' | 'share'; path: string }
+  | { kind: 'review'; dir: string }
+  | { kind: 'inbox'; root: string }
+  | { kind: 'session'; id: string }
+
+/**
+ * Where a Files window's floating preview goes (YAZ-3357 D9): the popup's size, and the hovered row's top and
+ * bottom in the Files window's own page coordinates. Main places it beside the window, on the row's height.
+ */
+export interface FilesPreviewRequest {
+  width: number
+  height: number
+  top: number
+  bottom: number
+}
+
+/**
  * One open window, saved for the next launch (GRO-2160), which brings back the ones it is asked for or
  * the ones `settings.startupWindows` names (YAZ-2589). `root` null = Welcome screen.
  *
@@ -1722,6 +1771,18 @@ export interface WindowEntry {
   // the window. A file of an older build still holds `focusList` here; the loader does not read it
   // (Decision 4: no migration), so the next write drops the key.
   bounds: WindowBounds
+  /**
+   * `'files'` for a Files window (YAZ-3357 D1); absent for a normal window. Additive within version 1: an old build
+   * drops the key and opens a normal window. A Files window is never the target of a link, a moved tab or a raise.
+   * ⌘⇧N, "Move to new window" and the tab board's "New window" never copy it.
+   */
+  kind?: WindowKind
+  /**
+   * A Files window's zoom level (YAZ-3357, demo feedback), as Chromium counts it: 0 = 100%, each step of 1 = ×1.2. Its own:
+   * the Files window has an origin of its own (`desktop/src/main/rendererUrl.ts`), so ⌘+ there zooms no other window.
+   * ⌘⇧F starts it one step (+20%) above the window it came from. Absent = 0, and on a normal window.
+   */
+  zoom?: number
 }
 
 /** How much a page is used (YAZ-2663 D2): `score` is what its uses were worth at `last`, the time (ms) it last came on show. */
@@ -2536,6 +2597,8 @@ export interface WindowIdentity {
    * the vault's last file. Given out by its FIRST `window:identity` only, as `startView`. Never stored.
    */
   startEmpty?: true
+  /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */
+  kind?: WindowKind
 }
 
 /**
