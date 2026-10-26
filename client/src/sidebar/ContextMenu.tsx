@@ -170,6 +170,9 @@ function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { i
 
 /** The sidebar's right-click menu — the file tree's (GRO-2022) and the vault switcher's (YAZ-1798) — and a tab's (YAZ-2949 D6). The overlay catches click-away and stray right-clicks. */
 export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
+  // A glyph on any row (YAZ-3264 D6) leaves an empty slot on the rows without one, so every label
+  // starts at the same place, as in a Finder menu. A flyout is its own menu and keeps its own rule.
+  const glyphs = sections.some((section) => section.some((item) => item.children === undefined && item.icon !== undefined))
   // The ONE open flyout (D7 amended): at most one parent is expanded at a time.
   const [openId, setOpenId] = useState<string | null>(null)
   // Hover intent (YAZ-3085 D4): three parents stand in a column, so a pointer on its way into a
@@ -222,7 +225,7 @@ export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
         onClose()
       }}
     >
-      <div ref={menuRef} className="ctx-menu" style={{ left: pos.left, top: pos.top }} onMouseDown={(e) => e.stopPropagation()} role="menu">
+      <div ref={menuRef} className={`ctx-menu${glyphs ? ' ctx-menu--glyphs' : ''}`} style={{ left: pos.left, top: pos.top }} onMouseDown={(e) => e.stopPropagation()} role="menu">
         <Groups
           sections={sections}
           render={(item) =>

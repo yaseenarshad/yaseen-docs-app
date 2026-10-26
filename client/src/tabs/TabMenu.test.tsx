@@ -121,6 +121,13 @@ describe('TabMenu Focus and Favorites (YAZ-3264 D2)', () => {
     ])
   })
 
+  it('D6: the two items carry their sidebar tab\'s glyph, the eye and the heart; the other rows have none', () => {
+    const el = mount(lists())
+    const withGlyph = [...el.querySelectorAll('.ctx-menu__item')].filter((b) => b.querySelector('svg') !== null).map((b) => b.textContent)
+    expect(withGlyph).toEqual(['Add to focus', 'Add to favorites'])
+    expect(el.querySelector('.ctx-menu')?.classList.contains('ctx-menu--glyphs')).toBe(true)
+  })
+
   it('S2, S14: a page in a list reads "Remove from …", and each item toggles the path with the state the menu read', () => {
     const props = lists({}, { focus: true, favorite: true })
     let el = mount(props)

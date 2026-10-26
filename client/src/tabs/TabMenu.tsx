@@ -1,5 +1,6 @@
 import { api, BridgeRequestError } from '../api'
 import { ContextMenu } from '../sidebar/ContextMenu'
+import { EyeIcon, HeartIcon } from '../views/view/icons'
 import type { MenuAction, MenuSection } from '../sidebar/menuSections'
 
 /** An open tab menu: where it stands, the tab it is about, and that tab's review state as it was when the menu opened. */
@@ -87,7 +88,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
   // Four groups (YAZ-2949 D6), in this order: the tab's place · find the file · this tab
   // and its note · outside the app. `ContextMenu` skips an empty group and closes the menu after each item.
   // The two list toggles (YAZ-3264 D2) stand where the sidebar's file menu has them: focus right after
-  // "Show in sidebar", favorites first in the last group. Each acts on the state the menu read (S14).
+  // "Show in sidebar", favorites first in the last group, each with its sidebar tab's glyph (D6). Each acts on the state the menu read (S14).
   const lists = menu.lists ?? null
   const sections: MenuSection[] = [
     [
@@ -98,7 +99,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     ],
     [
       { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => onShowInSidebar?.(menu.path) },
-      ...(lists === null || onToggleFocus === undefined ? [] : [{ id: 'focus', label: lists.focus ? 'Remove from focus' : 'Add to focus', onSelect: () => onToggleFocus([menu.path], lists.focus) }]),
+      ...(lists === null || onToggleFocus === undefined ? [] : [{ id: 'focus', label: lists.focus ? 'Remove from focus' : 'Add to focus', icon: <EyeIcon />, onSelect: () => onToggleFocus([menu.path], lists.focus) }]),
       { id: 'copy-path', label: 'Copy path', onSelect: () => void navigator.clipboard.writeText(menu.path) },
     ],
     [
@@ -109,7 +110,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
       ...(menu.review === null ? [] : [{ id: 'review', label: menu.review ? 'Turn review off' : 'Turn review on', onSelect: () => onSetReview?.(menu.path, !menu.review) }]),
     ],
     [
-      ...(lists === null || onToggleFavorite === undefined ? [] : [{ id: 'toggle-favorite', label: lists.favorite ? 'Remove from favorites' : 'Add to favorites', onSelect: () => onToggleFavorite([menu.path], lists.favorite) }]),
+      ...(lists === null || onToggleFavorite === undefined ? [] : [{ id: 'toggle-favorite', label: lists.favorite ? 'Remove from favorites' : 'Add to favorites', icon: <HeartIcon />, onSelect: () => onToggleFavorite([menu.path], lists.favorite) }]),
       { id: 'reveal', label: 'Reveal in Finder', onSelect: () => osAction(api.shell.reveal({ path: menu.path }), `Can't reveal "${label}" — it is no longer there`, "Can't reveal") },
       { id: 'open-vscode', label: 'Open in VS Code', onSelect: () => osAction(api.shell.openVsCode({ path: menu.path }), `Can't open "${label}" in VS Code — it is no longer there`, "Can't open in VS Code") },
     ],
