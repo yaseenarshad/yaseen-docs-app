@@ -18,3 +18,8 @@ export function windowTitle(vault: string | null, file: string | null, titles: P
   if (file === null) return lead
   return `${lead} — ${pageLabel(file, folder, titles)}`
 }
+
+/** A Files window's title (YAZ-3357 D4): "Files — <vault>", its vaults by name, in the window's order. */
+export function filesWindowTitle(vaults: readonly string[]): string {
+  return vaults.length === 0 ? APP_NAME : `Files — ${vaults.join(', ')}`
+}

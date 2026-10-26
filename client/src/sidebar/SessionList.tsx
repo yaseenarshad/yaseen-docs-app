@@ -28,10 +28,10 @@ interface SessionListProps {
   onOpenFile: (path: string) => void
   /** "Restore session" (D3): App adds the session's tabs to this window. */
   onRestore: (id: string) => void
-  /** "Save open tabs" (D5): App saves this window's tabs as a new session. */
-  onSave: () => void
-  /** "Update with open tabs" (S28): App saves this window's tabs into the session. */
-  onUpdate: (id: string) => void
+  /** "Save open tabs" (D5): App saves this window's tabs as a new session. Absent in a Files window (YAZ-3357 D8), which has no tabs: no button. */
+  onSave?: () => void
+  /** "Update with open tabs" (S28): App saves this window's tabs into the session. Absent in a Files window: no menu item. */
+  onUpdate?: (id: string) => void
   /** A save just made this session (D5, S1): its row opens its name field, with the name selected, once it is in the list. */
   renameRequest: string | null
   /** The request was acted on: it must not open the field again. */
@@ -82,7 +82,7 @@ export const SessionList = memo(function SessionList({ titles, onOpenFile, onRes
       ? [
           [
             { id: 'restore-session', label: 'Restore session', onSelect: () => onRestore(session.id) },
-            { id: 'update-session', label: 'Update with open tabs', onSelect: () => onUpdate(session.id) },
+            ...(onUpdate === undefined ? [] : [{ id: 'update-session', label: 'Update with open tabs', onSelect: () => onUpdate(session.id) }]),
             { id: 'rename-session', label: 'Rename', onSelect: () => setRenaming(session.id) },
           ],
           [{ id: 'delete-session', label: 'Delete session', danger: true, onSelect: () => setDeleting(session) }],
@@ -98,9 +98,11 @@ export const SessionList = memo(function SessionList({ titles, onOpenFile, onRes
     <>
       <div className="sidebar__focus-bar">
         <span>{sessions.length === 0 ? 'No sessions' : count(sessions.length, 'session', 'sessions')}</span>
-        <button type="button" className="sidebar__focus-clear" onClick={onSave}>
-          Save open tabs
-        </button>
+        {onSave !== undefined && (
+          <button type="button" className="sidebar__focus-clear" onClick={onSave}>
+            Save open tabs
+          </button>
+        )}
       </div>
       {sessions.length === 0 && <p className="sidebar__msg">{NO_SESSIONS_HELP}</p>}
       {sessions.length > 0 && (

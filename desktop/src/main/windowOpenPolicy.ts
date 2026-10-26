@@ -1,13 +1,26 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { OpenLinkRequest } from '@shared/types'
+import type { BrowserWindowConstructorOptions } from 'electron'
+import { FILES_PREVIEW_FRAME, type OpenLinkRequest } from '@shared/types'
 import { isExternalLinkProtocol } from './fs/openLink'
 
 export type LinkOpener = (req: OpenLinkRequest) => Promise<void>
 
-/** Defense in depth: safe `_blank` URLs leave through the OS; no popup becomes a child window. */
-export function createWindowOpenHandler(open: LinkOpener) {
-  return ({ url }: { url: string }): { action: 'deny' } => {
+/**
+ * The ONE popup a window may make (YAZ-3357 D9): a Files window's floating preview. No frame, a clear background, no
+ * shadow of its own (the panel draws one), never focused, never in the Dock or the taskbar, hidden until main shows it.
+ */
+export const FILES_PREVIEW_OPTIONS: BrowserWindowConstructorOptions = { frame: false, transparent: true, hasShadow: false, focusable: false, show: false, skipTaskbar: true, resizable: false }
+
+export type WindowOpenAnswer = { action: 'deny' } | { action: 'allow'; overrideBrowserWindowOptions: BrowserWindowConstructorOptions }
+
+/**
+ * Defense in depth: safe `_blank` URLs leave through the OS; no popup becomes a child window — but one: with
+ * `filesPreview` (a Files window, YAZ-3357 D9), exactly `about:blank` in the frame `FILES_PREVIEW_FRAME`.
+ */
+export function createWindowOpenHandler(open: LinkOpener, filesPreview = false) {
+  return ({ url, frameName }: { url: string; frameName?: string }): WindowOpenAnswer => {
+    if (filesPreview && url === 'about:blank' && frameName === FILES_PREVIEW_FRAME) return { action: 'allow', overrideBrowserWindowOptions: FILES_PREVIEW_OPTIONS }
     try {
       if (isExternalLinkProtocol(new URL(url).protocol)) void open({ href: url }).catch(() => undefined)
     } catch {

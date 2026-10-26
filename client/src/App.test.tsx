@@ -10,7 +10,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type RestoreSessionResult, type SidebarTab, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type RestoreSessionResult, type SidebarTab, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -29,6 +29,11 @@ interface SidebarStubProps {
   vaults: { root: string; name: string; watch: unknown; index: unknown; upkeep: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[] }[]
   /** Right-click → "Share" on a board row (YAZ-3040). */
   onShareFile?: (path: string) => void
+  /** A Files window's header button (YAZ-3357 D8): Tabs Mission Control. */
+  onShowAllTabs?: () => void
+  onToNormalWindow?: () => void
+  /** A Files window's floating preview (YAZ-3357 D9): its popup, or 'overlay'. */
+  previewFloat?: unknown
   /** The vault rows the user closed (YAZ-2602 R9): App's, for the session. */
   closedVaults: readonly string[]
   onSetVaultOpen: (root: string, open: boolean) => void
@@ -219,6 +224,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const linkPopOutTab = new Set<(ref: TabRef) => void>()
   const linkHighlightTab = new Set<(ref: TabRef | null) => void>()
   const linkTabAction = new Set<(req: { ref: TabRef; action: TabAction }) => void>()
+  const linkFromFiles = new Set<(action: FilesAction) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
   const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
   const dragLanded = new Set<(ev: { paths: string[] }) => void>()
@@ -299,6 +305,12 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       // The board's frames and empty canvas (YAZ-3343 D21, D22).
       closeOther: vi.fn(async (_id: string) => undefined),
       openBehind: vi.fn(async () => 'w-new'),
+      // The Files window's doors (YAZ-3357).
+      openFiles: vi.fn(async (_root: string | null) => undefined),
+      openFromFiles: vi.fn(async (_action: FilesAction) => undefined),
+      filesWide: vi.fn(async (_open: boolean) => undefined),
+      filesPreview: vi.fn(async (_req: unknown) => undefined),
+      filesToNormal: vi.fn(async () => undefined),
       setRoots: vi.fn(async (_id: string, _roots: readonly string[]) => undefined),
       popOutTab: vi.fn(async (_from: string, _ref: TabRef) => undefined),
       showWindow: vi.fn(async (_id: string) => undefined),
@@ -387,6 +399,11 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onTabAction: vi.fn((l: (req: { ref: TabRef; action: TabAction }) => void) => {
         linkTabAction.add(l)
         return () => linkTabAction.delete(l)
+      }),
+      // A Files window's click run in this window (YAZ-3357 D2).
+      onOpenFromFiles: vi.fn((l: (action: FilesAction) => void) => {
+        linkFromFiles.add(l)
+        return () => linkFromFiles.delete(l)
       }),
       ready: vi.fn(async () => undefined),
     },
@@ -505,6 +522,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitPopOutTab: (ref: TabRef) => linkPopOutTab.forEach((l) => l(ref)),
     emitHighlightTab: (ref: TabRef | null) => linkHighlightTab.forEach((l) => l(ref)),
     emitTabAction: (req: { ref: TabRef; action: TabAction }) => linkTabAction.forEach((l) => l(req)),
+    emitFromFiles: (action: FilesAction) => linkFromFiles.forEach((l) => l(action)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
     emitDragLanded: (paths: string[]) => dragLanded.forEach((l) => l({ paths })),
     emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
@@ -6087,7 +6105,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     const { bridge, el, emitFileRenamed } = await mountVault()
     await draggedOut('/v/A.md')
     // The box waits for the link count; a slow CI runner can take a few more ticks to show it.
-    await vi.waitFor(() => expect(box(el)).not.toBeNull())
+    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: 5000 })
     expect(box(el)?.getAttribute('role')).toBe('alertdialog')
     expect(el.querySelector(`#${box(el)?.getAttribute('aria-labelledby')}`)?.textContent).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
@@ -6117,6 +6135,8 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
   it('main says the drag landed in another window of the app: the box of that drag closes, or never shows when the word comes during its read; a box of other items stays (YAZ-3263)', async () => {
     const { el, emitDragLanded } = await mountVault()
     await draggedOut('/v/A.md')
+    // The box waits for the link count; a slow CI runner can take a few more ticks to show it (as in the alert dialog test).
+    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: 5000 })
     act(() => emitDragLanded(['/v/B.md']))
     expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     act(() => emitDragLanded(['/v/A.md']))
@@ -6132,9 +6152,111 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
   it('an item that is gone before the box shows is left out; with none left there is no box (S31)', async () => {
     const { el } = await mountVault()
     await draggedOut('/v/gone.md', '/v/A.md')
+    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: 5000 })
     expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     await act(async () => button(el, 'Keep in vault')?.click())
     await draggedOut('/v/gone.md')
     expect(box(el)).toBeNull()
+  })
+})
+
+describe('App Files window (YAZ-3357)', () => {
+  const entry = (over: Partial<WindowEntry> & Pick<WindowEntry, 'id' | 'root'>): WindowEntry => ({ roots: over.root === null ? [] : [over.root], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 }, ...over })
+  const FILES = { id: 'f', root: '/v', file: null, tabs: [], kind: 'files' as const }
+  const tabNames = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+  /** The popup cannot be made in jsdom: the overlay fallback stands in (D9). */
+  const noPopup = () => vi.spyOn(window, 'open').mockReturnValue(null)
+  /** The sidebar's props once App renders it as a Files window's (it hands `onShowAllTabs`): a slow CI runner can read an earlier render. */
+  const filesSidebar = async () => {
+    await vi.waitFor(() => expect(captured.sidebar?.onShowAllTabs).toBeDefined(), { timeout: 5000 })
+    return captured.sidebar!
+  }
+
+  it('D1, D2, D4, D7, D8: only the sidebar — no strip, no right panel, no resize edge; its rows open through main, a click previews, Enter and a double click keep, ⌘-click opens in the background', async () => {
+    noPopup()
+    const state = { ...defaultAppState(), windows: [entry({ ...FILES }), entry({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })] }
+    const { bridge, el } = await mount(state, FILES)
+    expect(el.querySelector('.app--files [data-sidebar]')).not.toBeNull()
+    expect(el.querySelector('.tabbar')).toBeNull()
+    expect(el.querySelector('.sidebar-resize, .right-panel-reopen, [data-start-page]')).toBeNull()
+    expect(document.title).toBe('Files — v')
+    const sidebar = await filesSidebar()
+    expect(sidebar.onSaveSession).toBeUndefined()
+    expect(sidebar.onUpdateSession).toBeUndefined()
+    expect(sidebar.previewFloat).toBe('overlay')
+    act(() => sidebar.onOpenFile('/v/a.md'))
+    act(() => sidebar.onKeepFile('/v/b.md'))
+    act(() => sidebar.onOpenFileBackground('/v/c.md'))
+    // Enter on a row makes a click with no pointer (`detail` 0): it keeps the tab.
+    const enterClick = new MouseEvent('click', { detail: 0 })
+    const row = document.createElement('button')
+    row.addEventListener('click', () => sidebar.onOpenFile('/v/d.md'))
+    act(() => void row.dispatchEvent(enterClick))
+    act(() => sidebar.onInbox('/v'))
+    expect(bridge.window.openFromFiles.mock.calls.map(([action]) => action)).toEqual([
+      { kind: 'open', path: '/v/a.md', how: 'preview' },
+      { kind: 'open', path: '/v/b.md', how: 'keep' },
+      { kind: 'open', path: '/v/c.md', how: 'background' },
+      { kind: 'open', path: '/v/d.md', how: 'keep' },
+      { kind: 'inbox', root: '/v' },
+    ])
+    // Nothing opened here: the Files window stores no tab.
+    expect(tabNames(el)).toEqual([])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ tabs: expect.arrayContaining(['/v/a.md']) }))
+  })
+
+  it('D13: a Files window hands its sidebar "Make full window", which asks main; a full window hands none', async () => {
+    const { bridge } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES })] }, FILES)
+    const toNormal = (await filesSidebar()).onToNormalWindow!
+    act(() => toNormal())
+    await act(async () => {})
+    expect(bridge.window.filesToNormal).toHaveBeenCalledTimes(1)
+  })
+
+  it('D3, D8: "Show all tabs" opens the board right of the sidebar and main makes the window wide; again closes it and main makes it narrow; ⌘B never hides the sidebar; ⌘T asks for a new window', async () => {
+    noPopup()
+    const { bridge, el, emitNewTab } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES })] }, FILES)
+    await filesSidebar()
+    act(() => captured.sidebar!.onShowAllTabs!())
+    expect(bridge.window.filesWide.mock.calls).toEqual([[true]])
+    // Not in the narrow window (D10): the sidebar keeps its width, and the board waits for the wide one.
+    expect(el.querySelector('.app--files-board')).not.toBeNull()
+    expect(el.querySelector('.taboverview')).toBeNull()
+    await act(async () => {})
+    act(() => void window.dispatchEvent(new Event('resize')))
+    expect(el.querySelector('.app--files-board .workspace .taboverview')).not.toBeNull()
+    // The board has no switch: it always shows every window.
+    expect(el.textContent).not.toContain('Show all windows')
+    // The button again (or ⌘⇧M) closes it — and the board stays, the sidebar unstretched, until the window is narrow again.
+    act(() => captured.sidebar!.onShowAllTabs!())
+    expect(bridge.window.filesWide.mock.calls).toEqual([[true], [false]])
+    expect(el.querySelector('.app--files-board .taboverview')).not.toBeNull()
+    await act(async () => {})
+    act(() => void window.dispatchEvent(new Event('resize')))
+    expect(el.querySelector('.taboverview')).toBeNull()
+    expect(el.querySelector('.app--files-board')).toBeNull()
+    act(() => void el.querySelector('.app')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })))
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    act(() => emitNewTab())
+    await act(async () => {})
+    expect(bridge.window.duplicate).toHaveBeenCalledTimes(1)
+  })
+
+  it('D2: a full window runs a Files window\'s actions with its own doors — keep, background, history and a session', async () => {
+    const { el, emitFromFiles, bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => emitFromFiles({ kind: 'open', path: '/v/b.md', how: 'keep' }))
+    expect(tabNames(el)).toEqual(['a', 'b'])
+    expect(el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent).toBe('b')
+    act(() => emitFromFiles({ kind: 'open', path: '/v/c.md', how: 'background' }))
+    expect(tabNames(el)).toEqual(['a', 'b', 'c'])
+    expect(el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent).toBe('b')
+    // History opens this window's history panel on the page; a session restores through this window's own door.
+    act(() => emitFromFiles({ kind: 'history', path: '/v/b.md' }))
+    // The panel is a lazy chunk: it asks for the page's versions once it has loaded.
+    await vi.waitFor(() => expect(bridge.github.history).toHaveBeenCalled())
+    expect(JSON.stringify(bridge.github.history.mock.calls[0])).toContain('/v/b.md')
+    act(() => emitFromFiles({ kind: 'session', id: 's1' }))
+    await act(async () => {})
+    expect(bridge.window.restoreSession).toHaveBeenCalledWith('s1')
   })
 })

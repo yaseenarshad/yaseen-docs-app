@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, normalizeRoots, rootOfPath, sameVaults, stripSlash, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type StartView, type StartupWindows, type TabAction, type TabRef, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, FILES_WINDOW_ZOOM_UP, clampFilesZoom, defaultRightPanelIdentity, normalizeRoots, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 
@@ -51,7 +51,8 @@ const DEFAULT_BOUNDS: WindowBounds = { x: 100, y: 100, width: 1200, height: 800 
 
 /** The slice of `BrowserWindow` the manager drives; a test fake implements it in a few lines. */
 export interface ManagedWindow {
-  webContents: { id: number; send(channel: string, ...args: unknown[]): void }
+  /** `getZoomLevel` (YAZ-3357): a new Files window starts one step above the window it came from. */
+  webContents: { id: number; send(channel: string, ...args: unknown[]): void; getZoomLevel(): number }
   getBounds(): WindowBounds
   isDestroyed(): boolean
   isMinimized(): boolean
@@ -63,6 +64,12 @@ export interface ManagedWindow {
   close(): void
   /** Like Electron's: destroys without emitting `close` (`closed` still fires). */
   destroy(): void
+  /** Like Electron's: orders the window to the front WITHOUT focusing it (YAZ-3357 D7, a Files window's preview click). */
+  moveTop(): void
+  /** Like Electron's: `animate` animates the change on macOS. A Files window grows for the board at once, never animated (YAZ-3357 D10). */
+  setBounds(bounds: WindowBounds, animate?: boolean): void
+  /** Like Electron's: the page area's bounds on screen, the title bar left out (YAZ-3357 D9, the preview's row height). */
+  getContentBounds(): WindowBounds
   on(event: 'move' | 'resize' | 'closed' | 'focus' | 'minimize' | 'restore', listener: () => void): unknown
   on(event: 'close', listener: (e: { preventDefault(): void }) => void): unknown
 }
@@ -80,6 +87,11 @@ export interface WindowHost {
   exists(path: string): boolean
   /** Whether `path` exists as a directory — `openRecentBeside` probes before touching the MRU (GRO-2211, moved here by YAZ-1767), and `routeToFile` asks it first: a folder goes to that door (YAZ-2556 D1). */
   dirExists(path: string): boolean
+  /**
+   * The floating preview popup of the Files window `win` (YAZ-3357 D9): shown INACTIVE at `bounds` (no focus, so the
+   * arrow keys keep browsing), or hidden with null — never closed: the renderer reuses it. No popup yet: nothing.
+   */
+  showPreview(win: ManagedWindow, bounds: WindowBounds | null): void
 }
 
 export interface WindowManager extends WindowLookup {
@@ -214,10 +226,41 @@ export interface WindowManager extends WindowLookup {
   handleFlushed(sender: { id: number }): void
   /** `before-quit`: record the vault of the window in front (YAZ-2589 A1), then handshake every window at once (YAZ-2198); `windows[]` is kept, and the next launch brings back what it is asked for. */
   flushAllForQuit(): Promise<void>
+  /**
+   * A Files window (YAZ-3357 D5, D6) on `root`, or with null on every vault of the window `from`. From a full window it
+   * opens flush left of it, as tall, as wide as its sidebar, with its lens; from a Files window, cascaded; with no
+   * window, `FILES_WINDOW_DEFAULT_W` × `FILES_WINDOW_DEFAULT_H` at the default spot. All clamped to the screen. The
+   * source does not change. `false` = no vault to show (a Welcome window, no window at all).
+   */
+  openFilesWindow(from: string | undefined, root: string | null): boolean
+  /**
+   * A click in the Files window `from` (YAZ-3357 D2, D7): the target is the full window that shows the action's vault
+   * — the one focused last, else the first — never a Files window or a hidden one. It hears `link:open-from-files`
+   * (held until its page listens). A preview brings it to the front unfocused (`moveTop`), a background tab raises
+   * nothing, anything else focuses it. With none, a new full window opens beside the Files window on that vault:
+   * on the page itself for `open`, else with the push held for it. `false` = `from` is no live Files window.
+   */
+  openFromFiles(from: string, action: FilesAction): boolean
+  /**
+   * Tabs Mission Control in the Files window `id` (YAZ-3357 D3): `open` keeps its narrow bounds stored, marks it wide
+   * (`commitBounds` skips it, so the store keeps the narrow ones) and grows it to `FILES_WINDOW_WIDE_W`, clamped, at
+   * once (D10, not animated); closing puts the stored narrow bounds back. In memory only: a restart always opens narrow. `false` = no live Files window.
+   */
+  filesWide(id: string, open: boolean): boolean
+  /** The Files window `id`'s floating preview (YAZ-3357 D9): beside the window on the row's height (`filesPreviewBounds`), or hidden with null. `false` = no live Files window. */
+  filesPreview(id: string, req: FilesPreviewRequest | null): boolean
+  /** ⌘+ / ⌘− in the Files window `id` (YAZ-3357): store its own zoom `level` for the next launch. Any other window: nothing. */
+  setFilesZoom(id: string, level: number): void
+  /**
+   * "Make full window" (YAZ-3357 D13): a full window on the Files window `id`'s vaults and lens opens where it
+   * stands — as tall, at a normal width, clamped — with no tab (`startEmpty`), then `id` closes by its real close. `false` = not
+   * a live Files window.
+   */
+  filesToNormal(id: string): boolean
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -233,14 +276,9 @@ const centreDistanceSq = (a: WindowBounds, b: WindowBounds): number => {
   return dx * dx + dy * dy
 }
 
-/**
- * Restored bounds must land on a display that still exists: the window goes fully inside the
- * work area it overlaps most (fully off-screen → the nearest one; ties keep the earliest, so
- * callers pass the primary first), shrunk to fit if oversized. No work areas at all leaves
- * the bounds alone (nothing to clamp against).
- */
-export function clampBounds(bounds: WindowBounds, workAreas: readonly WindowBounds[]): WindowBounds {
-  if (workAreas.length === 0) return bounds
+/** The work area `bounds` overlaps most (fully off-screen → the nearest one; ties keep the earliest); undefined with none. */
+function areaOf(bounds: WindowBounds, workAreas: readonly WindowBounds[]): WindowBounds | undefined {
+  if (workAreas.length === 0) return undefined
   let area = workAreas[0]
   let best = overlapArea(bounds, area)
   for (const wa of workAreas) {
@@ -250,7 +288,18 @@ export function clampBounds(bounds: WindowBounds, workAreas: readonly WindowBoun
       best = o
     }
   }
-  if (best === 0) area = workAreas.reduce((a, b) => (centreDistanceSq(bounds, b) < centreDistanceSq(bounds, a) ? b : a))
+  return best === 0 ? workAreas.reduce((a, b) => (centreDistanceSq(bounds, b) < centreDistanceSq(bounds, a) ? b : a)) : area
+}
+
+/**
+ * Restored bounds must land on a display that still exists: the window goes fully inside the
+ * work area it overlaps most (fully off-screen → the nearest one; ties keep the earliest, so
+ * callers pass the primary first), shrunk to fit if oversized. No work areas at all leaves
+ * the bounds alone (nothing to clamp against).
+ */
+export function clampBounds(bounds: WindowBounds, workAreas: readonly WindowBounds[]): WindowBounds {
+  const area = areaOf(bounds, workAreas)
+  if (area === undefined) return bounds
   const width = Math.min(bounds.width, area.width)
   const height = Math.min(bounds.height, area.height)
   return {
@@ -262,6 +311,77 @@ export function clampBounds(bounds: WindowBounds, workAreas: readonly WindowBoun
 }
 
 const sameBounds = (a: WindowBounds, b: WindowBounds): boolean => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
+
+// ---------- Files windows (pure, YAZ-3357) ----------
+
+/** A Files window (YAZ-3357 D1): never the target of a link, a moved tab, a raise or a Files window's click. */
+export const isFilesWindow = (w: Pick<WindowEntry, 'kind'>): boolean => w.kind === 'files'
+
+/**
+ * Where a Files window opens (YAZ-3357 D6): flush LEFT of the source window `source`, on its top and as tall, `width`
+ * wide (the source's sidebar); with no source, `FILES_WINDOW_DEFAULT_W` × `FILES_WINDOW_DEFAULT_H` at the default spot.
+ * Clamped to the screen, so at the left edge of a screen it stands over the source's left side.
+ */
+export function filesWindowBounds(source: WindowBounds | null, width: number, workAreas: readonly WindowBounds[]): WindowBounds {
+  if (source === null) return clampBounds({ x: DEFAULT_BOUNDS.x, y: DEFAULT_BOUNDS.y, width: FILES_WINDOW_DEFAULT_W, height: FILES_WINDOW_DEFAULT_H }, workAreas)
+  return clampBounds({ x: source.x - width, y: source.y, width, height: source.height }, workAreas)
+}
+
+/** The narrowest a full window beside a Files window gets before it moves over it instead. */
+const BESIDE_FILES_MIN_W = 640
+
+/**
+ * A full window a Files window makes (YAZ-3357: ⌘T, ⌘⇧N, the board's "New window", a click with no target): RIGHT of
+ * it, as tall, the default width — narrower to stay beside it on its screen, down to BESIDE_FILES_MIN_W; then clamped.
+ */
+export function besideFilesBounds(files: WindowBounds, workAreas: readonly WindowBounds[]): WindowBounds {
+  const x = files.x + files.width
+  const area = areaOf(files, workAreas)
+  const room = area === undefined ? DEFAULT_BOUNDS.width : area.x + area.width - x
+  return clampBounds({ x, y: files.y, width: Math.max(BESIDE_FILES_MIN_W, Math.min(DEFAULT_BOUNDS.width, room)), height: files.height }, workAreas)
+}
+
+/**
+ * The floating preview of a Files window (YAZ-3357 D9): `req`'s size, RIGHT of the window's page area `content` on the
+ * screen that holds it, or LEFT of it when that screen has no room there; centred on the hovered row (`req.top` and
+ * `req.bottom` are page coordinates) and kept on that screen. Rounded: the popup is placed in whole pixels.
+ */
+export function filesPreviewBounds(content: WindowBounds, workAreas: readonly WindowBounds[], req: FilesPreviewRequest): WindowBounds {
+  const area = areaOf(content, workAreas) ?? { x: -Infinity, y: -Infinity, width: Infinity, height: Infinity }
+  const width = Math.round(Math.min(req.width, area.width))
+  const height = Math.round(Math.min(req.height, area.height))
+  const right = content.x + content.width
+  const x = right + width <= area.x + area.width ? right : Math.max(area.x, content.x - width)
+  const mid = content.y + (req.top + req.bottom) / 2
+  const y = Math.min(Math.max(area.y, mid - height / 2), area.y + area.height - height)
+  return { x: Math.round(x), y: Math.round(y), width, height }
+}
+
+/** The path or folder a Files window's action is about (YAZ-3357 D2): its target must show the vault that holds it. A session: its first vault, else the Files window's. */
+function filesActionPoint(action: FilesAction, files: Pick<WindowEntry, 'root'>, sessions: readonly Session[]): string | null {
+  switch (action.kind) {
+    case 'open':
+    case 'history':
+    case 'share':
+      return action.path
+    case 'review':
+      return action.dir
+    case 'inbox':
+      return action.root
+    case 'session':
+      return sessions.find((s) => s.id === action.id)?.roots[0] ?? files.root
+  }
+}
+
+/**
+ * The window a Files window's action goes to (YAZ-3357 D2): of the FULL windows `usable` says are live (and not
+ * hidden) and that show a vault holding `point`, the one focused most recently (`focusOrder`), else the first in
+ * `windows[]`. Null = none: the caller opens one.
+ */
+export function pickFilesTarget(point: string, windows: readonly WindowEntry[], focusOrder: readonly string[], usable: (id: string) => boolean): string | null {
+  const shows = windows.filter((w) => !isFilesWindow(w) && usable(w.id) && rootOfPath(w.roots, point) !== null)
+  return focusOrder.find((id) => shows.some((w) => w.id === id)) ?? shows[0]?.id ?? null
+}
 
 // ---------- deep-link routing (pure, E1 GRO-2171) ----------
 
@@ -320,6 +440,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const hiddenWins = new Set<string>()
   /** The live windows minimized in the Dock (YAZ-3343). Never stored. */
   const minimizedWins = new Set<string>()
+  /** The Files windows grown wide for Tabs Mission Control (YAZ-3357 D3): their stored bounds stay the narrow ones. Never stored. */
+  const wideFiles = new Set<string>()
   /** In-flight flush handshakes by `webContents.id`; `settle` answers ack and timeout alike. */
   const pendingFlush = new Map<number, { done: Promise<void>; settle: () => void }>()
   /** Windows closing as part of the quit keep their state entry: the next launch can bring them back. */
@@ -393,10 +515,10 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     return done
   }
 
-  /** Patch only `bounds` onto the entry as it is NOW (the renderer may have changed root/file since). */
+  /** Patch only `bounds` onto the entry as it is NOW (the renderer may have changed root/file since). A wide Files window keeps its narrow bounds (YAZ-3357 D3). */
   const commitBounds = (id: string, win: ManagedWindow): void => {
     const entry = entryOf(id)
-    if (entry === undefined || win.isDestroyed()) return
+    if (entry === undefined || win.isDestroyed() || wideFiles.has(id)) return
     const bounds = win.getBounds()
     if (!sameBounds(bounds, entry.bounds)) store.upsertWindow({ ...entry, bounds })
   }
@@ -465,6 +587,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const at = focusOrder.indexOf(id)
       if (at !== -1) focusOrder.splice(at, 1)
       const wasHidden = hiddenWins.delete(id)
+      wideFiles.delete(id)
       if (minimizedWins.delete(id) && !quitting) tellMinimized()
       if (quitting) return
       if (wasHidden) tellHidden()
@@ -498,7 +621,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const openBlank = (from: WindowEntry, hidden: boolean): string => {
     const id = randomUUID()
     emptyStarts.add(id)
-    open({ id, root: from.root, roots: [...from.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: from.sidebarCollapsed, sidebarLens: from.sidebarLens, bounds: cascadeFrom(from) }, hidden)
+    // From a Files window (YAZ-3357 D8, D14: its ⌘T, ⌘⇧N and the board's "New window") the sidebar shows, and the window stands right of it.
+    open({ id, root: from.root, roots: [...from.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: isFilesWindow(from) ? false : from.sidebarCollapsed, sidebarLens: from.sidebarLens, bounds: madeFrom(from) }, hidden)
     return id
   }
   /** A hidden window (YAZ-3343) shows and takes the focus; `false` = not live. A shown one is only focused. */
@@ -513,11 +637,17 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     return true
   }
 
-  const openWindow = (opts: OpenWindowOptions): void => {
+  /** A new full window; `bounds` = where a Files window puts it (YAZ-3357), else the default spot. Answers its id. */
+  const openWindow = (opts: OpenWindowOptions, bounds?: WindowBounds): string => {
     // A window opened on a vault is a use of that vault (YAZ-2555 D5); its first focus does not count.
     noteUsed(opts.root)
-    open({ id: randomUUID(), root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+    const id = randomUUID()
+    open({ id, root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, bounds: bounds ?? clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+    return id
   }
+  /** Where a window made FROM `from` goes (YAZ-3357): cascaded off a full window, beside a Files window, which is too narrow to copy. */
+  const madeFrom = (from: WindowEntry): WindowBounds =>
+    isFilesWindow(from) ? besideFilesBounds(from.bounds, host.workAreas()) : cascadeFrom(from)
 
   /** The window `id` when it is live and not destroyed (YAZ-3343 D3): the doors of the tab board act on no other. */
   const liveWindow = (id: string): ManagedWindow | undefined => {
@@ -570,7 +700,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const raiseWindows = (matches: (entry: WindowEntry) => boolean): boolean => {
     const wins = store
       .get()
-      .windows.filter(matches)
+      // A Files window (YAZ-3357 D2) is never raised for a vault: ⌘1–9, Open Recent and the vault sets skip it.
+      .windows.filter((w) => !isFilesWindow(w) && matches(w))
       .map((w) => ({ id: w.id, win: live.get(w.id) }))
       .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
     const rank = (id: string): number => {
@@ -625,7 +756,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       if (host.dirExists(path)) return stripSlash(path)
       if (cannotOpen(path) !== null) return null
       const state = store.get()
-      return resolveLinkTarget(path, state.windows, state.recents, rootOverride).root
+      return resolveLinkTarget(path, state.windows.filter((w) => !isFilesWindow(w)), state.recents, rootOverride).root
     },
 
     restore(which) {
@@ -662,7 +793,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       if (carry?.view !== undefined) startViews.set(id, { path, view: carry.view })
       // The tab's display name is stored with the new window's one tab (YAZ-3057 D3). `from`'s own strip must not come along,
       // and neither does its name (YAZ-3343 D14): the new window is another window, with its automatic label.
-      const { tabStrip: _from, name: _name, ...source } = from
+      // Nor its kind (YAZ-3357 D1): a tab moves to a full window.
+      const { tabStrip: _from, name: _name, kind: _kind, ...source } = from
       // From the tab board it is QUIET (YAZ-3343 D37): the new window is HIDDEN until the board shows it (D23).
       open({ ...source, id, roots: [...from.roots], file: path, tabs: [path], ...(carry?.name === undefined ? {} : { tabStrip: [{ path, name: carry.name }] }), rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: cascadeFrom(from) }, carry?.background === true)
       if (carry?.background === true) tellHidden()
@@ -692,7 +824,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     moveTo(to, path, carry) {
       const win = live.get(to)
       const entry = entryOf(to)
-      if (win === undefined || win.isDestroyed() || entry === undefined || rootOfPath(entry.roots, path) === null) return false
+      // A Files window (YAZ-3357 D2) has no tabs to take one.
+      if (win === undefined || win.isDestroyed() || entry === undefined || isFilesWindow(entry) || rootOfPath(entry.roots, path) === null) return false
       // A quiet move from the tab board (YAZ-3343 D13) raises nothing: the user stays on the board they dropped it on.
       if (carry?.background !== true) focusWindow(win)
       sendLink(win, CONTRACT.link.onTakeTab.channel, { path, ...carry })
@@ -719,7 +852,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     moveTab(from, to, ref) {
       const source = liveWindow(from)
       const entry = entryOf(to)
-      if (source === undefined || from === to || liveWindow(to) === undefined || entry === undefined || rootOfPath(entry.roots, ref.path) === null) return false
+      if (source === undefined || from === to || liveWindow(to) === undefined || entry === undefined || isFilesWindow(entry) || rootOfPath(entry.roots, ref.path) === null) return false
       sendLink(source, CONTRACT.link.onSendTab.channel, { to, ref: { path: ref.path, copy: ref.copy } })
       return true
     },
@@ -806,7 +939,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         return
       }
       const state = store.get()
-      const target = resolveLinkTarget(path, state.windows, state.recents, rootOverride)
+      // A Files window (YAZ-3357 D2) is never a link's target: it has no page to show it in.
+      const target = resolveLinkTarget(path, state.windows.filter((w) => !isFilesWindow(w)), state.recents, rootOverride)
       if (target.kind === 'new') {
         openWindow({ root: target.root, file: target.file })
         return
@@ -836,6 +970,103 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     handleFlushed(sender) {
       pendingFlush.get(sender.id)?.settle()
+    },
+
+    openFilesWindow(from, root) {
+      const source = from === undefined ? undefined : entryOf(from)
+      const roots = root !== null ? [root] : (source?.roots ?? [])
+      if (roots.length === 0) return false
+      const areas = host.workAreas()
+      // The source as it stands now (the stored bounds lag a drag by BOUNDS_DEBOUNCE_MS); a wide Files window by its stored, narrow bounds.
+      const at = source === undefined ? null : wideFiles.has(source.id) ? source.bounds : (liveWindow(source.id)?.getBounds() ?? source.bounds)
+      const bounds =
+        source === undefined || at === null
+          ? filesWindowBounds(null, FILES_WINDOW_DEFAULT_W, areas)
+          : isFilesWindow(source)
+            ? clampBounds({ ...at, x: at.x + WINDOW_CASCADE_PX, y: at.y + WINDOW_CASCADE_PX }, areas)
+            : filesWindowBounds(at, source.sidebarCollapsed ? FILES_WINDOW_DEFAULT_W : store.get().sidebarWidth, areas)
+      const vaults = normalizeRoots(roots, roots[0])
+      // A size above the source (D11, "maybe like 20% bigger"): one zoom step over a full window's; a Files window's own.
+      const sourceZoom = source === undefined ? 0 : isFilesWindow(source) ? (source.zoom ?? 0) : (liveWindow(source.id)?.webContents.getZoomLevel() ?? 0) + FILES_WINDOW_ZOOM_UP
+      const zoom = clampFilesZoom(source === undefined ? FILES_WINDOW_ZOOM_UP : sourceZoom)
+      // The lens comes from the source (D6); the focus list is the vault's, and no name or tab comes along.
+      open({ id: randomUUID(), kind: 'files', root: vaults[0], roots: vaults, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: source?.sidebarLens ?? DEFAULT_SIDEBAR_LENS, bounds, ...(zoom !== 0 ? { zoom } : {}) })
+      return true
+    },
+
+    openFromFiles(from, action) {
+      const files = entryOf(from)
+      if (files === undefined || !isFilesWindow(files) || liveWindow(from) === undefined) return false
+      const state = store.get()
+      const point = filesActionPoint(action, files, state.sessions)
+      if (point === null) return false
+      const id = pickFilesTarget(point, state.windows, focusOrder, (w) => liveWindow(w) !== undefined && !hiddenWins.has(w))
+      if (id === null) {
+        // No full window shows the vault: a new one opens beside the Files window, on the page itself for `open`.
+        const vault = rootOfPath(files.roots, point) ?? (action.kind === 'session' ? point : null)
+        if (vault === null) return false
+        const made = openWindow({ root: vault, file: action.kind === 'open' ? action.path : null }, besideFilesBounds(files.bounds, host.workAreas()))
+        const win = live.get(made)
+        // Anything else waits for its page to listen (`sendLink` holds it until `link:ready`).
+        if (action.kind !== 'open' && win !== undefined) sendLink(win, CONTRACT.link.onOpenFromFiles.channel, action)
+        return true
+      }
+      const win = live.get(id)
+      if (win === undefined) return false
+      // D7: a preview comes to the front with no focus, so the arrows keep browsing the Files window; a background tab raises nothing.
+      if (action.kind === 'open' && action.how === 'preview') {
+        if (win.isMinimized()) win.restore()
+        win.moveTop()
+      } else if (action.kind !== 'open' || action.how !== 'background') focusWindow(win)
+      sendLink(win, CONTRACT.link.onOpenFromFiles.channel, action)
+      return true
+    },
+
+    filesWide(id, open) {
+      const win = liveWindow(id)
+      const entry = entryOf(id)
+      if (win === undefined || entry === undefined || !isFilesWindow(entry)) return false
+      if (open) {
+        if (wideFiles.has(id)) return true
+        // The narrow bounds as they stand now go in the store first; from here on `commitBounds` leaves them.
+        commitBounds(id, win)
+        wideFiles.add(id)
+        const narrow = entryOf(id)?.bounds ?? entry.bounds
+        // At once, not animated (D10): macOS's animation lays the page out on every frame of it.
+        win.setBounds(clampBounds({ ...narrow, width: Math.max(narrow.width, FILES_WINDOW_WIDE_W) }, host.workAreas()), false)
+      } else if (wideFiles.delete(id)) win.setBounds(entry.bounds, false)
+      return true
+    },
+
+    filesToNormal(id) {
+      const win = liveWindow(id)
+      const entry = entryOf(id)
+      if (win === undefined || entry === undefined || !isFilesWindow(entry)) return false
+      // Where it stands now, by its narrow bounds when the board made it wide; a full window's width.
+      const at = wideFiles.has(id) ? entry.bounds : win.getBounds()
+      const next = randomUUID()
+      emptyStarts.add(next)
+      // The new window first: the Files window's close must never be the app's last.
+      open({ id: next, root: entry.root, roots: [...entry.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: entry.sidebarLens, bounds: clampBounds({ ...at, width: Math.max(at.width, DEFAULT_BOUNDS.width) }, host.workAreas()) })
+      win.close()
+      return true
+    },
+
+    setFilesZoom(id, level) {
+      const entry = entryOf(id)
+      if (entry === undefined || !isFilesWindow(entry)) return
+      const zoom = clampFilesZoom(level)
+      if ((entry.zoom ?? 0) === zoom) return
+      const { zoom: _old, ...rest } = entry
+      store.upsertWindow(zoom === 0 ? rest : { ...rest, zoom })
+    },
+
+    filesPreview(id, req) {
+      const win = liveWindow(id)
+      const entry = entryOf(id)
+      if (win === undefined || entry === undefined || !isFilesWindow(entry)) return false
+      host.showPreview(win, req === null ? null : filesPreviewBounds(win.getContentBounds(), host.workAreas(), req))
+      return true
     },
 
     async flushAllForQuit() {

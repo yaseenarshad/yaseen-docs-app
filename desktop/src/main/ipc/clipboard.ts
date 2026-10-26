@@ -2,6 +2,7 @@ import type { WebContents } from 'electron'
 import { SPECIAL } from '@shared/ipc'
 import { BridgeFailure } from '../fs/fsUtils'
 import type { WindowManagerIpc } from '../windows'
+import { isRendererUrl } from '../rendererUrl'
 import { handleWithEvent } from './envelope'
 
 // Bound renderer-supplied strings while allowing large document selections (UTF-16 code units).
@@ -12,16 +13,6 @@ export interface ClipboardHost {
   /** Electron clipboard.writeText replaces existing formats with text only. */
   writeText(text: string): void
   rendererUrl: string
-}
-
-function isRendererUrl(raw: string, expected: string): boolean {
-  try {
-    const actual = new URL(raw)
-    const renderer = new URL(expected)
-    return actual.protocol === renderer.protocol && actual.host === renderer.host && actual.pathname === renderer.pathname
-  } catch {
-    return false
-  }
 }
 
 /** Private preload reply to Copy as; no arbitrary clipboard writer is exposed to the renderer. */

@@ -186,12 +186,15 @@ export const storage = {
    * page's vault. Read only while a tab menu is open, never a render trigger; main checks the target again.
    */
   getOtherWindows: (): readonly WindowEntry[] => {
-    // The same array while the windows are the same (YAZ-3343 D2): the tab board reads it as a snapshot.
-    if (others.windows !== state.windows || others.id !== identity.id) others = { windows: state.windows, id: identity.id, list: state.windows.filter((w) => w.id !== identity.id) }
+    // The same array while the windows are the same (YAZ-3343 D2): the tab board reads it as a snapshot. A Files window is
+    // never one of them (YAZ-3357 D2): no "Move to ▸" row, no frame on a board, no Kill all.
+    if (others.windows !== state.windows || others.id !== identity.id) others = { windows: state.windows, id: identity.id, list: state.windows.filter((w) => w.id !== identity.id && w.kind !== 'files') }
     return others.list
   },
   /** This window's id (`WindowEntry.id`), from the identity `init()` loaded: the tab board keys its stored places by it (YAZ-3343 D1). */
   getWindowId: (): string => identity.id,
+  /** This window is a Files window (YAZ-3357 D1): only the sidebar, no tabs. Fixed for the window's life, so a render may read it. */
+  isFilesWindow: (): boolean => identity.kind === 'files',
 
   /**
    * A window's name (YAZ-3343 D14), off the cache; this window's when `id` is left out. `undefined` = no name:

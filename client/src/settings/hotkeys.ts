@@ -62,7 +62,8 @@ export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   // ⌘⌫ (YAZ-3272 D20): Finder's Move to Trash, on the undo's boundary; a plain ⌫ deletes nothing.
   { keys: '⌘⌫', label: 'Move the selected files and folders to the Trash — asks first unless "Confirm before deleting" is off; outside a note, a drawing, a diagram or a field, which keep their own' },
   { keys: '⌘W', label: 'Close tab — on the last tab it empties the window, then closes it' },
-  { keys: '⌘⇧W', label: 'Close window' },
+  // YAZ-3357 D15: ⌘⇧W opens a Files window; Close Window has no key (File menu, or ⌘W on the last tab).
+  { keys: '⌘⇧W', label: 'New Files window — the sidebar on its own, beside your windows' },
   { keys: '⌃Tab / ⌃⇧Tab', label: 'Next / previous tab' },
   { keys: '⌘⇧] / ⌘⇧[', label: 'Next / previous tab' },
   // An upkeep review (YAZ-2322): live only while one is open, and they answer with the caret in the note.

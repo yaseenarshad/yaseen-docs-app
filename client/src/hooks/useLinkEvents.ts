@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { MovedTab, TabAction, TabRef } from '@shared/types'
+import type { FilesAction, MovedTab, TabAction, TabRef } from '@shared/types'
 import { api } from '../api'
 
 interface UseLinkEventsOptions {
@@ -23,6 +23,8 @@ interface UseLinkEventsOptions {
   onHighlightTab?: (ref: TabRef | null) => void
   /** Another window's board asks a tab action of this window's tab (YAZ-3343): run it here. */
   onTabAction?: (req: { ref: TabRef; action: TabAction }) => void
+  /** A Files window asked this window to act (YAZ-3357 D2): run the matching callback here. Main raised the window by the action's rule. */
+  onOpenFromFiles?: (action: FilesAction) => void
 }
 
 /**
@@ -31,7 +33,7 @@ interface UseLinkEventsOptions {
  * D3, D13). Every listener is on BEFORE `link.ready`: main sends what it held at that call, and a push with no
  * listener is lost. The board's seven are optional: a window without them hears nothing of the board.
  */
-export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onHighlightTab, onTabAction }: UseLinkEventsOptions): void {
+export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onHighlightTab, onTabAction, onOpenFromFiles }: UseLinkEventsOptions): void {
   useEffect(() => {
     const offs = [
       api.link.onOpenFile(onOpenFile),
@@ -44,11 +46,12 @@ export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onC
       ...(onPopOutTab === undefined ? [] : [api.link.onPopOutTab(onPopOutTab)]),
       ...(onHighlightTab === undefined ? [] : [api.link.onHighlightTab(onHighlightTab)]),
       ...(onTabAction === undefined ? [] : [api.link.onTabAction(onTabAction)]),
+      ...(onOpenFromFiles === undefined ? [] : [api.link.onOpenFromFiles(onOpenFromFiles)]),
     ]
     // Main holds a link push until this window can hear it (YAZ-2589 A2): a page that is still loading hears nothing.
     void api.link.ready()
     return () => {
       for (const off of offs) off()
     }
-  }, [onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onHighlightTab, onTabAction])
+  }, [onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onHighlightTab, onTabAction, onOpenFromFiles])
 }

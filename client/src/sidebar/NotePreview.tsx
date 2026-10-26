@@ -14,7 +14,7 @@ import { createPortal } from 'react-dom'
 import { ReadOnlyNote } from '../editor/ReadOnlyNote'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { boardFolder } from '../lib/paths'
-import { usePlacement, type PreviewAnchor } from './previewPlacement'
+import { portalTarget, usePlacement, type PreviewAnchor } from './previewPlacement'
 import './boardPreview.css'
 
 /** How much of a note's body the hover preview draws (YAZ-3075 D1, C17): about 25 lines need far less. */
@@ -46,6 +46,7 @@ export default function NotePreview({ root, node, name, wikilinks, textVars, anc
       </div>
       <ReadOnlyNote className="note-preview__body" path={node.path} wikilinks={wikilinks} maxChars={NOTE_PREVIEW_CHARS} unreadable="Preview unavailable" />
     </div>,
-    document.body,
+    // The page's body, or a Files window's floating popup (YAZ-3357 D9).
+    portalTarget(anchor),
   )
 }

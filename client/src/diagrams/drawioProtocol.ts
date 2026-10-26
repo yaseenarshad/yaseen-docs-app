@@ -108,7 +108,7 @@ const TOOL_KEYS = [
  * code draw.io reads as plus or minus; ⌘⇧O ⌘⇧E ⌘⇧L; ⌘⇧[ / ⌘⇧] (tabs, draw.io's font size); ⌘⇧S
  * (draw.io's Save As — the app has none, and Export Excalidraw Drawing… is greyed on a diagram).
  * Docs' own menu chords join them (YAZ-3028): ⌘T New Tab, ⌘W Close Tab, ⌘O Switch Vault, and ⌘⇧N
- * New Window, ⌘⇧W Close Window, ⌘⇧M Tab Overview.
+ * New Window, ⌘⇧W New Files Window (YAZ-3357 D15), ⌘⇧M Tab Overview.
  */
 const MENU_CHORDS = [
   ...[75, 188, 48, 61, 107, 187, 222, 109, 173, 189, 84, 87, 79].map((keyCode) => ({ keyCode, control: true, action: null })),

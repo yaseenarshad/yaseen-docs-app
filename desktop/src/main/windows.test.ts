@@ -9,8 +9,12 @@ import {
   BOUNDS_DEBOUNCE_MS,
   FLUSH_TIMEOUT_MS,
   WINDOW_CASCADE_PX,
+  besideFilesBounds,
   clampBounds,
   createWindowManager,
+  filesPreviewBounds,
+  filesWindowBounds,
+  pickFilesTarget,
   resolveLinkTarget,
   type ManagedWindow,
   type WindowHost,
@@ -60,11 +64,14 @@ let nextWebContentsId = 100
 
 /** A `ManagedWindow` stand-in: records sends, replays events, destroys like Electron (`closed` fires, `close` does not). */
 class FakeWindow {
-  webContents = { id: nextWebContentsId++, send: vi.fn() }
+  webContents = { id: nextWebContentsId++, send: vi.fn(), getZoomLevel: vi.fn(() => 0) }
   destroyed = false
   minimized = false
   focusCount = 0
   showCount = 0
+  moveTopCount = 0
+  /** Every `setBounds` call (YAZ-3357 D3): the bounds and whether it animates. */
+  setBoundsCalls: Array<[WindowBounds, boolean | undefined]> = []
   private listeners = new Map<string, Array<(...args: unknown[]) => void>>()
   constructor(public bounds: WindowBounds) {}
   focus(): void {
@@ -72,6 +79,19 @@ class FakeWindow {
   }
   show(): void {
     this.showCount++
+  }
+  moveTop(): void {
+    this.moveTopCount++
+  }
+  /** Like Electron's: the window takes the bounds, and `resize` follows. */
+  setBounds(bounds: WindowBounds, animate?: boolean): void {
+    this.setBoundsCalls.push([{ ...bounds }, animate])
+    this.bounds = { ...bounds }
+    this.emit('resize')
+  }
+  /** A 28 px title bar. */
+  getContentBounds(): WindowBounds {
+    return { x: this.bounds.x, y: this.bounds.y + 28, width: this.bounds.width, height: this.bounds.height - 28 }
   }
   isMinimized(): boolean {
     return this.minimized
@@ -116,8 +136,9 @@ function makeHost(
   areas: WindowBounds[] = [AREA],
   exists: (path: string) => boolean = () => true,
   dirExists: (path: string) => boolean = () => true,
-): { host: WindowHost; created: Array<{ entry: WindowEntry; win: FakeWindow; hidden?: true }> } {
+): { host: WindowHost; created: Array<{ entry: WindowEntry; win: FakeWindow; hidden?: true }>; previews: Array<[FakeWindow, WindowBounds | null]> } {
   const created: Array<{ entry: WindowEntry; win: FakeWindow; hidden?: true }> = []
+  const previews: Array<[FakeWindow, WindowBounds | null]> = []
   const host: WindowHost = {
     create(entry, opts) {
       const win = new FakeWindow({ ...entry.bounds })
@@ -127,8 +148,9 @@ function makeHost(
     workAreas: () => areas,
     exists,
     dirExists,
+    showPreview: (win, bounds) => void previews.push([win as unknown as FakeWindow, bounds]),
   }
-  return { host, created }
+  return { host, created, previews }
 }
 
 let dir: string
@@ -1875,5 +1897,204 @@ describe('createWindowManager: the tab board reaches other windows (YAZ-3343 D3,
     expect(relaunch.created.find((c) => c.entry.id === 'w1')?.entry.name).toBe('Writing')
     expect(manager.setName('w1', null)).toBe(true)
     expect(store.get().windows[0]).not.toHaveProperty('name')
+  })
+})
+
+describe('Files windows (YAZ-3357)', () => {
+  const panel = defaultRightPanelIdentity()
+  const REF = { path: '/a/x.md', copy: 0 }
+  /** w1 and w2 are full windows on /a, w3 a full one on /c, f a Files window on /a and /c. Every page listens. */
+  function seedFiles() {
+    const normal = { file: null, tabs: [], rightPanel: panel, sidebarCollapsed: false, sidebarLens: 'files' as const }
+    store.upsertWindow({ id: 'w1', root: '/a', roots: ['/a'], ...normal, bounds: { x: 400, y: 100, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w2', root: '/a', roots: ['/a'], ...normal, bounds: { x: 420, y: 120, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w3', root: '/c', roots: ['/c'], ...normal, bounds: { x: 440, y: 140, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'f', kind: 'files', root: '/a', roots: ['/a', '/c'], ...normal, bounds: { x: 120, y: 100, width: 280, height: 600 } })
+    const { host, created, previews } = makeHost([AREA], () => true, (path) => !path.endsWith('.md'))
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    for (const c of created) manager.handleLinkReady(c.win.webContents)
+    const [w1, w2, w3, f] = created.map((c) => c.win)
+    return { manager, host, created, previews, w1, w2, w3, f }
+  }
+  const sent = (win: FakeWindow) => win.webContents.send.mock.calls.filter(([ch]) => ch === CONTRACT.link.onOpenFromFiles.channel).map(([, action]) => action)
+
+  it('D6: a Files window opens flush left of its source, on its top and as tall, as wide as the sidebar, clamped; with no source at the default spot', () => {
+    expect(filesWindowBounds({ x: 500, y: 80, width: 900, height: 700 }, 260, [AREA])).toEqual({ x: 240, y: 80, width: 260, height: 700 })
+    // At the left edge of the screen it is pushed onto it, over the source's left side.
+    expect(filesWindowBounds({ x: 100, y: 80, width: 900, height: 700 }, 260, [AREA])).toEqual({ x: 0, y: 80, width: 260, height: 700 })
+    expect(filesWindowBounds(null, 280, [AREA])).toEqual({ x: 100, y: 100, width: 280, height: 800 })
+    // A full window it makes stands right of it, as tall.
+    expect(besideFilesBounds({ x: 0, y: 80, width: 260, height: 700 }, [AREA])).toEqual({ x: 260, y: 80, width: 1180, height: 700 })
+    // Narrower to stay beside it, down to a usable width; then it moves over the Files window.
+    expect(besideFilesBounds({ x: 1000, y: 80, width: 260, height: 700 }, [AREA])).toEqual({ x: 800, y: 80, width: 640, height: 700 })
+  })
+
+  it('D5, D6: openFilesWindow stores kind files, takes the source\'s vaults (or the one asked for) and lens, and the source does not change', () => {
+    const { manager, created } = seedFiles()
+    store.setSidebarWidth(300)
+    store.upsertWindow({ ...store.get().windows.find((w) => w.id === 'w3')!, sidebarLens: 'focus' })
+    expect(manager.openFilesWindow('w3', null)).toBe(true)
+    const made = created.at(-1)!.entry
+    expect(made).toMatchObject({ kind: 'files', root: '/c', roots: ['/c'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'focus', bounds: { x: 140, y: 140, width: 300, height: 600 } })
+    expect(store.get().windows.find((w) => w.id === 'w3')?.bounds).toEqual({ x: 440, y: 140, width: 800, height: 600 })
+    expect(manager.openFilesWindow('w1', '/z')).toBe(true)
+    expect(created.at(-1)!.entry.roots).toEqual(['/z'])
+    expect(manager.openFilesWindow(undefined, null)).toBe(false)
+  })
+
+  it('D13 "Make full window": a full window opens where the Files window stands, on its vaults and lens, empty; then the Files window closes by its real close', () => {
+    const { manager, created, f } = seedFiles()
+    expect(manager.filesToNormal('w1')).toBe(false)
+    expect(manager.filesToNormal('f')).toBe(true)
+    const made = created.at(-1)!.entry
+    expect(made).toMatchObject({ root: '/a', roots: ['/a', '/c'], file: null, tabs: [], sidebarCollapsed: false, bounds: { x: 120, y: 100, width: 1200, height: 600 } })
+    expect(made).not.toHaveProperty('kind')
+    expect(manager.takeStartEmpty(made.id)).toBe(true)
+    // The flush handshake runs: the Files window goes by its real close, after the new window exists.
+    expect(f.flushCount()).toBe(1)
+  })
+
+  it('D11 zoom: a Files window starts one step (+20%) above its source and keeps its own ⌘+ / ⌘− level; a full window stores none', () => {
+    const { manager, created, w1 } = seedFiles()
+    w1.webContents.getZoomLevel.mockReturnValue(0.5)
+    manager.openFilesWindow('w1', null)
+    const made = created.at(-1)!.entry
+    expect(made.zoom).toBe(1.5)
+    // From a Files window: its own level, not one more.
+    manager.openFilesWindow(made.id, null)
+    expect(created.at(-1)!.entry.zoom).toBe(1.5)
+    manager.setFilesZoom(made.id, 3)
+    expect(store.get().windows.find((w) => w.id === made.id)?.zoom).toBe(3)
+    manager.setFilesZoom(made.id, 99)
+    expect(store.get().windows.find((w) => w.id === made.id)?.zoom).toBe(9)
+    manager.setFilesZoom(made.id, 0)
+    expect(store.get().windows.find((w) => w.id === made.id)).not.toHaveProperty('zoom')
+    manager.setFilesZoom('w1', 2)
+    expect(store.get().windows.find((w) => w.id === 'w1')).not.toHaveProperty('zoom')
+  })
+
+  it('D2: the target is the most recently focused live FULL window that shows the vault, else the first; never a Files window or a hidden one', () => {
+    const windows = store.get().windows
+    expect(pickFilesTarget('/a/x.md', windows, [], () => true)).toBeNull()
+    const { manager, w1, w2, f } = seedFiles()
+    const all = store.get().windows
+    expect(pickFilesTarget('/a/x.md', all, [], () => true)).toBe('w1')
+    expect(pickFilesTarget('/a/x.md', all, ['f', 'w3', 'w2', 'w1'], () => true)).toBe('w2')
+    expect(pickFilesTarget('/a/x.md', all, ['w2'], (id) => id !== 'w2')).toBe('w1')
+    expect(pickFilesTarget('/c/y.md', all, ['f'], () => true)).toBe('w3')
+    expect(pickFilesTarget('/b/y.md', all, [], () => true)).toBeNull()
+    // Through the manager: w2 was focused last, then the Files window itself.
+    w2.emit('focus')
+    f.emit('focus')
+    expect(manager.openFromFiles('f', { kind: 'open', path: '/a/x.md', how: 'preview' })).toBe(true)
+    expect(sent(w2)).toEqual([{ kind: 'open', path: '/a/x.md', how: 'preview' }])
+    expect(sent(w1)).toEqual([])
+    expect(sent(f)).toEqual([])
+    // A full window cannot ask through this door.
+    expect(manager.openFromFiles('w1', { kind: 'open', path: '/a/x.md', how: 'keep' })).toBe(false)
+  })
+
+  it('D7: a preview comes to the front unfocused, keep and the others focus, a background tab raises nothing', () => {
+    const { manager, w1, w3 } = seedFiles()
+    manager.openFromFiles('f', { kind: 'open', path: '/a/x.md', how: 'preview' })
+    expect([w1.moveTopCount, w1.focusCount]).toEqual([1, 0])
+    manager.openFromFiles('f', { kind: 'open', path: '/a/x.md', how: 'background' })
+    expect([w1.moveTopCount, w1.focusCount]).toEqual([1, 0])
+    manager.openFromFiles('f', { kind: 'open', path: '/a/x.md', how: 'keep' })
+    manager.openFromFiles('f', { kind: 'inbox', root: '/c' })
+    expect([w1.focusCount, w3.focusCount]).toEqual([1, 1])
+    expect(sent(w1)).toHaveLength(3)
+    expect(sent(w3)).toEqual([{ kind: 'inbox', root: '/c' }])
+  })
+
+  it('D2: with no window on the vault a new full window opens beside the Files window — on the page for open, else holding the push for its page', () => {
+    const { manager, created, f } = seedFiles()
+    store.upsertWindow({ ...store.get().windows.find((w) => w.id === 'f')!, roots: ['/a', '/c', '/d'] })
+    expect(manager.openFromFiles('f', { kind: 'open', path: '/d/n.md', how: 'preview' })).toBe(true)
+    const opened = created.at(-1)!
+    expect(opened.entry).toMatchObject({ root: '/d', file: '/d/n.md', tabs: ['/d/n.md'], bounds: { x: 400, y: 100, width: 1040, height: 600 } })
+    expect(opened.entry.kind).toBeUndefined()
+    expect(sent(opened.win)).toEqual([])
+    manager.openFromFiles('f', { kind: 'history', path: '/d/n.md' })
+    expect(created).toHaveLength(5) // the window just opened shows /d now
+    manager.openFromFiles('f', { kind: 'review', dir: '/a/x' })
+    expect(created).toHaveLength(5)
+    opened.win.destroy()
+    manager.openFromFiles('f', { kind: 'share', path: '/d/n.md' })
+    const again = created.at(-1)!
+    expect(again.entry).toMatchObject({ root: '/d', file: null })
+    expect(sent(again.win)).toEqual([]) // held: its page does not listen yet
+    manager.handleLinkReady(again.win.webContents)
+    expect(sent(again.win)).toEqual([{ kind: 'share', path: '/d/n.md' }])
+    void f
+  })
+
+  it('D2: a Files window is no target of a link, a moved tab or a vault raise', () => {
+    const { manager, created, f, w1 } = seedFiles()
+    // Only the Files window shows /c besides w3; with w3 gone a link to /c opens a NEW window, not the Files window.
+    created[2].win.destroy()
+    manager.routeToFile('/c/y.md')
+    expect(created.at(-1)!.entry).toMatchObject({ root: '/c', file: '/c/y.md' })
+    expect(f.webContents.send.mock.calls.some(([ch]) => ch === CONTRACT.link.onOpenFile.channel)).toBe(false)
+    expect(manager.rootFor('/c/z.md')).toBe('/c')
+    expect(manager.moveTo('f', '/a/x.md')).toBe(false)
+    expect(manager.moveTab('w1', 'f', REF)).toBe(false)
+    // ⌘1–9 / Open Recent raise the vault's full windows only.
+    const focusBefore = f.focusCount
+    manager.openRecentBeside('/a')
+    expect(f.focusCount).toBe(focusBefore)
+    expect(w1.focusCount).toBe(1)
+  })
+
+  it('D1: ⌘⇧N, "Move to new window" and the board\'s "New window" from a Files window make FULL windows beside it, the sidebar shown', () => {
+    const { manager, created } = seedFiles()
+    const files = store.get().windows.find((w) => w.id === 'f')!
+    manager.duplicateWindow({ ...files, sidebarCollapsed: true })
+    expect(created.at(-1)!.entry).toMatchObject({ roots: ['/a', '/c'], sidebarCollapsed: false, bounds: { x: 400, y: 100, width: 1040, height: 600 } })
+    expect(created.at(-1)!.entry.kind).toBeUndefined()
+    manager.openBehind(files)
+    expect(created.at(-1)!.entry.kind).toBeUndefined()
+    manager.popOut(files, '/a/x.md')
+    expect(created.at(-1)!.entry.kind).toBeUndefined()
+  })
+
+  it('D3: the board makes the Files window wide while its narrow bounds stay stored; closing puts them back; a quit while wide keeps them narrow', async () => {
+    const { manager, f } = seedFiles()
+    const narrow = { x: 120, y: 100, width: 280, height: 600 }
+    expect(manager.filesWide('f', true)).toBe(true)
+    expect(f.setBoundsCalls).toEqual([[{ x: 120, y: 100, width: 1200, height: 600 }, false]])
+    vi.advanceTimersByTime(BOUNDS_DEBOUNCE_MS * 2)
+    expect(store.get().windows.find((w) => w.id === 'f')?.bounds).toEqual(narrow)
+    // Twice open is one growth.
+    manager.filesWide('f', true)
+    expect(f.setBoundsCalls).toHaveLength(1)
+    expect(manager.filesWide('f', false)).toBe(true)
+    expect(f.setBoundsCalls.at(-1)).toEqual([narrow, false])
+    vi.advanceTimersByTime(BOUNDS_DEBOUNCE_MS * 2)
+    expect(store.get().windows.find((w) => w.id === 'f')?.bounds).toEqual(narrow)
+    // Wide again, then quit: the next launch opens it narrow.
+    manager.filesWide('f', true)
+    const quit = manager.flushAllForQuit()
+    for (const c of [f]) manager.handleFlushed(c.webContents)
+    vi.advanceTimersByTime(FLUSH_TIMEOUT_MS)
+    await quit
+    expect(store.get().windows.find((w) => w.id === 'f')?.bounds).toEqual(narrow)
+    // A full window never grows.
+    expect(manager.filesWide('w1', true)).toBe(false)
+  })
+
+  it('D9: the floating preview stands right of the Files window on the row\'s height, or left with no room; null hides it', () => {
+    const content = { x: 100, y: 128, width: 280, height: 572 }
+    expect(filesPreviewBounds(content, [AREA], { width: 500, height: 300, top: 200, bottom: 220 })).toEqual({ x: 380, y: 188, width: 500, height: 300 })
+    // No room right of a window at the screen's right edge: left of it.
+    expect(filesPreviewBounds({ ...content, x: 1100 }, [AREA], { width: 500, height: 300, top: 200, bottom: 220 })).toEqual({ x: 600, y: 188, width: 500, height: 300 })
+    // A row near the bottom keeps the panel on the screen.
+    expect(filesPreviewBounds(content, [AREA], { width: 500, height: 600, top: 700, bottom: 720 })).toEqual({ x: 380, y: 300, width: 500, height: 600 })
+    const { manager, previews, f } = seedFiles()
+    expect(manager.filesPreview('f', { width: 500, height: 300, top: 200, bottom: 220 })).toBe(true)
+    expect(manager.filesPreview('f', null)).toBe(true)
+    expect(previews).toEqual([[f, { x: 400, y: 188, width: 500, height: 300 }], [f, null]])
+    expect(manager.filesPreview('w1', null)).toBe(false)
   })
 })
