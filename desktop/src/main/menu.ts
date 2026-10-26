@@ -43,7 +43,7 @@ export interface MenuHandlers {
   tabOverview(): void
   /** View › Toggle Sidebar: ask only the focused renderer to toggle its window identity. */
   toggleSidebar(): void
-  /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused note or the app (YAZ-1710). */
+  /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused note (YAZ-1710), else the sidebar zoom (YAZ-3389). */
   zoom(step: ZoomStep): void
   openHelp(): void
   /** Yaseen Docs › Check for Updates… (YAZ-2976 D7): one check now; main answers in the window in front with a notice or the "What's new" sheet (S4–S6). */

@@ -1916,14 +1916,9 @@ button {
   align-items: center;
   justify-content: center;
   height: 22px;
-  padding: 0;
-  border: 0;
   border-radius: 6px;
-  background: transparent;
   color: var(--fg-muted);
-  font: inherit;
   line-height: 1;
-  cursor: pointer;
 }
 
 .sidebar-zoom__step {

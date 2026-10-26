@@ -3,7 +3,8 @@
  * a tree row 1.25× taller on screen, while the sidebar's header, its tab row and the footer's cog keep
  * their size and place, and the window's own Chromium zoom stays 0. The value is a setting: it is in
  * the state file after a quit and comes back on the next launch. The percent goes back to 100%, and
- * View › Zoom In / Actual Size with no note focused step the same zoom.
+ * View › Zoom In / Actual Size with no note focused step the same zoom. A Chromium zoom left from an
+ * older build goes back to 0 at the next load (D8).
  *
  * Serial (the suite's idiom): each step continues the last.
  */
@@ -33,6 +34,9 @@ const rowHeight = (w: Page) => fileRow(w, 'Ideas').evaluate((el) => el.getBoundi
 /** The window's real Chromium zoom level, from main. */
 const zoomLevel = (a: ElectronApplication): Promise<number> =>
   a.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('win=w1'))!.webContents.getZoomLevel())
+/** Set the window's Chromium zoom from main, as a ⌘+ of an older build did. */
+const setZoomLevel = (a: ElectronApplication, level: number): Promise<void> =>
+  a.evaluate(({ BrowserWindow }, l) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('win=w1'))!.webContents.setZoomLevel(l), level)
 const CHROME = ['.sidebar__header', '.sidebar__lenses', '.sidebar__footer .settings-button']
 
 test.beforeAll(async () => {
@@ -84,4 +88,12 @@ test('step 4 — View › Zoom In and Actual Size, with no note focused, step th
   await clickMenuItem(app, 'menu.view.zoom-reset', 'w1')
   await expect(percent(win)).toHaveText('100%')
   expect(await zoomLevel(app)).toBe(0)
+})
+
+test('step 5 — a Chromium zoom from an older build: the next load sets it back to 0 (D8)', async () => {
+  await setZoomLevel(app, 2)
+  expect(await zoomLevel(app)).toBe(2)
+  await win.reload()
+  await expect(percent(win)).toHaveText('100%')
+  await expect.poll(() => zoomLevel(app)).toBe(0)
 })

@@ -337,7 +337,7 @@ describe('createStore: loading', () => {
     for (const width of [159, 481, NaN, '200', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, tableOfContentsWidth: width })).toBe(false)
   })
 
-  it('sidebarZoom (YAZ-3389): an older file without the key loads at 100; junk loads at 100; a number off the steps is clamped to 50–200; the channel takes 50–200 only', async () => {
+  it('sidebarZoom (YAZ-3389): an older file without the key loads at 100; junk loads at 100; an off-step number inside 50–200 is kept (D7), one outside is clamped; the channel takes 50–200 only', async () => {
     expect(DEFAULT_SETTINGS.sidebarZoom).toBe(100)
     const { sidebarZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))

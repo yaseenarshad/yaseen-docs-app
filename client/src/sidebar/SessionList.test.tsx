@@ -164,8 +164,11 @@ describe('SessionList (YAZ-3147 D6)', () => {
   it('S32: "Delete session" asks with a sheet; Cancel keeps it, Delete removes it through main', async () => {
     await mount([WORK, SOLO])
     rightClick(rows()[0])
+    // The menu and the sheet are on the page, not in the list (YAZ-3389 D12): the list zooms, they never do.
+    expect([document.querySelector('.ctx-menu')?.isConnected, el.querySelector('.ctx-menu')]).toEqual([true, null])
     choose('Delete session')
     const sheet = () => document.querySelector('[role="dialog"]')
+    expect([sheet()?.isConnected, el.querySelector('[role="dialog"]')]).toEqual([true, null])
     expect(sheet()?.querySelector('.confirm__text')?.textContent).toBe('Delete "Work"?Your files and open tabs do not change.')
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.confirm button')].find((x) => x.textContent === 'Cancel')?.click())
     expect(sheet()).toBeNull()

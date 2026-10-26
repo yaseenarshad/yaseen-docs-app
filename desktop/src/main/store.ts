@@ -351,7 +351,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.canvas = sanitizeCanvasPrefs(src.canvas)
   out.canvasPanel = sanitizeCanvasPanel(src.canvasPanel)
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
-  // YAZ-3389: a number off the steps is clamped to 50–200, not reset; missing or not a number reads 100.
+  // YAZ-3389 D7: a number off the steps but inside 50–200 is kept; one outside is clamped, not reset; missing or not a number reads 100.
   if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
   return out
 }

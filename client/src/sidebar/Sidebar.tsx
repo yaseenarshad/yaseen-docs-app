@@ -814,7 +814,11 @@ export function Sidebar({
   const settingsRef = useRef({ settings, onChangeSettings })
   settingsRef.current = { settings, onChangeSettings }
   const changeTabs = useCallback((next: SettingsState['sidebarTabs']) => settingsRef.current.onChangeSettings({ ...settingsRef.current.settings, sidebarTabs: next }), [])
-  const changeZoom = useCallback((sidebarZoom: number) => settingsRef.current.onChangeSettings({ ...settingsRef.current.settings, sidebarZoom }), [])
+  // The same value writes nothing, as on the key path (YAZ-3389 D6): a click on "100%" at 100%.
+  const changeZoom = useCallback((sidebarZoom: number) => {
+    const { settings: now, onChangeSettings: write } = settingsRef.current
+    if (sidebarZoom !== now.sidebarZoom) write({ ...now, sidebarZoom })
+  }, [])
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
   // The copy the open page lights in (YAZ-3131 Decision 3, S12, S13): where it was clicked, else the

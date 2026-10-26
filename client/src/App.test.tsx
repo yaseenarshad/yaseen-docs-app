@@ -10,7 +10,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type RestoreSessionResult, type SidebarTab, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type RestoreSessionResult, type SidebarTab, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -203,7 +203,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuNewTab = new Set<() => void>()
   const windowGlow = new Set<(on: boolean) => void>()
   const menuNewWindow = new Set<() => void>()
-  const menuZoom = new Set<() => void>()
+  const menuZoom = new Set<(step: ZoomStep) => void>()
   const menuWhatsNew = new Set<() => void>()
   // The board gestures (YAZ-3037): Export Excalidraw Drawing… is the one App routes itself during a review.
   const menuExportDrawing = new Set<() => void>()
@@ -337,7 +337,10 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onTabOverview: menuSub(menuTabOverview),
       onNewTab: menuSub(menuNewTab),
       onNewWindow: menuSub(menuNewWindow),
-      onZoom: menuSub(menuZoom),
+      onZoom: vi.fn((l: (step: ZoomStep) => void) => {
+        menuZoom.add(l)
+        return () => menuZoom.delete(l)
+      }),
       onWhatsNew: menuSub(menuWhatsNew),
       onExportImage: menuSub(new Set()),
       onExportDrawing: menuSub(menuExportDrawing),
@@ -489,6 +492,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitGlow: (on: boolean) => windowGlow.forEach((l) => l(on)),
     emitNewWindow: () => menuNewWindow.forEach((l) => l()),
     emitWhatsNew: () => menuWhatsNew.forEach((l) => l()),
+    emitZoom: (step: ZoomStep) => menuZoom.forEach((l) => l(step)),
     emitExportDrawing: () => menuExportDrawing.forEach((l) => l()),
     emitShareLink: () => menuShareLink.forEach((l) => l()),
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
@@ -1168,6 +1172,18 @@ describe('App section indent settings (YAZ-2709)', () => {
     expect([app.style.getPropertyValue('--section-step-setting'), app.getAttribute('data-section-lines')]).toEqual(['30', 'always'])
     act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sectionStep: 36, sectionLines: 'hover' } }))
     expect([app.style.getPropertyValue('--section-step-setting'), app.getAttribute('data-section-lines')]).toEqual(['36', 'hover'])
+  })
+})
+
+describe('App sidebar zoom from the menu keys (YAZ-3389 D6)', () => {
+  it('with no note focused, ⌘+ at 200 writes nothing, and ⌘0 at 150 writes 100 over the other settings', async () => {
+    const at200: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarZoom: 200, theme: 'dark' } }
+    const { bridge, emitStateChanged, emitZoom } = await mount(at200, { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => emitZoom(1))
+    expect(bridge.state.setSettings).not.toHaveBeenCalled()
+    act(() => emitStateChanged({ ...at200, settings: { ...at200.settings, sidebarZoom: 150 } }))
+    act(() => emitZoom(0))
+    expect(bridge.state.setSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarZoom: 100, theme: 'dark' })
   })
 })
 

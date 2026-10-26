@@ -7709,15 +7709,20 @@ describe('update pill (YAZ-2976 D4)', () => {
 
   it('no update, no pill: the footer has the cog and the sidebar zoom', async () => {
     const { el } = await mount()
-    expect(el.querySelector('.update-pill')).toBeNull()
+    const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
+    expect(footer).toEqual(['settings-button', 'sidebar-zoom'])
   })
 
-  it('the sidebar zoom (YAZ-3389): the lists take `--sidebar-zoom` from the setting, and + writes the next step over the other settings', async () => {
-    const { el, props } = await mount({ settings: { ...DEFAULT_SETTINGS, sidebarZoom: 125, theme: 'dark' } })
+  it('the sidebar zoom (YAZ-3389): the lists take `--sidebar-zoom` from the setting, + writes the next step over the other settings, and the same value writes nothing (D6)', async () => {
+    const { el, props, rerender } = await mount({ settings: { ...DEFAULT_SETTINGS, sidebarZoom: 125, theme: 'dark' } })
     expect(el.querySelector<HTMLElement>('.sidebar__body')!.style.getPropertyValue('--sidebar-zoom')).toBe('1.25')
     expect(el.querySelector('.sidebar-zoom__value')?.textContent).toBe('125%')
     act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Zoom the sidebar in"]')!.click())
     expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarZoom: 150, theme: 'dark' })
+
+    await rerender({ settings: { ...DEFAULT_SETTINGS, sidebarZoom: 100 } })
+    act(() => el.querySelector<HTMLButtonElement>('.sidebar-zoom__value')!.click())
+    expect(props.onChangeSettings).toHaveBeenCalledTimes(1)
   })
 })
 

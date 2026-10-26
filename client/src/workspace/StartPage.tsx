@@ -278,7 +278,7 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
       onBack()
     }
     // The columns stand one below the other in a narrow page area (S23; `STACK_AT` is the width of
-    // startPage.css). ⌘+ makes the page area narrow too. With no layout (a test) the width reads 0: three columns.
+    // startPage.css). With no layout (a test) the width reads 0: three columns.
     const width = page.current?.clientWidth ?? 0
     const stacked = width > 0 && width <= STACK_AT
     // The columns that have rows, in their order: ← and → go over a column with none (S36).

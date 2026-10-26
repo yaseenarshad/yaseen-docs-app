@@ -472,15 +472,15 @@ export function App() {
   }, [])
 
   // ⌘+ / ⌘− / ⌘0 that no note claimed step the sidebar zoom (YAZ-3389), over the settings of the moment.
-  const zoom = useCallback(
-    (step: ZoomStep) =>
-      requestZoom(step, () => {
-        const now = storage.getSettings()
-        const sidebarZoom = step === 0 ? 100 : stepSidebarZoom(now.sidebarZoom, step)
-        if (sidebarZoom !== now.sidebarZoom) changeSettings({ ...now, sidebarZoom })
-      }),
+  const zoomSidebar = useCallback(
+    (step: ZoomStep) => {
+      const now = storage.getSettings()
+      const sidebarZoom = step === 0 ? 100 : stepSidebarZoom(now.sidebarZoom, step)
+      if (sidebarZoom !== now.sidebarZoom) changeSettings({ ...now, sidebarZoom })
+    },
     [changeSettings],
   )
+  const zoom = useCallback((step: ZoomStep) => requestZoom(step, zoomSidebar), [zoomSidebar])
 
   /** A lens tab click (YAZ-847): write through to this window's identity, then mirror it locally. */
   const changeLens = useCallback((next: SidebarTab) => {
