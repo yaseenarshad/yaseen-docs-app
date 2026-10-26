@@ -577,6 +577,19 @@ describe('TabOverview', () => {
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }, { path: '/w/n.md' }, { path: '/w/m.md' }, { path: '/w/z.md' }])]
     await again({})
     expect(storage.setTabCanvas).toHaveBeenLastCalledWith({ set: [{ win: 'w2', path: '/w/z.md', copy: 1, by: 'window', x: o.x + 3 * C.w, y: o.y }] })
+    // Two new tabs at once: each in a cell of its own (S14), in reading order.
+    others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }, { path: '/w/n.md' }, { path: '/w/m.md' }, { path: '/w/z.md' }, { path: '/w/p.md' }, { path: '/w/q.md' }])]
+    await again({})
+    expect(storage.setTabCanvas).toHaveBeenLastCalledWith({ set: [{ win: 'w2', path: '/w/p.md', copy: 0, by: 'window', x: o.x + C.w, y: o.y + C.h }, { win: 'w2', path: '/w/q.md', copy: 0, by: 'window', x: o.x + 2 * C.w, y: o.y + C.h }] })
+  })
+
+  it('S51: a card the filter hid and brings back is no new card — typing and clearing the filter stores nothing', async () => {
+    canvas = { allWindows: true, snap: true, cards: [] }
+    others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
+    const { el } = await mount()
+    type(el, 'y')
+    type(el, '')
+    expect(storage.setTabCanvas).not.toHaveBeenCalled()
   })
 
   it('demo feedback: the pointer over ANOTHER window\'s frame (or one of its cards) makes that window glow — once per change; its own frame, empty canvas, a drag and the board going put it out', async () => {
@@ -958,7 +971,8 @@ describe('TabOverview', () => {
     expect(ctx(g)).toBe(true)
     expect(menuItems(el)).toContain('Tidy up this group')
     act(() => menuItem(el, 'Tidy up this group')?.click())
-    const set = vi.mocked(storage.setTabCanvas).mock.calls.at(-1)![0].set!
+    // The tidy's write (a group it now reaches gives way after it, D28).
+    const set = vi.mocked(storage.setTabCanvas).mock.calls.map(([patch]) => patch.set ?? []).find((cards) => cards.some((c) => c.path === '/v/Projects/report.pdf'))!
     expect(set.map((c) => [c.path, c.x, c.y])).toEqual(['/v/Projects/plan.md', '/v/Projects/report.pdf', '/v/Projects/Alpha'].map((path, i) => [path, gx + BOARD.islandPad + i * (BOARD.pageW + BOARD.pageGap), gy + BOARD.islandPad + BOARD.labelH]))
     expect([Number.parseFloat(island(el, 'Projects').style.left), Number.parseFloat(island(el, 'Projects').style.top)]).toEqual([gx, gy])
     // The filter keeps its own text menu.

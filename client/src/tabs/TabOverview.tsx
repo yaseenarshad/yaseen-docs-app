@@ -1,12 +1,12 @@
 import { lazy, memo, Suspense, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { isBoard } from '@shared/fileKind'
-import { rootOfPath, type CanvasCard, type TabAction, type CanvasFrame, type CanvasLayout, type DiagramDarkColors, type StoredTab, type TabRef, type WindowEntry } from '@shared/types'
+import { rootOfPath, type CanvasCard, type TabAction, type CanvasLayout, type TabCanvasPatch, type DiagramDarkColors, type StoredTab, type TabRef, type WindowEntry } from '@shared/types'
 import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { isFolderPath, pageLabel, useLatestTrees, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
 import type { Tab } from '../workspace/useWorkspace'
-import { BOARD, buildBoard, cellKey, copiesOf, refsOf, CELL, colsFor, dropOutcome, freeCell, freeFramePosition, islandCols, nearestOk, snapPoint, layoutCanvas, nearest, withoutTitle, type BoardPage, type BoardTab, type CanvasPlan, type FrameInput, type Island, type Rect, type Way } from './board'
+import { arrivalIn, BOARD, buildBoard, cellKey, copiesOf, dropOutcome, fieldOf, frameDrop, layoutCanvas, nearest, placeCard, refsOf, storedAt, tidyFrame, tidyGroup, withoutTitle, type BoardPage, type BoardTab, type CanvasPlan, type Field, type FrameInput, type Island, type Rect, type Way } from './board'
 import { setBoardHighlight } from './boardHighlight'
 import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
 import { TabNameField } from './TabNameField'
@@ -30,10 +30,6 @@ const ZOOM_STEP = 1.25
 const FIT_MARGIN = 1.1
 /** The least zoom the fit goes to: below it, it centres on the active card's frame instead. */
 const FIT_MIN_ZOOM = 0.25
-/** The least room a drop leaves between two frames, or two groups — the auto flow's own gap between groups at most. */
-const gapOf = (by: CanvasLayout): number => (by === 'window' ? BOARD.apart : Math.min(BOARD.apart, BOARD.islandGap))
-/** A free (unsnapped) card's search step when its first spot would crowd another frame (demo feedback: no overlap). */
-const FREE_STEP = { w: 20, h: 20 }
 /** A window that shows no vault of the page refuses it (D13): one short line, so the toast never cuts it (demo feedback). */
 export const MOVE_REFUSED = "Can't move here — that window doesn't have this tab's vault."
 export const ADD_REFUSED = "Can't add here — that window doesn't have this file's vault."
@@ -644,31 +640,24 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const drop = (g: Extract<Gesture, { kind: 'card' }>, clientX: number, clientY: number): void => {
     const { plan: now, info: cards, byWin: wins, layout: by, allWindows: framed } = live.current
     const card = cards.get(g.id)
-    const from = ghosts.get(g.id) ?? now.cards.get(g.id)
-    if (card === undefined || from === undefined) return
-    const zoom = cam.current.zoom
-    const free = { x: Math.round(from.x + g.dx / zoom), y: Math.round(from.y + g.dy / zoom) }
-    // "Snap to grid" (demo feedback): the nearest FREE cell of its frame's (or group's) own grid; off, where it was let go.
-    // Either way its frame (or group) must not grow into another (demo feedback: no overlap): the nearest spot that keeps it clear.
-    const { x, y } = snapOn ? snapCard(g.id, free, new Set([g.id]), null) : (nearestOk(free, FREE_STEP, (p) => keepsClear(mates(g.id), new Set([g.id]), p, ownerOf(g.id))) ?? free)
+    const from = posOf(g.id)
+    const placed = now.cards.get(g.id)
+    if (card === undefined || from === undefined || placed === undefined) return
     const outcome = dropOutcome({ from: card.win, path: card.page.path, at: toWorld(clientX, clientY), frames: now.frames, framed, rootsOf: (win) => wins.get(win)?.roots })
     if (outcome.kind === 'refuse') {
-      // The card slides back to its place (tabs.css: `data-sliding`), and the board says why.
+      // The card slides back to its place (tabs.css: `data-sliding`), and the board says why (D38).
       delete g.el.dataset.lifted
       g.el.dataset.sliding = ''
       g.el.style.transform = ''
       window.setTimeout(() => delete g.el.dataset.sliding, 240)
-      // One short line (demo feedback): a long window label cut the toast before it said why.
       onNotice?.(MOVE_REFUSED)
       return
     }
     settleCard(g.el)
     if (outcome.kind === 'move') {
-      const target = wins.get(outcome.to)
-      // The tab arrives as the next copy of its path there: its card stands where it was dropped (D13).
-      const copy = target?.tabs.filter((t) => t.path === card.page.path).length ?? 0
-      // It ARRIVES inside that frame (demo bug: never at the raw drop point): see `arrivalIn`.
-      const set = arrivalIn(outcome.to, { path: card.page.path, copy })
+      // The tab arrives as the next copy of its path there, INSIDE that frame (D28, S41): see `arrivalIn`.
+      const copy = wins.get(outcome.to)?.tabs.filter((t) => t.path === card.page.path).length ?? 0
+      const set = arrivalIn(now, outcome.to, { path: card.page.path, copy }, { where: posOf })
       const arrive = set[set.length - 1]
       storage.setTabCanvas({ set })
       setGhosts((held) => new Map(held).set(g.id, { x: arrive.x, y: arrive.y }))
@@ -676,134 +665,15 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       wrote()
       return
     }
-    // Placed (D12): stored where it stands.
-    // Snapped, it settles into its cell from where it was let go (~120 ms, none under reduced motion).
+    // Placed (D12): the nearest free cell of its frame's grid with Snap on, else where it was let go (D26) — and
+    // never where its frame (or group) would reach another (D28). Snapped, it settles into its cell (~120 ms).
+    const zoom = cam.current.zoom
+    const free = { x: Math.round(from.x + g.dx / zoom), y: Math.round(from.y + g.dy / zoom) }
+    const { x, y } = placeCard(fieldOf(now, by, placed.owner, new Set([g.id]), posOf), free, snapOn)
     if (x !== free.x || y !== free.y) flip.current = [{ el: g.el, x: from.x + g.dx / zoom - x, y: from.y + g.dy / zoom - y }]
-    storage.setTabCanvas({ set: [{ win: card.win, path: card.page.path, copy: card.ref.copy, by, x, y }] })
+    storage.setTabCanvas({ set: [storedAt(placed, by, { x, y })] })
     if (ghosts.has(g.id)) setGhosts((held) => new Map([...held].filter(([id]) => id !== g.id)))
     wrote()
-  }
-  /** The cards that share a card's grid: its frame's (the window layout) or its group's (the folder layout), in order. */
-  const mates = (id: string): string[] => {
-    const { plan: now, info: cards, layout: by } = live.current
-    if (by === 'window') {
-      const win = cards.get(id)?.win
-      return now.order.filter((one) => cards.get(one)?.win === win)
-    }
-    return now.groups.find((g) => g.island.pages.some((page) => page.id === id))?.island.pages.map((page) => page.id) ?? [id]
-  }
-  /**
-   * A frame's (or group's) OWN grid (demo feedback: "snap only the tabs"): cell (0, 0) is its first card that is not
-   * moving — every card of it moves with a frame drag, so the grid moves with the frame, and a card snapped on it lines
-   * up with its neighbours whatever the frame went through. With no such card, the frame's first slot.
-   */
-  const gridOf = (id: string, moving: ReadonlySet<string>): { x: number; y: number } => {
-    const { plan: now, info: cards, layout: by } = live.current
-    const ref = mates(id).find((one) => !moving.has(one))
-    const at = ref === undefined ? undefined : (ghosts.get(ref) ?? now.cards.get(ref))
-    if (at !== undefined) return { x: at.x, y: at.y }
-    if (by === 'window') {
-      const frame = now.frames.find((f) => f.win === cards.get(id)?.win)
-      if (frame !== undefined) return { x: frame.x + BOARD.framePad, y: frame.y + BOARD.framePad }
-    }
-    const group = now.groups.find((g) => g.island.pages.some((page) => page.id === id))
-    return group === undefined ? { x: 0, y: 0 } : { x: group.x + BOARD.islandPad, y: group.y + BOARD.islandPad + BOARD.labelH }
-  }
-  /** A top-left snapped to the nearest FREE cell of window `win`'s frame grid, its cards (moved and auto) all taken: a card arriving there (D13). */
-  /**
-   * WHERE A CARD ARRIVES in window `win`'s frame (demo bug: an arrival far from its frame stretched it over two others):
-   * a frame with no placed card is FROZEN first — its cards stored where they stand, in the same write — then the card
-   * takes the first free cell inside the frame's box in reading order (`near`: a copy's source — right of it, then
-   * below), else a new row at its foot; and if the frame would then reach another, the nearest cell that keeps it
-   * clear. Never the raw drop point. `except`: cards that are no part of the frame yet (a card that just appeared).
-   * Answers the cards to store, the arrival last.
-   */
-  const arrivalIn = (win: string, tab: { path: string; copy: number }, near?: { x: number; y: number }, except: ReadonlySet<string> = new Set()): CanvasCard[] => {
-    const { plan: now, info: cards } = live.current
-    const ids = now.order.filter((id) => cards.get(id)?.win === win && !except.has(id))
-    const out: CanvasCard[] = []
-    if (!canvas.cards.some((c) => c.by === 'window' && c.win === win))
-      for (const id of ids) {
-        const c = cards.get(id)
-        const p = now.cards.get(id)
-        if (c !== undefined && p !== undefined) out.push({ win, path: c.page.path, copy: c.ref.copy, by: 'window', x: p.x, y: p.y })
-      }
-    const spots = ids.flatMap((id) => {
-      const p = ghosts.get(id) ?? now.cards.get(id)
-      return p === undefined ? [] : [p]
-    })
-    const frame = now.frames.find((f) => f.win === win)
-    const origin = spots.length > 0 ? { x: Math.min(...spots.map((p) => p.x)), y: Math.min(...spots.map((p) => p.y)) } : frame !== undefined ? { x: frame.x + BOARD.framePad, y: frame.y + BOARD.framePad } : { x: 0, y: 0 }
-    const cols = spots.length > 0 ? Math.round((Math.max(...spots.map((p) => p.x)) - origin.x) / CELL.w) + 1 : 1
-    const rows = spots.length > 0 ? Math.round((Math.max(...spots.map((p) => p.y)) - origin.y) / CELL.h) + 1 : 0
-    const taken = new Set(spots.map((p) => cellKey(p, origin)))
-    const free = (p: { x: number; y: number }): boolean => !taken.has(cellKey(p, origin)) && keepsClear(ids, new Set(), p, { win, key: null })
-    let spot: { x: number; y: number } | null = null
-    if (near !== undefined) {
-      const s0 = snapPoint(near, origin)
-      spot = [{ x: s0.x + CELL.w, y: s0.y }, { x: s0.x, y: s0.y + CELL.h }].find(free) ?? nearestOk(s0, CELL, free)
-    } else {
-      for (let r = 0; r < rows && spot === null; r++)
-        for (let c = 0; c < cols && spot === null; c++) {
-          const p = { x: origin.x + c * CELL.w, y: origin.y + r * CELL.h }
-          if (free(p)) spot = p
-        }
-      const foot = { x: origin.x, y: origin.y + rows * CELL.h }
-      spot ??= free(foot) ? foot : nearestOk(foot, CELL, free)
-    }
-    spot ??= { x: origin.x, y: origin.y + rows * CELL.h }
-    out.push({ win, path: tab.path, copy: tab.copy, by: 'window', ...spot })
-    return out
-  }
-  /** The frame (window layout) or group (folder layout) a card stands in: what must keep clear of the others. */
-  const ownerOf = (id: string): { win: string | null; key: string | null } => {
-    const { plan: now, info: cards, layout: by } = live.current
-    if (by === 'window') return { win: cards.get(id)?.win ?? null, key: null }
-    return { win: null, key: now.groups.find((g) => g.island.pages.some((page) => page.id === id))?.key ?? null }
-  }
-  /** Every other frame (or group) as it stands, its label row included: what a drop must keep clear of (demo feedback). */
-  const othersThan = (owner: { win: string | null; key: string | null }): Rect[] => {
-    const { plan: now, layout: by } = live.current
-    if (by === 'window') return now.frames.filter((f) => f.win !== owner.win).map((f) => ({ x: f.x, y: f.y - BOARD.frameLabelH, w: f.w, h: f.h + BOARD.frameLabelH }))
-    return now.groups.filter((g) => g.key !== owner.key).map((g) => ({ x: g.x, y: g.y, w: g.w, h: g.h }))
-  }
-  /**
-   * Whether a card at `at` keeps its frame (or group) clear of every other (demo feedback: no overlap): the box the
-   * frame would have round its cards that stay (`ids` but `moving`) and this one.
-   */
-  const keepsClear = (ids: readonly string[], moving: ReadonlySet<string>, at: { x: number; y: number }, owner: { win: string | null; key: string | null }): boolean => {
-    const { plan: now, layout: by } = live.current
-    let box: Rect = { x: at.x, y: at.y, w: BOARD.pageW, h: BOARD.pageH }
-    for (const id of ids) {
-      if (moving.has(id)) continue
-      const pos = ghosts.get(id) ?? now.cards.get(id)
-      if (pos === undefined) continue
-      const x = Math.min(box.x, pos.x)
-      const y = Math.min(box.y, pos.y)
-      box = { x, y, w: Math.max(box.x + box.w, pos.x + BOARD.pageW) - x, h: Math.max(box.y + box.h, pos.y + BOARD.pageH) - y }
-    }
-    const pad = by === 'window' ? BOARD.framePad : BOARD.islandPad
-    const top = by === 'window' ? BOARD.frameLabelH : BOARD.labelH
-    const rect = { x: box.x - pad, y: box.y - pad - top, w: box.w + 2 * pad, h: box.h + 2 * pad + top }
-    const gap = gapOf(by)
-    return othersThan(owner).every((o) => !(rect.x < o.x + o.w + gap && rect.x + rect.w + gap > o.x && rect.y < o.y + o.h + gap && rect.y + rect.h + gap > o.y))
-  }
-  /** A card's top-left snapped to the nearest FREE cell of its own grid; `placed` holds the cells a pick took so far, per grid. */
-  const snapCard = (id: string, free: { x: number; y: number }, moving: ReadonlySet<string>, placed: Map<string, Set<string>> | null): { x: number; y: number } => {
-    const { plan: now } = live.current
-    const origin = gridOf(id, moving)
-    const key = `${origin.x},${origin.y}`
-    const taken = placed?.get(key) ?? new Set<string>()
-    if (!placed?.has(key)) for (const one of mates(id)) if (!moving.has(one)) {
-      const pos = ghosts.get(one) ?? now.cards.get(one)
-      if (pos !== undefined) taken.add(cellKey(pos, origin))
-    }
-    const at = nearestOk(snapPoint(free, origin), CELL, (p) => !taken.has(cellKey(p, origin)) && keepsClear(mates(id), moving, p, ownerOf(id))) ?? freeCell(snapPoint(free, origin), taken, origin)
-    if (placed !== null) {
-      taken.add(cellKey(at, origin))
-      placed.set(key, taken)
-    }
-    return at
   }
   /** The card lets go of the pointer's transform at its new place, with no slide back (its `left`/`top` render next). */
   const settleCard = (el: HTMLElement): void => {
@@ -872,43 +742,40 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
    * board renders once. A drop on another window's frame moves no tab — only a single card's drop does (D13).
    */
   const dropGroup = (g: Extract<Gesture, { kind: 'group' }>): void => {
-    const { plan: now, info: cards, layout: by } = live.current
+    const { plan: now, layout: by } = live.current
     const zoom = cam.current.zoom
     let ddx = Math.round(g.dx / zoom)
     let ddy = Math.round(g.dy / zoom)
     for (const el of g.els) settleCard(el)
-    // A FRAME or a GROUP gives way (demo feedback: no overlap): dropped on another, it takes the nearest free spot,
-    // and settles there from where it was let go. The others stay.
-    if (g.lead === undefined) {
-      const owner = by === 'window' ? { win: g.win, key: null } : { win: null, key: now.groups.find((one) => one.island.pages.some((page) => page.id === g.cards[0]))?.key ?? null }
-      const was = by === 'window' ? now.frames.find((f) => f.win === g.win) : now.groups.find((one) => one.key === owner.key)
-      if (was !== undefined) {
-        const top = by === 'window' ? BOARD.frameLabelH : 0
-        const rect = { x: was.x + ddx, y: was.y - top + ddy, w: was.w, h: was.h + top }
-        const to = freeFramePosition(rect, othersThan(owner), gapOf(by))
-        if (to.x !== rect.x || to.y !== rect.y) {
-          flip.current = g.els.map((el) => ({ el, x: rect.x - to.x, y: rect.y - to.y }))
-          ddx += to.x - rect.x
-          ddy += to.y - rect.y
-        }
-      }
+    // A FRAME or a GROUP gives way (D28): dropped on another, it takes the nearest free spot, and settles there from
+    // where it was let go. The others stay.
+    const owner = g.lead === undefined ? now.cards.get(g.cards[0])?.owner ?? g.win : undefined
+    if (owner !== undefined) {
+      const to = frameDrop(now, by, owner, ddx, ddy)
+      if (to.dx !== ddx || to.dy !== ddy) flip.current = g.els.map((el) => ({ el, x: ddx - to.dx, y: ddy - to.dy }))
+      ddx = to.dx
+      ddy = to.dy
     }
-    // "Snap to grid" (demo feedback) is the CARDS': a frame or a group moves freely, its cards with it. A pick's cards
-    // each snap on their own frame's grid, and never two in one cell.
+    // "Snap to grid" is the CARDS' (D26): a frame or a group moves freely, its cards with it. A pick's cards each snap
+    // on their own frame's grid, and never two in one cell.
     const moving = new Set(g.cards)
-    const placed = snapOn && g.lead !== undefined ? new Map<string, Set<string>>() : null
+    const fields = new Map<string, Field>()
     const set = g.cards.flatMap((id) => {
-      const card = cards.get(id)
-      const pos = ghosts.get(id) ?? now.cards.get(id)
+      const card = now.cards.get(id)
+      const pos = posOf(id)
       if (card === undefined || pos === undefined) return []
       const free = { x: pos.x + ddx, y: pos.y + ddy }
-      const at = placed !== null ? snapCard(id, free, moving, placed) : free
-      return [{ win: card.win, path: card.page.path, copy: card.ref.copy, by, ...at }]
+      if (!snapOn || g.lead === undefined) return [storedAt(card, by, free)]
+      const field = fields.get(card.owner) ?? fieldOf(now, by, card.owner, moving, posOf)
+      fields.set(card.owner, field)
+      const at = placeCard(field, free, true)
+      field.taken.add(cellKey(at, field.origin))
+      return [storedAt(card, by, at)]
     })
-    // A frame drag also stores the FRAME's place (demo bug): an empty one has no card to store, and the first cards
-    // that arrive take its first cells there.
-    const frameAt = g.lead === undefined && by === 'window' ? now.frames.find((f) => f.win === g.win) : undefined
-    const setFrames = frameAt === undefined ? [] : [{ win: g.win, x: frameAt.x + ddx, y: frameAt.y - BOARD.frameLabelH + ddy }]
+    // A frame drag also stores the FRAME's place (D16): an empty one has no card to store, and the first cards that
+    // arrive take its first cells there.
+    const frame = g.lead === undefined && by === 'window' ? now.frames.find((f) => f.win === g.win) : undefined
+    const setFrames = frame === undefined ? [] : [{ win: g.win, x: frame.x + ddx, y: frame.y - BOARD.frameLabelH + ddy }]
     if (set.length > 0 || setFrames.length > 0) storage.setTabCanvas({ ...(set.length > 0 ? { set } : {}), ...(setFrames.length > 0 ? { setFrames } : {}) })
     wrote()
   }
@@ -1192,73 +1059,50 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const at = right + wide <= wrapW ? { x: right, y: source.y - BOARD.frameLabelH } : { x: source.x, y: source.y + source.h + BOARD.frameGap }
     setAnchors((held) => new Map(held).set(fresh.id, at))
   }, [others])
-  // A card that APPEARS while the board shows (demo feedback: "rather than some random place") in a window the board
-  // already showed — a copy, a tab moved in, a tab opened there — arrives as every arrival does (`arrivalIn`): a copy
-  // by its source, any other in the frame's first free cell. Stored at once; one write for all of them.
+  // A card that APPEARS while the board shows (D30, S36, S51) in a window the board already showed — a copy, a tab
+  // moved in, a tab opened there — arrives as every arrival does (`arrivalIn`): a copy by its source, any other in the
+  // frame's first free cell, each in a cell of its own. Stored at once; one write for all of them. A card the filter
+  // brings back is no new card: the cards seen are every tab of the windows shown, filtered or not.
   const seenWins = useRef<ReadonlySet<string>>(new Set())
   useEffect(() => {
-    const ids = new Set(plan.cards.keys())
+    const ids = new Set(allCards)
     const wins = new Set(plan.frames.map((f) => f.win))
     const knewWins = seenWins.current
     seenWins.current = wins
-    if (seenCards.current === null) {
-      seenCards.current = ids
-      return
-    }
-    const fresh = [...ids].filter((id) => !seenCards.current!.has(id))
+    const seen = seenCards.current
     seenCards.current = ids
-    if (layout !== 'window' || fresh.length === 0) return
+    if (seen === null || layout !== 'window') return
+    const fresh = allCards.filter((id) => !seen.has(id) && plan.cards.get(id)?.moved === false && knewWins.has(plan.cards.get(id)!.win))
     const set: CanvasCard[] = []
-    const freshSet = new Set(fresh)
+    const except = new Set(fresh)
+    const arrived = new Map<string, { x: number; y: number }>()
+    const where = (id: string) => arrived.get(id) ?? posOf(id)
     for (const id of fresh) {
-      const card = info.get(id)
-      const at = plan.cards.get(id)
-      if (card === undefined || at === undefined || at.moved || !knewWins.has(card.win)) continue
+      const card = plan.cards.get(id)!
       const dup = dupSource.current
-      const source = dup !== null && dup.win === card.win && dup.path === card.page.path ? plan.cards.get(dup.id) : undefined
+      const source = dup !== null && dup.win === card.win && dup.path === card.path ? plan.cards.get(dup.id) : undefined
       if (source !== undefined) dupSource.current = null
-      // Cards placed for this window by an arrival before stand where they were put; the frame is frozen once.
-      const already = set.filter((c) => c.win === card.win)
-      const out = arrivalIn(card.win, { path: card.page.path, copy: card.ref.copy }, source, freshSet)
-      set.push(...out.filter((c) => !already.some((d) => d.path === c.path && d.copy === c.copy)))
+      const out = arrivalIn(plan, card.win, card, { where, near: source, except })
+      // An arrival stands where it was put: the next one keeps out of its cell. The frame is frozen once.
+      const arrival = out[out.length - 1]
+      arrived.set(id, arrival)
+      except.delete(id)
+      set.push(...out.filter((c) => !set.some((d) => d.win === c.win && d.path === c.path && d.copy === c.copy)))
     }
     if (set.length === 0) return
     storage.setTabCanvas({ set })
     wrote()
   }, [plan])
-  // REPAIR ON OPEN (demo bug, an idempotent safety net): frames (or groups) that overlap when the board lays out — a
-  // state from before the no-overlap rule — are put right ONCE per layout: the later one in window order moves to the
-  // nearest free spot, and its cards (and frame) are stored there. Nothing overlaps: no write.
-  const repairedFor = useRef<CanvasLayout | null>(null)
+  // THE LAYOUT'S REPAIR (D28, S56): a frame or group the layout moved clear of another is stored where it stands, so
+  // the state says what the board shows; the next layout then moves nothing and stores nothing. Never while a filter
+  // is typed: that layout is the filter's. The same repair is never sent twice.
+  const repaired = useRef('')
   useEffect(() => {
-    if (repairedFor.current === layout) return
-    repairedFor.current = layout
-    const boxes =
-      layout === 'window'
-        ? plan.frames.map((f) => ({ win: f.win, rect: { x: f.x, y: f.y - BOARD.frameLabelH, w: f.w, h: f.h + BOARD.frameLabelH }, ids: plan.order.filter((id) => info.get(id)?.win === f.win) }))
-        : plan.groups.map((g) => ({ win: null as string | null, rect: { x: g.x, y: g.y, w: g.w, h: g.h }, ids: g.island.pages.map((page) => page.id) }))
-    const fixed: Rect[] = []
-    const set: CanvasCard[] = []
-    const setFrames: CanvasFrame[] = []
-    for (const b of boxes) {
-      const overlaps = fixed.some((o) => b.rect.x < o.x + o.w && b.rect.x + b.rect.w > o.x && b.rect.y < o.y + o.h && b.rect.y + b.rect.h > o.y)
-      if (!overlaps) {
-        fixed.push(b.rect)
-        continue
-      }
-      const to = freeFramePosition(b.rect, fixed, gapOf(layout))
-      const dx = to.x - b.rect.x
-      const dy = to.y - b.rect.y
-      for (const id of b.ids) {
-        const c = info.get(id)
-        const p = plan.cards.get(id)
-        if (c !== undefined && p !== undefined) set.push({ win: c.win, path: c.page.path, copy: c.ref.copy, by: layout, x: p.x + dx, y: p.y + dy })
-      }
-      if (b.win !== null) setFrames.push({ win: b.win, x: to.x, y: to.y })
-      fixed.push({ ...b.rect, x: to.x, y: to.y })
-    }
-    if (set.length === 0 && setFrames.length === 0) return
-    storage.setTabCanvas({ ...(set.length > 0 ? { set } : {}), ...(setFrames.length > 0 ? { setFrames } : {}) })
+    if (plan.repair === null || terms.length > 0) return
+    const key = JSON.stringify(plan.repair)
+    if (key === repaired.current) return
+    repaired.current = key
+    storage.setTabCanvas(plan.repair)
     wrote()
   }, [plan])
   // The board going puts out the glow it lit.
@@ -1391,37 +1235,11 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     setGhosts(new Map())
     wrote()
   }
-  /** Store the cards `ids` in a grid of `cols` from (x, y), in the order given — one write (demo feedback: tidy in place). */
-  const lineUp = (ids: readonly string[], cols: number, x: number, y: number, setFrames: CanvasFrame[] = []): void => {
-    const set = ids.flatMap((id, i) => {
-      const card = info.get(id)
-      return card === undefined ? [] : [{ win: card.win, path: card.page.path, copy: card.ref.copy, by: layout, x: x + (i % cols) * (BOARD.pageW + BOARD.pageGap), y: y + Math.floor(i / cols) * (BOARD.pageH + BOARD.pageGap) }]
-    })
-    if (set.length > 0 || setFrames.length > 0) storage.setTabCanvas({ ...(set.length > 0 ? { set } : {}), ...(setFrames.length > 0 ? { setFrames } : {}) })
+  /** "Tidy up this window" (D21, D29) and "Tidy up this group": one write. */
+  const tidy = (patch: TabCanvasPatch | null): void => {
+    if (patch === null) return
+    storage.setTabCanvas(patch)
     wrote()
-  }
-  /**
-   * "Tidy up this window" (demo feedback): the frame STAYS where it is; its cards line up in folder order inside it,
-   * from its top-left, in the layout's columns (`colsFor`). If the new shape would reach another frame, it gives way.
-   */
-  const tidyWindow = (win: string): void => {
-    const frame = plan.frames.find((f) => f.win === win)
-    if (frame === undefined) return
-    const ids = plan.order.filter((id) => info.get(id)?.win === win)
-    const cols = colsFor(ids.length)
-    const used = Math.max(1, Math.min(cols, ids.length))
-    const rows = Math.max(1, Math.ceil(ids.length / cols))
-    const rect = { x: frame.x, y: frame.y - BOARD.frameLabelH, w: used * CELL.w - BOARD.pageGap + 2 * BOARD.framePad, h: rows * CELL.h - BOARD.pageGap + 2 * BOARD.framePad + BOARD.frameLabelH }
-    const to = freeFramePosition(rect, othersThan({ win, key: null }), BOARD.apart)
-    // The frame keeps (or takes) its place: stored with its cards, in the same write.
-    lineUp(ids, cols, to.x + BOARD.framePad, to.y + BOARD.frameLabelH + BOARD.framePad, [{ win, x: to.x, y: to.y }])
-  }
-  /** "Tidy up this group": the group STAYS; its cards line up in it, from its top-left, as its grid lays them. */
-  const tidyCards = (key: string): void => {
-    const group = groupsByKey.get(key)
-    if (group === undefined) return
-    const ids = group.island.pages.map((page) => page.id)
-    lineUp(ids, islandCols(ids.length, wrapW), group.x + BOARD.islandPad, group.y + BOARD.islandPad + BOARD.labelH)
   }
   /** A frame's "Close all tabs" / "Close window", on its second click (demo feedback: two clicks, no sheet). */
   const closeWindow = (win: string, whole: boolean): void => {
@@ -1457,7 +1275,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     // It arrives inside its frame (demo bug), as every arrival; a window not in the state yet stands at its anchor.
     const anchor = frameAnchors.get(win)
     if (w !== undefined && plan.frames.some((f) => f.win === win)) {
-      storage.setTabCanvas({ set: arrivalIn(win, { path, copy: w.tabs.filter((t) => t.path === path).length }) })
+      storage.setTabCanvas({ set: arrivalIn(plan, win, { path, copy: w.tabs.filter((t) => t.path === path).length }, { where: posOf }) })
       wrote()
     } else if (anchor !== undefined) {
       storage.setTabCanvas({ set: [{ win, path, copy: 0, by: 'window', x: anchor.x + BOARD.framePad, y: anchor.y + BOARD.frameLabelH + BOARD.framePad }] })
@@ -1648,7 +1466,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const card = info.get(id)
     const target = byWin.get(to)
     if (card === undefined) return
-    if (target !== undefined && plan.frames.some((f) => f.win === to)) storage.setTabCanvas({ set: arrivalIn(to, { path: card.page.path, copy: target.tabs.filter((t) => t.path === card.page.path).length }) })
+    if (target !== undefined && plan.frames.some((f) => f.win === to)) storage.setTabCanvas({ set: arrivalIn(plan, to, { path: card.page.path, copy: target.tabs.filter((t) => t.path === card.page.path).length }, { where: posOf }) })
     setRinged(null)
     sendCard(card, to)
     wrote()
@@ -1938,7 +1756,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           <MenuItem
             label="Tidy up this group"
             onSelect={() => {
-              tidyCards(menuGroup.key)
+              tidy(tidyGroup(plan, menuGroup.key, wrapW))
               setIslandMenu(null)
             }}
           />
@@ -1977,7 +1795,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
             onHover={() => setFrameArm(null)}
             label="Tidy up this window"
             onSelect={() => {
-              tidyWindow(frameMenu.win)
+              tidy(tidyFrame(plan, frameMenu.win))
               setFrameMenu(null)
             }}
           />
