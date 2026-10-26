@@ -54,6 +54,9 @@ export function NoticeToast({ notice, ms, onClose }: { notice: Notice; ms: numbe
           className={`link-notice__clock${held ? '' : ' link-notice__clock--running'}`}
           aria-hidden="true"
           data-seconds={seconds}
+          // The count's end closes the toast too: the timer of a window out of sight runs late, and the
+          // toast would wait there on "0s". Held, the count does not run, so it has no end.
+          onAnimationEnd={onClose}
           style={{ '--left': seconds, '--count-steps': seconds, '--count-ms': `${ms}ms` } as CSSProperties}
         />
       )}

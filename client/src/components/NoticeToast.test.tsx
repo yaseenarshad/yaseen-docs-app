@@ -104,4 +104,13 @@ describe('NoticeToast (YAZ-3303)', () => {
     tick(1)
     expect(onClose).toHaveBeenCalledOnce()
   })
+
+  it('goes when its count ends, even if the timer runs late (a window behind another: no "0s" left on screen)', () => {
+    show(undo, 6000)
+    tick(2000)
+    // macOS slows the timers of a window that is out of sight; the count's own end closes the toast.
+    // jsdom has no AnimationEvent, so React listens for the prefixed name there.
+    act(() => void clock()!.dispatchEvent(new Event('webkitAnimationEnd', { bubbles: true })))
+    expect(onClose).toHaveBeenCalledOnce()
+  })
 })

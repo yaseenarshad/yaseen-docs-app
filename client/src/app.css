@@ -979,12 +979,13 @@ button {
    counter draws it. No JS tick renders anything. Held (no `--running`), it shows the full time and stops. */
 @property --left {
   syntax: '<integer>';
-  inherits: false;
+  inherits: true; /* the ::after that draws it reads it: not inherited, it would read 0 there */
   initial-value: 0;
 }
 
+/* Never "0s": the count ends at 0 the frame the toast goes, so the last second it shows is 1. */
 .link-notice__clock::after {
-  counter-reset: left var(--left);
+  counter-reset: left max(var(--left), 1);
   content: counter(left) 's';
 }
 

@@ -18,7 +18,7 @@ import { appWindow, buildFixtureVault, clickMenuItem, copyVault, launchApp, quit
 test.describe.configure({ mode: 'serial' })
 
 /** The nav as the registry orders it (registry.tsx): the settings pages (General first, YAZ-3276 D7), a divider, the reference pages. */
-const NAV_ORDER = ['General', 'Appearance', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Storage', 'Sharing', 'Hotkeys'] as const
+const NAV_ORDER = ['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Storage', 'Sharing', 'Hotkeys'] as const
 
 // ---------- the dialog's parts, by role and stable class only (never position) ----------
 
@@ -141,10 +141,11 @@ test('step 3 — search narrows the page to hits under breadcrumbs, and a hit st
 
   // "threading" matches on the GROUP title: its three rows, under "section › group". It matches
   // the next group's hint too, which names Bullet threading (YAZ-2709): that group's two rows
-  // follow under their own breadcrumb.
+  // follow under their own breadcrumb. The sidebar's line style row names it too (YAZ-3309 D7).
   await search(win).fill('threading')
-  await expect(headings(win)).toHaveText(['Editor › Bullet threading', 'Editor › Section indent'])
-  await expect(rows(win)).toHaveCount(5)
+  await expect(headings(win)).toHaveText(['Appearance › Sidebar level lines', 'Editor › Bullet threading', 'Editor › Section indent'])
+  await expect(rows(win)).toHaveCount(6)
+  await expect(row(win, 'sidebarLineStyle')).toBeVisible()
   await expect(row(win, 'bulletThreading')).toBeVisible()
   await expect(row(win, 'threadWidth')).toBeVisible()
   await expect(row(win, 'threadColor')).toBeVisible()
@@ -236,12 +237,12 @@ test('step 6 — Appearance › "Sidebar level lines" (YAZ-3309 D3, D6–D10): e
     return { opacity: before.opacity, left: before.left, width: before.width, pointerEvents: before.pointerEvents }
   })
   // Roadmap.md inside Projects/: with the thread, its li draws the piece from the folder's line down to its row.
-  const roadmap = folder.locator('> ul.tree[role="group"] > li:has(> .tree__row--file[data-path$="/Roadmap.md"])')
+  const roadmap = folder.locator('> ul.tree[role="group"] > li').filter({ has: win.locator('.tree__row--file[data-path$="/Roadmap.md"]') })
   const thread = () => roadmap.evaluate((li) => {
     const before = getComputedStyle(li, '::before')
     return { content: before.content, opacity: before.opacity, zIndex: before.zIndex, pointerEvents: before.pointerEvents, radius: before.borderBottomLeftRadius }
   })
-  const mouseOnNote = () => win.locator('.ProseMirror').hover()
+  const mouseOnNote = () => win.locator('.ProseMirror').filter({ visible: true }).first().hover()
   const mouseOnTree = () => win.locator('.sidebar__body').hover()
   const choose = async (id: 'sidebarLines' | 'sidebarLineStyle', label: string, value: string) => {
     await cog(win).click()
@@ -259,7 +260,7 @@ test('step 6 — Appearance › "Sidebar level lines" (YAZ-3309 D3, D6–D10): e
   await expect(dialog(win)).toBeVisible()
   await navItem(win, 'Appearance').click()
   // Its own group on Appearance (D6); its rows and their defaults are SettingsDialog.test's.
-  await expect(row(win, 'sidebarLines').locator('xpath=ancestor::*[contains(@class, "settings-group")][1]').locator('.settings-group__title')).toHaveText('Sidebar level lines')
+  await expect(row(win, 'sidebarLines').locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " settings-group ")][1]').locator('.settings-group__title')).toHaveText('Sidebar level lines')
   await shoot(win, 'settings-11-sidebar-level-lines-group')
   await win.keyboard.press('Escape')
   await expect(win.locator('.app')).toHaveAttribute('data-sidebar-lines', 'hover')

@@ -191,10 +191,21 @@ test('step 4 — Settings › Notifications: "Copy, cut or paste" Off silences t
   await expect(notice(winB)).toContainText('already exists')
   await expect(notice(winB)).toHaveAttribute('data-icon', 'error')
   // The count runs in CSS (YAZ-3303 D9): `--left` steps down from 4 (the default Show for) one second at a time.
-  const left = () => notice(winB).locator('.link-notice__clock').evaluate((el) => Number(getComputedStyle(el).getPropertyValue('--left')))
-  const first = await left()
+  // The clock remounts as its count starts (`key={run}`), so the locator can catch the first one just as React
+  // swaps it out: a detached element computes `--left` as '' (Number('') is 0). Only a connected clock counts.
+  const left = () => notice(winB).locator('.link-notice__clock').evaluate((el) => (el.isConnected ? Number(getComputedStyle(el).getPropertyValue('--left')) : NaN))
+  let first = NaN
+  await expect.poll(async () => (first = await left())).not.toBeNaN()
   expect(first).toBeGreaterThanOrEqual(3)
   await expect.poll(left, { timeout: 3000 }).toBeLessThan(first)
   expect(await exists(path.join(vaultA, 'Ideas.md'))).toBe(true)
   await shoot(winB, 'fileClipboard-04-notifications-off-error-shows')
+  // Never "0s": the count draws at least 1 (`max(var(--left), 1)`), even where `--left` itself reads 0.
+  const drawn = (v: number) => notice(winB).locator('.link-notice__clock').evaluate((el, v) => {
+    el.style.animation = 'none'
+    el.style.setProperty('--left', String(v))
+    return getComputedStyle(el, '::after').counterReset
+  }, v)
+  expect(await drawn(0)).toBe('left 1')
+  expect(await drawn(3)).toBe('left 3')
 })
