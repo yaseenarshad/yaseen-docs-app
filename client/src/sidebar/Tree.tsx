@@ -204,7 +204,7 @@ interface TreeProps {
   onOpenFile: (path: string, top?: string) => void
   /**
    * A double click on a row (YAZ-2648 D2): the page is a KEPT tab. On a file row the first click
-   * has opened it in the preview tab, and this keeps it; a folder row opens its folder as one.
+   * has opened it in the preview tab, and this keeps it. A folder row has no double click (YAZ-3377 D1).
    * `top`: as `onOpenFile`'s (YAZ-3144), so a page kept from a copy lights there too.
    */
   onKeepFile: (path: string, top?: string) => void

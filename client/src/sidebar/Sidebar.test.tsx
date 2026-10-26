@@ -3488,7 +3488,7 @@ describe('"Show in sidebar" on a row of Search, Focus and Favorites (YAZ-2638 D1
     }
   })
 
-  it('S26, S27: each search row has the item, first in the menu, before "Open" and before "Add to focus" — a file, a folder, and a parent row that is no match', async () => {
+  it('S26, S27: each search row has the item, first in the menu, before "Open folder page" and before "Add to focus" — a file, a folder, and a parent row that is no match', async () => {
     const { el, v, rerender } = await mountVault()
     const inFiles = Object.fromEntries(['/Projects', '/top.md'].map((rel) => [rel, menuOf(el, row(el, `${v}${rel}`))]))
     await rerender({ lens: 'search' })
