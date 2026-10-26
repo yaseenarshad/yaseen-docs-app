@@ -3,7 +3,7 @@
  * Same harness as smoke.spec.ts (temp `--user-data-dir`, COPY of a generated fixture vault,
  * `g3-` step screenshots). Serial by design across four launches:
  *
- *   launch 1 (vault A, one seeded window) — scenario 1 (⌘⇧N twin windows + live sync),
+ *   launch 1 (vault A, one seeded window) — scenario 1 (⌘⇧N: a new window with a blank tab, then the same page + live sync),
  *     scenario 2 (conflict bar when dirty), scenario 3 (⌘-click → new window);
  *   launch 2 (no seed) — scenario 6: the three windows those scenarios left behind restore;
  *   launch 3 (vaults A+B seeded) — scenario 4 (hot deep link routes to the right vault's
@@ -34,6 +34,7 @@ import {
   LAST_BULLET,
   launchApp,
   multiWindowState,
+  openFromBlankTab,
   quitApp,
   readState,
   SEED_BODY,
@@ -86,7 +87,7 @@ test.afterAll(async () => {
   )
 })
 
-test('scenario 1 — ⌘⇧N duplicates the window: same file, cascaded bounds, live sync', async () => {
+test('scenario 1 — ⌘⇧N opens a new window on the same vault with a blank tab (YAZ-3343 D35, S59): cascaded bounds; a page opened there syncs live', async () => {
   app = await launchApp({ userData, seedState: seededState(vaultA, noteA) })
   winA = await appWindow(app, 'w1')
   await expect(editorOf(winA)).toContainText(SEED_BODY)
@@ -97,16 +98,25 @@ test('scenario 1 — ⌘⇧N duplicates the window: same file, cascaded bounds, 
   winB = await extraWindow(app, ['w1'])
   winBId = winParam(winB)!
   expect(await windowCount(app)).toBe(2)
-  await expect(editorOf(winB)).toContainText(SEED_BODY) // same file open
-  await expect.poll(() => winB.title()).toBe(titleOf(vaultA, noteA))
-  // The duplicate's state entry: same root/file, bounds cascaded from the seed's (60, 60).
+  // No tab is copied (D35, which replaced GRO-2167's copy): the blank tab, the caret in the search, the vault alone in the title.
+  await expect(tabsOf(winB)).toHaveText(['New tab'])
+  await expect.poll(() => winB.title()).toBe(path.basename(vaultA))
+  // The new window's state entry: same vault, no file, no tab, bounds cascaded from the seed's (60, 60).
   await expect.poll(async () => (await readState(userData)).windows.length).toBe(2)
   const entryB = (await readState(userData)).windows.find((w) => w.id === winBId)!
   expect(entryB.root).toBe(vaultA)
-  expect(entryB.file).toBe(noteA)
+  expect(entryB.roots).toEqual([vaultA])
+  expect(entryB.file).toBeNull()
+  expect(entryB.tabs).toEqual([])
   expect(entryB.bounds.x).toBe(60 + CASCADE)
   expect(entryB.bounds.y).toBe(60 + CASCADE)
-  await shoot(winB, 'g3-01a-twin-window')
+  await shoot(winB, 'g3-01a-new-window-blank-tab')
+
+  // The same page in B, by the search the blank tab gives: the two windows now show one file.
+  await openFromBlankTab(winB, 'Welcome note')
+  await expect(editorOf(winB)).toContainText(SEED_BODY)
+  await expect.poll(() => winB.title()).toBe(titleOf(vaultA, noteA))
+  await shoot(winB, 'g3-01b-same-page')
 
   // Edit in A (inside an existing bullet — never right after Enter, Milkdown remaps the caret):
   // autosave writes the file, the shared watcher tells B, and B — clean — reloads silently.
@@ -116,7 +126,7 @@ test('scenario 1 — ⌘⇧N duplicates the window: same file, cascaded bounds, 
   await expect(editorOf(winA)).toContainText(SYNC_MARKER)
   await expect(editorOf(winB)).toContainText(SYNC_MARKER, { timeout: 10_000 })
   await expect(winB.locator('.conflict-bar')).toHaveCount(0) // clean reload path, no conflict bar
-  await shoot(winB, 'g3-01b-live-sync')
+  await shoot(winB, 'g3-01c-live-sync')
 })
 
 test('scenario 2 — external edit while B is dirty raises the conflict bar; Reload adopts disk', async () => {

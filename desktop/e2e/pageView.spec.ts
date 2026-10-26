@@ -1,8 +1,8 @@
 /**
- * PAGE VIEW (YAZ-2951): "Duplicate tab", ⌘⇧N (File › New Window) and "Move to new window" give the
- * copy its source's page view — the drilled-in bullet with its breadcrumbs, the live folds, the
- * scroll spot and the text size (D1, D2). The source here is drilled into "Alpha parent", has
- * "Alpha sibling" folded and stands at 125% (⌘+ through View › Zoom In, the app's own zoom path).
+ * PAGE VIEW (YAZ-2951): "Duplicate tab" and "Move to new window" give the copy its source's page view —
+ * the drilled-in bullet with its breadcrumbs, the live folds, the scroll spot and the text size (D1, D2).
+ * Since YAZ-3343 D35, ⌘⇧N (File › New Window) opens a blank tab and takes no page view (step 3).
+ * The source here is drilled into "Alpha parent", has "Alpha sibling" folded and stands at 125% (⌘+ through View › Zoom In, the app's own zoom path).
  * Each copy must show the same three things. The note on disk never changes: a page view is view
  * state only, never stored (S18).
  *
@@ -15,7 +15,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, clickMenuItem, closeWindow, editorOf, extraWindow, launchApp, layer, seededState, shoot, tabsOf, windowCount, winParam } from './helpers'
+import { activeTab, appWindow, clickMenuItem, closeWindow, editorOf, extraWindow, launchApp, layer, openFromBlankTab, seededState, shoot, tabsOf, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -96,11 +96,16 @@ test('step 2 — Duplicate tab: the copy shows the same breadcrumbs, fold and te
   await expectSourceView(win, 'pageview-3-source-again')
 })
 
-test('step 3 — ⌘⇧N: the new window shows the page on show with the same view (S11)', async () => {
+test('step 3 — ⌘⇧N: the new window has the blank tab and takes no page view (YAZ-3343 D35, S59, which replaced S11)', async () => {
   await clickMenuItem(app, 'menu.file.new-window', 'w1')
   const copy = await extraWindow(app, ['w1'])
-  await expect(activeTab(copy)).toHaveText(TITLE)
-  await expectSourceView(copy, 'pageview-4-new-window')
+  // No tab and no page view come along: the page opened there from the search shows the whole outline, not the drill-in.
+  await openFromBlankTab(copy, TITLE)
+  await expect(line(copy, 'Alpha child')).toBeVisible()
+  await expect(line(copy, 'Beta parent')).toBeVisible()
+  await shoot(copy, 'pageview-4-new-window')
+  // The source window keeps its own view.
+  await expectSourceView(win, 'pageview-4b-source-kept')
 
   // Back to one window, so the next step finds its new window by id.
   await closeWindow(app, winParam(copy)!)

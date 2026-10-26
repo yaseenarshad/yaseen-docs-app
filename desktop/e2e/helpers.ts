@@ -111,6 +111,19 @@ export async function showSearchTab(w: Page): Promise<void> {
   await expect(searchTab(w)).toHaveAttribute('aria-selected', 'true')
   await expect(searchBar(w)).toBeVisible()
 }
+/**
+ * The window ⌘⇧N opens (YAZ-3343 D35, S59) is on the same vaults with NO tab: the blank tab shows, with the
+ * caret in the search bar, as after ⌘T. This checks that, then opens the page `label` as a user does there:
+ * types its name and takes the first match with Enter. The page is then the window's one tab.
+ */
+export async function openFromBlankTab(w: Page, label: string): Promise<void> {
+  await expect(tabsOf(w)).toHaveText(['New tab'])
+  await expect(searchBar(w)).toBeFocused()
+  await w.keyboard.type(label)
+  await expect(fileRow(w, label)).toBeVisible()
+  await searchBar(w).press('Enter')
+  await expect(activeTab(w)).toContainText(label)
+}
 /** An item of the sidebar's own row menu (overlay + menu) by its exact label. */
 export const menuItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
 /**
@@ -429,6 +442,12 @@ export async function extraWindow(app: ElectronApplication, known: readonly stri
  * never steal when the plain focus took) and poll again (~3s total). Then click regardless:
  * main's own last-focused fallback (`pickMenuTargetWindow`) covers the single-window case even
  * when macOS never granted focus at all.
+ *
+ * In the hidden run (`YASEEN_DOCS_E2E_HIDDEN=1`, the default) a window can never take the OS focus: main
+ * makes `focus()` and `show()` do nothing. A steal there only took the keyboard from the app the person
+ * was using (YAZ-3343). So the hidden run never steals: it sends the two focus events a real focus sends
+ * (`focus` on the window, `browser-window-focus` on the app), and main's last-focused fallback picks
+ * that window, as it does after a real focus.
  */
 export async function clickMenuItem(app: ElectronApplication, itemId: string, focusWinId?: string): Promise<void> {
   await app.evaluate(
@@ -437,7 +456,10 @@ export async function clickMenuItem(app: ElectronApplication, itemId: string, fo
         arg.focusWinId === undefined
           ? undefined
           : BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes(`win=${arg.focusWinId}`))
-      if (target !== undefined) {
+      if (target !== undefined && process.env.YASEEN_DOCS_E2E_HIDDEN === '1') {
+        target.emit('focus')
+        electronApp.emit('browser-window-focus', {}, target)
+      } else if (target !== undefined) {
         const focusLanded = async (deadline: number): Promise<boolean> => {
           while (BrowserWindow.getFocusedWindow() !== target) {
             if (Date.now() >= deadline) return false
