@@ -30,6 +30,7 @@ import { absFrom, dirname, relTo } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
+import { useVaultListsHere } from './lists/useVaultListsHere'
 import { readPageView } from './lib/pageView'
 import { ownsSidebarHotkey } from './lib/sidebarHotkey'
 import { buildSetupPrompt } from './lib/syncAttention'
@@ -312,6 +313,9 @@ export function App() {
   // The one door every surface uses (D10 amended, YAZ-1674): text, an optional glyph kind (`'info'`
   // unless the caller names one) and an optional type (YAZ-3303 D2) — so `onNotice(text)` still works.
   const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType) => showNotice({ text, icon, type }), [showNotice])
+  // Focus and Favorites of the window's vaults (YAZ-3264 D1): here, not in the sidebar, which unmounts
+  // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
+  const lists = useVaultListsHere(roots, notify)
   // The toast's clock is the toast's own (`NoticeToast`, YAZ-3303 D9): App only says how long and closes it.
   const closeNotice = useCallback(() => setNotice(null), [])
   // The box after a drag out to Finder (YAZ-3254 D9B): its own slot, so the toast above never hides it.
@@ -2307,6 +2311,7 @@ export function App() {
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
           vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
+          lists={lists}
           closedVaults={closedVaults}
           onSetVaultOpen={setVaultOpen}
           onAddVault={addVault}
@@ -2432,6 +2437,10 @@ export function App() {
               titles={titles}
               reviewState={reviewState}
               onSetReview={setReview}
+              // The tab menu's "Add to focus" and "Add to favorites" (YAZ-3264 D2): App's lists, so they work with the sidebar hidden.
+              listState={lists.stateOf}
+              onToggleFocus={lists.toggleFocus}
+              onToggleFavorite={lists.toggleFavorite}
             />
           )}
           <div className="tabstack">
@@ -2519,6 +2528,10 @@ export function App() {
                 onNotice={notify}
                 reviewState={reviewState}
                 onSetReview={setReview}
+                // A card's "Add to focus" and "Add to favorites" (YAZ-3264 D4): the same lists and toggles as the tab row's.
+                listState={lists.stateOf}
+                onToggleFocus={lists.toggleFocus}
+                onToggleFavorite={lists.toggleFavorite}
               />
             )}
             {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}

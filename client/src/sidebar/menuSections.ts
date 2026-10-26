@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react'
+import { createElement, type ReactNode } from 'react'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
+import { EyeIcon, HeartIcon } from '../views/view/icons'
 import type { MenuTargets } from './Sidebar'
 
 /**
@@ -191,7 +192,8 @@ const focus: Leaf = (t, h) => {
   if (paths === null) return null
   const isOn = t.focusIsOn
   const n = paths.length > 1 ? `${paths.length} ` : ''
-  return { id: 'focus', label: isOn ? `Remove ${n}from focus` : `Add ${n}to focus`, onSelect: () => h.onToggleFocus(paths, isOn) }
+  // The Focus tab's own glyph (YAZ-3264 D6), so the row reads at a glance.
+  return { id: 'focus', label: isOn ? `Remove ${n}from focus` : `Add ${n}to focus`, icon: createElement(EyeIcon), onSelect: () => h.onToggleFocus(paths, isOn) }
 }
 
 // ---- (2) Clipboard: the file clipboard (YAZ-1674), then the text clipboard ----
@@ -351,7 +353,8 @@ const toggleFavorite: Leaf = (t, h) => {
   if (paths === null) return null
   const isOn = t.favoriteIsOn
   const n = paths.length > 1 ? `${paths.length} ` : ''
-  return { id: 'toggle-favorite', label: isOn ? `Remove ${n}from favorites` : `Add ${n}to favorites`, onSelect: () => h.onToggleFavorite(paths, isOn) }
+  // The Favorites tab's own glyph (YAZ-3264 D6).
+  return { id: 'toggle-favorite', label: isOn ? `Remove ${n}from favorites` : `Add ${n}to favorites`, icon: createElement(HeartIcon), onSelect: () => h.onToggleFavorite(paths, isOn) }
 }
 
 /**
