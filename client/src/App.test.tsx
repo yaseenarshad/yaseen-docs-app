@@ -6119,6 +6119,8 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
   it('main says the drag landed in another window of the app: the box of that drag closes, or never shows when the word comes during its read; a box of other items stays (YAZ-3263)', async () => {
     const { el, emitDragLanded } = await mountVault()
     await draggedOut('/v/A.md')
+    // The box waits for the link count; a slow CI runner can take a few more ticks to show it (as in the alert dialog test).
+    await vi.waitFor(() => expect(box(el)).not.toBeNull())
     act(() => emitDragLanded(['/v/B.md']))
     expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     act(() => emitDragLanded(['/v/A.md']))
@@ -6134,6 +6136,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
   it('an item that is gone before the box shows is left out; with none left there is no box (S31)', async () => {
     const { el } = await mountVault()
     await draggedOut('/v/gone.md', '/v/A.md')
+    await vi.waitFor(() => expect(box(el)).not.toBeNull())
     expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     await act(async () => button(el, 'Keep in vault')?.click())
     await draggedOut('/v/gone.md')
