@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, normalizeRoots, rootOfPath, sameVaults, stripSlash, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type StartView, type StartupWindows, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, normalizeRoots, rootOfPath, sameVaults, stripSlash, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type StartView, type StartupWindows, type TabAction, type TabRef, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 
@@ -57,18 +57,23 @@ export interface ManagedWindow {
   isMinimized(): boolean
   restore(): void
   focus(): void
+  /** Like Electron's: shows a window built hidden (YAZ-3343, the tab board's windows). */
+  show(): void
   /** Like Electron's: emits `close` first — the manager intercepts it to run the flush handshake. */
   close(): void
   /** Like Electron's: destroys without emitting `close` (`closed` still fires). */
   destroy(): void
-  on(event: 'move' | 'resize' | 'closed' | 'focus', listener: () => void): unknown
+  on(event: 'move' | 'resize' | 'closed' | 'focus' | 'minimize' | 'restore', listener: () => void): unknown
   on(event: 'close', listener: (e: { preventDefault(): void }) => void): unknown
 }
 
 /** The Electron-only half, injected by `main/index.ts`: window construction and display geometry. */
 export interface WindowHost {
-  /** Builds the `BrowserWindow` at `entry.bounds` and loads `<renderer>?win=<entry.id>`. */
-  create(entry: WindowEntry): ManagedWindow
+  /**
+   * Builds the `BrowserWindow` at `entry.bounds` and loads `<renderer>?win=<entry.id>`. With `hidden` (YAZ-3343, a window
+   * the tab board made) it is built and loaded but NOT shown: it shows when the board shows it (`showWindow`).
+   */
+  create(entry: WindowEntry, opts?: { hidden: true }): ManagedWindow
   /** Every display's workArea, primary first (`clampBounds` keeps the earliest area on ties). */
   workAreas(): WindowBounds[]
   /** Whether `path` exists as a regular file — `routeToFile` (E1) probes before opening anything, and `rootFor` before it counts the path as asked for (YAZ-2589 A6). */
@@ -90,10 +95,11 @@ export interface WindowManager extends WindowLookup {
   /** D6 plumbing: an independent window on `root`/`file` (the gestures land in D-). A window on a vault bumps it in the MRU (YAZ-2555 D5). */
   openWindow(opts: OpenWindowOptions): void
   /**
-   * D6 plumbing: every vault + the file of `from` (YAZ-2602 S34), cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167).
-   * `view` is the active tab's page view (YAZ-2951 D5): kept in memory for the new window's first `window:identity`.
+   * ⌘⇧N (GRO-2167; YAZ-3343 replaced YAZ-2951 D5's copy of the tabs, demo feedback): a window on every vault of `from`,
+   * cascaded, fresh id, with NO tab — it boots on the blank tab with the caret in the search (`startEmpty`), as ⌘T.
+   * The sidebar's state (shown or hidden, the lens) comes along by value; the right panel starts empty.
    */
-  duplicateWindow(from: WindowEntry, view?: PageView): void
+  duplicateWindow(from: WindowEntry): void
   /**
    * A tab's "Move to new window" (YAZ-2933 D1, D3, D5): `from`'s vaults (by value) and lens, ONE tab `path`, the
    * sidebar hidden, the right panel closed and empty, cascaded bounds, fresh id. No MRU bump, as `duplicateWindow`.
@@ -108,6 +114,43 @@ export interface WindowManager extends WindowLookup {
    */
   moveTo(to: string, path: string, carry?: PopOutCarry): boolean
   /**
+   * A card of another window on the tab board (YAZ-3343 D3): raise the live window `to` and push `link:focus-tab`
+   * with `ref`, held like any link push until its page listens. `false` = `to` is not live. The target finds the tab itself.
+   */
+  focusTab(to: string, ref: TabRef): boolean
+  /** The ✕ of another window's cards (YAZ-3343 D3, D10): push `link:close-tabs` with `refs` to the live window `to`, which closes them itself. No raise. `false` = `to` is not live. */
+  closeTabs(to: string, refs: readonly TabRef[]): boolean
+  /**
+   * A card dropped in another window's frame (YAZ-3343 D13): push `link:send-tab` `{ to, ref }` to the live window
+   * `from`, which saves the tab and sends it with `window:move-to`, as "Move to ▸" does. `false` = either window
+   * is not live, they are the same window, or `to` shows no vault of `ref.path` (the `moveTo` rule). No raise, here or
+   * after: `from` sends it as a QUIET move (`background`), which `moveTo` does not raise.
+   */
+  moveTab(from: string, to: string, ref: TabRef): boolean
+  /** Name the live window `id` (YAZ-3343 D14), or `null` for its automatic label: `store.setWindowName`. `false` = `id` is not live. */
+  setName(id: string, name: string | null): boolean
+  /** The board's highlight on window `to`'s card (YAZ-3343): it lights that tab in its strip; `null` puts it out. Dropped when `to` is not live. */
+  highlightTab(to: string, ref: TabRef | null): void
+  /** A card menu's tab action on window `to`'s tab (YAZ-3343): push `link:tab-action`; "Show in sidebar" raises `to` too. `false` = not live. */
+  tabAction(to: string, ref: TabRef, action: TabAction): boolean
+  /** A hidden window the tab board made (YAZ-3343): show it and focus it. `false` = not live. */
+  showWindow(id: string): boolean
+  /** The live windows built hidden and not shown yet (YAZ-3343). In memory only: a restart shows every window. */
+  hiddenWindows(): string[]
+  /** The live windows minimized in the Dock now (YAZ-3343). In memory only. */
+  minimizedWindows(): string[]
+  /** "Move to new window" on another window's card (YAZ-3343): push `link:pop-out-tab` to the live window `from`, which moves its own tab quietly. `false` = not live. */
+  popOutTab(from: string, ref: TabRef): boolean
+  /** The vault chip of an empty frame (YAZ-3343): push `link:set-roots` to the live window `id` with NO tab. `false` = not live, or it has a tab. */
+  setRoots(id: string, roots: readonly string[]): boolean
+  /** "Close window" on another window's frame (YAZ-3343): its REAL close (the flush handshake runs). `false` = `id` is not live. */
+  closeOther(id: string): boolean
+  /**
+   * "New window" from the tab board (YAZ-3343): a window on `from`'s vaults with no tab, cascaded from it, shown inactive
+   * BEHIND `from`, which is raised again once it shows. No MRU bump. Answers its id.
+   */
+  openBehind(from: WindowEntry): string
+  /**
    * A "Move to ▸" row of window `from` points at window `to` (YAZ-3091 D8): `to` glows, the one lit before goes dark,
    * and `null` puts it out. Never `from` itself, and never a raise. A glow is a moment: it is not held for a page that
    * does not listen yet, and it goes out when `from` or `to` closes.
@@ -118,6 +161,8 @@ export interface WindowManager extends WindowLookup {
    * takes it, so a reload starts fresh (S17). A window that closes before it asks drops it (S20). Never stored.
    */
   takeStartView(id: string): StartView | undefined
+  /** A window `openBehind` opened (YAZ-3343): `true` ONCE, for its first `window:identity`, so it boots with no tab. */
+  takeStartEmpty(id: string): boolean
   /**
    * The ONE back-end door for "open a recent vault" (YAZ-1767 🔒 D1): the sidebar's vault
    * switcher and App's `openVault` (a vault window's Open Folder… / Open Recent, YAZ-1914) land here via `window:open-recent`, the Window menu's vault rows (⌘1–⌘9, YAZ-2555 D3) call it in main, and so does
@@ -172,7 +217,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'highlight' | 'takeStartView' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -269,6 +314,12 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const live = new Map<string, ManagedWindow>()
   /** Page views for new windows that have not read their identity yet (YAZ-2951 D5), by window id. Memory only. */
   const startViews = new Map<string, StartView>()
+  /** The windows `openBehind` opened, until their first identity read (YAZ-3343): they boot empty. */
+  const emptyStarts = new Set<string>()
+  /** The live windows the tab board made, built hidden and not shown yet (YAZ-3343). Never stored. */
+  const hiddenWins = new Set<string>()
+  /** The live windows minimized in the Dock (YAZ-3343). Never stored. */
+  const minimizedWins = new Set<string>()
   /** In-flight flush handshakes by `webContents.id`; `settle` answers ack and timeout alike. */
   const pendingFlush = new Map<number, { done: Promise<void>; settle: () => void }>()
   /** Windows closing as part of the quit keep their state entry: the next launch can bring them back. */
@@ -350,8 +401,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     if (!sameBounds(bounds, entry.bounds)) store.upsertWindow({ ...entry, bounds })
   }
 
-  const attach = (entry: WindowEntry): void => {
-    const win = host.create(entry)
+  const attach = (entry: WindowEntry, hidden = false): void => {
+    const win = hidden ? host.create(entry, { hidden: true }) : host.create(entry)
+    if (hidden) hiddenWins.add(entry.id)
     const { id } = entry
     const wcId = win.webContents.id
     const unregister = register(win, id)
@@ -375,6 +427,14 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     win.on('move', scheduleBounds)
     win.on('resize', scheduleBounds)
     win.on('focus', () => noteFocused(id))
+    // Minimized in the Dock (YAZ-3343, demo feedback): the board tags the frame until it is restored.
+    win.on('minimize', () => {
+      minimizedWins.add(id)
+      tellMinimized()
+    })
+    win.on('restore', () => {
+      if (minimizedWins.delete(id)) tellMinimized()
+    })
 
     /** `close` is always intercepted: the window only goes away via `destroy()` after its flush. */
     let closing = false
@@ -402,7 +462,12 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       for (const [from, to] of lit) if (to === id) lit.delete(from)
       const at = focusOrder.indexOf(id)
       if (at !== -1) focusOrder.splice(at, 1)
+      const wasHidden = hiddenWins.delete(id)
+      if (minimizedWins.delete(id) && !quitting) tellMinimized()
       if (quitting) return
+      if (wasHidden) tellHidden()
+      // A window the board made, still hidden, never runs on alone: with no window left on screen it shows (YAZ-3343).
+      else if (hiddenWins.size > 0 && [...live.keys()].every((other) => hiddenWins.has(other))) for (const other of [...hiddenWins]) showWindow(other)
       // A user close forgets the window; the LAST one closing quits the app (`window-all-closed`), so that is
       // a quit too: its entry stays, and the vault it was working in is the "last vault" (YAZ-2589 A1, YAZ-2602 A8).
       if (live.size > 0) store.removeWindow(id)
@@ -410,15 +475,42 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     })
   }
 
-  const open = (entry: WindowEntry): void => {
+  const open = (entry: WindowEntry, hidden = false): void => {
     store.upsertWindow(entry)
-    attach(entry)
+    attach(entry, hidden)
+  }
+  /** Every live window hears which windows are minimized (YAZ-3343): the tab board tags their frames. */
+  const tellMinimized = (): void => {
+    const ids = [...minimizedWins]
+    for (const win of live.values()) if (!win.isDestroyed()) win.webContents.send(CONTRACT.window.onMinimizedWindows.channel, ids)
+  }
+  /** Every live window hears which windows are hidden (YAZ-3343): the tab board tags their frames. */
+  const tellHidden = (): void => {
+    const ids = [...hiddenWins]
+    for (const win of live.values()) if (!win.isDestroyed()) win.webContents.send(CONTRACT.window.onHiddenWindows.channel, ids)
+  }
+  /** A hidden window (YAZ-3343) shows and takes the focus; `false` = not live. A shown one is only focused. */
+  const showWindow = (id: string): boolean => {
+    const win = live.get(id)
+    if (win === undefined || win.isDestroyed()) return false
+    if (hiddenWins.delete(id)) {
+      win.show()
+      tellHidden()
+    }
+    focusWindow(win)
+    return true
   }
 
   const openWindow = (opts: OpenWindowOptions): void => {
     // A window opened on a vault is a use of that vault (YAZ-2555 D5); its first focus does not count.
     noteUsed(opts.root)
     open({ id: randomUUID(), root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+  }
+
+  /** The window `id` when it is live and not destroyed (YAZ-3343 D3): the doors of the tab board act on no other. */
+  const liveWindow = (id: string): ManagedWindow | undefined => {
+    const win = live.get(id)
+    return win === undefined || win.isDestroyed() ? undefined : win
   }
 
   const focusWindow = (win: ManagedWindow): void => {
@@ -548,23 +640,20 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     openWindow,
 
-      duplicateWindow(from, view) {
+      duplicateWindow(from) {
         const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
         const id = randomUUID()
-        // Only the tab on show carries its view (YAZ-2951 D3); a window with no page on show has none (S13).
-        if (view !== undefined && from.file !== null) startViews.set(id, { path: from.file, view })
-        // Clone every ordered path list so the new window's durable identity cannot alias the source;
-        // sidebar visibility and the lens (YAZ-1628) are copied by value and then persist independently. The focus
-        // list is not the window's to copy (YAZ-2702 Decision 1): the new window reads it from the vault, as each window does (S10).
+        // NO tab (YAZ-3343, which replaced YAZ-2951 D5's copy): it boots on the blank tab, the caret in the search.
+        emptyStarts.add(id)
+        // The vaults by value; sidebar visibility and the lens (YAZ-1628) by value too, then each window keeps its own.
+        // The focus list is not the window's to copy (YAZ-2702 Decision 1). Neither is its name (YAZ-3343 D14).
         open({
           id,
           root: from.root,
           roots: [...from.roots],
-          file: from.file,
-          tabs: [...from.tabs],
-          // The copies and display names come along (YAZ-3057 D5), by value: each window then keeps its own.
-          ...(from.tabStrip === undefined ? {} : { tabStrip: from.tabStrip.map((t) => ({ ...t })) }),
-          rightPanel: { ...from.rightPanel, items: [...from.rightPanel.items] },
+          file: null,
+          tabs: [],
+          rightPanel: defaultRightPanelIdentity(),
           sidebarCollapsed: from.sidebarCollapsed,
           sidebarLens: from.sidebarLens,
           bounds: clampBounds(cascaded, host.workAreas()),
@@ -576,18 +665,108 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // The id first, and the page view under it before the window exists: its first identity read cannot miss it (YAZ-2951 D5).
       const id = randomUUID()
       if (carry?.view !== undefined) startViews.set(id, { path, view: carry.view })
-      // The tab's display name is stored with the new window's one tab (YAZ-3057 D3). `from`'s own strip must not come along.
-      const { tabStrip: _from, ...source } = from
-      open({ ...source, id, roots: [...from.roots], file: path, tabs: [path], ...(carry?.name === undefined ? {} : { tabStrip: [{ path, name: carry.name }] }), rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: clampBounds(cascaded, host.workAreas()) })
+      // The tab's display name is stored with the new window's one tab (YAZ-3057 D3). `from`'s own strip must not come along,
+      // and neither does its name (YAZ-3343 D14): the new window is another window, with its automatic label.
+      const { tabStrip: _from, name: _name, ...source } = from
+      // From the tab board it is QUIET (YAZ-3343, demo feedback): the new window is HIDDEN until the board shows it.
+      open({ ...source, id, roots: [...from.roots], file: path, tabs: [path], ...(carry?.name === undefined ? {} : { tabStrip: [{ path, name: carry.name }] }), rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: clampBounds(cascaded, host.workAreas()) }, carry?.background === true)
+      if (carry?.background === true) tellHidden()
+    },
+
+    showWindow,
+
+    tabAction(to, ref, action) {
+      const win = liveWindow(to)
+      if (win === undefined) return false
+      if (action.kind === 'show-in-sidebar') showWindow(to)
+      sendLink(win, CONTRACT.link.onTabAction.channel, { ref: { path: ref.path, copy: ref.copy }, action })
+      return true
+    },
+
+    hiddenWindows: () => [...hiddenWins],
+
+    minimizedWindows: () => [...minimizedWins],
+
+    popOutTab(from, ref) {
+      const win = liveWindow(from)
+      if (win === undefined) return false
+      sendLink(win, CONTRACT.link.onPopOutTab.channel, { path: ref.path, copy: ref.copy })
+      return true
     },
 
     moveTo(to, path, carry) {
       const win = live.get(to)
       const entry = entryOf(to)
       if (win === undefined || win.isDestroyed() || entry === undefined || rootOfPath(entry.roots, path) === null) return false
-      focusWindow(win)
+      // A quiet move from the tab board (YAZ-3343 D13) raises nothing: the user stays on the board they dropped it on.
+      if (carry?.background !== true) focusWindow(win)
       sendLink(win, CONTRACT.link.onTakeTab.channel, { path, ...carry })
       return true
+    },
+
+    focusTab(to, ref) {
+      const win = liveWindow(to)
+      if (win === undefined) return false
+      // A hidden window (YAZ-3343) shows the first time one of its tabs is opened from the board.
+      showWindow(to)
+      sendLink(win, CONTRACT.link.onFocusTab.channel, { path: ref.path, copy: ref.copy })
+      return true
+    },
+
+    closeTabs(to, refs) {
+      const win = liveWindow(to)
+      if (win === undefined) return false
+      // No raise (D3): the user is on the board of another window, closing cards there.
+      sendLink(win, CONTRACT.link.onCloseTabs.channel, refs.map((ref) => ({ path: ref.path, copy: ref.copy })))
+      return true
+    },
+
+    moveTab(from, to, ref) {
+      const source = liveWindow(from)
+      const entry = entryOf(to)
+      if (source === undefined || from === to || liveWindow(to) === undefined || entry === undefined || rootOfPath(entry.roots, ref.path) === null) return false
+      sendLink(source, CONTRACT.link.onSendTab.channel, { to, ref: { path: ref.path, copy: ref.copy } })
+      return true
+    },
+
+    setName(id, name) {
+      return liveWindow(id) !== undefined && store.setWindowName(id, name)
+    },
+
+    setRoots(id, roots) {
+      const win = liveWindow(id)
+      const entry = entryOf(id)
+      // Only an EMPTY window switches its vaults this way: a tab of the old vaults would be left in no vault.
+      if (win === undefined || entry === undefined || entry.tabs.length > 0 || entry.file !== null) return false
+      sendLink(win, CONTRACT.link.onSetRoots.channel, [...roots])
+      return true
+    },
+
+    closeOther(id) {
+      const win = liveWindow(id)
+      if (win === undefined) return false
+      win.close()
+      return true
+    },
+
+    openBehind(from) {
+      const id = randomUUID()
+      const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
+      // It boots with no tab, not on the vault's last file (demo bug, "why do 2 tabs open?"): its first identity says so.
+      emptyStarts.add(id)
+      store.upsertWindow({ id, root: from.root, roots: [...from.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: from.sidebarCollapsed, sidebarLens: from.sidebarLens, bounds: clampBounds(cascaded, host.workAreas()) })
+      const entry = entryOf(id)
+      if (entry === undefined) return id
+      // HIDDEN (demo feedback): it lives on the board until the user shows it there.
+      attach(entry, true)
+      tellHidden()
+      return id
+    },
+
+    highlightTab(to, ref) {
+      // A glance: never held for a page that does not listen yet, never a raise.
+      const win = liveWindow(to)
+      if (win !== undefined) win.webContents.send(CONTRACT.link.onHighlightTab.channel, ref === null ? null : { path: ref.path, copy: ref.copy })
     },
 
     highlight(from, to) {
@@ -606,6 +785,10 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const start = startViews.get(id)
       startViews.delete(id)
       return start
+    },
+
+    takeStartEmpty(id) {
+      return emptyStarts.delete(id)
     },
 
     openRecentBeside,

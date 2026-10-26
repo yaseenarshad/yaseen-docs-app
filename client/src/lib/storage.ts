@@ -3,10 +3,12 @@ import {
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
   addRecentRoot,
+  applyTabCanvasPatch,
   cleanVaultName,
   defaultAppState,
   defaultFolderState,
   defaultRightPanelIdentity,
+  defaultTabCanvas,
   freeVaultKey,
   keyedVaults,
   listVaults,
@@ -23,6 +25,8 @@ import {
   type SidebarLens,
   type StartView,
   type StoredTab,
+  type TabCanvasPatch,
+  type TabCanvasState,
   type TocSource,
   type VaultEntry,
   type Session,
@@ -45,6 +49,8 @@ let state: AppState = defaultAppState()
 let identity: WindowIdentity = { id: '', root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
+/** The canvas of a state without one (a main of before YAZ-3343, a test's bridge): ONE object, so a `useSyncExternalStore` snapshot holds still. */
+const NO_TAB_CANVAS: TabCanvasState = defaultTabCanvas()
 
 /**
  * The two orders across vaults, each with its mutator on the bridge: the Favorites order (YAZ-2631
@@ -82,6 +88,15 @@ function send(what: string, call: () => Promise<void>): void {
   }
 }
 
+/** Two canvases that store the same switch and the same cards in the same order (YAZ-3343 D1). */
+function sameTabCanvas(a: TabCanvasState, b: TabCanvasState | undefined): boolean {
+  const fa = a.frames ?? []
+  const fb = b?.frames ?? []
+  if (fa.length !== fb.length || !fa.every((f, i) => f.win === fb[i].win && f.x === fb[i].x && f.y === fb[i].y)) return false
+  return b !== undefined && a.allWindows === b.allWindows && a.snap === b.snap && a.cards.length === b.cards.length
+    && a.cards.every((c, i) => { const d = b.cards[i]; return c.win === d.win && c.path === d.path && c.copy === d.copy && c.by === d.by && c.x === d.x && c.y === d.y })
+}
+
 function folderOf(root: string): FolderState {
   return state.folders[root] ?? defaultFolderState()
 }
@@ -109,6 +124,8 @@ export const storage = {
       // The sessions too (YAZ-3147 D6): a tab click writes the window and broadcasts, and the open
       // Sessions tab must not draw again for it. 30 sessions of 40 tabs at most, so the compare stays small.
       if (JSON.stringify(held.sessions) === JSON.stringify(next.sessions)) state = { ...state, sessions: held.sessions }
+      // And the tab board's canvas (YAZ-3343 D1): the board reads it as a snapshot, and most broadcasts are not about it.
+      if (held.tabCanvas !== undefined && sameTabCanvas(held.tabCanvas, next.tabCanvas)) state = { ...state, tabCanvas: held.tabCanvas }
       listeners.forEach((l) => l())
     })
   },
@@ -175,6 +192,45 @@ export const storage = {
    * page's vault. Read only while a tab menu is open, never a render trigger; main checks the target again.
    */
   getOtherWindows: (): WindowEntry[] => state.windows.filter((w) => w.id !== identity.id),
+
+  /**
+   * A window's name (YAZ-3343 D14), off the cache; this window's when `id` is left out. `undefined` = no name:
+   * the window has its automatic label. Main keeps it (`WindowEntry.name`), so every window reads every name.
+   */
+  windowName: (id: string = identity.id): string | undefined => state.windows.find((w) => w.id === id)?.name,
+  /**
+   * Name an open window, this one or another (D14), or with null (or a blank name) give it back its automatic label.
+   * The cache takes the name cleaned as main cleans it, at once; main checks that the window is open.
+   */
+  setWindowName(id: string, raw: string | null): void {
+    const name = cleanVaultName(raw)
+    state = {
+      ...state,
+      windows: state.windows.map((w) => {
+        if (w.id !== id) return w
+        const { name: _old, ...rest } = w
+        return name === null ? rest : { ...rest, name }
+      }),
+    }
+    send('window.setName', () => api.window.setName(id, name))
+  },
+
+  /**
+   * The tab board's canvas (YAZ-3343 D1): the "Show all windows" switch and the cards the user moved, last moved
+   * first. App-wide and per machine. The same object until a change: a `useSyncExternalStore` snapshot.
+   */
+  getTabCanvas: (): TabCanvasState => state.tabCanvas ?? NO_TAB_CANVAS,
+  /**
+   * One change to the canvas (D1): on a drop, a switch or "Tidy up", never on each pointer move. The cache applies
+   * it by main's own rule (`applyTabCanvasPatch`) at once; a patch that changes nothing sends nothing.
+   */
+  setTabCanvas(patch: TabCanvasPatch): void {
+    const current = state.tabCanvas ?? NO_TAB_CANVAS
+    const next = applyTabCanvasPatch(current, patch, new Set(state.windows.map((w) => w.id)))
+    if (next === current) return
+    state = { ...state, tabCanvas: next }
+    send('state.setTabCanvas', () => api.state.setTabCanvas(patch))
+  },
   pushRecentRoot(path: string, now = Date.now()): RecentRoots {
     const next = addRecentRoot(state.recents, path, now)
     state = { ...state, recents: next }
@@ -227,6 +283,11 @@ export const storage = {
    * The tabs with their copies, display names and active copy (YAZ-3057): boot only, like `getTabs`.
    * A window that stores no strip gives its plain `tabs`, one entry per path.
    */
+  /**
+   * This window was opened EMPTY on purpose (YAZ-3343, demo bug "why do 2 tabs open?"): the tab board's "New window".
+   * Main says so in its first identity; it boots with no tab, never on the vault's last file.
+   */
+  isEmptyByChoice: (): boolean => identity.file === null && identity.startEmpty === true,
   getTabStrip: (): StoredTab[] => identity.tabStrip?.map((t) => ({ ...t })) ?? identity.tabs.map((path) => ({ path })),
 
   /** Durable right-panel identity at boot; clone the ordered list so callers cannot mutate the cache. */

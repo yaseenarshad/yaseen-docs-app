@@ -1151,6 +1151,15 @@ describe('take (YAZ-3091 D5): a tab another window moved here', () => {
     expect(copy.preview).toBe('t2')
   })
 
+  it('YAZ-3343 D13: a QUIET move (`background`) only joins the strip — the tab on show stays active, and the new one mounts when first shown; with no page on show it shows', () => {
+    const s = two()
+    const quiet = reduceTabs(s, { type: 'take', path: '/v/c.md', background: true })
+    expect(quiet.tabs.map((t) => t.path)).toEqual([A, B, '/v/c.md'])
+    expect([quiet.active, quiet.mounted, quiet.history, quiet.preview]).toEqual(['t1', ['t1'], s.history, null])
+    const empty = reduceTabs(two({ tabs: [], active: null, mounted: [] }), { type: 'take', path: '/v/c.md', background: true })
+    expect(empty.active).toBe(empty.tabs[0].id)
+  })
+
   it('S13: under the blank tab the page fills it — a page that is open too gets its copy, never a trip to its tab', () => {
     const filled = reduceTabs(two({ blank: true }), { type: 'take', path: '/v/c.md' })
     expect(filled.tabs.map((t) => t.path)).toEqual([A, B, '/v/c.md'])

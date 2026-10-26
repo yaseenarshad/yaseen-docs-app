@@ -48,6 +48,9 @@ export interface TabMenuProps {
   onSetReview?: (path: string, on: boolean) => void
   /** Where a failed OS action says so (YAZ-963) — App's passive notice. */
   onNotice?: (message: string) => void
+  /** Items before the menu's own groups, and after them (YAZ-3343, the tab board's cards: "Go to tab", "Close tab"). */
+  leading?: MenuAction[]
+  trailing?: MenuAction[]
 }
 
 /**
@@ -58,7 +61,7 @@ export interface TabMenuProps {
  * display name (YAZ-2949) and the review toggle (YAZ-2322). Drawn as data by the sidebar's own
  * `ContextMenu` (YAZ-2949 D6), so its groups have the same lines as every other menu of the app.
  */
-export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onSetReview, onNotice }: TabMenuProps) {
+export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onSetReview, onNotice, leading = [], trailing = [] }: TabMenuProps) {
   /**
    * The menu's OS actions (YAZ-963), the sidebar's `reveal` idiom on a tab: read-only, so there is
    * nothing to confirm or repair — but a STALE tab (deleted or moved externally) rejects `NOT_FOUND`,
@@ -78,6 +81,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
   // Four groups (YAZ-2949 D6), in this order: the tab's place · find the file · this tab
   // and its note · outside the app. `ContextMenu` skips an empty group and closes the menu after each item.
   const sections: MenuSection[] = [
+    leading,
     [
       ...(onMoveToNewWindow === undefined ? [] : [{ id: 'new-window', label: 'Move to new window', onSelect: () => onMoveToNewWindow(menu.path, menu.id) }]),
       // Right after "Move to new window" (YAZ-2940 D5).
@@ -100,5 +104,5 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
       { id: 'open-vscode', label: 'Open in VS Code', onSelect: () => osAction(api.shell.openVsCode({ path: menu.path }), `Can't open "${label}" in VS Code — it is no longer there`, "Can't open in VS Code") },
     ],
   ]
-  return <ContextMenu x={menu.x} y={menu.y} sections={sections} onClose={onClose} />
+  return <ContextMenu x={menu.x} y={menu.y} sections={[...sections, trailing]} onClose={onClose} />
 }

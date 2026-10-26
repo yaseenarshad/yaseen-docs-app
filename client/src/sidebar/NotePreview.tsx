@@ -9,12 +9,12 @@
  * mounts this `key={path}`, so a read that lands after the row changed is dropped (C25), and the
  * Crepe instance goes with it on close (C28). Lazy, with its CSS, like the board's panel.
  */
-import type { CSSProperties, RefObject } from 'react'
+import type { CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { ReadOnlyNote } from '../editor/ReadOnlyNote'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { boardFolder } from '../lib/paths'
-import { usePlacement } from './previewPlacement'
+import { usePlacement, type PreviewAnchor } from './previewPlacement'
 import './boardPreview.css'
 
 /** How much of a note's body the hover preview draws (YAZ-3075 D1, C17): about 25 lines need far less. */
@@ -30,8 +30,8 @@ interface NotePreviewProps {
   wikilinks: WikilinkResolveSource
   /** The text formatting of the note's vault (YAZ-3067 D12, C20): `--text-size` and the `--hN-*` variables. */
   textVars: CSSProperties
-  /** The `<aside className="sidebar">` the panel sits beside. */
-  anchor: RefObject<HTMLElement | null>
+  /** What the panel sits beside: the `<aside className="sidebar">`, or a card of the tab board (YAZ-3343). */
+  anchor: PreviewAnchor
 }
 
 export default function NotePreview({ root, node, name, wikilinks, textVars, anchor }: NotePreviewProps) {

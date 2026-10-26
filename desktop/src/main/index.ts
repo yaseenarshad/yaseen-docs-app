@@ -110,13 +110,15 @@ const settingsFolder = followSettingsFolder(store, { macId: () => macId(), host:
 const hiddenE2E = process.env.YASEEN_DOCS_E2E_HIDDEN === '1'
 
 const manager = createWindowManager(store, {
-  create(entry: WindowEntry) {
+  create(entry: WindowEntry, opts?: { hidden: true }) {
+    const hidden = opts?.hidden === true
     const win = new BrowserWindow({
       ...entry.bounds,
-      ...(hiddenE2E && { show: false }),
+      // A window the tab board made (YAZ-3343) is built HIDDEN: it shows when the board shows it.
+      ...((hiddenE2E || hidden) && { show: false }),
       // The backing store matches the theme (K, GRO-2218): no white flash on dark launches.
       backgroundColor: windowBackgroundColor(store.get().settings.theme, nativeTheme.shouldUseDarkColors),
-      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true, ...(hiddenE2E && { backgroundThrottling: false }) },
+      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true, ...((hiddenE2E || hidden) && { backgroundThrottling: false }) },
     })
     // A hidden e2e window must never surface: `focus()` and `show()` would order it front.
     if (hiddenE2E) win.show = win.focus = () => {}

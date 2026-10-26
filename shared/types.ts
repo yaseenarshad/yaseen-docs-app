@@ -1702,6 +1702,12 @@ export interface WindowEntry {
    * Additive within version 1: an old build drops the key and opens `tabs`.
    */
   tabStrip?: StoredTab[]
+  /**
+   * The window's name (YAZ-3343 D14), cleaned like a vault's (`cleanVaultName`). Absent = the automatic label
+   * (the active page and "+ N more tabs", as a "Move to ▸" row). Additive within version 1: an old build drops the key.
+   * A duplicate window does not copy it.
+   */
+  name?: string
   rightPanel: RightPanelIdentity
   /** Whether this window's sidebar is hidden (YAZ-1280); independent from every other window. */
   sidebarCollapsed: boolean
@@ -1901,11 +1907,129 @@ export interface AppState {
   settingsFolder: string | null
   /** The time of the settings this Mac has now (YAZ-3276 D3): its own last change of a field that travels, or the `savedAt` of the folder file it took. 0 = none. */
   settingsSavedAt: number
+  /**
+   * The tab board's canvas (YAZ-3343 D1): the "Show all windows" switch and the cards the user moved. Per machine.
+   * Additive within version 1: a file without it loads the default, and an old build drops the key.
+   */
+  tabCanvas: TabCanvasState
+}
+
+/** At most this many moved cards are kept (YAZ-3343 D1), last moved first: about 60 KB of the state file. */
+export const MAX_CANVAS_CARDS = 500
+/** At most this many stored window frames (YAZ-3343, demo bug: an empty frame must drag freely too). */
+export const MAX_CANVAS_FRAMES = 100
+
+/** Where a window's frame stands on the board's 'window' layout (YAZ-3343): its label row's top-left, in world px. */
+export interface CanvasFrame {
+  win: string
+  x: number
+  y: number
+}
+
+/**
+ * A tab of a window, named without its tab id (ids never reach storage, YAZ-2940 D1): its path, and which copy
+ * of that path it is in the window's strip — 0 for the first tab of the path, 1 for its first copy (YAZ-3057).
+ */
+export interface TabRef {
+  path: string
+  copy: number
+}
+
+/**
+ * A tab action ANOTHER window's board asks of this window's tab (YAZ-3343, demo feedback: one card menu for every card):
+ * the owner runs it itself. `show-in-sidebar` also raises the owner.
+ */
+export type TabAction = { kind: 'duplicate' } | { kind: 'set-name'; name: string | null } | { kind: 'show-in-sidebar' } | { kind: 'set-review'; on: boolean }
+
+/** The two layouts of the board (YAZ-3343 D8): this window in folder groups, or every window in its own frame. */
+export type CanvasLayout = 'folder' | 'window'
+
+/** A card the user moved on the tab board (YAZ-3343 D1). A card that is not stored stands in its group. */
+export interface CanvasCard extends TabRef {
+  /** The id of the window that has the tab (`WindowEntry.id`). */
+  win: string
+  /** The layout the card was moved in: each layout keeps its own places. */
+  by: CanvasLayout
+  /** World coordinates of the card's top-left corner, in px at zoom 1. */
+  x: number
+  y: number
+}
+
+export interface TabCanvasState {
+  /** "Show all windows" (YAZ-3343 D8): on, the board shows every window, each in its own frame. */
+  allWindows: boolean
+  /** "Snap to grid" (YAZ-3343, demo feedback): a dropped card goes to the nearest free cell of the world's grid. On by default. */
+  snap: boolean
+  /** The moved cards, last moved first, MAX_CANVAS_CARDS at most. One entry per (win, path, copy, by). */
+  cards: CanvasCard[]
+  /**
+   * The frames the user (or the board) placed, 'window' layout only (YAZ-3343, demo bug): an EMPTY frame stands here
+   * and drags freely; the first cards that arrive take its first cells. One per window, MAX_CANVAS_FRAMES at most.
+   * Absent = none (a file from before it; an old build drops the key).
+   */
+  frames?: CanvasFrame[]
+}
+
+/** One change to the canvas (YAZ-3343 D1), sent on a drop or a switch — never on each pointer move. */
+export interface TabCanvasPatch {
+  allWindows?: boolean
+  snap?: boolean
+  /** Frames to store, each replacing that window's (YAZ-3343); `forgetFrames` drops them by window id. */
+  setFrames?: CanvasFrame[]
+  forgetFrames?: string[]
+  /** Cards to store: each replaces the entry with the same (win, path, copy, by). */
+  set?: CanvasCard[]
+  /** Cards to forget ("Tidy up", D9): the entries with these (win, path, copy, by) go. */
+  forget?: Array<TabRef & { win: string; by: CanvasLayout }>
+}
+
+/** "Show all windows" is ON by default (Yaseen's demo feedback on YAZ-3343): a stored `false` stays off. */
+export function defaultTabCanvas(): TabCanvasState {
+  return { allWindows: true, snap: true, cards: [], frames: [] }
+}
+
+/** A card's key on the tab board (YAZ-3343 D1): (win, path, copy, by). One stored card per key. A path holds no NUL, so the joined string cannot collide. */
+export const canvasCardKey = (c: TabRef & { win: string; by: CanvasLayout }): string => `${c.win}\0${c.path}\0${c.copy}\0${c.by}`
+
+/**
+ * One canvas patch over a canvas (YAZ-3343 D1), the ONE rule of main's store and the renderer's cache: `allWindows`
+ * sets the switch; each card of `set` replaces the card with its key and goes to the front, the first of `set`
+ * frontmost (a key twice in `set`: the first wins); `forget` drops cards by key. A card of a window that `windows`
+ * lacks is not stored: that window is gone, and its card would be an orphan. The list is cut at MAX_CANVAS_CARDS.
+ * Answers `canvas` ITSELF when nothing changes, so a caller can skip a commit by identity.
+ */
+export function applyTabCanvasPatch(canvas: TabCanvasState, patch: TabCanvasPatch, windows: ReadonlySet<string>): TabCanvasState {
+  const seen = new Set<string>()
+  const set = (patch.set ?? []).filter((c) => {
+    const key = canvasCardKey(c)
+    if (!windows.has(c.win) || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  for (const c of patch.forget ?? []) seen.add(canvasCardKey(c))
+  const cards = [...set, ...canvas.cards.filter((c) => !seen.has(canvasCardKey(c)))].slice(0, MAX_CANVAS_CARDS)
+  const allWindows = patch.allWindows ?? canvas.allWindows
+  // A canvas stored before the snap switch has none: on (the default).
+  const snap = patch.snap ?? canvas.snap ?? true
+  // The frames by the same rule, keyed by window (YAZ-3343): set first, then forget, a window the state lacks dropped.
+  const held = canvas.frames ?? []
+  const framesSeen = new Set<string>()
+  const setFrames = (patch.setFrames ?? []).filter((f) => {
+    if (!windows.has(f.win) || framesSeen.has(f.win)) return false
+    framesSeen.add(f.win)
+    return true
+  })
+  for (const win of patch.forgetFrames ?? []) framesSeen.add(win)
+  const frames = [...setFrames, ...held.filter((f) => !framesSeen.has(f.win))].slice(0, MAX_CANVAS_FRAMES)
+  const same = allWindows === canvas.allWindows && snap === canvas.snap && cards.length === canvas.cards.length
+    && cards.every((c, i) => canvasCardKey(c) === canvasCardKey(canvas.cards[i]) && c.x === canvas.cards[i].x && c.y === canvas.cards[i].y)
+    && frames.length === held.length && frames.every((f, i) => f.win === held[i].win && f.x === held[i].x && f.y === held[i].y)
+  return same ? canvas : { allWindows, snap, cards, frames }
 }
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, settingsSavedAt: 0 }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, settingsSavedAt: 0, tabCanvas: defaultTabCanvas() }
 }
 
 export function defaultFolderState(): FolderState {
@@ -2395,6 +2519,8 @@ export interface WindowIdentity {
   tabs: string[]
   /** The tabs with their copies, display names and active copy (YAZ-3057), as `WindowEntry.tabStrip`. */
   tabStrip?: StoredTab[]
+  /** The window's name (YAZ-3343 D14), as `WindowEntry.name`. */
+  name?: string
   rightPanel: RightPanelIdentity
   /** Whether this window's sidebar is hidden (YAZ-1280). */
   sidebarCollapsed: boolean
@@ -2405,6 +2531,11 @@ export interface WindowIdentity {
    * given out by the FIRST `window:identity` of the new window only (S17). Never stored.
    */
   startView?: StartView
+  /**
+   * This window was opened EMPTY on purpose (YAZ-3343, the tab board's "New window"): it boots with no tab, never on
+   * the vault's last file. Given out by its FIRST `window:identity` only, as `startView`. Never stored.
+   */
+  startEmpty?: true
 }
 
 /**
@@ -2436,6 +2567,12 @@ export interface PopOutCarry {
   view?: PageView
   /** The tab's display name (YAZ-2949 D7), if it has one: main stores it with the new window's tab (YAZ-3057 D3). */
   name?: string
+  /**
+   * A QUIET move (YAZ-3343 D13, Yaseen's demo feedback): a card dropped in another window's frame on the tab board.
+   * Main does not raise the target, and the target adds the tab in the background: its page on show stays. "Move to ▸"
+   * sends none, and raises and shows the tab as before. "Move to new window" ignores it.
+   */
+  background?: true
 }
 
 /** A tab that another window hands to this one (YAZ-3091 D1): its page plus the same carry as "Move to new window". */

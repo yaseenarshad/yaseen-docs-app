@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { CONTRACT, SPECIAL, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import * as windows from '../windows'
@@ -35,6 +35,19 @@ let manager: {
   duplicateWindow: ReturnType<typeof vi.fn>
   popOut: ReturnType<typeof vi.fn>
   moveTo: ReturnType<typeof vi.fn<(to: string, path: string) => boolean>>
+  focusTab: ReturnType<typeof vi.fn<(to: string, ref: TabRef) => boolean>>
+  closeTabs: ReturnType<typeof vi.fn<(to: string, refs: readonly TabRef[]) => boolean>>
+  moveTab: ReturnType<typeof vi.fn<(from: string, to: string, ref: TabRef) => boolean>>
+  setName: ReturnType<typeof vi.fn<(id: string, name: string | null) => boolean>>
+  closeOther: ReturnType<typeof vi.fn<(id: string) => boolean>>
+  setRoots: ReturnType<typeof vi.fn<(id: string, roots: readonly string[]) => boolean>>
+  popOutTab: ReturnType<typeof vi.fn<(from: string, ref: TabRef) => boolean>>
+  showWindow: ReturnType<typeof vi.fn<(id: string) => boolean>>
+  hiddenWindows: ReturnType<typeof vi.fn<() => string[]>>
+  minimizedWindows: ReturnType<typeof vi.fn<() => string[]>>
+  highlightTab: ReturnType<typeof vi.fn<(to: string, ref: TabRef | null) => void>>
+  tabAction: ReturnType<typeof vi.fn<(to: string, ref: TabRef, action: unknown) => boolean>>
+  openBehind: ReturnType<typeof vi.fn<(from: WindowEntry) => string>>
   highlight: ReturnType<typeof vi.fn>
   openRecentBeside: ReturnType<typeof vi.fn>
   openAlone: ReturnType<typeof vi.fn>
@@ -44,6 +57,7 @@ let manager: {
   handleLinkReady: ReturnType<typeof vi.fn>
   vaultNotice: ReturnType<typeof vi.fn>
   takeStartView: ReturnType<typeof vi.fn<(id: string) => StartView | undefined>>
+  takeStartEmpty: ReturnType<typeof vi.fn<(id: string) => boolean>>
 }
 /** `event.sender` stand-ins: webContents 1 is registered as window w1, webContents 9 is unknown. */
 const sender = { id: 1 }
@@ -55,7 +69,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined) }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -77,7 +91,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes, `link:ready` and the paste fallback (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -497,7 +511,7 @@ describe('registerWindowIpc', () => {
 
   it('window:duplicate hands the caller entry to the manager; unknown callers are rejected', async () => {
     expect(await registered(CONTRACT.window.duplicate.channel)({ sender })).toEqual(ok(undefined))
-    expect(manager.duplicateWindow).toHaveBeenCalledWith(entry, undefined)
+    expect(manager.duplicateWindow).toHaveBeenCalledWith(entry)
     expect(await registered(CONTRACT.window.duplicate.channel)({ sender: stranger })).toEqual(bad('BAD_REQUEST'))
     expect(manager.duplicateWindow).toHaveBeenCalledTimes(1)
   })
@@ -534,15 +548,135 @@ describe('registerWindowIpc', () => {
     expect(manager.moveTo).toHaveBeenLastCalledWith('w2', '/v/a.md', { view, name: 'Outline' })
     expect(await moveTo({ sender }, 'w2', '/v/a.md')).toEqual(ok(undefined))
     expect(manager.moveTo).toHaveBeenLastCalledWith('w2', '/v/a.md', {})
+    // A quiet move (YAZ-3343 D13): only `true` is one.
+    expect(await moveTo({ sender }, 'w2', '/v/a.md', { background: true })).toEqual(ok(undefined))
+    expect(manager.moveTo).toHaveBeenLastCalledWith('w2', '/v/a.md', { background: true })
+    expect(await moveTo({ sender }, 'w2', '/v/a.md', { background: 'yes' })).toEqual(ok(undefined))
+    expect(manager.moveTo).toHaveBeenLastCalledWith('w2', '/v/a.md', {})
     expect(await moveTo({ sender: stranger }, 'w2', '/v/a.md')).toEqual(bad('BAD_REQUEST'))
     expect(await moveTo({ sender }, 'w1', '/v/a.md')).toEqual(expect.objectContaining({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: expect.stringContaining('its own window') }) }))
     expect(await moveTo({ sender }, 'w2', 'a.md')).toEqual(bad('NOT_ABSOLUTE'))
     expect(await moveTo({ sender }, 7, '/v/a.md')).toEqual(bad('BAD_REQUEST'))
     expect(await moveTo({ sender }, 'w2', '/v/a.md', 'Outline')).toEqual(bad('BAD_REQUEST'))
-    expect(manager.moveTo).toHaveBeenCalledTimes(2)
+    expect(manager.moveTo).toHaveBeenCalledTimes(4)
     // The manager refuses: the window closed, or it shows no vault of the page (D2). The source keeps its tab.
     manager.moveTo.mockReturnValueOnce(false)
     expect(await moveTo({ sender }, 'w2', '/v/a.md')).toEqual(bad('NOT_FOUND'))
+  })
+
+  describe('the tab board doors (YAZ-3343 D3, D13, D14)', () => {
+    const REF = { path: '/v/a.md', copy: 1 }
+
+    it('window:close-other closes another window by its real close (never the caller, which has close-self); window:open-behind opens one on the CALLER\'s window and answers its id', async () => {
+      const closeOther = registered(CONTRACT.window.closeOther.channel)
+      const openBehind = registered(CONTRACT.window.openBehind.channel)
+      expect(await closeOther({ sender }, 'w2')).toEqual(ok(undefined))
+      expect(manager.closeOther).toHaveBeenLastCalledWith('w2')
+      expect(await closeOther({ sender }, 'w1')).toEqual(bad('BAD_REQUEST'))
+      expect(await closeOther({ sender }, 7)).toEqual(bad('BAD_REQUEST'))
+      expect(await closeOther({ sender: stranger }, 'w2')).toEqual(bad('BAD_REQUEST'))
+      manager.closeOther.mockReturnValueOnce(false)
+      expect(await closeOther({ sender }, 'w2')).toEqual(bad('NOT_FOUND'))
+      expect(await openBehind({ sender })).toEqual(ok('w9'))
+      expect(manager.openBehind.mock.calls[0][0]).toMatchObject({ id: 'w1' })
+      expect(await openBehind({ sender: stranger })).toEqual(bad('BAD_REQUEST'))
+      // The vault chip: absolute roots, one at least; a window with tabs refuses.
+      const setRoots = registered(CONTRACT.window.setRoots.channel)
+      expect(await setRoots({ sender }, 'w9', ['/x'])).toEqual(ok(undefined))
+      expect(manager.setRoots).toHaveBeenLastCalledWith('w9', ['/x'])
+      for (const roots of [[], ['x'], '/x', undefined]) expect((await setRoots({ sender }, 'w9', roots) as { ok: boolean }).ok).toBe(false)
+      manager.setRoots.mockReturnValueOnce(false)
+      expect(await setRoots({ sender }, 'w9', ['/x'])).toEqual(bad('NOT_FOUND'))
+      // "Move to new window" on another window's card: that window does it; the caller's own is window:pop-out.
+      const popOutTab = registered(CONTRACT.window.popOutTab.channel)
+      expect(await popOutTab({ sender }, 'w2', { path: '/v/a.md', copy: 0 })).toEqual(ok(undefined))
+      expect(manager.popOutTab).toHaveBeenLastCalledWith('w2', { path: '/v/a.md', copy: 0 })
+      expect(await popOutTab({ sender }, 'w1', { path: '/v/a.md', copy: 0 })).toEqual(bad('BAD_REQUEST'))
+      manager.popOutTab.mockReturnValueOnce(false)
+      expect(await popOutTab({ sender }, 'w2', { path: '/v/a.md', copy: 0 })).toEqual(bad('NOT_FOUND'))
+      // The hidden windows: read, and shown.
+      expect(await registered(CONTRACT.window.hiddenWindows.channel)({ sender })).toEqual(ok(['w9']))
+      expect(await registered(CONTRACT.window.minimizedWindows.channel)({ sender })).toEqual(ok(['w2']))
+      const show = registered(CONTRACT.window.showWindow.channel)
+      expect(await show({ sender }, 'w9')).toEqual(ok(undefined))
+      expect(manager.showWindow).toHaveBeenLastCalledWith('w9')
+      manager.showWindow.mockReturnValueOnce(false)
+      expect(await show({ sender }, 'w9')).toEqual(bad('NOT_FOUND'))
+      const lightTab = registered(CONTRACT.window.highlightTab.channel)
+      expect(await lightTab({ sender }, 'w2', { path: '/v/a.md', copy: 1 })).toEqual(ok(undefined))
+      expect(manager.highlightTab).toHaveBeenLastCalledWith('w2', { path: '/v/a.md', copy: 1 })
+      expect(await lightTab({ sender }, 'w2', null)).toEqual(ok(undefined))
+      expect(manager.highlightTab).toHaveBeenLastCalledWith('w2', null)
+      expect(await lightTab({ sender }, 'w2', { path: 'a.md', copy: 0 })).toEqual(bad('NOT_ABSOLUTE'))
+      // A card menu's tab action on another window's tab: cleaned, and that window runs it.
+      const act = registered(CONTRACT.window.tabAction.channel)
+      const REF0 = { path: '/v/a.md', copy: 0 }
+      expect(await act({ sender }, 'w2', REF0, { kind: 'set-name', name: '  Plan  ' })).toEqual(ok(undefined))
+      expect(manager.tabAction).toHaveBeenLastCalledWith('w2', REF0, { kind: 'set-name', name: 'Plan' })
+      for (const action of [{ kind: 'duplicate' }, { kind: 'show-in-sidebar' }, { kind: 'set-review', on: true }, { kind: 'set-name', name: null }]) {
+        expect(await act({ sender }, 'w2', REF0, action)).toEqual(ok(undefined))
+        expect(manager.tabAction).toHaveBeenLastCalledWith('w2', REF0, action)
+      }
+      for (const action of [null, { kind: 'delete' }, { kind: 'set-review' }, { kind: 'set-name', name: 3 }]) expect(await act({ sender }, 'w2', REF0, action)).toEqual(bad('BAD_REQUEST'))
+      manager.tabAction.mockReturnValueOnce(false)
+      expect(await act({ sender }, 'w2', REF0, { kind: 'duplicate' })).toEqual(bad('NOT_FOUND'))
+    })
+
+    it('window:focus-tab and window:close-tabs pass the target and clean refs; a stranger, the caller as target, a bad id and a bad ref are rejected; a refusal is NOT_FOUND', async () => {
+      const focusTab = registered(CONTRACT.window.focusTab.channel)
+      const closeTabs = registered(CONTRACT.window.closeTabs.channel)
+      expect(await focusTab({ sender }, 'w2', { ...REF, extra: 1 })).toEqual(ok(undefined))
+      expect(manager.focusTab).toHaveBeenLastCalledWith('w2', REF)
+      expect(await closeTabs({ sender }, 'w2', [REF, { path: '/v/b.md', copy: 0 }])).toEqual(ok(undefined))
+      expect(manager.closeTabs).toHaveBeenLastCalledWith('w2', [REF, { path: '/v/b.md', copy: 0 }])
+      expect(await focusTab({ sender: stranger }, 'w2', REF)).toEqual(bad('BAD_REQUEST'))
+      expect(await focusTab({ sender }, 'w1', REF)).toEqual(bad('BAD_REQUEST'))
+      expect(await closeTabs({ sender }, 'w1', [REF])).toEqual(bad('BAD_REQUEST'))
+      expect(await focusTab({ sender }, 7, REF)).toEqual(bad('BAD_REQUEST'))
+      expect(await focusTab({ sender }, 'w2', { path: 'a.md', copy: 0 })).toEqual(bad('NOT_ABSOLUTE'))
+      for (const copy of [-1, 1.5, '0', undefined]) expect(await focusTab({ sender }, 'w2', { path: '/v/a.md', copy })).toEqual(bad('BAD_REQUEST'))
+      expect(await closeTabs({ sender }, 'w2', REF)).toEqual(bad('BAD_REQUEST')) // not an array
+      expect(await closeTabs({ sender }, 'w2', [REF, null])).toEqual(bad('BAD_REQUEST')) // one bad ref rejects the call
+      expect(manager.focusTab).toHaveBeenCalledTimes(1)
+      expect(manager.closeTabs).toHaveBeenCalledTimes(1)
+      manager.focusTab.mockReturnValueOnce(false)
+      manager.closeTabs.mockReturnValueOnce(false)
+      expect(await focusTab({ sender }, 'w2', REF)).toEqual(bad('NOT_FOUND'))
+      expect(await closeTabs({ sender }, 'w2', [REF])).toEqual(bad('NOT_FOUND'))
+    })
+
+    it('window:move-tab passes from, to and the ref; from may be the caller; the same window both ends is BAD_REQUEST and a refusal NOT_FOUND', async () => {
+      const moveTab = registered(CONTRACT.window.moveTab.channel)
+      expect(await moveTab({ sender }, 'w1', 'w2', REF)).toEqual(ok(undefined))
+      expect(manager.moveTab).toHaveBeenLastCalledWith('w1', 'w2', REF)
+      expect(await moveTab({ sender }, 'w2', 'w3', REF)).toEqual(ok(undefined))
+      expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w3', REF)
+      expect(await moveTab({ sender: stranger }, 'w1', 'w2', REF)).toEqual(bad('BAD_REQUEST'))
+      expect(await moveTab({ sender }, 'w2', 'w2', REF)).toEqual(bad('BAD_REQUEST'))
+      expect(await moveTab({ sender }, 'w1', null, REF)).toEqual(bad('BAD_REQUEST'))
+      expect(await moveTab({ sender }, 'w1', 'w2', { path: '/v/a.md' })).toEqual(bad('BAD_REQUEST'))
+      expect(manager.moveTab).toHaveBeenCalledTimes(2)
+      manager.moveTab.mockReturnValueOnce(false)
+      expect(await moveTab({ sender }, 'w1', 'w2', REF)).toEqual(bad('NOT_FOUND'))
+    })
+
+    it('window:set-name passes any window id and a string or null; a stranger and a bad name are rejected; a window that is not live is NOT_FOUND; identity answers the stored name', async () => {
+      const setName = registered(CONTRACT.window.setName.channel)
+      expect(await setName({ sender }, 'w2', 'Writing')).toEqual(ok(undefined))
+      expect(manager.setName).toHaveBeenLastCalledWith('w2', 'Writing')
+      expect(await setName({ sender }, 'w1', null)).toEqual(ok(undefined))
+      expect(manager.setName).toHaveBeenLastCalledWith('w1', null)
+      expect(await setName({ sender: stranger }, 'w1', 'X')).toEqual(bad('BAD_REQUEST'))
+      expect(await setName({ sender }, 'w1', 42)).toEqual(bad('BAD_REQUEST'))
+      expect(await setName({ sender }, 7, 'X')).toEqual(bad('BAD_REQUEST'))
+      manager.setName.mockReturnValueOnce(false)
+      expect(await setName({ sender }, 'w9', 'X')).toEqual(bad('NOT_FOUND'))
+      // The name rides every identity read, and a set-identity patch can neither set nor drop it.
+      store.setWindowName('w1', 'Writing')
+      expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { name: 'Hijack', sidebarCollapsed: true })).toEqual(ok(undefined))
+      expect(store.get().windows[0].name).toBe('Writing')
+      expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok(expect.objectContaining({ id: 'w1', name: 'Writing' })))
+    })
   })
 
   it('window:highlight passes the CALLER and the window its row points at, or null to clear; a stranger and a bad id are rejected (YAZ-3091 D8)', async () => {
@@ -601,22 +735,17 @@ describe('registerWindowIpc', () => {
   describe('the page view a new window starts with (YAZ-2951 D5, S17, S19)', () => {
     const VIEW: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
 
-    it('window:duplicate and window:pop-out pass a good view on; a bad one is dropped and the window still opens; folds are cut at MAX_FOLD_KEYS_PER_FILE', async () => {
-      const duplicate = registered(CONTRACT.window.duplicate.channel)
+    it('window:pop-out passes a good view on; a bad one is dropped and the window still opens; folds are cut at MAX_FOLD_KEYS_PER_FILE (⌘⇧N carries none since YAZ-3343)', async () => {
       const popOut = registered(CONTRACT.window.popOut.channel)
-      expect(await duplicate({ sender }, VIEW)).toEqual(ok(undefined))
-      expect(manager.duplicateWindow).toHaveBeenLastCalledWith(entry, VIEW)
       expect(await popOut({ sender }, '/v/a.md', { view: VIEW })).toEqual(ok(undefined))
       expect(manager.popOut).toHaveBeenLastCalledWith(entry, '/v/a.md', { view: VIEW })
       for (const wrong of [null, 'view', { ...VIEW, scrollTop: 'x' }, { ...VIEW, zoomKey: 3 }, { ...VIEW, folds: [1] }, { ...VIEW, folds: 'a' }, { ...VIEW, magnification: Number.NaN }, { scrollTop: 0 }]) {
-        expect(await duplicate({ sender }, wrong)).toEqual(ok(undefined))
-        expect(manager.duplicateWindow).toHaveBeenLastCalledWith(entry, undefined)
         expect(await popOut({ sender }, '/v/a.md', { view: wrong })).toEqual(ok(undefined))
         expect(manager.popOut).toHaveBeenLastCalledWith(entry, '/v/a.md', {})
       }
       const many = Array.from({ length: MAX_FOLD_KEYS_PER_FILE + 20 }, (_, i) => `k${i}:0`)
-      await duplicate({ sender }, { ...VIEW, folds: many })
-      expect(manager.duplicateWindow.mock.lastCall?.[1]).toEqual({ ...VIEW, folds: many.slice(0, MAX_FOLD_KEYS_PER_FILE) })
+      await popOut({ sender }, '/v/a.md', { view: { ...VIEW, folds: many } })
+      expect(manager.popOut.mock.lastCall?.[2]).toEqual({ view: { ...VIEW, folds: many.slice(0, MAX_FOLD_KEYS_PER_FILE) } })
       // The options themselves must be an object.
       expect(await popOut({ sender }, '/v/a.md', 'view')).toEqual(bad('BAD_REQUEST'))
     })

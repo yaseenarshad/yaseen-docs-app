@@ -23,6 +23,7 @@ function installBridge(state: AppState, identity: IdentityFixture) {
       setSectionIndent: vi.fn(async () => undefined),
       setTocSwitch: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
+      setTabCanvas: vi.fn(async () => undefined),
       onChange: vi.fn((l: (s: AppState) => void) => {
         listener = l
         return () => {
@@ -39,6 +40,7 @@ function installBridge(state: AppState, identity: IdentityFixture) {
         sidebarLens: identity.sidebarLens ?? 'favorites',
       })),
       setIdentity: vi.fn(async () => undefined),
+      setName: vi.fn(async () => undefined),
       open: vi.fn(),
       duplicate: vi.fn(),
     },
@@ -123,6 +125,44 @@ describe('storage.getVaultSets (YAZ-2602 D8)', () => {
     b.emit({ ...defaultAppState(), vaultSets: [reading] })
     expect(storage.getVaultSets()).toEqual([reading])
     expect(woke).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the tab board: its canvas and window names (YAZ-3343 D1, D14)', () => {
+  const entry = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: '/v', roots: ['/v'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 }, ...extra })
+  const card = { win: 'w2', path: '/v/a.md', copy: 0, by: 'window' as const, x: 5, y: 6 }
+
+  it('getTabCanvas is the default without one; setTabCanvas applies main\'s rule in the cache at once and sends the patch; a no-op sends nothing; a broadcast of the same canvas keeps the snapshot', async () => {
+    // "Show all windows" is on by default (demo feedback).
+    expect(storage.getTabCanvas()).toEqual({ allWindows: true, snap: true, cards: [], frames: [] })
+    expect(storage.getTabCanvas()).toBe(storage.getTabCanvas())
+    const state = { ...defaultAppState(), windows: [entry('w1'), entry('w2')] }
+    b = installBridge(state, { id: 'w1', root: '/v', file: null, tabs: [] })
+    await storage.init()
+    storage.setTabCanvas({ allWindows: true, set: [card, { ...card, win: 'gone' }] })
+    expect(storage.getTabCanvas()).toEqual({ allWindows: true, snap: true, cards: [card], frames: [] }) // a card of no window is not kept, as main keeps none
+    expect(b.bridge.state.setTabCanvas).toHaveBeenCalledExactlyOnceWith({ allWindows: true, set: [card, { ...card, win: 'gone' }] })
+    storage.setTabCanvas({ allWindows: true, set: [card] })
+    expect(b.bridge.state.setTabCanvas).toHaveBeenCalledTimes(1)
+    const snapshot = storage.getTabCanvas()
+    b.emit({ ...state, tabCanvas: { allWindows: true, snap: true, cards: [{ ...card }] }, sidebarWidth: 300 })
+    expect(storage.getTabCanvas()).toBe(snapshot)
+    b.emit({ ...state, tabCanvas: { allWindows: false, snap: true, cards: [] } })
+    expect(storage.getTabCanvas()).toEqual({ allWindows: false, snap: true, cards: [] })
+  })
+
+  it('windowName reads this window\'s name, or another\'s by id; setWindowName cleans it in the cache at once and sends the clean name, null for none', async () => {
+    b = installBridge({ ...defaultAppState(), windows: [entry('w1', { name: 'Writing' }), entry('w2')] }, { id: 'w1', root: '/v', file: null, tabs: [] })
+    await storage.init()
+    expect(storage.windowName()).toBe('Writing')
+    expect(storage.windowName('w2')).toBeUndefined()
+    storage.setWindowName('w2', '  Research  ')
+    expect(storage.windowName('w2')).toBe('Research')
+    expect(b.bridge.window.setName).toHaveBeenLastCalledWith('w2', 'Research')
+    storage.setWindowName('w1', '   ')
+    expect(storage.windowName()).toBeUndefined()
+    expect(storage.getOtherWindows()).toEqual([entry('w2', { name: 'Research' })])
+    expect(b.bridge.window.setName).toHaveBeenLastCalledWith('w1', null)
   })
 })
 

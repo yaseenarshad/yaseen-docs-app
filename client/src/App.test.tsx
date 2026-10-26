@@ -5,12 +5,12 @@
  * storage / api / hook modules run against it.
  */
 import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type RestoreSessionResult, type SidebarTab, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type RestoreSessionResult, type SidebarTab, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -180,7 +180,7 @@ vi.mock('./sidebar/Sidebar', () => ({
   },
 }))
 
-import { App, MOVE_ROW_TITLE_MAX, replayNotice } from './App'
+import { App, MOVE_ROW_TITLE_MAX, preloadTabBoard, replayNotice } from './App'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -210,6 +210,14 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const linkOpenFile = new Set<(path: string) => void>()
   const linkNotice = new Set<(message: string) => void>()
   const linkTakeTab = new Set<(tab: MovedTab) => void>()
+  // Another window's tab board (YAZ-3343 D3, D10, D13): it picks, closes or sends this window's tabs by ref.
+  const linkFocusTab = new Set<(ref: TabRef) => void>()
+  const linkCloseTabs = new Set<(refs: TabRef[]) => void>()
+  const linkSendTab = new Set<(req: { to: string; ref: TabRef }) => void>()
+  const linkSetRoots = new Set<(roots: string[]) => void>()
+  const linkPopOutTab = new Set<(ref: TabRef) => void>()
+  const linkHighlightTab = new Set<(ref: TabRef | null) => void>()
+  const linkTabAction = new Set<(req: { ref: TabRef; action: TabAction }) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
   const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
   const dragLanded = new Set<(ev: { paths: string[] }) => void>()
@@ -256,6 +264,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       setSectionIndent: vi.fn(async () => undefined),
       setTocSwitch: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
+      // The tab board's canvas (YAZ-3343 D1): the switch and the moved cards.
+      setTabCanvas: vi.fn(async () => undefined),
       onChange: vi.fn((listener: (next: AppState) => void) => {
         stateChanged.add(listener)
         return () => stateChanged.delete(listener)
@@ -280,6 +290,23 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       closeSelf: vi.fn(async () => undefined),
       // "Move to ▸" (YAZ-3091 D8): a row under the pointer lights up its window; another window's row lights up this one.
       highlight: vi.fn(async (_to: string | null) => undefined),
+      // The tab board's doors to other windows (YAZ-3343 D3, D13, D14).
+      focusTab: vi.fn(async (_to: string, _ref: TabRef) => undefined),
+      closeTabs: vi.fn(async (_to: string, _refs: readonly TabRef[]) => undefined),
+      moveTab: vi.fn(async (_from: string, _to: string, _ref: TabRef) => undefined),
+      setName: vi.fn(async (_id: string, _name: string | null) => undefined),
+      // The board's frames and empty canvas (YAZ-3343, demo feedback).
+      closeOther: vi.fn(async (_id: string) => undefined),
+      openBehind: vi.fn(async () => 'w-new'),
+      setRoots: vi.fn(async (_id: string, _roots: readonly string[]) => undefined),
+      popOutTab: vi.fn(async (_from: string, _ref: TabRef) => undefined),
+      showWindow: vi.fn(async (_id: string) => undefined),
+      hiddenWindows: vi.fn(async (): Promise<string[]> => []),
+      onHiddenWindows: vi.fn(() => () => undefined),
+      minimizedWindows: vi.fn(async (): Promise<string[]> => []),
+      onMinimizedWindows: vi.fn(() => () => undefined),
+      highlightTab: vi.fn(async (_to: string, _ref: TabRef | null) => undefined),
+      tabAction: vi.fn(async (_to: string, _ref: TabRef, _action: unknown) => undefined),
       onGlow: vi.fn((l: (on: boolean) => void) => {
         windowGlow.add(l)
         return () => windowGlow.delete(l)
@@ -328,6 +355,34 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onTakeTab: vi.fn((l: (tab: MovedTab) => void) => {
         linkTakeTab.add(l)
         return () => linkTakeTab.delete(l)
+      }),
+      onFocusTab: vi.fn((l: (ref: TabRef) => void) => {
+        linkFocusTab.add(l)
+        return () => linkFocusTab.delete(l)
+      }),
+      onCloseTabs: vi.fn((l: (refs: TabRef[]) => void) => {
+        linkCloseTabs.add(l)
+        return () => linkCloseTabs.delete(l)
+      }),
+      onSendTab: vi.fn((l: (req: { to: string; ref: TabRef }) => void) => {
+        linkSendTab.add(l)
+        return () => linkSendTab.delete(l)
+      }),
+      onSetRoots: vi.fn((l: (roots: string[]) => void) => {
+        linkSetRoots.add(l)
+        return () => linkSetRoots.delete(l)
+      }),
+      onPopOutTab: vi.fn((l: (ref: TabRef) => void) => {
+        linkPopOutTab.add(l)
+        return () => linkPopOutTab.delete(l)
+      }),
+      onHighlightTab: vi.fn((l: (ref: TabRef | null) => void) => {
+        linkHighlightTab.add(l)
+        return () => linkHighlightTab.delete(l)
+      }),
+      onTabAction: vi.fn((l: (req: { ref: TabRef; action: TabAction }) => void) => {
+        linkTabAction.add(l)
+        return () => linkTabAction.delete(l)
       }),
       ready: vi.fn(async () => undefined),
     },
@@ -435,6 +490,13 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
     emitTakeTab: (tab: MovedTab) => linkTakeTab.forEach((l) => l(tab)),
+    emitFocusTab: (ref: TabRef) => linkFocusTab.forEach((l) => l(ref)),
+    emitCloseTabsHere: (refs: TabRef[]) => linkCloseTabs.forEach((l) => l(refs)),
+    emitSendTab: (req: { to: string; ref: TabRef }) => linkSendTab.forEach((l) => l(req)),
+    emitSetRoots: (roots: string[]) => linkSetRoots.forEach((l) => l(roots)),
+    emitPopOutTab: (ref: TabRef) => linkPopOutTab.forEach((l) => l(ref)),
+    emitHighlightTab: (ref: TabRef | null) => linkHighlightTab.forEach((l) => l(ref)),
+    emitTabAction: (req: { ref: TabRef; action: TabAction }) => linkTabAction.forEach((l) => l(req)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
     emitDragLanded: (paths: string[]) => dragLanded.forEach((l) => l({ paths })),
     emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
@@ -443,6 +505,13 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
 
 let root: Root | null = null
 let container: HTMLElement | null = null
+/** The tab board with "Show all windows" OFF (it is on by default, YAZ-3343 demo feedback): this window's folder groups. */
+const FOLDER_BOARD = { allWindows: false, snap: true, cards: [] }
+
+// The tab board is a lazy chunk (YAZ-3343 D4), loaded on idle in the app: here it is loaded once up front, so a board renders as it opens.
+beforeAll(async () => {
+  await preloadTabBoard()
+})
 
 async function mount(
   state: AppState,
@@ -1345,6 +1414,130 @@ describe('App Move to new window (YAZ-2933)', () => {
   })
 })
 
+describe('App tab board across windows (YAZ-3343)', () => {
+  const tabNames = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+  const activeName = (el: HTMLElement) => el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent
+  const entry = (over: Partial<WindowEntry> & Pick<WindowEntry, 'id' | 'root'>): WindowEntry => ({ roots: over.root === null ? [] : [over.root], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 }, ...over })
+  const ME = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/c.md'] }
+  const W2 = entry({ id: 'w2', root: '/v', file: '/v/x.md', tabs: ['/v/x.md', '/v/y.md'], name: 'Research' })
+  const withWindows = (over: Partial<AppState> = {}): AppState => ({ ...defaultAppState(), windows: [entry(ME), W2], ...over })
+
+  it('D3, D10, D13: another window\'s board picks a tab here by ref — it shows and this board closes; closes tabs by ref; sends one through the "Move to ▸" door, which saves it first', async () => {
+    const { bridge, el, emitTabOverview, emitFocusTab, emitCloseTabsHere, emitSendTab } = await mount(withWindows(), ME)
+    act(() => emitTabOverview())
+    expect(el.querySelector('.taboverview')).not.toBeNull()
+    act(() => emitFocusTab({ path: '/v/b.md', copy: 0 }))
+    expect(activeName(el)).toBe('b')
+    expect(el.querySelector('.taboverview')).toBeNull()
+    // A ref this strip does not hold is nothing to close.
+    act(() => emitCloseTabsHere([{ path: '/v/c.md', copy: 0 }, { path: '/v/c.md', copy: 1 }]))
+    expect(tabNames(el)).toEqual(['a', 'b'])
+    await act(async () => emitSendTab({ to: 'w2', ref: { path: '/v/a.md', copy: 0 } }))
+    await act(async () => {})
+    // A board's drop is a QUIET move (Yaseen's demo feedback): main raises nothing, w2 adds it in the background.
+    expect(bridge.window.moveTo).toHaveBeenCalledExactlyOnceWith('w2', '/v/a.md', expect.objectContaining({ name: undefined, background: true }))
+    expect(tabNames(el)).toEqual(['b'])
+  })
+
+  it('D13, demo feedback: a tab moved here QUIETLY joins the strip in the background — the page on show and an open board stay; "Move to ▸" still shows it', async () => {
+    const { el, emitTabOverview, emitTakeTab } = await mount(withWindows(), ME)
+    act(() => emitTabOverview())
+    act(() => emitTakeTab({ path: '/v/z.md', name: 'Moved', background: true }))
+    expect(tabNames(el)).toEqual(['a', 'b', 'c', 'Moved'])
+    expect(activeName(el)).toBe('a')
+    expect(el.querySelector('.taboverview')).not.toBeNull()
+    act(() => emitTakeTab({ path: '/v/y.md' }))
+    expect(activeName(el)).toBe('y')
+    expect(el.querySelector('.taboverview')).toBeNull()
+  })
+
+  it('D8, D10, D14: with "Show all windows" on the board shows the other windows\' frames, a named one by its name; Kill all asks "Close N tabs in M windows?" and closes the others there; the title leads with this window\'s name', async () => {
+    const state = withWindows({ tabCanvas: { allWindows: true, snap: true, cards: [] }, windows: [entry({ ...ME, name: 'Desk' }), W2] })
+    const { bridge, el, emitTabOverview } = await mount(state, ME)
+    expect(document.title.startsWith('Desk — ')).toBe(true)
+    act(() => emitTabOverview())
+    expect([...el.querySelectorAll('.taboverview__frame-name')].map((n) => n.textContent)).toEqual(['Desk', 'Research'])
+    act(() => el.querySelector<HTMLButtonElement>('.taboverview__kill')?.click())
+    expect(document.querySelector('.confirm .confirm__text')?.textContent).toBe('Close 5 tabs in 2 windows? Your text is saved. The tabs do not come back.')
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.confirm .confirm__btn')].find((b) => b.textContent === 'Kill 5 tabs')?.click())
+    expect(tabNames(el)).toEqual([])
+    expect(bridge.window.closeTabs).toHaveBeenCalledExactlyOnceWith('w2', [{ path: '/v/x.md', copy: 0 }, { path: '/v/y.md', copy: 0 }])
+  })
+
+  it('demo feedback: a frame\'s "Close all tabs" / "Close window" take two clicks in the menu, no sheet — another window by main\'s doors, this one by its own; an empty window takes a vault chip\'s pick', async () => {
+    const state = withWindows({ tabCanvas: { allWindows: true, snap: true, cards: [] } })
+    const { bridge, el, emitTabOverview, emitSetRoots } = await mount(state, ME)
+    act(() => emitTabOverview())
+    const item = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === label)
+    const twice = (win: string, first: string, second: string) => {
+      act(() => void el.querySelector(`.taboverview__frame[data-win="${win}"]`)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+      act(() => item(first)?.click())
+      act(() => item(second)?.click())
+    }
+    twice('w2', 'Close all tabs', 'Click again to close 2 tabs')
+    expect(document.querySelector('.confirm')).toBeNull()
+    expect(bridge.window.closeTabs).toHaveBeenCalledExactlyOnceWith('w2', [{ path: '/v/x.md', copy: 0 }, { path: '/v/y.md', copy: 0 }])
+    twice('w2', 'Close window', 'Click again to close')
+    expect(bridge.window.closeOther).toHaveBeenCalledExactlyOnceWith('w2')
+    twice('w1', 'Close all tabs', 'Click again to close 3 tabs')
+    expect(tabNames(el)).toEqual([])
+    // Empty now: a vault chip's pick switches this window's vaults.
+    act(() => emitSetRoots(['/w']))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ roots: ['/w'] }))
+  })
+
+  it('demo bug, "why do 2 tabs open?": a window opened EMPTY from the board (its first identity says so) boots with no tab — not the vault\'s last file — and a tab moved in quietly is its ONE tab, active', async () => {
+    const empty = { id: 'w9', root: '/v', file: null, tabs: [], startEmpty: true as const }
+    const { el, emitTakeTab } = await mount(withFolder(withWindows(), '/v', '/v/today.md'), empty)
+    // The blank tab only (⌘T's, YAZ-2655 D10) — no page.
+    expect(tabNames(el)).toEqual(['New tab'])
+    act(() => emitTakeTab({ path: '/v/today.md', background: true }))
+    expect(tabNames(el)).toEqual(['today'])
+    expect(activeName(el)).toBe('today')
+  })
+
+  it('an empty window that is NOT one by choice still opens on the vault\'s last file, as before', async () => {
+    const { el } = await mount(withFolder(withWindows(), '/v', '/v/today.md'), { id: 'w9', root: '/v', file: null, tabs: [] })
+    expect(tabNames(el)).toEqual(['today'])
+  })
+
+  it('demo feedback: "Move to new window" asked by another window\'s board pops this tab out QUIETLY (behind), its text saved first; the strip\'s own stays in front', async () => {
+    const { bridge, el, emitPopOutTab } = await mount(withWindows(), ME)
+    await act(async () => emitPopOutTab({ path: '/v/b.md', copy: 0 }))
+    await act(async () => {})
+    expect(bridge.window.popOut).toHaveBeenCalledExactlyOnceWith('/v/b.md', expect.objectContaining({ background: true }))
+    expect(tabNames(el)).toEqual(['a', 'c'])
+    act(() => void el.querySelectorAll('.tabbar__tab')[0]?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Move to new window')?.click())
+    await act(async () => {})
+    expect(bridge.window.popOut).toHaveBeenLastCalledWith('/v/a.md', expect.not.objectContaining({ background: true }))
+  })
+
+  it('demo feedback: another window\'s board highlighting a tab of THIS window lights it in the strip; null puts it out', async () => {
+    const { el, emitHighlightTab } = await mount(withWindows(), ME)
+    const lit = () => [...el.querySelectorAll('.tabbar__tab--lit [role="tab"]')].map((t) => t.textContent)
+    act(() => emitHighlightTab({ path: '/v/c.md', copy: 0 }))
+    expect(lit()).toEqual(['c'])
+    act(() => emitHighlightTab(null))
+    expect(lit()).toEqual([])
+  })
+
+  it('demo feedback: another window\'s board asks a tab action of THIS window\'s tab — a copy, a display name — and this window runs it', async () => {
+    const { el, emitTabAction } = await mount(withWindows(), ME)
+    act(() => emitTabAction({ ref: { path: '/v/b.md', copy: 0 }, action: { kind: 'duplicate' } }))
+    expect(tabNames(el)).toEqual(['a', 'b', 'b', 'c'])
+    act(() => emitTabAction({ ref: { path: '/v/c.md', copy: 0 }, action: { kind: 'set-name', name: 'Roadmap' } }))
+    expect(tabNames(el)).toEqual(['a', 'b', 'b', 'Roadmap'])
+  })
+
+  it('D14: "Move to ▸" calls a named window by its name', async () => {
+    const { el } = await mount(withWindows(), ME)
+    act(() => void el.querySelectorAll('.tabbar__tab')[0]?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Move to')?.click())
+    expect([...el.querySelectorAll('.ctx-menu__sub [role="menuitem"]')].map((b) => b.textContent)).toContain('Research')
+  })
+})
+
 describe('App Move to ▸ a window (YAZ-3091)', () => {
   const VIEW: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
   const rightClick = (target: Element | undefined) =>
@@ -1478,7 +1671,8 @@ describe('App Move to ▸ a window (YAZ-3091)', () => {
   })
 
   it('S17: from a page of the tab board, the tab leaves the board, and the board stays open', async () => {
-    const { bridge, el } = await mount(withWindows(W2), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    // This window's board alone ("Show all windows" off), so its pages are this window's tabs.
+    const { bridge, el } = await mount({ ...withWindows(W2), tabCanvas: FOLDER_BOARD }, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')!.click())
     const pages = () => [...el.querySelectorAll<HTMLElement>('.taboverview__page')]
     rightClick(pages().find((p) => p.querySelector('.taboverview__title')?.textContent === 'b'))
@@ -1530,32 +1724,21 @@ describe('App new windows carry the page view (YAZ-2951 D2, D5)', () => {
     return registerPageView(scroller, () => view)
   }
 
-  it('⌘⇧N saves the page on show, THEN asks main for the copy with that page\'s view (S11)', async () => {
+  it('⌘⇧N (YAZ-3343, which replaced S11/S13): asks main for a new window with NO view and saves nothing first; a refusal says why', async () => {
     const { bridge, el, emitNewWindow } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
-    const off = answerFor(el, 0, VIEW)
-    const order: string[] = []
-    const flush = vi.spyOn(continuity, 'flushRenamedPath').mockImplementation(async (path) => void order.push(`flush ${path}`))
-    bridge.window.duplicate.mockImplementationOnce(async () => void order.push('duplicate'))
+    const flush = vi.spyOn(continuity, 'flushRenamedPath')
     await act(async () => emitNewWindow())
-    expect(order).toEqual(['flush /v/a.md', 'duplicate'])
-    expect(bridge.window.duplicate).toHaveBeenCalledExactlyOnceWith(VIEW)
-    expect(flush).toHaveBeenCalledTimes(1)
-    off()
+    expect(bridge.window.duplicate).toHaveBeenCalledExactlyOnceWith()
+    expect(flush).not.toHaveBeenCalled()
+    bridge.window.duplicate.mockRejectedValueOnce(new Error('no room'))
+    await act(async () => emitNewWindow())
+    expect(el.textContent).toContain("Can't open a new window: no room")
   })
 
-  it('⌘⇧N with no page on show asks with no view (S13); a failed save opens nothing and says why (S15)', async () => {
-    const { bridge, emitNewWindow, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
-    await act(async () => emitNewWindow())
-    expect(bridge.window.duplicate).toHaveBeenCalledExactlyOnceWith(undefined)
-    act(() => root?.unmount())
-    container?.remove()
-    history.replaceState(null, '', '/')
-    const second = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
-    vi.spyOn(continuity, 'flushRenamedPath').mockRejectedValueOnce(new Error('disk full'))
-    await act(async () => second.emitNewWindow())
-    expect(second.bridge.window.duplicate).not.toHaveBeenCalled()
-    expect(second.el.textContent).toContain("Can't open a new window: disk full")
-    expect(el.textContent).toBe('') // the first window's page is gone: the notice is the second's
+  it('⌘⇧N\'s new window (its first identity says it opens empty) boots on the blank tab with the caret in the search, the same vaults, no page', async () => {
+    const { el } = await mount(withFolder(defaultAppState(), '/v', '/v/a.md'), { id: 'w2', root: '/v', file: null, tabs: [], startEmpty: true })
+    expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual(['New tab'])
+    expect(captured.sidebar?.root ?? '/v').toBe('/v')
   })
 
   it('"Move to new window" passes the page\'s view to main (D2, S16)', async () => {
@@ -2344,7 +2527,7 @@ describe('App tabs (I2, GRO-2234)', () => {
   })
 
   it('the tab board (YAZ-2648 D5): the grid button and the menu key open it over the stack with every editor still mounted; a page opens its tab and closes it; a page ✕ and an island ✕ leave it open; going to a page closes it', async () => {
-    const { el, emitTabOverview } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/Docs/c.md', '/v/Docs/d.md'] })
+    const { el, emitTabOverview } = await mount({ ...defaultAppState(), tabCanvas: FOLDER_BOARD }, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/Docs/c.md', '/v/Docs/d.md'] })
     const overview = () => el.querySelector('.taboverview')
     const page = (label: string) => [...el.querySelectorAll<HTMLElement>('.taboverview__page')].find((c) => c.querySelector('.taboverview__title')?.textContent === label)
     const button = el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')!
@@ -2376,8 +2559,10 @@ describe('App tabs (I2, GRO-2234)', () => {
     // A page's ✕ on the ACTIVE tab closes that tab and the board stays; so does an island's ✕, which closes every tab of its folder.
     act(() => emitTabOverview())
     act(() => page('b')?.querySelector<HTMLButtonElement>('.taboverview__close')?.click())
+    act(() => page('b')?.querySelector<HTMLButtonElement>('.taboverview__close')?.click())
     expect(stripLabels(el)).toEqual(['a', 'c', 'd'])
     expect(overview()).not.toBeNull()
+    act(() => el.querySelector<HTMLButtonElement>('[role="group"][aria-label="Docs"] .taboverview__island-close')?.click())
     act(() => el.querySelector<HTMLButtonElement>('[role="group"][aria-label="Docs"] .taboverview__island-close')?.click())
     expect(stripLabels(el)).toEqual(['a'])
     expect(overview()).not.toBeNull()
@@ -2445,7 +2630,7 @@ describe('App tabs (I2, GRO-2234)', () => {
   })
 
   it('the ways off the tab board: every trip to a page closes it, the page ALREADY open too (S46, YAZ-2657 A2); ⌘W closes the tab and it (S47); its last tab closes it (S44, R18). A rename of the open page, an island\'s ✕ — ONE identity write — and "Move to ▸ Right panel" from a strip tab\'s menu leave it open (R12, R30)', async () => {
-    const { bridge, el, emitTabOverview, emitNextTab, emitCloseTab, emitLinkOpenFile, emitFileRenamed } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/x.md', '/v/Docs/c.md', '/v/Docs/d.md', '/v/Docs/e.md'] })
+    const { bridge, el, emitTabOverview, emitNextTab, emitCloseTab, emitLinkOpenFile, emitFileRenamed } = await mount({ ...defaultAppState(), tabCanvas: FOLDER_BOARD }, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/x.md', '/v/Docs/c.md', '/v/Docs/d.md', '/v/Docs/e.md'] })
     const board = () => el.querySelector('.taboverview')
     const open = () => {
       if (board() === null) act(() => emitTabOverview())
@@ -2477,6 +2662,8 @@ describe('App tabs (I2, GRO-2234)', () => {
     // An island's ✕ closes its three tabs — the active one with them — in ONE identity write, and the board stays (YAZ-2657 A10).
     open()
     bridge.window.setIdentity.mockClear()
+    // Two clicks (demo feedback): the first arms "Close 3", the second closes.
+    act(() => el.querySelector<HTMLButtonElement>('[role="group"][aria-label="Papers"] .taboverview__island-close')?.click())
     expect(await after(() => el.querySelector<HTMLButtonElement>('[role="group"][aria-label="Papers"] .taboverview__island-close')?.click())).toEqual([false, 'x'])
     expect(stripLabels(el)).toEqual(['a', 'b', 'x'])
     expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ tabs: ['/v/a.md', '/v/b.md', '/v/x.md'], file: '/v/x.md' }))
@@ -2498,6 +2685,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     // S44: the last tab closes from the board: the board closes, and the window shows the empty state.
     open()
     act(() => el.querySelector<HTMLButtonElement>('.taboverview__page .taboverview__close')?.click())
+    act(() => el.querySelector<HTMLButtonElement>('.taboverview__page .taboverview__close')?.click())
     expect(board()).toBeNull()
     expect(stripLabels(el)).toEqual([])
     expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
@@ -2511,16 +2699,6 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(el.querySelector('.tabbar__tab--preview')).toBeNull()
     act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Back"]')?.click())
     expect(stripLabels(el)).toEqual(['a', 'b'])
-  })
-
-  it('a page dragged to the board\'s right edge moves its tab to the right panel — the active one too — and the board stays open (YAZ-2648)', async () => {
-    const { bridge, el, emitTabOverview } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
-    act(() => emitTabOverview())
-    act(() => void el.querySelector('.taboverview__page')?.dispatchEvent(new Event('dragstart', { bubbles: true })))
-    act(() => void el.querySelector('.taboverview__drop')?.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true })))
-    expect(stripLabels(el)).toEqual(['b'])
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabs: ['/v/b.md'], file: '/v/b.md', rightPanel: expect.objectContaining({ open: true, items: ['/v/a.md'] }) }))
-    expect([...el.querySelectorAll('.taboverview__title')].map((t) => t.textContent)).toEqual(['b'])
   })
 
   it('the board\'s zoom (YAZ-2648): the layer it opened from zooms out as it hides; a chosen page is active at once, its layer zooms in under the leaving board, and the board is gone when the zoom is over', async () => {

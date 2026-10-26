@@ -63,8 +63,15 @@ ids.reletter/2: invoke ids:reletter ["a0","a1"]; => "answer"; !> {"code":"NOT_FO
 ids.set/3: invoke ids:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 ids.state/1: invoke ids:state ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 index/1: invoke fs:index ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+link.onCloseTabs/1: on link:close-tabs -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:close-tabs
+link.onFocusTab/1: on link:focus-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:focus-tab
+link.onHighlightTab/1: on link:highlight-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:highlight-tab
 link.onNotice/1: on link:notice -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:notice
 link.onOpenFile/1: on link:open-file -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:open-file
+link.onPopOutTab/1: on link:pop-out-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:pop-out-tab
+link.onSendTab/1: on link:send-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:send-tab
+link.onSetRoots/1: on link:set-roots -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:set-roots
+link.onTabAction/1: on link:tab-action -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:tab-action
 link.onTakeTab/1: on link:take-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:take-tab
 link.ready/0: invoke link:ready []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.favorites/1: invoke media:favorites ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -137,6 +144,7 @@ state.setSectionIndent/3: invoke state:set-section-indent ["a0","a1","a2"]; => "
 state.setSettings/1: invoke state:set-settings ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setSettingsFolder/1: invoke state:set-settings-folder ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setSidebarWidth/1: invoke state:set-sidebar-width ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.setTabCanvas/1: invoke state:set-tab-canvas ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setTocSource/3: invoke state:set-toc-source ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setTocSwitch/3: invoke state:set-toc-switch ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.settingsFolder/0: invoke state:settings-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -151,18 +159,29 @@ vaultConfig.onChange/1: on vaultConfig:changed -> listener[[{"id":"0-0-0-0-0","e
 vaultConfig.read/2: invoke vaultConfig:read ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultConfig.write/3: invoke vaultConfig:write ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 watch/2: send watch:subscribe [{"id":"0-0-0-0-0","root":"a0"}]; on watch:event -> listener[["ev"]]; off watch:event; send watch:unsubscribe ["0-0-0-0-0"]
+window.closeOther/1: invoke window:close-other ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.closeSelf/0: invoke window:close-self []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-window.duplicate/1: invoke window:duplicate ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.closeTabs/2: invoke window:close-tabs ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.duplicate/0: invoke window:duplicate []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.focusTab/2: invoke window:focus-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.hiddenWindows/0: invoke window:hidden-windows-now []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.highlight/1: invoke window:highlight ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.highlightTab/2: invoke window:highlight-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.identity/0: invoke window:identity []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.minimizedWindows/0: invoke window:minimized-windows-now []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.moveTab/3: invoke window:move-tab ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.moveTo/3: invoke window:move-to ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.onFlush/1: (no IPC)
 window.onGlow/1: on window:glow -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off window:glow
+window.onHiddenWindows/1: on window:hidden-windows -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off window:hidden-windows
+window.onMinimizedWindows/1: on window:minimized-windows -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off window:minimized-windows
 window.open/1: invoke window:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openAlone/1: invoke window:open-alone ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.openBehind/0: invoke window:open-behind []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openRecent/1: invoke window:open-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openSet/1: invoke window:open-set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.popOut/2: invoke window:pop-out ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.popOutTab/2: invoke window:pop-out-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.removeSession/1: invoke window:remove-session ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.removeSet/1: invoke window:remove-set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.renameSession/2: invoke window:rename-session ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -171,7 +190,11 @@ window.restoreSession/1: invoke window:restore-session ["a0"]; => "answer"; !> {
 window.saveSession/2: invoke window:save-session ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.saveSet/1: invoke window:save-set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.setIdentity/1: invoke window:set-identity ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.setName/2: invoke window:set-name ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.setRoots/2: invoke window:set-roots ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.setSessionTabs/2: invoke window:set-session-tabs ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.showWindow/1: invoke window:show ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.tabAction/3: invoke window:tab-action ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.zoom/1: invoke window:zoom ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 writeAsset/1: invoke fs:write-asset ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 writeFile/1: invoke fs:write ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}"
