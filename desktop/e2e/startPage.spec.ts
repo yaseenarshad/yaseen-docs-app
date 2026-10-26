@@ -89,8 +89,8 @@ test('⌘T, →, ↓, Enter: a recent page opens from the new tab page with no m
   expect(opens[roadmap]).toEqual({ score: 1, last: seededAt - MINUTE })
 })
 
-// Written for YAZ-2740 and NOT RUN: Playwright is off limits for agents here (it shows the app's window). The widths
-// were measured on a copy of the row in headless Chromium. The first person who runs it corrects what it finds.
+// Written for YAZ-2740 without being run; the widths were measured on a copy of the row in headless Chromium. First
+// run hidden for YAZ-3343 (26 Oct 2026): it passes once ⌘T waits for the page.
 test('a narrow window with two vaults: the long name of a recent page shows in full, and the vault tag gave way (YAZ-2740 S9)', async () => {
   // This test stands by itself: the app of the test above is gone, also when that test stopped before its quit.
   await app?.close().catch(() => undefined)
@@ -106,6 +106,9 @@ test('a narrow window with two vaults: the long name of a recent page shows in f
   state.folders[vault].opens = { [note]: { score: 1, last: seededAt - MINUTE } }
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
+  // The page listens for the menu once its tab shows: ⌘T before that is lost. (The old focus step of `clickMenuItem`
+  // waited about 3 s by chance; the hidden run has none since YAZ-3343.)
+  await expect(activeTab(win)).toHaveText('Welcome note')
   await clickMenuItem(app, 'menu.file.new-tab', 'w1')
   await expect(recent(win).locator('.start__name')).toHaveText([LONG_NAME])
   await expect(recent(win).locator('.tree__vault')).toHaveText([LONG_VAULT_NAME])

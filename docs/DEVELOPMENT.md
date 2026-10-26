@@ -66,7 +66,7 @@ ls "$HOME/Library/Application Support/Yaseen Docs/"
 
 ```bash
 npm test          # vitest suite, FOUR projects: client (jsdom), desktop (node), tools (node — the packaging checks, the budget gate and the perf harness), perf (jsdom — the budget tripwires)
-npm run e2e       # Playwright-Electron suite (desktop/e2e/, 76 specs; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
+npm run e2e       # Playwright-Electron suite (desktop/e2e/, 78 specs; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
 npm run typecheck
 npm run build     # electron-vite build → desktop/out, then the share viewer → share/dist/assets
 npm run perf:budget:ci   # the size and integrity gate on desktop/out (what CI runs, after build)

@@ -2322,7 +2322,7 @@ describe('the save log (YAZ-3235 D1)', () => {
 })
 
 describe('the tab board canvas and window names (YAZ-3343 D1, D14)', () => {
-  it('demo bug: a stored card whose tab left its window is PRUNED when that window\'s tabs change — from the demo\'s state: two stale cards sharing cells with live ones; idempotent', async () => {
+  it('YAZ-3343 D28: a stored card whose tab left its window is PRUNED when that window\'s tabs change — from the demo\'s state: two stale cards sharing cells with live ones; idempotent', async () => {
     const strip = (paths: string[]) => paths.map((path) => ({ path }))
     const roadmap: WindowEntry = { ...win('demo-a'), root: '/v', roots: ['/v'], file: '/v/Roadmap.md', tabs: ['/v/Roadmap.md', '/v/Note 08.md', '/v/Wireframe.md'], tabStrip: [{ path: '/v/Roadmap.md', name: 'Plan' }, ...strip(['/v/Note 08.md', '/v/Wireframe.md'])] }
     const card = (path: string, copy: number, x: number, y: number): CanvasCard => ({ win: 'demo-a', path, copy, by: 'window', x, y })
@@ -2339,7 +2339,7 @@ describe('the tab board canvas and window names (YAZ-3343 D1, D14)', () => {
     expect(store.get().tabCanvas).toBe(held)
   })
 
-  it('demo bug: frame places are stored per window (the last set wins), loaded leniently, cut at MAX_CANVAS_FRAMES, and go with their window', async () => {
+  it('YAZ-3343 D16: frame places are stored per window (the last set wins), loaded leniently, cut at MAX_CANVAS_FRAMES, and go with their window', async () => {
     await seed(valid({ windows: [win('w1'), win('w2')], tabCanvas: { allWindows: true, cards: [], frames: [{ win: 'w1', x: 10, y: 20 }, { win: 'w1', x: 1, y: 1 }, { win: 'gone', x: 0, y: 0 }, { win: 'w2', x: 'far', y: 0 }, null] } }))
     const store = createStore(file)
     expect(store.get().tabCanvas.frames).toEqual([{ win: 'w1', x: 10, y: 20 }])
@@ -2366,7 +2366,7 @@ describe('the tab board canvas and window names (YAZ-3343 D1, D14)', () => {
         cards: [good, card('w1', '/v/a.md', 99), card('w2', '/v/b.md'), { ...good, path: 'rel.md' }, { ...good, copy: -1 }, { ...good, copy: 1.5 }, { ...good, by: 'grid' }, { ...good, x: 'far' }, { ...good, win: '' }, null, card('w1', '/v/a.md', 2, { copy: 1 }), card('w1', '/v/a.md', 3, { by: 'window' })],
       },
     }))
-    // A switch that is not `false` is the default, ON (demo feedback); a stored `false` stays off.
+    // A switch that is not `false` is the default, ON (D19); a stored `false` stays off.
     expect(createStore(file).get().tabCanvas).toEqual({ allWindows: true, snap: true, cards: [good, card('w1', '/v/a.md', 2, { copy: 1 }), card('w1', '/v/a.md', 3, { by: 'window' })], frames: [] })
     expect(defaultTabCanvas().allWindows).toBe(true)
     await seed(valid({ windows: [win('w1')], tabCanvas: { allWindows: false, snap: true, cards: [] } }))

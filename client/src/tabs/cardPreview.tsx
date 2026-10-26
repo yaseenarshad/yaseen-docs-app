@@ -1,5 +1,5 @@
 /**
- * THE CARD PREVIEW (YAZ-3343, Yaseen's demo feedback: "reuse the existing Preview on hover setting"): the sidebar's
+ * THE CARD PREVIEW (YAZ-3343 D18): the sidebar's
  * own hover panel (`PreviewPanel`: a note's top, a board's picture, nothing for anything else) beside a card of the
  * tab board. Resting the pointer on a card for the sidebar's dwell opens it, while Settings › Preview on hover is on;
  * holding Space opens it at once for the highlighted card, whatever the setting — it is an explicit key.

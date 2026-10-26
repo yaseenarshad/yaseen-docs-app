@@ -7,7 +7,7 @@ import { MAX_FOLD_KEYS_PER_FILE, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, M
 import { CONTRACT, SPECIAL, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import * as windows from '../windows'
-import { registerWindowIpc } from './window'
+import { MAX_CLOSE_REFS, registerWindowIpc } from './window'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }))
 
@@ -671,6 +671,10 @@ describe('registerWindowIpc', () => {
       for (const copy of [-1, 1.5, '0', undefined]) expect(await focusTab({ sender }, 'w2', { path: '/v/a.md', copy })).toEqual(bad('BAD_REQUEST'))
       expect(await closeTabs({ sender }, 'w2', REF)).toEqual(bad('BAD_REQUEST')) // not an array
       expect(await closeTabs({ sender }, 'w2', [REF, null])).toEqual(bad('BAD_REQUEST')) // one bad ref rejects the call
+      // A list longer than any window holds is refused whole, as state:set-tab-canvas refuses its long lists.
+      expect(await closeTabs({ sender }, 'w2', Array.from({ length: MAX_CLOSE_REFS + 1 }, (_, copy) => ({ path: '/v/a.md', copy })))).toEqual(bad('BAD_REQUEST'))
+      // The error names the parameter the caller got wrong.
+      expect(await focusTab({ sender }, 7, REF)).toEqual(expect.objectContaining({ error: expect.objectContaining({ message: expect.stringContaining("'to'") }) }))
       expect(manager.focusTab).toHaveBeenCalledTimes(1)
       expect(manager.closeTabs).toHaveBeenCalledTimes(1)
       manager.focusTab.mockReturnValueOnce(false)

@@ -114,7 +114,7 @@ describe('NoticeToast (YAZ-3303)', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('YAZ-3343, demo feedback: a long message wraps (three lines at most) and, when it is cut, its whole text is the pointer\'s (title); a short one is as before', () => {
+  it('YAZ-3343 D36, S60: a long message wraps (three lines at most) and, when it is cut, its whole text is the pointer\'s (title); a short one is as before', () => {
     show({ text: 'Saved', icon: 'info' }, 4000)
     expect(el.querySelector('.link-notice__text')?.getAttribute('title')).toBeNull()
     act(() => root?.unmount())

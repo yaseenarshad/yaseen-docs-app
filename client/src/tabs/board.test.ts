@@ -4,8 +4,8 @@
  * page does not repeat. Pure functions, no DOM.
  */
 import { describe, expect, it } from 'vitest'
-import type { CanvasCard } from '@shared/types'
-import { BOARD, buildBoard, CELL, cellKey, colsFor, freeFramePosition, nearestOk, dropOutcome, frameAt, freeCell, islandBox, islandCols, layoutCanvas, nearest, snapPoint, withoutTitle, type FrameInput, type VaultIslands } from './board'
+import { applyTabCanvasPatch, type CanvasCard, type CanvasFrame } from '@shared/types'
+import { arrivalIn, BOARD, buildBoard, CELL, cellKey, colsFor, fieldOf, frameDrop, freeFramePosition, nearestOk, placeCard, dropOutcome, frameAt, islandBox, islandCols, layoutCanvas, nearest, snapPoint, withoutTitle, type FrameInput, type VaultIslands } from './board'
 
 const name = (path: string): string => path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
 /** Tabs by path: with no copies, a tab's id here is its path (YAZ-2940 D1). */
@@ -55,7 +55,7 @@ describe('buildBoard (D7)', () => {
 })
 
 describe('islandCols / islandBox — the sizes the stylesheet is given', () => {
-  it('about as wide as tall (demo feedback: ceil(√(n × 1.6)), 8 at most), and never more than the board is wide', () => {
+  it('about as wide as tall (YAZ-3343 D29: ceil(√(n × 1.6)), 8 at most), and never more than the board is wide', () => {
     expect([1, 2, 3, 4, 5, 7].map((count) => islandCols(count, 2000))).toEqual([1, 2, 3, 3, 3, 4])
     expect([1, 2, 19, 40, 100].map(colsFor)).toEqual([1, 2, 6, 8, 8])
     expect(islandCols(7, 500)).toBe(2)
@@ -105,7 +105,7 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
     ]
     const plan = layoutCanvas([me], { by: 'folder', wrapW: 2000, stored })
     expect(at(plan, '/v/a.md')).toEqual([900, 700, true])
-    // b keeps its own slot: nothing closes up (demo feedback, "no reshuffle").
+    // b keeps its own slot: nothing closes up (D16, "no reshuffle").
     expect(at(plan, '/v/b.md')).toEqual([islandPad + pageW + pageGap, islandPad + labelH, false])
     const notes = plan.groups[0]
     expect([notes.x, notes.y]).toEqual([islandPad + pageW + pageGap - islandPad, 0])
@@ -114,16 +114,19 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
     expect(plan.bounds.x + plan.bounds.w).toBe(Math.max(900 + pageW + islandPad, docs.x + docs.w))
   })
 
-  it('demo feedback, "no reshuffle": moving one card never moves another card or group, in either layout', () => {
+  it('S16, D16 "no reshuffle": moving one card never moves another card or group, in either layout', () => {
     const other = one('w2', ['/w/x.md', '/w/y.md'], ['/w'], ['Work'])
     for (const by of ['folder', 'window'] as const) {
       const windows = by === 'folder' ? [me] : [me, other]
-      const free = layoutCanvas(windows, { by, wrapW: 1200, stored: [] })
+      const free = layoutCanvas(windows, { by, wrapW: 3000, stored: [] })
       for (const moved of [...free.cards.keys()]) {
         const info = moved.includes('\n') ? { win: 'w2', path: moved.split('\n')[1] } : { win: 'me', path: moved }
-        const plan = layoutCanvas(windows, { by, wrapW: 1200, stored: [{ ...info, copy: 0, by, x: -500, y: 4000 }] })
+        // Far down in its own column: the drop's rule keeps its frame (or group) clear of the others (D28).
+        const own = by === 'window' ? free.frames.find((f) => f.win === info.win)!.x : free.groups.find((g) => g.island.pages.some((p) => p.id === moved))!.x
+        const to = { x: own + (by === 'window' ? framePad : islandPad), y: free.bounds.y + free.bounds.h + 500 }
+        const plan = layoutCanvas(windows, { by, wrapW: 3000, stored: [{ ...info, copy: 0, by, ...to }] })
         for (const [id, card] of free.cards) if (id !== moved) expect([id, plan.cards.get(id)]).toEqual([id, card])
-        expect(plan.cards.get(moved)).toEqual({ x: -500, y: 4000, moved: true })
+        expect(plan.cards.get(moved)).toMatchObject({ ...to, moved: true })
         // Every frame keeps its place (a moved card may only widen its own frame's box).
         for (const f of plan.frames) expect([f.win, f.x <= free.frames.find((g) => g.win === f.win)!.x]).toEqual([f.win, true])
       }
@@ -138,7 +141,7 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
     expect([plan.groups, plan.vaults]).toEqual([[], []])
     expect(plan.frames.map((f) => f.win)).toEqual(['me', 'w2', 'w3'])
     const [mine, second, third] = plan.frames
-    const slot = (i: number) => [framePad + (i % BOARD.frameCols) * (pageW + pageGap), frameLabelH + framePad + Math.floor(i / BOARD.frameCols) * (pageH + pageGap), false]
+    const slot = (i: number) => [framePad + (i % colsFor(6)) * (pageW + pageGap), frameLabelH + framePad + Math.floor(i / colsFor(6)) * (pageH + pageGap), false]
     // Folder order: the vault's top level (a, b), then Docs (c..f) — four columns, so f wraps to the next row.
     expect(plan.order.slice(0, 6)).toEqual(['/v/a.md', '/v/b.md', '/v/Docs/c.md', '/v/Docs/d.md', '/v/Docs/e.md', '/v/Docs/f.md'])
     plan.order.slice(0, 6).forEach((id, i) => expect([id, at(plan, id)]).toEqual([id, slot(i)]))
@@ -156,7 +159,7 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
     void labelH
   })
 
-  it('demo bug, "the window pane is getting bigger and bigger": a frame or a group dragged twice keeps its size, and its box moves by exactly the sum of the drags, in both layouts', () => {
+  it('S25, D16, "the window pane is getting bigger and bigger": a frame or a group dragged twice keeps its size, and its box moves by exactly the sum of the drags, in both layouts', () => {
     const other = one('w2', ['/w/x.md', '/w/y.md'], ['/w'], ['Work'])
     const two = one('me', ['/v/a.md', '/w/b.md', '/w/Docs/c.md'], ['/v', '/w'], ['Notes', 'Work'])
     /** What the board stores on a drop: each carried card at its place + the move. */
@@ -201,7 +204,7 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
   })
 })
 
-describe('the grid ("Snap to grid", demo feedback): a frame\'s own, at any origin', () => {
+describe('the grid ("Snap to grid", YAZ-3343 D26): a frame\'s own, at any origin', () => {
   // A frame dragged by a non-cell amount: its grid starts wherever its cards are.
   const o = { x: 137, y: -41 }
 
@@ -209,12 +212,14 @@ describe('the grid ("Snap to grid", demo feedback): a frame\'s own, at any origi
     expect(snapPoint({ x: o.x + CELL.w * 2 + 40, y: o.y + CELL.h * 3 - 30 }, o)).toEqual({ x: o.x + CELL.w * 2, y: o.y + CELL.h * 3 })
     expect(snapPoint({ x: o.x - 200, y: o.y }, o)).toEqual({ x: o.x - CELL.w, y: o.y })
     const target = { x: o.x + CELL.w, y: o.y + CELL.h }
-    expect(freeCell(target, new Set(), o)).toEqual(target)
+    const taken = new Set<string>()
+    const freeCell = () => nearestOk(target, CELL, (p) => !taken.has(cellKey(p, o)))
+    expect(freeCell()).toEqual(target)
     // Taken: the nearest free cell — up or down first (a cell is wider than tall).
-    const taken = new Set([cellKey(target, o)])
-    expect(freeCell(target, taken, o)).toEqual({ x: target.x, y: target.y - CELL.h })
+    taken.add(cellKey(target, o))
+    expect(freeCell()).toEqual({ x: target.x, y: target.y - CELL.h })
     taken.add(cellKey({ x: target.x, y: target.y - CELL.h }, o))
-    expect(freeCell(target, taken, o)).toEqual({ x: target.x, y: target.y + CELL.h })
+    expect(freeCell()).toEqual({ x: target.x, y: target.y + CELL.h })
   })
 
   it('a frame\'s auto slots are one cell apart: they are on the grid of any one of them', () => {
@@ -225,7 +230,7 @@ describe('the grid ("Snap to grid", demo feedback): a frame\'s own, at any origi
   })
 })
 
-describe('no overlap and a viewport-shaped layout (demo feedback)', () => {
+describe('no overlap and a viewport-shaped layout (YAZ-3343 D28, D29)', () => {
   const win = (id: string, n: number): FrameInput => ({ win: id, vaults: buildBoard(Array.from({ length: n }, (_, i) => ({ id: `${id}\n/v/n${i}.md\n0`, path: `/v/n${i}.md` })), ['/v'], ['Notes'], name).map((v) => ({ ...v, named: false })) })
 
   it('freeFramePosition: a frame dropped on another goes to the nearest spot clear of it by the gap; a clear one stays', () => {
@@ -270,6 +275,140 @@ describe('no overlap and a viewport-shaped layout (demo feedback)', () => {
     const [a, b] = plan.frames
     expect([a.x, a.y]).toEqual([b0.x, b0.y])
     expect(a.x + a.w <= b.x - BOARD.apart || b.x + b.w <= a.x - BOARD.apart || a.y + a.h <= b.y - BOARD.frameLabelH - BOARD.apart || b.y + b.h <= a.y - BOARD.frameLabelH - BOARD.apart).toBe(true)
+  })
+})
+
+describe('THE NO-OVERLAP RULE in the layout (YAZ-3343 D28, S26, S56): frames and groups never overlap, whatever is stored', () => {
+  const win = (id: string, n: number): FrameInput => ({ win: id, vaults: buildBoard(Array.from({ length: n }, (_, i) => ({ id: `${id}\n/v/n${i}.md\n0`, path: `/v/n${i}.md` })), ['/v'], ['Notes'], name).map((v) => ({ ...v, named: false })) })
+  /** A window of one vault whose folders are the groups of the folder layout. */
+  const folders = (paths: readonly string[]): FrameInput => ({ win: 'me', vaults: buildBoard(byPath(paths), ['/v'], ['Notes'], name).map((v) => ({ ...v, named: false })) })
+  /** Every frame (its label row in) or group of the plan. */
+  const boxes = (plan: ReturnType<typeof layoutCanvas>): { key: string; x: number; y: number; w: number; h: number }[] =>
+    plan.frames.length > 0 ? plan.frames.map((f) => ({ key: f.win, x: f.x, y: f.y - BOARD.frameLabelH, w: f.w, h: f.h + BOARD.frameLabelH })) : plan.groups.map((g) => ({ key: g.key, x: g.x, y: g.y, w: g.w, h: g.h }))
+  const overlapping = (plan: ReturnType<typeof layoutCanvas>): string[][] => {
+    const all = boxes(plan)
+    return all.flatMap((a, i) => all.slice(i + 1).filter((b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h).map((b) => [a.key, b.key]))
+  }
+  const card = (w: string, i: number, x: number, y: number, by: 'window' | 'folder' = 'window'): CanvasCard => ({ win: w, path: `/v/n${i}.md`, copy: 0, by, x, y })
+  /** The canvas after the plan's repair is stored, by the shared rule. */
+  const repaired = (plan: ReturnType<typeof layoutCanvas>, cards: CanvasCard[], frames: CanvasFrame[], wins: readonly string[]) => applyTabCanvasPatch({ allWindows: true, snap: true, cards, frames }, plan.repair ?? {}, new Set(wins))
+
+  it('window layout: an AUTO frame keeps clear of a frame with only SOME cards placed — the placed card is part of that frame', () => {
+    const wins = [win('a', 2), win('b', 2)]
+    const free = layoutCanvas(wins, { by: 'window', wrapW: 5000, stored: [] })
+    const b0 = free.frames[1]
+    // One of a's two cards placed on b's first slot: a's frame now reaches over b's spot.
+    const plan = layoutCanvas(wins, { by: 'window', wrapW: 5000, stored: [card('a', 1, b0.x + BOARD.framePad, b0.y + BOARD.framePad)] })
+    expect(overlapping(plan)).toEqual([])
+    // a stands as the user left it: b gave way.
+    expect(plan.cards.get('a\n/v/n1.md\n0')).toMatchObject({ x: b0.x + BOARD.framePad, y: b0.y + BOARD.framePad, moved: true })
+    expect(plan.cards.get('a\n/v/n0.md\n0')).toMatchObject({ x: free.cards.get('a\n/v/n0.md\n0')!.x, y: free.cards.get('a\n/v/n0.md\n0')!.y })
+  })
+
+  it('window layout: a frame dragged away (its cards and its place stored) moves no other frame — its spot in the flow stays empty (D16)', () => {
+    const wins = [win('a', 2), win('b', 3), win('c', 1)]
+    const free = layoutCanvas(wins, { by: 'window', wrapW: 5000, stored: [] })
+    const a = free.frames[0]
+    const dy = 2000
+    const stored = [0, 1].map((i) => card('a', i, free.cards.get(`a\n/v/n${i}.md\n0`)!.x, free.cards.get(`a\n/v/n${i}.md\n0`)!.y + dy))
+    const plan = layoutCanvas(wins, { by: 'window', wrapW: 5000, stored, anchors: new Map([['a', { x: a.x, y: a.y - BOARD.frameLabelH + dy }]]) })
+    expect(plan.frames.slice(1)).toEqual(free.frames.slice(1))
+    expect(plan.frames[0]).toMatchObject({ x: a.x, y: a.y + dy })
+    expect(plan.repair).toBeNull()
+  })
+
+  it('window layout: two STORED frames that overlap (an old file) — the later one moves clear, and the plan says what to store; stored, the next layout is the same and stores nothing', () => {
+    const wins = [win('a', 2), win('b', 2)]
+    const cards = [card('a', 0, 0, 0), card('a', 1, CELL.w, 0), card('b', 0, 100, 40), card('b', 1, 100 + CELL.w, 40)]
+    const plan = layoutCanvas(wins, { by: 'window', wrapW: 5000, stored: cards })
+    expect(overlapping(plan)).toEqual([])
+    // a, the earlier, stays.
+    expect(plan.cards.get('a\n/v/n0.md\n0')).toMatchObject({ x: 0, y: 0 })
+    const b = plan.cards.get('b\n/v/n0.md\n0')!
+    expect(plan.repair?.set?.map((c) => [c.win, c.path, c.x, c.y])).toEqual([['b', '/v/n0.md', b.x, b.y], ['b', '/v/n1.md', b.x + CELL.w, b.y]])
+    const next = repaired(plan, cards, [], ['a', 'b'])
+    const again = layoutCanvas(wins, { by: 'window', wrapW: 5000, stored: next.cards, anchors: new Map((next.frames ?? []).map((f) => [f.win, f])) })
+    expect([again.cards, again.frames, again.repair]).toEqual([plan.cards, plan.frames, null])
+  })
+
+  it('window layout: a frame that GROWS by a tab that arrived while the board was closed never covers the frame under it', () => {
+    const wins = [win('a', 3), win('b', 2)]
+    // a: its three cards in one row, its place stored; b right under it, the gap kept.
+    const a = [0, 1, 2].map((i) => card('a', i, BOARD.framePad + i * CELL.w, BOARD.frameLabelH + BOARD.framePad))
+    const bTop = BOARD.frameLabelH + BOARD.pageH + 2 * BOARD.framePad + BOARD.apart
+    const b = [0, 1].map((i) => card('b', i, BOARD.framePad + i * CELL.w, bTop + BOARD.frameLabelH + BOARD.framePad))
+    const anchors = new Map([['a', { x: 0, y: 0 }], ['b', { x: 0, y: bTop }]])
+    const before = layoutCanvas(wins, { by: 'window', wrapW: 5000, stored: [...a, ...b], anchors })
+    expect([overlapping(before), before.repair]).toEqual([[], null])
+    // A fourth tab opens in a: its slot is a new row, and a reaches down over b.
+    const grown = [win('a', 4), win('b', 2)]
+    const plan = layoutCanvas(grown, { by: 'window', wrapW: 5000, stored: [...a, ...b], anchors })
+    expect(overlapping(plan)).toEqual([])
+    expect(plan.cards.get('a\n/v/n3.md\n0')).toMatchObject({ x: BOARD.framePad, y: BOARD.frameLabelH + BOARD.framePad + CELL.h, moved: false })
+    // b, the later frame, moved clear; its cards and its place are stored where it stands now.
+    const bf = plan.frames[1]
+    expect(plan.repair?.setFrames).toEqual([{ win: 'b', x: bf.x, y: bf.y - BOARD.frameLabelH }])
+  })
+
+  it('folder layout: an AUTO group keeps clear of a group whose card was placed over its spot', () => {
+    const me = folders(['/v/a.md', '/v/b.md', '/v/Docs/c.md', '/v/Docs/d.md'])
+    const free = layoutCanvas([me], { by: 'folder', wrapW: 5000, stored: [] })
+    const docs = free.groups[1]
+    const plan = layoutCanvas([me], { by: 'folder', wrapW: 5000, stored: [{ win: 'me', path: '/v/b.md', copy: 0, by: 'folder', x: docs.x + BOARD.islandPad, y: docs.y + BOARD.islandPad + BOARD.labelH }] })
+    expect(overlapping(plan)).toEqual([])
+    expect(plan.cards.get('/v/b.md')).toMatchObject({ x: docs.x + BOARD.islandPad, moved: true })
+  })
+
+  it('folder layout: two STORED groups that overlap — the later moves clear, all its cards stored; the next layout stores nothing', () => {
+    const me = folders(['/v/a.md', '/v/Docs/c.md'])
+    const cards: CanvasCard[] = [{ win: 'me', path: '/v/a.md', copy: 0, by: 'folder', x: 0, y: 0 }, { win: 'me', path: '/v/Docs/c.md', copy: 0, by: 'folder', x: 50, y: 20 }]
+    const plan = layoutCanvas([me], { by: 'folder', wrapW: 5000, stored: cards })
+    expect(overlapping(plan)).toEqual([])
+    const c = plan.cards.get('/v/Docs/c.md')!
+    expect(plan.repair?.set).toEqual([{ win: 'me', path: '/v/Docs/c.md', copy: 0, by: 'folder', x: c.x, y: c.y }])
+    const again = layoutCanvas([me], { by: 'folder', wrapW: 5000, stored: repaired(plan, cards, [], ['me']).cards })
+    expect([again.cards, again.repair]).toEqual([plan.cards, null])
+  })
+})
+
+describe('the placement rules of a drop (YAZ-3343 D26, D28, D30)', () => {
+  const win = (id: string, n: number): FrameInput => ({ win: id, vaults: buildBoard(Array.from({ length: n }, (_, i) => ({ id: `${id}\n/v/n${i}.md\n0`, path: `/v/n${i}.md` })), ['/v'], ['Notes'], name).map((v) => ({ ...v, named: false })) })
+  // a: three cards in a row; b right of it, the gap kept.
+  const plan = layoutCanvas([win('a', 3), win('b', 1)], { by: 'window', wrapW: 5000, stored: [] })
+  const where = (id: string) => plan.cards.get(id)
+  const at = (i: number) => plan.cards.get(`a\n/v/n${i}.md\n0`)!
+  const b = plan.frames[1]
+
+  it('S14, S15, S28: a card goes to the nearest FREE cell of its frame\'s grid, never to a cell that makes its frame reach another; Snap off, where it was let go', () => {
+    const field = fieldOf(plan, 'window', 'a', new Set([`a\n/v/n0.md\n0`]), where)
+    // Let go a little off n1's cell: n1 holds it, so the nearest free cell — above it (a cell is wider than tall).
+    expect(placeCard(field, { x: at(1).x + 30, y: at(1).y + 10 }, true)).toEqual({ x: at(1).x, y: at(1).y - CELL.h })
+    // Let go on b's frame: the nearest cell that keeps a clear of b, left of b by the gap at least.
+    const put = placeCard(field, { x: b.x + 20, y: at(0).y }, true)
+    expect(put.x + BOARD.pageW + BOARD.framePad + BOARD.apart).toBeLessThanOrEqual(b.x)
+    expect(field.taken.has(cellKey(put, field.origin))).toBe(false)
+    // Snap off, in the open: where it was let go.
+    expect(placeCard(field, { x: at(0).x + 7, y: at(0).y + 300 }, false)).toEqual({ x: at(0).x + 7, y: at(0).y + 300 })
+  })
+
+  it('S41, S51, S36: a card ARRIVES inside its frame — the frame frozen first, then the first free cell or a new row; a copy right of its source', () => {
+    const set = arrivalIn(plan, 'a', { path: '/v/x.md', copy: 0 }, { where })
+    expect(set.slice(0, 3)).toEqual([0, 1, 2].map((i) => ({ win: 'a', path: `/v/n${i}.md`, copy: 0, by: 'window', x: at(i).x, y: at(i).y })))
+    // The row is full: a new row at its foot.
+    expect(set[3]).toEqual({ win: 'a', path: '/v/x.md', copy: 0, by: 'window', x: at(0).x, y: at(0).y + CELL.h })
+    // Next to its source: right of n0 is taken, so below it.
+    expect(arrivalIn(plan, 'a', { path: '/v/n0.md', copy: 1 }, { where, near: at(0) }).at(-1)).toMatchObject({ x: at(0).x, y: at(0).y + CELL.h })
+    // In a frame with a hole, the hole.
+    const holed = layoutCanvas([win('a', 3), win('b', 1)], { by: 'window', wrapW: 5000, stored: [{ win: 'a', path: '/v/n1.md', copy: 0, by: 'window', x: at(1).x, y: at(1).y + CELL.h }] })
+    expect(arrivalIn(holed, 'a', { path: '/v/x.md', copy: 0 }, { where: (id) => holed.cards.get(id) })).toEqual([{ win: 'a', path: '/v/x.md', copy: 0, by: 'window', x: at(1).x, y: at(1).y }])
+  })
+
+  it('S26: a frame dropped on another goes to the nearest spot clear of it; dropped in the open it stays where it was let go', () => {
+    expect(frameDrop(plan, 'window', 'a', 0, 900)).toEqual({ dx: 0, dy: 900 })
+    const move = frameDrop(plan, 'window', 'a', b.x - plan.frames[0].x, 0)
+    const a = plan.frames[0]
+    const moved = { x: a.x + move.dx, y: a.y + move.dy }
+    expect(moved.x + a.w + BOARD.apart <= b.x || b.x + b.w + BOARD.apart <= moved.x || moved.y + a.h + BOARD.apart <= b.y - BOARD.frameLabelH || b.y + b.h + BOARD.apart <= moved.y - BOARD.frameLabelH).toBe(true)
   })
 })
 

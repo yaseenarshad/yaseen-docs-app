@@ -15,7 +15,7 @@ interface UseLinkEventsOptions {
   onCloseTabs?: (refs: TabRef[]) => void
   /** Another window's tab board dropped this window's tab `ref` in the frame of window `to` (YAZ-3343 D13): save it, send it with `window.moveTo`, close it here. */
   onSendTab?: (req: { to: string; ref: TabRef }) => void
-  /** A tab board's vault chip picked this EMPTY window's vaults (YAZ-3343, demo feedback): show them, if it still has no tab. */
+  /** A tab board's vault chip picked this EMPTY window's vaults (YAZ-3343 D22): show them, if it still has no tab. */
   onSetRoots?: (roots: string[]) => void
   /** A tab board of another window asked this one to move its tab `ref` to a new window, quietly (YAZ-3343). */
   onPopOutTab?: (ref: TabRef) => void
@@ -31,7 +31,7 @@ interface UseLinkEventsOptions {
  * Deep-link pushes from the main process (E1, GRO-2171); main routes each link to the best window. A tab moved from
  * another window comes the same way (YAZ-3091 D1), and so do the tab board's requests from other windows (YAZ-3343
  * D3, D13). Every listener is on BEFORE `link.ready`: main sends what it held at that call, and a push with no
- * listener is lost. The board's three are optional: a window without them hears nothing of the board.
+ * listener is lost. The board's seven are optional: a window without them hears nothing of the board.
  */
 export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onHighlightTab, onTabAction, onOpenFromFiles }: UseLinkEventsOptions): void {
   useEffect(() => {

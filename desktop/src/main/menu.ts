@@ -19,7 +19,7 @@ export interface MenuHandlers {
   pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** File › New Tab (⌘T, YAZ-2655 D10): the focused window's renderer shows its blank tab and puts the caret in its search bar. */
   newTab(): void
-  /** File › New Window (⌘⇧N, D6): ask the focused window for its copy (YAZ-2951 D5) — it saves its page, then calls `window:duplicate` with its page view. */
+  /** File › New Window (⌘⇧N, D6): the focused window calls `window:duplicate` — a window on its vaults with no tab (YAZ-3343 D35). */
   newWindow(): void
   /** File › New Files Window (⌘⇧F, YAZ-3357 D5): main opens a Files window on the focused window's vaults, flush left of it. */
   newFilesWindow(): void
@@ -367,8 +367,8 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
       if (target !== undefined) target.send(SPECIAL.menuPasteAs, { mode, text: host.readClipboardText() } satisfies ClipboardPasteRequest)
     },
     newWindow() {
-      // Through the window first (YAZ-2951 D5): it saves its page, reads its page view, then calls
-      // `window:duplicate`. A window whose page does not answer opens nothing (S14).
+      // Through the focused window, which calls `window:duplicate` (YAZ-3343 D35): main names the caller from the
+      // sender. A window whose page does not answer opens nothing (YAZ-2951 S14).
       host.focusedWebContents()?.send(CONTRACT.menu.onNewWindow.channel)
     },
     newFilesWindow() {

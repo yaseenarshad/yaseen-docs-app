@@ -195,31 +195,31 @@ export const CONTRACT = {
     /** A window frame's name on the tab board (YAZ-3343 D14): name the open window `id`, or `null` to go back to its automatic label. Any window can name any open window. */
     setName: invoke<[id: string, name: string | null], void>('window:set-name', 2),
     /**
-     * "Close window" in a frame's menu on the tab board (YAZ-3343, demo feedback): the open window `id` closes by its REAL
+     * "Close window" in a frame's menu on the tab board (YAZ-3343 D21): the open window `id` closes by its REAL
      * close, so its flush handshake saves its unsaved text first. Never the caller (it has `close-self`).
      */
     closeOther: invoke<[id: string], void>('window:close-other', 1),
     /**
-     * "New window" from the tab board's empty canvas (YAZ-3343, demo feedback): a window on the CALLER's vaults with no
-     * tab, shown BEHIND the caller (inactive: the board keeps the focus). Answers the new window's id.
+     * "New window" from the tab board's empty canvas (YAZ-3343 D22, D23): a window on the CALLER's vaults with no tab,
+     * HIDDEN until the user shows it from the board (the board keeps the focus). Answers the new window's id.
      */
     openBehind: invoke<[], string>('window:open-behind', 0),
     /**
-     * The vault chip on an EMPTY window's frame on the tab board (YAZ-3343, demo feedback): window `id` — live, with NO
+     * The vault chip on an EMPTY window's frame on the tab board (YAZ-3343 D22): window `id` — live, with NO
      * tab — shows these vaults instead. Main checks and pushes `link:set-roots`; that window switches itself.
      */
     setRoots: invoke<[id: string, roots: readonly string[]], void>('window:set-roots', 2),
-    /** "Move to new window" on ANOTHER window's card of the tab board (YAZ-3343, demo feedback): window `from` moves its tab `ref` to a new window itself, quietly (its text saved first). */
+    /** "Move to new window" on ANOTHER window's card of the tab board (YAZ-3343 D37): window `from` moves its tab `ref` to a new window itself, quietly (its text saved first). */
     popOutTab: invoke<[from: string, ref: TabRef], void>('window:pop-out-tab', 2),
     /** A frame's "Show window" on the tab board (YAZ-3343): a window the board made, still hidden, shows and takes the focus. */
     showWindow: invoke<[id: string], void>('window:show', 1),
     /** A card menu's tab action on ANOTHER window's card (YAZ-3343): window `to` runs `action` on its tab `ref` itself. */
     tabAction: invoke<[to: string, ref: TabRef, action: TabAction], void>('window:tab-action', 3),
-    /** The tab board's highlight on ANOTHER window's card (YAZ-3343, demo feedback): window `to` lights that tab in its strip; `null` puts it out. A glance: dropped for a window that is not live. */
+    /** The tab board's highlight on ANOTHER window's card (YAZ-3343 D33): window `to` lights that tab in its strip; `null` puts it out. A glance: dropped for a window that is not live. */
     highlightTab: invoke<[to: string, ref: TabRef | null], void>('window:highlight-tab', 2),
     /** The windows the tab board made that are still hidden (YAZ-3343), read when a board opens. */
     hiddenWindows: invoke<[], string[]>('window:hidden-windows-now', 0),
-    /** The windows minimized in the Dock now (YAZ-3343, demo feedback): the board tags their frames. */
+    /** The windows minimized in the Dock now (YAZ-3343 D23): the board tags their frames. */
     minimizedWindows: invoke<[], string[]>('window:minimized-windows-now', 0),
     /**
      * A "Move to ▸" row under the pointer or the keyboard (YAZ-3091 D8): the open window `to` glows, so you see which
@@ -309,7 +309,7 @@ export const CONTRACT = {
     onTabOverview: push('menu:tab-overview'),
     /** File › New Tab (⌘T): show the one blank tab, with the caret in the sidebar's search bar (YAZ-2655 D10, D11). */
     onNewTab: push('menu:new-tab'),
-    /** File › New Window (⌘⇧N): the window saves its page, reads its page view, then calls `window.duplicate` (YAZ-2951 D5). */
+    /** File › New Window (⌘⇧N): the focused window calls `window.duplicate`, which opens a window on its vaults with no tab (YAZ-3343 D35). */
     onNewWindow: push('menu:new-window'),
     /** Help › What's New… (YAZ-2976 D8): the window opens its "What's new" window. */
     onWhatsNew: push('menu:whats-new'),

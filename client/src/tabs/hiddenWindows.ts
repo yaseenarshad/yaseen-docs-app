@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { api } from '../api'
 
 /**
- * Two sets of window ids main keeps in memory and pushes to every window (YAZ-3343, demo feedback): the windows the
+ * Two sets of window ids main keeps in memory and pushes to every window (YAZ-3343 D23): the windows the
  * tab board made that are still HIDDEN, and the windows MINIMIZED in the Dock. Each is read once, then followed by its
  * push. The board tags their frames. Tiny stores of their own, so a push renders the board alone.
  */

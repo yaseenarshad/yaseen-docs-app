@@ -133,22 +133,26 @@ describe('the tab board: its canvas and window names (YAZ-3343 D1, D14)', () => 
   const card = { win: 'w2', path: '/v/a.md', copy: 0, by: 'window' as const, x: 5, y: 6 }
 
   it('getTabCanvas is the default without one; setTabCanvas applies main\'s rule in the cache at once and sends the patch; a no-op sends nothing; a broadcast of the same canvas keeps the snapshot', async () => {
-    // "Show all windows" is on by default (demo feedback).
+    // "Show all windows" is on by default (D19).
     expect(storage.getTabCanvas()).toEqual({ allWindows: true, snap: true, cards: [], frames: [] })
     expect(storage.getTabCanvas()).toBe(storage.getTabCanvas())
     const state = { ...defaultAppState(), windows: [entry('w1'), entry('w2')] }
     b = installBridge(state, { id: 'w1', root: '/v', file: null, tabs: [] })
     await storage.init()
+    // The board renders its own moves at once: the cache wakes its readers (a no-op wakes none).
+    const woke = vi.fn()
+    storage.subscribe(woke)
     storage.setTabCanvas({ allWindows: true, set: [card, { ...card, win: 'gone' }] })
+    expect(woke).toHaveBeenCalledTimes(1)
     expect(storage.getTabCanvas()).toEqual({ allWindows: true, snap: true, cards: [card], frames: [] }) // a card of no window is not kept, as main keeps none
     expect(b.bridge.state.setTabCanvas).toHaveBeenCalledExactlyOnceWith({ allWindows: true, set: [card, { ...card, win: 'gone' }] })
     storage.setTabCanvas({ allWindows: true, set: [card] })
-    expect(b.bridge.state.setTabCanvas).toHaveBeenCalledTimes(1)
+    expect([b.bridge.state.setTabCanvas.mock.calls.length, woke.mock.calls.length]).toEqual([1, 1])
     const snapshot = storage.getTabCanvas()
-    b.emit({ ...state, tabCanvas: { allWindows: true, snap: true, cards: [{ ...card }] }, sidebarWidth: 300 })
+    b.emit({ ...state, tabCanvas: { allWindows: true, snap: true, cards: [{ ...card }], frames: [] }, sidebarWidth: 300 })
     expect(storage.getTabCanvas()).toBe(snapshot)
-    b.emit({ ...state, tabCanvas: { allWindows: false, snap: true, cards: [] } })
-    expect(storage.getTabCanvas()).toEqual({ allWindows: false, snap: true, cards: [] })
+    b.emit({ ...state, tabCanvas: { allWindows: false, snap: true, cards: [], frames: [] } })
+    expect(storage.getTabCanvas()).toEqual({ allWindows: false, snap: true, cards: [], frames: [] })
   })
 
   it('windowName reads this window\'s name, or another\'s by id; setWindowName cleans it in the cache at once and sends the clean name, null for none', async () => {
@@ -156,12 +160,19 @@ describe('the tab board: its canvas and window names (YAZ-3343 D1, D14)', () => 
     await storage.init()
     expect(storage.windowName()).toBe('Writing')
     expect(storage.windowName('w2')).toBeUndefined()
+    const woke = vi.fn()
+    storage.subscribe(woke)
     storage.setWindowName('w2', '  Research  ')
     expect(storage.windowName('w2')).toBe('Research')
+    // The new name wakes the cache's readers; the same name again wakes none.
+    storage.setWindowName('w2', 'Research')
+    expect(woke).toHaveBeenCalledTimes(1)
     expect(b.bridge.window.setName).toHaveBeenLastCalledWith('w2', 'Research')
     storage.setWindowName('w1', '   ')
     expect(storage.windowName()).toBeUndefined()
     expect(storage.getOtherWindows()).toEqual([entry('w2', { name: 'Research' })])
+    // The same array while the windows are the same: the board reads it as a snapshot (D2).
+    expect(storage.getOtherWindows()).toBe(storage.getOtherWindows())
     expect(b.bridge.window.setName).toHaveBeenLastCalledWith('w1', null)
   })
 })

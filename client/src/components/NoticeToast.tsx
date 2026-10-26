@@ -13,7 +13,7 @@ import { NoticeIcon } from './NoticeIcon'
  * - every toast has ✕ (YAZ-3303 D8): with "Until closed" it is the only way out. CSS draws the ✕ too, so the
  *   toast's text is its message (and its button's label), as before 3303.
  * A new notice (a new object) starts the clock again; the mouse that is on the toast still holds it.
- * A long message WRAPS to three lines at most, then ends in "…" (YAZ-3343, demo feedback: "we can't read the entire
+ * A long message WRAPS to three lines at most, then ends in "…" (YAZ-3343 D36: "we can't read the entire
  * line"); cut, the pointer on it shows it whole (`title`). The count, ✕ and an action stay on its first line.
  */
 export function NoticeToast({ notice, ms, onClose }: { notice: Notice; ms: number | null; onClose: () => void }) {
