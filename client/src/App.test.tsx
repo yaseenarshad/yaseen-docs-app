@@ -6089,7 +6089,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     const { bridge, el, emitFileRenamed } = await mountVault()
     await draggedOut('/v/A.md')
     // The box waits for the link count; a slow CI runner can take a few more ticks to show it.
-    await vi.waitFor(() => expect(box(el)).not.toBeNull())
+    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: 5000 })
     expect(box(el)?.getAttribute('role')).toBe('alertdialog')
     expect(el.querySelector(`#${box(el)?.getAttribute('aria-labelledby')}`)?.textContent).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
@@ -6120,7 +6120,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     const { el, emitDragLanded } = await mountVault()
     await draggedOut('/v/A.md')
     // The box waits for the link count; a slow CI runner can take a few more ticks to show it (as in the alert dialog test).
-    await vi.waitFor(() => expect(box(el)).not.toBeNull())
+    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: 5000 })
     act(() => emitDragLanded(['/v/B.md']))
     expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     act(() => emitDragLanded(['/v/A.md']))
@@ -6136,7 +6136,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
   it('an item that is gone before the box shows is left out; with none left there is no box (S31)', async () => {
     const { el } = await mountVault()
     await draggedOut('/v/gone.md', '/v/A.md')
-    await vi.waitFor(() => expect(box(el)).not.toBeNull())
+    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: 5000 })
     expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     await act(async () => button(el, 'Keep in vault')?.click())
     await draggedOut('/v/gone.md')
@@ -6150,6 +6150,11 @@ describe('App Files window (YAZ-3357)', () => {
   const tabNames = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
   /** The popup cannot be made in jsdom: the overlay fallback stands in (D9). */
   const noPopup = () => vi.spyOn(window, 'open').mockReturnValue(null)
+  /** The sidebar's props once App renders it as a Files window's (it hands `onShowAllTabs`): a slow CI runner can read an earlier render. */
+  const filesSidebar = async () => {
+    await vi.waitFor(() => expect(captured.sidebar?.onShowAllTabs).toBeDefined(), { timeout: 5000 })
+    return captured.sidebar!
+  }
 
   it('D1, D2, D4, D7, D8: only the sidebar — no strip, no right panel, no resize edge; its rows open through main, a click previews, Enter and a double click keep, ⌘-click opens in the background', async () => {
     noPopup()
@@ -6159,7 +6164,7 @@ describe('App Files window (YAZ-3357)', () => {
     expect(el.querySelector('.tabbar')).toBeNull()
     expect(el.querySelector('.sidebar-resize, .right-panel-reopen, [data-start-page]')).toBeNull()
     expect(document.title).toBe('Files — v')
-    const sidebar = captured.sidebar!
+    const sidebar = await filesSidebar()
     expect(sidebar.onSaveSession).toBeUndefined()
     expect(sidebar.onUpdateSession).toBeUndefined()
     expect(sidebar.previewFloat).toBe('overlay')
@@ -6186,7 +6191,8 @@ describe('App Files window (YAZ-3357)', () => {
 
   it('D13: a Files window hands its sidebar "Make full window", which asks main; a full window hands none', async () => {
     const { bridge } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES })] }, FILES)
-    act(() => captured.sidebar!.onToNormalWindow!())
+    const toNormal = (await filesSidebar()).onToNormalWindow!
+    act(() => toNormal())
     await act(async () => {})
     expect(bridge.window.filesToNormal).toHaveBeenCalledTimes(1)
   })
@@ -6194,6 +6200,7 @@ describe('App Files window (YAZ-3357)', () => {
   it('D3, D8: "Show all tabs" opens the board right of the sidebar and main makes the window wide; again closes it and main makes it narrow; ⌘B never hides the sidebar; ⌘T asks for a new window', async () => {
     noPopup()
     const { bridge, el, emitNewTab } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES })] }, FILES)
+    await filesSidebar()
     act(() => captured.sidebar!.onShowAllTabs!())
     expect(bridge.window.filesWide.mock.calls).toEqual([[true]])
     // Not in the narrow window (D10): the sidebar keeps its width, and the board waits for the wide one.
