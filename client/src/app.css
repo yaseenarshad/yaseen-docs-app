@@ -2064,7 +2064,16 @@ button {
 
 .ctx-menu__label > svg {
   flex: none;
+  /* One slot for each glyph (YAZ-3264 D6): a 14 px glyph stands centred in a 15 px one. */
+  min-width: 15px;
   opacity: 0.75;
+}
+
+/* A menu with a glyph on any row (YAZ-3264 D6): a row without one starts its label after an empty
+   slot (10 px padding + 15 px glyph + 8 px gap), so every label lines up. The flyout is its own menu. */
+.ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__item:not(:has(> .ctx-menu__label)),
+.ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__parent > .ctx-menu__item {
+  padding-left: 33px;
 }
 
 /* Delete (GRO-2272): destructive, so it reads as such in BOTH themes — --danger is

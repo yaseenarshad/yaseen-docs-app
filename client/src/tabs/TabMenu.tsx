@@ -1,6 +1,8 @@
 import { api, BridgeRequestError } from '../api'
 import { ContextMenu } from '../sidebar/ContextMenu'
+import { EyeIcon, HeartIcon } from '../views/view/icons'
 import type { MenuAction, MenuSection } from '../sidebar/menuSections'
+import type { ListState } from '../lists/useVaultListsHere'
 
 /** An open tab menu: where it stands, the tab it is about, and that tab's review state as it was when the menu opened. */
 export interface TabMenuAt {
@@ -14,6 +16,11 @@ export interface TabMenuAt {
   review: boolean | null
   /** The tab has a display name (YAZ-2949 D3): offers "Reset to page name". */
   named: boolean
+  /**
+   * Whether the page is in Focus and in Favorites (YAZ-3264 D2), read when the menu opened (S14).
+   * Absent or null hides both items: a page in no vault of the window, or one whose lists are not read yet (S7, S8).
+   */
+  lists?: ListState | null
 }
 
 /** One other open window that can take this tab (YAZ-3091 D2): its id for main, and its row text (D7). */
@@ -46,6 +53,10 @@ export interface TabMenuProps {
   /** Reveal this exact tab in the sidebar without activating it. */
   onShowInSidebar?: (path: string) => void
   onSetReview?: (path: string, on: boolean) => void
+  /** "Add to focus" / "Remove from focus" (YAZ-3264 D2): App's lists (D1), with the state the menu read. No jump to the Focus tab (D3). */
+  onToggleFocus?: (paths: string[], isOn: boolean) => void
+  /** "Add to favorites" / "Remove from favorites" (YAZ-3264 D2), as `onToggleFocus`. */
+  onToggleFavorite?: (paths: string[], isOn: boolean) => void
   /** Where a failed OS action says so (YAZ-963) — App's passive notice. */
   onNotice?: (message: string) => void
   /** Items before the menu's own groups, and after them (YAZ-3343, the tab board's cards: "Go to tab", "Close tab"). */
@@ -58,10 +69,10 @@ export interface TabMenuProps {
  * the same open files, so they offer the same items — the sidebar row's Copy path (YAZ-922) and
  * its OS actions (YAZ-963: Reveal in Finder, Open in VS Code), Show in sidebar, the move to a
  * new window (YAZ-2933), "Duplicate tab" (YAZ-2940) and "Move to ▸" another window or the right panel (YAZ-3091), the tab's
- * display name (YAZ-2949) and the review toggle (YAZ-2322). Drawn as data by the sidebar's own
+ * display name (YAZ-2949), the review toggle (YAZ-2322), and Focus and Favorites (YAZ-3264). Drawn as data by the sidebar's own
  * `ContextMenu` (YAZ-2949 D6), so its groups have the same lines as every other menu of the app.
  */
-export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onSetReview, onNotice, leading = [], trailing = [] }: TabMenuProps) {
+export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onSetReview, onToggleFocus, onToggleFavorite, onNotice, leading = [], trailing = [] }: TabMenuProps) {
   /**
    * The menu's OS actions (YAZ-963), the sidebar's `reveal` idiom on a tab: read-only, so there is
    * nothing to confirm or repair — but a STALE tab (deleted or moved externally) rejects `NOT_FOUND`,
@@ -80,6 +91,9 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
   ].filter((group) => group.length > 0)
   // Four groups (YAZ-2949 D6), in this order: the tab's place · find the file · this tab
   // and its note · outside the app. `ContextMenu` skips an empty group and closes the menu after each item.
+  // The two list toggles (YAZ-3264 D2) stand where the sidebar's file menu has them: focus right after
+  // "Show in sidebar", favorites first in the last group, each with its sidebar tab's glyph (D6). Each acts on the state the menu read (S14).
+  const lists = menu.lists ?? null
   const sections: MenuSection[] = [
     leading,
     [
@@ -90,6 +104,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     ],
     [
       { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => onShowInSidebar?.(menu.path) },
+      ...(lists === null || onToggleFocus === undefined ? [] : [{ id: 'focus', label: lists.focus ? 'Remove from focus' : 'Add to focus', icon: <EyeIcon />, onSelect: () => onToggleFocus([menu.path], lists.focus) }]),
       { id: 'copy-path', label: 'Copy path', onSelect: () => void navigator.clipboard.writeText(menu.path) },
     ],
     [
@@ -100,6 +115,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
       ...(menu.review === null ? [] : [{ id: 'review', label: menu.review ? 'Turn review off' : 'Turn review on', onSelect: () => onSetReview?.(menu.path, !menu.review) }]),
     ],
     [
+      ...(lists === null || onToggleFavorite === undefined ? [] : [{ id: 'toggle-favorite', label: lists.favorite ? 'Remove from favorites' : 'Add to favorites', icon: <HeartIcon />, onSelect: () => onToggleFavorite([menu.path], lists.favorite) }]),
       { id: 'reveal', label: 'Reveal in Finder', onSelect: () => osAction(api.shell.reveal({ path: menu.path }), `Can't reveal "${label}" — it is no longer there`, "Can't reveal") },
       { id: 'open-vscode', label: 'Open in VS Code', onSelect: () => osAction(api.shell.openVsCode({ path: menu.path }), `Can't open "${label}" in VS Code — it is no longer there`, "Can't open in VS Code") },
     ],

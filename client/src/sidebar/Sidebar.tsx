@@ -34,6 +34,7 @@ import { dropOn, hasFiles, leftTarget, Tree, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
+import type { VaultListsHere } from '../lists/useVaultListsHere'
 import { outermost, useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 import { HoverPreviewHost, useHoverPreview } from './HoverPreviewHost'
@@ -72,6 +73,8 @@ export interface SidebarVault {
 interface SidebarProps {
   /** The window's vaults, in the window's order (YAZ-2602 D1); never empty. App keys this panel on one of them (YAZ-2631 D5). */
   vaults: readonly SidebarVault[]
+  /** The window's Focus and Favorites (YAZ-3264 D1): App holds them, so the tab menu reaches them while this panel is hidden. */
+  lists: VaultListsHere
   /** The vault rows the user closed (YAZ-2602 R9): App's, so they stay closed while this panel is unmounted. */
   closedVaults: readonly string[]
   onSetVaultOpen: (root: string, open: boolean) => void
@@ -492,6 +495,7 @@ const NO_DIRS: readonly string[] = []
 /** Mounted with `key={one vault of the window}` by App (YAZ-2631 D5), so all state below lives while that vault is in the window. */
 export function Sidebar({
   vaults,
+  lists,
   closedVaults,
   onSetVaultOpen,
   onAddVault,
@@ -561,7 +565,7 @@ export function Sidebar({
   // Each state broadcast hands over a new copy of the settings (YAZ-3237): the sort keeps its identity while its
   // value stays, so the memoised levels (YAZ-2194) draw nothing again on a tab click or a window move.
   const sort = useMemo<TabSort | undefined>(() => (stored === undefined ? undefined : { by: stored.by, reverse: stored.reverse }), [stored?.by, stored?.reverse])
-  const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice, sort?.by === 'updated')
+  const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, sort?.by === 'updated')
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */

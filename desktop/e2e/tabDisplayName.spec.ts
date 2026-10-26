@@ -55,9 +55,10 @@ test('right-click a tab › Set display name: the copy gets its own name, on the
   await tabsOf(win).nth(1).click({ button: 'right' })
   expect((await groups(win)).map((g) => g.filter((label) => !label?.startsWith('Turn review')))).toEqual([
     ['Move to new window', 'Duplicate tab', 'Move to'],
-    ['Show in sidebar', 'Copy path'],
+    // Focus and Favorites (YAZ-3264 D2): where the sidebar's file menu has them.
+    ['Show in sidebar', 'Add to focus', 'Copy path'],
     ['Set display name'],
-    ['Reveal in Finder', 'Open in VS Code'],
+    ['Add to favorites', 'Reveal in Finder', 'Open in VS Code'],
   ])
   await shoot(win, 'display-name-1-menu')
   await menuItem(win, 'Set display name').click()
