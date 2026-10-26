@@ -965,7 +965,7 @@ export function createStore(filePath: string): Store {
       // The moved cards of a window that goes go with it (YAZ-3343 D1): an id is never used again.
       const cards = state.tabCanvas.cards.filter((c) => !ids.includes(c.win))
       // Its frame's place too (YAZ-3343).
-      const held = state.tabCanvas.frames ?? []
+      const held = state.tabCanvas.frames
       const frames = held.filter((f) => !ids.includes(f.win))
       const tabCanvas = cards.length === state.tabCanvas.cards.length && frames.length === held.length ? state.tabCanvas : { ...state.tabCanvas, cards, frames }
       commit({ ...state, windows: state.windows.filter((w) => !ids.includes(w.id)), tabCanvas })

@@ -507,7 +507,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
 let root: Root | null = null
 let container: HTMLElement | null = null
 /** The tab board with "Show all windows" OFF (it is on by default, YAZ-3343 demo feedback): this window's folder groups. */
-const FOLDER_BOARD = { allWindows: false, snap: true, cards: [] }
+const FOLDER_BOARD = { allWindows: false, snap: true, cards: [], frames: [] }
 
 // The tab board is a lazy chunk (YAZ-3343 D4), loaded on idle in the app: here it is loaded once up front, so a board renders as it opens.
 beforeAll(async () => {
@@ -1453,7 +1453,7 @@ describe('App tab board across windows (YAZ-3343)', () => {
   })
 
   it('D8, D10, D14: with "Show all windows" on the board shows the other windows\' frames, a named one by its name; Kill all asks "Close N tabs in M windows?" and closes the others there; the title leads with this window\'s name', async () => {
-    const state = withWindows({ tabCanvas: { allWindows: true, snap: true, cards: [] }, windows: [entry({ ...ME, name: 'Desk' }), W2] })
+    const state = withWindows({ tabCanvas: { allWindows: true, snap: true, cards: [], frames: [] }, windows: [entry({ ...ME, name: 'Desk' }), W2] })
     const { bridge, el, emitTabOverview } = await mount(state, ME)
     expect(document.title.startsWith('Desk — ')).toBe(true)
     act(() => emitTabOverview())
@@ -1466,7 +1466,7 @@ describe('App tab board across windows (YAZ-3343)', () => {
   })
 
   it('demo feedback: a frame\'s "Close all tabs" / "Close window" take two clicks in the menu, no sheet — another window by main\'s doors, this one by its own; an empty window takes a vault chip\'s pick', async () => {
-    const state = withWindows({ tabCanvas: { allWindows: true, snap: true, cards: [] } })
+    const state = withWindows({ tabCanvas: { allWindows: true, snap: true, cards: [], frames: [] } })
     const { bridge, el, emitTabOverview, emitSetRoots } = await mount(state, ME)
     act(() => emitTabOverview())
     const item = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === label)

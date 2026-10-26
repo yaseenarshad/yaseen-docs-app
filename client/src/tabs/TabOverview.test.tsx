@@ -34,17 +34,30 @@ import { api } from '../api'
 const readHeads = vi.mocked(api.readHeads)
 
 /** The canvas as `storage` holds it (YAZ-3343 D1), for these tests: a patch lands at once, by the shared rule. */
-let canvas: TabCanvasState = { allWindows: false, snap: false, cards: [] }
+let canvas: TabCanvasState = { allWindows: false, snap: false, cards: [], frames: [] }
 let others: WindowEntry[] = []
 const names = new Map<string, string>()
 const other = (id: string, roots: string[], strip: { path: string; name?: string; active?: true }[]): WindowEntry =>
   ({ id, roots, root: roots[0], file: strip.find((t) => t.active)?.path ?? strip[0]?.path ?? null, tabs: [...new Set(strip.map((t) => t.path))], tabStrip: strip, ...(names.has(id) ? { name: names.get(id) } : {}) }) as unknown as WindowEntry
+/** The cache's readers: its own writes wake them, as `storage`'s do. */
+const readers = new Set<() => void>()
+const wake = () => readers.forEach((l) => l())
 function fakeStorage(): void {
+  vi.spyOn(storage, 'subscribe').mockImplementation((l) => (readers.add(l), () => void readers.delete(l)))
   vi.spyOn(storage, 'getTabCanvas').mockImplementation(() => canvas)
-  vi.spyOn(storage, 'setTabCanvas').mockImplementation((patch) => void (canvas = applyTabCanvasPatch(canvas, patch, new Set(['me', ...others.map((w) => w.id)]))))
+  vi.spyOn(storage, 'setTabCanvas').mockImplementation((patch) => {
+    const next = applyTabCanvasPatch(canvas, patch, new Set(['me', ...others.map((w) => w.id)]))
+    if (next === canvas) return
+    canvas = next
+    wake()
+  })
   vi.spyOn(storage, 'getOtherWindows').mockImplementation(() => others)
   vi.spyOn(storage, 'windowName').mockImplementation((id = 'me') => names.get(id))
-  vi.spyOn(storage, 'setWindowName').mockImplementation((id, name) => void (name === null ? names.delete(id) : names.set(id, name)))
+  vi.spyOn(storage, 'setWindowName').mockImplementation((id, name) => {
+    if (name === null) names.delete(id)
+    else names.set(id, name)
+    wake()
+  })
 }
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -147,8 +160,9 @@ function boardArea(width: number, height: number): () => void {
 
 beforeEach(() => {
   _resetTabHeads()
-  canvas = { allWindows: false, snap: false, cards: [] }
+  canvas = { allWindows: false, snap: false, cards: [], frames: [] }
   others = []
+  readers.clear()
   names.clear()
   fakeStorage()
   // A note that could not be read (plan.md) answers null and fails nothing.
@@ -337,7 +351,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback, "Snap to grid" (the cards only): a drop goes to the nearest FREE cell of its frame\'s own grid; a frame drags FREELY, and a card dropped in it after still lines up with its neighbours; the toggle stores it; off, the drop stays free', async () => {
-    canvas = { allWindows: true, snap: true, cards: [] }
+    canvas = { allWindows: true, snap: true, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const { el } = await mount()
     const toggle = el.querySelector<HTMLButtonElement>('[aria-label="Snap to grid"]')!
@@ -376,7 +390,7 @@ describe('TabOverview', () => {
   })
 
   it('demo bug: with Snap on, a card dropped on ANOTHER window\'s card arrives in the nearest FREE cell of THAT frame\'s grid, as the next copy of its path there', async () => {
-    canvas = { allWindows: true, snap: true, cards: [] }
+    canvas = { allWindows: true, snap: true, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/x.md' }])]
     const onDropToWindow = vi.fn()
     const { el } = await mount({ onDropToWindow })
@@ -403,7 +417,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback: "Move to new window" on a card is QUIET from the board — this window\'s by its quiet door, another\'s by asking that window; the new window\'s frame stands right of its source\'s', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const onMoveToNewWindowQuietly = vi.fn()
     const { el, again } = await mount({ onMoveToNewWindowQuietly })
@@ -423,7 +437,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback: a window the board made stays HIDDEN — its frame says so, and "Show window" in its menu shows it', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
     const { el } = await mount()
     // Main's push: w2 is one of the board's hidden windows.
@@ -441,7 +455,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback: the highlight on ANOTHER window\'s card lights that tab there — once per change, and put out when it leaves; every window\'s active card wears the active look', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md' }, { path: '/w/z.md', active: true }])]
     const { el } = await mount()
     expect([...el.querySelectorAll<HTMLElement>('.taboverview__page--active')].map((c) => c.dataset.tab)).toEqual(['/v/a.md', 'w2\n/w/z.md\n0'])
@@ -461,7 +475,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback, no overlap: a FRAME dropped on another takes the nearest free spot (the other stays); a CARD whose frame would grow into another goes to the nearest spot that keeps it clear', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
     const { el } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/a.md', '/v/b.md'] })
     const boxOf = (win: string) => {
@@ -489,7 +503,7 @@ describe('TabOverview', () => {
   })
 
   it('demo bug: an EMPTY frame drags freely and its place is stored; the first card that arrives takes its first cell there', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }]), other('w3', ['/w'], [])]
     const moveTo = vi.fn().mockResolvedValue(undefined)
     ;(api.window as unknown as Record<string, unknown>).moveTo = moveTo
@@ -516,7 +530,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback: another window\'s card menu asks THAT window for its tab actions (duplicate, name, sidebar); "Move to ▸" lists the other windows that show its vault, rings their frame on hover, and moves the tab quietly into the nearest free cell', async () => {
-    canvas = { allWindows: true, snap: true, cards: [] }
+    canvas = { allWindows: true, snap: true, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }]), other('w3', ['/w'], [{ path: '/w/q.md', active: true }])]
     const onHighlightWindow = vi.fn()
     const onMoveTab = vi.fn()
@@ -559,7 +573,7 @@ describe('TabOverview', () => {
     const C = { w: BOARD.pageW + BOARD.pageGap, h: BOARD.pageH + BOARD.pageGap }
     // w2's three cards placed in a row with a hole in the middle: y at cell 0, z at cell 2.
     const o = { x: 1000, y: 100 }
-    canvas = { allWindows: true, snap: true, cards: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: o.x, y: o.y }, { win: 'w2', path: '/w/z.md', copy: 0, by: 'window', x: o.x + 2 * C.w, y: o.y }] }
+    canvas = { allWindows: true, snap: true, cards: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: o.x, y: o.y }, { win: 'w2', path: '/w/z.md', copy: 0, by: 'window', x: o.x + 2 * C.w, y: o.y }], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const { el, again } = await mount()
     // A new tab there (a search pick, a move…): the first gap, between y and z.
@@ -584,7 +598,7 @@ describe('TabOverview', () => {
   })
 
   it('S51: a card the filter hid and brings back is no new card — typing and clearing the filter stores nothing', async () => {
-    canvas = { allWindows: true, snap: true, cards: [] }
+    canvas = { allWindows: true, snap: true, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const { el } = await mount()
     type(el, 'y')
@@ -593,7 +607,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback: the pointer over ANOTHER window\'s frame (or one of its cards) makes that window glow — once per change; its own frame, empty canvas, a drag and the board going put it out', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
     const onHighlightWindow = vi.fn()
     const { el } = await mount({ onHighlightWindow })
@@ -614,7 +628,7 @@ describe('TabOverview', () => {
 
   it('demo bug: a card dropped into a frame with NO placed cards — the frame is frozen where it stands, and the card lands INSIDE it (its first free cell, or a new row), never at the drop point', async () => {
     const C = { w: BOARD.pageW + BOARD.pageGap, h: BOARD.pageH + BOARD.pageGap }
-    canvas = { allWindows: true, snap: true, cards: [] }
+    canvas = { allWindows: true, snap: true, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/a1.md', active: true }, { path: '/w/a2.md' }, { path: '/w/a3.md' }])]
     const onDropToWindow = vi.fn()
     const { el } = await mount({ onDropToWindow })
@@ -642,7 +656,7 @@ describe('TabOverview', () => {
   it('demo bug: frames that overlap when the board opens are repaired ONCE — the later one moves clear and is stored; a second open writes nothing', async () => {
     // From the demo's state: one card of w2 stored deep inside this window's frame, so w2's box covers it.
     const deep = { x: BOARD.framePad + 230, y: BOARD.frameLabelH + BOARD.framePad }
-    canvas = { allWindows: true, snap: false, cards: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: deep.x, y: deep.y }] }
+    canvas = { allWindows: true, snap: false, cards: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: deep.x, y: deep.y }], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const { el } = await mount()
     expect(storage.setTabCanvas).toHaveBeenCalledTimes(1)
@@ -660,7 +674,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback: a double click on a frame\'s EMPTY AREA goes to that window (its active tab; an empty one shows; this window\'s leaves the board onto its tab) — on its LABEL it renames; the label says its vault, and "Minimized" when it is', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md' }, { path: '/w/z.md', active: true }]), other('w3', ['/w'], [])]
     const { el, props } = await mount()
     const dbl = (target: Element | null | undefined) => act(() => void target?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
@@ -708,7 +722,7 @@ describe('TabOverview', () => {
   })
 
   it('YAZ-3343 D9: "Tidy up" forgets every moved card the layout shows, and they stand in their groups again', async () => {
-    canvas = { allWindows: false, snap: false, cards: [{ win: 'me', path: '/v/a.md', copy: 0, by: 'folder', x: 800, y: 900 }] }
+    canvas = { allWindows: false, snap: false, cards: [{ win: 'me', path: '/v/a.md', copy: 0, by: 'folder', x: 800, y: 900 }], frames: [] }
     const { el } = await mount()
     const tidy = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Tidy up')!
     expect(tidy.disabled).toBe(false)
@@ -789,7 +803,7 @@ describe('TabOverview', () => {
   })
 
   it('YAZ-3343 D13: a card dropped in another window\'s frame moves there — this window\'s by App\'s door, another\'s by main — and its place there is stored; a window with no vault of the page refuses it, and the card slides back', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
     const onDropToWindow = vi.fn()
     const onMoveTab = vi.fn()
@@ -828,7 +842,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback: a WINDOW FRAME drags as one — frame, groups and cards follow by transform with no render; the drop stores every card of it moved by the same delta, in ONE write and ONE render; a press with no move moves nothing', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const { el, commits } = await mount()
     const ids = ['w2\n/w/y.md\n0', 'w2\n/w/z.md\n0']
@@ -858,7 +872,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback: a window frame has no folder boxes — its cards in folder order, each with its folder in grey (the vault first where the window has two or more); the folder layout keeps its groups; empty canvas still pans', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/Docs/z.md', active: true }, { path: '/w/y.md' }])]
     const { el } = await mount()
     expect(el.querySelectorAll('.taboverview__island, .taboverview__vault-name').length).toBe(0)
@@ -891,7 +905,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback: ⌘-click picks as Shift does; dragging a picked card carries every picked card, of any window, by the same delta — no render while it moves, ONE write and ONE render on the drop, and no tab changes window', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w', '/v'], [{ path: '/w/y.md', active: true }])]
     const onDropToWindow = vi.fn()
     const onMoveTab = vi.fn()
@@ -919,7 +933,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback: a right-click anywhere on a frame opens its menu — "Tidy up this window" lines its cards up and the FRAME STAYS; "Close all tabs" / "Close window" ask App; a group\'s background opens the group\'s menu, whose tidy keeps the group; empty canvas: only "New window", never the text-edit menu', async () => {
-    canvas = { allWindows: true, snap: false, cards: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: 1500, y: 900 }, { win: 'w2', path: '/w/z.md', copy: 0, by: 'window', x: 2400, y: 1300 }, { win: 'me', path: '/v/a.md', copy: 0, by: 'window', x: 900, y: 900 }] }
+    canvas = { allWindows: true, snap: false, cards: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: 1500, y: 900 }, { win: 'w2', path: '/w/z.md', copy: 0, by: 'window', x: 2400, y: 1300 }, { win: 'me', path: '/v/a.md', copy: 0, by: 'window', x: 900, y: 900 }], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const onCloseWindow = vi.fn()
     const { el, again } = await mount({ onCloseWindow })
@@ -964,7 +978,7 @@ describe('TabOverview', () => {
     expect(ctx(body(el))).toBe(true)
     expect(el.querySelector('.ctx-menu')).toBeNull()
     // The folder layout: a group's background opens the group's menu; its tidy lines its cards up where the group is.
-    canvas = { allWindows: false, snap: false, cards: [{ win: 'me', path: '/v/Projects/plan.md', copy: 0, by: 'folder', x: 700, y: 700 }] }
+    canvas = { allWindows: false, snap: false, cards: [{ win: 'me', path: '/v/Projects/plan.md', copy: 0, by: 'folder', x: 700, y: 700 }], frames: [] }
     await again({})
     const g = island(el, 'Projects')
     const [gx, gy] = [Number.parseFloat(g.style.left), Number.parseFloat(g.style.top)]
@@ -980,7 +994,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback: "New window" — a right-click on empty canvas (never a double click) opens one behind, its frame at that point, and "Open tabs here…" opens for it; a pick adds a BACKGROUND tab (this window by its door, another by a quiet move); a vault it does not show is refused', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
     const onNewWindow = vi.fn(async () => 'w3')
     const onOpenTabHere = vi.fn()
@@ -1053,7 +1067,7 @@ describe('TabOverview', () => {
   })
 
   it('demo feedback: an EMPTY frame\'s vault chip lists the recent vaults, and a pick asks main to switch that window', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w3', ['/v'], [])]
     vi.spyOn(storage, 'getRecentRoots').mockReturnValue([{ path: '/x/Research', lastOpened: 2 }, { path: '/v', lastOpened: 1 }])
     const setRoots = vi.fn().mockResolvedValue(undefined)
@@ -1068,7 +1082,7 @@ describe('TabOverview', () => {
   })
 
   it('YAZ-3343 D14: a frame\'s label names its window — a double click or "Name window" opens the field, ⏎ stores it; "Reset name" goes back to the automatic label', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
     const { el } = await mount()
     const label = () => frame(el, 'w2').querySelector<HTMLElement>('.taboverview__frame-label')!
@@ -1205,7 +1219,7 @@ describe('TabOverview', () => {
   })
 
   it('S33, D27, D10: the pick bar\'s closes take two clicks — the first turns the button into a red "Click again to close N"; a move off it, Esc or a click elsewhere puts it back; with all windows, "Close the others" says the windows too', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const { el, props } = await mount()
     const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((b) => b.textContent === label)

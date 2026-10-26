@@ -1958,16 +1958,16 @@ export interface CanvasCard extends TabRef {
 export interface TabCanvasState {
   /** "Show all windows" (YAZ-3343 D8): on, the board shows every window, each in its own frame. */
   allWindows: boolean
-  /** "Snap to grid" (YAZ-3343, demo feedback): a dropped card goes to the nearest free cell of the world's grid. On by default. */
+  /** "Snap to grid" (YAZ-3343 D26): a dropped card goes to the nearest free cell of its frame's own grid. On by default. */
   snap: boolean
   /** The moved cards, last moved first, MAX_CANVAS_CARDS at most. One entry per (win, path, copy, by). */
   cards: CanvasCard[]
   /**
-   * The frames the user (or the board) placed, 'window' layout only (YAZ-3343, demo bug): an EMPTY frame stands here
-   * and drags freely; the first cards that arrive take its first cells. One per window, MAX_CANVAS_FRAMES at most.
-   * Absent = none (a file from before it; an old build drops the key).
+   * The frames the user (or the board) placed, 'window' layout only (YAZ-3343 D16): an EMPTY frame stands here and
+   * drags freely; the first cards that arrive take its first cells. One per window, MAX_CANVAS_FRAMES at most. The
+   * store's sanitizer gives a file from before it none; an old build drops the key.
    */
-  frames?: CanvasFrame[]
+  frames: CanvasFrame[]
 }
 
 /** One change to the canvas (YAZ-3343 D1), sent on a drop or a switch — never on each pointer move. */
@@ -2009,10 +2009,9 @@ export function applyTabCanvasPatch(canvas: TabCanvasState, patch: TabCanvasPatc
   for (const c of patch.forget ?? []) seen.add(canvasCardKey(c))
   const cards = [...set, ...canvas.cards.filter((c) => !seen.has(canvasCardKey(c)))].slice(0, MAX_CANVAS_CARDS)
   const allWindows = patch.allWindows ?? canvas.allWindows
-  // A canvas stored before the snap switch has none: on (the default).
-  const snap = patch.snap ?? canvas.snap ?? true
+  const snap = patch.snap ?? canvas.snap
   // The frames by the same rule, keyed by window (YAZ-3343): set first, then forget, a window the state lacks dropped.
-  const held = canvas.frames ?? []
+  const held = canvas.frames
   const framesSeen = new Set<string>()
   const setFrames = (patch.setFrames ?? []).filter((f) => {
     if (!windows.has(f.win) || framesSeen.has(f.win)) return false
@@ -2021,10 +2020,15 @@ export function applyTabCanvasPatch(canvas: TabCanvasState, patch: TabCanvasPatc
   })
   for (const win of patch.forgetFrames ?? []) framesSeen.add(win)
   const frames = [...setFrames, ...held.filter((f) => !framesSeen.has(f.win))].slice(0, MAX_CANVAS_FRAMES)
-  const same = allWindows === canvas.allWindows && snap === canvas.snap && cards.length === canvas.cards.length
-    && cards.every((c, i) => canvasCardKey(c) === canvasCardKey(canvas.cards[i]) && c.x === canvas.cards[i].x && c.y === canvas.cards[i].y)
-    && frames.length === held.length && frames.every((f, i) => f.win === held[i].win && f.x === held[i].x && f.y === held[i].y)
-  return same ? canvas : { allWindows, snap, cards, frames }
+  const next = { allWindows, snap, cards, frames }
+  return sameTabCanvas(next, canvas) ? canvas : next
+}
+
+/** Two canvases that store the same switches, the same cards and the same frames, in the same order (YAZ-3343 D1). */
+export function sameTabCanvas(a: TabCanvasState, b: TabCanvasState): boolean {
+  return a.allWindows === b.allWindows && a.snap === b.snap && a.cards.length === b.cards.length && a.frames.length === b.frames.length
+    && a.cards.every((c, i) => canvasCardKey(c) === canvasCardKey(b.cards[i]) && c.x === b.cards[i].x && c.y === b.cards[i].y)
+    && a.frames.every((f, i) => f.win === b.frames[i].win && f.x === b.frames[i].x && f.y === b.frames[i].y)
 }
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */

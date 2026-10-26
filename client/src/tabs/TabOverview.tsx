@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { isBoard } from '@shared/fileKind'
 import { rootOfPath, type CanvasCard, type TabAction, type CanvasLayout, type TabCanvasPatch, type DiagramDarkColors, type StoredTab, type TabRef, type WindowEntry } from '@shared/types'
 import { api } from '../api'
@@ -115,21 +115,25 @@ const SIZES = {
 const ZOOM_POINT = ['--tab-zoom-scale', '--tab-zoom-x', '--tab-zoom-y', '--tab-layer-x', '--tab-layer-y']
 /** No page: the empty set the pick and the pictures start from. */
 const NONE: ReadonlySet<string> = new Set()
-const NO_WINDOWS: WindowEntry[] = []
+const NO_WINDOWS: readonly WindowEntry[] = []
 const WAYS: Record<string, Way> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }
 const tabCount = (n: number): string => (n === 1 ? '1 tab' : `${n} tabs`)
 const clampZoom = (zoom: number): number => Math.min(BOARD.maxZoom, Math.max(BOARD.minZoom, zoom))
 const noSubscribe = (): (() => void) => () => undefined
-const noWindows = (): WindowEntry[] => NO_WINDOWS
+const noWindows = (): readonly WindowEntry[] => NO_WINDOWS
 
 /**
- * The other windows as a snapshot (YAZ-3343 D2): `getOtherWindows` filters a new array on every call, and a
- * `useSyncExternalStore` snapshot must stay the same object while nothing the board reads of them changed.
+ * The other windows as a snapshot (YAZ-3343 D2): a `useSyncExternalStore` snapshot must stay the same object while
+ * nothing the board reads of them changed — a window's bounds or sidebar change no card. `getOtherWindows` holds its
+ * array while the windows hold, so the compare runs once per change of the state, not on each render.
  */
-let othersHeld: WindowEntry[] = NO_WINDOWS
+let othersHeld: readonly WindowEntry[] = NO_WINDOWS
+let othersFrom: readonly WindowEntry[] | null = null
 let othersKey = ''
-function otherWindows(): WindowEntry[] {
+function otherWindows(): readonly WindowEntry[] {
   const next = storage.getOtherWindows()
+  if (next === othersFrom) return othersHeld
+  othersFrom = next
   const key = JSON.stringify(next.map((w) => [w.id, w.roots, w.file, w.tabs, w.tabStrip, w.name]))
   if (key !== othersKey) {
     othersKey = key
@@ -361,8 +365,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const picturedRef = useRef(pictured)
   /** Cards dropped in another window's frame, held where they were dropped until their tab leaves (D13). Not stored. */
   const [ghosts, setGhosts] = useState<ReadonlyMap<string, { x: number; y: number }>>(new Map())
-  /** This window's own writes to the state (the canvas, a window's name) wake no `storage.subscribe`: the board renders itself after each. */
-  const [, wrote] = useReducer((n: number) => n + 1, 0)
   /** The filter box was the last thing used: Space then types a space (see `onKeyDown`). */
   const typed = useRef(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -401,8 +403,8 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   // are read off the state only while the switch is on (D2).
   const canvas = useSyncExternalStore(storage.subscribe, storage.getTabCanvas)
   const allWindows = canvas.allWindows
-  /** "Snap to grid" (demo feedback): a stored canvas from before the switch has none, and is on. */
-  const snapOn = canvas.snap !== false
+  /** "Snap to grid" (D26). */
+  const snapOn = canvas.snap
   const layout: CanvasLayout = allWindows ? 'window' : 'folder'
   const others = useSyncExternalStore(allWindows ? storage.subscribe : noSubscribe, allWindows ? otherWindows : noWindows)
   const myName = storage.windowName()
@@ -444,7 +446,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const wrapW = view !== null && view.w > 0 ? view.w - 2 * BOARD.padX : Infinity
   /** Where frames stand (demo bug: an empty frame drags freely too): the stored ones, and the board's own until they are stored. */
   const frameAnchors = useMemo(() => {
-    const at = new Map<string, { x: number; y: number }>((canvas.frames ?? []).map((f) => [f.win, { x: f.x, y: f.y }]))
+    const at = new Map<string, { x: number; y: number }>(canvas.frames.map((f) => [f.win, { x: f.x, y: f.y }]))
     for (const [win, p] of anchors) if (!at.has(win)) at.set(win, p)
     return at
   }, [canvas, anchors])
@@ -668,7 +670,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       storage.setTabCanvas({ set })
       setGhosts((held) => new Map(held).set(g.id, { x: arrive.x, y: arrive.y }))
       sendCard(card, outcome.to)
-      wrote()
       return
     }
     // Placed (D12): the nearest free cell of its frame's grid with Snap on, else where it was let go (D26) — and
@@ -679,7 +680,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (x !== free.x || y !== free.y) flip.current = [{ el: g.el, x: from.x + g.dx / zoom - x, y: from.y + g.dy / zoom - y }]
     storage.setTabCanvas({ set: [storedAt(placed, by, { x, y })] })
     if (ghosts.has(g.id)) setGhosts((held) => new Map([...held].filter(([id]) => id !== g.id)))
-    wrote()
   }
   /** The card lets go of the pointer's transform at its new place, with no slide back (its `left`/`top` render next). */
   const settleCard = (el: HTMLElement): void => {
@@ -783,7 +783,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const frame = g.lead === undefined && by === 'window' ? now.frames.find((f) => f.win === g.win) : undefined
     const setFrames = frame === undefined ? [] : [{ win: g.win, x: frame.x + ddx, y: frame.y - BOARD.frameLabelH + ddy }]
     if (set.length > 0 || setFrames.length > 0) storage.setTabCanvas({ ...(set.length > 0 ? { set } : {}), ...(setFrames.length > 0 ? { setFrames } : {}) })
-    wrote()
   }
   const onCancel = (e: PointerEvent): void => {
     const g = gesture.current
@@ -1097,7 +1096,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     }
     if (set.length === 0) return
     storage.setTabCanvas({ set })
-    wrote()
   }, [plan])
   // THE LAYOUT'S REPAIR (D28, S56): a frame or group the layout moved clear of another is stored where it stands, so
   // the state says what the board shows; the next layout then moves nothing and stores nothing. Never while a filter
@@ -1109,7 +1107,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (key === repaired.current) return
     repaired.current = key
     storage.setTabCanvas(plan.repair)
-    wrote()
   }, [plan])
   // The board going puts out the glow it lit.
   useEffect(
@@ -1126,7 +1123,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (due.length === 0) return
     storage.setTabCanvas({ setFrames: due.map(([win, p]) => ({ win, x: p.x, y: p.y })) })
     setAnchors((held) => new Map([...held].filter(([win]) => !known.has(win))))
-    wrote()
   }, [others, anchors])
   // A card held where it was dropped in another window's frame lets go once its window's tabs change: it left, or it stays where it stood.
   useEffect(() => {
@@ -1226,26 +1222,23 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     storage.setTabCanvas({ allWindows: !allWindows })
     cam.current = { ...cam.current, x: BOARD.padX, y: BOARD.padTop }
     applyCamera()
-    wrote()
   }
   /** "Tidy up" (D9): every place stored in this layout for the windows it shows — moved cards, groups and frames — goes; all stand in their groups again. */
   const shownWins = new Set(shownWindows.map((w) => w.win))
   const movedShown = canvas.cards.filter((card) => card.by === layout && shownWins.has(card.win))
   /** The frames placed in this layout ('window' only): Tidy up forgets them too. */
-  const placedFrames = layout === 'window' ? (canvas.frames ?? []).filter((f) => shownWins.has(f.win)) : []
+  const placedFrames = layout === 'window' ? canvas.frames.filter((f) => shownWins.has(f.win)) : []
   const tidyUp = (): void => {
     const forget = movedShown.map(({ win, path, copy, by }) => ({ win, path, copy, by }))
     const forgetFrames = placedFrames.map((f) => f.win)
     if (forget.length > 0 || forgetFrames.length > 0) storage.setTabCanvas({ ...(forget.length > 0 ? { forget } : {}), ...(forgetFrames.length > 0 ? { forgetFrames } : {}) })
     setAnchors(new Map())
     setGhosts(new Map())
-    wrote()
   }
   /** "Tidy up this window" (D21, D29) and "Tidy up this group": one write. */
   const tidy = (patch: TabCanvasPatch | null): void => {
     if (patch === null) return
     storage.setTabCanvas(patch)
-    wrote()
   }
   /** A frame's "Close all tabs" / "Close window", on its second click (demo feedback: two clicks, no sheet). */
   const closeWindow = (win: string, whole: boolean): void => {
@@ -1282,10 +1275,8 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const anchor = frameAnchors.get(win)
     if (w !== undefined && plan.frames.some((f) => f.win === win)) {
       storage.setTabCanvas({ set: arrivalIn(plan, win, { path, copy: w.tabs.filter((t) => t.path === path).length }, { where: posOf }) })
-      wrote()
     } else if (anchor !== undefined) {
       storage.setTabCanvas({ set: [{ win, path, copy: 0, by: 'window', x: anchor.x + BOARD.framePad, y: anchor.y + BOARD.frameLabelH + BOARD.framePad }] })
-      wrote()
     }
     if (w?.mine === true || win === windowId) onOpenTabHere?.(path)
     else api.window.moveTo(win, path, { background: true }).catch(() => onNotice?.(ADD_REFUSED))
@@ -1302,11 +1293,14 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (card.mine) onMoveToNewWindowQuietly(path, id)
     else api.window.popOutTab(card.win, card.ref).catch(() => onNotice?.("Can't move that tab: its window is closed"))
   }
-  /** This window's watch feed of a vault it shows, for the search panel; none for another vault. */
-  const watchOf = (root: string) => {
-    const scope = previewScope?.(root)
-    return scope !== undefined && scope.root === root ? scope.watch : undefined
-  }
+  /** This window's watch feed of a vault it shows, for the search panel; none for another vault. One identity per `previewScope`: the panel's vaults are memoised on it. */
+  const watchOf = useCallback(
+    (root: string) => {
+      const scope = previewScope?.(root)
+      return scope !== undefined && scope.root === root ? scope.watch : undefined
+    },
+    [previewScope],
+  )
   /** Where the search panel stands (demo feedback): beside its frame on screen, inside the board; the canvas's point for a frame not there yet. */
   const searchAt = (win: string): { left: number; top: number } => {
     const frame = plan.frames.find((f) => f.win === win)
@@ -1353,7 +1347,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const w = byWin.get(win)
     if (w === undefined) return
     storage.setWindowName(win, next === null || next === w.auto ? null : next)
-    wrote()
   }
 
   /** One card, at its place: inside its group's box (the folder layout), or straight on the world (a window frame). */
@@ -1475,7 +1468,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (target !== undefined && plan.frames.some((f) => f.win === to)) storage.setTabCanvas({ set: arrivalIn(plan, to, { path: card.page.path, copy: target.tabs.filter((t) => t.path === card.page.path).length }, { where: posOf }) })
     setRinged(null)
     sendCard(card, to)
-    wrote()
   }
   const frameOfMenu = frameMenu === null ? undefined : byWin.get(frameMenu.win)
 
@@ -1659,7 +1651,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           title={snapOn ? 'Snap to grid: on' : 'Snap to grid: off'}
           onClick={() => {
             storage.setTabCanvas({ snap: !snapOn })
-            wrote()
           }}
         >
           #
