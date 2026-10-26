@@ -1,5 +1,4 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { isBoard } from '@shared/fileKind'
 import { rootOfPath, type CanvasCard, type TabAction, type CanvasLayout, type TabCanvasPatch, type DiagramDarkColors, type StoredTab, type TabRef, type WindowEntry } from '@shared/types'
 import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -11,27 +10,22 @@ import { setBoardHighlight } from './boardHighlight'
 import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
 import { TabNameField } from './TabNameField'
 import { useTabHeads } from './useTabHeads'
+import { useCamera } from './useCamera'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from './cardPreview'
 import { useHiddenWindows, useMinimizedWindows } from './hiddenWindows'
 import { TabSearchPanel } from './TabSearchPanel'
 import { autoWindowLabel, windowLabel } from './windowLabel'
 import './tabs.css'
 
+export { SETTLE_MS, TOOLBAR_INSET } from './useCamera'
+
 /** A drawing's picture on its card (YAZ-3343 D6): its own chunk, which brings the picture code and the engines. */
 const CardPicture = lazy(() => import('./CardPicture'))
 
 /** How long the board's zoom takes, in ms. The board hands it to the tab stack as `--tab-zoom-ms`, for its own animation and for the page layer's (tabs.css). */
 export const ZOOM_MS = 250
-/** How long after the last pan or zoom step the board looks again at which cards are on screen (YAZ-3343 D6): never on every frame. */
-export const SETTLE_MS = 120
 /** The zoom buttons' step (D7). */
 const ZOOM_STEP = 1.25
-/** The fit's room round the board (D24): the board takes 1 / FIT_MARGIN of the viewport. */
-const FIT_MARGIN = 1.1
-/** The bottom of the board the toolbar stands in (tabs.css: 14 px + a 34 px row + room): the fit keeps every card above it. */
-export const TOOLBAR_INSET = 56
-/** The least zoom the fit goes to: below it, it centres on the active card's frame instead. */
-const FIT_MIN_ZOOM = 0.25
 /** A window that shows no vault of the page refuses it (D13): one short line, so the toast never cuts it (D38). */
 export const MOVE_REFUSED = "Can't move here — that window doesn't have this tab's vault."
 export const ADD_REFUSED = "Can't add here — that window doesn't have this file's vault."
@@ -115,12 +109,11 @@ const SIZES = {
 
 /** Where the zoom aims, as custom properties on the tab stack: gone when there is no page to aim at. */
 const ZOOM_POINT = ['--tab-zoom-scale', '--tab-zoom-x', '--tab-zoom-y', '--tab-layer-x', '--tab-layer-y']
-/** No page: the empty set the pick and the pictures start from. */
+/** No page: the empty set the pick starts from. */
 const NONE: ReadonlySet<string> = new Set()
 const NO_WINDOWS: readonly WindowEntry[] = []
 const WAYS: Record<string, Way> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }
 const tabCount = (n: number): string => (n === 1 ? '1 tab' : `${n} tabs`)
-const clampZoom = (zoom: number): number => Math.min(BOARD.maxZoom, Math.max(BOARD.minZoom, zoom))
 const noSubscribe = (): (() => void) => () => undefined
 const noWindows = (): readonly WindowEntry[] => NO_WINDOWS
 
@@ -331,8 +324,6 @@ type Gesture =
 export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere }: TabOverviewProps) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState<string | null>(active)
-  /** The viewport's box, measured when the board mounts and when the window resizes it. Null until then. */
-  const [view, setView] = useState<{ w: number; h: number } | null>(null)
   const [pageMenu, setPageMenu] = useState<TabMenuAt | null>(null)
   /** The frame a "Move to ▸" row points at, lit on the board while the row is under the pointer (D31). */
   const [ringed, setRinged] = useState<string | null>(null)
@@ -364,9 +355,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const [picked, setPicked] = useState<ReadonlySet<string>>(NONE)
   /** Space is held on a highlighted card: the preview panel shows it (D18). */
   const [spaceHeld, setSpaceHeld] = useState(false)
-  /** The drawings on screen while the zoom shows detail (D6), recomputed when the camera rests. */
-  const [pictured, setPictured] = useState<ReadonlySet<string>>(NONE)
-  const picturedRef = useRef(pictured)
   /** Cards dropped in another window's frame, held where they were dropped until their tab leaves (D13). Not stored. */
   const [ghosts, setGhosts] = useState<ReadonlyMap<string, { x: number; y: number }>>(new Map())
   /** The filter box was the last thing used: Space then types a space (see `onKeyDown`). */
@@ -375,11 +363,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const bodyRef = useRef<HTMLDivElement>(null)
   const worldRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  /** The camera (D4): applied as one transform on the world, never stored, never state. */
-  const cam = useRef<{ x: number; y: number; zoom: number }>({ x: BOARD.padX, y: BOARD.padTop, zoom: 1 })
   const gesture = useRef<Gesture | null>(null)
-  /** The zoom pill's percent, written by the camera (D24: Excalidraw's "− 100% +"). */
-  const percentRef = useRef<HTMLButtonElement>(null)
   /** The card a "Duplicate tab" copied, until its copy shows up (D30): the copy lands by it. */
   const dupSource = useRef<{ id: string; win: string; path: string } | null>(null)
   /** The cards seen so far: one that appears later is placed in its frame's grid (D30). */
@@ -401,7 +385,9 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const listId = useId()
   /** The preview beside a card (D18): the sidebar's panel, its dwell in a tiny store — no board render. */
   const cardPreview = useCardPreview(hoverPreview, (id) => Array.from(worldRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? []).find((el) => el.dataset.tab === id) ?? null)
-  const closePreview = cardPreview.close
+  /** The camera (D4, D7, D24): one transform on the world, never stored, never state. */
+  const camera = useCamera({ rootRef, bodyRef, worldRef, read: () => ({ plan: live.current.plan, active, where: posOf }), onMove: cardPreview.close })
+  const { view, pictured, cam, percentRef, apply: applyCamera, settle, toWorld } = camera
 
   // THE DATA. The canvas — the switch and the moved cards — is the state file's (D1); the other windows
   // are read off the state only while the switch is on (D2).
@@ -489,123 +475,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   // What the doors below read when they run: a ref, so the handlers of the cards and of the window keep one identity.
   const live = useRef({ plan, info, byWin, current, picked, pick, allCards, renaming, layout, allWindows, view, armed })
   live.current = { plan, info, byWin, current, picked, pick, allCards, renaming, layout, allWindows, view, armed }
-
-  /** The camera onto the world: one transform, no render (D4). */
-  const applyCamera = (glide = false): void => {
-    const world = worldRef.current
-    if (world === null) return
-    const { x, y, zoom } = cam.current
-    if (glide && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === false) {
-      world.dataset.glide = ''
-      window.setTimeout(() => delete world.dataset.glide, 220)
-    }
-    world.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`
-    // Far out, the cards show their titles alone (D15): one attribute, no render.
-    rootRef.current?.toggleAttribute('data-far', zoom < 0.6)
-    // The pill's percent (Excalidraw's), written straight into its text: the camera renders nothing.
-    if (percentRef.current !== null) percentRef.current.textContent = `${Math.round(zoom * 100)}%`
-  }
-
-  /** Which drawings are on screen at a zoom that shows detail (D6). Arithmetic on the plan; it renders only when the answer changed. */
-  const recount = (): void => {
-    const { plan: now, info: cards, view: box } = live.current
-    const { x, y, zoom } = cam.current
-    const next = new Set<string>()
-    if (zoom >= BOARD.detailZoom && box !== null && box.w > 0) {
-      for (const [id, pos] of now.cards) {
-        if (!isBoard(cards.get(id)?.page.path ?? '')) continue
-        const left = x + pos.x * zoom
-        const top = y + pos.y * zoom
-        if (left < box.w && top < box.h && left + BOARD.pageW * zoom > 0 && top + BOARD.pageH * zoom > 0) next.add(id)
-      }
-    }
-    // Compared here, not in an updater: a set that did not change must not even schedule a render.
-    const held = picturedRef.current
-    if (held.size === next.size && [...next].every((id) => held.has(id))) return
-    picturedRef.current = next
-    setPictured(next)
-  }
-  const settleTimer = useRef(0)
-  const settle = (): void => {
-    window.clearTimeout(settleTimer.current)
-    settleTimer.current = window.setTimeout(recount, SETTLE_MS)
-  }
-  useEffect(() => () => window.clearTimeout(settleTimer.current), [])
-
-  /** Zoom by `factor` about the viewport point (px, py): the world point under it holds still (D7). */
-  const zoomAt = (px: number, py: number, factor: number, glide = false): void => {
-    const c = cam.current
-    const zoom = clampZoom(c.zoom * factor)
-    c.x = px - ((px - c.x) * zoom) / c.zoom
-    c.y = py - ((py - c.y) * zoom) / c.zoom
-    c.zoom = zoom
-    applyCamera(glide)
-    settle()
-  }
-  const zoomButton = (factor: number): void => {
-    cardPreview.close()
-    const box = live.current.view
-    zoomAt((box?.w ?? 0) / 2, (box?.h ?? 0) / 2, factor, true)
-  }
-  /**
-   * THE FIT (D24):
-   * everything the board shows, centred, with `FIT_MARGIN` of room round it, at 100% at most. A board that would need
-   * less than `FIT_MIN_ZOOM` gets that zoom, centred on the frame (or group) of the active card. Null with no viewport.
-   */
-  const fitCamera = (): { x: number; y: number; zoom: number } | null => {
-    const { plan: now, view: box, info: cards } = live.current
-    const b = now.bounds
-    if (box === null || box.w <= 0 || box.h <= 0 || b.w <= 0 || b.h <= 0) return null
-    // The toolbar's row is no room for cards (D24).
-    const h = Math.max(1, box.h - TOOLBAR_INSET)
-    const fit = Math.min(1, box.w / (b.w * FIT_MARGIN), h / (b.h * FIT_MARGIN))
-    const centreOn = (r: Rect, zoom: number) => ({ zoom, x: box.w / 2 - (r.x + r.w / 2) * zoom, y: h / 2 - (r.y + r.h / 2) * zoom })
-    if (fit >= FIT_MIN_ZOOM) return centreOn(b, fit)
-    const here = active === null ? undefined : cards.get(active)
-    const frame = here === undefined ? undefined : now.frames.find((f) => f.win === here.win)
-    const group = active === null ? undefined : now.groups.find((g) => g.island.pages.some((page) => page.id === active))
-    return centreOn(frame ?? group ?? b, FIT_MIN_ZOOM)
-  }
-  /** "Fit all tabs" (D7): the same fit as the board's open. */
-  const fitAll = (): void => {
-    cardPreview.close()
-    const fit = fitCamera()
-    if (fit === null) return
-    cam.current = fit
-    applyCamera(true)
-    settle()
-  }
-  /** Pan just enough that the card `id` is on screen (D7): the arrows' move, the filter's first match. `centre` puts it in the middle. */
-  const reveal = (id: string, { centre = false, glide = true }: { centre?: boolean; glide?: boolean } = {}): void => {
-    const box = live.current.view
-    const pos = ghosts.get(id) ?? live.current.plan.cards.get(id)
-    if (box === null || box.w <= 0 || pos === undefined) return
-    const c = cam.current
-    const w = BOARD.pageW * c.zoom
-    const h = BOARD.pageH * c.zoom
-    const left = c.x + pos.x * c.zoom
-    const top = c.y + pos.y * c.zoom
-    const margin = 24
-    if (left >= 0 && top >= 0 && left + w <= box.w && top + h <= box.h) return
-    if (centre) {
-      c.x = box.w / 2 - (pos.x + BOARD.pageW / 2) * c.zoom
-      c.y = box.h / 2 - (pos.y + BOARD.pageH / 2) * c.zoom
-    } else {
-      if (left < margin) c.x += margin - left
-      else if (left + w > box.w - margin) c.x -= Math.min(left - margin, left + w - (box.w - margin))
-      if (top < margin) c.y += margin - top
-      else if (top + h > box.h - margin) c.y -= Math.min(top - margin, top + h - (box.h - margin))
-    }
-    applyCamera(glide)
-    settle()
-  }
-
-  /** World coordinates of a point of the screen. */
-  const toWorld = (clientX: number, clientY: number): { x: number; y: number } => {
-    const rect = bodyRef.current?.getBoundingClientRect()
-    const c = cam.current
-    return { x: (clientX - (rect?.left ?? 0) - c.x) / c.zoom, y: (clientY - (rect?.top ?? 0) - c.y) / c.zoom }
-  }
 
   // The doors of a card. Each closes over `live`, so `actions` is ONE object for the board's life.
   const openCard = (id: string): void => {
@@ -943,58 +812,8 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     else cardPreview.endSpace()
   }, [spaceHeld, current])
 
-  // The viewport's box, read when the board mounts and when its box changes — never on a keystroke, a pan or a hover.
-  useLayoutEffect(() => {
-    const body = bodyRef.current
-    if (body === null) return
-    const read = (): void => {
-      const w = body.clientWidth
-      const h = body.clientHeight
-      setView((now) => (now !== null && now.w === w && now.h === h ? now : { w, h }))
-    }
-    read()
-    const observer = new ResizeObserver(read)
-    observer.observe(body)
-    return () => observer.disconnect()
-  }, [])
-  // The camera's first place, once the viewport is known: THE FIT (D24) — every window on screen, a little
-  // room round them. With no viewport to fit (none measured yet), zoom 1 from the top-left padding. Never stored.
-  const placed = useRef(false)
-  useLayoutEffect(() => {
-    if (placed.current || view === null) return
-    placed.current = true
-    cam.current = fitCamera() ?? { x: BOARD.padX, y: BOARD.padTop, zoom: 1 }
-    applyCamera()
-    recount()
-  }, [view])
   // The pictures follow the plan too: a card that moved, or a filter that brought a drawing on screen.
-  useEffect(() => {
-    if (placed.current) recount()
-  }, [plan])
-  // Pinch and ⌘-scroll zoom about the pointer; two-finger scroll pans (D7). Not passive: the page itself must not scroll.
-  useEffect(() => {
-    const body = bodyRef.current
-    if (body === null) return
-    const wheel = (e: WheelEvent): void => {
-      e.preventDefault()
-      closePreview()
-      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (live.current.view?.h ?? 800) : 1
-      const rect = body.getBoundingClientRect()
-      if (e.ctrlKey || e.metaKey) return zoomAtRef.current(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * unit * 0.01))
-      cam.current.x -= e.deltaX * unit
-      cam.current.y -= e.deltaY * unit
-      applyCameraRef.current()
-      settleRef.current()
-    }
-    body.addEventListener('wheel', wheel, { passive: false })
-    return () => body.removeEventListener('wheel', wheel)
-  }, [])
-  const zoomAtRef = useRef(zoomAt)
-  zoomAtRef.current = zoomAt
-  const applyCameraRef = useRef(applyCamera)
-  applyCameraRef.current = applyCamera
-  const settleRef = useRef(settle)
-  settleRef.current = settle
+  useEffect(() => camera.recountIfPlaced(), [plan])
 
   // THE ZOOM. Opening, App shrinks the active tab's layer onto that tab's card while the board settles in
   // around it; leaving, both run back, onto the chosen card. The card's centre on screen is its world place ×
@@ -1138,7 +957,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   useEffect(() => {
     if (!wantReveal.current || current === null) return
     wantReveal.current = false
-    reveal(current)
+    camera.reveal(current)
   }, [current, plan])
 
   const changeQuery = (next: string): void => {
@@ -1635,17 +1454,17 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         </button>
         <span className="taboverview__toolbar-divider" aria-hidden />
         <div className="taboverview__zoom-pill">
-          <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoomButton(1 / ZOOM_STEP)}>
+          <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => camera.zoomBy(1 / ZOOM_STEP)}>
             −
           </button>
-          <button type="button" ref={percentRef} className="taboverview__zoom-percent" aria-label="Reset zoom" title="Reset zoom" onClick={() => zoomButton(1 / cam.current.zoom)}>
+          <button type="button" ref={percentRef} className="taboverview__zoom-percent" aria-label="Reset zoom" title="Reset zoom" onClick={() => camera.zoomBy(1 / cam.current.zoom)}>
             100%
           </button>
-          <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => zoomButton(ZOOM_STEP)}>
+          <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => camera.zoomBy(ZOOM_STEP)}>
             +
           </button>
         </div>
-        <button type="button" className="taboverview__zoom-fit" aria-label="Fit all tabs" title="Fit all tabs" onClick={fitAll}>
+        <button type="button" className="taboverview__zoom-fit" aria-label="Fit all tabs" title="Fit all tabs" onClick={camera.fitAll}>
           ⤢
         </button>
         {/* "Snap to grid" (D26): on by default, remembered; lit while on. */}
