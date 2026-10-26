@@ -310,8 +310,10 @@ export const gapOf = (by: CanvasLayout): number => (by === 'window' ? BOARD.apar
  * A card the user moved stands at its stored place (`stored`, the entries of this layout `by`); every other
  * card stands in its AUTO slot. POSITIONS ARE STABLE (D16): the slots are computed from ALL the cards as if none
  * were moved, and every frame keeps its spot in the flow wherever it stands, so a moved card or frame leaves its
- * spot empty and nothing else shifts; only a tab that opens or closes (or "Tidy up") reflows. A drawn box wraps
- * ITS CARDS ONLY: a box dragged as a whole moves with its cards, never stretches from its old place.
+ * spot empty and nothing else shifts. A tab that opens, or closes outside the board (or "Tidy up"), reflows; a tab
+ * that LEAVES a window from the board does not: the board stores the cards and frames that stay, in the same write
+ * (`departureFrom`, YAZ-3376). A drawn box wraps ITS CARDS ONLY: a box dragged as a whole moves with its cards, never
+ * stretches from its old place.
  *
  * 'folder' (the switch off): the groups of the window flow as the islands always did — side by side, wrapping
  * at `wrapW`, a vault's islands under its name — each group's box round its cards, its label row above them.
