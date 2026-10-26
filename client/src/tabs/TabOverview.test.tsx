@@ -1546,6 +1546,84 @@ describe('YAZ-3376, YAZ-3343 S16, D16, S45: a tab that LEAVES a window from the 
     await again({})
     expect(spots(el, ['w2\n/v/q.md\n0', 'w2\n/v/p.md\n0', 'w2\n/v/r.md\n0']).map(([, at]) => at)).toEqual(was)
   })
+
+  /** A pick-bar button by its name: an armed close is named by what its next click does. */
+  const pickButton = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((b) => (b.getAttribute('aria-label') ?? b.textContent) === label)
+  const metaClick = (el: HTMLElement, id: string) => act(() => void page(el, id)!.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+  const labelSpot = (el: HTMLElement, win: string) => [frame(el, win).style.left, frame(el, win).style.top]
+
+  it('the pick bar\'s "Close them" (cards of two windows): ONE write, and the cards that stay keep their places', async () => {
+    const onCloseTabs = vi.fn()
+    const { el, again, before } = await board({ onCloseTabs })
+    metaClick(el, '/v/b.md')
+    metaClick(el, 'w3\n/v/y.md\n0')
+    act(() => pickButton(el, 'Close them')!.click())
+    act(() => pickButton(el, 'Click again to close 2 tabs')!.click())
+    expect(onCloseTabs).toHaveBeenCalledExactlyOnceWith(['/v/b.md'])
+    expect(api.window.closeTabs).toHaveBeenCalledExactlyOnceWith('w3', [{ path: '/v/y.md', copy: 0 }])
+    expect(storage.setTabCanvas).toHaveBeenCalledOnce()
+    others = [other('w2', ['/v'], W2), other('w3', ['/v'], W3.slice(1))]
+    await again({ tabs: MINE.filter((p) => p !== '/v/b.md') })
+    const stay = STAY.filter((id) => id !== 'w3\n/v/y.md\n0')
+    expect(spots(el, stay)).toEqual(before.filter(([id]) => stay.includes(id as string)))
+  })
+
+  it('the pick bar\'s "Close the others": ONE write; the picked cards keep their places, and a frame left empty stays where it was', async () => {
+    const onCloseTabs = vi.fn()
+    const { el, again, before } = await board({ onCloseTabs })
+    const w2 = labelSpot(el, 'w2')
+    metaClick(el, '/v/a.md')
+    metaClick(el, '/v/c.md')
+    metaClick(el, 'w3\n/v/z.md\n0')
+    act(() => pickButton(el, 'Close the others')!.click())
+    act(() => pickButton(el, 'Click again to close 4 tabs in 3 windows')!.click())
+    expect(onCloseTabs).toHaveBeenCalledExactlyOnceWith(['/v/b.md', '/v/d.md'])
+    expect(storage.setTabCanvas).toHaveBeenCalledOnce()
+    others = [other('w2', ['/v'], []), other('w3', ['/v'], W3.slice(1))]
+    await again({ tabs: ['/v/a.md', '/v/c.md'] })
+    const stay = ['/v/a.md', '/v/c.md', 'w3\n/v/z.md\n0']
+    expect(spots(el, stay)).toEqual(before.filter(([id]) => stay.includes(id as string)))
+    expect(labelSpot(el, 'w2')).toEqual(w2)
+  })
+
+  it('a frame\'s "Close all tabs" and "Close window": ONE write each; nothing of that frame to keep, and every OTHER frame\'s cards keep their places', async () => {
+    const onCloseWindow = vi.fn()
+    const { el, again, before } = await board({ onCloseWindow })
+    const mine = labelSpot(el, 'me')
+    /** Two clicks in the frame's menu (D21): the item, then its armed label. */
+    const closeBy = (win: string, item: string, armed: string) => {
+      act(() => void frame(el, win).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+      act(() => menuItem(el, item)?.click())
+      act(() => menuItem(el, armed)?.click())
+    }
+    closeBy('me', 'Close all tabs', 'Click again to close 4 tabs')
+    expect(onCloseWindow).toHaveBeenLastCalledWith({ win: 'me', mine: true, refs: MINE.map((path) => ({ path, copy: 0 })), whole: false })
+    expect(storage.setTabCanvas).toHaveBeenCalledOnce()
+    await again({ tabs: [] })
+    const theirs = STAY.slice(3)
+    expect(spots(el, theirs)).toEqual(before.slice(3))
+    // The empty frame stays where it stood.
+    expect(labelSpot(el, 'me')).toEqual(mine)
+
+    closeBy('w2', 'Close window', 'Click again to close')
+    expect(onCloseWindow).toHaveBeenLastCalledWith({ win: 'w2', mine: false, refs: [{ path: '/v/x.md', copy: 0 }], whole: true })
+    expect(storage.setTabCanvas).toHaveBeenCalledTimes(2)
+    others = [other('w3', ['/v'], W3)]
+    await again({})
+    expect(spots(el, STAY.slice(4))).toEqual(before.slice(4))
+    expect(labelSpot(el, 'me')).toEqual(mine)
+  })
+
+  it('a group\'s "Close N" (the folder layout, the switch off — a window frame has no groups, D17): the tabs close by their door, and the board writes nothing (D16: the folder layout reflows on a close)', async () => {
+    const onCloseTabs = vi.fn()
+    canvas = { allWindows: false, snap: true, cards: [], frames: [] }
+    const { el } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/a.md', '/v/P/b.md', '/v/P/c.md', '/v/Q/d.md'], active: '/v/a.md', preview: null, onCloseTabs })
+    const close = island(el, 'P').querySelector<HTMLButtonElement>('.taboverview__island-close')!
+    act(() => close.click())
+    act(() => close.click())
+    expect(onCloseTabs).toHaveBeenCalledExactlyOnceWith(['/v/P/b.md', '/v/P/c.md'])
+    expect(storage.setTabCanvas).not.toHaveBeenCalled()
+  })
 })
 
 describe('plainLines (S54)', () => {
