@@ -515,6 +515,14 @@ describe('registerWindowIpc', () => {
     })
   })
 
+  it('bug YAZ-3392: a Files window\'s page that starts (a launch, a reload) ends a wide state, so the window is narrow again; a full window\'s identity never asks', async () => {
+    await registered(CONTRACT.window.identity.channel)({ sender })
+    expect(manager.filesWide).not.toHaveBeenCalled()
+    store.upsertWindow({ ...entry, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), kind: 'files' })
+    await registered(CONTRACT.window.identity.channel)({ sender })
+    expect(manager.filesWide).toHaveBeenCalledExactlyOnceWith('w1', false)
+  })
+
   it('the Files window doors (YAZ-3357): kind on the identity; open-from-files only from a Files window, its action checked against the window\'s vaults; wide and preview take checked values', async () => {
     const files: WindowEntry = { ...entry, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), kind: 'files' }
     store.upsertWindow(files)
@@ -528,8 +536,9 @@ describe('registerWindowIpc', () => {
     expect(await fromFiles({ sender }, { kind: 'open', path: '/v/a.md', how: 'tab' })).toEqual(bad('BAD_REQUEST'))
     expect(await fromFiles({ sender }, { kind: 'delete', path: '/v/a.md' })).toEqual(bad('BAD_REQUEST'))
     expect(manager.openFromFiles).toHaveBeenCalledTimes(2)
+    // The identity read above already ended any wide state (bug YAZ-3392); the door's own call is the last one.
     expect(await registered(CONTRACT.window.filesWide.channel)({ sender }, true)).toEqual(ok(undefined))
-    expect(manager.filesWide).toHaveBeenCalledExactlyOnceWith('w1', true)
+    expect(manager.filesWide).toHaveBeenLastCalledWith('w1', true)
     expect(await registered(CONTRACT.window.filesWide.channel)({ sender }, 'yes')).toEqual(bad('BAD_REQUEST'))
     const preview = registered(CONTRACT.window.filesPreview.channel)
     expect(await preview({ sender }, { width: 400, height: 300, top: 10, bottom: 30 })).toEqual(ok(undefined))

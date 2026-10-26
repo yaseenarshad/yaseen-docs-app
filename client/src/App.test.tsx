@@ -6215,13 +6215,21 @@ describe('App Files window (YAZ-3357)', () => {
     expect(bridge.window.duplicate).toHaveBeenCalledTimes(1)
   })
 
-  it('D2: a full window runs a Files window\'s click with its own doors — keep, background, and an Inbox opens the review', async () => {
-    const { el, emitFromFiles } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+  it('D2: a full window runs a Files window\'s actions with its own doors — keep, background, history and a session', async () => {
+    const { el, emitFromFiles, bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     act(() => emitFromFiles({ kind: 'open', path: '/v/b.md', how: 'keep' }))
     expect(tabNames(el)).toEqual(['a', 'b'])
     expect(el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent).toBe('b')
     act(() => emitFromFiles({ kind: 'open', path: '/v/c.md', how: 'background' }))
     expect(tabNames(el)).toEqual(['a', 'b', 'c'])
     expect(el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent).toBe('b')
+    // History opens this window's history panel on the page; a session restores through this window's own door.
+    act(() => emitFromFiles({ kind: 'history', path: '/v/b.md' }))
+    // The panel is a lazy chunk: it asks for the page's versions once it has loaded.
+    await vi.waitFor(() => expect(bridge.github.history).toHaveBeenCalled())
+    expect(JSON.stringify(bridge.github.history.mock.calls[0])).toContain('/v/b.md')
+    act(() => emitFromFiles({ kind: 'session', id: 's1' }))
+    await act(async () => {})
+    expect(bridge.window.restoreSession).toHaveBeenCalledWith('s1')
   })
 })

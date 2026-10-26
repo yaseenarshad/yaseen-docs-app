@@ -121,6 +121,20 @@ test('"Show all tabs" makes the Files window wide for the board, and narrow agai
   await expect(files.locator('.taboverview')).toHaveCount(0)
 })
 
+test('View › Reload while the board shows: the Files window goes back narrow, and the board opens again', async () => {
+  await showAllTabs(files).click()
+  await expect.poll(async () => (await boundsOf(filesId))?.width).toBe(await wideWidth(filesId))
+  await files.reload()
+  await expect(fileRow(files, 'Beta')).toBeVisible()
+  // The new page starts with the board closed (D3, D10): the window is narrow again, the sidebar never stretched.
+  await expect.poll(() => boundsOf(filesId)).toEqual(narrow)
+  // "Show all tabs" shows the board with room for it, and closes it.
+  await showAllTabs(files).click()
+  await expect(files.locator('.taboverview')).toBeVisible()
+  await showAllTabs(files).click()
+  await expect.poll(() => boundsOf(filesId)).toEqual(narrow)
+})
+
 test('a quit while the board shows brings the Files window back narrow, as a Files window', async () => {
   await showAllTabs(files).click()
   await expect.poll(async () => (await boundsOf(filesId))?.width).toBe(await wideWidth(filesId))
