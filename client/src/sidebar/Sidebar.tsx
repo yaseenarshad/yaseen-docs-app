@@ -1609,6 +1609,7 @@ export function Sidebar({
             type="button"
             className={`sidebar__files-chip${chipArmed ? ' sidebar__files-chip--armed' : ''}`}
             title={chipArmed ? 'Click again to make this a full window, with tabs and pages' : 'Files window: just the sidebar. Click twice to make it a full window'}
+            aria-label={chipArmed ? 'Make full window' : 'Files window'}
             onMouseLeave={() => setChipArmed(false)}
             onClick={() => {
               if (!chipArmed) return setChipArmed(true)
@@ -1616,7 +1617,9 @@ export function Sidebar({
               onToNormalWindow()
             }}
           >
-            {!chipArmed && <SidebarPanelIcon />}
+            {/* YAZ-3401: a narrow footer shows the icon alone. Armed, the red words cover the chip from its right edge
+                leftward (app.css), so the footer keeps its layout and the second click lands on them. */}
+            <SidebarPanelIcon />
             <span>{chipArmed ? 'Make full window' : 'Files window'}</span>
           </button>
         )}

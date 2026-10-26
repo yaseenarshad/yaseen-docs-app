@@ -7701,7 +7701,7 @@ describe('update pill (YAZ-2976 D4)', () => {
   it('sits after the cog in the footer, and its click asks App for the "What\'s new" window', async () => {
     const { el, props } = await mount({ update: { kind: 'ready', version: '1.0.13' } })
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
-    expect(footer).toEqual(['settings-button', 'sidebar-zoom', 'update-pill'])
+    expect(footer).toEqual(['settings-button', 'sidebar-zoom', 'update-pill-slot'])
     act(() => el.querySelector<HTMLButtonElement>('.update-pill')?.click())
     expect(props.onOpenWhatsNew).toHaveBeenCalledTimes(1)
   })
@@ -7728,7 +7728,7 @@ describe('update pill (YAZ-2976 D4)', () => {
     const onFilesZoom = vi.fn()
     const { el, props } = await mount({ settings: { ...DEFAULT_SETTINGS, sidebarZoom: 100 }, filesZoom: 150, onFilesZoom, onToNormalWindow: vi.fn(), update: { kind: 'ready', version: '1.0.13' } })
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
-    expect(footer).toEqual(['settings-button', 'sidebar-zoom', 'sidebar__files-chip', 'update-pill'])
+    expect(footer).toEqual(['settings-button', 'sidebar-zoom', 'sidebar__files-chip', 'update-pill-slot'])
     expect(el.querySelector<HTMLElement>('.sidebar__body')!.style.getPropertyValue('--sidebar-zoom')).toBe('1.5')
     expect(el.querySelector('.sidebar-zoom__value')?.textContent).toBe('150%')
     act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Zoom the sidebar in"]')!.click())

@@ -41,6 +41,10 @@ describe('UpdatePill', () => {
     expect(button.title).toBe("Click to see what's new")
     expect(button.type).toBe('button')
     expect(button.querySelector('.update-pill__emoji')?.getAttribute('aria-hidden')).toBe('true')
+    // YAZ-3401: a narrow footer shows the short words from `data-short`, or the 🎉 alone; the name stays the full words.
+    expect(button.getAttribute('aria-label')).toBe(label)
+    expect(button.dataset.short).toBe(kind === 'updated' ? "What's new" : 'Update')
+    expect(button.querySelector('.update-pill__label')?.textContent).toBe(label)
   })
 
   it('the dot breathes until the sheet is opened for this version, then rests; a newer version breathes again (D14)', () => {
