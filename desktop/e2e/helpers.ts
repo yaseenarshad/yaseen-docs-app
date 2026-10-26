@@ -327,13 +327,14 @@ export async function expandDirs(win: Page, dirs: string[]): Promise<void> {
 
 /**
  * Opens the folder `dir` (absolute path) as a KEPT tab at the end of the strip, and the active one
- * (YAZ-2648 D2 — before it, the folder took the current tab's place), by the double click a user makes on
- * its Files row (YAZ-2290 D3; `onDoubleClick` in client/src/sidebar/Tree.tsx). The two clicks of
- * that gesture fold and unfold the row on the way, so it ends as open or shut as it started.
+ * (YAZ-2648 D2 — before it, the folder took the current tab's place), by the item a user picks in
+ * its Files row's menu, "Open folder page" (YAZ-3377 D1, D2: a double click opens nothing). The row
+ * neither folds nor unfolds on the way.
  * Resolves once the folder view is on screen. A nested folder needs `expandDirs` on its ancestors.
  */
 export async function openFolder(win: Page, dir: string): Promise<void> {
-  await win.locator(`.tree__row--dir[data-path="${dir}"]`).dblclick()
+  await win.locator(`.tree__row--dir[data-path="${dir}"]`).click({ button: 'right' })
+  await menuItem(win, 'Open folder page').click()
   await expect(contents(win)).toBeVisible()
 }
 

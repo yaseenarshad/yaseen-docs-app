@@ -76,7 +76,7 @@ export type MenuSection = MenuItem[]
 export type MenuSectionTargets = MenuTargets & { clip: FileClipState }
 
 export interface MenuHandlers {
-  /** "Open" on a folder row (YAZ-2290 D3): the folder opens as a kept tab, as a double click opens it (YAZ-2648 D2). */
+  /** "Open folder page" on a folder row (YAZ-2290 D3, YAZ-3377 D2): the folder opens as a kept tab (YAZ-2648 D2). */
   onOpen: (path: string) => void
   /** One background tab per path (I3's opener, GRO-2235) — the caller owns the loop's semantics. */
   onOpenInNewTabs: (paths: string[]) => void
@@ -149,13 +149,13 @@ export const errorText = (error: unknown) => (error instanceof Error ? error.mes
 // ---- (1) Open / View: "Show in sidebar", a folder's Open, the plural open and the focus toggle — nothing here writes to disk ----
 
 /**
- * "Open" — a FOLDER row (YAZ-2290 D3): the folder itself is a tab, and a click on its row only
- * folds, so this is the one-click door to it. A file row opens on its click and has no such item.
+ * "Open folder page" — a FOLDER row (YAZ-2290 D3, YAZ-3377 D2): a click on its row only folds and a
+ * double click opens nothing, so this is the mouse's door to it. A file row has no such item.
  */
 const open: Leaf = (t, h) => {
   const path = t.openPath
   if (path === null) return null
-  return { id: 'open', label: 'Open', onSelect: () => h.onOpen(path) }
+  return { id: 'open', label: 'Open folder page', onSelect: () => h.onOpen(path) }
 }
 
 /**

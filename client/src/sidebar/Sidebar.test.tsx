@@ -744,7 +744,7 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('a double click on a FOLDER row opens the folder itself as a KEPT tab (YAZ-2648 D2); a single click still only selects and folds (YAZ-2290 D3)', async () => {
+  it('a double click on a FOLDER row opens nothing — its two clicks only select and fold (YAZ-3377 D1, S2)', async () => {
     const { props, el } = await mount()
     const row = el.querySelector<HTMLButtonElement>('.tree__row--dir')!
     const open = row.parentElement!.getAttribute('aria-expanded')
@@ -753,7 +753,7 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(row.className).toContain('tree__row--selected')
     expect(row.parentElement!.getAttribute('aria-expanded')).not.toBe(open)
     act(() => void row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
-    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onKeepFile).not.toHaveBeenCalled()
     expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(props.onOpenFileBackground).not.toHaveBeenCalled()
   })
@@ -771,20 +771,20 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(props.onKeepFile).toHaveBeenCalledTimes(1)
   })
 
-  it('the folder row menu LEADS with "Open", which opens the folder as a tab; a file row and blank space have no such item (YAZ-2290 D3)', async () => {
+  it('the folder row menu LEADS with "Open folder page", which opens the folder as a tab; a file row and blank space have no such item (YAZ-2290 D3, YAZ-3377 D2)', async () => {
     const { props, el } = await mount()
     act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(menuItems(el)[0]?.textContent).toBe('Open')
-    act(() => itemByLabel(el, 'Open')?.click())
-    // As the row's double click opens it: a kept tab (YAZ-2648 D2).
+    expect(menuItems(el)[0]?.textContent).toBe('Open folder page')
+    act(() => itemByLabel(el, 'Open folder page')?.click())
+    // A kept tab (YAZ-2648 D2).
     expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
     expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(el.querySelector('.ctx-menu')).toBeNull()
     act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Open')).toBeUndefined()
+    expect(itemByLabel(el, 'Open folder page')).toBeUndefined()
     act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Open')).toBeUndefined()
+    expect(itemByLabel(el, 'Open folder page')).toBeUndefined()
   })
 
   it('Enter on a focused FOLDER row opens the folder as a tab and does not fold it; shift+Enter is left alone (YAZ-2290 D3)', async () => {
@@ -2450,13 +2450,13 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     click(row(el, `${v}/plan.md`), { metaKey: true })
     expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(`${v}/plan.md`)
     expect(cursor(el)).toEqual(['plan'])
-    // S27: a folder row folds and, being a match, takes the highlight; only a double-click opens its page.
+    // S27: a folder row folds and, being a match, takes the highlight; a double-click opens nothing (YAZ-3377 D1).
     click(row(el, `${v}/Plans`))
     expect(shape(el)).toEqual(['Plans', 'plan'])
     expect(cursor(el)).toEqual(['Plans'])
     expect(props.onOpenFile).toHaveBeenCalledTimes(1)
     act(() => void row(el, `${v}/Plans`)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
-    expect(props.onKeepFile).toHaveBeenLastCalledWith(`${v}/Plans`)
+    expect(props.onKeepFile).not.toHaveBeenCalled()
     // S28: a row inside an opened folder is no match — it opens as a tree row does, and the highlight stays.
     await type(input, 'archive')
     click(row(el, `${v}/Archive`))
@@ -3167,7 +3167,7 @@ describe('search-row context menu (YAZ-2050)', () => {
     rightClick(result(el, true))
     expect(expected).not.toContain('Show in sidebar')
     expect(labels(el)).toEqual(['Show in sidebar', ...expected])
-    expect(labels(el).slice(0, 3)).toEqual(['Show in sidebar', 'Open', 'Add to focus'])
+    expect(labels(el).slice(0, 3)).toEqual(['Show in sidebar', 'Open folder page', 'Add to focus'])
   })
 
   it('follows the FILES rules whichever tab the search was shown from (🔒 D1): from Favorites the same menu, "Add to focus"', async () => {
@@ -3496,7 +3496,7 @@ describe('"Show in sidebar" on a row of Search, Focus and Favorites (YAZ-2638 D1
     expect(menuOf(el, row(el, `${v}/top.md`))).toEqual([ITEM, ...inFiles['/top.md']])
     await type(searchBar(el)!, 'projects')
     expect(menuOf(el, row(el, `${v}/Projects`))).toEqual([ITEM, ...inFiles['/Projects']])
-    expect(menuOf(el, row(el, `${v}/Projects`)).slice(0, 3)).toEqual([ITEM, 'Open', 'Remove from focus'])
+    expect(menuOf(el, row(el, `${v}/Projects`)).slice(0, 3)).toEqual([ITEM, 'Open folder page', 'Remove from focus'])
     await type(searchBar(el)!, 'plan')
     expect(menuOf(el, row(el, `${v}/Projects`))[0]).toBe(ITEM) // the parent of the match
   })
@@ -3647,7 +3647,7 @@ describe('folder rows in search (YAZ-1491)', () => {
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
   })
 
-  it('S27: a click on a folder row folds it, as on Files — it no longer opens the page; a double-click does (YAZ-2620 D1)', async () => {
+  it('S27: a click on a folder row folds it, as on Files — it no longer opens the page, nor does a double-click (YAZ-3377 D1, S8)', async () => {
     const { el, props } = await search('sub')
     const before = dirResult(el)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
     clickRow(dirResult(el))
@@ -3656,7 +3656,7 @@ describe('folder rows in search (YAZ-1491)', () => {
     expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(props.onOpenFileBackground).not.toHaveBeenCalled()
     act(() => void dirResult(el)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
-    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onKeepFile).not.toHaveBeenCalled()
     expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
   })
@@ -3671,7 +3671,7 @@ describe('folder rows in search (YAZ-1491)', () => {
   it('the folder result\'s right-click menu is the folder row\'s own menu, "Reveal in Finder" included, plus `Show in sidebar` first (YAZ-2638 D1)', async () => {
     const { el, props } = await search('sub')
     act(() => void dirResult(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(menuItems(el).map((b) => b.textContent)).toEqual(expect.arrayContaining(['Open', 'Add to focus', 'Rename']))
+    expect(menuItems(el).map((b) => b.textContent)).toEqual(expect.arrayContaining(['Open folder page', 'Add to focus', 'Rename']))
     expect(subItemByLabel(el, 'Reveal in Finder')).toBeDefined()
     // The tree-drawing items still leave the search through the reveal door.
     await act(async () => itemByLabel(el, 'New note')?.click())
@@ -6477,18 +6477,17 @@ describe('favorites (YAZ-1766)', () => {
       expect(lit(plan, 'tree__row--active')).toEqual([true, false])
     })
 
-    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R1) on %s: a double click opens a FOLDER page in copy B — the folder row lights in copy B (Decision 3)', async (lens) => {
-      const { el, v, rerender } = await mountWork(lens)
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R1) on %s: a double click on a FOLDER in copy B opens nothing — it selects copy B and folds (YAZ-3377 D1, S10)', async (lens) => {
+      const { el, v, props } = await mountWork(lens)
       const gtm = `${v}/Work/Wrenly/GTM`
       const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
       expect(rowsByPath(el, gtm)).toHaveLength(2)
-      // A real double click: two clicks (each selects and folds), then the dblclick (YAZ-2648 D2).
+      // A real double click: two clicks (each selects and folds), then the dblclick. The menu opens the page (R6).
       act(() => rowsByPath(el, gtm)[1]?.click())
       act(() => rowsByPath(el, gtm)[1]?.click())
       act(() => void rowsByPath(el, gtm)[1]?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
-      await rerender({ activeFile: gtm })
+      expect(props.onKeepFile).not.toHaveBeenCalled()
       expect(lit(gtm, 'tree__row--selected')).toEqual([false, true])
-      expect(lit(gtm, 'tree__row--active')).toEqual([false, true])
     })
 
     it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R2) on %s: Enter opens a FOLDER page in copy B — the folder row lights in copy B', async (lens) => {
@@ -6547,13 +6546,13 @@ describe('favorites (YAZ-1766)', () => {
       expect(lit(plan, 'tree__row--active')).toEqual([false, true])
     })
 
-    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R6) on %s: the row menu "Open" on a FOLDER in copy B — its page lights in copy B (Decision 3, S15)', async (lens) => {
+    it.each(['favorites', 'focus'] as const)('YAZ-3131 Decision 3 (YAZ-3144, R6) on %s: the row menu "Open folder page" on a FOLDER in copy B — its page lights in copy B (Decision 3, S15)', async (lens) => {
       const { el, v, rerender } = await mountWork(lens)
       const gtm = `${v}/Work/Wrenly/GTM`
       const lit = (path: string, cls: string) => rowsByPath(el, path).map((row) => row.classList.contains(cls))
-      // "Open" is a FOLDER row's item (YAZ-2290 D3); a file row opens on its click and has none.
+      // "Open folder page" is a FOLDER row's item (YAZ-2290 D3, YAZ-3377 D2); a file row opens on its click and has none.
       act(() => void rowsByPath(el, gtm)[1]?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 5, clientY: 5 })))
-      const open = itemByLabel(el, 'Open')
+      const open = itemByLabel(el, 'Open folder page')
       expect(open).toBeDefined()
       act(() => open?.click())
       await rerender({ activeFile: gtm })
