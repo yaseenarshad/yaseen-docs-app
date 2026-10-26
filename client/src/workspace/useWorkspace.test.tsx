@@ -174,7 +174,7 @@ describe('tabsReducer', () => {
         preview: '/v/p.md',
         blank: false,
       })
-      // The first page of an empty window too; and a kept open (a folder row's double click) fills it the same way.
+      // The first page of an empty window too; and a kept open (a folder's "Open folder page") fills it the same way.
       expect(tabsReducer(tabsReducer(state([], null), { type: 'new-tab' }), { type: 'open-current', path: '/v/c.md' })).toEqual(state(['/v/c.md'], '/v/c.md'))
       expect(tabsReducer(blank(), { type: 'open-new', path: '/v/Docs' })).toMatchObject({ tabs: ['/v/a.md', '/v/b.md', '/v/Docs'], active: '/v/Docs', preview: null, blank: false })
     })
@@ -645,7 +645,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     expect(read().tabs).toEqual(['/v/a.md', '/v/b.md'])
     expect(read().preview).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(afterPreview)
-    // A folder row's double click had no first open: the folder opens as a kept tab.
+    // A folder's "Open folder page" has no first open: the folder opens as a kept tab.
     act(() => latest.openKept('/v/Docs'))
     expect(read().tabs).toEqual(['/v/a.md', '/v/b.md', '/v/Docs'])
     expect(read().active).toBe('/v/Docs')

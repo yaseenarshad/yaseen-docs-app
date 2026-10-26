@@ -327,8 +327,12 @@ test('step 5 — a fold in the search lasts as long as its query; a matched fold
   await expect(fileRow(win, 'PLG SaaS')).toHaveCount(0)
   await dirRow(win, 'Industries').click()
   await expect(fileRow(win, 'PLG SaaS')).toHaveClass(/tree__row--context/)
-  // …and a double-click opens the folder's own page as a tab.
+  // …a double-click only folds and unfolds it (YAZ-3377 D1, S8), and its menu opens the folder's own page.
   await dirRow(win, 'Industries').dblclick()
+  await expect(fileRow(win, 'PLG SaaS')).toHaveClass(/tree__row--context/)
+  await expect(tabsOf(win).filter({ hasText: 'Industries' })).toHaveCount(0)
+  await dirRow(win, 'Industries').click({ button: 'right' })
+  await menuItem(win, 'Open folder page').click()
   await expect(activeTab(win)).toHaveText('Industries')
 
   // Esc goes back to the lens the window last showed — Files — and the text STAYS (YAZ-2638 S12;
