@@ -171,16 +171,15 @@ const manager = createWindowManager(store, {
         copyImage: () => win.webContents.copyImageAt(params.x, params.y),
         revealImage: (src) => void revealVaultImage(src, (file) => revealItem({ path: file })),
       })).popup({ window: win }))
-    // The window itself never zooms (YAZ-3389: the sidebar's lists and each note zoom, the frame does not).
-    // Chromium keeps a zoom per origin, so a ⌘+ from before that decision would stay forever: back to 0.
+    // The window itself never zooms (YAZ-3389: the sidebar's lists and each note zoom, the frame does not), a Files
+    // window too (D13: only its list grows, by its own `WindowEntry.zoom`). Chromium keeps a zoom per origin, so a ⌘+
+    // from before that decision would stay forever: back to 0.
     win.webContents.on('did-finish-load', () => win.webContents.setZoomLevel(0))
     // `<renderer>?win=<id>` so the renderer can ask `window.identity()` who it is.
-    // A Files window loads from an origin of its own (YAZ-3357), so its zoom is its own: Chromium keeps one per origin.
+    // A Files window loads from an origin of its own (YAZ-3357).
     const files = entry.kind === 'files'
     const url = rendererUrlFor(process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html', files)
     url.searchParams.set('win', entry.id)
-    // Its zoom as stored, on each load: ⌘⇧W starts it above its source, ⌘+ / ⌘− change it (`setFilesZoom`).
-    if (files) win.webContents.on('did-finish-load', () => win.webContents.setZoomLevel(store.get().windows.find((w) => w.id === entry.id)?.zoom ?? 0))
     void win.loadURL(url.toString())
     return win
   },

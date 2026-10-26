@@ -280,6 +280,12 @@ export const CONTRACT = {
      * vaults and lens, on the blank tab with the caret in the search, and the Files window closes.
      */
     filesToNormal: invoke<[], void>('window:files-to-normal', 0),
+    /**
+     * THIS Files window's own sidebar zoom in percent (YAZ-3389 D13): the footer's − % + and an unclaimed ⌘+ / ⌘− / ⌘0 there.
+     * Main normalizes it (`normalizeFilesZoom`) and stores it as `WindowEntry.zoom`; `window.identity()` gives it back. A
+     * full window is refused: its sidebar zoom is the shared `settings.sidebarZoom`.
+     */
+    filesZoom: invoke<[percent: number], void>('window:files-zoom', 1),
   },
   /** Menu gestures from the main process (B3, GRO-2161; tabs GRO-2232): main sends them to the focused window only. */
   menu: {

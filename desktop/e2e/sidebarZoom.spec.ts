@@ -4,7 +4,8 @@
  * their size and place, and the window's own Chromium zoom stays 0. The value is a setting: it is in
  * the state file after a quit and comes back on the next launch. The percent goes back to 100%, and
  * View › Zoom In / Actual Size with no note focused step the same zoom. A Chromium zoom left from an
- * older build goes back to 0 at the next load (D8).
+ * older build goes back to 0 at the next load (D8). A Files window (D13) zooms its own list: it opens one step above
+ * the full window's sidebar zoom, and its footer and View › Zoom In change only its own value.
  *
  * Serial (the suite's idiom): each step continues the last.
  */
@@ -12,7 +13,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, clickMenuItem, copyVault, fileRow, launchApp, quitApp, readState, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, clickMenuItem, copyVault, extraWindow, fileRow, launchApp, quitApp, readState, seededState, shoot, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -31,9 +32,9 @@ const box = (w: Page, selector: string) =>
     return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }
   })
 const rowHeight = (w: Page) => fileRow(w, 'Ideas').evaluate((el) => el.getBoundingClientRect().height)
-/** The window's real Chromium zoom level, from main. */
-const zoomLevel = (a: ElectronApplication): Promise<number> =>
-  a.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('win=w1'))!.webContents.getZoomLevel())
+/** The real Chromium zoom level of the window with `?win=<id>` (w1 by default), from main. */
+const zoomLevel = (a: ElectronApplication, id = 'w1'): Promise<number> =>
+  a.evaluate(({ BrowserWindow }, winId) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes(`win=${winId}`))!.webContents.getZoomLevel(), id)
 /** Set the window's Chromium zoom from main, as a ⌘+ of an older build did. */
 const setZoomLevel = (a: ElectronApplication, level: number): Promise<void> =>
   a.evaluate(({ BrowserWindow }, l) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('win=w1'))!.webContents.setZoomLevel(l), level)
@@ -96,4 +97,23 @@ test('step 5 — a Chromium zoom from an older build: the next load sets it back
   await win.reload()
   await expect(percent(win)).toHaveText('100%')
   await expect.poll(() => zoomLevel(app)).toBe(0)
+})
+
+test('step 6 — a Files window (D13): it opens one step above (125%), its + and View › Zoom In change only its own zoom, its window zoom stays 0', async () => {
+  await clickMenuItem(app, 'menu.file.new-files-window', 'w1')
+  const files = await extraWindow(app, ['w1'])
+  const filesId = winParam(files) ?? ''
+  await expect(percent(files)).toHaveText('125%')
+  await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === filesId)?.zoom).toBe(125)
+  await control(files).getByRole('button', { name: 'Zoom the sidebar in', exact: true }).click()
+  await expect(percent(files)).toHaveText('150%')
+  await clickMenuItem(app, 'menu.view.zoom-in', filesId)
+  await expect(percent(files)).toHaveText('200%')
+  await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === filesId)?.zoom).toBe(200)
+  // The full window and the shared setting never moved; no window has a Chromium zoom.
+  await expect(percent(win)).toHaveText('100%')
+  expect((await readState(userData)).settings.sidebarZoom).toBe(100)
+  expect(await zoomLevel(app, filesId)).toBe(0)
+  expect(await zoomLevel(app)).toBe(0)
+  await shoot(files, 'sidebarzoom-06-files-window')
 })

@@ -496,14 +496,24 @@ export function App() {
     setSettings(next)
   }, [])
 
-  // ⌘+ / ⌘− / ⌘0 that no note claimed step the sidebar zoom (YAZ-3389), over the settings of the moment.
+  // A Files window's own sidebar zoom (YAZ-3389 D13): only this window writes it, so a local copy stays true.
+  const [filesZoom, setFilesZoomState] = useState(() => (filesWindow ? storage.getFilesZoom() : 100))
+  // The same value writes nothing (YAZ-3389 D6), as for the shared zoom.
+  const changeFilesZoom = useCallback((percent: number) => {
+    if (percent === storage.getFilesZoom()) return
+    storage.setFilesZoom(percent)
+    setFilesZoomState(percent)
+  }, [])
+  // ⌘+ / ⌘− / ⌘0 that no note claimed step the sidebar zoom (YAZ-3389), over the settings of the moment;
+  // in a Files window they step its own zoom and never the shared one (D13).
   const zoomSidebar = useCallback(
     (step: ZoomStep) => {
+      if (filesWindow) return changeFilesZoom(step === 0 ? 100 : stepSidebarZoom(storage.getFilesZoom(), step))
       const now = storage.getSettings()
       const sidebarZoom = step === 0 ? 100 : stepSidebarZoom(now.sidebarZoom, step)
       if (sidebarZoom !== now.sidebarZoom) changeSettings({ ...now, sidebarZoom })
     },
-    [changeSettings],
+    [changeSettings, changeFilesZoom, filesWindow],
   )
   const zoom = useCallback((step: ZoomStep) => requestZoom(step, zoomSidebar), [zoomSidebar])
 
@@ -2556,6 +2566,8 @@ export function App() {
           // The vault menu's "Open in this window" (YAZ-1798 D8/D11): the one deliberate in-place switch.
           onOpenVaultHere={openRoot}
           onOpenSetHere={filesWindow ? openSetHere : undefined}
+          filesZoom={filesWindow ? filesZoom : undefined}
+          onFilesZoom={filesWindow ? changeFilesZoom : undefined}
           onToNormalWindow={filesWindow ? () => void api.window.filesToNormal().catch((err: unknown) => notify(`Can't make this a full window: ${err instanceof Error ? err.message : String(err)}`)) : undefined}
           // On the sidebar itself (YAZ-2194): stamped on .app as an inherited variable, every resize
           // move restyled the whole window, every mounted tab included.

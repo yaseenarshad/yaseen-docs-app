@@ -7723,6 +7723,18 @@ describe('update pill (YAZ-2976 D4)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.sidebar-zoom__value')!.click())
     expect(props.onChangeSettings).toHaveBeenCalledTimes(1)
   })
+
+  it('YAZ-3389 D13: a Files window zooms its own list — the footer (cog, zoom, chip, pill) reads and writes the window\'s zoom, never the settings', async () => {
+    const onFilesZoom = vi.fn()
+    const { el, props } = await mount({ settings: { ...DEFAULT_SETTINGS, sidebarZoom: 100 }, filesZoom: 150, onFilesZoom, onToNormalWindow: vi.fn(), update: { kind: 'ready', version: '1.0.13' } })
+    const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
+    expect(footer).toEqual(['settings-button', 'sidebar-zoom', 'sidebar__files-chip', 'update-pill'])
+    expect(el.querySelector<HTMLElement>('.sidebar__body')!.style.getPropertyValue('--sidebar-zoom')).toBe('1.5')
+    expect(el.querySelector('.sidebar-zoom__value')?.textContent).toBe('150%')
+    act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Zoom the sidebar in"]')!.click())
+    expect(onFilesZoom).toHaveBeenCalledExactlyOnceWith(200)
+    expect(props.onChangeSettings).not.toHaveBeenCalled()
+  })
 })
 
 /**

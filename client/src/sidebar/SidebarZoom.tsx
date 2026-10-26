@@ -1,6 +1,6 @@
 /**
  * THE SIDEBAR ZOOM in the footer (YAZ-3389): a quiet "− 100% +" after the cog. It zooms the sidebar's
- * lists only (`settings.sidebarZoom`, one value for every window) — never the frame, never a note,
+ * lists only (`settings.sidebarZoom`, one value for every full window; a Files window's own `WindowEntry.zoom`, D13) — never the frame, never a note,
  * which has its own zoom (`editor/DocumentZoom.tsx`). − and + walk `SIDEBAR_ZOOM_STEPS` and stop at
  * the walls; a click on the percent goes back to 100%.
  */

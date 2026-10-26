@@ -1691,13 +1691,21 @@ export const FILES_WINDOW_DEFAULT_W = 280
 export const FILES_WINDOW_DEFAULT_H = 800
 /** How wide a Files window grows while Tabs Mission Control shows in it (YAZ-3357 D3); clamped to the screen. */
 export const FILES_WINDOW_WIDE_W = 1200
-/** How far above its source window a new Files window is zoomed (YAZ-3357 D11, "maybe like 20% bigger"): one Chromium level, ×1.2. */
-export const FILES_WINDOW_ZOOM_UP = 1
-/** The zoom levels a Files window keeps: ⌘− and ⌘+ as far as Chromium goes in steps of 0.5. */
-export const FILES_WINDOW_ZOOM_MIN = -8
-export const FILES_WINDOW_ZOOM_MAX = 9
-/** A Files window's zoom `level`, kept in `FILES_WINDOW_ZOOM_MIN` … `FILES_WINDOW_ZOOM_MAX`. */
-export const clampFilesZoom = (level: number): number => Math.min(FILES_WINDOW_ZOOM_MAX, Math.max(FILES_WINDOW_ZOOM_MIN, level))
+/**
+ * The sidebar zoom a Files window has when nothing better is known (YAZ-3389 D13): one step above the default
+ * sidebar zoom, as ⌘⇧W gives a Files window over a full window at 100%. Also what an old stored Chromium level becomes.
+ */
+export const FILES_WINDOW_ZOOM_DEFAULT = 125
+/** The old Chromium zoom levels a Files window kept before YAZ-3389 D13 (−8 … 9): never a sidebar zoom percent. */
+const OLD_FILES_ZOOM_LEVEL_MAX = 9
+/**
+ * A Files window's own sidebar zoom in percent (YAZ-3389 D13), from any value: missing, not a finite number, or an old
+ * Chromium level (−8 … 9) → `FILES_WINDOW_ZOOM_DEFAULT`; otherwise rounded and clamped to `SIDEBAR_ZOOM_MIN` … `_MAX`.
+ */
+export function normalizeFilesZoom(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isFinite(v) || Math.abs(v) <= OLD_FILES_ZOOM_LEVEL_MAX) return FILES_WINDOW_ZOOM_DEFAULT
+  return Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, Math.round(v)))
+}
 /**
  * The frame name of a Files window's ONE floating preview popup (YAZ-3357 D9): `window.open('about:blank', this)`.
  * Main allows exactly this name with `about:blank`, from a Files window only; every other popup is denied.
@@ -1787,9 +1795,10 @@ export interface WindowEntry {
    */
   kind?: WindowKind
   /**
-   * A Files window's zoom level (YAZ-3357 D11), as Chromium counts it: 0 = 100%, each step of 1 = ×1.2. Its own:
-   * the Files window has an origin of its own (`desktop/src/main/rendererUrl.ts`), so ⌘+ there zooms no other window.
-   * ⌘⇧W starts it one step (+20%) above the window it came from. Absent = 0, and on a full window.
+   * A Files window's own sidebar zoom in percent (YAZ-3389 D13, which replaced YAZ-3357 D11's Chromium level): only
+   * its list grows, as `settings.sidebarZoom` does in a full window, and the footer's − % + and an unclaimed ⌘+ / ⌘− / ⌘0
+   * there change this value, never the shared one. ⌘⇧W starts it one `SIDEBAR_ZOOM_STEPS` step above the window it came
+   * from. Kept by the store on every Files window (`normalizeFilesZoom`); absent on a full window.
    */
   zoom?: number
 }
@@ -2612,6 +2621,8 @@ export interface WindowIdentity {
   startEmpty?: true
   /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */
   kind?: WindowKind
+  /** A Files window's own sidebar zoom in percent (YAZ-3389 D13), as `WindowEntry.zoom`; absent on a full window. */
+  zoom?: number
 }
 
 /**

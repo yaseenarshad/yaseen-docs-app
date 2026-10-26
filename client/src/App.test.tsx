@@ -32,6 +32,8 @@ interface SidebarStubProps {
   /** A Files window's header button (YAZ-3357 D8): Tabs Mission Control. */
   onShowAllTabs?: () => void
   onToNormalWindow?: () => void
+  filesZoom?: number
+  onFilesZoom?: (percent: number) => void
   /** A Files window's floating preview (YAZ-3357 D9): its popup, or 'overlay'. */
   previewFloat?: unknown
   /** The vault rows the user closed (YAZ-2602 R9): App's, for the session. */
@@ -311,6 +313,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       filesWide: vi.fn(async (_open: boolean) => undefined),
       filesPreview: vi.fn(async (_req: unknown) => undefined),
       filesToNormal: vi.fn(async () => undefined),
+      filesZoom: vi.fn(async (_percent: number) => undefined),
       setRoots: vi.fn(async (_id: string, _roots: readonly string[]) => undefined),
       popOutTab: vi.fn(async (_from: string, _ref: TabRef) => undefined),
       showWindow: vi.fn(async (_id: string) => undefined),
@@ -6211,6 +6214,20 @@ describe('App Files window (YAZ-3357)', () => {
     act(() => toNormal())
     await act(async () => {})
     expect(bridge.window.filesToNormal).toHaveBeenCalledTimes(1)
+  })
+
+  it('YAZ-3389 D13: the sidebar zoom is the window\'s own — an unclaimed ⌘+ / ⌘0 and the footer write `window:files-zoom`, never the shared settings', async () => {
+    const { bridge, emitZoom } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES, zoom: 150 })] }, { ...FILES, zoom: 150 })
+    expect((await filesSidebar()).filesZoom).toBe(150)
+    act(() => emitZoom(1))
+    expect(captured.sidebar!.filesZoom).toBe(200)
+    // At the wall nothing is written; the footer's value and ⌘0 are the window's too.
+    act(() => emitZoom(1))
+    act(() => captured.sidebar!.onFilesZoom!(125))
+    act(() => emitZoom(0))
+    expect(bridge.window.filesZoom.mock.calls).toEqual([[200], [125], [100]])
+    expect(captured.sidebar!.filesZoom).toBe(100)
+    expect(bridge.state.setSettings).not.toHaveBeenCalled()
   })
 
   it('D3, D8: "Show all tabs" opens the board right of the sidebar and main makes the window wide; again closes it and main makes it narrow; ⌘B never hides the sidebar; ⌘T asks for a new window', async () => {

@@ -187,6 +187,12 @@ interface SidebarProps {
    * makes it a full window where it stands. Absent = a full window, with no chip.
    */
   onToNormalWindow?: () => void
+  /**
+   * A Files window's own sidebar zoom in percent (YAZ-3389 D13) and its writer: the lists and the footer's − % + use
+   * them, never `settings.sidebarZoom`. Absent = a full window, which shares `settings.sidebarZoom`.
+   */
+  filesZoom?: number
+  onFilesZoom?: (percent: number) => void
   /** A Files window's hover preview (YAZ-3357 D9): its floating popup, or `'overlay'` where there is none. Absent: beside the sidebar. */
   previewFloat?: PreviewPopup | 'overlay'
   /** A save just made this session (YAZ-3147 D5): the Sessions tab opens its name field once; then `onSessionNameConsumed`. */
@@ -533,6 +539,8 @@ export function Sidebar({
   onShowAllTabs,
   onOpenSetHere,
   onToNormalWindow,
+  filesZoom,
+  onFilesZoom,
   previewFloat,
   sessionNameRequest,
   onSessionNameConsumed,
@@ -859,6 +867,10 @@ export function Sidebar({
     const { settings: now, onChangeSettings: write } = settingsRef.current
     if (sidebarZoom !== now.sidebarZoom) write({ ...now, sidebarZoom })
   }, [])
+  // A Files window zooms its own list only (YAZ-3389 D13); a full window shares `settings.sidebarZoom`.
+  const ownZoom = onFilesZoom !== undefined && filesZoom !== undefined
+  const zoomValue = ownZoom ? filesZoom : settings.sidebarZoom
+  const onZoom = ownZoom ? onFilesZoom : changeZoom
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
   // The copy the open page lights in (YAZ-3131 Decision 3, S12, S13): where it was clicked, else the
@@ -1400,7 +1412,7 @@ export function Sidebar({
         ref={bodyRef}
         className="sidebar__body"
         // The sidebar zoom (YAZ-3389): only the lists scale; the header, the tab row and the footer never do.
-        style={{ '--sidebar-zoom': settings.sidebarZoom / 100 } as CSSProperties}
+        style={{ '--sidebar-zoom': zoomValue / 100 } as CSSProperties}
         // The Sessions and Recents tabs have no vault behind their blank space either (YAZ-3147 D4, YAZ-3235 S20): their rows have their own menus.
         onContextMenu={(e) => (searching || lens === 'sessions' || lens === 'recents' ? e.preventDefault() : openMenu(null, e))}
         // Blank space takes a drop for the vault ROOT, as its paste does, and the header lights (YAZ-3247 D12) — one
@@ -1589,8 +1601,8 @@ export function Sidebar({
       </div>
       <div className="sidebar__footer">
         <SettingsButton onClick={onOpenSettings} />
-        {/* The zoom of the lists above (YAZ-3389), one value for every window. */}
-        <SidebarZoom value={settings.sidebarZoom} onChange={changeZoom} />
+        {/* The zoom of the lists above (YAZ-3389): one value for every full window, a Files window's own (D13). */}
+        <SidebarZoom value={zoomValue} onChange={onZoom} />
         {onToNormalWindow !== undefined && (
           // Which kind of window this is (YAZ-3357 D13), quiet beside the cog. Two clicks make it a full window.
           <button

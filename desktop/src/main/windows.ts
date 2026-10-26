@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, FILES_WINDOW_ZOOM_UP, clampFilesZoom, defaultRightPanelIdentity, normalizeRoots, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 
@@ -51,8 +51,7 @@ const DEFAULT_BOUNDS: WindowBounds = { x: 100, y: 100, width: 1200, height: 800 
 
 /** The slice of `BrowserWindow` the manager drives; a test fake implements it in a few lines. */
 export interface ManagedWindow {
-  /** `getZoomLevel` (YAZ-3357): a new Files window starts one step above the window it came from. */
-  webContents: { id: number; send(channel: string, ...args: unknown[]): void; getZoomLevel(): number }
+  webContents: { id: number; send(channel: string, ...args: unknown[]): void }
   getBounds(): WindowBounds
   isDestroyed(): boolean
   isMinimized(): boolean
@@ -249,8 +248,11 @@ export interface WindowManager extends WindowLookup {
   filesWide(id: string, open: boolean): boolean
   /** The Files window `id`'s floating preview (YAZ-3357 D9): beside the window on the row's height (`filesPreviewBounds`), or hidden with null. `false` = no live Files window. */
   filesPreview(id: string, req: FilesPreviewRequest | null): boolean
-  /** ⌘+ / ⌘− in the Files window `id` (YAZ-3357): store its own zoom `level` for the next launch. Any other window: nothing. */
-  setFilesZoom(id: string, level: number): void
+  /**
+   * The footer's − % + or an unclaimed ⌘+ / ⌘− / ⌘0 in the Files window `id` (YAZ-3389 D13): store its own sidebar zoom,
+   * `percent` normalized (`normalizeFilesZoom`). Any other window: nothing (`false`); a full window's zoom is `settings.sidebarZoom`.
+   */
+  setFilesZoom(id: string, percent: number): boolean
   /**
    * "Make full window" (YAZ-3357 D13): a full window on the Files window `id`'s vaults and lens opens where it
    * stands — as tall, at a normal width, clamped — with no tab (`startEmpty`), then `id` closes by its real close. `false` = not
@@ -986,11 +988,12 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
             ? clampBounds({ ...at, x: at.x + WINDOW_CASCADE_PX, y: at.y + WINDOW_CASCADE_PX }, areas)
             : filesWindowBounds(at, source.sidebarCollapsed ? FILES_WINDOW_DEFAULT_W : store.get().sidebarWidth, areas)
       const vaults = normalizeRoots(roots, roots[0])
-      // A size above the source (D11, "maybe like 20% bigger"): one zoom step over a full window's; a Files window's own.
-      const sourceZoom = source === undefined ? 0 : isFilesWindow(source) ? (source.zoom ?? 0) : (liveWindow(source.id)?.webContents.getZoomLevel() ?? 0) + FILES_WINDOW_ZOOM_UP
-      const zoom = clampFilesZoom(source === undefined ? FILES_WINDOW_ZOOM_UP : sourceZoom)
+      // Its list one sidebar zoom step above the source's (YAZ-3389 D13, "starting 20% bigger"): a Files window's own
+      // zoom, else the shared `settings.sidebarZoom` (a full window, or no source). At 200% it stays 200%.
+      const sourceZoom = source !== undefined && isFilesWindow(source) ? normalizeFilesZoom(source.zoom) : store.get().settings.sidebarZoom
+      const zoom = stepSidebarZoom(sourceZoom, 1)
       // The lens comes from the source (D6); the focus list is the vault's, and no name or tab comes along.
-      open({ id: randomUUID(), kind: 'files', root: vaults[0], roots: vaults, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: source?.sidebarLens ?? DEFAULT_SIDEBAR_LENS, bounds, ...(zoom !== 0 ? { zoom } : {}) })
+      open({ id: randomUUID(), kind: 'files', root: vaults[0], roots: vaults, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: source?.sidebarLens ?? DEFAULT_SIDEBAR_LENS, bounds, zoom })
       return true
     },
 
@@ -1052,13 +1055,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       return true
     },
 
-    setFilesZoom(id, level) {
+    setFilesZoom(id, percent) {
       const entry = entryOf(id)
-      if (entry === undefined || !isFilesWindow(entry)) return
-      const zoom = clampFilesZoom(level)
-      if ((entry.zoom ?? 0) === zoom) return
-      const { zoom: _old, ...rest } = entry
-      store.upsertWindow(zoom === 0 ? rest : { ...rest, zoom })
+      if (entry === undefined || !isFilesWindow(entry)) return false
+      const zoom = normalizeFilesZoom(percent)
+      // The same value writes nothing (YAZ-3394): no commit, no broadcast.
+      if (entry.zoom !== zoom) store.upsertWindow({ ...entry, zoom })
+      return true
     },
 
     filesPreview(id, req) {

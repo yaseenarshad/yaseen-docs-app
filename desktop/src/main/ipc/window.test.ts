@@ -62,7 +62,7 @@ let manager: {
   openFromFiles: ReturnType<typeof vi.fn<(from: string, action: unknown) => boolean>>
   filesWide: ReturnType<typeof vi.fn<(id: string, open: boolean) => boolean>>
   filesPreview: ReturnType<typeof vi.fn<(id: string, req: unknown) => boolean>>
-  setFilesZoom: ReturnType<typeof vi.fn<(id: string, level: number) => void>>
+  setFilesZoom: ReturnType<typeof vi.fn<(id: string, percent: number) => boolean>>
   filesToNormal: ReturnType<typeof vi.fn<(id: string) => boolean>>
 }
 /** `event.sender` stand-ins: webContents 1 is registered as window w1, webContents 9 is unknown. */
@@ -75,7 +75,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(), filesToNormal: vi.fn(() => true) }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -97,7 +97,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes, `link:ready` and the paste fallback (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.window.filesZoom.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -510,6 +510,25 @@ describe('registerWindowIpc', () => {
     store.upsertWindow({ ...entry, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), kind: 'files' })
     await registered(CONTRACT.window.identity.channel)({ sender })
     expect(manager.filesWide).toHaveBeenCalledExactlyOnceWith('w1', false)
+  })
+
+  it('YAZ-3389 D13: a Files window\'s identity carries its own sidebar zoom, normalized; window:files-zoom checks the percent and writes the CALLER\'s window only', async () => {
+    const identity = registered(CONTRACT.window.identity.channel)
+    const set = registered(CONTRACT.window.filesZoom.channel)
+    // A full window: no zoom of its own on the identity, and main refuses the write (its zoom is settings.sidebarZoom).
+    expect(await identity({ sender })).toEqual(ok(expect.not.objectContaining({ zoom: expect.anything() })))
+    manager.setFilesZoom.mockReturnValueOnce(false)
+    expect(await set({ sender }, 150)).toEqual(bad('BAD_REQUEST'))
+    // A Files window: a stored old Chromium level reads as the default, a stored percent as itself.
+    store.upsertWindow({ ...entry, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), kind: 'files', zoom: 3 })
+    expect(await identity({ sender })).toEqual(ok(expect.objectContaining({ kind: 'files', zoom: 125 })))
+    store.upsertWindow({ ...entry, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), kind: 'files', zoom: 150 })
+    expect(await identity({ sender })).toEqual(ok(expect.objectContaining({ zoom: 150 })))
+    expect(await set({ sender }, 200)).toEqual(ok(undefined))
+    expect(manager.setFilesZoom).toHaveBeenLastCalledWith('w1', 200)
+    for (const junk of ['150', Number.NaN, null]) expect(await set({ sender }, junk)).toEqual(bad('BAD_REQUEST'))
+    expect(await set({ sender: stranger }, 150)).toEqual(bad('BAD_REQUEST'))
+    expect(manager.setFilesZoom).toHaveBeenCalledTimes(2)
   })
 
   it('the Files window doors (YAZ-3357): kind on the identity; open-from-files only from a Files window, its action checked against the window\'s vaults; wide and preview take checked values', async () => {

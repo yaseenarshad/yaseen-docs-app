@@ -76,6 +76,8 @@ test('File › New Files Window opens a Files window flush left of the full wind
   await expect(fileRow(files, 'Beta')).toBeVisible()
   await expect(files.locator('.tabbar')).toHaveCount(0)
   await expect(chip(files)).toHaveText('Files window')
+  // YAZ-3389 D13: its list starts one sidebar zoom step above the full window's (100% → 125%), as its own zoom.
+  await expect(files.locator('.sidebar-zoom__value')).toHaveText('125%')
   // D1: main stored it as a Files window. D6: flush left of w1, on its top and as tall, as wide as the sidebar.
   await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === filesId)?.kind).toBe('files')
   const sidebarWidth = (await readState(userData)).sidebarWidth

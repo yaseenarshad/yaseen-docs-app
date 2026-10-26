@@ -2500,9 +2500,12 @@ describe('Files windows (YAZ-3357 D1)', () => {
     expect(createStore(file).get().windows[0].kind).toBe('files')
   })
 
-  it('zoom (D11) loads on a Files window only, clamped, and a junk or 0 level is none', async () => {
-    await seed(valid({ windows: [{ ...win('w1'), kind: 'files', zoom: 1.5 }, { ...win('w2'), kind: 'files', zoom: 40 }, { ...win('w3'), kind: 'files', zoom: 'big' }, { ...win('w4'), kind: 'files', zoom: 0 }, { ...win('w5'), zoom: 2 }] }))
+  it('zoom (YAZ-3389 D13) is a sidebar zoom percent on every Files window: an old Chromium level or junk is the default, off-range clamps, a full window has none', async () => {
+    const old = [{ ...win('w1'), kind: 'files', zoom: 1.5 }, { ...win('w2'), kind: 'files', zoom: -8 }, { ...win('w3'), kind: 'files', zoom: 'big' }, { ...win('w4'), kind: 'files' }]
+    const percents = [{ ...win('w5'), kind: 'files', zoom: 150 }, { ...win('w6'), kind: 'files', zoom: 40 }, { ...win('w7'), kind: 'files', zoom: 900 }, { ...win('w8'), zoom: 150 }]
+    await seed(valid({ windows: [...old, ...percents] }))
     const store = createStore(file)
-    expect(store.get().windows.map((w) => w.zoom)).toEqual([1.5, 9, undefined, undefined, undefined])
+    expect(store.get().windows.map((w) => w.zoom)).toEqual([125, 125, 125, 125, 150, 50, 200, undefined])
+    expect(store.get().windows[7]).not.toHaveProperty('zoom')
   })
 })
