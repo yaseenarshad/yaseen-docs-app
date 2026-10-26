@@ -84,7 +84,7 @@ test('step 1 — editing the title renames the page: sheet with the honest count
   await expect(readFile(path.join(vault, 'Guide.md'), 'utf8')).rejects.toThrow()
   // The note that linked to it was rewritten, and the passive summary says so.
   await expect.poll(() => readWhenReady(path.join(vault, 'Index.md'))).toBe(`# Index\n\nSee [[${RENAMED}]] here.\n`)
-  await expect(win.locator('.link-notice')).toHaveText('Updated links in 1 note')
+  await expect(win.locator('.link-notice__text')).toHaveText(`Renamed to "${RENAMED}". Updated links in 1 note`) // with Undo (YAZ-3268 D18)
   // Every surface shows the new name: the title itself, the tab strip and the sidebar row.
   await expect(title(win)).toHaveText(RENAMED)
   await expect(activeTab(win)).toHaveText(RENAMED)
