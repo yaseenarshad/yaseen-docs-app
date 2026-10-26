@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
-import { DEFAULT_SETTINGS, SIDEBAR_MAX_W } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_CANVAS_CARDS, SIDEBAR_MAX_W, defaultRightPanelIdentity } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import { registerStateIpc } from './state'
@@ -56,7 +56,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setSectionIndent.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel].sort(),
+      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setSectionIndent.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel].sort(),
     )
   })
 
@@ -272,5 +272,38 @@ describe('registerStateIpc', () => {
     expect(live.webContents.send).toHaveBeenCalledTimes(1)
     store.pushRecent('/v', 1)
     expect(live.webContents.send).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('state:set-tab-canvas (YAZ-3343 D1)', () => {
+  const card = { win: 'w1', path: '/v/a.md', copy: 0, by: 'folder', x: 1, y: 2 }
+  beforeEach(() => {
+    store.upsertWindow({ id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
+  })
+
+  it('applies a good patch in the store; unknown keys of a card are not stored', async () => {
+    const set = registered(CONTRACT.state.setTabCanvas.channel)
+    expect(await set({ sender }, { allWindows: true, set: [{ ...card, extra: 1 }] })).toEqual(ok(undefined))
+    expect(store.get().tabCanvas).toEqual({ allWindows: true, snap: true, cards: [card], frames: [] })
+    expect(await set({ sender }, { forget: [{ win: 'w1', path: '/v/a.md', copy: 0, by: 'folder' }] })).toEqual(ok(undefined))
+    expect(store.get().tabCanvas).toEqual({ allWindows: true, snap: true, cards: [], frames: [] })
+  })
+
+  it('is strict: a bad patch, switch, list or ONE bad card rejects the whole call and stores nothing', async () => {
+    const set = registered(CONTRACT.state.setTabCanvas.channel)
+    for (const patch of [
+      null,
+      'patch',
+      { allWindows: 'yes' },
+      { set: card },
+      { set: [card, { ...card, x: Number.NaN }] },
+      { set: [{ ...card, path: 'a.md' }] },
+      { set: [{ ...card, copy: -1 }] },
+      { set: [{ ...card, by: 'grid' }] },
+      { set: [{ ...card, win: '' }] },
+      { forget: [{ win: 'w1', path: '/v/a.md', by: 'folder' }] },
+      { set: Array.from({ length: MAX_CANVAS_CARDS + 1 }, () => card) },
+    ]) expect(await set({ sender }, patch)).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().tabCanvas).toEqual({ allWindows: true, snap: true, cards: [], frames: [] })
   })
 })

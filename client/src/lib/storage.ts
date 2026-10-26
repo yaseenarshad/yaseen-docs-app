@@ -3,10 +3,13 @@ import {
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
   addRecentRoot,
+  applyTabCanvasPatch,
+  sameTabCanvas,
   cleanVaultName,
   defaultAppState,
   defaultFolderState,
   defaultRightPanelIdentity,
+  defaultTabCanvas,
   freeVaultKey,
   keyedVaults,
   listVaults,
@@ -23,6 +26,8 @@ import {
   type SidebarLens,
   type StartView,
   type StoredTab,
+  type TabCanvasPatch,
+  type TabCanvasState,
   type TocSource,
   type VaultEntry,
   type Session,
@@ -45,6 +50,10 @@ let state: AppState = defaultAppState()
 let identity: WindowIdentity = { id: '', root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
+/** The other windows as `getOtherWindows` last answered them, and what they were read off. */
+let others: { windows: readonly WindowEntry[]; id: string; list: readonly WindowEntry[] } = { windows: [], id: '', list: [] }
+/** The canvas of a state without one (a main of before YAZ-3343, a test's bridge): ONE object, so a `useSyncExternalStore` snapshot holds still. */
+const NO_TAB_CANVAS: TabCanvasState = defaultTabCanvas()
 
 /**
  * The two orders across vaults, each with its mutator on the bridge: the Favorites order (YAZ-2631
@@ -109,11 +118,13 @@ export const storage = {
       // The sessions too (YAZ-3147 D6): a tab click writes the window and broadcasts, and the open
       // Sessions tab must not draw again for it. 30 sessions of 40 tabs at most, so the compare stays small.
       if (JSON.stringify(held.sessions) === JSON.stringify(next.sessions)) state = { ...state, sessions: held.sessions }
+      // And the tab board's canvas (YAZ-3343 D1): the board reads it as a snapshot, and most broadcasts are not about it.
+      if (held.tabCanvas !== undefined && next.tabCanvas !== undefined && sameTabCanvas(held.tabCanvas, next.tabCanvas)) state = { ...state, tabCanvas: held.tabCanvas }
       listeners.forEach((l) => l())
     })
   },
 
-  /** Called after a change made in ANY window landed in the cache — never for this window's own optimistic writes, but the ones of the two orders across vaults (`setFavoritesOrder`, `setFocusOrder`). */
+  /** Called after a change made in ANY window landed in the cache — never for this window's own optimistic writes, but the two orders across vaults (`setFavoritesOrder`, `setFocusOrder`) and the tab board's canvas and window names (`setTabCanvas`, `setWindowName`). */
   subscribe(listener: () => void): () => void {
     listeners.add(listener)
     return () => {
@@ -174,7 +185,60 @@ export const storage = {
    * The app's other windows (YAZ-3091 D2), off the cache: a tab's "Move to ▸" lists the ones that show its
    * page's vault. Read only while a tab menu is open, never a render trigger; main checks the target again.
    */
-  getOtherWindows: (): WindowEntry[] => state.windows.filter((w) => w.id !== identity.id),
+  getOtherWindows: (): readonly WindowEntry[] => {
+    // The same array while the windows are the same (YAZ-3343 D2): the tab board reads it as a snapshot.
+    if (others.windows !== state.windows || others.id !== identity.id) others = { windows: state.windows, id: identity.id, list: state.windows.filter((w) => w.id !== identity.id) }
+    return others.list
+  },
+  /** This window's id (`WindowEntry.id`), from the identity `init()` loaded: the tab board keys its stored places by it (YAZ-3343 D1). */
+  getWindowId: (): string => identity.id,
+
+  /**
+   * A window's name (YAZ-3343 D14), off the cache; this window's when `id` is left out. `undefined` = no name:
+   * the window has its automatic label. Main keeps it (`WindowEntry.name`), so every window reads every name.
+   */
+  windowName: (id: string = identity.id): string | undefined => state.windows.find((w) => w.id === id)?.name,
+  /**
+   * Name an open window, this one or another (D14), or with null (or a blank name) give it back its automatic label.
+   * The cache takes the name cleaned as main cleans it, at once; main checks that the window is open.
+   */
+  setWindowName(id: string, raw: string | null): void {
+    const name = cleanVaultName(raw)
+    const was = state.windows.find((w) => w.id === id)
+    const changed = was !== undefined && (was.name ?? null) !== name
+    if (changed) {
+      state = {
+        ...state,
+        windows: state.windows.map((w) => {
+          if (w.id !== id) return w
+          const { name: _old, ...rest } = w
+          return name === null ? rest : { ...rest, name }
+        }),
+      }
+    }
+    send('window.setName', () => api.window.setName(id, name))
+    // The board shows a new name at once, as it shows its own moves (YAZ-3343 D14).
+    if (changed) listeners.forEach((l) => l())
+  },
+
+  /**
+   * The tab board's canvas (YAZ-3343 D1): the "Show all windows" switch and the cards the user moved, last moved
+   * first. App-wide and per machine. The same object until a change: a `useSyncExternalStore` snapshot.
+   */
+  getTabCanvas: (): TabCanvasState => state.tabCanvas ?? NO_TAB_CANVAS,
+  /**
+   * One change to the canvas (D1): on a drop, a switch or "Tidy up", never on each pointer move. The cache applies
+   * it by main's own rule (`applyTabCanvasPatch`) at once; a patch that changes nothing sends nothing.
+   */
+  setTabCanvas(patch: TabCanvasPatch): void {
+    const current = state.tabCanvas ?? NO_TAB_CANVAS
+    const next = applyTabCanvasPatch(current, patch, new Set(state.windows.map((w) => w.id)))
+    if (next === current) return
+    state = { ...state, tabCanvas: next }
+    send('state.setTabCanvas', () => api.state.setTabCanvas(patch))
+    // The board renders its own moves at once, as the two orders do (`setOrder`).
+    listeners.forEach((l) => l())
+  },
   pushRecentRoot(path: string, now = Date.now()): RecentRoots {
     const next = addRecentRoot(state.recents, path, now)
     state = { ...state, recents: next }
@@ -223,6 +287,11 @@ export const storage = {
 
   /** Valid AT BOOT only (like `getFile`): the renderer owns tab state after boot (Tabs I2, GRO-2234). */
   getTabs: (): string[] => identity.tabs,
+  /**
+   * This window was opened EMPTY on purpose (YAZ-3343 D22, D35): the tab board's "New window", or ⌘⇧N. Main says so
+   * in its first identity; it boots with no tab, never on the vault's last file.
+   */
+  isEmptyByChoice: (): boolean => identity.file === null && identity.startEmpty === true,
   /**
    * The tabs with their copies, display names and active copy (YAZ-3057): boot only, like `getTabs`.
    * A window that stores no strip gives its plain `tabs`, one entry per path.

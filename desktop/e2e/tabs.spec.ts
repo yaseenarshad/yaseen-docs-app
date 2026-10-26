@@ -2,7 +2,7 @@
  * Tabs I3 (GRO-2235) and tab management (YAZ-2648): the tab strip against the REAL app — the
  * preview tab a sidebar click opens and reuses, the double click that keeps it, ⌘-click
  * background tabs, per-tab buffer preservation across switches, ⌃Tab cycling through the menu
- * accelerator ids, the tab board (the grid button and ⌘⇧M: islands, the filter, Enter), the
+ * accelerator ids, the tab board (the grid button and ⌘⇧M: the window frame, the folder groups, the filter, Enter), the
  * blank tab (⌘T and "+": a search result fills it as a kept tab), quit → relaunch tab restore
  * (every tab kept, no blank tab), "Kill all tabs" (YAZ-2739), and the ⌘W ladder down to the window close. Same harness as
  * smoke.spec.ts (temp `--user-data-dir`, COPY of a generated fixture vault, `i3-` step
@@ -52,6 +52,24 @@ const KEPT = ['Welcome note', 'Roadmap', 'Ideas', 'Old plan']
 const board = (w: Page) => w.locator('.taboverview')
 const gridButton = (w: Page) => w.locator('.tabbar-nav [aria-label="Show all open tabs"]')
 const pageTitles = (w: Page) => w.locator('.taboverview__page[data-path] .taboverview__title')
+const boardSwitch = (w: Page) => w.locator('.taboverview__switch')
+
+/**
+ * ⌘⇧N's window starts on the blank tab with no tab (YAZ-3343 D35): it gets `labels` as kept tabs the way a user
+ * fills it — the search of the blank tab for the first, then ⌘T and the search for each next one.
+ */
+async function fillFromSearch(w: Page, winId: string, labels: readonly string[]): Promise<void> {
+  for (const [i, label] of labels.entries()) {
+    if (i > 0) await clickMenuItem(app, 'menu.file.new-tab', winId)
+    await expect(activeTab(w)).toHaveText('New tab')
+    await expect(searchBar(w)).toBeFocused()
+    await w.keyboard.type(label)
+    await expect(fileRow(w, label)).toBeVisible()
+    await searchBar(w).press('Enter')
+    await expect(activeTab(w)).toHaveText(label)
+  }
+  await expect(tabsOf(w)).toHaveText([...labels])
+}
 
 let userData: string
 let vaultSrc: string
@@ -142,22 +160,38 @@ test('step 3 — ⌃Tab / ⌃⇧Tab cycle the strip with wraparound (the menu ac
   await shoot(win, 'i3-03-cycle-wraparound')
 })
 
-test('step 3b — the tab board: the grid button and ⌘⇧M open it, each folder is an island, the filter narrows the pages, Enter goes to the page', async () => {
+test('step 3b — the tab board (YAZ-3343): the grid button and ⌘⇧M open it, the window is a frame of cards, the switch shows folder groups, the filter narrows the cards, Enter goes to the page', async () => {
   // The grid button, right of ▶ (YAZ-2648 D8): the board stands in the editor's place, and the strip stays.
   await gridButton(win).click()
   await expect(board(win)).toBeVisible()
   await expect(gridButton(win)).toHaveAttribute('aria-pressed', 'true')
   await expect(tabsOf(win)).toHaveText(['Welcome note', 'Roadmap', 'Ideas'])
-  // One island per folder that directly holds an open page (D9): the vault's top level, named by
-  // the vault, then `Projects`; each label ends with its count. Three pages: nothing is a stack.
-  await expect(win.locator('.taboverview__island-leaf')).toHaveText([path.basename(vault), 'Projects'])
-  await expect(win.locator('.taboverview__island-count')).toHaveText(['2', '1'])
+  // "Show all windows" is on by default (D19, S21): the one window is one frame, "This window", that holds its cards
+  // directly, in vault, folder and strip order, each card with its folder in grey (D17). No folder group, no stack.
+  await expect(boardSwitch(win).locator('input[role="switch"]')).toBeChecked()
+  await expect(win.locator('.taboverview__frame')).toHaveCount(1)
+  await expect(win.locator('.taboverview__frame-here')).toHaveText('This window')
+  await expect(win.locator('.taboverview__island')).toHaveCount(0)
   await expect(pageTitles(win)).toHaveText(['Welcome note', 'Ideas', 'Roadmap'])
-  await expect(win.locator('.taboverview__stack')).toHaveCount(0)
   await expect(win.locator('.taboverview__page[aria-current="page"] .taboverview__title')).toHaveText('Roadmap')
   await shoot(win, 'i3-03b-board')
 
-  // The filter box has the keys: typing narrows the pages, and Enter opens the highlighted one.
+  // The switch off (D8, S22): this window in folder groups — the vault's top level, named by the vault, then `Projects`.
+  await boardSwitch(win).click()
+  await expect(boardSwitch(win).locator('input[role="switch"]')).not.toBeChecked()
+  await expect(win.locator('.taboverview__frame')).toHaveCount(0)
+  await expect(win.locator('.taboverview__island-leaf')).toHaveText([path.basename(vault), 'Projects'])
+  await expect(win.locator('.taboverview__island-count')).toHaveText(['2', '1'])
+  await expect(pageTitles(win)).toHaveText(['Welcome note', 'Ideas', 'Roadmap'])
+  await shoot(win, 'i3-03b-board-folder-groups')
+  // The switch is stored (D1); on again for the rest of the spec.
+  await expect.poll(async () => (await readState(userData)).tabCanvas.allWindows).toBe(false)
+  await boardSwitch(win).click()
+  await expect(win.locator('.taboverview__frame')).toHaveCount(1)
+  await expect.poll(async () => (await readState(userData)).tabCanvas.allWindows).toBe(true)
+  // The switch leaves the keys with the filter box (YAZ-3343 polish): the user types on at once.
+
+  // The filter box has the keys: typing narrows the cards, and Enter opens the highlighted one.
   await expect(win.locator('.taboverview__filter')).toBeFocused()
   await win.keyboard.type('idea')
   await expect(pageTitles(win)).toHaveText(['Ideas'])
@@ -241,16 +275,16 @@ test('step 4b — the tab context menu sits above the editor and accepts a real 
   await shoot(win, 'i3-04b-tab-menu-click')
 })
 
-test('step 4c — "Kill all tabs" (YAZ-2739): the grid button\'s menu and the board\'s button ask with the count; Cancel keeps every tab; the confirm closes them all, the ones the filter hides too, and the board with them', async () => {
-  // In a second window (⌘⇧N duplicate), so the first one keeps its tabs for the ladder below (S26).
+test('step 4c — "Kill all tabs" (YAZ-2739; YAZ-3343 D10): the grid button\'s menu asks for this window; the board asks for every window it shows; Cancel keeps every tab; the confirm closes them all, the ones the filter hides too, and the board with them', async () => {
+  // In a second window (⌘⇧N: a blank tab, YAZ-3343 D35), filled with the same five tabs, so the first one keeps its tabs for the ladder below (S26).
   await clickMenuItem(app, 'menu.file.new-window', 'w1')
   const dup = await extraWindow(app, ['w1'])
   const dupId = winParam(dup)!
-  await expect(tabsOf(dup)).toHaveText([...KEPT, 'Scratch'])
+  await fillFromSearch(dup, dupId, [...KEPT, 'Scratch'])
   const sheet = dup.locator('.confirm')
   const ASK = 'Kill all 5 tabs? Your text is saved. The tabs do not come back.'
 
-  // A right-click on the grid button: the two session saves (YAZ-3147 D5), then this item. Cancel on its sheet closes nothing.
+  // A right-click on the grid button: the two session saves (YAZ-3147 D5), then this item. It is this window's. Cancel on its sheet closes nothing.
   await gridButton(dup).click({ button: 'right' })
   await dup.locator('.ctx-menu').getByRole('menuitem', { name: 'Kill all tabs', exact: true }).click()
   await expect(sheet.locator('.confirm__text')).toHaveText(ASK)
@@ -258,9 +292,21 @@ test('step 4c — "Kill all tabs" (YAZ-2739): the grid button\'s menu and the bo
   await expect(sheet).toHaveCount(0)
   await expect(tabsOf(dup)).toHaveCount(5)
 
-  // The board's button, with text in the filter: the sheet counts every tab, and every tab goes.
+  // The board's button with "Show all windows" on (D10, S39): the sheet counts the tabs of both windows. Cancel.
   await gridButton(dup).click()
   await expect(board(dup)).toBeVisible()
+  await expect(dup.locator('.taboverview__frame')).toHaveCount(2)
+  await dup.locator('.taboverview__kill').click()
+  await expect(sheet.locator('.confirm__text')).toHaveText('Close 10 tabs in 2 windows? Your text is saved. The tabs do not come back.')
+  await shoot(dup, 'i3-04c-kill-all-two-windows-sheet')
+  await sheet.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(sheet).toHaveCount(0)
+  await expect(tabsOf(win)).toHaveCount(5)
+
+  // The switch off: the board is this window's alone. With text in the filter, the sheet counts every tab, and every tab goes.
+  await boardSwitch(dup).click()
+  await expect(dup.locator('.taboverview__frame')).toHaveCount(0)
+  await dup.locator('.taboverview__filter').click()
   await dup.keyboard.type('idea')
   await expect(pageTitles(dup)).toHaveText(['Ideas'])
   await dup.locator('.taboverview__kill').click()
@@ -271,6 +317,13 @@ test('step 4c — "Kill all tabs" (YAZ-2739): the grid button\'s menu and the bo
   await expect(board(dup)).toHaveCount(0)
   await expect(dup.locator('.start')).toBeVisible() // the new tab page, and the window is alive
   await expect(tabsOf(win)).toHaveText([...KEPT, 'Scratch']) // the other window keeps its tabs
+  // The switch is one stored value for every window (D1): on again.
+  await expect.poll(async () => (await readState(userData)).tabCanvas.allWindows).toBe(false)
+  await gridButton(win).click()
+  await boardSwitch(win).click()
+  await expect.poll(async () => (await readState(userData)).tabCanvas.allWindows).toBe(true)
+  await gridButton(win).click()
+  await expect(board(win)).toHaveCount(0)
 
   // ⌘W on a window with no tab closes it: the ladder below starts from one window again.
   await clickMenuItem(app, 'menu.file.close-tab', dupId)
@@ -278,14 +331,16 @@ test('step 4c — "Kill all tabs" (YAZ-2739): the grid button\'s menu and the bo
 })
 
 test('step 5 — the ⌘W ladder: tabs → empty state with the window ALIVE → window close', async () => {
-  // A second window (⌘⇧N duplicate — it carries the same tabs, each a kept tab) keeps the app alive
-  // while the ladder closes the first one all the way down.
+  // A second window (⌘⇧N: a blank tab, YAZ-3343 D35, filled from the search with the same tabs, each a kept tab)
+  // goes down the whole ladder while the first one keeps the app alive.
   await clickMenuItem(app, 'menu.file.new-window', 'w1')
   const dup = await extraWindow(app, ['w1'])
   const dupId = winParam(dup)!
   expect(await windowCount(app)).toBe(2)
-  await expect(tabsOf(dup)).toHaveText([...KEPT, 'Scratch'])
+  await fillFromSearch(dup, dupId, [...KEPT, 'Scratch'])
   await expect(previewTab(dup)).toHaveCount(0)
+  await tabsOf(dup).filter({ hasText: 'Roadmap' }).click()
+  await expect(activeTab(dup)).toHaveText('Roadmap')
 
   // ⌘W closes the active tab (Roadmap → its right neighbour Ideas takes over), then each tab that is left.
   await clickMenuItem(app, 'menu.file.close-tab', dupId)

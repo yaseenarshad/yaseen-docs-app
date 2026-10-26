@@ -1,10 +1,10 @@
-import { isTocSource, type FolderPatch } from '@shared/types'
+import { MAX_CANVAS_CARDS, MAX_CANVAS_FRAMES, isTocSource, type CanvasCard, type CanvasFrame, type FolderPatch, type TabCanvasPatch } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { requireStringArray } from '../fs/validate'
 import type { SettingsFolder } from '../settingsFolder'
-import { isSettings, type Store } from '../store'
+import { isSettings, readCanvasCard, readCanvasFrame, readCanvasKey, type Store } from '../store'
 import { broadcastAll } from './broadcast'
 import { handle } from './envelope'
 
@@ -28,6 +28,42 @@ function requireFolderPatch(raw: unknown): FolderPatch {
     patch.key = raw.key
   }
   return patch
+}
+
+/** One list of a canvas patch (YAZ-3343 D1): absent, or an array of MAX_CANVAS_CARDS at most whose EVERY entry reads — one bad entry rejects the call. */
+function optionalCards<T>(raw: unknown, key: 'set' | 'forget', read: (v: unknown) => T | null, shape: string): T[] | undefined {
+  if (raw === undefined) return undefined
+  if (!Array.isArray(raw) || raw.length > MAX_CANVAS_CARDS) throw new BridgeFailure('BAD_REQUEST', `'${key}' must be an array of at most ${MAX_CANVAS_CARDS} cards`)
+  return raw.map((v, i) => {
+    const card = read(v)
+    if (card === null) throw new BridgeFailure('BAD_REQUEST', `'${key}[${i}]' must be ${shape}`)
+    return card
+  })
+}
+
+/**
+ * The tab board's canvas patch (YAZ-3343 D1), strict at the boundary where the loader is lenient: `allWindows` a
+ * boolean, `set` cards with finite coordinates, `forget` card keys; a path must be absolute and a copy a whole number from 0.
+ */
+function requireTabCanvasPatch(raw: unknown): TabCanvasPatch {
+  if (!isRecord(raw)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
+  if (raw.allWindows !== undefined && typeof raw.allWindows !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'allWindows' must be a boolean")
+  if (raw.snap !== undefined && typeof raw.snap !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'snap' must be a boolean")
+  const set = optionalCards<CanvasCard>(raw.set, 'set', readCanvasCard, '{ win, path, copy, by, x, y }')
+  const forget = optionalCards(raw.forget, 'forget', readCanvasKey, '{ win, path, copy, by }')
+  // The frames (YAZ-3343): `setFrames` as `{ win, x, y }`, `forgetFrames` as window ids — strict, as the cards.
+  let setFrames: CanvasFrame[] | undefined
+  if (raw.setFrames !== undefined) {
+    if (!Array.isArray(raw.setFrames) || raw.setFrames.length > MAX_CANVAS_FRAMES) throw new BridgeFailure('BAD_REQUEST', `'setFrames' must be an array of at most ${MAX_CANVAS_FRAMES} frames`)
+    setFrames = raw.setFrames.map((v, i) => {
+      const frame = readCanvasFrame(v)
+      if (frame === null) throw new BridgeFailure('BAD_REQUEST', `'setFrames[${i}]' must be { win, x, y }`)
+      return frame
+    })
+  }
+  if (raw.forgetFrames !== undefined && (!Array.isArray(raw.forgetFrames) || raw.forgetFrames.length > MAX_CANVAS_FRAMES || !raw.forgetFrames.every((w) => typeof w === 'string' && w !== ''))) throw new BridgeFailure('BAD_REQUEST', "'forgetFrames' must be an array of window ids")
+  const forgetFrames = raw.forgetFrames as string[] | undefined
+  return { ...(raw.allWindows === undefined ? {} : { allWindows: raw.allWindows }), ...(raw.snap === undefined ? {} : { snap: raw.snap }), ...(set === undefined ? {} : { set }), ...(forget === undefined ? {} : { forget }), ...(setFrames === undefined ? {} : { setFrames }), ...(forgetFrames === undefined ? {} : { forgetFrames: [...forgetFrames] }) }
 }
 
 /** The `state.*` half of `window.yaseenDocs` over the main-owned store (GRO-2159). */
@@ -97,6 +133,9 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
     const r = requireAbsPath(root, 'root')
     if (typeof key !== 'string' || key === '') throw new BridgeFailure('BAD_REQUEST', "'key' must be a non-empty string")
     store.setBaseGroups(r, key, requireStringArray(collapsed, 'collapsed'))
+  })
+  handle(CONTRACT.state.setTabCanvas, async (patch: unknown) => {
+    store.setTabCanvas(requireTabCanvasPatch(patch))
   })
   // Every live window gets the new state (`state.onChange` in the renderer), whichever window changed it.
   store.onChange((state) => broadcastAll(CONTRACT.state.onChange.channel, state))

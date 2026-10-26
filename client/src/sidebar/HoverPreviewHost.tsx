@@ -32,6 +32,7 @@ import { createStore, type Store } from '../lib/store'
 import { useAppliedTheme } from '../lib/theme'
 import { findNode } from '../lib/treeState'
 import { boardPreviewKey } from './boardPreviewKey'
+import type { PreviewAnchor } from './previewPlacement'
 
 const BoardPreview = lazy(() => import('./BoardPreview'))
 /**
@@ -42,7 +43,7 @@ const BoardPreview = lazy(() => import('./BoardPreview'))
  * way at the dwell's end.
  */
 let notePreviewModule: typeof import('./NotePreview') | null = null
-const loadNotePreview = () => import('./NotePreview').then((module) => (notePreviewModule = module))
+export const loadNotePreview = () => import('./NotePreview').then((module) => (notePreviewModule = module))
 const LazyNotePreview = lazy(loadNotePreview)
 
 /** The row the pointer (or focus) rests on — pending until the dwell ends, then shown; `path` null = none. */
@@ -119,7 +120,6 @@ interface HoverPreviewHostProps {
 
 export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, nameOf, textVarsOf, enabled, diagramDarkColors, anchor, onClose }: HoverPreviewHostProps) {
   const { path, shown } = useSyncExternalStore(hover.subscribe, hover.getState)
-  const theme = useAppliedTheme()
   const node = useMemo(() => {
     if (path === null || forest === null) return null
     const n = findNode(forest, path)
@@ -143,47 +143,73 @@ export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, 
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
   }, [visible, onClose])
+  if (!visible) return null
+  return <PreviewPanel key={node.path} path={node.path} root={rootOf(node.path)} name={nameOf(node.path)} wikilinks={wikilinksOf(node.path)} textVars={textVarsOf(node.path)} knownMtime={node.mtime} watch={watchOf?.(node.path)} diagramDarkColors={diagramDarkColors} anchor={anchor} />
+}
+
+export interface PreviewPanelProps {
+  path: string
+  /** The vault that holds the file: the header names its folder relative to it. */
+  root: string
+  /** A note's name as the app shows it (its title): the note panel's header. */
+  name: string
+  wikilinks: WikilinkResolveSource
+  textVars: CSSProperties
+  /** The mtime the caller knows (the tree's); the board head's read can only make it newer. 0 = none. */
+  knownMtime?: number
+  /** The vault's watch feed (A41): a board saved while its panel shows is drawn again. */
+  watch?: WatchSource
+  diagramDarkColors: DiagramDarkColors
+  anchor: PreviewAnchor
+}
+
+/**
+ * ONE PREVIEW PANEL for a shown file (YAZ-3075, shared with the tab board by YAZ-3343): a note's top, or a board's
+ * picture, the kind by its path; anything else shows nothing. The caller decides WHEN (a dwell, Space on the board)
+ * and mounts it `key={path}`. A board reads its head once on open and follows the watch feed (see the module doc).
+ */
+export function PreviewPanel({ path, root, name, wikilinks, textVars, knownMtime = 0, watch, diagramDarkColors, anchor }: PreviewPanelProps) {
+  const theme = useAppliedTheme()
   // The board's mtime as its file says now (see the module doc); the tree's until the read answers.
-  // A note has no head and no watch (C27): only a shown BOARD gets a `shownPath`.
+  // A note has no head and no watch (C27): only a BOARD gets a `boardPath`.
   const [head, setHead] = useState<{ path: string; mtime: number } | null>(null)
-  const shownPath = visible && isBoard(node.path) ? node.path : null
+  const boardPath = isBoard(path) ? path : null
   useEffect(() => {
-    if (shownPath === null) return
+    if (boardPath === null) return
     let live = true
-    void api.boardHead(shownPath).then(
+    void api.boardHead(boardPath).then(
       (res) => {
-        if (live) setHead({ path: shownPath, mtime: res.mtime })
+        if (live) setHead({ path: boardPath, mtime: res.mtime })
       },
       // YAZ-3044 A6: the panel still opens on the tree's mtime (0 never beats it), and the
       // picture's own read then shows why it cannot be drawn ("Preview unavailable").
       () => {
-        if (live) setHead({ path: shownPath, mtime: 0 })
+        if (live) setHead({ path: boardPath, mtime: 0 })
       },
     )
     // A41: a write while the panel shows moves the key; the event's mtime is the file's own.
-    const off = watchOf?.(shownPath)?.subscribe((ev) => {
-      if (live && ev.type === 'change' && ev.path === shownPath) setHead({ path: shownPath, mtime: ev.mtime })
+    const off = watch?.subscribe((ev) => {
+      if (live && ev.type === 'change' && ev.path === boardPath) setHead({ path: boardPath, mtime: ev.mtime })
     })
     return () => {
       live = false
       off?.()
     }
-  }, [shownPath, watchOf])
-  if (!visible) return null
-  const root = rootOf(node.path)
-  if (isMarkdown(node.path)) {
+  }, [boardPath, watch])
+  const node = useMemo(() => ({ path }), [path])
+  if (isMarkdown(path)) {
     const NotePreview = notePreviewModule?.default ?? LazyNotePreview
     return (
       <Suspense fallback={null}>
-        <NotePreview key={node.path} root={root} node={node} name={nameOf(node.path)} wikilinks={wikilinksOf(node.path)} textVars={textVarsOf(node.path)} anchor={anchor} />
+        <NotePreview root={root} node={node} name={name} wikilinks={wikilinks} textVars={textVars} anchor={anchor} />
       </Suspense>
     )
   }
-  if (head === null || head.path !== node.path) return null
-  const mtime = Math.max(node.mtime, head.mtime)
+  if (boardPath === null || head === null || head.path !== path) return null
+  const mtime = Math.max(knownMtime, head.mtime)
   return (
     <Suspense fallback={null}>
-      <BoardPreview key={node.path} root={root} node={node} cacheKey={boardPreviewKey(root, { path: node.path, mtime }, theme, diagramDarkColors)} anchor={anchor} />
+      <BoardPreview root={root} node={node} cacheKey={boardPreviewKey(root, { path, mtime }, theme, diagramDarkColors)} anchor={anchor} />
     </Suspense>
   )
 }

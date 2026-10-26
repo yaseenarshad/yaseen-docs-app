@@ -40,7 +40,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W } from '../../shared/types'
-import { activeTab, appWindow, clickMenuItem, closeWindow, editorOf, extraWindow, fileRow, launchApp, layer, quitApp, readState, seededState, shoot, winParam } from './helpers'
+import { activeTab, appWindow, clickMenuItem, closeWindow, editorOf, extraWindow, fileRow, launchApp, layer, openFromBlankTab, quitApp, readState, seededState, shoot, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(60_000)
@@ -679,10 +679,10 @@ test('step 8b — a page turned off stays off: after a reopen, in a new window (
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
   await win.keyboard.press('Escape')
 
-  // ⌘⇧N duplicates the window on the same note: a new editor, which reads the saved switch.
+  // ⌘⇧N opens a new window on the blank tab (YAZ-3343 D35); its search opens the same note: a new editor, which reads the saved switch.
   await clickMenuItem(app, 'menu.file.new-window', 'w1')
   const dup = await extraWindow(app, ['w1'])
-  await expect(activeTab(dup)).toContainText('Chapters')
+  await openFromBlankTab(dup, 'Chapters')
   // Wait for the note itself: a check for "no table of contents" passes before the editor exists.
   await expect(editorOf(dup).locator('h1')).toBeVisible()
   await cog(dup).click()

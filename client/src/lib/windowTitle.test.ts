@@ -25,6 +25,12 @@ describe('windowTitle', () => {
     expect(windowTitle('Docs Vault', null, NONE)).toBe('Docs Vault')
   })
 
+  it('a named window leads with its name in the vault\'s place, alone with no file (YAZ-3343 D14)', () => {
+    expect(windowTitle('notes', '/vaults/notes/Ideas.md', NONE, false, 'Writing')).toBe('Writing — Ideas')
+    expect(windowTitle('notes', null, NONE, false, 'Writing')).toBe('Writing')
+    expect(windowTitle(null, null, NONE, false, 'Writing')).toBe(APP_NAME)
+  })
+
   it('is the app name on the Welcome screen (no vault), whatever the file says', () => {
     expect(APP_NAME).toBe('Yaseen Docs')
     expect(windowTitle(null, null, NONE)).toBe(APP_NAME)

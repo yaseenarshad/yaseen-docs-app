@@ -64,10 +64,14 @@ class FakeWindow {
   destroyed = false
   minimized = false
   focusCount = 0
+  showCount = 0
   private listeners = new Map<string, Array<(...args: unknown[]) => void>>()
   constructor(public bounds: WindowBounds) {}
   focus(): void {
     this.focusCount++
+  }
+  show(): void {
+    this.showCount++
   }
   isMinimized(): boolean {
     return this.minimized
@@ -81,7 +85,7 @@ class FakeWindow {
     this.listeners.set(event, list)
     return this
   }
-  emit(event: 'move' | 'resize' | 'focus'): void {
+  emit(event: 'move' | 'resize' | 'focus' | 'minimize' | 'restore'): void {
     for (const l of this.listeners.get(event) ?? []) l()
   }
   /** What Electron does on a user close: emit `close`; destroy only when nobody preventDefault-ed. */
@@ -112,12 +116,12 @@ function makeHost(
   areas: WindowBounds[] = [AREA],
   exists: (path: string) => boolean = () => true,
   dirExists: (path: string) => boolean = () => true,
-): { host: WindowHost; created: Array<{ entry: WindowEntry; win: FakeWindow }> } {
-  const created: Array<{ entry: WindowEntry; win: FakeWindow }> = []
+): { host: WindowHost; created: Array<{ entry: WindowEntry; win: FakeWindow; hidden?: true }> } {
+  const created: Array<{ entry: WindowEntry; win: FakeWindow; hidden?: true }> = []
   const host: WindowHost = {
-    create(entry) {
+    create(entry, opts) {
       const win = new FakeWindow({ ...entry.bounds })
-      created.push({ entry, win })
+      created.push({ entry, win, ...(opts?.hidden === true ? { hidden: true as const } : {}) })
       return win as ManagedWindow
     },
     workAreas: () => areas,
@@ -1132,7 +1136,7 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(store.get().windows).toEqual([created[0].entry])
   })
 
-  it('duplicateWindow copies the complete workspace identity, then the two entries can diverge', () => {
+  it('duplicateWindow (⌘⇧N) opens on the same vault with NO tab and an empty right panel — the sidebar comes along — then the two entries can diverge (YAZ-3343 replaced the copy of the tabs)', () => {
     const rightPanel = { open: true, width: 560, items: ['/v/right-a.md', '/v/right-b.md'], expanded: '/v/right-b.md' }
     const from: WindowEntry = { id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], rightPanel, sidebarCollapsed: true, sidebarLens: 'focus', bounds: { x: 100, y: 100, width: 800, height: 600 } }
     store.upsertWindow(from)
@@ -1142,10 +1146,9 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     const entry = created[0].entry
     expect(entry.id).not.toBe('w1')
     expect(entry.root).toBe('/v')
-    expect(entry.file).toBe('/v/a.md')
-    expect(entry.tabs).toEqual(['/v/a.md', '/v/b.md']) // the copy carries every tab, not just the active file (GRO-2232)
-    expect(entry.rightPanel).toEqual(rightPanel)
-    expect(entry.rightPanel.items).not.toBe(from.rightPanel.items)
+    expect(entry.file).toBeNull()
+    expect(entry.tabs).toEqual([]) // no tab: it boots on the blank tab (YAZ-3343 D35)
+    expect(entry.rightPanel.items).toEqual([])
     expect(entry.sidebarCollapsed).toBe(true)
     expect(entry.sidebarLens).toBe('focus') // the lens comes along too (YAZ-1628) — copied, not the Files default (YAZ-1846 G)
     // No focus list comes along (YAZ-2702 S10, which overturns YAZ-2619 S26): the copy reads the vault's list, as the source does.
@@ -1155,23 +1158,6 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     store.upsertWindow({ ...entry, sidebarCollapsed: false })
     expect(store.get().windows.find((w) => w.id === 'w1')?.sidebarCollapsed).toBe(true)
     expect(store.get().windows.find((w) => w.id === entry.id)?.sidebarCollapsed).toBe(false)
-  })
-
-  it('duplicateWindow copies the copies and display names BY VALUE; each window then keeps its own (YAZ-3057 D5, S14)', () => {
-    const tabStrip = [{ path: '/v/a.md', name: 'Draft' }, { path: '/v/a.md', active: true as const }, { path: '/v/b.md' }]
-    const from: WindowEntry = { id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], tabStrip, rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 100, y: 100, width: 800, height: 600 } }
-    store.upsertWindow(from)
-    const { host, created } = makeHost()
-    createWindowManager(store, host).duplicateWindow(from)
-    const entry = created[0].entry
-    expect(entry.tabStrip).toEqual(tabStrip)
-    expect(entry.tabStrip?.[0]).not.toBe(tabStrip[0])
-    store.upsertWindow({ ...entry, tabStrip: [{ path: '/v/a.md', name: 'Mine' }, { path: '/v/b.md' }] })
-    expect(store.get().windows.find((w) => w.id === 'w1')?.tabStrip).toEqual(tabStrip)
-    // A window with no strip gives a copy with none.
-    const plainFrom: WindowEntry = { ...from, id: 'w9', tabStrip: undefined }
-    createWindowManager(store, makeHost().host).duplicateWindow(plainFrom)
-    expect(store.get().windows.at(-1)).not.toHaveProperty('tabStrip')
   })
 
   it('openWindow takes more vaults for the window: `root` first, each vault once — and a vault another window already shows is shown by both (YAZ-2602 S9)', () => {
@@ -1192,7 +1178,7 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     const { host, created } = makeHost()
     createWindowManager(store, host).duplicateWindow(from)
     const entry = created[0].entry
-    expect(entry).toMatchObject({ root: '/a', roots: ['/a', '/b'], file: '/b/x.md', tabs: ['/b/x.md'] })
+    expect(entry).toMatchObject({ root: '/a', roots: ['/a', '/b'], file: null, tabs: [] })
     expect(entry.roots).not.toBe(from.roots)
     from.roots.push('/mutated') // mutating the source afterwards never reaches the copy
     expect(entry.roots).toEqual(['/a', '/b'])
@@ -1277,8 +1263,117 @@ describe('createWindowManager: moveTo hands a tab to an open window (YAZ-3091 D1
     const manager = createWindowManager(store, host)
     manager.restore('all')
     const [w1, w2, w3] = created.map((c) => c.win)
-    return { manager, w1, w2, w3 }
+    return { manager, w1, w2, w3, created }
   }
+
+  it('YAZ-3343, the tab board\'s "New window": a window on the caller\'s vaults with no tab, cascaded, built HIDDEN — every window hears it is; its id is answered', () => {
+    const { manager, w1, created } = seedMove()
+    const from = store.get().windows.find((w) => w.id === 'w1')!
+    const id = manager.openBehind(from)
+    const made = created.at(-1)!
+    expect(made.entry).toMatchObject({ id, root: '/a', roots: ['/a', '/b'], file: null, tabs: [], bounds: { x: 10 + WINDOW_CASCADE_PX, y: 10 + WINDOW_CASCADE_PX } })
+    expect(made.entry.name).toBeUndefined()
+    expect(store.get().windows.some((w) => w.id === id)).toBe(true)
+    expect(made.hidden).toBe(true)
+    expect([made.win.showCount, made.win.focusCount]).toEqual([0, 0])
+    expect(manager.hiddenWindows()).toEqual([id])
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.window.onHiddenWindows.channel, [id])
+    // Its FIRST identity says it opened empty (D22: it boots with no tab), and only that one.
+    expect([manager.takeStartEmpty(id), manager.takeStartEmpty(id), manager.takeStartEmpty('w1')]).toEqual([true, false, false])
+  })
+
+  it('YAZ-3343, a hidden window: "Show window" shows and focuses it; opening one of its tabs from the board shows it; and with no window left on screen it shows by itself', () => {
+    const { manager, w1, w2, w3, created } = seedMove()
+    const from = store.get().windows.find((w) => w.id === 'w1')!
+    const a = manager.openBehind(from)
+    const b = manager.openBehind(from)
+    const [wa, wb] = created.slice(-2).map((c) => c.win)
+    expect(manager.showWindow(a)).toBe(true)
+    expect([wa.showCount, wa.focusCount]).toEqual([1, 1])
+    expect(manager.hiddenWindows()).toEqual([b])
+    manager.handleLinkReady(wb.webContents)
+    expect(manager.focusTab(b, { path: '/a/x.md', copy: 0 })).toBe(true)
+    expect(wb.showCount).toBe(1)
+    expect(manager.hiddenWindows()).toEqual([])
+    expect(manager.showWindow('nope')).toBe(false)
+    // A third, hidden; every shown window then closes: it shows rather than run on unseen.
+    const c = manager.openBehind(from)
+    const wc = created.at(-1)!.win
+    for (const w of [w1, w2, w3, wa, wb]) w.destroy()
+    expect(wc.showCount).toBe(1)
+    expect(manager.hiddenWindows()).toEqual([])
+    void c
+  })
+
+  it('YAZ-3343, the vault chip: an EMPTY live window hears link:set-roots; a window with a tab, or a closed one, refuses', () => {
+    const { manager, w1, w2 } = seedMove()
+    for (const w of [w1, w2]) manager.handleLinkReady(w.webContents)
+    expect(manager.setRoots('w2', ['/x'])).toBe(true)
+    expect(w2.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/x'])
+    expect(manager.setRoots('w1', ['/x'])).toBe(false) // w1 has a tab
+    expect(manager.setRoots('nope', ['/x'])).toBe(false)
+  })
+
+  it('YAZ-3343, "Move to new window" from the tab board: QUIET — the window is built HIDDEN; from another window\'s card, that window hears link:pop-out-tab', () => {
+    const { manager, w1, w2, created } = seedMove()
+    for (const w of [w1, w2]) manager.handleLinkReady(w.webContents)
+    const from = store.get().windows.find((w) => w.id === 'w1')!
+    manager.popOut(from, '/a/x.md', { name: 'Outline', background: true })
+    const made = created.at(-1)!
+    expect(made.entry).toMatchObject({ file: '/a/x.md', tabs: ['/a/x.md'], tabStrip: [{ path: '/a/x.md', name: 'Outline' }] })
+    expect(made.hidden).toBe(true)
+    expect([made.win.showCount, made.win.focusCount]).toEqual([0, 0])
+    expect(manager.hiddenWindows()).toEqual([made.entry.id])
+    // The strip's own "Move to new window" opens in front, as before.
+    manager.popOut(from, '/a/x.md')
+    expect(created.at(-1)!.hidden).toBeUndefined()
+    expect(manager.popOutTab('w2', { path: '/c/y.md', copy: 1 })).toBe(true)
+    expect(w2.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onPopOutTab.channel, { path: '/c/y.md', copy: 1 })
+    expect(manager.popOutTab('nope', { path: '/c/y.md', copy: 0 })).toBe(false)
+  })
+
+  it('YAZ-3343, the board\'s highlight on another window\'s card: that live window hears link:highlight-tab at once; a window that is not live is skipped', () => {
+    const { manager, w2 } = seedMove()
+    manager.highlightTab('w2', { path: '/c/y.md', copy: 0 })
+    expect(w2.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onHighlightTab.channel, { path: '/c/y.md', copy: 0 })
+    manager.highlightTab('w2', null)
+    expect(w2.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onHighlightTab.channel, null)
+    expect(() => manager.highlightTab('nope', null)).not.toThrow()
+  })
+
+  it('YAZ-3343, a card menu\'s tab action on another window: it hears link:tab-action; "Show in sidebar" raises (and shows) it too', () => {
+    const { manager, w2 } = seedMove()
+    manager.handleLinkReady(w2.webContents)
+    expect(manager.tabAction('w2', { path: '/c/y.md', copy: 0 }, { kind: 'duplicate' })).toBe(true)
+    expect(w2.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onTabAction.channel, { ref: { path: '/c/y.md', copy: 0 }, action: { kind: 'duplicate' } })
+    expect(w2.focusCount).toBe(0)
+    manager.tabAction('w2', { path: '/c/y.md', copy: 0 }, { kind: 'show-in-sidebar' })
+    expect(w2.focusCount).toBe(1)
+    expect(manager.tabAction('nope', { path: '/c/y.md', copy: 0 }, { kind: 'duplicate' })).toBe(false)
+  })
+
+  it('YAZ-3343, minimized in the Dock: every window hears the minimized set on minimize and on restore; a closed one leaves it', () => {
+    const { manager, w1, w2 } = seedMove()
+    w2.emit('minimize')
+    expect(manager.minimizedWindows()).toEqual(['w2'])
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.window.onMinimizedWindows.channel, ['w2'])
+    w2.emit('restore')
+    expect(manager.minimizedWindows()).toEqual([])
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.window.onMinimizedWindows.channel, [])
+    w2.emit('minimize')
+    w2.destroy()
+    expect(manager.minimizedWindows()).toEqual([])
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.window.onMinimizedWindows.channel, [])
+  })
+
+  it('YAZ-3343, a frame\'s "Close window": the REAL close of another live window (its flush handshake runs); a closed one is false', () => {
+    const { manager, w2 } = seedMove()
+    const close = vi.spyOn(w2, 'close')
+    expect(manager.closeOther('w2')).toBe(true)
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(w2.isDestroyed()).toBe(false) // the handshake holds it until the renderer flushed
+    expect(manager.closeOther('nope')).toBe(false)
+  })
   const VIEW: PageView = { scrollTop: 120, zoomKey: 'l1 a:0', folds: ['abc:0'], magnification: 110 }
 
   it('raises the target and pushes link:take-tab with the path, the view and the name, held until the page listens; no entry changes', () => {
@@ -1297,6 +1392,15 @@ describe('createWindowManager: moveTo hands a tab to an open window (YAZ-3091 D1
     // The target stores its own new tab: main changes no entry, and keeps no page view for it.
     expect(store.get().windows).toBe(before)
     expect(manager.takeStartView('w1')).toBeUndefined()
+  })
+
+  it('YAZ-3343 D13: a QUIET move (`background`, a card dropped on a tab board) raises nothing, and the target hears it as one', () => {
+    const { manager, w1 } = seedMove()
+    manager.handleLinkReady(w1.webContents)
+    w1.minimized = true
+    expect(manager.moveTo('w1', '/a/x.md', { name: 'Outline', background: true })).toBe(true)
+    expect([w1.focusCount, w1.isMinimized()]).toEqual([0, true])
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onTakeTab.channel, { path: '/a/x.md', name: 'Outline', background: true })
   })
 
   it('refuses an unknown id, a closed window, a path in no vault of the target, and a Welcome window (D2): nothing is sent, nothing is raised', () => {
@@ -1342,50 +1446,60 @@ describe('createWindowManager: moveTo hands a tab to an open window (YAZ-3091 D1
   })
 })
 
-describe('createWindowManager: a new window gets its page view once (YAZ-2951 D5, S17, S20)', () => {
+describe('createWindowManager: a popped-out window gets its page view once (YAZ-2951 D2, S17, S20; ⌘⇧N no longer, YAZ-3343 D35)', () => {
   const VIEW: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
   const from: WindowEntry = { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 100, y: 100, width: 800, height: 600 } }
 
-  it('duplicateWindow keeps the view for the active file, popOut for its path; takeStartView gives each one time', () => {
+  it('popOut keeps the view for its path; takeStartView gives it one time; ⌘⇧N carries none any more (YAZ-3343)', () => {
     store.upsertWindow(from)
     const { host, created } = makeHost()
     const manager = createWindowManager(store, host)
-    manager.duplicateWindow(from, VIEW)
+    manager.duplicateWindow(from)
     manager.popOut(from, '/b/y.md', { view: VIEW })
     const [dup, popped] = created.map((c) => c.entry.id)
-    expect(manager.takeStartView(dup)).toEqual({ path: '/a/x.md', view: VIEW })
-    expect(manager.takeStartView(dup)).toBeUndefined() // a reload of the new window starts fresh (S17)
+    expect(manager.takeStartView(dup)).toBeUndefined()
     expect(manager.takeStartView(popped)).toEqual({ path: '/b/y.md', view: VIEW })
-    expect(manager.takeStartView(popped)).toBeUndefined()
-    expect(manager.takeStartView('w1')).toBeUndefined()
+    expect(manager.takeStartView(popped)).toBeUndefined() // a reload of the new window starts fresh (S17)
     // Never stored (S18): the entries hold no page view.
     expect(JSON.stringify(store.get().windows)).not.toContain('l2 a:1')
   })
 
-  it('no view, or a window with no page on show (S13), keeps nothing', () => {
-    const welcome: WindowEntry = { ...from, id: 'w0', root: null, roots: [], file: null, tabs: [] }
-    store.upsertWindow(from)
-    store.upsertWindow(welcome)
+  it('YAZ-3343, ⌘⇧N: a window on the SAME vaults with NO tab, cascaded, in front; it boots on the blank tab (startEmpty, once); the sidebar comes along, the right panel does not', () => {
+    store.upsertWindow({ ...from, sidebarCollapsed: true, sidebarLens: 'favorites', rightPanel: { ...defaultRightPanelIdentity(), open: true, items: ['/a/r.md'] } })
     const { host, created } = makeHost()
     const manager = createWindowManager(store, host)
-    manager.duplicateWindow(from)
-    manager.duplicateWindow(welcome, VIEW)
-    manager.popOut(from, '/b/y.md')
-    manager.popOut(from, '/b/y.md', {})
-    expect(created.map((c) => manager.takeStartView(c.entry.id))).toEqual([undefined, undefined, undefined, undefined])
+    manager.duplicateWindow(store.get().windows.find((w) => w.id === 'w1')!)
+    const made = created[0]
+    expect(made.entry).toMatchObject({ root: '/a', roots: ['/a', '/b'], file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites', bounds: { x: 100 + WINDOW_CASCADE_PX, y: 100 + WINDOW_CASCADE_PX } })
+    expect(made.entry.tabStrip).toBeUndefined()
+    expect(made.entry.rightPanel.items).toEqual([])
+    expect(made.hidden).toBeUndefined()
+    expect([manager.takeStartEmpty(made.entry.id), manager.takeStartEmpty(made.entry.id)]).toEqual([true, false])
   })
 
-  it('a new window that closes before it reads its view forgets it (S20)', async () => {
+  it('popOut with no view keeps nothing (S13)', () => {
     store.upsertWindow(from)
     const { host, created } = makeHost()
     const manager = createWindowManager(store, host)
-    manager.duplicateWindow(from, VIEW)
-    const { win, entry } = created[0]
-    win.close()
-    manager.handleFlushed(win.webContents)
+    manager.popOut(from, '/b/y.md')
+    manager.popOut(from, '/b/y.md', {})
+    expect(created.map((c) => manager.takeStartView(c.entry.id))).toEqual([undefined, undefined])
+  })
+
+  it('a new window that closes before it reads its view forgets it (S20) — and its empty start (YAZ-3343)', async () => {
+    store.upsertWindow(from)
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.popOut(from, '/b/y.md', { view: VIEW })
+    manager.duplicateWindow(from)
+    for (const { win } of created) {
+      win.close()
+      manager.handleFlushed(win.webContents)
+    }
     await vi.advanceTimersByTimeAsync(0)
-    expect(win.isDestroyed()).toBe(true)
-    expect(manager.takeStartView(entry.id)).toBeUndefined()
+    expect(created.map(({ win }) => win.isDestroyed())).toEqual([true, true])
+    expect(manager.takeStartView(created[0].entry.id)).toBeUndefined()
+    expect(manager.takeStartEmpty(created[1].entry.id)).toBe(false)
   })
 })
 
@@ -1679,5 +1793,87 @@ describe('createWindowManager: routeToFile (E1)', () => {
     expect(sentOn(w2, CONTRACT.link.onNotice.channel)).toEqual([[CONTRACT.link.onNotice.channel, "Can't open Work: folder not found"]])
     expect([w1.focusCount, w2.focusCount]).toEqual([1, 1])
     expect(sentOn(w1, CONTRACT.link.onNotice.channel)).toHaveLength(1)
+  })
+})
+
+describe('createWindowManager: the tab board reaches other windows (YAZ-3343 D3, D13, D14)', () => {
+  /** w1 shows /a and /b, w2 shows /c only, w3 is a Welcome window. Every page listens, unless a test says otherwise. */
+  function seedBoard(listen = true) {
+    store.upsertWindow({ id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w2', root: '/c', roots: ['/c'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 40, y: 40, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w3', root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 70, y: 70, width: 800, height: 600 } })
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    const [w1, w2, w3] = created.map((c) => c.win)
+    if (listen) for (const c of [w1, w2, w3]) manager.handleLinkReady(c.webContents)
+    return { manager, w1, w2, w3 }
+  }
+  const REF = { path: '/a/x.md', copy: 1 }
+
+  it('D3 focusTab raises the target and pushes link:focus-tab (held until the page listens); closeTabs pushes link:close-tabs and raises nothing', () => {
+    const { manager, w1 } = seedBoard(false)
+    w1.minimized = true
+    expect(manager.focusTab('w1', REF)).toBe(true)
+    expect(w1.isMinimized()).toBe(false)
+    expect(w1.focusCount).toBe(1)
+    expect(w1.webContents.send).not.toHaveBeenCalled() // held like any link push (YAZ-2589 A2)
+    manager.handleLinkReady(w1.webContents)
+    expect(w1.webContents.send.mock.calls).toEqual([[CONTRACT.link.onFocusTab.channel, REF]])
+    expect(manager.closeTabs('w1', [REF, { path: '/b/y.md', copy: 0 }])).toBe(true)
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onCloseTabs.channel, [REF, { path: '/b/y.md', copy: 0 }])
+    expect(w1.focusCount).toBe(1)
+  })
+
+  it('D3 focusTab and closeTabs refuse an unknown id, a destroyed window and a closed one: nothing is sent, nothing is raised', () => {
+    const { manager, w1 } = seedBoard()
+    expect(manager.focusTab('nope', REF)).toBe(false)
+    expect(manager.closeTabs('nope', [REF])).toBe(false)
+    w1.destroyed = true // destroyed, its `closed` not yet fired
+    expect(manager.focusTab('w1', REF)).toBe(false)
+    expect(manager.closeTabs('w1', [REF])).toBe(false)
+    w1.destroyed = false
+    w1.destroy()
+    expect(manager.focusTab('w1', REF)).toBe(false)
+    expect(w1.webContents.send).not.toHaveBeenCalled()
+    expect(w1.focusCount).toBe(0)
+  })
+
+  it('D13 moveTab pushes link:send-tab { to, ref } to the SOURCE, raising nothing; it refuses a target with no vault of the page, a Welcome window, the same window, and a window that is not live', () => {
+    const { manager, w1, w2, w3 } = seedBoard()
+    store.upsertWindow({ ...store.get().windows[1], roots: ['/c', '/a'] }) // w2 now shows /a too
+    expect(manager.moveTab('w1', 'w2', REF)).toBe(true)
+    expect(w1.webContents.send.mock.calls).toEqual([[CONTRACT.link.onSendTab.channel, { to: 'w2', ref: REF }]])
+    expect(manager.moveTab('w1', 'w2', { path: '/b/y.md', copy: 0 })).toBe(false) // w2 shows no /b: no vault is added
+    expect(manager.moveTab('w1', 'w3', REF)).toBe(false) // a Welcome window shows no vault
+    expect(manager.moveTab('w1', 'w1', REF)).toBe(false)
+    expect(manager.moveTab('nope', 'w2', REF)).toBe(false)
+    expect(manager.moveTab('w1', 'nope', REF)).toBe(false)
+    w2.destroy()
+    expect(manager.moveTab('w1', 'w2', REF)).toBe(false)
+    expect(w1.webContents.send).toHaveBeenCalledTimes(1)
+    for (const c of [w1, w2, w3]) expect(c.focusCount).toBe(0)
+  })
+
+  it('D14 setName names a LIVE window only; null takes the name away; duplicateWindow and popOut do not copy it, a launch keeps it', () => {
+    const { manager, w2 } = seedBoard()
+    expect(manager.setName('w1', '  Writing ')).toBe(true)
+    expect(store.get().windows[0].name).toBe('Writing')
+    expect(manager.setName('nope', 'X')).toBe(false)
+    w2.destroy()
+    expect(manager.setName('w2', 'X')).toBe(false)
+    const named = store.get().windows[0]
+    const { host, created } = makeHost()
+    const other = createWindowManager(store, host)
+    other.duplicateWindow(named)
+    other.popOut(named, '/a/x.md', { name: 'Tab' })
+    expect(created.map((c) => c.entry)).toEqual([expect.not.objectContaining({ name: expect.anything() }), expect.not.objectContaining({ name: expect.anything() })])
+    expect(store.get().windows.filter((w) => w.name !== undefined).map((w) => w.id)).toEqual(['w1'])
+    // A launch brings the window back with its name.
+    const relaunch = makeHost()
+    createWindowManager(store, relaunch.host).restore('all')
+    expect(relaunch.created.find((c) => c.entry.id === 'w1')?.entry.name).toBe('Writing')
+    expect(manager.setName('w1', null)).toBe(true)
+    expect(store.get().windows[0]).not.toHaveProperty('name')
   })
 })

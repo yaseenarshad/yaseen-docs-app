@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, tabsOf, appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, extraWindow, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, SEED_FILE, seededState, wholeRow, shoot, topLabels, windowCount, winParam } from './helpers'
+import { activeTab, tabsOf, appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, extraWindow, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, searchBar, SEED_FILE, seededState, wholeRow, shoot, topLabels, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -142,12 +142,16 @@ test('step 3 — the list and the active tab survive quit → relaunch: the list
 // ---------------------------------------------------------------- a second window, and remove one
 
 test('step 4 — a second window on the vault shows the same list (YAZ-2702 S7, S10); "Remove from focus" in the first takes that row out of both and keeps the tab', async () => {
-  // ⌘⇧N (menu.file.new-window) duplicates the window — lens included, so the copy opens on the Focus
-  // tab. It was handed no list: it read the vault's, as each window does (S10).
+  // ⌘⇧N (menu.file.new-window) opens a window on the same vault — lens included — on the blank tab, whose caret is
+  // in the search (YAZ-3343 D35). The Focus tab is its stored lens, one click away. It was handed no list: it read
+  // the vault's, as each window does (S10).
   await clickMenuItem(app, 'menu.file.new-window', 'w1')
   const dup = await extraWindow(app, ['w1'])
   const dupId = winParam(dup)!
   expect(await windowCount(app)).toBe(2)
+  await expect(searchBar(dup)).toBeFocused()
+  await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === dupId)?.sidebarLens).toBe('focus')
+  await focusTab(dup).click()
   await expect(focusTab(dup)).toHaveAttribute('aria-selected', 'true')
   await expect(topLabels(dup)).toHaveText(['Projects', 'Ideas'])
   await expect(countLine(dup)).toHaveText('2 in focus')

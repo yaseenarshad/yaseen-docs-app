@@ -14,7 +14,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, clickMenuItem, closeWindow, dirRow, editorOf, expandDirs, extraWindow, fileRow, launchApp, quitApp, readState, seededState, shoot, windowCount, winParam } from './helpers'
+import { activeTab, appWindow, clickMenuItem, closeWindow, dirRow, editorOf, expandDirs, extraWindow, fileRow, launchApp, lensTab, quitApp, readState, seededState, shoot, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -102,12 +102,14 @@ test('step 2 — two dirs opened by hand are open in a second window on the same
   await expect(dirRow(win, 'beta')).toBeVisible()
   await expect(fileRow(win, 'Deep note')).toHaveCount(0) // `beta` was left folded on purpose
 
-  // A second window on the same root (⌘⇧N duplicates it) reads the SAME in-memory list — that is
-  // what "session, shared by every window on the root" means, and it is only observable here.
+  // A second window on the same root (⌘⇧N) reads the SAME in-memory list — that is what "session, shared by
+  // every window on the root" means, and it is only observable here. It opens on the blank tab with the caret in
+  // the search (YAZ-3343 D35): its Files tab is one click away.
   await clickMenuItem(app, 'menu.file.new-window', 'w1')
   const dup = await extraWindow(app, ['w1'])
   const dupId = winParam(dup)!
   expect(await windowCount(app)).toBe(2)
+  await lensTab(dup, 'Files').click()
   for (const dir of OPEN_BY_HAND) {
     await expect(dup.locator(`li[role="treeitem"]:has(> .tree__row--dir[data-path="${path.join(vault, dir)}"])`)).toHaveAttribute(
       'aria-expanded',
