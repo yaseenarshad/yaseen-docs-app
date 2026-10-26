@@ -40,7 +40,7 @@ import { useSharing } from './share/useSharing'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { filesWindowTitle, windowTitle } from './lib/windowTitle'
-import { askFromFiles, filesClickHow } from './lib/filesWindow'
+import { askFromFiles, filesClickHow, watchFilesKeys } from './lib/filesWindow'
 import { FloatingPreview } from './sidebar/HoverPreviewHost'
 import { filesPreviewPopup } from './sidebar/previewPopup'
 import { isFolderPath, pageName, pathTitles, useAllPathTitles } from './lib/pageLabel'
@@ -2316,6 +2316,8 @@ export function App() {
    * A Files window's sidebar doors (YAZ-3357 D2, D7): each sends ONE message to main, which runs it in a full window.
    * A click previews (Enter keeps, `filesClickHow`), a double click keeps, ⌘-click opens a background tab. Null in a full window.
    */
+  // The Enter key presses that `filesClickHow` reads (D7, bug YAZ-3399): a Files window only.
+  useEffect(() => (filesWindow ? watchFilesKeys(window) : undefined), [filesWindow])
   const filesDoors = useMemo(() => {
     if (!filesWindow) return null
     const ask = (action: FilesAction): void => askFromFiles(action, notify)
