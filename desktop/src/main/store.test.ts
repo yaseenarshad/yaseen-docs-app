@@ -2454,7 +2454,7 @@ describe('the tab board canvas and window names (YAZ-3343 D1, D14)', () => {
 })
 
 describe('Files windows (YAZ-3357 D1)', () => {
-  it('kind loads as `files` exactly; any other value is a normal window, never a bad entry; a window write keeps it, and the file holds it', async () => {
+  it('kind loads as `files` exactly; any other value is a full window, never a bad entry; a window write keeps it, and the file holds it', async () => {
     await seed(valid({ windows: [{ ...win('w1'), kind: 'files' }, { ...win('w2'), kind: 'tabs' }, { ...win('w3'), kind: 7 }, win('w4')] }))
     const store = createStore(file)
     expect(store.get().windows.map((w) => [w.id, w.kind])).toEqual([['w1', 'files'], ['w2', undefined], ['w3', undefined], ['w4', undefined]])
@@ -2465,7 +2465,7 @@ describe('Files windows (YAZ-3357 D1)', () => {
     expect(createStore(file).get().windows[0].kind).toBe('files')
   })
 
-  it('zoom (demo feedback) loads on a Files window only, clamped, and a junk or 0 level is none', async () => {
+  it('zoom (D11) loads on a Files window only, clamped, and a junk or 0 level is none', async () => {
     await seed(valid({ windows: [{ ...win('w1'), kind: 'files', zoom: 1.5 }, { ...win('w2'), kind: 'files', zoom: 40 }, { ...win('w3'), kind: 'files', zoom: 'big' }, { ...win('w4'), kind: 'files', zoom: 0 }, { ...win('w5'), zoom: 2 }] }))
     const store = createStore(file)
     expect(store.get().windows.map((w) => w.zoom)).toEqual([1.5, 9, undefined, undefined, undefined])

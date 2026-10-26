@@ -11,15 +11,15 @@ export const APP_NAME = 'Yaseen Docs'
  * folder name (YAZ-1974 D4), never its path. `name` is the window's own name (YAZ-3343 D14), when it has one:
  * it stands where the vault stands. The Welcome screen keeps the app name.
  */
-/** A Files window's title (YAZ-3357 D4): "Files — <vault>", its vaults by name, in the window's order. */
-export function filesWindowTitle(vaults: readonly string[]): string {
-  return vaults.length === 0 ? APP_NAME : `Files — ${vaults.join(', ')}`
-}
-
 export function windowTitle(vault: string | null, file: string | null, titles: PathTitles, folder = false, name?: string): string {
   if (vault === null) return APP_NAME
   // A named window (YAZ-3343 D14) leads with its name in the vault's place: the name is what the user picks it by.
   const lead = name ?? vault
   if (file === null) return lead
   return `${lead} — ${pageLabel(file, folder, titles)}`
+}
+
+/** A Files window's title (YAZ-3357 D4): "Files — <vault>", its vaults by name, in the window's order. */
+export function filesWindowTitle(vaults: readonly string[]): string {
+  return vaults.length === 0 ? APP_NAME : `Files — ${vaults.join(', ')}`
 }

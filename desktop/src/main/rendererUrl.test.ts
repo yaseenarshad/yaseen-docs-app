@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { isRendererUrl, rendererUrlFor } from './rendererUrl'
 
 describe('rendererUrlFor (YAZ-3357): a Files window has an origin of its own, so its zoom is its own', () => {
-  it('moves the app host to files, and the dev server from localhost to [::1]; a normal window keeps the base', () => {
+  it('moves the app host to files, and the dev server from localhost to [::1]; a full window keeps the base', () => {
     expect(rendererUrlFor('app://yaseen/index.html', false).toString()).toBe('app://yaseen/index.html')
     expect(rendererUrlFor('app://yaseen/index.html', true).toString()).toBe('app://files/index.html')
     expect(rendererUrlFor('http://localhost:5175/', true).toString()).toBe('http://[::1]:5175/')

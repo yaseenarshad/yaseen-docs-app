@@ -173,14 +173,14 @@ interface SidebarProps {
   onUpdateSession?: (id: string) => void
   /**
    * A Files window (YAZ-3357 D8): the header's "Hide sidebar" button is "Show all tabs" instead, and opens Tabs Mission
-   * Control. Absent in a normal window.
+   * Control. Absent in a full window.
    */
   onShowAllTabs?: () => void
   /** A Files window (YAZ-3357): the vault switcher switches THIS window in place, and a workspace row through this. */
   onOpenSetHere?: (id: string) => Promise<boolean>
   /**
-   * A Files window (YAZ-3357, demo feedback): the footer's "Files window" chip says what this window is, and its one item
-   * turns it into a normal window where it stands. Absent = a normal window, with no chip.
+   * A Files window (YAZ-3357 D13): the footer's "Files window" chip says what this window is, and its second click
+   * makes it a full window where it stands. Absent = a full window, with no chip.
    */
   onToNormalWindow?: () => void
   /** A Files window's hover preview (YAZ-3357 D9): its floating popup, or `'overlay'` where there is none. Absent: beside the sidebar. */
@@ -579,7 +579,7 @@ export function Sidebar({
   /** The sort menu (YAZ-3227 D4): the tab it sorts and where its button is, while it is open. */
   const [sortMenu, setSortMenu] = useState<{ tab: SortedTab; x: number; y: number } | null>(null)
   /**
-   * The Files window chip, clicked once (YAZ-3357, demo feedback: "a two click … kinda how in mission control we have for closing
+   * The Files window chip, clicked once (YAZ-3357 D13: "a two click … kinda how in mission control we have for closing
    * a tab"): red "Make full window" until the second click converts, or a move off, Esc or a press elsewhere lets it go.
    */
   const [chipArmed, setChipArmed] = useState(false)
@@ -1578,7 +1578,7 @@ export function Sidebar({
       <div className="sidebar__footer">
         <SettingsButton onClick={onOpenSettings} />
         {onToNormalWindow !== undefined && (
-          // Which kind of window this is (YAZ-3357, demo feedback), quiet beside the cog. Two clicks make it a full window.
+          // Which kind of window this is (YAZ-3357 D13), quiet beside the cog. Two clicks make it a full window.
           <button
             type="button"
             className={`sidebar__files-chip${chipArmed ? ' sidebar__files-chip--armed' : ''}`}

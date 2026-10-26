@@ -536,7 +536,7 @@ describe('registerWindowIpc', () => {
     expect(await preview({ sender }, null)).toEqual(ok(undefined))
     expect(manager.filesPreview.mock.calls).toEqual([['w1', { width: 400, height: 300, top: 10, bottom: 30 }], ['w1', null]])
     expect(await preview({ sender }, { width: 0, height: 300, top: 0, bottom: 0 })).toEqual(bad('BAD_REQUEST'))
-    // A normal window has no such door.
+    // A full window has no such door.
     store.upsertWindow(entry)
     expect(await fromFiles({ sender }, { kind: 'open', path: '/v/a.md', how: 'keep' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.window.openFiles.channel)({ sender }, null)).toEqual(ok(undefined))

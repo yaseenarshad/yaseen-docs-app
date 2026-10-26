@@ -124,7 +124,7 @@ interface HoverPreviewHostProps {
  * The row of `path` a Files window's floating preview stands beside (YAZ-3357 D9): the one under the pointer, else the one
  * with the keyboard focus, else the first; with none on show, the middle of the sidebar. In this page's coordinates.
  */
-export function previewRowRect(aside: HTMLElement | null, path: string): AnchorRect {
+function previewRowRect(aside: HTMLElement | null, path: string): AnchorRect {
   const rows = aside === null ? [] : [...aside.querySelectorAll<HTMLElement>(`[data-path="${CSS.escape(path)}"]`)]
   const row = rows.find((el) => el.matches(':hover')) ?? rows.find((el) => el === document.activeElement) ?? rows[0]
   const rect = (row ?? aside)?.getBoundingClientRect()
@@ -133,7 +133,7 @@ export function previewRowRect(aside: HTMLElement | null, path: string): AnchorR
 }
 
 /** What a shown preview sits beside: the sidebar, or a Files window's popup or overlay (YAZ-3357 D9). One object per shown path. */
-export function useFloatAnchor(anchor: RefObject<HTMLElement | null>, float: PreviewPopup | 'overlay' | undefined, path: string | null): PreviewAnchor {
+function useFloatAnchor(anchor: RefObject<HTMLElement | null>, float: PreviewPopup | 'overlay' | undefined, path: string | null): PreviewAnchor {
   return useMemo<PreviewAnchor>(() => {
     if (float === undefined || path === null) return anchor
     if (float === 'overlay') return { overlay: true }

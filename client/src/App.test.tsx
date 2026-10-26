@@ -6177,7 +6177,7 @@ describe('App Files window (YAZ-3357)', () => {
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ tabs: expect.arrayContaining(['/v/a.md']) }))
   })
 
-  it('demo feedback: a Files window hands its sidebar "Turn into normal window", which asks main; a normal window hands none', async () => {
+  it('D13: a Files window hands its sidebar "Make full window", which asks main; a full window hands none', async () => {
     const { bridge } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES })] }, FILES)
     act(() => captured.sidebar!.onToNormalWindow!())
     await act(async () => {})
@@ -6189,7 +6189,7 @@ describe('App Files window (YAZ-3357)', () => {
     const { bridge, el, emitNewTab } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES })] }, FILES)
     act(() => captured.sidebar!.onShowAllTabs!())
     expect(bridge.window.filesWide.mock.calls).toEqual([[true]])
-    // Not in the narrow window (demo feedback, "isnt smooth or fast"): the sidebar keeps its width, and the board waits for the wide one.
+    // Not in the narrow window (D10): the sidebar keeps its width, and the board waits for the wide one.
     expect(el.querySelector('.app--files-board')).not.toBeNull()
     expect(el.querySelector('.taboverview')).toBeNull()
     await act(async () => {})
@@ -6212,7 +6212,7 @@ describe('App Files window (YAZ-3357)', () => {
     expect(bridge.window.duplicate).toHaveBeenCalledTimes(1)
   })
 
-  it('D2: a normal window runs a Files window\'s click with its own doors — keep, background, and an Inbox opens the review', async () => {
+  it('D2: a full window runs a Files window\'s click with its own doors — keep, background, and an Inbox opens the review', async () => {
     const { el, emitFromFiles } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     act(() => emitFromFiles({ kind: 'open', path: '/v/b.md', how: 'keep' }))
     expect(tabNames(el)).toEqual(['a', 'b'])

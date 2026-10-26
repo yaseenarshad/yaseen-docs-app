@@ -1903,7 +1903,7 @@ describe('createWindowManager: the tab board reaches other windows (YAZ-3343 D3,
 describe('Files windows (YAZ-3357)', () => {
   const panel = defaultRightPanelIdentity()
   const REF = { path: '/a/x.md', copy: 0 }
-  /** w1 and w2 are normal windows on /a, w3 a normal one on /c, f a Files window on /a and /c. Every page listens. */
+  /** w1 and w2 are full windows on /a, w3 a full one on /c, f a Files window on /a and /c. Every page listens. */
   function seedFiles() {
     const normal = { file: null, tabs: [], rightPanel: panel, sidebarCollapsed: false, sidebarLens: 'files' as const }
     store.upsertWindow({ id: 'w1', root: '/a', roots: ['/a'], ...normal, bounds: { x: 400, y: 100, width: 800, height: 600 } })
@@ -1924,7 +1924,7 @@ describe('Files windows (YAZ-3357)', () => {
     // At the left edge of the screen it is pushed onto it, over the source's left side.
     expect(filesWindowBounds({ x: 100, y: 80, width: 900, height: 700 }, 260, [AREA])).toEqual({ x: 0, y: 80, width: 260, height: 700 })
     expect(filesWindowBounds(null, 280, [AREA])).toEqual({ x: 100, y: 100, width: 280, height: 800 })
-    // A normal window it makes stands right of it, as tall.
+    // A full window it makes stands right of it, as tall.
     expect(besideFilesBounds({ x: 0, y: 80, width: 260, height: 700 }, [AREA])).toEqual({ x: 260, y: 80, width: 1180, height: 700 })
     // Narrower to stay beside it, down to a usable width; then it moves over the Files window.
     expect(besideFilesBounds({ x: 1000, y: 80, width: 260, height: 700 }, [AREA])).toEqual({ x: 800, y: 80, width: 640, height: 700 })
@@ -1943,7 +1943,7 @@ describe('Files windows (YAZ-3357)', () => {
     expect(manager.openFilesWindow(undefined, null)).toBe(false)
   })
 
-  it('"Turn into normal window" (demo feedback): a normal window opens where the Files window stands, on its vaults and lens, empty; then the Files window closes by its real close', () => {
+  it('D13 "Make full window": a full window opens where the Files window stands, on its vaults and lens, empty; then the Files window closes by its real close', () => {
     const { manager, created, f } = seedFiles()
     expect(manager.filesToNormal('w1')).toBe(false)
     expect(manager.filesToNormal('f')).toBe(true)
@@ -1955,7 +1955,7 @@ describe('Files windows (YAZ-3357)', () => {
     expect(f.flushCount()).toBe(1)
   })
 
-  it('zoom (demo feedback): a Files window starts one step (+20%) above its source and keeps its own ⌘+ / ⌘− level; a normal window stores none', () => {
+  it('D11 zoom: a Files window starts one step (+20%) above its source and keeps its own ⌘+ / ⌘− level; a full window stores none', () => {
     const { manager, created, w1 } = seedFiles()
     w1.webContents.getZoomLevel.mockReturnValue(0.5)
     manager.openFilesWindow('w1', null)
@@ -1974,7 +1974,7 @@ describe('Files windows (YAZ-3357)', () => {
     expect(store.get().windows.find((w) => w.id === 'w1')).not.toHaveProperty('zoom')
   })
 
-  it('D2: the target is the most recently focused live NORMAL window that shows the vault, else the first; never a Files window or a hidden one', () => {
+  it('D2: the target is the most recently focused live FULL window that shows the vault, else the first; never a Files window or a hidden one', () => {
     const windows = store.get().windows
     expect(pickFilesTarget('/a/x.md', windows, [], () => true)).toBeNull()
     const { manager, w1, w2, f } = seedFiles()
@@ -1991,7 +1991,7 @@ describe('Files windows (YAZ-3357)', () => {
     expect(sent(w2)).toEqual([{ kind: 'open', path: '/a/x.md', how: 'preview' }])
     expect(sent(w1)).toEqual([])
     expect(sent(f)).toEqual([])
-    // A normal window cannot ask through this door.
+    // A full window cannot ask through this door.
     expect(manager.openFromFiles('w1', { kind: 'open', path: '/a/x.md', how: 'keep' })).toBe(false)
   })
 
@@ -2008,7 +2008,7 @@ describe('Files windows (YAZ-3357)', () => {
     expect(sent(w3)).toEqual([{ kind: 'inbox', root: '/c' }])
   })
 
-  it('D2: with no window on the vault a new normal window opens beside the Files window — on the page for open, else holding the push for its page', () => {
+  it('D2: with no window on the vault a new full window opens beside the Files window — on the page for open, else holding the push for its page', () => {
     const { manager, created, f } = seedFiles()
     store.upsertWindow({ ...store.get().windows.find((w) => w.id === 'f')!, roots: ['/a', '/c', '/d'] })
     expect(manager.openFromFiles('f', { kind: 'open', path: '/d/n.md', how: 'preview' })).toBe(true)
@@ -2040,14 +2040,14 @@ describe('Files windows (YAZ-3357)', () => {
     expect(manager.rootFor('/c/z.md')).toBe('/c')
     expect(manager.moveTo('f', '/a/x.md')).toBe(false)
     expect(manager.moveTab('w1', 'f', REF)).toBe(false)
-    // ⌘1–9 / Open Recent raise the vault's normal windows only.
+    // ⌘1–9 / Open Recent raise the vault's full windows only.
     const focusBefore = f.focusCount
     manager.openRecentBeside('/a')
     expect(f.focusCount).toBe(focusBefore)
     expect(w1.focusCount).toBe(1)
   })
 
-  it('D1: ⌘⇧N, "Move to new window" and the board\'s "New window" from a Files window make NORMAL windows beside it, the sidebar shown', () => {
+  it('D1: ⌘⇧N, "Move to new window" and the board\'s "New window" from a Files window make FULL windows beside it, the sidebar shown', () => {
     const { manager, created } = seedFiles()
     const files = store.get().windows.find((w) => w.id === 'f')!
     manager.duplicateWindow({ ...files, sidebarCollapsed: true })
@@ -2080,7 +2080,7 @@ describe('Files windows (YAZ-3357)', () => {
     vi.advanceTimersByTime(FLUSH_TIMEOUT_MS)
     await quit
     expect(store.get().windows.find((w) => w.id === 'f')?.bounds).toEqual(narrow)
-    // A normal window never grows.
+    // A full window never grows.
     expect(manager.filesWide('w1', true)).toBe(false)
   })
 

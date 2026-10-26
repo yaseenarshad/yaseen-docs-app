@@ -94,8 +94,7 @@ import {
   type TabCanvasPatch,
   type TabCanvasState,
   type TabRef,
-  FILES_WINDOW_ZOOM_MAX,
-  FILES_WINDOW_ZOOM_MIN,
+  clampFilesZoom,
 } from '@shared/types'
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
@@ -494,10 +493,10 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
     const roots = normalizeRoots(Array.isArray(w.roots) ? w.roots.filter((r): r is string => typeof r === 'string' && isAbsolute(r)) : [], w.root)
     // The window's name (YAZ-3343 D14) reads like a vault's: a junk or blank name is no name, never a bad entry.
     const name = cleanVaultName(w.name)
-    // A Files window (YAZ-3357 D1) is `'files'` exactly; any other value is a normal window, never a bad entry.
+    // A Files window (YAZ-3357 D1) is `'files'` exactly; any other value is a full window, never a bad entry.
     const files = w.kind === 'files'
     // A Files window's own zoom (YAZ-3357): a finite level in range, else none.
-    const zoom = files && typeof w.zoom === 'number' && Number.isFinite(w.zoom) ? Math.min(FILES_WINDOW_ZOOM_MAX, Math.max(FILES_WINDOW_ZOOM_MIN, w.zoom)) : 0
+    const zoom = files && typeof w.zoom === 'number' && Number.isFinite(w.zoom) ? clampFilesZoom(w.zoom) : 0
     out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, ...(tabStrip === undefined ? {} : { tabStrip }), ...(name === null ? {} : { name }), rightPanel, sidebarCollapsed, sidebarLens, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height }, ...(files ? { kind: 'files' as const } : {}), ...(zoom !== 0 ? { zoom } : {}) })
   }
   return out

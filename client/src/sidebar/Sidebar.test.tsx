@@ -10330,8 +10330,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
   })
 })
 
-describe('Sidebar: the Files window chip (YAZ-3357, demo feedback)', () => {
-  it('a Files window shows "Files window" beside the cog; the first click turns it red "Make full window", the second converts; a move off, Esc or a press elsewhere lets it go; a normal window has no chip', async () => {
+describe('Sidebar: the Files window chip (YAZ-3357 D13)', () => {
+  it('a Files window shows "Files window" beside the cog; the first click turns it red "Make full window", the second converts; a move off, Esc or a press elsewhere lets it go; a full window has no chip', async () => {
     const onToNormalWindow = vi.fn()
     const { el } = await mount({ onToNormalWindow })
     const chip = el.querySelector<HTMLButtonElement>('.sidebar__footer .sidebar__files-chip')!

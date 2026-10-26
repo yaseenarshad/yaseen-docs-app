@@ -46,7 +46,7 @@ describe('the Files window preview popup (YAZ-3357 D9)', () => {
   })
 
   it.each([
-    ['a normal window', false, 'about:blank', FILES_PREVIEW_FRAME],
+    ['a full window', false, 'about:blank', FILES_PREVIEW_FRAME],
     ['another frame name', true, 'about:blank', 'other'],
     ['another URL', true, 'app://yaseen/index.html', FILES_PREVIEW_FRAME],
   ])('denies %s', (_what, files, url, frameName) => {

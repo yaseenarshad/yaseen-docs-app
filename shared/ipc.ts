@@ -269,7 +269,7 @@ export const CONTRACT = {
      */
     openFiles: invoke<[root: string | null], void>('window:open-files', 1),
     /**
-     * A click in THIS Files window (YAZ-3357 D2, D7): main picks the normal window that shows the page's vault — the one
+     * A click in THIS Files window (YAZ-3357 D2, D7): main picks the full window that shows the page's vault — the one
      * focused last, else the first — or opens one, pushes `link:open-from-files` to it and raises it by `action`'s rule.
      */
     openFromFiles: invoke<[action: FilesAction], void>('window:open-from-files', 1),
@@ -278,7 +278,7 @@ export const CONTRACT = {
     /** THIS Files window's floating preview (YAZ-3357 D9): main shows its popup beside the window at `req`, inactive; `null` hides it. */
     filesPreview: invoke<[req: FilesPreviewRequest | null], void>('window:files-preview', 1),
     /**
-     * "Turn into normal window" in THIS Files window (YAZ-3357, demo feedback): a normal window opens where it stands, on its
+     * "Make full window" in THIS Files window (YAZ-3357 D13): a full window opens where it stands, on its
      * vaults and lens, on the blank tab with the caret in the search, and the Files window closes.
      */
     filesToNormal: invoke<[], void>('window:files-to-normal', 0),

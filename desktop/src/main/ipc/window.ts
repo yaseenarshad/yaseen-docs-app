@@ -453,9 +453,9 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     if (typeof open !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'open' must be a boolean")
     if (!windows.filesWide(entryFor(e).id, open)) throw new BridgeFailure('BAD_REQUEST', 'only a Files window grows for the board')
   })
-  // `window:files-to-normal` (YAZ-3357, demo feedback): the CALLER, a Files window, becomes a normal window where it stands.
+  // `window:files-to-normal` (YAZ-3357 D13): the CALLER, a Files window, becomes a full window where it stands.
   handleWithEvent(CONTRACT.window.filesToNormal, async (e) => {
-    if (!windows.filesToNormal(entryFor(e).id)) throw new BridgeFailure('BAD_REQUEST', 'only a Files window turns into a normal window')
+    if (!windows.filesToNormal(entryFor(e).id)) throw new BridgeFailure('BAD_REQUEST', 'only a Files window turns into a full window')
   })
   // `window:files-preview` (YAZ-3357 D9): the CALLER's floating preview, shown beside it or hidden.
   handleWithEvent(CONTRACT.window.filesPreview, async (e, req: unknown) => {

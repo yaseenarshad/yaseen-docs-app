@@ -102,7 +102,6 @@ function TabBoard(props: ComponentProps<BoardModule['TabOverview']>) {
   )
 }
 
-/** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
 /** Runs `then` once the window has its new size (YAZ-3357 D3): on its next resize, or after 150 ms when none comes (a size that did not change). */
 function afterResize(then: () => void): void {
   let done = false
@@ -116,6 +115,7 @@ function afterResize(then: () => void): void {
   setTimeout(go, 150)
 }
 
+/** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
 function syncHash(path: string | null): void {
   history.replaceState(null, '', fileHash(path) || location.pathname + location.search)
 }
@@ -250,7 +250,7 @@ function bootStartView(tab: string | null, file: string | null): Map<string, Pag
 
 export function App() {
   /**
-   * A Files window (YAZ-3357 D1): only the sidebar. Its clicks go to a normal window (`askFromFiles`), it has no tab
+   * A Files window (YAZ-3357 D1): only the sidebar. Its clicks go to a full window (`askFromFiles`), it has no tab
    * strip, no editor and no right panel, and Tabs Mission Control opens beside the sidebar. Fixed for the window's life.
    */
   const [filesWindow] = useState(storage.isFilesWindow)
@@ -625,7 +625,7 @@ export function App() {
     // The folder's remembered file becomes the sole restored tab (D6); reset mirrors it down. A Files window has no tab (YAZ-3357 D1).
     resetTabs(path, filesWindow ? null : storage.getLastFile(path))
     return true
-  }, [resetTabs])
+  }, [resetTabs, filesWindow])
 
   /**
    * The ONE vault-open rule (YAZ-1914): a window that already shows a vault never changes vault —
@@ -635,7 +635,7 @@ export function App() {
    * in its label and calls `openRoot` directly.
    */
   const openVault = useCallback((path: string): void => {
-    // A Files window changes its own vault too (YAZ-3357, demo feedback): Open Folder… and Open Recent open no window.
+    // A Files window changes its own vault too (YAZ-3357 D12): Open Folder… and Open Recent open no window.
     if (root === null || filesWindow) {
       void openRoot(path)
       return
@@ -643,7 +643,7 @@ export function App() {
     void api.window.openRecent(path).catch((err: unknown) => console.error('[open-vault] openRecent failed:', err))
   }, [root, openRoot, filesWindow])
   /**
-   * A workspace row in a Files window's vault switcher (YAZ-3357, demo feedback): THIS window takes the workspace's vaults,
+   * A workspace row in a Files window's vault switcher (YAZ-3357 D12): THIS window takes the workspace's vaults,
    * the ones still on disk, in its order. Nothing opens or is raised. `false` = none is left (the row greys, as `openSet`'s).
    */
   const openSetHere = useCallback(async (id: string): Promise<boolean> => {
@@ -1061,7 +1061,7 @@ export function App() {
       closeUnderOverview(now.current.tabs.map((t) => t.id))
     }
     for (const { win, refs } of others) api.window.closeTabs(win, refs).catch(() => notify("Can't close the tabs of a window that closed"))
-  }, [closeBlank, closeUnderOverview, notify])
+  }, [closeBlank, closeUnderOverview, notify, filesWindow])
   /**
    * A save of the open tabs as a session (YAZ-3147 D5, S1–S9): "Save open tabs" on the Sessions tab and the
    * grid menu's two items. Main saves THIS window's tabs under "New session" (the blank tab is no tab, and the
@@ -1354,7 +1354,7 @@ export function App() {
     onNextTab: toNextTab,
     onPrevTab: toPrevTab,
     onTabOverview: toggleOverview,
-    // ⌘T in a Files window (YAZ-3357 D8) opens a new normal window, as ⌘⇧N: there is no strip for a tab.
+    // ⌘T in a Files window (YAZ-3357 D8) opens a new full window, as ⌘⇧N: there is no strip for a tab.
     onNewTab: filesWindow ? newWindow : newTab,
     onNewWindow: newWindow,
     onZoom: requestZoom,
@@ -2288,8 +2288,8 @@ export function App() {
   const shown = session === null ? (pageOnShow === null ? null : activeTab) : reviewLayer
 
   /**
-   * A Files window's sidebar doors (YAZ-3357 D2, D7): each sends ONE message to main, which runs it in a normal window.
-   * A click previews (Enter keeps, `filesClickHow`), a double click keeps, ⌘-click opens a background tab. Null in a normal window.
+   * A Files window's sidebar doors (YAZ-3357 D2, D7): each sends ONE message to main, which runs it in a full window.
+   * A click previews (Enter keeps, `filesClickHow`), a double click keeps, ⌘-click opens a background tab. Null in a full window.
    */
   const filesDoors = useMemo(() => {
     if (!filesWindow) return null
@@ -2307,8 +2307,8 @@ export function App() {
   }, [filesWindow, notify])
   /**
    * Tabs Mission Control in a Files window (YAZ-3357 D3, D8): it stands right of the sidebar, and main makes the window wide
-   * for it. The board shows only once the window IS wide, and stays until it is narrow again (demo feedback, "it flashes then
-   * is slow"): it never lays out in the narrow window, and the sidebar never stretches across the wide one.
+   * for it. The board shows only once the window IS wide, and stays until it is narrow again (D10): it never lays out
+   * in the narrow window, and the sidebar never stretches across the wide one.
    */
   const filesWant = filesWindow && overview.phase !== 'closed'
   const [filesBoard, setFilesBoard] = useState(false)
@@ -2481,7 +2481,7 @@ export function App() {
           onReorderVaults={reorderVaults}
           // Under the blank tab no row is the open one (YAZ-2655): every row opens, the one of the tab that was active too.
           activeFile={pageOnShow}
-          // A Files window's rows open in a normal window (YAZ-3357 D2): its own doors, never this window's tabs.
+          // A Files window's rows open in a full window (YAZ-3357 D2): its own doors, never this window's tabs.
           onOpenFile={filesDoors?.open ?? openPage}
           onKeepFile={filesDoors?.keep ?? openKeptPage}
           onOpenFileBackground={filesDoors?.background ?? openBackground}
@@ -2510,7 +2510,7 @@ export function App() {
           onSaveSession={filesWindow ? undefined : saveOpenTabs}
           onUpdateSession={filesWindow ? undefined : updateSession}
           onShowAllTabs={filesWindow ? toggleOverview : undefined}
-          // While the board shows (wide), the hover preview stands beside the sidebar over the board, as in a normal window.
+          // While the board shows (wide), the hover preview stands beside the sidebar over the board, as in a full window.
           previewFloat={filesBoard ? undefined : previewFloat}
           sessionNameRequest={sessionNameRequest}
           onSessionNameConsumed={clearSessionNameRequest}

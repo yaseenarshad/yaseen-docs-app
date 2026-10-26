@@ -130,7 +130,7 @@ export interface VaultSwitcherProps {
   /** The Sidebar's passive notice — the copies confirm through it (D9), with their toast type (YAZ-3303 D2). */
   onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void
   /**
-   * A Files window (YAZ-3357, demo feedback: "switch the vault … not open the vault, just make it a file window vault change"):
+   * A Files window (YAZ-3357 D12: "switch the vault … not open the vault, just make it a file window vault change"):
    * a click or ⏎ on a vault row — ⇧ and ⌥ too — switches THIS window to that vault in place (`onOpenHere`), and a workspace
    * row to its vaults (`onOpenSetHere`). Nothing is raised and no window opens. The menu keeps its explicit doors.
    */

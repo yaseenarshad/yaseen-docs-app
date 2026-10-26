@@ -1674,7 +1674,7 @@ export interface StoredTab {
 /**
  * A window's kind (YAZ-3357 D1): `'files'` is a Files window, a window that is ONLY the sidebar — the vault
  * switcher, the lenses, the search and the tree — with no tab strip, no editor and no right panel. A click
- * in it opens the page in a normal window (`FilesAction`). Absent = a normal window.
+ * in it opens the page in a full window (`FilesAction`). Absent = a full window.
  */
 export type WindowKind = 'files'
 
@@ -1684,11 +1684,13 @@ export const FILES_WINDOW_DEFAULT_W = 280
 export const FILES_WINDOW_DEFAULT_H = 800
 /** How wide a Files window grows while Tabs Mission Control shows in it (YAZ-3357 D3); clamped to the screen. */
 export const FILES_WINDOW_WIDE_W = 1200
-/** How far above its source window a new Files window is zoomed (YAZ-3357, demo feedback "maybe like 20% bigger"): one Chromium level, ×1.2. */
+/** How far above its source window a new Files window is zoomed (YAZ-3357 D11, "maybe like 20% bigger"): one Chromium level, ×1.2. */
 export const FILES_WINDOW_ZOOM_UP = 1
 /** The zoom levels a Files window keeps: ⌘− and ⌘+ as far as Chromium goes in steps of 0.5. */
 export const FILES_WINDOW_ZOOM_MIN = -8
 export const FILES_WINDOW_ZOOM_MAX = 9
+/** A Files window's zoom `level`, kept in `FILES_WINDOW_ZOOM_MIN` … `FILES_WINDOW_ZOOM_MAX`. */
+export const clampFilesZoom = (level: number): number => Math.min(FILES_WINDOW_ZOOM_MAX, Math.max(FILES_WINDOW_ZOOM_MIN, level))
 /**
  * The frame name of a Files window's ONE floating preview popup (YAZ-3357 D9): `window.open('about:blank', this)`.
  * Main allows exactly this name with `about:blank`, from a Files window only; every other popup is denied.
@@ -1699,7 +1701,7 @@ export const FILES_PREVIEW_FRAME = 'yaseen-files-preview'
 export type FilesOpenHow = 'preview' | 'keep' | 'background'
 
 /**
- * What a Files window asks of a normal window (YAZ-3357 D2), through ONE door (`window:open-from-files`): main picks
+ * What a Files window asks of a full window (YAZ-3357 D2), through ONE door (`window:open-from-files`): main picks
  * the window and pushes the action to it (`link:open-from-files`), and that window runs its own callback for it.
  */
 export type FilesAction =
@@ -1772,15 +1774,15 @@ export interface WindowEntry {
   // (Decision 4: no migration), so the next write drops the key.
   bounds: WindowBounds
   /**
-   * `'files'` for a Files window (YAZ-3357 D1); absent for a normal window. Additive within version 1: an old build
-   * drops the key and opens a normal window. A Files window is never the target of a link, a moved tab or a raise.
+   * `'files'` for a Files window (YAZ-3357 D1); absent for a full window. Additive within version 1: an old build
+   * drops the key and opens a full window. A Files window is never the target of a link, a moved tab or a raise.
    * ⌘⇧N, "Move to new window" and the tab board's "New window" never copy it.
    */
   kind?: WindowKind
   /**
-   * A Files window's zoom level (YAZ-3357, demo feedback), as Chromium counts it: 0 = 100%, each step of 1 = ×1.2. Its own:
+   * A Files window's zoom level (YAZ-3357 D11), as Chromium counts it: 0 = 100%, each step of 1 = ×1.2. Its own:
    * the Files window has an origin of its own (`desktop/src/main/rendererUrl.ts`), so ⌘+ there zooms no other window.
-   * ⌘⇧W starts it one step (+20%) above the window it came from. Absent = 0, and on a normal window.
+   * ⌘⇧W starts it one step (+20%) above the window it came from. Absent = 0, and on a full window.
    */
   zoom?: number
 }

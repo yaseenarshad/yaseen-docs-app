@@ -50,7 +50,7 @@ export interface PreviewPopup {
 export type PreviewAnchor = RefObject<HTMLElement | null> | { rect: AnchorRect } | { popup: PreviewPopup; rect: AnchorRect } | { overlay: true }
 
 /** The room around a panel in the floating popup (YAZ-3357 D9): the popup has no shadow, the panel draws its own there. */
-export const POPUP_MARGIN = 16
+const POPUP_MARGIN = 16
 
 /** Where the panel's DOM goes: the floating popup's element, else this page's body. */
 export function portalTarget(anchor: PreviewAnchor): HTMLElement {
@@ -61,7 +61,7 @@ export function portalTarget(anchor: PreviewAnchor): HTMLElement {
 const BESIDE_MAX_W = 520
 
 /** A panel's size beside a card, or in the floating popup off the screen's size (YAZ-3357 D9): a glance, not a page. */
-export function besideSize(roomWidth: number, roomHeight: number, shape: PreviewShape): { width: number; height: number } {
+function besideSize(roomWidth: number, roomHeight: number, shape: PreviewShape): { width: number; height: number } {
   const width = Math.min(BESIDE_MAX_W, Math.round(roomWidth * 0.4))
   const tallest = Math.round(roomHeight * MAX_H_RATIO)
   return { width, height: shape === 'note' ? tallest : Math.min(tallest, Math.max(MIN_H, Math.round(width * HEIGHT_RATIO))) }
