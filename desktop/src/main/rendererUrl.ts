@@ -3,7 +3,8 @@
  * windows"). Chromium keeps ONE zoom level per origin, so a Files window loads the same bundle from an origin of its own and
  * its ⌘+ / ⌘− zoom Files windows only: `app://files/` in the app (every host but `vault` and `drawio` serves the bundle), and
  * in dev the dev server's IPv6 loopback `[::1]` (where it listens) beside the other windows' `localhost`. Nothing is stored in
- * the browser profile, so the origin carries nothing else.
+ * the browser profile, so the origin carries nothing else. Since YAZ-3389 D13 no window has a Chromium zoom (each resets
+ * to 0 on load) and a Files window's list zooms by its own `WindowEntry.zoom`; the own origin stays as a guard.
  */
 const FILES_APP_HOST = 'files'
 

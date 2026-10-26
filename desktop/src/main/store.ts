@@ -27,6 +27,8 @@ import {
   SIDEBAR_LINE_STYLES,
   SIDEBAR_MAX_W,
   SIDEBAR_MIN_W,
+  SIDEBAR_ZOOM_MAX,
+  SIDEBAR_ZOOM_MIN,
   SIDEBAR_BUTTONS,
   SIDEBAR_TABS,
   STARTUP_WINDOWS,
@@ -94,7 +96,7 @@ import {
   type TabCanvasPatch,
   type TabCanvasState,
   type TabRef,
-  clampFilesZoom,
+  normalizeFilesZoom,
 } from '@shared/types'
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
@@ -334,6 +336,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   noticeClipboard: (v): v is boolean => typeof v === 'boolean',
   noticeLists: (v): v is boolean => typeof v === 'boolean',
   gestureSounds: (v): v is boolean => typeof v === 'boolean',
+  sidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -349,6 +352,8 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.canvas = sanitizeCanvasPrefs(src.canvas)
   out.canvasPanel = sanitizeCanvasPanel(src.canvasPanel)
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
+  // YAZ-3389 D7: a number off the steps but inside 50–200 is kept; one outside is clamped, not reset; missing or not a number reads 100.
+  if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
   return out
 }
 
@@ -495,9 +500,10 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
     const name = cleanVaultName(w.name)
     // A Files window (YAZ-3357 D1) is `'files'` exactly; any other value is a full window, never a bad entry.
     const files = w.kind === 'files'
-    // A Files window's own zoom (YAZ-3357): a finite level in range, else none.
-    const zoom = files && typeof w.zoom === 'number' && Number.isFinite(w.zoom) ? clampFilesZoom(w.zoom) : 0
-    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, ...(tabStrip === undefined ? {} : { tabStrip }), ...(name === null ? {} : { name }), rightPanel, sidebarCollapsed, sidebarLens, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height }, ...(files ? { kind: 'files' as const } : {}), ...(zoom !== 0 ? { zoom } : {}) })
+    // A Files window's own sidebar zoom in percent (YAZ-3389 D13): always there on a Files window, never on a full one.
+    // An old Chromium level (YAZ-3357, −8 … 9) or junk is the default; a percent off the 50–200 range is clamped.
+    const zoom = files ? normalizeFilesZoom(w.zoom) : undefined
+    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, ...(tabStrip === undefined ? {} : { tabStrip }), ...(name === null ? {} : { name }), rightPanel, sidebarCollapsed, sidebarLens, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height }, ...(files ? { kind: 'files' as const } : {}), ...(zoom === undefined ? {} : { zoom }) })
   }
   return out
 }

@@ -7701,14 +7701,39 @@ describe('update pill (YAZ-2976 D4)', () => {
   it('sits after the cog in the footer, and its click asks App for the "What\'s new" window', async () => {
     const { el, props } = await mount({ update: { kind: 'ready', version: '1.0.13' } })
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
-    expect(footer).toEqual(['settings-button', 'update-pill'])
+    expect(footer).toEqual(['settings-button', 'sidebar-zoom', 'update-pill-slot'])
     act(() => el.querySelector<HTMLButtonElement>('.update-pill')?.click())
     expect(props.onOpenWhatsNew).toHaveBeenCalledTimes(1)
   })
 
-  it('no update, no pill: the footer has the cog alone', async () => {
+  it('no update, no pill: the footer has the cog and the sidebar zoom', async () => {
     const { el } = await mount()
-    expect(el.querySelector('.update-pill')).toBeNull()
+    const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
+    expect(footer).toEqual(['settings-button', 'sidebar-zoom'])
+  })
+
+  it('the sidebar zoom (YAZ-3389): the lists take `--sidebar-zoom` from the setting, + writes the next step over the other settings, and the same value writes nothing (D6)', async () => {
+    const { el, props, rerender } = await mount({ settings: { ...DEFAULT_SETTINGS, sidebarZoom: 125, theme: 'dark' } })
+    expect(el.querySelector<HTMLElement>('.sidebar__body')!.style.getPropertyValue('--sidebar-zoom')).toBe('1.25')
+    expect(el.querySelector('.sidebar-zoom__value')?.textContent).toBe('125%')
+    act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Zoom the sidebar in"]')!.click())
+    expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarZoom: 150, theme: 'dark' })
+
+    await rerender({ settings: { ...DEFAULT_SETTINGS, sidebarZoom: 100 } })
+    act(() => el.querySelector<HTMLButtonElement>('.sidebar-zoom__value')!.click())
+    expect(props.onChangeSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('YAZ-3389 D13: a Files window zooms its own list — the footer (cog, zoom, chip, pill) reads and writes the window\'s zoom, never the settings', async () => {
+    const onFilesZoom = vi.fn()
+    const { el, props } = await mount({ settings: { ...DEFAULT_SETTINGS, sidebarZoom: 100 }, filesZoom: 150, onFilesZoom, onToNormalWindow: vi.fn(), update: { kind: 'ready', version: '1.0.13' } })
+    const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
+    expect(footer).toEqual(['settings-button', 'sidebar-zoom', 'sidebar__files-chip', 'update-pill-slot'])
+    expect(el.querySelector<HTMLElement>('.sidebar__body')!.style.getPropertyValue('--sidebar-zoom')).toBe('1.5')
+    expect(el.querySelector('.sidebar-zoom__value')?.textContent).toBe('150%')
+    act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Zoom the sidebar in"]')!.click())
+    expect(onFilesZoom).toHaveBeenCalledExactlyOnceWith(200)
+    expect(props.onChangeSettings).not.toHaveBeenCalled()
   })
 })
 

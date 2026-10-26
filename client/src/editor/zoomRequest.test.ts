@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ZOOM_EVENT, requestZoom } from './zoomRequest'
 
-const zoom = vi.fn(async () => undefined)
-Object.defineProperty(window, 'yaseenDocs', { value: { window: { zoom } }, configurable: true, writable: true })
+/** What App passes for the unclaimed case: the sidebar zoom (YAZ-3389). */
+const zoom = vi.fn()
 
 afterEach(() => {
   zoom.mockClear()
   document.body.replaceChildren()
 })
 
-describe('requestZoom (YAZ-1710)', () => {
-  it('lets the note that contains the focus claim the step and then leaves the app alone', () => {
+describe('requestZoom (YAZ-1710, YAZ-3389)', () => {
+  it('lets the note that contains the focus claim the step, and then the sidebar zoom is not called', () => {
     const section = document.createElement('section')
     const input = document.createElement('input')
     section.append(input)
@@ -22,21 +22,21 @@ describe('requestZoom (YAZ-1710)', () => {
       event.preventDefault()
     })
 
-    requestZoom(1)
+    requestZoom(1, zoom)
     expect(seen).toEqual([1])
     expect(zoom).not.toHaveBeenCalled()
   })
 
-  it('zooms the whole app when nothing claims it — focus outside every note, or nowhere at all', () => {
+  it('hands the step to the unclaimed fallback (the sidebar zoom) when nothing claims it — focus outside every note, or nowhere at all', () => {
     const button = document.createElement('button')
     document.body.append(button)
     button.focus()
-    requestZoom(-1)
+    requestZoom(-1, zoom)
     expect(zoom).toHaveBeenCalledExactlyOnceWith(-1)
 
     button.blur()
     expect(document.activeElement).toBe(document.body)
-    requestZoom(0)
+    requestZoom(0, zoom)
     expect(zoom).toHaveBeenLastCalledWith(0)
   })
 
@@ -61,11 +61,11 @@ describe('requestZoom (YAZ-1710)', () => {
       seen.push((event as CustomEvent<number>).detail)
       event.preventDefault()
     })
-    requestZoom(1)
+    requestZoom(1, zoom)
     expect(seen).toEqual([1])
-    // A press outside every page (blank sidebar space) ends the claim: the app zooms, as on main.
+    // A press outside every page (blank sidebar space) ends the claim: the sidebar zooms.
     document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
-    requestZoom(1)
+    requestZoom(1, zoom)
     expect(seen).toEqual([1])
     expect(zoom).toHaveBeenLastCalledWith(1)
     zoom.mockClear()
@@ -73,7 +73,7 @@ describe('requestZoom (YAZ-1710)', () => {
     document.getSelection()!.removeAllRanges()
   })
 
-  it('a caret left in an EDITABLE note does not claim it with the focus elsewhere: the app zooms, as before', () => {
+  it('a caret left in an EDITABLE note does not claim it with the focus elsewhere: the sidebar zooms', () => {
     const section = document.createElement('section')
     const body = document.createElement('div')
     body.className = 'ProseMirror'
@@ -85,7 +85,7 @@ describe('requestZoom (YAZ-1710)', () => {
     document.getSelection()!.setBaseAndExtent(text, 2, text, 2)
     ;(document.activeElement as HTMLElement | null)?.blur()
     section.addEventListener(ZOOM_EVENT, (event) => event.preventDefault())
-    requestZoom(1)
+    requestZoom(1, zoom)
     expect(zoom).toHaveBeenCalledExactlyOnceWith(1)
     document.getSelection()!.removeAllRanges()
   })
@@ -109,7 +109,7 @@ describe('requestZoom (YAZ-1710)', () => {
       seen.push((event as CustomEvent<number>).detail)
       event.preventDefault()
     })
-    requestZoom(1)
+    requestZoom(1, zoom)
     expect(seen).toEqual([])
     expect(zoom).toHaveBeenCalledExactlyOnceWith(1)
     document.getSelection()!.removeAllRanges()

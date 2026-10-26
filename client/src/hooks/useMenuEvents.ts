@@ -27,7 +27,7 @@ interface UseMenuEventsOptions {
   onNewTab: () => void
   /** File › New Window (⌘⇧N): save the page on show, then open the copy with its page view (YAZ-2951 D5). */
   onNewWindow: () => void
-  /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the focused note, else the whole app (YAZ-1710). */
+  /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the focused note (YAZ-1710), else the sidebar zoom (YAZ-3389). */
   onZoom: (step: ZoomStep) => void
   /** Help › What's New… (YAZ-2976 D8): open the "What's new" sheet, with or without an update. */
   onWhatsNew: () => void

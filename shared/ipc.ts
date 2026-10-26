@@ -261,8 +261,6 @@ export const CONTRACT = {
     removeSession: invoke<[id: string], void>('window:remove-session', 1),
     /** Close THIS window through the REAL close path, so the flush handshake runs (GRO-2232). */
     closeSelf: invoke<[], void>('window:close-self', 0),
-    /** App-wide zoom for THIS window (YAZ-1710): what the stock `zoomIn` / `zoomOut` / `resetZoom` roles did — level ± 0.5, or back to 0. */
-    zoom: invoke<[step: ZoomStep], void>('window:zoom', 1),
     /**
      * A Files window (YAZ-3357 D5, D6): on the vault `root`, or with null on every vault of THIS window. It opens flush
      * left of this window, as tall, as wide as the sidebar. The vault menu's "Open in Files window"; ⌘⇧W is main's own.
@@ -282,6 +280,12 @@ export const CONTRACT = {
      * vaults and lens, on the blank tab with the caret in the search, and the Files window closes.
      */
     filesToNormal: invoke<[], void>('window:files-to-normal', 0),
+    /**
+     * THIS Files window's own sidebar zoom in percent (YAZ-3389 D13): the footer's − % + and an unclaimed ⌘+ / ⌘− / ⌘0 there.
+     * Main normalizes it (`normalizeFilesZoom`) and stores it as `WindowEntry.zoom`; `window.identity()` gives it back. A
+     * full window is refused: its sidebar zoom is the shared `settings.sidebarZoom`.
+     */
+    filesZoom: invoke<[percent: number], void>('window:files-zoom', 1),
   },
   /** Menu gestures from the main process (B3, GRO-2161; tabs GRO-2232): main sends them to the focused window only. */
   menu: {

@@ -64,7 +64,7 @@ let nextWebContentsId = 100
 
 /** A `ManagedWindow` stand-in: records sends, replays events, destroys like Electron (`closed` fires, `close` does not). */
 class FakeWindow {
-  webContents = { id: nextWebContentsId++, send: vi.fn(), getZoomLevel: vi.fn(() => 0) }
+  webContents = { id: nextWebContentsId++, send: vi.fn() }
   destroyed = false
   minimized = false
   focusCount = 0
@@ -1955,23 +1955,33 @@ describe('Files windows (YAZ-3357)', () => {
     expect(f.flushCount()).toBe(1)
   })
 
-  it('D11 zoom: a Files window starts one step (+20%) above its source and keeps its own ⌘+ / ⌘− level; a full window stores none', () => {
-    const { manager, created, w1 } = seedFiles()
-    w1.webContents.getZoomLevel.mockReturnValue(0.5)
+  it('YAZ-3389 D13: a Files window opens one sidebar zoom step above its source and keeps its own sidebar zoom; a full window stores none', () => {
+    const { manager, created } = seedFiles()
+    const zoomOf = (id: string) => store.get().windows.find((w) => w.id === id)?.zoom
+    // From a full window: one step above the shared sidebar zoom (100 → 125, 150 → 200).
     manager.openFilesWindow('w1', null)
     const made = created.at(-1)!.entry
-    expect(made.zoom).toBe(1.5)
-    // From a Files window: its own level, not one more.
+    expect(made.zoom).toBe(125)
+    store.setSettings({ ...store.get().settings, sidebarZoom: 150 })
+    manager.openFilesWindow('w2', null)
+    expect(created.at(-1)!.entry.zoom).toBe(200)
+    // From a Files window: one step above ITS zoom, never the shared one; at 200% it stays 200%.
+    expect(manager.setFilesZoom(made.id, 75)).toBe(true)
+    expect(zoomOf(made.id)).toBe(75)
     manager.openFilesWindow(made.id, null)
-    expect(created.at(-1)!.entry.zoom).toBe(1.5)
+    expect(created.at(-1)!.entry.zoom).toBe(90)
+    manager.setFilesZoom(made.id, 200)
+    manager.openFilesWindow(made.id, null)
+    expect(created.at(-1)!.entry.zoom).toBe(200)
+    // A write is normalized: off-range clamps, an old Chromium level is the default.
+    manager.setFilesZoom(made.id, 999)
+    expect(zoomOf(made.id)).toBe(200)
     manager.setFilesZoom(made.id, 3)
-    expect(store.get().windows.find((w) => w.id === made.id)?.zoom).toBe(3)
-    manager.setFilesZoom(made.id, 99)
-    expect(store.get().windows.find((w) => w.id === made.id)?.zoom).toBe(9)
-    manager.setFilesZoom(made.id, 0)
-    expect(store.get().windows.find((w) => w.id === made.id)).not.toHaveProperty('zoom')
-    manager.setFilesZoom('w1', 2)
+    expect(zoomOf(made.id)).toBe(125)
+    // A full window has no zoom of its own: nothing is written.
+    expect(manager.setFilesZoom('w1', 150)).toBe(false)
     expect(store.get().windows.find((w) => w.id === 'w1')).not.toHaveProperty('zoom')
+    expect(store.get().settings.sidebarZoom).toBe(150)
   })
 
   it('D2: the target is the most recently focused live FULL window that shows the vault, else the first; never a Files window or a hidden one', () => {

@@ -1788,6 +1788,10 @@ button {
   flex: 1;
   overflow: auto;
   padding: 6px 0 24px;
+  /* The sidebar zoom (YAZ-3389): the lists scale, the box stays where it is. Standardized CSS zoom,
+     so `getBoundingClientRect` and the pointer agree. A menu or a sheet opened from a list goes to
+     `document.body`, out of the zoom (`SessionList`). */
+  zoom: var(--sidebar-zoom, 1);
 }
 
 .sidebar__msg {
@@ -1891,6 +1895,8 @@ button {
   height: var(--sidebar-footer-h);
   padding: 6px 8px;
   border-top: 1px solid var(--border);
+  /* YAZ-3401: the Files window chip shortens by this width; the update pill by its own slot (update.css). The cog and the zoom never do. */
+  container-type: inline-size;
 }
 
 /* The footer cog: it only opens the dialog now, so no open state to style. */
@@ -1904,6 +1910,53 @@ button {
 .settings-button:hover {
   color: var(--fg);
   background: var(--bg-hover);
+}
+
+/* The footer's sidebar zoom (YAZ-3389): borderless and quiet, the cog's colour and hover. The number
+   keeps one width, so 90% and 100% never shift the row. */
+.sidebar-zoom {
+  display: flex;
+  align-items: center;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-zoom__step,
+.sidebar-zoom__value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--fg-muted);
+  line-height: 1;
+}
+
+.sidebar-zoom__step {
+  width: 22px;
+  font-size: 13px;
+}
+
+.sidebar-zoom__value {
+  min-width: 38px;
+  padding: 0 3px;
+}
+
+.sidebar-zoom__step:hover:enabled,
+.sidebar-zoom__value:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.sidebar-zoom__step:focus-visible,
+.sidebar-zoom__value:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.sidebar-zoom__step:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* ---------- scrolling strips (YAZ-1471) ---------- */
@@ -3154,6 +3207,7 @@ button {
 
 /* The Files window chip (YAZ-3357 D13): which kind of window this is, quiet beside the cog; two clicks make it a full window. */
 .sidebar__files-chip {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -3188,5 +3242,42 @@ button {
   border-color: var(--danger);
   color: #fff;
   background: var(--danger);
+}
+/* YAZ-3401: the red words cover the chip from its right edge leftward, over the zoom in a narrow footer. A hidden
+   copy of "Files window" keeps the chip's width, so nothing moves under the pointer between the two clicks. */
+.sidebar__files-chip--armed::after {
+  content: 'Files window';
+  visibility: hidden;
+}
+.sidebar__files-chip--armed span {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 5px;
+  overflow: visible;
+  border-radius: 999px;
+  background: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger); /* the chip's border, also where the words reach past the chip */
   font-weight: 600;
+}
+/* YAZ-3401, measured: "Files window" needs a 212 px footer (content box), and 239 px beside the round update pill
+   (its slot's last 24 px). Narrower, the chip is its icon alone; its title and accessible name keep the words. */
+@container (width < 212px) {
+  .sidebar__files-chip:not(.sidebar__files-chip--armed) span,
+  .sidebar__files-chip--armed::after {
+    display: none;
+  }
+  .sidebar__files-chip {
+    padding: 3px 5px;
+  }
+}
+@container (width < 239px) {
+  .sidebar__footer:has(.update-pill) .sidebar__files-chip:not(.sidebar__files-chip--armed) span,
+  .sidebar__footer:has(.update-pill) .sidebar__files-chip--armed::after {
+    display: none;
+  }
+  .sidebar__footer:has(.update-pill) .sidebar__files-chip {
+    padding: 3px 5px;
+  }
 }
