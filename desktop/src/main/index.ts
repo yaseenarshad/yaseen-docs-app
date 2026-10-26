@@ -176,7 +176,7 @@ const manager = createWindowManager(store, {
     const files = entry.kind === 'files'
     const url = rendererUrlFor(process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html', files)
     url.searchParams.set('win', entry.id)
-    // Its zoom as stored, on each load: ⌘⇧F starts it above its source, ⌘+ / ⌘− change it (`setFilesZoom`).
+    // Its zoom as stored, on each load: ⌘⇧W starts it above its source, ⌘+ / ⌘− change it (`setFilesZoom`).
     if (files) win.webContents.on('did-finish-load', () => win.webContents.setZoomLevel(store.get().windows.find((w) => w.id === entry.id)?.zoom ?? 0))
     void win.loadURL(url.toString())
     return win

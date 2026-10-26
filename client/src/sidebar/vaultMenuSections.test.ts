@@ -191,12 +191,12 @@ describe('buildVaultSetMenuSections (YAZ-2602 S67)', () => {
 
 /** "Open in Files window" (YAZ-3357 D5): after "Open by itself", on every vault, where the caller can open one. */
 describe('Open in Files window (YAZ-3357 D5)', () => {
-  it('follows "Open by itself", hint ⌘⇧F, on another vault and on this window\'s own; it hands its path to onOpenFilesWindow alone; with no handler there is no item', () => {
+  it('follows "Open by itself", hint ⌘⇧W, on another vault and on this window\'s own; it hands its path to onOpenFilesWindow alone; with no handler there is no item', () => {
     const h = { ...handlers(), onOpenFilesWindow: vi.fn() }
     expect(groupsOf(buildVaultMenuSections(target(), h))[0]).toEqual(['Open by itself', 'Open in Files window', 'Add to this window', 'Open in this window'])
     expect(groupsOf(buildVaultMenuSections(target({ isCurrent: true, isAloneHere: true }), h))[0]).toEqual(['Open in Files window'])
     const sections = buildVaultMenuSections(target(), h)
-    expect(item(sections, 'open-files-window').hint).toBe('⌘⇧F')
+    expect(item(sections, 'open-files-window').hint).toBe('⌘⇧W')
     item(sections, 'open-files-window').onSelect()
     expect(h.onOpenFilesWindow).toHaveBeenCalledExactlyOnceWith(OTHER)
     expect(h.onOpenAlone).not.toHaveBeenCalled()

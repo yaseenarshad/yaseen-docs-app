@@ -265,7 +265,7 @@ export const CONTRACT = {
     zoom: invoke<[step: ZoomStep], void>('window:zoom', 1),
     /**
      * A Files window (YAZ-3357 D5, D6): on the vault `root`, or with null on every vault of THIS window. It opens flush
-     * left of this window, as tall, as wide as the sidebar. The vault menu's "Open in Files window"; ⌘⇧F is main's own.
+     * left of this window, as tall, as wide as the sidebar. The vault menu's "Open in Files window"; ⌘⇧W is main's own.
      */
     openFiles: invoke<[root: string | null], void>('window:open-files', 1),
     /**

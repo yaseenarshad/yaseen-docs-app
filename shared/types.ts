@@ -1780,7 +1780,7 @@ export interface WindowEntry {
   /**
    * A Files window's zoom level (YAZ-3357, demo feedback), as Chromium counts it: 0 = 100%, each step of 1 = ×1.2. Its own:
    * the Files window has an origin of its own (`desktop/src/main/rendererUrl.ts`), so ⌘+ there zooms no other window.
-   * ⌘⇧F starts it one step (+20%) above the window it came from. Absent = 0, and on a normal window.
+   * ⌘⇧W starts it one step (+20%) above the window it came from. Absent = 0, and on a normal window.
    */
   zoom?: number
 }

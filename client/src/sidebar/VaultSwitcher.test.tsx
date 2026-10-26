@@ -1616,7 +1616,7 @@ describe('VaultSwitcher: Open by itself (YAZ-2858 D2, D3, S9 to S14)', () => {
     const { el } = render()
     openPanel(el)
     rightClick(rowOf(el, ARCHIVE))
-    expect(menuItem('Open in Files window').dataset.hint).toBe('⌘⇧F')
+    expect(menuItem('Open in Files window').dataset.hint).toBe('⌘⇧W')
     await act(async () => menuItem('Open in Files window').click())
     expect(openFiles).toHaveBeenCalledExactlyOnceWith(ARCHIVE)
     expect(rows(el)).toEqual([])
