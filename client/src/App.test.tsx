@@ -587,6 +587,9 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+/** How long a wait for a render holds on a slow CI runner: it stalled past 5 s there (main's CI at b06bd5f4, PR #181). Inside the 30 s test limit. */
+const SLOW_RUNNER_MS = 15_000
+
 describe('App per-window sidebar visibility (YAZ-1280)', () => {
   it('boots from window identity and View › Toggle Sidebar reuses the one local toggle path', async () => {
     const { bridge, el, emitToggleSidebar } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
@@ -6089,7 +6092,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     const { bridge, el, emitFileRenamed } = await mountVault()
     await draggedOut('/v/A.md')
     // The box waits for the link count; a slow CI runner can take a few more ticks to show it.
-    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: 5000 })
+    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     expect(box(el)?.getAttribute('role')).toBe('alertdialog')
     expect(el.querySelector(`#${box(el)?.getAttribute('aria-labelledby')}`)?.textContent).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
@@ -6120,7 +6123,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     const { el, emitDragLanded } = await mountVault()
     await draggedOut('/v/A.md')
     // The box waits for the link count; a slow CI runner can take a few more ticks to show it (as in the alert dialog test).
-    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: 5000 })
+    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     act(() => emitDragLanded(['/v/B.md']))
     expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     act(() => emitDragLanded(['/v/A.md']))
@@ -6136,7 +6139,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
   it('an item that is gone before the box shows is left out; with none left there is no box (S31)', async () => {
     const { el } = await mountVault()
     await draggedOut('/v/gone.md', '/v/A.md')
-    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: 5000 })
+    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     await act(async () => button(el, 'Keep in vault')?.click())
     await draggedOut('/v/gone.md')
@@ -6152,7 +6155,7 @@ describe('App Files window (YAZ-3357)', () => {
   const noPopup = () => vi.spyOn(window, 'open').mockReturnValue(null)
   /** The sidebar's props once App renders it as a Files window's (it hands `onShowAllTabs`): a slow CI runner can read an earlier render. */
   const filesSidebar = async () => {
-    await vi.waitFor(() => expect(captured.sidebar?.onShowAllTabs).toBeDefined(), { timeout: 5000 })
+    await vi.waitFor(() => expect(captured.sidebar?.onShowAllTabs).toBeDefined(), { timeout: SLOW_RUNNER_MS })
     return captured.sidebar!
   }
 
@@ -6190,6 +6193,7 @@ describe('App Files window (YAZ-3357)', () => {
   })
 
   it('D13: a Files window hands its sidebar "Make full window", which asks main; a full window hands none', async () => {
+    noPopup()
     const { bridge } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES })] }, FILES)
     const toNormal = (await filesSidebar()).onToNormalWindow!
     act(() => toNormal())
