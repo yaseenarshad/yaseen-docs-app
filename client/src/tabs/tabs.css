@@ -353,6 +353,8 @@
 .taboverview {
   position: absolute;
   inset: 0;
+  /* The toolbar reads the board's own width (a container query), not the window's: the sidebar takes some. */
+  container: taboverview / inline-size;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -939,24 +941,30 @@
     0 3px 12px rgba(0, 0, 0, 0.12);
 }
 
-/* The camera's controls (D7), bottom left as on Excalidraw: the pill "− 100% +" and "Fit all tabs" beside it. */
+/* The board's toolbar (D24), bottom left as on Excalidraw: ONE row at every common width — the fit keeps the cards
+   above it (`TOOLBAR_INSET`), and the pick bar stands over it. */
 .taboverview__zoom {
   position: absolute;
   left: 16px;
   bottom: 14px;
   display: flex;
-  flex-wrap: wrap-reverse;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
-  /* The pick bar has the middle: the toolbar wraps (upward) before it reaches it. */
-  max-width: calc(50% - 150px);
+  gap: 4px;
 }
 
-/* The switch and Tidy up joined the camera's controls (demo feedback): the same compact family. */
+/* A narrow board: the switch says its name in its tooltip only. */
+@container taboverview (max-width: 640px) {
+  .taboverview__switch-text {
+    display: none;
+  }
+}
+
+/* The switch and Tidy up joined the camera's controls (D24): the same compact family. */
 .taboverview__zoom .taboverview__switch,
 .taboverview__zoom .taboverview__tidy {
   height: 34px;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg);
@@ -1090,10 +1098,10 @@
   background: var(--bg-hover);
 }
 
-/* The pick's bar, bottom middle (the zoom has the left corner), only while cards are picked: a count and what can be done with them. */
+/* The pick's bar, middle, over the toolbar's row (so the two never meet), only while cards are picked: a count and what can be done with them. */
 .taboverview__pick {
   position: absolute;
-  bottom: 14px;
+  bottom: 58px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

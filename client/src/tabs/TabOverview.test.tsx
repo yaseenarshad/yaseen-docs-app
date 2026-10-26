@@ -12,7 +12,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { applyTabCanvasPatch, type FileHead, type TabCanvasState, type WindowEntry } from '@shared/types'
 import { storage } from '../lib/storage'
 import { BOARD, withoutTitle } from './board'
-import { TabOverview as IdTabOverview, SETTLE_MS, ZOOM_MS, type TabOverviewProps as IdTabOverviewProps } from './TabOverview'
+import { TabOverview as IdTabOverview, SETTLE_MS, TOOLBAR_INSET, ZOOM_MS, type TabOverviewProps as IdTabOverviewProps } from './TabOverview'
 import { boardHighlight } from './boardHighlight'
 import { _resetTabHeads, plainLines } from './useTabHeads'
 import { HOVER_PREVIEW_DWELL_MS } from '../sidebar/HoverPreviewHost'
@@ -267,10 +267,11 @@ describe('TabOverview', () => {
         expect(x0 + cx * z0).toBeGreaterThanOrEqual(0)
         expect(y0 + cy * z0).toBeGreaterThanOrEqual(0)
         expect(x0 + (cx + BOARD.pageW) * z0).toBeLessThanOrEqual(1000)
-        expect(y0 + (cy + BOARD.pageH) * z0).toBeLessThanOrEqual(600)
+        // The toolbar has the bottom row: no card under it at the fit.
+        expect(y0 + (cy + BOARD.pageH) * z0).toBeLessThanOrEqual(600 - TOOLBAR_INSET)
       }
       // ONE toolbar bottom left (demo feedback): the switch, Tidy up, then the camera's controls.
-      expect([...el.querySelectorAll('.taboverview__zoom button, .taboverview__zoom [role="switch"]')].map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['', 'Tidy up', 'Zoom out', 'Reset zoom', 'Zoom in', 'Fit all tabs', 'Snap to grid'])
+      expect([...el.querySelectorAll('.taboverview__zoom button, .taboverview__zoom [role="switch"]')].map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['Show all windows', 'Tidy up', 'Zoom out', 'Reset zoom', 'Zoom in', 'Fit all tabs', 'Snap to grid'])
       expect(el.querySelector('.taboverview__top [role="switch"]')).toBeNull()
       const cards = el.querySelectorAll('.taboverview__page').length
       commits.n = 0
@@ -1246,6 +1247,19 @@ describe('TabOverview', () => {
     act(() => button('Click again to close 1 tab')!.click())
     expect(props.onCloseTabs).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
     expect(el.querySelector('.taboverview__pick')).toBeNull()
+  })
+
+  it('S3, D24: the toolbar keeps the keys with the filter box — after a click on the switch or a button, typing still filters', async () => {
+    const { el } = await mount()
+    const toggle = el.querySelector<HTMLInputElement>('[role="switch"]')!
+    // A click on the switch's label focuses its box in a browser; the board takes the focus back.
+    toggle.focus()
+    act(() => void toggle.closest('label')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })))
+    expect(document.activeElement).toBe(filter(el))
+    const fit = el.querySelector<HTMLButtonElement>('.taboverview__zoom-fit')!
+    fit.focus()
+    act(() => void fit.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })))
+    expect(document.activeElement).toBe(filter(el))
   })
 
   it('S62, S63, R36, demo feedback: Space held opens the sidebar\'s preview panel for the highlight and closes on release — it opens nothing; it follows the arrows; while a query is being typed Space is a space, until the highlight is moved; a PDF has no panel', async () => {

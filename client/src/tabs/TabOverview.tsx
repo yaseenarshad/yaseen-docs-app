@@ -28,6 +28,8 @@ export const SETTLE_MS = 120
 const ZOOM_STEP = 1.25
 /** The fit's room round the board (demo feedback, "a bit more"): the board takes 1 / FIT_MARGIN of the viewport. */
 const FIT_MARGIN = 1.1
+/** The bottom of the board the toolbar stands in (tabs.css: 14 px + a 34 px row + room): the fit keeps every card above it. */
+export const TOOLBAR_INSET = 56
 /** The least zoom the fit goes to: below it, it centres on the active card's frame instead. */
 const FIT_MIN_ZOOM = 0.25
 /** A window that shows no vault of the page refuses it (D13): one short line, so the toast never cuts it (demo feedback). */
@@ -552,8 +554,10 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const { plan: now, view: box, info: cards } = live.current
     const b = now.bounds
     if (box === null || box.w <= 0 || box.h <= 0 || b.w <= 0 || b.h <= 0) return null
-    const fit = Math.min(1, box.w / (b.w * FIT_MARGIN), box.h / (b.h * FIT_MARGIN))
-    const centreOn = (r: Rect, zoom: number) => ({ zoom, x: box.w / 2 - (r.x + r.w / 2) * zoom, y: box.h / 2 - (r.y + r.h / 2) * zoom })
+    // The toolbar's row is no room for cards (D24).
+    const h = Math.max(1, box.h - TOOLBAR_INSET)
+    const fit = Math.min(1, box.w / (b.w * FIT_MARGIN), h / (b.h * FIT_MARGIN))
+    const centreOn = (r: Rect, zoom: number) => ({ zoom, x: box.w / 2 - (r.x + r.w / 2) * zoom, y: h / 2 - (r.y + r.h / 2) * zoom })
     if (fit >= FIT_MIN_ZOOM) return centreOn(b, fit)
     const here = active === null ? undefined : cards.get(active)
     const frame = here === undefined ? undefined : now.frames.find((f) => f.win === here.win)
@@ -1616,13 +1620,13 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           {allWindows && plan.order.map((id) => cardOf(id))}
         </div>
       </div>
-      {/* The camera's controls (D7), bottom left as on Excalidraw: a pill "− 100% +" — the percent resets to 100% — and "Fit all tabs" beside it. */}
-      {/* ONE toolbar, bottom left (demo feedback): the switch, Tidy up, then the camera's controls. */}
-      <div className="taboverview__zoom" role="toolbar" aria-label="Board">
-        <label className="taboverview__switch">
-          <input type="checkbox" role="switch" aria-checked={allWindows} checked={allWindows} onChange={toggleAllWindows} />
+      {/* ONE toolbar, bottom left (D24): the switch, Tidy up, then the camera's controls — a pill "− 100% +" (the percent resets to 100%), "Fit all tabs" and "Snap to grid". */}
+      {/* A pointer click here leaves the keys with the filter box, as everywhere on the board (a click on a label focuses its box). */}
+      <div className="taboverview__zoom" role="toolbar" aria-label="Board" onClick={(e) => e.detail > 0 && inputRef.current?.focus()}>
+        <label className="taboverview__switch" title="Show all windows">
+          <input type="checkbox" role="switch" aria-label="Show all windows" aria-checked={allWindows} checked={allWindows} onChange={toggleAllWindows} />
           <span className="taboverview__switch-track" aria-hidden />
-          <span>Show all windows</span>
+          <span className="taboverview__switch-text">Show all windows</span>
         </label>
         <button type="button" className="taboverview__tidy" disabled={movedShown.length === 0 && placedFrames.length === 0} onClick={tidyUp}>
           Tidy up
