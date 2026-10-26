@@ -204,7 +204,7 @@ interface TreeProps {
   onOpenFile: (path: string, top?: string) => void
   /**
    * A double click on a row (YAZ-2648 D2): the page is a KEPT tab. On a file row the first click
-   * has opened it in the preview tab, and this keeps it; a folder row opens its folder as one.
+   * has opened it in the preview tab, and this keeps it. A folder row has no double click (YAZ-3377 D1).
    * `top`: as `onOpenFile`'s (YAZ-3144), so a page kept from a copy lights there too.
    */
   onKeepFile: (path: string, top?: string) => void
@@ -408,6 +408,8 @@ function TreeLevel({
                 // selection like a file (YAZ-1578, 🔒 D1) — so shift toggles and never folds. A
                 // PLAIN click SELECTS the folder (D9, YAZ-1674 — the Finder rule) and then folds,
                 // so ⌘C / ⌘V have a target the moment a folder is clicked.
+                // Two fast clicks only fold and unfold: a double click opens nothing (YAZ-3377 D1,
+                // overturning YAZ-2290 D3). The menu's "Open folder page" and Enter open the folder.
                 onClick={(e) => {
                   if (e.shiftKey) {
                     selection.toggle(node.path, copyOf(node))
@@ -416,15 +418,9 @@ function TreeLevel({
                   selection.set(node.path, copyOf(node))
                   onToggle(foldOf(node))
                 }}
-                // The folder itself is the tab (YAZ-2290 D3, overturning YAZ-1578 D3): a double
-                // click opens it, as a KEPT tab (YAZ-2648 D2). Its two clicks have selected and folded
-                // as ever; shift never opens. A vault row is no page (YAZ-2602 D3): neither gesture
-                // opens one, and Enter folds it.
-                onDoubleClick={(e) => {
-                  if (!e.shiftKey && !vaultRows.has(node.path)) onKeepFile(node.path, copyOf(node))
-                }}
-                // Enter opens it too, as it opens a file row — there through the button's own click,
-                // which on this row folds. So the key is taken here and Space is left to fold.
+                // Enter opens the folder, as it opens a file row — there through the button's own click,
+                // which on this row folds. So the key is taken here and Space is left to fold. A vault
+                // row is no page (YAZ-2602 D3): Enter folds it.
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter' || e.shiftKey || vaultRows.has(node.path)) return
                   e.preventDefault()

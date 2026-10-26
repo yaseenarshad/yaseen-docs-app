@@ -309,8 +309,8 @@ export interface MenuTargets {
   /** "Copy path" — the right-clicked row (file or folder), or for blank space the vault ROOT of a window with one vault (GRO-2273); null there with two or more (YAZ-2602 S10). */
   copyPath: string | null
   /**
-   * "Open" — a FOLDER row outside a plural selection (YAZ-2290 D3): the folder opens as the current
-   * tab. Null on a file row (its click opens it), on blank space, and inside a 2+ selection, where
+   * "Open folder page" — a FOLDER row outside a plural selection (YAZ-2290 D3, YAZ-3377 D2): the folder
+   * opens as a kept tab (YAZ-2648 R1). Null on a file row (its click opens it), on blank space, and inside a 2+ selection, where
    * "Open N in new tabs" is the item. Its OWN field.
    */
   openPath: string | null
@@ -837,7 +837,7 @@ export function Sidebar({
     },
     [onOpenFile],
   )
-  // A double click and the row menu's "Open" keep the page as a tab (YAZ-2648 D2): the same rule (YAZ-3144).
+  // A file row's double click and a folder's "Open folder page" keep the page as a tab (YAZ-2648 D2): the same rule (YAZ-3144).
   const keepFromTree = useCallback(
     (path: string, top?: string) => {
       setOpenCopy(top === undefined ? null : { path, top })

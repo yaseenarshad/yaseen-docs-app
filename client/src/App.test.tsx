@@ -1079,7 +1079,8 @@ describe('App deep links (E1, GRO-2171)', () => {
     const { bridge, el, emitShareLink } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/Plan.excalidraw', tabs: ['/v/Plan.excalidraw'] })
     await act(async () => emitShareLink())
     await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull())
-    expect(bridge.share.get).toHaveBeenCalledWith({ root: '/v', path: '/v/Plan.excalidraw' })
+    // The dialog asks for the link after it mounts, so a slow CI runner sees the dialog before the ask.
+    await vi.waitFor(() => expect(bridge.share.get).toHaveBeenCalledWith({ root: '/v', path: '/v/Plan.excalidraw' }))
   })
 
   it('File › Share Link does nothing on a note: no dialog, no question to main, no notice (YAZ-3040)', async () => {

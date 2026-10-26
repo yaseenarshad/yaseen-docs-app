@@ -75,7 +75,7 @@ All of it is built in. There is no plugin to find and no setting to turn on.
 
 ### Turn any folder into a table or a board
 
-Double-click a folder. It opens as a page, and the notes in it are the rows. There is no setup file and no import. The columns are the properties that your notes already have. Add a Board view, and drag a card to a different column.
+Right-click a folder and select **Open folder page**. It opens as a page, and the notes in it are the rows. There is no setup file and no import. The columns are the properties that your notes already have. Add a Board view, and drag a card to a different column.
 
 It works like a spreadsheet:
 
@@ -252,7 +252,7 @@ When a new version is out, a blue **🎉 New update ready** pill shows next to t
 The first three things to try:
 
 1. Click the dot of a bullet to zoom into it. Press `⌘.` to do the same from the keyboard.
-2. Double-click a folder. Click **+**, add a **Board**, and drag a card.
+2. Right-click a folder and select **Open folder page**. Click **+**, add a **Board**, and drag a card.
 3. Give your agent the two lines from above, and ask it to comment on a note.
 
 ## For developers
