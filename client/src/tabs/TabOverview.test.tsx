@@ -12,7 +12,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { applyTabCanvasPatch, type FileHead, type TabCanvasState, type WindowEntry } from '@shared/types'
 import { storage } from '../lib/storage'
 import { BOARD, withoutTitle } from './board'
-import { TabOverview as IdTabOverview, SETTLE_MS, ZOOM_MS, type TabOverviewProps as IdTabOverviewProps } from './TabOverview'
+import { TabOverview as IdTabOverview, SETTLE_MS, TOOLBAR_INSET, ZOOM_MS, type TabOverviewProps as IdTabOverviewProps } from './TabOverview'
 import { boardHighlight } from './boardHighlight'
 import { _resetTabHeads, plainLines } from './useTabHeads'
 import { HOVER_PREVIEW_DWELL_MS } from '../sidebar/HoverPreviewHost'
@@ -34,17 +34,30 @@ import { api } from '../api'
 const readHeads = vi.mocked(api.readHeads)
 
 /** The canvas as `storage` holds it (YAZ-3343 D1), for these tests: a patch lands at once, by the shared rule. */
-let canvas: TabCanvasState = { allWindows: false, snap: false, cards: [] }
+let canvas: TabCanvasState = { allWindows: false, snap: false, cards: [], frames: [] }
 let others: WindowEntry[] = []
 const names = new Map<string, string>()
 const other = (id: string, roots: string[], strip: { path: string; name?: string; active?: true }[]): WindowEntry =>
   ({ id, roots, root: roots[0], file: strip.find((t) => t.active)?.path ?? strip[0]?.path ?? null, tabs: [...new Set(strip.map((t) => t.path))], tabStrip: strip, ...(names.has(id) ? { name: names.get(id) } : {}) }) as unknown as WindowEntry
+/** The cache's readers: its own writes wake them, as `storage`'s do. */
+const readers = new Set<() => void>()
+const wake = () => readers.forEach((l) => l())
 function fakeStorage(): void {
+  vi.spyOn(storage, 'subscribe').mockImplementation((l) => (readers.add(l), () => void readers.delete(l)))
   vi.spyOn(storage, 'getTabCanvas').mockImplementation(() => canvas)
-  vi.spyOn(storage, 'setTabCanvas').mockImplementation((patch) => void (canvas = applyTabCanvasPatch(canvas, patch, new Set(['me', ...others.map((w) => w.id)]))))
+  vi.spyOn(storage, 'setTabCanvas').mockImplementation((patch) => {
+    const next = applyTabCanvasPatch(canvas, patch, new Set(['me', ...others.map((w) => w.id)]))
+    if (next === canvas) return
+    canvas = next
+    wake()
+  })
   vi.spyOn(storage, 'getOtherWindows').mockImplementation(() => others)
   vi.spyOn(storage, 'windowName').mockImplementation((id = 'me') => names.get(id))
-  vi.spyOn(storage, 'setWindowName').mockImplementation((id, name) => void (name === null ? names.delete(id) : names.set(id, name)))
+  vi.spyOn(storage, 'setWindowName').mockImplementation((id, name) => {
+    if (name === null) names.delete(id)
+    else names.set(id, name)
+    wake()
+  })
 }
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -67,7 +80,7 @@ const HEADS: Record<string, string> = {
 }
 
 async function mount(over: Partial<TabOverviewProps> = {}) {
-  const props: TabOverviewProps = { roots: ['/v', '/w'], vaultNames: ['Notes', 'Work'], tabs: TABS, active: '/v/a.md', preview: '/w/x.md', titles: new Map(), windowId: 'me', onOpen: vi.fn(), onCloseTabs: vi.fn(), onDismiss: vi.fn(), onMoveToRight: vi.fn(), onShowInSidebar: vi.fn(), ...over }
+  const props: TabOverviewProps = { roots: ['/v', '/w'], vaultNames: ['Notes', 'Work'], tabs: TABS, active: '/v/a.md', preview: '/w/x.md', titles: new Map(), windowId: 'me', onOpen: vi.fn(), onCloseTabs: vi.fn(), onDismiss: vi.fn(), onMoveToRight: vi.fn(), onShowInSidebar: vi.fn(), onDropToWindow: vi.fn(), onMoveTab: vi.fn(), onMoveToNewWindowQuietly: vi.fn(), ...over }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -147,8 +160,9 @@ function boardArea(width: number, height: number): () => void {
 
 beforeEach(() => {
   _resetTabHeads()
-  canvas = { allWindows: false, snap: false, cards: [] }
+  canvas = { allWindows: false, snap: false, cards: [], frames: [] }
   others = []
+  readers.clear()
   names.clear()
   fakeStorage()
   // A note that could not be read (plan.md) answers null and fails nothing.
@@ -165,7 +179,7 @@ afterEach(() => {
 })
 
 describe('TabOverview', () => {
-  it('S33 to S35, S53, S54, S57, S58: a page per tab on the island of its folder, under its vault; the notes read in ONE call: plain first lines on a note, a title alone on anything else', async () => {
+  it('YAZ-2648 S33 to S35, S53, S54, S57, S58: a page per tab on the island of its folder, under its vault; the notes read in ONE call: plain first lines on a note, a title alone on anything else', async () => {
     const { el, again } = await mount()
     // Only the notes are asked for, all at once; a folder tab and a PDF have no lines.
     expect(readHeads.mock.calls).toEqual([[['/v/a.md', '/v/Projects/plan.md', '/w/x.md', '/v/Projects/Alpha/2026-10-08.md']]])
@@ -197,7 +211,7 @@ describe('TabOverview', () => {
     expect(texts(el, '.taboverview__lines')).toEqual(['Heading\na task with a link', 'Excalidraw drawing', 'draw.io diagram'])
   })
 
-  it('S40, S41, S43: the keyboard stays in the filter box: typing narrows by title and path, the arrows move the highlight, Enter opens it, Esc goes back; a page ✕ and an island ✕ close tabs and open nothing', async () => {
+  it('YAZ-2648 S40, S41, S43: the keyboard stays in the filter box: typing narrows by title and path, the arrows move the highlight, Enter opens it, Esc goes back; a page ✕ and an island ✕ close tabs and open nothing', async () => {
     const { el, props } = await mount()
     // The highlight starts on the active tab's page.
     expect(current(el)).toBe('a')
@@ -238,7 +252,7 @@ describe('TabOverview', () => {
     expect(props.onDismiss).toHaveBeenCalledTimes(1)
   })
 
-  it('YAZ-3343 D4, D7, demo feedback: the camera — on open it FITS the board with room round it; the buttons zoom about the middle within 0.2 to 2; "Fit all tabs" fits the same; a pan, a pinch and ⌘-scroll render nothing', async () => {
+  it('YAZ-3343 S1 to S4, D4, D7, D24: the camera — on open it FITS the board with room round it; the buttons zoom about the middle within 0.2 to 2; "Fit all tabs" fits the same; a pan, a pinch and ⌘-scroll render nothing', async () => {
     vi.useFakeTimers()
     const restore = boardArea(1000, 600)
     try {
@@ -253,10 +267,11 @@ describe('TabOverview', () => {
         expect(x0 + cx * z0).toBeGreaterThanOrEqual(0)
         expect(y0 + cy * z0).toBeGreaterThanOrEqual(0)
         expect(x0 + (cx + BOARD.pageW) * z0).toBeLessThanOrEqual(1000)
-        expect(y0 + (cy + BOARD.pageH) * z0).toBeLessThanOrEqual(600)
+        // The toolbar has the bottom row: no card under it at the fit.
+        expect(y0 + (cy + BOARD.pageH) * z0).toBeLessThanOrEqual(600 - TOOLBAR_INSET)
       }
       // ONE toolbar bottom left (demo feedback): the switch, Tidy up, then the camera's controls.
-      expect([...el.querySelectorAll('.taboverview__zoom button, .taboverview__zoom [role="switch"]')].map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['', 'Tidy up', 'Zoom out', 'Reset zoom', 'Zoom in', 'Fit all tabs', 'Snap to grid'])
+      expect([...el.querySelectorAll('.taboverview__zoom button, .taboverview__zoom [role="switch"]')].map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['Show all windows', 'Tidy up', 'Zoom out', 'Reset zoom', 'Zoom in', 'Fit all tabs', 'Snap to grid'])
       expect(el.querySelector('.taboverview__top [role="switch"]')).toBeNull()
       const cards = el.querySelectorAll('.taboverview__page').length
       commits.n = 0
@@ -299,7 +314,7 @@ describe('TabOverview', () => {
     }
   })
 
-  it('YAZ-3343 D12: a drag moves the card — it follows the pointer by its own transform with no render, and the drop is ONE render and ONE stored place; a press with no move is a click', async () => {
+  it('YAZ-3343 S13, S19, D12: a drag moves the card — it follows the pointer by its own transform with no render, and the drop is ONE render and ONE stored place; a press with no move is a click', async () => {
     // One group, so a drop anywhere keeps it clear of the others (the no-overlap rule has its own tests).
     const { el, props, commits } = await mount({ roots: ['/v', '/w'], vaultNames: ['Notes', 'Work'], tabs: ['/v/a.md', '/v/b.md'] })
     const card = page(el, '/v/a.md')!
@@ -336,8 +351,8 @@ describe('TabOverview', () => {
     expect(card.getAttribute('draggable')).toBeNull()
   })
 
-  it('demo feedback, "Snap to grid" (the cards only): a drop goes to the nearest FREE cell of its frame\'s own grid; a frame drags FREELY, and a card dropped in it after still lines up with its neighbours; the toggle stores it; off, the drop stays free', async () => {
-    canvas = { allWindows: true, snap: true, cards: [] }
+  it('YAZ-3343 S14, S15, S25, D26, "Snap to grid" (the cards only): a drop goes to the nearest FREE cell of its frame\'s own grid; a frame drags FREELY, and a card dropped in it after still lines up with its neighbours; the toggle stores it; off, the drop stays free', async () => {
+    canvas = { allWindows: true, snap: true, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const { el } = await mount()
     const toggle = el.querySelector<HTMLButtonElement>('[aria-label="Snap to grid"]')!
@@ -375,8 +390,8 @@ describe('TabOverview', () => {
     expect(vi.mocked(storage.setTabCanvas).mock.calls.at(-1)![0].set![0]).toMatchObject({ x: xx + 37, y: xy + 23 })
   })
 
-  it('demo bug: with Snap on, a card dropped on ANOTHER window\'s card arrives in the nearest FREE cell of THAT frame\'s grid, as the next copy of its path there', async () => {
-    canvas = { allWindows: true, snap: true, cards: [] }
+  it('YAZ-3343 S41, D26: with Snap on, a card dropped on ANOTHER window\'s card arrives in the nearest FREE cell of THAT frame\'s grid, as the next copy of its path there', async () => {
+    canvas = { allWindows: true, snap: true, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/x.md' }])]
     const onDropToWindow = vi.fn()
     const { el } = await mount({ onDropToWindow })
@@ -402,16 +417,14 @@ describe('TabOverview', () => {
     expect(held).not.toContain(cell([put.x, put.y]))
   })
 
-  it('demo feedback: "Move to new window" on a card is QUIET from the board — this window\'s by its quiet door, another\'s by asking that window; the new window\'s frame stands right of its source\'s', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S38, D37: "Move to new window" on a card is QUIET from the board — this window\'s by its quiet door, another\'s by asking that window; the new window\'s frame stands right of its source\'s', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
-    const onMoveToNewWindow = vi.fn()
     const onMoveToNewWindowQuietly = vi.fn()
-    const { el, again } = await mount({ onMoveToNewWindow, onMoveToNewWindowQuietly })
+    const { el, again } = await mount({ onMoveToNewWindowQuietly })
     rightClick(page(el, '/v/a.md'))
     act(() => menuItem(el, 'Move to new window')?.click())
     expect(onMoveToNewWindowQuietly).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/a.md')
-    expect(onMoveToNewWindow).not.toHaveBeenCalled()
     rightClick(page(el, 'w2\n/w/z.md\n0'))
     act(() => menuItem(el, 'Move to new window')?.click())
     expect(api.window.popOutTab).toHaveBeenCalledExactlyOnceWith('w2', { path: '/w/z.md', copy: 0 })
@@ -424,8 +437,8 @@ describe('TabOverview', () => {
     expect([frame(el, 'w5').style.left, frame(el, 'w5').style.top]).toEqual([`${right}px`, w2.style.top])
   })
 
-  it('demo feedback: a window the board made stays HIDDEN — its frame says so, and "Show window" in its menu shows it', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S28, S54, D23: a window the board made stays HIDDEN — its frame says so, and "Show window" in its menu shows it', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
     const { el } = await mount()
     // Main's push: w2 is one of the board's hidden windows.
@@ -442,8 +455,8 @@ describe('TabOverview', () => {
     act(() => tell([]))
   })
 
-  it('demo feedback: the highlight on ANOTHER window\'s card lights that tab there — once per change, and put out when it leaves; every window\'s active card wears the active look', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S12, S29, D33: the highlight on ANOTHER window\'s card lights that tab there — once per change, and put out when it leaves; every window\'s active card wears the active look', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md' }, { path: '/w/z.md', active: true }])]
     const { el } = await mount()
     expect([...el.querySelectorAll<HTMLElement>('.taboverview__page--active')].map((c) => c.dataset.tab)).toEqual(['/v/a.md', 'w2\n/w/z.md\n0'])
@@ -462,8 +475,8 @@ describe('TabOverview', () => {
     expect(api.window.highlightTab).toHaveBeenLastCalledWith('w2', null)
   })
 
-  it('demo feedback, no overlap: a FRAME dropped on another takes the nearest free spot (the other stays); a CARD whose frame would grow into another goes to the nearest spot that keeps it clear', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S18, S26, D28, no overlap: a FRAME dropped on another takes the nearest free spot (the other stays); a CARD whose frame would grow into another goes to the nearest spot that keeps it clear', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
     const { el } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/a.md', '/v/b.md'] })
     const boxOf = (win: string) => {
@@ -490,8 +503,8 @@ describe('TabOverview', () => {
     expect(apart(boxOf('me'), boxOf('w2'))).toBe(true)
   })
 
-  it('demo bug: an EMPTY frame drags freely and its place is stored; the first card that arrives takes its first cell there', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S27, D16: an EMPTY frame drags freely and its place is stored; the first card that arrives takes its first cell there', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }]), other('w3', ['/w'], [])]
     const moveTo = vi.fn().mockResolvedValue(undefined)
     ;(api.window as unknown as Record<string, unknown>).moveTo = moveTo
@@ -517,8 +530,8 @@ describe('TabOverview', () => {
     void moveTo
   })
 
-  it('demo feedback: another window\'s card menu asks THAT window for its tab actions (duplicate, name, sidebar); "Move to ▸" lists the other windows that show its vault, rings their frame on hover, and moves the tab quietly into the nearest free cell', async () => {
-    canvas = { allWindows: true, snap: true, cards: [] }
+  it('YAZ-3343 S35 to S37, S43, D31: another window\'s card menu asks THAT window for its tab actions (duplicate, name, sidebar); "Move to ▸" lists the other windows that show its vault, rings their frame on hover, and moves the tab quietly into the nearest free cell', async () => {
+    canvas = { allWindows: true, snap: true, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }]), other('w3', ['/w'], [{ path: '/w/q.md', active: true }])]
     const onHighlightWindow = vi.fn()
     const onMoveTab = vi.fn()
@@ -557,11 +570,11 @@ describe('TabOverview', () => {
     expect(frame(el, 'w3').className).not.toContain('taboverview__frame--ringed')
   })
 
-  it('demo feedback: a card that APPEARS in a frame whose cards were placed is placed too — a copy right of its source; any other new tab in the first gap; a full frame gets a new row', async () => {
+  it('YAZ-3343 S36, S51, D30: a card that APPEARS in a frame whose cards were placed is placed too — a copy right of its source; any other new tab in the first gap; a full frame gets a new row', async () => {
     const C = { w: BOARD.pageW + BOARD.pageGap, h: BOARD.pageH + BOARD.pageGap }
     // w2's three cards placed in a row with a hole in the middle: y at cell 0, z at cell 2.
     const o = { x: 1000, y: 100 }
-    canvas = { allWindows: true, snap: true, cards: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: o.x, y: o.y }, { win: 'w2', path: '/w/z.md', copy: 0, by: 'window', x: o.x + 2 * C.w, y: o.y }] }
+    canvas = { allWindows: true, snap: true, cards: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: o.x, y: o.y }, { win: 'w2', path: '/w/z.md', copy: 0, by: 'window', x: o.x + 2 * C.w, y: o.y }], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const { el, again } = await mount()
     // A new tab there (a search pick, a move…): the first gap, between y and z.
@@ -579,10 +592,23 @@ describe('TabOverview', () => {
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }, { path: '/w/n.md' }, { path: '/w/m.md' }, { path: '/w/z.md' }])]
     await again({})
     expect(storage.setTabCanvas).toHaveBeenLastCalledWith({ set: [{ win: 'w2', path: '/w/z.md', copy: 1, by: 'window', x: o.x + 3 * C.w, y: o.y }] })
+    // Two new tabs at once: each in a cell of its own (S14), in reading order.
+    others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }, { path: '/w/n.md' }, { path: '/w/m.md' }, { path: '/w/z.md' }, { path: '/w/p.md' }, { path: '/w/q.md' }])]
+    await again({})
+    expect(storage.setTabCanvas).toHaveBeenLastCalledWith({ set: [{ win: 'w2', path: '/w/p.md', copy: 0, by: 'window', x: o.x + C.w, y: o.y + C.h }, { win: 'w2', path: '/w/q.md', copy: 0, by: 'window', x: o.x + 2 * C.w, y: o.y + C.h }] })
   })
 
-  it('demo feedback: the pointer over ANOTHER window\'s frame (or one of its cards) makes that window glow — once per change; its own frame, empty canvas, a drag and the board going put it out', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S51: a card the filter hid and brings back is no new card — typing and clearing the filter stores nothing', async () => {
+    canvas = { allWindows: true, snap: true, cards: [], frames: [] }
+    others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
+    const { el } = await mount()
+    type(el, 'y')
+    type(el, '')
+    expect(storage.setTabCanvas).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-3343 S29, D33: the pointer over ANOTHER window\'s frame (or one of its cards) makes that window glow — once per change; its own frame, empty canvas, a drag and the board going put it out', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
     const onHighlightWindow = vi.fn()
     const { el } = await mount({ onHighlightWindow })
@@ -601,9 +627,9 @@ describe('TabOverview', () => {
     expect(onHighlightWindow).toHaveBeenLastCalledWith(null)
   })
 
-  it('demo bug: a card dropped into a frame with NO placed cards — the frame is frozen where it stands, and the card lands INSIDE it (its first free cell, or a new row), never at the drop point', async () => {
+  it('YAZ-3343 S41, D28: a card dropped into a frame with NO placed cards — the frame is frozen where it stands, and the card lands INSIDE it (its first free cell, or a new row), never at the drop point', async () => {
     const C = { w: BOARD.pageW + BOARD.pageGap, h: BOARD.pageH + BOARD.pageGap }
-    canvas = { allWindows: true, snap: true, cards: [] }
+    canvas = { allWindows: true, snap: true, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/a1.md', active: true }, { path: '/w/a2.md' }, { path: '/w/a3.md' }])]
     const onDropToWindow = vi.fn()
     const { el } = await mount({ onDropToWindow })
@@ -628,10 +654,10 @@ describe('TabOverview', () => {
     })
   })
 
-  it('demo bug: frames that overlap when the board opens are repaired ONCE — the later one moves clear and is stored; a second open writes nothing', async () => {
+  it('YAZ-3343 S56, D28: frames that overlap when the board opens are repaired ONCE — the later one moves clear and is stored; a second open writes nothing', async () => {
     // From the demo's state: one card of w2 stored deep inside this window's frame, so w2's box covers it.
     const deep = { x: BOARD.framePad + 230, y: BOARD.frameLabelH + BOARD.framePad }
-    canvas = { allWindows: true, snap: false, cards: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: deep.x, y: deep.y }] }
+    canvas = { allWindows: true, snap: false, cards: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: deep.x, y: deep.y }], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const { el } = await mount()
     expect(storage.setTabCanvas).toHaveBeenCalledTimes(1)
@@ -648,8 +674,8 @@ describe('TabOverview', () => {
     expect(storage.setTabCanvas).not.toHaveBeenCalled()
   })
 
-  it('demo feedback: a double click on a frame\'s EMPTY AREA goes to that window (its active tab; an empty one shows; this window\'s leaves the board onto its tab) — on its LABEL it renames; the label says its vault, and "Minimized" when it is', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S24, S32, D32, D34: a double click on a frame\'s EMPTY AREA goes to that window (its active tab; an empty one shows; this window\'s leaves the board onto its tab) — on its LABEL it renames; the label says its vault, and "Minimized" when it is', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md' }, { path: '/w/z.md', active: true }]), other('w3', ['/w'], [])]
     const { el, props } = await mount()
     const dbl = (target: Element | null | undefined) => act(() => void target?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
@@ -676,7 +702,7 @@ describe('TabOverview', () => {
     expect(frame(el, 'w2').textContent).not.toContain('Minimized')
   })
 
-  it('demo feedback: the open fits — a tiny board stays at 100%; and an armed Close goes back to ✕ when the pointer leaves its card', async () => {
+  it('YAZ-3343 S1, S33, D27: the open fits — a tiny board stays at 100%; and an armed Close goes back to ✕ when the pointer leaves its card', async () => {
     const restore = boardArea(1000, 600)
     try {
       const { el, props } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/a.md'] })
@@ -696,8 +722,8 @@ describe('TabOverview', () => {
     }
   })
 
-  it('YAZ-3343 D9: "Tidy up" forgets every moved card the layout shows, and they stand in their groups again', async () => {
-    canvas = { allWindows: false, snap: false, cards: [{ win: 'me', path: '/v/a.md', copy: 0, by: 'folder', x: 800, y: 900 }] }
+  it('YAZ-3343 S20, D9: "Tidy up" forgets every moved card the layout shows, and they stand in their groups again', async () => {
+    canvas = { allWindows: false, snap: false, cards: [{ win: 'me', path: '/v/a.md', copy: 0, by: 'folder', x: 800, y: 900 }], frames: [] }
     const { el } = await mount()
     const tidy = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Tidy up')!
     expect(tidy.disabled).toBe(false)
@@ -707,12 +733,12 @@ describe('TabOverview', () => {
     expect(tidy.disabled).toBe(true)
   })
 
-  it('YAZ-3343 D11: a display name has "Page: <page>" under it, and each copy of a path says which it is; the tooltip stays', async () => {
+  it('YAZ-3343 S8, D11: a display name has "Page: <page>" under it, and each copy of a path says which it is; the tooltip stays', async () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/v/b.md' }, { id: 't3', path: '/v/a.md' }]
-    await act(async () => root?.render(<IdTabOverview roots={['/v']} vaultNames={['Notes']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} onOpen={vi.fn()} onCloseTabs={vi.fn()} onDismiss={vi.fn()} />))
+    await act(async () => root?.render(<IdTabOverview roots={['/v']} vaultNames={['Notes']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={vi.fn()} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
     const el = container
     const face = (id: string) => [page(el, id)?.querySelector('.taboverview__title')?.textContent, page(el, id)?.querySelector('.taboverview__pagename')?.textContent ?? null, page(el, id)?.querySelector('.taboverview__copy')?.textContent ?? null]
     expect(face('t1')).toEqual(['Outline', 'Page: Plan', '1 of 2'])
@@ -721,12 +747,11 @@ describe('TabOverview', () => {
     expect(page(el, 't1')!.title).toBe('Plan\n/v/a.md')
   })
 
-  it('YAZ-3343 D8, D2, D3, D10: "Show all windows" — a switch, stored; one frame per window, this one first; another window\'s cards go to it, close there, and have their own three-item menu; Kill all hands App the other windows\' tabs', async () => {
+  it('YAZ-3343 S21, S31, S33, S39, D2, D3, D8, D10: "Show all windows" — a switch, stored; one frame per window, this one first; another window\'s cards go to it, close there, and have their own three-item menu; Kill all hands App the other windows\' tabs', async () => {
     names.set('w2', 'Research')
     others = [other('w2', ['/w'], [{ path: '/w/y.md' }, { path: '/w/z.md', active: true }, { path: '/w/y.md', name: 'Second' }]), other('w3', ['/v'], [])]
-    const onCloseNow = vi.fn()
     const onKillAll = vi.fn()
-    const { el, props, again } = await mount({ onCloseNow, onKillAll })
+    const { el, props, again } = await mount({ onKillAll })
     const toggle = el.querySelector<HTMLInputElement>('[role="switch"]')!
     expect([toggle.closest('label')?.textContent, toggle.getAttribute('aria-checked'), el.querySelectorAll('.taboverview__frame').length]).toEqual(['Show all windows', 'false', 0])
     // Off: this window's cards only.
@@ -748,7 +773,7 @@ describe('TabOverview', () => {
     // A click goes to it in its window — and this board stays open (demo feedback); its ✕ closes it there.
     act(() => theirs[1].click())
     expect(api.window.focusTab).toHaveBeenCalledExactlyOnceWith('w2', { path: '/w/z.md', copy: 0 })
-    expect([onCloseNow.mock.calls.length, vi.mocked(props.onDismiss).mock.calls.length]).toEqual([0, 0])
+    expect(props.onDismiss).not.toHaveBeenCalled()
     expect(props.onOpen).not.toHaveBeenCalled()
     act(() => theirs[2].querySelector<HTMLButtonElement>('.taboverview__close')!.click())
     act(() => theirs[2].querySelector<HTMLButtonElement>('.taboverview__close')!.click())
@@ -763,7 +788,7 @@ describe('TabOverview', () => {
     // A pick across windows closes per window.
     shiftClick(page(el, '/v/a.md'))
     shiftClick(theirs[1])
-    act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((b) => b.textContent === 'Close them')?.click())
+    for (const label of ['Close them', 'Click again to close 2 tabs']) act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((b) => b.textContent === label)?.click())
     expect(props.onCloseTabs).toHaveBeenLastCalledWith(['/v/a.md'])
     expect(api.window.closeTabs).toHaveBeenLastCalledWith('w2', [{ path: '/w/z.md', copy: 0 }])
 
@@ -778,14 +803,13 @@ describe('TabOverview', () => {
     expect(el.querySelector('[data-win="w2"]')).toBeNull()
   })
 
-  it('YAZ-3343 D13: a card dropped in another window\'s frame moves there — this window\'s by App\'s door, another\'s by main — and its place there is stored; a window with no vault of the page refuses it, and the card slides back', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S40, S42, D13: a card dropped in another window\'s frame moves there — this window\'s by App\'s door, another\'s by main — and its place there is stored; a window with no vault of the page refuses it, and the card slides back', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
-    const onMoveToWindow = vi.fn()
     const onDropToWindow = vi.fn()
     const onMoveTab = vi.fn()
     const onNotice = vi.fn()
-    const { el } = await mount({ onMoveToWindow, onDropToWindow, onMoveTab, onNotice })
+    const { el } = await mount({ onDropToWindow, onMoveTab, onNotice })
     /** The client point inside a frame: the camera stands at the padding, zoom 1. */
     const inside = (win: string) => ({ x: BOARD.padX + Number.parseFloat(frame(el, win).style.left) + 30, y: BOARD.padTop + Number.parseFloat(frame(el, win).style.top) + 30 })
 
@@ -795,7 +819,7 @@ describe('TabOverview', () => {
     dragTo(a, to.x, to.y)
     expect(onNotice).toHaveBeenCalledExactlyOnceWith("Can't move here — that window doesn't have this tab's vault.")
     expect([a.style.transform, a.dataset.sliding]).toEqual(['', ''])
-    expect(onMoveToWindow).not.toHaveBeenCalled()
+    expect(onDropToWindow).not.toHaveBeenCalled()
     expect(storage.setTabCanvas).not.toHaveBeenCalled()
 
     // x.md is of /w: it goes to w2, and arrives as the next copy of its path there, where it was dropped.
@@ -805,7 +829,6 @@ describe('TabOverview', () => {
     dragTo(x, to.x, to.y)
     // The drop's own door, the quiet one (demo feedback): "Move to ▸" is the menu's.
     expect(onDropToWindow).toHaveBeenCalledExactlyOnceWith('w2', '/w/x.md', '/w/x.md')
-    expect(onMoveToWindow).not.toHaveBeenCalled()
     // It ARRIVES inside w2's frame (demo bug: never at the raw drop point): w2's card frozen, the arrival in a new row under it.
     const [wy] = [placeOf(page(el, 'w2\n/w/y.md\n0')!)]
     expect(storage.setTabCanvas).toHaveBeenCalledExactlyOnceWith({ set: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: wy[0], y: wy[1] }, { win: 'w2', path: '/w/x.md', copy: 0, by: 'window', x: wy[0], y: wy[1] + BOARD.pageH + BOARD.pageGap }] })
@@ -819,8 +842,8 @@ describe('TabOverview', () => {
     expect(onMoveTab).toHaveBeenCalledExactlyOnceWith('w2', 'me', { path: '/w/y.md', copy: 0 })
   })
 
-  it('demo feedback: a WINDOW FRAME drags as one — frame, groups and cards follow by transform with no render; the drop stores every card of it moved by the same delta, in ONE write and ONE render; a press with no move moves nothing', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S25, D16: a WINDOW FRAME drags as one — frame, groups and cards follow by transform with no render; the drop stores every card of it moved by the same delta, in ONE write and ONE render; a press with no move moves nothing', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const { el, commits } = await mount()
     const ids = ['w2\n/w/y.md\n0', 'w2\n/w/z.md\n0']
@@ -849,8 +872,8 @@ describe('TabOverview', () => {
     expect(api.window.moveTab).not.toHaveBeenCalled()
   })
 
-  it('demo feedback: a window frame has no folder boxes — its cards in folder order, each with its folder in grey (the vault first where the window has two or more); the folder layout keeps its groups; empty canvas still pans', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S21, S22, D17: a window frame has no folder boxes — its cards in folder order, each with its folder in grey (the vault first where the window has two or more); the folder layout keeps its groups; empty canvas still pans', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/Docs/z.md', active: true }, { path: '/w/y.md' }])]
     const { el } = await mount()
     expect(el.querySelectorAll('.taboverview__island, .taboverview__vault-name').length).toBe(0)
@@ -882,12 +905,12 @@ describe('TabOverview', () => {
     expect(el.querySelector('.taboverview__folder')).toBeNull()
   })
 
-  it('demo feedback: ⌘-click picks as Shift does; dragging a picked card carries every picked card, of any window, by the same delta — no render while it moves, ONE write and ONE render on the drop, and no tab changes window', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S17, S44, D25: ⌘-click picks as Shift does; dragging a picked card carries every picked card, of any window, by the same delta — no render while it moves, ONE write and ONE render on the drop, and no tab changes window', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w', '/v'], [{ path: '/w/y.md', active: true }])]
-    const onMoveToWindow = vi.fn()
+    const onDropToWindow = vi.fn()
     const onMoveTab = vi.fn()
-    const { el, props, commits } = await mount({ onMoveToWindow, onMoveTab })
+    const { el, props, commits } = await mount({ onDropToWindow, onMoveTab })
     const ids = ['/v/a.md', 'w2\n/w/y.md\n0']
     const placeAt = (id: string) => placeOf(page(el, id)!)
     const before = ids.map(placeAt)
@@ -906,12 +929,12 @@ describe('TabOverview', () => {
     pointer(window, 'pointerup', target.x, target.y)
     expect(commits.n).toBe(1)
     expect(storage.setTabCanvas).toHaveBeenCalledExactlyOnceWith({ set: [{ win: 'me', path: '/v/a.md', copy: 0, by: 'window', x: before[0][0] + target.x, y: before[0][1] + target.y }, { win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: before[1][0] + target.x, y: before[1][1] + target.y }] })
-    expect([onMoveToWindow, onMoveTab, api.window.moveTab].map((door) => vi.mocked(door).mock.calls.length)).toEqual([0, 0, 0])
+    expect([onDropToWindow, onMoveTab].map((door) => vi.mocked(door).mock.calls.length)).toEqual([0, 0])
     expect(ids.map(placeAt)).toEqual(before.map(([x, y]) => [x + target.x, y + target.y]))
   })
 
-  it('demo feedback: a right-click anywhere on a frame opens its menu — "Tidy up this window" lines its cards up and the FRAME STAYS; "Close all tabs" / "Close window" ask App; a group\'s background opens the group\'s menu, whose tidy keeps the group; empty canvas: only "New window", never the text-edit menu', async () => {
-    canvas = { allWindows: true, snap: false, cards: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: 1500, y: 900 }, { win: 'w2', path: '/w/z.md', copy: 0, by: 'window', x: 2400, y: 1300 }, { win: 'me', path: '/v/a.md', copy: 0, by: 'window', x: 900, y: 900 }] }
+  it('YAZ-3343 S46, S52, S53, S55, D21: a right-click anywhere on a frame opens its menu — "Tidy up this window" lines its cards up and the FRAME STAYS; "Close all tabs" / "Close window" ask App; a group\'s background opens the group\'s menu, whose tidy keeps the group; empty canvas: only "New window", never the text-edit menu', async () => {
+    canvas = { allWindows: true, snap: false, cards: [{ win: 'w2', path: '/w/y.md', copy: 0, by: 'window', x: 1500, y: 900 }, { win: 'w2', path: '/w/z.md', copy: 0, by: 'window', x: 2400, y: 1300 }, { win: 'me', path: '/v/a.md', copy: 0, by: 'window', x: 900, y: 900 }], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const onCloseWindow = vi.fn()
     const { el, again } = await mount({ onCloseWindow })
@@ -946,7 +969,7 @@ describe('TabOverview', () => {
     expect(menuItem(el, 'Close all tabs')).toBeDefined()
     act(() => menuItem(el, 'Close all tabs')?.click())
     act(() => menuItem(el, 'Click again to close 2 tabs')?.click())
-    expect(onCloseWindow).toHaveBeenLastCalledWith({ win: 'w2', mine: false, label: 'y + 1 more tab', refs: [{ path: '/w/y.md', copy: 0 }, { path: '/w/z.md', copy: 0 }], whole: false })
+    expect(onCloseWindow).toHaveBeenLastCalledWith({ win: 'w2', mine: false, refs: [{ path: '/w/y.md', copy: 0 }, { path: '/w/z.md', copy: 0 }], whole: false })
     expect(el.querySelector('.ctx-menu')).toBeNull()
     ctx(frame(el, 'me'))
     act(() => menuItem(el, 'Close window')?.click())
@@ -956,22 +979,23 @@ describe('TabOverview', () => {
     expect(ctx(body(el))).toBe(true)
     expect(el.querySelector('.ctx-menu')).toBeNull()
     // The folder layout: a group's background opens the group's menu; its tidy lines its cards up where the group is.
-    canvas = { allWindows: false, snap: false, cards: [{ win: 'me', path: '/v/Projects/plan.md', copy: 0, by: 'folder', x: 700, y: 700 }] }
+    canvas = { allWindows: false, snap: false, cards: [{ win: 'me', path: '/v/Projects/plan.md', copy: 0, by: 'folder', x: 700, y: 700 }], frames: [] }
     await again({})
     const g = island(el, 'Projects')
     const [gx, gy] = [Number.parseFloat(g.style.left), Number.parseFloat(g.style.top)]
     expect(ctx(g)).toBe(true)
     expect(menuItems(el)).toContain('Tidy up this group')
     act(() => menuItem(el, 'Tidy up this group')?.click())
-    const set = vi.mocked(storage.setTabCanvas).mock.calls.at(-1)![0].set!
+    // The tidy's write (a group it now reaches gives way after it, D28).
+    const set = vi.mocked(storage.setTabCanvas).mock.calls.map(([patch]) => patch.set ?? []).find((cards) => cards.some((c) => c.path === '/v/Projects/report.pdf'))!
     expect(set.map((c) => [c.path, c.x, c.y])).toEqual(['/v/Projects/plan.md', '/v/Projects/report.pdf', '/v/Projects/Alpha'].map((path, i) => [path, gx + BOARD.islandPad + i * (BOARD.pageW + BOARD.pageGap), gy + BOARD.islandPad + BOARD.labelH]))
     expect([Number.parseFloat(island(el, 'Projects').style.left), Number.parseFloat(island(el, 'Projects').style.top)]).toEqual([gx, gy])
     // The filter keeps its own text menu.
     expect(ctx(filter(el))).toBe(false)
   })
 
-  it('demo feedback: "New window" — a right-click on empty canvas (never a double click) opens one behind, its frame at that point, and "Open tabs here…" opens for it; a pick adds a BACKGROUND tab (this window by its door, another by a quiet move); a vault it does not show is refused', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S46, S47, S49, S50, D22: "New window" — a right-click on empty canvas (never a double click) opens one behind, its frame at that point, and "Open tabs here…" opens for it; a pick adds a BACKGROUND tab (this window by its door, another by a quiet move); a vault it does not show is refused', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
     const onNewWindow = vi.fn(async () => 'w3')
     const onOpenTabHere = vi.fn()
@@ -1043,8 +1067,8 @@ describe('TabOverview', () => {
     void onNotice
   })
 
-  it('demo feedback: an EMPTY frame\'s vault chip lists the recent vaults, and a pick asks main to switch that window', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S48, D22: an EMPTY frame\'s vault chip lists the recent vaults, and a pick asks main to switch that window', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w3', ['/v'], [])]
     vi.spyOn(storage, 'getRecentRoots').mockReturnValue([{ path: '/x/Research', lastOpened: 2 }, { path: '/v', lastOpened: 1 }])
     const setRoots = vi.fn().mockResolvedValue(undefined)
@@ -1058,8 +1082,8 @@ describe('TabOverview', () => {
     expect(setRoots).toHaveBeenCalledExactlyOnceWith('w3', ['/x/Research'])
   })
 
-  it('YAZ-3343 D14: a frame\'s label names its window — a double click or "Name window" opens the field, ⏎ stores it; "Reset name" goes back to the automatic label', async () => {
-    canvas = { allWindows: true, snap: false, cards: [] }
+  it('YAZ-3343 S24, D14: a frame\'s label names its window — a double click or "Name window" opens the field, ⏎ stores it; "Reset name" goes back to the automatic label', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
     const { el } = await mount()
     const label = () => frame(el, 'w2').querySelector<HTMLElement>('.taboverview__frame-label')!
@@ -1085,11 +1109,11 @@ describe('TabOverview', () => {
     expect(menuItems(el)).toEqual(['Open tabs here…', 'Tidy up this window', 'Name window'])
   })
 
-  it('S45, R29: right-click: a page opens the tab strip\'s own menu, an island its folder\'s — Show in sidebar, Copy path, Close N tabs — and a menu\'s Esc is not the board\'s', async () => {
+  it('YAZ-2648 S45, R29: right-click: a page opens the tab strip\'s own menu, an island its folder\'s — Show in sidebar, Copy path, Close N tabs — and a menu\'s Esc is not the board\'s', async () => {
     const { el, props } = await mount({ reviewState: (path) => (path === '/v/a.md' ? false : null), onSetReview: vi.fn() })
     rightClick(page(el, '/v/a.md'))
     // `TabMenu`, the one the strip's tabs open: the same items in the same order.
-    expect(menuItems(el)).toEqual(['Go to tab', 'Move to', 'Show in sidebar', 'Copy path', 'Turn review on', 'Reveal in Finder', 'Open in VS Code', 'Close tab'])
+    expect(menuItems(el)).toEqual(['Go to tab', 'Move to new window', 'Move to', 'Show in sidebar', 'Copy path', 'Turn review on', 'Reveal in Finder', 'Open in VS Code', 'Close tab'])
     key(el, 'Escape')
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(props.onDismiss).not.toHaveBeenCalled()
@@ -1120,7 +1144,7 @@ describe('TabOverview', () => {
   })
 
   it('YAZ-2940 D5, S5: a page\'s menu has "Duplicate tab" right after "Move to new window"; a click copies that tab by id and leaves the board open', async () => {
-    const { el, props } = await mount({ onMoveToNewWindow: vi.fn(), onDuplicate: vi.fn() })
+    const { el, props } = await mount({ onDuplicate: vi.fn() })
     rightClick(page(el, '/v/Projects/plan.md'))
     expect(menuItems(el).slice(0, 4)).toEqual(['Go to tab', 'Move to new window', 'Duplicate tab', 'Move to'])
     act(() => menuItem(el, 'Duplicate tab')?.click())
@@ -1132,13 +1156,14 @@ describe('TabOverview', () => {
 
   it('YAZ-3091 D3, S17: a page\'s "Move to ▸" lists the windows asked for ITS page, a line, then "Right panel"; a window row moves that tab by id and leaves the board open', async () => {
     const onMoveTargets = vi.fn((path: string) => (path.startsWith('/w/') ? [] : [{ id: 'w2', label: 'Notes — plan · 3 tabs' }]))
-    const { el, props } = await mount({ onMoveTargets, onMoveToWindow: vi.fn() })
+    const { el, props } = await mount({ onMoveTargets })
     rightClick(page(el, '/v/Projects/plan.md'))
     expect(onMoveTargets).toHaveBeenLastCalledWith('/v/Projects/plan.md')
     act(() => menuItem(el, 'Move to')?.click())
     expect([...el.querySelectorAll('.ctx-menu__sub [role="group"]')].map((g) => g.textContent)).toEqual(['Notes — plan · 3 tabs', 'Right panel'])
     act(() => menuItem(el, 'Notes — plan · 3 tabs')?.click())
-    expect(props.onMoveToWindow).toHaveBeenCalledExactlyOnceWith('w2', '/v/Projects/plan.md', '/v/Projects/plan.md')
+    // Quiet from the board (D20): the drop's door.
+    expect(props.onDropToWindow).toHaveBeenCalledExactlyOnceWith('w2', '/v/Projects/plan.md', '/v/Projects/plan.md')
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(props.onDismiss).not.toHaveBeenCalled()
     // A page of a vault no other window shows: only "Right panel" (S1, S3).
@@ -1147,7 +1172,7 @@ describe('TabOverview', () => {
     expect([...el.querySelectorAll('.ctx-menu__sub [role="group"]')].map((g) => g.textContent)).toEqual(['Right panel'])
   })
 
-  it('S65 to S69: pick many: shift-click picks and never opens; the bar closes the picked tabs, or the others, and drops the pick; Esc drops the pick before it leaves the board; a plain click still opens', async () => {
+  it('YAZ-2648 S65 to S69: pick many: shift-click picks and never opens; the bar closes the picked tabs, or the others, and drops the pick; Esc drops the pick before it leaves the board; a plain click still opens', async () => {
     const { el, props, again } = await mount()
     const bar = () => el.querySelector('.taboverview__pick')
     expect(bar()).toBeNull()
@@ -1166,7 +1191,7 @@ describe('TabOverview', () => {
     expect(props.onCloseTabs).toHaveBeenLastCalledWith(['/v/Projects/report.pdf', '/w/x.md', '/v/Projects/Alpha', '/v/Projects/Alpha/2026-10-08.md'])
     expect(bar()).toBeNull()
     rightClick(page(el, '/w/x.md'))
-    expect(menuItems(el).slice(0, 2)).toEqual(['Go to tab', 'Move to'])
+    expect(menuItems(el).slice(0, 3)).toEqual(['Go to tab', 'Move to new window', 'Move to'])
     key(el, 'Escape') // the menu's
 
     shiftClick(page(el, '/v/a.md'))
@@ -1175,7 +1200,9 @@ describe('TabOverview', () => {
     await again({ tabs: TABS.filter((path) => path !== '/w/x.md') })
     expect(texts(el, '.taboverview__pick-count')).toEqual(['1 picked'])
     shiftClick(page(el, '/v/Projects/plan.md'))
+    // Two clicks (D27): the first arms it.
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((button) => button.textContent === 'Close them')?.click())
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((button) => button.textContent === 'Click again to close 2 tabs')?.click())
     expect(props.onCloseTabs).toHaveBeenLastCalledWith(['/v/a.md', '/v/Projects/plan.md'])
     expect(bar()).toBeNull()
 
@@ -1192,7 +1219,50 @@ describe('TabOverview', () => {
     expect(props.onOpen).toHaveBeenCalledExactlyOnceWith('/v/Projects/plan.md')
   })
 
-  it('S62, S63, R36, demo feedback: Space held opens the sidebar\'s preview panel for the highlight and closes on release — it opens nothing; it follows the arrows; while a query is being typed Space is a space, until the highlight is moved; a PDF has no panel', async () => {
+  it('YAZ-3343 S33, D27, D10: the pick bar\'s closes take two clicks — the first turns the button into a red "Click again to close N"; a move off it, Esc or a click elsewhere puts it back; with all windows, "Close the others" says the windows too', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
+    others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
+    const { el, props } = await mount()
+    const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((b) => b.textContent === label)
+    act(() => void page(el, '/v/a.md')!.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+    // The others: this window's five other tabs and w2's two.
+    act(() => button('Close the others')!.click())
+    expect([vi.mocked(props.onCloseTabs).mock.calls.length, vi.mocked(api.window.closeTabs).mock.calls.length]).toEqual([0, 0])
+    const armed = button('Click again to close 7 tabs in 2 windows')!
+    expect(armed.className).toContain('taboverview__armed')
+    // The pointer off it puts it back.
+    act(() => void armed.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: body(el) })))
+    expect(button('Close the others')).toBeDefined()
+    // Esc puts it back, and keeps the pick.
+    act(() => button('Close the others')!.click())
+    key(el, 'Escape')
+    expect([button('Close the others') !== undefined, el.querySelector('.taboverview__pick-count')?.textContent]).toEqual([true, '1 picked'])
+    // A press elsewhere puts it back.
+    act(() => button('Close the others')!.click())
+    act(() => void body(el).dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(button('Close the others')).toBeDefined()
+    // "Close them": two clicks, then the picked tab closes and the pick goes.
+    act(() => button('Close them')!.click())
+    expect(props.onCloseTabs).not.toHaveBeenCalled()
+    act(() => button('Click again to close 1 tab')!.click())
+    expect(props.onCloseTabs).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
+    expect(el.querySelector('.taboverview__pick')).toBeNull()
+  })
+
+  it('YAZ-3343 S3, D24: the toolbar keeps the keys with the filter box — after a click on the switch or a button, typing still filters', async () => {
+    const { el } = await mount()
+    const toggle = el.querySelector<HTMLInputElement>('[role="switch"]')!
+    // A click on the switch's label focuses its box in a browser; the board takes the focus back.
+    toggle.focus()
+    act(() => void toggle.closest('label')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })))
+    expect(document.activeElement).toBe(filter(el))
+    const fit = el.querySelector<HTMLButtonElement>('.taboverview__zoom-fit')!
+    fit.focus()
+    act(() => void fit.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })))
+    expect(document.activeElement).toBe(filter(el))
+  })
+
+  it('YAZ-2648 S62, S63, R36; YAZ-3343 S10, D18: Space held opens the sidebar\'s preview panel for the highlight and closes on release — it opens nothing; it follows the arrows; while a query is being typed Space is a space, until the highlight is moved; a PDF has no panel', async () => {
     const { el, props } = await mount({ previewScope: SCOPE })
     expect(peek(el)).toBeNull()
     // An empty box: Space is the board's, and previews the highlight (the active card to begin with) — the setting is off here.
@@ -1227,7 +1297,7 @@ describe('TabOverview', () => {
     expect(props.onDismiss).not.toHaveBeenCalled()
   })
 
-  it('demo feedback: with Preview on hover, resting on a card for the dwell opens its panel beside it (a note, a board); another card switches it; leaving, a drag start or a pan closes it; the hover renders no card', async () => {
+  it('YAZ-3343 S10, S11, D18: with Preview on hover, resting on a card for the dwell opens its panel beside it (a note, a board); another card switches it; leaving, a drag start or a pan closes it; the hover renders no card', async () => {
     vi.useFakeTimers()
     const { el } = await mount({ previewScope: SCOPE, hoverPreview: true, tabs: [...TABS, '/v/Map.drawio'], active: '/v/a.md' })
     const rest = async (path: string) => {
@@ -1265,7 +1335,7 @@ describe('TabOverview', () => {
     pointer(window, 'pointerup', 0, 0)
   })
 
-  it('demo feedback: with Preview on hover OFF a rest opens nothing — but Space still does', async () => {
+  it('YAZ-3343 S10, D18: with Preview on hover OFF a rest opens nothing — but Space still does', async () => {
     vi.useFakeTimers()
     const { el } = await mount({ previewScope: SCOPE, hoverPreview: false })
     act(() => void page(el, '/w/x.md')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true })))
@@ -1277,7 +1347,7 @@ describe('TabOverview', () => {
     expect(peek(el)).toBe('x')
   })
 
-  it('S32, S42: leaving: the board zooms out by its own data attribute, and says it left when the zoom is over', async () => {
+  it('YAZ-2648 S32, S42: leaving: the board zooms out by its own data attribute, and says it left when the zoom is over', async () => {
     vi.useFakeTimers()
     const onLeft = vi.fn()
     const { el, again } = await mount({ onLeft })
@@ -1294,7 +1364,7 @@ describe('TabOverview', () => {
     expect(el.style.getPropertyValue('--tab-zoom-ms')).toBe('')
   })
 
-  it('S55, S59, S61: an empty note shows its title alone, and the title is the index\'s; a second open shows the text it holds before the call answers and takes new text for a new mtime; a call that fails takes no text away', async () => {
+  it('YAZ-2648 S55, S59, S61: an empty note shows its title alone, and the title is the index\'s; a second open shows the text it holds before the call answers and takes new text for a new mtime; a call that fails takes no text away', async () => {
     const tabs = ['/v/a-k3m9.md', '/v/empty.md', '/v/only-frontmatter.md']
     const over = { roots: ['/v'], vaultNames: ['Notes'], tabs, active: '/v/a-k3m9.md', preview: null, titles: new Map([['/v/a-k3m9.md', 'Alpha, as titled']]) }
     const heads = (text: string, mtime: number) => tabs.map((path): FileHead => ({ path, mtime, text: path === tabs[0] ? text : '' }))
@@ -1378,7 +1448,7 @@ describe('TabOverview', () => {
     expect(props.onDismiss).toHaveBeenCalledTimes(1)
   })
 
-  it('R45: tells the strip which page it highlights: the pointer and the arrows move it, and a board that goes lets go', async () => {
+  it('YAZ-2648 R45: tells the strip which page it highlights: the pointer and the arrows move it, and a board that goes lets go', async () => {
     const { el } = await mount()
     expect(boardHighlight()).toBe('/v/a.md')
     act(() => void page(el, '/v/Projects/Alpha')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true })))
@@ -1417,14 +1487,14 @@ describe('TabOverview display name (YAZ-2949 D4, D5)', () => {
     container = null
   })
 
-  it('S2, S3, S12: "Set display name" puts a field on the page; a click and keys in it stay there; ⏎ saves; a named page shows its name, with the page name in its tooltip', async () => {
+  it('YAZ-2949 S2, S3, S12: "Set display name" puts a field on the page; a click and keys in it stay there; ⏎ saves; a named page shows its name, with the page name in its tooltip', async () => {
     const onSetName = vi.fn()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/w/x.md' }]
     const onOpen = vi.fn()
-    await act(async () => root?.render(<IdTabOverview roots={['/v', '/w']} vaultNames={['Notes', 'Work']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} onOpen={onOpen} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onSetName={onSetName} />))
+    await act(async () => root?.render(<IdTabOverview roots={['/v', '/w']} vaultNames={['Notes', 'Work']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={onOpen} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onSetName={onSetName} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
     const el = container
     const card = page(el, 't1')!
     expect(card.querySelector('.taboverview__title')?.textContent).toBe('Outline')

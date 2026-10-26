@@ -1916,7 +1916,7 @@ export interface AppState {
 
 /** At most this many moved cards are kept (YAZ-3343 D1), last moved first: about 60 KB of the state file. */
 export const MAX_CANVAS_CARDS = 500
-/** At most this many stored window frames (YAZ-3343, demo bug: an empty frame must drag freely too). */
+/** At most this many stored window frames (YAZ-3343 D16: an empty frame drags freely too). */
 export const MAX_CANVAS_FRAMES = 100
 
 /** Where a window's frame stands on the board's 'window' layout (YAZ-3343): its label row's top-left, in world px. */
@@ -1936,7 +1936,7 @@ export interface TabRef {
 }
 
 /**
- * A tab action ANOTHER window's board asks of this window's tab (YAZ-3343, demo feedback: one card menu for every card):
+ * A tab action ANOTHER window's board asks of this window's tab (YAZ-3343 D31: one card menu for every card):
  * the owner runs it itself. `show-in-sidebar` also raises the owner.
  */
 export type TabAction = { kind: 'duplicate' } | { kind: 'set-name'; name: string | null } | { kind: 'show-in-sidebar' } | { kind: 'set-review'; on: boolean }
@@ -1958,16 +1958,16 @@ export interface CanvasCard extends TabRef {
 export interface TabCanvasState {
   /** "Show all windows" (YAZ-3343 D8): on, the board shows every window, each in its own frame. */
   allWindows: boolean
-  /** "Snap to grid" (YAZ-3343, demo feedback): a dropped card goes to the nearest free cell of the world's grid. On by default. */
+  /** "Snap to grid" (YAZ-3343 D26): a dropped card goes to the nearest free cell of its frame's own grid. On by default. */
   snap: boolean
   /** The moved cards, last moved first, MAX_CANVAS_CARDS at most. One entry per (win, path, copy, by). */
   cards: CanvasCard[]
   /**
-   * The frames the user (or the board) placed, 'window' layout only (YAZ-3343, demo bug): an EMPTY frame stands here
-   * and drags freely; the first cards that arrive take its first cells. One per window, MAX_CANVAS_FRAMES at most.
-   * Absent = none (a file from before it; an old build drops the key).
+   * The frames the user (or the board) placed, 'window' layout only (YAZ-3343 D16): an EMPTY frame stands here and
+   * drags freely; the first cards that arrive take its first cells. One per window, MAX_CANVAS_FRAMES at most. The
+   * store's sanitizer gives a file from before it none; an old build drops the key.
    */
-  frames?: CanvasFrame[]
+  frames: CanvasFrame[]
 }
 
 /** One change to the canvas (YAZ-3343 D1), sent on a drop or a switch — never on each pointer move. */
@@ -1983,7 +1983,7 @@ export interface TabCanvasPatch {
   forget?: Array<TabRef & { win: string; by: CanvasLayout }>
 }
 
-/** "Show all windows" is ON by default (Yaseen's demo feedback on YAZ-3343): a stored `false` stays off. */
+/** "Show all windows" is ON by default (YAZ-3343 D19): a stored `false` stays off. */
 export function defaultTabCanvas(): TabCanvasState {
   return { allWindows: true, snap: true, cards: [], frames: [] }
 }
@@ -2009,10 +2009,9 @@ export function applyTabCanvasPatch(canvas: TabCanvasState, patch: TabCanvasPatc
   for (const c of patch.forget ?? []) seen.add(canvasCardKey(c))
   const cards = [...set, ...canvas.cards.filter((c) => !seen.has(canvasCardKey(c)))].slice(0, MAX_CANVAS_CARDS)
   const allWindows = patch.allWindows ?? canvas.allWindows
-  // A canvas stored before the snap switch has none: on (the default).
-  const snap = patch.snap ?? canvas.snap ?? true
+  const snap = patch.snap ?? canvas.snap
   // The frames by the same rule, keyed by window (YAZ-3343): set first, then forget, a window the state lacks dropped.
-  const held = canvas.frames ?? []
+  const held = canvas.frames
   const framesSeen = new Set<string>()
   const setFrames = (patch.setFrames ?? []).filter((f) => {
     if (!windows.has(f.win) || framesSeen.has(f.win)) return false
@@ -2021,10 +2020,15 @@ export function applyTabCanvasPatch(canvas: TabCanvasState, patch: TabCanvasPatc
   })
   for (const win of patch.forgetFrames ?? []) framesSeen.add(win)
   const frames = [...setFrames, ...held.filter((f) => !framesSeen.has(f.win))].slice(0, MAX_CANVAS_FRAMES)
-  const same = allWindows === canvas.allWindows && snap === canvas.snap && cards.length === canvas.cards.length
-    && cards.every((c, i) => canvasCardKey(c) === canvasCardKey(canvas.cards[i]) && c.x === canvas.cards[i].x && c.y === canvas.cards[i].y)
-    && frames.length === held.length && frames.every((f, i) => f.win === held[i].win && f.x === held[i].x && f.y === held[i].y)
-  return same ? canvas : { allWindows, snap, cards, frames }
+  const next = { allWindows, snap, cards, frames }
+  return sameTabCanvas(next, canvas) ? canvas : next
+}
+
+/** Two canvases that store the same switches, the same cards and the same frames, in the same order (YAZ-3343 D1). */
+export function sameTabCanvas(a: TabCanvasState, b: TabCanvasState): boolean {
+  return a.allWindows === b.allWindows && a.snap === b.snap && a.cards.length === b.cards.length && a.frames.length === b.frames.length
+    && a.cards.every((c, i) => canvasCardKey(c) === canvasCardKey(b.cards[i]) && c.x === b.cards[i].x && c.y === b.cards[i].y)
+    && a.frames.every((f, i) => f.win === b.frames[i].win && f.x === b.frames[i].x && f.y === b.frames[i].y)
 }
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
@@ -2527,7 +2531,7 @@ export interface WindowIdentity {
   /** Which sidebar lens this window shows (YAZ-847, per window since YAZ-1628). */
   sidebarLens: SidebarLens
   /**
-   * The page view the active tab starts with (YAZ-2951 D5): set by ⌘⇧N or "Move to new window",
+   * The page view the active tab starts with (YAZ-2951 D2): set by "Move to new window" (⌘⇧N copies none since YAZ-3343 D35),
    * given out by the FIRST `window:identity` of the new window only (S17). Never stored.
    */
   startView?: StartView
@@ -2539,7 +2543,7 @@ export interface WindowIdentity {
 }
 
 /**
- * How a page looks now (YAZ-2951 D1): what "Duplicate tab", ⌘⇧N and "Move to new window" give the
+ * How a page looks now (YAZ-2951 D1): what "Duplicate tab" and "Move to new window" give the
  * copy. Read once, on the action (`client/src/lib/pageView.ts`). Never stored (CONTRACTS rule 12).
  */
 export interface PageView {
@@ -2553,7 +2557,7 @@ export interface PageView {
   magnification: number
 }
 
-/** A page view for one file: what a new window starts its active tab with (YAZ-2951 D5). Never stored. */
+/** A page view for one file: what a popped-out window starts its active tab with (YAZ-2951 D2). Never stored. */
 export interface StartView {
   path: string
   view: PageView
@@ -2568,9 +2572,10 @@ export interface PopOutCarry {
   /** The tab's display name (YAZ-2949 D7), if it has one: main stores it with the new window's tab (YAZ-3057 D3). */
   name?: string
   /**
-   * A QUIET move (YAZ-3343 D13, Yaseen's demo feedback): a card dropped in another window's frame on the tab board.
-   * Main does not raise the target, and the target adds the tab in the background: its page on show stays. "Move to ▸"
-   * sends none, and raises and shows the tab as before. "Move to new window" ignores it.
+   * A QUIET move (YAZ-3343 D20): a move FROM THE TAB BOARD — a card dropped in another window's frame, its "Move to ▸",
+   * a search pick. Main does not raise the target, and the target adds the tab in the background: its page on show
+   * stays. "Move to ▸" from the tab strip sends none, and raises and shows the tab as before. With "Move to new
+   * window" from the board, the new window is HIDDEN until the board shows it (D23, D37).
    */
   background?: true
 }

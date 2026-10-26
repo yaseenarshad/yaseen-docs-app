@@ -1446,7 +1446,7 @@ describe('createWindowManager: moveTo hands a tab to an open window (YAZ-3091 D1
   })
 })
 
-describe('createWindowManager: a new window gets its page view once (YAZ-2951 D5, S17, S20; ⌘⇧N no longer, YAZ-3343)', () => {
+describe('createWindowManager: a popped-out window gets its page view once (YAZ-2951 D2, S17, S20; ⌘⇧N no longer, YAZ-3343 D35)', () => {
   const VIEW: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
   const from: WindowEntry = { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 100, y: 100, width: 800, height: 600 } }
 
@@ -1486,17 +1486,20 @@ describe('createWindowManager: a new window gets its page view once (YAZ-2951 D5
     expect(created.map((c) => manager.takeStartView(c.entry.id))).toEqual([undefined, undefined])
   })
 
-  it('a new window that closes before it reads its view forgets it (S20)', async () => {
+  it('a new window that closes before it reads its view forgets it (S20) — and its empty start (YAZ-3343)', async () => {
     store.upsertWindow(from)
     const { host, created } = makeHost()
     const manager = createWindowManager(store, host)
     manager.popOut(from, '/b/y.md', { view: VIEW })
-    const { win, entry } = created[0]
-    win.close()
-    manager.handleFlushed(win.webContents)
+    manager.duplicateWindow(from)
+    for (const { win } of created) {
+      win.close()
+      manager.handleFlushed(win.webContents)
+    }
     await vi.advanceTimersByTimeAsync(0)
-    expect(win.isDestroyed()).toBe(true)
-    expect(manager.takeStartView(entry.id)).toBeUndefined()
+    expect(created.map(({ win }) => win.isDestroyed())).toEqual([true, true])
+    expect(manager.takeStartView(created[0].entry.id)).toBeUndefined()
+    expect(manager.takeStartEmpty(created[1].entry.id)).toBe(false)
   })
 })
 

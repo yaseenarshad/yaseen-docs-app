@@ -353,6 +353,8 @@
 .taboverview {
   position: absolute;
   inset: 0;
+  /* The toolbar reads the board's own width (a container query), not the window's: the sidebar takes some. */
+  container: taboverview / inline-size;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -542,7 +544,7 @@
   border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
 }
 
-/* The frame a "Move to ▸" row points at (demo feedback): an accent ring, as the real window glows. */
+/* The frame a "Move to ▸" row points at (D31): an accent ring, as the real window glows. */
 .taboverview__frame--ringed {
   box-shadow: 0 0 0 3px var(--accent);
 }
@@ -568,7 +570,7 @@
   white-space: nowrap;
 }
 
-/* A window the board made and keeps hidden until it is shown (demo feedback): muted. */
+/* A window the board made and keeps hidden until it is shown (D23): muted. */
 .taboverview__frame-hidden {
   flex: none;
   padding: 0 6px;
@@ -579,7 +581,7 @@
   color: var(--fg-muted);
 }
 
-/* The window's vault or workspace (demo feedback): muted, small; it gives way before the window's name does. */
+/* The window's vault or workspace (D34): muted, small; it gives way before the window's name does. */
 .taboverview__frame-vault {
   flex: 0 1000 auto;
   min-width: 0;
@@ -683,7 +685,7 @@
   background: var(--bg-hover);
 }
 
-/* A card (Yaseen's demo feedback: "an old school trello card"): short and wide, its title row, a "Page: …"
+/* A card (D15): short and wide, its title row, a "Page: …"
    line when named, two lines of the note — at its place in its group. It lifts under the pointer. */
 .taboverview__page {
   position: absolute;
@@ -693,7 +695,7 @@
   box-sizing: border-box;
   width: var(--tab-page-w);
   height: var(--tab-page-h);
-  /* Balanced (demo feedback, "a lot of wasted space"): the lines sit in the middle of the card, no empty band below. */
+  /* Balanced (D15): the lines sit in the middle of the card, no empty band below. */
   justify-content: center;
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -713,7 +715,7 @@
   transform: translateY(-2px);
 }
 
-/* A folder group or a whole window frame held by the pointer (Yaseen's demo feedback on YAZ-3343): it, its
+/* A folder group or a whole window frame held by the pointer (D16): it, its
    groups and its cards follow by transform, over everything else, until the drop stores every card's place. */
 .taboverview__island,
 .taboverview__frame,
@@ -753,7 +755,7 @@
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12);
 }
 
-/* Each window's ACTIVE tab (demo feedback, "a bit more prominent"): the strip's active pill — an accent fill and an
+/* Each window's ACTIVE tab (D33): the strip's active pill — an accent fill and an
    accent edge all round, in both themes. The highlight keeps its own darker edge and shadow over it. */
 .taboverview__page--active {
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
@@ -770,7 +772,7 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;
   overflow: hidden;
-  /* The title reads at a glance (demo feedback: "make the titles bigger"): one line, cut with an ellipsis. */
+  /* The title reads at a glance (D15): one line, cut with an ellipsis. */
   font-size: 18px;
   font-weight: 600;
   line-height: 22px;
@@ -787,7 +789,7 @@
   font-style: italic;
 }
 
-/* A window frame's card says its folder (demo feedback: no folder boxes inside frames): grey, one line, under
+/* A window frame's card says its folder (D17: no folder boxes inside frames): grey, one line, under
    its title; its text then keeps one line, so the card stays a card. */
 .taboverview__folder {
   flex: none;
@@ -844,7 +846,7 @@
 }
 
 /* The note's first lines (D6): plain text, the note's own line breaks kept, two at most on a card — the
-   peek is the place to read. */
+   preview panel is the place to read (D18). */
 .taboverview__lines {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -894,7 +896,7 @@
   visibility: visible;
 }
 
-/* An armed ✕ (demo feedback, "closing a tab is too easy"): a small red Close in its place, on show until it is clicked again or let go. */
+/* An armed ✕ (D27): a small red Close in its place, on show until it is clicked again or let go. */
 .taboverview .taboverview__close--armed,
 .taboverview .taboverview__close--armed:hover,
 .taboverview .taboverview__close--armed:focus-visible,
@@ -909,12 +911,20 @@
   background: var(--danger);
 }
 
-/* A frame menu's close clicked once (demo feedback): red AT ONCE, and under the pointer, focus and a press too — the
+/* A frame menu's close clicked once (D21): red AT ONCE, and under the pointer, focus and a press too — the
    menu's own hover must not win. The danger token of Kill all's button (`confirm__btn--danger`), in both themes. */
 .ctx-menu .ctx-menu__item.taboverview__armed,
 .ctx-menu .ctx-menu__item.taboverview__armed:hover:not(:disabled),
 .ctx-menu .ctx-menu__item.taboverview__armed:focus-visible,
 .ctx-menu .ctx-menu__item.taboverview__armed:active {
+  color: #fff;
+  background: var(--danger);
+}
+
+/* A close of the pick bar clicked once (D27): red, as an armed ✕, under the pointer too. */
+.taboverview__pick button.taboverview__armed,
+.taboverview__pick button.taboverview__armed:hover,
+.taboverview__pick button.taboverview__armed:focus-visible {
   color: #fff;
   background: var(--danger);
 }
@@ -931,24 +941,30 @@
     0 3px 12px rgba(0, 0, 0, 0.12);
 }
 
-/* The camera's controls (D7), bottom left as on Excalidraw: the pill "− 100% +" and "Fit all tabs" beside it. */
+/* The board's toolbar (D24), bottom left as on Excalidraw: ONE row at every common width — the fit keeps the cards
+   above it (`TOOLBAR_INSET`), and the pick bar stands over it. */
 .taboverview__zoom {
   position: absolute;
   left: 16px;
   bottom: 14px;
   display: flex;
-  flex-wrap: wrap-reverse;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
-  /* The pick bar has the middle: the toolbar wraps (upward) before it reaches it. */
-  max-width: calc(50% - 150px);
+  gap: 4px;
 }
 
-/* The switch and Tidy up joined the camera's controls (demo feedback): the same compact family. */
+/* A narrow board: the switch says its name in its tooltip only. */
+@container taboverview (max-width: 640px) {
+  .taboverview__switch-text {
+    display: none;
+  }
+}
+
+/* The switch and Tidy up joined the camera's controls (D24): the same compact family. */
 .taboverview__zoom .taboverview__switch,
 .taboverview__zoom .taboverview__tidy {
   height: 34px;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg);
@@ -1016,7 +1032,7 @@
   background: var(--accent-soft);
 }
 
-/* "Open tabs here…" (demo feedback): the app's search over the board, beside its window's frame. */
+/* "Open tabs here…" (D22): the app's search over the board, beside its window's frame. */
 .taboverview__search {
   position: absolute;
   z-index: 6;
@@ -1065,7 +1081,7 @@
   background: var(--bg-hover);
 }
 
-/* An empty frame's vault chip (demo feedback): which vaults the window shows, and a way to switch while it is empty. */
+/* An empty frame's vault chip (D22): which vaults the window shows, and a way to switch while it is empty. */
 .taboverview__vault-chip {
   flex: none;
   padding: 1px 8px;
@@ -1082,10 +1098,10 @@
   background: var(--bg-hover);
 }
 
-/* The pick's bar, bottom middle (the zoom has the left corner), only while cards are picked: a count and what can be done with them. */
+/* The pick's bar, middle, over the toolbar's row (so the two never meet), only while cards are picked: a count and what can be done with them. */
 .taboverview__pick {
   position: absolute;
-  bottom: 14px;
+  bottom: 58px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
