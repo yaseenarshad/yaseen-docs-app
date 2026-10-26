@@ -921,12 +921,29 @@
   background: var(--danger);
 }
 
-/* A close of the pick bar clicked once (D27): red, as an armed ✕, under the pointer too. */
+/* A close of the pick bar clicked once (D27): red, as an armed ✕, under the pointer too. It keeps its label and its
+   width, so no button of the bar moves (YAZ-3374); what the next click does stands in a red hint above it. */
 .taboverview__pick button.taboverview__armed,
 .taboverview__pick button.taboverview__armed:hover,
 .taboverview__pick button.taboverview__armed:focus-visible {
   color: #fff;
   background: var(--danger);
+}
+
+.taboverview__pick-hint {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #fff;
+  background: var(--danger);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
 }
 
 /* A picked card (shift-click): the accent, as an outline. The highlight keeps its shadow under it. */
@@ -1121,6 +1138,7 @@
 }
 
 .taboverview__pick button {
+  position: relative;
   padding: 3px 8px;
   border-radius: 5px;
 }

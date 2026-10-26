@@ -1703,13 +1703,18 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   )
 }
 
-/** A close of the pick bar (D27): the first click arms it — red, "Click again to close N" — and the second closes; the pointer leaving it puts it back. */
+/**
+ * A close of the pick bar (D27): the first click arms it — red, IN PLACE: it keeps its own label, so no button of the
+ * bar moves (YAZ-3374), and "Click again to close N" stands in a hint above it — and the second closes. The pointer
+ * leaving it puts it back.
+ */
 function PickClose({ arm, armed, setArmed, label, armedLabel, onClose }: { arm: string; armed: string | null; setArmed: (next: string | null) => void; label: string; armedLabel: string; onClose: () => void }) {
   const on = armed === arm
   return (
     <button
       type="button"
       className={on ? 'taboverview__armed' : undefined}
+      aria-label={on ? armedLabel : undefined}
       onMouseLeave={() => on && setArmed(null)}
       onClick={() => {
         if (!on) return setArmed(arm)
@@ -1717,7 +1722,12 @@ function PickClose({ arm, armed, setArmed, label, armedLabel, onClose }: { arm: 
         onClose()
       }}
     >
-      {on ? armedLabel : label}
+      <span className="taboverview__pick-label">{label}</span>
+      {on && (
+        <span className="taboverview__pick-hint" aria-hidden>
+          {armedLabel}
+        </span>
+      )}
     </button>
   )
 }

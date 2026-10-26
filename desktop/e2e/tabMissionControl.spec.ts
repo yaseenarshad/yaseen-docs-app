@@ -218,6 +218,18 @@ test('step 5 — a double-click on the other frame\'s label names that window (D
   await shoot(w1, 'mission-05-window-named')
 })
 
+test('step 5b — the pick bar: Clear stays under the pointer after a close is armed (D27, YAZ-3374)', async () => {
+  await card(w1, 'w1', welcome).click({ modifiers: ['Meta'] })
+  await card(w1, 'w2', oldPlan).click({ modifiers: ['Meta'] })
+  await w1.locator('.taboverview__pick button', { hasText: 'Close the others' }).click()
+  const clear = w1.locator('.taboverview__pick button', { hasText: 'Clear' })
+  const at = (await clear.boundingBox())!
+  await w1.mouse.move(at.x + at.width / 2, at.y + at.height / 2, { steps: 5 })
+  await w1.mouse.down()
+  await w1.mouse.up()
+  await expect(w1.locator('.taboverview__pick')).toHaveCount(0)
+})
+
 test('step 6 — a relaunch with the same user-data-dir keeps the moved cards\' places and the window\'s name (D1, D14, S19)', async () => {
   const arrived = storedCard(await readState(userData), 'w2', ideas)!
   await quitApp(app)

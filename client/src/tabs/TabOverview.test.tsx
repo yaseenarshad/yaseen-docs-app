@@ -788,7 +788,7 @@ describe('TabOverview', () => {
     // A pick across windows closes per window.
     shiftClick(page(el, '/v/a.md'))
     shiftClick(theirs[1])
-    for (const label of ['Close them', 'Click again to close 2 tabs']) act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((b) => b.textContent === label)?.click())
+    for (const label of ['Close them', 'Click again to close 2 tabs']) act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((b) => (b.getAttribute('aria-label') ?? b.textContent) === label)?.click())
     expect(props.onCloseTabs).toHaveBeenLastCalledWith(['/v/a.md'])
     expect(api.window.closeTabs).toHaveBeenLastCalledWith('w2', [{ path: '/w/z.md', copy: 0 }])
 
@@ -1202,7 +1202,7 @@ describe('TabOverview', () => {
     shiftClick(page(el, '/v/Projects/plan.md'))
     // Two clicks (D27): the first arms it.
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((button) => button.textContent === 'Close them')?.click())
-    act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((button) => button.textContent === 'Click again to close 2 tabs')?.click())
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((button) => button.getAttribute('aria-label') === 'Click again to close 2 tabs')?.click())
     expect(props.onCloseTabs).toHaveBeenLastCalledWith(['/v/a.md', '/v/Projects/plan.md'])
     expect(bar()).toBeNull()
 
@@ -1219,14 +1219,22 @@ describe('TabOverview', () => {
     expect(props.onOpen).toHaveBeenCalledExactlyOnceWith('/v/Projects/plan.md')
   })
 
-  it('YAZ-3343 S33, D27, D10: the pick bar\'s closes take two clicks — the first turns the button into a red "Click again to close N"; a move off it, Esc or a click elsewhere puts it back; with all windows, "Close the others" says the windows too', async () => {
+  it('YAZ-3343 S33, D27, D10, YAZ-3374: the pick bar\'s closes take two clicks — the first turns the button red, in place, with "Click again to close N" above it; a move off it, Esc or a click elsewhere puts it back; with all windows, "Close the others" says the windows too', async () => {
     canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const { el, props } = await mount()
-    const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((b) => b.textContent === label)
+    // A button by its name: an armed close is named by what its next click does.
+    const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((b) => (b.getAttribute('aria-label') ?? b.textContent) === label)
     act(() => void page(el, '/v/a.md')!.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+    /** What each button of the bar shows as its own label: what sets its width in the bar. */
+    const labels = () => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].map((b) => b.querySelector('.taboverview__pick-label')?.textContent ?? b.textContent)
+    const before = labels()
     // The others: this window's five other tabs and w2's two.
     act(() => button('Close the others')!.click())
+    // YAZ-3374: the close arms IN PLACE — every button keeps its own label, so none moves, and "Clear" stays under the
+    // pointer; what the next click does stands in a hint above the armed button.
+    expect(labels()).toEqual(before)
+    expect(el.querySelector('.taboverview__pick-hint')?.textContent).toBe('Click again to close 7 tabs in 2 windows')
     expect([vi.mocked(props.onCloseTabs).mock.calls.length, vi.mocked(api.window.closeTabs).mock.calls.length]).toEqual([0, 0])
     const armed = button('Click again to close 7 tabs in 2 windows')!
     expect(armed.className).toContain('taboverview__armed')
