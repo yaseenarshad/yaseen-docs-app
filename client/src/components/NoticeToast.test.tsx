@@ -113,4 +113,27 @@ describe('NoticeToast (YAZ-3303)', () => {
     act(() => void clock()!.dispatchEvent(new Event('webkitAnimationEnd', { bubbles: true })))
     expect(onClose).toHaveBeenCalledOnce()
   })
+
+  it('YAZ-3343, demo feedback: a long message wraps (three lines at most) and, when it is cut, its whole text is the pointer\'s (title); a short one is as before', () => {
+    show({ text: 'Saved', icon: 'info' }, 4000)
+    expect(el.querySelector('.link-notice__text')?.getAttribute('title')).toBeNull()
+    act(() => root?.unmount())
+    root = createRoot(el)
+    // jsdom lays nothing out: a text taller than its box is a cut one.
+    const was = [Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight'), Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')]
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get: () => 90 })
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 54 })
+    try {
+      const long = "Can't move here — that window doesn't have this tab's vault, and a very long reason follows that will not fit three lines."
+      show({ text: long, icon: 'error' }, 6000)
+      expect(el.querySelector('.link-notice__text')?.getAttribute('title')).toBe(long)
+      expect(el.querySelector('.link-notice__text')?.textContent).toBe(long)
+    } finally {
+      for (const [i, name] of (['scrollHeight', 'clientHeight'] as const).entries()) {
+        const d = was[i]
+        if (d === undefined) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[name]
+        else Object.defineProperty(HTMLElement.prototype, name, d)
+      }
+    }
+  })
 })

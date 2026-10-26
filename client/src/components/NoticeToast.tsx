@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import type { Notice } from '../lib/notice'
 import { NoticeIcon } from './NoticeIcon'
 
@@ -13,6 +13,8 @@ import { NoticeIcon } from './NoticeIcon'
  * - every toast has ✕ (YAZ-3303 D8): with "Until closed" it is the only way out. CSS draws the ✕ too, so the
  *   toast's text is its message (and its button's label), as before 3303.
  * A new notice (a new object) starts the clock again; the mouse that is on the toast still holds it.
+ * A long message WRAPS to three lines at most, then ends in "…" (YAZ-3343, demo feedback: "we can't read the entire
+ * line"); cut, the pointer on it shows it whole (`title`). The count, ✕ and an action stay on its first line.
  */
 export function NoticeToast({ notice, ms, onClose }: { notice: Notice; ms: number | null; onClose: () => void }) {
   const [held, setHeld] = useState(false)
@@ -25,6 +27,13 @@ export function NoticeToast({ notice, ms, onClose }: { notice: Notice; ms: numbe
     return () => clearTimeout(timer)
   }, [notice, ms, held, onClose])
   const seconds = ms === null ? null : Math.ceil(ms / 1000)
+  // Whether the message is cut at its three lines: then its whole text is the pointer's to read.
+  const textRef = useRef<HTMLSpanElement>(null)
+  const [cut, setCut] = useState(false)
+  useLayoutEffect(() => {
+    const el = textRef.current
+    setCut(el !== null && el.scrollHeight > el.clientHeight + 1)
+  }, [notice.text])
   return (
     // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.
     <div
@@ -35,7 +44,9 @@ export function NoticeToast({ notice, ms, onClose }: { notice: Notice; ms: numbe
       onMouseLeave={() => setHeld(false)}
     >
       <NoticeIcon icon={notice.icon} />
-      <span className="link-notice__text">{notice.text}</span>
+      <span ref={textRef} className="link-notice__text" title={cut ? notice.text : undefined}>
+        {notice.text}
+      </span>
       {notice.action !== undefined && (
         <button
           type="button"
