@@ -773,7 +773,7 @@ describe('TabOverview', () => {
     // A pick across windows closes per window.
     shiftClick(page(el, '/v/a.md'))
     shiftClick(theirs[1])
-    act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((b) => b.textContent === 'Close them')?.click())
+    for (const label of ['Close them', 'Click again to close 2 tabs']) act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((b) => b.textContent === label)?.click())
     expect(props.onCloseTabs).toHaveBeenLastCalledWith(['/v/a.md'])
     expect(api.window.closeTabs).toHaveBeenLastCalledWith('w2', [{ path: '/w/z.md', copy: 0 }])
 
@@ -1185,7 +1185,9 @@ describe('TabOverview', () => {
     await again({ tabs: TABS.filter((path) => path !== '/w/x.md') })
     expect(texts(el, '.taboverview__pick-count')).toEqual(['1 picked'])
     shiftClick(page(el, '/v/Projects/plan.md'))
+    // Two clicks (D27): the first arms it.
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((button) => button.textContent === 'Close them')?.click())
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((button) => button.textContent === 'Click again to close 2 tabs')?.click())
     expect(props.onCloseTabs).toHaveBeenLastCalledWith(['/v/a.md', '/v/Projects/plan.md'])
     expect(bar()).toBeNull()
 
@@ -1200,6 +1202,36 @@ describe('TabOverview', () => {
     shiftClick(page(el, '/v/a.md'))
     act(() => page(el, '/v/Projects/plan.md')?.click())
     expect(props.onOpen).toHaveBeenCalledExactlyOnceWith('/v/Projects/plan.md')
+  })
+
+  it('S33, D27, D10: the pick bar\'s closes take two clicks — the first turns the button into a red "Click again to close N"; a move off it, Esc or a click elsewhere puts it back; with all windows, "Close the others" says the windows too', async () => {
+    canvas = { allWindows: true, snap: false, cards: [] }
+    others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
+    const { el, props } = await mount()
+    const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.taboverview__pick button')].find((b) => b.textContent === label)
+    act(() => void page(el, '/v/a.md')!.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+    // The others: this window's five other tabs and w2's two.
+    act(() => button('Close the others')!.click())
+    expect([vi.mocked(props.onCloseTabs).mock.calls.length, vi.mocked(api.window.closeTabs).mock.calls.length]).toEqual([0, 0])
+    const armed = button('Click again to close 7 tabs in 2 windows')!
+    expect(armed.className).toContain('taboverview__armed')
+    // The pointer off it puts it back.
+    act(() => void armed.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: body(el) })))
+    expect(button('Close the others')).toBeDefined()
+    // Esc puts it back, and keeps the pick.
+    act(() => button('Close the others')!.click())
+    key(el, 'Escape')
+    expect([button('Close the others') !== undefined, el.querySelector('.taboverview__pick-count')?.textContent]).toEqual([true, '1 picked'])
+    // A press elsewhere puts it back.
+    act(() => button('Close the others')!.click())
+    act(() => void body(el).dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(button('Close the others')).toBeDefined()
+    // "Close them": two clicks, then the picked tab closes and the pick goes.
+    act(() => button('Close them')!.click())
+    expect(props.onCloseTabs).not.toHaveBeenCalled()
+    act(() => button('Click again to close 1 tab')!.click())
+    expect(props.onCloseTabs).toHaveBeenCalledExactlyOnceWith(['/v/a.md'])
+    expect(el.querySelector('.taboverview__pick')).toBeNull()
   })
 
   it('S62, S63, R36, demo feedback: Space held opens the sidebar\'s preview panel for the highlight and closes on release — it opens nothing; it follows the arrows; while a query is being typed Space is a space, until the highlight is moved; a PDF has no panel', async () => {

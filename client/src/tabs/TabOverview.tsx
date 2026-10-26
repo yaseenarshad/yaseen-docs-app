@@ -345,7 +345,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const [chipMenu, setChipMenu] = useState<{ x: number; y: number; win: string } | null>(null)
   /** "Open tabs here…": the window the search panel opens tabs in, or null (demo feedback). */
   const [searchFor, setSearchFor] = useState<string | null>(null)
-  /** The one ✕ clicked once (demo feedback): `card:<id>` or `group:<key>`; its next click closes. */
+  /** The one close clicked once (D27): `card:<id>`, `group:<key>`, or the pick bar's `pick:them` / `pick:others`; its next click closes. */
   const [armed, setArmed] = useState<string | null>(null)
   /** Windows opened from the canvas, standing where they were asked for while this board shows (one-shot, never stored). */
   const [anchors, setAnchors] = useState<ReadonlyMap<string, { x: number; y: number }>>(new Map())
@@ -472,6 +472,12 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const stopIds = new Map(shown.map((id, i) => [id, `${listId}-p${i}`]))
   const currentStop = current === null ? undefined : stopIds.get(current)
   const pick = allCards.filter((id) => picked.has(id))
+  /** What "Close the others" closes, said on its armed button (D27): with all windows on, in how many windows too (D10). */
+  const othersText = (() => {
+    const rest = allCards.filter((id) => !picked.has(id))
+    const wins = new Set(shownWindows.filter((w) => w.tabs.some((t) => !picked.has(t.id))).map((w) => w.win)).size
+    return `Click again to close ${tabCount(rest.length)}${allWindows ? ` in ${wins === 1 ? '1 window' : `${wins} windows`}` : ''}`
+  })()
   const anyMenu = pageMenu !== null || islandMenu !== null || pickMenu !== null || frameMenu !== null
 
   // What the doors below read when they run: a ref, so the handlers of the cards and of the window keep one identity.
@@ -1485,8 +1491,8 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         // The board keeps the focus where it is, so a press away from a card's name field would not end it:
         // that press saves it, as a click away does on the strip (YAZ-2949 S3).
         if ((renaming !== null || naming !== null) && document.activeElement instanceof HTMLElement) document.activeElement.blur()
-        // A press anywhere but the armed Close itself puts it back to ✕.
-        if (armed !== null && !(e.target instanceof Element && e.target.closest('.taboverview__close--armed') !== null)) setArmed(null)
+        // A press anywhere but the armed Close itself puts it back.
+        if (armed !== null && !(e.target instanceof Element && e.target.closest('.taboverview__close--armed, .taboverview__pick .taboverview__armed') !== null)) setArmed(null)
         e.preventDefault()
       }}
     >
@@ -1661,16 +1667,12 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       </div>
       {/* The preview panel beside a card (demo feedback): a rest of the pointer, or Space. Portalled, never clicked. */}
       <CardPreviewHost store={cardPreview.store} cardOf={previewCard} scopeOf={previewScope} diagramDarkColors={darkColors} />
-      {/* The pick's bar: only while cards are picked. Both closes drop the pick and leave the board open. */}
+      {/* The pick's bar: only while cards are picked. Each close takes two clicks (D27), drops the pick and leaves the board open. */}
       {pick.length > 0 && (
         <div className="taboverview__pick" role="toolbar" aria-label="Picked tabs">
           <span className="taboverview__pick-count">{pick.length} picked</span>
-          <button type="button" onClick={() => closePick(false)}>
-            Close them
-          </button>
-          <button type="button" onClick={() => closePick(true)}>
-            Close the others
-          </button>
+          <PickClose arm="pick:them" armed={armed} setArmed={setArmed} label="Close them" armedLabel={`Click again to close ${tabCount(pick.length)}`} onClose={() => closePick(false)} />
+          <PickClose arm="pick:others" armed={armed} setArmed={setArmed} label="Close the others" armedLabel={othersText} onClose={() => closePick(true)} />
           <button type="button" onClick={() => setPicked(NONE)}>
             Clear
           </button>
@@ -1882,6 +1884,25 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         />
       )}
     </div>
+  )
+}
+
+/** A close of the pick bar (D27): the first click arms it — red, "Click again to close N" — and the second closes; the pointer leaving it puts it back. */
+function PickClose({ arm, armed, setArmed, label, armedLabel, onClose }: { arm: string; armed: string | null; setArmed: (next: string | null) => void; label: string; armedLabel: string; onClose: () => void }) {
+  const on = armed === arm
+  return (
+    <button
+      type="button"
+      className={on ? 'taboverview__armed' : undefined}
+      onMouseLeave={() => on && setArmed(null)}
+      onClick={() => {
+        if (!on) return setArmed(arm)
+        setArmed(null)
+        onClose()
+      }}
+    >
+      {on ? armedLabel : label}
+    </button>
   )
 }
 

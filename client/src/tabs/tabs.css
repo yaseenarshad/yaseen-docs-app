@@ -919,6 +919,14 @@
   background: var(--danger);
 }
 
+/* A close of the pick bar clicked once (D27): red, as an armed ✕, under the pointer too. */
+.taboverview__pick button.taboverview__armed,
+.taboverview__pick button.taboverview__armed:hover,
+.taboverview__pick button.taboverview__armed:focus-visible {
+  color: #fff;
+  background: var(--danger);
+}
+
 /* A picked card (shift-click): the accent, as an outline. The highlight keeps its shadow under it. */
 .taboverview__page--picked {
   border-color: var(--accent);
