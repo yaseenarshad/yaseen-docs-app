@@ -6171,11 +6171,11 @@ describe('App Files window (YAZ-3357)', () => {
     act(() => sidebar.onOpenFile('/v/a.md'))
     act(() => sidebar.onKeepFile('/v/b.md'))
     act(() => sidebar.onOpenFileBackground('/v/c.md'))
-    // Enter on a row makes a click with no pointer (`detail` 0): it keeps the tab.
-    const enterClick = new MouseEvent('click', { detail: 0 })
-    const row = document.createElement('button')
-    row.addEventListener('click', () => sidebar.onOpenFile('/v/d.md'))
-    act(() => void row.dispatchEvent(enterClick))
+    // Enter on a row opens during the Enter key press (bug YAZ-3399: no `window.event`): it keeps the tab.
+    const onEnter = (): void => sidebar.onOpenFile('/v/d.md')
+    window.addEventListener('keydown', onEnter)
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })))
+    window.removeEventListener('keydown', onEnter)
     act(() => sidebar.onInbox('/v'))
     expect(bridge.window.openFromFiles.mock.calls.map(([action]) => action)).toEqual([
       { kind: 'open', path: '/v/a.md', how: 'preview' },
