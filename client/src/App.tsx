@@ -2528,6 +2528,10 @@ export function App() {
                 onNotice={notify}
                 reviewState={reviewState}
                 onSetReview={setReview}
+                // A card's "Add to focus" and "Add to favorites" (YAZ-3264 D4): the same lists and toggles as the tab row's.
+                listState={lists.stateOf}
+                onToggleFocus={lists.toggleFocus}
+                onToggleFavorite={lists.toggleFavorite}
               />
             )}
             {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
