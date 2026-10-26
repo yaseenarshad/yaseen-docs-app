@@ -309,3 +309,21 @@
 .whats-new__actions .btn--primary:hover {
   background: color-mix(in srgb, var(--accent) 85%, #000);
 }
+
+/* A narrow window (YAZ-3357 D14, a Files window): the list stands above the notes, shorter, so the notes keep the width. */
+@media (max-width: 560px) {
+  .whats-new__columns {
+    flex-direction: column;
+  }
+
+  .whats-new__list {
+    flex: 0 0 auto;
+    max-height: 30vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .whats-new__notes {
+    padding: 4px 16px 16px;
+  }
+}

@@ -68,6 +68,7 @@ link.onFocusTab/1: on link:focus-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","r
 link.onHighlightTab/1: on link:highlight-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:highlight-tab
 link.onNotice/1: on link:notice -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:notice
 link.onOpenFile/1: on link:open-file -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:open-file
+link.onOpenFromFiles/1: on link:open-from-files -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:open-from-files
 link.onPopOutTab/1: on link:pop-out-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:pop-out-tab
 link.onSendTab/1: on link:send-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:send-tab
 link.onSetRoots/1: on link:set-roots -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:set-roots
@@ -163,6 +164,9 @@ window.closeOther/1: invoke window:close-other ["a0"]; => "answer"; !> {"code":"
 window.closeSelf/0: invoke window:close-self []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.closeTabs/2: invoke window:close-tabs ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.duplicate/0: invoke window:duplicate []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.filesPreview/1: invoke window:files-preview ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.filesToNormal/0: invoke window:files-to-normal []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.filesWide/1: invoke window:files-wide ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.focusTab/2: invoke window:focus-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.hiddenWindows/0: invoke window:hidden-windows-now []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.highlight/1: invoke window:highlight ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -178,6 +182,8 @@ window.onMinimizedWindows/1: on window:minimized-windows -> listener[[{"id":"0-0
 window.open/1: invoke window:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openAlone/1: invoke window:open-alone ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openBehind/0: invoke window:open-behind []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.openFiles/1: invoke window:open-files ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.openFromFiles/1: invoke window:open-from-files ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openRecent/1: invoke window:open-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openSet/1: invoke window:open-set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.popOut/2: invoke window:pop-out ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

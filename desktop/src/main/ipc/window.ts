@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, rootOfPath, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, rootOfPath, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -121,6 +121,40 @@ function requireTabRef(v: unknown, param: string): TabRef {
   return ref
 }
 
+/** A Files window's action (YAZ-3357 D2): one of the union's shapes, its paths absolute and in a vault of the Files window `from`. */
+function requireFilesAction(v: unknown, from: WindowEntry): FilesAction {
+  if (!isRecord(v)) throw new BridgeFailure('BAD_REQUEST', "'action' must be an object")
+  const inVault = (raw: unknown, param: string): string => {
+    const path = requireAbsPath(raw, param)
+    if (rootOfPath(from.roots, path) === null) throw new BridgeFailure('BAD_REQUEST', `'${param}' is in no vault of this window`)
+    return path
+  }
+  switch (v.kind) {
+    case 'open':
+      if (v.how !== 'preview' && v.how !== 'keep' && v.how !== 'background') throw new BridgeFailure('BAD_REQUEST', "'action.how' must be preview, keep or background")
+      return { kind: 'open', path: inVault(v.path, 'action.path'), how: v.how }
+    case 'history':
+    case 'share':
+      return { kind: v.kind, path: inVault(v.path, 'action.path') }
+    case 'review':
+      return { kind: 'review', dir: inVault(v.dir, 'action.dir') }
+    case 'inbox':
+      return { kind: 'inbox', root: inVault(v.root, 'action.root') }
+    case 'session':
+      return { kind: 'session', id: requireString(v.id, 'id') }
+    default:
+      throw new BridgeFailure('BAD_REQUEST', "'action.kind' must be open, history, share, review, inbox or session")
+  }
+}
+
+/** The floating preview's place (YAZ-3357 D9): four finite numbers, the size above 0. */
+function requireFilesPreview(v: unknown): FilesPreviewRequest {
+  if (!isRecord(v) || ![v.width, v.height, v.top, v.bottom].every((n) => typeof n === 'number' && Number.isFinite(n)) || (v.width as number) <= 0 || (v.height as number) <= 0) {
+    throw new BridgeFailure('BAD_REQUEST', "'req' must be { width, height, top, bottom } with a size above 0")
+  }
+  return { width: v.width as number, height: v.height as number, top: v.top as number, bottom: v.bottom as number }
+}
+
 /**
  * The `window.*` half of `window.yaseenDocs`. The caller is resolved through the window lookup
  * (`webContents.id` → window id) and answered from `AppState.windows`. `open` / `duplicate`
@@ -138,13 +172,16 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   }
 
   handleWithEvent(CONTRACT.window.identity, async (e): Promise<WindowIdentity> => {
-    const { id, root, roots, file, tabs, tabStrip, name, rightPanel, sidebarCollapsed, sidebarLens } = entryFor(e)
+    const { id, root, roots, file, tabs, tabStrip, name, rightPanel, sidebarCollapsed, sidebarLens, kind } = entryFor(e)
     // A new window's page view goes out with its FIRST identity only (YAZ-2951 S17): a reload starts fresh.
     const startView = windows.takeStartView(id)
     // A window the tab board opened empty (YAZ-3343) says so once: it boots with no tab.
     const startEmpty = windows.takeStartEmpty(id)
+    // A Files window's page that starts (a launch, a reload) starts with its board closed (YAZ-3357 D3, D10; bug YAZ-3392):
+    // main ends a wide state left from the page before, so the window is narrow again and the next board grows it.
+    if (kind === 'files') windows.filesWide(id, false)
     // The copies and display names (YAZ-3057) go out with EVERY identity read: a reload keeps them, as a restart does.
-    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(startEmpty ? { startEmpty: true as const } : {}) }
+    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(kind === undefined ? {} : { kind }) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
@@ -198,6 +235,9 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   handleWithEvent(CONTRACT.window.zoom, async (e, step: unknown) => {
     if (step !== -1 && step !== 0 && step !== 1) throw new BridgeFailure('BAD_REQUEST', 'step must be -1, 0 or 1')
     e.sender.setZoomLevel(step === 0 ? 0 : e.sender.getZoomLevel() + 0.5 * step)
+    // A Files window keeps its own zoom for the next launch (YAZ-3357): its origin is its own, so no other window moved.
+    const id = windows.idFor(e.sender)
+    if (id !== undefined) windows.setFilesZoom(id, e.sender.getZoomLevel())
   })
 
   handle(CONTRACT.window.open, async (opts: unknown) => {
@@ -396,6 +436,33 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   })
   handle(CONTRACT.window.removeSession, async (id: unknown) => {
     store.removeSession(requireString(id, 'id'))
+  })
+
+  // `window:open-files` (YAZ-3357 D5, D6): the vault menu's "Open in Files window" — beside the CALLER, on `root` or on
+  // every vault of the caller. A root the caller does not name in its own list is still a vault: any folder may open.
+  handleWithEvent(CONTRACT.window.openFiles, async (e, root: unknown) => {
+    const from = entryFor(e)
+    const vault = root === null ? null : requireAbsPath(root, 'root')
+    if (!windows.openFilesWindow(from.id, vault)) throw new BridgeFailure('BAD_REQUEST', 'this window shows no vault')
+  })
+  // `window:open-from-files` (YAZ-3357 D2): ONE door for every click in a Files window; main picks the window. Only a Files window asks.
+  handleWithEvent(CONTRACT.window.openFromFiles, async (e, action: unknown) => {
+    const from = entryFor(e)
+    if (from.kind !== 'files') throw new BridgeFailure('BAD_REQUEST', 'only a Files window opens through this door')
+    if (!windows.openFromFiles(from.id, requireFilesAction(action, from))) throw new BridgeFailure('NOT_FOUND', 'no window can open that')
+  })
+  // `window:files-wide` (YAZ-3357 D3): the board opens or closes in the CALLER, a Files window; main owns the width.
+  handleWithEvent(CONTRACT.window.filesWide, async (e, open: unknown) => {
+    if (typeof open !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'open' must be a boolean")
+    if (!windows.filesWide(entryFor(e).id, open)) throw new BridgeFailure('BAD_REQUEST', 'only a Files window grows for the board')
+  })
+  // `window:files-to-normal` (YAZ-3357 D13): the CALLER, a Files window, becomes a full window where it stands.
+  handleWithEvent(CONTRACT.window.filesToNormal, async (e) => {
+    if (!windows.filesToNormal(entryFor(e).id)) throw new BridgeFailure('BAD_REQUEST', 'only a Files window turns into a full window')
+  })
+  // `window:files-preview` (YAZ-3357 D9): the CALLER's floating preview, shown beside it or hidden.
+  handleWithEvent(CONTRACT.window.filesPreview, async (e, req: unknown) => {
+    if (!windows.filesPreview(entryFor(e).id, req === null ? null : requireFilesPreview(req))) throw new BridgeFailure('BAD_REQUEST', 'only a Files window has a floating preview')
   })
 
   // Explicit paste outside a Crepe editor uses Chromium insertion for native selection/undo.

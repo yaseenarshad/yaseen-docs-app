@@ -251,9 +251,10 @@ test('step 3 — holding ⇧ says "Open here" on the highlighted row, and ⇧⏎
 
 test('step 4 — "Set display name" from the header menu renames the header, the window title and `folders[root].name`', async () => {
   // The header IS the current vault (YAZ-1798): its menu has the middle three groups only — no
-  // "Open in this window", no "Remove", and no "Reset" while no display name is set (YAZ-1974 D5).
+  // "Open in this window", no "Remove", and no "Reset" while no display name is set (YAZ-1974 D5). "Open in Files
+  // window" stands first on every vault, this one too (YAZ-3357 D5, S3).
   await trigger(win).click({ button: 'right' })
-  await expect(vaultMenuItems(win)).toHaveText(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  await expect(vaultMenuItems(win)).toHaveText(['Open in Files window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   await vaultMenuItem(win, 'Set display name').click()
 
   // The name becomes a field WHERE it stood — the header — the folder name as its placeholder (D5).
@@ -284,7 +285,7 @@ test('step 5 — the display name survives quit → relaunch; "Reset to folder n
 
   // With a display name set the menu gains "Reset to folder name" — never "Rename" (D5).
   await trigger(win).click({ button: 'right' })
-  await expect(vaultMenuItems(win)).toHaveText(['Set display name', 'Reset to folder name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  await expect(vaultMenuItems(win)).toHaveText(['Open in Files window', 'Set display name', 'Reset to folder name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   await vaultMenuItem(win, 'Reset to folder name').click()
   await expect(headerName(win)).toHaveText(BETA)
   await expect.poll(() => win.title()).toBe(titleOf('Ideas.md', BETA))

@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -263,6 +263,25 @@ export const CONTRACT = {
     closeSelf: invoke<[], void>('window:close-self', 0),
     /** App-wide zoom for THIS window (YAZ-1710): what the stock `zoomIn` / `zoomOut` / `resetZoom` roles did — level ± 0.5, or back to 0. */
     zoom: invoke<[step: ZoomStep], void>('window:zoom', 1),
+    /**
+     * A Files window (YAZ-3357 D5, D6): on the vault `root`, or with null on every vault of THIS window. It opens flush
+     * left of this window, as tall, as wide as the sidebar. The vault menu's "Open in Files window"; ⌘⇧W is main's own.
+     */
+    openFiles: invoke<[root: string | null], void>('window:open-files', 1),
+    /**
+     * A click in THIS Files window (YAZ-3357 D2, D7): main picks the full window that shows the page's vault — the one
+     * focused last, else the first — or opens one, pushes `link:open-from-files` to it and raises it by `action`'s rule.
+     */
+    openFromFiles: invoke<[action: FilesAction], void>('window:open-from-files', 1),
+    /** Tabs Mission Control opens (`true`) or closes in THIS Files window (YAZ-3357 D3): main makes it wide, or narrow again. */
+    filesWide: invoke<[open: boolean], void>('window:files-wide', 1),
+    /** THIS Files window's floating preview (YAZ-3357 D9): main shows its popup beside the window at `req`, inactive; `null` hides it. */
+    filesPreview: invoke<[req: FilesPreviewRequest | null], void>('window:files-preview', 1),
+    /**
+     * "Make full window" in THIS Files window (YAZ-3357 D13): a full window opens where it stands, on its
+     * vaults and lens, on the blank tab with the caret in the search, and the Files window closes.
+     */
+    filesToNormal: invoke<[], void>('window:files-to-normal', 0),
   },
   /** Menu gestures from the main process (B3, GRO-2161; tabs GRO-2232): main sends them to the focused window only. */
   menu: {
@@ -326,6 +345,8 @@ export const CONTRACT = {
     onHighlightTab: push<TabRef | null>('link:highlight-tab'),
     /** Another window's board asks a tab action of this window's tab `ref` (YAZ-3343): run it here. */
     onTabAction: push<{ ref: TabRef; action: TabAction }>('link:tab-action'),
+    /** A Files window asked this window to act (YAZ-3357 D2): open the page, its history, its Share dialog, a review, an Inbox or a session. */
+    onOpenFromFiles: push<FilesAction>('link:open-from-files'),
     /** A link could not be opened (bad URL, unsupported, missing or non-regular file): show `message` unobtrusively. */
     onNotice: push<string>('link:notice'),
     /** This window's three listeners above are on (YAZ-2589 A2): main sends the pushes it held while the page loaded. */

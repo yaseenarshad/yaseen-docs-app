@@ -15,6 +15,8 @@ const noopHandlers = (): MenuHandlers => ({
   pasteAs: vi.fn(),
   newTab: vi.fn(),
   newWindow: vi.fn(),
+  newFilesWindow: vi.fn(),
+  closeWindow: vi.fn(),
   switchVault: vi.fn(),
   openFolder: vi.fn(),
   openRecent: vi.fn(),
@@ -81,7 +83,7 @@ describe('buildMenuTemplate', () => {
     expect(handlers.settings).toHaveBeenCalledTimes(1)
   })
 
-  it('File menu: New Tab ⌘T, New Window ⌘⇧N, Switch Vault… ⌘O, Open Folder… ⌘⇧O, Open Recent, Search Vault ⌘K, Close Tab ⌘W, Close Window ⌘⇧W', () => {
+  it('File menu: New Tab ⌘T, New Window ⌘⇧N, Switch Vault… ⌘O, Open Folder… ⌘⇧O, Open Recent, Search Vault ⌘K, Close Tab ⌘W, Close Window (no key)', () => {
     const handlers = noopHandlers()
     const file = menuOf(build(RECENTS, false, handlers), 'File')
 
@@ -94,6 +96,12 @@ describe('buildMenuTemplate', () => {
     expect(newWindow?.accelerator).toBe('CmdOrCtrl+Shift+N')
     click(newWindow)
     expect(handlers.newWindow).toHaveBeenCalledTimes(1)
+
+    // ⌘⇧W (YAZ-3357 D5, D15): New Files Window, right after New Window.
+    const newFiles = file[file.indexOf(newWindow as MenuItemConstructorOptions) + 1]
+    expect([newFiles.id, newFiles.label, newFiles.accelerator]).toEqual(['menu.file.new-files-window', 'New Files Window', 'CmdOrCtrl+Shift+W'])
+    click(newFiles)
+    expect(handlers.newFilesWindow).toHaveBeenCalledTimes(1)
 
     // ⌘O is Switch Vault… (YAZ-1767 D8): directly ABOVE Open Folder…, into the focused renderer.
     const switchVault = file.find((i) => i.label === 'Switch Vault…')
@@ -123,10 +131,13 @@ describe('buildMenuTemplate', () => {
     click(closeTab)
     expect(handlers.closeTab).toHaveBeenCalledTimes(1)
 
-    // Close Window keeps role close (the flush-handshake OS close) on ⌘⇧W.
+    // Close Window has no key and no role (role close would bring ⌘W along): ⌘⇧W is New Files Window (YAZ-3357 D15).
+    // Its click is the focused window's real close (the flush handshake), through `handlers.closeWindow`.
     const close = file.find((i) => i.label === 'Close Window')
-    expect(close?.role).toBe('close')
-    expect(close?.accelerator).toBe('CmdOrCtrl+Shift+W')
+    expect(close?.role).toBeUndefined()
+    expect(close?.accelerator).toBeUndefined()
+    click(close)
+    expect(handlers.closeWindow).toHaveBeenCalledTimes(1)
   })
 
   it('Open Recent lists recents in MRU order; every click — plain or ⌥ — hands the path over the same way (YAZ-1914 D2)', () => {
@@ -498,7 +509,7 @@ const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', roots: ['/vaults/n
 
 /** `folderExists` is the open-recent door's answer: `false` = the folder is gone (the door pruned it from the recents). */
 function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, folderExists = true) {
-  const windows = { duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => folderExists), linkNotice: vi.fn() }
+  const windows = { duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => folderExists), linkNotice: vi.fn(), idFor: vi.fn((wc: { id: number }) => (wc.id === 7 ? 'w1' : undefined)), openFilesWindow: vi.fn((from: string | undefined) => from !== undefined), closeWindow: vi.fn() }
   const host: MenuHost = {
     focusedWebContents: () => focused,
     readClipboardText: vi.fn(() => '# Clipboard\n\nText'),
@@ -540,6 +551,28 @@ describe('createMenuHandlers', () => {
     handlers.newWindow()
     expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.menu.onNewWindow.channel)
     expect(windows.duplicateWindow).not.toHaveBeenCalled() // main no longer copies the window by itself
+  })
+
+  it('closeWindow (YAZ-3357 D15): the focused window\'s real close in main; with no window it does nothing', () => {
+    const { handlers, windows } = makeHandlers({ id: 7, send: vi.fn() })
+    handlers.closeWindow()
+    expect(windows.closeWindow).toHaveBeenCalledExactlyOnceWith('w1')
+    const none = makeHandlers(undefined)
+    none.handlers.closeWindow()
+    expect(none.windows.closeWindow).not.toHaveBeenCalled()
+  })
+
+  it('newFilesWindow (⌘⇧W, YAZ-3357 D5, D15) goes straight to main with the focused window as the source; with no window it says why', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers, windows } = makeHandlers(wc)
+    handlers.newFilesWindow()
+    expect(windows.openFilesWindow).toHaveBeenCalledExactlyOnceWith('w1', null)
+    expect(wc.send).not.toHaveBeenCalled()
+    expect(windows.linkNotice).not.toHaveBeenCalled()
+    const none = makeHandlers(undefined)
+    none.handlers.newFilesWindow()
+    expect(none.windows.openFilesWindow).toHaveBeenCalledExactlyOnceWith(undefined, null)
+    expect(none.windows.linkNotice).toHaveBeenCalledTimes(1)
   })
 
   it('newWindow with no window at all is a no-op', () => {

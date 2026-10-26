@@ -21,6 +21,10 @@ export interface MenuHandlers {
   newTab(): void
   /** File › New Window (⌘⇧N, D6): the focused window calls `window:duplicate` — a window on its vaults with no tab (YAZ-3343 D35). */
   newWindow(): void
+  /** File › New Files Window (⌘⇧W, YAZ-3357 D5, D15): main opens a Files window on the focused window's vaults, flush left of it. */
+  newFilesWindow(): void
+  /** File › Close Window (no key since YAZ-3357 D15): the focused window's REAL close, so its flush handshake runs. */
+  closeWindow(): void
   /** File › Switch Vault… (⌘O, YAZ-1767 D8): the focused window's renderer opens its sidebar vault switcher. */
   switchVault(): void
   /** File › Open Folder… (⌘⇧O): the focused window's renderer runs its pick-folder flow. */
@@ -139,6 +143,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }: M
         // ⌘T is New Tab (YAZ-2655 D10): the renderer owns the tabs, so the gesture goes to the focused window's renderer.
         { id: 'menu.file.new-tab', label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: () => handlers.newTab() },
         { id: 'menu.file.new-window', label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: () => handlers.newWindow() },
+        // ⌘⇧W (YAZ-3357 D15, Yaseen: "can we change the hotkey for this to CMD SHIFT W? and remove whatever the hotkey for that is right now?"): Close Window gave it up.
+        { id: 'menu.file.new-files-window', label: 'New Files Window', accelerator: 'CmdOrCtrl+Shift+W', click: () => handlers.newFilesWindow() },
         { type: 'separator' },
         // ⌘O opens the sidebar header's vault switcher (YAZ-1767 D8): the renderer owns the panel,
         // so the gesture goes to the focused window's renderer like Search Vault does.
@@ -161,10 +167,10 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }: M
         { id: 'menu.file.share-link', label: 'Share Link', accelerator: 'CmdOrCtrl+Shift+L', enabled: onBoard, click: () => handlers.shareLink() },
         { type: 'separator' },
         // ⌘W is Close Tab (GRO-2232, locked): the renderer owns tab state, so the gesture goes to
-        // the focused window's renderer. Close Window moves to ⌘⇧W and keeps `role: 'close'` — the
-        // OS close that windows.ts intercepts for the flush handshake.
+        // the focused window's renderer. Close Window has NO key since YAZ-3357 D15 (⌘⇧W opens a Files window), so it
+        // is no `role: 'close'` (that role brings ⌘W along): its click is the real close, which windows.ts intercepts for the flush handshake.
         { id: 'menu.file.close-tab', label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => handlers.closeTab() },
-        { id: 'menu.file.close-window', role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W' },
+        { id: 'menu.file.close-window', label: 'Close Window', click: () => handlers.closeWindow() },
       ],
     },
     {
@@ -351,7 +357,7 @@ export interface MenuHost {
   checkForUpdates(): void
 }
 
-type MenuWindows = Pick<WindowManager, 'openRecentBeside' | 'linkNotice'>
+type MenuWindows = Pick<WindowManager, 'openRecentBeside' | 'linkNotice' | 'idFor' | 'openFilesWindow' | 'closeWindow'>
 
 export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHandlers {
   return {
@@ -366,6 +372,17 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
       // Through the focused window, which calls `window:duplicate` (YAZ-3343 D35): main names the caller from the
       // sender. A window whose page does not answer opens nothing (YAZ-2951 S14).
       host.focusedWebContents()?.send(CONTRACT.menu.onNewWindow.channel)
+    },
+    newFilesWindow() {
+      // Straight to main (YAZ-3357 D5): the focused window is only the source of the vaults and the place. With
+      // none, or the Welcome window, there is no vault to show, and the window in front says so.
+      const target = host.focusedWebContents()
+      if (!windows.openFilesWindow(target === undefined ? undefined : windows.idFor(target), null)) windows.linkNotice('Open a vault first: a Files window shows the vaults of a window')
+    },
+    closeWindow() {
+      const target = host.focusedWebContents()
+      const id = target === undefined ? undefined : windows.idFor(target)
+      if (id !== undefined) windows.closeWindow(id)
     },
     switchVault() {
       host.focusedWebContents()?.send(CONTRACT.menu.onSwitchVault.channel)

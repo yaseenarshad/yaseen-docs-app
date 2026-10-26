@@ -544,7 +544,7 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
   it('the trigger opens the CURRENT vault\'s menu (no Open in this window, no Remove) and leaves the panel closed; the native menu is swallowed', () => {
     const { el } = render()
     expect(rightClick(trigger(el))).toBe(true)
-    expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+    expect(menuLabels()).toEqual(['Open in Files window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
     expect(panel(el)).toBeNull()
   })
 
@@ -553,10 +553,10 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     openPanel(el)
     const before = activeRow(el)
     rightClick(rows(el)[0])
-    expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+    expect(menuLabels()).toEqual(['Open in Files window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     rightClick(otherRow(el))
-    expect(menuLabels()).toEqual(['Open by itself', 'Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
+    expect(menuLabels()).toEqual(['Open by itself', 'Open in Files window', 'Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
     expect(activeRow(el)).toBe(before)
   })
 
@@ -1120,11 +1120,11 @@ describe('VaultSwitcher: several vaults in one window (YAZ-2602 S15, S8)', () =>
     const { el } = render({ roots: [ROOT, '/w/Notes'], onAddHere: vi.fn(async () => true) })
     openPanel(el)
     rightClick(rowOf(el, ARCHIVE))
-    expect(menuLabels()).toEqual(['Open by itself', 'Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
+    expect(menuLabels()).toEqual(['Open by itself', 'Open in Files window', 'Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     for (const inWindow of [ROOT, '/w/Notes']) {
       rightClick(rowOf(el, inWindow))
-      expect(menuLabels()).toEqual(['Open by itself', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+      expect(menuLabels()).toEqual(['Open by itself', 'Open in Files window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     }
   })
@@ -1235,6 +1235,31 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     act(() => void rows(el)[1].dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
     expect(activeRow(el)).toBe(rows(el)[1])
     expect(el.querySelectorAll('.vault-switcher__row--active')).toHaveLength(1)
+  })
+
+  it('YAZ-3357, a Files window: a vault row (plain, ⇧ or ⌥) switches THIS window in place and a workspace row takes its vaults here; nothing opens or is raised; the vault it shows alone only closes the panel', async () => {
+    const onOpenSetHere = vi.fn(async () => true)
+    const { el, props } = render({ onOpenSetHere })
+    seedSets(WORK)
+    openPanel(el)
+    act(() => rows(el)[0].click())
+    await settle()
+    expect(onOpenSetHere).toHaveBeenCalledExactlyOnceWith(WORK.id)
+    expect(openSet).not.toHaveBeenCalled()
+    expect(panel(el)).toBeNull()
+    for (const key of [{}, { shiftKey: true }, { altKey: true }]) {
+      openPanel(el)
+      act(() => void rows(el)[3].dispatchEvent(new MouseEvent('click', { ...key, bubbles: true })))
+      await settle()
+    }
+    expect(props.onOpenHere).toHaveBeenCalledTimes(3)
+    expect(props.onOpenHere).toHaveBeenLastCalledWith('/v/Archive')
+    openPanel(el)
+    act(() => rows(el)[1].click())
+    await settle()
+    expect(props.onOpenHere).toHaveBeenCalledTimes(3)
+    expect(panel(el)).toBeNull()
+    expect(openRecent).not.toHaveBeenCalled()
   })
 
   it('the filter matches a workspace by its name, ranked like a vault; a group with no match shows no label (S64)', async () => {
@@ -1514,7 +1539,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     seedSets(WORK, READING)
     const { el } = render()
     rightClick(trigger(el))
-    expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+    expect(menuLabels()).toEqual(['Open in Files window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   })
 
   it('a window with one vault reads no saved workspace for its header, on a render or on a change of the cache: one vault is never a workspace (S70)', () => {
@@ -1581,8 +1606,23 @@ describe('VaultSwitcher: Open by itself (YAZ-2858 D2, D3, S9 to S14)', () => {
     const { el } = render()
     openPanel(el)
     rightClick(rowOf(el, ARCHIVE))
-    expect(menuLabels()).toEqual(['Open by itself', 'Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
+    expect(menuLabels()).toEqual(['Open by itself', 'Open in Files window', 'Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
     expect(menuItem('Open by itself').dataset.hint).toBe('⌥⏎')
+  })
+
+  it('YAZ-3357 D5: "Open in Files window" on a row and on the header asks main for a Files window on that vault, and the panel closes', async () => {
+    const openFiles = vi.fn(async () => undefined)
+    Object.assign((window as unknown as { yaseenDocs: { window: object } }).yaseenDocs.window, { openFiles })
+    const { el } = render()
+    openPanel(el)
+    rightClick(rowOf(el, ARCHIVE))
+    expect(menuItem('Open in Files window').dataset.hint).toBe('⌘⇧W')
+    await act(async () => menuItem('Open in Files window').click())
+    expect(openFiles).toHaveBeenCalledExactlyOnceWith(ARCHIVE)
+    expect(rows(el)).toEqual([])
+    rightClick(trigger(el))
+    await act(async () => menuItem('Open in Files window').click())
+    expect(openFiles).toHaveBeenLastCalledWith(ROOT)
   })
 
   it('S10: in a window with one vault, that vault has no "Open by itself" — neither on its row nor in the header\'s menu', () => {
@@ -1600,7 +1640,7 @@ describe('VaultSwitcher: Open by itself (YAZ-2858 D2, D3, S9 to S14)', () => {
     openPanel(el)
     for (const inWindow of [ROOT, '/w/Notes']) {
       rightClick(rowOf(el, inWindow))
-      expect(menuLabels()).toEqual(['Open by itself', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+      expect(menuLabels()).toEqual(['Open by itself', 'Open in Files window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
       escape()
     }
   })

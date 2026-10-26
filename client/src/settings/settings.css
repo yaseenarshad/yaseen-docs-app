@@ -771,3 +771,28 @@
   margin: 0;
   font-size: 14px;
 }
+
+/*
+ * A narrow window (YAZ-3357 D14: a Files window is about 230 px of page): the nav and the page side
+ * by side leave the page no width. The nav stands above the page instead, shorter, and the sheet
+ * takes the window less a small margin. The nav leaves room on its right for the close button.
+ */
+@media (max-width: 560px) {
+  .settings-dialog {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+  }
+
+  .settings-nav {
+    max-height: 35vh;
+    padding-right: 44px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-pane {
+    padding: 16px;
+  }
+}

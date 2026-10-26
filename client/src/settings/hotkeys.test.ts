@@ -28,7 +28,7 @@ describe('HOTKEYS source of truth', () => {
 
   it('covers the window & tab shortcuts from the application menu (B3 + Tabs)', () => {
     const keys = WINDOW_HOTKEYS.map((h) => h.keys)
-    // ⌘⇧N / ⌘⇧O / ⌘W (Close Tab) / ⌘⇧W (Close Window) and the tab-switch pairs live in the
+    // ⌘⇧N / ⌘⇧O / ⌘W (Close Tab) / ⌘⇧W (New Files Window, YAZ-3357 D15) and the tab-switch pairs live in the
     // menu (menu.ts, GRO-2161/2232). No '⌥ Open Recent' tip: ⌥ no longer differs from a plain click (YAZ-1914 D2).
     for (const expected of ['⌘⇧N', '⌘⇧O', '⌘O', '⌘K', '⌘,', '⌘B', '⌘⇧C', '⌘X / ⌘C', '⌘V', '⌘W', '⌘⇧W', '⌃Tab / ⌃⇧Tab', '⌘⇧] / ⌘⇧[']) {
       expect(keys).toContain(expected)
@@ -43,9 +43,9 @@ describe('HOTKEYS source of truth', () => {
     // ⌘⇧C (🔒 D4, YAZ-1338): the multi-selection FIRST, the open file as the fallback — the
     // order matters, so the label has to name both and in that order.
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧C')?.label).toMatch(/selection.*else the open file/i)
-    // The ⌘W ladder swap (GRO-2232, locked): ⌘W closes the TAB, ⌘⇧W the window — never the reverse.
+    // ⌘W closes the TAB (GRO-2232, locked). ⌘⇧W opens a Files window since YAZ-3357 D15; Close Window has no key.
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘W')?.label).toMatch(/close tab/i)
-    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧W')?.label).toMatch(/close window/i)
+    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧W')?.label).toMatch(/files window/i)
     // A move's undo (YAZ-3255 D10, audit 11): right after the file clipboard, and it says where a page keeps the keys.
     expect(keys[keys.indexOf('⌘V') + 1]).toBe('⌘Z / ⌘⇧Z')
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘Z / ⌘⇧Z')?.label).toMatch(/undo.*redo.*move.*outside a note/i)

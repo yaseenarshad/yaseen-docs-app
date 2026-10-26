@@ -94,6 +94,7 @@ import {
   type TabCanvasPatch,
   type TabCanvasState,
   type TabRef,
+  clampFilesZoom,
 } from '@shared/types'
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
@@ -393,7 +394,7 @@ export const isWindowBounds = (v: unknown): v is WindowBounds =>
   isRecord(v) && isFiniteNumber(v.x) && isFiniteNumber(v.y) && isFiniteNumber(v.width) && isFiniteNumber(v.height)
 
 /** Core v1 shape; additive window-identity fields are repaired separately. */
-type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { roots?: unknown; tabs?: unknown; tabStrip?: unknown; name?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown }
+type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { roots?: unknown; tabs?: unknown; tabStrip?: unknown; name?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown; kind?: unknown; zoom?: unknown }
 const isStoredWindowEntry = (v: unknown): v is StoredWindowEntry =>
   isRecord(v) && typeof v.id === 'string' && isStringOrNull(v.root) && isStringOrNull(v.file) && isWindowBounds(v.bounds)
 
@@ -492,7 +493,11 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
     const roots = normalizeRoots(Array.isArray(w.roots) ? w.roots.filter((r): r is string => typeof r === 'string' && isAbsolute(r)) : [], w.root)
     // The window's name (YAZ-3343 D14) reads like a vault's: a junk or blank name is no name, never a bad entry.
     const name = cleanVaultName(w.name)
-    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, ...(tabStrip === undefined ? {} : { tabStrip }), ...(name === null ? {} : { name }), rightPanel, sidebarCollapsed, sidebarLens, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
+    // A Files window (YAZ-3357 D1) is `'files'` exactly; any other value is a full window, never a bad entry.
+    const files = w.kind === 'files'
+    // A Files window's own zoom (YAZ-3357): a finite level in range, else none.
+    const zoom = files && typeof w.zoom === 'number' && Number.isFinite(w.zoom) ? clampFilesZoom(w.zoom) : 0
+    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, ...(tabStrip === undefined ? {} : { tabStrip }), ...(name === null ? {} : { name }), rightPanel, sidebarCollapsed, sidebarLens, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height }, ...(files ? { kind: 'files' as const } : {}), ...(zoom !== 0 ? { zoom } : {}) })
   }
   return out
 }
