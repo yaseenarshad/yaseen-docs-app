@@ -12,8 +12,8 @@ import { canvasCardKey, rootOfPath, stripSlash, type CanvasCard, type CanvasFram
 import { dirname, relTo } from '../lib/paths'
 
 /**
- * Every length is in px at zoom 1. A page is a short, wide CARD (Yaseen's demo feedback on YAZ-3343, "an old
- * school trello card"): its title, a "Page: …" line when named, two lines of the note — the peek is for reading.
+ * Every length is in px at zoom 1. A page is a short, wide CARD (D15): its title, a "Page: …" line when named, and
+ * two lines of the note; the preview panel is for reading (D18).
  */
 export const BOARD = {
   pageW: 220,
@@ -28,13 +28,11 @@ export const BOARD = {
   islandGap: 20,
   /** A vault's name above its islands (two or more vaults). */
   vaultH: 34,
-  /** A window's frame (YAZ-3343 D8): the room around its groups, its label row above it, and the gap between two frames. */
+  /** A window's frame (YAZ-3343 D8): the room around its cards, its label row above it, and the gap between two frames in the flow. */
   framePad: 18,
   frameLabelH: 30,
   frameGap: 40,
-  /** The columns of a window frame's one grid of cards (demo feedback: compact frames, no folder boxes inside). */
-  frameCols: 4,
-  /** The least room between two frames (or groups) a drop or the layout leaves (demo feedback: no overlap). */
+  /** The least room between two frames (or groups) a drop or the layout leaves (D28: no overlap). */
   apart: 24,
   /** Where the camera puts the board's top-left corner when it opens (D7). */
   padX: 28,
@@ -140,14 +138,14 @@ export function buildBoard(tabs: readonly BoardTab[], roots: readonly string[], 
     }))
 }
 
-/** How many pages an island sets side by side: three at most, and four pages as two and two — and never more than the board is wide. */
+/** How many pages an island sets side by side: `colsFor`'s count (8 at most), and never more than the board is wide. */
 export function islandCols(count: number, boardW: number): number {
   const fits = Math.floor((boardW - 2 * BOARD.islandPad + BOARD.pageGap) / (BOARD.pageW + BOARD.pageGap))
   return Math.max(1, Math.min(colsFor(count), fits))
 }
 
 /**
- * How many columns a frame (or group) of `count` cards lays them in (demo feedback: "spread out horizontally"): about
+ * How many columns a frame (or group) of `count` cards lays them in (D29): about
  * as wide as tall for short wide cards — ceil(√(n × 1.6)), 1 to 8. Two cards are two side by side, nineteen six.
  */
 export function colsFor(count: number): number {
@@ -158,7 +156,7 @@ export function colsFor(count: number): number {
 const crowds = (a: Rect, b: Rect, gap: number): boolean => a.x < b.x + b.w + gap && a.x + a.w + gap > b.x && a.y < b.y + b.h + gap && a.y + a.h + gap > b.y
 
 /**
- * THE NO-OVERLAP RULE (demo feedback: "not allow windows to overlap each other"): the top-left nearest to `rect`'s
+ * THE NO-OVERLAP RULE (D28): the top-left nearest to `rect`'s
  * where it keeps `gap` from every one of `others` — `rect`'s own when it does already. What moved gives way; the others
  * stay. Free placement, no grid: the answer lies on an edge of an obstacle, so those are the candidates.
  */

@@ -1,5 +1,5 @@
 /**
- * "Open tabs here…" (YAZ-3343, Yaseen's demo feedback): the app's own search — `useSearchResults`, the search bar's
+ * "Open tabs here…" (YAZ-3343 D22): the app's own search — `useSearchResults`, the search bar's
  * ranking over each vault's index and tree, drawn as the flat result list (`SearchResults`, the shortcut picker's) —
  * floating over the tab board beside one window's frame. It searches THAT window's vaults: a vault this window does
  * not show has its index read by the search itself (`api.index`), and its tree by the tree feed, only while the panel

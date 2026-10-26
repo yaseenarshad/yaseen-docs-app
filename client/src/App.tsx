@@ -1092,15 +1092,14 @@ export function App() {
   /** "Move to new window" (YAZ-2933): main opens the window and stores the name with its one tab (YAZ-3057). A last tab leaves this window empty. */
   const movePageToNewWindow = useCallback((path: string, id: string) =>
     sendTabAway(path, id, (carry) => api.window.popOut(path, carry), "Can't move to a new window", false), [sendTabAway])
-  /** The same from the tab board (YAZ-3343, demo feedback): QUIET — the new window opens behind, the board keeps the focus. */
+  /** The same from the tab board (YAZ-3343 D37): QUIET — the new window opens behind, the board keeps the focus. */
   const movePageToNewWindowQuietly = useCallback((path: string, id: string) =>
     sendTabAway(path, id, (carry) => api.window.popOut(path, { ...carry, background: true }), "Can't move to a new window", false), [sendTabAway])
   /** "Move to ▸ <window>" (YAZ-3091 D1, D6): main hands the tab to the open window `to`, or refuses when it closed (S19). */
   const movePageToWindow = useCallback((to: string, path: string, id: string) =>
     sendTabAway(path, id, (carry) => api.window.moveTo(to, path, carry), "Can't move to that window", true), [sendTabAway])
   /**
-   * A card dropped in another window's frame on a tab board (YAZ-3343 D13): the same move, QUIET (Yaseen's demo
-   * feedback) — main raises nothing and the tab joins that window in the background, so the user stays on the board.
+   * A card dropped in another window's frame on a tab board (YAZ-3343 D13): the same move, QUIET (D20) — main raises nothing and the tab joins that window in the background, so the user stays on the board.
    */
   const movePageToWindowQuietly = useCallback((to: string, path: string, id: string) =>
     sendTabAway(path, id, (carry) => api.window.moveTo(to, path, { ...carry, background: true }), "Can't move to that window", true), [sendTabAway])
@@ -1171,7 +1170,7 @@ export function App() {
   }, [movePageToWindowQuietly])
   // Below `startView`: a moved tab's page view goes there (YAZ-3091 D5).
   /**
-   * A tab board's vault chip picked this window's vaults (YAZ-3343, demo feedback): only while it has NO tab — main
+   * A tab board's vault chip picked this window's vaults (YAZ-3343 D22): only while it has NO tab — main
    * checked, and a tab that came since keeps the window as it is. A Welcome window opens the vault as File › Open does.
    */
   const setRootsHere = useCallback((next: string[]) => {
@@ -1186,11 +1185,11 @@ export function App() {
     const tab = tabOfRef(now.current.tabs, ref)
     if (tab !== undefined) movePageToNewWindowQuietly(tab.path, tab.id)
   }, [movePageToNewWindowQuietly])
-  /** Another window's board highlights a card of THIS window (YAZ-3343, demo feedback): the strip lights that tab, as R45 does for this window's own board. */
+  /** Another window's board highlights a card of THIS window (YAZ-3343 D33): the strip lights that tab, as R45 does for this window's own board. */
   const highlightTabHere = useCallback((ref: TabRef | null) => {
     setBoardHighlight(ref === null ? null : (tabOfRef(now.current.tabs, ref)?.id ?? null))
   }, [])
-  /** Another window's board asks a tab action of a tab of THIS window (YAZ-3343, demo feedback: one card menu). */
+  /** Another window's board asks a tab action of a tab of THIS window (YAZ-3343 D31: one card menu). */
   const tabActionHere = useCallback(({ ref, action }: { ref: TabRef; action: TabAction }) => {
     const tab = tabOfRef(now.current.tabs, ref)
     if (tab === undefined) return
@@ -1204,15 +1203,15 @@ export function App() {
   const moveBoardTab = useCallback((from: string, to: string, ref: TabRef) => {
     api.window.moveTab(from, to, ref).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
   }, [notify])
-  /** What the board's preview panel needs of a page's vault (demo feedback): the scope that holds it, or the first one. */
+  /** What the board's preview panel needs of a page's vault (D18): the scope that holds it, or the first one. */
   const boardPreviewScope = useCallback((path: string) => {
     const scope = scopeOf(path)
     return { root: scope.root, wikilinks: scope.wikilinks, textVars: textVarsFor(path), watch: scope.watch }
   }, [scopeOf, textVarsFor])
-  /** "New window" from the tab board's empty canvas (YAZ-3343, demo feedback): on this window's vaults, behind it. */
+  /** "New window" from the tab board's empty canvas (YAZ-3343 D22): on this window's vaults, behind it. */
   const openWindowBehind = useCallback(() => api.window.openBehind(), [])
   /**
-   * A frame's "Close all tabs" / "Close window" on the tab board, clicked twice in its menu (YAZ-3343, demo feedback: no
+   * A frame's "Close all tabs" / "Close window" on the tab board, clicked twice in its menu (YAZ-3343 D21: no
    * sheet). THIS window by its own doors (its tabs as Kill all closes them; the window by its real close, which saves
    * first); another by main's.
    */
@@ -1252,7 +1251,7 @@ export function App() {
   }, [mounted, startView])
   /**
    * ⌘⇧N (GRO-2167): a new window on this window's vaults with NO tab — it opens on the blank tab, the caret in the
-   * search (YAZ-3343, demo feedback, which replaced YAZ-2951 D5's copy of the tabs and the page view).
+   * search (YAZ-3343 D35, which replaced YAZ-2951 D5's copy of the tabs and the page view).
    */
   const newWindow = useCallback(() => {
     api.window.duplicate().catch((err: unknown) => notify(`Can't open a new window: ${err instanceof Error ? err.message : String(err)}`))
@@ -2510,7 +2509,7 @@ export function App() {
                 onMoveTargets={moveTargets}
                 onDropToWindow={movePageToWindowQuietly}
                 onMoveToNewWindowQuietly={movePageToNewWindowQuietly}
-                // The sidebar's own preview panel beside a card (demo feedback): the setting gates the hover, never Space.
+                // The sidebar's own preview panel beside a card (D18): the setting gates the hover, never Space.
                 hoverPreview={settings.hoverPreview}
                 previewScope={boardPreviewScope}
                 onHighlightWindow={highlightWindow}

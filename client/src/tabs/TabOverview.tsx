@@ -26,13 +26,13 @@ export const ZOOM_MS = 250
 export const SETTLE_MS = 120
 /** The zoom buttons' step (D7). */
 const ZOOM_STEP = 1.25
-/** The fit's room round the board (demo feedback, "a bit more"): the board takes 1 / FIT_MARGIN of the viewport. */
+/** The fit's room round the board (D24): the board takes 1 / FIT_MARGIN of the viewport. */
 const FIT_MARGIN = 1.1
 /** The bottom of the board the toolbar stands in (tabs.css: 14 px + a 34 px row + room): the fit keeps every card above it. */
 export const TOOLBAR_INSET = 56
 /** The least zoom the fit goes to: below it, it centres on the active card's frame instead. */
 const FIT_MIN_ZOOM = 0.25
-/** A window that shows no vault of the page refuses it (D13): one short line, so the toast never cuts it (demo feedback). */
+/** A window that shows no vault of the page refuses it (D13): one short line, so the toast never cuts it (D38). */
 export const MOVE_REFUSED = "Can't move here — that window doesn't have this tab's vault."
 export const ADD_REFUSED = "Can't add here — that window doesn't have this file's vault."
 /** The search panel's width (tabs.css). */
@@ -71,11 +71,11 @@ export interface TabOverviewProps {
   onDismiss: () => void
   /** "Kill all tabs" (YAZ-2739): App asks first, then closes every tab of the window — and with "Show all windows" on, `others` too (YAZ-3343 D10). Absent, the board has no such button. */
   onKillAll?: (others: readonly WindowTabs[]) => void
-  /** A frame's "Close all tabs" / "Close window", clicked twice in its menu (demo feedback): App closes — this window by its own doors, another by main's. */
+  /** A frame's "Close all tabs" / "Close window", clicked twice in its menu (D21): App closes — this window by its own doors, another by main's. */
   onCloseWindow?: (req: { win: string; mine: boolean; refs: TabRef[]; whole: boolean }) => void
-  /** "New window" from the empty canvas (demo feedback): App opens one on this window's vaults, BEHIND, and answers its id. */
+  /** "New window" from the empty canvas (D22): App opens one on this window's vaults, BEHIND, and answers its id. */
   onNewWindow?: () => Promise<string>
-  /** A pick of "Open tabs here…" for THIS window (demo feedback): a background tab of the page; the board stays. */
+  /** A pick of "Open tabs here…" for THIS window (D22): a background tab of the page; the board stays. */
   onOpenTabHere?: (path: string) => void
   /** A page's menu is a tab's menu (`TabMenu`): these are the strip's own doors. */
   onMoveToRight?: (path: string) => void
@@ -97,7 +97,7 @@ export interface TabOverviewProps {
   onNotice?: (message: string) => void
   reviewState?: (path: string) => boolean | null
   onSetReview?: (path: string, on: boolean) => void
-  /** Settings › Preview on hover (demo feedback): resting on a card opens the sidebar's own preview panel beside it. Space opens it whatever this says. */
+  /** Settings › Preview on hover (D18): resting on a card opens the sidebar's own preview panel beside it. Space opens it whatever this says. */
   hoverPreview?: boolean
   /** What the preview panel needs of a page's vault (its links, text formatting, watch feed): App's. Absent, no panel. */
   previewScope?: (path: string) => PreviewScope
@@ -166,7 +166,7 @@ interface CardInfo {
   ref: TabRef
   /** The vault of the page in its own window: a drawing's picture is drawn there (D6). */
   root: string | null
-  /** Its folder as a window frame's card says it (demo feedback): the island's label, the vault's name first where its window has two or more. */
+  /** Its folder as a window frame's card says it (D17): the island's label, the vault's name first where its window has two or more. */
   folder: string
 }
 
@@ -204,7 +204,7 @@ interface CardProps {
   /** The page's own name: the "Page: …" line under a display name (D11), and the name field's placeholder. */
   page: string
   named: boolean
-  /** A window frame's card says its folder, grey, under its title (demo feedback); null in the folder layout, where its group says it. */
+  /** A window frame's card says its folder, grey, under its title (D17); null in the folder layout, where its group says it. */
   folder: string | null
   lines: string
   /** "1 of 2" on each copy of a path the window has twice or more (D11). */
@@ -217,7 +217,7 @@ interface CardProps {
   current: boolean
   picked: boolean
   renaming: boolean
-  /** Its ✕ was clicked once: it shows a red "Close", and the next click closes (demo feedback). */
+  /** Its ✕ was clicked once: it shows a red "Close", and the next click closes (D27). */
   armed: boolean
   /** Its drawing's picture shows (D6): it is on screen and the zoom shows detail. */
   picture: boolean
@@ -279,7 +279,7 @@ const Card = memo(function Card(p: CardProps) {
         p.lines !== '' && <span className="taboverview__lines">{p.lines}</span>
       )}
       {p.copyText !== null && <span className="taboverview__copy">{p.copyText}</span>}
-      {/* Two clicks (demo feedback, "closing a tab is too easy"): the first turns the ✕ into a red Close, the second closes. */}
+      {/* Two clicks (D27): the first turns the ✕ into a red Close, the second closes. */}
       <button
         type="button"
         className={`taboverview__close${p.armed ? ' taboverview__close--armed' : ''}`}
@@ -300,17 +300,18 @@ const Card = memo(function Card(p: CardProps) {
 type Gesture =
   | { kind: 'pan'; pointer: number; startX: number; startY: number; camX: number; camY: number }
   | { kind: 'card'; pointer: number; id: string; el: HTMLElement; startX: number; startY: number; dragging: boolean; dx: number; dy: number }
-  /** A folder group, or with "Show all windows" a whole window frame, held as one (Yaseen's demo feedback on YAZ-3343): `els` are the boxes that move, `cards` every card they carry. */
+  /** A folder group, or with "Show all windows" a whole window frame, held as one (D16): `els` are the boxes that move, `cards` every card they carry. */
   | { kind: 'group'; pointer: number; win: string; cards: string[]; els: HTMLElement[]; startX: number; startY: number; dragging: boolean; dx: number; dy: number; lead?: string }
 
 /**
  * The tab board (YAZ-2648 D5, YAZ-3343): every open tab as a card on a CANVAS, in the editor's place while it
  * shows — App hides the tab stack under it and unmounts nothing, so each page is as it was when the board
  * closes. A card shows its title and, for a note, its first lines (D6, `useTabHeads`); a drawing's card its
- * picture. Cards stand in GROUPS, one per folder that directly holds them, under their vault (D7), at places
- * `layoutCanvas` (board.ts) computes with no DOM; a card the user dragged stands where it was put, and that
- * place is stored (YAZ-3343 D1, D12). With "Show all windows" (D8) every open window is a FRAME of its own
- * groups, and a card dropped in another window's frame moves its tab there (D13).
+ * picture. With "Show all windows" off, cards stand in GROUPS, one per folder that directly holds them, under
+ * their vault (D7, D8); on, every open window is a FRAME that holds its cards directly, in folder order (D17).
+ * `layoutCanvas` (board.ts) computes every place with no DOM; a card, a group or a frame the user dragged stands
+ * where it was put, and that place is stored (D1, D12, D16). A card dropped in another window's frame moves its
+ * tab there (D13). The placement rules — snap, no overlap, arrivals — are board.ts's too (D26, D28, D30).
  *
  * THE CAMERA (YAZ-3343 D4, D7): one world layer in the board's viewport, moved by ONE CSS transform written
  * straight onto it from a ref — a pan, a pinch, ⌘-scroll and the zoom buttons render nothing. A drag moves the
@@ -322,9 +323,10 @@ type Gesture =
  *
  * The keyboard stays in the filter box: typing narrows the cards by title and path, the arrows move the
  * highlight to the nearest card that way (and pan to it), Enter opens it, Esc goes back to the page. SPACE,
- * held, peeks at the highlighted card. SHIFT-click PICKS cards, and a small bar closes the picked ones, or the
- * others. "Kill all tabs" (YAZ-2739), at the end of the top row, is about every tab the board is about,
- * whatever the filter shows; the board only asks: App owns the sheet and the close.
+ * held, opens the preview panel for the highlighted card (D18). ⌘-click or Shift-click PICKS cards (D25), and a
+ * small bar closes the picked ones, or the others, with two clicks (D27). "Kill all tabs" (YAZ-2739), at the
+ * end of the top row, is about every tab the board is about, whatever the filter shows; the board only asks:
+ * App owns the sheet and the close.
  */
 export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere }: TabOverviewProps) {
   const [query, setQuery] = useState('')
@@ -332,24 +334,24 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   /** The viewport's box, measured when the board mounts and when the window resizes it. Null until then. */
   const [view, setView] = useState<{ w: number; h: number } | null>(null)
   const [pageMenu, setPageMenu] = useState<TabMenuAt | null>(null)
-  /** The frame a "Move to ▸" row points at, lit on the board while the row is under the pointer (demo feedback). */
+  /** The frame a "Move to ▸" row points at, lit on the board while the row is under the pointer (D31). */
   const [ringed, setRinged] = useState<string | null>(null)
   /** The card whose name is a field (YAZ-2949 D4), by tab id, or null. */
   const [renaming, setRenaming] = useState<string | null>(null)
   const [islandMenu, setIslandMenu] = useState<{ x: number; y: number; key: string } | null>(null)
   /** A window frame's menu (D14), and the frame whose label is a name field. */
   const [frameMenu, setFrameMenuState] = useState<{ x: number; y: number; win: string } | null>(null)
-  /** The frame menu's close item clicked once (demo feedback): its next click closes. Gone with the menu. */
+  /** The frame menu's close item clicked once (D21): its next click closes. Gone with the menu. */
   const [frameArm, setFrameArm] = useState<'tabs' | 'window' | null>(null)
   const setFrameMenu = (next: { x: number; y: number; win: string } | null): void => {
     setFrameArm(null)
     setFrameMenuState(next)
   }
-  /** The empty canvas's menu ("New window"), with the world point it was asked at (demo feedback). */
+  /** The empty canvas's menu ("New window"), with the world point it was asked at (D22). */
   const [canvasMenu, setCanvasMenu] = useState<{ x: number; y: number; world: { x: number; y: number } } | null>(null)
-  /** An empty frame's vault chip, open on its list of recent vaults (demo feedback). */
+  /** An empty frame's vault chip, open on its list of recent vaults (D22). */
   const [chipMenu, setChipMenu] = useState<{ x: number; y: number; win: string } | null>(null)
-  /** "Open tabs here…": the window the search panel opens tabs in, or null (demo feedback). */
+  /** "Open tabs here…": the window the search panel opens tabs in, or null (D22). */
   const [searchFor, setSearchFor] = useState<string | null>(null)
   /** The one close clicked once (D27): `card:<id>`, `group:<key>`, or the pick bar's `pick:them` / `pick:others`; its next click closes. */
   const [armed, setArmed] = useState<string | null>(null)
@@ -360,8 +362,8 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const [pickMenu, setPickMenu] = useState<{ x: number; y: number } | null>(null)
   /** The cards picked with shift-click. The board's own, for as long as it is open. */
   const [picked, setPicked] = useState<ReadonlySet<string>>(NONE)
-  /** Space is down on a highlighted card. */
-  const [peeking, setPeeking] = useState(false)
+  /** Space is held on a highlighted card: the preview panel shows it (D18). */
+  const [spaceHeld, setSpaceHeld] = useState(false)
   /** The drawings on screen while the zoom shows detail (D6), recomputed when the camera rests. */
   const [pictured, setPictured] = useState<ReadonlySet<string>>(NONE)
   const picturedRef = useRef(pictured)
@@ -376,17 +378,17 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   /** The camera (D4): applied as one transform on the world, never stored, never state. */
   const cam = useRef<{ x: number; y: number; zoom: number }>({ x: BOARD.padX, y: BOARD.padTop, zoom: 1 })
   const gesture = useRef<Gesture | null>(null)
-  /** The zoom pill's percent, written by the camera (demo feedback: Excalidraw's "− 100% +"). */
+  /** The zoom pill's percent, written by the camera (D24: Excalidraw's "− 100% +"). */
   const percentRef = useRef<HTMLButtonElement>(null)
-  /** The card a "Duplicate tab" copied, until its copy shows up (demo feedback): the copy lands by it. */
+  /** The card a "Duplicate tab" copied, until its copy shows up (D30): the copy lands by it. */
   const dupSource = useRef<{ id: string; win: string; path: string } | null>(null)
-  /** The cards seen so far: one that appears later is placed in its frame's grid (demo feedback). */
+  /** The cards seen so far: one that appears later is placed in its frame's grid (D30). */
   const seenCards = useRef<Set<string> | null>(null)
-  /** The other window glowing because the pointer is on its frame (demo feedback), sent once per change. */
+  /** The other window glowing because the pointer is on its frame (D33), sent once per change. */
   const onHighlightWindowRef = useRef(onHighlightWindow)
   onHighlightWindowRef.current = onHighlightWindow
   const glowing = useRef<string | null>(null)
-  /** A card popped out to a new window from this board, and the windows known before (demo feedback): its frame's placement. */
+  /** A card popped out to a new window from this board, and the windows known before (D37): its frame's placement. */
   const popping = useRef<{ from: string; path: string } | null>(null)
   const known = useRef<ReadonlySet<string>>(new Set())
   /** A card just snapped into its cell: where it was let go, relative to the cell, for the settle after the render. */
@@ -397,7 +399,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const wantReveal = useRef(false)
   /** The listbox of cards, and the stem of each stop's id: what the filter box points a reader at. */
   const listId = useId()
-  /** The preview beside a card (demo feedback): the sidebar's panel, its dwell in a tiny store — no board render. */
+  /** The preview beside a card (D18): the sidebar's panel, its dwell in a tiny store — no board render. */
   const cardPreview = useCardPreview(hoverPreview, (id) => Array.from(worldRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? []).find((el) => el.dataset.tab === id) ?? null)
   const closePreview = cardPreview.close
 
@@ -410,9 +412,9 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const layout: CanvasLayout = allWindows ? 'window' : 'folder'
   const others = useSyncExternalStore(allWindows ? storage.subscribe : noSubscribe, allWindows ? otherWindows : noWindows)
   const myName = storage.windowName()
-  /** The windows the board made that are still hidden (demo feedback): tagged, and "Show window" in their menu. */
+  /** The windows the board made that are still hidden (D23): tagged, and "Show window" in their menu. */
   const hidden = useHiddenWindows()
-  /** The windows minimized in the Dock (demo feedback): tagged. */
+  /** The windows minimized in the Dock (D23): tagged. */
   const minimized = useMinimizedWindows()
   // A page is a folder by the Files tree of the vault that holds it; one of a vault this window does not show falls back to the first vault's tree, so to its file name.
   const trees = useLatestTrees(roots)
@@ -446,13 +448,13 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     // `labelOf` reads `roots`, `titles` and the trees, all of them deps.
   }, [tabs, active, others, roots, vaultNames, titles, termsKey, windowId, myName, trees])
   const wrapW = view !== null && view.w > 0 ? view.w - 2 * BOARD.padX : Infinity
-  /** Where frames stand (demo bug: an empty frame drags freely too): the stored ones, and the board's own until they are stored. */
+  /** Where frames stand (D16: an empty frame drags freely too): the stored ones, and the board's own until they are stored. */
   const frameAnchors = useMemo(() => {
     const at = new Map<string, { x: number; y: number }>(canvas.frames.map((f) => [f.win, { x: f.x, y: f.y }]))
     for (const [win, p] of anchors) if (!at.has(win)) at.set(win, p)
     return at
   }, [canvas, anchors])
-  /** The viewport's shape: the auto layout packs to it (demo feedback, "spread out horizontally"). None until measured. */
+  /** The viewport's shape: the auto layout packs to it (D29). None until measured. */
   const aspect = view !== null && view.w > 0 && view.h > 0 ? view.w / view.h : undefined
   const plan: CanvasPlan = useMemo(() => layoutCanvas(allWindows ? model.frames : model.frames.slice(0, 1), { by: layout, wrapW, stored: canvas.cards, anchors: frameAnchors, aspect }), [model, allWindows, layout, wrapW, canvas, frameAnchors, aspect])
   const { windows, info, byWin } = model
@@ -498,7 +500,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       window.setTimeout(() => delete world.dataset.glide, 220)
     }
     world.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`
-    // Far out, the cards show their titles alone (demo feedback): one attribute, no render.
+    // Far out, the cards show their titles alone (D15): one attribute, no render.
     rootRef.current?.toggleAttribute('data-far', zoom < 0.6)
     // The pill's percent (Excalidraw's), written straight into its text: the camera renders nothing.
     if (percentRef.current !== null) percentRef.current.textContent = `${Math.round(zoom * 100)}%`
@@ -546,7 +548,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     zoomAt((box?.w ?? 0) / 2, (box?.h ?? 0) / 2, factor, true)
   }
   /**
-   * THE FIT (demo feedback: "the zoom level should be according to what fits all of the windows and maybe a bit more"):
+   * THE FIT (D24):
    * everything the board shows, centred, with `FIT_MARGIN` of room round it, at 100% at most. A board that would need
    * less than `FIT_MIN_ZOOM` gets that zoom, centred on the frame (or group) of the active card. Null with no viewport.
    */
@@ -610,7 +612,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const card = live.current.info.get(id)
     if (card === undefined) return
     if (card.mine) return onOpen(id)
-    // Another window's tab (D3): that window shows it — and this board STAYS open (demo feedback), its highlight on the card.
+    // Another window's tab (D3): that window shows it — and this board STAYS open (D32), its highlight on the card.
     api.window.focusTab(card.win, card.ref).catch(() => onNotice?.("Can't go to that tab: its window is closed"))
   }
   /** Move a card's tab to the window `to`, QUIETLY (D13, D20): this window's by App's door, another's through main. */
@@ -831,7 +833,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       const card = live.current.info.get(id)
       if (card === undefined) return
       // On one of two or more picked cards the menu is the pick's; on any other card — this window's or another's — the
-      // tab's own menu, with "Go to tab" before it and "Close tab" after (demo feedback: one menu for every card).
+      // tab's own menu, with "Go to tab" before it and "Close tab" after (D31: one menu for every card).
       menuOn(e, () =>
         live.current.picked.has(id) && live.current.pick.length > 1
           ? setPickMenu({ x: e.clientX, y: e.clientY })
@@ -841,7 +843,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     hover: (id: string) => {
       // A move of the pointer, never a card that was panned or dragged under it.
       if (gesture.current !== null) return
-      // The preview's dwell is the tiny store's: no render of the board (demo feedback, "Preview on hover").
+      // The preview's dwell is the tiny store's: no render of the board (D18).
       const card = live.current.info.get(id)
       if (card !== undefined) cardPreview.hoverCard(id, card.page.path)
       if (id === live.current.current) return
@@ -864,7 +866,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       // The card's own press: never the camera's. A ✕ and a name field keep theirs.
       e.stopPropagation()
       if (e.button !== 0 || live.current.renaming === id || (e.target instanceof Element && e.target.closest('button, input') !== null)) return
-      // A PICKED card carries the whole pick, of any windows and groups (demo feedback): every picked card follows by
+      // A PICKED card carries the whole pick, of any windows and groups (D25): every picked card follows by
       // transform and the drop stores them all — it never moves a tab to another window; only a single unpicked card's drop does (D13).
       if (live.current.picked.has(id)) {
         const picks = live.current.pick
@@ -893,7 +895,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     renamed: () => doorsRef.current.renamed(),
   }))
 
-  // THE SETTLE (demo feedback): a card snapped into its cell starts where it was let go and eases in. After the
+  // THE SETTLE (D15): a card snapped into its cell starts where it was let go and eases in. After the
   // render that moved it, before the paint; transform only, and none under reduced motion.
   useLayoutEffect(() => {
     const all = flip.current
@@ -915,7 +917,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     setBoardHighlight(current)
   }, [current])
   useEffect(() => () => setBoardHighlight(null), [])
-  // The highlight on ANOTHER window's card lights that tab in ITS strip too (demo feedback): sent when the highlighted
+  // The highlight on ANOTHER window's card lights that tab in ITS strip too (D33): sent when the highlighted
   // card changes, and put out in the window lit before — when the highlight leaves its cards, and when the board goes.
   const litTab = useRef<{ win: string; key: string } | null>(null)
   useEffect(() => {
@@ -933,13 +935,13 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     },
     [],
   )
-  // SPACE, held, opens the sidebar's own preview panel for the highlighted card (demo feedback: one preview look), and
+  // SPACE, held, opens the sidebar's own preview panel for the highlighted card (D18: one preview look), and
   // follows the highlight while it is held; let go, it closes. Whatever Settings › Preview on hover says: it is a key.
   useEffect(() => {
     const card = current === null ? undefined : info.get(current)
-    if (peeking && current !== null && card !== undefined) cardPreview.showNow(current, card.page.path)
+    if (spaceHeld && current !== null && card !== undefined) cardPreview.showNow(current, card.page.path)
     else cardPreview.endSpace()
-  }, [peeking, current])
+  }, [spaceHeld, current])
 
   // The viewport's box, read when the board mounts and when its box changes — never on a keystroke, a pan or a hover.
   useLayoutEffect(() => {
@@ -955,7 +957,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     observer.observe(body)
     return () => observer.disconnect()
   }, [])
-  // The camera's first place, once the viewport is known: THE FIT (demo feedback) — every window on screen, a little
+  // The camera's first place, once the viewport is known: THE FIT (D24) — every window on screen, a little
   // room round them. With no viewport to fit (none measured yet), zoom 1 from the top-left padding. Never stored.
   const placed = useRef(false)
   useLayoutEffect(() => {
@@ -1040,11 +1042,11 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   useEffect(() => {
     if (!anyMenu && document.activeElement === document.body) inputRef.current?.focus()
   }, [tabs, anyMenu])
-  // Space let go ends the peek, wherever the focus is by then; so does the window losing it.
+  // Space let go closes the preview, wherever the focus is by then; so does the window losing it.
   useEffect(() => {
-    if (!peeking) return
+    if (!spaceHeld) return
     const end = (e: Event): void => {
-      if (e.type === 'blur' || (e as globalThis.KeyboardEvent).key === ' ') setPeeking(false)
+      if (e.type === 'blur' || (e as globalThis.KeyboardEvent).key === ' ') setSpaceHeld(false)
     }
     window.addEventListener('keyup', end)
     window.addEventListener('blur', end)
@@ -1052,8 +1054,8 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       window.removeEventListener('keyup', end)
       window.removeEventListener('blur', end)
     }
-  }, [peeking])
-  // A window a card was popped out to (demo feedback): when it shows up, its frame stands beside its source's — right of
+  }, [spaceHeld])
+  // A window a card was popped out to (D37): when it shows up, its frame stands beside its source's — right of
   // it, or below when the row has no room. One shot, for this board.
   useEffect(() => {
     const pop = popping.current
@@ -1120,7 +1122,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     [],
   )
   // The board's own placements (a new window at the click point, a popped-out tab's beside its source) are STORED as
-  // frame places as soon as that window is in the state, so they outlive the board (demo bug).
+  // frame places as soon as that window is in the state, so they outlive the board (D16).
   useEffect(() => {
     const known = new Set(others.map((w) => w.id))
     const due = [...anchors].filter(([win]) => known.has(win))
@@ -1160,13 +1162,13 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       else onDismiss()
       return
     }
-    // SPACE PEEKS at the highlighted card — except while a query is being typed, where it is a
+    // SPACE PREVIEWS the highlighted card (D18) — except while a query is being typed, where it is a
     // space. "Being typed" is: the box holds text, and the last thing done was typing in it. A
     // move of the highlight, by an arrow or by the pointer going onto another card, hands Space
-    // back to the peek; the next character typed takes it again. An empty box never needs a space.
+    // back to the preview; the next character typed takes it again. An empty box never needs a space.
     if (e.key === ' ' && !(e.target instanceof HTMLButtonElement) && !(e.target instanceof HTMLInputElement && e.target.type === 'checkbox') && current !== null && (query === '' || !typed.current)) {
       e.preventDefault()
-      if (!peeking) setPeeking(true)
+      if (!spaceHeld) setSpaceHeld(true)
       return
     }
     // Enter on a ✕ is that button's own.
@@ -1193,7 +1195,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   }
 
   // A press on the board's body (D7): a folder group's label row or background holds that group, a window frame's
-  // label or background that whole window (Yaseen's demo feedback); empty canvas outside them pans. A card, a
+  // label or background that whole window (D16); empty canvas outside them pans. A card, a
   // button and a field keep their own presses.
   const onBodyPointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0 || gesture.current !== null || !(e.target instanceof Element)) return
@@ -1209,7 +1211,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (frameEl !== null && win !== undefined && naming !== win) {
       const world = worldRef.current
       const mine = (el: HTMLElement): boolean => el.dataset.win === win
-      // The frame holds its cards directly (demo feedback): the frame and every card of it move.
+      // The frame holds its cards directly (D17): the frame and every card of it move.
       const els = [frameEl, ...Array.from(world?.querySelectorAll<HTMLElement>('[data-tab]') ?? []).filter(mine)]
       return startGesture({ kind: 'group', win, cards: plan.order.filter((id) => info.get(id)?.win === win), els, ...start })
     }
@@ -1244,14 +1246,14 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (patch === null) return
     storage.setTabCanvas(patch)
   }
-  /** A frame's "Close all tabs" / "Close window", on its second click (demo feedback: two clicks, no sheet). */
+  /** A frame's "Close all tabs" / "Close window", on its second click (D21: two clicks, no sheet). */
   const closeWindow = (win: string, whole: boolean): void => {
     const w = byWin.get(win)
     if (w === undefined) return
     onCloseWindow?.({ win, mine: w.mine, refs: refsOf(w.tabs), whole })
   }
   /**
-   * "New window" (demo feedback): one on this window's vaults, behind; its frame stands at the asked point while the
+   * "New window" (D22): one on this window's vaults, behind; its frame stands at the asked point while the
    * board shows, and the search opens for it. The switch turns on: a window is a frame of "Show all windows".
    */
   const newWindowAt = (world: { x: number; y: number }): void => {
@@ -1267,7 +1269,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     )
   }
   /**
-   * A pick of "Open tabs here…" (demo feedback): the page as a background tab of the window. This window adds it
+   * A pick of "Open tabs here…" (D22): the page as a background tab of the window. This window adds it
    * itself; another gets it as a quiet move of a path (nothing closes here). A frame the board placed (`anchors`)
    * keeps the arriving card in its grid there.
    */
@@ -1275,7 +1277,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const w = byWin.get(win)
     // A window opened a moment ago may not be in the state yet: it shows this window's vaults.
     if (rootOfPath(w?.roots ?? roots, path) === null) return void onNotice?.(ADD_REFUSED)
-    // It arrives inside its frame (demo bug), as every arrival; a window not in the state yet stands at its anchor.
+    // It arrives inside its frame (D28), as every arrival; a window not in the state yet stands at its anchor.
     const anchor = frameAnchors.get(win)
     if (w !== undefined && plan.frames.some((f) => f.win === win)) {
       storage.setTabCanvas({ set: arrivalIn(plan, win, { path, copy: w.tabs.filter((t) => t.path === path).length }, { where: posOf }) })
@@ -1286,7 +1288,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     else api.window.moveTo(win, path, { background: true }).catch(() => onNotice?.(ADD_REFUSED))
   }
   /**
-   * "Move to new window" on a card (demo feedback): QUIET from the board. This window's card by its own door, another
+   * "Move to new window" on a card (D37): QUIET from the board. This window's card by its own door, another
    * window's by asking that window (its text saved first). The new window's frame then stands beside its source's.
    */
   const popOutCard = (path: string, id: string): void => {
@@ -1305,7 +1307,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     },
     [previewScope],
   )
-  /** Where the search panel stands (demo feedback): beside its frame on screen, inside the board; the canvas's point for a frame not there yet. */
+  /** Where the search panel stands (D22): beside its frame on screen, inside the board; the canvas's point for a frame not there yet. */
   const searchAt = (win: string): { left: number; top: number } => {
     const frame = plan.frames.find((f) => f.win === win)
     const anchor = anchors.get(win)
@@ -1322,7 +1324,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     return { left, top: Math.max(12, Math.min(oy + c.y + top * c.zoom, h > 0 ? h - 200 : Infinity)) }
   }
   /**
-   * A right-click on the board's body (demo feedback): a folder group's — label row or background — opens its menu, a
+   * A right-click on the board's body (D21): a folder group's — label row or background — opens its menu, a
    * window frame's its own; empty canvas opens nothing, and never the app's text-edit menu. A card's own menu and a
    * name field's text menu stop it before it gets here.
    */
@@ -1334,7 +1336,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (key !== undefined && groupsByKey.has(key)) return menuOn(e, () => setIslandMenu({ x: e.clientX, y: e.clientY, key }))
     const win = allWindows ? e.target.closest<HTMLElement>('.taboverview__frame')?.dataset.win : undefined
     if (win !== undefined && byWin.has(win)) return menuOn(e, () => setFrameMenu({ x: e.clientX, y: e.clientY, win }))
-    // Empty canvas: "New window" there (demo feedback), and never the text-edit menu.
+    // Empty canvas: "New window" there (D21), and never the text-edit menu.
     if (onNewWindow !== undefined && e.target.closest('.taboverview__page, .taboverview__island, .taboverview__frame, .taboverview__zoom') === null) {
       const world = toWorld(e.clientX, e.clientY)
       menuOn(e, () => setCanvasMenu({ x: e.clientX, y: e.clientY, world }))
@@ -1409,7 +1411,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     onHighlightWindow?.(win)
   }
   /**
-   * The pointer over ANOTHER window's frame — its label, its background or a card (demo feedback): that window glows.
+   * The pointer over ANOTHER window's frame — its label, its background or a card (D33): that window glows.
    * This window's own frame and empty canvas put it out. A menu that is open has the glow ("Move to ▸" rows).
    */
   const onBodyHover = (e: MouseEvent): void => {
@@ -1417,14 +1419,14 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const win = allWindows ? (e.target.closest<HTMLElement>('.taboverview__page, .taboverview__frame')?.dataset.win ?? null) : null
     glowWindow(win === null || win === windowId || byWin.get(win)?.mine === true ? null : win)
   }
-  /** A window's vaults as its frame says them (demo feedback): one vault's name, a saved workspace's, else the first +N. */
+  /** A window's vaults as its frame says them (D34): one vault's name, a saved workspace's, else the first +N. */
   const vaultsLabel = (list: readonly string[]): string => {
     const set = storage.getVaultSets().find((one) => one.roots.length === list.length && one.roots.every((r, i) => r === list[i]))
     if (set !== undefined) return set.name
     return list.length === 1 ? storage.vaultName(list[0]) : `${storage.vaultName(list[0])} +${list.length - 1}`
   }
   /**
-   * A double click on a frame's EMPTY AREA (demo feedback: "two ways to get to the same spot"): another window comes
+   * A double click on a frame's EMPTY AREA (D32): another window comes
    * to the front on its active tab — shown if hidden, restored if minimized — and this board stays; an empty one just
    * shows. This window's frame leaves the board onto its active tab, as a click on its card. Its label renames.
    */
@@ -1440,7 +1442,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (card !== undefined) api.window.focusTab(win, card.ref).catch(() => onNotice?.("Can't go to that window: it is closed"))
     else api.window.showWindow(win).catch(() => onNotice?.("Can't show that window: it is closed"))
   }
-  /** A tab action of another window's card (demo feedback): that window runs it on its own tab. */
+  /** A tab action of another window's card (D31): that window runs it on its own tab. */
   const askTab = (id: string, action: TabAction): void => {
     const card = info.get(id)
     if (card === undefined || card.mine) return
@@ -1453,7 +1455,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (card.mine) onSetName?.(id, name)
     else askTab(id, { kind: 'set-name', name })
   }
-  /** "Move to ▸" rows of a card (demo feedback): every OTHER window than its own that shows a vault of its page, by its frame's label. */
+  /** "Move to ▸" rows of a card (D31): every OTHER window than its own that shows a vault of its page, by its frame's label. */
   const moveTargetsOf = (id: string): MoveTarget[] => {
     const card = info.get(id)
     if (card === undefined) return []
@@ -1462,7 +1464,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     return windows.filter((w) => w.win !== card.win && rootOfPath(w.roots, card.page.path) !== null).map((w) => ({ id: w.win, label: w.label }))
   }
   /**
-   * "Move to ▸ <window>" from the board (demo feedback): QUIET, as a card dropped in that window's frame — no raise, a
+   * "Move to ▸ <window>" from the board (D20): QUIET, as a card dropped in that window's frame — no raise, a
    * background tab there — and the card arrives in that frame's nearest free cell.
    */
   const moveCardTo = (id: string, to: string): void => {
@@ -1492,7 +1494,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         e.preventDefault()
       }}
     >
-      {/* The board's top row: the filter box in the middle, and at the right end the switch, "Tidy up" and "Kill all tabs" (D8, D9). */}
+      {/* The board's top row: the filter box, and at the right end "Kill all tabs" (D24: the switch and "Tidy up" are in the toolbar). */}
       <div className="taboverview__top">
         <input
           ref={inputRef}
@@ -1552,12 +1554,12 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                     ) : (
                       <>
                         <span className="taboverview__frame-name">{w.label}</span>
-                        {/* Its vault or workspace, muted (demo feedback); an empty frame's chip says it instead. */}
+                        {/* Its vault or workspace, muted (D34); an empty frame's chip says it instead. */}
                         {w.tabs.length > 0 && w.roots.length > 0 && <span className="taboverview__frame-vault">· {vaultsLabel(w.roots)}</span>}
                         {w.mine && <span className="taboverview__frame-here">This window</span>}
                         {hidden.has(frame.win) && <span className="taboverview__frame-hidden">Hidden</span>}
                         {minimized.has(frame.win) && <span className="taboverview__frame-hidden">Minimized</span>}
-                        {/* An EMPTY window can still switch its vaults (demo feedback): the chip goes once it has a tab. */}
+                        {/* An EMPTY window can still switch its vaults (D22): the chip goes once it has a tab. */}
                         {w.tabs.length === 0 && (
                           <button
                             type="button"
@@ -1597,7 +1599,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                     <span className="taboverview__island-leaf">{island.label.slice(cut === -1 ? 0 : cut + 3)}</span>
                   </span>
                   <span className="taboverview__island-count">{count}</span>
-                  {/* Two clicks, as a card's ✕ (demo feedback): "Close N", then the group's tabs close. */}
+                  {/* Two clicks, as a card's ✕ (D27): "Close N", then the group's tabs close. */}
                   <button
                     type="button"
                     className={`taboverview__island-close${armed === `group:${group.key}` ? ' taboverview__close--armed' : ''}`}
@@ -1616,7 +1618,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
               </div>
             )
           })}
-          {/* A window frame holds its cards directly, in folder order, each saying its folder (demo feedback). */}
+          {/* A window frame holds its cards directly, in folder order, each saying its folder (D17). */}
           {allWindows && plan.order.map((id) => cardOf(id))}
         </div>
       </div>
@@ -1646,7 +1648,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         <button type="button" className="taboverview__zoom-fit" aria-label="Fit all tabs" title="Fit all tabs" onClick={fitAll}>
           ⤢
         </button>
-        {/* "Snap to grid" (demo feedback): on by default, remembered; lit while on. */}
+        {/* "Snap to grid" (D26): on by default, remembered; lit while on. */}
         <button
           type="button"
           className={`taboverview__zoom-fit taboverview__snap${snapOn ? ' taboverview__snap--on' : ''}`}
@@ -1660,7 +1662,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           #
         </button>
       </div>
-      {/* The preview panel beside a card (demo feedback): a rest of the pointer, or Space. Portalled, never clicked. */}
+      {/* The preview panel beside a card (D18): a rest of the pointer, or Space. Portalled, never clicked. */}
       <CardPreviewHost store={cardPreview.store} cardOf={previewCard} scopeOf={previewScope} diagramDarkColors={darkColors} />
       {/* The pick's bar: only while cards are picked. Each close takes two clicks (D27), drops the pick and leaves the board open. */}
       {pick.length > 0 && (
@@ -1692,7 +1694,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           />
         </ContextMenuSurface>
       )}
-      {/* EVERY card's menu is the tab's (`TabMenu`, demo feedback): "Go to tab", the strip's own items, "Close tab". A card of
+      {/* EVERY card's menu is the tab's (`TabMenu`, D31): "Go to tab", the strip's own items, "Close tab". A card of
           another window asks its window for what only that window can do (`askTab`); the path's items run here. */}
       {pageMenu !== null && menuCard !== undefined && (
         <TabMenu
@@ -1718,7 +1720,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
             menuCard.mine && onDuplicate === undefined
               ? undefined
               : (id) => {
-                  // The copy lands by its source (demo feedback): remembered until it shows up.
+                  // The copy lands by its source (D30): remembered until it shows up.
                   dupSource.current = { id, win: menuCard.win, path: menuCard.page.path }
                   if (menuCard.mine) onDuplicate?.(id)
                   else askTab(id, { kind: 'duplicate' })
@@ -1814,7 +1816,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
               }}
             />
           )}
-          {/* Two clicks IN PLACE (demo feedback): the first turns the item red, the second does it; another item puts it back. */}
+          {/* Two clicks IN PLACE (D21): the first turns the item red, the second does it; another item puts it back. */}
           {onCloseWindow !== undefined && frameOfMenu.tabs.length > 0 && (
             <MenuItem
               label={frameArm === 'tabs' ? `Click again to close ${tabCount(frameOfMenu.tabs.length)}` : 'Close all tabs'}
@@ -1841,13 +1843,13 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           )}
         </ContextMenuSurface>
       )}
-      {/* The empty canvas (demo feedback): a new window, there. */}
+      {/* The empty canvas (D21): a new window, there. */}
       {canvasMenu !== null && (
         <ContextMenuSurface x={canvasMenu.x} y={canvasMenu.y} onClose={() => setCanvasMenu(null)}>
           <MenuItem label="New window" onSelect={() => newWindowAt(canvasMenu.world)} />
         </ContextMenuSurface>
       )}
-      {/* An empty frame's vault chip (demo feedback): the recent vaults; a pick switches that window to it. */}
+      {/* An empty frame's vault chip (D22): the recent vaults; a pick switches that window to it. */}
       {chipMenu !== null && (
         <ContextMenuSurface x={chipMenu.x} y={chipMenu.y} onClose={() => setChipMenu(null)}>
           {storage.getRecentRoots().map((recent) => (
@@ -1863,7 +1865,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           ))}
         </ContextMenuSurface>
       )}
-      {/* "Open tabs here…" (demo feedback): the app's search, for one window. */}
+      {/* "Open tabs here…" (D22): the app's search, for one window. */}
       {searchFor !== null && (
         <TabSearchPanel
           key={searchFor}

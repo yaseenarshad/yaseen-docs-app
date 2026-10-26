@@ -141,7 +141,7 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
     expect([plan.groups, plan.vaults]).toEqual([[], []])
     expect(plan.frames.map((f) => f.win)).toEqual(['me', 'w2', 'w3'])
     const [mine, second, third] = plan.frames
-    const slot = (i: number) => [framePad + (i % BOARD.frameCols) * (pageW + pageGap), frameLabelH + framePad + Math.floor(i / BOARD.frameCols) * (pageH + pageGap), false]
+    const slot = (i: number) => [framePad + (i % colsFor(6)) * (pageW + pageGap), frameLabelH + framePad + Math.floor(i / colsFor(6)) * (pageH + pageGap), false]
     // Folder order: the vault's top level (a, b), then Docs (c..f) — four columns, so f wraps to the next row.
     expect(plan.order.slice(0, 6)).toEqual(['/v/a.md', '/v/b.md', '/v/Docs/c.md', '/v/Docs/d.md', '/v/Docs/e.md', '/v/Docs/f.md'])
     plan.order.slice(0, 6).forEach((id, i) => expect([id, at(plan, id)]).toEqual([id, slot(i)]))
