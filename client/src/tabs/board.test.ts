@@ -55,7 +55,7 @@ describe('buildBoard (D7)', () => {
 })
 
 describe('islandCols / islandBox — the sizes the stylesheet is given', () => {
-  it('about as wide as tall (demo feedback: ceil(√(n × 1.6)), 8 at most), and never more than the board is wide', () => {
+  it('about as wide as tall (YAZ-3343 D29: ceil(√(n × 1.6)), 8 at most), and never more than the board is wide', () => {
     expect([1, 2, 3, 4, 5, 7].map((count) => islandCols(count, 2000))).toEqual([1, 2, 3, 3, 3, 4])
     expect([1, 2, 19, 40, 100].map(colsFor)).toEqual([1, 2, 6, 8, 8])
     expect(islandCols(7, 500)).toBe(2)
@@ -105,7 +105,7 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
     ]
     const plan = layoutCanvas([me], { by: 'folder', wrapW: 2000, stored })
     expect(at(plan, '/v/a.md')).toEqual([900, 700, true])
-    // b keeps its own slot: nothing closes up (demo feedback, "no reshuffle").
+    // b keeps its own slot: nothing closes up (D16, "no reshuffle").
     expect(at(plan, '/v/b.md')).toEqual([islandPad + pageW + pageGap, islandPad + labelH, false])
     const notes = plan.groups[0]
     expect([notes.x, notes.y]).toEqual([islandPad + pageW + pageGap - islandPad, 0])
@@ -159,7 +159,7 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
     void labelH
   })
 
-  it('demo bug, "the window pane is getting bigger and bigger": a frame or a group dragged twice keeps its size, and its box moves by exactly the sum of the drags, in both layouts', () => {
+  it('S25, D16, "the window pane is getting bigger and bigger": a frame or a group dragged twice keeps its size, and its box moves by exactly the sum of the drags, in both layouts', () => {
     const other = one('w2', ['/w/x.md', '/w/y.md'], ['/w'], ['Work'])
     const two = one('me', ['/v/a.md', '/w/b.md', '/w/Docs/c.md'], ['/v', '/w'], ['Notes', 'Work'])
     /** What the board stores on a drop: each carried card at its place + the move. */
@@ -204,7 +204,7 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
   })
 })
 
-describe('the grid ("Snap to grid", demo feedback): a frame\'s own, at any origin', () => {
+describe('the grid ("Snap to grid", YAZ-3343 D26): a frame\'s own, at any origin', () => {
   // A frame dragged by a non-cell amount: its grid starts wherever its cards are.
   const o = { x: 137, y: -41 }
 
@@ -230,7 +230,7 @@ describe('the grid ("Snap to grid", demo feedback): a frame\'s own, at any origi
   })
 })
 
-describe('no overlap and a viewport-shaped layout (demo feedback)', () => {
+describe('no overlap and a viewport-shaped layout (YAZ-3343 D28, D29)', () => {
   const win = (id: string, n: number): FrameInput => ({ win: id, vaults: buildBoard(Array.from({ length: n }, (_, i) => ({ id: `${id}\n/v/n${i}.md\n0`, path: `/v/n${i}.md` })), ['/v'], ['Notes'], name).map((v) => ({ ...v, named: false })) })
 
   it('freeFramePosition: a frame dropped on another goes to the nearest spot clear of it by the gap; a clear one stays', () => {
