@@ -2,6 +2,7 @@ import { api, BridgeRequestError } from '../api'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { EyeIcon, HeartIcon } from '../views/view/icons'
 import type { MenuAction, MenuSection } from '../sidebar/menuSections'
+import type { ListState } from '../lists/useVaultListsHere'
 
 /** An open tab menu: where it stands, the tab it is about, and that tab's review state as it was when the menu opened. */
 export interface TabMenuAt {
@@ -19,7 +20,7 @@ export interface TabMenuAt {
    * Whether the page is in Focus and in Favorites (YAZ-3264 D2), read when the menu opened (S14).
    * Absent or null hides both items: a page in no vault of the window, or one whose lists are not read yet (S7, S8).
    */
-  lists?: { focus: boolean; favorite: boolean } | null
+  lists?: ListState | null
 }
 
 /** One other open window that can take this tab (YAZ-3091 D2): its id for main, and its row text (D7). */

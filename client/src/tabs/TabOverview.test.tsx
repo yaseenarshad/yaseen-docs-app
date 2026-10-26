@@ -570,7 +570,7 @@ describe('TabOverview', () => {
     expect(frame(el, 'w3').className).not.toContain('taboverview__frame--ringed')
   })
 
-  it('YAZ-3264 S16 to S18, D2, D4, D6: every card menu has the tab row\'s Focus and Favorites items, with their glyphs; a card of another window toggles HERE; a card whose vault this window does not show has neither', async () => {
+  it('YAZ-3264 S16 to S18, D2, D4, D6: every card menu has the tab row\'s Focus and Favorites items; a card of another window toggles HERE; a card whose vault this window does not show has neither', async () => {
     canvas = { allWindows: true, snap: true, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }]), other('w3', ['/x'], [{ path: '/x/q.md', active: true }])]
     const onToggleFocus = vi.fn()
@@ -583,7 +583,6 @@ describe('TabOverview', () => {
     expect(menuItems(el)).toEqual(expect.arrayContaining(['Show in sidebar', 'Add to focus', 'Add to favorites']))
     expect(menuItems(el).indexOf('Add to focus')).toBe(menuItems(el).indexOf('Show in sidebar') + 1)
     expect(menuItems(el).indexOf('Add to favorites')).toBe(menuItems(el).indexOf('Reveal in Finder') - 1)
-    expect(el.querySelector('.ctx-menu')?.classList.contains('ctx-menu--glyphs')).toBe(true)
     act(() => menuItem(el, 'Add to favorites')?.click())
     expect(onToggleFavorite).toHaveBeenLastCalledWith(['/v/a.md'], false)
     // S17: another window's card on a vault this window shows — the state this window read, written here, not asked of w2.

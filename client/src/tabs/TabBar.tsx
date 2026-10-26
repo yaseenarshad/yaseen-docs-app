@@ -5,6 +5,7 @@ import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
 import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import type { Tab } from '../workspace/useWorkspace'
+import type { ListState } from '../lists/useVaultListsHere'
 import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
 import { TabNameField } from './TabNameField'
 import { useBoardHighlight } from './boardHighlight'
@@ -95,7 +96,7 @@ export interface TabBarProps {
    * two lists — null hides both items — and the two toggles. App's lists (D1), so they work with the
    * sidebar hidden; a toggle only toasts (D3).
    */
-  listState?: (path: string) => { focus: boolean; favorite: boolean } | null
+  listState?: (path: string) => ListState | null
   onToggleFocus?: (paths: string[], isOn: boolean) => void
   onToggleFavorite?: (paths: string[], isOn: boolean) => void
 }

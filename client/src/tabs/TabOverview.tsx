@@ -5,6 +5,7 @@ import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { isFolderPath, pageLabel, useLatestTrees, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
 import type { Tab } from '../workspace/useWorkspace'
+import type { ListState } from '../lists/useVaultListsHere'
 import { arrivalIn, BOARD, buildBoard, cellKey, copiesOf, dropOutcome, fieldOf, frameDrop, layoutCanvas, nearest, placeCard, refsOf, storedAt, tidyFrame, tidyGroup, withoutTitle, type BoardPage, type BoardTab, type CanvasPlan, type Field, type FrameInput, type Island, type Rect, type Way } from './board'
 import { setBoardHighlight } from './boardHighlight'
 import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
@@ -97,7 +98,7 @@ export interface TabOverviewProps {
    * lists are the vault's, not the window's (YAZ-2702), so a card of another window on a vault this
    * window shows toggles here, and the other window hears the change.
    */
-  listState?: (path: string) => { focus: boolean; favorite: boolean } | null
+  listState?: (path: string) => ListState | null
   onToggleFocus?: (paths: string[], isOn: boolean) => void
   onToggleFavorite?: (paths: string[], isOn: boolean) => void
   /** Settings › Preview on hover (D18): resting on a card opens the sidebar's own preview panel beside it. Space opens it whatever this says. */
