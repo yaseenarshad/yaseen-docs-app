@@ -255,6 +255,10 @@ export interface PlacedVault {
 
 export interface PlacedFrame extends Rect {
   win: string
+  /** Its label row's top-left in the layout: where the slots of its unmoved cards start. A stored frame stands there. */
+  spot: { x: number; y: number }
+  /** It has a place of its own (an anchor, or the no-overlap rule just moved it): no auto flow moves it. */
+  placed: boolean
 }
 
 /** Where everything of the canvas stands, in world px. */
@@ -475,7 +479,7 @@ export function layoutCanvas(windows: readonly FrameInput[], { by, wrapW, stored
     if (shifted.has(u) && framed) setFrames.push({ win: u.win, x: u.left, y: u.top })
     const box = boxOf(u)
     bounds = union(bounds, box)
-    if (framed) frames.push({ win: u.win, x: box.x, y: box.y + frameLabelH, w: box.w, h: box.h - frameLabelH })
+    if (framed) frames.push({ win: u.win, x: box.x, y: box.y + frameLabelH, w: box.w, h: box.h - frameLabelH, spot: { x: u.left, y: u.top }, placed: u.anchored || shifted.has(u) })
     else if (u.island !== null && u.cards.length > 0) {
       groups.push({ key: u.owner, win: u.win, island: u.island, ...box })
       const key = `${u.win}\n${u.at}`
@@ -599,6 +603,35 @@ export function arrivalIn(plan: CanvasPlan, win: string, tab: TabRef, { where, n
   return out
 }
 
+/**
+ * A TAB THAT LEAVES its window from the board (YAZ-3376, S16, D16, S45) — a drop in another frame, "Move to", "Move to
+ * new window", a close: the write that keeps every other card where it stands. The auto layout would lay the source
+ * frame out again with a card less, and move each frame with no place of its own to a new spot in the flow. So each
+ * card that stays in a frame a card leaves is stored where it stands, under its copy number AFTER the leave (a copy
+ * after a leaving copy of its path is one less, as main's prune counts); the copy numbers that no longer exist are
+ * forgotten; and each frame with no place of its own is stored at its spot. 'window' layout only; null when nothing leaves.
+ */
+export function departureFrom(plan: CanvasPlan, leaving: ReadonlySet<string>): TabCanvasPatch | null {
+  const gone = [...leaving].flatMap((id) => plan.cards.get(id) ?? [])
+  if (plan.frames.length === 0 || gone.length === 0) return null
+  const set: CanvasCard[] = []
+  const forget: Array<TabRef & { win: string; by: CanvasLayout }> = []
+  for (const win of new Set(gone.map((c) => c.win))) {
+    const out = gone.filter((c) => c.win === win)
+    const count = new Map<string, number>()
+    for (const id of matesOf(plan, win)) {
+      const card = plan.cards.get(id)!
+      count.set(card.path, (count.get(card.path) ?? 0) + 1)
+      if (leaving.has(id)) continue
+      const shift = out.filter((c) => c.path === card.path && c.copy < card.copy).length
+      if (!card.moved || shift > 0) set.push({ ...storedAt(card, 'window', card), copy: card.copy - shift })
+    }
+    for (const [path, n] of count) for (let copy = n - out.filter((c) => c.path === path).length; copy < n; copy++) forget.push({ win, path, copy, by: 'window' })
+  }
+  const setFrames = plan.frames.filter((f) => !f.placed).map((f) => ({ win: f.win, ...f.spot }))
+  return { ...(set.length > 0 ? { set } : {}), ...(forget.length > 0 ? { forget } : {}), ...(setFrames.length > 0 ? { setFrames } : {}) }
+}
+
 /** Where a frame or group dropped (dx, dy) from its place goes (D16, D28): there, or the nearest spot clear of every other by the gap. Answers the move to apply. */
 export function frameDrop(plan: CanvasPlan, by: CanvasLayout, owner: string, dx: number, dy: number): { dx: number; dy: number } {
   const was = ownerBox(plan, owner)
@@ -637,7 +670,7 @@ export function tidyGroup(plan: CanvasPlan, key: string, wrapW: number): TabCanv
 }
 
 /** The window whose frame (its label row included) holds the world point, or null (YAZ-3343 D13). A later frame wins where two overlap. */
-export function frameAt(frames: readonly PlacedFrame[], x: number, y: number): string | null {
+export function frameAt(frames: readonly (Rect & { win: string })[], x: number, y: number): string | null {
   for (let i = frames.length - 1; i >= 0; i--) {
     const f = frames[i]
     if (x >= f.x && x <= f.x + f.w && y >= f.y - BOARD.frameLabelH && y <= f.y + f.h) return f.win
@@ -654,7 +687,7 @@ export type DropOutcome = { kind: 'place' } | { kind: 'move'; to: string } | { k
  * shows no vault of the page (`rootsOf(to)` holds none), which refuses it. Anywhere else, its own frame
  * or empty canvas, it stays where it was put.
  */
-export function dropOutcome({ from, path, at, frames, framed, rootsOf }: { from: string; path: string; at: { x: number; y: number }; frames: readonly PlacedFrame[]; framed: boolean; rootsOf: (win: string) => readonly string[] | undefined }): DropOutcome {
+export function dropOutcome({ from, path, at, frames, framed, rootsOf }: { from: string; path: string; at: { x: number; y: number }; frames: readonly (Rect & { win: string })[]; framed: boolean; rootsOf: (win: string) => readonly string[] | undefined }): DropOutcome {
   if (!framed) return { kind: 'place' }
   const to = frameAt(frames, at.x, at.y)
   if (to === null || to === from) return { kind: 'place' }
