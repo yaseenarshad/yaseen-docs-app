@@ -189,9 +189,7 @@ test('step 3b — the tab board (YAZ-3343): the grid button and ⌘⇧M open it,
   await boardSwitch(win).click()
   await expect(win.locator('.taboverview__frame')).toHaveCount(1)
   await expect.poll(async () => (await readState(userData)).tabCanvas.allWindows).toBe(true)
-  // A click on the switch's label gives the keyboard focus to the switch (Space toggles it, never peeks). The user
-  // clicks the filter box to type in it again.
-  await win.locator('.taboverview__filter').click()
+  // The switch leaves the keys with the filter box (YAZ-3343 polish): the user types on at once.
 
   // The filter box has the keys: typing narrows the cards, and Enter opens the highlighted one.
   await expect(win.locator('.taboverview__filter')).toBeFocused()
