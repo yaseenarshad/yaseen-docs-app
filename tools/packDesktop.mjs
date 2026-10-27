@@ -9,6 +9,7 @@
  *
  * First it stages the TypeScript 7 language server of each target (`stageTypescript`, YAZ-3453):
  * the Windows binary is not in `node_modules` on a Mac, and electron-builder copies the staged folder.
+ * Then the Python helper (`stagePyright`, YAZ-3455): `pyright`, one Node program for every target.
  *
  * `--mac` then recompresses the dmg zlib → lzma (`lzmaDmg`, YAZ-2181).
  *
@@ -21,7 +22,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dmgPath, lzmaDmg } from './lib/dmg.mjs'
-import { lspTargets, stageTypescript } from './lib/lspPack.mjs'
+import { lspTargets, stagePyright, stageTypescript } from './lib/lspPack.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -35,6 +36,11 @@ const { build: desktopBuild } = JSON.parse(readFileSync(join(root, 'desktop', 'p
 for (const target of lspTargets(desktopBuild, args)) {
   const { dir, from } = await stageTypescript({ repo: root, ...target })
   console.log(`[lsp] typescript ${target.os}-${target.arch}: ${dir} (${from})`)
+}
+{
+  // The Python helper (YAZ-3455): one Node program for every target.
+  const { dir, from } = await stagePyright({ repo: root })
+  console.log(`[lsp] pyright: ${dir} (${from})`)
 }
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const named = [

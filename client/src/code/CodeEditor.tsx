@@ -27,6 +27,8 @@ import { DocumentChips, useDocumentHost, type DocumentHostProps } from '../docum
 import type { NoticeKind } from '../lib/notice'
 import { storage } from '../lib/storage'
 import { useAppliedTheme } from '../lib/theme'
+import { trackCodeTab } from './codeOpener'
+import { attachLanguageClient } from './languageClient'
 import { lineBreakOf, withOneLineBreak } from './lineBreak'
 import { applyAppTheme, monaco } from './monaco'
 import { monacoThemeName } from './monacoTheme'
@@ -40,6 +42,8 @@ export interface CodeEditorProps extends DocumentHostProps {
   onNotice?: (text: string, icon?: NoticeKind) => void
   /** App's sidebar toggle: the renderer owns ⌘B, and Monaco's element would never pass it up. */
   onToggleSidebar?: () => void
+  /** A jump to another file (YAZ-3454, D10): the tab's own link door, so Back returns. */
+  onOpenFile?: (path: string) => void
 }
 
 interface LoadedCode {
@@ -84,7 +88,7 @@ interface CodeHostProps extends CodeEditorProps {
 }
 
 /** Mounts exactly one Monaco editor and model for `loaded`; the document host owns everything that writes. */
-function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar }: CodeHostProps) {
+function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar, onOpenFile }: CodeHostProps) {
   const theme = useAppliedTheme()
   const mountRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<ReturnType<typeof monaco.editor.create> | null>(null)
@@ -95,6 +99,8 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
   const applyingDisk = useRef(false)
   const sidebarRef = useRef(onToggleSidebar)
   sidebarRef.current = onToggleSidebar
+  const openRef = useRef(onOpenFile)
+  openRef.current = onOpenFile
 
   /** The bytes to write: the model's value with its BOM, or the text it held when the tab closed. */
   const textNow = (): string => {
@@ -168,7 +174,12 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
       if (!applyingDisk.current) autosave.current?.update(model.getAlternativeVersionId())
     })
     start(model.getAlternativeVersionId(), loaded.mtime)
+    // Jump by meaning (YAZ-3454, YAZ-3455): the project's helper, and Cmd+click through `onOpenFile`.
+    const helper = attachLanguageClient(model, { root, path })
+    const jumps = trackCodeTab(editor, path, (to) => openRef.current?.(to))
     return () => {
+      jumps.dispose()
+      helper.dispose()
       changes.dispose()
       closedText.current = model.getValue(monaco.editor.EndOfLinePreference.TextDefined, true)
       editor.dispose()

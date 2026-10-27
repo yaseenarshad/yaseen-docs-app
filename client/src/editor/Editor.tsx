@@ -204,7 +204,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     // The document host renders its own `section.editor editor--code`, as a board's does.
     return (
       <Suspense fallback={<section className="editor" />}>
-        <CodeEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} onNotice={onNotice} onToggleSidebar={onToggleSidebar} />
+        <CodeEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} onNotice={onNotice} onToggleSidebar={onToggleSidebar} onOpenFile={onOpenFile} />
       </Suspense>
     )
   }

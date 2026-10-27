@@ -27,6 +27,7 @@
     "@milkdown/plugin-tooltip": "file:client/vendor/milkdown-plugin-tooltip-7.22.1-yaz2238.tgz",
     "esbuild": "^0.28.2",
     "jsdom": "^30.0.1",
+    "pyright": "1.1.414",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
   },
