@@ -169,6 +169,7 @@ window.duplicate/0: invoke window:duplicate []; => "answer"; !> {"code":"NOT_FOU
 window.filesPreview/1: invoke window:files-preview ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.filesToNormal/0: invoke window:files-to-normal []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.filesWide/1: invoke window:files-wide ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.filesZoom/1: invoke window:files-zoom ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.focusTab/2: invoke window:focus-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.hiddenWindows/0: invoke window:hidden-windows-now []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.highlight/1: invoke window:highlight ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -203,7 +204,6 @@ window.setRoots/2: invoke window:set-roots ["a0","a1"]; => "answer"; !> {"code":
 window.setSessionTabs/2: invoke window:set-session-tabs ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.showWindow/1: invoke window:show ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.tabAction/3: invoke window:tab-action ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-window.zoom/1: invoke window:zoom ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 writeAsset/1: invoke fs:write-asset ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 writeFile/1: invoke fs:write ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}"
 `;

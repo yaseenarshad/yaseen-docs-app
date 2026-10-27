@@ -14,6 +14,7 @@ import {
   keyedVaults,
   listVaults,
   mergeFavoritesOrder,
+  normalizeFilesZoom,
   normalizeRoots,
   rootOfPath,
   type AppState,
@@ -195,6 +196,16 @@ export const storage = {
   getWindowId: (): string => identity.id,
   /** This window is a Files window (YAZ-3357 D1): only the sidebar, no tabs. Fixed for the window's life, so a render may read it. */
   isFilesWindow: (): boolean => identity.kind === 'files',
+  /**
+   * A Files window's own sidebar zoom in percent (YAZ-3389 D13), from its identity; a full window has none and reads
+   * the shared `settings.sidebarZoom` instead. Only this window writes it (`setFilesZoom`), so the cache stays true.
+   */
+  getFilesZoom: (): number => normalizeFilesZoom(identity.zoom),
+  /** Step this Files window's own sidebar zoom (D13): the cache at once, then main (`window:files-zoom`) stores it. */
+  setFilesZoom(percent: number): void {
+    identity = { ...identity, zoom: percent }
+    send('window.filesZoom', () => api.window.filesZoom(percent))
+  },
 
   /**
    * A window's name (YAZ-3343 D14), off the cache; this window's when `id` is left out. `undefined` = no name:

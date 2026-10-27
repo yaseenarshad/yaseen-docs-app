@@ -6,6 +6,7 @@
 
 /* Beside the 26px cog: a 22px solid accent pill inside the footer's 39px row (`--sidebar-footer-h`). */
 .update-pill {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -33,6 +34,7 @@
 
 /* The white dot: it breathes until the sheet was opened for this version, then it rests. */
 .update-pill__dot {
+  order: 1; /* after the short words, which CSS draws in `::after` (YAZ-3401) */
   flex: none;
   width: 6px;
   height: 6px;
@@ -43,6 +45,46 @@
 
 .update-pill__dot--breathing {
   animation: update-pill-breathe 2s ease-in-out infinite;
+}
+
+/*
+ * YAZ-3401: the pill shortens by the room left for it. Its slot takes the footer's free width after the cog, the
+ * sidebar zoom and the Files window chip, and is the size container. Measured: "New update ready" needs 156 px
+ * (its 4 px margin and 151 px), "What's new" (the wider short words) needs 119 px. Narrower, the words go and the
+ * pill is a 22 px round 🎉 with the dot on its corner. The DOM text, the accessible name and the title keep the
+ * full words.
+ */
+.update-pill-slot {
+  flex: 1 1 0;
+  display: flex;
+  min-width: 0;
+  container-type: inline-size;
+}
+@container (width < 156px) {
+  .update-pill__label {
+    display: none;
+  }
+  .update-pill::after {
+    content: attr(data-short);
+  }
+}
+@container (width < 119px) {
+  .update-pill {
+    justify-content: center;
+    width: 22px;
+    margin-left: 2px;
+    padding: 0;
+  }
+  .update-pill::after {
+    content: none;
+  }
+  .update-pill__dot {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 5px;
+    height: 5px;
+  }
 }
 
 @keyframes update-pill-pop {

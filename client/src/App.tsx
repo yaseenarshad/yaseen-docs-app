@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isBoard, isViewOnly } from '@shared/fileKind'
 import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -40,7 +40,7 @@ import { useSharing } from './share/useSharing'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { filesWindowTitle, windowTitle } from './lib/windowTitle'
-import { askFromFiles, filesClickHow } from './lib/filesWindow'
+import { askFromFiles, filesClickHow, watchFilesKeys } from './lib/filesWindow'
 import { FloatingPreview } from './sidebar/HoverPreviewHost'
 import { filesPreviewPopup } from './sidebar/previewPopup'
 import { isFolderPath, pageName, pathTitles, useAllPathTitles } from './lib/pageLabel'
@@ -498,6 +498,27 @@ export function App() {
     storage.setSettings(next)
     setSettings(next)
   }, [])
+
+  // A Files window's own sidebar zoom (YAZ-3389 D13): only this window writes it, so a local copy stays true.
+  const [filesZoom, setFilesZoomState] = useState(() => (filesWindow ? storage.getFilesZoom() : 100))
+  // The same value writes nothing (YAZ-3389 D6), as for the shared zoom.
+  const changeFilesZoom = useCallback((percent: number) => {
+    if (percent === storage.getFilesZoom()) return
+    storage.setFilesZoom(percent)
+    setFilesZoomState(percent)
+  }, [])
+  // ⌘+ / ⌘− / ⌘0 that no note claimed step the sidebar zoom (YAZ-3389), over the settings of the moment;
+  // in a Files window they step its own zoom and never the shared one (D13).
+  const zoomSidebar = useCallback(
+    (step: ZoomStep) => {
+      if (filesWindow) return changeFilesZoom(step === 0 ? 100 : stepSidebarZoom(storage.getFilesZoom(), step))
+      const now = storage.getSettings()
+      const sidebarZoom = step === 0 ? 100 : stepSidebarZoom(now.sidebarZoom, step)
+      if (sidebarZoom !== now.sidebarZoom) changeSettings({ ...now, sidebarZoom })
+    },
+    [changeSettings, changeFilesZoom, filesWindow],
+  )
+  const zoom = useCallback((step: ZoomStep) => requestZoom(step, zoomSidebar), [zoomSidebar])
 
   /** A lens tab click (YAZ-847): write through to this window's identity, then mirror it locally. */
   const changeLens = useCallback((next: SidebarTab) => {
@@ -1364,7 +1385,7 @@ export function App() {
     // ⌘T in a Files window (YAZ-3357 D8) opens a new full window, as ⌘⇧N: there is no strip for a tab.
     onNewTab: filesWindow ? newWindow : newTab,
     onNewWindow: newWindow,
-    onZoom: requestZoom,
+    onZoom: zoom,
     onWhatsNew: openWhatsNew,
     onExportImage: exportImage,
     onExportDrawing: reviewer === null ? exportDrawing : review.skip,
@@ -2298,6 +2319,8 @@ export function App() {
    * A Files window's sidebar doors (YAZ-3357 D2, D7): each sends ONE message to main, which runs it in a full window.
    * A click previews (Enter keeps, `filesClickHow`), a double click keeps, ⌘-click opens a background tab. Null in a full window.
    */
+  // The Enter key presses that `filesClickHow` reads (D7, bug YAZ-3399): a Files window only.
+  useEffect(() => (filesWindow ? watchFilesKeys(window) : undefined), [filesWindow])
   const filesDoors = useMemo(() => {
     if (!filesWindow) return null
     const ask = (action: FilesAction): void => askFromFiles(action, notify)
@@ -2548,6 +2571,8 @@ export function App() {
           // The vault menu's "Open in this window" (YAZ-1798 D8/D11): the one deliberate in-place switch.
           onOpenVaultHere={openRoot}
           onOpenSetHere={filesWindow ? openSetHere : undefined}
+          filesZoom={filesWindow ? filesZoom : undefined}
+          onFilesZoom={filesWindow ? changeFilesZoom : undefined}
           onToNormalWindow={filesWindow ? () => void api.window.filesToNormal().catch((err: unknown) => notify(`Can't make this a full window: ${err instanceof Error ? err.message : String(err)}`)) : undefined}
           // On the sidebar itself (YAZ-2194): stamped on .app as an inherited variable, every resize
           // move restyled the whole window, every mounted tab included.

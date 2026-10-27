@@ -10,7 +10,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type RestoreSessionResult, type SidebarTab, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type RestoreSessionResult, type SidebarTab, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -32,6 +32,8 @@ interface SidebarStubProps {
   /** A Files window's header button (YAZ-3357 D8): Tabs Mission Control. */
   onShowAllTabs?: () => void
   onToNormalWindow?: () => void
+  filesZoom?: number
+  onFilesZoom?: (percent: number) => void
   /** A Files window's floating preview (YAZ-3357 D9): its popup, or 'overlay'. */
   previewFloat?: unknown
   /** The vault rows the user closed (YAZ-2602 R9): App's, for the session. */
@@ -208,7 +210,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuNewTab = new Set<() => void>()
   const windowGlow = new Set<(on: boolean) => void>()
   const menuNewWindow = new Set<() => void>()
-  const menuZoom = new Set<() => void>()
+  const menuZoom = new Set<(step: ZoomStep) => void>()
   const menuWhatsNew = new Set<() => void>()
   // The board gestures (YAZ-3037): Export Excalidraw Drawing… is the one App routes itself during a review.
   const menuExportDrawing = new Set<() => void>()
@@ -311,6 +313,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       filesWide: vi.fn(async (_open: boolean) => undefined),
       filesPreview: vi.fn(async (_req: unknown) => undefined),
       filesToNormal: vi.fn(async () => undefined),
+      filesZoom: vi.fn(async (_percent: number) => undefined),
       setRoots: vi.fn(async (_id: string, _roots: readonly string[]) => undefined),
       popOutTab: vi.fn(async (_from: string, _ref: TabRef) => undefined),
       showWindow: vi.fn(async (_id: string) => undefined),
@@ -349,7 +352,10 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onTabOverview: menuSub(menuTabOverview),
       onNewTab: menuSub(menuNewTab),
       onNewWindow: menuSub(menuNewWindow),
-      onZoom: menuSub(menuZoom),
+      onZoom: vi.fn((l: (step: ZoomStep) => void) => {
+        menuZoom.add(l)
+        return () => menuZoom.delete(l)
+      }),
       onWhatsNew: menuSub(menuWhatsNew),
       onExportImage: menuSub(new Set()),
       onExportDrawing: menuSub(menuExportDrawing),
@@ -506,6 +512,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitGlow: (on: boolean) => windowGlow.forEach((l) => l(on)),
     emitNewWindow: () => menuNewWindow.forEach((l) => l()),
     emitWhatsNew: () => menuWhatsNew.forEach((l) => l()),
+    emitZoom: (step: ZoomStep) => menuZoom.forEach((l) => l(step)),
     emitExportDrawing: () => menuExportDrawing.forEach((l) => l()),
     emitShareLink: () => menuShareLink.forEach((l) => l()),
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
@@ -586,6 +593,9 @@ afterEach(() => {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
   vi.restoreAllMocks()
 })
+
+/** How long a wait for a render holds on a slow CI runner: it stalled past 5 s there (main's CI at b06bd5f4, PR #181). Inside the 30 s test limit. */
+const SLOW_RUNNER_MS = 15_000
 
 describe('App per-window sidebar visibility (YAZ-1280)', () => {
   it('boots from window identity and View › Toggle Sidebar reuses the one local toggle path', async () => {
@@ -1187,6 +1197,18 @@ describe('App section indent settings (YAZ-2709)', () => {
     expect([app.style.getPropertyValue('--section-step-setting'), app.getAttribute('data-section-lines')]).toEqual(['30', 'always'])
     act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sectionStep: 36, sectionLines: 'hover' } }))
     expect([app.style.getPropertyValue('--section-step-setting'), app.getAttribute('data-section-lines')]).toEqual(['36', 'hover'])
+  })
+})
+
+describe('App sidebar zoom from the menu keys (YAZ-3389 D6)', () => {
+  it('with no note focused, ⌘+ at 200 writes nothing, and ⌘0 at 150 writes 100 over the other settings', async () => {
+    const at200: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarZoom: 200, theme: 'dark' } }
+    const { bridge, emitStateChanged, emitZoom } = await mount(at200, { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => emitZoom(1))
+    expect(bridge.state.setSettings).not.toHaveBeenCalled()
+    act(() => emitStateChanged({ ...at200, settings: { ...at200.settings, sidebarZoom: 150 } }))
+    act(() => emitZoom(0))
+    expect(bridge.state.setSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarZoom: 100, theme: 'dark' })
   })
 })
 
@@ -6089,7 +6111,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
     const { bridge, el, emitFileRenamed } = await mountVault()
     await draggedOut('/v/A.md')
     // The box waits for the link count; a slow CI runner can take a few more ticks to show it.
-    await vi.waitFor(() => expect(box(el)).not.toBeNull())
+    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     expect(box(el)?.getAttribute('role')).toBe('alertdialog')
     expect(el.querySelector(`#${box(el)?.getAttribute('aria-labelledby')}`)?.textContent).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
@@ -6119,6 +6141,8 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
   it('main says the drag landed in another window of the app: the box of that drag closes, or never shows when the word comes during its read; a box of other items stays (YAZ-3263)', async () => {
     const { el, emitDragLanded } = await mountVault()
     await draggedOut('/v/A.md')
+    // The box waits for the link count; a slow CI runner can take a few more ticks to show it (as in the alert dialog test).
+    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     act(() => emitDragLanded(['/v/B.md']))
     expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     act(() => emitDragLanded(['/v/A.md']))
@@ -6134,6 +6158,7 @@ describe('App: the box after a drag out to Finder (YAZ-3254)', () => {
   it('an item that is gone before the box shows is left out; with none left there is no box (S31)', async () => {
     const { el } = await mountVault()
     await draggedOut('/v/gone.md', '/v/A.md')
+    await vi.waitFor(() => expect(box(el)).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     expect(boxText(el)).toBe('Copied 1 file (A.md) to Finder? 1 note links to it.')
     await act(async () => button(el, 'Keep in vault')?.click())
     await draggedOut('/v/gone.md')
@@ -6147,6 +6172,11 @@ describe('App Files window (YAZ-3357)', () => {
   const tabNames = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
   /** The popup cannot be made in jsdom: the overlay fallback stands in (D9). */
   const noPopup = () => vi.spyOn(window, 'open').mockReturnValue(null)
+  /** The sidebar's props once App renders it as a Files window's (it hands `onShowAllTabs`): a slow CI runner can read an earlier render. */
+  const filesSidebar = async () => {
+    await vi.waitFor(() => expect(captured.sidebar?.onShowAllTabs).toBeDefined(), { timeout: SLOW_RUNNER_MS })
+    return captured.sidebar!
+  }
 
   it('D1, D2, D4, D7, D8: only the sidebar — no strip, no right panel, no resize edge; its rows open through main, a click previews, Enter and a double click keep, ⌘-click opens in the background', async () => {
     noPopup()
@@ -6156,18 +6186,18 @@ describe('App Files window (YAZ-3357)', () => {
     expect(el.querySelector('.tabbar')).toBeNull()
     expect(el.querySelector('.sidebar-resize, .right-panel-reopen, [data-start-page]')).toBeNull()
     expect(document.title).toBe('Files — v')
-    const sidebar = captured.sidebar!
+    const sidebar = await filesSidebar()
     expect(sidebar.onSaveSession).toBeUndefined()
     expect(sidebar.onUpdateSession).toBeUndefined()
     expect(sidebar.previewFloat).toBe('overlay')
     act(() => sidebar.onOpenFile('/v/a.md'))
     act(() => sidebar.onKeepFile('/v/b.md'))
     act(() => sidebar.onOpenFileBackground('/v/c.md'))
-    // Enter on a row makes a click with no pointer (`detail` 0): it keeps the tab.
-    const enterClick = new MouseEvent('click', { detail: 0 })
-    const row = document.createElement('button')
-    row.addEventListener('click', () => sidebar.onOpenFile('/v/d.md'))
-    act(() => void row.dispatchEvent(enterClick))
+    // Enter on a row opens during the Enter key press (bug YAZ-3399: no `window.event`): it keeps the tab.
+    const onEnter = (): void => sidebar.onOpenFile('/v/d.md')
+    window.addEventListener('keydown', onEnter)
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })))
+    window.removeEventListener('keydown', onEnter)
     act(() => sidebar.onInbox('/v'))
     expect(bridge.window.openFromFiles.mock.calls.map(([action]) => action)).toEqual([
       { kind: 'open', path: '/v/a.md', how: 'preview' },
@@ -6182,15 +6212,32 @@ describe('App Files window (YAZ-3357)', () => {
   })
 
   it('D13: a Files window hands its sidebar "Make full window", which asks main; a full window hands none', async () => {
+    noPopup()
     const { bridge } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES })] }, FILES)
-    act(() => captured.sidebar!.onToNormalWindow!())
+    const toNormal = (await filesSidebar()).onToNormalWindow!
+    act(() => toNormal())
     await act(async () => {})
     expect(bridge.window.filesToNormal).toHaveBeenCalledTimes(1)
+  })
+
+  it('YAZ-3389 D13: the sidebar zoom is the window\'s own — an unclaimed ⌘+ / ⌘0 and the footer write `window:files-zoom`, never the shared settings', async () => {
+    const { bridge, emitZoom } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES, zoom: 150 })] }, { ...FILES, zoom: 150 })
+    expect((await filesSidebar()).filesZoom).toBe(150)
+    act(() => emitZoom(1))
+    expect(captured.sidebar!.filesZoom).toBe(200)
+    // At the wall nothing is written; the footer's value and ⌘0 are the window's too.
+    act(() => emitZoom(1))
+    act(() => captured.sidebar!.onFilesZoom!(125))
+    act(() => emitZoom(0))
+    expect(bridge.window.filesZoom.mock.calls).toEqual([[200], [125], [100]])
+    expect(captured.sidebar!.filesZoom).toBe(100)
+    expect(bridge.state.setSettings).not.toHaveBeenCalled()
   })
 
   it('D3, D8: "Show all tabs" opens the board right of the sidebar and main makes the window wide; again closes it and main makes it narrow; ⌘B never hides the sidebar; ⌘T asks for a new window', async () => {
     noPopup()
     const { bridge, el, emitNewTab } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES })] }, FILES)
+    await filesSidebar()
     act(() => captured.sidebar!.onShowAllTabs!())
     expect(bridge.window.filesWide.mock.calls).toEqual([[true]])
     // Not in the narrow window (D10): the sidebar keeps its width, and the board waits for the wide one.
