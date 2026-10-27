@@ -22,6 +22,9 @@ vi.mock('../api', async (importOriginal) => ({
   api: { readFile: vi.fn() },
 }))
 
+// The sidebar's note panel (YAZ-3403): a stand-in that says which note it shows and where it was told to go.
+vi.mock('../sidebar/NotePreview', () => ({ default: ({ name, anchor }: { name: string; anchor: { side?: string } }) => <div className="note-preview" data-side={anchor.side ?? ''} aria-label={`Preview of ${name}`} /> }))
+
 import { api } from '../api'
 
 const readFile = vi.mocked(api.readFile)
@@ -78,11 +81,12 @@ function feed(records: IndexRecord[], folders: IndexRecord[] = []): void {
   act(() => source.update((target) => resolve(target)?.record.path ?? null, records, folders))
 }
 
-function mount(path = B): HTMLElement {
+function mount(path = B, hover = false): HTMLElement {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<BacklinksSection path={path} source={source} openCurrent={openCurrent} openBackground={openBackground} />))
+  const previewScope = () => ({ root: '/vault', wikilinks: source, textVars: {} })
+  act(() => root?.render(<BacklinksSection path={path} source={source} openCurrent={openCurrent} openBackground={openBackground} hoverPreview={hover} previewScope={previewScope} />))
   return container
 }
 
@@ -116,6 +120,28 @@ afterEach(() => {
 })
 
 describe('BacklinksSection (Links D, GRO-2193)', () => {
+  it('YAZ-3429, D12 amended: a rest of 400 ms on a mention or a snippet opens the linking note\'s panel at the window\'s right edge, never beside the row', async () => {
+    feed(RECORDS)
+    const el = mount(B, true)
+    click(header(el)!)
+    await flush()
+    const rest = async (target: Element) => {
+      act(() => void target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400)
+      })
+      await flush()
+    }
+    await rest(notes(el)[0])
+    const panel = document.querySelector('.note-preview')
+    expect(panel?.getAttribute('aria-label')).toBe('Preview of A')
+    expect(panel?.getAttribute('data-side')).toBe('edge')
+    act(() => void notes(el)[0].dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
+    expect(document.querySelector('.note-preview')).toBeNull()
+    await rest(snippets(el)[0])
+    expect(document.querySelector('.note-preview')?.getAttribute('data-side')).toBe('edge')
+  })
+
   it('renders nothing before the first index snapshot', () => {
     expect(mount().innerHTML).toBe('')
   })

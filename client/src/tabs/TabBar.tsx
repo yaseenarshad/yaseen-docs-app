@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { titleWithKey, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { rootOfPath, type DiagramDarkColors } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, insertionSlot } from '../lib/dragSlot'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
@@ -10,6 +11,7 @@ import type { ListState } from '../lists/useVaultListsHere'
 import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
 import { TabNameField } from './TabNameField'
 import { useBoardHighlight } from './boardHighlight'
+import { CardPreviewHost, useCardPreview, type PreviewScope } from './cardPreview'
 import './tabs.css'
 
 export interface TabBarProps {
@@ -100,6 +102,11 @@ export interface TabBarProps {
   listState?: (path: string) => ListState | null
   onToggleFocus?: (paths: string[], isOn: boolean) => void
   onToggleFavorite?: (paths: string[], isOn: boolean) => void
+  /** Settings › Preview on hover › Tabs (YAZ-3403): resting on a tab that is not on show opens the sidebar's panel below it. */
+  hoverPreview?: boolean
+  /** What the hover panel needs of a tab's vault: App's `boardPreviewScope`. No scope, no hover panel. */
+  previewScope?: (path: string) => PreviewScope
+  diagramDarkColors?: DiagramDarkColors
   /** `settings.hotkeys` (YAZ-3397 D2): the "+" and the grid button name their keys as they are now (YAZ-3410). Absent = the defaults. */
   hotkeys?: HotkeyOverrides
 }
@@ -146,7 +153,7 @@ const Chevron = ({ d }: { d: string }) => (
  * (YAZ-2655): it stands outside the scroller, so it is on show however far the strip scrolled.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {} }: TabBarProps) {
+export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -168,6 +175,23 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
   }, [lit])
   const isFolder = useFolderPaths(roots)
   const labelOf = (path: string): string => pageLabel(path, isFolder(path), titles)
+  // The hover panel (YAZ-3403): the sidebar's own panel below a tab that is not on show, after the sidebar's dwell. Its
+  // dwell lives in a tiny store, so a pointer crossing tabs draws no strip. A click, a right-click, a drag, a key, the
+  // wheel and a scroll close it in the hook (each drag and menu starts with a press). Here: a new tab on show, a rename
+  // (one that a command starts has no press), and the hovered tab gone (another window closed it: no `mouseleave`).
+  const stripRef = useRef<HTMLDivElement | null>(null)
+  const tabPreview = useCardPreview(hoverPreview, (id) => stripRef.current?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(id)}"]`) ?? null)
+  const closeTabPreview = tabPreview.close
+  useEffect(() => closeTabPreview(), [active, blank, renaming, closeTabPreview])
+  const tabStore = tabPreview.store
+  useEffect(() => {
+    const { id } = tabStore.getState()
+    if (id !== null && !tabs.some((t) => t.id === id)) closeTabPreview()
+  }, [tabs, tabStore, closeTabPreview])
+  const previewTab = (id: string): { root: string | null; name: string } | null => {
+    const tab = tabs.find((t) => t.id === id)
+    return tab === undefined ? null : { root: rootOfPath(roots, tab.path), name: tab.name ?? labelOf(tab.path) }
+  }
 
   // Overflow polish (I3): tabs shrink to a floor and the strip scrolls, so scroll the active
   // tab fully into view on every activation. jsdom has no scrollIntoView — hence the `?.()`.
@@ -333,6 +357,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
         )}
       </div>
       <div
+        ref={stripRef}
         className={`tabbar scroll-strip${externalOver === 0 && tabs.length === 0 ? ' tabbar--drop-empty' : ''}`}
         role="tablist"
         aria-label="Open files"
@@ -366,6 +391,8 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
               className={cls.join(' ')}
               // A tab whose name is a field does not drag (YAZ-2949 S9): a press in the field places the caret.
               draggable={id !== renaming}
+              onMouseEnter={isActive || id === renaming ? undefined : () => tabPreview.hoverCard(id, path)}
+              onMouseLeave={() => tabPreview.leaveCard(id)}
               onDragStart={(e) => {
                 if (e.dataTransfer) writePageDrag(e.dataTransfer, { path, owner: 'main' })
                 setExternalOver(null)
@@ -459,6 +486,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
         </button>
       )}
       <div className="tabbar-tail" {...endSlot} />
+      <CardPreviewHost store={tabPreview.store} cardOf={previewTab} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} side="below" />
       {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} moveTargets={onMoveTargets?.(menu.path)} onMoveToWindow={onMoveToWindow} onHighlightWindow={onHighlightWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onToggleFocus={onToggleFocus} onToggleFavorite={onToggleFavorite} onNotice={onNotice} />}
       {/* The grid button's menu: the two saves of a session (YAZ-3147 D5), a line, then "Kill all tabs". With no tab
           there is nothing to save or close, and each item is grey like any item that cannot be used (S4). */}

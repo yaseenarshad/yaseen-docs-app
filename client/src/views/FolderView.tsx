@@ -27,7 +27,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
-import { folderSettingsPath, inFolder, type CommentsOrder, type FileResponse, type PropertiesResponse } from '@shared/types'
+import { folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type PropertiesResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { FrontmatterPanel } from '../editor/FrontmatterPanel'
@@ -49,6 +49,7 @@ import { createNote } from './scaffold'
 import { guardReadOnly, readOnlyPaths } from './readOnlyRows'
 import { writeFolderValues, writeProperties } from './writeProperty'
 import { ViewFolder } from './view/GroupHeader'
+import type { PreviewScope } from '../tabs/cardPreview'
 import './views.css'
 import './folderView.css'
 
@@ -75,6 +76,10 @@ export interface FolderViewProps {
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => void
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
+  /** Settings › Preview on hover › Folder views (YAZ-3403), with what its panel needs: handed to `ViewsPane`. */
+  hoverPreview?: boolean
+  previewScope?: (path: string) => PreviewScope
+  diagramDarkColors?: DiagramDarkColors
 }
 
 /**
@@ -121,6 +126,9 @@ export function FolderView({
   onRetitle,
   commentsOrder,
   onChangeCommentsOrder,
+  hoverPreview,
+  previewScope,
+  diagramDarkColors,
 }: FolderViewProps) {
   const feed = useIndexFeed(source)
   const titles = usePathTitles(source)
@@ -392,6 +400,9 @@ export function FolderView({
             properties={properties}
             onOpenFile={onOpenFile}
             folder={host}
+            hoverPreview={hoverPreview}
+            previewScope={previewScope}
+            diagramDarkColors={diagramDarkColors}
           />
         </ViewFolder.Provider>
       </section>

@@ -35,14 +35,13 @@ let root: Root | null = null
 let hook: ReturnType<typeof useHoverPreview>
 interface ProbeProps {
   blocked: boolean
-  enabled: boolean
   activeFile: string | null
 }
-function Probe({ blocked, enabled, activeFile }: ProbeProps) {
-  hook = useHoverPreview(blocked, enabled, activeFile)
+function Probe({ blocked, activeFile }: ProbeProps) {
+  hook = useHoverPreview(blocked, activeFile)
   return null
 }
-const render = (props: Partial<ProbeProps> = {}) => act(() => root?.render(<Probe blocked={false} enabled activeFile={null} {...props} />))
+const render = (props: Partial<ProbeProps> = {}) => act(() => root?.render(<Probe blocked={false} activeFile={null} {...props} />))
 const state = () => hook.hover.getState()
 const wait = (ms: number) => act(() => void vi.advanceTimersByTime(ms))
 
@@ -77,12 +76,12 @@ describe('useHoverPreview', () => {
     expect(state()).toEqual({ path: '/v/b.excalidraw', shown: true })
   })
 
-  it('opens nothing while blocked, and closes on blocking, disabling, or another board opening', () => {
+  it('opens nothing while blocked, and closes on blocking or another board opening', () => {
     render({ blocked: true })
     act(() => hook.hoverFile(board('a')))
     wait(HOVER_PREVIEW_DWELL_MS)
     expect(state().path).toBeNull()
-    for (const next of [{ blocked: true }, { enabled: false }, { activeFile: '/v/b.excalidraw' }]) {
+    for (const next of [{ blocked: true }, { activeFile: '/v/b.excalidraw' }]) {
       render()
       act(() => hook.hoverFile(board('a')))
       wait(HOVER_PREVIEW_DWELL_MS)

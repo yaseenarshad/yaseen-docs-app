@@ -1454,6 +1454,8 @@ export interface SettingsState {
   confirmRename: boolean
   /** Rest the pointer on a note, drawing or diagram row to see it (Draw's YAZ-1800 D2; YAZ-3044 A20; notes since YAZ-3075 D5). Text, PDF and image rows never preview. */
   hoverPreview: boolean
+  /** Each place's own say on the hover preview (YAZ-3403), under the `hoverPreview` master switch: a place shows it only while both are on (`hoverOn`). A place missing from a stored state reads on. */
+  hoverPreviewIn: Record<HoverPlace, boolean>
   /** Comment stream order (YAZ-1515): how you READ, global, never part of a note. */
   commentsOrder: CommentsOrder
   /** Each sidebar tab's sort (YAZ-3227 D1): how you READ, global to this Mac, never part of a vault. */
@@ -1526,6 +1528,15 @@ export interface SettingsState {
  * and a drag width each fit one Mac only, like `AppState.sidebarWidth`. Every other field travels.
  */
 export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth']
+
+/** The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover. */
+export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'links'
+export const HOVER_PLACES: readonly HoverPlace[] = ['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links']
+
+/** Whether `place` shows the hover preview (YAZ-3403): the master switch and the place's own are both on. */
+export function hoverOn(settings: Pick<SettingsState, 'hoverPreview' | 'hoverPreviewIn'>, place: HoverPlace): boolean {
+  return settings.hoverPreview && settings.hoverPreviewIn[place]
+}
 
 export type DiagramDarkColors = 'adapt' | 'keep'
 export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
@@ -1644,6 +1655,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   confirmDelete: true,
   confirmRename: true,
   hoverPreview: true,
+  hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, links: true },
   commentsOrder: 'oldest',
   sidebarSort: DEFAULT_SIDEBAR_SORT,
   sidebarTabs: DEFAULT_SIDEBAR_TABS,

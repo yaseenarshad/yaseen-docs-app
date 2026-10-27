@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isBoard, isViewOnly } from '@shared/fileKind'
 import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -59,6 +59,7 @@ import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import type { MoveTarget } from './tabs/TabMenu'
 import { setBoardHighlight } from './tabs/boardHighlight'
+import { spacePanel } from './tabs/cardPreview'
 import { tabOfRef, windowLabel } from './tabs/windowLabel'
 import { useUpdate } from './update/useUpdate'
 import { RightPanel } from './right-panel/RightPanel'
@@ -941,6 +942,10 @@ export function App() {
   }, [openSearch])
   // What the panel draws: the file of a row of the new tab page (YAZ-2663 S39), else the file of the search.
   const panelPath = pagePreviewPath ?? previewShown
+  // While it shows, no hover panel opens in any place (YAZ-3403): each dwell reads this live, so no editor draws for it.
+  useLayoutEffect(() => {
+    spacePanel.shown = panelPath !== null
+  }, [panelPath])
   /** Leave the board for the tab `id` — a page of the board, a tab of the strip — or, with null, for the page that is open (Esc, the button, ⌘⇧M). */
   const leaveOverview = useCallback((id: string | null) => {
     const { active: open, tabs: all } = now.current
@@ -1295,6 +1300,14 @@ export function App() {
     const scope = scopeOf(path)
     return { root: scope.root, wikilinks: scope.wikilinks, textVars: textVarsFor(path), watch: scope.watch }
   }, [scopeOf, textVarsFor])
+  /**
+   * The same door for the editors' hover panels (YAZ-3403: a note's [[links]], its linked mentions, a folder's views):
+   * one identity for the window's life, reading the newest scopes when a panel opens, so a change in one vault renders
+   * no editor (`RetainedEditor` is memo).
+   */
+  const previewScopeNow = useRef(boardPreviewScope)
+  previewScopeNow.current = boardPreviewScope
+  const editorPreviewScope = useCallback((path: string) => previewScopeNow.current(path), [])
   /** "New window" from the tab board's empty canvas (YAZ-3343 D22): on this window's vaults, behind it. */
   const openWindowBehind = useCallback(() => api.window.openBehind(), [])
   /**
@@ -2294,6 +2307,11 @@ export function App() {
       // A diagram tab's dark-mode colours, and ⌘B pressed inside its draw.io frame.
       diagramDarkColors: settings.diagramDarkColors,
       onToggleSidebar: toggleSidebar,
+      // YAZ-3403: the hover panel of a note's [[links]], its linked mentions and a folder's views, each its own SETTING.
+      hoverLinks: hoverOn(settings, 'links'),
+      hoverBacklinks: hoverOn(settings, 'backlinks'),
+      hoverFolderViews: hoverOn(settings, 'folderViews'),
+      previewScope: editorPreviewScope,
       // Upkeep off (🔒 D7): no settings, so no Reviews section.
       reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
     }
@@ -2390,7 +2408,7 @@ export function App() {
       onDropToWindow={movePageToWindowQuietly}
       onMoveToNewWindowQuietly={movePageToNewWindowQuietly}
       // The sidebar's own preview panel beside a card (D18): the setting gates the hover, never Space.
-      hoverPreview={settings.hoverPreview}
+      hoverPreview={hoverOn(settings, 'tabBoard')}
       previewScope={boardPreviewScope}
       onHighlightWindow={highlightWindow}
       onDuplicate={duplicateTab}
@@ -2523,6 +2541,7 @@ export function App() {
           onRevealInFiles={revealInFiles}
           previewPath={previewShown}
           onPreview={setPreviewPath}
+          pagePreviewShown={pagePreviewPath !== null}
           // A note's hover preview wears its vault's text formatting, as its tab does (YAZ-3075 C20).
           textVarsFor={textVarsFor}
           onPickFolder={pick}
@@ -2663,11 +2682,15 @@ export function App() {
               listState={lists.stateOf}
               onToggleFocus={lists.toggleFocus}
               onToggleFavorite={lists.toggleFavorite}
+              // The hover panel below a tab that is not on show (YAZ-3403).
+              hoverPreview={hoverOn(settings, 'tabs')}
+              previewScope={boardPreviewScope}
+              diagramDarkColors={settings.diagramDarkColors}
             />
           )}
           <div className="tabstack">
             {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden. Mounted only while it shows (R1). */}
-            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} />}
+            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
             {mounted.map((id) => {
               const path = pathOf.get(id)
               if (path === undefined) return null

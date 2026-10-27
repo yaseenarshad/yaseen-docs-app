@@ -25,7 +25,7 @@ import { useState, type ReactNode } from 'react'
 import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import type { GithubSyncStatus, IdsState, IndexResponse, SettingsState } from '@shared/types'
+import type { GithubSyncStatus, HoverPlace, IdsState, IndexResponse, SettingsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -245,6 +245,20 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
     </>
   )
 }
+
+const HOVER_WORDS = ['hover', 'preview', 'note', 'markdown', 'drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse']
+
+/** Settings › Files & Links › Preview on hover (YAZ-3403): one row per place, under the master switch. */
+const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string; hint?: string; keywords: string[] }[] = [
+  { place: 'sidebar', label: 'Sidebar', hint: 'Files, Focus, Favorites and Recents.', keywords: ['sidebar', 'files', 'tree', 'focus', 'favorites', 'recents'] },
+  { place: 'search', label: 'Search results', keywords: ['search', 'results', 'find'] },
+  { place: 'newTab', label: 'New tab page', keywords: ['new tab', 'start', 'page', 'recent'] },
+  { place: 'tabBoard', label: 'Tab board', hint: 'Mission Control: each open tab as a card.', keywords: ['tab board', 'mission control', 'cards', 'overview'] },
+  { place: 'tabs', label: 'Tabs', hint: "A tab you're not on.", keywords: ['tabs', 'tab strip', 'tab bar'] },
+  { place: 'backlinks', label: 'Linked mentions', hint: 'The list under a note.', keywords: ['backlinks', 'linked mentions', 'references'] },
+  { place: 'folderViews', label: 'Folder views', hint: 'Table, board, cards and list. A view whose own Preview is on keeps its own card.', keywords: ['folder', 'views', 'table', 'board', 'cards', 'list', 'kanban'] },
+  { place: 'links', label: 'Links in notes', hint: '[[Links]] in the text.', keywords: ['links', 'wikilinks', 'editor', 'text'] },
+]
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
@@ -565,17 +579,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // Draw's YAZ-1800 D2, ported by YAZ-3044 A20: the sidebar's hover preview, on by default.
-            // One switch for notes and boards (YAZ-3075 D5).
-            id: 'hoverPreview',
-            label: 'Preview on hover',
-            hint: 'Rest the mouse on a note, drawing or diagram in the sidebar to see it.',
-            keywords: ['note', 'markdown', 'drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreview} onChange={(hoverPreview) => onChange({ ...settings, hoverPreview })} ariaLabel="Preview on hover" />
-            ),
-          },
-          {
             id: 'newNoteLocation',
             label: 'Default location for new notes',
             keywords: ['folder', 'wikilink'],
@@ -583,6 +586,34 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             wide: ({ settings }) => settings.newNoteLocation === 'folder',
             render: ({ settings, onChange }) => <NewNoteLocationControl settings={settings} onChange={onChange} />,
           },
+        ],
+      },
+      {
+        // YAZ-3403: one master switch, then each place's own. A place shows the panel only while both are on (`hoverOn`).
+        title: 'Preview on hover',
+        items: [
+          {
+            // Draw's YAZ-1800 D2, ported by YAZ-3044 A20: the sidebar's hover preview, on by default.
+            // One switch for notes and boards (YAZ-3075 D5).
+            id: 'hoverPreview',
+            label: 'Preview on hover',
+            hint: 'Rest the mouse on a note, drawing or diagram to see it. Turn single places off below.',
+            keywords: HOVER_WORDS,
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreview} onChange={(hoverPreview) => onChange({ ...settings, hoverPreview })} ariaLabel="Preview on hover" />
+            ),
+          },
+          ...HOVER_PLACE_ROWS.map(
+            ({ place, label, hint, keywords }): SettingDef => ({
+              id: `hoverPreviewIn.${place}`,
+              label,
+              hint,
+              keywords: [...HOVER_WORDS, ...keywords],
+              render: ({ settings, onChange }) => (
+                <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreviewIn[place]} onChange={(on) => onChange({ ...settings, hoverPreviewIn: { ...settings.hoverPreviewIn, [place]: on } })} ariaLabel={`Preview on hover: ${label}`} />
+              ),
+            }),
+          ),
         ],
       },
       {

@@ -2886,6 +2886,20 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     expect([searchBar(el)?.value, labels(el)]).toEqual(['anchor', ['Docs', 'Guides', 'Anchor guide', 'Anchor']])
   })
 
+  it('YAZ-3403 S17, S19, D6: a rest of 400 ms on a note result opens the note panel beside the sidebar, as on Files; more typed letters close it', async () => {
+    const { el, v } = await open({ lens: 'search' })
+    ;(window.yaseenDocs as unknown as { readFile: ReturnType<typeof vi.fn> }).readFile.mockImplementation(async (path: string) => ({ path, content: '# Top of the anchor\n', mtime: 1, size: 20 }))
+    const notePanel = () => document.querySelector<HTMLElement>('.note-preview')
+    await type(searchBar(el)!, 'anchor')
+    const hit = row(el, `${v}/Docs/Anchor.md`)!
+    act(() => void hit.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    await act(() => new Promise<void>((r) => setTimeout(r, 450)))
+    for (let i = 0; i < 200 && notePanel() === null; i++) await act(() => new Promise<void>((r) => setTimeout(r, 50)))
+    expect(notePanel()?.querySelector('.board-preview__name')?.textContent).toBe('Anchor')
+    await type(searchBar(el)!, 'anchor g')
+    expect(notePanel()).toBeNull()
+  })
+
   it('S12: Esc in an empty bar goes back too', async () => {
     const { el, props } = await open({ lens: 'search' })
     await press(searchBar(el)!, 'Escape')

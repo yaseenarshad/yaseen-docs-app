@@ -14,8 +14,11 @@ import { GroupHeader, cellContent, groupKeyOf, rowTitle } from './GroupHeader'
 import { PageContextMenu } from './PageContextMenu'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
+import type { ViewHover } from './viewHover'
 
 export interface ListViewProps {
+  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): absent while the setting is off, or while this view's own Preview is on. */
+  hover?: ViewHover
   def: ViewSet
   view: ViewDef
   records: readonly IndexRecord[]
@@ -78,7 +81,7 @@ const separatorOf = (view: ViewDef): string => (typeof view.propertySeparator ==
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY }: ListViewProps) {
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY, hover }: ListViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   /** A typed editor keeps its own (native) menu, as in the table. */
   const openMenu = (event: ReactMouseEvent, row: Row): void => {
@@ -133,7 +136,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
       {shown.map((row, i) => {
         const inline = indent ? '' : rest.map((k) => render(row.values[k], resolve)).filter((s) => s !== '').join(separator)
         return (
-          <li key={row.record.path} className="view-list__item" onContextMenu={(event) => openMenu(event, row)}>
+          <li key={row.record.path} className="view-list__item" onContextMenu={(event) => openMenu(event, row)} {...hover?.itemProps(row.record.path)}>
             {marker !== 'none' && (
               <span className="view-list__marker" aria-hidden>
                 {marker === 'number' ? `${i + 1}.` : '•'}

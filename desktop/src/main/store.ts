@@ -8,6 +8,7 @@ import {
   DEFAULT_SIDEBAR_LENS,
   DEFAULT_SIDEBAR_TABS,
   HEADING_KEYS,
+  HOVER_PLACES,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FAVORITES_ORDER,
   MAX_FOLD_KEYS_PER_FILE,
@@ -60,6 +61,7 @@ import {
   type FolderPatch,
   type FolderState,
   type HeadingStyles,
+  type HoverPlace,
   type NewNoteLocation,
   type NoticeLength,
   type OpenStat,
@@ -299,6 +301,14 @@ export function sanitizeSidebarTabs(raw: unknown): SidebarTabsPrefs {
   }
 }
 
+/** Each place's hover switch (YAZ-3403), strict — the IPC boundary's check: every place, each a boolean. */
+const isHoverPreviewIn = (v: unknown): v is Record<HoverPlace, boolean> => isRecord(v) && HOVER_PLACES.every((place) => typeof v[place] === 'boolean')
+/** The places' hover switches on load (YAZ-3403): each valid one is kept, a missing or broken one reads on — a file from before a place existed shows it. */
+export function sanitizeHoverPreviewIn(raw: unknown): Record<HoverPlace, boolean> {
+  const src = isRecord(raw) ? raw : {}
+  return Object.fromEntries(HOVER_PLACES.map((place) => [place, typeof src[place] === 'boolean' ? src[place] : true])) as Record<HoverPlace, boolean>
+}
+
 /**
  * One key change (YAZ-3397 D2): a known command id, and null for "No key" or a key the recorder would take
  * (YAZ-3410): one this build reads, with ⌘ or ⌃ (or an F-key), and not an App-standard key (⌘Q is Quit) nor a
@@ -349,6 +359,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   confirmDelete: (v): v is boolean => typeof v === 'boolean',
   confirmRename: (v): v is boolean => typeof v === 'boolean',
   hoverPreview: (v): v is boolean => typeof v === 'boolean',
+  hoverPreviewIn: isHoverPreviewIn,
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
   sidebarSort: isSidebarSort,
   sidebarTabs: isSidebarTabs,
@@ -390,6 +401,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.canvas = sanitizeCanvasPrefs(src.canvas)
   out.canvasPanel = sanitizeCanvasPanel(src.canvasPanel)
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
+  out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
   // YAZ-3389 D7: a number off the steps but inside 50–200 is kept; one outside is clamped, not reset; missing or not a number reads 100.
   if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))

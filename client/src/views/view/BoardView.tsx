@@ -16,8 +16,11 @@ import { allPropertyKeys } from './properties'
 import { PageContextMenu } from './PageContextMenu'
 import { NO_READ_ONLY } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
+import type { ViewHover } from './viewHover'
 
 export interface BoardViewProps {
+  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): absent while the setting is off, or while this view's own Preview is on. */
+  hover?: ViewHover
   def: ViewSet
   view: ViewDef
   viewIndex: number
@@ -106,6 +109,7 @@ export function BoardView({
   wikilinks,
   resolve,
   readOnly = NO_READ_ONLY,
+  hover,
 }: BoardViewProps) {
   const { rowProps, card, close } = usePreview(preview, wikilinks)
   const levelKeys = [groupByKey(view), groupByKey(view, 1)]
@@ -244,6 +248,7 @@ export function BoardView({
           className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
           {...dragSource(row, group, at)}
           {...rowProps(row.record)}
+          {...hover?.itemProps(row.record.path)}
           // Every card is a focusable "cell" (YAZ-1557 D2): a plain click SELECTS it, and only the
           // title, Enter, or a modifier opens — so a card without a title still has a name to read.
           tabIndex={0}

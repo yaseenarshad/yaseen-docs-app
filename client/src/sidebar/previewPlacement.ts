@@ -47,7 +47,10 @@ export interface PreviewPopup {
  * What a panel sits beside: the sidebar (its element, measured live), a fixed box — a card of the tab board —, a Files
  * window's row in the floating popup (YAZ-3357 D9), or, where that popup cannot be made, the lower part of a Files window (`overlay`).
  */
-export type PreviewAnchor = RefObject<HTMLElement | null> | { rect: AnchorRect } | { popup: PreviewPopup; rect: AnchorRect } | { overlay: true }
+export type PreviewAnchor = RefObject<HTMLElement | null> | { rect: AnchorRect; side?: PreviewSide } | { popup: PreviewPopup; rect: AnchorRect } | { overlay: true }
+
+/** Where a panel goes off its box other than beside it: under it (a tab, YAZ-3403 D11), or at the window's right edge, level with it (a linked mention, YAZ-3429). */
+export type PreviewSide = 'below' | 'edge'
 
 /** The room around a panel in the floating popup (YAZ-3357 D9): the popup has no shadow, the panel draws its own there. */
 const POPUP_MARGIN = 16
@@ -81,14 +84,47 @@ export function overlayPlacement(innerWidth: number, innerHeight: number): Board
 /**
  * Where the panel goes beside a CARD of the tab board (YAZ-3343 D18): right of the card with
  * the sidebar's gap, or left of it when the window has no room there; centred on the card and kept inside the
- * window. The same shapes as beside the sidebar. Null when the window leaves no room at all.
+ * window. The same shapes as beside the sidebar. With no room on either side — a linked mention is as wide as the
+ * page (YAZ-3429) — below or above the box, whichever has more room: never over it. Null when the window leaves no room at all.
  */
 export function besidePlacement(rect: AnchorRect, innerWidth: number, innerHeight: number, shape: PreviewShape = 'board'): BoardPreviewPlacement | null {
   const { width, height } = besideSize(innerWidth, innerHeight, shape)
   if (width <= 0 || height <= 0) return null
-  const left = rect.right + GAP + width <= innerWidth - GAP ? rect.right + GAP : Math.max(GAP, rect.left - GAP - width)
-  const top = Math.min(Math.max(GAP, Math.round((rect.top + rect.bottom) / 2 - height / 2)), Math.max(GAP, innerHeight - GAP - height))
-  return { left, top, width, height }
+  const top = levelTop(rect, innerHeight, height)
+  if (rect.right + GAP + width <= innerWidth - GAP) return { left: rect.right + GAP, top, width, height }
+  if (rect.left - GAP - width >= GAP) return { left: rect.left - GAP - width, top, width, height }
+  const above = rect.top - GAP / 2 - GAP
+  if (innerHeight - GAP - (rect.bottom + GAP / 2) >= above) return belowPlacement(rect, innerWidth, innerHeight, shape)
+  const tall = Math.min(height, above)
+  return tall <= 0 ? null : { left: Math.max(GAP, Math.min(rect.left, innerWidth - GAP - width)), top: rect.top - GAP / 2 - tall, width, height: tall }
+}
+
+/** The top of a panel `height` tall, centred on the box and kept inside the window. */
+const levelTop = (rect: AnchorRect, innerHeight: number, height: number): number =>
+  Math.min(Math.max(GAP, Math.round((rect.top + rect.bottom) / 2 - height / 2)), Math.max(GAP, innerHeight - GAP - height))
+
+/**
+ * Where the panel goes at the RIGHT EDGE of the window, level with a box (YAZ-3429, a linked mention): the mention
+ * runs across the page, so no side of it has room; the start of the row stays in view on the left. Null with no room.
+ */
+export function edgePlacement(rect: AnchorRect, innerWidth: number, innerHeight: number, shape: PreviewShape = 'board'): BoardPreviewPlacement | null {
+  const { width, height } = besideSize(innerWidth, innerHeight, shape)
+  if (width <= 0 || height <= 0) return null
+  return { left: innerWidth - GAP - width, top: levelTop(rect, innerHeight, height), width, height }
+}
+
+/**
+ * Where the panel goes BELOW a box (YAZ-3403, a tab of the tab strip): the size it takes beside a card, 8 px under
+ * the box, from the box's left edge and kept inside the window; no taller than the room below.
+ * Null when the window leaves no room at all.
+ */
+export function belowPlacement(rect: AnchorRect, innerWidth: number, innerHeight: number, shape: PreviewShape = 'board'): BoardPreviewPlacement | null {
+  const size = besideSize(innerWidth, innerHeight, shape)
+  const top = rect.bottom + GAP / 2
+  const height = Math.min(size.height, innerHeight - GAP - top)
+  if (size.width <= 0 || height <= 0) return null
+  const left = Math.max(GAP, Math.min(rect.left, innerWidth - GAP - size.width))
+  return { left, top, width: size.width, height }
 }
 
 /**
@@ -123,7 +159,8 @@ export function usePlacement(anchor: PreviewAnchor, shape: PreviewShape): BoardP
       return () => window.removeEventListener('resize', place)
     }
     if ('rect' in anchor) {
-      const place = () => setPlacement(besidePlacement(anchor.rect, window.innerWidth, window.innerHeight, shape))
+      const at = !('side' in anchor) || anchor.side === undefined ? besidePlacement : anchor.side === 'below' ? belowPlacement : edgePlacement
+      const place = () => setPlacement(at(anchor.rect, window.innerWidth, window.innerHeight, shape))
       place()
       window.addEventListener('resize', place)
       return () => window.removeEventListener('resize', place)
