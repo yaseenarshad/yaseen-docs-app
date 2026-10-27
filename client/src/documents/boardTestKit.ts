@@ -1,5 +1,5 @@
 /**
- * Test doubles the three board-document suites share (YAZ-2073 8B) — `useBoardDocument.test`,
+ * Test doubles the three board-document suites share (YAZ-2073 8B) — `useDocumentHost.test`,
  * `DrawingEditor.test` and `DrawioEditor.test`: the window's watcher driven by hand, and the
  * `IntersectionObserver` that tells a board its tab came back into view. Test-only; nothing ships it.
  */

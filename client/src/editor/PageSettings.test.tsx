@@ -389,6 +389,15 @@ describe('PageSettings: Read only', () => {
     expect(menu()!.querySelector('button')?.textContent).toBe('Read only')
   })
 
+  it('a host with no switch (a code file, YAZ-3448) hands no handler, and gets no row', () => {
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined} />))
+    click(cog())
+    expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Line numbers'])
+  })
+
   it('S41: a board\u2019s menu has only that row, and no counts', () => {
     mountReadOnly({ board: true })
     expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Read only'])

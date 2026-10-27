@@ -51,7 +51,7 @@ export function onLiveShareChange(listener: () => void): () => void {
 }
 
 /**
- * Called by `useBoardDocument` after every successful save, for both kinds of board. Cheap: it only
+ * Called by `useDocumentHost` after every successful save, for both kinds of board. Cheap: it only
  * (re)arms a timer. It tells the listeners only when `isPending` flips (YAZ-3044 A29): autosave fires
  * about every 500 ms while you draw, and each tell re-derives the sidebar's share marks.
  */

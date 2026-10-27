@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import type { FileResponse, FileWriteRequest, FileWriteResponse } from '@shared/types'
 import { MAX_FILE_BYTES } from '@shared/types'
-import { BridgeFailure, atomicWrite, fsCall, requireAbsPath, requireMarkdownFile, requireTextReadableFile } from './fsUtils'
+import { BridgeFailure, atomicWrite, fsCall, requireAbsPath, requireTextReadableFile } from './fsUtils'
 import { readBoundedRegularFile } from './boundedRead'
 import { requireRequest } from './validate'
 
@@ -28,15 +28,16 @@ export async function readFile(path: string): Promise<FileResponse> {
 }
 
 /**
- * `window.yaseenDocs.writeFile(req)`. Atomic (tmp + rename),
- * parent dir must exist. With `expectedMtime`, a newer file on disk rejects `CONFLICT` carrying
+ * `window.yaseenDocs.writeFile(req)`: a note or a code file (YAZ-3445 D3). Atomic (tmp + rename),
+ * parent dir must exist. The bytes are the string as given: the code tab keeps the file's line
+ * break and BOM in it, so main never rewrites either. With `expectedMtime`, a newer file on disk rejects `CONFLICT` carrying
  * the current mtime and nothing is written. The request crosses IPC from a sandboxed renderer,
  * so its shape is checked like a request body, not trusted from the type.
  */
 export async function writeFile(req: FileWriteRequest): Promise<FileWriteResponse> {
   const { path, content, expectedMtime } = requireRequest(req)
   const p = requireAbsPath(path, 'path')
-  requireMarkdownFile(p)
+  requireTextReadableFile(p)
   if (typeof content !== 'string') throw new BridgeFailure('BAD_REQUEST', "'content' must be a string", { path: p })
   if (expectedMtime !== undefined && typeof expectedMtime !== 'number') {
     throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: p })

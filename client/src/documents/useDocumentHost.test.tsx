@@ -15,7 +15,7 @@ import type { Autosave } from '../lib/autosave'
 import { _resetRenameContinuity, flushRenamedPath, retireDeletedPath } from '../lib/renameContinuity'
 import { BOARD_COMMAND_EVENT, requestBoardCommand } from './boardCommand'
 import { fakeWatch, withRevealObserver } from './boardTestKit'
-import { BoardChips, exportWithNotice, useBoardDocument } from './useBoardDocument'
+import { DocumentChips, exportWithNotice, useDocumentHost } from './useDocumentHost'
 
 const ROOT = '/vault'
 const PATH = '/vault/Board.excalidraw'
@@ -31,18 +31,18 @@ const focus = vi.fn()
 const { watch, watcherSaw } = fakeWatch()
 
 let flushListener: (() => Promise<void> | void) | null = null
-let board: ReturnType<typeof useBoardDocument>
+let board: ReturnType<typeof useDocumentHost>
 let root: Root | null = null
 let container: HTMLElement
 
 /** The engine's stand-in: the hook, its bar and its chips in a board section. */
-function Host({ sync, onSyncNow, readOnly = false }: { sync?: GithubSyncStatus | null; onSyncNow?: () => void; readOnly?: boolean }) {
-  board = useBoardDocument({ root: ROOT, path: PATH, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus, readOnly, onNotice })
+function Host({ sync, onSyncNow, readOnly = false, readOnlySwitch }: { sync?: GithubSyncStatus | null; onSyncNow?: () => void; readOnly?: boolean; readOnlySwitch?: boolean }) {
+  board = useDocumentHost({ root: ROOT, path: PATH, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus, readOnly, readOnlySwitch, onNotice })
   return (
     <section className="editor editor--drawing">
       <div ref={board.hostRef}>
         {board.conflictBar}
-        <BoardChips store={board.chips} className="chips" />
+        <DocumentChips store={board.chips} className="chips" />
       </div>
     </section>
   )
@@ -468,5 +468,26 @@ describe('the cog, the "Read only" chip and the "Allow edits?" box on a board (Y
     edit(1)
     expect(chip()).not.toBeNull()
     expect(text()).toContain('Unsaved')
+  })
+})
+
+describe('a file with no read-only switch (YAZ-3448: a code file)', () => {
+  it('has no cog and no chip, only the save chip; its saves never touch the switch', async () => {
+    opened({ readOnlySwitch: false })
+    expect([...container.querySelector('.chips')!.children].map((c) => c.className.split(' ')[0])).toEqual(['save-indicator'])
+    expect(container.querySelector('.page-settings')).toBeNull()
+    edit(1)
+    await after(500)
+    expect(write).toHaveBeenCalledExactlyOnceWith(100)
+    expect(setBoardReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('a reload that answers nothing leaves it off', async () => {
+    opened({ readOnlySwitch: false })
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect(board.readOnly).toBe(false)
+    expect(container.querySelector('.read-only-chip')).toBeNull()
   })
 })

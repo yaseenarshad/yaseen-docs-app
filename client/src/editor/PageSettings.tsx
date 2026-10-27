@@ -15,17 +15,17 @@ const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] 
  * all but section indent (YAZ-2709), "Table of contents" (YAZ-2950) and "TOC made from" (YAZ-2700
  * D14), which the host saves with the note. "Line numbers" and "Heading levels" are never saved.
  *
- * "Read only" (YAZ-3076 D3) is the FIRST row on every kind of file — a note, a drawing, a diagram —
- * and is stored IN the file by the host. A board's menu has only that row: every Markdown-only row
+ * "Read only" (YAZ-3076 D3) is the FIRST row on a note, a drawing and a diagram, and is stored IN
+ * the file by the host. A file with no switch (a code file, YAZ-3448) gives no `onToggleReadOnly`. A board's menu has only that row: every Markdown-only row
  * and the counts show only when their handler is given, the rule "Table of contents" already had.
  * While read only is on, the row closes the menu and the host opens the chip's "Allow edits?" box
  * (D4, S47); while it is off, the row turns it on at once and the menu stays open (S43).
  */
-export function PageSettings({ readOnly, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, readText }: {
-  /** The file's read-only switch (YAZ-3076 D1): every kind has it. */
-  readOnly: boolean
-  /** Off → the host turns it on; on → the host opens the "Allow edits?" box (this menu closes first). */
-  onToggleReadOnly: () => void
+export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, readText }: {
+  /** The file's read-only switch (YAZ-3076 D1): a note, a drawing and a diagram have it. */
+  readOnly?: boolean
+  /** Off → the host turns it on; on → the host opens the "Allow edits?" box (this menu closes first). Absent → no row (a file with no switch, YAZ-3448). */
+  onToggleReadOnly?: () => void
   lineNumbers?: boolean
   /** Absent → no row (a board). The same for "Section indent" and "Heading levels". */
   onToggleLineNumbers?: () => void
@@ -95,13 +95,13 @@ export function PageSettings({ readOnly, onToggleReadOnly, lineNumbers = false, 
         <CogIcon size={13} />
       </button>
       {text !== null && <div id={menuId} className="page-settings__menu" role="group" aria-label="Page settings">
-        <button type="button" aria-pressed={readOnly} onClick={() => {
+        {onToggleReadOnly !== undefined && <button type="button" aria-pressed={readOnly} onClick={() => {
           // On: the one box, under the chip (D4) — so the menu makes way for it.
           if (readOnly) setOpen(false)
           onToggleReadOnly()
         }}>
           <span>Read only</span><span aria-hidden="true">{readOnly ? '✓' : ''}</span>
-        </button>
+        </button>}
         {onToggleLineNumbers !== undefined && <button type="button" aria-pressed={lineNumbers} onClick={onToggleLineNumbers}>
           <span>Line numbers</span><span aria-hidden="true">{lineNumbers ? '✓' : ''}</span>
         </button>}

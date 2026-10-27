@@ -4,7 +4,7 @@
  * protocol's events as that iframe's window from `app://drawio` and reads what the host posts
  * back — and every diagram-side rule (the handshake order, the theme, export, the baseline, the
  * debounce, the reload) runs through the real `Autosave` and the real host. The rules both boards
- * share — echo, conflict, flush, retire — are pinned once, in `documents/useBoardDocument.test.tsx`.
+ * share — echo, conflict, flush, retire — are pinned once, in `documents/useDocumentHost.test.tsx`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
