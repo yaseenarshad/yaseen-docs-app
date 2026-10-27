@@ -103,6 +103,7 @@ import {
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
+import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, isHotkeyId, isUsableKey, keyFor, sameKey, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { travellingChanged, travels } from '@shared/settingsSync'
 import { atomicWrite } from './fs/fsUtils'
@@ -308,6 +309,42 @@ export function sanitizeHoverPreviewIn(raw: unknown): Record<HoverPlace, boolean
   return Object.fromEntries(HOVER_PLACES.map((place) => [place, typeof src[place] === 'boolean' ? src[place] : true])) as Record<HoverPlace, boolean>
 }
 
+/**
+ * One key change (YAZ-3397 D2): a known command id, and null for "No key" or a key the recorder would take
+ * (YAZ-3410): one this build reads, with ⌘ or ⌃ (or an F-key), and not an App-standard key (⌘Q is Quit) nor a
+ * fixed key of the menu (YAZ-3419: ⌘⇧V is Paste as plain text). The
+ * UI never writes anything else, so this is the only stop for a hand-edited file: a menu item with the key
+ * `A` would take every typed "a" in every window.
+ */
+const isHotkeyEntry = ([id, key]: [string, unknown]): boolean =>
+  isHotkeyId(id) && (key === null || (typeof key === 'string' && isUsableKey(key) && ![...APP_STANDARD_KEYS, ...MENU_FIXED_KEYS].some((k) => sameKey(k.accelerator, key))))
+
+/**
+ * The command whose change goes when two commands have one key now (YAZ-3410), or null when no two do: of the
+ * commands in a clash, the LAST in `HOTKEY_COMMANDS` order that has a change (it gets its default back). The
+ * defaults never clash with each other, so a clash always has a change in it.
+ */
+function clashLoser(overrides: HotkeyOverrides): HotkeyId | null {
+  const keyOf = (id: HotkeyId) => keyFor(id, overrides)
+  const inClash = HOTKEY_COMMANDS.filter((c) => HOTKEY_COMMANDS.some((o) => o.id !== c.id && sameKey(keyOf(c.id), keyOf(o.id))))
+  return inClash.filter((c) => overrides[c.id] !== undefined).at(-1)?.id ?? null
+}
+
+/** The user's key changes, strict: every entry reads (`isHotkeyEntry`) and no two commands share a key. The IPC boundary rejects anything else; `sanitizeHotkeys` repairs a stored one. */
+const isHotkeyOverrides = (v: unknown): v is HotkeyOverrides => isRecord(v) && Object.entries(v).every(isHotkeyEntry) && clashLoser(v) === null
+
+/**
+ * A stored `hotkeys` with each entry that does not read dropped (an id a later build removed, a key that is no
+ * key), then the clashes undone one change at a time (`clashLoser`); the same object when all read.
+ */
+export function sanitizeHotkeys(raw: unknown): HotkeyOverrides {
+  if (isHotkeyOverrides(raw)) return raw
+  if (!isRecord(raw)) return {}
+  const out: HotkeyOverrides = Object.fromEntries(Object.entries(raw).filter(isHotkeyEntry))
+  for (let loser = clashLoser(out); loser !== null; loser = clashLoser(out)) delete out[loser]
+  return out
+}
+
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
 const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is SettingsState[K] } = {
   lineSpacing: isFiniteNumber,
@@ -347,6 +384,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   noticeClipboard: (v): v is boolean => typeof v === 'boolean',
   noticeLists: (v): v is boolean => typeof v === 'boolean',
   gestureSounds: (v): v is boolean => typeof v === 'boolean',
+  hotkeys: isHotkeyOverrides,
   sidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
@@ -364,10 +402,14 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.canvasPanel = sanitizeCanvasPanel(src.canvasPanel)
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
+  out.hotkeys = sanitizeHotkeys(src.hotkeys)
   // YAZ-3389 D7: a number off the steps but inside 50–200 is kept; one outside is clamped, not reset; missing or not a number reads 100.
   if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
   return out
 }
+
+/** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
+const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys']
 
 /**
  * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,
@@ -384,7 +426,8 @@ export function mergeFolderSettings(current: SettingsState, incoming: Partial<Re
       .filter(([key]) => travels(key) && (SETTINGS_KEYS as string[]).includes(key))
       .map(([key, value]) => {
         const here = current[key as keyof SettingsState]
-        return [key, isObject(value) && isObject(here) ? { ...here, ...value } : value]
+        // The key changes (YAZ-3397 D2) are a whole list, not parts: a key another Mac reset must not come back from this one.
+        return [key, isObject(value) && isObject(here) && !WHOLE_FIELDS.includes(key as keyof SettingsState) ? { ...here, ...value } : value]
       }),
   )
   const out = sanitizeSettings({ ...current, ...taken })
@@ -395,7 +438,7 @@ export function mergeFolderSettings(current: SettingsState, incoming: Partial<Re
     if (!SETTINGS_FIELD_OK[key](value) && JSON.stringify(got) === JSON.stringify(DEFAULT_SETTINGS[key])) {
       // No repair for this field (`sidebarSort`): the whole field fell back to the default, so all of it stays this Mac's (YAZ-3302).
       Object.assign(out, { [key]: here })
-    } else if (isObject(value) && isObject(here) && isObject(got)) {
+    } else if (isObject(value) && isObject(here) && isObject(got) && !WHOLE_FIELDS.includes(key)) {
       // A field with a repair by part (`canvas`): each part the repair changed keeps this Mac's part (YAZ-3298).
       const kept = Object.fromEntries(Object.entries(got).map(([part, v]) => [part, JSON.stringify(v) === JSON.stringify(value[part]) ? v : (here[part] ?? v)]))
       Object.assign(out, { [key]: kept })

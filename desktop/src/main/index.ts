@@ -26,6 +26,7 @@ import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOn
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
 import { followSettingsFolder } from './settingsFolder'
+import { hotkeyRecording } from './hotkeyRecording'
 import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
 import { runQuitSequence } from './quitSequence'
@@ -319,11 +320,18 @@ app.whenReady().then(() => {
   }
   const { apply: applyMenu, applyIfMoved } = gateOnBoardKind(activeFileKind, () =>
     Menu.setApplicationMenu(
-      Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind() }, handlers)),
+      Menu.buildFromTemplate(
+        buildMenuTemplate(
+          // The user's keys (YAZ-3397 D2), and none at all while a key recorder listens (D6).
+          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), hotkeys: store.get().settings.hotkeys, suspendKeys: hotkeyRecording.active() },
+          handlers,
+        ),
+      ),
     ),
   )
   applyMenu()
   subscribeMenuRebuild(store, applyMenu)
+  hotkeyRecording.onChange(applyMenu)
   // A tab switch changes which file is in front; a focus change changes which window is asked. Either
   // rebuilds only when the board items' answer moves (YAZ-3044 A32).
   subscribeMenuRebuildOnActiveFile(store, applyIfMoved)

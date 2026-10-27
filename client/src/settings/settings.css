@@ -590,35 +590,183 @@
   background: radial-gradient(circle closest-side, var(--preview-color) 92%, transparent 100%) 0 0 / calc(2 * var(--preview-thickness)) 100% repeat-x;
 }
 
-/* ---------- hotkey reference (GRO-2067) — one table per Hotkeys group ---------- */
+/* ---------- Settings › Hotkeys (GRO-2067; one row per key since YAZ-3397) ----------
+   Each key is its own bare row (hotkeysSection.tsx), so the card's hairline sits between keys; the rows are
+   tighter than a setting's. A key the user can change is a button; a built-in or macOS key is muted text (D8). */
 
-.hotkeys__list {
-  margin: 0;
+.setting[data-setting^='hotkey-'] {
+  padding: 6px 0;
 }
 
 .hotkeys__row {
   display: flex;
   align-items: baseline;
   gap: 14px;
-  padding: 6px 0;
-}
-
-/* The card rule again, one level down: a hairline between hotkey rows, none above the first or under the last. */
-.hotkeys__row + .hotkeys__row {
-  border-top: 1px solid var(--border);
 }
 
 .hotkeys__keys {
   flex: none;
   min-width: 150px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 14px;
   font-variant-numeric: tabular-nums;
   color: var(--fg);
 }
 
+.hotkeys__row--fixed .hotkeys__keys {
+  color: var(--fg-muted);
+}
+
 .hotkeys__label {
   margin: 0;
   font-size: 14px;
+  color: var(--fg-muted);
+}
+
+.hotkeys__label--command {
+  color: var(--fg);
+}
+
+.hotkeys__hint {
+  color: var(--fg-muted);
+}
+
+/* The changeable key (D6): a quiet pill that reads as the key, not as a form control. */
+.hotkeys__key {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.hotkeys__key:hover {
+  background: var(--accent-soft);
+}
+
+.hotkeys__key--none {
+  color: var(--fg-muted);
+}
+
+/* A key the user changed (D7): the accent, beside its Reset link. */
+.hotkeys__key--changed {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.hotkeys__key--recording {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.hotkeys__link {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 13px;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.hotkeys__link:hover {
+  text-decoration: underline;
+}
+
+/* The lines under a recording row: the hint muted, a refused key in red (D6). */
+.hotkeys__line {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--fg-muted);
+}
+
+.hotkeys__line--refused {
+  color: var(--danger);
+}
+
+/* The change pop-up (D6): the key now → the key it will have, big enough to read at a glance. */
+.hotkeys__swap {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  margin: 4px 0 14px;
+}
+
+.hotkeys__swap-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hotkeys__swap-label {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.hotkeys__cap {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.hotkeys__cap--new {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.hotkeys__swap-arrow {
+  padding-bottom: 5px;
+  font-size: 17px;
+  color: var(--fg-muted);
+}
+
+/* What else the change does, in the pop-up (D6): "⌘⇧W is New Files window now. It will lose its key." */
+.confirm .hotkeys__line--ask {
+  margin: 0 0 10px;
+  color: var(--fg);
+}
+
+/* The Hotkeys page's search bar (D5): the text box, then "Press keys to search", above the page's groups; the answer wraps under them. */
+.hotkeys__search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-bottom: 18px;
+}
+
+.hotkeys__search .hotkeys__line {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.hotkeys__find {
+  flex: 1 1 220px;
+  margin-bottom: 0;
+}
+
+.hotkeys__line--answer {
+  color: var(--fg);
+}
+
+.hotkeys__reset-all {
+  display: flex;
+}
+
+.hotkeys__changes {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--fg-muted);
 }
 

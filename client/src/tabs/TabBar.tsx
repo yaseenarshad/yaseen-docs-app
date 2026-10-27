@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react'
+import { titleWithKey, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { rootOfPath, type DiagramDarkColors } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, insertionSlot } from '../lib/dragSlot'
@@ -106,6 +107,8 @@ export interface TabBarProps {
   /** What the hover panel needs of a tab's vault: App's `boardPreviewScope`. No scope, no hover panel. */
   previewScope?: (path: string) => PreviewScope
   diagramDarkColors?: DiagramDarkColors
+  /** `settings.hotkeys` (YAZ-3397 D2): the "+" and the grid button name their keys as they are now (YAZ-3410). Absent = the defaults. */
+  hotkeys?: HotkeyOverrides
 }
 
 /** How long a tab slides open or shut, in ms (YAZ-2656 D12). The row hands it to the stylesheet as `--tab-slide-ms`, so the slide and the ghost's timer take the same time. */
@@ -150,7 +153,7 @@ const Chevron = ({ d }: { d: string }) => (
  * (YAZ-2655): it stands outside the scroller, so it is on show however far the strip scrolled.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: TabBarProps) {
+export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -336,7 +339,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
             type="button"
             className="tabbar-nav__btn"
             aria-label="Show all open tabs"
-            title="Show all open tabs (⌘⇧M)"
+            title={titleWithKey('Show all open tabs', 'tabOverview', hotkeys)}
             aria-pressed={overviewOpen}
             onClick={onToggleOverview}
             // The right press that opens the menu leaves the keyboard focus where it is — under the board, in its filter box.
@@ -478,7 +481,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
         )}
       </div>
       {onNewTab && (
-        <button type="button" className="tabbar__new" aria-label="New tab" title="New tab (⌘T)" onClick={onNewTab}>
+        <button type="button" className="tabbar__new" aria-label="New tab" title={titleWithKey('New tab', 'newTab', hotkeys)} onClick={onNewTab}>
           <PlusIcon />
         </button>
       )}

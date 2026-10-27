@@ -8,7 +8,7 @@ import { buildVaultMenuSections, buildVaultSetMenuSections, type VaultMenuHandle
 
 const OTHER = '/v/Émojis 🚀 & spaces'
 /** A target as the switcher builds it: the folder name, no display name set. */
-const target = (over: Partial<VaultMenuTarget> = {}): VaultMenuTarget => ({ path: OTHER, name: 'Émojis 🚀 & spaces', isCurrent: false, isAloneHere: false, renamed: false, keyed: [], ...over })
+const target = (over: Partial<VaultMenuTarget> = {}): VaultMenuTarget => ({ path: OTHER, name: 'Émojis 🚀 & spaces', isCurrent: false, isAloneHere: false, renamed: false, keyed: [], hotkeys: {}, ...over })
 
 function handlers(): VaultMenuHandlers {
   return { onOpenAlone: vi.fn(), onOpenHere: vi.fn(), onAddHere: vi.fn(), onRename: vi.fn(), onResetName: vi.fn(), onSetKey: vi.fn(), onReveal: vi.fn(), onOpenVsCode: vi.fn(), onRemove: vi.fn(), onNotice: vi.fn() }
@@ -41,6 +41,13 @@ describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
       ['Reveal in Finder', 'Open in VS Code'],
       ['Remove from recent vaults'],
     ])
+  })
+
+  it('Open in Files window names the New Files window key as it is NOW (YAZ-3410 item 3): ⌘⇧W, a changed key, or no hint', () => {
+    const h = { ...handlers(), onOpenFilesWindow: vi.fn() }
+    expect(item(buildVaultMenuSections(target(), h), 'open-files-window').hint).toBe('⌘⇧W')
+    expect(item(buildVaultMenuSections(target({ hotkeys: { newFilesWindow: 'CmdOrCtrl+Alt+F' } }), h), 'open-files-window').hint).toBe('⌥⌘F')
+    expect(item(buildVaultMenuSections(target({ hotkeys: { newFilesWindow: null } }), h), 'open-files-window').hint).toBeUndefined()
   })
 
   it('Open in this window names its hotkey, ⇧⏎ (YAZ-1974 D8)', () => {

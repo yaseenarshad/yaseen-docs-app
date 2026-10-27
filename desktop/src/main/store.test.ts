@@ -337,6 +337,40 @@ describe('createStore: loading', () => {
     for (const width of [159, 481, NaN, '200', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, tableOfContentsWidth: width })).toBe(false)
   })
 
+  it('hotkeys (YAZ-3397 D2): a file from before has none and loads `{}`; a bad id or key costs that entry only; the IPC guard is strict', async () => {
+    const { hotkeys: _hotkeys, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: { ...legacySettings, theme: 'dark' } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, theme: 'dark' })
+    expect(createStore(file).get().settings.hotkeys).toEqual({})
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K', closeTab: null, quit: 'CmdOrCtrl+Q', newTab: 7, openFolder: 'Not+A+Key' } } }))
+    expect(createStore(file).get().settings.hotkeys).toEqual({ search: 'CmdOrCtrl+Shift+K', closeTab: null })
+    for (const junk of [null, 'x', [], 3]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: junk }).hotkeys).toEqual({})
+
+    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K', closeTab: null } })).toBe(true)
+    for (const bad of [{ quit: 'CmdOrCtrl+Q' }, { search: 3 }, { search: '' }, [], null, undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: bad })).toBe(false)
+  })
+
+  it('hotkeys (YAZ-3410 item 4): a key the recorder refuses is dropped, and no two commands keep one key; the IPC guard refuses both', () => {
+    // A bare letter would take every typed "a" in every window; ⌘Q is the app's Quit (App standard).
+    // ⌘⇧V and ⌘= are fixed keys of the menu (YAZ-3419): Paste as plain text and Zoom In's hidden twin.
+    for (const key of ['A', 'Shift+A', 'CmdOrCtrl+Q', 'CmdOrCtrl+Shift+V', 'CmdOrCtrl+=']) {
+      expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: key, closeTab: null } }).hotkeys, key).toEqual({ closeTab: null })
+      expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: key } }), key).toBe(false)
+    }
+    // ⌘B is Toggle sidebar's default: the change that clashes with it goes, and Search the vault has ⌘K again.
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+B', closeTab: null } }).hotkeys).toEqual({ closeTab: null })
+    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+B' } })).toBe(false)
+    // Two changes on one key: the one LAST in `HOTKEY_COMMANDS` order goes (Copy path after Search the vault).
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Alt+J', copyPath: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ search: 'CmdOrCtrl+Alt+J' })
+    // Dropping one change can uncover the next clash: Tab overview's ⌘⇧M comes back, so Search the vault's ⌘⇧M goes too.
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+M', copyPath: 'CmdOrCtrl+Alt+J', tabOverview: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ copyPath: 'CmdOrCtrl+Alt+J' })
+    // A move (D6) is no clash: the key left New Files window, which has "No key" now.
+    const moved = { search: 'CmdOrCtrl+Shift+W', newFilesWindow: null }
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: moved }).hotkeys).toEqual(moved)
+    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: moved })).toBe(true)
+  })
+
   it('sidebarZoom (YAZ-3389): an older file without the key loads at 100; junk loads at 100; an off-step number inside 50–200 is kept (D7), one outside is clamped; the channel takes 50–200 only', async () => {
     expect(DEFAULT_SETTINGS.sidebarZoom).toBe(100)
     const { sidebarZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS

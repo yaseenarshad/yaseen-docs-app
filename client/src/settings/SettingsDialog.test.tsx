@@ -17,6 +17,7 @@ import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { TextFormatting } from '@shared/textFormatting'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
 import { idsAskMessage, idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
+import { HOTKEYS_SECTION } from './hotkeysSection'
 import { SETTINGS_SECTIONS } from './registry'
 import { SettingsDialog } from './SettingsDialog'
 
@@ -140,7 +141,11 @@ const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
 const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links'].map((place) => `hoverPreviewIn.${place}`)]
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
-const HOTKEY_ROWS = ['hotkeys-keyboard', 'hotkeys-views', 'hotkeys-window', 'hotkeys-canvas', 'hotkeys-drawio', 'hotkeys-mouse']
+/**
+ * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
+ * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
+ */
+const HOTKEY_ROWS = HOTKEYS_SECTION.groups.flatMap((g) => g.items.map((i) => i.id)).filter((id) => !id.startsWith('hotkey-macos-') && id !== 'hotkeys-reset-all')
 const THREADING_HINT = 'Guide lines that connect nested bullets.'
 const TEXT_FORMATTING_HINT = 'How text looks in every note of this vault.'
 const TOC_HINT = 'The headings or the bullets of a note, at its right edge.'
@@ -326,7 +331,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(lines(one.el).flatMap(([, found]) => found)).toEqual([])
   })
 
-  it('Hotkeys is a page like the others, under the divider: clicking it swaps the pane for its six tables and takes aria-current="page"', () => {
+  it('Hotkeys is a page like the others, under the divider: clicking it swaps the pane for its groups, one row per key, and takes aria-current="page"', () => {
     const { el } = mount()
     expect(navShape(el).slice(-2)).toEqual(['—', 'Hotkeys'])
     clickNav(el, 'Hotkeys')
@@ -335,9 +340,13 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
     expect(headings(el)).toEqual(['Hotkeys'])
     expect(sections(el).map((s) => s.id)).toEqual(['settings-hotkeys'])
-    expect(groupTitles(el)).toEqual(['Keyboard', 'Views', 'Window', 'Excalidraw canvas', 'draw.io diagram', 'Mouse'])
+    expect(groupTitles(el)).toEqual(['Window', 'Keyboard', 'Views', 'Excalidraw canvas', 'draw.io diagram', 'Mouse', 'App standard'])
     expect(rowIds(el)).toEqual(HOTKEY_ROWS)
-    expect([...el.querySelectorAll('[data-setting="hotkeys-window"] .hotkeys__keys')].map((k) => k.textContent)).toContain('⌘,')
+    // A changeable key is a button (D6); a built-in one is text (D8).
+    expect(row(el, 'hotkey-settings')?.querySelector('.hotkeys__key')?.textContent).toBe('⌘,')
+    expect(row(el, 'hotkey-closeWindow')?.querySelector('.hotkeys__key')?.textContent).toBe('No key')
+    expect(row(el, 'hotkey-keyboard-table-of-contents')?.querySelector('button')).toBeNull()
+    expect(row(el, 'hotkey-keyboard-table-of-contents')?.querySelector('.hotkeys__keys')?.textContent).toBe('⌘J')
   })
 
   it('a section that goes while its page shows gives way to the first, General, in the pane and in the nav: Sync with the engine gone', () => {
@@ -1001,7 +1010,12 @@ describe('SettingsDialog search (D6)', () => {
     // The sidebar's line style (YAZ-3309 D7) names bullet threading: it leads, on Appearance.
     type(searchInput(el), 'bullet')
     expect(headings(el)).toEqual(['Appearance › Sidebar level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
-    expect(rowIds(el)).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines', 'hotkeys-keyboard', 'hotkeys-mouse'])
+    // A Hotkeys hit is the ONE row that names a bullet, not its whole table (YAZ-3397 D5).
+    expect(rowIds(el)).toEqual([
+      ...['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines'],
+      ...['fold-unfold-the-bullet-or-heading-sectio', 'fold-all-bullets-and-headings', 'unfold-all-bullets-and-headings', 'zoom-into-the-bullet-at-the-caret', 'cycle-bullet-task-done', 'indent-outdent-bullet'].map((r) => `hotkey-keyboard-${r}`),
+      ...['zoom-into-that-bullet', 'fold-unfold-that-bullet-or-heading-secti'].map((r) => `hotkey-mouse-${r}`),
+    ])
     type(searchInput(el), 'spacing')
     expect(headings(el)).toEqual(['Appearance › Spacing'])
     expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap'])
@@ -1014,7 +1028,7 @@ describe('SettingsDialog search (D6)', () => {
     expect(rowIds(el)).toEqual(['sectionStep', 'sectionLines'])
     type(searchInput(el), 'close tab')
     expect(headings(el)).toEqual(['Hotkeys › Window'])
-    expect(rowIds(el)).toEqual(['hotkeys-window'])
+    expect(rowIds(el)).toEqual(['hotkey-closeTab'])
   })
 
   it('clearing a query returns to the page that was showing before it — a later settings page and the Hotkeys page alike', () => {
@@ -1042,7 +1056,7 @@ describe('SettingsDialog search (D6)', () => {
     const { el, onClose } = mount()
     // As it opens: General (YAZ-3276 D7).
     type(searchInput(el), 'trash')
-    expect(rowIds(el)).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'hotkeys-window']) // ⌘⌫'s row says "Trash" too (YAZ-3272 D20)
+    expect(rowIds(el)).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'hotkey-window-move-the-selected-files-and-folders-to-t']) // ⌘⌫'s row says "Trash" too (YAZ-3272 D20)
     pressEscape(searchInput(el))
     expect(onClose).not.toHaveBeenCalled()
     expect(searchInput(el).value).toBe('')

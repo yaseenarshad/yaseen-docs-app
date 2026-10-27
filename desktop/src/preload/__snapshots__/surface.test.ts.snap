@@ -56,6 +56,7 @@ github.setEnabled/2: invoke github:set-enabled ["a0","a1"]; => "answer"; !> {"co
 github.status/1: invoke github:status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.syncNow/1: invoke github:sync-now ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.version/3: invoke github:version ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+hotkeys.recording/1: invoke hotkeys:recording ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 ids.backfill/1: invoke ids:backfill ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 ids.check/1: invoke ids:check ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 ids.onChanged/1: on ids:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off ids:changed
@@ -149,6 +150,7 @@ state.setTabCanvas/1: invoke state:set-tab-canvas ["a0"]; => "answer"; !> {"code
 state.setTocSource/3: invoke state:set-toc-source ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setTocSwitch/3: invoke state:set-toc-switch ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.settingsFolder/0: invoke state:settings-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.systemHotkeys/0: invoke state:system-hotkeys []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 storage.shrink/2: invoke storage:shrink ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 storage.stats/1: invoke storage:stats ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 tree/1: invoke fs:tree ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
