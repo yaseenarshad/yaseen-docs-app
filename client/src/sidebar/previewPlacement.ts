@@ -47,7 +47,10 @@ export interface PreviewPopup {
  * What a panel sits beside: the sidebar (its element, measured live), a fixed box — a card of the tab board —, a Files
  * window's row in the floating popup (YAZ-3357 D9), or, where that popup cannot be made, the lower part of a Files window (`overlay`).
  */
-export type PreviewAnchor = RefObject<HTMLElement | null> | { rect: AnchorRect; below?: true } | { popup: PreviewPopup; rect: AnchorRect } | { overlay: true }
+export type PreviewAnchor = RefObject<HTMLElement | null> | { rect: AnchorRect; side?: PreviewSide } | { popup: PreviewPopup; rect: AnchorRect } | { overlay: true }
+
+/** Where a panel goes off its box other than beside it: under it (a tab, YAZ-3403 D11), or at the window's right edge, level with it (a linked mention, YAZ-3429). */
+export type PreviewSide = 'below' | 'edge'
 
 /** The room around a panel in the floating popup (YAZ-3357 D9): the popup has no shadow, the panel draws its own there. */
 const POPUP_MARGIN = 16
@@ -87,13 +90,27 @@ export function overlayPlacement(innerWidth: number, innerHeight: number): Board
 export function besidePlacement(rect: AnchorRect, innerWidth: number, innerHeight: number, shape: PreviewShape = 'board'): BoardPreviewPlacement | null {
   const { width, height } = besideSize(innerWidth, innerHeight, shape)
   if (width <= 0 || height <= 0) return null
-  const top = Math.min(Math.max(GAP, Math.round((rect.top + rect.bottom) / 2 - height / 2)), Math.max(GAP, innerHeight - GAP - height))
+  const top = levelTop(rect, innerHeight, height)
   if (rect.right + GAP + width <= innerWidth - GAP) return { left: rect.right + GAP, top, width, height }
   if (rect.left - GAP - width >= GAP) return { left: rect.left - GAP - width, top, width, height }
   const above = rect.top - GAP / 2 - GAP
   if (innerHeight - GAP - (rect.bottom + GAP / 2) >= above) return belowPlacement(rect, innerWidth, innerHeight, shape)
   const tall = Math.min(height, above)
   return tall <= 0 ? null : { left: Math.max(GAP, Math.min(rect.left, innerWidth - GAP - width)), top: rect.top - GAP / 2 - tall, width, height: tall }
+}
+
+/** The top of a panel `height` tall, centred on the box and kept inside the window. */
+const levelTop = (rect: AnchorRect, innerHeight: number, height: number): number =>
+  Math.min(Math.max(GAP, Math.round((rect.top + rect.bottom) / 2 - height / 2)), Math.max(GAP, innerHeight - GAP - height))
+
+/**
+ * Where the panel goes at the RIGHT EDGE of the window, level with a box (YAZ-3429, a linked mention): the mention
+ * runs across the page, so no side of it has room; the start of the row stays in view on the left. Null with no room.
+ */
+export function edgePlacement(rect: AnchorRect, innerWidth: number, innerHeight: number, shape: PreviewShape = 'board'): BoardPreviewPlacement | null {
+  const { width, height } = besideSize(innerWidth, innerHeight, shape)
+  if (width <= 0 || height <= 0) return null
+  return { left: innerWidth - GAP - width, top: levelTop(rect, innerHeight, height), width, height }
 }
 
 /**
@@ -142,7 +159,7 @@ export function usePlacement(anchor: PreviewAnchor, shape: PreviewShape): BoardP
       return () => window.removeEventListener('resize', place)
     }
     if ('rect' in anchor) {
-      const at = 'below' in anchor && anchor.below === true ? belowPlacement : besidePlacement
+      const at = !('side' in anchor) || anchor.side === undefined ? besidePlacement : anchor.side === 'below' ? belowPlacement : edgePlacement
       const place = () => setPlacement(at(anchor.rect, window.innerWidth, window.innerHeight, shape))
       place()
       window.addEventListener('resize', place)

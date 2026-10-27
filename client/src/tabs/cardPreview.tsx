@@ -16,7 +16,7 @@ import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { createStore, type Store } from '../lib/store'
 import { HOVER_PREVIEW_DWELL_MS, loadNotePreview, PreviewPanel } from '../sidebar/HoverPreviewHost'
-import type { AnchorRect } from '../sidebar/previewPlacement'
+import type { AnchorRect, PreviewSide } from '../sidebar/previewPlacement'
 
 /** The card the pointer rests on, or Space holds — pending until the dwell ends, then shown beside `rect`. */
 export interface CardPreviewState {
@@ -148,8 +148,8 @@ export interface PreviewScope {
   watch?: WatchSource
 }
 
-/** The panel's half: it alone reads the store. `below` puts the panel under the card (a tab of the strip), not beside it. */
-export function CardPreviewHost({ store, cardOf, scopeOf, diagramDarkColors, below = false }: { store: Store<CardPreviewState>; cardOf: (id: string, path: string) => { root: string | null; name: string } | null; scopeOf?: (path: string) => PreviewScope; diagramDarkColors: DiagramDarkColors; below?: boolean }) {
+/** The panel's half: it alone reads the store. `side` puts the panel under the card (a tab of the strip) or at the window's right edge (a linked mention), not beside it. */
+export function CardPreviewHost({ store, cardOf, scopeOf, diagramDarkColors, side }: { store: Store<CardPreviewState>; cardOf: (id: string, path: string) => { root: string | null; name: string } | null; scopeOf?: (path: string) => PreviewScope; diagramDarkColors: DiagramDarkColors; side?: PreviewSide }) {
   const { id, path, shown, rect } = useSyncExternalStore(store.subscribe, store.getState)
   if (!shown || id === null || path === null || rect === null || scopeOf === undefined) return null
   const card = cardOf(id, path)
@@ -158,5 +158,5 @@ export function CardPreviewHost({ store, cardOf, scopeOf, diagramDarkColors, bel
   // A card of another window may be of a vault this window does not show: its own window's vault names it.
   const root = card.root ?? scope.root
   if (root === null) return null
-  return <PreviewPanel key={`${id}\n${path}`} path={path} root={root} name={card.name} wikilinks={scope.wikilinks} textVars={scope.textVars} watch={scope.watch} diagramDarkColors={diagramDarkColors} anchor={below ? { rect, below: true } : { rect }} />
+  return <PreviewPanel key={`${id}\n${path}`} path={path} root={root} name={card.name} wikilinks={scope.wikilinks} textVars={scope.textVars} watch={scope.watch} diagramDarkColors={diagramDarkColors} anchor={{ rect, side }} />
 }

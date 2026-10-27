@@ -60,17 +60,10 @@ const NONE: readonly IndexRecord[] = []
 export function BacklinksSection({ path, source, openCurrent, openBackground, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: BacklinksSectionProps) {
   const feed = useIndexFeed(source)
   const [expanded, setExpanded] = useState(false)
-  // The hover panel (YAZ-3403): beside the whole section — the note's text column — level with the hovered button;
-  // where neither side has room, above or below the row, never over it (YAZ-3429).
+  // The hover panel (YAZ-3403): at the window's right edge, level with the hovered button, so the start of the
+  // mention stays in view on the left (YAZ-3429): a mention runs across the page, so no side of it has room.
   const sectionRef = useRef<HTMLElement>(null)
-  const preview = useCardPreview(hoverPreview, (id) => {
-    const section = sectionRef.current
-    const button = section?.querySelector(`[data-preview="${CSS.escape(id)}"]`)
-    if (section === null || section === undefined || button === null || button === undefined) return null
-    const across = section.getBoundingClientRect()
-    const row = button.getBoundingClientRect()
-    return { left: across.left, right: across.right, top: row.top, bottom: row.bottom }
-  })
+  const preview = useCardPreview(hoverPreview, (id) => sectionRef.current?.querySelector<HTMLElement>(`[data-preview="${CSS.escape(id)}"]`) ?? null)
   const hoverOf: HoverOf = (id, page) => ({ 'data-preview': id, onMouseEnter: () => preview.hoverCard(id, page), onMouseLeave: () => preview.leaveCard(id) })
   // Read only while a panel shows: the linking note's name, as the entry shows it.
   const previewCard = (_: string, page: string) => ({ root: null, name: pageLabel(page, false, pathTitles(feed.records, feed.folders)) })
@@ -102,7 +95,7 @@ export function BacklinksSection({ path, source, openCurrent, openBackground, ho
           ))}
         </ul>
       )}
-      <CardPreviewHost store={preview.store} cardOf={previewCard} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
+      <CardPreviewHost store={preview.store} cardOf={previewCard} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} side="edge" />
     </section>
   )
 }

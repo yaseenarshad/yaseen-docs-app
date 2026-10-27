@@ -1,6 +1,6 @@
 /** Where the hover preview panel goes (YAZ-1800): a pure rule of the sidebar's right edge and the window. */
 import { describe, expect, it } from 'vitest'
-import { belowPlacement, besidePlacement, boardPreviewPlacement } from './previewPlacement'
+import { belowPlacement, besidePlacement, boardPreviewPlacement, edgePlacement } from './previewPlacement'
 
 describe('boardPreviewPlacement', () => {
   it('sits a gap right of the sidebar, a little over half the room wide, vertically centred', () => {
@@ -72,5 +72,21 @@ describe('besidePlacement with no room on either side (YAZ-3429: the linked ment
 
   it('keeps the side placement when a side has room (YAZ-3343 D18 unchanged)', () => {
     expect(besidePlacement({ left: 100, top: 300, right: 300, bottom: 400 }, 1440, 900)).toMatchObject({ left: 316 })
+  })
+})
+
+describe('edgePlacement (YAZ-3429: a linked mention — Yasin: "cant it be on the right side … so its more ont he right side of the window?")', () => {
+  // A mention row at 1440 × 900 that runs across the page (360–1400).
+  const row = { left: 360, top: 300, right: 1400, bottom: 324 }
+
+  it('sits at the right edge of the window, level with the row, so the start of the row stays in view', () => {
+    // width = min(520, 576) = 520 → left = 1440 - 16 - 520 = 904; height = min(630, max(220, 354)) = 354; top = 312 - 177 = 135.
+    expect(edgePlacement(row, 1440, 900)).toEqual({ left: 904, top: 135, width: 520, height: 354 })
+    expect(edgePlacement(row, 1440, 900)!.left).toBeGreaterThan(row.left + 400)
+  })
+
+  it('stays inside the window for a row near the bottom, and is null with no room', () => {
+    expect(edgePlacement({ ...row, top: 860, bottom: 884 }, 1440, 900, 'note')).toMatchObject({ top: 254, height: 630 })
+    expect(edgePlacement(row, 0, 900)).toBeNull()
   })
 })
