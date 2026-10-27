@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { APP_ZOOM_STEPS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, HOVER_PLACES, hoverOn, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, stepSidebarZoom, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { APP_ZOOM_STEPS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, HOVER_PLACES, hoverOn, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, stepSidebarZoom, stepZoom, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { createStore, isSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
 
@@ -440,7 +440,7 @@ describe('createStore: loading', () => {
     expect(hoverOn({ hoverPreview: false, hoverPreviewIn: places }, 'newTab')).toBe(false) // the master off wins (S37)
   })
 
-  it('stepSidebarZoom (YAZ-3389): one step each way along 50–200, an off-step value snaps to the next step that way, a wall stays put', () => {
+  it('stepSidebarZoom (YAZ-3389) and stepZoom (YAZ-3432): one step each way along the steps, an off-step value snaps to the next step that way, a wall stays put', () => {
     const walk = (from: number, dir: 1 | -1): number[] => {
       const out = [from]
       while (out.length < 20 && stepSidebarZoom(out[out.length - 1], dir) !== out[out.length - 1]) out.push(stepSidebarZoom(out[out.length - 1], dir))
@@ -451,6 +451,10 @@ describe('createStore: loading', () => {
     expect([stepSidebarZoom(110, 1), stepSidebarZoom(110, -1)]).toEqual([125, 100])
     expect([stepSidebarZoom(60, 1), stepSidebarZoom(60, -1)]).toEqual([75, 50])
     expect([stepSidebarZoom(50, -1), stepSidebarZoom(200, 1)]).toEqual([50, 200])
+    // The same walk over the App sizes (YAZ-3432): 90 and 125 are the walls; an off-step value snaps.
+    expect([90, 100, 110, 125].map((p) => stepZoom(APP_ZOOM_STEPS, p, 1))).toEqual([100, 110, 125, 125])
+    expect([90, 100, 110, 125].map((p) => stepZoom(APP_ZOOM_STEPS, p, -1))).toEqual([90, 90, 100, 110])
+    expect([stepZoom(APP_ZOOM_STEPS, 105, 1), stepZoom(APP_ZOOM_STEPS, 105, -1)]).toEqual([110, 100])
   })
 
   it('canvas and diagramDarkColors (YAZ-3037 done-when): a yaseendocs.json from before YAZ-3028 loads with the defaults; a file with some canvas prefs keeps them', async () => {

@@ -2715,7 +2715,7 @@ export const SIDEBAR_ZOOM_STEPS = [50, 75, 90, 100, 125, 150, 200] as const
 export const SIDEBAR_ZOOM_MIN = SIDEBAR_ZOOM_STEPS[0]
 export const SIDEBAR_ZOOM_MAX = SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]
 
-/** The App sizes in percent (YAZ-3432): the zoom menu's App row, one button each. */
+/** The App sizes in percent (YAZ-3432): the zoom menu's App size row walks them with − and +. */
 export const APP_ZOOM_STEPS = [90, 100, 110, 125] as const
 /** A stored or sent App size (YAZ-3432): one of `APP_ZOOM_STEPS`, else 100. */
 export function normalizeAppZoom(v: unknown): number {
@@ -2723,12 +2723,17 @@ export function normalizeAppZoom(v: unknown): number {
 }
 
 /**
- * One sidebar zoom step (YAZ-3389): the next step in `direction`. A value between two steps snaps to
- * the next one that way; at a wall (50% down, 200% up) the value comes back unchanged.
+ * One zoom step along `steps` (ascending): the next step in `direction`. A value between two steps snaps to the next
+ * one that way; at a wall (the first step down, the last up) the value comes back unchanged.
  */
-export function stepSidebarZoom(percent: number, direction: 1 | -1): number {
-  const next = direction === 1 ? SIDEBAR_ZOOM_STEPS.find((p) => p > percent) : [...SIDEBAR_ZOOM_STEPS].reverse().find((p) => p < percent)
+export function stepZoom(steps: readonly number[], percent: number, direction: 1 | -1): number {
+  const next = direction === 1 ? steps.find((p) => p > percent) : [...steps].reverse().find((p) => p < percent)
   return next ?? percent
+}
+
+/** One sidebar zoom step (YAZ-3389) along `SIDEBAR_ZOOM_STEPS`: 50% down and 200% up are the walls. */
+export function stepSidebarZoom(percent: number, direction: 1 | -1): number {
+  return stepZoom(SIDEBAR_ZOOM_STEPS, percent, direction)
 }
 
 /**

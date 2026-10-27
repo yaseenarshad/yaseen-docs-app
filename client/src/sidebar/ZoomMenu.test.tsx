@@ -1,4 +1,4 @@
-/** The footer's zoom menu (YAZ-3432): the chip shows the sidebar zoom and opens the menu; Sidebar steps, App sets the App size. */
+/** The footer's zoom menu (YAZ-3432): the chip shows the sidebar zoom and opens the menu; App size on top, Sidebar at the bottom, each − % +. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -24,7 +24,17 @@ function render(props: { sidebar?: number; app?: number; onSidebar?: (p: number)
 
 const chip = () => document.querySelector<HTMLButtonElement>('.zoom-chip')!
 const menu = () => document.querySelector<HTMLElement>('.zoom-menu[role="dialog"]')
-const sizes = () => [...document.querySelectorAll<HTMLButtonElement>('.zoom-menu [role="group"][aria-label="App size"] button')]
+/** A button of the menu by its accessible name. */
+const button = (name: string) => menu()!.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!
+const value = (row: 'App size' | 'Sidebar zoom') => menu()!.querySelector<HTMLButtonElement>(`[role="group"][aria-label="${row}"] .zoom-stepper__value`)!
+/** The page's zoom as Chromium shows it: `devicePixelRatio` (1 on this screen at 100%), and the resize it fires. */
+function pageZoom(z: number): void {
+  Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: z })
+  act(() => void window.dispatchEvent(new Event('resize')))
+}
+afterEach(() => {
+  Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 })
+})
 const mousedown = (el: EventTarget) => act(() => void el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
 
 describe('ZoomMenu', () => {
@@ -40,8 +50,9 @@ describe('ZoomMenu', () => {
     expect(menu()!.parentElement).toBe(document.body)
     expect(chip().getAttribute('aria-expanded')).toBe('true')
     expect(chip().className).toBe('zoom-chip zoom-chip--open')
-    expect([...menu()!.querySelectorAll('.zoom-menu__label')].map((l) => l.textContent)).toEqual(['Sidebar', 'App size'])
-    expect(menu()!.querySelector('.sidebar-zoom__value')?.textContent).toBe('150%')
+    // App size on top, Sidebar at the bottom, next to the chip; each row the same "− 100% +".
+    expect([...menu()!.querySelectorAll('.zoom-menu__label, [role="group"]')].map((l) => l.getAttribute('aria-label') ?? l.textContent)).toEqual(['App size', 'App size', 'Sidebar', 'Sidebar zoom'])
+    expect([value('App size').textContent, value('Sidebar zoom').textContent]).toEqual(['100%', '150%'])
 
     act(() => chip().click())
     expect(menu()).toBeNull()
@@ -51,41 +62,64 @@ describe('ZoomMenu', () => {
     const onSidebar = vi.fn()
     render({ sidebar: 100, onSidebar })
     act(() => chip().click())
-    act(() => menu()!.querySelector<HTMLButtonElement>('button[aria-label="Zoom the sidebar in"]')!.click())
+    act(() => button('Zoom the sidebar in').click())
     expect(onSidebar).toHaveBeenLastCalledWith(125)
-    act(() => menu()!.querySelector<HTMLButtonElement>('button[aria-label="Zoom the sidebar out"]')!.click())
+    act(() => button('Zoom the sidebar out').click())
     expect(onSidebar).toHaveBeenLastCalledWith(90)
     render({ sidebar: 200, onSidebar })
-    expect(menu()!.querySelector<HTMLButtonElement>('button[aria-label="Zoom the sidebar in"]')!.disabled).toBe(true)
-    act(() => menu()!.querySelector<HTMLButtonElement>('.sidebar-zoom__value')!.click())
+    expect(button('Zoom the sidebar in').disabled).toBe(true)
+    act(() => value('Sidebar zoom').click())
     expect(onSidebar).toHaveBeenLastCalledWith(100)
     // A click inside the menu keeps it open.
     expect(menu()).not.toBeNull()
   })
 
-  it('App size: one button for each of 90 · 100 · 110 · 125, the current one pressed; a click writes its percent', () => {
+  it('App size: − and + step 90 · 100 · 110 · 125 and stop at the walls, the percent writes 100; the sidebar zoom never moves', () => {
     const onApp = vi.fn()
-    render({ app: 110, onApp })
+    const onSidebar = vi.fn()
+    render({ app: 110, onApp, onSidebar })
     act(() => chip().click())
-    expect(sizes().map((b) => b.textContent)).toEqual(['90%', '100%', '110%', '125%'])
-    expect(sizes().map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true', 'false'])
-    act(() => sizes()[3].click())
-    expect(onApp).toHaveBeenCalledExactlyOnceWith(125)
-    expect(chip().getAttribute('aria-label')).toBe('Zoom: sidebar 100%, App size 110%')
+    expect(value('App size').textContent).toBe('110%')
+    act(() => button('Make the app larger').click())
+    expect(onApp).toHaveBeenLastCalledWith(125)
+    act(() => button('Make the app smaller').click())
+    expect(onApp).toHaveBeenLastCalledWith(100)
+    render({ app: 125, onApp, onSidebar })
+    expect([button('Make the app smaller').disabled, button('Make the app larger').disabled]).toEqual([false, true])
+    act(() => value('App size').click())
+    expect(onApp).toHaveBeenLastCalledWith(100)
+    render({ app: 90, onApp, onSidebar })
+    expect([button('Make the app smaller').disabled, button('Make the app larger').disabled]).toEqual([true, false])
+    expect(onSidebar).not.toHaveBeenCalled()
+    expect(chip().getAttribute('aria-label')).toBe('Zoom: sidebar 100%, App size 90%')
   })
 
-  it('the menu is zoomed by 1 / the App size, so it keeps its size on the screen; its place is kept in screen px while it is open', () => {
+  it('the menu is zoomed by 1 / the PAGE\'s zoom, so it keeps its size on the screen; its place is kept in screen px while it is open', () => {
     render({ app: 100 })
     vi.spyOn(chip(), 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ x: 40, y: 700, width: 38, height: 22 }))
     act(() => chip().click())
     const body = () => menu()!.querySelector<HTMLElement>('.zoom-menu__body')!
-    expect(body().style.zoom).toBe('1')
+    const place = () => [menu()!.style.left, menu()!.style.bottom, body().style.zoom]
     const bottom = window.innerHeight - 700 + 4
-    expect([menu()!.style.left, menu()!.style.bottom]).toEqual(['40px', `${bottom}px`])
-    // App size 125%: the page is 1.25× larger, so the menu is zoomed by 0.8 and its place in page px shrinks to match.
+    expect(place()).toEqual(['40px', `${bottom}px`, '1'])
+    // The setting says 110% before main has zoomed the page: the menu keeps its size and place, so a second quick
+    // click on + lands on + again.
+    render({ app: 110 })
+    expect(place()).toEqual(['40px', `${bottom}px`, '1'])
+    // The page is zoomed (a resize, with the new `devicePixelRatio`): the menu by 1 / 1.1, its place in page px to match.
+    pageZoom(1.1)
+    expect(place()).toEqual([`${40 / 1.1}px`, `${bottom / 1.1}px`, String(1 / 1.1)])
     render({ app: 125 })
-    expect(body().style.zoom).toBe('0.8')
-    expect([menu()!.style.left, menu()!.style.bottom]).toEqual([`${40 / 1.25}px`, `${bottom / 1.25}px`])
+    pageZoom(1.25)
+    expect(place()).toEqual([`${40 / 1.25}px`, `${bottom / 1.25}px`, '0.8'])
+  })
+
+  it('opened at an App size of 125%, the menu is zoomed by 0.8 from the start, right above the chip', () => {
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1.25 })
+    render({ app: 125 })
+    vi.spyOn(chip(), 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ x: 40, y: 700, width: 38, height: 22 }))
+    act(() => chip().click())
+    expect([menu()!.style.left, menu()!.style.bottom, menu()!.querySelector<HTMLElement>('.zoom-menu__body')!.style.zoom]).toEqual(['40px', `${window.innerHeight - 700 + 4}px`, '0.8'])
   })
 
   it('a menu that would pass the window\'s right edge moves left, once, and never past the left edge (a narrow Files window)', () => {
@@ -110,7 +144,7 @@ describe('ZoomMenu', () => {
     expect(document.activeElement).toBe(chip())
 
     act(() => chip().click())
-    mousedown(menu()!.querySelector('.zoom-menu__size')!)
+    mousedown(button('Make the app larger'))
     expect(menu()).not.toBeNull()
     mousedown(document.body)
     expect(menu()).toBeNull()

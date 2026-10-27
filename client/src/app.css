@@ -1963,67 +1963,29 @@ button {
 }
 
 .zoom-menu__body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 6px;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 4px 4px 4px 10px;
 }
 
 .zoom-menu__label {
-  padding: 2px 3px 0;
-  font-size: 11px;
-  color: var(--fg-muted);
-}
-
-.zoom-menu__label:not(:first-child) {
-  margin-top: 4px;
-}
-
-.zoom-menu__sizes {
-  display: flex;
-  gap: 2px;
-}
-
-.zoom-menu__size {
-  min-width: 34px;
-  height: 22px;
-  padding: 0 4px;
-  border-radius: 6px;
-  color: var(--fg-muted);
   font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
+  color: var(--fg-muted);
 }
 
-.zoom-menu__size:hover {
-  color: var(--fg);
-  background: var(--bg-hover);
-}
-
-/* The App size of the moment: the accent, as a chosen option. */
-.zoom-menu__size[aria-pressed='true'] {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  font-weight: 600;
-}
-
-.zoom-menu__size:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-/* The Sidebar row of the zoom menu (YAZ-3389, in the footer until YAZ-3432): "− 100% +". The number keeps one width,
-   so 90% and 100% never shift the row. */
-.sidebar-zoom {
+/* The zoom menu's two rows (YAZ-3432; the sidebar's sat in the footer, YAZ-3389): "− 100% +". The number keeps one
+   width, so 90% and 100% never shift the row, and the menu never changes its width. */
+.zoom-stepper {
   display: flex;
   align-items: center;
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
 
-.sidebar-zoom__step,
-.sidebar-zoom__value {
+.zoom-stepper__step,
+.zoom-stepper__value {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2033,29 +1995,29 @@ button {
   line-height: 1;
 }
 
-.sidebar-zoom__step {
+.zoom-stepper__step {
   width: 22px;
   font-size: 13px;
 }
 
-.sidebar-zoom__value {
+.zoom-stepper__value {
   min-width: 38px;
   padding: 0 3px;
 }
 
-.sidebar-zoom__step:hover:enabled,
-.sidebar-zoom__value:hover {
+.zoom-stepper__step:hover:enabled,
+.zoom-stepper__value:hover {
   color: var(--fg);
   background: var(--bg-hover);
 }
 
-.sidebar-zoom__step:focus-visible,
-.sidebar-zoom__value:focus-visible {
+.zoom-stepper__step:focus-visible,
+.zoom-stepper__value:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
-.sidebar-zoom__step:disabled {
+.zoom-stepper__step:disabled {
   opacity: 0.4;
   cursor: default;
 }

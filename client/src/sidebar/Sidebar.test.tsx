@@ -7741,19 +7741,19 @@ describe('update pill (YAZ-2976 D4)', () => {
     expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarZoom: 150, theme: 'dark' })
 
     await rerender({ settings: { ...DEFAULT_SETTINGS, sidebarZoom: 100 } })
-    act(() => document.querySelector<HTMLButtonElement>('.zoom-menu .sidebar-zoom__value')!.click())
+    act(() => document.querySelector<HTMLButtonElement>('.zoom-menu [aria-label="Sidebar zoom"] .zoom-stepper__value')!.click())
     expect(props.onChangeSettings).toHaveBeenCalledTimes(1)
   })
 
-  it('the App size (YAZ-3432): the menu\'s App row writes `appZoom` over the other settings; the same value writes nothing', async () => {
+  it('the App size (YAZ-3432): the menu\'s App size + writes the next `appZoom` over the other settings; the percent at 100% writes nothing', async () => {
     const { el, props } = await mount({ settings: { ...DEFAULT_SETTINGS, sidebarZoom: 150, theme: 'dark' } })
     act(() => el.querySelector<HTMLButtonElement>('.zoom-chip')!.click())
-    const size = (p: number) => document.querySelector<HTMLButtonElement>(`.zoom-menu [aria-label="App size"] button[title="Every window at ${p}%"]`)!
-    expect(size(100).getAttribute('aria-pressed')).toBe('true')
-    act(() => size(100).click())
+    const row = document.querySelector<HTMLElement>('.zoom-menu [role="group"][aria-label="App size"]')!
+    expect(row.querySelector('.zoom-stepper__value')?.textContent).toBe('100%')
+    act(() => row.querySelector<HTMLButtonElement>('.zoom-stepper__value')!.click())
     expect(props.onChangeSettings).not.toHaveBeenCalled()
-    act(() => size(125).click())
-    expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarZoom: 150, theme: 'dark', appZoom: 125 })
+    act(() => row.querySelector<HTMLButtonElement>('button[aria-label="Make the app larger"]')!.click())
+    expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarZoom: 150, theme: 'dark', appZoom: 110 })
   })
 
   it('YAZ-3389 D13: a Files window zooms its own list — the footer (cog, zoom, chip, pill) reads and writes the window\'s zoom, never the settings', async () => {

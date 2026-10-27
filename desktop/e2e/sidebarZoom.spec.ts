@@ -9,9 +9,10 @@
  * the full window's sidebar zoom, and its footer and View › Zoom In change only its own value.
  * The footer fits (YAZ-3401): from the narrowest sidebar (180 px) up, with the "Files window" chip, with an update
  * ready (a fake feed, as `update.spec`), and with both, no item runs past the footer and no label is cut.
- * The APP SIZE (YAZ-3432): the menu's App row zooms every window (Chromium's page zoom, a Files window too), a tab
- * 1.25× larger on the screen at 125%, while the menu keeps its size and its place; it opens right above the chip at
- * 125%, the footer still fits at 180 px, and the value comes back after a relaunch.
+ * The APP SIZE (YAZ-3432): the menu's App size row, on top and the same "− 100% +" as the Sidebar row below it, zooms
+ * every window (Chromium's page zoom, a Files window too), a tab 1.25× larger on the screen at 125%, while the menu
+ * keeps its size and its place, so a double click on + takes 100 to 125; it opens right above the chip at 125%, the
+ * footer still fits at 180 px, and the value comes back after a relaunch; its percent goes back to 100%.
  *
  * Serial (the suite's idiom): each step continues the last.
  */
@@ -41,7 +42,9 @@ async function control(w: Page) {
   if ((await zoomMenu(w).count()) === 0) await zoomChip(w).click()
   return zoomMenu(w).locator('[role="group"][aria-label="Sidebar zoom"]')
 }
-const appSize = (w: Page, p: number) => zoomMenu(w).locator(`[role="group"][aria-label="App size"] button[title="Every window at ${p}%"]`)
+/** The menu's App size row, the same "− 100% +" as the Sidebar row (YAZ-3432), and its percent. */
+const appRow = (w: Page) => zoomMenu(w).locator('[role="group"][aria-label="App size"]')
+const appPercent = (w: Page) => appRow(w).locator('.zoom-stepper__value')
 /** The real Chromium zoom factor of the window with `?win=<id>`, from main. */
 const zoomFactor = (a: ElectronApplication, id = 'w1'): Promise<number> =>
   a.evaluate(({ BrowserWindow }, winId) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes(`win=${winId}`))!.webContents.getZoomFactor(), id)
@@ -167,7 +170,7 @@ test('step 1 — "Zoom the sidebar in": 125%, a tree row 1.25× taller, the head
   const chrome = await Promise.all(CHROME.map((s) => box(win, s)))
   await (await control(win)).getByRole('button', { name: 'Zoom the sidebar in', exact: true }).click()
   await expect(percent(win)).toHaveText('125%')
-  await expect(zoomMenu(win).locator('.sidebar-zoom__value')).toHaveText('125%')
+  await expect((await control(win)).locator('.zoom-stepper__value')).toHaveText('125%')
   await expect.poll(async () => (await rowHeight(win)) / row).toBeCloseTo(1.25, 1)
   expect(await Promise.all(CHROME.map((s) => box(win, s)))).toEqual(chrome)
   expect(await zoomLevel(app)).toBe(0)
@@ -186,7 +189,7 @@ test('step 2 — quit and launch again: the state file says 125 and the sidebar 
 })
 
 test('step 3 — a click on the menu\'s percent goes back to 100%', async () => {
-  await (await control(win)).locator('.sidebar-zoom__value').click()
+  await (await control(win)).locator('.zoom-stepper__value').click()
   await expect(percent(win)).toHaveText('100%')
   await win.keyboard.press('Escape')
 })
@@ -345,15 +348,16 @@ const menuPlace = (w: Page) =>
   })
 const ACTIVE_TAB = '.tabbar [role="tab"][aria-selected="true"]'
 
-test('step 9 — YAZ-3432: the zoom chip opens the menu right above it, with Sidebar and App size; Escape and a click outside close it', async () => {
+test('step 9 — YAZ-3432: the zoom chip opens the menu right above it, App size on top and Sidebar below, each − % +; Escape and a click outside close it', async () => {
   await dragSidebarTo(win, 260)
   await expect(zoomChip(win)).toHaveAttribute('aria-expanded', 'false')
   await zoomChip(win).click()
   await expect(zoomMenu(win)).toBeVisible()
   await expect(zoomChip(win)).toHaveAttribute('aria-expanded', 'true')
-  await expect(zoomMenu(win).locator('.zoom-menu__label')).toHaveText(['Sidebar', 'App size'])
-  await expect(zoomMenu(win).locator('[aria-label="App size"] button')).toHaveText(['90%', '100%', '110%', '125%'])
-  await expect(appSize(win, 100)).toHaveAttribute('aria-pressed', 'true')
+  // App size on top, Sidebar at the bottom next to the chip; both rows the same "− 100% +".
+  await expect(zoomMenu(win).locator('.zoom-menu__label')).toHaveText(['App size', 'Sidebar'])
+  await expect(zoomMenu(win).locator('[role="group"]')).toHaveText(['−100%+', '−100%+'])
+  await expect(appRow(win).getByRole('button', { name: 'Make the app smaller', exact: true })).toBeEnabled()
   const place = await menuPlace(win)
   expect(place.above).toBeCloseTo(4, 0)
   expect(place.left).toBeCloseTo(0, 0)
@@ -368,7 +372,7 @@ test('step 9 — YAZ-3432: the zoom chip opens the menu right above it, with Sid
   await expect(zoomMenu(win)).toHaveCount(0)
 })
 
-test('step 10 — YAZ-3432: App size 125% zooms every window, a tab 1.25× and the Files window too, while the menu keeps its size and place', async () => {
+test('step 10 — YAZ-3432: a double click on App size + (100 → 125) zooms every window, a tab 1.25× and the Files window too, while the menu and its + keep their size and place', async () => {
   const files = filesPage()
   const filesId = winParam(files) ?? ''
   await fileRow(win, 'Ideas').click()
@@ -379,24 +383,30 @@ test('step 10 — YAZ-3432: App size 125% zooms every window, a tab 1.25× and t
 
   await zoomChip(win).click()
   const before = await screenBox(win, '.zoom-menu')
+  const plus = appRow(win).getByRole('button', { name: 'Make the app larger', exact: true })
+  const plusBefore = await screenBox(win, '.zoom-menu [aria-label="App size"] button[aria-label="Make the app larger"]')
   await shoot(win, 'sidebarzoom-10-app-100-menu-open')
-  await appSize(win, 125).click()
+  // A quick double click on + at one point on the screen: both clicks land on +, 100 → 110 → 125, and + is then off.
+  await plus.dblclick()
+  await expect(appPercent(win)).toHaveText('125%')
+  await expect(plus).toBeDisabled()
   await expect.poll(() => zoomFactor(app)).toBe(1.25)
   await expect.poll(() => zoomFactor(app, filesId)).toBe(1.25)
   await expect.poll(async () => (await screenBox(win, ACTIVE_TAB)).height / tab.height).toBeCloseTo(1.25, 1)
   await expect.poll(async () => (await screenBox(win, ACTIVE_TAB)).width / tab.width).toBeCloseTo(1.25, 1)
   await expect.poll(async () => (await screenBox(files, '.tree__row--file')).height / filesRow.height).toBeCloseTo(1.25, 1)
-  await expect(appSize(win, 125)).toHaveAttribute('aria-pressed', 'true')
   // The menu on the screen: the same size, in the same place, so the buttons stay under the pointer.
   const after = await screenBox(win, '.zoom-menu')
   expect(after.dpr / before.dpr).toBeCloseTo(1.25, 2)
+  const plusAfter = await screenBox(win, '.zoom-menu [aria-label="App size"] button[aria-label="Make the app larger"]')
+  for (const k of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(plusAfter[k] - plusBefore[k]), `+ ${k}: ${plusBefore[k]} → ${plusAfter[k]}`).toBeLessThanOrEqual(1.5)
   for (const k of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(after[k] - before[k]), `menu ${k}: ${before[k]} → ${after[k]}`).toBeLessThanOrEqual(1.5)
   await expect.poll(async () => (await readState(userData)).settings.appZoom).toBe(125)
   await shootZoomed(app, win, 'sidebarzoom-10-app-125-menu-open')
   await shootZoomed(app, files, 'sidebarzoom-10-files-125')
   // The Files window's own menu says the same.
   await zoomChip(files).click()
-  await expect(appSize(files, 125)).toHaveAttribute('aria-pressed', 'true')
+  await expect(appPercent(files)).toHaveText('125%')
   await files.keyboard.press('Escape')
   await expect(zoomMenu(files)).toHaveCount(0)
 })
@@ -433,7 +443,7 @@ test('step 11 — YAZ-3432: at 125% the menu opens right above the chip and insi
   await files.keyboard.press('Escape')
 })
 
-test('step 12 — YAZ-3432: quit and launch again: the state file says 125 and every window comes back at 125%; App 100% from the menu goes back', async () => {
+test('step 12 — YAZ-3432: quit and launch again: the state file says 125 and every window comes back at 125%; a click on the App size percent goes back to 100%', async () => {
   await quitApp(app)
   expect((await readState(userData)).settings.appZoom).toBe(125)
   app = await launchApp({ userData })
@@ -442,7 +452,7 @@ test('step 12 — YAZ-3432: quit and launch again: the state file says 125 and e
   await expect(activeTab(win)).toBeVisible()
   await shootZoomed(app, win, 'sidebarzoom-12-relaunch-125')
   await zoomChip(win).click()
-  await appSize(win, 100).click()
+  await appPercent(win).click()
   await expect.poll(() => zoomFactor(app)).toBe(1)
   await expect.poll(async () => (await readState(userData)).settings.appZoom).toBe(100)
 })
