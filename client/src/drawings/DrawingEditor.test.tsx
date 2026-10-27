@@ -7,7 +7,7 @@
  * stub exposes the surface's three outward moves — emit a snapshot, hand over the API, fail —
  * so every drawing-side rule below (baseline, debounce, reload, the image bytes, the chips) runs
  * through the real `Autosave` and the real host. The rules both boards share — conflict, flush,
- * retire — are pinned once, in `documents/useBoardDocument.test.tsx`.
+ * retire — are pinned once, in `documents/useDocumentHost.test.tsx`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'

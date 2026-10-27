@@ -57,7 +57,6 @@ import { registerPageView } from '../lib/pageView'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { transformFile } from '../views/writeProperty'
-import { TextViewer } from '../viewers/TextViewer'
 import { PdfViewer } from '../viewers/PdfViewer'
 import { ImageViewer } from '../viewers/ImageViewer'
 import type { NoticeKind } from '../lib/notice'
@@ -71,6 +70,8 @@ import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/card
 const DrawingEditor = lazy(() => import('../drawings/DrawingEditor').then((m) => ({ default: m.DrawingEditor })))
 /** A diagram tab (YAZ-3028 D5): the same rule — its host in its own chunk, and draw.io in its own origin's iframe. */
 const DrawioEditor = lazy(() => import('../diagrams/DrawioEditor').then((m) => ({ default: m.DrawioEditor })))
+/** A code tab (YAZ-3448, D1/D2): the same rule — its host in its own chunk, and Monaco in the next (`code/monaco.ts`). */
+const CodeEditor = lazy(() => import('../code/CodeEditor').then((m) => ({ default: m.CodeEditor })))
 
 /**
  * A save flips the chip unsaved → saving → saved, and each flip re-renders CrepeHost; these sections
@@ -200,10 +201,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
   }
   const kind = fileKind(path)
   if (kind === 'text') {
+    // The document host renders its own `section.editor editor--code`, as a board's does.
     return (
-      <section className="editor">
-        <TextViewer path={path} watch={watch} />
-      </section>
+      <Suspense fallback={<section className="editor" />}>
+        <CodeEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} onNotice={onNotice} onToggleSidebar={onToggleSidebar} />
+      </Suspense>
     )
   }
   if (kind === 'pdf') {

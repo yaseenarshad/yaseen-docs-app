@@ -2,7 +2,7 @@
  * THE DRAWING DOCUMENT (Draw's 🔒 YAZ-1810, ported by YAZ-3028 D2): a `.excalidraw` opened full-pane in a
  * tab. `Editor` dispatches `kind === 'drawing'` here, and this is the shell's ordinary document host — save
  * chip, sync chip, conflict bar, debounced autosave, the quit handshake, all from
- * `useBoardDocument` (YAZ-2073 🔒 D16) — with the canvas where a text editor would be.
+ * `useDocumentHost` (YAZ-2073 🔒 D16) — with the canvas where a text editor would be.
  *
  * 🔒 CHROME ONLY. The ENGINE lives behind `ExcalidrawSurface` — the SAME surface the note embed's
  * modal mounts (rule 28) — and nothing in this file imports the package, or anything that does.
@@ -39,8 +39,8 @@ import { useCallback, useEffect, useRef, type KeyboardEvent as ReactKeyboardEven
 import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse } from '@shared/types'
 import { unpersistedFiles } from '@shared/drawingAssets'
 import { api } from '../api'
-import { BoardDocumentShell } from '../documents/BoardDocumentShell'
-import { BoardChips, exportWithNotice, useBoardDocument, type BoardDocumentProps } from '../documents/useBoardDocument'
+import { DocumentShell } from '../documents/DocumentShell'
+import { DocumentChips, exportWithNotice, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
 import type { NoticeKind } from '../lib/notice'
 import { basename } from '../lib/paths'
 import { useAppliedTheme } from '../lib/theme'
@@ -55,7 +55,7 @@ export const BROKEN_DRAWING_DOCUMENT = "This Excalidraw drawing can't be opened:
 /** What File › Export Drawing… says when the save sheet or the write refused (🔒 YAZ-1775 D3, YAZ-1821). */
 const EXPORT_FAILED = "The Excalidraw drawing couldn't be exported."
 
-export interface DrawingEditorProps extends BoardDocumentProps {
+export interface DrawingEditorProps extends DocumentHostProps {
   /**
    * The user-level canvas preferences (🔒 YAZ-1775 D9), App's copy of `SettingsState.canvas`: seeded into
    * the scene at mount and kept in step with the engine both ways. Omitted = the engine's defaults.
@@ -97,9 +97,9 @@ const brokenDocument = (): string => BROKEN_DRAWING_DOCUMENT
 
 export function DrawingEditor(props: DrawingEditorProps) {
   return (
-    <BoardDocumentShell root={props.root} path={props.path} className="editor--drawing" load={loadDocument} errorText={brokenDocument}>
+    <DocumentShell root={props.root} path={props.path} className="editor--drawing" load={loadDocument} errorText={brokenDocument}>
       {(loaded, onFailed) => <DrawingHost {...props} loaded={loaded} onFailed={onFailed} />}
-    </BoardDocumentShell>
+    </DocumentShell>
   )
 }
 
@@ -123,7 +123,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
   const persisted = useRef(new Set(loaded.stored))
 
   // Fresh closures every render are fine: the hook reads them through its `engine` ref, never stale.
-  const board = useBoardDocument({
+  const board = useDocumentHost({
     root,
     path,
     watch,
@@ -218,7 +218,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
 
   // The chips, as the engine's top-right slot content: ONE identity for the host's life (the surface
   // hands this straight to a memoized `<Excalidraw>`); what they say comes from the store.
-  const renderTopRight = useCallback(() => <BoardChips store={chips} className="drawing-editor__chips" />, [chips])
+  const renderTopRight = useCallback(() => <DocumentChips store={chips} className="drawing-editor__chips" />, [chips])
 
   const onApi = useCallback((a: DrawingSurfaceApi) => {
     surface.current = a

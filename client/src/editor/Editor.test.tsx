@@ -16,6 +16,9 @@ import type { FileResponse, IndexRecord, PageView, TableOfContents, TocSource, T
 import { resolverFor } from '../views/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { Editor } from './Editor'
+import { created } from '../code/monacoTestKit'
+// Loaded up front, so `Editor`'s lazy import of the code tab resolves within a settle.
+import '../code/CodeEditor'
 import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import * as frontmatter from '@shared/frontmatter'
@@ -49,6 +52,9 @@ vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
   return { ...actual, api: { ...actual.api, tree: vi.fn(), readFile: vi.fn(), readPdf: vi.fn(), readImage: vi.fn(), writeFile: vi.fn(), shell: { openLink: vi.fn() }, index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } } }
 })
+
+// A code file opens Monaco (YAZ-3448), which does not run in jsdom: the code tab's own fake.
+vi.mock('../code/monaco', () => import('../code/monacoTestKit'))
 
 vi.mock('./createCrepe', () => {
   interface FakeCrepe {
@@ -284,7 +290,7 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     expect(readFile).toHaveBeenCalledExactlyOnceWith('/vault/data.JSON')
     expect(createCrepeMock).not.toHaveBeenCalled()
     expect(writeFile).not.toHaveBeenCalled()
-    expect(flushListeners).toHaveLength(0) // no autosave owner
+    expect(flushListeners).toHaveLength(1) // the code tab's document host (YAZ-3448), never the note's autosave
     expect(split).not.toHaveBeenCalled()
     expect(subscribe).not.toHaveBeenCalled() // no backlinks/home semantic feed
     expect(rename).not.toHaveBeenCalled()
@@ -292,7 +298,10 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     expect(el.querySelector('.frontmatter-panel')).toBeNull()
     expect(el.querySelector('.folder-view')).toBeNull()
     expect(el.querySelector('.backlinks')).toBeNull()
-    expect(el.querySelector('.text-viewer')).not.toBeNull()
+    // The code tab holds the file whole: its frontmatter-looking head is code, never split (YAZ-3448 S9).
+    // Mixed breaks take the first one found, LF here (YAZ-3445 S3).
+    expect(el.querySelector('.editor--code .code-editor')).not.toBeNull()
+    expect(created.models.at(-1)?.getValue(0, true)).toBe('---\nstatus: idea\n---\nraw\n\ttext\n')
 
     split.mockRestore()
     subscribe.mockRestore()
@@ -1561,9 +1570,9 @@ describe('the page settings cog (YAZ-2643)', () => {
     expect(container!.querySelector('.editor-host')!.contains(container!.querySelector('.page-settings'))).toBe(false)
   })
 
-  it('a text file has no cog (S11)', async () => {
+  it('a text file has no cog (S11; a code tab since YAZ-3448, whose cog rows come with 2C)', async () => {
     const el = await mount('{"a": 1}', 1, { path: '/vault/data.json' })
-    expect(el.querySelector('.text-viewer')).not.toBeNull()
+    expect(el.querySelector('.code-editor')).not.toBeNull()
     expect(el.querySelector('.page-settings')).toBeNull()
   })
 
