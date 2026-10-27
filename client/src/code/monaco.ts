@@ -49,7 +49,9 @@ const ONE_FILE_NOISE = [2307, 2792, 7016, 7026, 2875]
 const ts = monaco.typescript
 for (const defaults of [ts.typescriptDefaults, ts.javascriptDefaults]) {
   defaults.setCompilerOptions({ ...defaults.getCompilerOptions(), jsx: ts.JsxEmit.ReactJSX, allowJs: true, allowNonTsExtensions: true, target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.NodeJs, esModuleInterop: true })
-  defaults.setDiagnosticsOptions({ ...defaults.getDiagnosticsOptions(), diagnosticCodesToIgnore: ONE_FILE_NOISE })
+  defaults.setDiagnosticsOptions({ ...defaults.getDiagnosticsOptions(), diagnosticCodesToIgnore: ONE_FILE_NOISE, onlyVisible: true })
+  // Jumps and references: `languageClient.ts` is the one source (the project's helper, else this worker). YAZ-3454.
+  defaults.setModeConfiguration({ ...defaults.modeConfiguration, definitions: false, references: false })
 }
 
 /**

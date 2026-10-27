@@ -13,6 +13,7 @@ import { registerFavoritesIpc } from './favorites'
 import { registerFocusIpc } from './focus'
 import { registerFsIpc } from './fs'
 import { registerGithubIpc } from './github'
+import { registerLspIpc } from './lsp'
 import { registerMediaLibraryIpc } from './mediaLibrary'
 import { registerMediaStudioIpc } from './mediaStudio'
 import { registerPropertiesIpc } from './properties'
@@ -37,7 +38,12 @@ import { registerWindowIpc } from './window'
  * (`ShareIpcPlaces`, YAZ-3040) is where the share viewer's files are. `settingsFolder` (YAZ-3276) is the
  * one `followSettingsFolder` of `main/index.ts`: the Settings row asks it whether the folder is missing.
  */
-export type IpcPlaces = ShareIpcPlaces & { userData: string }
+export type IpcPlaces = ShareIpcPlaces & {
+  userData: string
+  /** Where the shipped language helpers are (YAZ-3454): `process.resourcesPath` and `app.getAppPath()`; absent = no helper. */
+  resourcesPath?: string
+  appPath?: string
+}
 
 export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets } {
   const { userData } = places
@@ -53,6 +59,8 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerWindowIpc(store, windows)
   registerStorageIpc()
   registerSoundIpc()
+  // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).
+  registerLspIpc({ isPackaged: places.isPackaged, resourcesPath: places.resourcesPath ?? '', appPath: places.appPath ?? '' })
   // THE one secrets instance (YAZ-3028): `secrets.set`/`has` for the renderer, `read` for main's own callers.
   // It is threaded into the Image Studio's providers (a Pixabay request is built without the key ever leaving
   // main; YAZ-3038) and into sharing (the Cloudflare token and the upload password; YAZ-3040).

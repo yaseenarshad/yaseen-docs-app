@@ -1,4 +1,8 @@
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import path from 'node:path'
+import type { LanguageSpec } from './pool'
+import { findProjectRoot } from './projectRoot'
 import type { ServerCommand } from './server'
 
 /**
@@ -54,4 +58,46 @@ export function resolveTypescriptServer(opts: {
 /** The command that starts the TypeScript helper with `projectRoot` as its working folder. */
 export function typescriptServerCommand(binary: string, projectRoot: string): ServerCommand {
   return { name: 'typescript', command: binary, args: TYPESCRIPT_LSP_ARGS, cwd: projectRoot }
+}
+
+/** The files that make a folder a TS or JS project (YAZ-3454): the nearest one above the file wins. */
+export const TYPESCRIPT_PROJECT_MARKERS = ['tsconfig.json', 'jsconfig.json', 'package.json'] as const
+
+/** Where the shipped helpers are: `Resources/lsp/` packaged, `node_modules` in dev (YAZ-3453, YAZ-3455). */
+export interface LspPlaces {
+  isPackaged: boolean
+  resourcesPath: string
+  /** `app.getAppPath()`: the `desktop/` folder in dev. */
+  appPath: string
+}
+
+/** A memo of one lookup on disk: the helper binary does not move while the app runs. */
+function once<T>(fn: () => T): () => T {
+  let done = false
+  let value: T
+  return () => {
+    if (!done) {
+      value = fn()
+      done = true
+    }
+    return value
+  }
+}
+
+/** TypeScript 7 for TS, JS and React (YAZ-3454): the project is the nearest `tsconfig.json`, `jsconfig.json` or `package.json`; none = no helper (S7). */
+export function typescriptSpec(places: LspPlaces, exists: (p: string) => boolean = existsSync): LanguageSpec {
+  const binary = once(() => resolveTypescriptServer({ ...places, platform: process.platform, arch: process.arch, exists }))
+  return {
+    language: 'typescript',
+    projectRoot: (file) => findProjectRoot(file, TYPESCRIPT_PROJECT_MARKERS, exists, [homedir()]),
+    command: (root) => {
+      const bin = binary()
+      return bin === null ? null : typescriptServerCommand(bin, root)
+    },
+    // `lib.*.d.ts` sit beside the binary.
+    ownFolder: () => {
+      const bin = binary()
+      return bin === null ? null : path.dirname(bin)
+    },
+  }
 }

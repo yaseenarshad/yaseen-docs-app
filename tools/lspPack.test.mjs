@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { lockEntry, lspTargets, stageTypescript, stagedDir, typescriptPackage, verifyIntegrity } from './lib/lspPack.mjs'
+import { lockEntry, lspTargets, pyrightStagedDir, stagePyright, stageTypescript, stagedDir, typescriptPackage, verifyIntegrity } from './lib/lspPack.mjs'
 
 /**
  * Staging the TypeScript 7 language server for the packaged app (YAZ-3453): from `node_modules`
@@ -108,5 +108,55 @@ describe('lspPack (YAZ-3453)', () => {
     const bad = async () => ({ ok: true, status: 200, arrayBuffer: async () => tarball('tsc.exe', '6.6.6') })
     await expect(stageTypescript({ repo, os: 'win', arch: 'x64', fetchImpl: bad })).rejects.toThrow('integrity mismatch')
     expect(readFileSync(join(result.dir, 'tsc.exe'), 'utf8')).toBe('binary 7.0.2')
+  })
+})
+
+/** A `pyright` package folder: the entry, `dist/` with a source map, the legal file. */
+function writePyright(dir, version) {
+  mkdirSync(join(dir, 'dist', 'typeshed-fallback', 'stdlib'), { recursive: true })
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'pyright', version }))
+  writeFileSync(join(dir, 'LICENSE.txt'), 'MIT')
+  writeFileSync(join(dir, 'langserver.index.js'), "require('./dist/pyright-langserver')")
+  writeFileSync(join(dir, 'dist', 'pyright-langserver.js'), `server ${version}`)
+  writeFileSync(join(dir, 'dist', 'pyright-langserver.js.map'), '{}')
+  writeFileSync(join(dir, 'dist', 'typeshed-fallback', 'stdlib', 'builtins.pyi'), 'class int: ...')
+  writeFileSync(join(dir, 'README.md'), 'readme')
+}
+
+describe('stagePyright (YAZ-3455)', () => {
+  it('the real lockfile pins pyright, and the build copies the staged folder', () => {
+    const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'))
+    const root = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    const build = JSON.parse(readFileSync(new URL('../desktop/package.json', import.meta.url), 'utf8')).build
+    expect(root.devDependencies.pyright).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(lockEntry(lock, 'pyright').version).toBe(root.devDependencies.pyright)
+    expect(build.extraResources).toContainEqual({ from: '.cache/lsp/pyright', to: 'lsp/pyright' })
+  })
+
+  it('copies the entry, dist without source maps and the license from node_modules, then skips a second run', async () => {
+    writeLock({ pyright: { version: '1.1.414', resolved: 'https://registry.invalid/p.tgz', integrity: integrity(Buffer.from('unused')) } })
+    writePyright(join(repo, 'node_modules', 'pyright'), '1.1.414')
+    const noFetch = () => {
+      throw new Error('no download expected')
+    }
+    const first = await stagePyright({ repo, fetchImpl: noFetch })
+    expect(first).toEqual({ dir: pyrightStagedDir(repo), from: 'node_modules' })
+    for (const f of ['langserver.index.js', 'LICENSE.txt', 'package.json', 'dist/pyright-langserver.js', 'dist/typeshed-fallback/stdlib/builtins.pyi']) expect(existsSync(join(first.dir, f)), f).toBe(true)
+    expect(existsSync(join(first.dir, 'dist', 'pyright-langserver.js.map'))).toBe(false)
+    expect(existsSync(join(first.dir, 'README.md'))).toBe(false)
+    expect((await stagePyright({ repo, fetchImpl: noFetch })).from).toBe('cache')
+  })
+
+  it('downloads and checks the tarball when the installed version is not the lockfile\'s', async () => {
+    const src = mkdtempSync(join(tmpdir(), 'yaz-3455-tgz-'))
+    writePyright(join(src, 'package'), '1.1.414')
+    execFileSync('tar', ['-czf', join(src, 'p.tgz'), '-C', src, 'package'])
+    const bytes = readFileSync(join(src, 'p.tgz'))
+    rmSync(src, { recursive: true, force: true })
+    writeLock({ pyright: { version: '1.1.414', resolved: 'https://registry.invalid/p.tgz', integrity: integrity(bytes) } })
+    writePyright(join(repo, 'node_modules', 'pyright'), '1.1.400')
+    const result = await stagePyright({ repo, fetchImpl: async () => ({ ok: true, status: 200, arrayBuffer: async () => bytes }) })
+    expect(result.from).toBe('download')
+    expect(readFileSync(join(result.dir, 'dist', 'pyright-langserver.js'), 'utf8')).toBe('server 1.1.414')
   })
 })

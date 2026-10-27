@@ -73,6 +73,21 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 - **Spelling**: misspellings get the OS squiggle; right-click for suggestions, "Add to Dictionary", and cut/copy/paste.
 - **Round-trip**: the first real edit rewrites the file in remark's normalised form (bullet markers, 2-space indent, …); empty items are written as a bare `*` / `* [ ]`. Typing without changes never writes.
 
+### Jump by meaning in code files
+
+A code file that opens in a tab (TS, JS, React, Python) gets VS Code's two jumps:
+
+- **Cmd+click** (or F12) on a name opens the file where it is made, in the same tab, at its line. Back returns. A target in the project's `node_modules` (a `.d.ts`) opens in a code tab too.
+- **Shift+F12** (or right-click › Find All References) opens VS Code's peek box with every place that uses the name. Enter or a double click on a row opens that place.
+
+A language helper answers, one for each project, in its own process: TypeScript 7 for TS, JS and React (the project is the nearest `tsconfig.json`, `jsconfig.json` or `package.json` above the file), and `pyright` for Python (the nearest `pyproject.toml`, `setup.py` or `requirements.txt`, else the vault). Python needs no install: `pyright` runs on the app's own Node. When the project has a `.venv` or `venv`, Cmd+click also opens the installed libraries; with no venv, library jumps need a `python3` on the app's `PATH` outside `/usr/bin` (an app opened from the Finder has none), and jumps inside the project always work. `/usr/bin` is left out on purpose: on a Mac without the Command Line Tools, `/usr/bin/python3` opens Apple's install dialog. Hover on a Python name shows its type. It starts with the first code tab of its project and stops when the last one closes. At most 3 helpers run at once; a 4th project stops the one used longest ago. While no helper answers (a file outside any project, a helper that is still loading or that crashed), the jumps work inside the one file, with no message.
+
+Limits:
+
+- TypeScript 7 does not read `baseUrl`. A project whose `tsconfig.json` uses `baseUrl`, or a `paths` entry without `./` or `../`, loses the jumps through those imports (relative imports still work). Write `paths` relative to the `tsconfig.json`, with no `baseUrl`: `"@shared/*": ["../shared/*"]`.
+- A helper sees only its own project. In a folder with several `tsconfig.json` files, Shift+F12 lists the places in the project of the tab, not in the others.
+- A name made in the helper's own files (`console`, `Array`, Python's `print`: the `lib.*.d.ts` and stub files inside the app) does not open. A `.pyi` stub file does not open either.
+
 ### Comments
 
 Every note carries a Linear-style comment stream under its body, before "Linked mentions". It lives in the note's own frontmatter, under one `comments` key, so it travels with the file (sync, rename, Obsidian); no sidecar, nothing else is written. A folder has the same stream under its views, kept in the folder's hidden `.folder.md` (see Folders). Threads are one level deep (a reply names its top-level parent in `reply_to`; a reply to a reply is filed under the root), a comment can carry an optional one-line title, every comment wears a stable number (`#3`, a reply `#3.1`) that never changes, even after a delete, and folds like a bullet without its header text ever moving (Expand all / Collapse all on the header), and bodies are GitHub-flavoured Markdown, rendered read-only and sanitised. The Properties panel shows the key as Reserved, and it never enters the index or a view column. `⌘Enter` posts; Delete asks first.

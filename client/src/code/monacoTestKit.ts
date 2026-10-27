@@ -33,9 +33,14 @@ export class FakeModel {
 
   constructor(
     text: string,
-    readonly uri: { scheme: string; authority: string; path: string },
+    readonly uri: FakeUri,
   ) {
     this.load(text)
+  }
+
+  /** Monaco's language from the extension, as `createModel` with no language picks it. */
+  getLanguageId(): string {
+    return /\.(ts|tsx|mts|cts)$/.test(this.uri.path) ? 'typescript' : /\.(js|jsx|mjs|cjs)$/.test(this.uri.path) ? 'javascript' : /\.pyi?$/.test(this.uri.path) ? 'python' : 'plaintext'
   }
 
   private load(text: string): void {
@@ -175,6 +180,24 @@ export class FakeEditor {
     mount.appendChild(this.input)
   }
 
+  /** Where `setPosition` put the cursor, and what `revealPositionInCenter` showed (YAZ-3454 jumps). */
+  position: { lineNumber: number; column: number } | null = null
+  revealed: { lineNumber: number; column: number }[] = []
+  private focusListeners = new Set<() => void>()
+
+  setPosition(position: { lineNumber: number; column: number }): void {
+    this.position = { ...position }
+  }
+
+  revealPositionInCenter(position: { lineNumber: number; column: number }): void {
+    this.revealed.push({ ...position })
+  }
+
+  onDidFocusEditorWidget(listener: () => void): { dispose: () => void } {
+    this.focusListeners.add(listener)
+    return { dispose: () => void this.focusListeners.delete(listener) }
+  }
+
   saveViewState(): unknown {
     const collapsedRegions = [...this.folded].sort((a, b) => a - b).map((line) => ({ startLineNumber: line, endLineNumber: line + 1, isCollapsed: true }))
     return { ...structuredClone(this.viewState), contributionsState: { 'editor.contrib.folding': { collapsedRegions } } }
@@ -228,6 +251,7 @@ export class FakeEditor {
 
   focus(): void {
     this.input.focus()
+    for (const listener of [...this.focusListeners]) listener()
   }
 
   updateOptions(patch: Record<string, unknown>): void {
@@ -256,14 +280,49 @@ export class FakeEditor {
 
 export const created: { editors: FakeEditor[]; models: FakeModel[] } = { editors: [], models: [] }
 
+/** A URI with what the code tab reads: its parts, `fsPath` and `toString`. */
+export interface FakeUri {
+  scheme: string
+  authority: string
+  path: string
+  fsPath: string
+  toString(): string
+}
+const fakeUri = (parts: { scheme: string; authority: string; path: string }): FakeUri => ({ ...parts, fsPath: parts.path, toString: () => `${parts.scheme}://${parts.authority}${parts.path}` })
+
+/** The language providers and the editor opener the code tab registers (YAZ-3454), by kind. */
+export const registered: { definition: Map<string, unknown>; references: Map<string, unknown>; hover: Map<string, unknown>; openers: unknown[] } = { definition: new Map(), references: new Map(), hover: new Map(), openers: [] }
+const register = (into: Map<string, unknown>) => (language: string, provider: unknown) => {
+  into.set(language, provider)
+  return { dispose: () => void into.delete(language) }
+}
+
 export const monaco = {
-  Uri: { from: (parts: { scheme: string; authority: string; path: string }) => parts },
+  Uri: { from: (parts: { scheme: string; authority: string; path: string }) => fakeUri(parts), file: (path: string) => fakeUri({ scheme: 'file', authority: '', path }) },
   KeyMod: { CtrlCmd: 2048, Shift: 1024, Alt: 512, WinCtrl: 256 },
   KeyCode: { KeyZ: 56 },
+  Range: class {
+    constructor(
+      readonly startLineNumber: number,
+      readonly startColumn: number,
+      readonly endLineNumber: number,
+      readonly endColumn: number,
+    ) {}
+  },
+  languages: {
+    registerDefinitionProvider: register(registered.definition),
+    registerReferenceProvider: register(registered.references),
+    registerHoverProvider: register(registered.hover),
+  },
   editor: {
+    registerEditorOpener: (opener: unknown) => {
+      registered.openers.push(opener)
+      return { dispose: () => void registered.openers.splice(registered.openers.indexOf(opener), 1) }
+    },
+    getModel: (uri: FakeUri) => created.models.find((m) => !m.isDisposed() && m.uri.toString() === uri.toString()) ?? null,
     EndOfLineSequence: { LF, CRLF },
     EndOfLinePreference: { TextDefined: 0, LF: 1, CRLF: 2 },
-    createModel: (text: string, _language: string | undefined, uri: { scheme: string; authority: string; path: string }) => {
+    createModel: (text: string, _language: string | undefined, uri: FakeUri) => {
       const model = new FakeModel(text, uri)
       created.models.push(model)
       return model

@@ -11,6 +11,7 @@
  * docs/CONTRACTS.md › Bridge API.
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { SystemHotkey } from './macosHotkeys'
 
 /**
@@ -565,6 +566,23 @@ export const CONTRACT = {
     notes: invoke<[], ReleaseNotes>('update:notes', 0),
     /** "Restart to update" (D6): quit through the quit sequence, swap, open again. For `manual` (S13) it opens the GitHub release page instead. */
     restart: invoke<[], void>('update:restart', 0),
+  },
+  /**
+   * The language helpers of the code tab (YAZ-3454 4B, YAZ-3455 4C; D9, D10): TypeScript 7 for TS,
+   * JS and React, `pyright` for Python, each in its own process of main, one per project, at most 3.
+   * A tab opens its file with its text and gets a handle; only `open` and `change` carry text, every
+   * request a handle and a position. `null` = no helper answers (none fits, or it is down): the tab
+   * falls back to Monaco's one-file help, with no message. Long form: docs/CONTRACTS.md › Bridge API.
+   */
+  lsp: {
+    open: invoke<[req: LspOpenRequest], LspOpenResponse | null>('lsp:open', 1),
+    /** The tab's whole text now (debounced by the tab). */
+    change: invoke<[handle: string, text: string], void>('lsp:change', 2),
+    /** The tab closed; the helper stops with the last tab of its project. */
+    close: invoke<[handle: string], void>('lsp:close', 1),
+    definition: invoke<[req: LspPositionRequest], LspLocation[] | null>('lsp:definition', 1),
+    references: invoke<[req: LspPositionRequest], LspLocation[] | null>('lsp:references', 1),
+    hover: invoke<[req: LspPositionRequest], LspHover | null>('lsp:hover', 1),
   },
 } as const
 

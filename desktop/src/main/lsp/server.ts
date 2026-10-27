@@ -35,6 +35,8 @@ export interface StartOptions {
   initializationOptions?: unknown
   /** How long `initialize` may take. Default 30 s. */
   initializeTimeoutMs?: number
+  /** Answers the server's own requests (`workspace/configuration`) from the first message on; default `defaultServerReply`. */
+  onServerRequest?: RequestHandler
 }
 
 /** What the app's client can do. UTF-16 positions: Monaco counts columns in UTF-16 code units, as LSP's default does. */
@@ -68,6 +70,8 @@ export interface LanguageServer {
   onRequest(handler: RequestHandler): void
   /** `shutdown` + `exit`, then a kill if the process is still there after `timeoutMs` (default 2 s). Idempotent. */
   stop(timeoutMs?: number): Promise<void>
+  /** True once anyone called `stop`: the exit that follows is no crash, whatever its code (YAZ-3454). */
+  readonly stopRequested: boolean
 }
 
 const running = new Set<LanguageServer>()
@@ -106,6 +110,7 @@ export async function startLanguageServer(cmd: ServerCommand, options: StartOpti
   const spawnError = new Promise<never>((_, reject) => child.once('error', (err) => reject(new Error(`${cmd.name}: could not start ${cmd.command}: ${err.message}`))))
 
   const connection = new RpcConnection(child.stdout!, child.stdin!)
+  if (options.onServerRequest) connection.onRequest(options.onServerRequest)
   void exited.then((exit) => {
     connection.dispose(new Error(`${cmd.name} ended (code ${exit.code}, signal ${exit.signal})${stderr ? `: ${stderr.trim().slice(-500)}` : ''}`))
   })
@@ -121,6 +126,9 @@ export async function startLanguageServer(cmd: ServerCommand, options: StartOpti
     onNotification: (handler) => connection.onNotification(handler),
     onRequest: (handler) => connection.onRequest(handler),
     stop: (timeoutMs = 2000) => (stopping ??= stopProcess(child, connection, exited, timeoutMs)),
+    get stopRequested() {
+      return stopping !== null
+    },
   }
   running.add(server)
   void exited.then(() => running.delete(server))
