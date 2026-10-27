@@ -27,8 +27,11 @@ import { allPropertyKeys } from './properties'
 import { setViewOrder } from './columnOrder'
 import { NO_READ_ONLY, READ_ONLY_TIP, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
+import type { ViewHover } from './viewHover'
 
 export interface TableViewProps {
+  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): absent while the setting is off, or while this view's own Preview is on. */
+  hover?: ViewHover
   def: ViewSet
   view: ViewDef
   viewIndex: number
@@ -150,7 +153,7 @@ function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: 
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, preview = false, wikilinks, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, preview = false, wikilinks, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   const { rowProps, card, close } = usePreview(preview, wikilinks)
   /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
@@ -498,9 +501,10 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   className={line.gk !== null && dnd.over === line.gk ? 'view-table__row--drop' : undefined}
                   {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)), ...dnd.target(line.g, line.at) })}
                   {...rowProps(line.row.record)}
+                  {...hover?.itemProps(line.row.record.path)}
                   // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart
-                  // rather than replacing it (YAZ-1244): a card must never hang over a drag.
-                  onDragStartCapture={close}
+                  // rather than replacing it (YAZ-1244): a card must never hang over a drag. The hover panel too (YAZ-3403).
+                  onDragStartCapture={() => (close(), hover?.close())}
                   onContextMenu={openRowMenu(line.row.record)}
                 >
                   {/* No `data-cell` and no tabIndex: the gutter is outside the arrow-key grid (YAZ-1513). */}

@@ -9,7 +9,7 @@
  *   - what is on the disk, and whether it is a file or a folder, off the window's one tree feed.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
-import { rootOfPath, stripSlash, type OpenStat, type TreeNode } from '@shared/types'
+import { rootOfPath, stripSlash, type DiagramDarkColors, type OpenStat, type TreeNode } from '@shared/types'
 import { api } from '../api'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import type { NoticeKind } from '../lib/notice'
@@ -20,6 +20,7 @@ import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
 import { favoriteOrder, findNode } from '../lib/treeState'
 import { PREVIEW_FOLLOW_MS } from '../sidebar/hooks/useSidebarSearch'
+import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import { suggestFavorites } from './suggestFavorites'
 import './startPage.css'
 
@@ -92,9 +93,14 @@ export interface StartPageProps {
   previewPath?: string | null
   onPreview?: (path: string | null) => void
   onNotice: (message: string, kind?: NoticeKind) => void
+  /** Settings › Preview on hover (YAZ-3403): resting on a note or board row opens the sidebar's own panel beside the row. Space opens the big panel whatever this says. */
+  hoverPreview?: boolean
+  /** What the hover panel needs of a row's vault: its links, its text formatting, its watch feed. No scope, no hover panel. */
+  previewScope?: (path: string) => PreviewScope
+  diagramDarkColors?: DiagramDarkColors
 }
 
-export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFiles, onRowMenu, onBack, onBackToSearch, focusRef, previewPath = null, onPreview, onNotice }: StartPageProps) {
+export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFiles, onRowMenu, onBack, onBackToSearch, focusRef, previewPath = null, onPreview, onNotice, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: StartPageProps) {
   // What is on the disk (S18) is the Files tree's to say: it alone knows a folder from a file, and
   // holds the pages that are no notes. The window's one feed keeps the newest tree of each vault
   // with the sidebar hidden too, but then nothing reads a new one when a note goes. So the page
@@ -248,7 +254,24 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
     }
   }, [])
 
+  // The hover panel (YAZ-3403): the sidebar's own panel beside a row, as the tab board shows it beside a card
+  // (YAZ-3343 D18). A row is `<col> <row number>`; its dwell lives in a tiny store, so a pointer that crosses
+  // rows draws no page. Off while the Space panel shows: one panel at a time.
+  const rowPreview = useCardPreview(hoverPreview && !previewing, (id) => {
+    const [col, at] = id.split(' ')
+    return page.current?.querySelector<HTMLElement>(`button.start__row[data-col="${col}"][data-row="${at}"]`) ?? null
+  })
+  const previewRow = (id: string): { root: string | null; name: string } | null => {
+    const [col, at] = id.split(' ')
+    const row = COLUMNS.some((column) => column.col === col) ? columns[col as (typeof COLUMNS)[number]['col']].rows[Number(at)] : undefined
+    return row === undefined ? null : { root: row.vault.root, name: pageLabel(row.path, false, titles) }
+  }
+  // New rows (a use, a favorite, a folder opened) can move a row under the panel: the panel goes.
+  const closeRowPreview = rowPreview.close
+  useEffect(() => closeRowPreview(), [columns, closeRowPreview])
+
   const onKeys = (e: KeyboardEvent<HTMLDivElement>): void => {
+    rowPreview.close() // a key ends the glance: the keys walk the rows, and Space has its own panel
     const on = e.target instanceof Element ? e.target.closest<HTMLElement>('button.start__row') : null
     const col = COLUMNS.find((column) => column.col === on?.dataset.col)?.col
     const n = Number(on?.dataset.row)
@@ -343,7 +366,7 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
   // "How long ago" is from this draw: the page has no timer.
   const now = Date.now()
   return (
-    <div ref={page} className="start" onKeyDown={onKeys}>
+    <div ref={page} className="start" onKeyDown={onKeys} onScroll={rowPreview.close}>
       <div className="start__columns">
         {COLUMNS.map(({ col, label, empty }) => (
           <section key={col} className="start__column" data-col={col} aria-label={label}>
@@ -362,7 +385,7 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
                   return (
                     <li key={`${row.depth} ${row.path}`}>
                       {/* `data-col` and `data-row` say where the row stands: the arrow keys walk by them (YAZ-2674). */}
-                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} style={top ? undefined : { paddingLeft: (folder ? 8 : 26) + row.depth * 14 }} aria-expanded={folder ? open : undefined} data-path={row.path} data-col={col} data-row={at} title={row.path} onClick={(e) => activate(row, e.metaKey)} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY))}>
+                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} style={top ? undefined : { paddingLeft: (folder ? 8 : 26) + row.depth * 14 }} aria-expanded={folder ? open : undefined} data-path={row.path} data-col={col} data-row={at} title={row.path} onMouseEnter={folder ? undefined : () => rowPreview.hoverCard(`${col} ${at}`, row.path)} onMouseLeave={() => rowPreview.leaveCard(`${col} ${at}`)} onClick={(e) => (rowPreview.close(), activate(row, e.metaKey))} onContextMenu={(e) => (e.preventDefault(), rowPreview.close(), onRowMenu(row.path, e.clientX, e.clientY))}>
                         {/* The chevron is the mouse's Space (D13): it opens and closes the folder here, and the row's own click — the folder in Files — does not follow. */}
                         {folder && <span className={`tree__chevron${open ? ' tree__chevron--open' : ''}`} onClick={(e) => (e.stopPropagation(), toggleDir(col, row.path))} />}
                         <span className="start__name">{pageLabel(row.path, folder, titles)}</span>
@@ -380,6 +403,7 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
           </section>
         ))}
       </div>
+      <CardPreviewHost store={rowPreview.store} cardOf={previewRow} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
     </div>
   )
 }

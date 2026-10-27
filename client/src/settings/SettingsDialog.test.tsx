@@ -137,7 +137,8 @@ const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents'
 const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
-const FILES_ROWS = ['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation']
+/** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
+const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links'].map((place) => `hoverPreviewIn.${place}`)]
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 const HOTKEY_ROWS = ['hotkeys-keyboard', 'hotkeys-views', 'hotkeys-window', 'hotkeys-canvas', 'hotkeys-drawio', 'hotkeys-mouse']
 const THREADING_HINT = 'Guide lines that connect nested bullets.'
@@ -273,8 +274,8 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     for (const id of ['bulletThreading', 'threadWidth', 'threadColor']) expect(row(el, id)?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Bullet threading')
 
     clickNav(el, 'Files & Links')
-    // "When the app starts" moved to General (YAZ-3276 D7): with no vault, Files & Links has no titled group.
-    expect(groupTitles(el)).toEqual([])
+    // "When the app starts" moved to General (YAZ-3276 D7): with no vault, Files & Links' one titled group is Preview on hover (YAZ-3403).
+    expect(groupTitles(el)).toEqual(['Preview on hover'])
     expect(hints()).toEqual([])
     // Files & Links starts with an untitled group too.
     expect(el.querySelector('#settings-files .settings-group')).not.toBeNull()

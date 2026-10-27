@@ -56,8 +56,10 @@ describe('settingCandidates', () => {
       'libraryFolder',
       'confirmDelete',
       'confirmRename',
-      'hoverPreview',
       'newNoteLocation',
+      // Settings › Files & Links › Preview on hover (YAZ-3403): the master switch, then one row per place.
+      'hoverPreview',
+      ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links'].map((place) => `hoverPreviewIn.${place}`),
       'ids',
       'duplicates',
       'idLetters',
@@ -130,7 +132,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'hoverPreview', 'newNoteLocation', 'ids', 'duplicates', 'idLetters', 'oldIds'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'ids', 'duplicates', 'idLetters', 'oldIds'])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
@@ -153,13 +155,15 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkeys-drawio'])
     // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['sidebarLines', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sidebarLines', 'sectionLines', 'tocLines', 'hoverPreview'])
+    // And the hover preview's master switch and each place's own (YAZ-3403).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sidebarLines', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
   })
 
   it('the sidebar\'s level lines (YAZ-3309 D6, D7, D9, S12): "sidebar" finds the three rows of the group first; "folder", "tree" and "indent" find Show, not the TOC row; "thread" finds Style and Thread colour beside Bullet threading; "accent" finds the two colour pickers', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 3)).toEqual(['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
+    // The hover preview's Sidebar row (YAZ-3403) is named "Sidebar" outright, so it leads.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 4)).toEqual(['hoverPreviewIn.sidebar', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     for (const query of ['folder', 'tree', 'indent']) {
       expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('sidebarLines')
       expect(ids(searchSettings(settingCandidates(ctx()), query))).not.toContain('tocLines')

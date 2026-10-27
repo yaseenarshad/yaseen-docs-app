@@ -56,6 +56,9 @@
  *    unresolved → create-then-open via `createFromLink`) and preventDefaults so the caret
  *    never lands in the match (no raw-text flash); revealed raw text stays editable.
  *    Registered only when `opts.wikilinkNav` provides the handlers.
+ *  - Wikilink hover (YAZ-3403, `wikilink/wikilinkHover.ts`): the pointer on a resolved `.wikilink` span tells the
+ *    host which page it opens, for the hover panel. Registered only when `opts.wikilinkHover` is passed: the
+ *    note editor's, never a read-only preview's.
  *  - Id link menu (YAZ-2293, `wikilink/wikilinkMenu.ts`): right-click on a rendered id link shows
  *    the note's name and its id and offers Copy ID; every other link keeps the native menu.
  *    Registered with the click plugin, on the same source and nav.
@@ -223,6 +226,7 @@ import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outl
 import { caretIntoZoom, createOutlineZoom, getZoomKey, zoomKeymap, type ZoomOptions } from './outline/zoom'
 import { focusSidebar } from '../lib/focusHandoff'
 import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
+import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
 import { createWikilinkMenu } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
@@ -253,6 +257,8 @@ export interface CreateCrepeOptions {
   wikilinkCandidates?: WikilinkCandidateSource
   /** Wikilink click navigation (GRO-2192): tabs API + create-on-click handlers. Absent → links render but clicks fall through to plain editing (the click plugin is not registered). */
   wikilinkNav?: WikilinkNav
+  /** Wikilink hover (YAZ-3403): the host's hover panel hears which page a resolved link opens. Absent → the hover plugin is not registered. */
+  wikilinkHover?: WikilinkHover
   /** Standard Markdown link actions (YAZ-1309): primary click opens; right-click edits/copies/removes. Absent → Crepe's stock behavior. */
   markdownLinkNav?: MarkdownLinkNav
   /** Drawing creator (YAZ-877): the host writes the sidecar, the item inserts the embed. Absent → NO Drawing row is added to the slash menu. */
@@ -445,6 +451,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const viewOnlyLinks = opts.viewOnlyLinks ?? createViewOnlyLinkSource()
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks))
   if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav, viewOnlyLinks)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav))
+  if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav))
   if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))

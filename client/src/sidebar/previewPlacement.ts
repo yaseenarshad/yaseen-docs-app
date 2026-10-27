@@ -47,7 +47,7 @@ export interface PreviewPopup {
  * What a panel sits beside: the sidebar (its element, measured live), a fixed box — a card of the tab board —, a Files
  * window's row in the floating popup (YAZ-3357 D9), or, where that popup cannot be made, the lower part of a Files window (`overlay`).
  */
-export type PreviewAnchor = RefObject<HTMLElement | null> | { rect: AnchorRect } | { popup: PreviewPopup; rect: AnchorRect } | { overlay: true }
+export type PreviewAnchor = RefObject<HTMLElement | null> | { rect: AnchorRect; below?: true } | { popup: PreviewPopup; rect: AnchorRect } | { overlay: true }
 
 /** The room around a panel in the floating popup (YAZ-3357 D9): the popup has no shadow, the panel draws its own there. */
 const POPUP_MARGIN = 16
@@ -92,6 +92,20 @@ export function besidePlacement(rect: AnchorRect, innerWidth: number, innerHeigh
 }
 
 /**
+ * Where the panel goes BELOW a box (YAZ-3403, a tab of the tab strip): the size it takes beside a card, 8 px under
+ * the box, from the box's left edge and kept inside the window; no taller than the room below.
+ * Null when the window leaves no room at all.
+ */
+export function belowPlacement(rect: AnchorRect, innerWidth: number, innerHeight: number, shape: PreviewShape = 'board'): BoardPreviewPlacement | null {
+  const size = besideSize(innerWidth, innerHeight, shape)
+  const top = rect.bottom + GAP / 2
+  const height = Math.min(size.height, innerHeight - GAP - top)
+  if (size.width <= 0 || height <= 0) return null
+  const left = Math.max(GAP, Math.min(rect.left, innerWidth - GAP - size.width))
+  return { left, top, width: size.width, height }
+}
+
+/**
  * Where the panel goes (YAZ-1800): right of the sidebar with a gap, a little over half of the
  * room left, landscape-ish, vertically centred. A note is 70% of the window tall (YAZ-3075 D2), so
  * it shows some 25 lines. Null when the window leaves no room at all.
@@ -123,7 +137,8 @@ export function usePlacement(anchor: PreviewAnchor, shape: PreviewShape): BoardP
       return () => window.removeEventListener('resize', place)
     }
     if ('rect' in anchor) {
-      const place = () => setPlacement(besidePlacement(anchor.rect, window.innerWidth, window.innerHeight, shape))
+      const at = 'below' in anchor && anchor.below === true ? belowPlacement : besidePlacement
+      const place = () => setPlacement(at(anchor.rect, window.innerWidth, window.innerHeight, shape))
       place()
       window.addEventListener('resize', place)
       return () => window.removeEventListener('resize', place)

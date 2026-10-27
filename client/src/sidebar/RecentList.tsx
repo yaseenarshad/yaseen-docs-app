@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type MouseEvent } from 'react'
+import { isBoard, isMarkdown } from '@shared/fileKind'
 import type { TreeResponse } from '@shared/types'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
@@ -69,6 +70,8 @@ interface RecentListProps {
   onOpenFileBackground: (path: string) => void
   /** A right-click on a row (D7, S20): the Sidebar opens the one-row file menu, "Show in sidebar" first. */
   onMenu: (path: string, e: MouseEvent) => void
+  /** The sidebar's hover preview (YAZ-3403): a note or board row previews beside the sidebar, as a Files row does. */
+  onHoverFile?: (node: { path: string } | null) => void
 }
 
 /**
@@ -77,7 +80,7 @@ interface RecentListProps {
  * the tab shows. Memo: App draws again on each app-state broadcast; the list draws only when its own
  * props, a save log or the day change.
  */
-export const RecentList = memo(function RecentList({ trees, roots, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu }: RecentListProps) {
+export const RecentList = memo(function RecentList({ trees, roots, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile }: RecentListProps) {
   const edits = useEdits(roots)
   const today = useToday()
   const files = useMemo(() => recentFiles(trees, roots, edits), [trees, roots, edits])
@@ -114,7 +117,7 @@ export const RecentList = memo(function RecentList({ trees, roots, titles, activ
               {open && (
                 <ul className="tree">
                   {day.files.map((file) => (
-                    <RecentRow key={file.path} file={file} active={file.path === activeFile} titles={titles} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} />
+                    <RecentRow key={file.path} file={file} active={file.path === activeFile} titles={titles} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} onHoverFile={onHoverFile} />
                   ))}
                 </ul>
               )}
@@ -128,14 +131,16 @@ export const RecentList = memo(function RecentList({ trees, roots, titles, activ
   )
 })
 
-interface RecentRowProps extends Pick<RecentListProps, 'titles' | 'onOpenFile' | 'onKeepFile' | 'onOpenFileBackground' | 'onMenu'> {
+interface RecentRowProps extends Pick<RecentListProps, 'titles' | 'onOpenFile' | 'onKeepFile' | 'onOpenFileBackground' | 'onMenu' | 'onHoverFile'> {
   file: RecentFile
   active: boolean
 }
 
 /** One file (D6, S18): its page name, and the time of its save on the right; the path is the tooltip. */
-function RecentRow({ file, active, titles, onOpenFile, onKeepFile, onOpenFileBackground, onMenu }: RecentRowProps) {
+function RecentRow({ file, active, titles, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile }: RecentRowProps) {
   const { path, edited } = file
+  // A board or note row's hover handlers, as a Files row's (YAZ-3403): pointer and focus alike.
+  const hover = onHoverFile === undefined || !(isBoard(path) || isMarkdown(path)) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
   return (
     <li>
       <button
@@ -149,6 +154,7 @@ function RecentRow({ file, active, titles, onOpenFile, onKeepFile, onOpenFileBac
           if (!e.metaKey) onKeepFile(path)
         }}
         onContextMenu={(e) => onMenu(path, e)}
+        {...hover}
       >
         <span className="tree__label">{pageLabel(path, false, titles)}</span>
         <span className="tree__count">{timeOf(edited)}</span>

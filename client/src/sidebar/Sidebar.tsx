@@ -1,6 +1,6 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { isBoard } from '@shared/fileKind'
-import { stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
+import { hoverOn, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { GridIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -693,10 +693,12 @@ export function Sidebar({
   const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i] })), [roots, watches, dirsByVault, filesByVault])
   // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
   const searching = lens === 'search'
-  // The hover preview (YAZ-3028 D11): a menu or the Info popover owns the pointer while it stands, and
-  // a typed search hides the tree it would point at. While App's Space panel shows, no hover preview
+  // The hover preview (YAZ-3028 D11): a menu or the Info popover owns the pointer while it stands. A search
+  // result previews as a Files row does (YAZ-3403). While App's Space panel shows, no hover preview
   // starts and one that shows closes (YAZ-3075 D4, C12): one panel at a time.
-  const { hover, hoverFile, closePreview } = useHoverPreview(menu !== null || infoPopover !== null || previewPath !== null || !settings.hoverPreview, !searching, activeFile) // off (A20): no dwell starts
+  // Settings › Preview on hover has a switch for the search results and one for the rest of the sidebar (YAZ-3403).
+  const hoverHere = hoverOn(settings, searching ? 'search' : 'sidebar')
+  const { hover, hoverFile, closePreview } = useHoverPreview(menu !== null || infoPopover !== null || previewPath !== null || !hoverHere, true, activeFile) // off (A20): no dwell starts
   /** The watch feed of the vault that holds `path` (the hover preview and Info listen on it, A41). */
   const watchOf = useCallback((path: string): WatchSource | undefined => watches[roots.indexOf(rootOf(path))], [watches, roots, rootOf])
   // The Info popover reads the board's head when it opens, and again on each `change` of that board
@@ -806,6 +808,8 @@ export function Sidebar({
   // The pinned items (YAZ-2662 D3): the rows of the Focus tab, then those of the Favorites tab. Their matches are the search's top group.
   const pinned = useMemo(() => pinnedRoots([...focusNodes, ...favoriteNodes]), [focusNodes, favoriteNodes])
   const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, pendingSearchClear)
+  // A new query moves the results under a still pointer: the panel of the row that was there goes (YAZ-3403).
+  useEffect(() => closePreview(), [query, closePreview])
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
   // parent row is no match, so the highlight cannot go to it, and the menu must still say what it acts on.
   const menuRow = menu?.leaveSearchTo ?? null
@@ -1552,7 +1556,7 @@ export function Sidebar({
           <SessionList titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} renameRequest={sessionNameRequest} onRenameConsumed={onSessionNameConsumed} />
         ) : lens === 'recents' ? (
           // The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window, by day.
-          <RecentList trees={trees} roots={roots} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} />
+          <RecentList trees={trees} roots={roots} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
@@ -1702,7 +1706,7 @@ export function Sidebar({
           </Suspense>
         </ContextMenuSurface>
       )}
-      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} nameOf={nameOf} textVarsOf={textVarsFor} enabled={settings.hoverPreview && !searching} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} float={previewFloat} onClose={closePreview} />
+      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} nameOf={nameOf} textVarsOf={textVarsFor} enabled={hoverHere} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} float={previewFloat} onClose={closePreview} />
       {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
       {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} copy={pendingPaste.copy} lost={pendingPaste.lost} titles={titles} onConfirm={confirmPaste} onCancel={cancelPaste} />}
       {confirmingShortcut !== null && (

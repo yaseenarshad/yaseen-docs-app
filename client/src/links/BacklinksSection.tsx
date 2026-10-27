@@ -21,14 +21,18 @@
  * carries the resolver AND the snapshot it was built from. A refetched snapshot pokes the source,
  * N recomputes live, and an entry re-reads its snippets when its own record's mtime moved — so a
  * link added or removed on disk lands here without a watcher or an IPC call of our own.
+ *
+ * Hover (YAZ-3403): resting on an entry's title or one of its lines shows the LINKING note in the sidebar's hover
+ * panel, right of the note's text column and level with the row (left of it when the window has no room there).
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { isFolderSettingsPath, type IndexRecord } from '@shared/types'
+import { isFolderSettingsPath, type DiagramDarkColors, type IndexRecord } from '@shared/types'
 import { api } from '../api'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { pathTitles, type PathTitles } from '../lib/pageLabel'
+import { pageLabel, pathTitles, type PathTitles } from '../lib/pageLabel'
 import { dirname } from '../lib/paths'
+import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import { backlinksFor, folderMentionSnippets, mentionSnippets, type MentionSnippet } from './backlinks'
 import './backlinks.css'
 
@@ -41,19 +45,40 @@ export interface BacklinksSectionProps {
   openCurrent: (path: string) => void
   /** ⌘-click: append a background tab. Absent → ⌘-click opens in the current tab. */
   openBackground?: (path: string) => void
+  /** Settings › Preview on hover › Linked mentions (YAZ-3403). */
+  hoverPreview?: boolean
+  /** What the hover panel needs of a page's vault: App's `boardPreviewScope`. No scope, no hover panel. */
+  previewScope?: (path: string) => PreviewScope
+  diagramDarkColors?: DiagramDarkColors
 }
+
+/** An entry's hover handlers (YAZ-3403): `id` names the hovered button, `page` the note it previews. */
+type HoverOf = (id: string, page: string) => { 'data-preview': string; onMouseEnter: () => void; onMouseLeave: () => void }
 
 const NONE: readonly IndexRecord[] = []
 
-export function BacklinksSection({ path, source, openCurrent, openBackground }: BacklinksSectionProps) {
+export function BacklinksSection({ path, source, openCurrent, openBackground, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: BacklinksSectionProps) {
   const feed = useIndexFeed(source)
   const [expanded, setExpanded] = useState(false)
+  // The hover panel (YAZ-3403): beside the whole section — the note's text column — level with the hovered button.
+  const sectionRef = useRef<HTMLElement>(null)
+  const preview = useCardPreview(hoverPreview, (id) => {
+    const section = sectionRef.current
+    const button = section?.querySelector(`[data-preview="${CSS.escape(id)}"]`)
+    if (section === null || section === undefined || button === null || button === undefined) return null
+    const across = section.getBoundingClientRect()
+    const row = button.getBoundingClientRect()
+    return { left: across.left, right: across.right, top: row.top, bottom: row.bottom }
+  })
+  const hoverOf: HoverOf = (id, page) => ({ 'data-preview': id, onMouseEnter: () => preview.hoverCard(id, page), onMouseLeave: () => preview.leaveCard(id) })
+  // Read only while a panel shows: the linking note's name, as the entry shows it.
+  const previewCard = (id: string) => ({ root: null, name: pageLabel(id.slice(0, id.lastIndexOf('\n')), false, pathTitles(feed.records, feed.folders)) })
 
   const entries = feed.resolve === null ? NONE : backlinksFor(path, feed.records, feed.resolve, feed.folders)
   if (entries.length === 0) return null
 
   return (
-    <section className="backlinks">
+    <section ref={sectionRef} className="backlinks">
       <button type="button" className="backlinks__header" aria-expanded={expanded} onClick={() => setExpanded((open) => !open)}>
         <svg className="backlinks__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />
@@ -71,10 +96,12 @@ export function BacklinksSection({ path, source, openCurrent, openBackground }: 
               titles={pathTitles(feed.records, feed.folders)}
               openCurrent={openCurrent}
               openBackground={openBackground}
+              hoverOf={hoverOf}
             />
           ))}
         </ul>
       )}
+      <CardPreviewHost store={preview.store} cardOf={previewCard} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
     </section>
   )
 }
@@ -91,6 +118,7 @@ function BacklinkEntry({
   titles,
   openCurrent,
   openBackground,
+  hoverOf,
 }: {
   record: IndexRecord
   target: string
@@ -99,6 +127,7 @@ function BacklinkEntry({
   titles: PathTitles
   openCurrent: (path: string) => void
   openBackground?: (path: string) => void
+  hoverOf: HoverOf
 }) {
   /** null = the read is in flight (skeleton); [] = read failed, or nothing left to show. */
   const [snippets, setSnippets] = useState<MentionSnippet[] | null>(null)
@@ -136,14 +165,14 @@ function BacklinkEntry({
 
   return (
     <li className="backlinks__entry">
-      <button type="button" className="backlinks__note" title={page} onClick={open}>
+      <button type="button" className="backlinks__note" title={page} onClick={open} {...hoverOf(`${page}\n-1`, page)}>
         {record.title}
       </button>
       {lines === null ? (
         <div className="backlinks__skeleton" aria-hidden />
       ) : (
         lines.map((snippet, i) => (
-          <button key={i} type="button" className="backlinks__snippet" title={page} onClick={open}>
+          <button key={i} type="button" className="backlinks__snippet" title={page} onClick={open} {...hoverOf(`${page}\n${i}`, page)}>
             {snippetRuns(snippet)}
           </button>
         ))

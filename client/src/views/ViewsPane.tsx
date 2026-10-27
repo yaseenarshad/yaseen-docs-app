@@ -1,7 +1,7 @@
 import { boardOptionGroups } from './boardOptionGroups'
 import { columnTyping } from './editorType'
-import { useEffect, useMemo, useState } from 'react'
-import { MAX_COLLAPSED_GROUP_KEYS, type IndexRecord, type PropertiesResponse } from '@shared/types'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -25,6 +25,8 @@ import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { NO_READ_ONLY } from './readOnlyRows'
+import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
+import type { ViewHover } from './view/viewHover'
 
 /**
  * The folder host's bundle (🔒 D3, YAZ-819). ViewsPane stays ONE component: the host (`FolderView`),
@@ -121,6 +123,11 @@ export interface ViewsPaneProps {
   onOpenFile: (path: string) => void
   /** The folder's bundle (🔒 D3, YAZ-819): every edit of its views is ONE `update` through this adapter's one door. */
   folder: FolderHost
+  /** Settings › Preview on hover › Folder views (YAZ-3403): resting on an item shows the sidebar's panel beside it. */
+  hoverPreview?: boolean
+  /** What the hover panel needs of a page's vault: App's `boardPreviewScope`. No scope, no hover panel. */
+  previewScope?: (path: string) => PreviewScope
+  diagramDarkColors?: DiagramDarkColors
 }
 
 /**
@@ -156,7 +163,7 @@ export function freeName(base: string, taken: ReadonlySet<string>): string {
   for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
 }
 
-export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder }: ViewsPaneProps) {
+export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
@@ -170,6 +177,28 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   const [moves, setMoves] = useState<Record<string, PendingMove>>({})
   const [moveError, setMoveError] = useState<{ path: string; message: string } | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
+  // The hover panel (YAZ-3403): ONE dwell and ONE panel for every layout (`viewHover.ts`), beside the hovered item.
+  // An item is found again by its path, the hovered copy first (a board can show a note twice). Nothing opens while an
+  // inline editor is open — at the dwell's end too.
+  const paneRef = useRef<HTMLDivElement>(null)
+  const editing = (): boolean => paneRef.current?.querySelector('[data-editing]') != null
+  const itemHover = useCardPreview(hoverPreview, (path) => {
+    if (editing()) return null
+    const items = [...(paneRef.current?.querySelectorAll<HTMLElement>(`[data-hover-item="${CSS.escape(path)}"]`) ?? [])]
+    return items.find((el) => el.matches(':hover')) ?? items[0] ?? null
+  })
+  const { hoverCard, leaveCard, close: closeItemHover } = itemHover
+  const itemProps = useCallback(
+    (path: string) => ({
+      'data-hover-item': path,
+      onMouseEnter: () => {
+        if (!editing()) hoverCard(path, path)
+      },
+      onMouseLeave: () => leaveCard(path),
+    }),
+    [hoverCard, leaveCard],
+  )
+  const viewHover = useMemo<ViewHover>(() => ({ itemProps, close: closeItemHover }), [itemProps, closeItemHover])
   const { def } = parsed
   const views = def.views
   const index = Math.max(0, Math.min(active, views.length - 1))
@@ -390,8 +419,14 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
     },
   }
 
+  // A table or board whose own Preview is on keeps its own card, and takes no shared panel: never two.
+  const ownCard = view.preview === true && (view.type === 'table' || view.type === 'board')
+  const hoverHere = ownCard ? undefined : viewHover
+  useEffect(() => {
+    if (ownCard) closeItemHover()
+  }, [ownCard, closeItemHover])
   return (
-    <div className="views-pane">
+    <div ref={paneRef} className="views-pane">
       <Toolbar
         def={def}
         view={view}
@@ -438,6 +473,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
         />
       ) : view.type === 'table' ? (
         <TableView
+          hover={hoverHere}
           readOnly={readOnly}
           def={def}
           view={view}
@@ -472,6 +508,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
         />
       ) : view.type === 'board' ? (
         <BoardView
+          hover={hoverHere}
           readOnly={readOnly}
           settings={folder.settings}
           def={def}
@@ -495,6 +532,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
         />
       ) : view.type === 'cards' ? (
         <CardsView
+          hover={hoverHere}
           readOnly={readOnly}
           def={def}
           view={view}
@@ -519,6 +557,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
         />
       ) : view.type === 'list' ? (
         <ListView
+          hover={hoverHere}
           readOnly={readOnly}
           def={def}
           view={view}
@@ -558,6 +597,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
           {notes.join(' · ')}
         </p>
       )}
+      <CardPreviewHost store={itemHover.store} cardOf={(path) => ({ root: null, name: records.find((r) => r.path === path)?.title ?? '' })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
     </div>
   )
 }
