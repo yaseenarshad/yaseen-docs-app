@@ -9,6 +9,13 @@ const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] 
   { label: 'Bullets', value: 'bullets' },
 ]
 
+/** One row of plain switches (YAZ-3449): a label, its check mark while on, and what a click does. */
+export interface PageSwitch {
+  label: string
+  on: boolean
+  onToggle: () => void
+}
+
 /**
  * The page's own quick switches (YAZ-2643): a cog left of the zoom pill, and a small menu under it.
  * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab —
@@ -20,8 +27,11 @@ const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] 
  * and the counts show only when their handler is given, the rule "Table of contents" already had.
  * While read only is on, the row closes the menu and the host opens the chip's "Allow edits?" box
  * (D4, S47); while it is off, the row turns it on at once and the menu stays open (S43).
+ *
+ * A code tab (YAZ-3449) passes its own rows instead, as `switches`: "Read only (all code files)", "Wrap long
+ * lines", "Minimap". Each one changes an app setting for every code file; the menu stays open, as for any row.
  */
-export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, readText }: {
+export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, switches, readText }: {
   /** The file's read-only switch (YAZ-3076 D1): a note, a drawing and a diagram have it. */
   readOnly?: boolean
   /** Off → the host turns it on; on → the host opens the "Allow edits?" box (this menu closes first). Absent → no row (a file with no switch, YAZ-3448). */
@@ -43,6 +53,8 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   tocSource?: TocSource | null
   /** Absent → the menu has no "TOC made from" choice (this page shows no table of contents: there is nothing to build). */
   onChangeTocSource?: (source: TocSource | null) => void
+  /** Plain rows after "Read only" (a code tab's three, YAZ-3449); absent or empty → none. */
+  switches?: readonly PageSwitch[]
   /** The page's plain text. Read once when the menu opens, never while it is closed. Absent → no counts (a board). */
   readText?: () => string
 }) {
@@ -102,6 +114,9 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         }}>
           <span>Read only</span><span aria-hidden="true">{readOnly ? '✓' : ''}</span>
         </button>}
+        {switches?.map(({ label, on, onToggle }) => <button key={label} type="button" aria-pressed={on} onClick={onToggle}>
+          <span>{label}</span><span aria-hidden="true">{on ? '✓' : ''}</span>
+        </button>)}
         {onToggleLineNumbers !== undefined && <button type="button" aria-pressed={lineNumbers} onClick={onToggleLineNumbers}>
           <span>Line numbers</span><span aria-hidden="true">{lineNumbers ? '✓' : ''}</span>
         </button>}

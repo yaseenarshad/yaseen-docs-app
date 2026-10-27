@@ -89,6 +89,25 @@ export const TEXT_VIEW_EXTENSIONS = [
   '.mdx',
   '.rst',
   '.tex',
+  // YAZ-3438 D4 (YAZ-3450): 18 more code types. Names with no extension (`Dockerfile`, `Makefile`) stay out.
+  '.lua',
+  '.r',
+  '.dart',
+  '.scala',
+  '.hs',
+  '.clj',
+  '.pl',
+  '.proto',
+  '.diff',
+  '.patch',
+  '.gradle',
+  '.groovy',
+  '.ml',
+  '.erl',
+  '.jl',
+  '.cmake',
+  '.fs',
+  '.elm',
 ] as const
 export const PDF_EXTENSIONS = ['.pdf'] as const
 export const IMAGE_VIEW_MIME = {
@@ -1521,6 +1540,15 @@ export interface SettingsState {
    * `SIDEBAR_ZOOM_STEPS`; a stored value is kept within 50–200 (`SIDEBAR_ZOOM_MIN` / `_MAX`).
    */
   sidebarZoom: number
+  /**
+   * Code files (YAZ-3449, YAZ-3438 D5): every code tab opens read only, and shows the Read only chip. One app setting
+   * for all code files, never stored with a file. "Allow edits" on a tab's chip unlocks that tab until it closes.
+   */
+  codeReadOnly: boolean
+  /** Code files (YAZ-3438 D8): long lines wrap in every code tab. Alt+Z flips one tab and saves nothing. */
+  codeWrap: boolean
+  /** Code files (YAZ-3438 D6): every code tab shows Monaco's minimap. */
+  codeMinimap: boolean
 }
 
 /**
@@ -1679,6 +1707,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
   gestureSounds: true,
   hotkeys: {},
   sidebarZoom: 100,
+  codeReadOnly: false,
+  codeWrap: true,
+  codeMinimap: false,
 }
 
 export interface WindowBounds {

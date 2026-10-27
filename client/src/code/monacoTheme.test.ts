@@ -50,7 +50,11 @@ describe('buildMonacoTheme (YAZ-3447)', () => {
       'editorWidget.background': '#f6f6f7',
       'peekView.border': '#5b6cff',
       'peekViewResult.background': '#f6f6f7',
+      // The find box (YAZ-3451): its match and its on options in the accent.
+      'editor.findMatchBorder': '#5b6cff',
+      'inputOption.activeBorder': '#5b6cff',
     })
+    expect(theme.colors['editor.findMatchBackground']).toBe(theme.colors['inputOption.activeBackground'])
     expect(theme.rules).toContainEqual({ token: 'keyword', foreground: 'cf222e' })
     expect(theme.rules).toContainEqual({ token: 'string', foreground: '0a3069' })
     expect(theme.rules).toContainEqual({ token: 'comment', foreground: '7a7a7a', fontStyle: 'italic' })

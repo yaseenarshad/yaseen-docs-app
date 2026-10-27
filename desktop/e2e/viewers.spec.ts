@@ -1,8 +1,9 @@
 /**
  * The VIEW-ONLY viewers against the REAL app (E26, YAZ-1289 — e2e coverage under YAZ-2171): a
- * `.txt`, a `.pdf` and a `.png` in the vault each open in a tab as a read-only viewer
- * (`client/src/viewers/TextViewer.tsx`, `PdfViewer.tsx`, `ImageViewer.tsx`, mounted by
- * `editor/Editor.tsx` on `fileKind`), render something REAL, and leave the bytes on disk alone.
+ * `.pdf` and a `.png` in the vault each open in a tab as a read-only viewer (`PdfViewer.tsx`,
+ * `ImageViewer.tsx`, mounted by `editor/Editor.tsx` on `fileKind`), render something REAL, and leave
+ * the bytes on disk alone. A `.txt` opens in the code tab (Monaco, YAZ-3448; `TextViewer` is gone,
+ * YAZ-3450): opening, closing and quitting it with no edit leaves its bytes alone too.
  *
  * WHAT IT PROVES, and why only the real app can: the bytes cross the bridge through the
  * dedicated bounded reads (`readFile` strict text, `readPdf`, `readImage`) and are rendered by
@@ -90,20 +91,16 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — a .txt opens as the read-only text viewer with its exact bytes', async () => {
+test('step 1 — a .txt opens in the code tab (YAZ-3448), and no note editor mounts for it', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
   // View-only rows keep their FULL filename (stripExt strips `.md` only) — that is the label clicked.
   await fileRow(win, TEXT_FILE).click()
 
-  const viewer = layer(win).locator('.text-viewer')
-  await expect(viewer).toBeVisible()
-  await expect(viewer.locator('.text-viewer__name')).toHaveText(TEXT_FILE)
-  await expect(viewer.locator('.text-viewer__badge')).toHaveText('Read only')
-  const content = viewer.locator('pre.text-viewer__content[role="textbox"][aria-readonly="true"]')
-  await expect(content).toHaveText(TEXT_BODY) // `<pre>` keeps the double space and the tab
-  await expect(viewer).toHaveAttribute('aria-busy', 'false')
-  await expect(editorOf(win)).toHaveCount(0) // no editor was mounted for it
+  const code = layer(win).locator('.editor--code .monaco-editor')
+  await expect(code).toBeVisible()
+  await expect(code.locator('.view-lines')).toContainText('second line')
+  await expect(editorOf(win)).toHaveCount(0) // no note editor was mounted for it
   await expect(tabsOf(win)).toHaveText([TEXT_FILE])
   await shoot(win, 'viewers-01-text')
 })
@@ -152,7 +149,7 @@ test('step 4 — closing the viewer tab writes nothing: every fixture is byte-id
 test('step 5 — the real quit path (flush handshake included) leaves them untouched too', async () => {
   // Reopen a viewer so a mounted one is what the close/flush handshake runs over.
   await fileRow(win, TEXT_FILE).click()
-  await expect(layer(win).locator('.text-viewer__content')).toHaveText(TEXT_BODY)
+  await expect(layer(win).locator('.editor--code .monaco-editor .view-lines')).toContainText('second line')
   await quitApp(app)
   expect(await snapshot()).toEqual(baseline)
   expect((await readdir(vault)).sort()).toEqual(rootListing)

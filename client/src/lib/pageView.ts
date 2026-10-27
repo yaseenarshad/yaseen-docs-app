@@ -6,7 +6,8 @@
  * never in the tab model: keeping it there would render App again on each fold and drill-in.
  *
  * So each editor puts ONE reader function here when it opens, keyed by its tab's scroller
- * (`.editor-host`), and takes it out when it goes. The reader runs only when one of the three
+ * (`.editor-host`; a code tab's own element, `.code-editor`, YAZ-3451, whose Monaco scrolls inside
+ * itself), and takes it out when it goes. The reader runs only when one of the three
  * actions asks: nothing runs while you type, fold, drill in or scroll. A WeakMap: a scroller that
  * leaves the DOM takes its entry with it.
  */
@@ -16,7 +17,7 @@ type PageViewReader = () => PageView
 
 const readers = new WeakMap<Element, PageViewReader>()
 
-/** Answer for `host` (a tab's `.editor-host`); returns the off function, which removes only this reader. */
+/** Answer for `host` (a tab's `.editor-host` or `.code-editor`); returns the off function, which removes only this reader. */
 export function registerPageView(host: Element, read: PageViewReader): () => void {
   readers.set(host, read)
   return () => {
@@ -27,6 +28,6 @@ export function registerPageView(host: Element, read: PageViewReader): () => voi
 
 /** The page view of tab `tabId` now, or undefined when the tab has no open editor (S8, S9). */
 export function readPageView(tabId: string): PageView | undefined {
-  const host = document.querySelector(`[data-tab="${CSS.escape(tabId)}"] .editor-host`)
+  const host = document.querySelector(`[data-tab="${CSS.escape(tabId)}"] :is(.editor-host, .code-editor)`)
   return host === null ? undefined : readers.get(host)?.()
 }

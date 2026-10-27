@@ -10,8 +10,19 @@
  *
  * THE BYTES (YAZ-3445 D3). The model is born with every line break as the file's first one
  * (`withOneLineBreak`), so its EOL is `lineBreakOf` the file, and `getValue` keeps a leading BOM. A
- * save writes what was read, the edits aside. A code file has no read-only switch (`readOnlySwitch:
- * false`); 2C adds the code rule.
+ * save writes what was read, the edits aside.
+ *
+ * READ ONLY, WRAP, MINIMAP (YAZ-3449; YAZ-3438 D5, D6, D8) are app settings, never a file's: the host runs
+ * with `readOnlySwitch: false`, and the tab's own cog (`CodeChips`) changes the setting for every code tab.
+ * Each tab follows them live. "Allow edits" on the chip unlocks this tab until it closes; the setting going
+ * on again locks it again. ⌥Z flips this tab's wrap and saves nothing; a change of the setting overrides it.
+ *
+ * A NOTE TAB'S FEATURES (YAZ-3451, D7): Monaco's find box (⌘F, ⌘⌥F); folds remembered by the text of
+ * their first line (`codeFolds.ts`); the note's text size (⌘+ / ⌘− / ⌘0, the zoom pill), per tab, never
+ * stored; "Duplicate tab" reads folds, scroll and text size through `registerPageView`. An outside
+ * reload is ONE undoable edit over the part that changed (`reloadEdit.ts`): ⌘Z still works after it.
+ * Scroll and cursor survive a tab switch because the tab stays mounted (a hidden layer sends Monaco's
+ * `ResizeObserver` nothing, so it keeps its layout).
  *
  * THE APP'S KEYS WIN (YAZ-3447). A keydown in the capture phase, on this tab's own element, before
  * Monaco: the menu's commands (`HOTKEY_COMMANDS`, as the user set them) stop there, so Monaco never
@@ -19,17 +30,25 @@
  * Toggle sidebar, which the renderer owns, is handed up as a diagram does (`onToggleSidebar`). ⌘S
  * saves at once, as on a drawing.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { PageView, ZoomStep } from '@shared/types'
 import { HOTKEY_COMMANDS, fromKeyEvent, keyFor, sameKey, type HotkeyId, type HotkeyOverrides, type KeyPress } from '@shared/hotkeyBindings'
 import { api, BridgeRequestError } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
+import { stepZoomByKey } from '../editor/DocumentZoom'
+import { ZOOM_EVENT } from '../editor/zoomRequest'
 import type { NoticeKind } from '../lib/notice'
+import { registerPageView } from '../lib/pageView'
 import { storage } from '../lib/storage'
 import { useAppliedTheme } from '../lib/theme'
+import { CodeChips } from './CodeChips'
+import { attachFolds } from './codeFolds'
+import { DEFAULT_CODE_SETTINGS, type CodeSettings } from './codeSettings'
 import { lineBreakOf, withOneLineBreak } from './lineBreak'
 import { applyAppTheme, monaco } from './monaco'
 import { monacoThemeName } from './monacoTheme'
+import { diskEdit } from './reloadEdit'
 import './codeEditor.css'
 
 /** What a code file that will not open says; main's reason follows it when there is one. */
@@ -40,6 +59,14 @@ export interface CodeEditorProps extends DocumentHostProps {
   onNotice?: (text: string, icon?: NoticeKind) => void
   /** App's sidebar toggle: the renderer owns ⌘B, and Monaco's element would never pass it up. */
   onToggleSidebar?: () => void
+  /** Settings › Code (YAZ-3449): one value for every code tab; absent = the default. */
+  codeReadOnly?: boolean
+  codeWrap?: boolean
+  codeMinimap?: boolean
+  /** The cog's rows write these settings for every code file; absent = no cog. */
+  onChangeCodeSettings?: (patch: Partial<CodeSettings>) => void
+  /** A copied tab's start (YAZ-2951 D1, YAZ-3451 S5): its source's folds, scroll and text size. Read at mount only. */
+  startView?: PageView
 }
 
 interface LoadedCode {
@@ -65,8 +92,14 @@ export function appCommandOf(event: KeyPress, overrides: HotkeyOverrides | undef
   return HOTKEY_COMMANDS.find((c) => pressed.some((p) => p !== null && sameKey(keyFor(c.id, overrides), p)))?.id ?? null
 }
 
+const BOM = '\uFEFF'
+const BOM_AT_START = /^\uFEFF/
+
 /** Each code tab's model needs its own URI (two tabs may hold one file); the path keeps its extension, which picks the language. */
 let nextTab = 0
+
+/** Monaco's text size at 100 %; the tab's zoom scales it. */
+const FONT_SIZE = 13
 
 /** The model's line break for a file's text (YAZ-3445 D3). */
 const eolOf = (text: string) => (lineBreakOf(text) === '\r\n' ? monaco.editor.EndOfLineSequence.CRLF : monaco.editor.EndOfLineSequence.LF)
@@ -84,7 +117,7 @@ interface CodeHostProps extends CodeEditorProps {
 }
 
 /** Mounts exactly one Monaco editor and model for `loaded`; the document host owns everything that writes. */
-function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar }: CodeHostProps) {
+function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar, codeReadOnly = DEFAULT_CODE_SETTINGS.codeReadOnly, codeWrap = DEFAULT_CODE_SETTINGS.codeWrap, codeMinimap = DEFAULT_CODE_SETTINGS.codeMinimap, onChangeCodeSettings, startView }: CodeHostProps) {
   const theme = useAppliedTheme()
   const mountRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<ReturnType<typeof monaco.editor.create> | null>(null)
@@ -95,6 +128,18 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
   const applyingDisk = useRef(false)
   const sidebarRef = useRef(onToggleSidebar)
   sidebarRef.current = onToggleSidebar
+  /** "Allow edits" on this tab's chip (YAZ-3449 S2): this tab only, until it closes. */
+  const [unlocked, setUnlocked] = useState(false)
+  const [askingUnlock, setAskingUnlock] = useState(false)
+  const locked = codeReadOnly && !unlocked
+  /** This tab's wrap: the setting, or ⌥Z's flip of it until the setting changes (S4). */
+  const wrap = useRef(codeWrap)
+  /** The text size, per tab (YAZ-3451): a copy starts at its source's (S5); never stored. */
+  const [zoom, setZoom] = useState(startView?.magnification ?? 100)
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+  /** The values the editor is born with; the effects below follow every change after. */
+  const born = useRef({ locked, codeWrap, codeMinimap, zoom, startView })
 
   /** The bytes to write: the model's value with its BOM, or the text it held when the tab closed. */
   const textNow = (): string => {
@@ -113,28 +158,37 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
     onNotice,
     readOnlySwitch: false,
     write: (expectedMtime) => api.writeFile({ path, content: textNow(), expectedMtime }),
-    // Disk truth in, the cursor and the scroll kept where they still fit; then the new baseline.
+    // Disk truth in as ONE undoable edit over the part that changed (YAZ-3451): ⌘Z still works after
+    // it, and the cursor, folds and scroll anchor outside it stay. Then the new baseline.
     reload: async (a) => {
       const res = await api.readFile(path)
-      const editor = editorRef.current
       const model = modelRef.current
-      if (editor === null || model === null || model.isDisposed()) return
-      const view = editor.saveViewState()
+      if (editorRef.current === null || model === null || model.isDisposed()) return
+      const next = withOneLineBreak(res.content)
+      const old = model.getValue(monaco.editor.EndOfLinePreference.LF, true)
       applyingDisk.current = true
       try {
-        model.setValue(withOneLineBreak(res.content))
+        // Monaco keeps the BOM apart from the text: only `setValue` can add or drop one (and it clears undo).
+        if (old.startsWith(BOM) !== next.startsWith(BOM)) model.setValue(next)
+        else {
+          const edit = diskEdit(old.replace(BOM_AT_START, ''), next.replace(BOM_AT_START, '').replace(/\r\n?/g, '\n'))
+          if (edit !== null) {
+            model.pushStackElement()
+            model.pushEditOperations([], [edit], () => null)
+            model.pushStackElement()
+          }
+        }
         model.setEOL(eolOf(res.content))
       } finally {
         applyingDisk.current = false
       }
-      if (view !== null) editor.restoreViewState(view)
       a.reset(model.getAlternativeVersionId(), res.mtime)
     },
     // The menu's board commands (Export image…) mean nothing in a code file.
     onCommand: () => undefined,
     focus: () => editorRef.current?.focus(),
   })
-  const { start, autosave } = doc
+  const { start, autosave, retired } = doc
 
   // One editor and one model for the host's life; both disposed with it (no leak per tab).
   useEffect(() => {
@@ -148,28 +202,60 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
       model,
       theme: monacoThemeName(theme),
       automaticLayout: true,
-      // D6's quiet layout; 2C puts wrap and the minimap under Settings › Code.
+      fontSize: (FONT_SIZE * born.current.zoom) / 100,
+      // D6's quiet layout; wrap, the minimap and read only are Settings › Code (YAZ-3449).
       lineNumbers: 'on',
       showFoldingControls: 'always',
       stickyScroll: { enabled: true },
       bracketPairColorization: { enabled: true },
-      minimap: { enabled: false },
-      wordWrap: 'on',
+      minimap: { enabled: born.current.codeMinimap },
+      wordWrap: born.current.codeWrap ? 'on' : 'off',
+      readOnly: born.current.locked,
       scrollBeyondLastLine: false,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-      fontSize: 13,
       // The tab's section clips its overflow: hovers, suggestions and the peek box must not be cut.
       fixedOverflowWidgets: true,
     })
     modelRef.current = model
     editorRef.current = editor
+    // ⌥Z (D8): VS Code's "Toggle Word Wrap", which standalone Monaco lacks. This tab only, never saved.
+    const toggleWrap = editor.addAction({
+      id: 'editor.action.toggleWordWrap',
+      label: 'View: Toggle Word Wrap',
+      keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyZ],
+      run: () => {
+        wrap.current = !wrap.current
+        editor.updateOptions({ wordWrap: wrap.current ? 'on' : 'off' })
+      },
+    })
     const changes = model.onDidChangeContent(() => {
       // A reload is disk truth, never an edit: the reload resets the baseline itself.
       if (!applyingDisk.current) autosave.current?.update(model.getAlternativeVersionId())
     })
     start(model.getAlternativeVersionId(), loaded.mtime)
+
+    // Folds (S1–S4): a copy starts with its source's live folds and writes none until one changes in it;
+    // a tab that a delete or a rename retired writes none at all. Then a copy's scroll spot (S5).
+    const copy = born.current.startView
+    const folds = attachFolds(editor, {
+      seed: copy?.folds ?? storage.getFolds(root, path),
+      cleanup: copy === undefined,
+      write: (keys) => {
+        if (!retired.current) storage.setFolds(root, path, keys)
+      },
+      // After the folds: they change the height above the spot. Never on a closed tab (`attachFolds`).
+      onRestored: () => {
+        if (copy !== undefined) editor.setScrollTop(copy.scrollTop)
+      },
+    })
+    const host = mount.closest('.code-editor')
+    const offPageView = host === null ? null : registerPageView(host, () => ({ scrollTop: editor.getScrollTop(), zoomKey: null, folds: folds.keys(), magnification: zoomRef.current }))
+
     return () => {
+      offPageView?.()
+      folds.dispose()
       changes.dispose()
+      toggleWrap.dispose()
       closedText.current = model.getValue(monaco.editor.EndOfLinePreference.TextDefined, true)
       editor.dispose()
       model.dispose()
@@ -178,6 +264,39 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
     }
     // Mount once: `loaded` and `path` are fixed for this host (the shell keys it by path), and a theme change is the effect below.
   }, [])
+
+  // Settings › Code, live in every tab (S1, S4, S5). A setting going on again locks a tab that was unlocked (S1).
+  useEffect(() => {
+    if (codeReadOnly) setUnlocked(false)
+  }, [codeReadOnly])
+  useEffect(() => {
+    if (!locked) setAskingUnlock(false)
+    editorRef.current?.updateOptions({ readOnly: locked })
+  }, [locked])
+  useEffect(() => {
+    wrap.current = codeWrap
+    editorRef.current?.updateOptions({ wordWrap: codeWrap ? 'on' : 'off' })
+  }, [codeWrap])
+  useEffect(() => {
+    editorRef.current?.updateOptions({ minimap: { enabled: codeMinimap } })
+  }, [codeMinimap])
+
+  // The text size (YAZ-3451): the note's keys and pill. ⌘+ / ⌘− / ⌘0 bubble from the focus to this
+  // tab's section as `ZOOM_EVENT` (`zoomRequest.ts`), and this tab claims them; ⌘0 is 100 %.
+  useEffect(() => {
+    const section = doc.hostRef.current?.closest('.editor')
+    if (section == null) return
+    const onZoom = (event: Event): void => {
+      event.preventDefault()
+      const step = (event as CustomEvent<ZoomStep>).detail
+      setZoom(step === 0 ? 100 : (stepZoomByKey(zoomRef.current, step) ?? zoomRef.current))
+    }
+    section.addEventListener(ZOOM_EVENT, onZoom)
+    return () => section.removeEventListener(ZOOM_EVENT, onZoom)
+  }, [doc.hostRef])
+  useLayoutEffect(() => {
+    editorRef.current?.updateOptions({ fontSize: (FONT_SIZE * zoom) / 100 })
+  }, [zoom])
 
   // Appearance, live (S2): one theme for every Monaco on the page, rebuilt from the tokens now applied.
   useEffect(() => {
@@ -209,7 +328,27 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
 
   return (
     <div className="code-editor" ref={doc.hostRef}>
-      <DocumentChips store={doc.chips} className="status-chips" />
+      <DocumentChips
+        store={doc.chips}
+        className="status-chips"
+        lead={
+          <CodeChips
+            settings={{ codeReadOnly, codeWrap, codeMinimap }}
+            onChangeSettings={onChangeCodeSettings}
+            zoom={zoom}
+            onZoom={setZoom}
+            locked={locked}
+            asking={askingUnlock}
+            onAsk={() => setAskingUnlock(true)}
+            onAllow={() => {
+              setAskingUnlock(false)
+              setUnlocked(true)
+              editorRef.current?.focus()
+            }}
+            onCancel={() => setAskingUnlock(false)}
+          />
+        }
+      />
       {doc.conflictBar}
       <div className="code-editor__monaco" ref={mountRef} />
     </div>

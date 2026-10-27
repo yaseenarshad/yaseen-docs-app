@@ -15,6 +15,24 @@ describe('fileKind', () => {
     expect(fileKind(`/vault/Example${ext.toUpperCase()}`)).toBe('text')
   })
 
+  it('the 18 code types of YAZ-3450 (D4) are text, each in the list once', () => {
+    const added = ['.lua', '.r', '.dart', '.scala', '.hs', '.clj', '.pl', '.proto', '.diff', '.patch', '.gradle', '.groovy', '.ml', '.erl', '.jl', '.cmake', '.fs', '.elm']
+    for (const ext of added) {
+      expect(fileKind(`/vault/src/main${ext}`), ext).toBe('text')
+      expect(isViewOnly(`main${ext}`), ext).toBe(true)
+    }
+    // They follow `.tex`, in that order, and no extension is in the list twice.
+    const list = TEXT_VIEW_EXTENSIONS as readonly string[]
+    expect(list.slice(list.indexOf('.tex') + 1)).toEqual(added)
+    expect(new Set(list).size).toBe(list.length)
+  })
+
+  it('S2 (YAZ-3450): a name with no extension has no viewer, also one a code tool knows (Dockerfile, Makefile)', () => {
+    for (const name of ['Dockerfile', 'Makefile', 'CMakeLists', 'Gemfile', 'LICENSE', '/vault/app/Procfile', '/vault/.r', '/vault/.lua']) expect(fileKind(name), name).toBeNull()
+    // `CMakeLists.txt` is text by its `.txt`, as before.
+    expect(fileKind('CMakeLists.txt')).toBe('text')
+  })
+
   it('classifies PDFs case-insensitively', () => {
     expect(fileKind('report.pdf')).toBe('pdf')
     expect(fileKind('/vault/REPORT.PDF')).toBe('pdf')
@@ -68,6 +86,10 @@ describe('canRenameWithoutConversion', () => {
   it('lets Markdown and text move between spellings of their own kind, and never across kinds', () => {
     expect(canRenameWithoutConversion('a.md', 'b.markdown')).toBe(true)
     expect(canRenameWithoutConversion('data.json', 'data.yaml')).toBe(true)
+    // S4 (YAZ-3450): a code file may change its language; both are the text kind.
+    expect(canRenameWithoutConversion('a.ts', 'a.py')).toBe(true)
+    expect(canRenameWithoutConversion('build.gradle', 'build.groovy')).toBe(true)
+    expect(canRenameWithoutConversion('a.lua', 'a.md')).toBe(false)
     expect(canRenameWithoutConversion('a.md', 'a.txt')).toBe(false)
     expect(canRenameWithoutConversion('a.pdf', 'a.png')).toBe(false)
   })

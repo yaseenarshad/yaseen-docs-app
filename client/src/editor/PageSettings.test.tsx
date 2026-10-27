@@ -398,6 +398,32 @@ describe('PageSettings: Read only', () => {
     expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Line numbers'])
   })
 
+  it('a code tab (YAZ-3449) passes its own rows: each shows its check mark, a click calls only its handler, and the menu stays open', () => {
+    const calls: string[] = []
+    function Harness() {
+      const [rows, setRows] = useState({ 'Read only (all code files)': false, 'Wrap long lines': true, Minimap: false })
+      const switches = Object.entries(rows).map(([label, on]) => ({ label, on, onToggle: () => {
+        calls.push(label)
+        setRows((now) => ({ ...now, [label]: !on }))
+      } }))
+      return <PageSettings switches={switches} />
+    }
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<Harness />))
+    click(cog())
+    expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Read only (all code files)', 'Wrap long lines\u2713', 'Minimap'])
+    expect(switchNamed('Wrap long lines').getAttribute('aria-pressed')).toBe('true')
+    click(switchNamed('Read only (all code files)'))
+    click(switchNamed('Minimap'))
+    expect(calls).toEqual(['Read only (all code files)', 'Minimap'])
+    expect(menu()).not.toBeNull()
+    expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Read only (all code files)\u2713', 'Wrap long lines\u2713', 'Minimap\u2713'])
+    // No counts: a code tab hands no `readText`.
+    expect(menu()!.textContent).not.toContain('words')
+  })
+
   it('S41: a board\u2019s menu has only that row, and no counts', () => {
     mountReadOnly({ board: true })
     expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Read only'])

@@ -5,11 +5,11 @@ import { readPageView, registerPageView } from './pageView'
 const view = (scrollTop: number): PageView => ({ scrollTop, zoomKey: null, folds: [], magnification: 100 })
 
 /** A tab layer holding an editor scroller, as App and Editor draw them. */
-function tabWithHost(id: string): HTMLElement {
+function tabWithHost(id: string, className = 'editor-host'): HTMLElement {
   const layer = document.createElement('div')
   layer.dataset.tab = id
   const host = document.createElement('div')
-  host.className = 'editor-host'
+  host.className = className
   layer.appendChild(host)
   document.body.appendChild(layer)
   return host
@@ -30,6 +30,12 @@ describe('pageView: each editor answers for its tab (YAZ-2951 D4)', () => {
     expect(readPageView('t1')).toEqual(view(40))
     expect(readPageView('t2')).toBeUndefined()
     expect(readPageView('no-such-tab')).toBeUndefined()
+  })
+
+  it('a code tab answers from its own element, `.code-editor` (YAZ-3451): Monaco scrolls inside it', () => {
+    const host = tabWithHost('c1', 'code-editor')
+    registerPageView(host, () => ({ scrollTop: 120, zoomKey: null, folds: ['function a() {'], magnification: 125 }))
+    expect(readPageView('c1')).toEqual({ scrollTop: 120, zoomKey: null, folds: ['function a() {'], magnification: 125 })
   })
 
   it('off removes the reader; an old off does not remove a newer reader of the same host', () => {
