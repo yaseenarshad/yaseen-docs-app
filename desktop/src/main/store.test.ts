@@ -337,6 +337,20 @@ describe('createStore: loading', () => {
     for (const width of [159, 481, NaN, '200', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, tableOfContentsWidth: width })).toBe(false)
   })
 
+  it('hotkeys (YAZ-3397 D2): a file from before has none and loads `{}`; a bad id or key costs that entry only; the IPC guard is strict', async () => {
+    const { hotkeys: _hotkeys, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: { ...legacySettings, theme: 'dark' } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, theme: 'dark' })
+    expect(createStore(file).get().settings.hotkeys).toEqual({})
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K', closeTab: null, quit: 'CmdOrCtrl+Q', newTab: 7, openFolder: 'Not+A+Key' } } }))
+    expect(createStore(file).get().settings.hotkeys).toEqual({ search: 'CmdOrCtrl+Shift+K', closeTab: null })
+    for (const junk of [null, 'x', [], 3]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: junk }).hotkeys).toEqual({})
+
+    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K', closeTab: null } })).toBe(true)
+    for (const bad of [{ quit: 'CmdOrCtrl+Q' }, { search: 3 }, { search: '' }, [], null, undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: bad })).toBe(false)
+  })
+
   it('canvas and diagramDarkColors (YAZ-3037 done-when): a yaseendocs.json from before YAZ-3028 loads with the defaults; a file with some canvas prefs keeps them', async () => {
     const { canvas: _canvas, diagramDarkColors: _dark, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: { ...legacySettings, theme: 'dark' } }))

@@ -7,6 +7,7 @@
  */
 
 import type { ReviewEntry } from './reviews'
+import type { HotkeyOverrides } from './hotkeyBindings'
 
 // ---------- Errors ----------
 
@@ -1507,6 +1508,11 @@ export interface SettingsState {
   noticeLists: boolean
   /** The land and trash sounds (YAZ-3267 D15, YAZ-3303 D7). macOS can still say no. */
   gestureSounds: boolean
+  /**
+   * The keys the user changed (YAZ-3397 D2): only the changes, by command (`shared/hotkeyBindings.ts`);
+   * null is "No key". `{}` is every default. It travels with the other settings.
+   */
+  hotkeys: HotkeyOverrides
 }
 
 /**
@@ -1653,6 +1659,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   noticeClipboard: true,
   noticeLists: true,
   gestureSounds: true,
+  hotkeys: {},
 }
 
 export interface WindowBounds {

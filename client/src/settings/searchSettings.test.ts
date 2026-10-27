@@ -7,12 +7,14 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { SettingsCtx } from './registry'
-import { searchSettings, settingCandidates, type SettingHit } from './searchSettings'
+import { searchSettings, settingCandidates, wordMatches, type SettingHit } from './searchSettings'
 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 const ids = (hits: readonly SettingHit[]) => hits.map((h) => h.item.id)
+/** The Hotkeys page's rows, in page order. */
+const hotkeyRows = () => ids(settingCandidates(ctx()).filter((h) => h.section.id === 'hotkeys'))
 
 /** A synthetic candidate list where the three tiers are all present for one needle. */
 const tiers: SettingHit[] = (['width of the thread', 'width', 'content width'] as const).map((name) => ({
@@ -62,13 +64,18 @@ describe('settingCandidates', () => {
       'duplicates',
       'idLetters',
       'oldIds',
-      'hotkeys-keyboard',
-      'hotkeys-views',
-      'hotkeys-window',
-      'hotkeys-canvas',
-      'hotkeys-drawio',
-      'hotkeys-mouse',
+      // Settings › Hotkeys (YAZ-3397 D5): one candidate per KEY, so a search finds the row, not the table.
+      ...hotkeyRows(),
     ])
+  })
+
+  it('Hotkeys: the changeable commands head Window, then one row per built-in key, the Mac\'s keys, and Reset all — every id unique (YAZ-3397 D5, D8)', () => {
+    const rows = hotkeyRows()
+    expect(rows.slice(0, 14)).toEqual(['newTab', 'newWindow', 'newFilesWindow', 'closeTab', 'closeWindow', 'switchVault', 'openFolder', 'search', 'settings', 'toggleSidebar', 'copyPath', 'tabOverview', 'nextTab', 'prevTab'].map((id) => `hotkey-${id}`))
+    expect(rows).toContain('hotkey-keyboard-table-of-contents')
+    expect(rows).toContain('hotkey-macos-spotlight')
+    expect(rows[rows.length - 1]).toBe('hotkeys-reset-all')
+    expect(new Set(rows).size).toBe(rows.length)
   })
 
   it('includes the Sync page only when the engine is there', () => {
@@ -126,7 +133,7 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'readable line'))).toEqual(['contentWidth'])
     // The sounds of Settings › Notifications (YAZ-3303) say "the Trash" in their hints.
     // "trash" is also the word of ⌘⌫ in the Window hotkeys (YAZ-3272 D20).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'trash'))).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'hotkeys-window'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'trash'))).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'hotkey-window-move-the-selected-files-and-folders-to-t'])
   })
 
   it('matches on the section title, returning every row of that section', () => {
@@ -143,14 +150,15 @@ describe('searchSettings', () => {
     // The words the app already uses for the bullet features and the fold keys: the row is one of the answers.
     for (const query of ['outline', 'headings']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('tableOfContents')
     // The settings folder's hint names the table of contents width, which stays on this Mac (YAZ-3276 D7); General comes first.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['settingsFolder', 'tableOfContents', 'tocLines', 'hotkeys-keyboard'])
+    // The ⌘J row's label starts with the words, so it ranks first (a prefix hit, YAZ-3397 D5).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['hotkey-keyboard-table-of-contents', 'settingsFolder', 'tableOfContents', 'tocLines'])
   })
 
   it('"Level lines" (YAZ-2762, YAZ-3309 D6): the label of the TOC\'s row and the title of the sidebar\'s group find the TOC row and the three rows of the group; "hierarchy", "guide" and "hover" find the two Show rows among the rows that share the word', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'level lines'))).toEqual(['tocLines', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'hierarchy'))).toEqual(['sidebarLines', 'tocLines'])
     // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkeys-drawio'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-drawio-a-shape-s-outline-a-text-s-background'])
     // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['sidebarLines', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sidebarLines', 'sectionLines', 'tocLines', 'hoverPreview'])
@@ -183,13 +191,37 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'comments order'))).toEqual(['commentsOrder'])
   })
 
-  it('a hotkey label finds its Hotkeys table: "close tab" → Window', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'close tab'))).toEqual(['hotkeys-window'])
-    expect(ids(searchSettings(settingCandidates(ctx()), '⌘W'))).toEqual(['hotkeys-window'])
-    // "underline" is also a word of Appearance › Text formatting (YAZ-3068), which comes first in registry order;
-    // a note and a draw.io diagram both underline with ⌘U (YAZ-3037): both hotkey tables answer too.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['textFormatting', 'hotkeys-keyboard', 'hotkeys-drawio'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkeys-canvas'])
+  it('words, when no substring matches (YAZ-3397 D5): "file window" finds New Files window first, "file winodw" too (one slip); a query that matches as text keeps only those rows', () => {
+    const all = settingCandidates(ctx())
+    expect(ids(searchSettings(all, 'file window'))[0]).toBe('hotkey-newFilesWindow')
+    expect(ids(searchSettings(all, 'file winodw'))[0]).toBe('hotkey-newFilesWindow')
+    expect(ids(searchSettings(all, 'swich vault'))).toEqual(['hotkey-switchVault'])
+    // Three letters get no slip: "pth" is not "pat".
+    expect(ids(searchSettings(all, 'copy pth'))).toEqual([])
+    expect(ids(searchSettings(all, 'files window'))).toEqual(['hotkey-newFilesWindow'])
+  })
+
+  it('wordMatches: a start of the word, or one slip (wrong, missing, extra or swapped letter) from four letters on', () => {
+    expect(wordMatches('fil', 'files')).toBe(true)
+    expect(wordMatches('winodw', 'window')).toBe(true)
+    expect(wordMatches('windw', 'window')).toBe(true)
+    expect(wordMatches('wiindow', 'window')).toBe(true)
+    expect(wordMatches('wimdow', 'window')).toBe(true)
+    expect(wordMatches('fle', 'files')).toBe(false)
+    expect(wordMatches('wnidwo', 'window')).toBe(false)
+  })
+
+  it('a hotkey label or key finds its ONE row (YAZ-3397 D5): "close tab" and "⌘W" → Close tab', () => {
+    expect(ids(searchSettings(settingCandidates(ctx()), 'close tab'))).toEqual(['hotkey-closeTab'])
+    expect(ids(searchSettings(settingCandidates(ctx()), '⌘W'))).toEqual(['hotkey-closeTab'])
+    // "underline" is also a word of Appearance › Text formatting (YAZ-3068); a note and a draw.io diagram both
+    // underline with ⌘U (YAZ-3037): both rows answer, the note's first (its label is the word).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-keyboard-underline', 'textFormatting', 'hotkey-drawio-bold-underline'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkey-canvas-export-excalidraw-drawing'])
+    // A changed key is searched by the key it has NOW.
+    const moved = { ...ctx(), settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K' } } }
+    expect(ids(searchSettings(settingCandidates(moved), '⌘⇧K'))).toEqual(['hotkey-search'])
+    expect(ids(searchSettings(settingCandidates(moved), '⌘K'))).toEqual([])
   })
 
   it('"review", "upkeep" and "inbox" each find every row of the Review section (YAZ-2322)', () => {

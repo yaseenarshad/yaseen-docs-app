@@ -8,7 +8,14 @@
  * set (table / cards / outline bindings); it was `BASES_HOTKEYS` under the heading "Bases" until
  * YAZ-861 renamed both to what they describe. hotkeys.test.ts pins the expected set so drift fails
  * loudly. Until YAZ-1679 this lived in sidebar/HotkeysPanel.tsx beside a keyboard-icon popover.
+ *
+ * The keys the user can CHANGE are not here (YAZ-3397 D2): they are `HOTKEY_COMMANDS` in
+ * `shared/hotkeyBindings.ts`, which the Window group lists first, each with its key as a button. What is
+ * left here is built in — the Settings page shows it as text — and `BUILT_IN_KEYS` reads these same
+ * tables back into accelerators, so the recorder knows which keys are taken.
  */
+import { APP_STANDARD_KEYS, keysOfDisplay, toDisplay, type FixedKey } from '@shared/hotkeyBindings'
+
 export interface HotkeyEntry {
   keys: string
   label: string
@@ -40,18 +47,15 @@ export const VIEW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: 'Esc', label: 'Cancel a card drag' },
 ]
 
-/** App/window shortcuts: menu-owned B3/Tabs/⌘K/⌘, (YAZ-1679), renderer-owned ⌘B (YAZ-1280), ⌘⇧C (YAZ-1338), the sidebar's ⌘X / ⌘C / ⌘V (YAZ-1674), a move's ⌘Z / ⌘⇧Z (YAZ-3255), the selection's ⌘⌫ (YAZ-3272) and a review session's keys (YAZ-2322), plus Open Recent's open-beside gesture. */
+/**
+ * The BUILT-IN app/window shortcuts, under the changeable ones (YAZ-3397 D1): a vault's number (it has its own
+ * "Set shortcut"), the sidebar's ⌘X / ⌘C / ⌘V (YAZ-1674), a move's ⌘Z / ⌘⇧Z (YAZ-3255), the selection's ⌘⌫
+ * (YAZ-3272), the hidden twins of the tab keys and a review session's keys (YAZ-2322). New window, ⌘O, ⌘K, ⌘,,
+ * ⌘B, ⌘⇧C, ⌘W, ⌘⇧W and ⌃Tab moved to `HOTKEY_COMMANDS` when they became changeable.
+ */
 export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
-  { keys: '⌘⇧N', label: 'New window — same folder and tabs' },
-  { keys: '⌘⇧O', label: 'Open folder…' },
-  // The vault switcher (YAZ-1767 D8): the sidebar header's panel, keyboard-first like ⌘K's bar.
-  { keys: '⌘O', label: 'Switch vault (type to filter, ⏎ brings it to the front or opens a new window, ⇧⏎ opens it in this window)' },
   // A vault's number (YAZ-2555 D3): the Window menu owns the key, so it answers from any window.
   { keys: '⌘1 … ⌘9', label: 'Go to the vault with that number — right-click a vault to give it one' },
-  { keys: '⌘K', label: 'Search the vault' },
-  { keys: '⌘,', label: 'Settings' },
-  { keys: '⌘B', label: 'Toggle sidebar outside editing surfaces' },
-  { keys: '⌘⇧C', label: 'Copy path — the row of the new tab page that the keyboard is on, else the sidebar selection when one is standing, else the open file' },
   // The file clipboard (YAZ-1674, D6): the sidebar's own chords, beside ⌘⇧C and like it about the
   // selection. One clipboard for every window, so a copy here pastes into another vault's window.
   { keys: '⌘X / ⌘C', label: 'Cut / copy the selected files and folders — pastes in any window, on any vault' },
@@ -61,10 +65,7 @@ export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘Z / ⌘⇧Z', label: 'Undo / redo the last move, delete or rename of files and folders — outside a note, a drawing, a diagram or a field, which keep their own' },
   // ⌘⌫ (YAZ-3272 D20): Finder's Move to Trash, on the undo's boundary; a plain ⌫ deletes nothing.
   { keys: '⌘⌫', label: 'Move the selected files and folders to the Trash — asks first unless "Confirm before deleting" is off; outside a note, a drawing, a diagram or a field, which keep their own' },
-  { keys: '⌘W', label: 'Close tab — on the last tab it empties the window, then closes it' },
-  // YAZ-3357 D15: ⌘⇧W opens a Files window; Close Window has no key (File menu, or ⌘W on the last tab).
-  { keys: '⌘⇧W', label: 'New Files window — the sidebar on its own, beside your windows' },
-  { keys: '⌃Tab / ⌃⇧Tab', label: 'Next / previous tab' },
+  // The hidden twins of Next / Previous tab (GRO-2232): they stay when the user changes ⌃Tab / ⌃⇧Tab.
   { keys: '⌘⇧] / ⌘⇧[', label: 'Next / previous tab' },
   // An upkeep review (YAZ-2322): live only while one is open, and they answer with the caret in the note.
   { keys: '⌘⇧⏎', label: 'In a review: still relevant — on to the next note' },
@@ -137,15 +138,31 @@ export const DRAWIO_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: 'Right-click empty canvas', label: 'Grid on / off' },
 ]
 
+/** The Mac's standard app keys (YAZ-3397 D1): the menu's roles, as `shared/hotkeyBindings.ts` lists them. */
+export const APP_STANDARD_HOTKEYS: readonly HotkeyEntry[] = APP_STANDARD_KEYS.map(({ label, accelerator }) => ({ keys: toDisplay(accelerator), label }))
+
 /**
- * The groups as Settings › Hotkeys shows them, heading first — one place to add another. `id` names the
- * table's settings row (`hotkeys-<id>`) where the title is not one word.
+ * The built-in groups as Settings › Hotkeys shows them, heading first — one place to add another (YAZ-3397 D8:
+ * Window, with the changeable keys above these, then the rest; "Used by macOS" comes after them all). `id`
+ * names the group's rows (`hotkey-<id>-<n>`) where the title is not one word.
  */
 export const HOTKEY_GROUPS: readonly { id?: string; title: string; entries: readonly HotkeyEntry[] }[] = [
+  { title: 'Window', entries: WINDOW_HOTKEYS },
   { title: 'Keyboard', entries: HOTKEYS },
   { title: 'Views', entries: VIEW_HOTKEYS },
-  { title: 'Window', entries: WINDOW_HOTKEYS },
   { id: 'canvas', title: 'Excalidraw canvas', entries: CANVAS_HOTKEYS },
   { id: 'drawio', title: 'draw.io diagram', entries: DRAWIO_HOTKEYS },
   { title: 'Mouse', entries: MOUSE_TIPS },
+  { id: 'standard', title: 'App standard', entries: APP_STANDARD_HOTKEYS },
 ]
+
+/** "Table of contents: ↑ ↓ pick…" → "Table of contents": a built-in key's name in one short line (D5's answer). */
+export const shortLabel = (label: string): string => label.split(/ — |: | \(/)[0]
+
+/**
+ * Every built-in KEY (YAZ-3397 D6) as an accelerator, read back from the tables above: '⌘X / ⌘C' is two
+ * keys, '⌘1 … ⌘9' nine, a mouse tip none. The recorder will not give one of these to a command.
+ */
+export const BUILT_IN_KEYS: readonly FixedKey[] = HOTKEY_GROUPS.filter((g) => g.entries !== MOUSE_TIPS).flatMap(({ entries }) =>
+  entries.flatMap(({ keys, label }) => keysOfDisplay(keys).map((accelerator) => ({ label: shortLabel(label), accelerator }))),
+)

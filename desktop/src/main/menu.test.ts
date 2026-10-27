@@ -44,9 +44,13 @@ const RECENTS: RecentRoots = [
   { path: '/vaults/old', lastOpened: 1 },
 ]
 
-function build(recents: RecentRoots = RECENTS, isDev = false, handlers: MenuHandlers = noopHandlers(), keyedVaults: MenuInputs['keyedVaults'] = [], activeKind: FileKind | null = null) {
-  return buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }, handlers)
+function build(recents: RecentRoots = RECENTS, isDev = false, handlers: MenuHandlers = noopHandlers(), keyedVaults: MenuInputs['keyedVaults'] = [], activeKind: FileKind | null = null, hotkeys: MenuInputs['hotkeys'] = {}, suspendKeys = false) {
+  return buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hotkeys, suspendKeys }, handlers)
 }
+
+/** Every item of the menu bar, submenus flattened. */
+const allItems = (template: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] =>
+  template.flatMap((i) => [i, ...(Array.isArray(i.submenu) ? allItems(i.submenu) : [])])
 
 /** The menu with `kind` as the focused window's active tab (YAZ-3037). */
 const onTab = (kind: FileKind | null, handlers: MenuHandlers = noopHandlers()) => build(RECENTS, false, handlers, [], kind)
@@ -729,6 +733,31 @@ describe('createMenuHandlers', () => {
   })
 })
 
+// ---------- the user's keys (YAZ-3397) ----------
+
+describe('buildMenuTemplate — the user\'s keys (YAZ-3397 D2, D5)', () => {
+  it('a changed key moves the accelerator; null removes it; the rest keep their defaults', () => {
+    const template = build(RECENTS, false, noopHandlers(), [], null, { search: 'CmdOrCtrl+Shift+K', closeTab: null, closeWindow: 'CmdOrCtrl+Alt+W' })
+    expect(item(template, 'File', 'menu.file.search')?.accelerator).toBe('CmdOrCtrl+Shift+K')
+    expect(item(template, 'File', 'menu.file.close-tab')).not.toHaveProperty('accelerator')
+    expect(item(template, 'File', 'menu.file.close-window')?.accelerator).toBe('CmdOrCtrl+Alt+W')
+    expect(item(template, 'File', 'menu.file.new-tab')?.accelerator).toBe('CmdOrCtrl+T')
+    expect(item(template, 'Window', 'menu.window.next-tab')?.accelerator).toBe('Control+Tab')
+    // The built-in keys never move: the hidden tab twins and the zoom items.
+    expect(item(template, 'Window', 'menu.window.next-tab-alt')?.accelerator).toBe('CmdOrCtrl+Shift+]')
+    expect(item(template, 'View', 'menu.view.zoom-reset')?.accelerator).toBe('CmdOrCtrl+0')
+  })
+
+  it('while a recorder listens no item has a key — a role gets an empty one, so Electron gives it none', () => {
+    const template = build(RECENTS, true, noopHandlers(), [{ key: 2, path: '/vaults/notes', name: 'notes' }], 'drawing', {}, true)
+    const items = allItems(template).filter((i) => i.type !== 'separator')
+    expect(items.filter((i) => i.accelerator !== undefined && i.accelerator !== '')).toEqual([])
+    for (const i of items.filter((x) => x.role !== undefined)) expect(i.accelerator, String(i.role)).toBe('')
+    // Everything else is as it was: the same ids, labels and clicks.
+    expect(allItems(template).map((i) => i.id ?? i.role ?? i.label)).toEqual(allItems(build(RECENTS, true, noopHandlers(), [{ key: 2, path: '/vaults/notes', name: 'notes' }], 'drawing')).map((i) => i.id ?? i.role ?? i.label))
+  })
+})
+
 // ---------- subscribeMenuRebuild ----------
 
 describe('subscribeMenuRebuild', () => {
@@ -785,6 +814,18 @@ describe('subscribeMenuRebuild', () => {
     store.setFolder('/vaults/notes', { key: null })
     expect(rebuild).toHaveBeenCalledTimes(6)
     expect(rows().map((v) => v.path)).toEqual(['/vaults/old'])
+  })
+
+  it('rebuilds when the user\'s keys change (YAZ-3397 D2), and not on a settings write that leaves them as they were', () => {
+    const rebuild = vi.fn()
+    subscribeMenuRebuild(store, rebuild)
+    // A renderer's write arrives as a new object: the same keys by value are no rebuild.
+    store.setSettings({ ...store.get().settings, theme: 'dark', hotkeys: { ...store.get().settings.hotkeys } })
+    expect(rebuild).not.toHaveBeenCalled()
+    store.setSettings({ ...store.get().settings, hotkeys: { search: 'CmdOrCtrl+Shift+K' } })
+    expect(rebuild).toHaveBeenCalledTimes(1)
+    store.setSettings({ ...store.get().settings, hotkeys: {} })
+    expect(rebuild).toHaveBeenCalledTimes(2)
   })
 
   it('returns an unsubscribe', () => {

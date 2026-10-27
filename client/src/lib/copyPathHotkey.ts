@@ -1,3 +1,4 @@
+import { windowChordFor, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { ownsWindowChord } from './windowChord'
 
 /**
@@ -8,6 +9,7 @@ import { ownsWindowChord } from './windowChord'
  * The SHIFT is required, not tolerated: plain ⌘C is the copy every editor and every list already
  * owns, and this chord must never shadow it.
  */
-export function ownsCopyPathHotkey(event: KeyboardEvent): boolean {
-  return ownsWindowChord(event, { key: 'c', shift: true })
+export function ownsCopyPathHotkey(event: KeyboardEvent, overrides: HotkeyOverrides = {}): boolean {
+  // The key is the user's (YAZ-3397 D2): ⌘⇧C unless they changed it, nothing with "No key".
+  return ownsWindowChord(event, windowChordFor('copyPath', overrides))
 }

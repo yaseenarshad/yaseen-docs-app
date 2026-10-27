@@ -56,8 +56,19 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setSectionIndent.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel].sort(),
+      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setSectionIndent.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel].sort(),
     )
+  })
+
+  it('YAZ-3397 D5: a recorder starts and stops the menu\'s keys for its window; anything but a boolean is refused', async () => {
+    const { hotkeyRecording } = await import('../hotkeyRecording')
+    const recording = registered(CONTRACT.hotkeys.recording.channel)
+    const wc = { id: 41, on: vi.fn(), once: vi.fn() }
+    expect(await recording({ sender: wc }, true)).toEqual(ok(undefined))
+    expect(hotkeyRecording.active()).toBe(true)
+    expect(await recording({ sender: wc }, 'yes')).toEqual(bad('BAD_REQUEST'))
+    expect(await recording({ sender: wc }, false)).toEqual(ok(undefined))
+    expect(hotkeyRecording.active()).toBe(false)
   })
 
   it('YAZ-3276 D6: a folder with another Mac\'s file wins (0); an empty one takes this Mac\'s settings (now); null keeps the settings', async () => {

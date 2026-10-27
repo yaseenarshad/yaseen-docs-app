@@ -99,6 +99,7 @@ import {
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
+import { isHotkeyId, parseAccelerator, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { travellingChanged, travels } from '@shared/settingsSync'
 import { atomicWrite } from './fs/fsUtils'
@@ -296,6 +297,20 @@ export function sanitizeSidebarTabs(raw: unknown): SidebarTabsPrefs {
   }
 }
 
+/**
+ * The user's key changes (YAZ-3397 D2), strict: only known command ids, each a key this build can read or
+ * null for "No key". The IPC boundary rejects anything else; `sanitizeHotkeys` repairs a stored one.
+ */
+const isHotkeyOverrides = (v: unknown): v is HotkeyOverrides =>
+  isRecord(v) && Object.entries(v).every(([id, key]) => isHotkeyId(id) && (key === null || (typeof key === 'string' && parseAccelerator(key) !== null)))
+
+/** A stored `hotkeys` with each entry that does not read dropped (an id a later build removed, a key that is no key); the same object when all read. */
+export function sanitizeHotkeys(raw: unknown): HotkeyOverrides {
+  if (isHotkeyOverrides(raw)) return raw
+  if (!isRecord(raw)) return {}
+  return Object.fromEntries(Object.entries(raw).filter(([id, key]) => isHotkeyOverrides({ [id]: key })))
+}
+
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
 const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is SettingsState[K] } = {
   lineSpacing: isFiniteNumber,
@@ -334,6 +349,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   noticeClipboard: (v): v is boolean => typeof v === 'boolean',
   noticeLists: (v): v is boolean => typeof v === 'boolean',
   gestureSounds: (v): v is boolean => typeof v === 'boolean',
+  hotkeys: isHotkeyOverrides,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -349,6 +365,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.canvas = sanitizeCanvasPrefs(src.canvas)
   out.canvasPanel = sanitizeCanvasPanel(src.canvasPanel)
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
+  out.hotkeys = sanitizeHotkeys(src.hotkeys)
   return out
 }
 
@@ -360,6 +377,9 @@ export function sanitizeSettings(raw: unknown): SettingsState {
  * that the file lacks or that the repair had to change keeps this Mac's part. A field with no repair by part
  * (`sidebarSort`) that the repair resets as a whole keeps this Mac's whole field (YAZ-3302).
  */
+/** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
+const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys']
+
 export function mergeFolderSettings(current: SettingsState, incoming: Partial<Record<keyof SettingsState, unknown>>): SettingsState {
   const isObject = (v: unknown): v is Record<string, unknown> => isRecord(v) && !Array.isArray(v)
   const taken = Object.fromEntries(
@@ -367,7 +387,8 @@ export function mergeFolderSettings(current: SettingsState, incoming: Partial<Re
       .filter(([key]) => travels(key) && (SETTINGS_KEYS as string[]).includes(key))
       .map(([key, value]) => {
         const here = current[key as keyof SettingsState]
-        return [key, isObject(value) && isObject(here) ? { ...here, ...value } : value]
+        // The key changes (YAZ-3397 D2) are a whole list, not parts: a key another Mac reset must not come back from this one.
+        return [key, isObject(value) && isObject(here) && !WHOLE_FIELDS.includes(key as keyof SettingsState) ? { ...here, ...value } : value]
       }),
   )
   const out = sanitizeSettings({ ...current, ...taken })
@@ -378,7 +399,7 @@ export function mergeFolderSettings(current: SettingsState, incoming: Partial<Re
     if (!SETTINGS_FIELD_OK[key](value) && JSON.stringify(got) === JSON.stringify(DEFAULT_SETTINGS[key])) {
       // No repair for this field (`sidebarSort`): the whole field fell back to the default, so all of it stays this Mac's (YAZ-3302).
       Object.assign(out, { [key]: here })
-    } else if (isObject(value) && isObject(here) && isObject(got)) {
+    } else if (isObject(value) && isObject(here) && isObject(got) && !WHOLE_FIELDS.includes(key)) {
       // A field with a repair by part (`canvas`): each part the repair changed keeps this Mac's part (YAZ-3298).
       const kept = Object.fromEntries(Object.entries(got).map(([part, v]) => [part, JSON.stringify(v) === JSON.stringify(value[part]) ? v : (here[part] ?? v)]))
       Object.assign(out, { [key]: kept })

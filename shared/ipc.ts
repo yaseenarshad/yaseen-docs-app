@@ -11,6 +11,7 @@
  * docs/CONTRACTS.md › Bridge API.
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { SystemHotkey } from './macosHotkeys'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -137,6 +138,11 @@ export const CONTRACT = {
     settingsFolder: invoke<[], { folder: string | null; missing: boolean }>('state:settings-folder', 0),
     /** Point the settings at a folder, or null for this Mac only (YAZ-3276 D6): a folder with another Mac's file wins; an empty one takes this Mac's settings. */
     setSettingsFolder: invoke<[folder: string | null], void>('state:set-settings-folder', 1),
+    /**
+     * The Mac's own keys as this Mac has them (YAZ-3397 D3): `shared/macosHotkeys.ts` with the user's System
+     * Settings choices laid over it. Read when Settings › Hotkeys shows; off macOS, no rows.
+     */
+    systemHotkeys: invoke<[], SystemHotkey[]>('state:system-hotkeys', 0),
     /** Clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by the main process. */
     setSidebarWidth: invoke<[width: number], void>('state:set-sidebar-width', 1),
     /** The tab board's canvas (YAZ-3343 D1): the switch, moved cards, forgotten cards (Tidy up). Sent on a drop or a click, never on each pointer move. */
@@ -163,6 +169,14 @@ export const CONTRACT = {
     setBaseGroups: invoke<[root: string, key: string, collapsed: readonly string[]], void>('state:set-base-groups', 3),
     /** Fired in every window after any change. */
     onChange: push<AppState>('state:changed'),
+  },
+  hotkeys: {
+    /**
+     * A key recorder in the calling window is listening, or stopped (YAZ-3397 D5): while any is, main builds
+     * the menu with NO key, so the keys pressed reach the page — on macOS a menu key fires before the page
+     * hears it, and recording ⌘W must not close the tab. A window that closes or reloads stops by itself.
+     */
+    recording: invoke<[on: boolean], void>('hotkeys:recording', 1),
   },
   window: {
     /** Who am I: main answers from `AppState.windows` by the `?win=<id>` in the window's URL. */

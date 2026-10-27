@@ -4,9 +4,11 @@ import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { requireStringArray } from '../fs/validate'
 import type { SettingsFolder } from '../settingsFolder'
+import { hotkeyRecording } from '../hotkeyRecording'
 import { isSettings, readCanvasCard, readCanvasFrame, readCanvasKey, type Store } from '../store'
+import { createSystemHotkeys } from '../systemHotkeys'
 import { broadcastAll } from './broadcast'
-import { handle } from './envelope'
+import { handle, handleWithEvent } from './envelope'
 
 /** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `name` / `key`, each type-checked. */
 function requireFolderPatch(raw: unknown): FolderPatch {
@@ -84,6 +86,14 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
     // so `missing` is that folder's, not the old one's (YAZ-3297). At most 2 s: a network folder that hangs
     // must not hang the door; the row then shows what is known, and the next open shows the rest.
     await Promise.race([settingsFolder.settled(), new Promise((done) => setTimeout(done, 2000))])
+  })
+  // "Used by macOS" (YAZ-3397 D3): this Mac's keys, read off its plist when the Hotkeys page asks, kept until the file changes.
+  const systemHotkeys = createSystemHotkeys()
+  handle(CONTRACT.state.systemHotkeys, async () => systemHotkeys())
+  // A key recorder starts or stops in the calling window (YAZ-3397 D5); `main/index.ts` rebuilds the menu with no key while any listens.
+  handleWithEvent(CONTRACT.hotkeys.recording, async (event, on: unknown) => {
+    if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
+    hotkeyRecording.set(event.sender, on)
   })
   handle(CONTRACT.state.setSidebarWidth, async (width: unknown) => {
     if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")

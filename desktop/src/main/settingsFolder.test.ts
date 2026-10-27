@@ -77,6 +77,15 @@ describe('the rules (D3)', () => {
     expect(mergeFolderSettings(threaded, { sidebarLineStyle: 'zigzag', sidebarThreadColor: 'red' })).toMatchObject({ sidebarLineStyle: 'thread', sidebarThreadColor: '#112233' })
   })
 
+  it("YAZ-3397: the key changes travel as a whole list — a key another Mac reset does not come back from this one", () => {
+    const here: SettingsState = { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K', closeTab: null } }
+    expect(mergeFolderSettings(here, { hotkeys: { closeTab: null } }).hotkeys).toEqual({ closeTab: null })
+    expect(mergeFolderSettings(here, { hotkeys: {} }).hotkeys).toEqual({})
+    // A file without them keeps this Mac's; an id this build does not know is dropped, the rest come in.
+    expect(mergeFolderSettings(here, { theme: 'dark' }).hotkeys).toEqual(here.hotkeys)
+    expect(mergeFolderSettings(here, { hotkeys: { newTab: 'CmdOrCtrl+Alt+T', aNewCommand: 'CmdOrCtrl+J' } }).hotkeys).toEqual({ newTab: 'CmdOrCtrl+Alt+T' })
+  })
+
   it("YAZ-3298: a canvas pref this build can't read, or that the file lacks, keeps this Mac's value (D3)", () => {
     const here: SettingsState = { ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, writingStrokeWidth: 7, toolLock: false } }
     const newer = mergeFolderSettings(here, { canvas: { ...DEFAULT_SETTINGS.canvas, toolLock: true, writingStrokeWidth: 'thick' } })

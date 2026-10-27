@@ -325,6 +325,9 @@ export function App() {
   const [resizing, setResizing] = useState(false)
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
+  /** The user's keys (YAZ-3397 D2) for the window listeners below, read at key time so a change needs no new listener. */
+  const hotkeysRef = useRef(settings.hotkeys)
+  hotkeysRef.current = settings.hotkeys
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
   // it activates the file's tab when already open, else opens it in the PREVIEW tab (YAZ-2648 D1);
   // a link that could not open shows a transient notice — unobtrusive, never a dialog.
@@ -439,7 +442,7 @@ export function App() {
   // Renderer bubble phase is deliberate: Milkdown and other focused tools get first ownership.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!ownsSidebarHotkey(event)) return
+      if (!ownsSidebarHotkey(event, hotkeysRef.current)) return
       event.preventDefault()
       toggleSidebar()
     }
@@ -1387,7 +1390,7 @@ export function App() {
    */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!ownsCopyPathHotkey(event)) return
+      if (!ownsCopyPathHotkey(event, hotkeysRef.current)) return
       const selected = sidebarSelection.current
       // A row of the new tab page that has the keyboard focus is what the user looks at (YAZ-2663 D9):
       // no page is on show there, and the page has no selection of its own, so that row is the answer first.

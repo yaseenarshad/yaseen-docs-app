@@ -19,6 +19,7 @@ import { BoardDocumentShell } from '../documents/BoardDocumentShell'
 import { BoardChips, exportWithNotice, useBoardDocument, type BoardDocumentProps } from '../documents/useBoardDocument'
 import { namingTab } from '../lib/focusHandoff'
 import type { NoticeKind } from '../lib/notice'
+import { storage } from '../lib/storage'
 import { basename } from '../lib/paths'
 import { useAppliedTheme } from '../lib/theme'
 import { drawioAdaptiveColors, drawioConfig, drawioFrameUrl, readDrawioMessage } from './drawioProtocol'
@@ -121,7 +122,8 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     if (h.configured || !h.configureAsked) return
     h.configured = true
     shownColors.current = wantedColors.current
-    post({ action: 'configure', config: drawioConfig(wantedColors.current) })
+    // The menu's keys as they are now (YAZ-3397 D2): a change reaches a diagram the next time it opens.
+    post({ action: 'configure', config: drawioConfig(wantedColors.current, storage.getSettings()?.hotkeys) })
   }, [post])
 
   /** Show the app's theme, once draw.io listens: its own `darkMode` / `lightMode` action. */

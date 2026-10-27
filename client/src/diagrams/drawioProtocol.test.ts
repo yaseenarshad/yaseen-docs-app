@@ -72,6 +72,19 @@ describe('drawioConfig (🔒 YAZ-1802 D3 / D12a / D12b / D16)', () => {
   })
 })
 
+describe('the menu chords follow the user\'s keys (YAZ-3397 D2)', () => {
+  it('a moved key is cleared where it is now, and its old chord is draw.io\'s again; the fixed chords stay', () => {
+    type Shortcut = { keyCode: string | number; control?: boolean; shift?: boolean; action: string | null }
+    const cleared = (hotkeys = {}) => (drawioConfig('adapt', hotkeys) as { keyboardShortcuts: Shortcut[] }).keyboardShortcuts.filter((s) => s.action === null && s.control === true).map((s) => `${s.shift === true ? '⇧' : ''}${s.keyCode}`)
+    expect(cleared()).toContain('75')
+    const moved = cleared({ search: 'CmdOrCtrl+Shift+J' })
+    expect(moved).toContain('⇧74')
+    expect(moved).not.toContain('75')
+    expect(moved).toEqual(expect.arrayContaining(['48', '⇧69', '⇧83']))
+    expect(cleared({ closeTab: null })).not.toContain('87')
+  })
+})
+
 describe('readDrawioMessage — only THAT iframe, only the drawio origin (🔒 YAZ-1802 D4)', () => {
   const frame = {}
   const msg = (data: unknown, over: Partial<{ source: unknown; origin: string }> = {}) => readDrawioMessage({ source: frame, origin: DRAWIO_ORIGIN, data, ...over }, frame)

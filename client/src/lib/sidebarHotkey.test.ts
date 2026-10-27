@@ -28,6 +28,16 @@ describe('ownsSidebarHotkey', () => {
     expect(ownsSidebarHotkey(event(document.body, { key: 'B' }))).toBe(true)
   })
 
+  it('follows the key the user gave it (YAZ-3397 D2): ⌃⌥S, by its physical key; ⌘B then is not it; "No key" owns nothing', () => {
+    const button = document.createElement('button')
+    document.body.append(button)
+    const moved = { toggleSidebar: 'Control+Alt+S' }
+    // ⌥ changes `key` on a Mac (⌥S is 'ß'): the physical key is what counts.
+    expect(ownsSidebarHotkey(event(button, { key: 'ß', code: 'KeyS', metaKey: false, ctrlKey: true, altKey: true }), moved)).toBe(true)
+    expect(ownsSidebarHotkey(event(button), moved)).toBe(false)
+    expect(ownsSidebarHotkey(event(button), { toggleSidebar: null })).toBe(false)
+  })
+
   it.each([
     ['no Command', { metaKey: false }],
     ['Control', { ctrlKey: true }],
