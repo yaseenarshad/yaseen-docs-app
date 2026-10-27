@@ -101,7 +101,7 @@ import {
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
-import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, isHotkeyId, isUsableKey, keyFor, sameKey, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, isHotkeyId, isUsableKey, keyFor, sameKey, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { travellingChanged, travels } from '@shared/settingsSync'
 import { atomicWrite } from './fs/fsUtils'
@@ -301,12 +301,13 @@ export function sanitizeSidebarTabs(raw: unknown): SidebarTabsPrefs {
 
 /**
  * One key change (YAZ-3397 D2): a known command id, and null for "No key" or a key the recorder would take
- * (YAZ-3410): one this build reads, with ⌘ or ⌃ (or an F-key), and not an App-standard key (⌘Q is Quit). The
+ * (YAZ-3410): one this build reads, with ⌘ or ⌃ (or an F-key), and not an App-standard key (⌘Q is Quit) nor a
+ * fixed key of the menu (YAZ-3419: ⌘⇧V is Paste as plain text). The
  * UI never writes anything else, so this is the only stop for a hand-edited file: a menu item with the key
  * `A` would take every typed "a" in every window.
  */
 const isHotkeyEntry = ([id, key]: [string, unknown]): boolean =>
-  isHotkeyId(id) && (key === null || (typeof key === 'string' && isUsableKey(key) && !APP_STANDARD_KEYS.some((k) => sameKey(k.accelerator, key))))
+  isHotkeyId(id) && (key === null || (typeof key === 'string' && isUsableKey(key) && ![...APP_STANDARD_KEYS, ...MENU_FIXED_KEYS].some((k) => sameKey(k.accelerator, key))))
 
 /**
  * The command whose change goes when two commands have one key now (YAZ-3410), or null when no two do: of the

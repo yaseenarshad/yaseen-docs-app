@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { MenuItemConstructorOptions } from 'electron'
 import { defaultRightPanelIdentity, type FileKind, type RecentRoots, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
+import { HOTKEY_COMMANDS, MENU_FIXED_KEYS, sameKey } from '@shared/hotkeyBindings'
 import { createStore, type Store } from './store'
 import { CANVAS_BACKGROUND_PICKS, HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, gateOnBoardKind, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile, type ContextMenuActions, type MenuHandlers, type MenuHost, type MenuInputs } from './menu'
 
@@ -892,5 +893,17 @@ describe('subscribeMenuRebuildOnActiveFile', () => {
     subscribeMenuRebuildOnActiveFile(store, rebuild)()
     store.upsertWindow({ ...ENTRY, file: null, tabs: [] })
     expect(rebuild).not.toHaveBeenCalled()
+  })
+})
+
+describe('the menu\'s fixed keys (YAZ-3419)', () => {
+  it('every key the menu carries is a changeable command\'s, a numbered vault\'s, or in MENU_FIXED_KEYS — so the recorder and the store refuse it', () => {
+    const vaults: MenuInputs['keyedVaults'] = [{ key: 1, name: 'Notes', path: '/vaults/notes' }]
+    const fixed = (['markdown', 'drawing', 'diagram', null] as const).flatMap((kind) =>
+      allItems(build(RECENTS, true, noopHandlers(), vaults, kind)).filter((i) => typeof i.accelerator === 'string' && i.accelerator !== '' && !i.id?.startsWith('menu.window.vault.')),
+    )
+    const stray = fixed.filter((i) => !HOTKEY_COMMANDS.some((c) => sameKey(c.key, i.accelerator as string)) && !MENU_FIXED_KEYS.some((k) => sameKey(k.accelerator, i.accelerator as string)))
+    expect(stray.map((i) => `${i.id} ${String(i.accelerator)}`)).toEqual([])
+    expect(fixed.length).toBeGreaterThan(MENU_FIXED_KEYS.length)
   })
 })

@@ -15,7 +15,7 @@
  * left here is built in — the Settings page shows it as text — and `BUILT_IN_KEYS` reads these same
  * tables back into accelerators, so the recorder knows which keys are taken.
  */
-import { APP_STANDARD_KEYS, keysOfDisplay, toDisplay, type FixedKey } from '@shared/hotkeyBindings'
+import { APP_STANDARD_KEYS, MENU_FIXED_KEYS, keysOfDisplay, sameKey, toDisplay, type FixedKey } from '@shared/hotkeyBindings'
 
 export interface HotkeyEntry {
   keys: string
@@ -36,6 +36,7 @@ export const HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘U', label: 'Underline' },
   { keys: '⌘⇧H', label: 'Highlight' },
   { keys: '⌘⇧X', label: 'Strikethrough' },
+  { keys: '⌘⇧V', label: 'Paste as plain text' },
   { keys: 'Tab / ⇧Tab', label: 'Indent / outdent bullet' },
   { keys: '⇧↑ / ⇧↓', label: 'Select to the end / start of this line, then one whole line per press' },
 ]
@@ -162,8 +163,10 @@ export const shortLabel = (label: string): string => label.split(/ — |: | \(/)
 
 /**
  * Every built-in KEY (YAZ-3397 D6) as an accelerator, read back from the tables above: '⌘X / ⌘C' is two
- * keys, '⌘1 … ⌘9' nine, a mouse tip none. The recorder will not give one of these to a command.
+ * keys, '⌘1 … ⌘9' nine, a mouse tip none. Then each fixed key of the menu that no table names (YAZ-3419:
+ * the hidden ⌘= of Zoom In). The recorder will not give one of these to a command.
  */
-export const BUILT_IN_KEYS: readonly FixedKey[] = HOTKEY_GROUPS.filter((g) => g.entries !== MOUSE_TIPS).flatMap(({ entries }) =>
+const TABLE_KEYS: readonly FixedKey[] = HOTKEY_GROUPS.filter((g) => g.entries !== MOUSE_TIPS).flatMap(({ entries }) =>
   entries.flatMap(({ keys, label }) => keysOfDisplay(keys).map((accelerator) => ({ label: shortLabel(label), accelerator }))),
 )
+export const BUILT_IN_KEYS: readonly FixedKey[] = [...TABLE_KEYS, ...MENU_FIXED_KEYS.filter((m) => !TABLE_KEYS.some((t) => sameKey(t.accelerator, m.accelerator)))]

@@ -388,6 +388,25 @@ export function ownersOf(accelerator: string, overrides: HotkeyOverrides | undef
 }
 
 /**
+ * The application menu's own fixed keys (YAZ-3419): the items of `desktop/src/main/menu.ts` that carry a key
+ * and are neither a changeable command, a role, nor a numbered vault. Not changeable — the recorder and the
+ * store refuse each one, so no command can share a key with a menu item. `menu.test.ts` walks the real
+ * menu and fails on a fixed key that is not here.
+ */
+export const MENU_FIXED_KEYS: readonly FixedKey[] = [
+  { label: 'Export image', accelerator: 'CmdOrCtrl+Shift+E' },
+  { label: 'Export Excalidraw drawing', accelerator: 'CmdOrCtrl+Shift+S' },
+  { label: 'Share link', accelerator: 'CmdOrCtrl+Shift+L' },
+  { label: 'Paste as plain text', accelerator: 'CmdOrCtrl+Shift+V' },
+  { label: 'Zoom: actual size', accelerator: 'CmdOrCtrl+0' },
+  { label: 'Zoom in', accelerator: 'CmdOrCtrl+Plus' },
+  { label: 'Zoom in', accelerator: 'CmdOrCtrl+=' },
+  { label: 'Zoom out', accelerator: 'CmdOrCtrl+-' },
+  { label: 'Next tab', accelerator: 'CmdOrCtrl+Shift+]' },
+  { label: 'Previous tab', accelerator: 'CmdOrCtrl+Shift+[' },
+]
+
+/**
  * The Mac's standard app keys (D1): the menu's roles (`desktop/src/main/menu.ts`). Not changeable — the
  * Settings page lists them as "App standard", and the recorder will not give one to a command.
  */

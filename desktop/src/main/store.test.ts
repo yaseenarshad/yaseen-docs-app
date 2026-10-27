@@ -353,7 +353,8 @@ describe('createStore: loading', () => {
 
   it('hotkeys (YAZ-3410 item 4): a key the recorder refuses is dropped, and no two commands keep one key; the IPC guard refuses both', () => {
     // A bare letter would take every typed "a" in every window; ⌘Q is the app's Quit (App standard).
-    for (const key of ['A', 'Shift+A', 'CmdOrCtrl+Q']) {
+    // ⌘⇧V and ⌘= are fixed keys of the menu (YAZ-3419): Paste as plain text and Zoom In's hidden twin.
+    for (const key of ['A', 'Shift+A', 'CmdOrCtrl+Q', 'CmdOrCtrl+Shift+V', 'CmdOrCtrl+=']) {
       expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: key, closeTab: null } }).hotkeys, key).toEqual({ closeTab: null })
       expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: key } }), key).toBe(false)
     }
