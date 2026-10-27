@@ -250,7 +250,7 @@ export interface WindowManager extends WindowLookup {
   /** The Files window `id`'s floating preview (YAZ-3357 D9): beside the window on the row's height (`filesPreviewBounds`), or hidden with null. `false` = no live Files window. */
   filesPreview(id: string, req: FilesPreviewRequest | null): boolean
   /**
-   * The footer's − % + or an unclaimed ⌘+ / ⌘− / ⌘0 in the Files window `id` (YAZ-3389 D13): store its own sidebar zoom,
+   * The zoom menu's − % + or an unclaimed ⌘+ / ⌘− / ⌘0 in the Files window `id` (YAZ-3389 D13): store its own sidebar zoom,
    * `percent` normalized (`normalizeFilesZoom`). Any other window: nothing (`false`); a full window's zoom is `settings.sidebarZoom`.
    */
   setFilesZoom(id: string, percent: number): boolean

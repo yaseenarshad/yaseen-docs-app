@@ -1822,7 +1822,7 @@ export interface WindowEntry {
   kind?: WindowKind
   /**
    * A Files window's own sidebar zoom in percent (YAZ-3389 D13, which replaced YAZ-3357 D11's Chromium level): only
-   * its list grows, as `settings.sidebarZoom` does in a full window, and the footer's − % + and an unclaimed ⌘+ / ⌘− / ⌘0
+   * its list grows, as `settings.sidebarZoom` does in a full window, and the zoom menu's − % + and an unclaimed ⌘+ / ⌘− / ⌘0
    * there change this value, never the shared one. ⌘⇧W starts it one `SIDEBAR_ZOOM_STEPS` step above the window it came
    * from. Kept by the store on every Files window (`normalizeFilesZoom`); absent on a full window.
    */
@@ -2710,17 +2710,13 @@ export interface ClipboardPasteRequest {
 /** One ⌘+ / ⌘− / ⌘0 press: up, down, or back to the default (YAZ-1710). */
 export type ZoomStep = -1 | 0 | 1
 
-/** The sidebar zoom's steps in percent (YAZ-3389): the footer's − / + and an unclaimed ⌘− / ⌘+ walk them. */
+/** The sidebar zoom's steps in percent (YAZ-3389): the zoom menu's Sidebar − / + and an unclaimed ⌘− / ⌘+ walk them. */
 export const SIDEBAR_ZOOM_STEPS = [50, 75, 90, 100, 125, 150, 200] as const
 export const SIDEBAR_ZOOM_MIN = SIDEBAR_ZOOM_STEPS[0]
 export const SIDEBAR_ZOOM_MAX = SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]
 
 /** The App sizes in percent (YAZ-3432): the zoom menu's App size row walks them with − and +. */
 export const APP_ZOOM_STEPS = [90, 100, 110, 125] as const
-/** A stored or sent App size (YAZ-3432): one of `APP_ZOOM_STEPS`, else 100. */
-export function normalizeAppZoom(v: unknown): number {
-  return typeof v === 'number' && (APP_ZOOM_STEPS as readonly number[]).includes(v) ? v : 100
-}
 
 /**
  * One zoom step along `steps` (ascending): the next step in `direction`. A value between two steps snaps to the next

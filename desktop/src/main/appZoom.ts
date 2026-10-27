@@ -1,4 +1,4 @@
-import { normalizeAppZoom, type SettingsState } from '@shared/types'
+import type { SettingsState } from '@shared/types'
 import type { Store } from './store'
 
 /**
@@ -8,9 +8,9 @@ import type { Store } from './store'
  * so it unit-tests without a browser.
  */
 
-/** The Chromium zoom factor for the settings (1 = 100%). */
+/** The Chromium zoom factor for the settings (1 = 100%). The store keeps `appZoom` on `APP_ZOOM_STEPS`. */
 export function appZoomFactor(settings: SettingsState): number {
-  return normalizeAppZoom(settings.appZoom) / 100
+  return settings.appZoom / 100
 }
 
 /** Calls `apply` with the new factor each time the App size changes, never on other writes. Windows load it themselves. */

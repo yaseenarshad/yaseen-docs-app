@@ -92,14 +92,16 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp 
   }, [at, scale])
 
   const place: CSSProperties | undefined = at === null ? undefined : { left: at.left / scale - shift, bottom: at.bottom / scale }
+  // The chip shows the sidebar zoom alone; its tooltip and its accessible name tell both values (D1).
+  const both = `Zoom: sidebar ${Math.round(sidebar)}%, App size ${app}%`
   return (
     <>
       <button
         ref={chipRef}
         type="button"
         className={`zoom-chip${open ? ' zoom-chip--open' : ''}`}
-        title="Sidebar zoom and App size"
-        aria-label={`Zoom: sidebar ${Math.round(sidebar)}%, App size ${app}%`}
+        title={both}
+        aria-label={both}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={toggle}

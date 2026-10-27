@@ -295,7 +295,7 @@ export const CONTRACT = {
      */
     filesToNormal: invoke<[], void>('window:files-to-normal', 0),
     /**
-     * THIS Files window's own sidebar zoom in percent (YAZ-3389 D13): the footer's − % + and an unclaimed ⌘+ / ⌘− / ⌘0 there.
+     * THIS Files window's own sidebar zoom in percent (YAZ-3389 D13): the zoom menu's − % + and an unclaimed ⌘+ / ⌘− / ⌘0 there.
      * Main normalizes it (`normalizeFilesZoom`) and stores it as `WindowEntry.zoom`; `window.identity()` gives it back. A
      * full window is refused: its sidebar zoom is the shared `settings.sidebarZoom`.
      */

@@ -6,7 +6,7 @@
  * the state file after a quit and comes back on the next launch. The percent goes back to 100%, and
  * View › Zoom In / Actual Size with no note focused step the same zoom. A Chromium zoom left from an
  * older build goes back to 0 at the next load (D8). A Files window (D13) zooms its own list: it opens one step above
- * the full window's sidebar zoom, and its footer and View › Zoom In change only its own value.
+ * the full window's sidebar zoom, and its zoom menu and View › Zoom In change only its own value.
  * The footer fits (YAZ-3401): from the narrowest sidebar (180 px) up, with the "Files window" chip, with an update
  * ready (a fake feed, as `update.spec`), and with both, no item runs past the footer and no label is cut.
  * The APP SIZE (YAZ-3432): the menu's App size row, on top and the same "− 100% +" as the Sidebar row below it, zooms
@@ -35,7 +35,6 @@ let win: Page
 
 /** The footer's zoom chip (YAZ-3432): it shows the sidebar zoom and opens the menu. */
 const zoomChip = (w: Page) => w.locator('.sidebar__footer .zoom-chip')
-const percent = zoomChip
 const zoomMenu = (w: Page) => w.locator('.zoom-menu[role="dialog"]')
 /** The menu's Sidebar row, "− 100% +"; the menu opens first when it is not up. */
 async function control(w: Page) {
@@ -162,14 +161,14 @@ test('step 1 — "Zoom the sidebar in": 125%, a tree row 1.25× taller, the head
   // No note open: nothing claims the menu's zoom later, so it reaches the sidebar.
   app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
-  await expect(percent(win)).toHaveText('100%')
+  await expect(zoomChip(win)).toHaveText('100%')
   await expect(fileRow(win, 'Ideas')).toBeVisible()
   expect(await zoomLevel(app)).toBe(0)
 
   const row = await rowHeight(win)
   const chrome = await Promise.all(CHROME.map((s) => box(win, s)))
   await (await control(win)).getByRole('button', { name: 'Zoom the sidebar in', exact: true }).click()
-  await expect(percent(win)).toHaveText('125%')
+  await expect(zoomChip(win)).toHaveText('125%')
   await expect((await control(win)).locator('.zoom-stepper__value')).toHaveText('125%')
   await expect.poll(async () => (await rowHeight(win)) / row).toBeCloseTo(1.25, 1)
   expect(await Promise.all(CHROME.map((s) => box(win, s)))).toEqual(chrome)
@@ -184,21 +183,21 @@ test('step 2 — quit and launch again: the state file says 125 and the sidebar 
   expect((await readState(userData)).settings.sidebarZoom).toBe(125)
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
-  await expect(percent(win)).toHaveText('125%')
+  await expect(zoomChip(win)).toHaveText('125%')
   expect(await zoomLevel(app)).toBe(0)
 })
 
 test('step 3 — a click on the menu\'s percent goes back to 100%', async () => {
   await (await control(win)).locator('.zoom-stepper__value').click()
-  await expect(percent(win)).toHaveText('100%')
+  await expect(zoomChip(win)).toHaveText('100%')
   await win.keyboard.press('Escape')
 })
 
 test('step 4 — View › Zoom In and Actual Size, with no note focused, step the sidebar zoom and never the window', async () => {
   await clickMenuItem(app, 'menu.view.zoom-in', 'w1')
-  await expect(percent(win)).toHaveText('125%')
+  await expect(zoomChip(win)).toHaveText('125%')
   await clickMenuItem(app, 'menu.view.zoom-reset', 'w1')
-  await expect(percent(win)).toHaveText('100%')
+  await expect(zoomChip(win)).toHaveText('100%')
   expect(await zoomLevel(app)).toBe(0)
 })
 
@@ -206,7 +205,7 @@ test('step 5 — a Chromium zoom from an older build: the next load sets it back
   await setZoomLevel(app, 2)
   expect(await zoomLevel(app)).toBe(2)
   await win.reload()
-  await expect(percent(win)).toHaveText('100%')
+  await expect(zoomChip(win)).toHaveText('100%')
   await expect.poll(() => zoomLevel(app)).toBe(0)
 })
 
@@ -214,16 +213,16 @@ test('step 6 — a Files window (D13): it opens one step above (125%), its + and
   await clickMenuItem(app, 'menu.file.new-files-window', 'w1')
   const files = await extraWindow(app, ['w1'])
   const filesId = winParam(files) ?? ''
-  await expect(percent(files)).toHaveText('125%')
+  await expect(zoomChip(files)).toHaveText('125%')
   await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === filesId)?.zoom).toBe(125)
   await (await control(files)).getByRole('button', { name: 'Zoom the sidebar in', exact: true }).click()
-  await expect(percent(files)).toHaveText('150%')
+  await expect(zoomChip(files)).toHaveText('150%')
   await files.keyboard.press('Escape')
   await clickMenuItem(app, 'menu.view.zoom-in', filesId)
-  await expect(percent(files)).toHaveText('200%')
+  await expect(zoomChip(files)).toHaveText('200%')
   await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === filesId)?.zoom).toBe(200)
   // The full window and the shared setting never moved; no window has a Chromium zoom.
-  await expect(percent(win)).toHaveText('100%')
+  await expect(zoomChip(win)).toHaveText('100%')
   expect((await readState(userData)).settings.sidebarZoom).toBe(100)
   expect(await zoomLevel(app, filesId)).toBe(0)
   expect(await zoomLevel(app)).toBe(0)

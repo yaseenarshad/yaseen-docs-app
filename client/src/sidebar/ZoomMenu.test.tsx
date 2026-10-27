@@ -58,40 +58,22 @@ describe('ZoomMenu', () => {
     expect(menu()).toBeNull()
   })
 
-  it('Sidebar: − and + step the sidebar zoom and the percent writes 100, as the footer did (YAZ-3389)', () => {
+  it('each row writes its own zoom only (the steps, the walls and the percent: ZoomStepper.test.tsx); a click inside keeps the menu open', () => {
     const onSidebar = vi.fn()
-    render({ sidebar: 100, onSidebar })
+    const onApp = vi.fn()
+    render({ sidebar: 100, app: 110, onSidebar, onApp })
     act(() => chip().click())
     act(() => button('Zoom the sidebar in').click())
-    expect(onSidebar).toHaveBeenLastCalledWith(125)
-    act(() => button('Zoom the sidebar out').click())
-    expect(onSidebar).toHaveBeenLastCalledWith(90)
-    render({ sidebar: 200, onSidebar })
-    expect(button('Zoom the sidebar in').disabled).toBe(true)
-    act(() => value('Sidebar zoom').click())
-    expect(onSidebar).toHaveBeenLastCalledWith(100)
-    // A click inside the menu keeps it open.
+    expect(onSidebar).toHaveBeenCalledExactlyOnceWith(125)
+    act(() => button('Make the app larger').click())
+    expect(onApp).toHaveBeenCalledExactlyOnceWith(125)
+    expect(onSidebar).toHaveBeenCalledTimes(1)
     expect(menu()).not.toBeNull()
   })
 
-  it('App size: − and + step 90 · 100 · 110 · 125 and stop at the walls, the percent writes 100; the sidebar zoom never moves', () => {
-    const onApp = vi.fn()
-    const onSidebar = vi.fn()
-    render({ app: 110, onApp, onSidebar })
-    act(() => chip().click())
-    expect(value('App size').textContent).toBe('110%')
-    act(() => button('Make the app larger').click())
-    expect(onApp).toHaveBeenLastCalledWith(125)
-    act(() => button('Make the app smaller').click())
-    expect(onApp).toHaveBeenLastCalledWith(100)
-    render({ app: 125, onApp, onSidebar })
-    expect([button('Make the app smaller').disabled, button('Make the app larger').disabled]).toEqual([false, true])
-    act(() => value('App size').click())
-    expect(onApp).toHaveBeenLastCalledWith(100)
-    render({ app: 90, onApp, onSidebar })
-    expect([button('Make the app smaller').disabled, button('Make the app larger').disabled]).toEqual([true, false])
-    expect(onSidebar).not.toHaveBeenCalled()
-    expect(chip().getAttribute('aria-label')).toBe('Zoom: sidebar 100%, App size 90%')
+  it('the chip\'s tooltip and accessible name tell both values (D1)', () => {
+    render({ sidebar: 150, app: 90 })
+    expect([chip().title, chip().getAttribute('aria-label')]).toEqual(['Zoom: sidebar 150%, App size 90%', 'Zoom: sidebar 150%, App size 90%'])
   })
 
   it('the menu is zoomed by 1 / the PAGE\'s zoom, so it keeps its size on the screen; its place is kept in screen px while it is open', () => {

@@ -1914,36 +1914,16 @@ button {
   background: var(--bg-hover);
 }
 
-/* The footer's zoom chip (YAZ-3432): the sidebar zoom's percent, borderless and quiet, the cog's colour and hover.
-   It keeps one width, so 90% and 100% never shift the row; open, it stays lit. */
+/* The footer's zoom chip (YAZ-3432): the sidebar zoom's percent, the same quiet button as the menu's percent below;
+   open, it stays lit. */
 .zoom-chip {
-  display: inline-flex;
   flex: none;
-  align-items: center;
-  justify-content: center;
-  min-width: 38px;
-  height: 22px;
-  padding: 0 3px;
-  border-radius: 6px;
-  color: var(--fg-muted);
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-.zoom-chip:hover,
-.zoom-chip--open {
-  color: var(--fg);
-  background: var(--bg-hover);
-}
-
-.zoom-chip:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
 }
 
 /* The zoom menu (YAZ-3432): on `document.body`, above the chip; its place is inline (ZoomMenu.tsx). The body is
-   zoomed by 1 / the App size, so the borders and the shadow below scale with the page and the controls do not. */
+   zoomed by 1 / the page's zoom, so the borders and the shadow below scale with the page and the controls do not. */
 .zoom-menu {
   position: fixed;
   z-index: 40;
@@ -1968,22 +1948,23 @@ button {
   align-items: center;
   gap: 2px 10px;
   padding: 4px 4px 4px 10px;
-}
-
-.zoom-menu__label {
-  font-size: 11.5px;
-  color: var(--fg-muted);
-}
-
-/* The zoom menu's two rows (YAZ-3432; the sidebar's sat in the footer, YAZ-3389): "− 100% +". The number keeps one
-   width, so 90% and 100% never shift the row, and the menu never changes its width. */
-.zoom-stepper {
-  display: flex;
-  align-items: center;
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
 
+.zoom-menu__label {
+  color: var(--fg-muted);
+}
+
+/* The zoom menu's two rows (YAZ-3432; the sidebar's sat in the footer, YAZ-3389): "− 100% +". The chip and each
+   percent keep one width, so 90% and 100% never shift the footer or a row, and the menu never changes its width;
+   all three are borderless and quiet, the cog's colour and hover. */
+.zoom-stepper {
+  display: flex;
+  align-items: center;
+}
+
+.zoom-chip,
 .zoom-stepper__step,
 .zoom-stepper__value {
   display: inline-flex;
@@ -2000,17 +1981,21 @@ button {
   font-size: 13px;
 }
 
+.zoom-chip,
 .zoom-stepper__value {
   min-width: 38px;
   padding: 0 3px;
 }
 
+.zoom-chip:hover,
+.zoom-chip--open,
 .zoom-stepper__step:hover:enabled,
 .zoom-stepper__value:hover {
   color: var(--fg);
   background: var(--bg-hover);
 }
 
+.zoom-chip:focus-visible,
 .zoom-stepper__step:focus-visible,
 .zoom-stepper__value:focus-visible {
   outline: 2px solid var(--accent);
@@ -3306,7 +3291,7 @@ button {
   color: #fff;
   background: var(--danger);
 }
-/* YAZ-3401: the red words cover the chip from its right edge leftward, over the zoom in a narrow footer. A hidden
+/* YAZ-3401: the red words cover the chip from its right edge leftward, over the zoom chip in a narrow footer. A hidden
    copy of "Files window" keeps the chip's width, so nothing moves under the pointer between the two clicks. */
 .sidebar__files-chip--armed::after {
   content: 'Files window';

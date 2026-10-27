@@ -17,9 +17,8 @@ afterEach(async () => {
 })
 
 describe('the App size in main (YAZ-3432)', () => {
-  it('appZoomFactor: a percent of the App sizes as a Chromium factor; anything else is 1', () => {
+  it('appZoomFactor: each App size as a Chromium factor (the store keeps only these, store.test.ts)', () => {
     expect([90, 100, 110, 125].map((appZoom) => appZoomFactor({ ...DEFAULT_SETTINGS, appZoom }))).toEqual([0.9, 1, 1.1, 1.25])
-    for (const appZoom of [0, 105, 200, NaN]) expect(appZoomFactor({ ...DEFAULT_SETTINGS, appZoom })).toBe(1)
   })
 
   it('subscribeAppZoom: applies the new factor only when the App size changed, never at once, and stops on unsubscribe', () => {
