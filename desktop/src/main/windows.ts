@@ -230,7 +230,8 @@ export interface WindowManager extends WindowLookup {
    * A Files window (YAZ-3357 D5, D6) on `root`, or with null on every vault of the window `from`. From a full window it
    * opens flush left of it, as tall, as wide as its sidebar, with its lens; from a Files window, cascaded; with no
    * window, `FILES_WINDOW_DEFAULT_W` × `FILES_WINDOW_DEFAULT_H` at the default spot. All clamped to the screen. The
-   * source does not change. `false` = no vault to show (a Welcome window, no window at all).
+   * source does not change. `false` = no vault to show (a Welcome window, no window at all). Each width is page px,
+   * so the window is that × the App size on the screen (YAZ-3441): its page is as wide as the source's sidebar.
    */
   openFilesWindow(from: string | undefined, root: string | null): boolean
   /**
@@ -243,10 +244,17 @@ export interface WindowManager extends WindowLookup {
   openFromFiles(from: string, action: FilesAction): boolean
   /**
    * Tabs Mission Control in the Files window `id` (YAZ-3357 D3): `open` keeps its narrow bounds stored, marks it wide
-   * (`commitBounds` skips it, so the store keeps the narrow ones) and grows it to `FILES_WINDOW_WIDE_W`, clamped, at
-   * once (D10, not animated); closing puts the stored narrow bounds back. In memory only: a restart always opens narrow. `false` = no live Files window.
+   * (`commitBounds` skips it, so the store keeps the narrow ones) and grows it to `FILES_WINDOW_WIDE_W` page px (× the
+   * App size on the screen, YAZ-3441), clamped, at once (D10, not animated); closing puts the stored narrow bounds back.
+   * In memory only: a restart always opens narrow. `false` = no live Files window.
    */
   filesWide(id: string, open: boolean): boolean
+  /**
+   * A new App size, from the factor `from` to `to` (YAZ-3441): each Files window keeps its PAGE width, so its window
+   * width scales by `to / from` and its right edge stays (it stands flush left of its source). A wide one's stored
+   * narrow bounds scale; the board's close brings them back. Full windows do not change: their sidebar is in page px.
+   */
+  appZoomChanged(from: number, to: number): void
   /** The Files window `id`'s floating preview (YAZ-3357 D9): beside the window on the row's height (`filesPreviewBounds`), or hidden with null. `false` = no live Files window. */
   filesPreview(id: string, req: FilesPreviewRequest | null): boolean
   /**
@@ -322,11 +330,11 @@ export const isFilesWindow = (w: Pick<WindowEntry, 'kind'>): boolean => w.kind =
 
 /**
  * Where a Files window opens (YAZ-3357 D6): flush LEFT of the source window `source`, on its top and as tall, `width`
- * wide (the source's sidebar); with no source, `FILES_WINDOW_DEFAULT_W` × `FILES_WINDOW_DEFAULT_H` at the default spot.
+ * wide (the source's sidebar, in screen px); with no source, `width` × `FILES_WINDOW_DEFAULT_H` at the default spot.
  * Clamped to the screen, so at the left edge of a screen it stands over the source's left side.
  */
 export function filesWindowBounds(source: WindowBounds | null, width: number, workAreas: readonly WindowBounds[]): WindowBounds {
-  if (source === null) return clampBounds({ x: DEFAULT_BOUNDS.x, y: DEFAULT_BOUNDS.y, width: FILES_WINDOW_DEFAULT_W, height: FILES_WINDOW_DEFAULT_H }, workAreas)
+  if (source === null) return clampBounds({ x: DEFAULT_BOUNDS.x, y: DEFAULT_BOUNDS.y, width, height: FILES_WINDOW_DEFAULT_H }, workAreas)
   return clampBounds({ x: source.x - width, y: source.y, width, height: source.height }, workAreas)
 }
 
@@ -982,12 +990,14 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const areas = host.workAreas()
       // The source as it stands now (the stored bounds lag a drag by BOUNDS_DEBOUNCE_MS); a wide Files window by its stored, narrow bounds.
       const at = source === undefined ? null : wideFiles.has(source.id) ? source.bounds : (liveWindow(source.id)?.getBounds() ?? source.bounds)
+      // The sidebar's width is page px; the window's is screen px, the App size larger (YAZ-3441).
+      const onScreen = (pagePx: number) => Math.round(pagePx * appZoomFactor(store.get().settings))
       const bounds =
         source === undefined || at === null
-          ? filesWindowBounds(null, FILES_WINDOW_DEFAULT_W, areas)
+          ? filesWindowBounds(null, onScreen(FILES_WINDOW_DEFAULT_W), areas)
           : isFilesWindow(source)
             ? clampBounds({ ...at, x: at.x + WINDOW_CASCADE_PX, y: at.y + WINDOW_CASCADE_PX }, areas)
-            : filesWindowBounds(at, source.sidebarCollapsed ? FILES_WINDOW_DEFAULT_W : store.get().sidebarWidth, areas)
+            : filesWindowBounds(at, onScreen(source.sidebarCollapsed ? FILES_WINDOW_DEFAULT_W : store.get().sidebarWidth), areas)
       const vaults = normalizeRoots(roots, roots[0])
       // Its list one sidebar zoom step above the source's (YAZ-3389 D13, "starting 20% bigger"): a Files window's own
       // zoom, else the shared `settings.sidebarZoom` (a full window, or no source). At 200% it stays 200%.
@@ -1037,9 +1047,30 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         wideFiles.add(id)
         const narrow = entryOf(id)?.bounds ?? entry.bounds
         // At once, not animated (D10): macOS's animation lays the page out on every frame of it.
-        win.setBounds(clampBounds({ ...narrow, width: Math.max(narrow.width, FILES_WINDOW_WIDE_W) }, host.workAreas()), false)
+        // The board's width is page px, the App size larger on the screen (YAZ-3441).
+        const wide = Math.round(FILES_WINDOW_WIDE_W * appZoomFactor(store.get().settings))
+        win.setBounds(clampBounds({ ...narrow, width: Math.max(narrow.width, wide) }, host.workAreas()), false)
       } else if (wideFiles.delete(id)) win.setBounds(entry.bounds, false)
       return true
+    },
+
+    appZoomChanged(from, to) {
+      if (from === to || from <= 0) return
+      const areas = host.workAreas()
+      for (const entry of store.get().windows) {
+        if (!isFilesWindow(entry)) continue
+        const win = liveWindow(entry.id)
+        const stored = wideFiles.has(entry.id) || win === undefined
+        // The narrow bounds: as it stands now, or the stored ones while the board makes it wide.
+        const narrow = stored ? entry.bounds : win.getBounds()
+        const width = Math.round((narrow.width * to) / from)
+        const bounds = clampBounds({ ...narrow, x: narrow.x + narrow.width - width, width }, areas)
+        if (stored) store.upsertWindow({ ...entry, bounds })
+        else {
+          win.setBounds(bounds, false)
+          commitBounds(entry.id, win)
+        }
+      }
     },
 
     filesToNormal(id) {

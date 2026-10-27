@@ -271,7 +271,9 @@ app.whenReady().then(() => {
     nativeTheme.themeSource = theme
   })
   // The App size (YAZ-3432): every window at once, the Files windows (an origin of their own) and their popups too.
-  subscribeAppZoom(store, (factor) => {
+  // First each Files window takes its new width, so its page keeps its width (YAZ-3441).
+  subscribeAppZoom(store, (factor, before) => {
+    manager.appZoomChanged(before, factor)
     for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.setZoomFactor(factor)
   })
   protocol.handle('app', (req) => {

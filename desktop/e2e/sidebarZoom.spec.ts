@@ -378,6 +378,7 @@ test('step 10 — YAZ-3432: a double click on App size + (100 → 125) zooms eve
   await expect(activeTab(win)).toBeVisible()
   const tab = await screenBox(win, ACTIVE_TAB)
   const filesRow = await screenBox(files, '.tree__row--file')
+  const filesPageW = await sidebarW(files)
   expect([await zoomFactor(app), await zoomFactor(app, filesId)]).toEqual([1, 1])
 
   await zoomChip(win).click()
@@ -394,6 +395,8 @@ test('step 10 — YAZ-3432: a double click on App size + (100 → 125) zooms eve
   await expect.poll(async () => (await screenBox(win, ACTIVE_TAB)).height / tab.height).toBeCloseTo(1.25, 1)
   await expect.poll(async () => (await screenBox(win, ACTIVE_TAB)).width / tab.width).toBeCloseTo(1.25, 1)
   await expect.poll(async () => (await screenBox(files, '.tree__row--file')).height / filesRow.height).toBeCloseTo(1.25, 1)
+  // YAZ-3441: the open Files window grew by the same factor, so its page keeps its width.
+  await expect.poll(() => sidebarW(files)).toBe(filesPageW)
   // The menu on the screen: the same size, in the same place, so the buttons stay under the pointer.
   const after = await screenBox(win, '.zoom-menu')
   expect(after.dpr / before.dpr).toBeCloseTo(1.25, 2)
@@ -410,9 +413,7 @@ test('step 10 — YAZ-3432: a double click on App size + (100 → 125) zooms eve
   await expect(zoomMenu(files)).toHaveCount(0)
 })
 
-test('step 11 — YAZ-3432: at 125% the menu opens right above the chip and inside the window; the footer still fits at 180 px', async () => {
-  const files = filesPage()
-  const filesId = winParam(files) ?? ''
+test('step 11 — YAZ-3432, YAZ-3441: at 125% the menu opens right above the chip and inside the window; the footer still fits at 180 px; a new Files window\'s page is as wide as the 180 px sidebar, with its "Files" tab', async () => {
   await win.keyboard.press('Escape')
   await expect(zoomMenu(win)).toHaveCount(0)
   await zoomChip(win).click()
@@ -430,10 +431,16 @@ test('step 11 — YAZ-3432: at 125% the menu opens right above the chip and insi
   await shootZoomed(app, win, `sidebarzoom-11-full-${SIDEBAR_MIN_W}-at-125`)
   await win.keyboard.press('Escape')
 
-  // A Files window of 180 page px is 225 px on the screen at 125%. The menu, wider than the chip's room, moves left to
-  // stay inside it (a measure that once looped and blanked the window).
-  await setWindowWidth(app, filesId, SIDEBAR_MIN_W * 1.25)
+  // YAZ-3441: File › New Files Window from the 180 px sidebar, with no resize by hand. The window is 225 px on the
+  // screen, so its page is 180 px, as wide as the source's sidebar, and the "Files" tab shows (it went to ⋯ at 144 px).
+  const known = app.windows().map(winParam).filter((id): id is string => id !== null)
+  await clickMenuItem(app, 'menu.file.new-files-window', 'w1')
+  const files = await extraWindow(app, known)
+  const filesId = winParam(files) ?? ''
   await expect.poll(() => sidebarW(files)).toBe(SIDEBAR_MIN_W)
+  expect(await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes(`win=${id}`))!.getBounds().width, filesId)).toBe(SIDEBAR_MIN_W * 1.25)
+  await expect(files.locator('.sidebar__lenses .sidebar__lens').filter({ hasText: /^Files$/ })).toBeVisible()
+  // The menu, wider than the chip's room, moves left to stay inside it (a measure that once looped and blanked the window).
   expect.soft(await footerFaults(files), `Files window at ${SIDEBAR_MIN_W} px, App size 125%`).toEqual([])
   await zoomChip(files).click()
   await expect(zoomMenu(files)).toBeVisible()

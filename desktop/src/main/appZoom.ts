@@ -13,13 +13,17 @@ export function appZoomFactor(settings: SettingsState): number {
   return settings.appZoom / 100
 }
 
-/** Calls `apply` with the new factor each time the App size changes, never on other writes. Windows load it themselves. */
-export function subscribeAppZoom(store: Store, apply: (factor: number) => void): () => void {
+/**
+ * Calls `apply` with the new factor and the one before it each time the App size changes, never on other writes.
+ * Windows load it themselves; the one before lets a Files window keep its page width (YAZ-3441).
+ */
+export function subscribeAppZoom(store: Store, apply: (factor: number, before: number) => void): () => void {
   let last = appZoomFactor(store.get().settings)
   return store.onChange((state) => {
     const next = appZoomFactor(state.settings)
     if (next === last) return
+    const before = last
     last = next
-    apply(next)
+    apply(next, before)
   })
 }

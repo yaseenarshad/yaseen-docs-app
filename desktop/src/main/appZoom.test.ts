@@ -21,7 +21,7 @@ describe('the App size in main (YAZ-3432)', () => {
     expect([90, 100, 110, 125].map((appZoom) => appZoomFactor({ ...DEFAULT_SETTINGS, appZoom }))).toEqual([0.9, 1, 1.1, 1.25])
   })
 
-  it('subscribeAppZoom: applies the new factor only when the App size changed, never at once, and stops on unsubscribe', () => {
+  it('subscribeAppZoom: applies the new factor and the one before (YAZ-3441) only when the App size changed, never at once, and stops on unsubscribe', () => {
     const store = createStore(file)
     const apply = vi.fn()
     const off = subscribeAppZoom(store, apply)
@@ -32,11 +32,11 @@ describe('the App size in main (YAZ-3432)', () => {
     expect(apply).not.toHaveBeenCalled()
 
     store.setSettings({ ...DEFAULT_SETTINGS, appZoom: 125 })
-    expect(apply).toHaveBeenCalledExactlyOnceWith(1.25)
+    expect(apply).toHaveBeenCalledExactlyOnceWith(1.25, 1)
     store.setSettings({ ...DEFAULT_SETTINGS, appZoom: 125, theme: 'dark' })
     expect(apply).toHaveBeenCalledTimes(1)
     store.setSettings({ ...DEFAULT_SETTINGS, appZoom: 90 })
-    expect(apply).toHaveBeenLastCalledWith(0.9)
+    expect(apply).toHaveBeenLastCalledWith(0.9, 1.25)
 
     off()
     store.setSettings({ ...DEFAULT_SETTINGS, appZoom: 100 })
