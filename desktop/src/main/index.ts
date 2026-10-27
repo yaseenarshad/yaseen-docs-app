@@ -30,6 +30,7 @@ import { hotkeyRecording } from './hotkeyRecording'
 import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
 import { runQuitSequence } from './quitSequence'
+import { stopAllLanguageServers } from './lsp/server'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
 import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
@@ -403,6 +404,8 @@ app.on('before-quit', (event) => {
     // The index cache's pending persist, and each vault's diary of links to the IDs this Mac made (YAZ-2677 R27): neither flush throws.
     flushIndex: () => Promise.all([flushIndexCache(), flushDiaries()]).then(() => undefined),
     flushSync: () => gitSync?.flushForQuit(),
+    // No language server outlives the app (YAZ-3453). Each also ends by itself when its stdin closes.
+    stopHelpers: () => stopAllLanguageServers(),
     // The swap waits for this process to end (S21, S22): start it last, then exit.
     exit: () => {
       updater.installOnExit(reopenAfterQuit)

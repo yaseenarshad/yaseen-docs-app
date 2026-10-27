@@ -39,5 +39,10 @@
   "overrides": {
     "@milkdown/components": "$@milkdown/components",
     "@milkdown/plugin-tooltip": "$@milkdown/plugin-tooltip"
+  },
+  "optionalDependencies": {
+    "@typescript/typescript-darwin-arm64": "7.0.2",
+    "@typescript/typescript-darwin-x64": "7.0.2",
+    "@typescript/typescript-win32-x64": "7.0.2"
   }
 }

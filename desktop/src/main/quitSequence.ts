@@ -8,6 +8,8 @@ export interface QuitDeps {
   flushIndex(): Promise<void>
   /** The last sync pass; undefined when quitting before `ready` created the manager. */
   flushSync(): Promise<void> | undefined
+  /** The language servers of the code tab (`lsp/server.ts`, YAZ-3453): `shutdown`, `exit`, then a kill. */
+  stopHelpers(): Promise<void>
   exit(): void
 }
 
@@ -22,7 +24,7 @@ export interface QuitDeps {
 export async function runQuitSequence(deps: QuitDeps): Promise<void> {
   try {
     await deps.flushWindows().catch((err: unknown) => console.error(`[quit] a window did not flush: ${String(err)}`))
-    const results = await Promise.allSettled([deps.flushStore(), deps.flushIndex(), deps.flushSync()])
+    const results = await Promise.allSettled([deps.flushStore(), deps.flushIndex(), deps.flushSync(), deps.stopHelpers()])
     for (const r of results) if (r.status === 'rejected') console.error(`[quit] a flush failed: ${String(r.reason)}`)
   } finally {
     deps.exit()

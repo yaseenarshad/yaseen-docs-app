@@ -393,7 +393,7 @@ describe('runQuitSequence (YAZ-2174)', () => {
     const { runQuitSequence } = await import('./quitSequence')
     const exit = vi.fn()
     const fail = () => Promise.reject(new Error('no'))
-    await expect(runQuitSequence({ flushWindows: fail, flushStore: fail, flushIndex: fail, flushSync: fail, exit })).resolves.toBeUndefined()
+    await expect(runQuitSequence({ flushWindows: fail, flushStore: fail, flushIndex: fail, flushSync: fail, stopHelpers: fail, exit })).resolves.toBeUndefined()
     expect(exit).toHaveBeenCalledOnce()
   })
 })
