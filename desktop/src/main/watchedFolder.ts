@@ -12,9 +12,11 @@ import { watchTree, type TreeWatcher } from './fs/treeWatcher'
  *    file announced once it has settled rather than half-written. A folder that does not exist
  *    yet is waited for.
  *  - RE-ANCHORING. Only the engine's polling fallback can lose a folder — one that appears while it
- *    starts — so the FIRST write that creates the folder re-adds it (`noteOwnWrite` does this).
+ *    starts — so the FIRST write that creates the folder re-adds it (`ownWrite` does this).
  *  - ECHO SUPPRESSION. A write this process made is announced to subscribers synchronously by the
  *    store itself; its watcher echo is dropped by mtime (`null` = an unlink this process caused).
+ *    The engine can hear the write before it answers — its start-up walk, a slow `stat`, a trash
+ *    that asks Finder — so an echo of a file under an own write waits for that write (YAZ-3431).
  *  - DEBOUNCE. 50 ms, because one save touches two or three files and the subscriber only wants
  *    to know that something changed.
  */
@@ -22,8 +24,11 @@ import { watchTree, type TreeWatcher } from './fs/treeWatcher'
 const NOTIFY_DEBOUNCE_MS = 50
 
 export interface WatchedFolder {
-  /** Note a write this process just made, so its echo is dropped; `null` mtime = a delete. */
-  noteOwnWrite(file: string, mtime: number | null): void
+  /**
+   * Runs `write`, this process's own write of `file`, so its echo is dropped. `write` answers the
+   * file's new mtime, `null` for a delete. One own write per file at a time (each store's chain).
+   */
+  ownWrite(file: string, write: () => Promise<number | null>): Promise<void>
   /** Point at another folder; the old one goes quiet and every own-write note is dropped. */
   setFolder(next: string): void
   close(): Promise<void>
@@ -47,20 +52,26 @@ export function createWatchedFolder(opts: WatchedFolderOptions): WatchedFolder {
   let dir = opts.dir
   let watcher: TreeWatcher
   let ownWrites = new Map<string, number | null>()
+  /** The echoes heard for a file while its own write runs, by file; looked at once it answers. */
+  let writing = new Map<string, Array<Stats | undefined>>()
   let anchored = false
   let timer: ReturnType<typeof setTimeout> | null = null
   let pending = new Set<string>()
+  let schedule: (p: string, stats?: Stats) => void
 
   function start(): TreeWatcher {
     anchored = existsSync(dir)
     ownWrites = new Map()
+    writing = new Map()
     const watched = dir
     // Docs' engine has no depth option; a path deeper than `depth` is simply never looked at, on the
     // native engine and on the polling fallback alike.
     const depth = opts.depth
     const w = watchTree(watched, depth === undefined ? {} : { ignored: (p) => path.relative(watched, p).split(path.sep).length - 1 > depth })
-    const schedule = (p: string, stats?: Stats) => {
+    schedule = (p: string, stats?: Stats) => {
       if (!opts.relevant(p, watched)) return
+      const held = writing.get(p)
+      if (held !== undefined) return void held.push(stats)
       const own = ownWrites.get(p)
       if (own !== undefined && (stats === undefined ? own === null : own === stats.mtimeMs)) {
         ownWrites.delete(p)
@@ -92,16 +103,30 @@ export function createWatchedFolder(opts: WatchedFolderOptions): WatchedFolder {
 
   watcher = start()
 
+  function noteOwnWrite(file: string, mtime: number | null): void {
+    // An entry is consumed by the echo it predicts; an echo that never arrives (a watcher that
+    // missed it) would otherwise keep its note for the session. Clearing the lot at a generous
+    // ceiling costs at most one spurious "something changed", which is a re-list.
+    if (ownWrites.size > 256) ownWrites.clear()
+    ownWrites.set(file, mtime)
+    if (!anchored) {
+      watcher.add(dir)
+      anchored = true
+    }
+  }
+
   return {
-    noteOwnWrite(file, mtime) {
-      // An entry is consumed by the echo it predicts; an echo that never arrives (a watcher that
-      // missed it) would otherwise keep its note for the session. Clearing the lot at a generous
-      // ceiling costs at most one spurious "something changed", which is a re-list.
-      if (ownWrites.size > 256) ownWrites.clear()
-      ownWrites.set(file, mtime)
-      if (!anchored) {
-        watcher.add(dir)
-        anchored = true
+    async ownWrite(file, write) {
+      const held: Array<Stats | undefined> = []
+      const during = writing
+      during.set(file, held)
+      try {
+        noteOwnWrite(file, await write())
+      } finally {
+        if (during.get(file) === held) during.delete(file)
+        // Now the note says what this write left: its echo is dropped, anything else goes out. A
+        // write that failed noted nothing, so all it held goes out. After `setFolder` the old folder is quiet.
+        if (during === writing) held.forEach((stats) => schedule(file, stats))
       }
     },
     setFolder(next) {

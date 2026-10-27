@@ -241,6 +241,22 @@ describe('createComponentStore — watching (🔒 YAZ-1775 D5: one library, ever
     expect(seen).toHaveBeenCalledTimes(1)
   })
 
+  it('an OWN delete notifies exactly once, also when the watcher hears it before the trash answers (YAZ-3431)', async () => {
+    await store.save({ name: 'A card', fragmentJson: fragment(), previewPng: PNG })
+    await settle()
+    const seen = vi.fn()
+    store.onChanged(seen)
+    // `shell.trashItem` asks Finder and can take a while; the files are gone long before it answers.
+    trash.mockImplementation(async (p: string) => {
+      await rm(p, { force: true })
+      await new Promise((r) => setTimeout(r, 250))
+    })
+    await store.delete({ slug: 'a-card' })
+    expect(seen).toHaveBeenCalledTimes(1)
+    await settle()
+    expect(seen).toHaveBeenCalledTimes(1)
+  })
+
   it('`setFolder` re-points the watcher; the old folder goes quiet and the new one is listed', async () => {
     await store.save({ name: 'A card', fragmentJson: fragment(), previewPng: PNG })
     const other = path.join(dir, 'other-library')

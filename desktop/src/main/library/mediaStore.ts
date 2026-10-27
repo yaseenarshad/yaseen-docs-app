@@ -57,11 +57,12 @@ export function createMediaStore(initialFolder: string, deps: { now?: () => numb
 
   async function write(lib: MediaLibraryFile): Promise<void> {
     const p = file()
-    const { mtime } = await fsCall(p, async () => {
-      await mkdir(folder, { recursive: true })
-      return atomicWrite(p, `${JSON.stringify(lib, null, 2)}\n`)
-    })
-    watched.noteOwnWrite(p, mtime)
+    await watched.ownWrite(p, () =>
+      fsCall(p, async () => {
+        await mkdir(folder, { recursive: true })
+        return (await atomicWrite(p, `${JSON.stringify(lib, null, 2)}\n`)).mtime
+      }),
+    )
     notify()
   }
 
