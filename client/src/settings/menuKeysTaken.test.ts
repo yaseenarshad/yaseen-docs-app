@@ -3,7 +3,7 @@
  * Otherwise the recorder gives that key to a command, and two menu items share one accelerator.
  */
 import { describe, expect, it } from 'vitest'
-import { HOTKEY_COMMANDS, ownersOf } from '@shared/hotkeyBindings'
+import { HOTKEY_COMMANDS, ownersOf, sameKey } from '@shared/hotkeyBindings'
 import { MACOS_HOTKEYS } from '@shared/macosHotkeys'
 import { BUILT_IN_KEYS } from './hotkeys'
 
@@ -27,6 +27,6 @@ describe('YAZ-3419: the menu\'s fixed keys are taken on the Hotkeys page', () =>
     expect(owners.length, `${key} reads as free`).toBeGreaterThan(0)
   })
   it('no changeable default is one of them', () => {
-    expect(HOTKEY_COMMANDS.length).toBe(14)
+    expect(HOTKEY_COMMANDS.filter((c) => FIXED_MENU_KEYS.some((k) => sameKey(c.key, k)))).toEqual([])
   })
 })
