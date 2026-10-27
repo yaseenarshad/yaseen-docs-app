@@ -32,6 +32,7 @@ import { SHARING_SECTION } from '../share/SharingPage'
 import type { SharingState } from '../share/useSharing'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { CANVAS_SECTION } from './canvasSection'
+import { CODE_SECTION } from './codeSection'
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented } from './controls'
 import { HOTKEYS_SECTION } from './hotkeysSection'
@@ -117,7 +118,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'general' | 'appearance' | 'notifications' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'appearance' | 'notifications' | 'editor' | 'code' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -548,6 +549,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
     ],
   },
+  // YAZ-3449: the three switches every code tab shares (its page cog has them too).
+  CODE_SECTION,
   // YAZ-3037 (YAZ-3028 D10): the user-level Excalidraw canvas preferences, declared in their own module
   // because there are fourteen of them and they are the one section with a mapping behind it (`shared/canvasPrefs.ts`).
   CANVAS_SECTION,

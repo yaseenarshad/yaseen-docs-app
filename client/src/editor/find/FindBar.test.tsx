@@ -154,6 +154,28 @@ describe('claim rule with a note editor and an outline view mounted together', (
   })
 })
 
+describe('claim rule beside a code tab (YAZ-3451)', () => {
+  it("a note's bar leaves CMD+F alone while the focus is in a code tab, so Monaco's find box gets it", async () => {
+    const channel = createFindChannel()
+    const { el, view } = await mountEditor('note apple', { find: channel })
+    renderBar(channel, 'note', el)
+    const codeTab = document.createElement('section')
+    codeTab.className = 'editor editor--code'
+    const monacoInput = document.createElement('textarea')
+    codeTab.appendChild(monacoInput)
+    document.body.appendChild(codeTab)
+    monacoInput.focus()
+    const event = pressCmdF(monacoInput)
+    expect(event.defaultPrevented).toBe(false)
+    expect(channel.getState().open).toBe(false)
+    // The note still claims it from its own body.
+    view.dom.focus()
+    pressCmdF(view.dom)
+    expect(channel.getState().open).toBe(true)
+    codeTab.remove()
+  })
+})
+
 describe('the counter and cycling', () => {
   it('shows N of M live, wraps with Enter, walks back with Shift+Enter', async () => {
     const channel = createFindChannel()

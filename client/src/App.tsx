@@ -555,6 +555,8 @@ export function App() {
   const changeTableOfContentsWidth = useCallback((width: number) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContentsWidth: width }), [changeSettings])
   // A drawing's engine moved a canvas pref (YAZ-3028, Draw's 🔒 YAZ-1775 D9): the same stable door.
   const changeCanvasPrefs = useCallback((canvas: CanvasPrefs) => changeSettings({ ...newNoteFolderInputs.current.settings, canvas }), [changeSettings])
+  // A code tab's cog row (YAZ-3449): Settings › Code, for every code file, through the same stable door.
+  const changeCodeSettings = useCallback((patch: Partial<Pick<SettingsState, 'codeReadOnly' | 'codeWrap' | 'codeMinimap'>>) => changeSettings({ ...newNoteFolderInputs.current.settings, ...patch }), [changeSettings])
   // The canvas panel's tab and dock choice (YAZ-3038): the same stable door; a choice that did not move is no write.
   const changeCanvasPanel = useCallback(
     (canvasPanel: CanvasPanelState) => {
@@ -2307,6 +2309,11 @@ export function App() {
       // A diagram tab's dark-mode colours, and ⌘B pressed inside its draw.io frame.
       diagramDarkColors: settings.diagramDarkColors,
       onToggleSidebar: toggleSidebar,
+      // YAZ-3449: every code tab's read only, wrap and minimap, each a SETTING, and its cog's door that writes them.
+      codeReadOnly: settings.codeReadOnly,
+      codeWrap: settings.codeWrap,
+      codeMinimap: settings.codeMinimap,
+      onChangeCodeSettings: changeCodeSettings,
       // YAZ-3403: the hover panel of a note's [[links]], its linked mentions and a folder's views, each its own SETTING.
       hoverLinks: hoverOn(settings, 'links'),
       hoverBacklinks: hoverOn(settings, 'backlinks'),

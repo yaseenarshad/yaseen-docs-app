@@ -37,7 +37,7 @@
  * TAB-REVEAL focus handoff (🔒 YAZ-1812) are both claimed on THIS host's own element: the shell keeps several boards
  * mounted, and exactly one of them is in front.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { GithubSyncStatus, SaveDrawingResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { PageSettings } from '../editor/PageSettings'
@@ -309,12 +309,15 @@ interface ChipState {
 /**
  * The page cog (YAZ-3076 D3: one row, "Read only"), the "Read only" chip while it is on (D4), the
  * sync chip (when the vault has one) and the save chip; what they say comes from the store. A file
- * with no switch (a code file) has no cog and no chip: the cog would have no row.
+ * with no switch (a code file) has no cog and no chip from here: the cog would have no row. Such an
+ * engine hands its own chips as `lead` (the code tab's cog, text size and Read only chip, YAZ-3449),
+ * drawn first; the same element across the store's renders, so a save's status moves leave it alone.
  */
-export function DocumentChips({ store, className }: { store: Store<ChipState>; className: string }) {
+export function DocumentChips({ store, className, lead }: { store: Store<ChipState>; className: string; lead?: ReactNode }) {
   const { status, sync, onSyncNow, readOnly, askingUnlock, readOnlyActions: actions } = useSyncExternalStore(store.subscribe, store.getState)
   return (
     <div className={className}>
+      {lead}
       {actions !== null && <PageSettings readOnly={readOnly} onToggleReadOnly={actions.toggle} />}
       {actions !== null && readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={actions.ask} onAllow={actions.allow} onCancel={actions.cancel} />}
       {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}

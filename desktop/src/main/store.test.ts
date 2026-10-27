@@ -201,6 +201,22 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ noticeLength: '4s', noticeUndo: true, noticeClipboard: false, noticeLists: true, gestureSounds: true })
   })
 
+  it('Settings › Code (YAZ-3449 S6): a file from before the code tab reads edit mode, wrap on, minimap off; each value survives; a wrong value falls back to its default, field by field', async () => {
+    const { codeReadOnly: _a, codeWrap: _b, codeMinimap: _c, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ codeReadOnly: false, codeWrap: true, codeMinimap: false })
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeReadOnly: true, codeWrap: false, codeMinimap: true } }))
+    expect(createStore(file).get().settings).toMatchObject({ codeReadOnly: true, codeWrap: false, codeMinimap: true })
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeReadOnly: 'yes', codeWrap: 0, codeMinimap: null } }))
+    expect(createStore(file).get().settings).toMatchObject({ codeReadOnly: false, codeWrap: true, codeMinimap: false })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, codeReadOnly: 1, codeWrap: 'off', codeMinimap: true })).toMatchObject({ codeReadOnly: false, codeWrap: true, codeMinimap: true })
+    // The IPC boundary refuses the whole object (it never repairs).
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeWrap: 'off' })).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeWrap: false })).toBe(true)
+  })
+
   it('commentsOrder: a pre-1515 file without the key sanitizes to oldest; both orders survive; junk falls back (YAZ-1515)', async () => {
     const { commentsOrder: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))

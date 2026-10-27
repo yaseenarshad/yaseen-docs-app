@@ -50,7 +50,8 @@ vi.mock('../editor/createCrepe', () => ({
   }),
 }))
 
-vi.mock('../viewers/TextViewer', () => ({ TextViewer: viewer('text') }))
+/** The code view (YAZ-3450), stood in: Monaco does not run in jsdom (its own suite is `code/CodePreview.test.tsx`). */
+vi.mock('../code/CodePreview', () => ({ default: viewer('text') }))
 vi.mock('../viewers/ImageViewer', () => ({ ImageViewer: viewer('image') }))
 vi.mock('../viewers/PdfViewer', () => ({ PdfViewer: viewer('pdf') }))
 /** The board picture (YAZ-3044 A22), stood in: it says what it was handed. */

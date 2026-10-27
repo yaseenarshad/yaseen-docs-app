@@ -71,7 +71,6 @@
 }
 
 /* The header names the file already. */
-.quicklook .text-viewer__header,
 .quicklook .image-viewer__header {
   display: none;
 }

@@ -61,7 +61,8 @@ export function FindBar({ channel, scope, hostRef }: FindBarProps) {
           ? shown(hostRef.current) &&
             ((active !== null && hostRef.current !== null && hostRef.current.contains(active)) ||
               !shown(document.querySelector('.editor-mount .ProseMirror')))
-          : shown(hostRef.current) && (!(active instanceof Element) || active.closest('.view-outline-editor') === null)
+          : // Never from a code tab (YAZ-3451): its ⌘F is Monaco's find box, and a note in the right panel would take it first.
+            shown(hostRef.current) && (!(active instanceof Element) || (active.closest('.view-outline-editor') === null && active.closest('.editor--code') === null))
       if (!claims) return
       event.preventDefault()
       event.stopPropagation()
