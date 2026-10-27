@@ -161,11 +161,12 @@ export function createComponentStore(initialFolder: string, deps: { now?: () => 
   }
 
   async function writeBytes(p: string, content: string | Uint8Array): Promise<void> {
-    const { mtime } = await fsCall(p, async () => {
-      await mkdir(path.dirname(p), { recursive: true })
-      return atomicWrite(p, content)
-    })
-    watched.noteOwnWrite(p, mtime)
+    await watched.ownWrite(p, () =>
+      fsCall(p, async () => {
+        await mkdir(path.dirname(p), { recursive: true })
+        return (await atomicWrite(p, content)).mtime
+      }),
+    )
     scanCache = null // this process just changed the folder; the next read scans it again
   }
 
@@ -276,15 +277,9 @@ export function createComponentStore(initialFolder: string, deps: { now?: () => 
         // Both files, and a preview that is already gone is not a failure — the fragment is the
         // component, the picture is a convenience.
         const fragment = fragmentPath(slug)
-        await fsCall(fragment, async () => {
-          await trash(fragment)
-          watched.noteOwnWrite(fragment, null)
-        })
+        await fsCall(fragment, () => watched.ownWrite(fragment, () => trash(fragment).then(() => null)))
         const preview = previewPath(slug)
-        await trash(preview).then(
-          () => watched.noteOwnWrite(preview, null),
-          () => undefined,
-        )
+        await watched.ownWrite(preview, () => trash(preview).then(() => null)).catch(() => undefined)
         scanCache = null
         return { index: next, value: undefined }
       })

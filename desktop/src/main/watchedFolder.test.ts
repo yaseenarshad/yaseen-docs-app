@@ -1,7 +1,8 @@
 /**
  * The one watched-folder shape every store in main shares (media, components, vault config): the
  * relevance filter and the 50 ms debounce, re-anchoring under the engine's polling fallback; and the
- * quarantine read and the serialising chain (now in `fs/fsUtils.ts`, YAZ-3044 A9). Echo suppression, a missing folder and `setFolder` are
+ * quarantine read and the serialising chain (now in `fs/fsUtils.ts`, YAZ-3044 A9), and an echo heard while
+ * its own write still runs (YAZ-3431). Echo suppression, a missing folder and `setFolder` are
  * `fs/watchConformance.test.ts`'s. Real engine, real temp dirs.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -87,6 +88,42 @@ describe('createWatchedFolder', () => {
     expect(calls).toEqual([[a, b]])
   })
 
+  it('drops the echo of an own write that the engine hears before the write answers (YAZ-3431)', async () => {
+    const watched = await watchJson(base)
+    const [own, gone, other] = [path.join(base, 'own.json'), path.join(base, 'gone.json'), path.join(base, 'other.json')]
+    await watched.ownWrite(own, async () => {
+      engines.last!.emit('add', own, { mtimeMs: 5 })
+      engines.last!.emit('add', other, { mtimeMs: 5 })
+      await sleep(200) // past the debounce: the echo must not go out meanwhile
+      return 5
+    })
+    await watched.ownWrite(gone, async () => {
+      engines.last!.emit('unlink', gone)
+      await sleep(200)
+      return null
+    })
+    await sleep(200)
+    expect(calls).toEqual([[other]])
+  })
+
+  it('an echo heard during an own write is an outside change when it is not that write: another mtime, or a write that failed', async () => {
+    const watched = await watchJson(base)
+    const [raced, failed] = [path.join(base, 'raced.json'), path.join(base, 'failed.json')]
+    await watched.ownWrite(raced, async () => {
+      engines.last!.emit('change', raced, { mtimeMs: 4 })
+      return 5
+    })
+    const refused = watched.ownWrite(failed, async () => {
+      engines.last!.emit('add', failed, { mtimeMs: 5 })
+      await sleep(200)
+      throw new Error('disk full')
+    })
+    await expect(refused).rejects.toThrow('disk full')
+    await until(() => calls.flat().length >= 2)
+    await sleep(200)
+    expect(calls.flat().sort()).toEqual([failed, raced])
+  })
+
   describe('under the polling fallback', { timeout: 20_000 }, () => {
     beforeEach(() => void (nativeWatch.fail = true))
 
@@ -95,8 +132,10 @@ describe('createWatchedFolder', () => {
       const watched = await watchJson(dir)
       await mkdir(dir)
       const own = path.join(dir, 'own.json')
-      await writeFile(own, '{}')
-      watched.noteOwnWrite(own, (await stat(own)).mtimeMs)
+      await watched.ownWrite(own, async () => {
+        await writeFile(own, '{}')
+        return (await stat(own)).mtimeMs
+      })
       await sleep(QUIET_MS)
       await writeFile(path.join(dir, 'outside.json'), '{}')
       await until(() => calls.some((c) => c.includes(path.join(dir, 'outside.json'))), POLL_PATIENCE_MS)

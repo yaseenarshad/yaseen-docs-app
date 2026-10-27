@@ -38,7 +38,9 @@ describe('sidebar sort perf (YAZ-3227)', () => {
   it('a 108-row level sorts by name in well under 1 ms', () => {
     const level = Array.from({ length: 108 }, (_, i) => note(`/v/Phase ${(i * 37) % 108}.md`, i))
     sortLevel(level, { by: 'name', reverse: false }, label)
-    const { median } = timeMedian(100, (i) => sortLevel(level, { by: 'name', reverse: i % 2 === 1 }, label))
+    const { median, worst } = timeMedian(100, (i) => sortLevel(level, { by: 'name', reverse: i % 2 === 1 }, label))
+    // The measured ms in the run's output (YAZ-861): the only budget here that did not print it (YAZ-3431).
+    console.log(`sortLevel 108 rows by name: median ${(median * 1000).toFixed(0)} µs, worst ${(worst * 1000).toFixed(0)} µs of 100`)
     expect(median).toBeLessThan(1)
   })
 
