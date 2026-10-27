@@ -2592,6 +2592,7 @@ export function App() {
           onOpenSetHere={filesWindow ? openSetHere : undefined}
           filesZoom={filesWindow ? filesZoom : undefined}
           onFilesZoom={filesWindow ? changeFilesZoom : undefined}
+          onZoomMenu={filesWindow ? storage.setFilesZoomMenu : undefined}
           onToNormalWindow={filesWindow ? () => void api.window.filesToNormal().catch((err: unknown) => notify(`Can't make this a full window: ${err instanceof Error ? err.message : String(err)}`)) : undefined}
           // On the sidebar itself (YAZ-2194): stamped on .app as an inherited variable, every resize
           // move restyled the whole window, every mounted tab included.

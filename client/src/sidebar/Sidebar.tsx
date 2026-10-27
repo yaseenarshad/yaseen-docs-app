@@ -196,6 +196,8 @@ interface SidebarProps {
    */
   filesZoom?: number
   onFilesZoom?: (percent: number) => void
+  /** A Files window (YAZ-3444): its zoom menu opened or closed, for main, which holds this window's resize until the close. */
+  onZoomMenu?: (open: boolean) => void
   /** A Files window's hover preview (YAZ-3357 D9): its floating popup, or `'overlay'` where there is none. Absent: beside the sidebar. */
   previewFloat?: PreviewPopup | 'overlay'
   /** A save just made this session (YAZ-3147 D5): the Sessions tab opens its name field once; then `onSessionNameConsumed`. */
@@ -545,6 +547,7 @@ export function Sidebar({
   onToNormalWindow,
   filesZoom,
   onFilesZoom,
+  onZoomMenu,
   previewFloat,
   sessionNameRequest,
   onSessionNameConsumed,
@@ -1617,7 +1620,7 @@ export function Sidebar({
         <SettingsButton onClick={onOpenSettings} hotkeys={settings.hotkeys} />
         {/* The zoom chip (YAZ-3432): its menu zooms the lists above (YAZ-3389: one value for every full window, a Files
             window's own, D13) and sets the App size of every window. */}
-        <ZoomMenu sidebar={zoomValue} onSidebar={onZoom} app={settings.appZoom} onApp={changeAppZoom} />
+        <ZoomMenu sidebar={zoomValue} onSidebar={onZoom} app={settings.appZoom} onApp={changeAppZoom} onOpenChange={onZoomMenu} />
         {onToNormalWindow !== undefined && (
           // Which kind of window this is (YAZ-3357 D13), quiet beside the cog. Two clicks make it a full window.
           <button

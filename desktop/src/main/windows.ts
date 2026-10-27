@@ -252,9 +252,17 @@ export interface WindowManager extends WindowLookup {
   /**
    * A new App size, from the factor `from` to `to` (YAZ-3441): each Files window keeps its PAGE width, so its window
    * width scales by `to / from` and its right edge stays (it stands flush left of its source). A wide one's stored
-   * narrow bounds scale; the board's close brings them back. Full windows do not change: their sidebar is in page px.
+   * narrow bounds scale and the wide window takes the board's width at the new App size; the board's close brings the
+   * narrow ones back. A Files window whose zoom menu is open waits for the close (`filesZoomMenu`, YAZ-3444). Full
+   * windows do not change: their sidebar is in page px.
    */
   appZoomChanged(from: number, to: number): void
+  /**
+   * The zoom menu of the Files window `id` opened or closed (YAZ-3444). While it is open, a new App size leaves that
+   * window's size, so the menu and its + stay under the pointer; the close gives it the width that keeps its page
+   * width from before the first change. A reload of its page counts as a close. `false` = no live Files window.
+   */
+  filesZoomMenu(id: string, open: boolean): boolean
   /** The Files window `id`'s floating preview (YAZ-3357 D9): beside the window on the row's height (`filesPreviewBounds`), or hidden with null. `false` = no live Files window. */
   filesPreview(id: string, req: FilesPreviewRequest | null): boolean
   /**
@@ -271,7 +279,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -453,6 +461,44 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const minimizedWins = new Set<string>()
   /** The Files windows grown wide for Tabs Mission Control (YAZ-3357 D3): their stored bounds stay the narrow ones. Never stored. */
   const wideFiles = new Set<string>()
+  /**
+   * The Files windows whose zoom menu is open (YAZ-3444): a new App size leaves their size, so the menu stays under the
+   * pointer. The value is the App size factor before the first change while it was open (null: no change yet). Never stored.
+   */
+  const zoomMenus = new Map<string, number | null>()
+  /** The board's width on the screen: `FILES_WINDOW_WIDE_W` page px × the App size (YAZ-3441). */
+  const wideWidth = (): number => Math.round(FILES_WINDOW_WIDE_W * appZoomFactor(store.get().settings))
+  /**
+   * A Files window takes the width that keeps its page width from the App size factor `from` to `to` (YAZ-3441), its
+   * right edge kept (it stands flush left of its source). While the board makes it wide, its stored narrow bounds
+   * scale and the wide window takes the board's width at the new App size.
+   */
+  const scaleFilesWindow = (entry: WindowEntry, from: number, to: number): void => {
+    if (from === to || from <= 0) return
+    const win = liveWindow(entry.id)
+    const wide = wideFiles.has(entry.id)
+    // The narrow bounds: as it stands now, or the stored ones while the board makes it wide.
+    const narrow = wide || win === undefined ? entry.bounds : win.getBounds()
+    const width = Math.round((narrow.width * to) / from)
+    const areas = host.workAreas()
+    const bounds = clampBounds({ ...narrow, x: narrow.x + narrow.width - width, width }, areas)
+    if (win === undefined) return store.upsertWindow({ ...entry, bounds })
+    if (wide) {
+      store.upsertWindow({ ...entry, bounds })
+      win.setBounds(clampBounds({ ...bounds, width: Math.max(bounds.width, wideWidth()) }, areas), false)
+      return
+    }
+    win.setBounds(bounds, false)
+    commitBounds(entry.id, win)
+  }
+  /** The zoom menu of the Files window `id` is gone (closed, or its page reloaded): the size it waited for (YAZ-3444). */
+  const zoomMenuClosed = (id: string): void => {
+    const from = zoomMenus.get(id)
+    zoomMenus.delete(id)
+    const entry = entryOf(id)
+    if (from === undefined || from === null || entry === undefined) return
+    scaleFilesWindow(entry, from, appZoomFactor(store.get().settings))
+  }
   /** In-flight flush handshakes by `webContents.id`; `settle` answers ack and timeout alike. */
   const pendingFlush = new Map<number, { done: Promise<void>; settle: () => void }>()
   /** Windows closing as part of the quit keep their state entry: the next launch can bring them back. */
@@ -599,6 +645,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       if (at !== -1) focusOrder.splice(at, 1)
       const wasHidden = hiddenWins.delete(id)
       wideFiles.delete(id)
+      zoomMenus.delete(id)
       if (minimizedWins.delete(id) && !quitting) tellMinimized()
       if (quitting) return
       if (wasHidden) tellHidden()
@@ -977,6 +1024,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     handleLinkReady(sender) {
       for (const send of heldLinks.get(sender.id) ?? []) send()
       heldLinks.delete(sender.id)
+      // A new page has no zoom menu open (YAZ-3444): one left open by the old page closes now.
+      const id = idFor(sender)
+      if (id !== undefined && zoomMenus.has(id)) zoomMenuClosed(id)
     },
 
     handleFlushed(sender) {
@@ -1048,29 +1098,32 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         const narrow = entryOf(id)?.bounds ?? entry.bounds
         // At once, not animated (D10): macOS's animation lays the page out on every frame of it.
         // The board's width is page px, the App size larger on the screen (YAZ-3441).
-        const wide = Math.round(FILES_WINDOW_WIDE_W * appZoomFactor(store.get().settings))
-        win.setBounds(clampBounds({ ...narrow, width: Math.max(narrow.width, wide) }, host.workAreas()), false)
+        win.setBounds(clampBounds({ ...narrow, width: Math.max(narrow.width, wideWidth()) }, host.workAreas()), false)
       } else if (wideFiles.delete(id)) win.setBounds(entry.bounds, false)
       return true
     },
 
     appZoomChanged(from, to) {
       if (from === to || from <= 0) return
-      const areas = host.workAreas()
       for (const entry of store.get().windows) {
         if (!isFilesWindow(entry)) continue
-        const win = liveWindow(entry.id)
-        const stored = wideFiles.has(entry.id) || win === undefined
-        // The narrow bounds: as it stands now, or the stored ones while the board makes it wide.
-        const narrow = stored ? entry.bounds : win.getBounds()
-        const width = Math.round((narrow.width * to) / from)
-        const bounds = clampBounds({ ...narrow, x: narrow.x + narrow.width - width, width }, areas)
-        if (stored) store.upsertWindow({ ...entry, bounds })
-        else {
-          win.setBounds(bounds, false)
-          commitBounds(entry.id, win)
+        // Its zoom menu is open (YAZ-3444): it waits for the close, from the App size before the FIRST change, so
+        // 100 → 110 → 125 ends as 100 → 125 would, with no rounding drift.
+        if (zoomMenus.has(entry.id)) {
+          if (zoomMenus.get(entry.id) === null) zoomMenus.set(entry.id, from)
+          continue
         }
+        scaleFilesWindow(entry, from, to)
       }
+    },
+
+    filesZoomMenu(id, open) {
+      const entry = entryOf(id)
+      if (entry === undefined || !isFilesWindow(entry) || liveWindow(id) === undefined) return false
+      if (open) {
+        if (!zoomMenus.has(id)) zoomMenus.set(id, null)
+      } else zoomMenuClosed(id)
+      return true
     },
 
     filesToNormal(id) {

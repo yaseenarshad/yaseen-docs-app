@@ -170,6 +170,7 @@ window.filesPreview/1: invoke window:files-preview ["a0"]; => "answer"; !> {"cod
 window.filesToNormal/0: invoke window:files-to-normal []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.filesWide/1: invoke window:files-wide ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.filesZoom/1: invoke window:files-zoom ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.filesZoomMenu/1: invoke window:files-zoom-menu ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.focusTab/2: invoke window:focus-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.hiddenWindows/0: invoke window:hidden-windows-now []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.highlight/1: invoke window:highlight ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

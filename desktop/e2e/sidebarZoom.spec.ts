@@ -462,3 +462,55 @@ test('step 12 — YAZ-3432: quit and launch again: the state file says 125 and e
   await expect.poll(() => zoomFactor(app)).toBe(1)
   await expect.poll(async () => (await readState(userData)).settings.appZoom).toBe(100)
 })
+
+/**
+ * Where the centre of `selector` is on the SCREEN, in screen px: the window's content x and y from main, plus the box
+ * in the page × the page's zoom. `screenBox` measures inside the window only, so it cannot see the window move.
+ */
+const onScreen = async (w: Page, selector: string) => {
+  const id = winParam(w) ?? ''
+  const [content, zoom] = await app.evaluate(({ BrowserWindow }, winId) => {
+    const bw = BrowserWindow.getAllWindows().find((b) => b.webContents.getURL().includes(`win=${winId}`))!
+    return [bw.getContentBounds(), bw.webContents.getZoomFactor()] as const
+  }, id)
+  const r = await w.locator(selector).first().evaluate(async (el) => {
+    await Promise.all(el.closest('.zoom-menu')?.getAnimations().map((a) => a.finished) ?? [])
+    const b = el.getBoundingClientRect()
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+  })
+  return { x: Math.round((content.x + r.x * zoom) * 10) / 10, y: Math.round((content.y + r.y * zoom) * 10) / 10 }
+}
+
+test('step 13 — YAZ-3444: in a Files window, a quick double click on its own menu\'s App size + keeps + at one SCREEN point (100 → 125); the window takes its page width back when the menu closes', async () => {
+  // w1 with room on its left: the Files window opens flush left of it, away from the screen's edge.
+  await app.evaluate(({ BrowserWindow }) => {
+    const bw = BrowserWindow.getAllWindows().find((b) => b.webContents.getURL().includes('win=w1'))!
+    bw.setBounds({ ...bw.getBounds(), x: 700 })
+  })
+  const known = app.windows().map(winParam).filter((id): id is string => id !== null)
+  await clickMenuItem(app, 'menu.file.new-files-window', 'w1')
+  const files = await extraWindow(app, known)
+  const filesId = winParam(files) ?? ''
+  await expect(zoomChip(files)).toBeVisible()
+  expect(await zoomFactor(app, filesId)).toBe(1)
+  const pageW = await sidebarW(files)
+
+  await zoomChip(files).click()
+  const PLUS = '.zoom-menu [aria-label="App size"] button[aria-label="Make the app larger"]'
+  const before = await onScreen(files, PLUS)
+  await appRow(files).getByRole('button', { name: 'Make the app larger', exact: true }).dblclick()
+  // Both clicks landed on +: 125%, and the menu is still open.
+  await expect(appPercent(files)).toHaveText('125%')
+  await expect.poll(() => zoomFactor(app, filesId)).toBe(1.25)
+  await expect(zoomMenu(files)).toBeVisible()
+  const after = await onScreen(files, PLUS)
+  expect(Math.abs(after.x - before.x), `+ x on the screen: ${before.x} → ${after.x}`).toBeLessThanOrEqual(1.5)
+  expect(Math.abs(after.y - before.y), `+ y on the screen: ${before.y} → ${after.y}`).toBeLessThanOrEqual(1.5)
+  await shootZoomed(app, files, 'sidebarzoom-13-files-menu-125')
+
+  // The menu closes: the window takes the width that gives its page the width it had at 100%.
+  await files.keyboard.press('Escape')
+  await expect(zoomMenu(files)).toHaveCount(0)
+  await expect.poll(() => sidebarW(files)).toBe(pageW)
+  await shootZoomed(app, files, 'sidebarzoom-13-files-closed-125')
+})

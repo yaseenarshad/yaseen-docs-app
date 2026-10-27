@@ -15,10 +15,10 @@ afterEach(() => {
   host = null
 })
 
-function render(props: { sidebar?: number; app?: number; onSidebar?: (p: number) => void; onApp?: (p: number) => void } = {}): HTMLElement {
+function render(props: { sidebar?: number; app?: number; onSidebar?: (p: number) => void; onApp?: (p: number) => void; onOpenChange?: (open: boolean) => void } = {}): HTMLElement {
   host ??= document.body.appendChild(document.createElement('div'))
   root ??= createRoot(host)
-  act(() => root?.render(<ZoomMenu sidebar={props.sidebar ?? 100} onSidebar={props.onSidebar ?? vi.fn()} app={props.app ?? 100} onApp={props.onApp ?? vi.fn()} />))
+  act(() => root?.render(<ZoomMenu sidebar={props.sidebar ?? 100} onSidebar={props.onSidebar ?? vi.fn()} app={props.app ?? 100} onApp={props.onApp ?? vi.fn()} onOpenChange={props.onOpenChange} />))
   return host
 }
 
@@ -134,5 +134,30 @@ describe('ZoomMenu', () => {
     act(() => chip().click())
     act(() => void window.dispatchEvent(new Event('blur')))
     expect(menu()).toBeNull()
+  })
+
+  it('YAZ-3444: onOpenChange hears true at the open and false at each close — Escape, a click outside, the chip, the blur, an unmount', () => {
+    const onOpenChange = vi.fn()
+    const props = { onOpenChange }
+    render(props)
+    expect(onOpenChange).not.toHaveBeenCalled()
+    act(() => chip().click())
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    act(() => chip().click())
+    mousedown(document.body)
+    act(() => chip().click())
+    act(() => chip().click())
+    act(() => chip().click())
+    act(() => void window.dispatchEvent(new Event('blur')))
+    expect(onOpenChange.mock.calls).toEqual([[true], [false], [true], [false], [true], [false], [true], [false]])
+    // A click inside the menu, or a new App size, sends nothing; an unmount while open sends the close.
+    act(() => chip().click())
+    act(() => button('Make the app larger').click())
+    render({ ...props, app: 110 })
+    expect(onOpenChange).toHaveBeenCalledTimes(9)
+    act(() => root?.unmount())
+    root = null
+    expect(onOpenChange).toHaveBeenLastCalledWith(false)
+    expect(onOpenChange).toHaveBeenCalledTimes(10)
   })
 })

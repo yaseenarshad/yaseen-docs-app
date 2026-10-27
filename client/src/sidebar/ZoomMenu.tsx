@@ -10,7 +10,8 @@
  * the screen too, so two quick clicks on + both land on +. The page's zoom is READ (`devicePixelRatio` against the one
  * at the open), never taken from the setting: main applies a new App size a moment after the setting changes, and a
  * menu that followed the setting would shrink and jump for that moment. Escape, a click outside and the window's blur
- * close it.
+ * close it. In a Files window main also holds that window's resize for a new App size until the close
+ * (`onOpenChange`, YAZ-3444): a resize keeps the window's right edge, so it would move the menu away from the pointer.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
@@ -23,12 +24,17 @@ interface ZoomMenuProps {
   /** The App size in percent (`settings.appZoom`). */
   app: number
   onApp: (percent: number) => void
+  /**
+   * A Files window (YAZ-3444): told `true` when the menu opens and `false` when it goes, by any close or an unmount.
+   * Main then holds that window's resize for a new App size until the close, so the window does not move under the menu.
+   */
+  onOpenChange?: (open: boolean) => void
 }
 
 /** The room between the chip and the menu, and the least between the menu and the window's right edge, in px. */
 const GAP = 4
 
-export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp }: ZoomMenuProps) {
+export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp, onOpenChange }: ZoomMenuProps) {
   // The menu's place while it is open, in SCREEN px (page px × the page's zoom at the open): its left edge and how far
   // its bottom is above the window's bottom. Screen px, so a new App size leaves it where it is. `dpr` is the screen's
   // own `devicePixelRatio` (the page's at 100%), so the page's zoom of any moment is `devicePixelRatio / dpr`.
@@ -42,6 +48,14 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp 
   const open = at !== null
   const scale = at === null ? app / 100 : window.devicePixelRatio / at.dpr
   const close = useCallback(() => setAt(null), [])
+  // The open and the close for main (YAZ-3444): every close path ends `open`, and an unmount runs the cleanup too.
+  const openChangeRef = useRef(onOpenChange)
+  openChangeRef.current = onOpenChange
+  useEffect(() => {
+    if (!open) return
+    openChangeRef.current?.(true)
+    return () => openChangeRef.current?.(false)
+  }, [open])
 
   const toggle = () => {
     if (open) return close()

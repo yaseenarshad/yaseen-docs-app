@@ -1984,12 +1984,60 @@ describe('Files windows (YAZ-3357)', () => {
     manager.appZoomChanged(1.25, 0.9)
     expect(f.getBounds()).toEqual({ x: 148, y: 100, width: 252, height: 600 })
     expect(w1.getBounds()).toEqual({ x: 400, y: 100, width: 800, height: 600 })
-    // While the board makes it wide, its stored narrow bounds scale, and the board's close brings them back.
+    // While the board makes it wide, its stored narrow bounds scale, and the board's close brings them back. The wide
+    // window itself takes the board's width at the new App size (1200 page px: 1080 at 90%, 1200 at 100%).
+    store.setSettings({ ...store.get().settings, appZoom: 90 })
     manager.filesWide('f', true)
+    expect(f.getBounds()).toEqual({ x: 148, y: 100, width: 1080, height: 600 })
+    store.setSettings({ ...store.get().settings, appZoom: 100 })
     manager.appZoomChanged(0.9, 1)
     expect(store.get().windows.find((w) => w.id === 'f')?.bounds).toEqual({ x: 120, y: 100, width: 280, height: 600 })
+    expect(f.getBounds()).toEqual({ x: 120, y: 100, width: 1200, height: 600 })
     manager.filesWide('f', false)
     expect(f.getBounds()).toEqual({ x: 120, y: 100, width: 280, height: 600 })
+  })
+
+  it('YAZ-3444: while a Files window\'s zoom menu is open, a new App size leaves its size; the menu\'s close gives it the width of its page from before the first change, with no drift; other Files windows resize at once', () => {
+    const { manager, created, f, w1 } = seedFiles()
+    manager.openFilesWindow('w2', null)
+    const g = created.at(-1)!.win
+    const gAt = g.getBounds()
+    // f: 263 wide, its right edge at 400. Its zoom menu opens; a full window's call is refused.
+    f.setBounds({ x: 137, y: 100, width: 263, height: 600 })
+    expect(manager.filesZoomMenu('f', true)).toBe(true)
+    expect(manager.filesZoomMenu('w1', true)).toBe(false)
+    // 100 → 110 → 125 from f's own menu: f keeps its size, so its menu stays under the pointer. g resizes at once.
+    store.setSettings({ ...store.get().settings, appZoom: 110 })
+    manager.appZoomChanged(1, 1.1)
+    store.setSettings({ ...store.get().settings, appZoom: 125 })
+    manager.appZoomChanged(1.1, 1.25)
+    expect(f.getBounds()).toEqual({ x: 137, y: 100, width: 263, height: 600 })
+    expect(g.getBounds().width).toBe(Math.round((Math.round(gAt.width * 1.1) * 1.25) / 1.1))
+    expect(w1.getBounds()).toEqual({ x: 400, y: 100, width: 800, height: 600 })
+    // The close: ONE resize, from the width before the first change: 263 × 1.25 = 329 (in two steps it would be 328).
+    const calls = f.setBoundsCalls.length
+    expect(manager.filesZoomMenu('f', false)).toBe(true)
+    expect(f.getBounds()).toEqual({ x: 71, y: 100, width: 329, height: 600 })
+    expect(store.get().windows.find((w) => w.id === 'f')?.bounds).toEqual({ x: 71, y: 100, width: 329, height: 600 })
+    expect(f.setBoundsCalls.length).toBe(calls + 1)
+    // A second close, or a close with no change while open, resizes nothing.
+    manager.filesZoomMenu('f', false)
+    manager.filesZoomMenu('f', true)
+    manager.filesZoomMenu('f', false)
+    expect(f.setBoundsCalls.length).toBe(calls + 1)
+    // There and back while open (125 → 110 → 125): the close keeps the width.
+    manager.filesZoomMenu('f', true)
+    manager.appZoomChanged(1.25, 1.1)
+    manager.appZoomChanged(1.1, 1.25)
+    manager.filesZoomMenu('f', false)
+    expect(f.getBounds()).toEqual({ x: 71, y: 100, width: 329, height: 600 })
+    // A reload of the page while the menu is open counts as its close: the page has no menu after it.
+    manager.filesZoomMenu('f', true)
+    store.setSettings({ ...store.get().settings, appZoom: 100 })
+    manager.appZoomChanged(1.25, 1)
+    expect(f.getBounds().width).toBe(329)
+    manager.handleLinkReady(f.webContents)
+    expect(f.getBounds()).toEqual({ x: 137, y: 100, width: 263, height: 600 })
   })
 
   it('D13 "Make full window": a full window opens where the Files window stands, on its vaults and lens, empty; then the Files window closes by its real close', () => {
