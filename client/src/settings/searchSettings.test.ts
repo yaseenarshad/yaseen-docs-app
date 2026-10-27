@@ -23,6 +23,7 @@ const tiers: SettingHit[] = (['width of the thread', 'width', 'content width'] a
   item: { id: name, label: name, render: () => null },
   name,
   lower: name.toLowerCase(),
+  words: name.split(' '),
 }))
 
 describe('settingCandidates', () => {
@@ -199,6 +200,14 @@ describe('searchSettings', () => {
     // Three letters get no slip: "pth" is not "pat".
     expect(ids(searchSettings(all, 'copy pth'))).toEqual([])
     expect(ids(searchSettings(all, 'files window'))).toEqual(['hotkey-newFilesWindow'])
+  })
+
+  it('a query word splits on . - / _ as a row word does (YAZ-3410): "draw.io bold" finds the draw.io Bold row; the row words are split once, with the candidates', () => {
+    const all = settingCandidates(ctx())
+    expect(ids(searchSettings(all, 'draw.io bold'))).toEqual(['hotkey-drawio-bold-underline'])
+    expect(ids(searchSettings(all, 'draw-io bold'))).toEqual(['hotkey-drawio-bold-underline'])
+    const bold = all.find((h) => h.item.id === 'hotkey-drawio-bold-underline')
+    expect(bold?.words).toEqual(expect.arrayContaining(['draw', 'io', 'bold', 'underline']))
   })
 
   it('wordMatches: a start of the word, or one slip (wrong, missing, extra or swapped letter) from four letters on', () => {

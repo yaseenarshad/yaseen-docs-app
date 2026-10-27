@@ -234,6 +234,18 @@ test('step 5 — a nav click swaps the page: Sync, then Hotkeys under the divide
   await popup.getByRole('button', { name: 'Cancel' }).click()
   await expect(popup).toHaveCount(0)
   await expect(row(win, 'hotkey-search').locator('.hotkeys__key')).toHaveText('⌘K')
+  // A built-in key is refused in RED (D6, S9): its line's colour is not the colour of the hint line under it.
+  await row(win, 'hotkey-search').locator('.hotkeys__key').click()
+  await win.keyboard.press('Meta+J')
+  const refused = row(win, 'hotkey-search').locator('.hotkeys__line--refused')
+  await expect(refused).toHaveText('⌘J is built in: Table of contents. Pick a different key.')
+  const colour = (line: typeof refused) => line.evaluate((p) => getComputedStyle(p).color)
+  const hint = row(win, 'hotkey-search').locator('.hotkeys__line:not(.hotkeys__line--refused)')
+  expect(await colour(refused)).not.toBe(await colour(hint))
+  await shoot(win, 'settings-09d-hotkeys-refused')
+  await win.keyboard.press('Escape')
+  await expect(refused).toHaveCount(0)
+  await expect(row(win, 'hotkey-search').locator('.hotkeys__key')).toHaveText('⌘K')
 
   await navItem(win, 'Appearance').click()
   await expect(navItem(win, 'Appearance')).toHaveAttribute('aria-current', 'page')

@@ -1,5 +1,5 @@
 /**
- * Which windows have a key recorder listening (YAZ-3397 D5). While any has, `main/index.ts` builds the menu
+ * Which windows have a key recorder listening (YAZ-3397 D6). While any has, `main/index.ts` builds the menu
  * with no key (`MenuInputs.suspendKeys`): on macOS a menu key fires before the page hears it, so without
  * this, recording ⌘W would close the tab and ⌘, open Settings again. The renderer says when it starts and
  * stops (`hotkeys:recording`); a window that closes, crashes or reloads stops by itself, so no menu is left

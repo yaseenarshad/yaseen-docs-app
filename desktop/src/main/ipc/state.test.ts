@@ -60,7 +60,7 @@ describe('registerStateIpc', () => {
     )
   })
 
-  it('YAZ-3397 D5: a recorder starts and stops the menu\'s keys for its window; anything but a boolean is refused', async () => {
+  it('YAZ-3397 D6: a recorder starts and stops the menu\'s keys for its window; anything but a boolean is refused', async () => {
     const { hotkeyRecording } = await import('../hotkeyRecording')
     const recording = registered(CONTRACT.hotkeys.recording.channel)
     const wc = { id: 41, on: vi.fn(), once: vi.fn() }

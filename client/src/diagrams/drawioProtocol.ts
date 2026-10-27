@@ -21,7 +21,7 @@
  * pressed inside draw.io, where the host page never sees the key (see `DrawioMessage`).
  */
 import { DRAWIO_ORIGIN } from '@shared/drawio'
-import { drawioChordFor, keyFor, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { HOTKEY_COMMANDS, drawioChordFor, keyFor, type DrawioChord, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { DiagramDarkColors } from '@shared/types'
 
 /**
@@ -109,30 +109,29 @@ const TOOL_KEYS = [
  * ⌘0 and every code draw.io reads as plus or minus; ⌘⇧E ⌘⇧L; ⌘⇧[ / ⌘⇧] (tabs, draw.io's font size); ⌘⇧S
  * (draw.io's Save As — the app has none, and Export Excalidraw Drawing… is greyed on a diagram).
  */
-const FIXED_MENU_CHORDS = [
-  ...[48, 61, 107, 187, 222, 109, 173, 189].map((keyCode) => ({ keyCode, control: true, action: null })),
-  ...[69, 76, 219, 221, 83].map((keyCode) => ({ keyCode, control: true, shift: true, action: null })),
+const FIXED_MENU_CHORDS: readonly DrawioChord[] = [
+  ...[48, 61, 107, 187, 222, 109, 173, 189].map((keyCode): DrawioChord => ({ keyCode, control: true, action: null })),
+  ...[69, 76, 219, 221, 83].map((keyCode): DrawioChord => ({ keyCode, control: true, shift: true, action: null })),
 ]
 
 /**
  * The menu items whose key the user can change (YAZ-3397 D2): ⌘K ⌘, ⌘T ⌘W ⌘O, ⌘⇧O ⌘⇧N ⌘⇧W ⌘⇧M and the tab
- * keys as they ship. Not ⌘B or ⌘⇧C, which the renderer owns (ours, not draw.io's to clear).
+ * keys as they ship. Not Toggle sidebar or Copy path (`rendererOwned`), whose keys the renderer owns (ours,
+ * not draw.io's to clear).
  */
-const MENU_COMMANDS: readonly HotkeyId[] = ['newTab', 'newWindow', 'newFilesWindow', 'closeTab', 'closeWindow', 'switchVault', 'openFolder', 'search', 'settings', 'tabOverview', 'nextTab', 'prevTab']
+const MENU_COMMANDS = HOTKEY_COMMANDS.filter((c) => c.rendererOwned !== true).map((c) => c.id)
 
 /**
  * Every menu chord draw.io must let through: the fixed ones, and the changeable ones as they are NOW
  * (YAZ-3397 D2). Read at `configure`, so a key changed while a diagram is open reaches it the next time it opens.
  */
-export function menuChords(hotkeys: HotkeyOverrides = {}): DrawioChordEntry[] {
+function menuChords(hotkeys: HotkeyOverrides = {}): DrawioChord[] {
   const changeable = MENU_COMMANDS.flatMap((id) => {
     const chord = drawioChordFor(keyFor(id, hotkeys))
     return chord === null ? [] : [chord]
   })
   return [...FIXED_MENU_CHORDS, ...changeable]
 }
-
-type DrawioChordEntry = { keyCode: number; control: boolean; shift?: boolean; alt?: boolean; action: null }
 
 /**
  * The `configure` reply (🔒 YAZ-1802 D3 / D12a / D12b). Every key is one draw.io v31.5.2 reads in

@@ -735,7 +735,7 @@ describe('createMenuHandlers', () => {
 
 // ---------- the user's keys (YAZ-3397) ----------
 
-describe('buildMenuTemplate — the user\'s keys (YAZ-3397 D2, D5)', () => {
+describe('buildMenuTemplate — the user\'s keys (YAZ-3397 D2, D6)', () => {
   it('a changed key moves the accelerator; null removes it; the rest keep their defaults', () => {
     const template = build(RECENTS, false, noopHandlers(), [], null, { search: 'CmdOrCtrl+Shift+K', closeTab: null, closeWindow: 'CmdOrCtrl+Alt+W' })
     expect(item(template, 'File', 'menu.file.search')?.accelerator).toBe('CmdOrCtrl+Shift+K')

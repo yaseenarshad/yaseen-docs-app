@@ -101,7 +101,7 @@ import {
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
-import { isHotkeyId, parseAccelerator, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, isHotkeyId, isUsableKey, keyFor, sameKey, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { travellingChanged, travels } from '@shared/settingsSync'
 import { atomicWrite } from './fs/fsUtils'
@@ -300,17 +300,38 @@ export function sanitizeSidebarTabs(raw: unknown): SidebarTabsPrefs {
 }
 
 /**
- * The user's key changes (YAZ-3397 D2), strict: only known command ids, each a key this build can read or
- * null for "No key". The IPC boundary rejects anything else; `sanitizeHotkeys` repairs a stored one.
+ * One key change (YAZ-3397 D2): a known command id, and null for "No key" or a key the recorder would take
+ * (YAZ-3410): one this build reads, with ⌘ or ⌃ (or an F-key), and not an App-standard key (⌘Q is Quit). The
+ * UI never writes anything else, so this is the only stop for a hand-edited file: a menu item with the key
+ * `A` would take every typed "a" in every window.
  */
-const isHotkeyOverrides = (v: unknown): v is HotkeyOverrides =>
-  isRecord(v) && Object.entries(v).every(([id, key]) => isHotkeyId(id) && (key === null || (typeof key === 'string' && parseAccelerator(key) !== null)))
+const isHotkeyEntry = ([id, key]: [string, unknown]): boolean =>
+  isHotkeyId(id) && (key === null || (typeof key === 'string' && isUsableKey(key) && !APP_STANDARD_KEYS.some((k) => sameKey(k.accelerator, key))))
 
-/** A stored `hotkeys` with each entry that does not read dropped (an id a later build removed, a key that is no key); the same object when all read. */
+/**
+ * The command whose change goes when two commands have one key now (YAZ-3410), or null when no two do: of the
+ * commands in a clash, the LAST in `HOTKEY_COMMANDS` order that has a change (it gets its default back). The
+ * defaults never clash with each other, so a clash always has a change in it.
+ */
+function clashLoser(overrides: HotkeyOverrides): HotkeyId | null {
+  const keyOf = (id: HotkeyId) => keyFor(id, overrides)
+  const inClash = HOTKEY_COMMANDS.filter((c) => HOTKEY_COMMANDS.some((o) => o.id !== c.id && sameKey(keyOf(c.id), keyOf(o.id))))
+  return inClash.filter((c) => overrides[c.id] !== undefined).at(-1)?.id ?? null
+}
+
+/** The user's key changes, strict: every entry reads (`isHotkeyEntry`) and no two commands share a key. The IPC boundary rejects anything else; `sanitizeHotkeys` repairs a stored one. */
+const isHotkeyOverrides = (v: unknown): v is HotkeyOverrides => isRecord(v) && Object.entries(v).every(isHotkeyEntry) && clashLoser(v) === null
+
+/**
+ * A stored `hotkeys` with each entry that does not read dropped (an id a later build removed, a key that is no
+ * key), then the clashes undone one change at a time (`clashLoser`); the same object when all read.
+ */
 export function sanitizeHotkeys(raw: unknown): HotkeyOverrides {
   if (isHotkeyOverrides(raw)) return raw
   if (!isRecord(raw)) return {}
-  return Object.fromEntries(Object.entries(raw).filter(([id, key]) => isHotkeyOverrides({ [id]: key })))
+  const out: HotkeyOverrides = Object.fromEntries(Object.entries(raw).filter(isHotkeyEntry))
+  for (let loser = clashLoser(out); loser !== null; loser = clashLoser(out)) delete out[loser]
+  return out
 }
 
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
@@ -374,6 +395,9 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   return out
 }
 
+/** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
+const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys']
+
 /**
  * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,
  * or that the file lacks, keeps THIS Mac's value — never the default: a newer build's field must not reset a
@@ -382,9 +406,6 @@ export function sanitizeSettings(raw: unknown): SettingsState {
  * that the file lacks or that the repair had to change keeps this Mac's part. A field with no repair by part
  * (`sidebarSort`) that the repair resets as a whole keeps this Mac's whole field (YAZ-3302).
  */
-/** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
-const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys']
-
 export function mergeFolderSettings(current: SettingsState, incoming: Partial<Record<keyof SettingsState, unknown>>): SettingsState {
   const isObject = (v: unknown): v is Record<string, unknown> => isRecord(v) && !Array.isArray(v)
   const taken = Object.fromEntries(

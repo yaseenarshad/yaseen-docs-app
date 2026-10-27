@@ -142,6 +142,10 @@ describe('a changeable key (D6, D7)', () => {
     expect(lines('search')[0]).toBe('⌘J is built in: Table of contents. Pick a different key.')
     press('Q', 'KeyQ', { metaKey: true, shiftKey: true })
     expect(lines('search')[0]).toBe('macOS uses ⌘⇧Q for Log out. Pick a different key.')
+    // Red is the refused class (jsdom has no colour; the e2e step 5 checks the colour): the hint under it is not refused.
+    const [refusedLine, hintLine] = row('hotkey-search').querySelectorAll('.hotkeys__line')
+    expect(refusedLine.classList.contains('hotkeys__line--refused')).toBe(true)
+    expect(hintLine.classList.contains('hotkeys__line--refused')).toBe(false)
     expect(keyButton('search').textContent).toBe('Press new keys…')
     // This Mac moved Spotlight to ⌥Space: ⌘Space is free.
     press(' ', 'Space', { metaKey: true })

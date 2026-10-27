@@ -1,5 +1,6 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { isBoard } from '@shared/fileKind'
+import { titleWithKey } from '@shared/hotkeyBindings'
 import { stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { GridIcon, SidebarPanelIcon } from '../views/view/icons'
@@ -1321,10 +1322,11 @@ export function Sidebar({
           onOpenVsCode={openVsCode}
           onNotice={onNotice}
           onOpenSetHere={onOpenSetHere}
+          hotkeys={settings.hotkeys}
         />
         {onShowAllTabs !== undefined ? (
           // A Files window is only the sidebar (YAZ-3357 D8): there is nothing to hide it for, and the board is its way to the tabs.
-          <button type="button" className="sidebar__collapse" onClick={onShowAllTabs} title="Show all tabs (⌘⇧M)" aria-label="Show all tabs">
+          <button type="button" className="sidebar__collapse" onClick={onShowAllTabs} title={titleWithKey('Show all tabs', 'tabOverview', settings.hotkeys)} aria-label="Show all tabs">
             <GridIcon />
           </button>
         ) : (
@@ -1376,7 +1378,7 @@ export function Sidebar({
             className="sidebar__search-input"
             type="text"
             placeholder="Search"
-            title="Search (⌘K)"
+            title={titleWithKey('Search', 'search', settings.hotkeys)}
             aria-label="Search notes"
             value={query}
             onChange={changeQuery}
@@ -1600,7 +1602,7 @@ export function Sidebar({
         )}
       </div>
       <div className="sidebar__footer">
-        <SettingsButton onClick={onOpenSettings} />
+        <SettingsButton onClick={onOpenSettings} hotkeys={settings.hotkeys} />
         {/* The zoom of the lists above (YAZ-3389): one value for every full window, a Files window's own (D13). */}
         <SidebarZoom value={zoomValue} onChange={onZoom} />
         {onToNormalWindow !== undefined && (
@@ -1641,7 +1643,7 @@ export function Sidebar({
           // Items as data (🔒 D8, YAZ-1674): every gating rule lives in `menuSections`. `clip` is read
           // at RENDER time, so "Paste N items" follows the app-wide clipboard while the menu stands.
           sections={buildMenuSections(
-            { ...menu, clip },
+            { ...menu, clip, hotkeys: settings.hotkeys },
             {
               onOpen: (path) => keepFromTree(path, menu.lens === 'focus' || menu.lens === 'favorites' ? (menu.top ?? undefined) : undefined),
               onOpenInNewTabs: openFilesInTabs,

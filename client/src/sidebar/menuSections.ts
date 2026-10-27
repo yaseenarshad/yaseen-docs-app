@@ -1,4 +1,5 @@
 import { createElement, type ReactNode } from 'react'
+import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
 import { EyeIcon, HeartIcon } from '../views/view/icons'
@@ -71,9 +72,10 @@ export type MenuSection = MenuItem[]
 /**
  * Sidebar's pinned `MenuTargets` plus the app-wide clipboard's LIVE state — the one field read at
  * render time rather than at open time, so "Paste N items" follows a copy made in another window
- * while this menu stands (🔒 D1, YAZ-1674).
+ * while this menu stands (🔒 D1, YAZ-1674). `hotkeys` is `settings.hotkeys` (YAZ-3397 D2), read at
+ * render time too: Copy path's hint is its key as it is now (YAZ-3410).
  */
-export type MenuSectionTargets = MenuTargets & { clip: FileClipState }
+export type MenuSectionTargets = MenuTargets & { clip: FileClipState; hotkeys: HotkeyOverrides }
 
 export interface MenuHandlers {
   /** "Open folder page" on a folder row (YAZ-2290 D3, YAZ-3377 D2): the folder opens as a kept tab (YAZ-2648 D2). */
@@ -254,7 +256,8 @@ const copyPaths: Leaf = (t, h) => {
 /**
  * "Copy path" — the row, or the vault ROOT for blank space (GRO-2273). Every copy confirms
  * through the one notice (YAZ-1341) — this item long predates it, so it also gained the failure
- * report it never had. The hint is ⌘⇧C, App's chord (🔒 D4, YAZ-1338): selection first, open file after.
+ * report it never had. The hint is App's chord (🔒 D4, YAZ-1338): selection first, open file after. It is the
+ * key as it is now — ⌘⇧C unless the user changed it, no hint with "No key" (YAZ-3397 D2, YAZ-3410).
  */
 const copyPath: Leaf = (t, h) => {
   const path = t.copyPath
@@ -262,7 +265,7 @@ const copyPath: Leaf = (t, h) => {
   return {
     id: 'copy-path',
     label: 'Copy path',
-    hint: '⌘⇧C',
+    hint: keyHint('copyPath', t.hotkeys),
     onSelect: () => {
       void navigator.clipboard.writeText(path).then(
         () => h.onNotice('Copied path', 'info', 'clipboard'),

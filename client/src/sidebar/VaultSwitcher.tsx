@@ -110,6 +110,7 @@ import type { NoticeKind, NoticeType } from '../lib/notice'
 import { InfoIcon, TriangleIcon } from '../views/view/icons'
 import { ContextMenu } from './ContextMenu'
 import { buildVaultMenuSections, buildVaultSetMenuSections } from './vaultMenuSections'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 
 export interface VaultSwitcherProps {
   /** The vaults of this window, in the window's order (YAZ-2602 D1; a drag of a vault row changes it, YAZ-2631 D5); never empty. */
@@ -135,6 +136,8 @@ export interface VaultSwitcherProps {
    * row to its vaults (`onOpenSetHere`). Nothing is raised and no window opens. The menu keeps its explicit doors.
    */
   onOpenSetHere?: (id: string) => Promise<boolean>
+  /** `settings.hotkeys` (YAZ-3397 D2): the vault menu's "Open in Files window" names its key as it is now (YAZ-3410). */
+  hotkeys: HotkeyOverrides
 }
 
 /**
@@ -197,7 +200,7 @@ export function defaultHighlight(matches: readonly { path: string }[], query: st
 /** The trigger's text (YAZ-2602 S15): one vault's name; two joined with " + "; more as the first two, then "+ N more". */
 export const vaultsLabel = (names: readonly string[]): string => (names.length <= 2 ? names.join(' + ') : `${names[0]} + ${names[1]} + ${names.length - 2} more`)
 
-export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onReveal, onOpenVsCode, onNotice, onOpenSetHere }: VaultSwitcherProps) {
+export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onReveal, onOpenVsCode, onNotice, onOpenSetHere, hotkeys }: VaultSwitcherProps) {
   // The first vault: the one a window with one vault has, and so the one the trigger's own menu and rename are about.
   const root = roots[0]
   const multi = roots.length > 1
@@ -437,7 +440,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   /** The vault menu's target (YAZ-1974 D4/D5): what the app calls it, and whether that is a display name at all — and who has which number (YAZ-2555 D2). */
   const menuTarget = (path: string) => {
     const name = storage.vaultName(path)
-    return { path, name, isCurrent: roots.includes(path), isAloneHere: roots.length === 1 && roots[0] === path, renamed: name !== basename(path), keyed: storage.keyedVaults() }
+    return { path, name, isCurrent: roots.includes(path), isAloneHere: roots.length === 1 && roots[0] === path, renamed: name !== basename(path), keyed: storage.keyedVaults(), hotkeys }
   }
 
   /**

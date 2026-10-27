@@ -89,6 +89,7 @@ function render(over: Partial<Props> = {}) {
     onReveal: vi.fn(),
     onOpenVsCode: vi.fn(),
     onNotice: vi.fn(),
+    hotkeys: {},
     ...over,
   }
   const draw = (next: Partial<Props>) => {

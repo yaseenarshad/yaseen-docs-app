@@ -38,6 +38,21 @@ describe('ownsSidebarHotkey', () => {
     expect(ownsSidebarHotkey(event(button), { toggleSidebar: null })).toBe(false)
   })
 
+  it('a saved key that is not a letter fires (YAZ-3410 item 1): ⌘Space, ⌘⇧↑ and ⌘⇧1 by their physical key; a different key does not', () => {
+    const button = document.createElement('button')
+    document.body.append(button)
+    // `key` is ' ', 'ArrowUp' and '!' (⇧1 on a US Mac): none of them spells the accelerator key.
+    expect(ownsSidebarHotkey(event(button, { key: ' ', code: 'Space' }), { toggleSidebar: 'CmdOrCtrl+Space' })).toBe(true)
+    expect(ownsSidebarHotkey(event(button, { key: 'ArrowUp', code: 'ArrowUp', shiftKey: true }), { toggleSidebar: 'CmdOrCtrl+Shift+Up' })).toBe(true)
+    expect(ownsSidebarHotkey(event(button, { key: '!', code: 'Digit1', shiftKey: true }), { toggleSidebar: 'CmdOrCtrl+Shift+1' })).toBe(true)
+    // The default ⌘B still fires, and another key with the same modifiers does not.
+    expect(ownsSidebarHotkey(event(button, { code: 'KeyB' }))).toBe(true)
+    expect(ownsSidebarHotkey(event(button, { key: 'ArrowDown', code: 'ArrowDown', shiftKey: true }), { toggleSidebar: 'CmdOrCtrl+Shift+Up' })).toBe(false)
+    expect(ownsSidebarHotkey(event(button, { key: '@', code: 'Digit2', shiftKey: true }), { toggleSidebar: 'CmdOrCtrl+Shift+1' })).toBe(false)
+    // A letter is matched by what it types, never by its place: Dvorak's ⌘B is on the physical N key.
+    expect(ownsSidebarHotkey(event(button, { key: 'n', code: 'KeyB' }))).toBe(false)
+  })
+
   it.each([
     ['no Command', { metaKey: false }],
     ['Control', { ctrlKey: true }],

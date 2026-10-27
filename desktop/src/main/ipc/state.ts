@@ -90,7 +90,7 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
   // "Used by macOS" (YAZ-3397 D3): this Mac's keys, read off its plist when the Hotkeys page asks, kept until the file changes.
   const systemHotkeys = createSystemHotkeys()
   handle(CONTRACT.state.systemHotkeys, async () => systemHotkeys())
-  // A key recorder starts or stops in the calling window (YAZ-3397 D5); `main/index.ts` rebuilds the menu with no key while any listens.
+  // A key recorder starts or stops in the calling window (YAZ-3397 D6); `main/index.ts` rebuilds the menu with no key while any listens.
   handleWithEvent(CONTRACT.hotkeys.recording, async (event, on: unknown) => {
     if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
     hotkeyRecording.set(event.sender, on)

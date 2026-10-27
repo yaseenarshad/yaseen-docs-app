@@ -64,10 +64,10 @@ export function applySymbolicHotkeys(plist: unknown, table: readonly MacosHotkey
   })
 }
 
-/** `plutil` as JSON on stdout. Rejects on any failure; the caller turns that into the table. */
+/** `plutil` as JSON on stdout, by its absolute path as `sounds.ts` runs `afplay` (no PATH lookup). Rejects on any failure; the caller turns that into the table. */
 function readPlistJson(path: string): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    execFile('plutil', ['-convert', 'json', '-o', '-', path], { timeout: 5000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+    execFile('/usr/bin/plutil', ['-convert', 'json', '-o', '-', path], { timeout: 5000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
       if (error !== null) return reject(error)
       try {
         resolve(JSON.parse(stdout) as unknown)

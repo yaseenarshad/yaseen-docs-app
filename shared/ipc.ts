@@ -172,7 +172,7 @@ export const CONTRACT = {
   },
   hotkeys: {
     /**
-     * A key recorder in the calling window is listening, or stopped (YAZ-3397 D5): while any is, main builds
+     * A key recorder in the calling window is listening, or stopped (YAZ-3397 D6): while any is, main builds
      * the menu with NO key, so the keys pressed reach the page — on macOS a menu key fires before the page
      * hears it, and recording ⌘W must not close the tab. A window that closes or reloads stops by itself.
      */

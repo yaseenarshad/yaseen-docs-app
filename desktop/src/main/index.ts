@@ -322,7 +322,7 @@ app.whenReady().then(() => {
     Menu.setApplicationMenu(
       Menu.buildFromTemplate(
         buildMenuTemplate(
-          // The user's keys (YAZ-3397 D2), and none at all while a key recorder listens (D5).
+          // The user's keys (YAZ-3397 D2), and none at all while a key recorder listens (D6).
           { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), hotkeys: store.get().settings.hotkeys, suspendKeys: hotkeyRecording.active() },
           handlers,
         ),

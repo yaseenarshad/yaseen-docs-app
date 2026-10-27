@@ -2623,6 +2623,7 @@ export function App() {
             <TabBar
               roots={roots}
               tabs={tabs}
+              hotkeys={settings.hotkeys}
               active={activeTab}
               preview={preview}
               blank={blank}

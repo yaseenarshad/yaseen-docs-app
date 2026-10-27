@@ -677,17 +677,12 @@
   text-decoration: underline;
 }
 
-/* The lines under a recording or asking row, lined up with the label column. */
+/* The lines under a recording row: the hint muted, a refused key in red (D6). */
 .hotkeys__line {
   margin: 6px 0 0;
   font-size: 13px;
   line-height: 1.4;
   color: var(--fg-muted);
-}
-
-.hotkeys__command > .hotkeys__line,
-.hotkeys__line--ask {
-  color: var(--fg);
 }
 
 .hotkeys__line--refused {
@@ -734,8 +729,10 @@
   color: var(--fg-muted);
 }
 
+/* What else the change does, in the pop-up (D6): "⌘⇧W is New Files window now. It will lose its key." */
 .confirm .hotkeys__line--ask {
   margin: 0 0 10px;
+  color: var(--fg);
 }
 
 /* The Hotkeys page's search bar (D5): the text box, then "Press keys to search", above the page's groups; the answer wraps under them. */

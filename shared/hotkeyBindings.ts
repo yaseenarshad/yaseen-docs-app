@@ -32,7 +32,7 @@ export type HotkeyId =
 
 export interface HotkeyCommand {
   id: HotkeyId
-  /** Short, sentence case: the confirm lines say it ("Use ⌘⇧K for Search the vault?"). */
+  /** Short, sentence case: the change pop-up says it ("Change the key for Search the vault?"). */
   label: string
   /** What the label does not say; shown muted under it. */
   hint?: string
@@ -40,6 +40,11 @@ export interface HotkeyCommand {
   key: string | null
   /** A key most Mac apps use for this (⌘T, ⌘W, ⌘, ⌘O, ⌘⇧N): moving it away asks harder (D6). */
   macStandard?: true
+  /**
+   * The renderer owns the key (`client/src/lib/windowChord.ts`), not the menu: no accelerator, and a draw.io
+   * diagram keeps its own binding on it (`drawioProtocol.ts` clears only the menu's keys).
+   */
+  rendererOwned?: true
 }
 
 export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
@@ -52,8 +57,8 @@ export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
   { id: 'openFolder', label: 'Open folder…', key: 'CmdOrCtrl+Shift+O' },
   { id: 'search', label: 'Search the vault', key: 'CmdOrCtrl+K' },
   { id: 'settings', label: 'Settings', key: 'CmdOrCtrl+,', macStandard: true },
-  { id: 'toggleSidebar', label: 'Toggle sidebar', hint: 'Outside editing surfaces', key: 'CmdOrCtrl+B' },
-  { id: 'copyPath', label: 'Copy path', hint: 'The row of the new tab page that the keyboard is on, else the sidebar selection when one is standing, else the open file', key: 'CmdOrCtrl+Shift+C' },
+  { id: 'toggleSidebar', label: 'Toggle sidebar', hint: 'Outside editing surfaces', key: 'CmdOrCtrl+B', rendererOwned: true },
+  { id: 'copyPath', label: 'Copy path', hint: 'The row of the new tab page that the keyboard is on, else the sidebar selection when one is standing, else the open file', key: 'CmdOrCtrl+Shift+C', rendererOwned: true },
   { id: 'tabOverview', label: 'Tab overview', hint: 'The same key opens it and closes it', key: 'CmdOrCtrl+Shift+M' },
   { id: 'nextTab', label: 'Next tab', key: 'Control+Tab' },
   { id: 'prevTab', label: 'Previous tab', key: 'Control+Shift+Tab' },
@@ -202,6 +207,18 @@ export function toDisplay(accelerator: string | null): string {
   const chord = parseAccelerator(accelerator)
   if (chord === null) return accelerator
   return `${chord.ctrl ? '⌃' : ''}${chord.alt ? '⌥' : ''}${chord.cmd ? '⌘' : ''}${chord.shift ? '⇧' : ''}${KEY_DISPLAY[chord.key] ?? chord.key}`
+}
+
+/** A menu item's hint (YAZ-3410): the command's key as it is NOW, or undefined — no hint — with "No key". */
+export function keyHint(id: HotkeyId, overrides: HotkeyOverrides | undefined): string | undefined {
+  const key = toDisplay(keyFor(id, overrides))
+  return key === '' ? undefined : key
+}
+
+/** A tooltip that names the command's key as it is NOW (YAZ-3410): 'New tab (⌘T)'; the bare text with "No key". */
+export function titleWithKey(text: string, id: HotkeyId, overrides: HotkeyOverrides | undefined): string {
+  const key = keyHint(id, overrides)
+  return key === undefined ? text : `${text} (${key})`
 }
 
 const DISPLAY_KEY = Object.fromEntries(Object.entries(KEY_DISPLAY).map(([key, shown]) => [shown, key]))
@@ -364,7 +381,7 @@ export type HotkeyOwner = { kind: 'command'; id: HotkeyId; label: string } | { k
  * Mac's: an empty list means the key is free. `builtIns` is the client's reference tables
  * (`client/src/settings/hotkeys.ts`), which `shared/` cannot import.
  */
-export function ownersOf(accelerator: string, overrides: HotkeyOverrides | undefined, systemKeys: readonly FixedKey[], builtIns: readonly FixedKey[] = []): HotkeyOwner[] {
+export function ownersOf(accelerator: string, overrides: HotkeyOverrides | undefined, systemKeys: readonly FixedKey[], builtIns: readonly FixedKey[]): HotkeyOwner[] {
   const commands: HotkeyOwner[] = HOTKEY_COMMANDS.filter((c) => sameKey(keyFor(c.id, overrides), accelerator)).map((c) => ({ kind: 'command', id: c.id, label: c.label }))
   const fixed = (keys: readonly FixedKey[], kind: 'builtIn' | 'macos'): HotkeyOwner[] => keys.filter((k) => sameKey(k.accelerator, accelerator)).map((k) => ({ kind, label: k.label }))
   return [...commands, ...fixed(builtIns, 'builtIn'), ...fixed(systemKeys, 'macos')]

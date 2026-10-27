@@ -16,12 +16,23 @@ import { readOnlyNoteHoldsKeys } from './readOnlyCaret'
  * unless `meta` says otherwise; ⌥ and ⌃ are off unless named (YAZ-3397 D2: a changed key can carry them).
  */
 export interface WindowChord {
-  /** Compared case-insensitively — Shift changes `key`'s case. With ⌥ held the PHYSICAL key is compared: ⌥ changes `key` on a Mac ('∫' for ⌥B). */
+  /**
+   * Compared case-insensitively — Shift changes `key`'s case. With ⌥ held the PHYSICAL key is compared: ⌥ changes
+   * `key` on a Mac ('∫' for ⌥B). A key that is not a letter also matches by its physical key (YAZ-3410): `key` is
+   * ' ' for Space, 'ArrowUp' for ↑ and '!' for ⇧1, never the accelerator's 'space', 'up' or '1'. A letter matches
+   * only by what it types, so ⌘B stays where the keyboard layout puts it.
+   */
   key: string
   shift: boolean
   alt?: boolean
   ctrl?: boolean
   meta?: boolean
+}
+
+function keyMatches(event: KeyboardEvent, chord: WindowChord): boolean {
+  const physical = eventKey(event)
+  if (chord.alt === true) return physical?.toLowerCase() === chord.key
+  return event.key.toLowerCase() === chord.key || (physical !== null && !/^[A-Z]$/.test(physical) && physical.toLowerCase() === chord.key)
 }
 
 /** A null chord is a command with no key now (YAZ-3397 D2): nothing owns it. */
@@ -35,7 +46,7 @@ export function ownsWindowChord(event: KeyboardEvent, chord: WindowChord | null)
     event.ctrlKey !== (chord.ctrl ?? false) ||
     event.altKey !== (chord.alt ?? false) ||
     event.shiftKey !== chord.shift ||
-    (chord.alt === true ? eventKey(event)?.toLowerCase() : event.key.toLowerCase()) !== chord.key
+    !keyMatches(event, chord)
   ) return false
 
   const target = event.target

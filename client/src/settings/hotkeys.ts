@@ -1,7 +1,8 @@
 /**
- * Hotkey reference (GRO-2067 Q4; a Settings page since YAZ-1679): the single source-of-truth list
- * every binding is read from — Settings › Hotkeys renders it, and the settings search indexes every
- * label and key so "close tab" finds the page. When a keymap changes anywhere (editor/outline/hotkeys.ts,
+ * Hotkey reference (GRO-2067 Q4; a Settings page since YAZ-1679): the display tables of the BUILT-IN keys.
+ * The keys the user can change are not here: they live in `shared/hotkeyBindings.ts` (YAZ-3397 D2, below).
+ * Settings › Hotkeys renders these tables one row per key, and the settings search indexes every label and
+ * key, so "close tab" finds the ROW (YAZ-3397 D5). When a keymap changes anywhere (editor/outline/hotkeys.ts,
  * foldAllHotkeys.ts, headingHotkeys.ts, zoom.ts, toc/TableOfContents.tsx, marks/underline.ts, marks/highlight.ts,
  * listCommands.ts, lineSelection.ts, views/view/*, the application menu in desktop/src/main/menu.ts), update HOTKEYS
  * (or VIEW_HOTKEYS / WINDOW_HOTKEYS) with it — `VIEW_HOTKEYS` is the folder view surface's own

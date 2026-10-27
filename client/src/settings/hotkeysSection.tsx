@@ -10,7 +10,7 @@
  *   row's search text is its label, its key and its hint. The changeable rows' text is built from the keys
  *   as they are now; the dialog rebuilds the candidates when a key changes, not on a keystroke.
  * - A change has two steps (D6): the button records a key, then a pop-up — the app's confirm sheet — shows
- *   the key it has now and the key it will have (Yasin's call in the demo), with what else changes. Only its
+ *   the key it has now and the key it will have (D6), with what else changes. Only its
  *   Save, "Move it here", Remove or Reset writes `settings.hotkeys`, through the dialog's `onChange` like
  *   every setting. A built-in or macOS key is refused in red and the row keeps recording.
  * - A changed key is in the accent colour with a Reset link, which asks in the same pop-up first (D7);
@@ -47,7 +47,7 @@ const shown = (key: string | null): string => (key === null ? 'No key' : toDispl
 type Heard = { kind: 'key'; key: string } | { kind: 'escape' } | { kind: 'backspace' }
 
 /**
- * Main builds the menu with no key while any recorder of this window listens (D5). Counted here: main
+ * Main builds the menu with no key while any recorder of this window listens (D6). Counted here: main
  * knows the window, not the recorder, and one recorder that stops as the next starts must not give the
  * menu its keys back. No bridge (a test) is no menu.
  */
@@ -64,7 +64,7 @@ function tellMain(on: boolean): void {
 let listening: { stop: () => void } | null = null
 
 /**
- * While `active`, every keydown is the recorder's (D5): taken in the window's capture phase, before the
+ * While `active`, every keydown is the recorder's (D6): taken in the window's capture phase, before the
  * dialog's Esc and App's keys, and never passed on. A lone modifier is ignored; a held key's repeats too.
  * A click outside `inside`, or the window losing focus, is Esc.
  */
@@ -178,13 +178,17 @@ function HotkeyCommandRow({ id, ctx }: { id: HotkeyId; ctx: SettingsCtx }) {
   const confirmSheet = (pending: Pending): { title: string; to: string | null; lines: string[]; yes: string; apply: () => void; careful: boolean } => {
     switch (pending.kind) {
       case 'save': {
-        const careful = losesMacStandard(id, overrides) && !sameKey(pending.key, command.key)
+        // The recorder stops on the key the command has now, so a new key always leaves a Mac-standard default.
+        const careful = losesMacStandard(id, overrides)
         return { title: `Change the key for ${command.label}?`, to: pending.key, lines: careful ? [macStandardLine(id)] : [], yes: careful ? 'Change anyway' : 'Save', careful, apply: () => write(withKey(overrides, id, pending.key)) }
       }
       case 'move': {
         const from = hotkeyCommand(pending.from)
-        const careful = losesMacStandard(pending.from, overrides) || (losesMacStandard(id, overrides) && !sameKey(pending.key, command.key))
-        const lines = [`${toDisplay(pending.key)} is ${from.label} now. It will lose its key.`, ...(losesMacStandard(pending.from, overrides) ? [macStandardLine(pending.from)] : []), ...(losesMacStandard(id, overrides) && !sameKey(pending.key, command.key) ? [macStandardLine(id)] : [])]
+        // Two Mac-standard keys can leave: the other command's, which loses its key, and this command's own.
+        const fromStandard = losesMacStandard(pending.from, overrides)
+        const ownStandard = losesMacStandard(id, overrides)
+        const lines = [`${toDisplay(pending.key)} is ${from.label} now. It will lose its key.`, ...(fromStandard ? [macStandardLine(pending.from)] : []), ...(ownStandard ? [macStandardLine(id)] : [])]
+        const careful = fromStandard || ownStandard
         return { title: `Change the key for ${command.label}?`, to: pending.key, lines, yes: careful ? 'Move anyway' : 'Move it here', careful, apply: () => write(withKey(withKey(overrides, pending.from, null), id, pending.key)) }
       }
       case 'remove': {
@@ -310,7 +314,7 @@ function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
 // ---------- "Press keys to search" ----------
 
 /** The one-line answer for a key (D5): who owns it, and whether the user can do anything about it. */
-export function keyAnswer(key: string, overrides: HotkeyOverrides, systemKeys: readonly SystemHotkey[]): string {
+function keyAnswer(key: string, overrides: HotkeyOverrides, systemKeys: readonly SystemHotkey[]): string {
   const d = toDisplay(key)
   const owners = ownersOf(key, overrides, systemKeys, BUILT_IN_KEYS)
   const macos = owners.find((o) => o.kind === 'macos')

@@ -2,6 +2,7 @@
  * "Used by macOS" (YAZ-3397 D3): this Mac's plist over the Mac's own table. The fixture is shaped like the
  * real file of the Mac this was built on, where Spotlight is ⌥Space — so ⌘Space must come out FREE.
  */
+import { execFile } from 'node:child_process'
 import { mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -10,6 +11,10 @@ import { sameKey } from '@shared/hotkeyBindings'
 import { MACOS_HOTKEYS } from '@shared/macosHotkeys'
 import { hotkeyRecording, createHotkeyRecording } from './hotkeyRecording'
 import { applySymbolicHotkeys, createSystemHotkeys } from './systemHotkeys'
+
+// The real reader runs `plutil`: mocked, so no test depends on the Mac it runs on.
+vi.mock('node:child_process', () => ({ execFile: vi.fn() }))
+const exec = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
 
 const PLIST = {
   AppleSymbolicHotKeys: {
@@ -48,6 +53,15 @@ describe('createSystemHotkeys', () => {
     dir = undefined
   })
 
+  it('the real reader runs `plutil` by its absolute path (YAZ-3410), as `sounds.ts` runs `afplay`: a PATH without /usr/bin still reads the plist', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'yd-symbolic-'))
+    const file = path.join(dir, 'com.apple.symbolichotkeys.plist')
+    await writeFile(file, 'binary plist')
+    exec.mockImplementationOnce((_cmd: string, _args: string[], _opts: unknown, done: (error: Error | null, stdout: string) => void) => done(null, JSON.stringify(PLIST)))
+    expect(owner(await createSystemHotkeys(file, 'darwin')(), 'Alt+Space')?.label).toBe('Spotlight')
+    expect(exec).toHaveBeenCalledExactlyOnceWith('/usr/bin/plutil', ['-convert', 'json', '-o', '-', file], expect.anything(), expect.any(Function))
+  })
+
   it('reads once per mtime, answers the table on a failed read, and nothing off macOS', async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'yd-symbolic-'))
     const file = path.join(dir, 'com.apple.symbolichotkeys.plist')
@@ -67,7 +81,7 @@ describe('createSystemHotkeys', () => {
   })
 })
 
-describe('hotkeyRecording (YAZ-3397 D5)', () => {
+describe('hotkeyRecording (YAZ-3397 D6)', () => {
   /** A fake WebContents: the events it can end with. */
   const sender = (id: number) => {
     const handlers = new Map<string, () => void>()

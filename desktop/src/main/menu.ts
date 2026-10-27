@@ -89,7 +89,7 @@ export interface MenuInputs {
    */
   hotkeys: HotkeyOverrides
   /**
-   * A key recorder is listening in some window (YAZ-3397 D5): the menu is built with NO key at all, the
+   * A key recorder is listening in some window (YAZ-3397 D6): the menu is built with NO key at all, the
    * roles' own included, so the keys pressed reach the page. On macOS a menu key fires before the page
    * hears it; recording ⌘W must not close the tab, nor ⌘Q quit. Absent = false.
    */
@@ -265,7 +265,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
 }
 
 /**
- * The menu with no key (YAZ-3397 D5), for while a recorder listens. An item's own key goes; a ROLE's goes
+ * The menu with no key (YAZ-3397 D6), for while a recorder listens. An item's own key goes; a ROLE's goes
  * too — Electron gives a role its default key (⌘Q, ⌘C…) whenever `accelerator` is absent, so it gets an
  * empty one, which Electron reads as none. Everything else — labels, clicks, enabled — is as it was.
  */
