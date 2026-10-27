@@ -11,12 +11,15 @@ import { storage } from '../lib/storage'
 import { StartPage, type StartPageProps } from './StartPage'
 import { suggestFavorites } from './suggestFavorites'
 import startCss from './startPage.css?inline'
+import { HOVER_PREVIEW_DWELL_MS } from '../sidebar/HoverPreviewHost'
 
 // The REAL rules of the third column behind a counter (R5): a test can say when the page ran them.
 vi.mock('./suggestFavorites', async (importOriginal) => {
   const real = await importOriginal<typeof import('./suggestFavorites')>()
   return { ...real, suggestFavorites: vi.fn(real.suggestFavorites) }
 })
+// The sidebar's note panel (YAZ-3403): a stand-in that says which note it shows.
+vi.mock('../sidebar/NotePreview', () => ({ default: ({ name }: { name: string }) => <div className="note-preview" aria-label={`Preview of ${name}`} /> }))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -714,6 +717,54 @@ describe('StartPage', () => {
     } finally {
       right.remove()
     }
+  })
+
+  it('YAZ-3403 S1, S6, S12 to S15, D2: a rest of 400 ms on a note row opens the sidebar\'s note panel; a folder row opens none; a key, the pointer leaving and a scroll close it; with the setting off, or while the Space panel shows, no panel opens', async () => {
+    vi.useRealTimers()
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    vi.setSystemTime(NOW)
+    const v = vault()
+    const fixture: Fixture = { trees: { [v]: [dir(`${v}/Projects`), file(`${v}/a.md`)] }, opens: { [v]: { [`${v}/a.md`]: used(2, HOUR), [`${v}/Projects`]: used(1, 2 * HOUR) } } }
+    const scope = () => ({ root: v, wikilinks: {} as never, textVars: {} })
+    const panel = () => document.querySelector('.note-preview')?.getAttribute('aria-label') ?? null
+    const enter = (target: Element) => act(() => void target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    const leave = (target: Element) => act(() => void target.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
+    const rest = async (target: Element, ms = HOVER_PREVIEW_DWELL_MS) => {
+      enter(target)
+      await act(async () => void vi.advanceTimersByTime(ms))
+      await act(async () => void (await import('../sidebar/NotePreview')))
+    }
+    const { el } = await mount(fixture, { hoverPreview: true, previewScope: scope })
+    const note = row(el, `${v}/a.md`)
+    await rest(note, HOVER_PREVIEW_DWELL_MS - 1)
+    expect(panel()).toBeNull() // not before the dwell
+    await act(async () => void vi.advanceTimersByTime(1))
+    await act(async () => void (await import('../sidebar/NotePreview')))
+    expect(panel()).toBe('Preview of a') // S1
+    leave(note)
+    expect(panel()).toBeNull() // S12: the pointer leaves
+    await rest(row(el, `${v}/Projects`))
+    expect(panel()).toBeNull() // S6: a folder row
+    await rest(note)
+    expect(panel()).toBe('Preview of a')
+    act(() => void note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', bubbles: true })))
+    expect(panel()).toBeNull() // S12: any key
+    leave(note)
+    await rest(note)
+    expect(panel()).toBe('Preview of a')
+    act(() => void el.querySelector('.start')!.dispatchEvent(new Event('scroll')))
+    expect(panel()).toBeNull() // S13: a scroll
+    leave(note)
+
+    // S15: Preview on hover (or New tab page) off — no panel.
+    await act(async () => root?.render(<StartPage {...doors([v])} hoverPreview={false} previewScope={scope} />))
+    await rest(row(el, `${v}/a.md`))
+    expect(panel()).toBeNull()
+    leave(row(el, `${v}/a.md`))
+    // S14: while the Space panel shows, a rest opens no small panel.
+    await act(async () => root?.render(<StartPage {...doors([v])} hoverPreview previewScope={scope} previewPath={`${v}/a.md`} onPreview={vi.fn()} />))
+    await rest(row(el, `${v}/a.md`))
+    expect(panel()).toBeNull()
   })
 
   it('S23: in a narrow page area the columns stand one below the other', () => {

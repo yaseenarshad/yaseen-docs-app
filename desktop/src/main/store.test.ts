@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, stepSidebarZoom, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, HOVER_PLACES, hoverOn, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, stepSidebarZoom, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { createStore, isSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
 
@@ -357,6 +357,33 @@ describe('createStore: loading', () => {
 
     for (const zoom of [50, 125, 200]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarZoom: zoom })).toBe(true)
     for (const zoom of [49, 201, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarZoom: zoom })).toBe(false)
+  })
+
+  it('hoverPreviewIn (YAZ-3403 D7, S37): a file from before reads every place on; a missing or broken place reads on and the others keep their values; the channel takes eight booleans only', async () => {
+    const allOn = { ...DEFAULT_SETTINGS.hoverPreviewIn }
+    expect(allOn).toEqual(Object.fromEntries(HOVER_PLACES.map((place) => [place, true])))
+    const { hoverPreviewIn: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: { ...legacySettings, hoverPreview: false } }))
+    const legacy = createStore(file).get().settings
+    expect(legacy.hoverPreviewIn).toEqual(allOn)
+    expect(legacy.hoverPreview).toBe(false) // the master keeps its own value
+
+    const { links: _gone, ...noLinks } = { ...allOn, tabs: false, search: false }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', hoverPreviewIn: { ...noLinks, newTab: 'no' } } }))
+    const some = createStore(file).get().settings
+    expect(some.hoverPreviewIn).toEqual({ ...allOn, tabs: false, search: false }) // links missing → on, newTab broken → on
+    expect(some.theme).toBe('dark') // one bad place costs that place only
+    for (const bad of ['off', null, 7]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hoverPreviewIn: bad }).hoverPreviewIn).toEqual(allOn)
+
+    expect(isSettings({ ...DEFAULT_SETTINGS, hoverPreviewIn: { ...allOn, links: false } })).toBe(true)
+    for (const bad of [{ ...allOn, links: 'false' }, noLinks, 'on', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, hoverPreviewIn: bad })).toBe(false)
+  })
+
+  it('hoverOn (YAZ-3403 D7, S36, S37): a place shows the panel only while the master and its own switch are both on', () => {
+    const places = { ...DEFAULT_SETTINGS.hoverPreviewIn, links: false }
+    expect(hoverOn({ hoverPreview: true, hoverPreviewIn: places }, 'newTab')).toBe(true)
+    expect(hoverOn({ hoverPreview: true, hoverPreviewIn: places }, 'links')).toBe(false) // the place off wins (S36)
+    expect(hoverOn({ hoverPreview: false, hoverPreviewIn: places }, 'newTab')).toBe(false) // the master off wins (S37)
   })
 
   it('stepSidebarZoom (YAZ-3389): one step each way along 50–200, an off-step value snaps to the next step that way, a wall stays put', () => {

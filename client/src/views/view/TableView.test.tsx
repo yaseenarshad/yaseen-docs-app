@@ -17,6 +17,7 @@ import { createCrepe } from '../../editor/createCrepe'
 import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { TEST_RECORDS } from '../testRecords'
 import { OPEN_DELAY_MS } from './PreviewCard'
+import { HOVER_PREVIEW_DWELL_MS } from '../../sidebar/HoverPreviewHost'
 
 /** No store behind this mount: collapse state stays in the pane. */
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
@@ -41,6 +42,9 @@ vi.mock('../../editor/createCrepe', () => ({
     return { create: vi.fn(async () => {}), setReadonly: vi.fn(), destroy: vi.fn() }
   }),
 }))
+
+// The sidebar's note panel (YAZ-3403, the folder views' shared hover): a stand-in that says which note it shows.
+vi.mock('../../sidebar/NotePreview', () => ({ default: ({ name }: { name: string }) => <div className="note-preview" aria-label={`Preview of ${name}`} /> }))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -931,6 +935,24 @@ describe('preview mode (YAZ-1244)', () => {
     hover(firstRow(el))
     await settle(OPEN_DELAY_MS + 50)
     expect(card()).toBeNull()
+  })
+
+  it('YAZ-3403 S32, S33, D9: with Preview on hover › Folder views on, a cards view shows the shared note panel; a table whose own Preview is on shows only its own card — never two panels', async () => {
+    const shared = { hoverPreview: true, previewScope: () => ({ root: '/vault', wikilinks: createWikilinkResolveSource(), textVars: {} }) }
+    const notePanel = () => document.body.querySelector('.note-preview')
+    const { el: cardsEl } = mount('views:\n  - type: cards\n    name: C\n    order:\n      - file.name\n', shared)
+    hover(q(cardsEl, '.view-card'))
+    await settle(Math.max(OPEN_DELAY_MS, HOVER_PREVIEW_DWELL_MS) + 50)
+    expect(notePanel()).not.toBeNull()
+    act(() => root?.unmount())
+    container?.remove()
+
+    const { el } = mount(PREVIEW_BASE, shared)
+    expect(firstRow(el).hasAttribute('data-hover-item')).toBe(false)
+    hover(firstRow(el))
+    await settle(Math.max(OPEN_DELAY_MS, HOVER_PREVIEW_DWELL_MS) + 50)
+    expect(card()).not.toBeNull()
+    expect(notePanel()).toBeNull()
   })
 
   it('a drag start closes the card', async () => {
