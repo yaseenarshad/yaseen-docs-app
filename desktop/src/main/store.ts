@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
 import {
+  APP_ZOOM_STEPS,
   COMMENTS_ORDERS,
   CONTENT_WIDTHS,
   DEFAULT_SETTINGS,
@@ -386,6 +387,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   gestureSounds: (v): v is boolean => typeof v === 'boolean',
   hotkeys: isHotkeyOverrides,
   sidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
+  // YAZ-3432: one of the App sizes only; a stored value off them loads as 100 (the default, `sanitizeSettings`).
+  appZoom: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 

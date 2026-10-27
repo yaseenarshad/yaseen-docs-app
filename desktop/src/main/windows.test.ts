@@ -1943,6 +1943,103 @@ describe('Files windows (YAZ-3357)', () => {
     expect(manager.openFilesWindow(undefined, null)).toBe(false)
   })
 
+  it('YAZ-3441: at App size 125% a new Files window is as wide ON THE SCREEN as the source\'s sidebar (page px × 1.25), so its page is as wide as that sidebar', () => {
+    const { manager, created, w1 } = seedFiles()
+    store.setSettings({ ...store.get().settings, appZoom: 125 })
+    const opened = (from: string | undefined, root: string | null = null) => {
+      expect(manager.openFilesWindow(from, root)).toBe(true)
+      return created.at(-1)!.entry.bounds
+    }
+    // The narrowest sidebar, 180 page px, is 225 screen px: flush left of w1 (x 400).
+    store.setSidebarWidth(180)
+    expect(opened('w1')).toEqual({ x: 175, y: 100, width: 225, height: 600 })
+    // The default sidebar, 260 page px, is 325 screen px.
+    store.setSidebarWidth(260)
+    expect(opened('w1')).toEqual({ x: 75, y: 100, width: 325, height: 600 })
+    // A collapsed source and no source give the default Files window width, 280 page px: 350 screen px.
+    store.upsertWindow({ ...store.get().windows.find((w) => w.id === 'w1')!, sidebarCollapsed: true })
+    expect(opened('w1').width).toBe(350)
+    expect(opened(undefined, '/z')).toEqual({ x: 100, y: 100, width: 350, height: 800 })
+    // At 100% nothing changes (D6): the page px are the screen px.
+    store.setSettings({ ...store.get().settings, appZoom: 100 })
+    expect(opened('w2').width).toBe(260)
+    expect(w1.getBounds()).toEqual({ x: 400, y: 100, width: 800, height: 600 })
+  })
+
+  it('YAZ-3441: the board makes a Files window FILES_WINDOW_WIDE_W page px wide at the App size (1200 × 1.1 = 1320, clamped to the screen)', () => {
+    const { manager, f } = seedFiles()
+    store.setSettings({ ...store.get().settings, appZoom: 110 })
+    expect(manager.filesWide('f', true)).toBe(true)
+    expect(f.getBounds()).toEqual({ x: 120, y: 100, width: 1320, height: 600 })
+    manager.filesWide('f', false)
+    expect(f.getBounds()).toEqual({ x: 120, y: 100, width: 280, height: 600 })
+  })
+
+  it('YAZ-3441: a new App size keeps each Files window\'s page width — its width scales by new / old, its right edge stays — and leaves full windows alone', () => {
+    const { manager, f, w1 } = seedFiles()
+    // f is 280 wide at x 120: its right edge is 400, flush left of w1.
+    manager.appZoomChanged(1, 1.25)
+    expect(f.getBounds()).toEqual({ x: 50, y: 100, width: 350, height: 600 })
+    expect(store.get().windows.find((w) => w.id === 'f')?.bounds).toEqual({ x: 50, y: 100, width: 350, height: 600 })
+    manager.appZoomChanged(1.25, 0.9)
+    expect(f.getBounds()).toEqual({ x: 148, y: 100, width: 252, height: 600 })
+    expect(w1.getBounds()).toEqual({ x: 400, y: 100, width: 800, height: 600 })
+    // While the board makes it wide, its stored narrow bounds scale, and the board's close brings them back. The wide
+    // window itself takes the board's width at the new App size (1200 page px: 1080 at 90%, 1200 at 100%).
+    store.setSettings({ ...store.get().settings, appZoom: 90 })
+    manager.filesWide('f', true)
+    expect(f.getBounds()).toEqual({ x: 148, y: 100, width: 1080, height: 600 })
+    store.setSettings({ ...store.get().settings, appZoom: 100 })
+    manager.appZoomChanged(0.9, 1)
+    expect(store.get().windows.find((w) => w.id === 'f')?.bounds).toEqual({ x: 120, y: 100, width: 280, height: 600 })
+    expect(f.getBounds()).toEqual({ x: 120, y: 100, width: 1200, height: 600 })
+    manager.filesWide('f', false)
+    expect(f.getBounds()).toEqual({ x: 120, y: 100, width: 280, height: 600 })
+  })
+
+  it('YAZ-3444: while a Files window\'s zoom menu is open, a new App size leaves its size; the menu\'s close gives it the width of its page from before the first change, with no drift; other Files windows resize at once', () => {
+    const { manager, created, f, w1 } = seedFiles()
+    manager.openFilesWindow('w2', null)
+    const g = created.at(-1)!.win
+    const gAt = g.getBounds()
+    // f: 263 wide, its right edge at 400. Its zoom menu opens; a full window's call is refused.
+    f.setBounds({ x: 137, y: 100, width: 263, height: 600 })
+    expect(manager.filesZoomMenu('f', true)).toBe(true)
+    expect(manager.filesZoomMenu('w1', true)).toBe(false)
+    // 100 → 110 → 125 from f's own menu: f keeps its size, so its menu stays under the pointer. g resizes at once.
+    store.setSettings({ ...store.get().settings, appZoom: 110 })
+    manager.appZoomChanged(1, 1.1)
+    store.setSettings({ ...store.get().settings, appZoom: 125 })
+    manager.appZoomChanged(1.1, 1.25)
+    expect(f.getBounds()).toEqual({ x: 137, y: 100, width: 263, height: 600 })
+    expect(g.getBounds().width).toBe(Math.round((Math.round(gAt.width * 1.1) * 1.25) / 1.1))
+    expect(w1.getBounds()).toEqual({ x: 400, y: 100, width: 800, height: 600 })
+    // The close: ONE resize, from the width before the first change: 263 × 1.25 = 329 (in two steps it would be 328).
+    const calls = f.setBoundsCalls.length
+    expect(manager.filesZoomMenu('f', false)).toBe(true)
+    expect(f.getBounds()).toEqual({ x: 71, y: 100, width: 329, height: 600 })
+    expect(store.get().windows.find((w) => w.id === 'f')?.bounds).toEqual({ x: 71, y: 100, width: 329, height: 600 })
+    expect(f.setBoundsCalls.length).toBe(calls + 1)
+    // A second close, or a close with no change while open, resizes nothing.
+    manager.filesZoomMenu('f', false)
+    manager.filesZoomMenu('f', true)
+    manager.filesZoomMenu('f', false)
+    expect(f.setBoundsCalls.length).toBe(calls + 1)
+    // There and back while open (125 → 110 → 125): the close keeps the width.
+    manager.filesZoomMenu('f', true)
+    manager.appZoomChanged(1.25, 1.1)
+    manager.appZoomChanged(1.1, 1.25)
+    manager.filesZoomMenu('f', false)
+    expect(f.getBounds()).toEqual({ x: 71, y: 100, width: 329, height: 600 })
+    // A reload of the page while the menu is open counts as its close: the page has no menu after it.
+    manager.filesZoomMenu('f', true)
+    store.setSettings({ ...store.get().settings, appZoom: 100 })
+    manager.appZoomChanged(1.25, 1)
+    expect(f.getBounds().width).toBe(329)
+    manager.handleLinkReady(f.webContents)
+    expect(f.getBounds()).toEqual({ x: 137, y: 100, width: 263, height: 600 })
+  })
+
   it('D13 "Make full window": a full window opens where the Files window stands, on its vaults and lens, empty; then the Files window closes by its real close', () => {
     const { manager, created, f } = seedFiles()
     expect(manager.filesToNormal('w1')).toBe(false)
@@ -2106,5 +2203,9 @@ describe('Files windows (YAZ-3357)', () => {
     expect(manager.filesPreview('f', null)).toBe(true)
     expect(previews).toEqual([[f, { x: 400, y: 188, width: 500, height: 300 }], [f, null]])
     expect(manager.filesPreview('w1', null)).toBe(false)
+    // YAZ-3432: at App size 125% the page's px are 1.25 screen px, so the panel and the row's height scale.
+    store.setSettings({ ...store.get().settings, appZoom: 125 })
+    manager.filesPreview('f', { width: 400, height: 240, top: 160, bottom: 176 })
+    expect(previews.at(-1)).toEqual([f, { x: 400, y: 188, width: 500, height: 300 }])
   })
 })

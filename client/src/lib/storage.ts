@@ -206,6 +206,10 @@ export const storage = {
     identity = { ...identity, zoom: percent }
     send('window.filesZoom', () => api.window.filesZoom(percent))
   },
+  /** This Files window's zoom menu opened or closed (YAZ-3444): main holds this window's resize for a new App size until the close. */
+  setFilesZoomMenu(open: boolean): void {
+    send('window.filesZoomMenu', () => api.window.filesZoomMenu(open))
+  },
 
   /**
    * A window's name (YAZ-3343 D14), off the cache; this window's when `id` is left out. `undefined` = no name:

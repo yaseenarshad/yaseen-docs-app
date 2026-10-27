@@ -227,6 +227,14 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     if (id === undefined || !windows.setFilesZoom(id, percent)) throw new BridgeFailure('BAD_REQUEST', 'sender is not a Files window')
   })
 
+  // `window:files-zoom-menu` (YAZ-3444): the caller's OWN Files window's zoom menu opened or closed; main holds that
+  // window's resize for a new App size until the close.
+  handleWithEvent(CONTRACT.window.filesZoomMenu, async (e, open: unknown) => {
+    if (typeof open !== 'boolean') throw new BridgeFailure('BAD_REQUEST', 'open must be a boolean')
+    const id = windows.idFor(e.sender)
+    if (id === undefined || !windows.filesZoomMenu(id, open)) throw new BridgeFailure('BAD_REQUEST', 'sender is not a Files window')
+  })
+
   // `window:close-self` (GRO-2232): the REAL close on the caller's own window, so the
   // close/flush handshake in windows.ts runs — never a destroy. Resolved via the window lookup
   // only (no state lookup): a window mid-close can still ask.
