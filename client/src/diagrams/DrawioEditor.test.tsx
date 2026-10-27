@@ -154,7 +154,8 @@ describe('the handshake (drawioProtocol.ts)', () => {
     expect(posted[0]).toMatchObject({ action: 'configure', _origin: DRAWIO_ORIGIN })
     expect((posted[0].config as Record<string, unknown>).compressXml).toBe(false)
     drawio({ event: 'init' })
-    expect(posted[1]).toMatchObject({ action: 'load', xml: XML, autosave: 1, title: 'Flow' })
+    // The tab's first load is draw.io's own: the first page, fitted (YAZ-3420 D2 K6).
+    expect(posted[1]).toMatchObject({ action: 'load', xml: XML, autosave: 1, title: 'Flow', yaseenKeepView: false })
   })
 
   it('configures anyway after a while when the overlay never answers — the document must still open', async () => {
@@ -309,12 +310,13 @@ describe('saving', () => {
 })
 
 describe('changes on disk', () => {
-  it('a CLEAN tab reloads the disk into draw.io; its answer is the new baseline, not an edit', async () => {
+  it('a CLEAN tab reloads the disk into draw.io, keeping the page and the view; its answer is the new baseline, not an edit', async () => {
     await opened()
     load.mockResolvedValue({ path: PATH, xml: EDITED, mtime: 300, size: 1 })
     watcherSaw({ type: 'change', path: PATH, mtime: 300 })
     await settle()
-    expect(posted.at(-1)).toMatchObject({ action: 'load', xml: EDITED })
+    // YAZ-3420 D2: our PostConfig.js keeps the page, the zoom and the scroll for this load.
+    expect(posted.at(-1)).toMatchObject({ action: 'load', xml: EDITED, yaseenKeepView: true })
     drawio({ event: 'load', xml: EDITED })
     drawio({ event: 'autosave', xml: `${EDITED} ` })
     await act(async () => {

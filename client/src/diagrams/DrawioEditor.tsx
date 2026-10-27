@@ -107,12 +107,13 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
    * Send a document into draw.io; its `load` answer becomes the new clean baseline at `mtime`.
    * draw.io focuses its own window as it loads: while a tab's name field has the caret, our
    * PostConfig.js skips that once (`yaseenKeepFocus`, YAZ-3084).
+   * `keepView` (YAZ-3420 D2): a reload keeps the page, the zoom and the scroll on screen.
    */
   const sendLoad = useCallback(
-    (xml: string, mtime: number) => {
+    (xml: string, mtime: number, keepView = false) => {
       pendingLoad.current = mtime
       latestXml.current = xml
-      post({ action: 'load', xml, autosave: 1, title: boardBaseName(basename(path)), yaseenKeepFocus: namingTab(document.activeElement) })
+      post({ action: 'load', xml, autosave: 1, title: boardBaseName(basename(path)), yaseenKeepFocus: namingTab(document.activeElement), yaseenKeepView: keepView })
     },
     [post, path],
   )
@@ -179,7 +180,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     reload: async (a) => {
       const res = await api.diagram.load({ root, path })
       a.reset(version.current, res.mtime)
-      sendLoad(res.xml, res.mtime)
+      sendLoad(res.xml, res.mtime, true)
       return isDiagramReadOnly(res.xml)
     },
     // Export Image… is the one board command a diagram answers.
