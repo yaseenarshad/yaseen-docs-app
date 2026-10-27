@@ -13,7 +13,8 @@
  *   iframe → `{ event: 'init' }`         → host `{ action: 'load', xml, autosave: 1 }`
  *   iframe → `{ event: 'load', xml }`    the document is on screen: the autosave baseline
  *   iframe → `{ event: 'autosave', xml }` on every change; `{ event: 'save', xml }` on ⌘S
- * and, from the host at any time: `{ action: 'load', … }` again (an outside change on a clean tab),
+ * and, from the host at any time: `{ action: 'load', …, yaseenKeepView: true }` again (an outside
+ * change on a clean tab; our PostConfig.js keeps the page, the zoom and the scroll — YAZ-3420 D2),
  * `{ action: 'invokeAction', actionName: 'darkMode' | 'lightMode' }` (the app's theme, live) and
  * `{ action: 'yaseenAdaptiveColors', value }` (the dark-mode colour setting, live — ours, answered
  * by our PostConfig.js, because draw.io has no embed action for it).

@@ -32,13 +32,50 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
     this.actions.get('undo').setEnabled(true)
     this.actions.get('redo').setEnabled(true)
   }
+  // draw.io's own: what the last session left open comes back, and a multi-layer diagram opens Layers.
+  EditorUi.prototype.restoreVisibleWindows = function () {
+    this.opened.push('layers', 'outline')
+  }
+  EditorUi.prototype.showLayersDialog = function () {
+    this.opened.push('layers')
+  }
+  // draw.io's own `simple` rule: a frame that grows past 1024 px opens Format — when it knows the last width.
+  EditorUi.prototype.windowResized = function () {
+    if (this.lastWindowWidth != null && this.lastWindowWidth < 1024 && this.frameWidth >= 1024) this.opened.push('format')
+    this.lastWindowWidth = this.frameWidth
+  }
+  // draw.io's own page and view calls. Its embed load is `setFileData` — the first page at scale 1,
+  // a fit of that page because it was never shown, then its `resetGraphView` scrolls home — and
+  // after it `fitInitialView`.
+  EditorUi.prototype.setFileData = function (pages) {
+    Object.assign(this, { pages, currentPage: pages[0], fitted: false })
+    this.editor.graph.view.scale = 1
+    this.fitInitialView()
+    Object.assign(this, { scroll: { x: 0, y: 0 }, fitted: false })
+  }
+  EditorUi.prototype.fitInitialView = function () {
+    this.fitted = true
+  }
+  EditorUi.prototype.getPageById = function (id) {
+    return this.pages.find((p) => p.getId() === id) ?? null
+  }
+  EditorUi.prototype.selectPage = function (page) {
+    this.currentPage = page
+  }
+  EditorUi.prototype.saveScrollState = function () {
+    return { ...this.scroll }
+  }
+  EditorUi.prototype.restoreScrollState = function (state) {
+    this.scroll = { ...state }
+  }
   function Menus() {}
   Menus.prototype.createPopupMenu = (menu) => menu.items.push('zoomIn', 'zoomOut')
   const env = {
     Graph,
     EditorUi,
     Menus,
-    mxSettings: { getSidebarWidth: () => 208 },
+    mxSettings: { getSidebarWidth: () => 208, getFormatWidth: () => 240 },
+    mxUtils: { indexOf: (array, item) => array.indexOf(item) },
     mxEvent: { CELLS_RESIZED: 'cellsResized', isMetaDown: (e) => e.metaKey === true, isAltDown: (e) => e.altKey === true, isShiftDown: (e) => e.shiftKey === true },
     mxConstants: {
       STYLE_SHAPE: 'shape',
@@ -146,7 +183,7 @@ function openEditor(env) {
     },
   }
   // An EditorUi as draw.io builds it: its prototype's methods, PostConfig's wraps included.
-  const ui = Object.assign(Object.create(env.EditorUi.prototype), { editor: { graph }, keyHandler, hsplitPosition: 208, setAdaptiveColors: vi.fn(), actions })
+  const ui = Object.assign(Object.create(env.EditorUi.prototype), { editor: { graph }, keyHandler, hsplitPosition: 208, setAdaptiveColors: vi.fn(), actions, opened: [] })
   env.EditorUi.prototype.createUi.call(ui)
   env.EditorUi.prototype.installKeyboardShortcuts.call(ui)
   return {
@@ -204,6 +241,54 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     expect(env.Graph.prototype.isZoomWheelEvent({ metaKey: true })).toBe(true)
     expect(env.Graph.prototype.isZoomWheelEvent({ ctrlKey: true })).toBe(true)
     expect(env.Graph.prototype.isZoomWheelEvent({})).toBe(false)
+  })
+
+  it('YAZ-3420 D1: nothing else opens by itself — no saved Format width, no restored windows, no Layers for layers, no panel on a wider frame', () => {
+    const { env } = loadPostConfig()
+    const { ui } = openEditor(env)
+    expect(env.mxSettings.getFormatWidth()).toBe(0)
+    ui.restoreVisibleWindows()
+    ui.showLayersDialog()
+    for (const width of [800, 1400, 700, 1600]) {
+      ui.frameWidth = width
+      ui.windowResized()
+    }
+    expect(ui.opened).toEqual([])
+  })
+
+  it('YAZ-3420 D2: a load flagged yaseenKeepView keeps the page (by id, then by place), the zoom and the scroll; anything else is draw.io’s fit', () => {
+    const { env, message } = loadPostConfig()
+    const { ui, graph } = openEditor(env)
+    const page = (id) => ({ getId: () => id })
+    const view = { scale: 1, setScale(scale) { this.scale = scale } }
+    graph.view = view
+    /** The host's load, then what draw.io does with it: `setFileData` (with its own page fit inside), then `fitInitialView`. */
+    const load = (pages, keepView) => {
+      message({ action: 'load', xml: '<mxfile/>', yaseenKeepView: keepView })
+      ui.setFileData(pages)
+      ui.fitInitialView()
+      return [ui.currentPage.getId(), view.scale, ui.scroll, ui.fitted]
+    }
+    Object.assign(ui, { pages: [page('a'), page('b')], scroll: { x: 300, y: 120 } })
+    ui.currentPage = ui.pages[1]
+    view.scale = 1.5
+    // K1, K5: the same page by id, though a page was added before it.
+    expect(load([page('new'), page('a'), page('b')], true)).toEqual(['b', 1.5, { x: 300, y: 120 }, false])
+    // K4: new ids — the page at the same place.
+    expect(load([page('x'), page('y'), page('z')], true)).toEqual(['z', 1.5, { x: 300, y: 120 }, false])
+    // K3: that page and its place are gone — draw.io's first page and fit.
+    expect(load([page('q')], true)).toEqual(['q', 1, { x: 0, y: 0 }, true])
+    // K6: a load with no flag (the tab's first) fits, and a flag never outlives its load.
+    view.scale = 2
+    expect(load([page('q'), page('r')], false)).toEqual(['q', 1, { x: 0, y: 0 }, true])
+    ui.fitInitialView()
+    expect(ui.fitted).toBe(true)
+    // A file draw.io cannot read throws in `setFileData`: the next fit (a page shown for the first time) is draw.io's own.
+    message({ action: 'load', xml: '<mxfile/>', yaseenKeepView: true })
+    expect(() => ui.setFileData(null)).toThrow()
+    ui.fitted = false
+    ui.fitInitialView()
+    expect([ui.currentPage.getId(), ui.fitted]).toEqual(['q', true])
   })
 
   it('ends the EMPTY canvas right-click menu with draw.io’s Grid toggle, and leaves a selection’s menu alone', () => {
@@ -469,6 +554,22 @@ describe.skipIf(!existsSync(APP_MIN_JS))(`every draw.io action we name exists in
       'mxGraph.clearSelection': /mxGraph\.prototype\.clearSelection\s*=\s*function/,
       'EditorUi.updateActionStates': /EditorUi\.prototype\.updateActionStates\s*=\s*function/,
       'actions.get("undo")': /this\.actions\.get\("undo"\)\.setEnabled/,
+      // YAZ-3420 D1
+      'mxSettings.getFormatWidth': /getFormatWidth\s*:\s*function/,
+      'createUi reads getFormatWidth': /this\.formatWidth\s*=\s*mxSettings\.getFormatWidth\(\)/,
+      'EditorUi.restoreVisibleWindows': /EditorUi\.prototype\.restoreVisibleWindows\s*=\s*function/,
+      'EditorUi.showLayersDialog': /EditorUi\.prototype\.showLayersDialog\s*=\s*function/,
+      'EditorUi.windowResized': /EditorUi\.prototype\.windowResized\s*=\s*function/,
+      'windowResized asks lastWindowWidth': /null!=this\.lastWindowWidth&&this\.lastWindowWidth/,
+      // YAZ-3420 D2
+      'EditorUi.fitInitialView': /EditorUi\.prototype\.fitInitialView\s*=\s*function/,
+      'EditorUi.setFileData': /EditorUi\.prototype\.setFileData\s*=\s*function/,
+      'the embed load is setFileData, then fitInitialView': /this\.setFileData\(\w+\);Editor\.fitDiagramOnLoad&&this\.fitInitialView\(\)/,
+      'Editor.fitDiagramOnLoad on': /Editor\.fitDiagramOnLoad\s*=\s*!0/,
+      'EditorUi.getPageById': /EditorUi\.prototype\.getPageById\s*=\s*function/,
+      'EditorUi.selectPage': /EditorUi\.prototype\.selectPage\s*=\s*function/,
+      'EditorUi.saveScrollState': /EditorUi\.prototype\.saveScrollState\s*=\s*function/,
+      'EditorUi.restoreScrollState': /EditorUi\.prototype\.restoreScrollState\s*=\s*function/,
     }
     for (const [name, pattern] of Object.entries(internals)) expect(app, name).toMatch(pattern)
   })

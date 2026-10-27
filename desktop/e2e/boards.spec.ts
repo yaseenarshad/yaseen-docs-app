@@ -21,6 +21,10 @@
  *     File › Export Image… and View › Canvas Background are enabled; the rail's hamburger opens the
  *     panel with its three tabs, and ⌘C on an empty selection opens Components. No search is typed:
  *     the Image Studio would reach a provider.
+ *   6 the draw.io panels and an outside change (YAZ-3420 D1, D2): with draw.io's own saved state
+ *     saying Format and Layers were open, a 2-page diagram with 2 layers opens with Shapes, Format
+ *     and Layers closed. On Page-2, zoomed in, a write from outside shows on Page-2 at the same zoom
+ *     and place, and nothing is written back.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -49,6 +53,41 @@ const ONE_BOX = [
   '</mxfile>',
   '',
 ].join('\n')
+const PAGES = 'Pages.drawio'
+/** Two pages; Page-2 has a second layer ("Notes"), so draw.io would open its Layers window on load. */
+const twoPages = (extra = '') =>
+  [
+    '<mxfile>',
+    '  <diagram id="p1" name="Page-1">',
+    '    <mxGraphModel grid="0" page="0">',
+    '      <root>',
+    '        <mxCell id="0" />',
+    '        <mxCell id="1" parent="0" />',
+    '        <mxCell id="a1" value="First page box" style="rounded=1;whiteSpace=wrap;" vertex="1" parent="1">',
+    '          <mxGeometry x="40" y="40" width="160" height="80" as="geometry" />',
+    '        </mxCell>',
+    '      </root>',
+    '    </mxGraphModel>',
+    '  </diagram>',
+    '  <diagram id="p2" name="Page-2">',
+    '    <mxGraphModel grid="0" page="0">',
+    '      <root>',
+    '        <mxCell id="0" />',
+    '        <mxCell id="1" parent="0" />',
+    '        <mxCell id="l2" value="Notes" parent="0" />',
+    '        <mxCell id="b1" value="Second page box" style="rounded=1;whiteSpace=wrap;" vertex="1" parent="1">',
+    '          <mxGeometry x="40" y="40" width="160" height="80" as="geometry" />',
+    '        </mxCell>',
+    '        <mxCell id="b2" value="Note box" style="rounded=1;whiteSpace=wrap;" vertex="1" parent="l2">',
+    '          <mxGeometry x="240" y="40" width="160" height="80" as="geometry" />',
+    '        </mxCell>',
+    extra,
+    '      </root>',
+    '    </mxGraphModel>',
+    '  </diagram>',
+    '</mxfile>',
+    '',
+  ].join('\n')
 /** The cells of a diagram file on disk, not counting draw.io's two root cells. */
 const cellCount = async (name: string): Promise<number> => ((await readFile(path.join(vault, name), 'utf8')).match(/<mxCell id="(?!0"|1")/g) ?? []).length
 /** The scene a Draw-made board starts as: empty, `yaseen-draw` source, no dates yet. */
@@ -71,6 +110,7 @@ test.beforeAll(async () => {
   vault = await copyVault(vaultSrc)
   await writeFile(path.join(vault, BOARD), EMPTY_BOARD)
   await writeFile(path.join(vault, DIAGRAM), ONE_BOX)
+  await writeFile(path.join(vault, PAGES), twoPages())
   userData = await mkdtemp(path.join(tmpdir(), 'yaz-3028-boards-'))
 })
 
@@ -220,4 +260,65 @@ test('step 5 — on a drawing tab the board menu items are on, and the rail and 
   await win.keyboard.press('Meta+c')
   await expect(panel).toBeVisible()
   await expect(panel.getByRole('tab', { name: 'Components', selected: true })).toBeVisible()
+})
+
+test('step 6 — every draw.io panel opens closed, and an outside change keeps the page and the zoom (YAZ-3420 D1, D2)', async () => {
+  if (app === null) throw new Error('step 5 did not run')
+  // Wide enough that draw.io's `simple` UI would open Format (1024 px) and Shapes (864 px) by itself.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.setSize(1800, 1000)))
+  // draw.io's own memory (`mxSettings`, one store for every tab) says Format and Layers were open.
+  // (Step 3 duplicated Flow's box, so it shows twice.)
+  await fileRow(win, DIAGRAM).click()
+  const flow = layer(win).frameLocator('iframe.drawio-editor__frame')
+  await expect(flow.getByText('Hello box', { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+  const drawio = win.frames().find((f) => f.url().startsWith('app://drawio/index.html'))
+  if (drawio === undefined) throw new Error('no draw.io frame')
+  await drawio.evaluate(() => {
+    const key = '.drawio-config'
+    const settings = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>
+    const layers = { x: 300, y: 120, w: 212, h: 200, visible: true, minimized: false }
+    localStorage.setItem(key, JSON.stringify({ ...settings, formatWidth: 240, windowStates: { layers } }))
+  })
+
+  // D1 (S1, S3, S6): a 2-layer diagram opens with every panel closed.
+  await fileRow(win, PAGES).click()
+  const frame = layer(win).frameLocator('iframe.drawio-editor__frame')
+  await expect(frame.getByText('First page box', { exact: true })).toBeVisible({ timeout: 30_000 })
+  const layersWindow = frame.locator('.mxWindow').filter({ hasText: 'Layers' })
+  /** A closed panel is 0 px wide plus its 1 px border — still "visible" to Playwright, so its width is the test. */
+  const closed = async () => {
+    await expect.poll(() => frame.locator('.geSidebarContainer').evaluateAll((panels) => panels.map((p) => (p as HTMLElement).offsetWidth))).toEqual([1, 1])
+    await expect(layersWindow.filter({ visible: true })).toHaveCount(0)
+  }
+  await closed()
+  await shoot(win, 'boards-08-diagram-panels-closed')
+
+  // D2 (K1, K8): on Page-2, zoomed in, a write from outside keeps the page, the zoom and the place.
+  await frame.getByText('Page-2', { exact: true }).click()
+  const box = frame.getByText('Second page box', { exact: true })
+  await expect(box).toBeVisible()
+  const fitted = await box.boundingBox()
+  await box.hover()
+  await win.keyboard.down('Control')
+  await win.mouse.wheel(0, -300)
+  await win.keyboard.up('Control')
+  await expect.poll(async () => (await box.boundingBox())?.width ?? 0).toBeGreaterThan((fitted?.width ?? 0) + 10)
+  await win.waitForTimeout(800) // draw.io zooms with a CSS preview first, then sets the real scale and scroll
+  const zoomed = await box.boundingBox()
+  await expect(layer(win).locator('.editor--diagram .save-indicator')).toHaveText('Saved')
+
+  const edited = twoPages(
+    ['        <mxCell id="b3" value="Agent box" style="rounded=1;whiteSpace=wrap;" vertex="1" parent="1">', '          <mxGeometry x="40" y="160" width="160" height="80" as="geometry" />', '        </mxCell>'].join('\n'),
+  )
+  await writeFile(path.join(vault, PAGES), edited)
+  await expect(frame.getByText('Agent box', { exact: true })).toBeVisible({ timeout: 10_000 })
+  await expect(frame.locator('.geActivePage')).toHaveText('Page-2')
+  const kept = await box.boundingBox()
+  expect(Math.abs((kept?.width ?? 0) - (zoomed?.width ?? 0))).toBeLessThan(1)
+  expect(Math.abs((kept?.x ?? 0) - (zoomed?.x ?? 0))).toBeLessThan(2)
+  expect(Math.abs((kept?.y ?? 0) - (zoomed?.y ?? 0))).toBeLessThan(2)
+  await closed()
+  await win.waitForTimeout(1500) // past the 500 ms autosave
+  expect(await readFile(path.join(vault, PAGES), 'utf8')).toBe(edited)
+  await shoot(win, 'boards-09-diagram-outside-change')
 })

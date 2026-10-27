@@ -36,6 +36,27 @@ window.ICON_SERVICE_PATH = null;
 		return null;
 	};
 
+	// YAZ-3420 D1: the Format panel and the Layers, Outline and Tags windows also open CLOSED,
+	// every time. draw.io saves each one in `mxSettings` (one store for every tab), opens Layers
+	// on a diagram with more than one layer, and opens Shapes and Format when the frame grows past
+	// 864 / 1024 px. The toolbar and the View menu still open them.
+	mxSettings.getFormatWidth = function()
+	{
+		return 0;
+	};
+
+	EditorUi.prototype.restoreVisibleWindows = function() {};
+	EditorUi.prototype.showLayersDialog = function() {};
+
+	var windowResized = EditorUi.prototype.windowResized;
+
+	EditorUi.prototype.windowResized = function()
+	{
+		// draw.io toggles a panel only when it knows the last width; without it, a resize only lays out.
+		this.lastWindowWidth = null;
+		windowResized.apply(this, arguments);
+	};
+
 	/** The one editor this page builds (embed mode has one), for the host's live messages below. */
 	var editorUi = null;
 	var createUi = EditorUi.prototype.createUi;
@@ -47,6 +68,68 @@ window.ICON_SERVICE_PATH = null;
 		createUi.apply(this, arguments);
 		installTextScaling(this.editor.graph);
 	};
+
+	// YAZ-3420 D2: a load the host flags with `yaseenKeepView` (an outside change on a clean tab)
+	// keeps the page and the view. draw.io's embed load is `setFileData` (the first page, its
+	// scrollbars reset) then `fitInitialView`; the view comes back in place of that last fit. It
+	// runs inside the load, while draw.io ignores changes, so nothing autosaves. draw.io also fits
+	// a page it shows for the first time, INSIDE `setFileData` and `selectPage`: those stay its own.
+	var keptView = null;
+	var settingFileData = false;
+	var setFileData = EditorUi.prototype.setFileData;
+	var fitInitialView = EditorUi.prototype.fitInitialView;
+
+	EditorUi.prototype.setFileData = function()
+	{
+		settingFileData = true;
+
+		try
+		{
+			return setFileData.apply(this, arguments);
+		}
+		catch (e)
+		{
+			// A file draw.io cannot read ends the load here, before its last fit: the view is not kept for later.
+			keptView = null;
+			throw e;
+		}
+		finally
+		{
+			settingFileData = false;
+		}
+	};
+
+	EditorUi.prototype.fitInitialView = function()
+	{
+		if (settingFileData)
+		{
+			return fitInitialView.apply(this, arguments);
+		}
+
+		var kept = keptView;
+		keptView = null;
+		var page = (kept != null) ? (this.getPageById(kept.pageId) || this.pages[kept.pageIndex]) : null;
+
+		if (page == null)
+		{
+			return fitInitialView.apply(this, arguments);
+		}
+
+		this.selectPage(page, true);
+		this.editor.graph.view.setScale(kept.scale);
+		this.restoreScrollState(kept.scroll);
+	};
+
+	/** What D2 keeps: the page (by id, then by place), the zoom, and draw.io's own scroll state. */
+	function currentView(ui)
+	{
+		return (ui == null || ui.currentPage == null) ? null : {
+			pageId: ui.currentPage.getId(),
+			pageIndex: mxUtils.indexOf(ui.pages, ui.currentPage),
+			scale: ui.editor.graph.view.scale,
+			scroll: ui.saveScrollState()
+		};
+	}
 
 	// YAZ-3076 D2: the file says read only, so the graph takes no edits — the host's `yaseenReadOnly`
 	// message, sent only after draw.io's `init` (when the editor exists, as for `yaseenAdaptiveColors`)
@@ -154,6 +237,7 @@ window.ICON_SERVICE_PATH = null;
 		if (msg != null && msg.action == 'load')
 		{
 			keepHostFocus = msg.yaseenKeepFocus === true;
+			keptView = (msg.yaseenKeepView === true) ? currentView(editorUi) : null;
 			window.setTimeout(function()
 			{
 				keepHostFocus = false;
