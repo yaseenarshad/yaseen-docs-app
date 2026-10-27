@@ -87,6 +87,12 @@ window.ICON_SERVICE_PATH = null;
 		{
 			return setFileData.apply(this, arguments);
 		}
+		catch (e)
+		{
+			// A file draw.io cannot read ends the load here, before its last fit: the view is not kept for later.
+			keptView = null;
+			throw e;
+		}
 		finally
 		{
 			settingFileData = false;

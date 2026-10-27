@@ -283,6 +283,12 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     expect(load([page('q'), page('r')], false)).toEqual(['q', 1, { x: 0, y: 0 }, true])
     ui.fitInitialView()
     expect(ui.fitted).toBe(true)
+    // A file draw.io cannot read throws in `setFileData`: the next fit (a page shown for the first time) is draw.io's own.
+    message({ action: 'load', xml: '<mxfile/>', yaseenKeepView: true })
+    expect(() => ui.setFileData(null)).toThrow()
+    ui.fitted = false
+    ui.fitInitialView()
+    expect([ui.currentPage.getId(), ui.fitted]).toEqual(['q', true])
   })
 
   it('ends the EMPTY canvas right-click menu with draw.io’s Grid toggle, and leaves a selection’s menu alone', () => {
