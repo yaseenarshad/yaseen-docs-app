@@ -173,12 +173,18 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
   const isFolder = useFolderPaths(roots)
   const labelOf = (path: string): string => pageLabel(path, isFolder(path), titles)
   // The hover panel (YAZ-3403): the sidebar's own panel below a tab that is not on show, after the sidebar's dwell. Its
-  // dwell lives in a tiny store, so a pointer crossing tabs draws no strip. A drag, a menu, a rename or a new tab on
-  // show closes it; a click, a key, the wheel and a scroll close it in the hook.
+  // dwell lives in a tiny store, so a pointer crossing tabs draws no strip. A click, a right-click, a drag, a key, the
+  // wheel and a scroll close it in the hook (each drag and menu starts with a press). Here: a new tab on show, a rename
+  // (one that a command starts has no press), and the hovered tab gone (another window closed it: no `mouseleave`).
   const stripRef = useRef<HTMLDivElement | null>(null)
   const tabPreview = useCardPreview(hoverPreview, (id) => stripRef.current?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(id)}"]`) ?? null)
   const closeTabPreview = tabPreview.close
   useEffect(() => closeTabPreview(), [active, blank, renaming, closeTabPreview])
+  const tabStore = tabPreview.store
+  useEffect(() => {
+    const { id } = tabStore.getState()
+    if (id !== null && !tabs.some((t) => t.id === id)) closeTabPreview()
+  }, [tabs, tabStore, closeTabPreview])
   const previewTab = (id: string): { root: string | null; name: string } | null => {
     const tab = tabs.find((t) => t.id === id)
     return tab === undefined ? null : { root: rootOfPath(roots, tab.path), name: tab.name ?? labelOf(tab.path) }
@@ -385,7 +391,6 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
               onMouseEnter={isActive || id === renaming ? undefined : () => tabPreview.hoverCard(id, path)}
               onMouseLeave={() => tabPreview.leaveCard(id)}
               onDragStart={(e) => {
-                tabPreview.close()
                 if (e.dataTransfer) writePageDrag(e.dataTransfer, { path, owner: 'main' })
                 setExternalOver(null)
                 setDrag({ from: i, over: null })
@@ -418,7 +423,6 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
                 // A right-click in the name's field is the field's own (YAZ-2949): no tab menu over it.
                 if (id === renaming) return
                 e.preventDefault()
-                tabPreview.close()
                 setMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null, named: name !== undefined, lists: listState?.(path) ?? null })
               }}
             >

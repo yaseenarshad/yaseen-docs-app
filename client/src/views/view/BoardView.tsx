@@ -263,8 +263,8 @@ export function BoardView({
             openCard(row, event)
           }}
           // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart rather
-          // than replacing it (YAZ-1244): a card must never hang over a drag. The hover panel too (YAZ-3403).
-          onDragStartCapture={() => (close(), hover?.close())}
+          // than replacing it (YAZ-1244): a card must never hang over a drag.
+          onDragStartCapture={close}
           onContextMenu={(event) => openCardMenu(event, row)}
         >
           {lines.map((line, i) => (

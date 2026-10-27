@@ -28,7 +28,7 @@ export interface WikilinkHover {
 const wikilinkHoverKey = new PluginKey('mdapp-wikilink-hover')
 
 /** The page a collapsed, resolved link span opens, or null. */
-function linkPathOf(view: EditorView, target: EventTarget | null, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): { span: Element; path: string } | null {
+function linkPathOf(view: EditorView, target: EventTarget | null, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource): { span: Element; path: string } | null {
   if (!(target instanceof Element)) return null
   const span = target.closest(`.${WIKILINK_CLASS}`)
   if (span === null || span.classList.contains(WIKILINK_UNRESOLVED_CLASS) || !view.dom.contains(span)) return null
@@ -36,16 +36,16 @@ function linkPathOf(view: EditorView, target: EventTarget | null, source: Wikili
   if (inner === null) return null
   const page = linkPageName(inner)
   if (page === '') return null
-  const viewTarget = viewOnly === undefined ? null : viewOnlyLinkTarget(inner)
+  const viewTarget = viewOnlyLinkTarget(inner)
   if (viewTarget !== null) {
-    const path = viewTarget.hasSubtarget ? null : (viewOnly?.resolve?.(viewTarget.page) ?? null)
+    const path = viewTarget.hasSubtarget ? null : (viewOnly.resolve?.(viewTarget.page) ?? null)
     return path === null ? null : { span, path }
   }
   const path = source.resolve?.(page) ?? null
   return path === null ? null : { span, path }
 }
 
-export function createWikilinkHover(source: WikilinkResolveSource, hover: WikilinkHover, viewOnly?: ViewOnlyLinkSource) {
+export function createWikilinkHover(source: WikilinkResolveSource, hover: WikilinkHover, viewOnly: ViewOnlyLinkSource) {
   /** The page of the link the pointer is on, or null: a move between a link's own segments is no new hover. */
   let current: string | null = null
   return $prose(

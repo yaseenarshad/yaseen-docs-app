@@ -32,6 +32,19 @@ const NONE: CardPreviewState = { id: null, path: null, shown: false, rect: null,
 const previews = (path: string): boolean => isBoard(path) || isMarkdown(path)
 
 /**
+ * App's Space panel shows (the search's or the new tab page's): no hover dwell starts, in any place (YAZ-3403). App
+ * writes it, and a dwell reads it live, so the Space panel opening draws no editor, tab or row.
+ */
+export const spacePanel = { shown: false }
+
+/** `box` holds the middle of `rect`: a scroll of that box moves what `rect` marks. */
+const holds = (box: AnchorRect, rect: AnchorRect): boolean => {
+  const x = (rect.left + rect.right) / 2
+  const y = (rect.top + rect.bottom) / 2
+  return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom
+}
+
+/**
  * The board's half: the store, the dwell, and every close. `find` gives a card's element by card id, or the box the
  * panel sits beside where no one element is it (a linked mention's row, a [[link]] in a note — YAZ-3403).
  */
@@ -59,7 +72,7 @@ export function useCardPreview(hoverOn: boolean, find: (id: string) => HTMLEleme
       const now = store.getState()
       if (now.by === 'space' || (now.id === id && now.by === 'hover')) return
       close()
-      if (!live.current.hoverOn || !previews(path)) return
+      if (!live.current.hoverOn || spacePanel.shown || !previews(path)) return
       const ask = request.current
       store.set({ id, path, shown: false, rect: null, by: 'hover' })
       // A note's chunk starts loading with the dwell, as in the sidebar.
@@ -97,25 +110,31 @@ export function useCardPreview(hoverOn: boolean, find: (id: string) => HTMLEleme
     if (!hoverOn && store.getState().by === 'hover') close()
   }, [hoverOn, store, close])
   useEffect(() => close, [close])
-  // A scroll, a key, a click or the wheel ends the glance (YAZ-3403): the item may move from under the panel, or the
-  // reader is doing something else. Listened to only while a hover dwell or panel is live, off the store, so the
-  // owner never re-renders for it; Space holds its own panel.
+  // A key, a click or the wheel ends the glance (YAZ-3403): the reader is doing something else. A scroll ends it when it
+  // moves the item: the page's, or a box's that holds the item (an element, or a box over the item's spot). Listened
+  // to only while a hover dwell or panel is live, off the store, so the owner never re-renders for it; Space holds its
+  // own panel.
   useEffect(() => {
-    const events = ['scroll', 'keydown', 'mousedown', 'wheel'] as const
+    const onScroll = ({ target }: Event) => {
+      const { id } = store.getState()
+      const at = id === null ? null : live.current.find(id)
+      if (at === null || !(target instanceof Element) || (at instanceof Element ? target.contains(at) : holds(target.getBoundingClientRect(), at))) close()
+    }
+    const events = [['scroll', onScroll], ['keydown', close], ['mousedown', close], ['wheel', close]] as const
     let on = false
     const follow = () => {
       const want = store.getState().by === 'hover'
       if (want === on) return
       on = want
-      for (const type of events) {
-        if (want) window.addEventListener(type, close, true)
-        else window.removeEventListener(type, close, true)
+      for (const [type, listener] of events) {
+        if (want) window.addEventListener(type, listener, true)
+        else window.removeEventListener(type, listener, true)
       }
     }
     const unsubscribe = store.subscribe(follow)
     return () => {
       unsubscribe()
-      if (on) for (const type of events) window.removeEventListener(type, close, true)
+      if (on) for (const [type, listener] of events) window.removeEventListener(type, listener, true)
     }
   }, [store, close])
   return { store, hoverCard, leaveCard, showNow, endSpace, close }
@@ -130,10 +149,10 @@ export interface PreviewScope {
 }
 
 /** The panel's half: it alone reads the store. `below` puts the panel under the card (a tab of the strip), not beside it. */
-export function CardPreviewHost({ store, cardOf, scopeOf, diagramDarkColors, below = false }: { store: Store<CardPreviewState>; cardOf: (id: string) => { root: string | null; name: string } | null; scopeOf?: (path: string) => PreviewScope; diagramDarkColors: DiagramDarkColors; below?: boolean }) {
+export function CardPreviewHost({ store, cardOf, scopeOf, diagramDarkColors, below = false }: { store: Store<CardPreviewState>; cardOf: (id: string, path: string) => { root: string | null; name: string } | null; scopeOf?: (path: string) => PreviewScope; diagramDarkColors: DiagramDarkColors; below?: boolean }) {
   const { id, path, shown, rect } = useSyncExternalStore(store.subscribe, store.getState)
   if (!shown || id === null || path === null || rect === null || scopeOf === undefined) return null
-  const card = cardOf(id)
+  const card = cardOf(id, path)
   if (card === null) return null
   const scope = scopeOf(path)
   // A card of another window may be of a vault this window does not show: its own window's vault names it.

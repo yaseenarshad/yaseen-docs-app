@@ -55,7 +55,7 @@ export interface HoverState {
 /** How long the pointer (or focus) rests on a board or note row before its preview opens (Draw's YAZ-1800; one wait for both, YAZ-3075 D3). */
 export const HOVER_PREVIEW_DWELL_MS = 400
 
-export function useHoverPreview(blocked: boolean, enabled: boolean, activeFile: string | null) {
+export function useHoverPreview(blocked: boolean, activeFile: string | null) {
   const [hover] = useState(() => createStore<HoverState>({ path: null, shown: false }))
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hoverRequest = useRef(0)
@@ -86,10 +86,10 @@ export function useHoverPreview(blocked: boolean, enabled: boolean, activeFile: 
     },
     [hover, closePreview],
   )
-  // Everything else that ends a glance: a search, a menu opening, another file opening.
+  // Everything else that ends a glance: a menu opening, a Space panel, the place's switch off, another file opening.
   useEffect(() => {
-    if (!enabled || blocked) closePreview()
-  }, [enabled, blocked, closePreview])
+    if (blocked) closePreview()
+  }, [blocked, closePreview])
   useEffect(() => closePreview(), [activeFile, closePreview])
   useEffect(() => closePreview, [closePreview]) // unmount: no dwell timer outlives the sidebar
 
@@ -110,7 +110,7 @@ interface HoverPreviewHostProps {
   nameOf: (path: string) => string
   /** The text formatting of the vault that holds a note (YAZ-3067 D12; YAZ-3075 C20). */
   textVarsOf: (path: string) => CSSProperties
-  /** Previews possible (no search typed, no menu up). */
+  /** The place's switch is on (Settings › Preview on hover › Sidebar, or › Search results while the Search tab shows). */
   enabled: boolean
   diagramDarkColors: DiagramDarkColors
   /** The sidebar, which the panel sits beside. */

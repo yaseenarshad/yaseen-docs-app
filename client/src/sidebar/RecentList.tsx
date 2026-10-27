@@ -104,7 +104,7 @@ export const RecentList = memo(function RecentList({ trees, roots, titles, activ
   }
   return (
     <>
-      {/* The tree's row styles, but no tree for the keys: the sidebar's arrow keys walk `[data-path]` rows only, so these rows are buttons that Tab reaches. */}
+      {/* The tree's row styles, but no tree for the keys: the sidebar's arrow keys walk `.tree__row[data-path]` rows only, so these rows are buttons that Tab reaches. */}
       <ul className="tree" aria-label="Recents">
         {days.map((day) => {
           const open = !shut.has(day.key)
@@ -139,10 +139,11 @@ interface RecentRowProps extends Pick<RecentListProps, 'titles' | 'onOpenFile' |
 /** One file (D6, S18): its page name, and the time of its save on the right; the path is the tooltip. */
 function RecentRow({ file, active, titles, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile }: RecentRowProps) {
   const { path, edited } = file
-  // A board or note row's hover handlers, as a Files row's (YAZ-3403): pointer and focus alike.
+  // A board or note row's hover handlers, as a Files row's (YAZ-3403): pointer and focus alike. The item's `data-path`
+  // puts a Files window's floating panel level with the row (`previewRowRect`); the button has none, for the keys.
   const hover = onHoverFile === undefined || !(isBoard(path) || isMarkdown(path)) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
   return (
-    <li>
+    <li data-path={path}>
       <button
         type="button"
         className={'tree__row' + (active ? ' tree__row--active' : '')}

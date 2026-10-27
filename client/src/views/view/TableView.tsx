@@ -503,8 +503,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   {...rowProps(line.row.record)}
                   {...hover?.itemProps(line.row.record.path)}
                   // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart
-                  // rather than replacing it (YAZ-1244): a card must never hang over a drag. The hover panel too (YAZ-3403).
-                  onDragStartCapture={() => (close(), hover?.close())}
+                  // rather than replacing it (YAZ-1244): a card must never hang over a drag.
+                  onDragStartCapture={close}
                   onContextMenu={openRowMenu(line.row.record)}
                 >
                   {/* No `data-cell` and no tabIndex: the gutter is outside the arrow-key grid (YAZ-1513). */}

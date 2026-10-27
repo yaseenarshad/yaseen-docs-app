@@ -117,6 +117,8 @@ interface SidebarProps {
    */
   previewPath: string | null
   onPreview: (path: string | null) => void
+  /** The new tab page's Space panel shows (YAZ-2663 S39): no hover preview, as with the search's (YAZ-3403). */
+  pagePreviewShown?: boolean
   /** The text formatting of the vault that holds a path (YAZ-3067 D12): App's `textVarsFor`, which a note's hover preview wears (YAZ-3075 C20). */
   textVarsFor: (path: string) => CSSProperties
   /** "Open folder…" — the last row of the header's vault switcher (YAZ-1767 D4) — runs App's picker; the picked vault opens beside (YAZ-1914). */
@@ -515,6 +517,7 @@ export function Sidebar({
   onOpenFileBackground,
   onRevealInFiles,
   previewPath,
+  pagePreviewShown = false,
   onPreview,
   textVarsFor,
   onPickFolder,
@@ -695,10 +698,10 @@ export function Sidebar({
   const searching = lens === 'search'
   // The hover preview (YAZ-3028 D11): a menu or the Info popover owns the pointer while it stands. A search
   // result previews as a Files row does (YAZ-3403). While App's Space panel shows, no hover preview
-  // starts and one that shows closes (YAZ-3075 D4, C12): one panel at a time.
+  // starts and one that shows closes (YAZ-3075 D4, C12): one panel at a time. The new tab page's Space panel too (YAZ-3403).
   // Settings › Preview on hover has a switch for the search results and one for the rest of the sidebar (YAZ-3403).
   const hoverHere = hoverOn(settings, searching ? 'search' : 'sidebar')
-  const { hover, hoverFile, closePreview } = useHoverPreview(menu !== null || infoPopover !== null || previewPath !== null || !hoverHere, true, activeFile) // off (A20): no dwell starts
+  const { hover, hoverFile, closePreview } = useHoverPreview(menu !== null || infoPopover !== null || previewPath !== null || pagePreviewShown || !hoverHere, activeFile) // off (A20): no dwell starts
   /** The watch feed of the vault that holds `path` (the hover preview and Info listen on it, A41). */
   const watchOf = useCallback((path: string): WatchSource | undefined => watches[roots.indexOf(rootOf(path))], [watches, roots, rootOf])
   // The Info popover reads the board's head when it opens, and again on each `change` of that board

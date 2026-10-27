@@ -18,6 +18,7 @@ import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugi
 import { TEST_RECORDS } from '../testRecords'
 import { OPEN_DELAY_MS } from './PreviewCard'
 import { HOVER_PREVIEW_DWELL_MS } from '../../sidebar/HoverPreviewHost'
+import { spacePanel } from '../../tabs/cardPreview'
 
 /** No store behind this mount: collapse state stays in the pane. */
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
@@ -937,10 +938,19 @@ describe('preview mode (YAZ-1244)', () => {
     expect(card()).toBeNull()
   })
 
-  it('YAZ-3403 S32, S33, D9: with Preview on hover › Folder views on, a cards view shows the shared note panel; a table whose own Preview is on shows only its own card — never two panels', async () => {
+  it('YAZ-3403 S32, S33, D9: with Preview on hover › Folder views on, a cards view shows the shared note panel, but not while the Space panel shows; a table whose own Preview is on shows only its own card — never two panels', async () => {
     const shared = { hoverPreview: true, previewScope: () => ({ root: '/vault', wikilinks: createWikilinkResolveSource(), textVars: {} }) }
     const notePanel = () => document.body.querySelector('.note-preview')
     const { el: cardsEl } = mount('views:\n  - type: cards\n    name: C\n    order:\n      - file.name\n', shared)
+    // App's Space panel shows: the rest opens no hover panel (App writes the flag; the dwell reads it live).
+    spacePanel.shown = true
+    try {
+      hover(q(cardsEl, '.view-card'))
+      await settle(HOVER_PREVIEW_DWELL_MS + 50)
+      expect(notePanel()).toBeNull()
+    } finally {
+      spacePanel.shown = false
+    }
     hover(q(cardsEl, '.view-card'))
     await settle(Math.max(OPEN_DELAY_MS, HOVER_PREVIEW_DWELL_MS) + 50)
     expect(notePanel()).not.toBeNull()

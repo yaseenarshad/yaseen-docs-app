@@ -351,25 +351,23 @@ function CrepeHost({
   const hostRef = useRef<HTMLDivElement>(null)
   // A copied page's start (YAZ-2940 D7, YAZ-2951 D1): a ref, so the create effect does not depend on it, and used once.
   const startViewRef = useRef(startView)
-  // The hover panel of the note's [[links]] (YAZ-3403): the sidebar's own panel beside a resolved link. Each hover is
-  // its own id (the page and a count), its box kept here; the dwell lives in the panel's tiny store, so nothing of the
-  // note draws for it. The plugin is wired once, with the editor; the setting is read live by the dwell.
-  const linkAt = useRef<{ id: string; rect: AnchorRect } | null>(null)
-  const linkPreview = useCardPreview(hoverLinks, (id) => (linkAt.current?.id === id ? linkAt.current.rect : null))
-  const [linkHover] = useState<WikilinkHover>(() => {
-    let count = 0
-    return {
-      onHover: (path, rect) => {
-        linkAt.current = { id: `${path}\n${++count}`, rect }
-        linkPreview.hoverCard(linkAt.current.id, path)
-      },
-      onLeave: () => {
-        if (linkAt.current !== null) linkPreview.leaveCard(linkAt.current.id)
-        linkAt.current = null
-      },
-    }
-  })
-  const linkCard = (id: string): { root: string | null; name: string } => ({ root: null, name: pageLabel(id.slice(0, id.lastIndexOf('\n')), false, titles) })
+  // The hover panel of the note's [[links]] (YAZ-3403): the sidebar's own panel beside a resolved link. A hover's id is
+  // its page: the plugin leaves one page before it hovers the next. The link's box is kept here; the dwell lives in the
+  // panel's tiny store, so nothing of the note draws for it. The plugin is wired once, with the editor; the setting is
+  // read live by the dwell.
+  const linkAt = useRef<{ path: string; rect: AnchorRect } | null>(null)
+  const linkPreview = useCardPreview(hoverLinks, (path) => (linkAt.current?.path === path ? linkAt.current.rect : null))
+  const [linkHover] = useState<WikilinkHover>(() => ({
+    onHover: (path, rect) => {
+      linkAt.current = { path, rect }
+      linkPreview.hoverCard(path, path)
+    },
+    onLeave: () => {
+      if (linkAt.current !== null) linkPreview.leaveCard(linkAt.current.path)
+      linkAt.current = null
+    },
+  }))
+  const linkCard = (_: string, path: string): { root: string | null; name: string } => ({ root: null, name: pageLabel(path, false, titles) })
   // This note owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,
   // body, comments, the zoom pill (YAZ-1710). Same ladder as the pill; ⌘0 is 100%; a wall is a no-op.
   useEffect(() => {

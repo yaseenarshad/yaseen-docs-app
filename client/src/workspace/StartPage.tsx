@@ -271,7 +271,6 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
   useEffect(() => closeRowPreview(), [columns, closeRowPreview])
 
   const onKeys = (e: KeyboardEvent<HTMLDivElement>): void => {
-    rowPreview.close() // a key ends the glance: the keys walk the rows, and Space has its own panel
     const on = e.target instanceof Element ? e.target.closest<HTMLElement>('button.start__row') : null
     const col = COLUMNS.find((column) => column.col === on?.dataset.col)?.col
     const n = Number(on?.dataset.row)
@@ -366,7 +365,7 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
   // "How long ago" is from this draw: the page has no timer.
   const now = Date.now()
   return (
-    <div ref={page} className="start" onKeyDown={onKeys} onScroll={rowPreview.close}>
+    <div ref={page} className="start" onKeyDown={onKeys}>
       <div className="start__columns">
         {COLUMNS.map(({ col, label, empty }) => (
           <section key={col} className="start__column" data-col={col} aria-label={label}>
@@ -385,7 +384,7 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
                   return (
                     <li key={`${row.depth} ${row.path}`}>
                       {/* `data-col` and `data-row` say where the row stands: the arrow keys walk by them (YAZ-2674). */}
-                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} style={top ? undefined : { paddingLeft: (folder ? 8 : 26) + row.depth * 14 }} aria-expanded={folder ? open : undefined} data-path={row.path} data-col={col} data-row={at} title={row.path} onMouseEnter={folder ? undefined : () => rowPreview.hoverCard(`${col} ${at}`, row.path)} onMouseLeave={() => rowPreview.leaveCard(`${col} ${at}`)} onClick={(e) => (rowPreview.close(), activate(row, e.metaKey))} onContextMenu={(e) => (e.preventDefault(), rowPreview.close(), onRowMenu(row.path, e.clientX, e.clientY))}>
+                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} style={top ? undefined : { paddingLeft: (folder ? 8 : 26) + row.depth * 14 }} aria-expanded={folder ? open : undefined} data-path={row.path} data-col={col} data-row={at} title={row.path} onMouseEnter={folder ? undefined : () => rowPreview.hoverCard(`${col} ${at}`, row.path)} onMouseLeave={() => rowPreview.leaveCard(`${col} ${at}`)} onClick={(e) => activate(row, e.metaKey)} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY))}>
                         {/* The chevron is the mouse's Space (D13): it opens and closes the folder here, and the row's own click — the folder in Files — does not follow. */}
                         {folder && <span className={`tree__chevron${open ? ' tree__chevron--open' : ''}`} onClick={(e) => (e.stopPropagation(), toggleDir(col, row.path))} />}
                         <span className="start__name">{pageLabel(row.path, folder, titles)}</span>

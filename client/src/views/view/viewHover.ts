@@ -7,6 +7,4 @@
 export interface ViewHover {
   /** The handlers an item spreads: `data-hover-item` finds it again when the dwell ends. */
   itemProps: (path: string) => { 'data-hover-item': string; onMouseEnter: () => void; onMouseLeave: () => void }
-  /** A drag starting closes the panel, as it closes a view's own card. */
-  close: () => void
 }

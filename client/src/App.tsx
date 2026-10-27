@@ -59,6 +59,7 @@ import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import type { MoveTarget } from './tabs/TabMenu'
 import { setBoardHighlight } from './tabs/boardHighlight'
+import { spacePanel } from './tabs/cardPreview'
 import { tabOfRef, windowLabel } from './tabs/windowLabel'
 import { useUpdate } from './update/useUpdate'
 import { RightPanel } from './right-panel/RightPanel'
@@ -938,6 +939,10 @@ export function App() {
   }, [openSearch])
   // What the panel draws: the file of a row of the new tab page (YAZ-2663 S39), else the file of the search.
   const panelPath = pagePreviewPath ?? previewShown
+  // While it shows, no hover panel opens in any place (YAZ-3403): each dwell reads this live, so no editor draws for it.
+  useLayoutEffect(() => {
+    spacePanel.shown = panelPath !== null
+  }, [panelPath])
   /** Leave the board for the tab `id` — a page of the board, a tab of the strip — or, with null, for the page that is open (Esc, the button, ⌘⇧M). */
   const leaveOverview = useCallback((id: string | null) => {
     const { active: open, tabs: all } = now.current
@@ -2533,6 +2538,7 @@ export function App() {
           onRevealInFiles={revealInFiles}
           previewPath={previewShown}
           onPreview={setPreviewPath}
+          pagePreviewShown={pagePreviewPath !== null}
           // A note's hover preview wears its vault's text formatting, as its tab does (YAZ-3075 C20).
           textVarsFor={textVarsFor}
           onPickFolder={pick}

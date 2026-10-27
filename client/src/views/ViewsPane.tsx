@@ -179,26 +179,19 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   const [createError, setCreateError] = useState<string | null>(null)
   // The hover panel (YAZ-3403): ONE dwell and ONE panel for every layout (`viewHover.ts`), beside the hovered item.
   // An item is found again by its path, the hovered copy first (a board can show a note twice). Nothing opens while an
-  // inline editor is open — at the dwell's end too.
+  // inline editor is open: the dwell's end finds no item then.
   const paneRef = useRef<HTMLDivElement>(null)
-  const editing = (): boolean => paneRef.current?.querySelector('[data-editing]') != null
   const itemHover = useCardPreview(hoverPreview, (path) => {
-    if (editing()) return null
+    if (paneRef.current?.querySelector('[data-editing]') != null) return null
     const items = [...(paneRef.current?.querySelectorAll<HTMLElement>(`[data-hover-item="${CSS.escape(path)}"]`) ?? [])]
     return items.find((el) => el.matches(':hover')) ?? items[0] ?? null
   })
   const { hoverCard, leaveCard, close: closeItemHover } = itemHover
-  const itemProps = useCallback(
-    (path: string) => ({
-      'data-hover-item': path,
-      onMouseEnter: () => {
-        if (!editing()) hoverCard(path, path)
-      },
-      onMouseLeave: () => leaveCard(path),
-    }),
-    [hoverCard, leaveCard],
-  )
-  const viewHover = useMemo<ViewHover>(() => ({ itemProps, close: closeItemHover }), [itemProps, closeItemHover])
+  const itemProps = useCallback((path: string) => ({ 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard])
+  const viewHover = useMemo<ViewHover>(() => ({ itemProps }), [itemProps])
+  // New records (a sync, another window's edit) can remove or move the item under the panel, and a removed item
+  // fires no `mouseleave`: the panel goes.
+  useEffect(() => closeItemHover(), [records, closeItemHover])
   const { def } = parsed
   const views = def.views
   const index = Math.max(0, Math.min(active, views.length - 1))
@@ -422,9 +415,6 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
   // A table or board whose own Preview is on keeps its own card, and takes no shared panel: never two.
   const ownCard = view.preview === true && (view.type === 'table' || view.type === 'board')
   const hoverHere = ownCard ? undefined : viewHover
-  useEffect(() => {
-    if (ownCard) closeItemHover()
-  }, [ownCard, closeItemHover])
   return (
     <div ref={paneRef} className="views-pane">
       <Toolbar
@@ -597,7 +587,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
           {notes.join(' · ')}
         </p>
       )}
-      <CardPreviewHost store={itemHover.store} cardOf={(path) => ({ root: null, name: records.find((r) => r.path === path)?.title ?? '' })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
+      <CardPreviewHost store={itemHover.store} cardOf={(_, path) => ({ root: null, name: records.find((r) => r.path === path)?.title ?? '' })} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
     </div>
   )
 }

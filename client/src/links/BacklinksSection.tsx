@@ -72,7 +72,7 @@ export function BacklinksSection({ path, source, openCurrent, openBackground, ho
   })
   const hoverOf: HoverOf = (id, page) => ({ 'data-preview': id, onMouseEnter: () => preview.hoverCard(id, page), onMouseLeave: () => preview.leaveCard(id) })
   // Read only while a panel shows: the linking note's name, as the entry shows it.
-  const previewCard = (id: string) => ({ root: null, name: pageLabel(id.slice(0, id.lastIndexOf('\n')), false, pathTitles(feed.records, feed.folders)) })
+  const previewCard = (_: string, page: string) => ({ root: null, name: pageLabel(page, false, pathTitles(feed.records, feed.folders)) })
 
   const entries = feed.resolve === null ? NONE : backlinksFor(path, feed.records, feed.resolve, feed.folders)
   if (entries.length === 0) return null
