@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { CANVAS_HOTKEYS, DRAWIO_HOTKEYS, HOTKEY_GROUPS, VIEW_HOTKEYS, HOTKEYS, MOUSE_TIPS, WINDOW_HOTKEYS } from './hotkeys'
+import { HOTKEY_COMMANDS, sameKey, toDisplay } from '@shared/hotkeyBindings'
+import { BUILT_IN_KEYS, CANVAS_HOTKEYS, DRAWIO_HOTKEYS, HOTKEY_GROUPS, VIEW_HOTKEYS, HOTKEYS, MOUSE_TIPS, WINDOW_HOTKEYS } from './hotkeys'
 
 describe('HOTKEYS source of truth', () => {
   it('covers every shipped keyboard binding', () => {
@@ -26,26 +27,35 @@ describe('HOTKEYS source of truth', () => {
     expect(VIEW_HOTKEYS.find((h) => h.keys === '⌘⏎ / ⌥⏎')?.label).toMatch(/background tab.*right panel/i)
   })
 
-  it('covers the window & tab shortcuts from the application menu (B3 + Tabs)', () => {
+  it('covers the window & tab shortcuts from the application menu (B3 + Tabs): the changeable ones in HOTKEY_COMMANDS, the built-in ones here, none twice (YAZ-3397 D2)', () => {
     const keys = WINDOW_HOTKEYS.map((h) => h.keys)
-    // ⌘⇧N / ⌘⇧O / ⌘W (Close Tab) / ⌘⇧W (New Files Window, YAZ-3357 D15) and the tab-switch pairs live in the
-    // menu (menu.ts, GRO-2161/2232). No '⌥ Open Recent' tip: ⌥ no longer differs from a plain click (YAZ-1914 D2).
-    for (const expected of ['⌘⇧N', '⌘⇧O', '⌘O', '⌘K', '⌘,', '⌘B', '⌘⇧C', '⌘X / ⌘C', '⌘V', '⌘W', '⌘⇧W', '⌃Tab / ⌃⇧Tab', '⌘⇧] / ⌘⇧[']) {
-      expect(keys).toContain(expected)
-    }
+    // The menu's changeable keys (menu.ts, GRO-2161/2232) live in `HOTKEY_COMMANDS` and are listed above these.
+    expect(HOTKEY_COMMANDS.map((c) => [c.id, toDisplay(c.key)])).toEqual([
+      ['newTab', '⌘T'],
+      ['newWindow', '⌘⇧N'],
+      ['newFilesWindow', '⌘⇧W'],
+      ['closeTab', '⌘W'],
+      ['closeWindow', ''],
+      ['switchVault', '⌘O'],
+      ['openFolder', '⌘⇧O'],
+      ['search', '⌘K'],
+      ['settings', '⌘,'],
+      ['toggleSidebar', '⌘B'],
+      ['copyPath', '⌘⇧C'],
+      ['tabOverview', '⌘⇧M'],
+      ['nextTab', '⌃Tab'],
+      ['prevTab', '⌃⇧Tab'],
+    ])
+    expect(HOTKEY_COMMANDS.filter((c) => c.macStandard === true).map((c) => c.id)).toEqual(['newTab', 'newWindow', 'closeTab', 'switchVault', 'settings'])
+    for (const command of HOTKEY_COMMANDS) if (command.key !== null) expect(keys, command.id).not.toContain(toDisplay(command.key))
+    for (const expected of ['⌘1 … ⌘9', '⌘X / ⌘C', '⌘V', '⌘⇧] / ⌘⇧[']) expect(keys).toContain(expected)
     expect(keys).not.toContain('⌥ Open Recent')
-    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘B')?.label).toMatch(/outside editing surfaces/i)
     // ⌘O (YAZ-1767 D8): the switcher's two verbs, filter then open — in a NEW window, never in place.
-    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘O')?.label).toMatch(/switch vault.*filter.*new window/i)
-    // ⌘1 … ⌘9 (YAZ-2555 D3, S33): right below ⌘O, and the label says where a vault gets its number.
-    expect(keys[keys.indexOf('⌘O') + 1]).toBe('⌘1 … ⌘9')
+    expect(HOTKEY_COMMANDS.find((c) => c.id === 'switchVault')?.hint).toMatch(/filter.*new window/i)
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘1 … ⌘9')?.label).toMatch(/vault with that number.*right-click a vault/i)
-    // ⌘⇧C (🔒 D4, YAZ-1338): the multi-selection FIRST, the open file as the fallback — the
-    // order matters, so the label has to name both and in that order.
-    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧C')?.label).toMatch(/selection.*else the open file/i)
-    // ⌘W closes the TAB (GRO-2232, locked). ⌘⇧W opens a Files window since YAZ-3357 D15; Close Window has no key.
-    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘W')?.label).toMatch(/close tab/i)
-    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧W')?.label).toMatch(/files window/i)
+    // ⌘⇧C (🔒 D4, YAZ-1338): the multi-selection FIRST, the open file as the fallback.
+    expect(HOTKEY_COMMANDS.find((c) => c.id === 'copyPath')?.hint).toMatch(/selection.*else the open file/i)
+    expect(HOTKEY_COMMANDS.find((c) => c.id === 'toggleSidebar')?.hint).toMatch(/outside editing surfaces/i)
     // A move's undo (YAZ-3255 D10, audit 11): right after the file clipboard, and it says where a page keeps the keys.
     expect(keys[keys.indexOf('⌘V') + 1]).toBe('⌘Z / ⌘⇧Z')
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘Z / ⌘⇧Z')?.label).toMatch(/undo.*redo.*move.*outside a note/i)
@@ -54,11 +64,21 @@ describe('HOTKEYS source of truth', () => {
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⌫')?.label).toMatch(/selected files and folders to the Trash.*outside a note/i)
   })
 
+  it('BUILT_IN_KEYS reads every table back into keys (YAZ-3397 D6): no changeable default is a key the app has built in, but ⌘B, which draw.io leaves to the sidebar', () => {
+    const builtIn = (accelerator: string) => BUILT_IN_KEYS.filter((k) => sameKey(k.accelerator, accelerator)).map((k) => k.label)
+    expect(builtIn('CmdOrCtrl+J')).toEqual(['Table of contents'])
+    expect(builtIn('CmdOrCtrl+Q')).toEqual(['Quit'])
+    expect(builtIn('CmdOrCtrl+9')).toHaveLength(1)
+    for (const command of HOTKEY_COMMANDS) if (command.key !== null && command.id !== 'toggleSidebar') expect(builtIn(command.key), command.id).toEqual([])
+    expect(BUILT_IN_KEYS.some((k) => k.label.startsWith('Click'))).toBe(false)
+  })
+
   it('covers the board keys from Draw (YAZ-3037): the menu\'s three board items and ⌘S, and the draw.io tables, between Window and Mouse', () => {
     expect(CANVAS_HOTKEYS.map((h) => h.keys)).toEqual(['⌘⇧E', '⌘⇧S', '⌘⇧L', '⌘S', '⌘F', '⌘C'])
     expect(CANVAS_HOTKEYS.find((h) => h.keys === '⌘C')?.label).toMatch(/components tab.*nothing is selected/i)
     expect(DRAWIO_HOTKEYS.map((h) => h.keys)).toContain('R / O / T')
-    expect(HOTKEY_GROUPS.map((g) => g.title)).toEqual(['Keyboard', 'Views', 'Window', 'Excalidraw canvas', 'draw.io diagram', 'Mouse'])
+    // YAZ-3397 D8: Window first (the changeable keys head it), App standard after Mouse; "Used by macOS" is the page's, after them.
+    expect(HOTKEY_GROUPS.map((g) => g.title)).toEqual(['Window', 'Keyboard', 'Views', 'Excalidraw canvas', 'draw.io diagram', 'Mouse', 'App standard'])
     // ⌘⇧S keeps both meanings: Skip in a review (the Window table), Export on a drawing tab.
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧S')?.label).toMatch(/review.*skip/i)
     expect(CANVAS_HOTKEYS.find((h) => h.keys === '⌘⇧S')?.label).toMatch(/export excalidraw drawing/i)

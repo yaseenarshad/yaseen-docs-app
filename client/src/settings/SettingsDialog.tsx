@@ -20,14 +20,17 @@
  * mousedown listener installed on mount would hear the cog click that opened it and close it in
  * the same tick. Bound to the overlay, it only hears what happens inside itself.
  *
- * Esc is layered: with a query typed it clears the search (back to the page); with none it
- * closes. Focus goes to the search box on open, and whatever had focus before — the cog, the
+ * Esc is layered: with a query typed it clears the search (back to the page) — the nav's first, then the
+ * Hotkeys page's own (YAZ-3397 D5); with none it closes. A key recorder of the Hotkeys page (YAZ-3397 D5, D6) takes Esc before the dialog hears it. Focus goes to the search box on open, and whatever had focus before — the cog, the
  * editor ⌘, was pressed in — gets it back on close.
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { SystemHotkey } from '@shared/macosHotkeys'
+import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
+import { KeySearch } from './hotkeysSection'
 import { availableSections, isAvailable, resolveHint, resolveWide, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
-import { searchSettings, settingCandidates } from './searchSettings'
+import { searchSettings, settingCandidates, type SettingHit } from './searchSettings'
 import { SettingRow } from './SettingRow'
 import './settings.css'
 
@@ -38,7 +41,10 @@ interface SettingsDialogProps {
   initialPage?: SettingsSectionId
 }
 
-export function SettingsDialog({ ctx, onClose, initialPage }: SettingsDialogProps) {
+export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDialogProps) {
+  /** The Mac's own keys (YAZ-3397 D3): asked of main once per open, when the Hotkeys page or a search first shows. */
+  const [systemHotkeys, setSystemHotkeys] = useState<SystemHotkey[] | undefined>(undefined)
+  const ctx = useMemo<SettingsCtx>(() => (systemHotkeys === undefined ? given : { ...given, systemHotkeys }), [given, systemHotkeys])
   const sections = availableSections(ctx)
   const settingsPages = sections.filter((s) => s.standalone !== true)
   const referencePages = sections.filter((s) => s.standalone === true)
@@ -46,6 +52,8 @@ export function SettingsDialog({ ctx, onClose, initialPage }: SettingsDialogProp
   const searchRef = useRef<HTMLInputElement>(null)
 
   const [query, setQuery] = useState('')
+  /** The Hotkeys page's own search bar (YAZ-3397 D5): it filters that page alone, and the nav's search stays the whole dialog's. */
+  const [hotkeyQuery, setHotkeyQuery] = useState('')
   /** The section asked for. Search leaves it alone, so clearing a query returns to it. */
   const [page, setPage] = useState<SettingsSectionId>(initialPage ?? sections[0].id)
   /** The section showing: a section this context stops showing while its page is open (Sync, Review) gives way to the first, in the pane and in the nav alike. */
@@ -60,22 +68,49 @@ export function SettingsDialog({ ctx, onClose, initialPage }: SettingsDialogProp
   }, [])
 
   // Built once per open: the searchable text is labels, hints and keywords, none of which a click
-  // inside the dialog changes in a way search needs to see.
-  const candidates = useMemo(() => settingCandidates(ctx), [])
+  // inside the dialog changes in a way search needs to see — but a hotkey's text is its key (YAZ-3397 D5),
+  // so a changed key, or the Mac's keys arriving, builds them again. Never on a keystroke.
+  const hotkeysKey = JSON.stringify(ctx.settings.hotkeys)
+  const candidates = useMemo(() => settingCandidates(ctx), [hotkeysKey, systemHotkeys]) // eslint-disable-line react-hooks/exhaustive-deps -- see above
   const searching = query.trim() !== ''
   const hits = searching ? searchSettings(candidates, query) : []
+  /** The query "Press keys to search" put in the page's box (D5): its answer shows while that query stands. */
+  const [keyQuery, setKeyQuery] = useState<string | null>(null)
+  const onHotkeys = shown.id === 'hotkeys'
+  const searchingHotkeys = onHotkeys && !searching && hotkeyQuery.trim() !== ''
+  const hotkeyHits = searchingHotkeys ? searchSettings(candidates.filter((c) => c.section.id === 'hotkeys'), hotkeyQuery) : []
+
+  const wantsSystemKeys = onHotkeys || searching
+  useEffect(() => {
+    if (!wantsSystemKeys || systemHotkeys !== undefined) return
+    let live = true
+    // No bridge (a test) or a failure: the rows stay away, and the recorder checks the Mac's own table.
+    void Promise.resolve()
+      .then(() => api.state.systemHotkeys())
+      .then(
+        (rows) => {
+          if (live) setSystemHotkeys(rows)
+        },
+        () => undefined,
+      )
+    return () => {
+      live = false
+    }
+  }, [wantsSystemKeys, systemHotkeys])
 
   const onKeyDown = (e: ReactKeyboardEvent): void => {
     if (e.key !== 'Escape') return
     e.preventDefault()
     e.stopPropagation()
     if (query !== '') setQuery('')
+    else if (onHotkeys && hotkeyQuery !== '') setHotkeyQuery('')
     else onClose()
   }
 
   /** A nav click is a page swap, and the new page starts at its top; a query in progress is dropped like any other navigation. */
   const showPage = (id: SettingsSectionId): void => {
     setQuery('')
+    setHotkeyQuery('')
     setPage(id)
     if (paneRef.current !== null) paneRef.current.scrollTop = 0
   }
@@ -108,13 +143,27 @@ export function SettingsDialog({ ctx, onClose, initialPage }: SettingsDialogProp
   // Hits under a breadcrumb per group ("Editor › Bullet threading"; an untitled group is just its
   // section). `candidates` is in registry order, so walking it keeps groups and rows in the order
   // the page shows them; the matcher's ranking decided only WHICH rows are here.
-  const matched = new Set(hits)
-  const hitGroups: { section: SettingsSection; group: SettingsGroup; items: SettingDef[] }[] = []
-  for (const candidate of candidates) {
-    if (!matched.has(candidate) || !isAvailable(candidate.item, ctx)) continue
-    const last = hitGroups[hitGroups.length - 1]
-    if (last?.group === candidate.group) last.items.push(candidate.item)
-    else hitGroups.push({ section: candidate.section, group: candidate.group, items: [candidate.item] })
+  const hitList = (found: readonly SettingHit[], asked: string, noun = 'settings') => {
+    const matched = new Set(found)
+    const hitGroups: { section: SettingsSection; group: SettingsGroup; items: SettingDef[] }[] = []
+    for (const candidate of candidates) {
+      if (!matched.has(candidate) || !isAvailable(candidate.item, ctx)) continue
+      const last = hitGroups[hitGroups.length - 1]
+      if (last?.group === candidate.group) last.items.push(candidate.item)
+      else hitGroups.push({ section: candidate.section, group: candidate.group, items: [candidate.item] })
+    }
+    return hitGroups.length === 0 ? (
+      <p className="settings-empty">
+        No {noun} match “{asked}”.
+      </p>
+    ) : (
+      hitGroups.map((entry, i) => (
+        <section key={i} className="settings-section">
+          <h2 className="settings-section__title">{entry.group.title === undefined ? entry.section.title : `${entry.section.title} › ${entry.group.title}`}</h2>
+          {group(entry.group, entry.items, 0, false)}
+        </section>
+      ))
+    )
   }
 
   return (
@@ -153,17 +202,21 @@ export function SettingsDialog({ ctx, onClose, initialPage }: SettingsDialogProp
           ✕
         </button>
         <div ref={paneRef} className="settings-pane">
+          {onHotkeys && !searching && (
+            <KeySearch
+              ctx={ctx}
+              query={hotkeyQuery}
+              answering={hotkeyQuery === keyQuery}
+              onQuery={(next, pressed) => {
+                if (pressed) setKeyQuery(next)
+                setHotkeyQuery(next)
+              }}
+            />
+          )}
           {searching ? (
-            hitGroups.length === 0 ? (
-              <p className="settings-empty">No settings match “{query}”.</p>
-            ) : (
-              hitGroups.map((entry, i) => (
-                <section key={i} className="settings-section">
-                  <h2 className="settings-section__title">{entry.group.title === undefined ? entry.section.title : `${entry.section.title} › ${entry.group.title}`}</h2>
-                  {group(entry.group, entry.items, 0, false)}
-                </section>
-              ))
-            )
+            hitList(hits, query)
+          ) : searchingHotkeys ? (
+            hitList(hotkeyHits, hotkeyQuery, 'hotkeys')
           ) : (
             section(shown)
           )}

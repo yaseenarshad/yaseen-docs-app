@@ -1,3 +1,4 @@
+import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { KeyedVault } from '@shared/types'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { errorText, type MenuAction, type MenuSection } from './menuSections'
@@ -11,7 +12,7 @@ import { errorText, type MenuAction, type MenuSection } from './menuSections'
  *   Set shortcut ▸ · Copy vault name, Copy path · Reveal in Finder, Open in VS Code ·
  *   Remove from recent vaults
  *
- * "Open in Files window" (YAZ-3357 D5), hint ⌘⇧W, follows "Open by itself" on every vault: a window that is only
+ * "Open in Files window" (YAZ-3357 D5), hint the New Files window key as it is now (⌘⇧W unless changed, YAZ-3410), follows "Open by itself" on every vault: a window that is only
  * the sidebar, on this vault, flush left of this window. Only where the caller can open one (`onOpenFilesWindow`).
  *
  * "Open by itself" (YAZ-2858 D2), hint ⌥⏎, opens the vault alone in its own window — main raises
@@ -42,6 +43,8 @@ export interface VaultMenuTarget {
   renamed: boolean
   /** Every vault that has a number (YAZ-2555 D2), this one included — who the "Set shortcut" flyout names beside each number. */
   keyed: readonly KeyedVault[]
+  /** `settings.hotkeys` (YAZ-3397 D2): "Open in Files window" names the New Files window key as it is now (YAZ-3410). */
+  hotkeys: HotkeyOverrides
 }
 
 export interface VaultMenuHandlers {
@@ -91,7 +94,7 @@ const copyItem = (id: string, what: string, text: string, h: VaultMenuHandlers):
   },
 })
 
-export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, renamed, keyed }: VaultMenuTarget, h: VaultMenuHandlers): MenuSection[] {
+export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, renamed, keyed, hotkeys }: VaultMenuTarget, h: VaultMenuHandlers): MenuSection[] {
   /** What stands beside a number: its vault's name — checked when it is this vault — or "free". */
   const holder = (n: number): string => {
     const vault = keyed.find((v) => v.key === n)
@@ -100,7 +103,7 @@ export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, ren
   return [
     [
       ...(isAloneHere ? [] : [{ id: 'open-alone', label: 'Open by itself', hint: '⌥⏎', onSelect: () => h.onOpenAlone(path) }]),
-      ...(h.onOpenFilesWindow === undefined ? [] : [{ id: 'open-files-window', label: 'Open in Files window', hint: '⌘⇧W', onSelect: () => h.onOpenFilesWindow?.(path) }]),
+      ...(h.onOpenFilesWindow === undefined ? [] : [{ id: 'open-files-window', label: 'Open in Files window', hint: keyHint('newFilesWindow', hotkeys), onSelect: () => h.onOpenFilesWindow?.(path) }]),
       ...(isCurrent
         ? []
         : [

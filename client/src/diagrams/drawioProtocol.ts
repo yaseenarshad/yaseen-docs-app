@@ -21,6 +21,7 @@
  * pressed inside draw.io, where the host page never sees the key (see `DrawioMessage`).
  */
 import { DRAWIO_ORIGIN } from '@shared/drawio'
+import { HOTKEY_COMMANDS, drawioChordFor, keyFor, type DrawioChord, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { DiagramDarkColors } from '@shared/types'
 
 /**
@@ -104,16 +105,33 @@ const TOOL_KEYS = [
 
 /**
  * draw.io's own bindings on chords the app's MENU owns (`desktop/src/main/menu.ts`), cleared so the
- * menu gets them everywhere: off macOS the page sees a key before the menu does. ⌘K ⌘, ⌘0 and every
- * code draw.io reads as plus or minus; ⌘⇧O ⌘⇧E ⌘⇧L; ⌘⇧[ / ⌘⇧] (tabs, draw.io's font size); ⌘⇧S
+ * menu gets them everywhere: off macOS the page sees a key before the menu does. The FIXED ones are here:
+ * ⌘0 and every code draw.io reads as plus or minus; ⌘⇧E ⌘⇧L; ⌘⇧[ / ⌘⇧] (tabs, draw.io's font size); ⌘⇧S
  * (draw.io's Save As — the app has none, and Export Excalidraw Drawing… is greyed on a diagram).
- * Docs' own menu chords join them (YAZ-3028): ⌘T New Tab, ⌘W Close Tab, ⌘O Switch Vault, and ⌘⇧N
- * New Window, ⌘⇧W New Files Window (YAZ-3357 D15), ⌘⇧M Tab Overview.
  */
-const MENU_CHORDS = [
-  ...[75, 188, 48, 61, 107, 187, 222, 109, 173, 189, 84, 87, 79].map((keyCode) => ({ keyCode, control: true, action: null })),
-  ...[79, 69, 76, 219, 221, 83, 78, 87, 77].map((keyCode) => ({ keyCode, control: true, shift: true, action: null })),
+const FIXED_MENU_CHORDS: readonly DrawioChord[] = [
+  ...[48, 61, 107, 187, 222, 109, 173, 189].map((keyCode): DrawioChord => ({ keyCode, control: true, action: null })),
+  ...[69, 76, 219, 221, 83].map((keyCode): DrawioChord => ({ keyCode, control: true, shift: true, action: null })),
 ]
+
+/**
+ * The menu items whose key the user can change (YAZ-3397 D2): ⌘K ⌘, ⌘T ⌘W ⌘O, ⌘⇧O ⌘⇧N ⌘⇧W ⌘⇧M and the tab
+ * keys as they ship. Not Toggle sidebar or Copy path (`rendererOwned`), whose keys the renderer owns (ours,
+ * not draw.io's to clear).
+ */
+const MENU_COMMANDS = HOTKEY_COMMANDS.filter((c) => c.rendererOwned !== true).map((c) => c.id)
+
+/**
+ * Every menu chord draw.io must let through: the fixed ones, and the changeable ones as they are NOW
+ * (YAZ-3397 D2). Read at `configure`, so a key changed while a diagram is open reaches it the next time it opens.
+ */
+function menuChords(hotkeys: HotkeyOverrides = {}): DrawioChord[] {
+  const changeable = MENU_COMMANDS.flatMap((id) => {
+    const chord = drawioChordFor(keyFor(id, hotkeys))
+    return chord === null ? [] : [chord]
+  })
+  return [...FIXED_MENU_CHORDS, ...changeable]
+}
 
 /**
  * The `configure` reply (🔒 YAZ-1802 D3 / D12a / D12b). Every key is one draw.io v31.5.2 reads in
@@ -122,7 +140,7 @@ const MENU_CHORDS = [
  * `@font-face` sheet lives on the drawio origin and our PostConfig.js hands it to
  * `Editor.configureFontCss` itself, so the host never needs to know the files.
  */
-export function drawioConfig(darkColors: DiagramDarkColors): Record<string, unknown> {
+export function drawioConfig(darkColors: DiagramDarkColors, hotkeys: HotkeyOverrides = {}): Record<string, unknown> {
   return {
     // D3: plain, uncompressed XML on every save (sets Editor.compressXml and defaultCompressed).
     compressXml: false,
@@ -143,7 +161,7 @@ export function drawioConfig(darkColors: DiagramDarkColors): Record<string, unkn
     // Excalidraw's quick picks: transparent, black and its four stroke colours, its four backgrounds.
     presetColors: ['none', '1E1E1E', 'E03131', '2F9E44', '1971C2', 'F08C00', 'FFC9C9', 'B2F2BB', 'A5D8FF', 'FFEC99'],
     defaultColors: [...OPEN_COLOUR_GRID, 'none', 'FFFFFF', '1E1E1E'],
-    keyboardShortcuts: [...TOOL_KEYS, ...MENU_CHORDS],
+    keyboardShortcuts: [...TOOL_KEYS, ...menuChords(hotkeys)],
   }
 }
 

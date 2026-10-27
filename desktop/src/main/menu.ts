@@ -8,6 +8,7 @@
 import type { MenuItemConstructorOptions } from 'electron'
 import { keyedVaults, type AppState, type ClipboardPasteRequest, type FileKind, type KeyedVault, type RecentRoots, type ZoomStep } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
+import { keyFor, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { Store } from './store'
 import type { WindowManager } from './windows'
 
@@ -82,6 +83,17 @@ export interface MenuInputs {
    * `subscribeMenuRebuildOnActiveFile` and the focus hook are what make a rebuild happen.
    */
   activeKind: FileKind | null
+  /**
+   * The user's key changes (YAZ-3397 D2), straight from `settings.hotkeys`: every changeable item takes its
+   * key from `keyFor`, and one with no key now has none. `subscribeMenuRebuild` rebuilds when they change.
+   */
+  hotkeys: HotkeyOverrides
+  /**
+   * A key recorder is listening in some window (YAZ-3397 D6): the menu is built with NO key at all, the
+   * roles' own included, so the keys pressed reach the page. On macOS a menu key fires before the page
+   * hears it; recording ⌘W must not close the tab, nor ⌘Q quit. Absent = false.
+   */
+  suspendKeys?: boolean
 }
 
 /**
@@ -107,7 +119,7 @@ const menuLabel = (text: string): string => text.replace(/&/g, '&&')
  * The whole menu bar as a template. Item `id`s are stable so a live check (Playwright) can
  * drive items through `Menu.getApplicationMenu().getMenuItemById(...)`.
  */
-export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
+export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hotkeys, suspendKeys = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
   const recentItems: MenuItemConstructorOptions[] =
     recents.length === 0
       ? [{ label: 'No Recent Folders', enabled: false }]
@@ -118,7 +130,12 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }: M
         }))
   const onBoard = activeKind === 'drawing' || activeKind === 'diagram'
   const onDrawing = activeKind === 'drawing'
-  return [
+  /** A changeable item's key (YAZ-3397 D2): the user's, else the default; none at all for "No key". */
+  const key = (id: HotkeyId): { accelerator?: string } => {
+    const accelerator = keyFor(id, hotkeys)
+    return accelerator === null ? {} : { accelerator }
+  }
+  const template: MenuItemConstructorOptions[] = [
     // macOS titles the first menu with the running app's name; the label only matters off-mac.
     {
       label: 'Yaseen Docs',
@@ -128,7 +145,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }: M
         { type: 'separator' },
         // ⌘, is the platform's settings key (YAZ-1679); the renderer owns the dialog, so the
         // gesture goes to the focused window's renderer like Search Vault does.
-        { id: 'menu.app.settings', label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => handlers.settings() },
+        { id: 'menu.app.settings', label: 'Settings…', ...key('settings'), click: () => handlers.settings() },
         { type: 'separator' },
         { role: 'hide' },
         { role: 'hideOthers' },
@@ -141,20 +158,20 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }: M
       label: 'File',
       submenu: [
         // ⌘T is New Tab (YAZ-2655 D10): the renderer owns the tabs, so the gesture goes to the focused window's renderer.
-        { id: 'menu.file.new-tab', label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: () => handlers.newTab() },
-        { id: 'menu.file.new-window', label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: () => handlers.newWindow() },
+        { id: 'menu.file.new-tab', label: 'New Tab', ...key('newTab'), click: () => handlers.newTab() },
+        { id: 'menu.file.new-window', label: 'New Window', ...key('newWindow'), click: () => handlers.newWindow() },
         // ⌘⇧W (YAZ-3357 D15, Yaseen: "can we change the hotkey for this to CMD SHIFT W? and remove whatever the hotkey for that is right now?"): Close Window gave it up.
-        { id: 'menu.file.new-files-window', label: 'New Files Window', accelerator: 'CmdOrCtrl+Shift+W', click: () => handlers.newFilesWindow() },
+        { id: 'menu.file.new-files-window', label: 'New Files Window', ...key('newFilesWindow'), click: () => handlers.newFilesWindow() },
         { type: 'separator' },
         // ⌘O opens the sidebar header's vault switcher (YAZ-1767 D8): the renderer owns the panel,
         // so the gesture goes to the focused window's renderer like Search Vault does.
-        { id: 'menu.file.switch-vault', label: 'Switch Vault…', accelerator: 'CmdOrCtrl+O', click: () => handlers.switchVault() },
-        { id: 'menu.file.open-folder', label: 'Open Folder…', accelerator: 'CmdOrCtrl+Shift+O', click: () => handlers.openFolder() },
+        { id: 'menu.file.switch-vault', label: 'Switch Vault…', ...key('switchVault'), click: () => handlers.switchVault() },
+        { id: 'menu.file.open-folder', label: 'Open Folder…', ...key('openFolder'), click: () => handlers.openFolder() },
         { id: 'menu.file.open-recent', label: 'Open Recent', submenu: recentItems },
         { type: 'separator' },
         // ⌘K focuses the sidebar's search bar (D4, YAZ-739 amended): the renderer owns the bar,
         // so the gesture goes to the focused window's renderer — un-collapsing the sidebar first.
-        { id: 'menu.file.search', label: 'Search Vault', accelerator: 'CmdOrCtrl+K', click: () => handlers.search() },
+        { id: 'menu.file.search', label: 'Search Vault', ...key('search'), click: () => handlers.search() },
         { type: 'separator' },
         // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D3 / D10, YAZ-1799): greyed out unless
         // the active tab is a board they work for. Export Image… and Share Link work on any board, Export
@@ -169,8 +186,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }: M
         // ⌘W is Close Tab (GRO-2232, locked): the renderer owns tab state, so the gesture goes to
         // the focused window's renderer. Close Window has NO key since YAZ-3357 D15 (⌘⇧W opens a Files window), so it
         // is no `role: 'close'` (that role brings ⌘W along): its click is the real close, which windows.ts intercepts for the flush handshake.
-        { id: 'menu.file.close-tab', label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => handlers.closeTab() },
-        { id: 'menu.file.close-window', label: 'Close Window', click: () => handlers.closeWindow() },
+        { id: 'menu.file.close-tab', label: 'Close Tab', ...key('closeTab'), click: () => handlers.closeTab() },
+        { id: 'menu.file.close-window', label: 'Close Window', ...key('closeWindow'), click: () => handlers.closeWindow() },
       ],
     },
     {
@@ -180,6 +197,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }: M
     {
       label: 'View',
       submenu: [
+        // No key here: ⌘B is the RENDERER's (YAZ-1280), so an editor that binds it keeps it. Its key, changed
+        // or not, lives in `ownsSidebarHotkey` (YAZ-3397 D2).
         { id: 'menu.view.toggle-sidebar', label: 'Toggle Sidebar', click: () => handlers.toggleSidebar() },
         { type: 'separator' },
         { role: 'reload' },
@@ -214,12 +233,12 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }: M
         { type: 'separator' },
         // Tab switching (GRO-2232): the visible pair carries the macOS-conventional ⌃Tab / ⌃⇧Tab;
         // hidden duplicates carry the ⌘⇧] / ⌘⇧[ equivalents (`acceleratorWorksWhenHidden`, macOS).
-        { id: 'menu.window.next-tab', label: 'Next Tab', accelerator: 'Control+Tab', click: () => handlers.nextTab() },
-        { id: 'menu.window.prev-tab', label: 'Previous Tab', accelerator: 'Control+Shift+Tab', click: () => handlers.prevTab() },
+        { id: 'menu.window.next-tab', label: 'Next Tab', ...key('nextTab'), click: () => handlers.nextTab() },
+        { id: 'menu.window.prev-tab', label: 'Previous Tab', ...key('prevTab'), click: () => handlers.prevTab() },
         { id: 'menu.window.next-tab-alt', label: 'Next Tab', accelerator: 'CmdOrCtrl+Shift+]', visible: false, acceleratorWorksWhenHidden: true, click: () => handlers.nextTab() },
         { id: 'menu.window.prev-tab-alt', label: 'Previous Tab', accelerator: 'CmdOrCtrl+Shift+[', visible: false, acceleratorWorksWhenHidden: true, click: () => handlers.prevTab() },
         // The tab overview (YAZ-2648 D5): the same key opens it and closes it.
-        { id: 'menu.window.tab-overview', label: 'Tab Overview', accelerator: 'CmdOrCtrl+Shift+M', click: () => handlers.tabOverview() },
+        { id: 'menu.window.tab-overview', label: 'Tab Overview', ...key('tabOverview'), click: () => handlers.tabOverview() },
         { type: 'separator' },
         // The numbered vaults (YAZ-2555 D3): one row each, ⌘<its number>. The MENU owns the key, so
         // it answers from any window, with the caret anywhere, and with every window minimized.
@@ -242,6 +261,22 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind }: M
       ],
     },
   ]
+  return suspendKeys ? withoutKeys(template) : template
+}
+
+/**
+ * The menu with no key (YAZ-3397 D6), for while a recorder listens. An item's own key goes; a ROLE's goes
+ * too — Electron gives a role its default key (⌘Q, ⌘C…) whenever `accelerator` is absent, so it gets an
+ * empty one, which Electron reads as none. Everything else — labels, clicks, enabled — is as it was.
+ */
+export function withoutKeys(items: readonly MenuItemConstructorOptions[]): MenuItemConstructorOptions[] {
+  return items.map((item) => {
+    const { accelerator: _key, submenu, ...rest } = item
+    const out: MenuItemConstructorOptions = { ...rest, ...(item.role !== undefined && item.type !== 'separator' ? { accelerator: '' } : {}) }
+    if (Array.isArray(submenu)) out.submenu = withoutKeys(submenu)
+    else if (submenu !== undefined) out.submenu = submenu
+    return out
+  })
 }
 
 function copyAsMenu(copyAs: MenuHandlers['copyAs']): MenuItemConstructorOptions {
@@ -462,17 +497,25 @@ export function menuKeyedVaults(state: AppState): KeyedVault[] {
  * sub-objects, so reference identity of `state.recents` and `state.folders` skips every
  * settings/window write for free. `state.folders` is a new object on every folder write (a fold, a
  * last file), so the rows (YAZ-2555 D3) compare by value: one pass over the folders per FOLDER write.
+ * The user's keys (YAZ-3397 D2) too: `settings.hotkeys` by reference, then by value.
  */
 export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => void {
   let last = store.get().recents
   let lastFolders = store.get().folders
   let lastVaults = JSON.stringify(menuKeyedVaults(store.get()))
+  let lastHotkeys = store.get().settings.hotkeys
+  let lastKeys = JSON.stringify(lastHotkeys)
   return store.onChange((state) => {
     const vaults = state.folders === lastFolders ? lastVaults : JSON.stringify(menuKeyedVaults(state))
     lastFolders = state.folders
-    if (state.recents === last && vaults === lastVaults) return
+    // The key changes (YAZ-3397 D2): by reference first, then by value — a settings write from a renderer
+    // arrives as a new object even when no key moved, and a theme change must not rebuild the menu.
+    const keys = state.settings.hotkeys === lastHotkeys ? lastKeys : JSON.stringify(state.settings.hotkeys)
+    lastHotkeys = state.settings.hotkeys
+    if (state.recents === last && vaults === lastVaults && keys === lastKeys) return
     last = state.recents
     lastVaults = vaults
+    lastKeys = keys
     rebuild()
   })
 }

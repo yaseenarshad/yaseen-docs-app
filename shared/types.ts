@@ -7,6 +7,7 @@
  */
 
 import type { ReviewEntry } from './reviews'
+import type { HotkeyOverrides } from './hotkeyBindings'
 
 // ---------- Errors ----------
 
@@ -1508,6 +1509,11 @@ export interface SettingsState {
   /** The land and trash sounds (YAZ-3267 D15, YAZ-3303 D7). macOS can still say no. */
   gestureSounds: boolean
   /**
+   * The keys the user changed (YAZ-3397 D2): only the changes, by command (`shared/hotkeyBindings.ts`);
+   * null is "No key". `{}` is every default. It travels with the other settings.
+   */
+  hotkeys: HotkeyOverrides
+  /**
    * The zoom of the sidebar's lists in percent (YAZ-3389): the tree, the search results and every other
    * tab's list, never the sidebar's header, tab row or footer. One value for every window. The steps are
    * `SIDEBAR_ZOOM_STEPS`; a stored value is kept within 50–200 (`SIDEBAR_ZOOM_MIN` / `_MAX`).
@@ -1659,6 +1665,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   noticeClipboard: true,
   noticeLists: true,
   gestureSounds: true,
+  hotkeys: {},
   sidebarZoom: 100,
 }
 

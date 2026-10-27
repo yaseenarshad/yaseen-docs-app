@@ -48,6 +48,8 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   // The folders among the targets (YAZ-3293 D23): none is a selection of files.
   folderPaths: [],
   clip: null,
+  // The user's key changes (YAZ-3397 D2): none, so every hint is the default key.
+  hotkeys: {},
   ...over,
 })
 
@@ -443,6 +445,12 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
   it('carries the shortcut hints: ⌘X, ⌘C, ⌘V — and ⌘⇧C on Copy path', () => {
     const sections = build({ clipPaths: ['/v/a.md'], copyPath: '/v/a.md' })
     expect(sections[1].map((i) => [i.label, i.hint])).toEqual([['Cut', '⌘X'], ['Copy', '⌘C'], ['Paste', '⌘V'], ['Copy path', '⌘⇧C']])
+  })
+
+  it('the Copy path hint is its key NOW (YAZ-3410 item 3): a changed key shows, "No key" shows no hint', () => {
+    const copyPathHint = (hotkeys: MenuSectionTargets['hotkeys']) => build({ copyPath: '/v/a.md', hotkeys }).flat().find((i) => i.id === 'copy-path')?.hint
+    expect(copyPathHint({ copyPath: 'CmdOrCtrl+Alt+P' })).toBe('⌥⌘P')
+    expect(copyPathHint({ copyPath: null })).toBeUndefined()
   })
 
   it('Paste is DISABLED with an empty clipboard — rendered for discoverability, inert on select', () => {

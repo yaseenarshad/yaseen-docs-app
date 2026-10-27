@@ -24,6 +24,7 @@
 import { useState, type ReactNode } from 'react'
 import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
+import type { SystemHotkey } from '@shared/macosHotkeys'
 import type { GithubSyncStatus, IdsState, IndexResponse, SettingsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
@@ -33,7 +34,7 @@ import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { CANVAS_SECTION } from './canvasSection'
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented } from './controls'
-import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
+import { HOTKEYS_SECTION } from './hotkeysSection'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
@@ -88,6 +89,12 @@ export interface SettingsCtx {
    * "Vault" dropdown starts. Absent in a window with no vault, so the group is not there.
    */
   textFormatting?: { vaults: readonly TextFormattingVault[]; activeRoot: string }
+  /**
+   * The Mac's own keys as this Mac has them (YAZ-3397 D3), for Settings › Hotkeys' "Used by macOS" rows and
+   * the recorder. The dialog fills it from `state:system-hotkeys` when the page or a search shows; absent
+   * until main answers.
+   */
+  systemHotkeys?: readonly SystemHotkey[]
 }
 
 export interface SettingDef {
@@ -137,18 +144,6 @@ export interface SettingsSection {
   standalone?: true
   groups: readonly SettingsGroup[]
 }
-
-/** One hotkey table (the Hotkeys section is one group per table, YAZ-1679 redesign). */
-const hotkeyTable = (entries: readonly HotkeyEntry[]) => (
-  <dl className="hotkeys__list">
-    {entries.map(({ keys, label }) => (
-      <div key={keys} className="hotkeys__row">
-        <dt className="hotkeys__keys">{keys}</dt>
-        <dd className="hotkeys__label">{label}</dd>
-      </div>
-    ))}
-  </dl>
-)
 
 /** What the section title does not say: the feature's other name, and where its notes turn up. */
 const REVIEW_KEYWORDS = ['upkeep', 'inbox']
@@ -691,27 +686,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   STORAGE_SECTION,
   // YAZ-3040: share links on the user's own Cloudflare — a setup flow and a write-up, its own page too.
   SHARING_SECTION,
-  {
-    id: 'hotkeys',
-    title: 'Hotkeys',
-    standalone: true,
-    // One group per table, so "Window" is a heading search knows. The id is the table's title
-    // lower-cased (`hotkeys-window`); every key and label of the table is a keyword, so "close
-    // tab" or "⌘W" finds it, and "keyboard shortcuts" reaches every table (the Keyboard one is
-    // already labelled that).
-    groups: HOTKEY_GROUPS.map(({ id, title, entries }) => ({
-      title,
-      items: [
-        {
-          id: `hotkeys-${id ?? title.toLowerCase()}`,
-          label: `${title} shortcuts`,
-          keywords: [...(title === 'Keyboard' ? [] : ['keyboard shortcuts']), ...entries.flatMap((entry) => [entry.keys, entry.label])],
-          wide: true,
-          render: () => hotkeyTable(entries),
-        },
-      ],
-    })),
-  },
+  // YAZ-3397: one row per key, the app-wide ones changeable (hotkeysSection.tsx).
+  HOTKEYS_SECTION,
 ]
 
 /** The sections this context can show, in registry order — what the nav lists and search covers. */

@@ -187,6 +187,12 @@ describe('TabBar', () => {
     expect(onNewTab).toHaveBeenCalledTimes(1)
   })
 
+  it('the tooltips name the keys as they are NOW (YAZ-3410 item 3): a changed key, and no key at all', () => {
+    const base = { tabs: ['/v/a.md'], active: '/v/a.md', onNewTab: vi.fn(), onToggleOverview: vi.fn(), ...noop, ...noNav }
+    const titles = (el: HTMLElement) => [el.querySelector<HTMLButtonElement>('button[aria-label="New tab"]')?.title, el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')?.title]
+    expect(titles(mount({ ...base, hotkeys: { newTab: 'CmdOrCtrl+Alt+T', tabOverview: null } }))).toEqual(['New tab (⌥⌘T)', 'Show all open tabs'])
+  })
+
   it('E: a tab is labelled with its title, a folder tab with its folder\'s; one the index does not hold keeps its file name (YAZ-2420 D14)', () => {
     const titles = new Map([['/v/up-001-abdul-k3m9x2pq7abc.md', 'UP-001 - Abdul'], ['/v/upwork', 'Upwork 2026']])
     const el = mount({ tabs: ['/v/up-001-abdul-k3m9x2pq7abc.md', '/v/upwork', '/v/scan.pdf'], active: '/v/scan.pdf', titles, ...noop, ...noNav })

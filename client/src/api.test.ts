@@ -30,6 +30,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     pickFolder: vi.fn(),
     watch: vi.fn(),
     state: vi.fn(),
+    hotkeys: vi.fn(),
     window: vi.fn(),
     menu: vi.fn(),
     link: vi.fn(),

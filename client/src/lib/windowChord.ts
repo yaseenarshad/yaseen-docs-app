@@ -8,25 +8,45 @@
  * counts as "editing" that drifted between them would be a bug nobody could see — a chord that
  * fires inside a field the other one respects.
  */
+import { eventKey } from '@shared/hotkeyBindings'
 import { readOnlyNoteHoldsKeys } from './readOnlyCaret'
 
-/** The chord's own half: which key, and whether Shift is part of it (never merely tolerated). */
+/**
+ * The chord's own half: which key, and exactly which modifiers (never merely tolerated). ⌘ is assumed
+ * unless `meta` says otherwise; ⌥ and ⌃ are off unless named (YAZ-3397 D2: a changed key can carry them).
+ */
 export interface WindowChord {
-  /** Compared case-insensitively — Shift changes `key`'s case, and ⌥ variants are declined above. */
+  /**
+   * Compared case-insensitively — Shift changes `key`'s case. With ⌥ held the PHYSICAL key is compared: ⌥ changes
+   * `key` on a Mac ('∫' for ⌥B). A key that is not a letter also matches by its physical key (YAZ-3410): `key` is
+   * ' ' for Space, 'ArrowUp' for ↑ and '!' for ⇧1, never the accelerator's 'space', 'up' or '1'. A letter matches
+   * only by what it types, so ⌘B stays where the keyboard layout puts it.
+   */
   key: string
   shift: boolean
+  alt?: boolean
+  ctrl?: boolean
+  meta?: boolean
 }
 
-export function ownsWindowChord(event: KeyboardEvent, chord: WindowChord): boolean {
+function keyMatches(event: KeyboardEvent, chord: WindowChord): boolean {
+  const physical = eventKey(event)
+  if (chord.alt === true) return physical?.toLowerCase() === chord.key
+  return event.key.toLowerCase() === chord.key || (physical !== null && !/^[A-Z]$/.test(physical) && physical.toLowerCase() === chord.key)
+}
+
+/** A null chord is a command with no key now (YAZ-3397 D2): nothing owns it. */
+export function ownsWindowChord(event: KeyboardEvent, chord: WindowChord | null): boolean {
+  if (chord === null) return false
   if (
     event.defaultPrevented ||
     event.repeat ||
     event.isComposing ||
-    !event.metaKey ||
-    event.ctrlKey ||
-    event.altKey ||
+    event.metaKey !== (chord.meta ?? true) ||
+    event.ctrlKey !== (chord.ctrl ?? false) ||
+    event.altKey !== (chord.alt ?? false) ||
     event.shiftKey !== chord.shift ||
-    event.key.toLowerCase() !== chord.key
+    !keyMatches(event, chord)
   ) return false
 
   const target = event.target
