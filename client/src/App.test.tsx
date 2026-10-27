@@ -542,6 +542,18 @@ beforeAll(async () => {
   await preloadTabBoard()
 })
 
+/**
+ * Unmounts the App of the test and removes its box. A second `mount` in one test calls it first: an App left
+ * mounted shares `window`, the storage and `captured.sidebar` with every later test, and on a slow CI runner
+ * its late renders took the sidebar slot from them (YAZ-3430).
+ */
+function unmountApp() {
+  act(() => root?.unmount())
+  root = null
+  container?.remove()
+  container = null
+}
+
 async function mount(
   state: AppState,
   identity: IdentityFixture,
@@ -549,6 +561,7 @@ async function mount(
   /** Runs BEFORE the first render, for stubs the mount itself consumes (the index). */
   tweak?: (b: ReturnType<typeof installBridge>) => void,
 ) {
+  unmountApp()
   const b = installBridge(state, identity, files)
   tweak?.(b)
   await storage.init()
@@ -577,10 +590,8 @@ const withFolder = (state: AppState, folderRoot: string, lastFile: string | null
 const settingsPage = (el: HTMLElement, title: string) => act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === title)!.click())
 
 afterEach(() => {
-  act(() => root?.unmount())
-  root = null
-  container?.remove()
-  container = null
+  const apps = document.body.querySelectorAll('.app').length
+  unmountApp()
   captured.sidebar = null
   captured.startPage = null
   captured.editorOpeners = []
@@ -592,9 +603,14 @@ afterEach(() => {
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
   vi.restoreAllMocks()
+  // One App at a time (YAZ-3430): a test that left another mounted fails here, not a later test at random.
+  expect(apps).toBeLessThanOrEqual(1)
 })
 
-/** How long a wait for a render holds on a slow CI runner: it stalled past 5 s there (main's CI at b06bd5f4, PR #181). Inside the 30 s test limit. */
+/**
+ * How long a wait for a render holds on a slow CI runner. Inside the 30 s test limit. The stalls past 5 s that
+ * set it (main's CI at b06bd5f4, PR #181) were the Apps a sessions test left mounted (YAZ-3430), not slowness.
+ */
 const SLOW_RUNNER_MS = 15_000
 
 describe('App per-window sidebar visibility (YAZ-1280)', () => {

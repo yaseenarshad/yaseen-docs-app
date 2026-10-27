@@ -1514,16 +1514,22 @@ describe('Sidebar tree refresh is coalesced (YAZ-2191)', () => {
     const { watch, fire } = withWatcher()
     const { bridge } = await mount({ watch })
     const before = bridge.tree.mock.calls.length
-    act(() => {
-      for (let i = 0; i < 50; i++) fire({ type: 'add', path: `/v/pulled-${i}.md`, mtime: 1 })
-    })
-    expect(bridge.tree.mock.calls.length).toBe(before + 1) // the leading read
-    await wait(60)
-    act(() => fire({ type: 'unlinkDir', path: '/v/sub' }))
-    await wait(60)
-    expect(bridge.tree.mock.calls.length).toBe(before + 1) // still inside the quiet window
-    await wait(80)
-    expect(bridge.tree.mock.calls.length).toBe(before + 2) // the trailing read
+    // A fake clock (YAZ-3430): real 60 ms waits raced the real 100 ms quiet window, and a slow CI runner let it end first.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      act(() => {
+        for (let i = 0; i < 50; i++) fire({ type: 'add', path: `/v/pulled-${i}.md`, mtime: 1 })
+      })
+      expect(bridge.tree.mock.calls.length).toBe(before + 1) // the leading read
+      await act(() => vi.advanceTimersByTimeAsync(60))
+      act(() => fire({ type: 'unlinkDir', path: '/v/sub' }))
+      await act(() => vi.advanceTimersByTimeAsync(99))
+      expect(bridge.tree.mock.calls.length).toBe(before + 1) // still inside the quiet window
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(bridge.tree.mock.calls.length).toBe(before + 2) // the trailing read, 100 ms after the last event
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('YAZ-3227 D2: under Last updated a `change` moves the saved note to the top with no read; turning it on reads the vault once', async () => {
