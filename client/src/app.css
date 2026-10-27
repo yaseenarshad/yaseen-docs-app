@@ -1895,7 +1895,9 @@ button {
   height: var(--sidebar-footer-h);
   padding: 6px 8px;
   border-top: 1px solid var(--border);
-  /* YAZ-3401: the Files window chip shortens by this width; the update pill by its own slot (update.css). The cog and the zoom never do. */
+  /* The armed Files window chip's words in a narrow footer stand on this box (YAZ-3432). */
+  position: relative;
+  /* YAZ-3401: the Files window chip shortens by this width; the update pill by its own slot (update.css). The cog and the zoom chip never do. */
   container-type: inline-size;
 }
 
@@ -1912,8 +1914,107 @@ button {
   background: var(--bg-hover);
 }
 
-/* The footer's sidebar zoom (YAZ-3389): borderless and quiet, the cog's colour and hover. The number
-   keeps one width, so 90% and 100% never shift the row. */
+/* The footer's zoom chip (YAZ-3432): the sidebar zoom's percent, borderless and quiet, the cog's colour and hover.
+   It keeps one width, so 90% and 100% never shift the row; open, it stays lit. */
+.zoom-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  height: 22px;
+  padding: 0 3px;
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.zoom-chip:hover,
+.zoom-chip--open {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.zoom-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The zoom menu (YAZ-3432): on `document.body`, above the chip; its place is inline (ZoomMenu.tsx). The body is
+   zoomed by 1 / the App size, so the borders and the shadow below scale with the page and the controls do not. */
+.zoom-menu {
+  position: fixed;
+  z-index: 40;
+  width: max-content;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  animation: zoom-menu-in 120ms ease-out;
+}
+
+@keyframes zoom-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.zoom-menu__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px;
+}
+
+.zoom-menu__label {
+  padding: 2px 3px 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.zoom-menu__label:not(:first-child) {
+  margin-top: 4px;
+}
+
+.zoom-menu__sizes {
+  display: flex;
+  gap: 2px;
+}
+
+.zoom-menu__size {
+  min-width: 34px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.zoom-menu__size:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+/* The App size of the moment: the accent, as a chosen option. */
+.zoom-menu__size[aria-pressed='true'] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-weight: 600;
+}
+
+.zoom-menu__size:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The Sidebar row of the zoom menu (YAZ-3389, in the footer until YAZ-3432): "− 100% +". The number keeps one width,
+   so 90% and 100% never shift the row. */
 .sidebar-zoom {
   display: flex;
   align-items: center;
@@ -3261,9 +3362,10 @@ button {
   box-shadow: 0 0 0 1px var(--danger); /* the chip's border, also where the words reach past the chip */
   font-weight: 600;
 }
-/* YAZ-3401, measured: "Files window" needs a 212 px footer (content box), and 239 px beside the round update pill
-   (its slot's last 24 px). Narrower, the chip is its icon alone; its title and accessible name keep the words. */
-@container (width < 212px) {
+/* YAZ-3401, measured: "Files window" needs a 168 px footer (content box), and 195 px beside the round update pill
+   (its slot's last 24 px); 44 px less than beside the "− 100% +" of before YAZ-3432. Narrower, the chip is its icon
+   alone; its title and accessible name keep the words. */
+@container (width < 168px) {
   .sidebar__files-chip:not(.sidebar__files-chip--armed) span,
   .sidebar__files-chip--armed::after {
     display: none;
@@ -3271,13 +3373,31 @@ button {
   .sidebar__files-chip {
     padding: 3px 5px;
   }
+  /* YAZ-3432: right of the narrow zoom chip there is no room leftward for the red words, so they start at the footer's
+     left edge instead, over the cog and the zoom chip, and still cover the chip under the pointer. */
+  .sidebar__files-chip--armed {
+    position: static;
+  }
+  .sidebar__files-chip--armed span {
+    inset: 50% auto auto 8px;
+    height: 20px;
+    translate: 0 -50%;
+  }
 }
-@container (width < 239px) {
+@container (width < 195px) {
   .sidebar__footer:has(.update-pill) .sidebar__files-chip:not(.sidebar__files-chip--armed) span,
   .sidebar__footer:has(.update-pill) .sidebar__files-chip--armed::after {
     display: none;
   }
   .sidebar__footer:has(.update-pill) .sidebar__files-chip {
     padding: 3px 5px;
+  }
+  .sidebar__footer:has(.update-pill) .sidebar__files-chip--armed {
+    position: static;
+  }
+  .sidebar__footer:has(.update-pill) .sidebar__files-chip--armed span {
+    inset: 50% auto auto 8px;
+    height: 20px;
+    translate: 0 -50%;
   }
 }

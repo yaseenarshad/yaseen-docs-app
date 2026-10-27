@@ -26,7 +26,7 @@ import { folderShortcuts } from './folderShortcuts'
 import { datedSeed, targetDirFor, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
-import { SidebarZoom } from './SidebarZoom'
+import { ZoomMenu } from './ZoomMenu'
 import { buildMenuSections } from './menuSections'
 import { RecentList } from './RecentList'
 import { SessionList } from './SessionList'
@@ -191,7 +191,7 @@ interface SidebarProps {
    */
   onToNormalWindow?: () => void
   /**
-   * A Files window's own sidebar zoom in percent (YAZ-3389 D13) and its writer: the lists and the footer's − % + use
+   * A Files window's own sidebar zoom in percent (YAZ-3389 D13) and its writer: the lists and the zoom menu's − % + use
    * them, never `settings.sidebarZoom`. Absent = a full window, which shares `settings.sidebarZoom`.
    */
   filesZoom?: number
@@ -874,6 +874,11 @@ export function Sidebar({
   const changeZoom = useCallback((sidebarZoom: number) => {
     const { settings: now, onChangeSettings: write } = settingsRef.current
     if (sidebarZoom !== now.sidebarZoom) write({ ...now, sidebarZoom })
+  }, [])
+  // The App size (YAZ-3432): one setting for every window, a Files window too; the same value writes nothing.
+  const changeAppZoom = useCallback((appZoom: number) => {
+    const { settings: now, onChangeSettings: write } = settingsRef.current
+    if (appZoom !== now.appZoom) write({ ...now, appZoom })
   }, [])
   // A Files window zooms its own list only (YAZ-3389 D13); a full window shares `settings.sidebarZoom`.
   const ownZoom = onFilesZoom !== undefined && filesZoom !== undefined
@@ -1610,8 +1615,9 @@ export function Sidebar({
       </div>
       <div className="sidebar__footer">
         <SettingsButton onClick={onOpenSettings} hotkeys={settings.hotkeys} />
-        {/* The zoom of the lists above (YAZ-3389): one value for every full window, a Files window's own (D13). */}
-        <SidebarZoom value={zoomValue} onChange={onZoom} />
+        {/* The zoom chip (YAZ-3432): its menu zooms the lists above (YAZ-3389: one value for every full window, a Files
+            window's own, D13) and sets the App size of every window. */}
+        <ZoomMenu sidebar={zoomValue} onSidebar={onZoom} app={settings.appZoom} onApp={changeAppZoom} />
         {onToNormalWindow !== undefined && (
           // Which kind of window this is (YAZ-3357 D13), quiet beside the cog. Two clicks make it a full window.
           <button

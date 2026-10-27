@@ -2106,5 +2106,9 @@ describe('Files windows (YAZ-3357)', () => {
     expect(manager.filesPreview('f', null)).toBe(true)
     expect(previews).toEqual([[f, { x: 400, y: 188, width: 500, height: 300 }], [f, null]])
     expect(manager.filesPreview('w1', null)).toBe(false)
+    // YAZ-3432: at App size 125% the page's px are 1.25 screen px, so the panel and the row's height scale.
+    store.setSettings({ ...store.get().settings, appZoom: 125 })
+    manager.filesPreview('f', { width: 400, height: 240, top: 160, bottom: 176 })
+    expect(previews.at(-1)).toEqual([f, { x: 400, y: 188, width: 500, height: 300 }])
   })
 })

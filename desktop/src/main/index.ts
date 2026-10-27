@@ -31,6 +31,7 @@ import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
 import { runQuitSequence } from './quitSequence'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
+import { appZoomFactor, subscribeAppZoom } from './appZoom'
 import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
 import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
 import { initMint, macId } from './vaultIndex/mint'
@@ -128,7 +129,7 @@ const manager = createWindowManager(store, {
       ...((hiddenE2E || hidden) && { show: false }),
       // The backing store matches the theme (K, GRO-2218): no white flash on dark launches.
       backgroundColor: windowBackgroundColor(store.get().settings.theme, nativeTheme.shouldUseDarkColors),
-      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true, ...((hiddenE2E || hidden) && { backgroundThrottling: false }) },
+      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true, zoomFactor: appZoomFactor(store.get().settings), ...((hiddenE2E || hidden) && { backgroundThrottling: false }) },
     })
     // A hidden e2e window must never surface: `focus()` and `show()` would order it front.
     if (hiddenE2E) win.show = win.focus = () => {}
@@ -172,10 +173,9 @@ const manager = createWindowManager(store, {
         copyImage: () => win.webContents.copyImageAt(params.x, params.y),
         revealImage: (src) => void revealVaultImage(src, (file) => revealItem({ path: file })),
       })).popup({ window: win }))
-    // The window itself never zooms (YAZ-3389: the sidebar's lists and each note zoom, the frame does not), a Files
-    // window too (D13: only its list grows, by its own `WindowEntry.zoom`). Chromium keeps a zoom per origin, so a ⌘+
-    // from before that decision would stay forever: back to 0.
-    win.webContents.on('did-finish-load', () => win.webContents.setZoomLevel(0))
+    // The window's own zoom is the App size and nothing else (YAZ-3432; ⌘+ zooms a note or the sidebar, YAZ-3389), a
+    // Files window too. Chromium keeps a zoom per origin, so each load sets it again: a zoom from an older build goes.
+    win.webContents.on('did-finish-load', () => win.webContents.setZoomFactor(appZoomFactor(store.get().settings)))
     // `<renderer>?win=<id>` so the renderer can ask `window.identity()` who it is.
     // A Files window loads from an origin of its own (YAZ-3357).
     const files = entry.kind === 'files'
@@ -210,6 +210,8 @@ const manager = createWindowManager(store, {
     const popup = previewByOwner.get(win.webContents.id)
     if (popup === undefined || popup.isDestroyed()) return
     if (bounds === null) return void popup.hide()
+    // The popup's page is drawn at the App size, as its Files window (YAZ-3432); `bounds` already counts it.
+    popup.webContents.setZoomFactor(appZoomFactor(store.get().settings))
     popup.setBounds(bounds)
     if (!hiddenE2E && !popup.isVisible()) popup.showInactive()
   },
@@ -267,6 +269,10 @@ app.whenReady().then(() => {
   // `prefers-color-scheme` in every renderer and the OS chrome follow the setting.
   subscribeNativeTheme(store, (theme) => {
     nativeTheme.themeSource = theme
+  })
+  // The App size (YAZ-3432): every window at once, the Files windows (an origin of their own) and their popups too.
+  subscribeAppZoom(store, (factor) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.setZoomFactor(factor)
   })
   protocol.handle('app', (req) => {
     const { host, pathname } = new URL(req.url)

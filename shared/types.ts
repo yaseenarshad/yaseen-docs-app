@@ -1521,6 +1521,12 @@ export interface SettingsState {
    * `SIDEBAR_ZOOM_STEPS`; a stored value is kept within 50–200 (`SIDEBAR_ZOOM_MIN` / `_MAX`).
    */
   sidebarZoom: number
+  /**
+   * The App size in percent (YAZ-3432): the Chromium page zoom of EVERY window, a Files window too, set by main
+   * (`webContents.setZoomFactor`). Only `APP_ZOOM_STEPS`; anything else is stored as 100. Mouse only: the footer's
+   * zoom menu writes it, never ⌘+ / ⌘− / ⌘0. The sidebar zoom and a note's zoom stack on it.
+   */
+  appZoom: number
 }
 
 /**
@@ -1679,6 +1685,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   gestureSounds: true,
   hotkeys: {},
   sidebarZoom: 100,
+  appZoom: 100,
 }
 
 export interface WindowBounds {
@@ -2707,6 +2714,13 @@ export type ZoomStep = -1 | 0 | 1
 export const SIDEBAR_ZOOM_STEPS = [50, 75, 90, 100, 125, 150, 200] as const
 export const SIDEBAR_ZOOM_MIN = SIDEBAR_ZOOM_STEPS[0]
 export const SIDEBAR_ZOOM_MAX = SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]
+
+/** The App sizes in percent (YAZ-3432): the zoom menu's App row, one button each. */
+export const APP_ZOOM_STEPS = [90, 100, 110, 125] as const
+/** A stored or sent App size (YAZ-3432): one of `APP_ZOOM_STEPS`, else 100. */
+export function normalizeAppZoom(v: unknown): number {
+  return typeof v === 'number' && (APP_ZOOM_STEPS as readonly number[]).includes(v) ? v : 100
+}
 
 /**
  * One sidebar zoom step (YAZ-3389): the next step in `direction`. A value between two steps snaps to

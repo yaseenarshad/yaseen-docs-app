@@ -11,6 +11,7 @@ import { fileKind } from '@shared/fileKind'
 import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
+import { appZoomFactor } from './appZoom'
 
 export interface WindowLike {
   webContents: { id: number }
@@ -1068,7 +1069,10 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const win = liveWindow(id)
       const entry = entryOf(id)
       if (win === undefined || entry === undefined || !isFilesWindow(entry)) return false
-      host.showPreview(win, req === null ? null : filesPreviewBounds(win.getContentBounds(), host.workAreas(), req))
+      // `req` is in the page's px; the screen's are the App size larger (YAZ-3432), and the popup has that zoom too.
+      const z = appZoomFactor(store.get().settings)
+      const onScreen = req === null ? null : { width: req.width * z, height: req.height * z, top: req.top * z, bottom: req.bottom * z }
+      host.showPreview(win, onScreen === null ? null : filesPreviewBounds(win.getContentBounds(), host.workAreas(), onScreen))
       return true
     },
 
