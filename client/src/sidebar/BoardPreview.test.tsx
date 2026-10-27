@@ -1,6 +1,6 @@
 /** Where the hover preview panel goes (YAZ-1800): a pure rule of the sidebar's right edge and the window. */
 import { describe, expect, it } from 'vitest'
-import { belowPlacement, boardPreviewPlacement } from './previewPlacement'
+import { belowPlacement, besidePlacement, boardPreviewPlacement } from './previewPlacement'
 
 describe('boardPreviewPlacement', () => {
   it('sits a gap right of the sidebar, a little over half the room wide, vertically centred', () => {
@@ -44,5 +44,33 @@ describe('belowPlacement (YAZ-3403 D11: a tab of the tab strip)', () => {
     expect(belowPlacement({ ...tab, top: 470, bottom: 500 }, 1440, 900, 'note')).toEqual({ left: 300, top: 508, width: 520, height: 376 })
     expect(belowPlacement({ ...tab, top: 850, bottom: 880 }, 1440, 900)).toBeNull()
     expect(belowPlacement(tab, 0, 900)).toBeNull()
+  })
+})
+
+/** True when the two boxes share any area: the panel must never cover what it previews. */
+const overlaps = (a: { left: number; top: number; right: number; bottom: number }, p: { left: number; top: number; width: number; height: number }): boolean =>
+  p.left < a.right && p.left + p.width > a.left && p.top < a.bottom && p.top + p.height > a.top
+
+describe('besidePlacement with no room on either side (YAZ-3429: the linked mentions are as wide as the page)', () => {
+  // A row of the linked mentions at 1440 × 900: the section spans 360–1400, so neither side holds a 520 px panel.
+  const row = { left: 360, top: 300, right: 1400, bottom: 324 }
+
+  it('goes below the row, from its left edge, when the room below is the larger', () => {
+    const at = besidePlacement(row, 1440, 900)
+    expect(at).not.toBeNull()
+    expect(overlaps(row, at!)).toBe(false)
+    expect(at).toMatchObject({ left: 360, top: 332 })
+  })
+
+  it('goes above the row when the room above is the larger', () => {
+    const low = { ...row, top: 700, bottom: 724 }
+    const at = besidePlacement(low, 1440, 900, 'note')
+    expect(at).not.toBeNull()
+    expect(overlaps(low, at!)).toBe(false)
+    expect(at!.top + at!.height).toBe(692)
+  })
+
+  it('keeps the side placement when a side has room (YAZ-3343 D18 unchanged)', () => {
+    expect(besidePlacement({ left: 100, top: 300, right: 300, bottom: 400 }, 1440, 900)).toMatchObject({ left: 316 })
   })
 })

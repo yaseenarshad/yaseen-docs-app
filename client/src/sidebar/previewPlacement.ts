@@ -81,14 +81,19 @@ export function overlayPlacement(innerWidth: number, innerHeight: number): Board
 /**
  * Where the panel goes beside a CARD of the tab board (YAZ-3343 D18): right of the card with
  * the sidebar's gap, or left of it when the window has no room there; centred on the card and kept inside the
- * window. The same shapes as beside the sidebar. Null when the window leaves no room at all.
+ * window. The same shapes as beside the sidebar. With no room on either side — a linked mention is as wide as the
+ * page (YAZ-3429) — below or above the box, whichever has more room: never over it. Null when the window leaves no room at all.
  */
 export function besidePlacement(rect: AnchorRect, innerWidth: number, innerHeight: number, shape: PreviewShape = 'board'): BoardPreviewPlacement | null {
   const { width, height } = besideSize(innerWidth, innerHeight, shape)
   if (width <= 0 || height <= 0) return null
-  const left = rect.right + GAP + width <= innerWidth - GAP ? rect.right + GAP : Math.max(GAP, rect.left - GAP - width)
   const top = Math.min(Math.max(GAP, Math.round((rect.top + rect.bottom) / 2 - height / 2)), Math.max(GAP, innerHeight - GAP - height))
-  return { left, top, width, height }
+  if (rect.right + GAP + width <= innerWidth - GAP) return { left: rect.right + GAP, top, width, height }
+  if (rect.left - GAP - width >= GAP) return { left: rect.left - GAP - width, top, width, height }
+  const above = rect.top - GAP / 2 - GAP
+  if (innerHeight - GAP - (rect.bottom + GAP / 2) >= above) return belowPlacement(rect, innerWidth, innerHeight, shape)
+  const tall = Math.min(height, above)
+  return tall <= 0 ? null : { left: Math.max(GAP, Math.min(rect.left, innerWidth - GAP - width)), top: rect.top - GAP / 2 - tall, width, height: tall }
 }
 
 /**

@@ -60,7 +60,8 @@ const NONE: readonly IndexRecord[] = []
 export function BacklinksSection({ path, source, openCurrent, openBackground, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: BacklinksSectionProps) {
   const feed = useIndexFeed(source)
   const [expanded, setExpanded] = useState(false)
-  // The hover panel (YAZ-3403): beside the whole section — the note's text column — level with the hovered button.
+  // The hover panel (YAZ-3403): beside the whole section — the note's text column — level with the hovered button;
+  // where neither side has room, above or below the row, never over it (YAZ-3429).
   const sectionRef = useRef<HTMLElement>(null)
   const preview = useCardPreview(hoverPreview, (id) => {
     const section = sectionRef.current
