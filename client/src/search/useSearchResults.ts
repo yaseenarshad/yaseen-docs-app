@@ -39,7 +39,8 @@ const NO_SNAPSHOT: Snapshot = { records: [], folders: [] }
 /** One vault's rows as they were last built, with what each part was built from. */
 type Rows = Snapshot & { dirs: readonly string[]; files: readonly string[]; folderRows: SearchCandidate[]; noteRows: SearchCandidate[]; fileRows: SearchCandidate[]; all: SearchCandidate[] }
 
-export function useSearchResults(vaults: readonly SearchVault[], query: string, pinned: ReadonlySet<string>): SearchCandidate[] {
+/** `keep` is the Search tab's filters (YAZ-3511 D16): the rows it fails never reach the ranking, so the cap cuts only rows that pass. The caller keeps it while the filters stay. */
+export function useSearchResults(vaults: readonly SearchVault[], query: string, pinned: ReadonlySet<string>, keep?: (row: SearchCandidate) => boolean): SearchCandidate[] {
   // Each vault's index snapshot, by its root, once it has landed.
   const [snapshots, setSnapshots] = useState<ReadonlyMap<string, Snapshot>>(() => new Map())
   // Latched by the first non-empty query and never unlatched: after that the snapshots stay warm
@@ -133,7 +134,9 @@ export function useSearchResults(vaults: readonly SearchVault[], query: string, 
   // The rows that rank first (YAZ-2662 D4): the path of each row that is a pinned item or is inside
   // one. Built when the rows or a list changes, so a keystroke pays one look in it for each match (R1).
   const first = useMemo(() => (pinned.size === 0 ? pinned : new Set(candidates.flatMap((c) => (atOrBelow(pinned, c.path) ? [c.path] : [])))), [candidates, pinned])
+  // The rows the filters keep, built when the rows or the filters change, not on each keystroke (D16).
+  const kept = useMemo(() => (keep === undefined ? candidates : candidates.filter(keep)), [candidates, keep])
   // An empty query matches EVERYTHING through the shared matcher (`indexOf('')` is 0), so the
   // no-query case is answered here rather than by the ranker.
-  return useMemo(() => (query.trim() === '' ? [] : searchRows(candidates, query, first)), [candidates, query, first])
+  return useMemo(() => (query.trim() === '' ? [] : searchRows(kept, query, first)), [kept, query, first])
 }

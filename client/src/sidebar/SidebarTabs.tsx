@@ -19,13 +19,17 @@ interface SidebarTabsProps {
   prefs: SidebarTabsPrefs
   /** A new row, from "Hide <tab>" or the Tab row panel (YAZ-3279): one settings write per change. */
   onChangePrefs: (next: SidebarTabsPrefs) => void
-  /** The sort button shows on this tab (YAZ-3227 D5: Files, Focus and Favorites), and whether its menu is open. */
+  /** The sort button shows on this tab (YAZ-3227 D5: Files, Focus and Favorites; Search since YAZ-3511 D3), and whether its menu is open. */
   sortShows: boolean
   sortOpen: boolean
+  /** A Search filter is on (YAZ-3511 D17): the button wears the accent color, and its tooltip says so. */
+  sortFiltered?: boolean
   /** The sort menu at a point — from the Sort button, or from "Sort…" in the ⋯ menu (S15) — or `null` to close it. */
   onSort: (at: { x: number; y: number } | null) => void
   /** The fold button shows (YAZ-862: not on Search, and only with something to fold), its label, and its action. */
   foldShows: boolean
+  /** The tab has nothing to fold (YAZ-3511 D19): the button stays, dimmed, so it never jumps in and out. */
+  foldDisabled?: boolean
   foldLabel: string
   onFold: () => void
 }
@@ -58,7 +62,7 @@ const isMenuKey = (e: { key: string; shiftKey: boolean; metaKey: boolean; ctrlKe
  * the row again only when a tab comes or goes (S30). With no observer, or no layout (jsdom), nothing
  * is measured and every tab fits.
  */
-export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs, onChangePrefs, sortShows, sortOpen, onSort, foldShows, foldLabel, onFold }: SidebarTabsProps) {
+export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs, onChangePrefs, sortShows, sortOpen, sortFiltered = false, onSort, foldShows, foldDisabled = false, foldLabel, onFold }: SidebarTabsProps) {
   const buttons: RowButtons = { sort: sortShows, fold: foldShows }
   const [fit, setFit] = useState(Number.POSITIVE_INFINITY)
   const layout = rowLayout(prefs, lens, fit, buttons)
@@ -282,13 +286,13 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
             <MoreIcon />
           </button>
         )}
-        {/* The sort button (YAZ-3227 D5): left of expand-all, on Files, Focus and Favorites. A second click closes its menu. */}
+        {/* The sort button (YAZ-3227 D5): left of expand-all, on Files, Focus, Favorites and Search (YAZ-3511 D3). A second click closes its menu. */}
         {onBar(prefs, buttons, 'sort') && (
           <button
             type="button"
-            className="sidebar__sort"
-            aria-label="Sort"
-            title="Sort"
+            className={sortFiltered ? 'sidebar__sort sidebar__sort--filtered' : 'sidebar__sort'}
+            aria-label={sortFiltered ? 'Sort, filters on' : 'Sort'}
+            title={sortFiltered ? 'Sort · Filters on' : 'Sort'}
             aria-haspopup="menu"
             aria-expanded={sortOpen}
             // The menu closes on any window mousedown; without this a second click would close and reopen it (the vault header's rule).
@@ -303,10 +307,10 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
         )}
         {/* One button for both directions AND every lens (⚡ YAZ-862, ⚡ YAZ-873): anything open
             collapses everything, and only a fully closed tree expands it. It acts on whichever lens is
-            ACTIVE. Gone — not disabled — on the Search tab (YAZ-2638 D2: its folds are the search's
-            own) and whenever the active reading has nothing to unfold. Sidebar decides; this draws. */}
+            ACTIVE: on Search the search's own folds, on Sessions and Recents their rows (YAZ-3511 D19).
+            On every tab, dimmed where the active reading has nothing to unfold. Sidebar decides; this draws. */}
         {onBar(prefs, buttons, 'fold') && (
-          <button type="button" className="sidebar__expand-all" aria-label={foldLabel} title={foldLabel} onClick={onFold}>
+          <button type="button" className="sidebar__expand-all" aria-label={foldLabel} title={foldLabel} disabled={foldDisabled} onClick={onFold}>
             <ChevronsIcon />
           </button>
         )}

@@ -1213,6 +1213,12 @@ button {
   user-select: none;
 }
 
+/* The page keeps 360 px, MAIN_WORKSPACE_MIN_W (YAZ-3511 D18): in a narrower window a wide sidebar is drawn narrower, and
+   its stored width comes back when the window does. A Files window is only the sidebar. */
+.app:not(.app--files) > .sidebar {
+  max-width: calc(100vw - 360px);
+}
+
 /* A Files window (YAZ-3357 D1, D8) is only the sidebar: it fills the window, with no edge to drag. While Tabs Mission
    Control shows, the window is wide and the sidebar keeps its narrow width (set on it), the board right of it. */
 .app--files:not(.app--files-board) > .sidebar {
@@ -1559,6 +1565,91 @@ button {
 .sidebar__more[aria-expanded='true'] {
   color: var(--fg);
   background: var(--bg-hover);
+}
+
+/* The filters that are on (YAZ-3511 D24): a thin bar under the search box, a chip for each, its × takes it off. */
+.sidebar__filters {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px 10px 5px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.sidebar__filters-icon {
+  flex: none;
+}
+
+.sidebar__filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px 1px 7px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.sidebar__filter-chip .file-icon {
+  display: inline-flex;
+}
+
+.sidebar__filter-x::before {
+  content: '×';
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  opacity: 0.7;
+}
+
+.sidebar__filter-chip:hover .sidebar__filter-x::before {
+  opacity: 1;
+}
+
+.sidebar__filter-clear {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.sidebar__filter-clear:hover {
+  color: var(--fg);
+}
+
+/* The full date over a row's short date (YAZ-3511 D25): above it, its right edge on the date's. */
+.tree__date-tip {
+  position: fixed;
+  z-index: 50;
+  transform: translateY(calc(-100% - 4px));
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 11px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  pointer-events: none;
+}
+
+/* Nothing to fold on this tab (YAZ-3511 D19): the button stays in its place, dimmed, with no hover. */
+.sidebar__expand-all:disabled,
+.sidebar__expand-all:disabled:hover {
+  opacity: 0.35;
+  color: var(--fg-muted);
+  background: none;
+  cursor: default;
+}
+
+/* A Search filter is on (YAZ-3511 D17): the button says so, as rows are hidden, and keeps it under the hover above. */
+.sidebar__sort--filtered,
+.sidebar__sort--filtered:hover {
+  color: var(--accent);
 }
 
 /* "More tabs" (YAZ-3273 D2): the sort button's look, right of the last tab — no push to the right, so
@@ -2176,6 +2267,22 @@ button {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5l7 7-7 7'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
+/* A parent's hint (the Search menu's "Type ▸ Markdown", YAZ-3511 D13) stands left of its chevron. */
+.ctx-menu__item--parent[data-hint]::before {
+  content: attr(data-hint);
+  order: 1;
+  margin-left: auto;
+  opacity: 0.5;
+  font-size: 11px;
+}
+
+/* …and keeps its chevron: the hint rule above would draw the hint there. */
+.ctx-menu__item--parent[data-hint]::after {
+  content: '';
+  order: 2;
+  opacity: 0.6;
+}
+
 .ctx-menu__sub {
   z-index: 41;
 }
@@ -2195,6 +2302,18 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+/* A file icon as the glyph (the Search menu's Type list, YAZ-3511 D13): the tree's own icon, 14 px and its 6 px margin,
+   in a 20 px slot that holds its place with the icons off, then 3 px: the 15 + 8 px of an SVG glyph, so the rows line up. */
+.ctx-menu__label:has(> .file-icon) {
+  gap: 3px;
+}
+
+.ctx-menu__label > .file-icon {
+  display: inline-flex;
+  flex: none;
+  min-width: 20px;
 }
 
 .ctx-menu__label > svg {
@@ -2965,6 +3084,20 @@ button {
   white-space: nowrap;
   font-size: 10px;
   color: color-mix(in srgb, var(--fg-muted) 60%, transparent);
+}
+
+/* A search row's Last updated (YAZ-3511 D5): as quiet as the vault tag, at the right end; the name gives way first. */
+.tree__date {
+  flex: none;
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--fg-muted) 60%, transparent);
+}
+.tree__vault + .tree__date {
+  margin-left: 0;
 }
 
 /* The shortcut mark (YAZ-2290 D2): this note shows here and lives elsewhere. Quiet, after the

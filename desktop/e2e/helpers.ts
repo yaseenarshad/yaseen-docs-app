@@ -85,7 +85,8 @@ export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selec
 /** The preview tab (YAZ-2648 D1): the one tab a sidebar click reuses, its name italic. None when every tab is a kept tab. */
 export const previewTab = (w: Page) => w.locator('.tabbar .tabbar__tab--preview [role="tab"]')
 /** A file row of the sidebar tree by its exact label. */
-export const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
+// Matched on the LABEL span, as `dirRow` is: a search row also ends with its Last updated (`.tree__date`, YAZ-3511 D5).
+export const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ has: w.locator('.tree__label').filter({ hasText: new RegExp(`^${label}$`) }) })
 /**
  * A folder row of the sidebar tree by its exact label. Matched on the LABEL span, never on the
  * row's whole text: a top row of the Focus tab or of the Favorites tab also carries its vault's name
@@ -289,6 +290,15 @@ export function seededState(vault: string, file: string | null): AppState {
   state.recents = [{ path: vault, lastOpened: Date.now() }]
   state.windows = [{ id: 'w1', root: vault, roots: [vault], file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
   state.folders = { [vault]: { expanded: [], lastFile: file, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } }
+  return state
+}
+
+/**
+ * The search by Name (YAZ-3511): for the specs that pin the cut, the folds and the keys of a search, not its sort — the
+ * order before Best match became the Search default (YAZ-3511 D12). searchSort.spec.ts covers the default itself.
+ */
+export function searchByName(state: AppState): AppState {
+  state.settings = { ...state.settings, searchSort: { by: 'name', reverse: false } }
   return state
 }
 
