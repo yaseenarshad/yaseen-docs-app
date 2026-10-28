@@ -150,7 +150,7 @@ describe('searchSettings', () => {
   it('matches on a keyword the label does not contain', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'system'))).toEqual(['theme'])
     // "dark" is also the draw.io row's word (YAZ-3037), and draw.io's own key for its dark colours (YAZ-3564).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'theme', 'diagramDarkColors'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-drawing-toggleTheme', 'hotkey-diagram-adaptiveColors', 'theme', 'diagramDarkColors'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'readable line'))).toEqual(['contentWidth'])
     // The sounds of Settings › Notifications (YAZ-3303) say "the Trash" in their hints.
     // "trash" is also the word of ⌘⌫ in the Window hotkeys (YAZ-3272 D20).
@@ -182,7 +182,7 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'level lines'))).toEqual(['sidebarLines', 'tocLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'hierarchy'))).toEqual(['sidebarLines', 'tocLines'])
     // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['hotkey-diagram-outline', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-diagram-colourOther'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['hotkey-diagram-outline', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-drawing-colors', 'hotkey-diagram-colourOther'])
     // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['sidebarLines', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403).
@@ -252,8 +252,8 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), '⌘W'))).toEqual(['hotkey-closeTab', 'hotkey-code-findWholeWord'])
     // "underline" is also a word of Appearance › Text formatting (YAZ-3068); a note and a draw.io diagram both
     // underline with ⌘U (YAZ-3037): both rows answer, the note's first (its label is the word).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-note-underline', 'hotkey-diagram-underline', 'textFormatting'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkey-app-menuExportExcalidrawDrawing'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-note-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkey-app-menuExportExcalidrawDrawing', 'hotkey-drawing-saveAs'])
     // A changed key is searched by the key it has NOW.
     const moved = { ...ctx(), settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K' } } }
     // ⌘⇧K is also draw.io's Shapes and the code tab's Delete line (other places, YAZ-3564): Search the vault comes first.

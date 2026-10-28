@@ -418,13 +418,15 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
     expect(headings(el)).toEqual(['Hotkeys'])
     expect(sections(el).map((s) => s.id)).toEqual(['settings-hotkeys'])
-    expect(groupTitles(el)).toEqual(['Window', 'Keyboard', 'Views', 'Excalidraw canvas', 'draw.io diagram', 'Mouse', 'App standard'])
+    // One group per place since YAZ-3564 (K7); "Used by macOS" shows once main answers.
+    expect(groupTitles(el)).toEqual(['App', 'Note', 'Drawing', 'Diagram', 'Code', 'Folder views', 'Mouse'])
     expect(rowIds(el)).toEqual(HOTKEY_ROWS)
     // A changeable key is a button (D6); a built-in one is text (D8).
     expect(row(el, 'hotkey-settings')?.querySelector('.hotkeys__key')?.textContent).toBe('⌘,')
     expect(row(el, 'hotkey-closeWindow')?.querySelector('.hotkeys__key')?.textContent).toBe('No key')
-    expect(row(el, 'hotkey-keyboard-table-of-contents')?.querySelector('button')).toBeNull()
-    expect(row(el, 'hotkey-keyboard-table-of-contents')?.querySelector('.hotkeys__keys')?.textContent).toBe('⌘J')
+    // The table of contents' ⌘J can change since YAZ-3564 (K6): a button too. A typing key stays text.
+    expect(row(el, 'hotkey-note-toc')?.querySelector('.hotkeys__key')?.textContent).toBe('⌘J')
+    expect(row(el, 'hotkey-note-enter')?.querySelector('button')).toBeNull()
   })
 
   it('a section that goes while its page shows gives way to the first, General, in the pane and in the nav: Sync with the engine gone', () => {
@@ -1098,11 +1100,11 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
 })
 
 describe('SettingsDialog search (D6)', () => {
-  it('"dark" shows the Theme row and the draw.io dark-mode row (YAZ-3037) under Appearance headings and nothing else — and the row still works', () => {
+  it('"dark" shows the Theme row and the draw.io dark-mode row (YAZ-3037) under Appearance headings, then the drawing\'s and the diagram\'s dark keys (YAZ-3564) — and the row still works', () => {
     const { el, onChange } = mount({ ...DEFAULT_SETTINGS }, status())
     type(searchInput(el), 'dark')
-    expect(headings(el)).toEqual(['Appearance', 'Appearance › draw.io diagrams'])
-    expect(rowIds(el)).toEqual(['theme', 'diagramDarkColors'])
+    expect(headings(el)).toEqual(['Appearance', 'Appearance › draw.io diagrams', 'Hotkeys › Drawing', 'Hotkeys › Diagram'])
+    expect(rowIds(el)).toEqual(['theme', 'diagramDarkColors', 'hotkey-drawing-toggleTheme', 'hotkey-diagram-adaptiveColors'])
     expect(sections(el)).toEqual([]) // the page is gone while the query stands
     act(() => rowButtons(el, 'theme')[2].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, theme: 'dark' })
@@ -1133,11 +1135,11 @@ describe('SettingsDialog search (D6)', () => {
     // breadcrumbs, registry order, never rank.
     // The sidebar's line style (YAZ-3309 D7) names bullet threading: it leads, on Appearance.
     type(searchInput(el), 'bullet')
-    expect(headings(el)).toEqual(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
+    expect(headings(el)).toEqual(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents', 'Hotkeys › Note', 'Hotkeys › Mouse'])
     // A Hotkeys hit is the ONE row that names a bullet, not its whole table (YAZ-3397 D5).
     expect(rowIds(el)).toEqual([
       ...['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tocOnByDefault', 'tableOfContents', 'tocLines'],
-      ...['fold-unfold-the-bullet-or-heading-sectio', 'fold-all-bullets-and-headings', 'unfold-all-bullets-and-headings', 'zoom-into-the-bullet-at-the-caret', 'cycle-bullet-task-done', 'indent-outdent-bullet'].map((r) => `hotkey-keyboard-${r}`),
+      ...['bulletList', 'cycleTask', 'indent', 'outdent', 'foldHere', 'unfoldHere', 'foldAll', 'unfoldAll', 'zoomIn', 'enter', 'tab'].map((r) => `hotkey-note-${r}`),
       ...['zoom-into-that-bullet', 'fold-unfold-that-bullet-or-heading-secti'].map((r) => `hotkey-mouse-${r}`),
     ])
     type(searchInput(el), 'spacing')
@@ -1145,13 +1147,14 @@ describe('SettingsDialog search (D6)', () => {
     expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap'])
     // Comments is a group of Appearance now, so its breadcrumb says so.
     type(searchInput(el), 'comments')
-    expect(headings(el)).toEqual(['Appearance › Comments'])
-    expect(rowIds(el)).toEqual(['commentsOrder'])
+    // A code key's row says "comment" too (YAZ-3564): the Appearance group leads.
+    expect(headings(el)[0]).toBe('Appearance › Comments')
+    expect(rowIds(el)[0]).toBe('commentsOrder')
     type(searchInput(el), 'section indent')
     expect(headings(el)).toEqual(['Editor › Section indent'])
     expect(rowIds(el)).toEqual(['sectionStep', 'sectionLines'])
     type(searchInput(el), 'close tab')
-    expect(headings(el)).toEqual(['Hotkeys › Window'])
+    expect(headings(el)).toEqual(['Hotkeys › App'])
     expect(rowIds(el)).toEqual(['hotkey-closeTab'])
   })
 
@@ -1180,7 +1183,7 @@ describe('SettingsDialog search (D6)', () => {
     const { el, onClose } = mount()
     // As it opens: General (YAZ-3276 D7).
     type(searchInput(el), 'trash')
-    expect(rowIds(el)).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'hotkey-window-move-the-selected-files-and-folders-to-t']) // ⌘⌫'s row says "Trash" too (YAZ-3272 D20)
+    expect(rowIds(el)).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'hotkey-app-trash']) // ⌘⌫'s row says "Trash" too (YAZ-3272 D20)
     pressEscape(searchInput(el))
     expect(onClose).not.toHaveBeenCalled()
     expect(searchInput(el).value).toBe('')
@@ -1430,7 +1433,8 @@ describe('SettingsDialog: Duplicate IDs (YAZ-2677 D7, S55 to S57)', () => {
     // Nothing runs until the user asks.
     expect(checkIds).not.toHaveBeenCalled()
     type(searchInput(el), 'duplicate')
-    expect(rowIds(el)).toEqual(['duplicates'])
+    // A drawing's and a diagram's Duplicate key answer too (YAZ-3564); the vault's row is first.
+    expect(rowIds(el)[0]).toBe('duplicates')
   })
 
   it('S55: a click runs the check now and tells the result in one line', async () => {

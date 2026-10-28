@@ -107,8 +107,8 @@ describe('a changeable key (D6, D7)', () => {
     await flush()
     expect(recording.mock.calls).toEqual([[true]])
 
-    press('K', 'KeyK', { metaKey: true, shiftKey: true })
-    expect(says()).toEqual(['Change the key for Search the vault?', '⌘K → ⌘⇧K'])
+    press('Y', 'KeyY', { metaKey: true, altKey: true }) // free in every place (⌘⇧K is a diagram's and a code tab's too, YAZ-3564)
+    expect(says()).toEqual(['Change the key for Search the vault?', '⌘K → ⌥⌘Y'])
     expect(popup()?.getAttribute('role')).toBe('dialog')
     // Nothing destroyed, nothing Mac-standard: the keyboard starts on Save.
     expect(document.activeElement?.textContent).toBe('Save')
@@ -118,13 +118,13 @@ describe('a changeable key (D6, D7)', () => {
 
     click(button(popup() as HTMLElement, 'Save'))
     expect(popup()).toBeNull()
-    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': 'CmdOrCtrl+Shift+K' } })
-    expect(keyButton('search').textContent).toBe('⌘⇧K')
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': 'CmdOrCtrl+Alt+Y' } })
+    expect(keyButton('search').textContent).toBe('⌥⌘Y')
     expect(keyButton('search').classList.contains('hotkeys__key--changed')).toBe(true)
 
     // Reset asks first, and only its confirm writes: back to `{}`.
     click(button(row('hotkey-search'), 'Reset'))
-    expect(says()).toEqual(['Reset Search the vault?', '⌘⇧K → ⌘K'])
+    expect(says()).toEqual(['Reset Search the vault?', '⌥⌘Y → ⌘K'])
     expect(onChange).toHaveBeenCalledTimes(1)
     click(button(popup() as HTMLElement, 'Cancel'))
     expect(popup()).toBeNull()
@@ -138,8 +138,9 @@ describe('a changeable key (D6, D7)', () => {
   it('a built-in or macOS key is refused in red and the row keeps recording; Esc cancels it and never reaches the dialog', async () => {
     await mount()
     click(keyButton('search'))
-    press('j', 'KeyJ', { metaKey: true })
-    expect(lines('search')[0]).toBe('⌘J is built in: Table of contents. Pick a different key.')
+    // ⌘⌫ is the window's own Trash key: built in (⌘J can change since YAZ-3564, so it would move instead).
+    press('Backspace', 'Backspace', { metaKey: true })
+    expect(lines('search')[0]).toBe('⌘⌫ is built in: App › Move the selected files and folders to the Trash. Pick a different key.')
     press('Q', 'KeyQ', { metaKey: true, shiftKey: true })
     expect(lines('search')[0]).toBe('macOS uses ⌘⇧Q for Log out. Pick a different key.')
     // Red is the refused class (jsdom has no colour; the e2e step 5 checks the colour): the hint under it is not refused.
@@ -166,14 +167,14 @@ describe('a changeable key (D6, D7)', () => {
     await mount()
     click(keyButton('search'))
     press('W', 'KeyW', { metaKey: true, shiftKey: true })
-    expect(says()).toEqual(['Change the key for Search the vault?', '⌘K → ⌘⇧W', '⌘⇧W is New Files window now. It will lose its key.'])
+    expect(says()).toEqual(['Change the key for Search the vault?', '⌘K → ⌘⇧W', '⌘⇧W is App › New Files window now. It will lose its key.'])
     click(button(popup() as HTMLElement, 'Move it here'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': 'CmdOrCtrl+Shift+W', 'app.newFilesWindow': null } })
     expect(keyButton('newFilesWindow').textContent).toBe('No key')
 
     click(keyButton('closeTab'))
-    press('K', 'KeyK', { metaKey: true, shiftKey: true })
-    expect(says()).toEqual(['Change the key for Close tab?', '⌘W → ⌘⇧K', '⌘W is the Mac standard for Close tab. Most Mac apps use it.'])
+    press('Y', 'KeyY', { metaKey: true, altKey: true })
+    expect(says()).toEqual(['Change the key for Close tab?', '⌘W → ⌥⌘Y', '⌘W is the Mac standard for Close tab. Most Mac apps use it.'])
     // A Mac-standard key asks harder: a red "Change anyway", and the keyboard starts on Cancel.
     expect(button(popup() as HTMLElement, 'Change anyway').classList.contains('confirm__btn--danger')).toBe(true)
     expect(document.activeElement?.textContent).toBe('Cancel')
@@ -191,7 +192,7 @@ describe('a changeable key (D6, D7)', () => {
     click(button(row('hotkeys-reset-all'), 'Reset all hotkeys'))
     const sheet = el.querySelector<HTMLElement>('.confirm') as HTMLElement
     expect(sheet.querySelector('.confirm__text')?.textContent).toBe('Reset 2 changed hotkeys?')
-    expect([...sheet.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Close tab: No key → ⌘W', 'Search the vault: ⌘⇧K → ⌘K'])
+    expect([...sheet.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['App › Close tab: No key → ⌘W', 'App › Search the vault: ⌘⇧K → ⌘K'])
     expect(onChange).not.toHaveBeenCalled()
     click(button(sheet, 'Reset 2 hotkeys'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: {} })
@@ -237,15 +238,18 @@ describe('the page (D5, D8)', () => {
     click(button(search(), 'Press keys to search'))
     press('k', 'KeyK', { metaKey: true })
     expect(hotkeyBox().value).toBe('⌘K')
-    expect(search().querySelector('[role="status"]')?.textContent).toBe('⌘K: Search the vault. You can change it.')
-    expect(shownRows()).toEqual(['hotkey-search'])
+    expect(search().querySelector('[role="status"]')?.textContent).toMatch(/^⌘K: App › Search the vault; Drawing › .*; Diagram › .*; Code › /)
+    // Every row on ⌘K shows, in every place (YAZ-3564 K10): Search the vault first.
+    expect(shownRows()[0]).toBe('hotkey-search')
+    expect(shownRows()).toContain('hotkey-drawing-link')
     // Typing over the pressed key ends its answer.
     type(hotkeyBox(), '⌘K ')
     expect(search().querySelector('[role="status"]')).toBeNull()
 
     for (const [key, code, mods, answer] of [
-      ['K', 'KeyK', { metaKey: true, shiftKey: true }, '⌘⇧K is free. You can use it.'],
-      ['j', 'KeyJ', { metaKey: true }, '⌘J: Table of contents. It is built in.'],
+      ['Y', 'KeyY', { metaKey: true, altKey: true }, '⌥⌘Y is free. You can use it.'],
+      // Every action on the key, in every place (YAZ-3564 K10).
+      ['j', 'KeyJ', { metaKey: true }, '⌘J: Note › Table of contents; Diagram › Fit the page.'],
       ['Q', 'KeyQ', { metaKey: true, shiftKey: true }, "⌘⇧Q: macOS uses it for Log out. You can't use it."],
     ] as const) {
       click(button(search(), 'Press keys to search'))
