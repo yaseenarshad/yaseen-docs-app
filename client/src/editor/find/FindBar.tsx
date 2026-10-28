@@ -17,6 +17,8 @@
  * from the handler itself — one call site, told apart by the ref being null or not.
  */
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore, type MouseEvent, type RefObject } from 'react'
+import { storage } from '../../lib/storage'
+import { isNoteKey } from '../noteKeys'
 import type { FindChannel } from './findChannel'
 import './find.css'
 
@@ -53,7 +55,8 @@ export function FindBar({ channel, scope, hostRef }: FindBarProps) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!event.metaKey || event.shiftKey || event.altKey || event.key !== 'f') return
+      // Find's key as it is now (YAZ-3564 K4): the setting is read at each keydown.
+      if (!isNoteKey(event, 'note.find', storage.getSettings()?.hotkeys)) return
       const active = document.activeElement
       // checkVisibility is absent under jsdom, where nothing is ever hidden — hence the ?? true.
       const shown = (el: Element | null): boolean => el instanceof HTMLElement && (el.checkVisibility?.() ?? true)

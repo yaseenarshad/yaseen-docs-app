@@ -24,6 +24,7 @@ import { toggleMark } from '@milkdown/kit/prose/commands'
 import type { Command } from '@milkdown/kit/prose/state'
 import { $markSchema, $remark, $shortcut } from '@milkdown/kit/utils'
 import { onVisibleLines } from '../lineSelection'
+import { rowShortcuts } from '../noteKeys'
 import type { Parent, PhrasingContent } from 'mdast'
 import type { Handle, Options as ToMarkdownOptions } from 'mdast-util-to-markdown'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
@@ -105,9 +106,8 @@ const PRIORITY = 100
 
 const toggleUnderline = (ctx: Ctx): Command => onVisibleLines(toggleMark(underlineSchema.type(ctx)))
 
-export const underlineKeymap = $shortcut((ctx: Ctx) => ({
-  ToggleUnderline: { key: 'Mod-u', priority: PRIORITY, onRun: () => toggleUnderline(ctx) },
-}))
+/** The key is the row's (`note.underline`, ⌘U by default; YAZ-3564 K4). */
+export const underlineKeymap = $shortcut((ctx: Ctx) => rowShortcuts(ctx, 'note.underline', 'ToggleUnderline', { priority: PRIORITY, onRun: () => toggleUnderline(ctx) }))
 
 /** Register with `editor.use(underline)`. */
 export const underline = [underlineRemark, underlineSchema, underlineKeymap].flat()

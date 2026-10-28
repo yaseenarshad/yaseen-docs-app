@@ -38,6 +38,7 @@ import { applyExternalMarkdown } from '../../editor/external/applyExternalMarkdo
 import { lockToBullets, outlineFeatures } from '../../editor/outline/bulletsOnly'
 import { createCrepe, getMarkdownForSave } from '../../editor/createCrepe'
 import { FindBar } from '../../editor/find/FindBar'
+import { storage } from '../../lib/storage'
 import { onWindowFlush } from '../../lib/windowFlush'
 import { createFindChannel } from '../../editor/find/findChannel'
 import type { WikilinkNav } from '../../editor/wikilink/wikilinkClick'
@@ -150,6 +151,8 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
       wikilinkCandidates,
       wikilinkNav: nav,
       find: findChannel,
+      // The note keys as the user set them (YAZ-3564 K4), as a note reads them: once, as the outline opens.
+      hotkeys: storage.getSettings()?.hotkeys,
       // No `image` options (YAZ-1656) on purpose: lock 4 below rejects any document holding an
       // `image` node, so a pasted screenshot would be written to the vault and then have its insert
       // filtered away. Images here stay Crepe's stock `<img>` until the lock says otherwise.

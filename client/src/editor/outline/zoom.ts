@@ -42,6 +42,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import { rowShortcuts } from '../noteKeys'
 import { ancestorItemPositions, innermostItemPos, isListItem, itemLabelText } from './listNodes'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
@@ -396,11 +397,14 @@ export const createOutlineZoom = ({ fileName, title, startKey = null }: ZoomOpti
   )
 }
 
-/** Keymap: `Mod-.` / `Mod-Shift-.` / `Mod-z` (zoom panic-undo) plus the escape guard; register with `editor.use(zoomKeymap)`. */
-export const zoomKeymap = $shortcut((_ctx: Ctx) => ({
-  ZoomIn: { key: 'Mod-.', priority: PRIORITY, onRun: () => zoomIntoSelection },
-  UndoZoom: { key: 'Mod-z', priority: PRIORITY, onRun: () => undoLastZoom },
-  ZoomOut: { key: 'Mod-Shift-.', priority: PRIORITY, onRun: () => zoomOutOneLevel },
+/**
+ * Keymap: `Mod-.` / `Mod-Shift-.` / `Mod-z` (zoom panic-undo) plus the escape guard; register with `editor.use(zoomKeymap)`.
+ * The chords are the rows' (`shared/keys/note.ts`, YAZ-3564 K4): the guard follows Outdent's key.
+ */
+export const zoomKeymap = $shortcut((ctx: Ctx) => ({
+  ...rowShortcuts(ctx, 'note.zoomIn', 'ZoomIn', { priority: PRIORITY, onRun: () => zoomIntoSelection }),
+  ...rowShortcuts(ctx, 'note.undo', 'UndoZoom', { priority: PRIORITY, onRun: () => undoLastZoom }),
+  ...rowShortcuts(ctx, 'note.zoomOut', 'ZoomOut', { priority: PRIORITY, onRun: () => zoomOutOneLevel }),
   ZoomLiftGuardTab: { key: 'Shift-Tab', priority: PRIORITY, onRun: () => blockEscapingLift },
-  ZoomLiftGuardBracket: { key: 'Mod-[', priority: PRIORITY, onRun: () => blockEscapingLift },
+  ...rowShortcuts(ctx, 'note.outdent', 'ZoomLiftGuardBracket', { priority: PRIORITY, onRun: () => blockEscapingLift }),
 }))

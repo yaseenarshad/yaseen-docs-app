@@ -638,6 +638,8 @@ function CrepeHost({
       toc: tocChannel,
       // A read-only note keeps its keyboard (YAZ-3125, YAZ-3127): this is a note editor, not a preview.
       readOnlyKeys: true,
+      // The note keys as the user set them (YAZ-3564 K4): read as the note opens, so a change applies to the next one.
+      hotkeys: storage.getSettings()?.hotkeys,
     })
     crepeRef.current = crepe
     let controller: ReturnType<typeof attach> | null = null

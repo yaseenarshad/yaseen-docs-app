@@ -36,6 +36,7 @@ import { liftListItem, sinkListItem } from '@milkdown/kit/prose/schema-list'
 import { type Command, type EditorState, Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
 import { onCoveredLines } from '../lineSelection'
+import { rowShortcuts } from '../noteKeys'
 import { findNestedList } from './listNodes'
 import { isOutlineItemCollapsed } from './outlineFolding'
 import { blockEscapingLift } from './zoom'
@@ -138,15 +139,15 @@ const backspaceCommand = (itemType: NodeType): Command => (state, dispatch) => {
   return true
 }
 
-/** Keymap plugin; register with `editor.use(outlinerKeymap)`. */
+/** Keymap plugin; register with `editor.use(outlinerKeymap)`. Tab, Enter and Backspace are built in; ⌘] / ⌘[ are the rows' (YAZ-3564 K4). */
 export const outlinerKeymap = $shortcut((ctx: Ctx) => {
   const itemType = listItemSchema.type(ctx)
   const paragraphType = paragraphSchema.type(ctx)
   return {
     Tab: { key: 'Tab', priority: PRIORITY, onRun: () => indentCommand(itemType) },
-    IndentBracket: { key: 'Mod-]', priority: PRIORITY, onRun: () => indentCommand(itemType) },
+    ...rowShortcuts(ctx, 'note.indent', 'IndentBracket', { priority: PRIORITY, onRun: () => indentCommand(itemType) }),
     Outdent: { key: 'Shift-Tab', priority: PRIORITY, onRun: () => outdentCommand(itemType) },
-    OutdentBracket: { key: 'Mod-[', priority: PRIORITY, onRun: () => outdentCommand(itemType) },
+    ...rowShortcuts(ctx, 'note.outdent', 'OutdentBracket', { priority: PRIORITY, onRun: () => outdentCommand(itemType) }),
     Enter: { key: 'Enter', priority: PRIORITY, onRun: () => enterCommand(itemType, paragraphType) },
     Backspace: { key: 'Backspace', priority: PRIORITY, onRun: () => backspaceCommand(itemType) },
   }
