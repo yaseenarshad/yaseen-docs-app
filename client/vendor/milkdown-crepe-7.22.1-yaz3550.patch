@@ -1,0 +1,176 @@
+diff --git a/lib/cjs/feature/block-edit/index.js b/lib/cjs/feature/block-edit/index.js
+--- a/lib/cjs/feature/block-edit/index.js
++++ b/lib/cjs/feature/block-edit/index.js
+@@ -738,7 +738,8 @@ function getGroups(filter, config, ctx) {
+   if (filter) {
+     groups = groups.map((group) => {
+       const items2 = group.items.filter(
+-        (item) => item.label.toLowerCase().includes(filter.toLowerCase())
++        // YAZ-3550: a row also matches by its optional `keywords`.
++        (item) => [item.label, ...(item.keywords || [])].some((word) => word.toLowerCase().includes(filter.toLowerCase()))
+       );
+       return {
+         ...group,
+@@ -992,7 +993,8 @@ class MenuView {
+       content: __privateGet$1(this, _content$1),
+       debounce: 20,
+       shouldShow(view2) {
+-        if (isInCodeBlock(view2.state.selection) || isInList(view2.state.selection))
++        // YAZ-3550: the menu opens in a list item too; only a code block keeps it shut.
++        if (isInCodeBlock(view2.state.selection))
+           return false;
+         const currentText = this.getContent(
+           view2,
+@@ -1194,4 +1196,3 @@ const blockEdit = (editor, config) => {
+ };
+ 
+ exports.blockEdit = blockEdit;
+-//# sourceMappingURL=index.js.map
+diff --git a/lib/cjs/index.js b/lib/cjs/index.js
+--- a/lib/cjs/index.js
++++ b/lib/cjs/index.js
+@@ -2502,7 +2502,8 @@ function getGroups$2(filter, config, ctx) {
+   if (filter) {
+     groups = groups.map((group) => {
+       const items2 = group.items.filter(
+-        (item) => item.label.toLowerCase().includes(filter.toLowerCase())
++        // YAZ-3550: a row also matches by its optional `keywords`.
++        (item) => [item.label, ...(item.keywords || [])].some((word) => word.toLowerCase().includes(filter.toLowerCase()))
+       );
+       return {
+         ...group,
+@@ -2756,7 +2757,8 @@ class MenuView {
+       content: __privateGet$5(this, _content$3),
+       debounce: 20,
+       shouldShow(view2) {
+-        if (isInCodeBlock(view2.state.selection) || isInList(view2.state.selection))
++        // YAZ-3550: the menu opens in a list item too; only a code block keeps it shut.
++        if (isInCodeBlock(view2.state.selection))
+           return false;
+         const currentText = this.getContent(
+           view2,
+@@ -4499,4 +4501,3 @@ exports.CrepeBuilder = CrepeBuilder;
+ exports.CrepeFeature = CrepeFeature;
+ exports.useCrepe = useCrepe;
+ exports.useCrepeFeatures = useCrepeFeatures;
+-//# sourceMappingURL=index.js.map
+diff --git a/lib/esm/feature/block-edit/index.js b/lib/esm/feature/block-edit/index.js
+--- a/lib/esm/feature/block-edit/index.js
++++ b/lib/esm/feature/block-edit/index.js
+@@ -736,7 +736,8 @@ function getGroups(filter, config, ctx) {
+   if (filter) {
+     groups = groups.map((group) => {
+       const items2 = group.items.filter(
+-        (item) => item.label.toLowerCase().includes(filter.toLowerCase())
++        // YAZ-3550: a row also matches by its optional `keywords`.
++        (item) => [item.label, ...(item.keywords || [])].some((word) => word.toLowerCase().includes(filter.toLowerCase()))
+       );
+       return {
+         ...group,
+@@ -990,7 +991,8 @@ class MenuView {
+       content: __privateGet$1(this, _content$1),
+       debounce: 20,
+       shouldShow(view2) {
+-        if (isInCodeBlock(view2.state.selection) || isInList(view2.state.selection))
++        // YAZ-3550: the menu opens in a list item too; only a code block keeps it shut.
++        if (isInCodeBlock(view2.state.selection))
+           return false;
+         const currentText = this.getContent(
+           view2,
+@@ -1192,4 +1194,3 @@ const blockEdit = (editor, config) => {
+ };
+ 
+ export { blockEdit };
+-//# sourceMappingURL=index.js.map
+diff --git a/lib/esm/index.js b/lib/esm/index.js
+--- a/lib/esm/index.js
++++ b/lib/esm/index.js
+@@ -2500,7 +2500,8 @@ function getGroups$2(filter, config, ctx) {
+   if (filter) {
+     groups = groups.map((group) => {
+       const items2 = group.items.filter(
+-        (item) => item.label.toLowerCase().includes(filter.toLowerCase())
++        // YAZ-3550: a row also matches by its optional `keywords`.
++        (item) => [item.label, ...(item.keywords || [])].some((word) => word.toLowerCase().includes(filter.toLowerCase()))
+       );
+       return {
+         ...group,
+@@ -2754,7 +2755,8 @@ class MenuView {
+       content: __privateGet$5(this, _content$3),
+       debounce: 20,
+       shouldShow(view2) {
+-        if (isInCodeBlock(view2.state.selection) || isInList(view2.state.selection))
++        // YAZ-3550: the menu opens in a list item too; only a code block keeps it shut.
++        if (isInCodeBlock(view2.state.selection))
+           return false;
+         const currentText = this.getContent(
+           view2,
+@@ -4493,4 +4495,3 @@ class Crepe extends CrepeBuilder {
+ Crepe.Feature = CrepeFeature;
+ 
+ export { Crepe, CrepeBuilder, CrepeFeature, useCrepe, useCrepeFeatures };
+-//# sourceMappingURL=index.js.map
+diff --git a/lib/types/feature/block-edit/menu/utils.d.ts b/lib/types/feature/block-edit/menu/utils.d.ts
+--- a/lib/types/feature/block-edit/menu/utils.d.ts
++++ b/lib/types/feature/block-edit/menu/utils.d.ts
+@@ -1,5 +1,7 @@
+ export type SlashMenuItem = {
+     label: string;
+     icon: string;
++    /** YAZ-3550: more words the filter matches besides the label. */
++    keywords?: string[];
+ };
+ //# sourceMappingURL=utils.d.ts.map
+\ No newline at end of file
+diff --git a/src/feature/block-edit/menu/config.ts b/src/feature/block-edit/menu/config.ts
+--- a/src/feature/block-edit/menu/config.ts
++++ b/src/feature/block-edit/menu/config.ts
+@@ -364,8 +364,11 @@ export function getGroups(
+   if (filter) {
+     groups = groups
+       .map((group) => {
++        // YAZ-3550: a row also matches by its optional `keywords`.
+         const items = group.items.filter((item) =>
+-          item.label.toLowerCase().includes(filter.toLowerCase())
++          [item.label, ...(item.keywords ?? [])].some((word) =>
++            word.toLowerCase().includes(filter.toLowerCase())
++          )
+         )
+ 
+         return {
+diff --git a/src/feature/block-edit/menu/index.ts b/src/feature/block-edit/menu/index.ts
+--- a/src/feature/block-edit/menu/index.ts
++++ b/src/feature/block-edit/menu/index.ts
+@@ -16,7 +16,7 @@ import { createApp, ref, type App, type Ref } from 'vue'
+ 
+ import type { BlockEditFeatureConfig } from '../index'
+ 
+-import { isInCodeBlock, isInList } from '../../../utils'
++import { isInCodeBlock } from '../../../utils'
+ import { Menu } from './component'
+ 
+ export const menu = slashFactory('CREPE_MENU')
+@@ -76,11 +76,8 @@ class MenuView implements PluginView {
+       content: this.#content,
+       debounce: 20,
+       shouldShow(this: SlashProvider, view: EditorView) {
+-        if (
+-          isInCodeBlock(view.state.selection) ||
+-          isInList(view.state.selection)
+-        )
+-          return false
++        // YAZ-3550: the menu opens in a list item too; only a code block keeps it shut.
++        if (isInCodeBlock(view.state.selection)) return false
+ 
+         const currentText = this.getContent(view, (node) =>
+           ['paragraph', 'heading'].includes(node.type.name)
+diff --git a/src/feature/block-edit/menu/utils.ts b/src/feature/block-edit/menu/utils.ts
+--- a/src/feature/block-edit/menu/utils.ts
++++ b/src/feature/block-edit/menu/utils.ts
+@@ -1,4 +1,6 @@
+ export type SlashMenuItem = {
+   label: string
+   icon: string
++  /** YAZ-3550: more words the filter matches besides the label. */
++  keywords?: string[]
+ }

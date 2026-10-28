@@ -99,6 +99,8 @@ import {
   type StoredTab,
   type TableOfContents,
   type TabSort,
+  type RowDates,
+  SORT_MENU_TABS,
   type Theme,
   type TocLines,
   type TocSource,
@@ -295,8 +297,8 @@ export const isHeadingStyles = (v: unknown): v is HeadingStyles =>
   isRecord(v) && Object.entries(v).every(([key, style]) => (HEADING_KEYS as readonly string[]).includes(key) && isHeadingStyle(style))
 
 /** One tab's sort (YAZ-3227 D1): Files has no manual order. */
-const isTabSort = (v: unknown, manual: boolean): v is TabSort =>
-  isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual'))
+const isTabSort = (v: unknown, manual: boolean, best = false): v is TabSort =>
+  isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual') || (best && v.by === 'best'))
 const isSidebarSort = (v: unknown): v is SidebarSort => isRecord(v) && isTabSort(v.files, false) && isTabSort(v.focus, true) && isTabSort(v.favorites, true)
 
 /** A list of known names, each once (YAZ-3273 D8). */
@@ -404,6 +406,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   hoverPreviewIn: isHoverPreviewIn,
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
   sidebarSort: isSidebarSort,
+  searchSort: (v): v is TabSort => isTabSort(v, false, true),
+  rowDates: (v): v is RowDates => isRecord(v) && SORT_MENU_TABS.every((tab) => typeof v[tab] === 'boolean'),
   sidebarTabs: isSidebarTabs,
   startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
   vaultOpensOn: (v): v is VaultOpensOn => typeof v === 'string' && (VAULT_OPENS_ON as readonly string[]).includes(v),

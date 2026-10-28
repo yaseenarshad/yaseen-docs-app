@@ -12,7 +12,9 @@ import { RenameInline } from './RenameInline'
 import { iconVars } from './materialIcons'
 import { NameEnding } from './FileIcon'
 import { iconsChangedBelow, rowIcon, type RowIcons } from './rowIcons'
-import { sortLevel } from './treeSort'
+import { keepsOrder, shownLabel, sortLevel, timeOf } from './treeSort'
+import { shortRelativeTime } from '../lib/relativeTime'
+import { formatDateTime } from '../lib/format'
 
 /** Inline "New note" / "New folder" input pending inside the tree (GRO-2022). */
 export interface PendingCreate {
@@ -258,8 +260,14 @@ interface TreeProps {
   titles: PathTitles
   /** A tab whose top rows reorder (YAZ-2631 D3): they drag along the list instead of moving on disk. Without it no row reorders. The top level alone gets it, so a drag's line draws no level below again. */
   reorder?: TreeReorder
-  /** The tab's sort (YAZ-3227); absent on the Search tab, whose rows stand by name, A to Z. */
+  /** The tab's sort (YAZ-3227); the Search tab's own since YAZ-3511 (`searchSort`). */
   sort?: TabSort
+  /** Each row but a vault row shows its Last updated at the right end (YAZ-3511 D6): the tab's own switch (D10). */
+  dates?: boolean
+  /** Search under Best match (YAZ-3511 D12): the score of each row, lower first (`sortLevel`). */
+  scores?: ReadonlyMap<string, number>
+  /** The top rows keep the order they came in, whatever the sort (YAZ-3511): the search's pinned items, focus before favorites (YAZ-2662 D3). The top level's alone. */
+  keepTop?: boolean
   /**
    * Search only (🔒 D5, YAZ-2620): the matched rows and the typed text, lowercased. A row in `hits`
    * shows that text marked in its label; a row outside it — a parent of a match, or a row inside a
@@ -325,6 +333,9 @@ function TreeLevel({
   titles,
   reorder,
   sort,
+  dates,
+  scores,
+  keepTop,
   marks,
   onLeaveToPage,
   top,
@@ -334,7 +345,7 @@ function TreeLevel({
   icons,
   depth = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort }
+  const recurse = { vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
@@ -344,10 +355,10 @@ function TreeLevel({
           },
           onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
   // This folder's shortcuts stand among its FILES (YAZ-2290), and the tab's sort orders the level (YAZ-3227 D7).
-  // The top rows of a Manual list, and the vault rows, keep their own order; with no sort (Search) a level stands as it came.
+  // The top rows of a Manual list, the vault rows and the search's pinned items keep their own order; with no sort a level stands as it came.
   const here = shortcuts.get(dirPath)
-  const keep = sort === undefined ? here === undefined : depth === 0 && (copies ? sort.by === 'manual' : vaultRows.size > 0)
-  const rows = keep ? nodes : sortLevel(here === undefined ? nodes : [...nodes, ...here], sort, (node) => pageLabel(node.path, node.type === 'dir', titles))
+  const keep = sort === undefined ? here === undefined : keepsOrder(depth, sort, { keepTop, copies, vaults: vaultRows.size > 0 })
+  const rows = keep ? nodes : sortLevel(here === undefined ? nodes : [...nodes, ...here], sort, shownLabel(titles), scores)
   const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
   // The top row a row stands under (YAZ-2845 D1): a top row is its own. It tells the copies of a row
   // that shows twice apart, and a right-click hands it to the menu, so an input mounts in that copy alone.
@@ -513,6 +524,7 @@ function TreeLevel({
                   {vaultRows.has(node.path) ? node.name : marked(pageLabel(node.path, true, titles), needleFor(node.path))}
                 </span>
                 {vaultTag(node.path)}
+                {dates === true && !vaultRows.has(node.path) && <RowDate node={node} />}
               </button>
             )}
             {expanded.has(foldOf(node)) && <Tree nodes={node.children} dirPath={node.path} depth={depth + 1} top={topOf(node)} {...recurse} />}
@@ -603,6 +615,7 @@ function TreeLevel({
               <ShareMark badge={shareBadges?.get(node.path)} />
               {isShortcutRow(node) && <ShortcutIcon />}
               {vaultTag(node.path)}
+              {dates === true && <RowDate node={node} />}
             </button>
           </li>
         ),
@@ -655,3 +668,10 @@ function sameLevel(prev: TreeProps, next: TreeProps): boolean {
 }
 
 export const Tree = memo(TreeLevel, sameLevel)
+
+/** A row's Last updated (YAZ-3511 D5): "3h", "2d", "5mo", the full date and time on hover. A folder's is its newest row in this tree (D6); an empty one shows none. */
+function RowDate({ node }: { node: TreeNode }) {
+  const time = timeOf(node)
+  // The full date and time is `RowDateTip`'s (YAZ-3511 D25), sooner than a `title`; the label says it to a screen reader.
+  return time > 0 ? <span className="tree__date" data-full={formatDateTime(time)} aria-label={formatDateTime(time)}>{shortRelativeTime(time, Date.now())}</span> : null
+}

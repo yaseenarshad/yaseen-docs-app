@@ -41,7 +41,7 @@ const TREES = new Map([
 const ROOTS = ['/v', '/w']
 const props = { trees: TREES, roots: ROOTS, titles: new Map([['/v/a.md', 'Alpha page']]), activeFile: null as string | null, onOpenFile: vi.fn(), onKeepFile: vi.fn(), onOpenFileBackground: vi.fn(), onMenu: vi.fn() }
 
-async function mount(app: AppState, extra: Partial<typeof props> = {}) {
+async function mount(app: AppState, extra: Partial<Parameters<typeof RecentList>[0]> = {}) {
   b = installBridge(app)
   await storage.init()
   el = document.createElement('div')
@@ -123,6 +123,17 @@ describe('RecentList (YAZ-3235 D3 to D7)', () => {
     expect(days()[0].querySelector('.tree__chevron--open')).toBeNull()
     expect(rows().map((r) => r.title)).toEqual(['/v/b.md'])
     act(() => days()[0].click())
+    expect(rows().map((r) => r.title)).toEqual(['/v/a.md', '/v/b.md'])
+  })
+
+  it('YAZ-3511 D19, edge case 68: the list reports its fold, and the expand-all button closes and opens every day', async () => {
+    const onFold = vi.fn()
+    await mount(stateWith({ '/v': { '/v/a.md': at(2026, 10, 23, 9), '/v/b.md': at(2026, 10, 22, 18) } }), { onFold })
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: true, any: true })
+    act(() => onFold.mock.lastCall?.[0].setAll(false))
+    expect(days().map((d) => d.getAttribute('aria-expanded'))).toEqual(['false', 'false'])
+    expect(rows()).toEqual([])
+    act(() => onFold.mock.lastCall?.[0].setAll(true))
     expect(rows().map((r) => r.title)).toEqual(['/v/a.md', '/v/b.md'])
   })
 

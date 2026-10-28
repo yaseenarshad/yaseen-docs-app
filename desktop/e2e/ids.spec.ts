@@ -53,7 +53,8 @@ const field = (w: Page) => confirmSheet(w).locator('.confirm__input')
 const sheetButton = (w: Page, label: string) => confirmSheet(w).locator('.confirm__btn', { hasText: new RegExp(`^${label}$`) })
 const inline = (w: Page) => w.locator('.create-inline__input')
 /** A search result is a row of the search tree (YAZ-2620). */
-const results = (w: Page) => w.locator('.sidebar__body .tree__row--file')
+// The labels alone: a search row also ends with its Last updated (YAZ-3511 D5).
+const results = (w: Page) => w.locator('.sidebar__body .tree__row--file .tree__label')
 const linkIn = (w: Page, text: string) => editorOf(w).locator('.wikilink', { hasText: text }).first()
 
 const read = (p: string) => readFile(p, 'utf8').catch(() => '')

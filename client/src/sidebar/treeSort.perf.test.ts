@@ -2,7 +2,11 @@
 import { describe, expect, it } from 'vitest'
 import type { TabSort, TreeNode, TreeResponse } from '@shared/types'
 import { pageLabel } from '../lib/pageLabel'
-import { sortLevel, withMtime } from './treeSort'
+import { bestScores } from '../search/bestMatch'
+import { fileCandidates, searchRows } from '../search/searchCandidates'
+import { filterTest, timesByPath, timeStart } from '../search/searchFilter'
+import { searchTree } from '../search/searchTree'
+import { sortLevel, timeOf, withMtime } from './treeSort'
 import { timeMedian } from '../test-perf'
 
 // 100 folders × 10 subfolders × 10 notes = 10,000 notes, each with its own time; plus a level of 108 rows, the largest one a real vault has.
@@ -59,5 +63,85 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     const { median: each, worst } = timeMedian(100, (i) => (trees = withMtime(trees, '/v', `/v/Folder ${i}/Sub 9/Note 9.md`, 20_000 + i)))
     console.log(`withMtime 10k: median ${(each * 1000).toFixed(0)} µs per save, worst ${(worst * 1000).toFixed(0)} µs of 100`)
     expect(each).toBeLessThan(1)
+  })
+
+  it('a keystroke on Search (YAZ-3511): 50 matches cut from 10,000 notes, sorted by Last updated, each row\'s date, in under 2 ms', () => {
+    const nodes = tree()
+    // 50 matches spread over the vault, a new set each run: each keystroke cuts a new tree, so no folder time is warm.
+    const hitsOf = (run: number) => new Set(Array.from({ length: 50 }, (_, i) => `/v/Folder ${(i * 2 + run) % 100}/Sub ${i % 10}/Note ${(i + run) % 10}.md`))
+    const keystroke = (run: number) => {
+      const cut = searchTree(nodes, hitsOf(run), new Set())
+      let dated = 0
+      const draw = (level: readonly TreeNode[]): void => {
+        for (const node of sortLevel(level, UPDATED, label)) {
+          if (timeOf(node) > 0) dated += 1
+          if (node.type === 'dir') draw(node.children)
+        }
+      }
+      draw(cut.nodes)
+      return dated
+    }
+    expect(keystroke(0)).toBeGreaterThanOrEqual(50)
+    const { median, worst } = timeMedian(100, keystroke)
+    console.log(`search keystroke, 50 of 10k by Last updated: median ${(median * 1000).toFixed(0)} µs, worst ${(worst * 1000).toFixed(0)} µs of 100`)
+    expect(median).toBeLessThan(2)
+  })
+
+  it('a keystroke on Search under Best match (YAZ-3511 D12): 50 matches cut from 10,000 notes, each folder scored by its best match, in under 2 ms', () => {
+    const nodes = tree()
+    const BEST: TabSort = { by: 'best', reverse: false }
+    const resultsOf = (run: number) => fileCandidates('/v', Array.from({ length: 50 }, (_, i) => `/v/Folder ${(i * 2 + run) % 100}/Sub ${i % 10}/Note ${(i + run) % 10}.md`))
+    const keystroke = (run: number) => {
+      const results = resultsOf(run)
+      const cut = searchTree(nodes, new Set(results.map((r) => r.path)), new Set())
+      const scores = bestScores(results, 'note', cut.nodes, cut.open)
+      let rows = 0
+      const draw = (level: readonly TreeNode[]): void => {
+        for (const node of sortLevel(level, BEST, label, scores)) {
+          rows += 1
+          if (node.type === 'dir') draw(node.children)
+        }
+      }
+      draw(cut.nodes)
+      return rows
+    }
+    expect(keystroke(0)).toBeGreaterThanOrEqual(50)
+    const { median, worst } = timeMedian(100, keystroke)
+    console.log(`search keystroke, 50 of 10k by Best match: median ${(median * 1000).toFixed(0)} µs, worst ${(worst * 1000).toFixed(0)} µs of 100`)
+    expect(median).toBeLessThan(2)
+  })
+
+  // 10,000 candidates, a third of them PDFs, with each row's time (a filter's whole input, D16).
+  const filtered = () => {
+    const nodes = tree()
+    const paths: string[] = []
+    const collect = (level: readonly TreeNode[]): void => {
+      for (const node of level) (node.type === 'dir' ? collect(node.children) : paths.push(node.path.replace(/(Note [0-2])\.md$/, '$1.pdf')))
+    }
+    collect(nodes)
+    return { nodes, candidates: fileCandidates('/v', paths) }
+  }
+
+  it('a keystroke with a filter on (YAZ-3511 D16): the ranking reads the kept rows only, in under 2 ms', () => {
+    const { candidates } = filtered()
+    const kept = candidates.filter(filterTest({ type: 'pdfs', time: 'any' }, () => 0, undefined)!)
+    expect(kept.length).toBe(3000)
+    const queries = ['n', 'no', 'not', 'note', 'note 1', 'note 2']
+    const { median, worst } = timeMedian(60, (i) => searchRows(kept, queries[i % queries.length]).length)
+    console.log(`search keystroke with PDFs on, 3k of 10k kept: median ${(median * 1000).toFixed(0)} µs, worst ${(worst * 1000).toFixed(0)} µs of 60`)
+    expect(median).toBeLessThan(2)
+  })
+
+  it('a filter pick (YAZ-3511 D16): each row\'s time over 11,100 rows and the filter over 10,000 candidates, once per pick, not per keystroke', () => {
+    const { candidates } = filtered()
+    const now = Date.now()
+    const pick = () => {
+      const times = timesByPath(tree())
+      return candidates.filter(filterTest({ type: 'markdown', time: 'year' }, (path) => times.get(path) ?? 0, timeStart('year', now))!).length
+    }
+    expect(pick()).toBe(0) // the fixture's times are from 1970
+    const { median, worst } = timeMedian(20, pick)
+    console.log(`filter pick, 10k candidates: median ${median.toFixed(2)} ms, worst ${worst.toFixed(2)} ms of 20`)
+    expect(median).toBeLessThan(16) // one frame, once per pick or per save while a time range is on
   })
 })

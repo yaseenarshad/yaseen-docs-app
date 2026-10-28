@@ -102,6 +102,17 @@ describe('SessionList (YAZ-3147 D6)', () => {
     expect(tabRows()).toEqual([])
   })
 
+  it('YAZ-3511 D19, edge case 68: the list reports its fold, and the expand-all button opens and closes every row', async () => {
+    const onFold = vi.fn()
+    await mount([WORK, SOLO], { onFold })
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: false, any: true })
+    act(() => onFold.mock.lastCall?.[0].setAll(true))
+    expect(rows().map((r) => r.getAttribute('aria-expanded'))).toEqual(['true', 'true'])
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: true })
+    act(() => onFold.mock.lastCall?.[0].setAll(false))
+    expect(rows().map((r) => r.getAttribute('aria-expanded'))).toEqual(['false', 'false'])
+  })
+
   it('a board tab row has no icon, so it always names its kind: its extension shows after the name; a display name and a note get none (YAZ-3536 D4)', async () => {
     const BOARDS: Session = { id: 's3', name: 'Boards', tabs: [{ path: '/v/Flow.drawio' }, { path: '/v/Map.excalidraw', name: 'Roadmap' }, { path: '/v/c.md' }], roots: ['/v'], lastUsed: 30 }
     await mount([BOARDS])
