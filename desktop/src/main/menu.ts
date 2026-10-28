@@ -19,6 +19,10 @@ export const HELP_URL = 'https://github.com/yaseenarshad/yaseen-docs-app#readme'
 export interface MenuHandlers {
   copyAs(mode: 'plain' | 'markdown'): void
   pasteAs(mode: ClipboardPasteRequest['mode']): void
+  /** File › New… (⌘N, YAZ-3556 D1): the focused window's renderer opens its New… box. */
+  newItem(): void
+  /** File › Go to Your Place (⌘D, YAZ-3556 D1): the focused window's renderer shows the place of `settings.goTo`. */
+  goTo(): void
   /** File › New Tab (⌘T, YAZ-2655 D10): the focused window's renderer shows its blank tab and puts the caret in its search bar. */
   newTab(): void
   /** File › New Window (⌘⇧N, D6): the focused window calls `window:duplicate` — a window on its vaults with no tab (YAZ-3343 D35). */
@@ -169,6 +173,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
       submenu: [
         // ⌘T is New Tab (YAZ-2655 D10): the renderer owns the tabs, so the gesture goes to the focused window's renderer.
         { id: 'menu.file.new-tab', label: 'New Tab', ...key('newTab'), click: () => handlers.newTab() },
+        // ⌘N, right under New Tab, opens the New… box (YAZ-3556 D1): a menu key, so it works with the caret in a note too.
+        { id: 'menu.file.new-item', label: 'New…', ...key('newItem'), click: () => handlers.newItem() },
         { id: 'menu.file.new-window', label: 'New Window', ...key('newWindow'), click: () => handlers.newWindow() },
         // ⌘⇧W (YAZ-3357 D15, Yaseen: "can we change the hotkey for this to CMD SHIFT W? and remove whatever the hotkey for that is right now?"): Close Window gave it up.
         { id: 'menu.file.new-files-window', label: 'New Files Window', ...key('newFilesWindow'), click: () => handlers.newFilesWindow() },
@@ -182,6 +188,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
         // ⌘K focuses the sidebar's search bar (D4, YAZ-739 amended): the renderer owns the bar,
         // so the gesture goes to the focused window's renderer — un-collapsing the sidebar first.
         { id: 'menu.file.search', label: 'Search Vault', ...key('search'), click: () => handlers.search() },
+        // ⌘D (YAZ-3556 D1, D9): the place of Settings › Sidebar › Go to. It steps aside on a drawing, a diagram and code (YAZ-3564 K9).
+        { id: 'menu.file.go-to', label: 'Go to Your Place', ...key('goTo'), click: () => handlers.goTo() },
         { type: 'separator' },
         // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D3 / D10, YAZ-1799): greyed out unless
         // the active tab is a board they work for. Export Image… and Share Link work on any board, Export
@@ -413,6 +421,12 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
       const target = host.focusedWebContents()
       if (target !== undefined) target.send(SPECIAL.menuPasteAs, { mode, text: host.readClipboardText() } satisfies ClipboardPasteRequest)
     },
+    newItem() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onNewItem.channel)
+    },
+    goTo() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onGoTo.channel)
+    },
     newWindow() {
       // Through the focused window, which calls `window:duplicate` (YAZ-3343 D35): main names the caller from the
       // sender. A window whose page does not answer opens nothing (YAZ-2951 S14).
@@ -537,13 +551,14 @@ export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => v
 /**
  * The menu's apply step, twice (YAZ-3044 A32): `apply` always rebuilds (a recents change, the first
  * build); `applyIfMoved` rebuilds only when the board items' answer moves — the file in front of the
- * asked window going between a drawing, a diagram and anything else. A focus change or a tab switch
+ * asked window going between a drawing, a diagram, code and anything else. A focus change or a tab switch
  * from note to note then costs one `fileKind`, not a whole new menu.
  */
 export function gateOnBoardKind(kindNow: () => FileKind | null, apply: () => void): { apply: () => void; applyIfMoved: () => void } {
-  const bucket = (): 'drawing' | 'diagram' | 'other' => {
+  // A code tab is a bucket of its own (YAZ-3556): the App keys that step aside in code (YAZ-3564 K9) change with it.
+  const bucket = (): 'drawing' | 'diagram' | 'code' | 'other' => {
     const kind = kindNow()
-    return kind === 'drawing' || kind === 'diagram' ? kind : 'other'
+    return kind === 'drawing' || kind === 'diagram' ? kind : kind === 'text' ? 'code' : 'other'
   }
   let last: ReturnType<typeof bucket> | null = null
   const always = (): void => {

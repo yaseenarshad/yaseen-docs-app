@@ -131,7 +131,7 @@ const GENERAL_ROWS = ['settingsFolder', 'startupWindows', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
 const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'diagramDarkColors']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
-const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules']
+const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
 const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tocOnByDefault', 'tableOfContents', 'tocLines']
@@ -213,7 +213,7 @@ describe('SettingsDialog shell (D1)', () => {
   it('Settings › Sidebar shows a colour row per kind with the Line set, while its icons have colour; Material, Grey and Off show none (YAZ-3440 D4)', () => {
     const colourRows = ['note', 'text', 'pdf', 'image', 'drawing', 'diagram'].map((kind) => `sidebarIconColors.${kind}`)
     const { el } = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconSet: 'line' })
-    expect(rowIds(el)).toEqual([...SIDEBAR_ROWS.slice(0, -1), ...colourRows, 'sidebarIconRules'])
+    expect(rowIds(el)).toEqual([...SIDEBAR_ROWS.slice(0, -2), ...colourRows, 'sidebarIconRules', 'goTo'])
     for (const files of ['grey', 'off'] as const) {
       act(() => root?.unmount())
       container?.remove()
@@ -340,9 +340,9 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(el.querySelector('#settings-appearance .settings-group')).not.toBeNull()
     expect(el.querySelector('#settings-appearance .settings-group')?.querySelector('.settings-group__title')).toBeNull()
 
-    // Sidebar (YAZ-3440 D7): its four groups; the Icon rules are a setting, so they need no vault (D9).
+    // Sidebar (YAZ-3440 D7): its four groups; the Icon rules are a setting, so they need no vault (D9). Go to is ⌘D's place (YAZ-3556 D8).
     clickNav(el, 'Sidebar')
-    expect(groupTitles(el)).toEqual(['Level lines', 'Folders', 'File icons', 'Icon rules'])
+    expect(groupTitles(el)).toEqual(['Level lines', 'Folders', 'File icons', 'Icon rules', 'Go to'])
     expect(hints()).toEqual([])
 
     clickNav(el, 'Editor')

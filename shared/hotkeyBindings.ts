@@ -18,6 +18,8 @@ export type HotkeyId =
   | 'newTab'
   | 'newWindow'
   | 'newFilesWindow'
+  | 'newItem'
+  | 'goTo'
   | 'closeTab'
   | 'closeWindow'
   | 'switchVault'
@@ -53,6 +55,10 @@ export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
   { id: 'newTab', label: 'New tab', key: 'CmdOrCtrl+T', macStandard: true },
   { id: 'newWindow', label: 'New window', hint: 'On the same vaults', key: 'CmdOrCtrl+Shift+N', macStandard: true },
   { id: 'newFilesWindow', label: 'New Files window', hint: 'The sidebar on its own, beside your windows', key: 'CmdOrCtrl+Shift+W' },
+  // YAZ-3556 D1: the New… box (⌘N, the Mac's own New) and the jump to the place set in Settings › Sidebar (⌘D). Drawings,
+  // diagrams and code keep their own ⌘D (Duplicate, Add next match) by default (YAZ-3564 K9).
+  { id: 'newItem', label: 'New note, drawing or diagram…', hint: 'Pick the kind and the folder, then name it in the sidebar', key: 'CmdOrCtrl+N', macStandard: true },
+  { id: 'goTo', label: 'Go to your place', hint: 'The tab, folder or file set in Settings › Sidebar › Go to', key: 'CmdOrCtrl+D', stepsAsideIn: ['drawing', 'diagram', 'code'] },
   { id: 'closeTab', label: 'Close tab', hint: 'On the last tab it empties the window, then closes it', key: 'CmdOrCtrl+W', macStandard: true },
   { id: 'closeWindow', label: 'Close window', key: null },
   { id: 'switchVault', label: 'Switch vault', hint: 'Type to filter, ⏎ brings it to the front or opens a new window, ⇧⏎ opens it in this window', key: 'CmdOrCtrl+O', macStandard: true },

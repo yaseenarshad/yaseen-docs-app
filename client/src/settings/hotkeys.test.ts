@@ -34,6 +34,8 @@ describe('HOTKEYS source of truth', () => {
       ['newTab', '⌘T'],
       ['newWindow', '⌘⇧N'],
       ['newFilesWindow', '⌘⇧W'],
+      ['newItem', '⌘N'],
+      ['goTo', '⌘D'],
       ['closeTab', '⌘W'],
       ['closeWindow', ''],
       ['switchVault', '⌘O'],
@@ -46,7 +48,7 @@ describe('HOTKEYS source of truth', () => {
       ['nextTab', '⌃Tab'],
       ['prevTab', '⌃⇧Tab'],
     ])
-    expect(HOTKEY_COMMANDS.filter((c) => c.macStandard === true).map((c) => c.id)).toEqual(['newTab', 'newWindow', 'closeTab', 'switchVault', 'settings'])
+    expect(HOTKEY_COMMANDS.filter((c) => c.macStandard === true).map((c) => c.id)).toEqual(['newTab', 'newWindow', 'newItem', 'closeTab', 'switchVault', 'settings'])
     for (const command of HOTKEY_COMMANDS) if (command.key !== null) expect(keys, command.id).not.toContain(toDisplay(command.key))
     for (const expected of ['⌘1 … ⌘9', '⌘X / ⌘C', '⌘V', '⌘⇧] / ⌘⇧[']) expect(keys).toContain(expected)
     expect(keys).not.toContain('⌥ Open Recent')

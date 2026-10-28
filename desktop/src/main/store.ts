@@ -74,6 +74,7 @@ import {
   type ContentWidth,
   type FolderPatch,
   type FolderState,
+  type GoToPlace,
   type HeadingStyles,
   type HoverPlace,
   type NewNoteLocation,
@@ -408,6 +409,18 @@ export function sanitizeOutlineHidden(raw: unknown): CodeSymbolKind[] {
   return [...new Set(raw.filter((k): k is CodeSymbolKind => typeof k === 'string' && (CODE_SYMBOL_KINDS as readonly string[]).includes(k)))]
 }
 
+/**
+ * ⌘D's place (YAZ-3556 D2), strict: a known tab, or a folder or a file by a root-relative path ('' only for the vault root,
+ * a folder). Only the keys of its kind: a value with extra keys does not read, so a merge by part can never mix two places.
+ */
+export const isGoToPlace = (v: unknown): v is GoToPlace => {
+  if (!isRecord(v)) return false
+  const keys = Object.keys(v).sort().join()
+  if (v.kind === 'tab') return keys === 'kind,tab' && isSidebarLens(v.tab)
+  if (v.kind !== 'folder' && v.kind !== 'file') return false
+  return keys === 'kind,path' && typeof v.path === 'string' && isValidNewNoteFolder(v.path) && (v.kind === 'folder' || v.path !== '')
+}
+
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
 const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is SettingsState[K] } = {
   lineSpacing: isFiniteNumber,
@@ -471,6 +484,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   codeOutlineHidden: isOutlineHidden,
   codeOutlineLocals: (v): v is boolean => typeof v === 'boolean',
   codeLanguageHelpers: (v): v is boolean => typeof v === 'boolean',
+  goTo: isGoToPlace,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -502,7 +516,8 @@ export function sanitizeSettings(raw: unknown): SettingsState {
 
 /** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
 // The icon colours too (YAZ-3440 D4): a colour another Mac reset to its default is a key gone, which a merge by part would bring back.
-const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors']
+// ⌘D's place too (YAZ-3556 D2): a tab and a folder have other parts, and a merge by part would mix them.
+const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors', 'goTo']
 
 /**
  * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,
