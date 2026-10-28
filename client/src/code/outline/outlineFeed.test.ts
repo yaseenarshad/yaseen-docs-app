@@ -47,6 +47,32 @@ describe('attachOutlineFeed', () => {
     feed.dispose()
   })
 
+  it('YAZ-3507: names inside functions are left out where the tree is built; setLocals reads again with the choice', async () => {
+    const method = (name: string, line: number, kids: CodeSymbol[]): CodeSymbol => ({ ...sym(name, line), kind: 5, range: { startLineNumber: line, startColumn: 1, endLineNumber: line + 3, endColumn: 2 }, children: kids })
+    const local = (name: string, line: number): CodeSymbol => ({ ...sym(name, line), kind: 12 })
+    const read = vi.fn(async () => [method('step1', 1, [local('n', 2)])])
+    const feed = attachOutlineFeed(editor as never, model as never, read)
+    await flush()
+    expect(read).toHaveBeenLastCalledWith(editor, model, false)
+    expect(feed.getState().tree!.name).toEqual(['step1'])
+    expect(feed.getState().tree!.localsLeftOut).toBe(1)
+    feed.setLocals(true)
+    await flush()
+    expect(read).toHaveBeenLastCalledWith(editor, model, true)
+    expect(feed.getState().tree!.name).toEqual(['step1', 'n'])
+    // The same choice again reads nothing; while Off, the change waits for the switch-on.
+    feed.setLocals(true)
+    feed.setActive(false)
+    feed.setLocals(false)
+    await flush()
+    expect(read).toHaveBeenCalledTimes(2)
+    feed.setActive(true)
+    await flush()
+    expect(read).toHaveBeenCalledTimes(3)
+    expect(feed.getState().tree!.name).toEqual(['step1'])
+    feed.dispose()
+  })
+
   it('YAZ-3501: a tree the TS worker built is taken as it is; an empty tree is a file with no symbol', async () => {
     const built = buildTree([sym('a', 1), sym('b', 2)])
     const answers = [built, buildTree([])]

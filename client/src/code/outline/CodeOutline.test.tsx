@@ -8,7 +8,7 @@
  * Outline beside it. jsdom lays nothing out, so the section is given the width a test wants.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, useRef } from 'react'
+import { act, Profiler, useRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { TOC_DEFAULT_W, type CodeOutlineSort, type CodeSymbolKind, type TableOfContents as TableOfContentsMode } from '@shared/types'
 import { FakeEditor, FakeModel } from '../monacoTestKit'
@@ -40,11 +40,17 @@ const SYMBOLS: CodeSymbol[] = [
   },
 ]
 
-/** A feed the test fills, as `outlineFeed.ts` would. */
+/** A feed the test fills, as `outlineFeed.ts` would: `setLocals` builds the tree again, with or without the names inside functions. */
 function testFeed(symbols: readonly CodeSymbol[] | null, markers: MarkerLike[] = []) {
-  let snapshot: OutlineSnapshot = { tree: symbols === null ? null : buildTree(symbols), markers }
+  let snapshot: OutlineSnapshot = { tree: symbols === null ? null : buildTree(symbols, true), markers }
   const listeners = new Set<() => void>()
-  const feed: OutlineFeed & { set(next: Partial<OutlineSnapshot>): void } = {
+  const feed: OutlineFeed & { set(next: Partial<OutlineSnapshot>): void; locals: boolean[] } = {
+    locals: [],
+    setLocals(show) {
+      feed.locals.push(show)
+      snapshot = { ...snapshot, tree: symbols === null ? null : buildTree(symbols, show) }
+      listeners.forEach((l) => l())
+    },
     getState: () => snapshot,
     subscribe(listener) {
       listeners.add(listener)
@@ -67,13 +73,19 @@ interface Mounted {
   onChangeView: ReturnType<typeof vi.fn>
   onChangeMode: ReturnType<typeof vi.fn>
   onReturnFocus: ReturnType<typeof vi.fn>
-  render(props?: Partial<{ mode: TableOfContentsMode; sort: CodeOutlineSort; hidden: CodeSymbolKind[] }>): void
+  render(props?: Partial<{ mode: TableOfContentsMode; sort: CodeOutlineSort; hidden: CodeSymbolKind[]; locals: boolean }>): void
 }
 
 let root: Root | null = null
 let host: HTMLElement | null = null
+/** One entry per React commit of the Outline (a `Profiler` around it). */
+const commits: number[] = []
 
-function mount(opts: { width?: number; mode?: TableOfContentsMode; symbols?: readonly CodeSymbol[] | null; markers?: MarkerLike[]; text?: string } = {}): Mounted {
+/**
+ * `locals` is "…" › Show › "Variables inside functions" (YAZ-3507). The scenarios of YAZ-3486 ran with every
+ * symbol a row, so they keep it on; the YAZ-3507 suite mounts with it off, the app's default.
+ */
+function mount(opts: { width?: number; mode?: TableOfContentsMode; symbols?: readonly CodeSymbol[] | null; markers?: MarkerLike[]; text?: string; locals?: boolean } = {}): Mounted {
   host = document.createElement('div')
   document.body.appendChild(host)
   const section = document.createElement('section')
@@ -88,16 +100,19 @@ function mount(opts: { width?: number; mode?: TableOfContentsMode; symbols?: rea
   const model = new FakeModel(opts.text ?? TEXT, { scheme: 'code-tab', authority: 't1', path: '/vault/long-class-for-folding.ts', fsPath: '/vault/long-class-for-folding.ts', toString: () => 'code-tab://t1/vault/long-class-for-folding.ts' })
   const editor = new FakeEditor(editorMount, { model })
   const feed = testFeed(opts.symbols === undefined ? SYMBOLS : opts.symbols, opts.markers)
+  commits.length = 0
   const onChangeView = vi.fn()
   const onChangeMode = vi.fn()
   const onReturnFocus = vi.fn(() => editor.focus())
-  let props = { mode: opts.mode ?? ('auto' as TableOfContentsMode), sort: 'position' as CodeOutlineSort, hidden: [] as CodeSymbolKind[] }
+  let props = { mode: opts.mode ?? ('auto' as TableOfContentsMode), sort: 'position' as CodeOutlineSort, hidden: [] as CodeSymbolKind[], locals: opts.locals ?? true }
   function Host() {
     const hostRef = useRef<HTMLDivElement>(null)
     return (
       <div className="code-editor">
         <div className="code-editor__monaco" ref={hostRef} />
-        <CodeOutline feed={feed} editor={editor} lineHeight={() => 19} mode={props.mode} onChangeMode={onChangeMode} width={TOC_DEFAULT_W} onChangeWidth={() => undefined} sort={props.sort} hidden={props.hidden} onChangeView={onChangeView} hostRef={hostRef} onReturnFocus={onReturnFocus} />
+        <Profiler id="outline" onRender={() => void commits.push(1)}>
+        <CodeOutline feed={feed} editor={editor} lineHeight={() => 19} mode={props.mode} onChangeMode={onChangeMode} width={TOC_DEFAULT_W} onChangeWidth={() => undefined} sort={props.sort} hidden={props.hidden} locals={props.locals} onChangeView={onChangeView} hostRef={hostRef} onReturnFocus={onReturnFocus} />
+        </Profiler>
       </div>
     )
   }
@@ -257,8 +272,8 @@ describe('S4 and S5: the "…" menu, remembered app-wide', () => {
     const m = mount()
     click(document.querySelector('button[aria-label="More actions"]')!)
     click(menuItem('Show'))
-    // Only the kinds this file has: a class, methods, variables.
-    expect([...document.querySelectorAll('.ctx-menu__sub .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Classes', 'Methods', 'Variables'])
+    // Only the kinds this file has: a class, methods, variables; then the names inside functions (on here).
+    expect([...document.querySelectorAll('.ctx-menu__sub .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Classes', 'Methods', 'Variables', 'Variables inside functions'])
     click(menuItem('Variables'))
     expect(m.onChangeView).toHaveBeenLastCalledWith({ codeOutlineHidden: ['variable'] })
     m.render({ hidden: ['variable'] })
@@ -278,6 +293,37 @@ describe('S4 and S5: the "…" menu, remembered app-wide', () => {
     click(document.querySelector('button[aria-label="More actions"]')!)
     click(menuItem('Expand all'))
     expect(rowNames().slice(0, 3)).toEqual(['Pipeline', 'step1', 'value1'])
+  })
+})
+
+describe('YAZ-3507: names inside functions', () => {
+  it('are not rows by default; "…" › Show › "Variables inside functions" writes the setting, and the rows come back', () => {
+    const m = mount({ locals: false })
+    expect(m.feed.locals).toEqual([false])
+    expect(rowNames().slice(0, 3)).toEqual(['Pipeline', 'step1', 'step2'])
+    expect(rowNames().some((n) => n.startsWith('value'))).toBe(false)
+    click(document.querySelector('button[aria-label="More actions"]')!)
+    click(menuItem('Show'))
+    // No Variables kind is left in the tree: only the class, the methods, and the row that brings the names back.
+    expect([...document.querySelectorAll('.ctx-menu__sub .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Classes', 'Methods', 'Variables inside functions'])
+    expect(menuItem('Variables inside functions').querySelector('path')).toBeNull()
+    click(menuItem('Variables inside functions'))
+    expect(m.onChangeView).toHaveBeenLastCalledWith({ codeOutlineLocals: true })
+    m.render({ locals: true })
+    expect(m.feed.locals).toEqual([false, true])
+    expect(rowNames().slice(0, 3)).toEqual(['Pipeline', 'step1', 'value1'])
+    click(document.querySelector('button[aria-label="More actions"]')!)
+    click(menuItem('Show'))
+    expect(menuItem('Variables inside functions').querySelector('path')).not.toBeNull()
+    click(menuItem('Variables inside functions'))
+    expect(m.onChangeView).toHaveBeenLastCalledWith({ codeOutlineLocals: false })
+  })
+
+  it('a file with no name inside a function does not offer the row', () => {
+    mount({ locals: false, symbols: [{ name: 'make', kind: 11, range: range(1, 3), selectionRange: range(1, 1, 17, 21) }, { name: 'LIMIT', kind: VARIABLE, range: range(4, 4), selectionRange: range(4, 4, 14, 19) }] })
+    click(document.querySelector('button[aria-label="More actions"]')!)
+    click(menuItem('Show'))
+    expect([...document.querySelectorAll('.ctx-menu__sub .ctx-menu__item')].map((b) => b.textContent)).toEqual(['Functions', 'Variables'])
   })
 })
 
@@ -313,6 +359,19 @@ describe('S7: follow the cursor', () => {
     // The accent marker rides the hairline to it.
     const marker = document.querySelector<HTMLElement>('.toc__marker')!
     expect(marker.style.transform).toBe(`translateY(${rowNames().indexOf('step7') * ROW_H}px)`)
+  })
+
+  it('a key typed inside one symbol (the column moves) renders nothing; a move into another symbol renders once', () => {
+    const m = mount()
+    const at = line('    const value3 = 2')
+    act(() => m.editor.setPosition({ lineNumber: at, column: 5 }))
+    expect(current()).toBe('value3')
+    const before = commits.length
+    for (let column = 6; column < 16; column++) act(() => m.editor.setPosition({ lineNumber: at, column }))
+    expect(commits.length).toBe(before)
+    act(() => m.editor.setPosition({ lineNumber: line('    const value4 = 3'), column: 5 }))
+    expect(current()).toBe('value4')
+    expect(commits.length).toBe(before + 1)
   })
 
   it('a current row inside a collapsed parent: the parent is current', () => {

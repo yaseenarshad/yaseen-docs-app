@@ -176,10 +176,12 @@ interface EditorProps {
   codeReadOnly?: boolean
   codeWrap?: boolean
   codeMinimap?: boolean
-  onChangeCodeSettings?: (patch: Partial<Pick<SettingsState, 'codeReadOnly' | 'codeWrap' | 'codeMinimap' | 'codeOutlineSort' | 'codeOutlineHidden'>>) => void
+  onChangeCodeSettings?: (patch: Partial<Pick<SettingsState, 'codeReadOnly' | 'codeWrap' | 'codeMinimap' | 'codeOutlineSort' | 'codeOutlineHidden' | 'codeOutlineLocals'>>) => void
   /** The code Outline's "…" menu (YAZ-3486): its sort and the kinds it hides, one value for every code file. */
   codeOutlineSort?: SettingsState['codeOutlineSort']
   codeOutlineHidden?: SettingsState['codeOutlineHidden']
+  /** "…" › Show › "Variables inside functions" (YAZ-3507), one value for every code file. */
+  codeOutlineLocals?: SettingsState['codeOutlineLocals']
   /** Settings › Preview on hover › Links in notes (YAZ-3403): resting on a resolved [[link]] shows the sidebar's panel beside it. */
   hoverLinks?: boolean
   /** Settings › Preview on hover › Linked mentions (YAZ-3403): resting on an entry shows the linking note beside the list. */
@@ -190,7 +192,7 @@ interface EditorProps {
   previewScope?: (path: string) => PreviewScope
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', onToggleSidebar, codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', onToggleSidebar, codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -213,7 +215,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     // Outline (YAZ-3486) reads the note's table of contents setting and width.
     return (
       <Suspense fallback={<section className="editor" />}>
-        <CodeEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} onNotice={onNotice} onToggleSidebar={onToggleSidebar} codeReadOnly={codeReadOnly} codeWrap={codeWrap} codeMinimap={codeMinimap} onChangeCodeSettings={onChangeCodeSettings} startView={startViewRef.current} onOpenFile={onOpenFile} tableOfContents={tableOfContents} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} codeOutlineSort={codeOutlineSort} codeOutlineHidden={codeOutlineHidden} />
+        <CodeEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} onNotice={onNotice} onToggleSidebar={onToggleSidebar} codeReadOnly={codeReadOnly} codeWrap={codeWrap} codeMinimap={codeMinimap} onChangeCodeSettings={onChangeCodeSettings} startView={startViewRef.current} onOpenFile={onOpenFile} tableOfContents={tableOfContents} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} codeOutlineSort={codeOutlineSort} codeOutlineHidden={codeOutlineHidden} codeOutlineLocals={codeOutlineLocals} />
       </Suspense>
     )
   }

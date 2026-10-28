@@ -249,6 +249,16 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, codeOutlineSort: 'name', codeOutlineHidden: ['field'] })).toBe(true)
   })
 
+  it('the code Outline\'s names inside functions (YAZ-3507): a file from before it reads off; on survives a restart; junk reads off', async () => {
+    const { codeOutlineLocals: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.codeOutlineLocals).toBe(false)
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeOutlineLocals: true } }))
+    expect(createStore(file).get().settings.codeOutlineLocals).toBe(true)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, codeOutlineLocals: 'yes' }).codeOutlineLocals).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeOutlineLocals: 1 })).toBe(false)
+  })
+
   it('commentsOrder: a pre-1515 file without the key sanitizes to oldest; both orders survive; junk falls back (YAZ-1515)', async () => {
     const { commentsOrder: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))

@@ -19,13 +19,16 @@ interface MonacoWorkerParts {
 }
 
 class AppTypeScriptWorker extends TypeScriptWorker {
-  /** The Outline's tree of `fileName`, packed; null when the worker has no such model. */
-  async getOutlineTree(fileName: string): Promise<ArrayBuffer | null> {
+  /**
+   * The Outline's tree of `fileName`, packed; null when the worker has no such model. Names inside
+   * functions are left out unless `showLocals` ("…" › Show › "Variables inside functions", YAZ-3507).
+   */
+  async getOutlineTree(fileName: string, showLocals = false): Promise<ArrayBuffer | null> {
     const worker = this as unknown as MonacoWorkerParts
     const model = worker._getModel(fileName)
     if (model === null) return null
     const root = worker.getLanguageService().getNavigationTree(fileName)
-    return packTree(outlineOfNavigation(root, (offset) => model.positionAt(offset)))
+    return packTree(outlineOfNavigation(root, (offset) => model.positionAt(offset), showLocals === true))
   }
 }
 

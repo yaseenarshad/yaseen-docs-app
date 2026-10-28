@@ -4,7 +4,7 @@ import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
 import type { EntryKind, MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
-import { isBoard, isMarkdown } from '@shared/fileKind'
+import { hasHoverPreview } from './hoverPreviewKinds'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { CloudOffIcon, LinkIcon, ShortcutIcon } from '../views/view/icons'
 import { TOO_LARGE_LABEL } from '../lib/syncAttention'
@@ -336,7 +336,7 @@ function TreeLevel({
   const recurse = { vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
-    onHoverFile === undefined || !(isBoard(path) || isMarkdown(path)) ? {} : {
+    onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
           // A pointer that comes in with a button down is in a press or a reorder, not a hover (YAZ-3467, audit 4).
           onMouseEnter: (e: React.MouseEvent) => {
             if (e.buttons === 0) onHoverFile({ path })

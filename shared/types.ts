@@ -90,7 +90,7 @@ export const TEXT_VIEW_EXTENSIONS = [
   '.mdx',
   '.rst',
   '.tex',
-  // YAZ-3438 D4 (YAZ-3450): 18 more code types. Names with no extension (`Dockerfile`, `Makefile`) stay out.
+  // YAZ-3438 D4 (YAZ-3450): 18 more code types. Names with no extension are `WELL_KNOWN_TEXT_NAMES` (YAZ-3505).
   '.lua',
   '.r',
   '.dart',
@@ -110,6 +110,15 @@ export const TEXT_VIEW_EXTENSIONS = [
   '.fs',
   '.elm',
 ] as const
+/**
+ * Well-known files with no extension that open as `text` (YAZ-3505, 2D3; YAZ-3439 "Decision — Demo round 2"
+ * reverses the D4 exclusion). The exact base name, case-sensitive as on disk; `Dockerfile.<anything>` too
+ * (`WELL_KNOWN_TEXT_PREFIXES`) when its extension is no kind of its own. Dot-files (`.gitignore`) stay hidden
+ * (`isSkipped`).
+ */
+export const WELL_KNOWN_TEXT_NAMES = ['Dockerfile', 'Makefile', 'Procfile', 'Gemfile', 'Jenkinsfile', 'Vagrantfile', 'LICENSE', 'CODEOWNERS'] as const
+/** `Dockerfile.dev`, `Dockerfile.prod`: a base name that starts with one of these, and goes on. */
+export const WELL_KNOWN_TEXT_PREFIXES = ['Dockerfile.'] as const
 export const PDF_EXTENSIONS = ['.pdf'] as const
 export const IMAGE_VIEW_MIME = {
   '.png': 'image/png',
@@ -315,6 +324,24 @@ export interface FileHead {
   mtime: number
   /** The first `HEAD_CHARS` of the body, the frontmatter block off; '' when the block alone fills the bytes read. */
   text: string
+}
+
+// ---------- readTextHead(path) (YAZ-3508) ----------
+
+/** How many bytes of a code file `readTextHead` reads off disk at most: room for `TEXT_HEAD_LINES` lines of code. */
+export const TEXT_HEAD_READ_BYTES = 16384
+/** How many lines of a code file the hover card shows, at most. */
+export const TEXT_HEAD_LINES = 60
+
+/** The top of one code file, for its hover card (YAZ-3508): never the whole file. */
+export interface TextHead {
+  path: string
+  mtime: number
+  size: number
+  /** The first `TEXT_HEAD_LINES` lines (at most `TEXT_HEAD_READ_BYTES` bytes), each break as `\n`, no BOM. */
+  text: string
+  /** The file goes on after `text`. */
+  cut: boolean
 }
 
 /** Dedicated binary response for the native PDF viewer; never base64-encoded or sent through `readFile`. */
@@ -1583,6 +1610,11 @@ export interface SettingsState {
   /** The code Outline (YAZ-3486): the kinds of symbol it hides, from its "…" menu. Empty = every kind shows, as in VS Code. */
   codeOutlineHidden: CodeSymbolKind[]
   /**
+   * The code Outline (YAZ-3507): "…" › Show › "Variables inside functions". Off (the default): a variable or
+   * constant declared inside a function, method or arrow function is not a row. One value for every code tab.
+   */
+  codeOutlineLocals: boolean
+  /**
    * Code files (YAZ-3500): "Jump across files (Cmd+click, Shift+F12)". Off (the default): no language helper
    * ever starts, and Cmd+click / Shift+F12 work inside one file only (Monaco's own help). On: the helpers of
    * YAZ-3454 / YAZ-3455. The first switch-on downloads them (`lsp.install`). Stays on this Mac (`LOCAL_SETTINGS`):
@@ -1794,6 +1826,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   codeMinimap: false,
   codeOutlineSort: 'position',
   codeOutlineHidden: [],
+  codeOutlineLocals: false,
   codeLanguageHelpers: false,
 }
 

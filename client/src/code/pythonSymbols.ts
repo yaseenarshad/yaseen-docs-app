@@ -105,6 +105,12 @@ function scanLine(line: string, state: ScanState): void {
   }
 }
 
+/**
+ * The 1-based column where a line's text starts: one per leading character, a tab too. `indentOf` is the nesting
+ * width (a tab to the next multiple of 8), never a column: a tab-indented decorator started 7 columns late.
+ */
+const leadingColumn = (line: string): number => line.length - line.trimStart().length + 1
+
 const position = (line: number, column: number) => ({ startLineNumber: line, startColumn: column, endLineNumber: line, endColumn: column })
 
 /** The symbols of a Python file's text, as a tree. */
@@ -154,7 +160,7 @@ export function pythonSymbols(text: string): CodeSymbol[] {
           {
             name,
             kind: cls !== null ? CLASS : inClass ? METHOD : FUNCTION,
-            range: { startLineNumber: start, startColumn: decorated !== 0 ? indentOf(lines[start - 1]) + 1 : column, endLineNumber: number, endColumn: line.length + 1 },
+            range: { startLineNumber: start, startColumn: decorated !== 0 ? leadingColumn(lines[start - 1]) : column, endLineNumber: number, endColumn: line.length + 1 },
             selectionRange: { ...position(number, nameColumn), endColumn: nameColumn + name.length },
             children: [],
           },

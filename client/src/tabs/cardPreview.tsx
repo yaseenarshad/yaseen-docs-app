@@ -10,12 +10,12 @@
  * pointer crossing cards re-renders the panel and nothing else — never the board or a card.
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
-import { isBoard, isMarkdown } from '@shared/fileKind'
 import type { DiagramDarkColors } from '@shared/types'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { createStore, type Store } from '../lib/store'
-import { HOVER_PREVIEW_DWELL_MS, loadNotePreview, PreviewPanel } from '../sidebar/HoverPreviewHost'
+import { HOVER_PREVIEW_DWELL_MS, PreviewPanel, preloadPreview } from '../sidebar/HoverPreviewHost'
+import { hasHoverPreview } from '../sidebar/hoverPreviewKinds'
 import type { AnchorRect, PreviewSide } from '../sidebar/previewPlacement'
 
 /** The card the pointer rests on, or Space holds — pending until the dwell ends, then shown beside `rect`. */
@@ -29,7 +29,8 @@ export interface CardPreviewState {
 }
 
 const NONE: CardPreviewState = { id: null, path: null, shown: false, rect: null, by: null }
-const previews = (path: string): boolean => isBoard(path) || isMarkdown(path)
+/** A note, a board or a code file (YAZ-3508): `hasHoverPreview`. */
+const previews = hasHoverPreview
 
 /**
  * App's Space panel shows (the search's or the new tab page's): no hover dwell starts, in any place (YAZ-3403). App
@@ -75,8 +76,8 @@ export function useCardPreview(hoverOn: boolean, find: (id: string) => HTMLEleme
       if (!live.current.hoverOn || spacePanel.shown || !previews(path)) return
       const ask = request.current
       store.set({ id, path, shown: false, rect: null, by: 'hover' })
-      // A note's chunk starts loading with the dwell, as in the sidebar.
-      if (isMarkdown(path)) loadNotePreview().catch(() => undefined)
+      // A note's or a code file's chunk starts loading with the dwell, as in the sidebar.
+      preloadPreview(path)
       timer.current = setTimeout(() => {
         timer.current = null
         if (ask === request.current) store.set({ shown: true, rect: rectOf(id) })

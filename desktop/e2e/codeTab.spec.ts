@@ -7,8 +7,10 @@
  * - YAZ-3478: the note's fold keys in a code tab (⌘⇧U, ⌘⇧I, ⌘↑, ⌘↓), ⌘End / ⌘Home, the fold chevron's
  *   right-click menu ("Collapse all", "Expand all"), the folds kept through a close and a reopen, and
  *   Monaco's own right-click menu in the app's `.ctx-menu` look (light and dark), above the chips row.
+ * - YAZ-3505: `Dockerfile`, `Makefile` and the other well-known names with no extension open, with colours.
  * - YAZ-3479: the 8 file types Monaco does not know get colours: each file shows its keyword, string,
  *   comment and number in the app theme's code colours (`--code-keyword`, …), not in one plain colour.
+ * - YAZ-3507: names inside functions are no rows by default; "…" › Show › "Variables inside functions" brings them back.
  * - YAZ-3486: the code Outline with the real Monaco symbols and the real Python helper: ⌘J opens it,
  *   Pin keeps it beside the code, the rows, the filter, collapse, Sort by and Show, the error mark, the
  *   current row following the cursor, a click that opens the folds and jumps, a `.py` file's rows, no
@@ -46,6 +48,16 @@ const TYPED: Record<string, { body: string; keyword: string; string: string; com
   'demo.patch': { body: '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old line\n+new line\n\\ No newline at end of file\n', keyword: '--- a/x', string: '+new line', comment: '\\ No newline at end of file' },
 }
 
+/** YAZ-3505: well-known names with no extension, each with a line its language colours. */
+const NAMED: Record<string, { body: string; checks: [text: string, token: string][] }> = {
+  Dockerfile: { body: '# a comment\nFROM node:22\nRUN npm ci\n', checks: [['FROM', '--code-keyword'], ['# a comment', '--fg-muted']] },
+  'Dockerfile.dev': { body: '# dev image\nFROM node:22\n', checks: [['FROM', '--code-keyword'], ['# dev image', '--fg-muted']] },
+  Makefile: { body: '# a comment\nCC ?= clang\nifeq ($(OS),Darwin)\nbuild: deps\n\t@echo "done" $(CC)\nendif\n', checks: [['# a comment', '--fg-muted'], ['CC', '--code-key'], ['ifeq', '--code-keyword'], ['build', '--code-type'], ['"done"', '--code-string']] },
+  Jenkinsfile: { body: '// a comment\ndef greet() { return "hi" }\n', checks: [['def', '--code-keyword'], ['"hi"', '--code-string']] },
+  Vagrantfile: { body: '# a comment\nVagrant.configure("2") do |config|\nend\n', checks: [['do', '--code-keyword'], ['# a comment', '--fg-muted']] },
+  LICENSE: { body: 'MIT License\n\nCopyright (c) 2026\n', checks: [['MIT License', '--fg']] },
+}
+
 /** YAZ-3486: `long-class-for-folding.ts`'s shape — `Pipeline` with 40 short methods — and a type error in `step3`. */
 const OUTLINE_FILE = 'outline-pipeline.ts'
 const outlineMethod = (n: number) => (n === 3 ? `  step3() {\n    const broken: number = 'text'\n    return broken\n  }` : `  step${n}() {\n    const value${n} = ${n}\n    return value${n}\n  }`)
@@ -69,6 +81,7 @@ test.beforeAll(async () => {
   vault = await copyVault(vaultSrc)
   await writeFile(path.join(vault, FILE), FILE_BODY)
   await Promise.all(Object.entries(TYPED).map(([name, t]) => writeFile(path.join(vault, name), t.body)))
+  await Promise.all(Object.entries(NAMED).map(([name, t]) => writeFile(path.join(vault, name), t.body)))
   await Promise.all([writeFile(path.join(vault, OUTLINE_FILE), OUTLINE_BODY), writeFile(path.join(vault, PY_FILE), PY_BODY), writeFile(path.join(vault, LUA_FILE), 'local x = 1\nprint(x)\n'), writeFile(path.join(vault, BIG_FILE), BIG_BODY)])
 })
 
@@ -98,7 +111,7 @@ test('step 1 — YAZ-3477: the cog menu shows above the sticky scroll lines', as
 
   await layer(win).locator('.page-settings__trigger').click()
   const rows = layer(win).locator('.page-settings__menu button')
-  await expect(rows).toHaveText(['Read only (all code files)', 'Wrap long lines', 'Minimap'].map((label) => new RegExp(`^${label.replace(/[()]/g, '\\$&')}`)))
+  await expect(rows).toHaveText(['Read only (all code files)', 'Wrap long lines (all code files)', 'Minimap (all code files)', 'Table of contents'].map((label) => new RegExp(`^${label.replace(/[()]/g, '\\$&')}`)))
   await shoot(win, 'codeTab-01-cog-over-sticky')
   for (const row of await rows.all()) {
     const box = await row.boundingBox()
@@ -217,6 +230,12 @@ test('step 6 — Monaco\'s right-click menu keeps its items and wears the app me
     // Monaco's items stay.
     const labels = await win.evaluate(() => Array.from(document.querySelector('.code-editor__monaco > .shadow-root-host')!.shadowRoot!.querySelectorAll('.action-label:not(.separator)')).map((e) => e.textContent))
     expect(labels).toEqual(expect.arrayContaining(['Cut', 'Copy', 'Paste', 'Command Palette']))
+    // ⇧⌘O is the app's "Open folder…" (YAZ-3439 "The app's own keys win"): Go to Symbol stays, with no ⇧⌘O hint.
+    const keys = await win.evaluate(() => Array.from(document.querySelector('.code-editor__monaco > .shadow-root-host')!.shadowRoot!.querySelectorAll('.action-menu-item')).map((row) => [row.querySelector('.action-label')?.textContent ?? '', row.querySelector('.keybinding')?.textContent ?? '']))
+    const goToSymbol = keys.find(([label]) => /^Go to Symbol/.test(label))
+    expect(goToSymbol, 'Go to Symbol is still in the menu').toBeDefined()
+    expect(goToSymbol![1]).toBe('')
+    expect(keys.some(([, key]) => key === '⇧⌘O')).toBe(false)
     await shoot(win, `codeTab-06-monaco-menu-${theme}`)
     await win.keyboard.press('Escape')
   }
@@ -265,6 +284,18 @@ test('step 8 — YAZ-3479: each of the 8 types Monaco lacked shows the app code 
   await shoot(win, 'codeTab-07-new-types')
 })
 
+test('step 8b — YAZ-3505: Dockerfile, Makefile and the other well-known names open in a code tab, with colours', async () => {
+  for (const [name, t] of Object.entries(NAMED)) {
+    await fileRow(win, name).click()
+    await expect(lines(win)).toContainText(t.checks[0][0])
+    for (const [text, token] of t.checks) {
+      const want = await tokenColour(win, token)
+      await expect.poll(() => colourOf(win, text), { message: `${name}: ${text}` }).toBe(want)
+    }
+    if (name === 'Makefile') await shoot(win, 'codeTab-07b-makefile')
+  }
+})
+
 const outline = (w: Page) => layer(w).locator('nav.outline')
 const outlineRows = (w: Page) => outline(w).locator('.outline__row')
 const outlineRow = (w: Page, name: string) => outlineRows(w).filter({ has: w.locator('.outline__name', { hasText: new RegExp(`^${name}$`) }) })
@@ -285,14 +316,24 @@ test('step 9 — YAZ-3486: the code Outline lists the symbols; filter, collapse,
   await outline(win).locator('.toc__pin').click()
   await expect(outline(win)).toHaveAttribute('data-names', '')
 
-  // S1: Pipeline, its 40 methods, each with its icon; the variable in each method; LIMIT.
-  await expect.poll(() => rowNames(win)).toEqual(expect.arrayContaining(['Pipeline', 'step1', 'value1', 'step2']))
-  expect((await rowNames(win))[0]).toBe('Pipeline')
-  const runner = await outline(win).locator('.outline__runner').evaluate((el) => el.getBoundingClientRect().height)
-  expect(runner).toBe((1 + 40 * 2 + 1) * 24)
+  // S1: Pipeline, its 40 methods, each with its icon; LIMIT. YAZ-3507: the variable in each method is a name inside a function, so no row by default.
+  await expect.poll(() => rowNames(win).then((n) => n.slice(0, 3))).toEqual(['Pipeline', 'step1', 'step2'])
+  const runnerHeight = () => outline(win).locator('.outline__runner').evaluate((el) => el.getBoundingClientRect().height)
+  expect(await runnerHeight()).toBe((1 + 40 + 1) * 24)
+  expect((await rowNames(win)).some((n) => n.startsWith('value') || n === 'broken')).toBe(false)
   await expect(outlineRow(win, 'Pipeline').locator('.outline__icon')).toHaveAttribute('data-family', 'class')
   await expect(outlineRow(win, 'step1').locator('.outline__icon')).toHaveAttribute('data-family', 'method')
+  // S6 with the names left out: the error in `broken` marks its method.
+  await expect(outlineRow(win, 'step3').locator('.outline__mark')).toHaveAttribute('data-mark', 'error', { timeout: 15_000 })
   await shoot(win, 'codeTab-09-outline-names')
+
+  // YAZ-3507: "…" › Show › "Variables inside functions" brings them back, under their methods.
+  await outline(win).getByRole('button', { name: 'More actions' }).click()
+  await menuItem(win, 'Show').click()
+  await menuListItem(win, 'Variables inside functions').click()
+  await expect.poll(() => rowNames(win).then((n) => n.slice(0, 3))).toEqual(['Pipeline', 'step1', 'value1'])
+  expect(await runnerHeight()).toBe((1 + 40 * 2 + 1) * 24)
+  await shoot(win, 'codeTab-09a-outline-variables-inside-functions')
 
   // S6: the TS worker's error marks the row that holds it red: `broken`, inside step3. Collapsed, step3 shows it.
   await expect(outlineRow(win, 'broken').locator('.outline__mark')).toHaveAttribute('data-mark', 'error', { timeout: 15_000 })
@@ -353,6 +394,19 @@ test('step 9 — YAZ-3486: the code Outline lists the symbols; filter, collapse,
   await expect(outline(win).locator('.outline__row[aria-current="true"] .outline__name')).toHaveText('step25')
   await shoot(win, 'codeTab-12-outline-jump')
   await win.keyboard.press('Meta+Shift+I')
+
+  // YAZ-3506: the cog's "Table of contents" row hides the panel of this file only; on brings it back.
+  await expect(outline(win)).toHaveAttribute('aria-label', 'Table of contents')
+  await layer(win).locator('.page-settings__trigger').click()
+  await layer(win).locator('.page-settings__menu button', { hasText: /^Table of contents/ }).click()
+  await expect(outline(win)).toHaveCount(0)
+  await win.keyboard.press('Escape')
+  await shoot(win, 'codeTab-12b-toc-off-for-this-file')
+  await layer(win).locator('.page-settings__trigger').click()
+  await layer(win).locator('.page-settings__menu button', { hasText: /^Table of contents/ }).click()
+  await win.keyboard.press('Escape')
+  await expect(outline(win)).toHaveCount(1)
+  await expect(outline(win).locator('.outline__row[aria-current="true"] .outline__name')).toHaveText('step25')
 })
 
 test('step 10 — YAZ-3486 S10, S11: a .py file lists its class and functions; a .lua file has no Outline', async () => {

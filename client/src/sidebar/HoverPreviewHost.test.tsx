@@ -14,7 +14,7 @@ vi.mock('../api', async (original) => ({
 }))
 
 /** The lazy panel, stood in: it reports the cache key the host handed it. */
-const panel = vi.hoisted(() => ({ keys: [] as string[], notes: [] as { path: string; size: unknown }[] }))
+const panel = vi.hoisted(() => ({ keys: [] as string[], notes: [] as { path: string; size: unknown }[], code: [] as string[] }))
 vi.mock('./BoardPreview', () => ({
   default: ({ cacheKey }: { cacheKey: string }) => {
     panel.keys.push(cacheKey)
@@ -26,6 +26,14 @@ vi.mock('./NotePreview', () => ({
   default: ({ node, textVars }: { node: { path: string }; textVars: Record<string, unknown> }) => {
     panel.notes.push({ path: node.path, size: textVars['--text-size'] })
     return <div className="fake-note-preview" />
+  },
+}))
+
+/** The lazy code card (YAZ-3508), stood in: it reports which file the host handed it. Monaco never loads here. */
+vi.mock('../code/CodeHoverPreview', () => ({
+  default: ({ path }: { path: string }) => {
+    panel.code.push(path)
+    return <div className="fake-code-preview" />
   },
 }))
 
@@ -93,9 +101,9 @@ describe('useHoverPreview', () => {
 })
 
 describe('a board or a note row opens a preview (YAZ-3028 D11, YAZ-3075 D6)', () => {
-  it('C1, C31: a note row waits the same 400 ms and shows; a text file, a PDF or an image row starts no dwell at all', () => {
+  it('C1, C31: a note row waits the same 400 ms and shows; a PDF or an image row starts no dwell at all', () => {
     render()
-    for (const path of ['/v/data.json', '/v/paper.pdf', '/v/photo.png']) {
+    for (const path of ['/v/paper.pdf', '/v/photo.png', '/v/clip.mp4']) {
       act(() => hook.hoverFile({ path }))
       wait(HOVER_PREVIEW_DWELL_MS)
       expect(state()).toEqual({ path: null, shown: false })
@@ -108,6 +116,17 @@ describe('a board or a note row opens a preview (YAZ-3028 D11, YAZ-3075 D6)', ()
     act(() => hook.hoverFile({ path: '/v/Flow.drawio' }))
     wait(HOVER_PREVIEW_DWELL_MS)
     expect(state()).toEqual({ path: '/v/Flow.drawio', shown: true })
+  })
+
+  it('YAZ-3508: a code or text file row waits the same 400 ms and shows, a well-known name too', () => {
+    render()
+    for (const path of ['/v/data.json', '/v/src/app.ts', '/v/Dockerfile']) {
+      act(() => hook.hoverFile({ path }))
+      wait(HOVER_PREVIEW_DWELL_MS - 1)
+      expect(state()).toEqual({ path, shown: false })
+      wait(1)
+      expect(state()).toEqual({ path, shown: true })
+    }
   })
 })
 
@@ -156,6 +175,14 @@ describe('HoverPreviewHost', () => {
     expect(panel.keys.at(-1)?.split('\n')[2]).toBe('2000')
     await act(async () => [...listeners].forEach((l) => l({ type: 'change', path: file.path, mtime: 3000 })))
     expect(panel.keys.at(-1)?.split('\n')[2]).toBe('3000')
+  })
+
+  it('YAZ-3508: a code file opens the code card, with no board head read', async () => {
+    panel.code = []
+    await show({ type: 'file', name: 'app.ts', path: '/v/src/app.ts', size: 10, mtime: 1000, kind: 'text' })
+    expect(panel.code.at(-1)).toBe('/v/src/app.ts')
+    expect(panel.notes).toEqual([])
+    expect(api.boardHead).not.toHaveBeenCalled()
   })
 
   it('YAZ-3075 C20, C27: a note opens its own panel in its vault`s text formatting, with no board head read and no watch subscription', async () => {

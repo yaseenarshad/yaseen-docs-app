@@ -36,9 +36,10 @@
  * ⌘End do (with ⇧, they select). A right-click on a fold chevron opens the app's menu: "Collapse all",
  * "Expand all". Each one is Monaco's own fold action, so the folds are remembered as any fold is.
  *
- * THE OUTLINE (YAZ-3486): VS Code's Outline in the note table of contents' place and frame
- * (`outline/CodeOutline.tsx`), on the same setting and width. Its feed (`outline/outlineFeed.ts`) is
- * made with the editor and goes with it.
+ * THE TABLE OF CONTENTS (YAZ-3486; called so since YAZ-3506): VS Code's Outline in the note table of
+ * contents' place and frame (`outline/CodeOutline.tsx`), on the same setting and width. Its feed
+ * (`outline/outlineFeed.ts`) is made with the editor and goes with it. The cog's "Table of contents" row
+ * turns it off for this file only, saved with the file as a note's is (`tocSwitches`, `usePageSwitch`).
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { TOC_DEFAULT_W, type CodeOutlineSort, type CodeSymbolKind, type PageView, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
@@ -48,6 +49,7 @@ import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
 import { stepZoomByKey } from '../editor/DocumentZoom'
 import { FOLD_KEYS } from '../editor/outline/foldKeys'
+import { usePageSwitch } from '../editor/usePageSwitch'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
 import type { NoticeKind } from '../lib/notice'
 import { registerPageView } from '../lib/pageView'
@@ -92,6 +94,8 @@ export interface CodeEditorProps extends DocumentHostProps {
   /** The Outline's "…" menu: Sort by, and the kinds it hides. Absent = Position, none hidden. */
   codeOutlineSort?: CodeOutlineSort
   codeOutlineHidden?: readonly CodeSymbolKind[]
+  /** "…" › Show › "Variables inside functions" (YAZ-3507). Absent = off: names inside functions are not rows. */
+  codeOutlineLocals?: boolean
   /** A copied tab's start (YAZ-2951 D1, YAZ-3451 S5): its source's folds, scroll and text size. Read at mount only. */
   startView?: PageView
   /** A jump to another file (YAZ-3454, D10): the tab's own link door, so Back returns. */
@@ -167,7 +171,7 @@ interface CodeHostProps extends CodeEditorProps {
 }
 
 /** Mounts exactly one Monaco editor and model for `loaded`; the document host owns everything that writes. */
-function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar, codeReadOnly = DEFAULT_CODE_SETTINGS.codeReadOnly, codeWrap = DEFAULT_CODE_SETTINGS.codeWrap, codeMinimap = DEFAULT_CODE_SETTINGS.codeMinimap, onChangeCodeSettings, startView, onOpenFile, tableOfContents = 'off', onChangeTableOfContents = noChange, tableOfContentsWidth = TOC_DEFAULT_W, onChangeTableOfContentsWidth = noChange, codeOutlineSort = 'position', codeOutlineHidden = NO_KINDS }: CodeHostProps) {
+function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar, codeReadOnly = DEFAULT_CODE_SETTINGS.codeReadOnly, codeWrap = DEFAULT_CODE_SETTINGS.codeWrap, codeMinimap = DEFAULT_CODE_SETTINGS.codeMinimap, onChangeCodeSettings, startView, onOpenFile, tableOfContents = 'off', onChangeTableOfContents = noChange, tableOfContentsWidth = TOC_DEFAULT_W, onChangeTableOfContentsWidth = noChange, codeOutlineSort = 'position', codeOutlineHidden = NO_KINDS, codeOutlineLocals = false }: CodeHostProps) {
   const theme = useAppliedTheme()
   const mountRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<ReturnType<typeof monaco.editor.create> | null>(null)
@@ -188,8 +192,12 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
   const [zoom, setZoom] = useState(startView?.magnification ?? 100)
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
+  // This file's "Table of contents" row (YAZ-3506): on for every file, and this file can turn its own off. Saved with
+  // the file in the app state, as a note's is; Settings › Table of contents still applies on top.
+  const [tocOn, toggleToc] = usePageSwitch(root, path, storage.getTocSwitch, storage.setTocSwitch)
+  const tocMode: TableOfContentsMode = tocOn ? tableOfContents : 'off'
   /** The values the editor is born with; the effects below follow every change after. */
-  const born = useRef({ locked, codeWrap, codeMinimap, zoom, startView, outlineOn: tableOfContents !== 'off' })
+  const born = useRef({ locked, codeWrap, codeMinimap, zoom, startView, outlineOn: tocMode !== 'off', outlineLocals: codeOutlineLocals })
   const openRef = useRef(onOpenFile)
   openRef.current = onOpenFile
   /** The chevron's right-click menu (YAZ-3478), at the pointer; null while closed. */
@@ -330,7 +338,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
     const menuLook = attachMenuLook(mount)
 
     // The Outline (YAZ-3486): symbols 300 ms after the last edit, never per keystroke.
-    const outlineFeed = attachOutlineFeed(editor, model, readSymbols, born.current.outlineOn)
+    const outlineFeed = attachOutlineFeed(editor, model, readSymbols, born.current.outlineOn, born.current.outlineLocals)
     setOutline({ editor, feed: outlineFeed })
 
     return () => {
@@ -443,6 +451,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
           <CodeChips
             settings={{ codeReadOnly, codeWrap, codeMinimap }}
             onChangeSettings={onChangeCodeSettings}
+            tableOfContents={tableOfContents === 'off' ? undefined : { on: tocOn, onToggle: toggleToc }}
             zoom={zoom}
             onZoom={setZoom}
             locked={locked}
@@ -464,12 +473,13 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
           feed={outline.feed}
           editor={outline.editor}
           lineHeight={() => (editorRef.current?.getOption(monaco.editor.EditorOption.lineHeight) as number | undefined) ?? 19}
-          mode={tableOfContents}
+          mode={tocMode}
           onChangeMode={onChangeTableOfContents}
           width={tableOfContentsWidth}
           onChangeWidth={onChangeTableOfContentsWidth}
           sort={codeOutlineSort}
           hidden={codeOutlineHidden}
+          locals={codeOutlineLocals}
           onChangeView={(patch) => onChangeCodeSettings?.(patch)}
           hostRef={mountRef}
           onReturnFocus={() => editorRef.current?.focus()}

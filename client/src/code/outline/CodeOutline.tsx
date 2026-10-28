@@ -12,8 +12,10 @@
  * THE ROWS ARE VS CODE'S: a tree of every symbol (no depth cap, no row cap), a type icon on each, a ⌄
  * on each row with children, "Collapse all", a filter box that keeps the matches and their parents,
  * and a "…" menu: Sort by Position / Name / Type, Show or hide each kind, Expand all, Collapse all.
- * Sort and the hidden kinds are app settings (`codeOutlineSort`, `codeOutlineHidden`); what is
- * collapsed and the filter belong to this tab.
+ * Show also has "Variables inside functions" (off: a name declared inside a function is not a row;
+ * YAZ-3507), offered when the file has such names. Sort, the hidden kinds and that row are app settings
+ * (`codeOutlineSort`, `codeOutlineHidden`, `codeOutlineLocals`); what is collapsed and the filter belong
+ * to this tab.
  *
  * FOLLOW THE CURSOR (S7): the current row is the symbol that holds the cursor; while the code
  * scrolls with the cursor off screen, the symbol at the top of the view. The list keeps it in view.
@@ -39,7 +41,7 @@ import type { MenuAction } from '../../sidebar/menuSections'
 import { jumpTo, type JumpEditorLike } from './codeJump'
 import { kindId, kindLabel, kindName, OutlineIcon } from './OutlineIcon'
 import type { OutlineFeed, OutlineSnapshot } from './outlineFeed'
-import { allKeys, currentRow, displayOrder, kindsIn, markSymbols, Mark, pathDepth, rowMark, visibleRows, KIND_COUNT, type OutlineRows, type OutlineTree } from './outlineModel'
+import { allKeys, displayOrder, kindsIn, markSymbols, Mark, pathDepth, rowMark, symbolAt, visibleRows, KIND_COUNT, type OutlineRows, type OutlineTree } from './outlineModel'
 import '../../editor/toc/toc.css'
 import './outline.css'
 
@@ -76,7 +78,9 @@ export interface CodeOutlineProps {
   onChangeWidth: (width: number) => void
   sort: CodeOutlineSort
   hidden: readonly CodeSymbolKind[]
-  onChangeView: (patch: { codeOutlineSort?: CodeOutlineSort; codeOutlineHidden?: CodeSymbolKind[] }) => void
+  /** "…" › Show › "Variables inside functions" (YAZ-3507): false leaves them out, where the tree is built. */
+  locals?: boolean
+  onChangeView: (patch: { codeOutlineSort?: CodeOutlineSort; codeOutlineHidden?: CodeSymbolKind[]; codeOutlineLocals?: boolean }) => void
   /** Monaco's mount: the scroller the frame measures. */
   hostRef: RefObject<HTMLElement | null>
   /** Esc and a second ⌘J hand the cursor back to the code. */
@@ -86,18 +90,27 @@ export interface CodeOutlineProps {
 const NO_SNAPSHOT: OutlineSnapshot = { tree: null, markers: [] }
 const noFeed = (): (() => void) => () => undefined
 
-export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, width, onChangeWidth, sort, hidden, onChangeView, hostRef, onReturnFocus }: CodeOutlineProps) {
+export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, width, onChangeWidth, sort, hidden, locals = false, onChangeView, hostRef, onReturnFocus }: CodeOutlineProps) {
   const { tree, markers } = useSyncExternalStore(feed?.subscribe ?? noFeed, feed?.getState ?? (() => NO_SNAPSHOT))
   const shows = mode !== 'off' && tree !== null
   // Off reads nothing (`outlineFeed.ts`): no symbols are read for an Outline nobody sees.
   useEffect(() => feed.setActive(mode !== 'off'), [feed, mode])
+  // The names inside functions are left out where the tree is built: a change reads again (YAZ-3507).
+  useEffect(() => feed.setLocals(locals), [feed, locals])
 
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
   const [filter, setFilter] = useState('')
   /** The row ↑ / ↓ picked from the filter box; null = the current row. */
   const [pick, setPick] = useState<number | null>(null)
-  /** Where the Outline follows: the cursor, or the top of the view (S7). */
-  const [place, setPlace] = useState<{ line: number; column: number } | null>(null)
+  /**
+   * Where the Outline follows: the cursor, or the top of the view (S7). The place itself is a ref; the state is only
+   * the deepest symbol that holds it, for the tree it was read against. So a key typed inside one symbol (the column
+   * moves) sets no state and re-renders nothing; a move into another symbol does (YAZ-3486 checker nit).
+   */
+  const placeRef = useRef<{ line: number; column: number } | null>(null)
+  const treeRef = useRef(tree)
+  treeRef.current = tree
+  const [placeNode, setPlaceNode] = useState<{ tree: OutlineTree | null; node: number }>({ tree: null, node: -1 })
   /** The node a jump landed on, current until the reader moves the code themselves. */
   const [locked, setLocked] = useState<number | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
@@ -121,8 +134,13 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
     if (locked !== null && locked < tree.size) {
       for (let i = locked; i !== -1; i = tree.parent[i]) if (rows.rowOf[i] !== -1) return rows.rowOf[i]
     }
-    return place === null ? -1 : currentRow(tree, rows, place.line, place.column)
-  }, [tree, rows, place, locked])
+    // A new tree since the place was read: the same place, looked up in it (a binary search per level).
+    const place = placeRef.current
+    const node = placeNode.tree === tree ? placeNode.node : place === null ? -1 : symbolAt(tree, place.line, place.column)
+    // The deepest symbol at the place, or its nearest drawn parent (`currentRow`'s rule).
+    for (let i = node; i !== -1; i = tree.parent[i]) if (rows.rowOf[i] !== -1) return rows.rowOf[i]
+    return -1
+  }, [tree, rows, placeNode, locked])
 
   const scrollerOf = (): HTMLElement | null => hostRef.current
   const sectionOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('section.editor') ?? null
@@ -140,11 +158,16 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
   const pendingFocus = useRef(false)
 
   // FOLLOW THE CURSOR (S7). A cursor move names the cursor; a scroll names the cursor while it is on
-  // screen, else the top of the view. One read per animation frame; state only when the place moves.
+  // screen, else the top of the view. One read per animation frame; state only when the symbol at the place changes.
   useEffect(() => {
     if (!shows) return
     let frame = 0
-    const setIfNew = (line: number, column: number): void => setPlace((was) => (was !== null && was.line === line && was.column === column ? was : { line, column }))
+    const setIfNew = (line: number, column: number): void => {
+      placeRef.current = { line, column }
+      const now = treeRef.current
+      const node = now === null ? -1 : symbolAt(now, line, column)
+      setPlaceNode((was) => (was.tree === now && was.node === node ? was : { tree: now, node }))
+    }
     const fromCursor = (): void => {
       const cursor = editor.getPosition()
       if (cursor !== null) setIfNew(cursor.lineNumber, cursor.column)
@@ -348,13 +371,14 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
     const off = hidden.includes(id)
     return { id: `show-${id}`, label: kindLabel(kind), icon: <CheckIcon on={!off} />, onSelect: () => onChangeView({ codeOutlineHidden: off ? hidden.filter((h) => h !== id) : [...hidden, id] }) }
   }
+  const localsRow: MenuAction = { id: 'show-locals', label: 'Variables inside functions', icon: <CheckIcon on={locals} />, onSelect: () => onChangeView({ codeOutlineLocals: !locals }) }
 
   return (
     <nav
       ref={navRef}
       className="toc outline"
       data-names={names ? '' : undefined}
-      aria-label="Outline"
+      aria-label="Table of contents"
       style={{ top: box.top, '--toc-height': `${box.height}px`, '--toc-gutter': `${box.gutter}px`, '--outline-right': `${right}px` } as CSSProperties}
       onKeyDown={onNavKey}
       onBlur={(event) => {
@@ -388,9 +412,9 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
           {(open || lingers) && (
             <div className="toc__card" data-leaving={open ? undefined : ''}>
               <div className="toc__header">
-                <span className="toc__title">Outline</span>
+                <span className="toc__title">Table of contents</span>
                 {mode === 'auto' && box.width >= NAMES_FLOOR && (
-                  <button type="button" className="toc__pin" title="Pin: keep the outline open beside the code" onClick={() => onChangeMode('pinned')}>
+                  <button type="button" className="toc__pin" title="Pin: keep the table of contents open beside the code" onClick={() => onChangeMode('pinned')}>
                     <PinIcon />
                     <span>Pin</span>
                   </button>
@@ -403,7 +427,7 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
           <button
             type="button"
             className="toc__rail"
-            aria-label="Outline"
+            aria-label="Table of contents"
             aria-expanded={open}
             onClick={() => {
               if (!open) openCard()
@@ -428,7 +452,7 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
             sections={[
               [
                 { id: 'sort', label: 'Sort by', children: [[sortRow('position', 'Position'), sortRow('name', 'Name'), sortRow('type', 'Type')]] },
-                { id: 'show', label: 'Show', children: [kindsIn(tree).map(kindRow)] },
+                { id: 'show', label: 'Show', children: locals || tree.localsLeftOut > 0 ? [kindsIn(tree).map(kindRow), [localsRow]] : [kindsIn(tree).map(kindRow)] },
               ],
               [
                 { id: 'expand-all', label: 'Expand all', onSelect: expandAll },

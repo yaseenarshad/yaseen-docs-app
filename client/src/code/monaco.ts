@@ -26,6 +26,7 @@ import CssWorker from 'monaco-editor/languages/features/css/css.worker?worker'
 import HtmlWorker from 'monaco-editor/languages/features/html/html.worker?worker'
 import JsonWorker from 'monaco-editor/languages/features/json/json.worker?worker'
 import TsWorker from './tsWorker?worker'
+import { appKeyRemovals } from './monacoKeys'
 import { registerExtraLanguages } from './monacoLanguages'
 import { buildMonacoTheme, monacoThemeName, readAppTokens, type AppTheme } from './monacoTheme'
 
@@ -52,6 +53,11 @@ function workerFor(label: string): Worker {
 self.MonacoEnvironment = { getWorker: (_workerId, label) => workerFor(label) }
 
 registerExtraLanguages(monaco.languages)
+
+// ⇧⌘O is the app's "Open folder…" (YAZ-3439 "The app's own keys win in code tabs"; the capture-phase keydown already
+// keeps the key from Monaco). Monaco's own binding of it to "Go to Symbol…" goes too, so its right-click menu shows
+// no hint for a key that does something else. The action stays, in F1 and in the menu (YAZ-3478 checker nit).
+monaco.editor.addKeybindingRules(appKeyRemovals(monaco.KeyMod, monaco.KeyCode))
 
 /**
  * TS 2307 / 2792 (cannot find module), 7016 (no types for a module), 7026 and 2875 (JSX with no React

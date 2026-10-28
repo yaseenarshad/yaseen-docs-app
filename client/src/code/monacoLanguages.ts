@@ -12,15 +12,24 @@
  * `.ml` (OCaml) is not here: Monaco's own F# language claims it, F# is of the same ML family, and its
  * colours fit (YAZ-3479).
  *
- * `monaco.ts` registers these once, at load, before any model is made, so a model's file extension
- * picks the language as it does for Monaco's own. Each language also gets its comment marks (⌘/) and
- * its brackets.
+ * WELL-KNOWN NAMES WITH NO EXTENSION (YAZ-3505, 2D3; `shared/fileKind.ts` `WELL_KNOWN_TEXT_NAMES`): `Makefile`
+ * gets its own small tokenizer here (`makefile`); `Jenkinsfile` is Groovy (the tokenizer above). Three more
+ * names go to Monaco's own languages (`FILENAME_LANGUAGES`): `Dockerfile.<anything>` to `dockerfile` (Monaco
+ * knows `Dockerfile` itself), `Vagrantfile` to `ruby` (Monaco knows `Gemfile`). `Procfile`, `LICENSE` and
+ * `CODEOWNERS` stay plain text. Monaco matches a file name case aside; which names open at all is
+ * `fileKind`'s, case-sensitive.
+ *
+ * `monaco.ts` registers these once, at load, before any model is made, so a model's file extension or
+ * name picks the language as it does for Monaco's own. Each language also gets its comment marks (⌘/)
+ * and its brackets.
  */
 import type { languages } from 'monaco-editor'
 
 export interface ExtraLanguage {
   id: string
   extensions: string[]
+  /** Whole file names that pick the language (YAZ-3505): `Makefile`, `Jenkinsfile`. */
+  filenames?: string[]
   aliases: string[]
   tokens: languages.IMonarchLanguage
   config: languages.LanguageConfiguration
@@ -121,6 +130,7 @@ const elm: ExtraLanguage = {
 const groovy: ExtraLanguage = {
   id: 'groovy',
   extensions: ['.groovy', '.gradle'],
+  filenames: ['Jenkinsfile'],
   aliases: ['Groovy', 'Gradle', 'groovy'],
   tokens: {
     tokenPostfix: '.groovy',
@@ -249,19 +259,77 @@ const diff: ExtraLanguage = {
   config: {},
 }
 
+/** Make's directives. A line that starts with one of them is a directive, not a rule. */
+const MAKE_DIRECTIVES = ['define', 'else', 'endef', 'endif', 'export', 'ifdef', 'ifeq', 'ifndef', 'ifneq', 'include', 'override', 'private', 'sinclude', 'undefine', 'unexport', 'vpath']
+/** GNU Make's functions: the first word inside `$(…)`. */
+const MAKE_FUNCTIONS = ['abspath', 'addprefix', 'addsuffix', 'and', 'basename', 'call', 'dir', 'error', 'eval', 'file', 'filter', 'filter-out', 'findstring', 'firstword', 'flavor', 'foreach', 'guile', 'if', 'info', 'join', 'lastword', 'notdir', 'or', 'origin', 'patsubst', 'realpath', 'shell', 'sort', 'strip', 'subst', 'suffix', 'value', 'warning', 'wildcard', 'word', 'wordlist', 'words']
+
+/**
+ * `Makefile` (YAZ-3505): comments, directives, variable assignments, rule targets, `$(…)` references (a GNU
+ * function's name as a function), a recipe's `@` / `-` / `+` marks, and strings. One state per line, read from
+ * the line start (Monarch carries a state over the end of a line), so a line never inherits the last one's.
+ */
+const makefile: ExtraLanguage = {
+  id: 'makefile',
+  extensions: [],
+  filenames: ['Makefile'],
+  aliases: ['Makefile', 'make'],
+  tokens: {
+    tokenPostfix: '.make',
+    functions: MAKE_FUNCTIONS,
+    tokenizer: {
+      root: [
+        // A recipe line starts with a tab; `@` (quiet), `-` (ignore errors) and `+` mark it.
+        [/^\t[@+-]+/, 'annotation'],
+        [/#.*$/, 'comment'],
+        // `NAME =`, `NAME :=`, `NAME ::=`, `NAME ?=`, `NAME +=`, `NAME !=`.
+        [/^\s*[A-Za-z_.][\w.-]*(?=\s*(?:::?=|[?+!]?=))/, 'key'],
+        [new RegExp(`^\\s*-?(?:${MAKE_DIRECTIVES.join('|')})(?=\\s|$)`), 'keyword'],
+        // A rule's targets: the names before one `:` or `::` (never `:=`), on a line that is not a recipe.
+        [/^[^\s:=#$][^:=#$]*(?=::?(?!=))/, 'type'],
+        [/\$[({]/, 'predefined', '@reference'],
+        [/\$[@<^?*+%|$]/, 'predefined'],
+        [/"(?:[^"\\]|\\.)*"|'[^']*'/, 'string'],
+        [/[^$"'#]+|./, ''],
+      ],
+      reference: [
+        [/[)}]/, 'predefined', '@pop'],
+        [/\$[({]/, 'predefined', '@push'],
+        [/[a-z-]+(?=\s)/, { cases: { '@functions': 'predefined', '@default': 'key' } }],
+        [/[^$(){}\s,]+/, 'key'],
+        [/[\s,(]+|\$/, ''],
+      ],
+    },
+  },
+  config: { comments: { lineComment: '#' }, brackets: BRACKETS, autoClosingPairs: PAIRS },
+}
+
 /** The languages, in the order they register. */
-export const EXTRA_LANGUAGES: readonly ExtraLanguage[] = [haskell, diff, groovy, erlang, cmake, elm]
+export const EXTRA_LANGUAGES: readonly ExtraLanguage[] = [haskell, diff, groovy, erlang, cmake, elm, makefile]
+
+/**
+ * Names that Monaco's OWN languages take too (YAZ-3505): `languages.register` with a known id adds these to
+ * it, as VS Code merges the contributions of one language.
+ */
+export const FILENAME_LANGUAGES: readonly { id: string; filenames?: string[]; filenamePatterns?: string[] }[] = [
+  { id: 'dockerfile', filenamePatterns: ['Dockerfile.*'] },
+  { id: 'ruby', filenames: ['Vagrantfile'] },
+]
 
 /** The part of `monaco.languages` this needs (the tests hand it a fake). */
 export type LanguageRegistry = Pick<typeof languages, 'register' | 'setMonarchTokensProvider' | 'setLanguageConfiguration' | 'getLanguages'>
 
-/** Registers each language Monaco lacks; one Monaco already has (a later Monaco) is left as it is. */
+/**
+ * Registers each language Monaco lacks; one Monaco already has (a later Monaco) is left as it is. Then the
+ * well-known names of Monaco's own languages (`FILENAME_LANGUAGES`), when Monaco has that language.
+ */
 export function registerExtraLanguages(registry: LanguageRegistry): void {
   const known = new Set(registry.getLanguages().map((l) => l.id))
   for (const lang of EXTRA_LANGUAGES) {
     if (known.has(lang.id)) continue
-    registry.register({ id: lang.id, extensions: lang.extensions, aliases: lang.aliases })
+    registry.register({ id: lang.id, extensions: lang.extensions, aliases: lang.aliases, ...(lang.filenames === undefined ? {} : { filenames: lang.filenames }) })
     registry.setMonarchTokensProvider(lang.id, lang.tokens)
     registry.setLanguageConfiguration(lang.id, lang.config)
   }
+  for (const names of FILENAME_LANGUAGES) if (known.has(names.id)) registry.register(names)
 }

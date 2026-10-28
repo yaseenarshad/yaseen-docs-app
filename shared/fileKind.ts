@@ -1,4 +1,4 @@
-import { DIAGRAM_EXTENSIONS, DRAWING_VIEW_EXTENSIONS, IMAGE_VIEW_EXTENSIONS, MARKDOWN_EXTENSIONS, PDF_EXTENSIONS, TEXT_VIEW_EXTENSIONS, type BoardKind, type FileKind } from './types'
+import { DIAGRAM_EXTENSIONS, DRAWING_VIEW_EXTENSIONS, IMAGE_VIEW_EXTENSIONS, MARKDOWN_EXTENSIONS, PDF_EXTENSIONS, TEXT_VIEW_EXTENSIONS, WELL_KNOWN_TEXT_NAMES, WELL_KNOWN_TEXT_PREFIXES, type BoardKind, type FileKind } from './types'
 
 /**
  * Lower-cased extension of a file name or path, dot included; `null` when there is none. A leading
@@ -10,9 +10,26 @@ function extensionOf(name: string): string | null {
   return dot <= 0 ? null : basename.slice(dot).toLowerCase()
 }
 
-/** Classifies a file name or path using the one approved, case-insensitive extension contract. */
+/**
+ * A well-known file with no extension (YAZ-3505): `Dockerfile`, `Makefile`, … exactly as on disk, or
+ * `Dockerfile.<anything>`. Never a dot-file.
+ */
+function isWellKnownText(name: string): boolean {
+  const basename = name.slice(name.lastIndexOf('/') + 1)
+  return (WELL_KNOWN_TEXT_NAMES as readonly string[]).includes(basename) || WELL_KNOWN_TEXT_PREFIXES.some((prefix) => basename.length > prefix.length && basename.startsWith(prefix))
+}
+
+/**
+ * Classifies a file name or path using the one approved, case-insensitive extension contract. A name whose
+ * extension is no kind (none at all, or `Dockerfile.dev`'s `.dev`) is `text` when it is a well-known name
+ * (`WELL_KNOWN_TEXT_NAMES`, case-sensitive; YAZ-3505). An extension that is a kind wins: `Dockerfile.md` is a note.
+ */
 export function fileKind(name: string): FileKind | null {
-  const ext = extensionOf(name)
+  const kind = kindOfExtension(extensionOf(name))
+  return kind ?? (isWellKnownText(name) ? 'text' : null)
+}
+
+function kindOfExtension(ext: string | null): FileKind | null {
   if (ext === null) return null
   if ((MARKDOWN_EXTENSIONS as readonly string[]).includes(ext)) return 'markdown'
   if ((TEXT_VIEW_EXTENSIONS as readonly string[]).includes(ext)) return 'text'

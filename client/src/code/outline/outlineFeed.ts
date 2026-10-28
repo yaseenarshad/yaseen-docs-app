@@ -9,6 +9,9 @@
  * (YAZ-3501): the page only takes it. An answer that a newer read overtook is thrown away. The first
  * read is at once, so a file opens with its Outline.
  *
+ * NAMES INSIDE FUNCTIONS (YAZ-3507) are left out where the tree is built (the TS worker, or `buildTree`
+ * here), never per render. `setLocals` ("…" › Show › "Variables inside functions") reads again at once.
+ *
  * OFF READS NOTHING. While the Outline is off (Settings › Table of contents › Off), `setActive(false)`
  * stops the reads: an edit arms no timer. Turning it on reads at once.
  *
@@ -35,21 +38,24 @@ export interface OutlineFeed {
   subscribe(listener: () => void): () => void
   /** The Outline shows (true) or is off (false): only a shown Outline reads symbols. */
   setActive(active: boolean): void
+  /** Keep (true) or leave out (false) the names inside functions: a change reads again (YAZ-3507). */
+  setLocals(show: boolean): void
   dispose(): void
 }
 
 /** A read's answer: a built tree (the TS worker's, YAZ-3501), a provider's symbols, or null for no answer. */
-export type ReadSymbols = (editor: Editor, model: Model) => Promise<OutlineTree | readonly CodeSymbol[] | null>
+export type ReadSymbols = (editor: Editor, model: Model, showLocals: boolean) => Promise<OutlineTree | readonly CodeSymbol[] | null>
 
 const EMPTY: OutlineSnapshot = { tree: null, markers: [] }
 
 const isTree = (answer: OutlineTree | readonly CodeSymbol[]): answer is OutlineTree => !Array.isArray(answer)
 
 /** Starts the feed of one code tab. `read` is `symbolSource.readSymbols`, given by the caller. */
-export function attachOutlineFeed(editor: Editor, model: Model, read: ReadSymbols, active = true): OutlineFeed {
+export function attachOutlineFeed(editor: Editor, model: Model, read: ReadSymbols, active = true, showLocals = false): OutlineFeed {
   let snapshot = EMPTY
   let disposed = false
   let on = active
+  let locals = showLocals
   /** An edit came while off: the symbols are stale when it turns on. */
   let stale = false
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -65,11 +71,12 @@ export function attachOutlineFeed(editor: Editor, model: Model, read: ReadSymbol
   const readNow = async (): Promise<void> => {
     timer = undefined
     const mine = ++asked
-    const symbols = await read(editor, model).catch(() => null)
+    const asLocals = locals
+    const symbols = await read(editor, model, asLocals).catch(() => null)
     // No answer (a helper that timed out, a provider that failed): the last tree stands, so the
     // Outline never blinks away for one bad read. An empty answer is a file with no symbol now.
     if (disposed || mine !== asked || model.isDisposed() || symbols === null) return
-    const tree = isTree(symbols) ? (symbols.size === 0 ? null : symbols) : symbols.length === 0 ? null : buildTree(symbols)
+    const tree = isTree(symbols) ? (symbols.size === 0 ? null : symbols) : symbols.length === 0 ? null : buildTree(symbols, asLocals)
     if (tree === null && snapshot.tree === null) return
     set({ tree, markers: tree === null ? [] : markersNow() })
   }
@@ -112,6 +119,17 @@ export function attachOutlineFeed(editor: Editor, model: Model, read: ReadSymbol
         stale = false
         void readNow()
       }
+    },
+    setLocals(next) {
+      if (next === locals || disposed) return
+      locals = next
+      if (!on) {
+        // The next switch-on reads with the new choice.
+        if (snapshot.tree !== null) stale = true
+        return
+      }
+      clearTimeout(timer)
+      void readNow()
     },
     dispose() {
       disposed = true

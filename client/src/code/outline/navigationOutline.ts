@@ -77,7 +77,10 @@ export function symbolsOfNavigation(root: NavigationItem | undefined, positionAt
   return top
 }
 
-/** The Outline's tree of a navigation tree: what the page's feed would have built from Monaco's symbols. */
-export function outlineOfNavigation(root: NavigationItem | undefined, positionAt: PositionAt): OutlineTree {
-  return buildTree(symbolsOfNavigation(root, positionAt))
+/**
+ * The Outline's tree of a navigation tree: what the page's feed would have built from Monaco's symbols.
+ * Names inside functions are left out unless `showLocals` (YAZ-3507, `buildTree`).
+ */
+export function outlineOfNavigation(root: NavigationItem | undefined, positionAt: PositionAt, showLocals = false): OutlineTree {
+  return buildTree(symbolsOfNavigation(root, positionAt), showLocals)
 }

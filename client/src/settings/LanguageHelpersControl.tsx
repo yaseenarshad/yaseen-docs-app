@@ -12,7 +12,9 @@ import { ON_OFF_OPTIONS } from './options'
  *  - On, without them: the box below, in the approved words. Cancel: the switch stays off, nothing downloads.
  *    "Download and turn on": main downloads and checks them (`lsp.install`); the box shows each step, then
  *    closes and the switch goes on. A failure: one sentence in the box, the switch stays off, and the
- *    button tries again. Cancel during the download stops it, and main deletes what it wrote.
+ *    button tries again. Cancel during the download stops it, and main deletes what it wrote. Settings closing
+ *    during the download is no Cancel: the download goes on, and when it works the switch goes on (YAZ-3500
+ *    checker nit), through the same door, which reads the settings of the moment.
  *  - Off: the switch goes off; main stops every helper.
  * The renderer only asks; main picks the URL, the version and the folder.
  */
@@ -46,12 +48,14 @@ export function LanguageHelpersControl({ on, onSet }: { on: boolean; onSet: (on:
   setRef.current = onSet
   /** Raised by each download and each Cancel: an answer for an older one changes nothing. */
   const attempt = useRef(0)
-  useEffect(
-    () => () => {
-      attempt.current++
-    },
-    [],
-  )
+  /** False once Settings closed: the box is gone, but a download the reader started still turns the switch on. */
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   const turnOn = async (): Promise<void> => {
     let ready = false
@@ -70,7 +74,7 @@ export function LanguageHelpersControl({ on, onSet }: { on: boolean; onSet: (on:
     let off = (): void => undefined
     try {
       off = api.lsp.onInstallProgress((p) => {
-        if (attempt.current === mine) setBox({ busy: true, line: progressText(p) })
+        if (attempt.current === mine && mounted.current) setBox({ busy: true, line: progressText(p) })
       })
     } catch {
       // No progress line; the answer still comes.
@@ -84,9 +88,9 @@ export function LanguageHelpersControl({ on, onSet }: { on: boolean; onSet: (on:
       }
       if (attempt.current !== mine) return
       if (result.ok) {
-        setBox(null)
+        if (mounted.current) setBox(null)
         setRef.current(true)
-      } else {
+      } else if (mounted.current) {
         setBox({ busy: false, line: installErrorText(result) })
       }
     } finally {

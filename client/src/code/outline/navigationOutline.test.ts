@@ -86,8 +86,46 @@ describe('symbolsOfNavigation', () => {
 
   it('the tree is buildTree of those symbols: the same rows, order, keys and ranges the page built before', () => {
     const at = positionsOf(SOURCE)
-    expect(outlineOfNavigation(navigationOf(SOURCE), at)).toEqual(buildTree(symbolsOfNavigation(navigationOf(SOURCE), at)))
-    expect(outlineOfNavigation(navigationOf(SOURCE), at).name.slice(0, 5)).toEqual(['Pipeline', 'step1', 'value1', 'size', 'Shape'])
+    expect(outlineOfNavigation(navigationOf(SOURCE), at, true)).toEqual(buildTree(symbolsOfNavigation(navigationOf(SOURCE), at), true))
+    expect(outlineOfNavigation(navigationOf(SOURCE), at, true).name.slice(0, 5)).toEqual(['Pipeline', 'step1', 'value1', 'size', 'Shape'])
+  })
+})
+
+describe('YAZ-3507: names inside functions, left out in the worker', () => {
+  /** `long-class-for-folding.ts`'s shape: methods with a loop counter `n`, and every other place a name can sit. */
+  const LOCALS = [
+    'export class Pipeline {',
+    '  count = 0',
+    '  constructor(private a: number) { const c = 1 }',
+    '  get g() { const gv = 1; return gv }',
+    '  step1(input: number) { for (let n = 0; n < 1; n++) {} function inner() { var deep = 2 } return input }',
+    '  step2(input: number) { for (let n = 0; n < 2; n++) {} return input }',
+    '  handler = () => { const inField = 1 }',
+    '}',
+    'const handler = () => { const inArrow = 1; [1].forEach((x) => { const inCallback = x }) }',
+    'export const TOP = 1',
+    'let topLet = 2',
+    'namespace NS { export const nsConst = 1; function nf() { const nl = 1 } }',
+    'const config = { mode: 1, run() { const inRun = 1 } }',
+    '',
+  ].join('\n')
+  const LOCAL_NAMES = ['c', 'gv', 'n', 'deep', 'inField', 'inArrow', 'inCallback', 'nl', 'inRun']
+
+  it('by default: no `n` and no other name declared inside a function; every other row stays', () => {
+    const tree = outlineOfNavigation(navigationOf(LOCALS), positionsOf(LOCALS))
+    expect(tree.name.filter((n) => LOCAL_NAMES.includes(n))).toEqual([])
+    for (const kept of ['Pipeline', 'count', 'constructor', 'a', 'g', 'step1', 'inner', 'step2', 'handler', 'forEach() callback', 'TOP', 'topLet', 'NS', 'nsConst', 'nf', 'config', 'mode', 'run']) expect(tree.name).toContain(kept)
+    expect(tree.localsLeftOut).toBe(LOCAL_NAMES.length + 1) // `n` twice
+    expect(unpackTree(packTree(tree))!.localsLeftOut).toBe(tree.localsLeftOut)
+  })
+
+  it('with "Variables inside functions" on: every one of them is a row again, under its function', () => {
+    const tree = outlineOfNavigation(navigationOf(LOCALS), positionsOf(LOCALS), true)
+    for (const name of LOCAL_NAMES) expect(tree.name).toContain(name)
+    expect(tree.name.filter((n) => n === 'n')).toHaveLength(2)
+    const n = tree.name.indexOf('n')
+    expect(tree.name[tree.parent[n]]).toBe('step1')
+    expect(tree.localsLeftOut).toBe(0)
   })
 })
 

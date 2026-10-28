@@ -147,6 +147,39 @@ describe('"Jump across files" (YAZ-3500)', () => {
     expect(box()).toBeNull()
   })
 
+  it('Settings closing during the download is no Cancel: the download goes on, and its success turns the switch on (YAZ-3500 checker nit)', async () => {
+    let finish: (r: LspInstallResult) => void = () => undefined
+    lsp.install.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+    render()
+    await clickOn()
+    act(() => button(HELPERS_BOX_CONFIRM, box()!)!.click())
+    await settle()
+    // Settings closes: the control and its box go, and nothing asks main to stop.
+    act(() => root?.unmount())
+    root = null
+    expect(lsp.cancelInstall).not.toHaveBeenCalled()
+    act(() => progress?.({ helper: 'typescript', phase: 'download', received: 1, total: 2, index: 1, count: 2 }))
+    finish({ ok: true })
+    await settle()
+    expect(onSet).toHaveBeenCalledWith(true)
+    expect(box()).toBeNull()
+  })
+
+  it('Settings closing during a download that then fails: the switch stays off, and nothing is drawn', async () => {
+    let finish: (r: LspInstallResult) => void = () => undefined
+    lsp.install.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+    render()
+    await clickOn()
+    act(() => button(HELPERS_BOX_CONFIRM, box()!)!.click())
+    await settle()
+    act(() => root?.unmount())
+    root = null
+    finish({ ok: false, error: 'offline' })
+    await settle()
+    expect(onSet).not.toHaveBeenCalled()
+    expect(box()).toBeNull()
+  })
+
   it('Off turns it off at once, with no box', async () => {
     render(true)
     act(() => button('Off', el)!.click())

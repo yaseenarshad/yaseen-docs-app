@@ -50,6 +50,17 @@ describe('pythonSymbols', () => {
     expect(pythonSymbols(text)[0].selectionRange.startLineNumber).toBe(5)
   })
 
+  it('a tab-indented decorated row starts at its decorator\'s first character: one column per tab, not 8 (YAZ-3486 checker nit)', () => {
+    const [cls] = pythonSymbols('class A:\n\t@property\n\tdef size(self):\n\t\treturn 1\n\t@staticmethod\n\tdef make():\n\t\treturn A()\n')
+    expect(cls.children!.map((s) => [s.name, s.range.startLineNumber, s.range.startColumn])).toEqual([
+      ['size', 2, 2],
+      ['make', 5, 2],
+    ])
+    // Spaces as before: 4 spaces, column 5.
+    const [spaced] = pythonSymbols('class A:\n    @property\n    def size(self):\n        return 1\n')
+    expect(spaced.children![0].range.startColumn).toBe(5)
+  })
+
   it('a docstring or a string that says "def" or "class" makes no row', () => {
     const text = [
       'def real():', // 1

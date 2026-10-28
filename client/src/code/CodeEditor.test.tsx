@@ -30,6 +30,7 @@ const readFile = vi.fn<(path: string) => Promise<FileResponse>>()
 const writeFile = vi.fn<(req: FileWriteRequest) => Promise<FileWriteResponse>>()
 const setBoardReadOnly = vi.fn()
 const setFolds = vi.fn(async () => undefined)
+const setTocSwitch = vi.fn(async () => undefined)
 const toggleSidebar = vi.fn()
 
 const { watch, watcherSaw } = fakeWatch()
@@ -79,7 +80,7 @@ beforeEach(() => {
       readFile,
       writeFile,
       setBoardReadOnly,
-      state: { setFolds },
+      state: { setFolds, setTocSwitch },
       window: {
         onFlush: (listener: () => Promise<void> | void) => {
           flushListener = listener
@@ -148,6 +149,13 @@ describe('loading', () => {
 })
 
 describe('S1: autosave', () => {
+  // The clock moves only when a test moves it (YAZ-3448 checker nit). With `shouldAdvanceTime`, real time leaked
+  // into the fake clock: under load the 500 ms save fired before `after(499)` was checked. The real timers go back
+  // first: a second `useFakeTimers` over the first kept the first one's real-time pump.
+  beforeEach(() => {
+    vi.useRealTimers()
+    vi.useFakeTimers({ shouldAdvanceTime: false })
+  })
   it('saves 500 ms after an edit: Unsaved → Saving → Saved, the whole text under the read mtime', async () => {
     let answer: (res: FileWriteResponse) => void = () => undefined
     writeFile.mockImplementationOnce((req) => new Promise((resolve) => (answer = () => resolve({ path: req.path, mtime: 200, size: req.content.length }))))
@@ -357,7 +365,7 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
 
   it('the cog has the three rows, in order, with the settings as they are; each row writes its setting for all code files', async () => {
     await openTwo({ codeReadOnly: false, codeWrap: true, codeMinimap: false })
-    expect(cogRows('a')).toEqual(['Read only (all code files)', 'Wrap long lines✓', 'Minimap'])
+    expect(cogRows('a')).toEqual(['Read only (all code files)', 'Wrap long lines (all code files)✓', 'Minimap (all code files)'])
     clickRow('a', 'Read only')
     expect(changeCode).toHaveBeenLastCalledWith({ codeReadOnly: true })
     clickRow('a', 'Wrap long lines')
@@ -446,6 +454,77 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     const [a] = created.editors
     act(() => root?.render(<></>))
     expect(a.actions.size).toBe(0)
+  })
+})
+
+describe('the cog\'s "Table of contents" row: this file only (YAZ-3506)', () => {
+  const PY_A = '/vault/app/a.py'
+  const PY_B = '/vault/app/b.py'
+  const PY = 'class Greeter:\n    def hello(self):\n        return 1\n'
+  function twoTabs(tableOfContents: 'auto' | 'pinned' | 'off', only: 'both' | 'b' = 'both'): void {
+    act(() =>
+      root?.render(
+        <>
+          {only === 'both' && <div data-tab="a"><CodeEditor root={ROOT} path={PY_A} watch={watch} onChangeCodeSettings={() => undefined} tableOfContents={tableOfContents} /></div>}
+          <div data-tab="b"><CodeEditor root={ROOT} path={PY_B} watch={watch} onChangeCodeSettings={() => undefined} tableOfContents={tableOfContents} /></div>
+        </>,
+      ),
+    )
+  }
+  const tab = (id: string): HTMLElement => container.querySelector<HTMLElement>(`[data-tab="${id}"]`)!
+  const toc = (id: string): Element | null => tab(id).querySelector('nav.outline')
+  const openCog = (id: string): HTMLButtonElement[] => {
+    if (tab(id).querySelector('.page-settings__menu') === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    return [...tab(id).querySelectorAll<HTMLButtonElement>('.page-settings__menu button')]
+  }
+  const clickToc = (id: string): void => {
+    const row = openCog(id).find((b) => b.textContent?.startsWith('Table of contents'))!
+    act(() => row.click())
+  }
+  beforeEach(() => readFile.mockImplementation(async (path) => disk(PY, 100, path)))
+  afterEach(() => {
+    readFile.mockReset()
+    storage.setTocSwitch(ROOT, PY_A, true)
+    storage.setTocSwitch(ROOT, PY_B, true)
+  })
+
+  it('the row is labelled "Table of contents", on by default, after the rows for all code files; the panel is called "Table of contents"', async () => {
+    twoTabs('pinned')
+    await settle()
+    expect(openCog('a').map((b) => b.textContent)).toEqual(['Read only (all code files)', 'Wrap long lines (all code files)✓', 'Minimap (all code files)', 'Table of contents✓'])
+    expect(toc('a')!.getAttribute('aria-label')).toBe('Table of contents')
+    expect(tab('a').textContent).not.toContain('Outline')
+  })
+
+  it('off hides the panel of this file only, saved with the file; it survives a close and reopen; on brings it back', async () => {
+    twoTabs('pinned')
+    await settle()
+    expect(toc('a')).not.toBeNull()
+    expect(toc('b')).not.toBeNull()
+    clickToc('a')
+    expect(toc('a')).toBeNull()
+    expect(toc('b')).not.toBeNull()
+    expect(storage.getTocSwitch(ROOT, PY_A)).toBe(false)
+    expect(storage.getTocSwitch(ROOT, PY_B)).toBe(true)
+    expect(setTocSwitch).toHaveBeenLastCalledWith(ROOT, PY_A, false)
+    // Close the tab, then open it again: still off, and the row says so.
+    twoTabs('pinned', 'b')
+    await settle()
+    twoTabs('pinned')
+    await settle()
+    expect(toc('a')).toBeNull()
+    expect(openCog('a').find((b) => b.textContent?.startsWith('Table of contents'))!.getAttribute('aria-pressed')).toBe('false')
+    clickToc('a')
+    await settle()
+    expect(toc('a')).not.toBeNull()
+    expect(setTocSwitch).toHaveBeenLastCalledWith(ROOT, PY_A, true)
+  })
+
+  it('Settings › Table of contents Off applies on top: no panel and no row', async () => {
+    twoTabs('off')
+    await settle()
+    expect(toc('a')).toBeNull()
+    expect(openCog('a').map((b) => b.textContent)).toEqual(['Read only (all code files)', 'Wrap long lines (all code files)✓', 'Minimap (all code files)'])
   })
 })
 

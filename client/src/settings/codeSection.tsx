@@ -11,6 +11,7 @@
  *   switch-on asks, then downloads them (`LanguageHelpersControl`). Not on the cog: it is not about one tab.
  */
 import { Segmented } from './controls'
+import { storage } from '../lib/storage'
 import { LanguageHelpersControl } from './LanguageHelpersControl'
 import { ON_OFF_OPTIONS } from './options'
 import type { SettingsSection } from './registry'
@@ -22,7 +23,7 @@ export const CODE_SECTION: SettingsSection = {
   title: 'Code',
   groups: [
     {
-      hint: 'For every code file (.ts, .py, .json, …). Each code tab’s page cog has the same switches.',
+      hint: 'For every code file (.ts, .py, .json, …). Each code tab’s page cog has the same switches, marked “(all code files)”.',
       items: [
         {
           id: 'codeReadOnly',
@@ -56,7 +57,8 @@ export const CODE_SECTION: SettingsSection = {
           label: 'Jump across files (Cmd+click, Shift+F12)',
           hint: 'For TypeScript, JavaScript, React and Python. The first time, it downloads two helper tools.',
           keywords: [...CODE_WORDS, 'go to definition', 'definition', 'references', 'find references', 'language server', 'lsp', 'typescript', 'python', 'pyright', 'f12', 'cmd click'],
-          render: ({ settings, onChange }) => <LanguageHelpersControl on={settings.codeLanguageHelpers === true} onSet={(codeLanguageHelpers) => onChange({ ...settings, codeLanguageHelpers })} />,
+          // The settings of the moment, not of this render: a download can end after Settings closed and other settings changed.
+          render: ({ settings, onChange }) => <LanguageHelpersControl on={settings.codeLanguageHelpers === true} onSet={(codeLanguageHelpers) => onChange({ ...(storage.getSettings() ?? settings), codeLanguageHelpers })} />,
         },
       ],
     },

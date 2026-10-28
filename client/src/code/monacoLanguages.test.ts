@@ -33,8 +33,8 @@ describe('the extra languages (YAZ-3479)', () => {
       expect(owners, ext).toHaveLength(1)
       expect(owners[0].tokens.tokenizer.root.length, ext).toBeGreaterThan(0)
     }
-    // .diff + .patch share one, .gradle + .groovy share one: 6 languages.
-    expect(EXTRA_LANGUAGES.map((l) => l.id)).toEqual(['haskell', 'diff', 'groovy', 'erlang', 'cmake', 'elm'])
+    // .diff + .patch share one, .gradle + .groovy share one: 6 languages; then Makefile's (YAZ-3505).
+    expect(EXTRA_LANGUAGES.map((l) => l.id)).toEqual(['haskell', 'diff', 'groovy', 'erlang', 'cmake', 'elm', 'makefile'])
   })
 
   it(".ml stays on Monaco's F# (not claimed here)", () => {
@@ -60,9 +60,44 @@ describe('the extra languages (YAZ-3479)', () => {
   it('registers each language once, with its extensions, tokenizer and comment marks; one Monaco already has is left alone', () => {
     const registry = { register: vi.fn(), setMonarchTokensProvider: vi.fn(), setLanguageConfiguration: vi.fn(), getLanguages: () => [{ id: 'elm' }] } as unknown as LanguageRegistry
     registerExtraLanguages(registry)
-    expect(vi.mocked(registry.register).mock.calls.map(([l]) => l.id)).toEqual(['haskell', 'diff', 'groovy', 'erlang', 'cmake'])
-    expect(registry.register).toHaveBeenCalledWith({ id: 'groovy', extensions: ['.groovy', '.gradle'], aliases: ['Groovy', 'Gradle', 'groovy'] })
+    // Monaco's own `dockerfile` and `ruby` are not in this registry: their names are not added.
+    expect(vi.mocked(registry.register).mock.calls.map(([l]) => l.id)).toEqual(['haskell', 'diff', 'groovy', 'erlang', 'cmake', 'makefile'])
+    expect(registry.register).toHaveBeenCalledWith({ id: 'groovy', extensions: ['.groovy', '.gradle'], aliases: ['Groovy', 'Gradle', 'groovy'], filenames: ['Jenkinsfile'] })
     expect(registry.setLanguageConfiguration).toHaveBeenCalledWith('haskell', expect.objectContaining({ comments: { lineComment: '--', blockComment: ['{-', '-}'] } }))
-    expect(vi.mocked(registry.setMonarchTokensProvider).mock.calls.map(([id]) => id)).toEqual(['haskell', 'diff', 'groovy', 'erlang', 'cmake'])
+    expect(vi.mocked(registry.setMonarchTokensProvider).mock.calls.map(([id]) => id)).toEqual(['haskell', 'diff', 'groovy', 'erlang', 'cmake', 'makefile'])
+  })
+})
+
+describe('well-known names with no extension (YAZ-3505)', () => {
+  it('Makefile and Jenkinsfile pick the app\'s tokenizers; Dockerfile.<anything> and Vagrantfile go to Monaco\'s own languages', () => {
+    const registry = { register: vi.fn(), setMonarchTokensProvider: vi.fn(), setLanguageConfiguration: vi.fn(), getLanguages: () => [{ id: 'dockerfile' }, { id: 'ruby' }] } as unknown as LanguageRegistry
+    registerExtraLanguages(registry)
+    expect(registry.register).toHaveBeenCalledWith({ id: 'makefile', extensions: [], aliases: ['Makefile', 'make'], filenames: ['Makefile'] })
+    expect(registry.register).toHaveBeenCalledWith({ id: 'dockerfile', filenamePatterns: ['Dockerfile.*'] })
+    expect(registry.register).toHaveBeenCalledWith({ id: 'ruby', filenames: ['Vagrantfile'] })
+    expect(registry.setLanguageConfiguration).toHaveBeenCalledWith('makefile', expect.objectContaining({ comments: { lineComment: '#' } }))
+  })
+
+  it('the Makefile tokenizer gives each part its token: comment, directive, variable, target, reference, function, recipe mark, string', () => {
+    const lexer = compile('makefile', EXTRA_LANGUAGES.find((l) => l.id === 'makefile')!.tokens) as { tokenizer: Record<string, { regex: RegExp; action: unknown }[]> }
+    const root = lexer.tokenizer.root
+    const first = (line: string): number => root.findIndex((rule) => rule.regex.test(line))
+    // The first rule that matches at the start of the line, and its token (Monaco adds `.make` when it runs).
+    const tokenOf = (line: string): unknown => {
+      const action = root[first(line)].action as string | { token: string }
+      return typeof action === 'string' ? action : action.token
+    }
+    expect(tokenOf('# build the app')).toBe('comment')
+    expect(tokenOf('ifeq ($(OS),Darwin)')).toBe('keyword')
+    expect(tokenOf('-include config.mk')).toBe('keyword')
+    expect(tokenOf('CC ?= clang')).toBe('key')
+    expect(tokenOf('build test: deps')).toBe('type')
+    expect(tokenOf('\t@echo "done"')).toBe('annotation')
+    expect(tokenOf('$(shell date)')).toBe('predefined')
+    // Inside a reference, a GNU function's name is a function; any other name a variable.
+    const source = EXTRA_LANGUAGES.find((l) => l.id === 'makefile')!.tokens
+    const word = (source.tokenizer.reference as [RegExp, { cases: Record<string, string> }][]).find(([regex]) => regex.test('shell date'))!
+    expect(word[1].cases).toEqual({ '@functions': 'predefined', '@default': 'key' })
+    expect(source.functions).toContain('shell')
   })
 })

@@ -37,16 +37,16 @@ const DOCUMENT_SYMBOLS = '_executeDocumentSymbolProvider'
 
 /** What the TS worker's proxy answers for the Outline (`code/tsWorker.ts`). */
 interface OutlineWorker {
-  getOutlineTree(fileName: string): Promise<ArrayBuffer | null>
+  getOutlineTree(fileName: string, showLocals: boolean): Promise<ArrayBuffer | null>
 }
 
 /** The TS worker's tree of a TS or JS model; undefined when the worker can not answer it. */
-async function readTsTree(model: Model): Promise<OutlineTree | undefined> {
+async function readTsTree(model: Model, showLocals: boolean): Promise<OutlineTree | undefined> {
   try {
     const ts = monaco.typescript
     const getWorker = model.getLanguageId() === 'typescript' ? await ts.getTypeScriptWorker() : await ts.getJavaScriptWorker()
     const worker = (await getWorker(model.uri)) as unknown as OutlineWorker
-    const packed = await worker.getOutlineTree(model.uri.toString())
+    const packed = await worker.getOutlineTree(model.uri.toString(), showLocals)
     return packed instanceof ArrayBuffer ? (unpackTree(packed) ?? undefined) : undefined
   } catch {
     return undefined
@@ -55,13 +55,15 @@ async function readTsTree(model: Model): Promise<OutlineTree | undefined> {
 
 /**
  * The symbols of the model now: a tree from the TS worker, or a provider's symbols; null when no
- * source answers. An empty tree or list is a file with no symbol.
+ * source answers. An empty tree or list is a file with no symbol. `showLocals` keeps the names inside
+ * functions in the TS worker's tree (YAZ-3507); a list of symbols keeps them all, and the feed's
+ * `buildTree` applies the same rule.
  */
-export async function readSymbols(editor: Editor, model: Model): Promise<OutlineTree | readonly CodeSymbol[] | null> {
+export async function readSymbols(editor: Editor, model: Model, showLocals = false): Promise<OutlineTree | readonly CodeSymbol[] | null> {
   const language = model.getLanguageId()
   if (language === 'python') return pythonSymbols(model.getValue())
   if (language === 'typescript' || language === 'javascript') {
-    const tree = await readTsTree(model)
+    const tree = await readTsTree(model, showLocals)
     if (tree !== undefined) return tree
   }
   const commands = (editor as unknown as { _commandService?: CommandServiceLike })._commandService

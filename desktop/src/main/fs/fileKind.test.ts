@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boardBaseName, canRenameWithoutConversion, fileKind, isAtomicTmp, isBoard, isDiagram, isDrawing, isMarkdown, isViewOnly } from '@shared/fileKind'
+import { boardBaseName, canRenameWithoutConversion, fileKind, isAtomicTmp, isBoard, isDiagram, isDrawing, isMarkdown, isSkipped, isViewOnly } from '@shared/fileKind'
 import { TEXT_VIEW_EXTENSIONS } from '@shared/types'
 
 describe('fileKind', () => {
@@ -27,10 +27,32 @@ describe('fileKind', () => {
     expect(new Set(list).size).toBe(list.length)
   })
 
-  it('S2 (YAZ-3450): a name with no extension has no viewer, also one a code tool knows (Dockerfile, Makefile)', () => {
-    for (const name of ['Dockerfile', 'Makefile', 'CMakeLists', 'Gemfile', 'LICENSE', '/vault/app/Procfile', '/vault/.r', '/vault/.lua']) expect(fileKind(name), name).toBeNull()
-    // `CMakeLists.txt` is text by its `.txt`, as before.
+  it('YAZ-3505: the well-known names with no extension are text, exactly as on disk, wherever they are', () => {
+    for (const name of ['Dockerfile', 'Makefile', 'Procfile', 'Gemfile', 'Jenkinsfile', 'Vagrantfile', 'LICENSE', 'CODEOWNERS']) {
+      expect(fileKind(name), name).toBe('text')
+      expect(fileKind(`/vault/app/${name}`), name).toBe('text')
+      expect(isViewOnly(name), name).toBe(true)
+    }
+    for (const name of ['Dockerfile.dev', '/vault/deploy/Dockerfile.prod', 'Dockerfile.x']) expect(fileKind(name), name).toBe('text')
+  })
+
+  it('YAZ-3505: near misses are not: another case, another name, a suffix; an extension that is a kind wins; dot-files stay skipped', () => {
+    for (const name of ['makefile.bak', 'makefile', 'dockerfile', 'MAKEFILE', 'License', 'LICENSE.bak', 'Makefile.old', 'Dockerfile.', 'CMakeLists', 'Gemfile2', '/vault/.r', '/vault/.lua']) expect(fileKind(name), name).toBeNull()
+    // `CMakeLists.txt` and `LICENSE.txt` are text by their `.txt`, as before; `Dockerfile.md` is a note.
     expect(fileKind('CMakeLists.txt')).toBe('text')
+    expect(fileKind('LICENSE.txt')).toBe('text')
+    expect(fileKind('Dockerfile.md')).toBe('markdown')
+    expect(isSkipped('.gitignore')).toBe(true)
+    expect(isSkipped('.env')).toBe(true)
+    expect(isSkipped('Dockerfile')).toBe(false)
+  })
+
+  it('YAZ-3505: renames keep working: the names are text, so text to text needs no conversion', () => {
+    expect(canRenameWithoutConversion('Dockerfile', 'Dockerfile.dev')).toBe(true)
+    expect(canRenameWithoutConversion('Makefile', 'build.mk.txt')).toBe(true)
+    expect(canRenameWithoutConversion('notes.txt', 'LICENSE')).toBe(true)
+    expect(canRenameWithoutConversion('Makefile', 'makefile')).toBe(false)
+    expect(canRenameWithoutConversion('LICENSE', 'photo.png')).toBe(false)
   })
 
   it('classifies PDFs case-insensitively', () => {

@@ -87,11 +87,37 @@ export interface OutlineTree {
    * symbol with children has one: only it can be collapsed. '' for the others.
    */
   key: readonly string[]
+  /**
+   * How many names inside functions the build left out (`isLocalName`; YAZ-3507), 0 when they show.
+   * The "…" › Show menu offers "Variables inside functions" only when there are some.
+   */
+  localsLeftOut: number
 }
 
 /** The number of kinds: Monaco's `SymbolKind` runs from 0 to 25. Any other number reads as `Variable`. */
 export const KIND_COUNT = 26
 const VARIABLE = 12
+const CONSTANT = 13
+
+/**
+ * The kinds a function body hides behind (YAZ-3507): a Method, Property, Field, Constructor, Function,
+ * Variable or Constant. Monaco's TS rules give a constructor, a `let` and an unknown kind as Variable, a
+ * getter or a setter as Property; a Variable or Property with a Variable child holds an arrow function
+ * or a function expression (`const f = () => { let n }`). So a Variable under one of these is a name
+ * inside a function. A Variable under the file, a Module, Namespace, Package, Class or Enum is kept.
+ */
+const FUNCTION_LIKE = new Set([5, 6, 7, 8, 11, VARIABLE, CONSTANT])
+
+/**
+ * A name declared inside a function, method or arrow function (YAZ-3507; YAZ-3439 "Decision — Demo round 2"):
+ * a Variable or a Constant whose parent is `FUNCTION_LIKE`. The loop counter `n` in a method is one.
+ * The Outline leaves them out unless "…" › Show › "Variables inside functions" is on.
+ */
+export function isLocalName(kind: number, parentKind: number | undefined): boolean {
+  return (kind === VARIABLE || kind === CONSTANT) && parentKind !== undefined && FUNCTION_LIKE.has(parentKind)
+}
+
+const kindOf = (kind: number): number => (Number.isInteger(kind) && kind >= 0 && kind < KIND_COUNT ? kind : VARIABLE)
 
 const before = (a: SymbolRange, b: SymbolRange): number => a.startLineNumber - b.startLineNumber || a.startColumn - b.startColumn
 
@@ -99,10 +125,12 @@ const NO_CHILDREN: readonly number[] = []
 
 /**
  * The tree of `symbols`, in document order: each list of siblings is sorted by where it starts.
- * Iterative, so a deep tree never runs out of stack.
+ * Iterative, so a deep tree never runs out of stack. A name inside a function (`isLocalName`) and its
+ * subtree are left out unless `showLocals`: the rule runs here, once per read, never per render (YAZ-3507).
  */
-export function buildTree(symbols: readonly CodeSymbol[]): OutlineTree {
+export function buildTree(symbols: readonly CodeSymbol[], showLocals = false): OutlineTree {
   // Pass 1: the nodes in document order, each with its parent.
+  let localsLeftOut = 0
   const nodes: CodeSymbol[] = []
   const parents: number[] = []
   const depths: number[] = []
@@ -114,6 +142,10 @@ export function buildTree(symbols: readonly CodeSymbol[]): OutlineTree {
       continue
     }
     const symbol = top.list[top.at++]
+    if (!showLocals && top.parent !== -1 && isLocalName(kindOf(symbol.kind), kindOf(nodes[top.parent].kind))) {
+      localsLeftOut++
+      continue
+    }
     const index = nodes.length
     nodes.push(symbol)
     parents.push(top.parent)
@@ -144,6 +176,7 @@ export function buildTree(symbols: readonly CodeSymbol[]): OutlineTree {
     children: new Array<readonly number[]>(size),
     roots: [] as number[],
     key: new Array<string>(size),
+    localsLeftOut,
   }
   const lists: number[][] = []
   for (let i = 0; i < size; i++) {
@@ -152,7 +185,7 @@ export function buildTree(symbols: readonly CodeSymbol[]): OutlineTree {
     const name = typeof s.name === 'string' && s.name !== '' ? s.name : '(anonymous)'
     tree.name[i] = name
     tree.lower[i] = name.toLowerCase()
-    tree.kind[i] = Number.isInteger(s.kind) && s.kind >= 0 && s.kind < KIND_COUNT ? s.kind : VARIABLE
+    tree.kind[i] = kindOf(s.kind)
     tree.depth[i] = Math.min(depths[i], 0xffff)
     tree.parent[i] = parents[i]
     tree.startLine[i] = s.range.startLineNumber

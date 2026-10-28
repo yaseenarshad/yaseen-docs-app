@@ -1,7 +1,8 @@
 /**
  * THE HOVER PREVIEW (Draw's YAZ-1800, ported by YAZ-3028 D11): a drawing or diagram row rested on
  * for the dwell opens a picture of the whole board beside the sidebar; a note row opens the top of
- * the note in the same box (YAZ-3075 D1). A text, PDF or image row never does (D6). The row is
+ * the note in the same box (YAZ-3075 D1); a code or text row the top of the file with its colours
+ * (YAZ-3508, `code/CodeHoverPreview.tsx`). A PDF or image row never does (D6; `hasHoverPreview`). The row is
  * pending until the dwell ends, then shown; only the row leaving the tree closes it. Every close
  * bumps `hoverRequest`, so an earlier row's dwell never fires late.
  *
@@ -19,8 +20,9 @@
  * A NOTE needs neither (YAZ-3075 D1, C26, C27): `NotePreview` reads the note itself on each open,
  * and a save while it shows does not draw it again — so no head read and no watch subscription.
  *
- * The panels themselves (`BoardPreview` with its picture cache, `NotePreview`, and their CSS) load
- * lazily, on the first dwell of their kind; a note's chunk starts loading when its dwell STARTS.
+ * The panels themselves (`BoardPreview` with its picture cache, `NotePreview`, `CodeHoverPreview`, and their
+ * CSS) load lazily, on the first dwell of their kind; a note's or a code file's chunk starts loading when its
+ * dwell STARTS (a code file's is Monaco's, so a window that never rests on one never loads it).
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from 'react'
 import { isBoard, isMarkdown } from '@shared/fileKind'
@@ -32,6 +34,7 @@ import { createStore, type Store } from '../lib/store'
 import { useAppliedTheme } from '../lib/theme'
 import { findNode } from '../lib/treeState'
 import { boardPreviewKey } from './boardPreviewKey'
+import { hasHoverPreview, isCodeHover } from './hoverPreviewKinds'
 import type { AnchorRect, PreviewAnchor, PreviewPopup } from './previewPlacement'
 
 const BoardPreview = lazy(() => import('./BoardPreview'))
@@ -45,6 +48,17 @@ const BoardPreview = lazy(() => import('./BoardPreview'))
 let notePreviewModule: typeof import('./NotePreview') | null = null
 export const loadNotePreview = () => import('./NotePreview').then((module) => (notePreviewModule = module))
 const LazyNotePreview = lazy(loadNotePreview)
+
+/** A code file's card (YAZ-3508), the same way as the note's: its dwell starts the load of Monaco's chunk. */
+let codeHoverModule: typeof import('../code/CodeHoverPreview') | null = null
+export const loadCodeHoverPreview = () => import('../code/CodeHoverPreview').then((module) => (codeHoverModule = module))
+const LazyCodeHoverPreview = lazy(loadCodeHoverPreview)
+
+/** The panel's chunk of `path`'s kind starts loading with the dwell. A failed load is the lazy panel's to meet. */
+export function preloadPreview(path: string): void {
+  if (isMarkdown(path)) loadNotePreview().catch(() => undefined)
+  else if (isCodeHover(path)) loadCodeHoverPreview().catch(() => undefined)
+}
 
 /** The row the pointer (or focus) rests on — pending until the dwell ends, then shown; `path` null = none. */
 export interface HoverState {
@@ -72,13 +86,12 @@ export function useHoverPreview(blocked: boolean, activeFile: string | null) {
       // The same row again (focus after the pointer, or back) keeps its dwell or its panel.
       if (node !== null && hover.getState().path === node.path) return
       closePreview()
-      // A board or a note previews (YAZ-3075 D6); a text file, a PDF or an image row has no preview.
-      if (node === null || blockedRef.current || !(isBoard(node.path) || isMarkdown(node.path))) return
+      // A board, a note or a code file previews (YAZ-3075 D6, YAZ-3508); a PDF or an image row has none.
+      if (node === null || blockedRef.current || !hasHoverPreview(node.path)) return
       const id = hoverRequest.current
       const { path } = node
       hover.set({ path, shown: false })
-      // A failed load is the lazy panel's to meet when it renders; here it would be an unhandled rejection.
-      if (isMarkdown(path)) loadNotePreview().catch(() => undefined)
+      preloadPreview(path)
       hoverTimer.current = setTimeout(() => {
         hoverTimer.current = null
         if (id === hoverRequest.current) hover.set({ shown: true })
@@ -221,6 +234,14 @@ export function PreviewPanel({ path, root, name, wikilinks, textVars, knownMtime
     }
   }, [boardPath, watch])
   const node = useMemo(() => ({ path }), [path])
+  if (isCodeHover(path)) {
+    const CodeHoverPreview = codeHoverModule?.default ?? LazyCodeHoverPreview
+    return (
+      <Suspense fallback={null}>
+        <CodeHoverPreview root={root} path={path} name={name} anchor={anchor} />
+      </Suspense>
+    )
+  }
   if (isMarkdown(path)) {
     const NotePreview = notePreviewModule?.default ?? LazyNotePreview
     return (
