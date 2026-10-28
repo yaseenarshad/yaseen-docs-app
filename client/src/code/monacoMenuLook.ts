@@ -12,7 +12,12 @@
  * they win in any order (Monaco adds its menu's style sheet after this one).
  */
 
-/** The app's `.ctx-menu` spacing (`app.css`): 4 px around, rows of 6 px × 10 px at 13 px, hints at 11 px. */
+/**
+ * The app's `.ctx-menu` spacing (`app.css`): 4 px around, hints at 11 px, and each row is the app's own
+ * row: `--menu-row-padding` (it inherits into the shadow root) around one line of 13 px text at
+ * `line-height: normal`. So the height follows the font, as the app's row does, and the two cannot drift
+ * (YAZ-3503: a fixed 27 px was 1 px short of the app's 28 px row on a Mac).
+ */
 export const MENU_LOOK_CSS = `
 .context-view .monaco-menu.monaco-menu {
   min-width: 140px;
@@ -22,13 +27,15 @@ export const MENU_LOOK_CSS = `
   padding: 4px 0;
 }
 .context-view .monaco-menu.monaco-menu .monaco-action-bar.vertical .action-menu-item {
-  height: 27px;
+  height: auto;
   margin: 0 4px;
   border-radius: 5px;
 }
 .context-view .monaco-menu.monaco-menu .monaco-action-bar.vertical .action-label:not(.separator) {
-  padding: 0 10px;
+  max-height: none;
+  padding: var(--menu-row-padding, 6px 10px);
   font-size: 13px;
+  line-height: normal;
 }
 .context-view .monaco-menu.monaco-menu .monaco-action-bar.vertical .keybinding {
   padding: 0 10px 0 16px;

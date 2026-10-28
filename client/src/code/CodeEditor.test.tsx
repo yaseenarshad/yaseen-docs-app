@@ -18,7 +18,7 @@ import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { readPageView } from '../lib/pageView'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
-import { BROKEN_CODE_DOCUMENT, CodeEditor, appCommandOf } from './CodeEditor'
+import { BROKEN_CODE_DOCUMENT, CodeEditor, LARGE_CODE_CHARS, appCommandOf, stickyModelFor } from './CodeEditor'
 import { applyAppTheme, created, resetFakeMonaco } from './monacoTestKit'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -115,6 +115,18 @@ describe('loading', () => {
     expect(model().uri.path).toBe(PATH)
     expect(editor().options).toMatchObject({ lineNumbers: 'on', showFoldingControls: 'always', stickyScroll: { enabled: true }, bracketPairColorization: { enabled: true }, minimap: { enabled: false }, wordWrap: 'on', readOnly: false })
     expect(container.querySelector('section.editor.editor--code')).not.toBeNull()
+  })
+
+  it('YAZ-3501: a large file’s sticky scroll reads the indentation, a normal file’s the symbols', async () => {
+    await opened('const a = 1\n')
+    expect(editor().options).toMatchObject({ stickyScroll: { enabled: true, defaultModel: 'outlineModel' } })
+    expect(stickyModelFor(LARGE_CODE_CHARS - 1)).toBe('outlineModel')
+    expect(stickyModelFor(LARGE_CODE_CHARS)).toBe('indentationModel')
+  })
+
+  it('YAZ-3501: a file of 512 KB or more opens with sticky scroll on the indentation model', async () => {
+    await opened(`${'export const value = 1\n'.repeat(Math.ceil(LARGE_CODE_CHARS / 23))}`)
+    expect(editor().options).toMatchObject({ stickyScroll: { enabled: true, defaultModel: 'indentationModel' } })
   })
 
   it('a file that will not open is one readable state, and no editor mounts', async () => {

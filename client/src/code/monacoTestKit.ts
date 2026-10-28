@@ -75,6 +75,11 @@ export class FakeModel {
     return this.lines.length
   }
 
+  /** The text's length in the model's own line breaks, BOM aside (Monaco's `getValueLength()`). */
+  getValueLength(): number {
+    return this.getValue().length
+  }
+
   getLineContent(lineNumber: number): string {
     return this.lines[lineNumber - 1] ?? ''
   }

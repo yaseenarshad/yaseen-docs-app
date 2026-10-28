@@ -5,8 +5,9 @@
  *
  * NEVER ON THE KEYSTROKE PATH. An edit only re-arms one timer; `READ_DELAY_MS` after the last edit
  * the symbols are read again (a worker or the helper does the work), and the tree is built once
- * when the answer comes. An answer that a newer read overtook is thrown away. The first read is at
- * once, so a file opens with its Outline.
+ * when the answer comes. A TS or JS file's answer is the tree itself, built in the TS worker
+ * (YAZ-3501): the page only takes it. An answer that a newer read overtook is thrown away. The first
+ * read is at once, so a file opens with its Outline.
  *
  * OFF READS NOTHING. While the Outline is off (Settings › Table of contents › Off), `setActive(false)`
  * stops the reads: an edit arms no timer. Turning it on reads at once.
@@ -37,9 +38,12 @@ export interface OutlineFeed {
   dispose(): void
 }
 
-export type ReadSymbols = (editor: Editor, model: Model) => Promise<readonly CodeSymbol[] | null>
+/** A read's answer: a built tree (the TS worker's, YAZ-3501), a provider's symbols, or null for no answer. */
+export type ReadSymbols = (editor: Editor, model: Model) => Promise<OutlineTree | readonly CodeSymbol[] | null>
 
 const EMPTY: OutlineSnapshot = { tree: null, markers: [] }
+
+const isTree = (answer: OutlineTree | readonly CodeSymbol[]): answer is OutlineTree => !Array.isArray(answer)
 
 /** Starts the feed of one code tab. `read` is `symbolSource.readSymbols`, given by the caller. */
 export function attachOutlineFeed(editor: Editor, model: Model, read: ReadSymbols, active = true): OutlineFeed {
@@ -65,7 +69,7 @@ export function attachOutlineFeed(editor: Editor, model: Model, read: ReadSymbol
     // No answer (a helper that timed out, a provider that failed): the last tree stands, so the
     // Outline never blinks away for one bad read. An empty answer is a file with no symbol now.
     if (disposed || mine !== asked || model.isDisposed() || symbols === null) return
-    const tree = symbols.length === 0 ? null : buildTree(symbols)
+    const tree = isTree(symbols) ? (symbols.size === 0 ? null : symbols) : symbols.length === 0 ? null : buildTree(symbols)
     if (tree === null && snapshot.tree === null) return
     set({ tree, markers: tree === null ? [] : markersNow() })
   }

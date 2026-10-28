@@ -13,16 +13,19 @@
  *   Pin keeps it beside the code, the rows, the filter, collapse, Sort by and Show, the error mark, the
  *   current row following the cursor, a click that opens the folds and jumps, a `.py` file's rows, no
  *   Outline for a `.lua` file, and the 5 MB file: its rows, and the long frames while typing in it.
+ * - YAZ-3501 (bug): typing in the 5 MB file: each key draws within a frame, with no long task after a pause.
+ * - YAZ-3502 (bug): a quit right after an edit of the 5 MB file: the flush and the app's quit steps are quick.
+ * - YAZ-3503 (bug): Monaco's menu rows are the app's menu rows to the pixel (step 6).
  *
  * Same harness as viewers.spec.ts: temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `codeTab-` screenshots, hidden windows. Keys and the wheel go to the page through Playwright, never
  * to the person's screen. Serial: one launch, each step continuing the last one.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, fileRow, launchApp, layer, menuItem, menuListItem, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, fileRow, launchApp, layer, menuItem, menuListItem, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -365,25 +368,40 @@ test('step 10 — YAZ-3486 S10, S11: a .py file lists its class and functions; a
   await expect(outline(win)).toHaveCount(0)
 })
 
-/** Types 20 keys at the start of a line of the big file, then waits 2.5 s (the 300 ms read and its answer): the long tasks of it all, ms. */
-async function typeAndWatch(w: Page, lineText: string): Promise<{ typedMs: number; long: number[] }> {
+/**
+ * Types 20 keys at the start of a line of the big file the way a person types: 4 bursts of 5 keys 100 ms
+ * apart, with a 700 ms pause after each, so each pause sets off what waits for one (the Outline's read
+ * 300 ms after the last edit, sticky scroll's, the autosave). Then 2.5 s more. Per key: keydown → the next
+ * frame → the next task, as `tools/perf`'s `typing` scenario measures it; and every long task, ms.
+ */
+async function typeAndWatch(w: Page, lineText: string): Promise<{ keys: number[]; long: number[] }> {
   await code(w).locator('.view-line', { hasText: lineText }).first().click()
   await w.evaluate(() => {
-    const g = window as unknown as { __long: number[]; __observer?: PerformanceObserver }
+    const g = window as unknown as { __long: number[]; __keys: number[]; __observer?: PerformanceObserver; __keyProbe?: boolean }
     g.__observer?.disconnect()
     g.__long = []
+    g.__keys = []
     g.__observer = new PerformanceObserver((list) => list.getEntries().forEach((e) => g.__long.push(Math.round(e.duration))))
     g.__observer.observe({ type: 'longtask' })
+    if (g.__keyProbe === true) return
+    g.__keyProbe = true
+    window.addEventListener('keydown', (e) => requestAnimationFrame(() => setTimeout(() => g.__keys.push(Math.round(performance.now() - e.timeStamp)))), true)
   })
-  const k0 = Date.now()
-  for (let i = 0; i < 20; i++) await w.keyboard.type('x', { delay: 40 })
-  const typedMs = Date.now() - k0
+  for (let burst = 0; burst < 4; burst++) {
+    for (let i = 0; i < 5; i++) await w.keyboard.type('x', { delay: 100 })
+    await w.waitForTimeout(700)
+  }
   await w.waitForTimeout(2500)
-  const long = await w.evaluate(() => (window as unknown as { __long: number[] }).__long)
+  const result = await w.evaluate(() => {
+    const g = window as unknown as { __long: number[]; __keys: number[] }
+    return { keys: [...g.__keys], long: [...g.__long] }
+  })
   for (let i = 0; i < 20; i++) await w.keyboard.press('Backspace')
   await w.waitForTimeout(1500)
-  return { typedMs, long }
+  return result
 }
+
+const median = (list: readonly number[]): number => [...list].sort((a, b) => a - b)[Math.floor(list.length / 2)]
 
 /** Settings › Editor › Table of contents, for the whole app. */
 async function setTableOfContents(w: Page, label: 'Off' | 'Always' | 'When there is room'): Promise<void> {
@@ -396,7 +414,7 @@ async function setTableOfContents(w: Page, label: 'Off' | 'Always' | 'When there
   await expect(dialog).toHaveCount(0)
 }
 
-test('step 11 — YAZ-3486 S12: the 5 MB file: its Outline, and typing stays smooth (with the Outline, and Off for the baseline)', async () => {
+test('step 11 — YAZ-3486 S12, YAZ-3501: the 5 MB file: its Outline, and each key draws at once (with the Outline, and Off)', async () => {
   test.setTimeout(120_000)
   const t0 = Date.now()
   await fileRow(win, BIG_FILE).click()
@@ -413,10 +431,58 @@ test('step 11 — YAZ-3486 S12: the 5 MB file: its Outline, and typing stays smo
   await setTableOfContents(win, 'Off')
   await expect(outline(win)).toHaveCount(0)
   const off = await typeAndWatch(win, 'export const value3 =')
-  console.log(`[YAZ-3486 S12] ${BIG_FILE}: code shown ${shownMs} ms, Outline rows ${outlineMs} ms after the click; ${runner / 24} rows, ${drawn} drawn. 20 keys + 2.5 s — with the Outline: ${withOutline.typedMs} ms, long tasks [${withOutline.long.join(', ')}] ms; Outline Off: ${off.typedMs} ms, long tasks [${off.long.join(', ')}] ms`)
+  console.log(`[YAZ-3486 S12, YAZ-3501] ${BIG_FILE}: code shown ${shownMs} ms, Outline rows ${outlineMs} ms after the click; ${runner / 24} rows, ${drawn} drawn. 20 keys in 4 bursts — with the Outline: keys [${withOutline.keys.join(', ')}] ms, long tasks [${withOutline.long.join(', ')}] ms; Outline Off: keys [${off.keys.join(', ')}] ms, long tasks [${off.long.join(', ')}] ms`)
+  // YAZ-3501: before the fix each pause in the typing cost the page 470–690 ms (sticky scroll's and the
+  // Outline's symbols, read on the page's thread), and a key typed then waited for it. Now the usual key
+  // draws in under one frame (16 ms), and no task holds a key for long.
+  for (const run of [withOutline, off]) {
+    expect(run.keys).toHaveLength(20)
+    expect(median(run.keys)).toBeLessThan(16)
+    expect(Math.max(...run.keys)).toBeLessThan(100)
+    expect(Math.max(0, ...run.long)).toBeLessThan(200)
+  }
   await setTableOfContents(win, 'Always')
 })
 
-test('step 12 — quit', async () => {
-  await quitApp(app)
+/**
+ * YAZ-3502: quit right after an edit of the 5 MB file. Main writes a time stamp at each step of the quit
+ * (`before-quit`, the window's `app:flushed`, the window gone, `app.exit`) into a file of the temp profile,
+ * because the process is gone when the test reads them. The app's own quit work must be quick, and the
+ * edit must be on disk. The end of the Electron process after `app.exit(0)` is not the app's work: on a
+ * Mac with a load average over 100 it took from 1.6 s to over 60 s, for a 100-line file as for this one
+ * (YAZ-3502 root cause). So the wait for the process to end has a wider cap than `quitApp`'s 15 s.
+ */
+test('step 12 — YAZ-3502: quit right after an edit of the 5 MB file: the flush and the app\'s quit steps are quick, and the edit is on disk', async () => {
+  test.setTimeout(120_000)
+  await fileRow(win, BIG_FILE).click()
+  await code(win).locator('.view-line', { hasText: 'export const value7 =' }).first().click()
+  await win.keyboard.press('Home')
+  await win.keyboard.type('q')
+  await expect(lines(win)).toContainText('qexport const value7 =')
+  const stamps = path.join(userData, 'quit-stamps.txt')
+  await app.evaluate(({ app: electronApp, ipcMain, BrowserWindow }, file) => {
+    const fs = process.mainModule!.require('node:fs') as typeof import('node:fs')
+    fs.writeFileSync(file, '')
+    const stamp = (step: string) => fs.appendFileSync(file, `${step} ${Date.now()}\n`)
+    electronApp.once('before-quit', () => stamp('before-quit'))
+    ipcMain.once('app:flushed', () => stamp('flushed'))
+    for (const w of BrowserWindow.getAllWindows()) w.once('closed', () => stamp('closed'))
+    const exit = electronApp.exit.bind(electronApp)
+    electronApp.exit = (code?: number) => {
+      stamp('exit')
+      exit(code)
+    }
+  }, stamps)
+  const t0 = Date.now()
+  await Promise.race([app.close(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('the app process did not end within 60 s of app.close()')), 60_000))])
+  const goneMs = Date.now() - t0
+  const at = Object.fromEntries((await readFile(stamps, 'utf8')).trim().split('\n').map((line) => line.split(' ')).map(([step, ms]) => [step, Number(ms)]))
+  const since = (step: string) => at[step] - at['before-quit']
+  console.log(`[YAZ-3502] quit after an edit of ${BIG_FILE}: flushed +${since('flushed')} ms, window gone +${since('closed')} ms, app.exit +${since('exit')} ms; the process ended ${goneMs} ms after app.close()`)
+  // The renderer's flush wrote the 5 MB text with the edit, and every quit step of the app ran in time.
+  expect(since('flushed')).toBeLessThan(1500)
+  expect(since('closed')).toBeLessThan(1500)
+  // `stopHelpers` may wait up to its 2 s cap for a language helper (`lsp/server.ts`).
+  expect(since('exit')).toBeLessThan(3500)
+  expect(await readFile(path.join(vault, BIG_FILE), 'utf8')).toContain('\nqexport const value7 = { id: 7,')
 })

@@ -96,6 +96,30 @@ export function renderSourcemapsAside(outDir: string, mapsDir: string): Plugin {
   }
 }
 
+/**
+ * Monaco's own TypeScript worker file, OUT of the build (YAZ-3501). The app starts its own TS worker
+ * (`client/src/code/tsWorker.ts`: Monaco's, plus the code Outline's tree), through
+ * `MonacoEnvironment.getWorker` (`client/src/code/monaco.ts`). Monaco's `workerManager.js` still names its
+ * own file in a `new Worker(new URL('ts.worker.js', import.meta.url))` that never runs while `getWorker`
+ * exists, and Vite would bundle that 7 MB file a second time. This removes the dead call before Vite sees
+ * it. A Monaco whose file no longer has it fails the build here, so the next upgrade looks again.
+ */
+export const MONACO_TS_WORKER_FILE = /monaco-editor\/esm\/vs\/languages\/features\/typescript\/workerManager\.js$/
+const MONACO_TS_WORKER_URL = /new Worker\(new URL\(['"]ts\.worker\.js['"], import\.meta\.url\), \{ type: "module" \}\)/
+
+export function dropMonacoTsWorkerUrl(): Plugin {
+  return {
+    name: 'yaseen-drop-monaco-ts-worker-url',
+    apply: 'build',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!MONACO_TS_WORKER_FILE.test(id.split('?')[0])) return null
+      if (!MONACO_TS_WORKER_URL.test(code)) throw new Error(`${id}: Monaco's TS worker URL is not where YAZ-3501 expects it — check \`dropMonacoTsWorkerUrl\``)
+      return { code: code.replace(MONACO_TS_WORKER_URL, `(() => { throw new Error('the TS worker starts from MonacoEnvironment.getWorker') })()`), map: null }
+    },
+  }
+}
+
 /** The last local build's maps, per version (the ROOT package.json's, which `tools/packDesktop.mjs` stamps in; rebuilding a release tag reproduces them), gitignored. */
 const { version } = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8')) as { version: string }
 const mapsDir = resolve(here, '.maps', version)
@@ -117,7 +141,7 @@ export default defineConfig({
   },
   renderer: {
     root: client,
-    plugins: [react(), excalidrawAssets(), drawioAssets(), renderSourcemapsAside(rendererOut, mapsDir)],
+    plugins: [react(), dropMonacoTsWorkerUrl(), excalidrawAssets(), drawioAssets(), renderSourcemapsAside(rendererOut, mapsDir)],
     resolve: {
       alias: { '@shared': shared },
       /**

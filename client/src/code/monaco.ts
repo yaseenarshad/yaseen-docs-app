@@ -5,7 +5,9 @@
  * WORKERS. Each worker is a Vite `?worker` bundle served beside the renderer (`app://yaseen/assets/…`);
  * nothing comes from a network. The imports name the same files Monaco's own `new Worker(new URL(…))`
  * calls name, so Vite bundles each worker once. `getWorker` is needed for the editor worker: Monaco
- * starts that one from a blob of `editorWebWorkerMain.js`, a file Vite copies raw, unbundled.
+ * starts that one from a blob of `editorWebWorkerMain.js`, a file Vite copies raw, unbundled. The TS
+ * worker is the one exception: `tsWorker.ts`, Monaco's own TS worker with one more method, the code
+ * Outline's tree (YAZ-3501); the build drops Monaco's unused copy (`electron.vite.config.ts`).
  *
  * SMART HELP in one file (TS, JS, TSX, JSON, CSS, HTML) is Monaco's own. Its TypeScript worker puts
  * EVERY open TS and JS model in one program: each code tab has its own model (`code-tab://t<n>/…`), and
@@ -23,7 +25,7 @@ import EditorWorker from 'monaco-editor/editor/editor.worker?worker'
 import CssWorker from 'monaco-editor/languages/features/css/css.worker?worker'
 import HtmlWorker from 'monaco-editor/languages/features/html/html.worker?worker'
 import JsonWorker from 'monaco-editor/languages/features/json/json.worker?worker'
-import TsWorker from 'monaco-editor/languages/features/typescript/ts.worker?worker'
+import TsWorker from './tsWorker?worker'
 import { registerExtraLanguages } from './monacoLanguages'
 import { buildMonacoTheme, monacoThemeName, readAppTokens, type AppTheme } from './monacoTheme'
 

@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Rollup } from 'vite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { renderSourcemapsAside } from './electron.vite.config'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dropMonacoTsWorkerUrl, renderSourcemapsAside } from './electron.vite.config'
 
 describe('renderSourcemapsAside (YAZ-2183)', () => {
   let root = ''
@@ -32,5 +34,23 @@ describe('renderSourcemapsAside (YAZ-2183)', () => {
     await build(['assets/index-a1.js', 'assets/index-a1.js.map'])
     await build(['assets/index-d4.js', 'assets/index-d4.js.map'])
     expect(await files(maps())).toEqual(['assets/index-d4.js.map'])
+  })
+})
+
+describe('dropMonacoTsWorkerUrl (YAZ-3501)', () => {
+  const transform = dropMonacoTsWorkerUrl().transform as (code: string, id: string) => { code: string } | null
+  const file = createRequire(path.join(__dirname, '..', 'client', 'package.json')).resolve('monaco-editor/languages/features/typescript/workerManager.js')
+
+  it("removes the dead `new Worker(new URL('ts.worker.js'))` from Monaco's real workerManager.js, and nothing else", () => {
+    const code = readFileSync(file, 'utf8')
+    const out = transform(code, file)!.code
+    expect(out).not.toContain("new URL('ts.worker.js'")
+    expect(out).toContain('createWorker: () => (() => {')
+    expect(out.replace(/createWorker: [^\n]*/, '')).toBe(code.replace(/createWorker: [^\n]*/, ''))
+  })
+
+  it('leaves every other file alone, and fails the build when the call moved', () => {
+    expect(transform("new Worker(new URL('ts.worker.js', import.meta.url), { type: \"module\" })", '/x/other.js')).toBeNull()
+    expect(() => transform('export {}', file)).toThrow(/YAZ-3501/)
   })
 })
