@@ -23,11 +23,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # The drawing engine's build (YAZ-3572 E4): its five dist/ folders and the stamp in them, keyed on every file
+      # its build reads (`ENGINE_INPUTS` in tools/buildEngine.mjs). A hit makes `npm run engine:build` a no-op; a miss
+      # builds it (about a minute and a half) and saves it at the end of the job.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: engine/packages/*/dist
+          key: engine-${{ runner.os }}-${{ hashFiles('engine/package.json', 'engine/yarn.lock', 'engine/scripts/**', 'engine/tsconfig.json', 'engine/packages/common/**', 'engine/packages/math/**', 'engine/packages/fractional-indexing/**', 'engine/packages/element/**', 'engine/packages/excalidraw/**') }}
       - run: npm ci
       # The pinned draw.io pack (YAZ-3028 D5, Draw's YAZ-1802 D5): sha256-checked, so the suites that read
-      # the real bundle run here too, and `npm run build` finds it unpacked. No cache step: the repo allows
-      # only checkout, setup-node and the release action, so the 54 MB draw.war downloads on each run.
+      # the real bundle run here too, and `npm run build` finds it unpacked. Not cached: the 54 MB draw.war
+      # downloads on each run (the repo allows actions/cache since YAZ-3572, for the engine only so far).
       - run: npm run drawio:pack
+      # Before the typecheck, which reads the engine's types: a no-op after a cache hit.
+      - run: npm run engine:build
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
