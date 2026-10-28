@@ -437,7 +437,7 @@ function keyAnswer(key: string, overrides: HotkeyOverrides, systemKeys: readonly
   if (macos !== undefined) return `${d}: macOS uses it for ${macos.label}. You can't use it.`
   const rows = ALL_KEYS.filter((r) => keysOf(r, overrides).some((k) => sameKey(k, key) || sameKey(k.split(' ')[0], key)))
   if (rows.length > 0) return `${d}: ${rows.map(owned).join('; ')}.`
-  if (!isUsableKey(key)) return `${d} needs ⌘, ⌃ or ⌥ to be a hotkey (a drawing tool can be a letter).`
+  if (!isUsableKey(key)) return `${d} needs ⌘, ⌃ or ⌥ to be a hotkey (a drawing or diagram tool can be a letter).`
   return `${d} is free. You can use it.`
 }
 

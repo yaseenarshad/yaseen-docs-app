@@ -63,14 +63,14 @@ export function blockersOf(row: KeyRow, overrides: HotkeyOverrides | undefined, 
 }
 
 /**
- * A key a row may take (K6): a drawing row takes a bare letter or digit (its tools are letters); every other row needs ⌘
+ * A key a row may take (K6): a drawing or diagram row takes a bare letter or digit (their tools are letters); every other row needs ⌘
  * or ⌃ (or ⌥, or an F-key), as an App key always did. Each step of a two-step key must be usable.
  */
 export function isUsableFor(row: KeyRow, key: string): boolean {
   return key.split(' ').every((step) => {
     const chord = parseAccelerator(step)
     if (chord === null) return false
-    if (row.scope === 'drawing' && /^[A-Z0-9]$/.test(chord.key)) return true
+    if ((row.scope === 'drawing' || row.scope === 'diagram') && /^[A-Z0-9]$/.test(chord.key)) return true
     return isUsableKey(step) || chord.alt
   })
 }
