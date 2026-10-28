@@ -16,7 +16,7 @@ import { expect, test } from '@playwright/test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, launchApp, layer, quitApp, seededState } from './helpers'
+import { appWindow, emitOpenFile, launchApp, layer, quitApp, seededState } from './helpers'
 
 /** A small TS file with several functions, as in the report (`recipes.ts`). */
 const TS_BODY = `export interface Recipe {
@@ -42,14 +42,16 @@ interface Restored {
   body: string
   /** A word of the file: the code shows. */
   text: string
-  /** Rows the table of contents must show. */
+  /** Rows the table of contents must show; empty = any row (HTML's rows are tags). */
   rows: string[]
 }
 const TS: Restored = { file: 'web/src/recipes.ts', body: TS_BODY, text: 'quickRecipes', rows: ['Recipe', 'MAX_MINUTES', 'recipes', 'quickRecipes', 'findRecipe'] }
 const JSON_FILE: Restored = { file: 'web/data.json', body: '{\n  "name": "box",\n  "items": [1, 2],\n  "owner": { "id": 3 }\n}\n', text: 'owner', rows: ['name', 'items', 'owner'] }
 const CSS: Restored = { file: 'web/site.css', body: '.card { color: red; }\n.title { margin: 0; }\n', text: '.title', rows: ['.card', '.title'] }
-/** The TS race lost in about half of the launches (2 of 4 in the report): 4 TS launches, then JSON and CSS. */
-const LAUNCHES: Restored[] = [TS, TS, TS, TS, JSON_FILE, CSS]
+const JS: Restored = { file: 'web/app.js', body: 'export function alpha() { return 1 }\nexport function beta() { return 2 }\n', text: 'beta', rows: ['alpha', 'beta'] }
+const HTML: Restored = { file: 'web/index.html', body: '<!doctype html>\n<html>\n<head><title>t</title></head>\n<body>\n<div id="main"><p>hi</p></div>\n</body>\n</html>\n', text: 'main', rows: [] }
+/** The TS race lost in about half of the launches (2 of 4 in the report): 4 TS launches, then JSON, CSS, JS and HTML (the checker's cases). */
+const LAUNCHES: Restored[] = [TS, TS, TS, TS, JSON_FILE, CSS, JS, HTML]
 
 let userData: string
 let vault: string
@@ -59,7 +61,7 @@ test.beforeAll(async () => {
   vault = await mkdtemp(path.join(tmpdir(), 'codeTocRestore-vault-'))
   await mkdir(path.join(vault, 'web', 'src'), { recursive: true })
   await Promise.all([
-    ...[TS, JSON_FILE, CSS].map(({ file, body }) => writeFile(path.join(vault, file), body)),
+    ...[TS, JSON_FILE, CSS, JS, HTML].map(({ file, body }) => writeFile(path.join(vault, file), body)),
     writeFile(path.join(vault, 'web', 'package.json'), '{ "name": "recipe-box", "private": true }\n'),
     writeFile(path.join(vault, 'README.md'), '# Recipe box\n'),
   ])
@@ -84,7 +86,7 @@ test('YAZ-3527: a code tab restored at launch shows its table of contents, every
       const shown = await expect
         .poll(async () => {
           const now = await names.allInnerTexts()
-          return rows.every((row) => now.includes(row))
+          return rows.length === 0 ? now.length > 0 : rows.every((row) => now.includes(row))
         }, { timeout: 10_000 })
         .toBe(true)
         .then(() => true)
@@ -95,4 +97,26 @@ test('YAZ-3527: a code tab restored at launch shows its table of contents, every
     }
   }
   expect(results).toEqual(LAUNCHES.map(({ file }) => `${file}: rows`))
+})
+
+test('YAZ-3527: the first JSON file opened in a session shows its table of contents, with no edit', async () => {
+  test.setTimeout(60_000)
+  const state = seededState(vault, path.join(vault, 'README.md'))
+  state.settings.tableOfContents = 'pinned'
+  const app = await launchApp({ userData, seedState: state })
+  try {
+    const win = await appWindow(app, 'w1')
+    await expect(layer(win).locator('.ProseMirror')).toContainText('Recipe box', { timeout: 20_000 })
+    await emitOpenFile(app, path.join(vault, JSON_FILE.file))
+    await expect(layer(win).locator('.editor--code .monaco-editor .view-lines')).toContainText(JSON_FILE.text, { timeout: 20_000 })
+    const names = layer(win).locator('nav.outline .outline__row .outline__name')
+    await expect
+      .poll(async () => {
+        const now = await names.allInnerTexts()
+        return JSON_FILE.rows.every((row) => now.includes(row))
+      }, { timeout: 10_000 })
+      .toBe(true)
+  } finally {
+    await quitApp(app)
+  }
 })

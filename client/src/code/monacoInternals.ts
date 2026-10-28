@@ -82,6 +82,7 @@ export function onSymbolProviderChange(editor: object, listener: () => void): { 
   const keys = (editor as { _contextKeyService?: ContextKeysLike })._contextKeyService
   if (typeof keys?.onDidChangeContext !== 'function') return null
   return keys.onDidChangeContext((event) => {
-    if (event.affectsSome(HAS_SYMBOL_PROVIDER)) listener()
+    // A Monaco that renamed `affectsSome` must not throw on every context change: then this door is shut, as if missing.
+    if (typeof event?.affectsSome === 'function' && event.affectsSome(HAS_SYMBOL_PROVIDER)) listener()
   })
 }
