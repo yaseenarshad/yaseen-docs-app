@@ -174,7 +174,7 @@ test('step 1 — the header button drops the panel: filter focused, both recents
 
 // ---------------------------------------------------------------- ⏎: beside, then raise
 
-test('step 2 — ⌘O then ⏎ opens the other vault BESIDE, on its remembered file; a second ⏎ RAISES that window instead of copying it', async () => {
+test('step 2 — ⌘O then ⏎ opens the other vault BESIDE, blank (YAZ-3487 D7); a second ⏎ RAISES that window instead of copying it', async () => {
   // ⌘O is the menu accelerator (menu.file.switch-vault): main sends `menu:switch-vault` to the
   // focused renderer, and each request TOGGLES the panel — open, with the filter focused (D8).
   await clickMenuItem(app, 'menu.file.switch-vault', 'w1')
@@ -182,21 +182,21 @@ test('step 2 — ⌘O then ⏎ opens the other vault BESIDE, on its remembered f
   await expect(filter(win)).toBeFocused()
   await expect(highlighted(win)).toContainText(BETA)
 
-  // ⏎ on the highlighted row → `window.openRecent(vaultB)`: no window shows Beta, so a NEW one
-  // opens on Beta's remembered last file (D2) — and THIS window stays exactly where it was.
+  // ⏎ on the highlighted row → `window.openRecent(vaultB)`: no window shows Beta, and this window has a tab, so a NEW
+  // one opens on Beta, blank — its remembered last file stays unread (YAZ-3487 D7) — and THIS window stays where it was.
   await win.keyboard.press('Enter')
   const winB = await extraWindow(app, ['w1'])
   const winBId = winParam(winB)!
   expect(await windowCount(app)).toBe(2)
-  await expect.poll(() => winB.title()).toBe(titleOf('Ideas.md', BETA))
-  await expect(editorOf(winB)).toContainText(IDEAS_BODY)
+  await expect.poll(() => winB.title()).toBe(BETA)
+  await expect(winB.locator('.start__heading')).toHaveText(['Recent', 'Favorites', 'Recently closed'])
   await expect(panel(win)).toHaveCount(0) // `true` from the door closes the panel
   await expect.poll(() => win.title()).toBe(titleOf(SEED_FILE, ALPHA))
   await expect(headerName(win)).toHaveText(ALPHA)
-  // The state file: a second entry rooted at Beta on its last file, and Beta bumped to the MRU's head.
+  // The state file: a second entry rooted at Beta with no file, and Beta bumped to the MRU's head.
   await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === winBId)?.root).toBe(vaultB)
   const entryB = (await readState(userData)).windows.find((w) => w.id === winBId)!
-  expect(entryB.file).toBe(path.join(vaultB, 'Ideas.md'))
+  expect(entryB.file).toBeNull()
   await expect.poll(async () => (await readState(userData)).recents.map((r) => r.path)).toEqual([vaultB, vaultA])
   await shoot(winB, 'vault-switcher-03-opened-beside')
 
@@ -234,16 +234,16 @@ test('step 3 — holding ⇧ says "Open here" on the highlighted row, and ⇧⏎
   await win.keyboard.press('Enter')
   await win.keyboard.up('Shift')
 
-  // The ONE deliberate in-place switch (D8/D11): same window, new vault — header, title, editor,
-  // the Files lens (YAZ-1846), and the state entry's root — with NO second window.
+  // The ONE deliberate in-place switch (D8/D11): same window, new vault — header, title, the Files lens (YAZ-1846),
+  // and the state entry's root — with NO second window. The vault opens blank (YAZ-3487 D7): no editor, the new tab page.
   await expect(headerName(win)).toHaveText(BETA)
-  await expect.poll(() => win.title()).toBe(titleOf('Ideas.md', BETA))
-  await expect(editorOf(win)).toContainText(IDEAS_BODY)
+  await expect.poll(() => win.title()).toBe(BETA)
+  await expect(editorOf(win)).toHaveCount(0)
   await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
   await expect(panel(win)).toHaveCount(0)
   expect(await windowCount(app)).toBe(1)
   await expect.poll(async () => (await readState(userData)).windows[0]?.root).toBe(vaultB)
-  expect((await readState(userData)).windows[0]?.file).toBe(path.join(vaultB, 'Ideas.md'))
+  expect((await readState(userData)).windows[0]?.file).toBeNull()
   await shoot(win, 'vault-switcher-05-opened-here')
 })
 
@@ -267,7 +267,7 @@ test('step 4 — "Set display name" from the header menu renames the header, the
 
   await expect(field).toHaveCount(0)
   await expect(headerName(win)).toHaveText(DISPLAY)
-  await expect.poll(() => win.title()).toBe(titleOf('Ideas.md', DISPLAY)) // the title takes the NAME (YAZ-1974 D4)
+  await expect.poll(() => win.title()).toBe(DISPLAY) // the title takes the NAME (YAZ-1974 D4); no page is open (YAZ-3487 D7)
   await expect.poll(async () => (await readState(userData)).folders[vaultB]?.name).toBe(DISPLAY)
   expect((await readState(userData)).folders[vaultA]?.name).toBeNull() // the other vault's bucket untouched
   await shoot(win, 'vault-switcher-06-display-name')
@@ -280,7 +280,7 @@ test('step 5 — the display name survives quit → relaunch; "Reset to folder n
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
   await expect(headerName(win)).toHaveText(DISPLAY)
-  await expect.poll(() => win.title()).toBe(titleOf('Ideas.md', DISPLAY))
+  await expect.poll(() => win.title()).toBe(DISPLAY)
   await shoot(win, 'vault-switcher-07-name-restored')
 
   // With a display name set the menu gains "Reset to folder name" — never "Rename" (D5).
@@ -288,7 +288,7 @@ test('step 5 — the display name survives quit → relaunch; "Reset to folder n
   await expect(vaultMenuItems(win)).toHaveText(['Open in Files window', 'Set display name', 'Reset to folder name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   await vaultMenuItem(win, 'Reset to folder name').click()
   await expect(headerName(win)).toHaveText(BETA)
-  await expect.poll(() => win.title()).toBe(titleOf('Ideas.md', BETA))
+  await expect.poll(() => win.title()).toBe(BETA)
   await expect.poll(async () => (await readState(userData)).folders[vaultB]?.name).toBeNull()
   await shoot(win, 'vault-switcher-08-name-reset')
   await quitApp(app)
@@ -352,13 +352,12 @@ test('step 7 — "Open by itself" on a vault of a workspace window opens it ALON
   await shoot(win, 'vault-switcher-10-open-by-itself-menu')
   await vaultMenuItem(win, 'Open by itself').click()
 
-  // `window.openAlone(vaultB)`: no window shows Beta ALONE, so a NEW one opens on its last file (D1, S1).
+  // `window.openAlone(vaultB)`: no window shows Beta ALONE, so a NEW one opens on it, blank (D1, S1; YAZ-3487 D7).
   const winB = await extraWindow(app, ['w1'])
   const winBId = winParam(winB)!
   await expect(panel(win)).toHaveCount(0) // `true` from the door closes the panel (S12)
   expect(await windowCount(app)).toBe(2)
-  await expect.poll(() => winB.title()).toBe(titleOf('Ideas.md', BETA))
-  await expect(editorOf(winB)).toContainText(IDEAS_BODY)
+  await expect.poll(() => winB.title()).toBe(BETA)
   await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === winBId)?.roots).toEqual([vaultB])
   // The workspace window does not change: it still shows both vaults.
   expect((await readState(userData)).windows.find((w) => w.id === 'w1')?.roots).toEqual([vaultA, vaultB])
@@ -374,5 +373,51 @@ test('step 7 — "Open by itself" on a vault of a workspace window opens it ALON
   await expect.poll(async () => (await windowIs(app, winBId))?.raised).toBe(true)
   expect(await windowCount(app)).toBe(2)
   await expect.poll(async () => (await readState(userData)).windows.length).toBe(2)
+  await quitApp(app)
+})
+
+// ---------------------------------------------------------------- YAZ-3487: Shift+Enter, the cue, the empty window, Recently closed
+
+test('step 8 — ⇧⏎ on a vault of a workspace window opens it by itself, and the row says so while ⌥ or ⇧ is held; an EMPTY window takes a vault itself; a closed tab leads "Recently closed"', async () => {
+  const state = twoVaultState()
+  state.windows[0].roots = [vaultA, vaultB]
+  app = await launchApp({ userData, seedState: state })
+  win = await appWindow(app, 'w1')
+  await expect(headerName(win)).toHaveText(`${ALPHA} + ${BETA}`)
+
+  // The cue (D5, S19, S20): ⌥ held, or ⇧ on a vault of this window, and the highlighted row says "Open by itself".
+  await openPanel(win)
+  await rowNamed(win, BETA).hover()
+  await win.keyboard.down('Alt')
+  await expect(rowNamed(win, BETA).locator('.vault-switcher__when')).toHaveText('Open by itself')
+  await win.keyboard.up('Alt')
+  await win.keyboard.down('Shift')
+  await expect(rowNamed(win, BETA).locator('.vault-switcher__when')).toHaveText('Open by itself')
+  await shoot(win, 'vault-switcher-12-open-by-itself-cue')
+  // ⇧⏎ (D4, S16): Beta by itself, in a NEW window (this one has a tab), blank (D7).
+  await win.keyboard.press('Enter')
+  await win.keyboard.up('Shift')
+  const winB = await extraWindow(app, ['w1'])
+  const winBId = winParam(winB)!
+  await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === winBId)?.roots).toEqual([vaultB])
+  expect((await readState(userData)).windows.find((w) => w.id === 'w1')?.roots).toEqual([vaultA, vaultB])
+  await closeWindow(app, winBId)
+  await expect.poll(() => windowCount(app)).toBe(1)
+
+  // The empty window (D1, S3): ⌘⇧N opens a window with no tab; ⌘O ⏎ on Beta there opens NO third window.
+  await clickMenuItem(app, 'menu.file.new-window', 'w1')
+  const empty = await extraWindow(app, ['w1'])
+  const emptyId = winParam(empty)!
+  await openPanel(empty)
+  await rowNamed(empty, BETA).click({ modifiers: ['Alt'] })
+  await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === emptyId)?.roots).toEqual([vaultB])
+  expect(await windowCount(app)).toBe(2)
+  await shoot(empty, 'vault-switcher-13-empty-window-took-the-vault')
+
+  // Recently closed (D8, D10, S31): close the tab of `w1`, open a new tab, and its note leads the third column.
+  await clickMenuItem(app, 'menu.file.close-tab', 'w1')
+  await clickMenuItem(app, 'menu.file.new-tab', 'w1')
+  await expect(win.locator('.start__column[data-col="closed"] .start__name').first()).toHaveText(path.basename(SEED_FILE, '.md'))
+  await shoot(win, 'vault-switcher-14-recently-closed')
   await quitApp(app)
 })
