@@ -166,14 +166,14 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} />))
   await settle()
   await settle()
   return container
@@ -451,8 +451,8 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
     saved = null
     vi.spyOn(storage, 'getTocSource').mockImplementation(() => saved)
     vi.spyOn(storage, 'setTocSource').mockImplementation(() => undefined)
-    // The page switch is saved too (YAZ-2950): kept out of the real store, which this file does not set up.
-    vi.spyOn(storage, 'getTocSwitch').mockImplementation(() => true)
+    // The page switch is saved too (YAZ-2950): kept out of the real store, which this file does not set up. No choice: the default decides (YAZ-3558 D1).
+    vi.spyOn(storage, 'getTocSwitch').mockImplementation(() => undefined)
     vi.spyOn(storage, 'setTocSwitch').mockImplementation(() => undefined)
   })
 
@@ -510,9 +510,9 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
     expect(writeFile).not.toHaveBeenCalled() // the note's own file never hears of it
   })
 
-  it('the control shows only where this page shows a table of contents: not with the app setting off, and not once the page turned its own off', async () => {
+  it('the control shows only where this page shows a table of contents: not with "Table of contents default" Off on a page with no choice, and not once the page turned its own off (YAZ-3558 S2)', async () => {
     saved = 'headings'
-    const off = await mount(BODY)
+    const off = await mount(BODY, 1, { tableOfContents: 'auto', tocOnByDefault: false })
     clickCog(off)
     expect(off.querySelector('.page-settings__menu')).not.toBeNull()
     expect(off.querySelector('.page-settings__choices')).toBeNull()
@@ -596,7 +596,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
 
   it('"Table of contents" is on for a page until the reader turns THIS page’s off: then no lines, no names and no ⌘J; the switch is saved with the note, on and off, and the next editor of the page starts with it (YAZ-2950 D1, D2)', async () => {
     const saved: Record<string, boolean> = {}
-    const read = vi.spyOn(storage, 'getTocSwitch').mockImplementation((_root, file) => saved[file] !== false)
+    const read = vi.spyOn(storage, 'getTocSwitch').mockImplementation((_root, file) => saved[file])
     const write = vi.spyOn(storage, 'setTocSwitch').mockImplementation((_root, file, on) => void (saved[file] = on))
     try {
       const el = await mount(BODY, 1, { tableOfContents: 'auto' })
@@ -643,28 +643,63 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     }
   })
 
-  it('with the app-wide setting Off the cog has no "Table of contents" row — there is nothing to turn off — and "Heading levels" is still there', async () => {
-    const el = await mount(BODY, 1, { tableOfContents: 'off' })
-    clickCog(el)
-    expect(rows(el).map((button) => button.textContent)).toEqual(['Read only', 'Line numbers', 'Section indent', 'Heading levels'])
-    expect(el.querySelector('.page-settings__choices')).toBeNull()
-  })
-
-  it('a page saved as off stays off through the app-wide setting Off: the row hides, the saved value is not touched, and it is used again when the setting comes back (YAZ-2950 D1)', async () => {
-    const read = vi.spyOn(storage, 'getTocSwitch').mockImplementation(() => false)
-    const write = vi.spyOn(storage, 'setTocSwitch').mockImplementation(() => undefined)
+  it('with "Table of contents default" Off the cog still has the row, unchecked: a click turns THIS page on, in the look of "Pin default", with "TOC made from:" and ⌘J; the page stores `true` and another page stays off (YAZ-3558 D1, S2, S3, S10, S13)', async () => {
+    const saved: Record<string, boolean> = {}
+    const read = vi.spyOn(storage, 'getTocSwitch').mockImplementation((_root, file) => saved[file])
+    const write = vi.spyOn(storage, 'setTocSwitch').mockImplementation((_root, file, on) => void (saved[file] = on))
     try {
-      const el = await mount(BODY, 1, { tableOfContents: 'off' })
-      clickCog(el)
-      expect(rows(el).map((button) => button.textContent)).toEqual(['Read only', 'Line numbers', 'Section indent', 'Heading levels'])
-      clickCog(el)
-      // The setting comes back in the same editor (Settings in this or another window): the page is still off.
-      act(() => root!.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} tableOfContents="auto" />))
+      const el = await mount(BODY, 1, { tableOfContents: 'auto', tocOnByDefault: false })
       act(() => tocOf().publish(TWO))
       expect(el.querySelector('nav.toc')).toBeNull()
+      expect(pressCmdJ().defaultPrevented).toBe(false)
       clickCog(el)
-      expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
+      expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents:false'])
+      expect(el.querySelector('.page-settings__choices')).toBeNull()
+      act(() => row(el, 'Table of contents').click())
+      expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('true')
+      expect(el.querySelector('.page-settings__choices')).not.toBeNull()
+      expect(el.querySelectorAll('.toc__line')).toHaveLength(2)
+      expect(pressCmdJ().defaultPrevented).toBe(true)
+      expect(write.mock.calls).toEqual([['/vault', PATH, true]])
+      // Another page with no choice follows the default: off.
+      await reopen({ tableOfContents: 'auto', tocOnByDefault: false })
+      act(() => tocOf().publish(TWO))
+      expect(el.querySelector('nav.toc')).toBeNull()
+    } finally {
+      read.mockRestore()
+      write.mockRestore()
+    }
+  })
+
+  it('a page with no choice follows "Table of contents default" at once, in the same editor; a page with a choice keeps it through Off and On (YAZ-3558 S4–S7)', async () => {
+    const saved: Record<string, boolean> = {}
+    const read = vi.spyOn(storage, 'getTocSwitch').mockImplementation((_root, file) => saved[file])
+    const write = vi.spyOn(storage, 'setTocSwitch').mockImplementation((_root, file, on) => void (saved[file] = on))
+    const render = (tocOnByDefault: boolean) => act(() => root!.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} tableOfContents="auto" tocOnByDefault={tocOnByDefault} />))
+    try {
+      const el = await mount(BODY, 1, { tableOfContents: 'auto' })
+      act(() => tocOf().publish(TWO))
+      expect(el.querySelector('nav.toc')).not.toBeNull()
+      // S6: Settings changes (this or another window), the open page with no choice follows, and nothing is written.
+      render(false)
+      expect(el.querySelector('nav.toc')).toBeNull()
+      render(true)
+      expect(el.querySelector('nav.toc')).not.toBeNull()
       expect(write).not.toHaveBeenCalled()
+      // S4: the page turns its own off; the default goes Off and On again, and the page stays off.
+      clickCog(el)
+      act(() => row(el, 'Table of contents').click())
+      for (const value of [false, true]) {
+        render(value)
+        expect(el.querySelector('nav.toc')).toBeNull()
+      }
+      // S5, S7: the page turns its own on; the default goes Off and On again, and the page stays on.
+      act(() => row(el, 'Table of contents').click())
+      for (const value of [false, true]) {
+        render(value)
+        expect(el.querySelector('nav.toc')).not.toBeNull()
+      }
+      expect(write.mock.calls).toEqual([['/vault', PATH, false], ['/vault', PATH, true]])
     } finally {
       read.mockRestore()
       write.mockRestore()

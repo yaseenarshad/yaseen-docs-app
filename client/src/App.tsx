@@ -2332,6 +2332,7 @@ export function App() {
       onChangeCommentsOrder: changeCommentsOrder,
       // YAZ-2700: the table of contents is a SETTING too, and whether its names fit depends on the content width.
       tableOfContents: settings.tableOfContents,
+      tocOnByDefault: settings.tocOnByDefault,
       contentWidth: settings.contentWidth,
       onChangeTableOfContents: changeTableOfContents,
       // YAZ-2752: the width of its names column is a SETTING as well.

@@ -507,11 +507,11 @@ describe('storage', () => {
     expect(storage.getSectionIndent('/r1', '/r1/b.md')).toBe(false)
   })
 
-  it('the table of contents switch is keyed by root then file; a note with no entry is on; on AND off are sent, and the same value again writes nothing (YAZ-2950)', () => {
-    expect(storage.getTocSwitch('/r1', '/r1/a.md')).toBe(true)
+  it('the table of contents switch is keyed by root then file; a note with no entry made no choice (`undefined`: the setting decides, YAZ-3558 D1); on AND off are sent, and the same value again writes nothing (YAZ-2950)', () => {
+    expect(storage.getTocSwitch('/r1', '/r1/a.md')).toBeUndefined()
     storage.setTocSwitch('/r1', '/r1/a.md', false)
     expect(storage.getTocSwitch('/r1', '/r1/a.md')).toBe(false)
-    expect(storage.getTocSwitch('/r2', '/r1/a.md')).toBe(true)
+    expect(storage.getTocSwitch('/r2', '/r1/a.md')).toBeUndefined()
     expect(b.bridge.state.setTocSwitch).toHaveBeenCalledExactlyOnceWith('/r1', '/r1/a.md', false)
     // The same value again: no write.
     storage.setTocSwitch('/r1', '/r1/a.md', false)

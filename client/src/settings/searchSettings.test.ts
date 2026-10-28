@@ -60,6 +60,7 @@ describe('settingCandidates', () => {
       'threadColor',
       'sectionStep',
       'sectionLines',
+      'tocOnByDefault',
       'tableOfContents',
       'tocLines',
       // Settings › Code (YAZ-3449).
@@ -162,14 +163,16 @@ describe('searchSettings', () => {
     for (const query of ['startup', 'launch', 'when the app starts']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['startupWindows'])
   })
 
-  it('"toc" finds the two rows of the table of contents and "jump" the first and the code tab\'s "Jump across files" (YAZ-3500); "outline" and "headings" find it among others; the group\'s name finds both rows and the ⌘J line of the Hotkeys table (YAZ-2700, YAZ-2762)', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'toc'))).toEqual(['tableOfContents', 'tocLines'])
+  it('"toc" finds the three rows of the table of contents and "jump" "Pin default" and the code tab\'s "Jump across files" (YAZ-3500); "outline" and "headings" find them among others; the group\'s name finds the rows and the ⌘J line of the Hotkeys table, "Table of contents default" first; "pin" and "default" find their rows (YAZ-2700, YAZ-2762, YAZ-3558 S18)', () => {
+    expect(ids(searchSettings(settingCandidates(ctx()), 'toc'))).toEqual(['tocOnByDefault', 'tableOfContents', 'tocLines'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'jump')).sort()).toEqual(['codeLanguageHelpers', 'tableOfContents'])
     // The words the app already uses for the bullet features and the fold keys: the row is one of the answers.
     for (const query of ['outline', 'headings']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('tableOfContents')
     // The settings folder's hint names the table of contents width, which stays on this Mac (YAZ-3276 D7); General comes first.
-    // The ⌘J row's label starts with the words, so it ranks first (a prefix hit, YAZ-3397 D5).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['hotkey-keyboard-table-of-contents', 'settingsFolder', 'tableOfContents', 'tocLines'])
+    // "Table of contents default" and the ⌘J row's label start with the words, so they rank first (a prefix hit, YAZ-3397 D5).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['tocOnByDefault', 'hotkey-keyboard-table-of-contents', 'settingsFolder', 'tableOfContents', 'tocLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'pin'))[0]).toBe('tableOfContents')
+    expect(ids(searchSettings(settingCandidates(ctx()), 'default'))).toEqual(expect.arrayContaining(['tocOnByDefault', 'tableOfContents']))
   })
 
   it('"Level lines" (YAZ-2762, YAZ-3309 D6, YAZ-3440 D7): the label of the TOC\'s row and of the sidebar\'s row find those two rows, the sidebar\'s first (its label starts with the words); "hierarchy", "guide" and "hover" find the two Show rows among the rows that share the word', () => {
@@ -177,7 +180,7 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'level lines'))).toEqual(['sidebarLines', 'tocLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'hierarchy'))).toEqual(['sidebarLines', 'tocLines'])
     // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-drawio-a-shape-s-outline-a-text-s-background'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-drawio-a-shape-s-outline-a-text-s-background'])
     // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['sidebarLines', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403).

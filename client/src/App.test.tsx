@@ -141,12 +141,12 @@ const captured = vi.hoisted(() => ({
   /** The door of the new tab page stub (YAZ-2663 S33): whether its first row took the keyboard focus. */
   startPageFocus: vi.fn(() => true),
   /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder — and the table of contents setting with its door (YAZ-2700 D2). */
-  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }[],
+  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }[],
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
-    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView })
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
+    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView })
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
@@ -1245,17 +1245,18 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     // The default: what a state file from before the feature loads as.
     expect([editor()?.tableOfContents, editor()?.contentWidth]).toEqual(['auto', 'medium'])
     const door = editor()?.onChangeTableOfContents
-    // Settings › Editor › Table of contents › Off, in a different window.
-    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, contentWidth: 'medium', tableOfContents: 'off' } }))
-    expect(editor()?.tableOfContents).toBe('off')
+    // Settings › Editor › Table of contents › "Table of contents default" Off, in a different window (YAZ-3558 D2).
+    expect(editor()?.tocOnByDefault).toBe(true)
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, contentWidth: 'medium', tocOnByDefault: false } }))
+    expect([editor()?.tocOnByDefault, editor()?.tableOfContents]).toEqual([false, 'auto'])
     expect(bridge.state.setSettings).not.toHaveBeenCalled()
-    // "Pin" in the card: the whole settings object with the one field changed, and the editor follows.
+    // "Pin" in the card: the whole settings object with the one field changed, and the editor follows; the default stays Off (S11).
     act(() => door?.('pinned'))
-    expect(bridge.state.setSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, contentWidth: 'medium', tableOfContents: 'pinned' })
+    expect(bridge.state.setSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, contentWidth: 'medium', tocOnByDefault: false, tableOfContents: 'pinned' })
     expect(editor()?.tableOfContents).toBe('pinned')
     // "Unpin".
     act(() => door?.('auto'))
-    expect(bridge.state.setSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, contentWidth: 'medium', tableOfContents: 'auto' })
+    expect(bridge.state.setSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, contentWidth: 'medium', tocOnByDefault: false, tableOfContents: 'auto' })
     expect(editor()?.tableOfContents).toBe('auto')
     // The retained editors are memo: a door that changed with the settings would render each of them.
     expect(editor()?.onChangeTableOfContents).toBe(door)

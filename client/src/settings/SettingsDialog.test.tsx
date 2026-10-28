@@ -134,7 +134,7 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines']
+const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tocOnByDefault', 'tableOfContents', 'tocLines']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
@@ -634,25 +634,37 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     ])
   })
 
-  it('Show the names: When there is room · Always · Off under "Table of contents" on the Editor page, after Section indent; Always writes the whole object with only it flipped (YAZ-2700)', () => {
+  it('"Table of contents default" (On · Off, with its hint) then "Pin default" (On · Off) under "Table of contents" on the Editor page, after Section indent; each writes the whole object with only its own field flipped (YAZ-2700; YAZ-3558 D2, D2a, D2b, D3, S15–S17)', () => {
     const { el, onChange } = mountOn('Editor')
     expect(row(el, 'tableOfContents')?.closest('[data-section]')?.id).toBe('settings-editor')
     const group = row(el, 'tableOfContents')?.closest('.settings-group')
     expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Table of contents')
     expect(group?.querySelector('.settings-group__hint')?.textContent).toBe(TOC_HINT)
     expect([...el.querySelectorAll('#settings-editor .settings-group__title')].map((t) => t.textContent)).toEqual(EDITOR_GROUPS)
-    expect(row(el, 'tableOfContents')?.querySelector('.setting__label')?.textContent).toBe('Show the names')
-    expect(rowButtons(el, 'tableOfContents').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['When there is room', 'true'], ['Always', 'false'], ['Off', 'false']])
-    act(() => rowButtons(el, 'tableOfContents')[1].click())
-    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, tableOfContents: 'pinned' })
+    expect(row(el, 'tocOnByDefault')?.querySelector('.setting__label')?.textContent).toBe('Table of contents default')
+    expect(row(el, 'tocOnByDefault')?.textContent).toContain('Off: a page can still turn it on in its cog.')
+    expect(rowButtons(el, 'tocOnByDefault').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
+    expect(row(el, 'tableOfContents')?.querySelector('.setting__label')?.textContent).toBe('Pin default')
+    expect(rowButtons(el, 'tableOfContents').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'false'], ['Off', 'true']])
+    act(() => rowButtons(el, 'tableOfContents')[0].click())
+    act(() => rowButtons(el, 'tocOnByDefault')[1].click())
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([
+      { ...DEFAULT_SETTINGS, tableOfContents: 'pinned' },
+      { ...DEFAULT_SETTINGS, tocOnByDefault: false },
+    ])
+    unmount()
+    // D2b: with the default Off, "Pin default" is still there.
+    const off = mountOn('Editor', { ...DEFAULT_SETTINGS, tocOnByDefault: false })
+    expect(rowButtons(off.el, 'tocOnByDefault').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+    expect(row(off.el, 'tableOfContents')).not.toBeNull()
   })
 
-  it('Level lines: On hover · Always show · Never, the second and last row of "Table of contents", On hover by default; each choice writes the whole object with only `tocLines` changed, and the row shows the saved one (YAZ-2762 D5)', () => {
+  it('Level lines: On hover · Always show · Never, the last row of "Table of contents", On hover by default; each choice writes the whole object with only `tocLines` changed, and the row shows the saved one (YAZ-2762 D5)', () => {
     const { el, onChange } = mountOn('Editor')
     const group = row(el, 'tocLines')?.closest('.settings-group')
     expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Table of contents')
-    // Below "Show the names", and the group holds those two rows and no other.
-    expect([...(group?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual(['tableOfContents', 'tocLines'])
+    // Below "Pin default", and the group holds those three rows and no other.
+    expect([...(group?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual(['tocOnByDefault', 'tableOfContents', 'tocLines'])
     expect(row(el, 'tocLines')?.querySelector('.setting__label')?.textContent).toBe('Level lines')
     expect(row(el, 'tocLines')?.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Level lines')
     expect(rowButtons(el, 'tocLines').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On hover', 'true'], ['Always show', 'false'], ['Never', 'false']])
@@ -663,7 +675,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       { ...DEFAULT_SETTINGS, tocLines: 'off' },
     ])
     // The row beside it is a field of its own: it did not move.
-    expect(rowButtons(el, 'tableOfContents').map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false'])
+    expect(rowButtons(el, 'tableOfContents').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
     unmount()
     // A saved "Never" comes back pressed.
     const saved = mountOn('Editor', { ...DEFAULT_SETTINGS, tocLines: 'off' })
@@ -1124,7 +1136,7 @@ describe('SettingsDialog search (D6)', () => {
     expect(headings(el)).toEqual(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
     // A Hotkeys hit is the ONE row that names a bullet, not its whole table (YAZ-3397 D5).
     expect(rowIds(el)).toEqual([
-      ...['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines'],
+      ...['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tocOnByDefault', 'tableOfContents', 'tocLines'],
       ...['fold-unfold-the-bullet-or-heading-sectio', 'fold-all-bullets-and-headings', 'unfold-all-bullets-and-headings', 'zoom-into-the-bullet-at-the-caret', 'cycle-bullet-task-done', 'indent-outdent-bullet'].map((r) => `hotkey-keyboard-${r}`),
       ...['zoom-into-that-bullet', 'fold-unfold-that-bullet-or-heading-secti'].map((r) => `hotkey-mouse-${r}`),
     ])

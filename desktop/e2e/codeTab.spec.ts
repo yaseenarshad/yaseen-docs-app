@@ -353,7 +353,7 @@ test('step 9 — YAZ-3486: the code Outline lists the symbols; filter, collapse,
   await expect(outline(win).locator('.toc__card')).toBeVisible()
   await expect(outline(win).locator('.outline__filter')).toBeFocused()
   await shoot(win, 'codeTab-08-outline-card')
-  // Pin: the names stay beside the code (the setting "Always").
+  // Pin: the names stay beside the code ("Pin default" On).
   await outline(win).locator('.toc__pin').click()
   await expect(outline(win)).toHaveAttribute('data-names', '')
 
@@ -524,13 +524,14 @@ async function typeAndWatch(w: Page, lineText: string): Promise<{ keys: number[]
 
 const median = (list: readonly number[]): number => [...list].sort((a, b) => a - b)[Math.floor(list.length / 2)]
 
-/** Settings › Editor › Table of contents, for the whole app. */
-async function setTableOfContents(w: Page, label: 'Off' | 'Always' | 'When there is room'): Promise<void> {
+/** Settings › Editor › Table of contents, for the whole app: "Table of contents default", and "Pin default" when given (YAZ-3558 D2). */
+async function setTableOfContents(w: Page, on: 'On' | 'Off', pin?: 'On' | 'Off'): Promise<void> {
   await w.getByRole('button', { name: 'Settings', exact: true }).click()
   const dialog = w.locator('.settings-dialog[role="dialog"]')
   await expect(dialog).toBeVisible()
   await dialog.locator('.settings-nav__item', { hasText: /^Editor$/ }).click()
-  await dialog.locator('[data-setting="tableOfContents"]').getByRole('button', { name: label, exact: true }).click()
+  await dialog.locator('[data-setting="tocOnByDefault"]').getByRole('button', { name: on, exact: true }).click()
+  if (pin !== undefined) await dialog.locator('[data-setting="tableOfContents"]').getByRole('button', { name: pin, exact: true }).click()
   await w.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
 }
@@ -562,7 +563,7 @@ test('step 11 — YAZ-3486 S12, YAZ-3501: the 5 MB file: its Outline, and each k
     expect(Math.max(...run.keys)).toBeLessThan(100)
     expect(Math.max(0, ...run.long)).toBeLessThan(200)
   }
-  await setTableOfContents(win, 'Always')
+  await setTableOfContents(win, 'On', 'On')
 })
 
 test('step 11b — YAZ-3526: large CSS, JSON and HTML files: each key draws at once, and no long task after a pause', async () => {

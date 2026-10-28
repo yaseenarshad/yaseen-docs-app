@@ -8,7 +8,7 @@
  * as "no symbol", and nothing read again until an edit.
  *
  * Each launch is a fresh app on the same temp profile and vault, with one code tab restored at startup, and
- * Settings › Table of contents = Always. The rows must show with no click and no key in the code.
+ * Settings › Table of contents › "Pin default" = On. The rows must show with no click and no key in the code.
  *
  * Hidden windows (`YASEEN_DOCS_E2E_HIDDEN=1`), a temp `--user-data-dir`, a temp vault.
  */
