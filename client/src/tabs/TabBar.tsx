@@ -4,7 +4,7 @@ import { rootOfPath, type DiagramDarkColors } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, insertionSlot } from '../lib/dragSlot'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
-import { FileIcon } from '../sidebar/FileIcon'
+import { FileIcon, NameEnding } from '../sidebar/FileIcon'
 import { GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
 import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import type { Tab } from '../workspace/useWorkspace'
@@ -139,8 +139,8 @@ const Chevron = ({ d }: { d: string }) => (
  * The window tab strip (Tabs I2/I3, GRO-2234/2235): each tab keyed by its own id, since two tabs
  * may show one file (YAZ-2940 D1) — ViewTabs' tablist
  * semantics (role=tab, aria-selected). The tabs are pills (YAZ-2656 R40, R41): each has a fill of
- * its own, the active one the brightest, and none joins the page. Labels hide only Markdown's vault
- * extension; view-only labels keep their extension, a folder's is its whole name (YAZ-2290) and
+ * its own, the active one the brightest, and none joins the page. Labels hide the extension of a note,
+ * a drawing and a diagram (YAZ-3536 D1); other files keep theirs, a folder's is its whole name (YAZ-2290) and
  * every full path lives in the title tooltip. Tabs reorder by HTML5 drag (the
  * groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none), the other tabs
  * moving apart at the drop slot; the strip scrolls when full and keeps the ACTIVE tab in view. A
@@ -455,6 +455,8 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
                 <span className="tabbar__label">
                   <FileIcon path={path} folder={isFolder(path)} />
                   {label}
+                  {/* A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4). */}
+                  {name === undefined && !isFolder(path) && <NameEnding path={path} />}
                 </span>
               </button>
               )}

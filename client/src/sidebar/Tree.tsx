@@ -10,6 +10,7 @@ import { CloudOffIcon, LinkIcon, ShortcutIcon } from '../views/view/icons'
 import { TOO_LARGE_LABEL } from '../lib/syncAttention'
 import { RenameInline } from './RenameInline'
 import { iconVars } from './materialIcons'
+import { NameEnding } from './FileIcon'
 import { iconsChangedBelow, rowIcon, type RowIcons } from './rowIcons'
 import { sortLevel } from './treeSort'
 
@@ -596,6 +597,7 @@ function TreeLevel({
               <span className="tree__label">
                 {idFor(node.path)}
                 {marked(pageLabel(node.path, false, titles), needleFor(node.path))}
+                <NameEnding path={node.path} />
               </span>
               {tooLarge?.has(node.path) === true && <CloudOffIcon label={TOO_LARGE_LABEL} />}
               <ShareMark badge={shareBadges?.get(node.path)} />

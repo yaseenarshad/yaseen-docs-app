@@ -115,6 +115,23 @@ describe('file and folder icons CSS contract (YAZ-3440 D4, D5)', () => {
     expect(look(off, FOLDER)).toBe('image')
   })
 
+  it("a board's extension (YAZ-3536 D4) is hidden while file icons show, and shows with File icons Off", () => {
+    const shown = (files: App['files'], className = 'name-ending') => {
+      const shell = document.createElement('div')
+      shell.className = 'app'
+      shell.dataset.sidebarFileIcons = files
+      const ending = shell.appendChild(document.createElement('span'))
+      ending.className = className
+      // The last matching rule wins: the Off rule has the higher weight and comes after.
+      const display = rules.filter((rule) => rule.selectors.some((s) => s.includes('.name-ending') && ending.matches(s))).map((rule) => /display:\s*(\w+)/.exec(rule.body)?.[1])
+      return display.at(-1)
+    }
+    for (const files of ['quiet', 'color', 'grey'] as const) expect(shown(files), files).toBe('none')
+    expect(shown('off')).toBe('inline')
+    // A row that never has an icon (a Sessions row) shows it whatever the setting.
+    for (const files of ['quiet', 'off'] as const) expect(shown(files, 'name-ending name-ending--always'), files).toBe('inline')
+  })
+
   it('Folder icons Off (D5) hides the folders alone, a custom one too; the files keep theirs', () => {
     const app: App = { set: 'material', files: 'quiet', folders: 'off' }
     expect(look(app, FOLDER)).toBe('none')

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { MAX_WINDOW_ROOTS, rootOfPath, type IndexRecord, type TreeResponse } from '@shared/types'
+import { boardBaseName } from '@shared/fileKind'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { basename, dirname, stripExt } from './paths'
 import { fetchTree, latestTree, onTree } from './treeFeed'
@@ -58,10 +59,17 @@ export function pathTitles(records: readonly IndexRecord[], folders: readonly In
 
 /**
  * A path as a NAME, wherever one is shown: its title (YAZ-2420 🔒 D14). A path the index does not
- * hold (not loaded yet, a PDF, an image, a folder with no settings file) shows its file name: a
- * file hides Markdown's extension; a folder's label is its whole name (YAZ-2290).
+ * hold (not loaded yet, a PDF, an image, a board, a folder with no settings file) shows its file name: a
+ * note, a drawing and a diagram hide their extension (YAZ-3536 D1); a folder's label is its whole name (YAZ-2290).
  */
-export const pageLabel = (path: string, folder: boolean, titles: PathTitles): string => titles.get(path) ?? (folder ? basename(path) : stripExt(basename(path)))
+export const pageLabel = (path: string, folder: boolean, titles: PathTitles): string => titles.get(path) ?? (folder ? basename(path) : fileLabel(basename(path)))
+
+/** A file name with one app extension hidden at most: `Flow.md.excalidraw` → `Flow.md`, `Flow.excalidraw.md` → `Flow.excalidraw` (YAZ-3536). */
+const fileLabel = (name: string): string => {
+  // `boardBaseName` is the board test too (its name whole = no board): one look at the extension, not `fileKind`'s six lists, on every row.
+  const bare = boardBaseName(name)
+  return bare !== name ? bare : stripExt(name)
+}
 
 /** `pageLabel` of a path the Files tree says the kind of (`isFolderPath`). */
 export const pageName = (root: string | null, path: string, titles: PathTitles): string => pageLabel(path, isFolderPath(root, path), titles)

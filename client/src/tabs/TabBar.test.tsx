@@ -237,6 +237,19 @@ describe('TabBar', () => {
     expect(icon('o').hasAttribute('data-icon-custom')).toBe(false)
   })
 
+  it("a board tab holds its extension after its name, for File icons Off to show (YAZ-3536 D4); a display name, a folder page and a note hold none", async () => {
+    container = document.body.appendChild(document.createElement('div'))
+    root = createRoot(container)
+    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/v', tree: [{ type: 'dir', name: 'Plan.drawio', path: '/v/Plan.drawio', children: [] }], generatedAt: 1 })
+    const tabs = [{ id: 'f', path: '/v/Flow.drawio' }, { id: 'n', path: '/v/Map.excalidraw', name: 'Roadmap' }, { id: 'd', path: '/v/Plan.drawio' }, { id: 'a', path: '/v/a.md' }]
+    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} tabs={tabs} active="f" {...noop} {...noNav} />))
+    await act(async () => void (await fetchTree('/v')))
+    const ending = (id: string) => container!.querySelector(`[data-tab="${id}"] .tabbar__label .name-ending`)
+    expect(ending('f')?.textContent).toBe('.drawio')
+    expect(container!.querySelector('[data-tab="f"] .tabbar__label')?.textContent).toBe('Flow.drawio') // hidden by app.css unless File icons Off
+    expect([ending('n'), ending('d'), ending('a')]).toEqual([null, null, null])
+  })
+
   it('marks only the active tab: aria-selected + the active modifier', () => {
     const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/b.md', ...noop, ...noNav })
     expect([...el.querySelectorAll('[role="tab"]')].map((t) => t.getAttribute('aria-selected'))).toEqual(['false', 'true'])

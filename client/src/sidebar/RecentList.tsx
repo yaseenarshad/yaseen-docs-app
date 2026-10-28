@@ -3,7 +3,7 @@ import { hasHoverPreview } from './hoverPreviewKinds'
 import type { TreeResponse } from '@shared/types'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
-import { FileIcon } from './FileIcon'
+import { FileIcon, NameEnding } from './FileIcon'
 import { MAX_RECENTS, recentDays, recentFiles, timeOf, type RecentFile } from './recents'
 
 type Log = Readonly<Record<string, number>>
@@ -162,6 +162,7 @@ function RecentRow({ file, active, titles, onOpenFile, onKeepFile, onOpenFileBac
         <span className="tree__label">
           <FileIcon path={path} />
           {pageLabel(path, false, titles)}
+          <NameEnding path={path} />
         </span>
         <span className="tree__count">{timeOf(edited)}</span>
       </button>
