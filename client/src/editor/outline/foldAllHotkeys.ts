@@ -6,6 +6,7 @@
  */
 import type { Command } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
+import { FOLD_KEYS } from './foldKeys'
 import { addHeadingFoldAllMeta, addHeadingFoldUndoMeta } from './headingFolding'
 import { addOutlineFoldAllMeta, addOutlineFoldUndoMeta } from './outlineFolding'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
@@ -37,12 +38,12 @@ const undoCombinedDocumentFold: Command = (state, dispatch) => {
 
 export const foldAllHotkeys = $shortcut(() => ({
   FoldAllDocument: {
-    key: 'Mod-Shift-u',
+    key: FOLD_KEYS.foldAll,
     priority: PRIORITY,
     onRun: () => setAllDocumentFolds(true),
   },
   UnfoldAllDocument: {
-    key: 'Mod-Shift-i',
+    key: FOLD_KEYS.unfoldAll,
     priority: PRIORITY,
     onRun: () => setAllDocumentFolds(false),
   },

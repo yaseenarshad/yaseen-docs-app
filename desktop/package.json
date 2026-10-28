@@ -20,7 +20,7 @@
     "appId": "com.yasinarshad.yaseendocs",
     "productName": "Yaseen Docs",
     "directories": { "output": "dist-app" },
-    "files": ["out/**"],
+    "files": ["out/**", "!node_modules/@typescript/**"],
     "extraResources": [{ "from": "build/bin", "to": "bin" }, { "from": "../share/dist/assets", "to": "share-viewer" }],
     "afterPack": "build/adhocSign.cjs",
     "mac": {

@@ -14,6 +14,7 @@ import { resolveDrawioDir, serveDrawio } from './drawio/assets'
 import { excalidrawFontsDir, viewerAssetsDir } from './ipc/share'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
+import { cancelHelperInstall } from './ipc/lsp'
 import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
@@ -30,6 +31,7 @@ import { hotkeyRecording } from './hotkeyRecording'
 import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
 import { runQuitSequence } from './quitSequence'
+import { stopAllLanguageServers } from './lsp/server'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { appZoomFactor, subscribeAppZoom } from './appZoom'
 import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
@@ -351,6 +353,7 @@ app.whenReady().then(() => {
     drawioDir: DRAWIO_DIR,
     fontsDir: excalidrawFontsDir({ isPackaged: app.isPackaged, mainDir: __dirname, appPath: app.getAppPath(), exists: existsSync }),
     isPackaged: app.isPackaged,
+    appPath: app.getAppPath(),
   }, settingsFolder)
   // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
   // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
@@ -411,6 +414,9 @@ app.on('before-quit', (event) => {
     // The index cache's pending persist, and each vault's diary of links to the IDs this Mac made (YAZ-2677 R27): neither flush throws.
     flushIndex: () => Promise.all([flushIndexCache(), flushDiaries()]).then(() => undefined),
     flushSync: () => gitSync?.flushForQuit(),
+    // No language server outlives the app (YAZ-3453). Each also ends by itself when its stdin closes.
+    // A helper download under way stops, and leaves no half folder (YAZ-3500).
+    stopHelpers: () => Promise.all([stopAllLanguageServers(), cancelHelperInstall()]).then(() => undefined),
     // The swap waits for this process to end (S21, S22): start it last, then exit.
     exit: () => {
       updater.installOnExit(reopenAfterQuit)

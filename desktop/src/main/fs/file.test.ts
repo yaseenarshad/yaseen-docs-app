@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mkdir, readdir, readFile as fsReadFile, utimes, writeFile as fsWriteFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile as fsReadFile, rm, utimes, writeFile as fsWriteFile } from 'node:fs/promises'
 import path from 'node:path'
 import { readFile, writeFile } from './file'
 import { failure, makeFixture } from './testFixture'
@@ -92,17 +92,91 @@ describe('writeFile', () => {
     expect(await code(writeFile({ path: path.join(root, 'x.md') } as never))).toBe('BAD_REQUEST')
     expect(await code(writeFile({ path: path.join(root, 'x.md'), content: '', expectedMtime: '1' as never }))).toBe('BAD_REQUEST')
     expect(await code(writeFile({ path: 'rel.md', content: '' }))).toBe('NOT_ABSOLUTE')
-    expect(await code(writeFile({ path: path.join(root, 'x.txt'), content: '' }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(writeFile({ path: path.join(root, 'x.pdf'), content: '' }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(writeFile(undefined as never))).toBe('BAD_REQUEST')
     expect(await code(writeFile('{not json' as never))).toBe('BAD_REQUEST')
   })
 
-  it.each(['existing.json', 'existing.py', 'existing.pdf'])('refuses to write %s and preserves the original bytes', async (name) => {
+  // S8 (YAZ-3445): a PDF, an image, a file with no in-app viewer and a board stay refused, and keep their bytes.
+  it.each(['existing.pdf', 'existing.png', 'existing.epub', 'existing.excalidraw', 'existing.drawio'])('refuses to write %s and preserves the original bytes', async (name) => {
     const file = path.join(root, name)
     const original = Buffer.from(`original:${name}`)
     await fsWriteFile(file, original)
     expect(await code(writeFile({ path: file, content: 'clobber' }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await fsReadFile(file)).toEqual(original)
+  })
+
+  // YAZ-3445 D3: a code file saves byte for byte. The renderer sends the file's own line break and
+  // BOM in the string (`lineBreakOf` sets the Monaco model's EOL), so main writes exactly that.
+  describe('code files (text kind)', () => {
+    const roundTrip = async (name: string, before: string, after: string): Promise<void> => {
+      const file = path.join(root, name)
+      await fsWriteFile(file, Buffer.from(before, 'utf8'))
+      const read = await readFile(file)
+      expect(read.content).toBe(before)
+      const w = await writeFile({ path: file, content: after, expectedMtime: read.mtime })
+      expect(w.size).toBe(Buffer.byteLength(after))
+      expect(await fsReadFile(file)).toEqual(Buffer.from(after, 'utf8'))
+      expect((await readFile(file)).content).toBe(after)
+      expect((await readdir(root)).filter((n) => n.includes('.tmp-'))).toEqual([])
+    }
+
+    it('S1: an LF file edited and saved keeps LF', () =>
+      roundTrip('lf.ts', 'const a = 1\nconst b = 2\n', 'const a = 1\nconst b = 3\nconst c = 4\n'))
+
+    it('S2: a CRLF file edited and saved keeps CRLF on every line', () =>
+      roundTrip('crlf.json', '{\r\n  "a": 1\r\n}\r\n', '{\r\n  "a": 1,\r\n  "b": 2\r\n}\r\n'))
+
+    it('S4: a file that starts with a UTF-8 BOM keeps the BOM', async () => {
+      await roundTrip('bom.py', '\ufeffprint("a")\n', '\ufeffprint("b")\n')
+      expect((await fsReadFile(path.join(root, 'bom.py'))).subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]))
+    })
+
+    // A bare `.env` has no extension (a leading dot alone is none) and is a hidden dot-entry, so only `<name>.env` is text.
+    it('S7: a local.env file saves like any other text file; a bare .env stays refused', async () => {
+      await roundTrip('local.env', 'A=1\n', 'A=2\n')
+      expect(await code(writeFile({ path: path.join(root, '.env'), content: 'A=3\n' }))).toBe('UNSUPPORTED_EXTENSION')
+    })
+
+    it('S9 (D2): a .yaml file that starts with --- saves whole, nothing split as frontmatter', () =>
+      roundTrip('compose.yaml', '---\nname: a\n---\nb: 1\n', '---\nname: a\n---\nb: 2\n'))
+
+    // YAZ-3458 (audit item 1): the door writes a code file, it never makes one.
+    it('a missing code file with no expectedMtime is NOT_FOUND and nothing is created', async () => {
+      for (const name of ['new.sh', 'Makefile', 'fresh.env']) {
+        const file = path.join(root, name)
+        expect(await code(writeFile({ path: file, content: 'x\n' })), name).toBe('NOT_FOUND')
+        expect((await readdir(root)).filter((n) => n.startsWith(name)), name).toEqual([])
+      }
+    })
+
+    it('a code file read, then deleted by another app, is put back by the save (as VS Code does)', async () => {
+      const file = path.join(root, 'gone.ts')
+      await fsWriteFile(file, 'export const v = 1\n')
+      const read = await readFile(file)
+      await rm(file)
+      await writeFile({ path: file, content: 'export const v = 2\n', expectedMtime: read.mtime })
+      expect(await fsReadFile(file, 'utf8')).toBe('export const v = 2\n')
+    })
+
+    it('a code file path that is a folder is NOT_A_FILE', async () => {
+      const dir = path.join(root, 'folder.ts')
+      await mkdir(dir)
+      expect(await code(writeFile({ path: dir, content: 'x' }))).toBe('NOT_A_FILE')
+      expect(await code(writeFile({ path: dir, content: 'x', expectedMtime: 1 }))).toBe('NOT_A_FILE')
+    })
+
+    it('CONFLICT: a stale mtime rejects with the disk mtime and writes nothing', async () => {
+      const file = path.join(root, 'stale.ts')
+      await fsWriteFile(file, 'export const v = 1\n')
+      const before = await readFile(file)
+      await utimes(file, new Date(), new Date(before.mtime + 5000))
+      const conflict = await failure(writeFile({ path: file, content: 'export const v = 2\n', expectedMtime: before.mtime }))
+      expect(conflict).toMatchObject({ code: 'CONFLICT', path: file })
+      expect(conflict.mtime).not.toBe(before.mtime)
+      expect(await fsReadFile(file, 'utf8')).toBe('export const v = 1\n')
+      expect((await readdir(root)).filter((n) => n.includes('.tmp-'))).toEqual([])
+    })
   })
 
   // A folder's settings file is born by its first change (YAZ-2290 D1): the renderer reads a

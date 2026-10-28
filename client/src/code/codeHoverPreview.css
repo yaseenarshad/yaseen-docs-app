@@ -1,0 +1,25 @@
+/*
+ * A code file's hover card (YAZ-3508): the top of the file, coloured by Monaco's `colorize` (its `mtkN` classes,
+ * styled by the app's Monaco theme), in the note card's frame (`boardPreview.css`). No scroll, no click; the last
+ * 64 px fade out, as a note's do. Lazy with the card, in Monaco's chunk.
+ */
+.code-hover__body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  padding: 12px 16px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre;
+  tab-size: 4;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+}
+
+.code-hover__body .editor-msg {
+  font-family: var(--font);
+  white-space: normal;
+}

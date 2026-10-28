@@ -135,6 +135,8 @@ const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
 const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines']
+/** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
+const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
 const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents']
 /** Settings › Excalidraw canvas (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
@@ -260,17 +262,17 @@ describe('SettingsDialog shell (D1)', () => {
 describe('SettingsDialog: a page for each section (YAZ-2709, amending the one long page)', () => {
   it('the nav: the settings pages (Review only with a vault, Sync only with the engine), a divider, then the Hotkeys reference page', () => {
     const { el } = mount()
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
     unmount()
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
-    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', '—', 'Hotkeys'])
+    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', '—', 'Hotkeys'])
     unmount()
     const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
-    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
+    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
   })
 
   it('the registry order once both YAZ-3028 halves land: canvas and images after Editor (YAZ-3037, YAZ-3038), storage and sharing after Sync (YAZ-3039, YAZ-3040), Hotkeys last', () => {
-    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
+    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'code', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
   })
 
   it('opens on General, the first page: the one section in the pane, anchored by id, with only its rows — no row of a later section is there (YAZ-3276 D7)', () => {
@@ -302,6 +304,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       page('Sidebar', 'settings-sidebar', SIDEBAR_ROWS),
       page('Notifications', 'settings-notifications', NOTIFICATIONS_ROWS),
       page('Editor', 'settings-editor', EDITOR_ROWS),
+      page('Code', 'settings-code', CODE_ROWS),
       page('Excalidraw canvas', 'settings-canvas', CANVAS_ROWS),
       page('Images', 'settings-images', IMAGES_ROWS),
       page('Files & Links', 'settings-files', FILES_ROWS),
@@ -358,6 +361,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Sidebar', []],
       ['Notifications', []],
       ['Editor', []],
+      ['Code', []],
       ['Excalidraw canvas', []],
       ['Images', []],
       ['Files & Links', []],
@@ -381,6 +385,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Sidebar', []],
       ['Notifications', []],
       ['Editor', []],
+      ['Code', []],
       ['Excalidraw canvas', []],
       ['Images', []],
       ['Files & Links', [{ text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' }]],
@@ -418,7 +423,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Sync')
     expect(currentNav(el)).toBe('Sync')
     act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange }} onClose={onClose} />))
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
     expect(headings(el)).toEqual(['General'])
     expect(currentNav(el)).toBe('General')
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
@@ -451,6 +456,31 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       expect(rowIds(again.el)).toEqual(GENERAL_ROWS)
       unmount()
     }
+  })
+})
+
+describe('Settings › Code (YAZ-3449)', () => {
+  it('shows the three switches as the settings are, and each writes the whole SettingsState with only its key changed', () => {
+    const { el, onChange } = mountOn('Code', { ...DEFAULT_SETTINGS })
+    expect(rowIds(el)).toEqual(CODE_ROWS)
+    // D5 wording here; the code tab's cog row is "Read only" under "All code files" (CodeEditor.test.tsx).
+    expect(CODE_ROWS.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Open code files read only', 'Wrap long lines', 'Minimap', 'Jump across files (Cmd+click, Shift+F12)'])
+    const pressed = (id: string) => rowButtons(el, id).find((b) => b.getAttribute('aria-pressed') === 'true' || b.className.includes('--active'))?.textContent
+    expect(CODE_ROWS.map(pressed)).toEqual(['Off', 'On', 'Off', 'Off'])
+    act(() => rowButtons(el, 'codeReadOnly')[0].click()) // On
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, codeReadOnly: true })
+    act(() => rowButtons(el, 'codeWrap')[1].click()) // Off
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, codeWrap: false })
+    act(() => rowButtons(el, 'codeMinimap')[0].click()) // On
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, codeMinimap: true })
+  })
+
+  it('search finds the rows by what a coder types', () => {
+    const { el } = mount()
+    type(searchInput(el), 'word wrap')
+    expect(rowIds(el)).toContain('codeWrap')
+    type(searchInput(el), 'go to definition')
+    expect(rowIds(el)).toContain('codeLanguageHelpers')
   })
 })
 
@@ -936,7 +966,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
     const { el } = mount()
     expect(navByTitle(el, 'Review')).toBeUndefined()
     const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'baseDays')])
-    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Hotkeys'])
+    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Hotkeys'])
     for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 

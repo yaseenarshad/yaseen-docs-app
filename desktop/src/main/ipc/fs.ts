@@ -15,6 +15,7 @@ import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure, fsCall, isSkipped, requireAbsPath } from '../fs/fsUtils'
 import { readHeads } from '../fs/heads'
+import { readTextHead } from '../fs/textHead'
 import { readImage } from '../fs/image'
 import { openInDefaultApp } from '../fs/openDefault'
 import { openInVsCode } from '../fs/openInVsCode'
@@ -54,6 +55,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   handle(CONTRACT.readFile, readFile)
   // The pages of the tab board (YAZ-2648 D6): read-only, one call for every open tab.
   handle(CONTRACT.readHeads, readHeads)
+  // A code file's hover card (YAZ-3508): its first lines, never the whole file.
+  handle(CONTRACT.readTextHead, readTextHead)
   handle(CONTRACT.readPdf, readPdf)
   handle(CONTRACT.readImage, readImage)
   // A note's save goes in the save log (YAZ-3235 D1); a quiet tidy-up write (`FileWriteRequest.quiet`) does not.

@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { APP_ZOOM_STEPS, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, HOVER_PLACES, hoverOn, MAX_COLLAPSED_GROUP_KEYS, MAX_CLOSED, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, stepSidebarZoom, stepZoom, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { createStore, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
 
@@ -199,6 +199,64 @@ describe('createStore: loading', () => {
 
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, noticeLength: '9s', noticeUndo: 'yes', noticeClipboard: false, gestureSounds: 0 } }))
     expect(createStore(file).get().settings).toMatchObject({ noticeLength: '4s', noticeUndo: true, noticeClipboard: false, noticeLists: true, gestureSounds: true })
+  })
+
+  it('Settings › Code (YAZ-3449 S6): a file from before the code tab reads edit mode, wrap on, minimap off; each value survives; a wrong value falls back to its default, field by field', async () => {
+    const { codeReadOnly: _a, codeWrap: _b, codeMinimap: _c, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ codeReadOnly: false, codeWrap: true, codeMinimap: false })
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeReadOnly: true, codeWrap: false, codeMinimap: true } }))
+    expect(createStore(file).get().settings).toMatchObject({ codeReadOnly: true, codeWrap: false, codeMinimap: true })
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeReadOnly: 'yes', codeWrap: 0, codeMinimap: null } }))
+    expect(createStore(file).get().settings).toMatchObject({ codeReadOnly: false, codeWrap: true, codeMinimap: false })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, codeReadOnly: 1, codeWrap: 'off', codeMinimap: true })).toMatchObject({ codeReadOnly: false, codeWrap: true, codeMinimap: true })
+    // The IPC boundary refuses the whole object (it never repairs).
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeWrap: 'off' })).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeWrap: false })).toBe(true)
+  })
+
+  it('"Jump across files" (YAZ-3500): a file from before it reads off; on survives a restart; a wrong value reads off; it stays on this Mac', async () => {
+    const { codeLanguageHelpers: _a, ...legacySettings } = DEFAULT_SETTINGS
+    expect(DEFAULT_SETTINGS.codeLanguageHelpers).toBe(false)
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.codeLanguageHelpers).toBe(false)
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeLanguageHelpers: true } }))
+    expect(createStore(file).get().settings.codeLanguageHelpers).toBe(true)
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeLanguageHelpers: 'yes' } }))
+    expect(createStore(file).get().settings.codeLanguageHelpers).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeLanguageHelpers: 1 })).toBe(false)
+    // The helpers are a download on this Mac: the switch never travels in a settings folder.
+    expect(LOCAL_SETTINGS).toContain('codeLanguageHelpers')
+  })
+
+  it('the code Outline (YAZ-3486 S4, S5): a file from before it reads Position and no hidden kind; each value survives a restart; a wrong value is repaired', async () => {
+    const { codeOutlineSort: _a, codeOutlineHidden: _b, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ codeOutlineSort: 'position', codeOutlineHidden: [] })
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeOutlineSort: 'type', codeOutlineHidden: ['variable', 'constant'] } }))
+    expect(createStore(file).get().settings).toMatchObject({ codeOutlineSort: 'type', codeOutlineHidden: ['variable', 'constant'] })
+
+    // A kind a later build removed, and a repeat, are dropped; the rest is kept. A sort that is no sort reads Position.
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeOutlineSort: 'size', codeOutlineHidden: ['variable', 'gadget', 'variable', 7] } }))
+    expect(createStore(file).get().settings).toMatchObject({ codeOutlineSort: 'position', codeOutlineHidden: ['variable'] })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, codeOutlineHidden: 'variable' }).codeOutlineHidden).toEqual([])
+    // The IPC boundary refuses the whole object (it never repairs).
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeOutlineHidden: ['gadget'] })).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeOutlineHidden: ['field', 'field'] })).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeOutlineSort: 'name', codeOutlineHidden: ['field'] })).toBe(true)
+  })
+
+  it('the code Outline\'s names inside functions (YAZ-3507): a file from before it reads off; on survives a restart; junk reads off', async () => {
+    const { codeOutlineLocals: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.codeOutlineLocals).toBe(false)
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeOutlineLocals: true } }))
+    expect(createStore(file).get().settings.codeOutlineLocals).toBe(true)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, codeOutlineLocals: 'yes' }).codeOutlineLocals).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeOutlineLocals: 1 })).toBe(false)
   })
 
   it('commentsOrder: a pre-1515 file without the key sanitizes to oldest; both orders survive; junk falls back (YAZ-1515)', async () => {

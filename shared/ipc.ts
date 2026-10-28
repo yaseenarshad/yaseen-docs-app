@@ -10,7 +10,9 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
+import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { SystemHotkey } from './macosHotkeys'
 import type { VaultIcons } from './vaultIcons'
 
@@ -41,6 +43,12 @@ export const CONTRACT = {
   readFile: invoke<[path: string], FileResponse>('fs:read', 1),
   /** The top of each note in `paths`, in their order (YAZ-2648 D6): only the head is read off disk, never the file. `null` for a path that is no note or could not be read; one never fails the rest. */
   readHeads: invoke<[paths: readonly string[]], (FileHead | null)[]>('fs:read-heads', 1),
+  /**
+   * The top of a `text` kind file for its hover card (YAZ-3508): at most `TEXT_HEAD_READ_BYTES` off disk, cut to
+   * `TEXT_HEAD_LINES` lines, never the whole file. Refused as `readFile` would refuse the file: `TOO_LARGE` over
+   * `MAX_FILE_BYTES`, `IO_ERROR` for bytes that are not UTF-8 or hold a NUL (in the part read).
+   */
+  readTextHead: invoke<[path: string], TextHead>('fs:read-text-head', 1),
   readPdf: invoke<[path: string], PdfResponse>('fs:read-pdf', 1),
   readImage: invoke<[path: string], ImageResponse>('fs:read-image', 1),
   writeFile: invoke<[req: FileWriteRequest], FileWriteResponse>('fs:write', 1),
@@ -585,6 +593,35 @@ export const CONTRACT = {
     notes: invoke<[], ReleaseNotes>('update:notes', 0),
     /** "Restart to update" (D6): quit through the quit sequence, swap, open again. For `manual` (S13) it opens the GitHub release page instead. */
     restart: invoke<[], void>('update:restart', 0),
+  },
+  /**
+   * The language helpers of the code tab (YAZ-3454 4B, YAZ-3455 4C; D9, D10): TypeScript 7 for TS,
+   * JS and React, `pyright` for Python, each in its own process of main, one per project, at most 3.
+   * A tab opens its file with its text and gets a handle; only `open` and `change` carry text, every
+   * request a handle and a position. `null` = no helper answers (none fits, or it is down): the tab
+   * falls back to Monaco's one-file help, with no message. Long form: docs/CONTRACTS.md › Bridge API.
+   */
+  lsp: {
+    open: invoke<[req: LspOpenRequest], LspOpenResponse | null>('lsp:open', 1),
+    /** The tab's whole text now (debounced by the tab). */
+    change: invoke<[handle: string, text: string], void>('lsp:change', 2),
+    /** The tab closed; the helper stops with the last tab of its project. */
+    close: invoke<[handle: string], void>('lsp:close', 1),
+    definition: invoke<[req: LspPositionRequest], LspLocation[] | null>('lsp:definition', 1),
+    references: invoke<[req: LspPositionRequest], LspLocation[] | null>('lsp:references', 1),
+    hover: invoke<[req: LspPositionRequest], LspHover | null>('lsp:hover', 1),
+    /** Are the helpers of this platform there (YAZ-3500)? `ready` = a switch-on needs no box and no download. */
+    helpers: invoke<[], LspHelpersState>('lsp:helpers', 0),
+    /**
+     * "Download and turn on" (YAZ-3500): main downloads the pinned packages of this platform, checks each
+     * one's sha512, unpacks it to `<userData>/lsp/<name>-<version>/`. Resolves when done or failed (never
+     * rejects for a failed download); the switch is the renderer's to set after `{ ok: true }`. A second
+     * call while one runs joins it. Progress arrives on `onInstallProgress`.
+     */
+    install: invoke<[], LspInstallResult>('lsp:install', 0),
+    /** The box's Cancel during a download: stops it and deletes what it wrote. */
+    cancelInstall: invoke<[], void>('lsp:cancel-install', 0),
+    onInstallProgress: push<LspInstallProgress>('lsp:install-progress'),
   },
 } as const
 

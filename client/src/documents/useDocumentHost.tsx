@@ -1,10 +1,10 @@
 /**
- * THE BOARD DOCUMENT HOST (Draw's YAZ-2073 🔒 D16, ported by YAZ-3028): the save / conflict / flush /
- * rename state machine the drawing tab (`DrawingEditor`) and the diagram tab (`DrawioEditor`) share,
- * written once. An editor says only what its engine knows — when its content is the clean baseline
- * (`start`), how the live document is written (`write`), how disk truth goes back in (`reload`) —
- * and this hook owns the rest. A hook and a shell, not a generic `<BoardEditor engine={…}>`: the two
- * engines have nothing else in common.
+ * THE DOCUMENT HOST (Draw's YAZ-2073 🔒 D16, ported by YAZ-3028; named for any engine by YAZ-3448 D2):
+ * the save / conflict / flush / rename state machine the drawing tab (`DrawingEditor`), the diagram
+ * tab (`DrawioEditor`) and the code tab (`CodeEditor`) share, written once. An editor says only what
+ * its engine knows — when its content is the clean baseline (`start`), how the live document is
+ * written (`write`), how disk truth goes back in (`reload`) — and this hook owns the rest. A hook and
+ * a shell, not a generic `<DocumentEditor engine={…}>`: the engines have nothing else in common.
  *
  * AUTOSAVE COUNTS, IT NEVER COMPARES BYTES. `Autosave<number>` is fed a change counter the engine
  * keeps; the bytes are produced once, inside `write`, when the 500 ms timer fires. Its status
@@ -16,26 +16,29 @@
  * disk and a DIRTY one raises the conflict bar (Reload / Keep mine). A `CONFLICT` from the save
  * door itself — a stale `expectedMtime`, i.e. the other window got there first — raises the same
  * bar, and `Autosave` blocks further writes until one of the two buttons answers it. Two windows
- * on one board is exactly this rule seen from both sides.
+ * on one document is exactly this rule seen from both sides.
  *
  * RENAME AND DELETE. The host registers the shell's rename-continuity handle for its path, so a
  * rename flushes these bytes before the file moves and a DELETE retires the controller — without
  * which closing the tab would flush on unmount and resurrect the file that was just trashed. A
- * board stashes no buffer across a rename (`capture` answers null): it is flushed first, and the
+ * document stashes no buffer across a rename (`capture` answers null): it is flushed first, and the
  * tab at the new path reads it back off disk.
  *
- * THE READ-ONLY SWITCH (YAZ-3076 D1) is stored IN the file, so the host holds it as the file last
+ * THE READ-ONLY SWITCH (YAZ-3076 D1) is stored IN a board's file, so the host holds it as the file last
  * said: the load (`readOnly`), each reload (what `reload` answers), and its own toggle. The toggle
  * (`setReadOnly`) is an `Autosave.writeBeside`: pending edits save first, then `board:set-read-only`
  * writes the one key under the new mtime, and the autosave adopts the mtime it answers — so the
  * watcher's echo is recognised and the scene is not reloaded. A file that changed on disk first is
  * refused (`CONFLICT`): the board reloads from disk, the switch stays, and one notice says why (S13).
+ * A code file has no place for it (YAZ-3448): `readOnlySwitch: false` means no cog row, no chip, and
+ * no `board:set-read-only` call, ever.
  *
  * THE APPLICATION MENU'S BOARD COMMANDS (Draw's 🔒 YAZ-1775 D10; the menu items are YAZ-3037) and the
- * TAB-REVEAL focus handoff (🔒 YAZ-1812) are both claimed on THIS host's own element: the shell keeps several boards
+ * TAB-REVEAL focus handoff (🔒 YAZ-1812) are both claimed on THIS host's own element: the shell keeps several documents
  * mounted, and exactly one of them is in front.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { isBoard } from '@shared/fileKind'
 import type { GithubSyncStatus, SaveDrawingResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { PageSettings } from '../editor/PageSettings'
@@ -53,8 +56,8 @@ import { noteBoardSaved } from '../share/liveShare'
 import { BOARD_COMMAND_EVENT, type BoardCommand } from './boardCommand'
 import { ConflictBar } from './ConflictBar'
 
-/** What every board editor is handed for its document, and hands on to `useBoardDocument` as is. */
-export interface BoardDocumentProps {
+/** What every document editor is handed for its document, and hands on to `useDocumentHost` as is. */
+export interface DocumentHostProps {
   root: string
   path: string
   /** The window's one watcher subscription; the conflict rule listens on it. */
@@ -64,7 +67,7 @@ export interface BoardDocumentProps {
   onSyncNow?: () => void
 }
 
-export interface BoardDocumentOptions extends BoardDocumentProps {
+export interface DocumentHostOptions extends DocumentHostProps {
   write: (expectedMtime: number) => Promise<{ mtime: number }>
   /**
    * Disk truth into the engine, and `autosave` reset to it; throws when the file cannot be read.
@@ -73,6 +76,11 @@ export interface BoardDocumentOptions extends BoardDocumentProps {
   reload: (autosave: Autosave<number>) => Promise<boolean | void>
   /** The loaded file's read-only switch (YAZ-3076 D1): `isDrawingReadOnly` / `isDiagramReadOnly` of what the shell loaded. */
   readOnly?: boolean
+  /**
+   * `false`: the file has no read-only switch (a code file, YAZ-3448) — no cog row, no chip, and the
+   * host never writes one. Absent = true, a board's switch.
+   */
+  readOnlySwitch?: boolean
   /** The window's ONE passive notice: why the read-only switch did not change. */
   onNotice?: (text: string, icon?: NoticeKind) => void
   onCommand: (command: BoardCommand) => void
@@ -85,7 +93,7 @@ export interface BoardDocumentOptions extends BoardDocumentProps {
  * `hostRef` goes on the host's own element (commands and the reveal are claimed on it); `start` hands
  * over the engine's clean baseline, and `autosave` is null until it has.
  */
-export function useBoardDocument(options: BoardDocumentOptions) {
+export function useDocumentHost(options: DocumentHostOptions) {
   const { path, watch, sync, onSyncNow } = options
   /** The engine's callbacks as of the last render: the listeners below are bound once, at mount. */
   const engine = useRef(options)
@@ -104,8 +112,8 @@ export function useBoardDocument(options: BoardDocumentOptions) {
   }, [readOnly])
   const readOnlyRef = useRef(readOnly)
   readOnlyRef.current = readOnly
-  // The chips' live state, read by `<BoardChips>` alone (YAZ-2073 5D).
-  const [chips] = useState(() => createStore<ChipState>({ status: 'saved', sync, onSyncNow, readOnly: options.readOnly === true, askingUnlock: false, readOnlyActions: NO_READ_ONLY_ACTIONS }))
+  // The chips' live state, read by `<DocumentChips>` alone (YAZ-2073 5D).
+  const [chips] = useState(() => createStore<ChipState>({ status: 'saved', sync, onSyncNow, readOnly: options.readOnly === true, askingUnlock: false, readOnlyActions: options.readOnlySwitch === false ? null : NO_READ_ONLY_ACTIONS }))
   useLayoutEffect(() => chips.set({ sync, onSyncNow }), [chips, sync, onSyncNow])
   useLayoutEffect(() => chips.set({ readOnly, askingUnlock }), [chips, readOnly, askingUnlock])
 
@@ -114,7 +122,8 @@ export function useBoardDocument(options: BoardDocumentOptions) {
       try {
         const res = await engine.current.write(expectedMtime)
         // Always-live share links (Draw's YAZ-1799, YAZ-3040): a shared board re-uploads once its saves settle.
-        noteBoardSaved(engine.current.root, engine.current.path)
+        // Only a board can be shared, so a code save never arms the share timer (YAZ-3458).
+        if (isBoard(engine.current.path)) noteBoardSaved(engine.current.root, engine.current.path)
         return res
       } catch (err) {
         // A stale guard is the conflict bar's business, not an error chip.
@@ -141,8 +150,8 @@ export function useBoardDocument(options: BoardDocumentOptions) {
       if (typeof nowReadOnly === 'boolean') setReadOnlyShown(nowReadOnly)
       setConflictMtime(null)
     } catch {
-      // The file went, or stopped being a board: keep what is on screen and let the next save
-      // say so. A reload that cannot read must never blank the board in front of the user.
+      // The file went, or stopped being its kind: keep what is on screen and let the next save
+      // say so. A reload that cannot read must never blank the document in front of the user.
     }
   }, [])
 
@@ -193,7 +202,7 @@ export function useBoardDocument(options: BoardDocumentOptions) {
         flush: async () => {
           if (!retired.current) await autosave.current?.flush()
         },
-        // A board stashes no buffer (see the module doc): flushed first, read back at the new path.
+        // A document stashes no buffer (see the module doc): flushed first, read back at the new path.
         capture: () => null,
         // …but Settings › Storage's shrink must know it has unsaved edits (YAZ-3039).
         dirty: () => autosave.current?.dirty === true,
@@ -239,7 +248,7 @@ export function useBoardDocument(options: BoardDocumentOptions) {
   const setReadOnly = useCallback(
     async (on: boolean): Promise<void> => {
       const a = autosave.current
-      if (a === null || retired.current) return
+      if (a === null || retired.current || engine.current.readOnlySwitch === false) return
       const { root, path: file } = engine.current
       try {
         await a.writeBeside((expectedMtime) => api.setBoardReadOnly({ root, path: file, on, expectedMtime }))
@@ -261,7 +270,7 @@ export function useBoardDocument(options: BoardDocumentOptions) {
   useLayoutEffect(
     () =>
       chips.set({
-        readOnlyActions: {
+        readOnlyActions: engine.current.readOnlySwitch === false ? null : {
           toggle: () => (readOnlyRef.current ? setAskingUnlock(true) : void setReadOnly(true)),
           ask: () => setAskingUnlock(true),
           allow: () => {
@@ -295,19 +304,24 @@ interface ChipState {
   onSyncNow: (() => void) | undefined
   readOnly: boolean
   askingUnlock: boolean
-  readOnlyActions: ReadOnlyActions
+  /** null: the file has no switch (`readOnlySwitch: false`). */
+  readOnlyActions: ReadOnlyActions | null
 }
 
 /**
  * The page cog (YAZ-3076 D3: one row, "Read only"), the "Read only" chip while it is on (D4), the
- * sync chip (when the vault has one) and the save chip; what they say comes from the store.
+ * sync chip (when the vault has one) and the save chip; what they say comes from the store. A file
+ * with no switch (a code file) has no cog and no chip from here: the cog would have no row. Such an
+ * engine hands its own chips as `lead` (the code tab's cog, text size and Read only chip, YAZ-3449),
+ * drawn first; the same element across the store's renders, so a save's status moves leave it alone.
  */
-export function BoardChips({ store, className }: { store: Store<ChipState>; className: string }) {
+export function DocumentChips({ store, className, lead }: { store: Store<ChipState>; className: string; lead?: ReactNode }) {
   const { status, sync, onSyncNow, readOnly, askingUnlock, readOnlyActions: actions } = useSyncExternalStore(store.subscribe, store.getState)
   return (
     <div className={className}>
-      <PageSettings readOnly={readOnly} onToggleReadOnly={actions.toggle} />
-      {readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={actions.ask} onAllow={actions.allow} onCancel={actions.cancel} />}
+      {lead}
+      {actions !== null && <PageSettings readOnly={readOnly} onToggleReadOnly={actions.toggle} />}
+      {actions !== null && readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={actions.ask} onAllow={actions.allow} onCancel={actions.cancel} />}
       {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
       <SaveIndicator status={status} />
     </div>

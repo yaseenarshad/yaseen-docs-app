@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type MouseEvent } from 'react'
-import { isBoard, isMarkdown } from '@shared/fileKind'
+import { hasHoverPreview } from './hoverPreviewKinds'
 import type { TreeResponse } from '@shared/types'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
@@ -142,7 +142,7 @@ function RecentRow({ file, active, titles, onOpenFile, onKeepFile, onOpenFileBac
   const { path, edited } = file
   // A board or note row's hover handlers, as a Files row's (YAZ-3403): pointer and focus alike. The item's `data-path`
   // puts a Files window's floating panel level with the row (`previewRowRect`); the button has none, for the keys.
-  const hover = onHoverFile === undefined || !(isBoard(path) || isMarkdown(path)) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
+  const hover = onHoverFile === undefined || !hasHoverPreview(path) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
   return (
     <li data-path={path}>
       <button

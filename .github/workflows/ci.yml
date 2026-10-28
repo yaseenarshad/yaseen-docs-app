@@ -31,6 +31,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+        env:
+          # Monaco (the code tab, YAZ-3438) makes the renderer build need more heap than Node's default on
+          # the hosted runner: without this the build dies with "JavaScript heap out of memory".
+          NODE_OPTIONS: --max-old-space-size=6144
       # desktop/out against tools/perf/budget.json: renderer + main bytes, chunk closure, fonts, the CLI entry.
       # The packaged half (.app, DMG, Info.plist, seal) is `npm run perf:budget`, run locally after desktop:build.
       - run: npm run perf:budget:ci

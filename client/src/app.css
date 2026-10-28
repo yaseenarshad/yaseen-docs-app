@@ -1,4 +1,8 @@
 :root {
+  /* A menu row's padding (YAZ-3503): the app's `.ctx-menu__item` and Monaco's right-click menu
+     (`code/monacoMenuLook.ts`) both read it. Each row is this padding around one line of 13 px text at
+     `line-height: normal`, so the two menus' rows are the same height on every Mac and every font. */
+  --menu-row-padding: 6px 10px;
   --bg: #ffffff;
   --bg-side: #f6f6f7;
   --fg: #1f1f1f;
@@ -2130,7 +2134,7 @@ button {
   justify-content: space-between;
   gap: 16px;
   width: 100%;
-  padding: 6px 10px;
+  padding: var(--menu-row-padding);
   border-radius: 5px;
   font-size: 13px;
   text-align: left;
@@ -2280,6 +2284,24 @@ button {
 
 .confirm__btn--danger:hover {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+/* A sheet with a title line over its text (YAZ-3500, "Turn on jump across files?"). */
+.confirm__title {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+/* The sheet's one line under the text: a download's progress, or why it failed (YAZ-3500). */
+.confirm__status {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.confirm__status--error {
+  color: var(--danger);
 }
 
 /* A sheet that waits for input (YAZ-2677 D2): its confirm button does nothing yet. */
