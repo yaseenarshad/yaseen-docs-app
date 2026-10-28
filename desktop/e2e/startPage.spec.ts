@@ -29,7 +29,7 @@ let vault2: string
 let app: ElectronApplication
 let win: Page
 
-/** The rows of "Recent", in the order drawn. */
+/** The rows of "Recently viewed" (YAZ-3487 D12; `data-col` stays `recent`), in the order drawn. */
 const recent = (w: Page) => w.locator('.start__column[data-col="recent"] .start__row')
 
 test.beforeAll(async () => {

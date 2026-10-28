@@ -1761,6 +1761,26 @@ describe('a NEW window starts with every folder closed (YAZ-3487, demo round 3)'
     expect(openState(fresh.el)).toBe('false')
     expect(fresh.bridge.state.setFolder).not.toHaveBeenCalledWith('/v', { expanded: [] })
   })
+
+  it('a vault that joins a new window does not write its closed tree over the first vault (YAZ-3513, round 2)', async () => {
+    const fresh = await mount({}, (bridge) => seeded(bridge, true))
+    const [v] = fresh.props.vaults
+    await fresh.rerender({ vaults: [v, { ...v, root: '/w', name: 'w' }] })
+    expect(fresh.bridge.state.setFolder).not.toHaveBeenCalledWith('/v', { expanded: [] })
+  })
+
+  it('a vault that leaves a new window does not write its closed tree over the vault that stays (YAZ-3513, round 2)', async () => {
+    const two = async (bridge: ReturnType<typeof installBridge>) => {
+      bridge.state.get.mockResolvedValue({ ...defaultAppState(), folders: { '/v': { ...defaultFolderState(), expanded: ['/v/sub'] } } })
+      bridge.window.identity.mockResolvedValue({ id: 'w1', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', startCollapsed: true as const })
+      await storage.init()
+    }
+    const base = oneVault({})[0]
+    const fresh = await mount({ vaults: [base, { ...base, root: '/w', name: 'w' }] }, two)
+    expect(fresh.bridge.state.setFolder).not.toHaveBeenCalled()
+    await fresh.rerender({ vaults: [base] })
+    expect(fresh.bridge.state.setFolder).not.toHaveBeenCalledWith('/v', { expanded: [] })
+  })
 })
 
 describe('launch: the restored tab is shown, not revealed (YAZ-1642)', () => {

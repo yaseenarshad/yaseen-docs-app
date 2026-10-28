@@ -41,7 +41,7 @@ test.afterAll(async () => {
 test('YAZ-3403 S1, S15, S36: a rest on a recent note of the new tab page shows its top beside the row; with "New tab page" off in Settings no panel opens there, and the sidebar still previews', async () => {
   const roadmap = path.join(vault, 'Projects', 'Roadmap.md')
   const ideas = path.join(vault, 'Ideas.md')
-  // A window with no tabs shows the new tab page; its "Recent" column reads the seeded open history.
+  // A window with no tabs shows the new tab page; its "Recently viewed" column reads the seeded open history.
   const seededAt = Date.now()
   const state = seededState(vault, null)
   state.folders[vault].opens = { [roadmap]: { score: 1, last: seededAt - MINUTE }, [ideas]: { score: 1, last: seededAt - 2 * MINUTE } }

@@ -225,7 +225,10 @@ export function useVaultTree(
     const joined = roots.filter((vault) => !before.includes(vault))
     const left = before.filter((vault) => !roots.includes(vault))
     if (joined.length > 0 || left.length > 0) {
-      dispatch({ type: 'setAll', dirs: [...expanded.filter((dir) => rootOfPath(left, dir) === null), ...joined.flatMap(storage.getExpanded)] })
+      const dirs = [...expanded.filter((dir) => rootOfPath(left, dir) === null), ...joined.flatMap(storage.getExpanded)]
+      // A new window that the user has not touched stays untouched: a vault that joins or leaves is no open or close (YAZ-3513).
+      if (expanded === startList.current) startList.current = dirs
+      dispatch({ type: 'setAll', dirs })
       return
     }
     if (expanded === startList.current) return
