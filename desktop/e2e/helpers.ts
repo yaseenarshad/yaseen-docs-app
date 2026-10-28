@@ -294,6 +294,15 @@ export function seededState(vault: string, file: string | null): AppState {
 }
 
 /**
+ * The search by Name (YAZ-3511): for the specs that pin the cut, the folds and the keys of a search, not its sort — the
+ * order before Best match became the Search default (YAZ-3511 D12). searchSort.spec.ts covers the default itself.
+ */
+export function searchByName(state: AppState): AppState {
+  state.settings = { ...state.settings, searchSort: { by: 'name', reverse: false } }
+  return state
+}
+
+/**
  * A sidebar wide enough for the whole tab row (YAZ-3273 D1): at the default 260 px the last tabs of
  * the row (Sessions, Recents) live in the ⋯ menu on Files. For the specs that read or click every tab.
  */

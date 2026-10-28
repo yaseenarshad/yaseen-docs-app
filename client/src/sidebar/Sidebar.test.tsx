@@ -12,7 +12,7 @@ import { StrictMode, act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { copyFoldKey } from '@shared/foldKey'
 import { parseFrontmatter } from '@shared/frontmatter'
-import { CLIP_CHANGED, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type ImportResponse, type IndexRecord, type PasteRequest, type PasteResponse, type SettingsState, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity, type SidebarTabsPrefs } from '@shared/types'
+import { CLIP_CHANGED, DEFAULT_ROW_DATES, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type ImportResponse, type IndexRecord, type PasteRequest, type PasteResponse, type SettingsState, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity, type SidebarTabsPrefs } from '@shared/types'
 import appCss from '../app.css?inline'
 import { formatDateTime } from '../lib/format'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -275,7 +275,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     // A row menu asked from the new tab page (YAZ-2663 D6): none unless a test makes the request.
     menuRequest: null,
     onMenuConsumed: vi.fn(),
-    settings: { ...DEFAULT_SETTINGS },
+    settings: TEST_SETTINGS,
     onChangeSettings: vi.fn(),
     onOpenSettings: vi.fn(),
     // The Sessions tab's doors (YAZ-3147): App's; SessionList.test is their subject.
@@ -374,6 +374,11 @@ const editorStub = (): HTMLElement => {
   document.body.appendChild(instance)
   return pm
 }
+/**
+ * The settings every mount starts with. The search tests pin the cut, the folds and the keys, not the sort: they read the
+ * search by Name, the order before Best match became the Search default (YAZ-3511 D12). The YAZ-3511 describe mounts the default itself.
+ */
+const TEST_SETTINGS: SettingsState = { ...DEFAULT_SETTINGS, searchSort: { by: 'name', reverse: false } }
 const menuItems = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')]
 const itemByLabel = (el: HTMLElement, label: string) => menuItems(el).find((b) => b.textContent === label)
 /**
@@ -1602,11 +1607,11 @@ describe('Sidebar tree refresh is coalesced (YAZ-2191)', () => {
     const { watch, fire } = withWatcher()
     const notes = [{ type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' }, { type: 'file', name: 'b.md', path: '/v/b.md', size: 1, mtime: 5, kind: 'markdown' }] as TreeNode[]
     // The search dates off (YAZ-3511 D2): they too keep the times fresh, and they are on by default.
-    const { el, bridge, rerender } = await mount({ watch, settings: { ...DEFAULT_SETTINGS, searchDates: false } }, (b) => b.tree.mockResolvedValue({ root: '/v', tree: notes, generatedAt: 1 } as never))
+    const { el, bridge, rerender } = await mount({ watch, settings: { ...DEFAULT_SETTINGS, rowDates: { ...DEFAULT_ROW_DATES, search: false } } }, (b) => b.tree.mockResolvedValue({ root: '/v', tree: notes, generatedAt: 1 } as never))
     const labels = () => [...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((n) => n.textContent)
     expect(labels()).toEqual(['a', 'b']) // Name, A to Z
     const before = bridge.tree.mock.calls.length
-    await rerender({ settings: { ...DEFAULT_SETTINGS, searchDates: false, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } } })
+    await rerender({ settings: { ...DEFAULT_SETTINGS, rowDates: { ...DEFAULT_ROW_DATES, search: false }, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } } })
     expect(bridge.tree.mock.calls.length).toBe(before + 1) // the one walk that makes the times fresh
     expect(labels()).toEqual(['b', 'a'])
     act(() => fire({ type: 'change', path: '/v/a.md', mtime: 9 }))
@@ -5557,7 +5562,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
   const tabNames = (el: HTMLElement) => tabs(el).map((b) => b.textContent || b.getAttribute('aria-label'))
   const more = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__more')
   const items = (el: HTMLElement) => menuItems(el).map((b) => `${b.textContent}${b.disabled ? ' (off)' : ''}${b.dataset.hint === undefined ? '' : ` [${b.dataset.hint}]`}`)
-  const withTabs = (sidebarTabs: Partial<SidebarTabsPrefs>) => ({ settings: { ...DEFAULT_SETTINGS, sidebarTabs: { ...DEFAULT_SIDEBAR_TABS, ...sidebarTabs } } })
+  const withTabs = (sidebarTabs: Partial<SidebarTabsPrefs>) => ({ settings: { ...TEST_SETTINGS, sidebarTabs: { ...DEFAULT_SIDEBAR_TABS, ...sidebarTabs } } })
   /** A mouse click: `detail` 1. `HTMLElement.click()` is 0, which is what Enter or Space make. */
   const mouseClick = (b: Element | null) => act(() => void b?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })))
   const rightClick = (target: Element | null) => {
@@ -5675,7 +5680,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     const fold = items(el)[1]
     expect([items(el)[0], ['Expand all', 'Collapse all'].includes(fold)]).toEqual(['Sort…', true]) // the fold button's own label
     act(() => itemByLabel(el, 'Sort…')?.click())
-    expect(menuItems(el).map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A'])
+    expect(menuItems(el).map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated'])
     act(() => itemByLabel(el, 'Last updated')?.click())
     expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...withTabs({ hiddenButtons: ['sort', 'fold'] }).settings, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } })
     mouseClick(more(el))
@@ -7225,9 +7230,9 @@ describe('favorites (YAZ-1766)', () => {
       const { el, props, rerender } = await mountVault({ lens: 'files' })
       expect(sortButton(el)?.nextElementSibling?.classList.contains('sidebar__expand-all')).toBe(true)
       openSort(el)
-      expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A'])
+      expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated'])
       await act(async () => itemByLabel(el, 'Last updated')?.click())
-      expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } })
+      expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...TEST_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } })
       expect(items(el)).toEqual([]) // a pick closes the menu
       await rerender({ lens: 'search' })
       expect(sortButton(el)).not.toBeNull()
@@ -7248,7 +7253,7 @@ describe('favorites (YAZ-1766)', () => {
       const { el, v, bridge, rerender } = await mountVault({ lens: 'favorites' }, { favorites: ['/top.md', '/Projects', '/Notes'] })
       expect(topLabels(el)).toEqual(['top', 'Projects', 'Notes'])
       openSort(el)
-      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated']) // no way group under Manual
+      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated', 'Show last updated']) // no way group under Manual, but the date row (YAZ-3511 D10)
       closeMenu(el)
       await rerender(withSort('favorites', 'name'))
       expect(topLabels(el)).toEqual(['Notes', 'Projects', 'top']) // folders first, then files
@@ -7267,7 +7272,7 @@ describe('favorites (YAZ-1766)', () => {
       const { el, rerender } = await mountVault({ lens: 'focus' }, { focus: ['/top.md', '/Notes'] })
       expect(topLabels(el)).toEqual(['top', 'Notes'])
       openSort(el)
-      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated'])
+      expect(items(el)).toEqual(['Manual✓', 'Name', 'Last updated', 'Show last updated'])
       closeMenu(el)
       await rerender(withSort('favorites', 'name')) // another tab's sort leaves Focus as it is
       expect(topLabels(el)).toEqual(['top', 'Notes'])
@@ -11013,7 +11018,7 @@ describe('Change icon from the tree (YAZ-3440 D8, D9)', () => {
     openPicker(el, 'All .md files…')
     expect(document.querySelector('.icon-picker__head')?.textContent).toBe('Icon for all .md files')
     await pickIcon('python')
-    expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, sidebarIconRules: [{ match: '*.md', kind: 'file', icon: 'python' }] })
+    expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...TEST_SETTINGS, sidebarIconRules: [{ match: '*.md', kind: 'file', icon: 'python' }] })
 
     act(() => root?.unmount())
     container?.remove()
@@ -11027,9 +11032,9 @@ describe('Change icon from the tree (YAZ-3440 D8, D9)', () => {
 })
 
 /**
- * The Search tab's own sort and dates (YAZ-3511 D1 to D7; scenarios 1 to 21 on YAZ-3512): the sort button of the tab
- * row serves Search too, with Name or Last updated, the way, and "Show last updated". The pick is `settings.searchSort`
- * and `settings.searchDates`, never `sidebarSort`.
+ * The Search tab's own sort, dates and filters (YAZ-3511 D1 to D17; edge cases 1 to 61 on YAZ-3512): the sort button of
+ * the tab row serves Search too, with Best match, Name or Last updated, the way, "Show last updated", and the Type and Time
+ * filters. The pick is `settings.searchSort` and `settings.rowDates.search`, never `sidebarSort`; the filters are no setting.
  */
 describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
   const H = 3_600_000
@@ -11049,10 +11054,10 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     { type: 'dir', name: 'plan empty', path: '/v/plan empty', children: [] },
   ]
   const RECORDS = ['/v/plan b.md', '/v/plan a.md', '/v/docs/plan 10.md', '/v/docs/plan 2.md'].map(indexRecord)
-  const search = async (settings: Partial<SettingsState> = {}, tree: TreeNode[] = tree3511()) => {
+  const search = async (settings: Partial<SettingsState> = {}, tree: TreeNode[] = tree3511(), records = RECORDS) => {
     const m = await mount({ lens: 'search', settings: { ...DEFAULT_SETTINGS, ...settings } }, (b) => {
       b.tree.mockResolvedValue({ root: '/v', tree, generatedAt: 1 })
-      b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1, ids: true } as never)
+      b.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true } as never)
     })
     const input = searchBar(m.el)!
     await type(input, 'plan')
@@ -11077,13 +11082,15 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
   }
   const wait = (ms: number) => act(() => new Promise<void>((r) => setTimeout(r, ms)))
 
-  it('S1, S3, S11, S12, S14: by default Name, A to Z — folders first, numbers in number order — and each file and folder row ends with its Last updated; an empty folder shows none', async () => {
-    const { el } = await search()
+  const NAME = { searchSort: { by: 'name', reverse: false } } as const
+
+  it('S3, S11, S12, S14: Name, A to Z — folders first, numbers in number order — and each file and folder row ends with its Last updated; an empty folder shows none', async () => {
+    const { el } = await search(NAME)
     expect(rows(el)).toEqual(['docs 3h', 'plan 2 3h', 'plan 10 2d', 'plan empty -', 'plan old 5mo', 'plan a 1w', 'plan b 34m'])
   })
 
   it('S15: a hover on the date shows the full date and time', async () => {
-    const { el } = await search()
+    const { el } = await search(NAME)
     expect(el.querySelector<HTMLElement>('.tree__row[data-path="/v/plan a.md"] .tree__date')?.title).toBe(formatDateTime(NOW - 7 * D))
   })
 
@@ -11126,19 +11133,19 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect(highlighted(el)).toBe('/v/plan old/x.md')
   })
 
-  it('S9, D3, D4, D7: the button opens the Search menu — no Manual, then "Show last updated" — and a pick writes `searchSort` or `searchDates` alone', async () => {
+  it('S9, S34, D3, D4, D7, D12: the button opens the Search menu — Best match first, no Manual, "Show last updated", then Type and Time — and a pick writes `searchSort` or `rowDates` alone', async () => {
     const { el, props } = await search()
     act(() => sortButton(el)?.click())
-    expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated✓'])
+    expect(items(el)).toEqual(['Best match✓', 'Name', 'Last updated', 'Show last updated✓', 'TypeAll types', 'TimeAny time'])
     await act(async () => itemByLabel(el, 'Last updated')?.click())
     expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, searchSort: { by: 'updated', reverse: false } })
     act(() => sortButton(el)?.click())
     await act(async () => itemByLabel(el, 'Show last updated')?.click())
-    expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, searchDates: false })
+    expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, rowDates: { ...DEFAULT_ROW_DATES, search: false } })
   })
 
   it('S11: with the dates off no row shows a date', async () => {
-    const { el } = await search({ searchDates: false })
+    const { el } = await search({ ...NAME, rowDates: { ...DEFAULT_ROW_DATES, search: false } })
     expect(rows(el)).toEqual(['docs -', 'plan 2 -', 'plan 10 -', 'plan empty -', 'plan old -', 'plan a -', 'plan b -'])
   })
 
@@ -11154,6 +11161,106 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     await wait(150)
     expect(m.el.querySelector('.tree__row[data-path="/v/plan a.md"] .tree__date')?.textContent).toBe('now')
     expect(m.bridge.tree.mock.calls.length).toBe(before)
+  })
+
+  // Best match (D12): the same name, a folder that holds one, a name that starts with the text, one that holds it.
+  const ranked = (): TreeNode[] => [
+    note('/v/Project plan.md', NOW - 60_000),
+    note('/v/Plan B.md', NOW - D),
+    note('/v/Plan.md', NOW - 100 * D),
+    { type: 'dir', name: 'Archive', path: '/v/Archive', children: [note('/v/Archive/plan.md', NOW - 200 * D)] },
+  ]
+  const searchRanked = async (settings: Partial<SettingsState> = {}) => {
+    const m = await mount({ lens: 'search', settings: { ...DEFAULT_SETTINGS, ...settings } }, (b) => {
+      b.tree.mockResolvedValue({ root: '/v', tree: ranked(), generatedAt: 1 })
+      b.index.mockResolvedValue({ root: '/v', records: ['/v/Project plan.md', '/v/Plan B.md', '/v/Plan.md', '/v/Archive/plan.md'].map(indexRecord), folders: [], generatedAt: 1, ids: true } as never)
+    })
+    const input = searchBar(m.el)!
+    await type(input, 'plan')
+    return { ...m, input }
+  }
+
+  it('S1, S28 to S31, S38, D12: by default Best match — the same name first, the newer one on a tie, a folder as good as its best match, no folders first; the highlight starts on the first row', async () => {
+    const { el, input } = await searchRanked()
+    expect(rows(el)).toEqual(['Plan 3mo', 'Archive 6mo', 'plan 6mo', 'Plan B 1d', 'Project plan 1m'])
+    expect(highlighted(el)).toBe('/v/Plan.md')
+    const walked = [highlighted(el)]
+    for (let i = 0; i < 3; i++) {
+      press(input, 'ArrowDown')
+      walked.push(highlighted(el))
+    }
+    expect(walked).toEqual(['/v/Plan.md', '/v/Archive/plan.md', '/v/Plan B.md', '/v/Project plan.md'])
+  })
+
+  it('S40, S57, S58, D13, D17: Type ▸ Notes keeps the notes and their folders; the sort button says a filter is on; PDFs with none says so', async () => {
+    const { el } = await search(NAME)
+    act(() => sortButton(el)?.click())
+    clickSub(el, 'Notes', 'Type')
+    expect(rows(el)).toEqual(['docs 3h', 'plan 2 3h', 'plan 10 2d', 'plan a 1w', 'plan b 34m'])
+    expect(sortButton(el)?.classList.contains('sidebar__sort--filtered')).toBe(true)
+    expect(sortButton(el)?.title).toBe('Sort · Filters on')
+    act(() => sortButton(el)?.click())
+    expect(items(el)).toContain('TypeNotes')
+    clickSub(el, 'PDFs', 'Type')
+    expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('No matches with these filters.')
+  })
+
+  it('S51, S52, S53, D15: the filters stay while the text changes and on another tab, and go when the bar is empty', async () => {
+    const { el, input, rerender } = await search(NAME)
+    act(() => sortButton(el)?.click())
+    clickSub(el, 'Folders', 'Type')
+    expect(rows(el)).toEqual(['plan empty -', 'plan old 5mo'])
+    await type(input, 'plan ')
+    expect(rows(el)).toEqual(['plan empty -', 'plan old 5mo'])
+    await rerender({ lens: 'files' })
+    await rerender({ lens: 'search' })
+    expect(rows(el)).toEqual(['plan empty -', 'plan old 5mo'])
+    await type(searchBar(el)!, '')
+    expect(sortButton(el)?.classList.contains('sidebar__sort--filtered')).toBe(false)
+    await type(searchBar(el)!, 'plan')
+    expect(rows(el)).toHaveLength(7)
+  })
+
+  it('S45, S47, S48, D14: Time ▸ Today keeps what changed since 00:00, and a folder by its newest file inside', async () => {
+    const today = new Date(NOW).setHours(0, 0, 0, 0)
+    const tree: TreeNode[] = [
+      note('/v/plan new.md', today + 1000),
+      note('/v/plan yesterday.md', today - 1000),
+      { type: 'dir', name: 'plan dir', path: '/v/plan dir', children: [note('/v/plan dir/x.md', today + 2000)] },
+      { type: 'dir', name: 'plan empty', path: '/v/plan empty', children: [] },
+    ]
+    const { el } = await search(NAME, tree, ['/v/plan new.md', '/v/plan yesterday.md', '/v/plan dir/x.md'].map(indexRecord))
+    expect(rows(el)).toHaveLength(4)
+    act(() => sortButton(el)?.click())
+    clickSub(el, 'Today', 'Time')
+    expect(rows(el).map((r) => r.split(' ').slice(0, -1).join(' '))).toEqual(['plan dir', 'plan new'])
+  })
+
+  it('S56, D16: a filter runs before the 50 limit, so the PDFs past the first 50 matches show', async () => {
+    const notes = Array.from({ length: 60 }, (_, i) => note(`/v/plan ${i}.md`, NOW - i * H))
+    const pdfs = [1, 2, 3].map((i): TreeNode => ({ type: 'file', name: `plan scan ${i}.pdf`, path: `/v/plan scan ${i}.pdf`, size: 1, mtime: NOW, kind: 'pdf' }))
+    const m = await mount({ lens: 'search', settings: { ...DEFAULT_SETTINGS, ...NAME } }, (b) => {
+      b.tree.mockResolvedValue({ root: '/v', tree: [...notes, ...pdfs], generatedAt: 1 })
+      b.index.mockResolvedValue({ root: '/v', records: notes.map((n) => indexRecord(n.path)), folders: [], generatedAt: 1, ids: true } as never)
+    })
+    await type(searchBar(m.el)!, 'plan')
+    expect(m.el.querySelector('.tree__row[data-path="/v/plan scan 1.pdf"]')).toBeNull()
+    act(() => sortButton(m.el)?.click())
+    clickSub(m.el, 'PDFs', 'Type')
+    expect(rows(m.el).map((r) => r.split(' ').slice(0, -1).join(' '))).toEqual(['plan scan 1.pdf', 'plan scan 2.pdf', 'plan scan 3.pdf'])
+  })
+
+  it('S22, S25, D10: Files has its own date switch, off by default; on, its rows show a date and Search keeps its own', async () => {
+    const { el, props, rerender } = await search(NAME)
+    await rerender({ lens: 'files' })
+    expect(el.querySelector('.tree__date')).toBeNull()
+    act(() => sortButton(el)?.click())
+    expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated'])
+    await act(async () => itemByLabel(el, 'Show last updated')?.click())
+    expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, files: true } })
+    await rerender({ settings: { ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, files: true } } })
+    expect(el.querySelector('.tree__row[data-path="/v/plan a.md"] .tree__date')?.textContent).toBe('1w')
+    expect(el.querySelector('.tree__row[data-path="/v/plan empty"] .tree__date')).toBeNull()
   })
 
   it('S9, S21: Files keeps its own sort and shows no dates', async () => {

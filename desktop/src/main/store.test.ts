@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { createStore, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
 
@@ -291,12 +291,13 @@ describe('createStore: loading', () => {
     }
   })
 
-  it('searchSort and searchDates (YAZ-3511 D1): a file without them reads Name, A to Z, with the dates on; a pick survives; Manual or a bad value falls back and keeps every other field', async () => {
-    const { searchSort: _sort, searchDates: _dates, ...legacySettings } = DEFAULT_SETTINGS
-    await seed(valid({ settings: legacySettings }))
-    expect(createStore(file).get().settings).toMatchObject({ searchSort: DEFAULT_SEARCH_SORT, searchDates: true })
+  it('searchSort and rowDates (YAZ-3511 D1, D10, D12): a file without them reads Best match, with the dates on Search only; a pick survives; a bad value falls back and keeps every other field', async () => {
+    const { searchSort: _sort, rowDates: _dates, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: { ...legacySettings, searchDates: false } }))
+    expect(createStore(file).get().settings).toMatchObject({ searchSort: { by: 'best', reverse: false }, rowDates: DEFAULT_ROW_DATES })
+    expect(DEFAULT_ROW_DATES).toEqual({ files: false, focus: false, favorites: false, search: true })
 
-    const picked = { searchSort: { by: 'updated', reverse: true }, searchDates: false }
+    const picked = { searchSort: { by: 'updated', reverse: true }, rowDates: { files: true, focus: false, favorites: true, search: false } }
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, ...picked } }))
     expect(createStore(file).get().settings).toMatchObject(picked)
 
@@ -308,9 +309,16 @@ describe('createStore: loading', () => {
       expect(settings.sidebarSort.files).toEqual(files)
       expect(isSettings({ ...DEFAULT_SETTINGS, searchSort: bad })).toBe(false) // the IPC boundary refuses it too
     }
-    await seed(valid({ settings: { ...DEFAULT_SETTINGS, searchDates: 'yes' } }))
-    expect(createStore(file).get().settings.searchDates).toBe(true)
-    expect(isSettings({ ...DEFAULT_SETTINGS, searchDates: 'yes' })).toBe(false)
+    for (const bad of [{ files: true, focus: true, favorites: true }, { ...DEFAULT_ROW_DATES, files: 'yes' }, true]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, rowDates: bad } }))
+      expect(createStore(file).get().settings.rowDates).toEqual(DEFAULT_ROW_DATES)
+      expect(isSettings({ ...DEFAULT_SETTINGS, rowDates: bad })).toBe(false)
+    }
+  })
+
+  it('Best match is the Search sort alone (YAZ-3511 D12, edge case 36): a Files sort of best falls back', async () => {
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'best', reverse: false } } } }))
+    expect(createStore(file).get().settings.sidebarSort).toEqual(DEFAULT_SIDEBAR_SORT)
   })
 
   it('sidebarTabs (YAZ-3273 D8, S29): a file without the key reads the default; a set row survives a restart; the repair drops unknown names and duplicates, puts missing tabs at the end and never keeps Files hidden', async () => {
