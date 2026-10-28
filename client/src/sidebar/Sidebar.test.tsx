@@ -3785,13 +3785,16 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
   ]
 
   let vaults = 0
-  /** A fresh vault and a fresh window per mount — the folds persist per root across this file — over an index of the vault's three notes. */
-  const mountVault = async (over: Partial<SidebarProps> = {}) => {
+  /**
+   * A fresh vault and a fresh window per mount — the folds persist per root across this file — over an index of the vault's three notes.
+   * `more`: rows added at the top of the vault, and paths (below the vault) added to the focus list and the favorites (YAZ-3440 D12).
+   */
+  const mountVault = async (over: Partial<SidebarProps> = {}, more: { rows?: (v: string) => TreeNode[]; listed?: string[] } = {}) => {
     const v = `/v-keys-${++vaults}`
-    const listed = [`${v}/Projects`, `${v}/top.md`]
+    const listed = [`${v}/Projects`, ...(more.listed ?? []).map((rel) => `${v}${rel}`), `${v}/top.md`]
     const records = ['/Projects/Alpha/a.md', '/Projects/plan.md', '/top.md'].map((rel) => ({ ...indexRecord(`${v}${rel}`), folder: rel.slice(1, Math.max(1, rel.lastIndexOf('/'))) }))
     const m = await mount({ root: v, ...over }, async (b) => {
-      b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
+      b.tree.mockResolvedValue({ root: v, tree: [...VAULT(v), ...(more.rows?.(v) ?? [])], generatedAt: 1 })
       b.index.mockResolvedValue({ root: v, records, folders: [], generatedAt: 1, ids: true } as never)
       b.favorites.get.mockResolvedValue(listed)
       b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
@@ -3941,7 +3944,7 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     for (const open of [props.onOpenFile, props.onOpenFileBackground, props.onKeepFile]) expect(open).not.toHaveBeenCalled()
   })
 
-  it('S62, S63: → opens a closed folder row and ← closes an open one, and the focus stays on the row; → on an open folder, ← on a closed folder, and both on a file row do nothing', async () => {
+  it('S62, S63, YAZ-3440 D12: → opens a closed folder row and ← closes an open one, and the focus stays on the row; at the top level ← on a closed folder, and both on a file row with no new tab page, do nothing', async () => {
     const { el, v, props } = await mountVault()
     const dir = `${v}/Projects`
     act(() => row(el, dir)?.focus())
@@ -3949,9 +3952,10 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
       key(document.activeElement, name)
       return [isOpen(el, dir), focused()]
     }
-    expect(fold('ArrowLeft')).toEqual(['false', 'Projects']) // closed already
+    expect(fold('ArrowLeft')).toEqual(['false', 'Projects']) // closed already, and a top row: no folder above it
     expect(fold('ArrowRight')).toEqual(['true', 'Projects'])
-    expect(fold('ArrowRight')).toEqual(['true', 'Projects']) // open already: the focus does not go into it
+    expect(fold('ArrowLeft')).toEqual(['false', 'Projects'])
+    expect(fold('ArrowRight')).toEqual(['true', 'Projects'])
     expect(fold('ArrowLeft')).toEqual(['false', 'Projects'])
     act(() => row(el, `${v}/top.md`)?.focus())
     const rows = labels(el)
@@ -3961,7 +3965,7 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     for (const open of [props.onOpenFile, props.onOpenFileBackground, props.onKeepFile]) expect(open).not.toHaveBeenCalled()
   })
 
-  it.each(['files', 'focus', 'favorites'] as const)('YAZ-2663 D8: on the %s tab → on a row that has nothing to open — a file row, an open folder row — asks for the new tab page; a closed folder still opens and does not ask, and ← never asks; when the page says no, and with no page, the key does what it did', async (lens) => {
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-2663 D8, YAZ-3440 D12: on the %s tab → on a file row asks for the new tab page; a closed folder still opens and an open folder goes to its first row, and neither asks; ← never asks; when the page says no, and with no page, the key does what it did', async (lens) => {
     const onLeaveToPage = vi.fn(() => true)
     const { el, v, rerender } = await mountVault()
     await rerender({ lens, onLeaveToPage })
@@ -3969,24 +3973,172 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     act(() => row(el, dir)?.focus())
     key(document.activeElement, 'ArrowRight') // closed: it opens, and the page is not asked
     expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['true', 0])
-    expect(key(document.activeElement, 'ArrowRight').defaultPrevented).toBe(true) // open already: nothing to open
-    expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['true', 1])
+    expect(key(document.activeElement, 'ArrowRight').defaultPrevented).toBe(true) // open already: its first row (D12)
+    expect([isOpen(el, dir), focused(), onLeaveToPage.mock.calls.length]).toEqual(['true', 'Alpha', 0])
+    act(() => row(el, dir)?.focus())
     key(document.activeElement, 'ArrowLeft')
-    expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['false', 1])
+    expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['false', 0])
     act(() => row(el, `${v}/top.md`)?.focus())
     key(document.activeElement, 'ArrowLeft')
-    expect(onLeaveToPage).toHaveBeenCalledTimes(1)
+    expect(onLeaveToPage).toHaveBeenCalledTimes(0)
     key(document.activeElement, 'ArrowRight')
-    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    expect(onLeaveToPage).toHaveBeenCalledTimes(1)
     // A → with a modifier is a shortcut of the window: the page is not asked.
     key(document.activeElement, 'ArrowRight', { metaKey: true })
-    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    expect(onLeaveToPage).toHaveBeenCalledTimes(1)
     // The page says no (no column has a row), and then no page shows: the focus stays on the row (S62).
     onLeaveToPage.mockReturnValue(false)
     key(document.activeElement, 'ArrowRight')
     await rerender({ onLeaveToPage: undefined })
     key(document.activeElement, 'ArrowRight')
-    expect([onLeaveToPage.mock.calls.length, focused()]).toEqual([3, 'top'])
+    expect([onLeaveToPage.mock.calls.length, focused()]).toEqual([2, 'top'])
+  })
+
+  /** Every row of `path` on show: in Focus and Favorites a row can show in two copies (YAZ-3131). */
+  const rowsOf = (el: HTMLElement, path: string) => [...el.querySelectorAll<HTMLElement>(`.sidebar__body .tree__row[data-path="${path}"]`)]
+  /** The keys of D12 select nothing and open nothing (YAZ-2662 D11). */
+  const nothingPicked = (el: HTMLElement, props: SidebarProps) => {
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
+    for (const open of [props.onOpenFile, props.onOpenFileBackground, props.onKeepFile]) expect(open).not.toHaveBeenCalled()
+  }
+
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-3440 D12: on the %s tab ← on a file row or a closed folder row moves the focus to the row of its folder, and folds nothing; on a top row it does nothing', async (lens) => {
+    const { el, v, props, rerender } = await mountVault()
+    await rerender({ lens })
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    for (const path of [`${v}/Projects/plan.md`, `${v}/Projects/Alpha`]) {
+      act(() => row(el, path)?.focus())
+      expect([key(document.activeElement, 'ArrowLeft').defaultPrevented, focused(), isOpen(el, `${v}/Projects`)]).toEqual([true, 'Projects', 'true'])
+    }
+    // A file deeper down: its folder, then that folder's folder.
+    act(() => row(el, `${v}/Projects/Alpha`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    act(() => row(el, `${v}/Projects/Alpha/a.md`)?.focus())
+    key(document.activeElement, 'ArrowLeft')
+    expect(focused()).toBe('Alpha')
+    key(document.activeElement, 'ArrowLeft') // Alpha is open: it folds, and the focus stays
+    key(document.activeElement, 'ArrowLeft') // closed now: up to Projects
+    expect([focused(), isOpen(el, `${v}/Projects/Alpha`)]).toEqual(['Projects', 'false'])
+    // The top level: no folder above, so the focus stays.
+    act(() => row(el, `${v}/top.md`)?.focus())
+    key(document.activeElement, 'ArrowLeft')
+    expect(focused()).toBe('top')
+    nothingPicked(el, props)
+  })
+
+  it.each(['focus', 'favorites'] as const)('YAZ-3440 D12, YAZ-3131: on the %s tab a folder that shows in two copies — ← on a row inside it goes to the folder row of the same copy', async (lens) => {
+    const { el, v, props, rerender } = await mountVault({}, { listed: ['/Projects/Alpha'] })
+    await rerender({ lens })
+    const alpha = `${v}/Projects/Alpha`
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    const copies = rowsOf(el, alpha)
+    expect(copies).toHaveLength(2)
+    for (const copy of copies) {
+      act(() => copy.focus())
+      key(copy, 'ArrowRight')
+    }
+    const files = rowsOf(el, `${alpha}/a.md`)
+    expect(files).toHaveLength(2)
+    // Each a.md goes up to the Alpha row whose item holds it: its own copy.
+    const landed = files.map((file) => {
+      act(() => file.focus())
+      key(file, 'ArrowLeft')
+      return copies.indexOf(document.activeElement as HTMLElement)
+    })
+    expect(landed).toEqual(files.map((file) => copies.findIndex((copy) => copy.closest('[role="treeitem"]')?.contains(file))))
+    expect(new Set(landed).size).toBe(2)
+    nothingPicked(el, props)
+  })
+
+  it('YAZ-3440 D12: ← on an open folder row folds it, and → on a closed folder row opens it — the focus stays on the row', async () => {
+    const { el, v, props } = await mountVault()
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    act(() => row(el, `${v}/Projects/Alpha`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    expect([isOpen(el, `${v}/Projects/Alpha`), focused()]).toEqual(['true', 'Alpha'])
+    key(document.activeElement, 'ArrowLeft')
+    expect([isOpen(el, `${v}/Projects/Alpha`), isOpen(el, `${v}/Projects`), focused()]).toEqual(['false', 'true', 'Alpha'])
+    nothingPicked(el, props)
+  })
+
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-3440 D12: on the %s tab → on an open folder row moves the focus to its first row; on an open empty folder it does nothing, and the new tab page is not asked', async (lens) => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, v, props, rerender } = await mountVault({}, { rows: (v) => [folder(`${v}/Empty`, [])], listed: ['/Empty'] })
+    await rerender({ lens, onLeaveToPage })
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    key(document.activeElement, 'ArrowRight')
+    expect(focused()).toBe('Alpha')
+    key(document.activeElement, 'ArrowRight') // Alpha opens
+    key(document.activeElement, 'ArrowRight')
+    expect(focused()).toBe('a')
+    act(() => row(el, `${v}/Empty`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    expect(isOpen(el, `${v}/Empty`)).toBe('true')
+    expect([key(document.activeElement, 'ArrowRight').defaultPrevented, focused(), onLeaveToPage.mock.calls.length]).toEqual([true, 'Empty', 0])
+    nothingPicked(el, props)
+  })
+
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-3440 D12, YAZ-2663 D8: on the %s tab → on a file row asks for the new tab page, at the top level and inside a folder', async (lens) => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, v, props, rerender } = await mountVault()
+    await rerender({ lens, onLeaveToPage })
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    for (const path of [`${v}/top.md`, `${v}/Projects/plan.md`]) {
+      act(() => row(el, path)?.focus())
+      expect(key(document.activeElement, 'ArrowRight').defaultPrevented).toBe(true)
+    }
+    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    nothingPicked(el, props)
+  })
+
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-3440 D12: on the %s tab Home and End move the focus to the first and the last row on show; with a modifier they are not the tree\'s', async (lens) => {
+    const { el, v, props, rerender } = await mountVault()
+    await rerender({ lens })
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    act(() => row(el, `${v}/Projects/plan.md`)?.focus())
+    expect([key(document.activeElement, 'End').defaultPrevented, focused()]).toEqual([true, 'top'])
+    expect([key(document.activeElement, 'Home').defaultPrevented, focused()]).toEqual([true, 'Projects'])
+    expect([key(document.activeElement, 'End', { shiftKey: true }).defaultPrevented, focused()]).toEqual([false, 'Projects'])
+    expect(isOpen(el, `${v}/Projects`)).toBe('true') // they fold nothing
+    nothingPicked(el, props)
+  })
+
+  it('YAZ-3440 D12, YAZ-2662 D11: the new keys select nothing and open nothing; a rename box and a create box keep Home, End, ← and → (the Search tab: the D11 case below)', async () => {
+    const { el, v, props } = await mountVault()
+    act(() => row(el, `${v}/Projects`)?.focus())
+    for (const name of ['ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowLeft', 'End', 'Home', 'ArrowRight', 'End', 'ArrowLeft']) key(document.activeElement, name)
+    nothingPicked(el, props)
+    const box = () => el.querySelector<HTMLInputElement>('.sidebar__body .create-inline__input')
+    for (const item of ['Rename', 'New note']) {
+      rightClick(row(el, `${v}/top.md`))
+      act(() => itemByLabel(el, item)?.click())
+      const taken = ['Home', 'End', 'ArrowLeft', 'ArrowRight'].map((name) => key(box(), name).defaultPrevented)
+      expect([item, taken, document.activeElement === box()]).toEqual([item, [false, false, false, false], true])
+      key(box(), 'Escape')
+    }
+  })
+
+  it('YAZ-3440 D12, D1: a row the keys move to scrolls into view — `.focus()` with no `preventScroll` — and its scroll margin keeps it below the stuck folder rows', async () => {
+    const { el, v } = await mountVault()
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    const spy = vi.spyOn(HTMLElement.prototype, 'focus')
+    try {
+      act(() => row(el, `${v}/Projects/plan.md`)?.focus())
+      spy.mockClear()
+      for (const name of ['ArrowLeft', 'ArrowRight', 'End', 'Home']) key(document.activeElement, name)
+      expect(spy).toHaveBeenCalledTimes(4)
+      for (const call of spy.mock.calls) expect(call[0]?.preventScroll).not.toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(appCss).toMatch(/\.tree__row,\n\.tree > li \{\n {2}scroll-margin-top: calc\(min\(var\(--tree-depth, 0\), var\(--sticky-levels, 7\)\) \* 25\.5px\);/)
   })
 
   it.each(['files', 'focus', 'favorites'] as const)('YAZ-2663 D10: on the %s tab, with the keyboard on nothing or on a tab button of the sidebar, ↓ or ↑ puts the focus on a row, and → asks for the new tab page; a field, a modifier and a row keep their keys', async (lens) => {
@@ -4248,10 +4400,10 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     }
   })
 
-  it('D11 names Files, Focus and Favorites: a row of the search tree is not walked — its keys are the search bar\'s', async () => {
+  it('D11 names Files, Focus and Favorites: a row of the search tree is not walked — its keys are the search bar\'s, Home and End too (YAZ-3440 D12)', async () => {
     const { el, v } = await search('alpha')
     act(() => row(el, `${v}/Projects`)?.focus())
-    expect(['ArrowDown', 'ArrowRight', 'ArrowLeft'].map((name) => key(document.activeElement, name).defaultPrevented)).toEqual([false, false, false])
+    expect(['ArrowDown', 'ArrowRight', 'ArrowLeft', 'Home', 'End'].map((name) => key(document.activeElement, name).defaultPrevented)).toEqual([false, false, false, false, false])
     expect([focused(), labels(el)]).toEqual(['Projects', ['Projects', 'Alpha']])
   })
 })
