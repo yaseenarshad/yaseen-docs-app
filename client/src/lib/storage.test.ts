@@ -247,7 +247,7 @@ describe('storage.init', () => {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2 },
       recents: [{ path: '/v', lastOpened: 5 }],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, opens: {}, edits: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, opens: {}, edits: {}, closed: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
     }
     const rightPanel = { open: true, width: 520, items: ['/v/b.md'], expanded: '/v/b.md' }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel, sidebarCollapsed: true })
@@ -442,20 +442,20 @@ describe('storage', () => {
     expect(storage.getTabs()).toEqual([])
   })
 
-  /** The workspace boot precedence: `hashFilePath(hash) ?? storage.getFile() ?? storage.getLastFile(root)`. */
-  const bootFile = (hash: string, root: string) => hashFilePath(hash) ?? storage.getFile() ?? storage.getLastFile(root)
+  /** The workspace boot precedence: `hashFilePath(hash) ?? storage.getFile()` — no `lastFile` fallback (YAZ-3487 D7). */
+  const bootFile = (hash: string) => hashFilePath(hash) ?? storage.getFile()
 
-  it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {
+  it('boot precedence (GRO-2160, YAZ-3487 D7): a pasted hash beats the identity file; the folder lastFile is never the fallback', async () => {
     // Two windows on the same folder: w2 restored on b.md while the folder's lastFile is a.md.
-    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, edits: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } } }
+    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } } }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/b.md'], sidebarCollapsed: false })
     await storage.init()
-    expect(bootFile('', '/v')).toBe('/v/b.md')
-    expect(bootFile('#/v/c.md', '/v')).toBe('/v/c.md')
-    // A fresh window on the folder (identity file null) still falls back to the folder's lastFile.
+    expect(bootFile('')).toBe('/v/b.md')
+    expect(bootFile('#/v/c.md')).toBe('/v/c.md')
+    // A fresh window on the folder (identity file null) opens blank: the folder's lastFile stays unread (YAZ-3487 D7).
     b = installBridge(seeded, { id: 'w3', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
-    expect(bootFile('', '/v')).toBe('/v/a.md')
+    expect(bootFile('')).toBeNull()
   })
 
   it('the table of contents source is keyed by root then file; null — Auto — is no entry; the same choice again writes nothing (YAZ-2700 D14)', () => {
@@ -651,7 +651,7 @@ describe('storage', () => {
     const next: AppState = {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, threadWidth: 3 },
-      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, opens: {}, edits: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
+      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
     }
     b.emit(next)
     expect(seen).toHaveBeenCalledTimes(1)

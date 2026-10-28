@@ -216,7 +216,7 @@ test('step 3c — ⌘T shows the blank tab with the caret in the search bar; the
   await clickMenuItem(app, 'menu.file.new-tab', 'w1')
   await expect(tabsOf(win)).toHaveText(['Welcome note', 'Roadmap', 'Ideas', 'New tab'])
   await expect(activeTab(win)).toHaveText('New tab')
-  await expect(win.locator('.start__heading')).toHaveText(['Recent', 'Favorites', 'Used a lot, not a favorite yet'])
+  await expect(win.locator('.start__heading')).toHaveText(['Recently closed', 'Recently viewed', 'Favorites'])
   await expect(searchBar(win)).toBeFocused()
   await shoot(win, 'i3-03c-blank-tab')
 

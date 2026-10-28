@@ -18,7 +18,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MAX_VAULT_SETS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type RecentRoots, type VaultSet } from '@shared/types'
 import { storage } from '../lib/storage'
-import { GROUP_OPEN_TEXT, GROUP_NOT_OPEN_TEXT, GROUP_SETS_TEXT, MISSING_TEXT, NO_MATCH_TEXT, OPEN_FOLDER_TEXT, OPEN_HERE_TEXT, SAVE_SET_TEXT, SETS_MISSING_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
+import { GROUP_OPEN_TEXT, GROUP_NOT_OPEN_TEXT, GROUP_SETS_TEXT, MISSING_TEXT, NO_MATCH_TEXT, OPEN_ALONE_TEXT, OPEN_FOLDER_TEXT, OPEN_HERE_TEXT, SAVE_SET_TEXT, SETS_MISSING_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -1152,14 +1152,17 @@ describe('VaultSwitcher: several vaults in one window (YAZ-2602 S15, S8)', () =>
     expect(rowOf(el, ARCHIVE).disabled).toBe(false)
   })
 
-  it('⇧⏎ on a vault of this window that is not the first is a plain open, as on the first: you are there', async () => {
+  it('⇧⏎ on a vault of this window has nothing to open here: it opens that vault by itself (YAZ-3487 D4, S16; it was a plain open)', async () => {
+    const openAlone = vi.fn(async () => true)
+    Object.assign((window as unknown as { yaseenDocs: { window: object } }).yaseenDocs.window, { openAlone })
     const { el, props } = render({ roots: [ROOT, '/w/Notes'] })
     openPanel(el)
     const second = rowOf(el, '/w/Notes')
     act(() => void second.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
     await settle()
     expect(props.onOpenHere).not.toHaveBeenCalled()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openRecent).not.toHaveBeenCalled()
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
   })
 })
 
@@ -1715,5 +1718,122 @@ describe('VaultSwitcher: Open by itself (YAZ-2858 D2, D3, S9 to S14)', () => {
     expect(props.onPickFolder).toHaveBeenCalledTimes(2)
     expect(openAlone).not.toHaveBeenCalled()
     expect(openRecent).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * YAZ-3487 D4, D5, D6: ⇧ on a vault of this workspace window opens it by itself; the held key says
+ * what ⏎ will do on the highlighted row; and a Files window's "Open by itself" changes that window.
+ */
+describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-3487 D4 to D6, S16 to S23)', () => {
+  const ARCHIVE = '/v/Archive'
+  const rowOf = (el: HTMLElement, path: string) => rows(el).find((r) => pathOf(r) === path)!
+  const when = (row: HTMLElement) => row.querySelector('.vault-switcher__when')?.textContent
+  const hold = (type: 'keydown' | 'keyup', mods: { shiftKey?: boolean; altKey?: boolean }) => act(() => void window.dispatchEvent(new KeyboardEvent(type, { key: 'Shift', ...mods })))
+  const hover = (row: HTMLElement) => act(() => void row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+
+  let openAlone: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    openAlone = vi.fn(async () => true)
+    Object.assign((window as unknown as { yaseenDocs: { window: object } }).yaseenDocs.window, { openAlone })
+  })
+
+  it('S16: ⇧⏎ on a vault of this workspace window → window.openAlone; never onOpenHere or openRecent', async () => {
+    const { el, props } = render({ roots: [ROOT, '/w/Notes'] })
+    openPanel(el)
+    hover(rowOf(el, '/w/Notes'))
+    act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })))
+    await settle()
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(props.onOpenHere).not.toHaveBeenCalled()
+    expect(openRecent).not.toHaveBeenCalled()
+    expect(panel(el)).toBeNull()
+  })
+
+  it('D11: a plain ⏎ or click on a vault of this workspace window opens it by itself, and that row always says so; a vault not in it opens as before', async () => {
+    const { el, props } = render({ roots: [ROOT, '/w/Notes'] })
+    openPanel(el)
+    const notes = rowOf(el, '/w/Notes')
+    hover(notes)
+    expect(when(notes)).toBe(OPEN_ALONE_TEXT)
+    act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    await settle()
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openRecent).not.toHaveBeenCalled()
+    openPanel(el)
+    const other = rowOf(el, ARCHIVE) // found once: reading a row's path hovers it
+    hover(other)
+    expect(when(other)).not.toBe(OPEN_ALONE_TEXT)
+    act(() => other.click())
+    await settle()
+    expect(openRecent).toHaveBeenCalledExactlyOnceWith(ARCHIVE)
+    expect(props.onOpenHere).not.toHaveBeenCalled()
+  })
+
+  it('D11: in a window with ONE vault, ⏎ on that vault only closes the panel, as before: no cue', async () => {
+    const { el } = render()
+    openPanel(el)
+    const own = rowOf(el, ROOT)
+    hover(own)
+    expect(when(own)).not.toBe(OPEN_ALONE_TEXT)
+  })
+
+  it('S19, S21, S22: ⌥ held → the highlighted vault row says "Open by itself"; ⌥ wins over ⇧; released, the time is back', () => {
+    const { el } = render()
+    openPanel(el)
+    hold('keydown', { altKey: true })
+    expect(when(activeRow(el)!)).toBe(OPEN_ALONE_TEXT)
+    expect(activeRow(el)!.querySelector('.vault-switcher__when--here')).not.toBeNull()
+    expect(rows(el).filter((r) => when(r) === OPEN_ALONE_TEXT)).toHaveLength(1)
+    hold('keydown', { altKey: true, shiftKey: true })
+    expect(when(activeRow(el)!)).toBe(OPEN_ALONE_TEXT)
+    hold('keyup', {})
+    expect(when(activeRow(el)!)).not.toBe(OPEN_ALONE_TEXT)
+  })
+
+  it('S19: no cue on the vault this window shows alone, or on "Open folder…"', () => {
+    const { el } = render()
+    openPanel(el)
+    const own = rowOf(el, ROOT)
+    hold('keydown', { altKey: true })
+    hover(own)
+    expect(when(own)).not.toBe(OPEN_ALONE_TEXT)
+    hover(openFolderRow(el))
+    expect(panel(el)!.textContent).not.toContain(OPEN_ALONE_TEXT)
+  })
+
+  it('S19: no cue on a workspace row', () => {
+    act(() => broadcast(seeded({ vaultSets: [{ id: 'set-work', name: 'Work', roots: [ARCHIVE, '/w/Notes'], lastUsed: NOW }] })))
+    const { el } = render()
+    openPanel(el)
+    hold('keydown', { altKey: true })
+    hover(rows(el)[0]) // the workspace row stands first
+    expect(activeRow(el)).toBe(rows(el)[0])
+    expect(panel(el)!.textContent).not.toContain(OPEN_ALONE_TEXT)
+  })
+
+  it('S20: ⇧ held in a workspace window → a vault of this window says "Open by itself", a vault not in it says "Open here"', () => {
+    const { el } = render({ roots: [ROOT, '/w/Notes'] })
+    openPanel(el)
+    // Found first: reading a row's path hovers it.
+    const notes = rowOf(el, '/w/Notes')
+    const archive = rowOf(el, ARCHIVE)
+    hold('keydown', { shiftKey: true })
+    hover(notes)
+    expect(when(notes)).toBe(OPEN_ALONE_TEXT)
+    hover(archive)
+    expect(when(archive)).toBe(OPEN_HERE_TEXT)
+    expect(when(notes)).not.toBe(OPEN_ALONE_TEXT)
+  })
+
+  it('S23: in a Files window the menu\'s "Open by itself" changes THIS window (onOpenHere); main opens no window', async () => {
+    const { el, props } = render({ roots: [ROOT, '/w/Notes'], onOpenSetHere: vi.fn(async () => true) })
+    openPanel(el)
+    rightClick(rowOf(el, '/w/Notes'))
+    pick('Open by itself')
+    await settle()
+    expect(props.onOpenHere).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openAlone).not.toHaveBeenCalled()
+    expect(panel(el)).toBeNull()
   })
 })

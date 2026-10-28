@@ -58,6 +58,7 @@ let manager: {
   vaultNotice: ReturnType<typeof vi.fn>
   takeStartView: ReturnType<typeof vi.fn<(id: string) => StartView | undefined>>
   takeStartEmpty: ReturnType<typeof vi.fn<(id: string) => boolean>>
+  takeStartCollapsed: ReturnType<typeof vi.fn<(id: string) => boolean>>
   openFilesWindow: ReturnType<typeof vi.fn<(from: string | undefined, root: string | null) => boolean>>
   openFromFiles: ReturnType<typeof vi.fn<(from: string, action: unknown) => boolean>>
   filesWide: ReturnType<typeof vi.fn<(id: string, open: boolean) => boolean>>
@@ -76,7 +77,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -98,7 +99,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes, `link:ready` and the paste fallback (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.window.filesZoom.channel, CONTRACT.window.filesZoomMenu.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.noteClosed.channel, CONTRACT.window.forgetClosed.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.window.filesZoom.channel, CONTRACT.window.filesZoomMenu.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -327,9 +328,28 @@ describe('registerWindowIpc', () => {
     expect(manager.openWindow).toHaveBeenCalledTimes(2)
   })
 
+  it('window:note-closed (YAZ-3487 D10): the closed notes go to the vaults of the CALLER\'s window; a wrong list is refused', async () => {
+    const addClosed = vi.spyOn(store, 'addClosed')
+    expect(await registered(CONTRACT.window.noteClosed.channel)({ sender }, ['/v/a.md'])).toEqual(ok(undefined))
+    expect(addClosed).toHaveBeenCalledExactlyOnceWith(['/v'], ['/v/a.md'])
+    expect(await registered(CONTRACT.window.noteClosed.channel)({ sender }, '/v/a.md')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.window.noteClosed.channel)({ sender }, ['rel.md'])).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CONTRACT.window.noteClosed.channel)({ sender: stranger }, ['/v/a.md'])).toEqual(bad('BAD_REQUEST'))
+    expect(addClosed).toHaveBeenCalledTimes(1)
+  })
+
+  it('window:forget-closed (YAZ-3487 D14): a list drops those notes, null clears the list of the CALLER\'s vaults; anything else is refused', async () => {
+    const forgetClosed = vi.spyOn(store, 'forgetClosed')
+    expect(await registered(CONTRACT.window.forgetClosed.channel)({ sender }, ['/v/a.md'])).toEqual(ok(undefined))
+    expect(await registered(CONTRACT.window.forgetClosed.channel)({ sender }, null)).toEqual(ok(undefined))
+    expect(forgetClosed.mock.calls).toEqual([[['/v'], ['/v/a.md']], [['/v'], null]])
+    expect(await registered(CONTRACT.window.forgetClosed.channel)({ sender }, 'x')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.window.forgetClosed.channel)({ sender }, ['rel.md'])).toEqual(bad('NOT_ABSOLUTE'))
+  })
+
   it('window:open-recent validates the path and returns the door\'s verdict (YAZ-1767 D1)', async () => {
     expect(await registered(CONTRACT.window.openRecent.channel)({ sender }, '/v/other')).toEqual(ok(true))
-    expect(manager.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/v/other')
+    expect(manager.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/v/other', 'w1') // the caller, for the empty-window door (YAZ-3487 D1)
     manager.openRecentBeside.mockReturnValueOnce(false)
     expect(await registered(CONTRACT.window.openRecent.channel)({ sender }, '/v/gone')).toEqual(ok(false))
     expect(await registered(CONTRACT.window.openRecent.channel)({ sender }, 'rel')).toEqual(bad('NOT_ABSOLUTE'))
@@ -339,7 +359,7 @@ describe('registerWindowIpc', () => {
 
   it('window:open-alone validates the path and returns the door\'s verdict; it never touches the open-recent door (YAZ-2858 D1)', async () => {
     expect(await registered(CONTRACT.window.openAlone.channel)({ sender }, '/v/other')).toEqual(ok(true))
-    expect(manager.openAlone).toHaveBeenCalledExactlyOnceWith('/v/other')
+    expect(manager.openAlone).toHaveBeenCalledExactlyOnceWith('/v/other', 'w1')
     manager.openAlone.mockReturnValueOnce(false)
     expect(await registered(CONTRACT.window.openAlone.channel)({ sender: stranger }, '/v/gone')).toEqual(ok(false)) // any window may ask
     expect(await registered(CONTRACT.window.openAlone.channel)({ sender }, 'rel')).toEqual(bad('NOT_ABSOLUTE'))
@@ -354,7 +374,7 @@ describe('registerWindowIpc', () => {
 
     it('window:open-set validates the id and returns the door\'s answer: what opened, and the folders that are gone (S65, S66)', async () => {
       expect(await registered(CONTRACT.window.openSet.channel)({ sender }, 's1')).toEqual(ok({ opened: true, missing: [] }))
-      expect(manager.openVaultSet).toHaveBeenCalledExactlyOnceWith('s1')
+      expect(manager.openVaultSet).toHaveBeenCalledExactlyOnceWith('s1', 'w1')
       manager.openVaultSet.mockReturnValueOnce({ opened: false, missing: ['/v', '/w'] })
       expect(await registered(CONTRACT.window.openSet.channel)({ sender: stranger }, 's2')).toEqual(ok({ opened: false, missing: ['/v', '/w'] })) // any window may ask
       for (const junk of [undefined, 5, null, ['s1']]) expect(await registered(CONTRACT.window.openSet.channel)({ sender }, junk)).toEqual(bad('BAD_REQUEST'))

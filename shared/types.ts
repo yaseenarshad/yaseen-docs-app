@@ -1511,6 +1511,8 @@ export interface SettingsState {
   sidebarTabs: SidebarTabsPrefs
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
+  /** What a vault opens on (YAZ-3487 D15): every vault open reads it — main's new windows, `openRoot`, `bootTabs`, the empty-window door. */
+  vaultOpensOn: VaultOpensOn
   /** Section indent (YAZ-2709): the width of one step in px, 24 | 30 | 36. On or off is per page (the page cog), never here. View-only. */
   sectionStep: number
   /** Section indent (YAZ-2709): the grey section lines show always, or only while the pointer is over the note. */
@@ -1728,6 +1730,10 @@ export const COMMENTS_ORDERS: readonly CommentsOrder[] = ['oldest', 'newest']
 export type StartupWindows = 'all' | 'last' | 'none'
 export const STARTUP_WINDOWS: readonly StartupWindows[] = ['all', 'last', 'none']
 
+/** What a vault opens on (YAZ-3487 D15): a blank tab (the default, D7), or its remembered last note (the old YAZ-1767 D2). */
+export type VaultOpensOn = 'blank' | 'last'
+export const VAULT_OPENS_ON: readonly VaultOpensOn[] = ['blank', 'last']
+
 /**
  * A note's table of contents (YAZ-2700): `auto` shows the names of its rows — its headings, or its
  * bullets (`TocSource`) — when the window has room beside the text and small lines when it has
@@ -1793,6 +1799,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarSort: DEFAULT_SIDEBAR_SORT,
   sidebarTabs: DEFAULT_SIDEBAR_TABS,
   startupWindows: 'last',
+  vaultOpensOn: 'blank',
   sectionStep: 30,
   sectionLines: 'always',
   tableOfContents: 'auto',
@@ -1965,8 +1972,8 @@ export interface WindowEntry {
   /**
    * A Files window's own sidebar zoom in percent (YAZ-3389 D13, which replaced YAZ-3357 D11's Chromium level): only
    * its list grows, as `settings.sidebarZoom` does in a full window, and the zoom menu's − % + and an unclaimed ⌘+ / ⌘− / ⌘0
-   * there change this value, never the shared one. ⌘⇧W starts it one `SIDEBAR_ZOOM_STEPS` step above the window it came
-   * from. Kept by the store on every Files window (`normalizeFilesZoom`); absent on a full window.
+   * there change this value, never the shared one. ⌘⇧W starts it AT the sidebar zoom of the window it came
+   * from (YAZ-3487; it was one step above). Kept by the store on every Files window (`normalizeFilesZoom`); absent on a full window.
    */
   zoom?: number
 }
@@ -2003,6 +2010,16 @@ export function addOpen(opens: Record<string, OpenStat>, file: string, now: numb
 
 /** A vault's save log keeps this many files at most (YAZ-3235 D1): the oldest saves go. */
 export const MAX_EDITS = 500
+/** A vault's "Recently closed" list keeps this many notes at most (YAZ-3487 D9): the oldest go. */
+export const MAX_CLOSED = 50
+
+/** Pure: `closed` with each of `files` closed at `now` (YAZ-3487 D9). Past MAX_CLOSED the oldest go. */
+export function addClosed(closed: Readonly<Record<string, number>>, files: readonly string[], now: number): Record<string, number> {
+  const next = { ...closed }
+  for (const file of files) next[file] = now
+  return Object.fromEntries(Object.entries(next).sort((a, b) => b[1] - a[1]).slice(0, MAX_CLOSED))
+}
+
 /** A save this soon after the last logged save of the same file is not logged again (YAZ-3235 D1): one commit a minute while you type. */
 export const EDIT_GAP_MS = 60_000
 
@@ -2037,6 +2054,8 @@ export interface FolderState {
   opens: Record<string, OpenStat>
   /** The save log (YAZ-3235 D1): file → when the app last saved it, ms (max MAX_EDITS). The main process alone adds a save, in the save doors; a pull never writes it. Persisted, per machine. Additive: a file without it loads as `{}`. */
   edits: Record<string, number>
+  /** The notes you closed (YAZ-3487 D9, "Recently closed"): file → when, ms (max MAX_CLOSED). The main process alone adds one (`addClosed`). Persisted, per machine. Additive: a file without it loads as `{}`. */
+  closed: Record<string, number>
   /** file → what its table of contents is built from (YAZ-2700 D14), for the notes where the reader chose. A note on Auto has NO entry. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   tocSources: Record<string, TocSource>
   /** file → the note's "Section indent" switch (YAZ-2709 D2), for the notes where the reader used it. A note with NO entry is off. `true` and `false` are both kept: a note the reader turned off stays apart from a note never touched, so a default for all notes can come later with no repair of this data. Keyed by page, as `tocSources` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
@@ -2284,7 +2303,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null }
 }
 
 /** One vault as the app lists it (YAZ-2556 D2): a row of the ⌘O panel, and of `yaseendocs vaults`. */
@@ -2783,10 +2802,15 @@ export interface WindowIdentity {
    */
   startView?: StartView
   /**
-   * This window was opened EMPTY on purpose (YAZ-3343, the tab board's "New window"): it boots with no tab, never on
-   * the vault's last file. Given out by its FIRST `window:identity` only, as `startView`. Never stored.
+   * This window was opened EMPTY on purpose (YAZ-3343, the tab board's "New window"): it boots on the blank tab with the
+   * caret in the search (every window boots with no tab of its own now, YAZ-3487 D7). Given out by its FIRST `window:identity` only, as `startView`. Never stored.
    */
   startEmpty?: true
+  /**
+   * A NEW window (⌘⇧N, the board's "New window", a new Files window — YAZ-3487, demo round 3): its Files tree starts with
+   * every folder closed, not with the vault's open folders. Given out by its FIRST `window:identity` only. Never stored.
+   */
+  startCollapsed?: true
   /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */
   kind?: WindowKind
   /** A Files window's own sidebar zoom in percent (YAZ-3389 D13), as `WindowEntry.zoom`; absent on a full window. */
@@ -2857,8 +2881,8 @@ export const SIDEBAR_ZOOM_STEPS = [50, 75, 90, 100, 125, 150, 200] as const
 export const SIDEBAR_ZOOM_MIN = SIDEBAR_ZOOM_STEPS[0]
 export const SIDEBAR_ZOOM_MAX = SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]
 
-/** The App sizes in percent (YAZ-3432): the zoom menu's App size row walks them with − and +. */
-export const APP_ZOOM_STEPS = [90, 100, 110, 125] as const
+/** The App sizes in percent (YAZ-3432): the zoom menu's App size row walks them with − and +. Up to 200% (YAZ-3487, demo round 3). */
+export const APP_ZOOM_STEPS = [90, 100, 110, 125, 150, 175, 200] as const
 
 /**
  * One zoom step along `steps` (ascending): the next step in `direction`. A value between two steps snaps to the next

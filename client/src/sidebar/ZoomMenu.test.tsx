@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { SIDEBAR_ZOOM_STEPS, stepZoom } from '@shared/types'
 import { ZoomMenu } from './ZoomMenu'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -69,6 +70,19 @@ describe('ZoomMenu', () => {
     expect(onApp).toHaveBeenCalledExactlyOnceWith(125)
     expect(onSidebar).toHaveBeenCalledTimes(1)
     expect(menu()).not.toBeNull()
+  })
+
+  it('YAZ-3487: a − and a + beside the chip step the sidebar zoom in one click, with no menu; each stops at its wall', () => {
+    const onSidebar = vi.fn()
+    render({ sidebar: 100, onSidebar })
+    const footer = document.querySelector('[aria-label="Sidebar zoom in the footer"]')!
+    const [minus, plus] = [footer.querySelector<HTMLButtonElement>('[aria-label="Zoom the sidebar out"]')!, footer.querySelector<HTMLButtonElement>('[aria-label="Zoom the sidebar in"]')!]
+    act(() => plus.click())
+    act(() => minus.click())
+    expect(onSidebar.mock.calls).toEqual([[stepZoom(SIDEBAR_ZOOM_STEPS, 100, 1)], [stepZoom(SIDEBAR_ZOOM_STEPS, 100, -1)]])
+    expect(menu()).toBeNull()
+    render({ sidebar: SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1] })
+    expect([...document.querySelectorAll<HTMLButtonElement>('[aria-label="Zoom the sidebar in"]')].at(-1)!.disabled).toBe(true)
   })
 
   it('the chip\'s tooltip and accessible name tell both values (D1)', () => {

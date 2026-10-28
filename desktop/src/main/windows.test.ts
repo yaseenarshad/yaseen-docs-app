@@ -413,14 +413,14 @@ describe('createWindowManager: what a launch brings back (YAZ-2589)', () => {
     expect(ids(store.get().windows)).toEqual(['a', 'c'])
   })
 
-  it('D1 (S2, S18): asked for a vault with no saved window → nothing comes back and no Welcome window opens; the request then opens the vault in a new window on its last page, and a second request for that vault waits for that window\'s page', () => {
+  it('D1 (S2, S18): asked for a vault with no saved window → nothing comes back and no Welcome window opens; the request then opens the vault in a new window, blank (YAZ-3487 D7), and a second request for that vault waits for that window\'s page', () => {
     const { manager, created } = seedSaved(['/v/b', '/v/a'], (p) => p === '/v/a/note.md', (p) => p === '/v/a' || p === '/v/a/')
     store.removeWindow('a')
     manager.restore([manager.rootFor('/v/a/')!])
     expect(created).toHaveLength(0)
     expect(store.get().windows).toEqual([])
     manager.routeToFile('/v/a/')
-    expect(created.map((c) => [c.entry.root, c.entry.file])).toEqual([['/v/a', '/v/a/Start here.md']])
+    expect(created.map((c) => [c.entry.root, c.entry.file])).toEqual([['/v/a', null]])
     expect(store.get().folders['/v/a']).toMatchObject({ key: 1, name: 'Alpha' })
     // A window that a request opened is still loading too: the hold is per window, not only for the ones `restore` brought back.
     const win = created[0].win
@@ -592,7 +592,7 @@ describe('createWindowManager: a request that cannot open is not a request (YAZ-
 })
 
 describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-recent door)', () => {
-  it('a live folder: bumps it to the top of the MRU, opens a window on its remembered last file (D2), returns true', () => {
+  it('a live folder: bumps it to the top of the MRU, opens a window on it BLANK — its remembered last file stays unread (YAZ-3487 D7, was D2) — returns true', () => {
     store.pushRecent('/v/other', 1)
     store.pushRecent('/v/notes', 2)
     store.setFolder('/v/other', { lastFile: '/v/other/Start here.md' })
@@ -601,8 +601,8 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
     expect(manager.openRecentBeside('/v/other')).toBe(true)
     expect(created).toHaveLength(1)
     expect(created[0].entry.root).toBe('/v/other')
-    expect(created[0].entry.file).toBe('/v/other/Start here.md')
-    expect(created[0].entry.tabs).toEqual(['/v/other/Start here.md'])
+    expect(created[0].entry.file).toBeNull()
+    expect(created[0].entry.tabs).toEqual([])
     expect(created[0].entry.sidebarLens).toBe('files') // ⌘O onto a vault with no window lands on Files (YAZ-1846)
     expect(store.get().recents.map((r) => r.path)).toEqual(['/v/other', '/v/notes'])
     expect(store.get().windows).toEqual([created[0].entry])
@@ -752,7 +752,7 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
 describe('createWindowManager: openAlone (YAZ-2858 D1 — "Open by itself": a window with this vault alone)', () => {
   const entry = (id: string, ...roots: string[]) => ({ id, root: roots[0], roots, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, bounds: { x: 0, y: 0, width: 800, height: 600 } })
 
-  it('S1: the vault is open ONLY in a workspace window → a new window with it alone, on its last file; the workspace window is not raised and does not change', () => {
+  it('S1: the vault is open ONLY in a workspace window → a new window with it alone, blank (YAZ-3487 D7); the workspace window is not raised and does not change', () => {
     store.upsertWindow(entry('ab', '/v/a', '/v/b'))
     store.setFolder('/v/b', { lastFile: '/v/b/Start here.md' })
     const { host, created } = makeHost()
@@ -764,8 +764,8 @@ describe('createWindowManager: openAlone (YAZ-2858 D1 — "Open by itself": a wi
     expect(created).toHaveLength(2)
     expect(created[1].entry.root).toBe('/v/b')
     expect(created[1].entry.roots).toEqual(['/v/b'])
-    expect(created[1].entry.file).toBe('/v/b/Start here.md')
-    expect(created[1].entry.tabs).toEqual(['/v/b/Start here.md'])
+    expect(created[1].entry.file).toBeNull() // blank (YAZ-3487 D7)
+    expect(created[1].entry.tabs).toEqual([])
     expect(ab.focusCount).toBe(0)
     expect(store.get().windows[0]).toEqual(before)
   })
@@ -894,7 +894,7 @@ describe('createWindowManager: openVaultSet (YAZ-2602 D8 — a saved set of vaul
   }
   const setIds = () => store.get().vaultSets.map((s) => s.id)
 
-  it('S65: no window shows exactly the set → ONE new window on its vaults in the SAVED order, on the first vault\'s last file; the set becomes the last used', () => {
+  it('S65: no window shows exactly the set → ONE new window on its vaults in the SAVED order, blank (YAZ-3487 D7); the set becomes the last used', () => {
     const { work, home, three } = seedSets()
     store.setFolder('/v/b', { lastFile: '/v/b/Start here.md' })
     store.setFolder('/v/a', { lastFile: '/v/a/Other.md' })
@@ -909,7 +909,7 @@ describe('createWindowManager: openVaultSet (YAZ-2602 D8 — a saved set of vaul
     expect(manager.openVaultSet(work.id)).toEqual({ opened: true, missing: [] })
     expect(created).toHaveLength(4)
     expect(created.slice(0, 3).map((c) => c.win.focusCount)).toEqual([0, 0, 0])
-    expect(created[3].entry).toMatchObject({ root: '/v/b', roots: ['/v/b', '/v/a'], file: '/v/b/Start here.md', tabs: ['/v/b/Start here.md'] })
+    expect(created[3].entry).toMatchObject({ root: '/v/b', roots: ['/v/b', '/v/a'], file: null, tabs: [] }) // blank (YAZ-3487 D7)
     expect(store.get().windows).toHaveLength(4)
     expect(store.get().windows[3]).toEqual(created[3].entry)
     expect(setIds()).toEqual([work.id, three.id, home.id])
@@ -980,7 +980,7 @@ describe('createWindowManager: openVaultSet (YAZ-2602 D8 — a saved set of vaul
     // `/v/a` is gone: "Three" opens on b and c, in the saved order, on the last file of the first vault that is left.
     expect(manager.openVaultSet(three.id)).toEqual({ opened: true, missing: ['/v/a'] })
     expect(created).toHaveLength(1)
-    expect(created[0].entry).toMatchObject({ root: '/v/b', roots: ['/v/b', '/v/c'], file: '/v/b/Start here.md' })
+    expect(created[0].entry).toMatchObject({ root: '/v/b', roots: ['/v/b', '/v/c'], file: null }) // blank (YAZ-3487 D7)
     // The folder can come back (a drive that is not mounted): the set is as it was saved, and it is the last used.
     expect(store.get().vaultSets[0]).toMatchObject({ id: three.id, roots: ['/v/a', '/v/b', '/v/c'] })
     // Again: the window that opened without the folder is the set's window now. It is raised; no second one opens.
@@ -1729,25 +1729,25 @@ describe('createWindowManager: routeToFile (E1)', () => {
     expect(store.get().recents[0]?.path).toBe('/v') // the door's bump: the vault is "last used"
   })
 
-  it('S2: a known vault\'s folder with no window → a new window on its remembered last file', () => {
+  it('S2: a known vault\'s folder with no window → a new window on it, blank (YAZ-3487 D7: its last file stays unread)', () => {
     const { manager, created, w1 } = seedFolder('/w')
     store.pushRecent('/w', 1)
     store.setFolder('/w', { lastFile: '/w/Start here.md' })
     manager.routeToFile('/w')
     expect(created).toHaveLength(3)
     expect(created[2].entry.root).toBe('/w')
-    expect(created[2].entry.file).toBe('/w/Start here.md')
+    expect(created[2].entry.file).toBeNull()
     expect(w1.focusCount).toBe(0)
   })
 
-  it('S2: the same folder with a trailing slash (a link keeps it) is the SAME vault: the window is on the stored root and its last file, and the recents hold it once', () => {
+  it('S2: the same folder with a trailing slash (a link keeps it) is the SAME vault: the window is on the stored root, blank (YAZ-3487 D7), and the recents hold it once', () => {
     const { manager, created } = seedRouting(() => false, (p) => p === '/w' || p === '/w/')
     store.pushRecent('/w', 1)
     store.setFolder('/w', { lastFile: '/w/Start here.md' })
     manager.routeToFile('/w/')
     expect(created).toHaveLength(3)
     expect(created[2].entry.root).toBe('/w')
-    expect(created[2].entry.file).toBe('/w/Start here.md')
+    expect(created[2].entry.file).toBeNull()
     expect(store.get().recents.map((r) => r.path)).toEqual(['/w'])
   })
 
@@ -2052,21 +2052,23 @@ describe('Files windows (YAZ-3357)', () => {
     expect(f.flushCount()).toBe(1)
   })
 
-  it('YAZ-3389 D13: a Files window opens one sidebar zoom step above its source and keeps its own sidebar zoom; a full window stores none', () => {
+  it('a Files window opens at its source\'s sidebar zoom (YAZ-3487, demo round 3; it was one step above, YAZ-3389 D13) and keeps its own; a full window stores none; a new one starts with its tree closed', () => {
     const { manager, created } = seedFiles()
     const zoomOf = (id: string) => store.get().windows.find((w) => w.id === id)?.zoom
-    // From a full window: one step above the shared sidebar zoom (100 → 125, 150 → 200).
+    // From a full window: the shared sidebar zoom as it is (100 → 100, 150 → 150).
     manager.openFilesWindow('w1', null)
     const made = created.at(-1)!.entry
-    expect(made.zoom).toBe(125)
+    expect(made.zoom).toBe(100)
+    expect(manager.takeStartCollapsed(made.id)).toBe(true)
+    expect(manager.takeStartCollapsed(made.id)).toBe(false) // once
     store.setSettings({ ...store.get().settings, sidebarZoom: 150 })
     manager.openFilesWindow('w2', null)
-    expect(created.at(-1)!.entry.zoom).toBe(200)
-    // From a Files window: one step above ITS zoom, never the shared one; at 200% it stays 200%.
+    expect(created.at(-1)!.entry.zoom).toBe(150)
+    // From a Files window: ITS zoom, never the shared one.
     expect(manager.setFilesZoom(made.id, 75)).toBe(true)
     expect(zoomOf(made.id)).toBe(75)
     manager.openFilesWindow(made.id, null)
-    expect(created.at(-1)!.entry.zoom).toBe(90)
+    expect(created.at(-1)!.entry.zoom).toBe(75)
     manager.setFilesZoom(made.id, 200)
     manager.openFilesWindow(made.id, null)
     expect(created.at(-1)!.entry.zoom).toBe(200)
@@ -2207,5 +2209,126 @@ describe('Files windows (YAZ-3357)', () => {
     store.setSettings({ ...store.get().settings, appZoom: 125 })
     manager.filesPreview('f', { width: 400, height: 240, top: 160, bottom: 176 })
     expect(previews.at(-1)).toEqual([f, { x: 400, y: 188, width: 500, height: 300 }])
+  })
+})
+
+describe('createWindowManager: the empty-window door (YAZ-3487 D1, D2, D3)', () => {
+  const bounds = { x: 0, y: 0, width: 800, height: 600 }
+  /** A stored window on `roots`: `tabs` open, the first on show; none = an EMPTY window. */
+  const entry = (id: string, roots: string[], tabs: string[] = [], extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: roots[0], roots, file: tabs[0] ?? null, tabs, rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds, ...extra })
+  /** The windows restored and each one ready for `link:*` messages. */
+  const seed = (...entries: WindowEntry[]) => {
+    for (const e of entries) store.upsertWindow(e)
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    for (const c of created) manager.handleLinkReady(c.win.webContents)
+    const win = (id: string) => created.find((c) => c.entry.id === id)!.win
+    return { manager, created, win }
+  }
+
+  it('S3: an EMPTY window asks for a vault with no window → it hears link:set-roots, no window opens, the MRU is bumped', () => {
+    const { manager, created, win } = seed(entry('e', ['/v/a']))
+    expect(manager.openRecentBeside('/v/c', 'e')).toBe(true)
+    expect(created).toHaveLength(1)
+    expect(win('e').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/c'])
+    expect(store.get().recents[0]?.path).toBe('/v/c')
+  })
+
+  it('S4: the vault has a window → that window comes to the front; the empty window hears nothing (YAZ-2602 D6)', () => {
+    const { manager, created, win } = seed(entry('e', ['/v/a']), entry('b', ['/v/b'], ['/v/b/x.md']))
+    const focused = win('b').focusCount
+    expect(manager.openRecentBeside('/v/b', 'e')).toBe(true)
+    expect(created).toHaveLength(2)
+    expect(win('b').focusCount).toBe(focused + 1)
+    expect(win('e').webContents.send).not.toHaveBeenCalledWith(CONTRACT.link.onSetRoots.channel, expect.anything())
+  })
+
+  it('S1, S5: "Open by itself" — a window with a tab gets a NEW window; an empty workspace window takes the vault alone', () => {
+    const busy = seed(entry('ab', ['/v/a', '/v/b'], ['/v/a/x.md']))
+    expect(busy.manager.openAlone('/v/b', 'ab')).toBe(true)
+    expect(busy.created).toHaveLength(2)
+    expect(busy.created[1].entry).toMatchObject({ roots: ['/v/b'], file: null, tabs: [] })
+    expect(store.get().windows.find((w) => w.id === 'ab')?.roots).toEqual(['/v/a', '/v/b'])
+
+    const empty = seed(entry('ab2', ['/v/c', '/v/d']))
+    const before = empty.created.length // every stored window comes back, the first test's too
+    expect(empty.manager.openAlone('/v/d', 'ab2')).toBe(true)
+    expect(empty.created).toHaveLength(before)
+    expect(empty.win('ab2').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/d'])
+  })
+
+  it('S6, S7, S8: the blank tab is no tab; a right-panel item, a page on show, or a Files window is NOT empty → a new window opens', () => {
+    const { manager, created } = seed(
+      entry('right', ['/v/a'], [], { rightPanel: { ...defaultRightPanelIdentity(), items: ['/v/a/side.md'] } }),
+      entry('files', ['/v/a'], [], { kind: 'files' }),
+    )
+    expect(manager.openRecentBeside('/v/c', 'right')).toBe(true)
+    expect(manager.openRecentBeside('/v/d', 'files')).toBe(true)
+    expect(created.slice(2).map((c) => c.entry.roots)).toEqual([['/v/c'], ['/v/d']])
+  })
+
+  it('S9: a workspace row in an EMPTY window → the window takes the set\'s vaults that are left; the set becomes the last used', () => {
+    const work = store.saveVaultSet('Work', ['/v/b', '/v/a'], 1)!
+    const { manager, created, win } = seed(entry('e', ['/v/x']))
+    expect(manager.openVaultSet(work.id, 'e')).toEqual({ opened: true, missing: [] })
+    expect(created).toHaveLength(1)
+    expect(win('e').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/b', '/v/a'])
+  })
+
+  it('S10, S12: a Welcome window (no vault) in front counts as empty: ⌘<n> sends it the vault, and no window opens', () => {
+    const { manager, created, win } = seed({ ...entry('wel', ['/x']), root: null, roots: [] })
+    expect(manager.openRecentBeside('/v/c', 'wel')).toBe(true)
+    expect(created).toHaveLength(1)
+    expect(win('wel').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/c'])
+  })
+
+  it('D15: with "Open on: Its last note" a new window opens on the vault\'s last file, as before YAZ-3487; blank is the default', () => {
+    store.setFolder('/v/c', { lastFile: '/v/c/Start here.md' })
+    const blank = seed(entry('b', ['/v/a'], ['/v/a/x.md']))
+    blank.manager.openRecentBeside('/v/c', 'b')
+    expect(blank.created.at(-1)!.entry.file).toBeNull()
+    store.setFolder('/v/d', { lastFile: '/v/d/Notes.md' })
+    store.setSettings({ ...store.get().settings, vaultOpensOn: 'last' })
+    blank.manager.openAlone('/v/d', 'b')
+    expect(blank.created.at(-1)!.entry).toMatchObject({ roots: ['/v/d'], file: '/v/d/Notes.md', tabs: ['/v/d/Notes.md'] })
+  })
+
+  it('S13: a folder that is gone → false; nothing is sent, nothing opens', () => {
+    store.upsertWindow(entry('e', ['/v/a']))
+    const { host, created } = makeHost(undefined, undefined, (p) => p !== '/v/gone')
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    manager.handleLinkReady(created[0].win.webContents)
+    expect(manager.openRecentBeside('/v/gone', 'e')).toBe(false)
+    expect(manager.openAlone('/v/gone', 'e')).toBe(false)
+    expect(created).toHaveLength(1)
+    expect(created[0].win.webContents.send).not.toHaveBeenCalledWith(CONTRACT.link.onSetRoots.channel, expect.anything())
+  })
+})
+
+describe('createWindowManager: a closed window\'s notes go to "Recently closed" (YAZ-3487 D10)', () => {
+  const close = async (manager: ReturnType<typeof createWindowManager>, win: FakeWindow) => {
+    win.close()
+    manager.handleFlushed(win.webContents)
+    await vi.advanceTimersByTimeAsync(0)
+  }
+
+  it('S33: a window you close while others stay puts each of its notes in its vault\'s list', async () => {
+    vi.setSystemTime(7000)
+    const { manager, w1 } = seedTwo()
+    await close(manager, w1)
+    expect(store.get().folders['/v'].closed).toEqual({ '/v/a.md': 7000 })
+  })
+
+  it('S34, S44: the last window (a quit) and a Files window put nothing in the list', async () => {
+    store.upsertWindow({ id: 'f', kind: 'files', root: '/v', roots: ['/v'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 300, height: 600 } })
+    store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    await close(manager, created[0].win)
+    await close(manager, created[1].win)
+    expect(store.get().folders['/v']?.closed ?? {}).toEqual({})
   })
 })

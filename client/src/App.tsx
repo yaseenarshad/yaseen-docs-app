@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isBoard, isViewOnly } from '@shared/fileKind'
 import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -272,7 +272,8 @@ export function App() {
   if (sidebarKey.current === null || !roots.includes(sidebarKey.current)) sidebarKey.current = root
   // The vault rows the user closed (YAZ-2602 R9): for the session and for this window, so never in
   // the store — and App's, like the lens below: the sidebar unmounts while it is hidden.
-  const [closedVaults, setClosedVaults] = useState<readonly string[]>([])
+  // A NEW window starts with every vault row closed too, as "Collapse all" leaves them (YAZ-3487, YAZ-2631 D6).
+  const [closedVaults, setClosedVaults] = useState<readonly string[]>(() => (storage.isCollapsedStart() && storage.getRoots().length > 1 ? storage.getRoots() : []))
   const setVaultOpen = useCallback((vault: string, open: boolean) => setClosedVaults((closed) => (closed.includes(vault) === !open ? closed : open ? closed.filter((v) => v !== vault) : [...closed, vault])), [])
   // Workspace (Tabs I2 + YAZ-966): one renderer-owned model, seeded from the boot identity snapshot
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab's path is this
@@ -292,6 +293,8 @@ export function App() {
    * LOOKS at reads this: the title, the sidebar's highlight, ⌘⇧C. What is stored reads `file`.
    */
   const pageOnShow = blank ? null : file
+  /** The notes this window's tabs show: "Recently closed" leaves them out (YAZ-3487 D10). One array while the tabs stay the same. */
+  const tabPaths = useMemo(() => tabs.map((t) => t.path), [tabs])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const sidebarCollapsedRef = useRef(sidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
@@ -663,20 +666,23 @@ export function App() {
         return false
       }
     }
+    // Its tabs close (YAZ-3487 D10): "Recently closed" keeps them. Sent first, while main still counts the old vaults.
+    const dropped = now.current.tabs.map((t) => t.path)
+    if (dropped.length > 0) storage.noteClosed(dropped)
     storage.setRoot(path) // ONE identity write: { root, file: null, tabs: [] } (Tabs rule 13)
     storage.pushRecentRoot(path)
     setSidebarLens(storage.getSidebarLens()) // the vault lands on Files (🔒 D2, YAZ-1846)
     setSidebarRevealRequest(null)
     setRoots(storage.getRoots()) // that ONE vault: every other vault of the window leaves (YAZ-2602 S61)
-    // The folder's remembered file becomes the sole restored tab (D6); reset mirrors it down. A Files window has no tab (YAZ-3357 D1).
-    resetTabs(path, filesWindow ? null : storage.getLastFile(path))
+    // A vault opens blank (YAZ-3487 D7) — or on its last note, as Settings › Open on says (D15); reset mirrors it down. A Files window has no tab (YAZ-3357 D1).
+    resetTabs(path, filesWindow || storage.getSettings().vaultOpensOn !== 'last' ? null : storage.getLastFile(path))
     return true
   }, [resetTabs, filesWindow])
 
   /**
    * The ONE vault-open rule (YAZ-1914): a window that already shows a vault never changes vault —
-   * the path goes to main's open-recent door (raise its windows, else a NEW window on its last
-   * file — YAZ-1767 D1/D9). Only the Welcome window (root null) becomes the vault in place. The
+   * the path goes to main's open-recent door (raise its windows, else this window when it is EMPTY,
+   * else a NEW window, blank — YAZ-1767 D1/D9, YAZ-3487 D1, D7). The Welcome window (root null) becomes the vault in place. The
    * one opt-in exception is the vault menu's "Open in this window" (YAZ-1798 D11), which says so
    * in its label and calls `openRoot` directly.
    */
@@ -849,9 +855,10 @@ export function App() {
   // A right-click on a row of the new tab page (YAZ-2663 D6): the sidebar opens its OWN row menu
   // for that path at the mouse, so the page has no menu and no rule is written twice. With the
   // sidebar hidden it shows first, and it mounts with the request already set (S31).
-  const showRowMenu = useCallback((path: string, x: number, y: number) => {
+  const showRowMenu = useCallback((path: string, x: number, y: number, closed = false) => {
     if (sidebarCollapsed) toggleSidebar()
-    setSidebarMenuRequest({ id: ++sidebarMenuId.current, path, x, y })
+    // A row of "Recently closed" asks for its two items too (YAZ-3487 D14).
+    setSidebarMenuRequest({ id: ++sidebarMenuId.current, path, x, y, ...(closed ? { closed } : {}) })
   }, [sidebarCollapsed, toggleSidebar])
   const consumeSidebarMenu = useCallback((id: number) => {
     setSidebarMenuRequest((request) => request?.id === id ? null : request)
@@ -1078,11 +1085,11 @@ export function App() {
    * change of the workspace, and the board stays — until its last tab goes: then it closes, and
    * the window shows the empty state (R18).
    */
-  const closeUnderOverview = useCallback((ids: string[]) => {
+  const closeUnderOverview = useCallback((ids: string[], moved = false) => {
     const { active: open, tabs: all } = now.current
     if (all.every((t) => ids.includes(t.id))) setOverview(OVERVIEW_CLOSED)
     ownChange.current = open !== null && ids.includes(open)
-    closeTabs(ids)
+    closeTabs(ids, moved)
   }, [closeTabs])
   const closeOneUnderOverview = useCallback((id: string) => closeUnderOverview([id]), [closeUnderOverview])
   /**
@@ -1190,8 +1197,9 @@ export function App() {
         // YAZ-3091 D6: the only tab of a window whose right panel is empty takes the window with it, through its real close.
         // An open blank tab is a tab too (YAZ-3105): then the window is not empty, and it stays.
         if (closeEmptyWindow && all.length === 1 && all[0].id === id && right === 0 && !newTab) void api.window.closeSelf()
-        else if (phase === 'open') closeUnderOverview([id])
-        else closeTab(id)
+        // A moved tab lives on in the other window: no "Recently closed" (YAZ-3487 D10).
+        else if (phase === 'open') closeUnderOverview([id], true)
+        else closeTab(id, true)
       })
       .catch((err: unknown) => notify(`${failed}: ${err instanceof Error ? err.message : String(err)}`))
   }, [closeUnderOverview, closeTab, notify])
@@ -1280,12 +1288,19 @@ export function App() {
    * checked, and a tab that came since keeps the window as it is. A Welcome window opens the vault as File › Open does.
    */
   const setRootsHere = useCallback((next: string[]) => {
-    if (now.current.tabs.length > 0 || next.length === 0) return
+    // Empty as main counts it (YAZ-3487 D1): no tab, and nothing in the right panel.
+    if (now.current.tabs.length > 0 || now.current.right > 0 || next.length === 0) return
     if (live.current.roots.length === 0) return void openRoot(next[0])
     storage.setRoots(next)
     for (const root of next) storage.pushRecentRoot(root)
     setRoots(storage.getRoots())
-  }, [openRoot])
+    // The vaults land on Files, as every vault open does (YAZ-1846 D2): a ⌘⇧N window boots on the search.
+    storage.setSidebarLens(DEFAULT_SIDEBAR_LENS)
+    setSidebarLens(DEFAULT_SIDEBAR_LENS)
+    // "Open on: Its last note" (YAZ-3487 D15): the first vault's last note, as a new window would. A Files window has no tab.
+    const last = filesWindow || storage.getSettings().vaultOpensOn !== 'last' ? null : storage.getLastFile(next[0])
+    if (last !== null) resetTabs(next[0], last)
+  }, [openRoot, filesWindow, resetTabs])
   /** Another window's board: "Move to new window" on a card of THIS window (YAZ-3343) — moved quietly, its text saved first. */
   const popOutTabHere = useCallback((ref: TabRef) => {
     const tab = tabOfRef(now.current.tabs, ref)
@@ -2240,10 +2255,13 @@ export function App() {
    * way (S51).
    */
   const removeVault = useCallback((gone: string) => {
-    const now = live.current.roots
-    const rest = now.filter((vault) => vault !== gone)
-    if (rest.length === 0 || rest.length === now.length) return
+    const vaults = live.current.roots
+    const rest = vaults.filter((vault) => vault !== gone)
+    if (rest.length === 0 || rest.length === vaults.length) return
     setSidebarRevealRequest(null)
+    // Its tabs close (YAZ-3487 D10): "Recently closed" keeps them. Sent first, while main still counts that vault.
+    const dropped = now.current.tabs.map((t) => t.path).filter((path) => rootOfPath([gone], path) !== null)
+    if (dropped.length > 0) storage.noteClosed(dropped)
     // The pages close against the vaults that stay: with none left open, the empty window is the
     // new first vault's to remember, and the vault that left keeps its last file (S52).
     deleteWorkspaceDir(stripSlash(gone), rest[0])
@@ -2720,7 +2738,7 @@ export function App() {
           )}
           <div className="tabstack">
             {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden. Mounted only while it shows (R1). */}
-            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
+            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} openTabs={tabPaths} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
             {mounted.map((id) => {
               const path = pathOf.get(id)
               if (path === undefined) return null

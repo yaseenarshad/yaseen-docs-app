@@ -45,7 +45,7 @@ import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberContr
 import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 export interface SettingsCtx {
   settings: SettingsState
@@ -331,6 +331,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['startup', 'launch', 'restore', 'windows', 'quit'],
             render: ({ settings, onChange }) => (
               <Segmented options={STARTUP_WINDOWS_OPTIONS} value={settings.startupWindows} onChange={(startupWindows) => onChange({ ...settings, startupWindows })} ariaLabel="Windows to reopen when the app starts" />
+            ),
+          },
+        ],
+      },
+      {
+        // YAZ-3487 D15: blank is the default (D7); the last note is the old way (YAZ-1767 D2).
+        title: 'When a vault opens',
+        items: [
+          {
+            id: 'vaultOpensOn',
+            label: 'Open on',
+            hint: 'A link to a note still opens that note.',
+            keywords: ['vault', 'open', 'blank', 'last note', 'new tab', 'start'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={VAULT_OPENS_ON_OPTIONS} value={settings.vaultOpensOn} onChange={(vaultOpensOn) => onChange({ ...settings, vaultOpensOn })} ariaLabel="What a vault opens on" />
             ),
           },
         ],

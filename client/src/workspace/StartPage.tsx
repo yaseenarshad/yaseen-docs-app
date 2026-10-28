@@ -1,10 +1,10 @@
 /**
  * The new tab page (YAZ-2663 D3): what a new tab (⌘T) and a window with no tabs show in the page
- * area. Three columns of rows: the pages last on show, the favorites, and what is used a lot and is
- * no favorite yet (D4). App mounts it only while it shows (R1), so everything here is read when the
- * page shows and followed while it does:
- *   - the open history and the order of the favorites across vaults, off the app state the window
- *     already holds (`storage`);
+ * area. Three columns of rows: the notes you closed last (YAZ-3487 D8, D13; it was "Used a lot, not a
+ * favorite yet", the third column), the pages last on show ("Recently viewed", D12), and the favorites. App mounts it only while it shows (R1), so
+ * everything here is read when the page shows and followed while it does:
+ *   - the open history, the closed notes, the other windows' tabs and the order of the favorites
+ *     across vaults, off the app state the window already holds (`storage`);
  *   - each vault's favorites, read one time and again on `favorites.onChanged`;
  *   - what is on the disk, and whether it is a file or a folder, off the window's one tree feed.
  */
@@ -21,36 +21,47 @@ import { fetchTree } from '../lib/treeFeed'
 import { favoriteOrder, findNode } from '../lib/treeState'
 import { PREVIEW_FOLLOW_MS } from '../sidebar/hooks/useSidebarSearch'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
-import { suggestFavorites } from './suggestFavorites'
+import { recentlyClosed } from './recentlyClosed'
 import './startPage.css'
 
 /** At this width of the page area, and under it, the columns stand one below the other: the `@container` rule of startPage.css. Keep the two the same. */
 const STACK_AT = 640
 
-/** "Recent" and "Favorites" show this many rows at most (YAZ-2663 D3). */
+/** Each column shows this many rows at most (YAZ-2663 D3, YAZ-3487 D8). */
 const START_ROWS = 8
 
 /** The columns in their order, each with the one grey line it shows when it has no rows (S19). */
 const COLUMNS = [
-  { col: 'recent', label: 'Recent', empty: 'Pages you open show here.' },
+  // "Recently closed" stands first (YAZ-3487 D13), and "Recent" reads "Recently viewed" beside it (D12): each says what it holds.
+  { col: 'closed', label: 'Recently closed', empty: 'Notes you close show here.' },
+  { col: 'recent', label: 'Recently viewed', empty: 'Pages you open show here.' },
   { col: 'favorites', label: 'Favorites', empty: 'No favorites yet. Right-click a file or folder → Add to favorites.' },
-  { col: 'suggested', label: 'Used a lot, not a favorite yet', empty: 'Nothing to suggest now.' },
 ] as const
 
-/** What the page reads of the app state for one vault of the window (R1): what the app calls the vault, and its open history. */
+/** What the page reads of the app state for one vault of the window (R1): what the app calls the vault, its open history, and its closed notes (YAZ-3487 D9). */
 interface VaultRecord {
   root: string
   name: string
   opens: Readonly<Record<string, OpenStat>>
+  closed: Readonly<Record<string, number>>
 }
 
 /** `a` and `b` read the same. Each broadcast of the app state is a new copy of it all, so only what a record HOLDS says that it changed. */
 function sameRecord(a: VaultRecord, b: VaultRecord): boolean {
   const paths = Object.keys(a.opens)
-  return a.root === b.root && a.name === b.name && paths.length === Object.keys(b.opens).length && paths.every((path) => path in b.opens && b.opens[path].last === a.opens[path].last && b.opens[path].score === a.opens[path].score)
+  const closed = Object.keys(a.closed)
+  return (
+    a.root === b.root &&
+    a.name === b.name &&
+    paths.length === Object.keys(b.opens).length &&
+    // "Recent" reads `last` alone: a new `score` with the same `last` changes no row (the suggestions that read it left, YAZ-3487 D8).
+    paths.every((path) => path in b.opens && b.opens[path].last === a.opens[path].last) &&
+    closed.length === Object.keys(b.closed).length &&
+    closed.every((path) => b.closed[path] === a.closed[path])
+  )
 }
 
-/** A row: a path the Files tree holds, as its node there, and the vault that holds it. `last` is when it was last on show ("Recent" alone says it). */
+/** A row: a path the Files tree holds, as its node there, and the vault that holds it. `last` is when it was last on show ("Recent") or closed ("Recently closed", YAZ-3487). */
 interface Row {
   path: string
   node: TreeNode
@@ -60,12 +71,17 @@ interface Row {
   depth: number
 }
 
+/** No tab is open. */
+const NO_TABS: readonly string[] = []
+
 /** No folder of the page is open. */
 const NO_DIRS: ReadonlySet<string> = new Set()
 
 export interface StartPageProps {
   /** The window's vaults, in the window's order (YAZ-2602 D1). */
   roots: readonly string[]
+  /** The notes this window's tabs show (YAZ-3487 D10): no row of "Recently closed". One array while the tabs stay the same. */
+  openTabs?: readonly string[]
   titles: PathTitles
   /** A click on a file (S21): App opens it as a sidebar click does, so it fills the blank tab. */
   onOpen: (path: string) => void
@@ -74,7 +90,7 @@ export interface StartPageProps {
   /** A click or Enter on a folder (S22), and Shift+Enter on any row (S38): App shows the row in Files — a folder open — with the keyboard focus on it. */
   onShowInFiles: (path: string) => void
   /** A right-click on a row (YAZ-2663 D6): App asks the sidebar for its own row menu of that path, at the mouse. The page has no menu. */
-  onRowMenu: (path: string, x: number, y: number) => void
+  onRowMenu: (path: string, x: number, y: number, closed?: boolean) => void
   /** ← on the first column that has rows, and Esc (S37, D8): the keyboard goes back to where it came from — a row of a sidebar tree, else the search bar. */
   onBack: () => void
   /** A typed letter (S41): App puts the caret in the search bar. */
@@ -100,7 +116,7 @@ export interface StartPageProps {
   diagramDarkColors?: DiagramDarkColors
 }
 
-export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFiles, onRowMenu, onBack, onBackToSearch, focusRef, previewPath = null, onPreview, onNotice, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: StartPageProps) {
+export function StartPage({ roots, openTabs = NO_TABS, titles, onOpen, onOpenBackground, onShowInFiles, onRowMenu, onBack, onBackToSearch, focusRef, previewPath = null, onPreview, onNotice, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: StartPageProps) {
   // What is on the disk (S18) is the Files tree's to say: it alone knows a folder from a file, and
   // holds the pages that are no notes. The window's one feed keeps the newest tree of each vault
   // with the sidebar hidden too, but then nothing reads a new one when a note goes. So the page
@@ -116,11 +132,20 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
   // of them holds a different use or name (`useLatestTrees`' idiom), and `storage` keeps the order.
   const held = useRef<readonly VaultRecord[]>([])
   const records = useSyncExternalStore(storage.subscribe, () => {
-    const next = roots.map((vault) => ({ root: vault, name: storage.vaultName(vault), opens: storage.getOpens(vault) }))
+    const next = roots.map((vault) => ({ root: vault, name: storage.vaultName(vault), opens: storage.getOpens(vault), closed: storage.getClosed(vault) }))
     if (next.length !== held.current.length || next.some((record, at) => !sameRecord(record, held.current[at]))) held.current = next
     return held.current
   })
   const favoritesOrder = useSyncExternalStore(storage.subscribe, storage.getFavoritesOrder)
+  // YAZ-3487 D10: a note a tab shows now — here, or in another window — is no closed note. Each broadcast is a new copy of
+  // the app state, so only the paths say that the other windows' tabs changed (the `held` idiom above, R5).
+  const heldTabs = useRef<readonly string[]>([])
+  const otherTabs = useSyncExternalStore(storage.subscribe, () => {
+    const next = storage.getOtherWindows().flatMap((w) => w.tabs)
+    if (next.length !== heldTabs.current.length || next.some((path, at) => path !== heldTabs.current[at])) heldTabs.current = next
+    return heldTabs.current
+  })
+  const openNow = useMemo(() => new Set([...openTabs, ...otherTabs]), [openTabs, otherTabs])
   // Each vault's favorites (R1), as the sidebar reads them (`useVaultTree`): one read when the page
   // shows, and one more on each `favorites:changed` for a vault of the window.
   const [favoritesByRoot, setFavoritesByRoot] = useState<Readonly<Record<string, readonly string[]>>>({})
@@ -165,10 +190,10 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
       },
       // S13: the order of the Favorites tab; a favorite with no file on this machine draws no row there either (YAZ-1766 D14).
       favorites: { rows: rowsOf(favoritePaths.map((path) => ({ path }))).slice(0, START_ROWS), read: favoritesRead },
-      // S14 to S17. Until every list of favorites is read, a favorite would show here as a suggestion.
-      suggested: { rows: favoritesRead ? rowsOf(suggestFavorites(records, favoritePaths, Date.now(), (path) => rowsOf([{ path }])[0]?.node.type ?? null)) : [], read: favoritesRead },
+      // YAZ-3487 D8: the notes you closed, the newest first, of every vault; a note on the disk no more draws no row (S38).
+      closed: { rows: rowsOf(recentlyClosed(records, openNow)).slice(0, START_ROWS), read: treesLanded },
     }
-  }, [roots, trees, records, favoritesByRoot, favoritesOrder])
+  }, [roots, trees, records, favoritesByRoot, favoritesOrder, openNow])
 
   // A folder row opens IN its column (YAZ-2663 D13): Space, or a click on its chevron, puts each
   // row that the folder holds below it, one step in, as the Files tree holds them — and a folder
@@ -191,7 +216,7 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
     return {
       recent: { rows: inside('recent', lists.recent.rows), read: lists.recent.read },
       favorites: { rows: inside('favorites', lists.favorites.rows), read: lists.favorites.read },
-      suggested: { rows: inside('suggested', lists.suggested.rows), read: lists.suggested.read },
+      closed: { rows: inside('closed', lists.closed.rows), read: lists.closed.read },
     }
   }, [lists, openDirs])
 
@@ -384,7 +409,7 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
                   return (
                     <li key={`${row.depth} ${row.path}`}>
                       {/* `data-col` and `data-row` say where the row stands: the arrow keys walk by them (YAZ-2674). */}
-                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} style={top ? undefined : { paddingLeft: (folder ? 8 : 26) + row.depth * 14 }} aria-expanded={folder ? open : undefined} data-path={row.path} data-col={col} data-row={at} title={row.path} onMouseEnter={folder ? undefined : () => rowPreview.hoverCard(`${col} ${at}`, row.path)} onMouseLeave={() => rowPreview.leaveCard(`${col} ${at}`)} onClick={(e) => activate(row, e.metaKey)} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY))}>
+                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} style={top ? undefined : { paddingLeft: (folder ? 8 : 26) + row.depth * 14 }} aria-expanded={folder ? open : undefined} data-path={row.path} data-col={col} data-row={at} title={row.path} onMouseEnter={folder ? undefined : () => rowPreview.hoverCard(`${col} ${at}`, row.path)} onMouseLeave={() => rowPreview.leaveCard(`${col} ${at}`)} onClick={(e) => activate(row, e.metaKey)} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY, col === 'closed'))}>
                         {/* The chevron is the mouse's Space (D13): it opens and closes the folder here, and the row's own click — the folder in Files — does not follow. */}
                         {folder && <span className={`tree__chevron${open ? ' tree__chevron--open' : ''}`} onClick={(e) => (e.stopPropagation(), toggleDir(col, row.path))} />}
                         <span className="start__name">{pageLabel(row.path, folder, titles)}</span>
