@@ -239,7 +239,10 @@ describe('autosave (YAZ-3528 D1)', () => {
     expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 999 })
   })
 
-  it('S17: back at the saved version before the quiet period ends writes nothing — the baseline is a value', async () => {
+  // S17 as corrected after the checker's round 1 (YAZ-3551): the real engine's version only grows,
+  // so an UNDO is one harmless extra save (rule 36's own trade, `contentVersion.ts`). What the
+  // baseline-as-a-value still buys is the engine reporting the saved version again (YAZ-3210).
+  it('a snapshot back at the saved version before the quiet period ends writes nothing — the baseline is a value', async () => {
     await open()
     emit(7)
     emit(8)
@@ -429,6 +432,56 @@ describe('leaving (YAZ-3528 D3)', () => {
     expect(onClose).not.toHaveBeenCalled()
     await mousedownOn(overlay)
     expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('YAZ-3552: the strip goes when the problem does — a later save that lands, or Keep mine', async () => {
+    await open()
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    await click(closeBtn())
+    expect(strip()).toContain(DISCARD_PROMPT)
+    emit(3)
+    await idle()
+    expect(label()).toBe('Saved')
+    expect(strip()).toBeNull()
+
+    emit(4)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await click(closeBtn())
+    expect(strip()).toContain(DISCARD_PROMPT)
+    await click(byText('Keep mine'))
+    expect(strip()).toBeNull()
+    expect(conflictBar()).toBeNull()
+  })
+
+  it('a conflict after a failed save shows the bar alone — the older error line goes', async () => {
+    await open()
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    await idle()
+    expect(errorLine()).toContain('disk is full')
+    emit(3)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await idle()
+    expect(conflictBar()).not.toBeNull()
+    expect(errorLine()).toBeNull()
+  })
+
+  it('a change made while the close is saving is saved too — no question, because nothing failed', async () => {
+    const { onClose } = await open()
+    emit(1)
+    emit(2)
+    let land: (() => void) | null = null
+    writeAsset.mockImplementationOnce(() => new Promise((resolve) => (land = () => resolve({ path: PATH, mtime: 999, size: BYTES.length }))))
+    await click(closeBtn())
+    emit(3)
+    await act(async () => land?.())
+    expect(writeAsset).toHaveBeenCalledTimes(2)
+    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 999 })
+    expect(strip()).toBeNull()
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 

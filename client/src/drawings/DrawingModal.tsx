@@ -90,6 +90,9 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
   /** Made by the surface's FIRST snapshot, the clean baseline; null until then and after a Reload. */
   const autosave = useRef<Autosave<number> | null>(null)
   const [status, setStatus] = useState<SaveStatus>('saved')
+  /** The status and the conflict as the close reads them right after its own flush (state lags a render). */
+  const statusRef = useRef<SaveStatus>('saved')
+  const conflictRef = useRef<number | null>(null)
   /** The disk moved under the previews (a save landed, or Reload read a newer scene): close pokes them once. */
   const stale = useRef(false)
   /** A close is saving: a second Esc / ✕ / click-away while it does is the same close, not another. */
@@ -100,6 +103,28 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
   const [conflict, setConflict] = useState<number | null>(null)
   /** Bumped by Reload so the surface remounts on the disk's scene (it reads `scene` once, on mount). */
   const [generation, setGeneration] = useState(0)
+  /** The canvas that may report: a snapshot from the canvas a Reload replaced must not become the new baseline. */
+  const generationRef = useRef(0)
+
+  /** A save's status: a save that lands answers the failed-save strip too (the label beside it says Saved). */
+  const onStatus = useCallback((next: SaveStatus) => {
+    statusRef.current = next
+    setStatus(next)
+    if (next === 'saved') setConfirming(false)
+  }, [])
+
+  /** A conflict raises the bar; the bar says what is wrong now, so an older error line goes. */
+  const onConflict = useCallback((diskMtime: number) => {
+    conflictRef.current = diskMtime
+    setConflict(diskMtime)
+    setError(null)
+  }, [])
+
+  const clearConflict = (): void => {
+    conflictRef.current = null
+    setConflict(null)
+    setConfirming(false)
+  }
 
   useEffect(() => {
     let live = true
@@ -145,16 +170,17 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
 
   const onSnapshot = useCallback(
     (next: DrawingSnapshot) => {
+      if (generation !== generationRef.current) return
       snapshot.current = next
       const drawing = loadedRef.current
       // Read only: never an edit, so there is nothing to autosave.
       if (drawing === null || drawing.scene.readOnly === true) return
       const a = autosave.current
       // The first snapshot IS the clean baseline (the surface restored the disk scene first).
-      if (a === null) autosave.current = new Autosave<number>({ content: next.version, mtime: drawing.mtime, delayMs: 500, save: write, onStatus: setStatus, onConflict: setConflict })
+      if (a === null) autosave.current = new Autosave<number>({ content: next.version, mtime: drawing.mtime, delayMs: 500, save: write, onStatus, onConflict })
       else a.update(next.version)
     },
-    [write],
+    [write, onStatus, onConflict, generation],
   )
 
   // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
@@ -181,6 +207,9 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
     if (a !== null) {
       closing.current = true
       await a.flush()
+      // A change made while that save ran is pending, not failed: save it too.
+      const failed = (): boolean => statusRef.current === 'error' || conflictRef.current !== null
+      if (a.dirty && !failed()) await a.flush()
       closing.current = false
       // A failed write or a conflict keeps it pending: the error line or the conflict bar says why.
       if (a.dirty) {
@@ -202,7 +231,7 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
   /** Keep mine: this canvas over the disk's version, guarded by the mtime the conflict reported. */
   const keepMine = (): void => {
     if (conflict === null) return
-    setConflict(null)
+    clearConflict()
     void autosave.current?.adopt(conflict)
   }
 
@@ -214,15 +243,16 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
     setError(null)
     try {
       const drawing = await openDrawing(root, target)
-      setConflict(null)
+      clearConflict()
+      generationRef.current += 1
       autosave.current?.dispose()
       // The remounted surface's first snapshot is the new baseline.
       autosave.current = null
       snapshot.current = null
       stale.current = true
-      setStatus('saved')
+      onStatus('saved')
       setLoaded(drawing)
-      setGeneration((g) => g + 1)
+      setGeneration(generationRef.current)
     } catch {
       setError(BROKEN_DRAWING_MESSAGE)
     }
