@@ -32,4 +32,10 @@ export interface KeyRow {
   stepsAsideIn?: readonly AsidePlace[]
   /** A Mac standard key (⌘Q, ⌘C…): it blocks every place, and no row can take it (K8). */
   macStandard?: true
+  /**
+   * An App key that never takes the key from a page: an Edit menu role (Undo, Copy…), which hands the key to the page
+   * in front, or a window key that acts only outside a note, a drawing, a diagram or a field (the file clipboard, a
+   * move's undo, ⌘⌫). It blocks no place (K3); a place's row still cannot take it, since it is a Mac standard or built in.
+   */
+  passesToPages?: true
 }

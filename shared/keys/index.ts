@@ -50,7 +50,7 @@ export function clashesOf(row: KeyRow, key: string, overrides: HotkeyOverrides |
     const theirs = keysOf(other, overrides)
     if (other.scope === row.scope) return theirs.some((k) => sameKey(k, key))
     if (other.scope === 'app') return (other.macStandard === true || !stepsAside(other, row.scope, aside)) && theirs.some((k) => sameKey(k, firstStep(key)))
-    if (row.scope === 'app') return !stepsAside(row, other.scope, aside) && theirs.some((k) => sameKey(firstStep(k), key))
+    if (row.scope === 'app') return row.passesToPages !== true && !stepsAside(row, other.scope, aside) && theirs.some((k) => sameKey(firstStep(k), key))
     return false
   })
 }
@@ -58,7 +58,8 @@ export function clashesOf(row: KeyRow, key: string, overrides: HotkeyOverrides |
 /** The rows that block a row's own key now (K3): each place's row shows "Blocked: <owner> fires first" while one does. */
 export function blockersOf(row: KeyRow, overrides: HotkeyOverrides | undefined, aside: HotkeyAside | undefined, rows: readonly KeyRow[] = ALL_KEYS): KeyRow[] {
   if (row.scope === 'app') return []
-  return keysOf(row, overrides).flatMap((key) => clashesOf(row, key, overrides, aside, rows).filter((other) => other.scope === 'app'))
+  // An App key that hands its key to the page (an Edit role, the file clipboard) is no blocker (K3); recording still refuses it.
+  return keysOf(row, overrides).flatMap((key) => clashesOf(row, key, overrides, aside, rows).filter((other) => other.scope === 'app' && other.passesToPages !== true))
 }
 
 /**
