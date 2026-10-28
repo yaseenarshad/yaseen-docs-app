@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -148,6 +148,13 @@ export const SIDEBAR_FILE_ICONS_OPTIONS: readonly Option<SidebarFileIcons>[] = [
   { label: 'Colour', value: 'quiet' },
   { label: 'All colour', value: 'color' },
   { label: 'Grey', value: 'grey' },
+  { label: 'Off', value: 'off' },
+]
+
+/** The sidebar's folder icons (YAZ-3440 D5, YAZ-3554): Material's default folder for every folder (the default), its icon by folder name, or none. */
+export const SIDEBAR_FOLDER_ICONS_OPTIONS: readonly Option<SidebarFolderIcons>[] = [
+  { label: 'Plain', value: 'plain' },
+  { label: 'By name', value: 'named' },
   { label: 'Off', value: 'off' },
 ]
 

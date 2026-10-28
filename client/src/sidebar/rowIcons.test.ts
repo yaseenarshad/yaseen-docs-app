@@ -5,7 +5,7 @@ import { suggestIcons } from './iconSuggestions'
 
 /** Which icon a row shows (YAZ-3440 D8, D9): its pick, then the first matching name rule of the settings, then Material's match, then the default. */
 const V = '/v'
-const icons = (paths: Record<string, string> = {}, rules: IconRule[] = []) => buildRowIcons({ [V]: { paths } }, [V], rules)
+const icons = (paths: Record<string, string> = {}, rules: IconRule[] = [], folderNames = true) => buildRowIcons({ [V]: { paths } }, [V], rules, folderNames)
 
 describe('the matching order (YAZ-3440 D8, D9)', () => {
   it("(1) a row's own pick wins over every rule and over Material", () => {
@@ -15,7 +15,7 @@ describe('the matching order (YAZ-3440 D8, D9)', () => {
 
   it("(2) then the FIRST rule whose glob matches the name and whose kind is the row's, in any case, in every vault", () => {
     const rules: IconRule[] = [{ match: '*.ts', kind: 'folder', icon: 'folder-src' }, { match: '*.TS', kind: 'file', icon: 'python' }, { match: '*', kind: 'file', icon: 'json' }]
-    const i = buildRowIcons({ '/v': { paths: {} }, '/w': { paths: {} } }, ['/v', '/w'], rules)
+    const i = buildRowIcons({ '/v': { paths: {} }, '/w': { paths: {} } }, ['/v', '/w'], rules, true)
     expect(rowIcon(i, '/v/x/a.ts', 'a.ts', 'file')).toEqual({ id: 'python', custom: true })
     expect(rowIcon(i, '/w/a.ts', 'a.ts', 'file')).toEqual({ id: 'python', custom: true })
     expect(rowIcon(i, '/v/b.md', 'b.md', 'file')).toEqual({ id: 'json', custom: true })
@@ -45,18 +45,41 @@ describe('the matching order (YAZ-3440 D8, D9)', () => {
   })
 })
 
+describe('Folder icons "Plain" (YAZ-3554 D1, D4)', () => {
+  it("every folder shows Material's default folder, open or closed, in the vaults and outside them; a pick and a rule still win; a file keeps its match", () => {
+    const i = icons({ '/v/trips': 'folder-images' }, [{ match: 'Assets', kind: 'folder', icon: 'folder-resource' }], false)
+    expect(rowIcon(i, '/v/src', 'src', 'folder')).toEqual({ id: 'folder', custom: false })
+    expect(rowIcon(i, '/v/app', 'app', 'folder', true)).toEqual({ id: 'folder-open', custom: false })
+    expect(rowIcon(i, '/v/trips', 'trips', 'folder')).toEqual({ id: 'folder-images', custom: true })
+    expect(rowIcon(i, '/v/assets', 'assets', 'folder', true)).toEqual({ id: 'folder-resource-open', custom: true })
+    expect(rowIcon(i, '/v/a.test.ts', 'a.test.ts', 'file')).toEqual({ id: 'test-ts', custom: false })
+    // Outside the window's vaults (D11): no pick and no rule, and still Plain.
+    expect(rowIcon(i, '/out/trips', 'trips', 'folder', false, false)).toEqual({ id: 'folder', custom: false })
+    expect(rowIcon(icons(), '/out/src', 'src', 'folder', false, false)).toEqual({ id: 'folder-src', custom: false })
+  })
+
+  it('a change of the choice is a new object that every level draws again; the same choice is the same object', () => {
+    const named = icons()
+    const plain = buildRowIcons({ [V]: { paths: {} } }, [V], [], false, named)
+    expect(plain).not.toBe(named)
+    expect(plain.paths).toBe(named.paths)
+    expect(iconsChangedBelow(named, plain, () => false)).toBe(true)
+    expect(buildRowIcons({ [V]: { paths: {} } }, [V], [], false, plain)).toBe(plain)
+  })
+})
+
 describe('what re-renders (YAZ-3440 D8)', () => {
   it('the same picks and rules give the same object; a new pick keeps the rules, so only the levels that draw its row re-render', () => {
     const rules: IconRule[] = [{ match: '*.py', kind: 'file', icon: 'lua' }]
     const a = icons({ '/v/x.md': 'lua' }, rules)
-    expect(buildRowIcons({ [V]: { paths: { '/v/x.md': 'lua' } } }, [V], [...rules], a)).toBe(a)
-    const b = buildRowIcons({ [V]: { paths: { '/v/x.md': 'lua', '/v/d/y.md': 'json' } } }, [V], rules, a)
+    expect(buildRowIcons({ [V]: { paths: { '/v/x.md': 'lua' } } }, [V], [...rules], true, a)).toBe(a)
+    const b = buildRowIcons({ [V]: { paths: { '/v/x.md': 'lua', '/v/d/y.md': 'json' } } }, [V], rules, true, a)
     expect(b.rules).toBe(a.rules)
     const drawnUnder = (dir: string) => (p: string) => p.startsWith(`${dir}/`)
     expect(iconsChangedBelow(a, b, drawnUnder('/v/d'))).toBe(true)
     expect(iconsChangedBelow(a, b, drawnUnder('/v/e'))).toBe(false)
     // A rule changed: every level.
-    const c = buildRowIcons({ [V]: { paths: { '/v/x.md': 'lua', '/v/d/y.md': 'json' } } }, [V], [], b)
+    const c = buildRowIcons({ [V]: { paths: { '/v/x.md': 'lua', '/v/d/y.md': 'json' } } }, [V], [], true, b)
     expect(iconsChangedBelow(b, c, drawnUnder('/v/e'))).toBe(true)
   })
 })
@@ -117,7 +140,7 @@ describe("Material's tables load lazily (YAZ-3470)", () => {
     const fresh = await import('./rowIcons')
     const material = await import('./materialIcons')
     expect(material.materialIconsLoaded()).toBe(false)
-    const before = fresh.buildRowIcons({ [V]: { paths: { '/v/a.ts': 'lua' } } }, [V], [{ match: '*.md', kind: 'file', icon: 'python' }])
+    const before = fresh.buildRowIcons({ [V]: { paths: { '/v/a.ts': 'lua' } } }, [V], [{ match: '*.md', kind: 'file', icon: 'python' }], true)
     expect(before.material).toBe(false)
     expect(fresh.rowIcon(before, '/v/a.ts', 'a.ts', 'file')).toEqual({ id: 'file', custom: false })
     expect(fresh.rowIcon(before, '/v/b.md', 'b.md', 'file')).toEqual({ id: 'file', custom: false })
@@ -125,7 +148,7 @@ describe("Material's tables load lazily (YAZ-3470)", () => {
     expect(material.iconUrl('file')).toBe('/material-icons/file.svg')
 
     await material.loadMaterialIcons()
-    const after = fresh.buildRowIcons({ [V]: { paths: { '/v/a.ts': 'lua' } } }, [V], [{ match: '*.md', kind: 'file', icon: 'python' }], before)
+    const after = fresh.buildRowIcons({ [V]: { paths: { '/v/a.ts': 'lua' } } }, [V], [{ match: '*.md', kind: 'file', icon: 'python' }], true, before)
     expect(after).not.toBe(before)
     expect(after.material).toBe(true)
     expect(fresh.iconsChangedBelow(before, after, () => false)).toBe(true)
@@ -133,7 +156,7 @@ describe("Material's tables load lazily (YAZ-3470)", () => {
     expect(fresh.rowIcon(after, '/v/b.md', 'b.md', 'file')).toEqual({ id: 'python', custom: true })
     expect(fresh.rowIcon(after, '/v/src', 'src', 'folder', true)).toEqual({ id: 'folder-src-open', custom: false })
     // Built again with nothing new: the same object, so no level renders.
-    const again = fresh.buildRowIcons({ [V]: { paths: { '/v/a.ts': 'lua' } } }, [V], [{ match: '*.md', kind: 'file', icon: 'python' }], after)
+    const again = fresh.buildRowIcons({ [V]: { paths: { '/v/a.ts': 'lua' } } }, [V], [{ match: '*.md', kind: 'file', icon: 'python' }], true, after)
     expect(again).toBe(after)
     expect(fresh.iconsChangedBelow(after, again, () => true)).toBe(false)
   })
