@@ -5,6 +5,7 @@ import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type Ap
 import { storage } from '../lib/storage'
 import { RecentList } from './RecentList'
 import { MAX_RECENTS, timeOf } from './recents'
+import { rowIcon } from './rowIcons'
 
 const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
 const tree = (root: string, paths: string[]): TreeResponse => ({ root, tree: paths.map(note), generatedAt: 1 })
@@ -93,6 +94,14 @@ describe('RecentList (YAZ-3235 D3 to D7)', () => {
     expect(rows().map((r) => r.title)).toEqual(['/w/d.md', '/v/a.md', '/v/b.md'])
     expect(rows().map((r) => r.classList.contains('tree__row--active'))).toEqual([false, true, false])
     expect(msg()).toBeNull()
+  })
+
+  it("each row shows its Files row's icon first in its label (YAZ-3440 D11)", async () => {
+    await mount(stateWith({ '/v': { '/v/a.md': at(2026, 10, 23, 9, 5) } }))
+    const icon = rows()[0].querySelector<HTMLElement>('.tree__label > .file-icon:first-child')!
+    expect(icon.dataset.icon).toBe(rowIcon(undefined, '/v/a.md', 'a.md', 'file').id)
+    expect(icon.dataset.kind).toBe('markdown')
+    expect(rows()[0].querySelector('.tree__label')?.textContent).toBe('Alpha page')
   })
 
   it('S17: a click on a day heading folds it, and a second click opens it; all days start open', async () => {

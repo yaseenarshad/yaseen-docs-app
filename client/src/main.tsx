@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { App } from './App'
 import { warmEngineFor } from './drawings/engine'
 import { storage } from './lib/storage'
+import { loadMaterialIcons } from './sidebar/materialIcons'
 // Crepe's common theme file by file, in its own order, minus latex (KaTeX's stylesheet and its 59
 // fonts), top-bar, ai and diff (AI diff review): features that never load (YAZ-2184).
 // image-block.css stays, as it did through style.css.
@@ -35,6 +36,10 @@ function render(): void {
     </React.StrictMode>,
   )
 }
+
+// Material's icon tables (YAZ-3470): their own chunk, out of the startup bundle. They load beside the app state,
+// so they are in before a tree has rows; the first render does not wait for them.
+void loadMaterialIcons()
 
 // The app state lives in the main process (D9): load it (and this window's identity) before the first render.
 void storage

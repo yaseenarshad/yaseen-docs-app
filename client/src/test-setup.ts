@@ -1,5 +1,10 @@
-import { afterAll } from 'vitest'
+import { afterAll, beforeAll } from 'vitest'
+import { loadMaterialIcons } from './sidebar/materialIcons'
 import { trackMilkdownTimeouts } from './test-timers'
+
+// The app starts loading Material's icon tables before its first render (`main.tsx`, YAZ-3470), so they are in by
+// the time a tree, a tab or a picker draws: each test file starts with them in too.
+beforeAll(() => loadMaterialIcons())
 
 // jsdom lacks a few layout/observer APIs that ProseMirror/CodeMirror touch; Crepe otherwise runs fine in jsdom.
 class NoopObserver {

@@ -6,6 +6,7 @@
  * jail: any absolute path on the machine may be read or written.
  */
 
+import type { IconRule } from './vaultIcons'
 import type { ReviewEntry } from './reviews'
 import type { HotkeyOverrides } from './hotkeyBindings'
 
@@ -1499,6 +1500,28 @@ export interface SettingsState {
   sidebarLineStyle: SidebarLineStyle
   /** The sidebar tree (YAZ-3309 D9): the colour of its thread, `#rrggbb`; null = the Bullet threading colour, else the app accent. It travels with the settings folder. */
   sidebarThreadColor: string | null
+  /** The sidebar tree (YAZ-3440 D1, D2): how many levels of open folders stick at the top of the list while their rows scroll under them; 0 = off. Fewer stick while the stack would cover more than 40% of the list (`stickyFolders.ts`). It travels with the settings folder. */
+  sidebarStickyLevels: SidebarStickyLevels
+  /** The sidebar tree (YAZ-3440 D4): which icons its rows show — `material` (Material Icon Theme's, by file name, extension and folder name; the default) or `line` (the app's own line glyphs, one per kind). It travels with the settings folder. */
+  sidebarIconSet: SidebarIconSet
+  /** The sidebar tree (YAZ-3440 D4): its file icons — `quiet` (every note grey, the other kinds in colour; the default), `color` (notes in colour too), `grey` (every file icon grey) or `off` (no file icons). A row's own pick or a rule keeps its colours in `quiet`. Folder icons are `sidebarFolderIcons`. It travels with the settings folder. */
+  sidebarFileIcons: SidebarFileIcons
+  /** The sidebar tree (YAZ-3440 D5 amended): a folder icon before each folder's name — with Material its folder-name icon or the default folder, with Line a grey folder; the open twin while it is open. A vault row never has one. Independent of `sidebarFileIcons`, which is the file rows' alone. It travels with the settings folder. */
+  sidebarFolderIcons: boolean
+  /** The sidebar tree (YAZ-3440 D6): a folder's arrow turns at once (`instant`, the default) or over 0.12s (`smooth`, as before). Reduce motion always turns it at once. It travels with the settings folder. */
+  sidebarArrowMotion: SidebarArrowMotion
+  /**
+   * The sidebar tree (YAZ-3440 D13): the Files tab follows the open tab, as VS Code's "Auto Reveal" does. When the
+   * active tab changes to a file or a folder in a vault of the window, Files opens the folders above it and scrolls
+   * its row into view: to the centre if it was off screen, not at all if it shows. No flash, no focus change; while
+   * another tab of the sidebar shows, it waits until Files shows. A vault row the user closed opens for it (over YAZ-2602 R9). Off by default: the tree starts closed (YAZ-1642).
+   * It travels with the settings folder.
+   */
+  sidebarRevealActive: boolean
+  /** The sidebar tree (YAZ-3440 D4): each kind's own icon colour, `#rrggbb`; a kind not in it has the built-in colour (`{}` = all built in). It travels with the settings folder, as a whole. */
+  sidebarIconColors: SidebarIconColors
+  /** The sidebar tree (YAZ-3440 D9): the name rules, `[{ match, kind, icon }]` (`shared/vaultIcons.ts`), the first that matches a row's name and kind naming its Material icon, after the row's own pick in its vault's `icons.json`. A personal preference: one list for every vault, and it travels with the settings folder. */
+  sidebarIconRules: IconRule[]
   /**
    * The canvas preferences every drawing, every window and every relaunch share (Draw's 🔒 YAZ-1775 D9,
    * YAZ-3028): seeded into a canvas at mount and kept in step with the engine both ways. See `CanvasPrefs`.
@@ -1540,6 +1563,12 @@ export interface SettingsState {
    * `SIDEBAR_ZOOM_STEPS`; a stored value is kept within 50–200 (`SIDEBAR_ZOOM_MIN` / `_MAX`).
    */
   sidebarZoom: number
+  /**
+   * The App size in percent (YAZ-3432): the Chromium page zoom of EVERY window, a Files window too, set by main
+   * (`webContents.setZoomFactor`). Only `APP_ZOOM_STEPS`; anything else is stored as 100. Mouse only: the footer's
+   * zoom menu writes it, never ⌘+ / ⌘− / ⌘0. The sidebar zoom and a note's zoom stack on it.
+   */
+  appZoom: number
   /**
    * Code files (YAZ-3449, YAZ-3438 D5): every code tab opens read only, and shows the Read only chip. One app setting
    * for all code files, never stored with a file. "Allow edits" on a tab's chip unlocks that tab until it closes.
@@ -1601,6 +1630,27 @@ export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
 /** The sidebar tree (YAZ-3309 D7, D8): the look of its level lines. */
 export type SidebarLineStyle = 'plain' | 'thread'
 export const SIDEBAR_LINE_STYLES: readonly SidebarLineStyle[] = ['plain', 'thread']
+
+/** The sidebar tree (YAZ-3440 D2): how many levels of folders can stick at the top of the list, in the order Settings shows them; 0 = off. */
+export type SidebarStickyLevels = 0 | 3 | 5 | 7
+export const SIDEBAR_STICKY_LEVELS: readonly SidebarStickyLevels[] = [0, 3, 5, 7]
+
+/** The sidebar tree (YAZ-3440 D4): which icons its rows show, in the order Settings shows them. */
+export type SidebarIconSet = 'material' | 'line'
+export const SIDEBAR_ICON_SETS: readonly SidebarIconSet[] = ['material', 'line']
+
+/** The sidebar tree (YAZ-3440 D4): how its file and folder icons look, in the order Settings shows them. */
+export type SidebarFileIcons = 'quiet' | 'color' | 'grey' | 'off'
+export const SIDEBAR_FILE_ICONS: readonly SidebarFileIcons[] = ['quiet', 'color', 'grey', 'off']
+
+/** The sidebar tree (YAZ-3440 D6): how a folder's arrow turns. */
+export type SidebarArrowMotion = 'instant' | 'smooth'
+export const SIDEBAR_ARROW_MOTIONS: readonly SidebarArrowMotion[] = ['instant', 'smooth']
+
+/** The sidebar tree (YAZ-3440 D4): the kinds whose icon has a colour of its own, in the order Settings shows them. `note` is a Markdown file's, coloured only with "All colour". */
+export const SIDEBAR_ICON_KINDS = ['note', 'text', 'pdf', 'image', 'drawing', 'diagram'] as const
+export type SidebarIconKind = (typeof SIDEBAR_ICON_KINDS)[number]
+export type SidebarIconColors = Partial<Record<SidebarIconKind, string>>
 
 /** Heading styles (YAZ-3049 D5): the levels a style can change, in the order Settings shows them. Since 1.0.16 they are saved in each vault (`shared/textFormatting.ts`, YAZ-3066). */
 export const HEADING_KEYS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const
@@ -1719,6 +1769,14 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarLines: 'hover',
   sidebarLineStyle: 'plain',
   sidebarThreadColor: null,
+  sidebarStickyLevels: 7,
+  sidebarIconSet: 'material',
+  sidebarFileIcons: 'quiet',
+  sidebarFolderIcons: true,
+  sidebarArrowMotion: 'instant',
+  sidebarRevealActive: false,
+  sidebarIconColors: {},
+  sidebarIconRules: [],
   canvas: DEFAULT_CANVAS_PREFS,
   diagramDarkColors: 'adapt',
   libraryFolder: null,
@@ -1730,6 +1788,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   gestureSounds: true,
   hotkeys: {},
   sidebarZoom: 100,
+  appZoom: 100,
   codeReadOnly: false,
   codeWrap: true,
   codeMinimap: false,
@@ -1872,7 +1931,7 @@ export interface WindowEntry {
   kind?: WindowKind
   /**
    * A Files window's own sidebar zoom in percent (YAZ-3389 D13, which replaced YAZ-3357 D11's Chromium level): only
-   * its list grows, as `settings.sidebarZoom` does in a full window, and the footer's − % + and an unclaimed ⌘+ / ⌘− / ⌘0
+   * its list grows, as `settings.sidebarZoom` does in a full window, and the zoom menu's − % + and an unclaimed ⌘+ / ⌘− / ⌘0
    * there change this value, never the shared one. ⌘⇧W starts it one `SIDEBAR_ZOOM_STEPS` step above the window it came
    * from. Kept by the store on every Files window (`normalizeFilesZoom`); absent on a full window.
    */
@@ -2760,18 +2819,26 @@ export interface ClipboardPasteRequest {
 /** One ⌘+ / ⌘− / ⌘0 press: up, down, or back to the default (YAZ-1710). */
 export type ZoomStep = -1 | 0 | 1
 
-/** The sidebar zoom's steps in percent (YAZ-3389): the footer's − / + and an unclaimed ⌘− / ⌘+ walk them. */
+/** The sidebar zoom's steps in percent (YAZ-3389): the zoom menu's Sidebar − / + and an unclaimed ⌘− / ⌘+ walk them. */
 export const SIDEBAR_ZOOM_STEPS = [50, 75, 90, 100, 125, 150, 200] as const
 export const SIDEBAR_ZOOM_MIN = SIDEBAR_ZOOM_STEPS[0]
 export const SIDEBAR_ZOOM_MAX = SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]
 
+/** The App sizes in percent (YAZ-3432): the zoom menu's App size row walks them with − and +. */
+export const APP_ZOOM_STEPS = [90, 100, 110, 125] as const
+
 /**
- * One sidebar zoom step (YAZ-3389): the next step in `direction`. A value between two steps snaps to
- * the next one that way; at a wall (50% down, 200% up) the value comes back unchanged.
+ * One zoom step along `steps` (ascending): the next step in `direction`. A value between two steps snaps to the next
+ * one that way; at a wall (the first step down, the last up) the value comes back unchanged.
  */
-export function stepSidebarZoom(percent: number, direction: 1 | -1): number {
-  const next = direction === 1 ? SIDEBAR_ZOOM_STEPS.find((p) => p > percent) : [...SIDEBAR_ZOOM_STEPS].reverse().find((p) => p < percent)
+export function stepZoom(steps: readonly number[], percent: number, direction: 1 | -1): number {
+  const next = direction === 1 ? steps.find((p) => p > percent) : [...steps].reverse().find((p) => p < percent)
   return next ?? percent
+}
+
+/** One sidebar zoom step (YAZ-3389) along `SIDEBAR_ZOOM_STEPS`: 50% down and 200% up are the walls. */
+export function stepSidebarZoom(percent: number, direction: 1 | -1): number {
+  return stepZoom(SIDEBAR_ZOOM_STEPS, percent, direction)
 }
 
 /**

@@ -1,7 +1,9 @@
+import { cleanIconRules, isIconRules } from '@shared/vaultIcons'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
 import {
+  APP_ZOOM_STEPS,
   CODE_OUTLINE_SORTS,
   CODE_SYMBOL_KINDS,
   COMMENTS_ORDERS,
@@ -27,7 +29,12 @@ import {
   SECTION_LINES,
   SECTION_STEPS,
   SIDEBAR_DEFAULT_W,
+  SIDEBAR_ARROW_MOTIONS,
+  SIDEBAR_FILE_ICONS,
+  SIDEBAR_ICON_KINDS,
+  SIDEBAR_ICON_SETS,
   SIDEBAR_LINE_STYLES,
+  SIDEBAR_STICKY_LEVELS,
   SIDEBAR_MAX_W,
   SIDEBAR_MIN_W,
   SIDEBAR_ZOOM_MAX,
@@ -75,7 +82,12 @@ import {
   type SettingsState,
   type Session,
   type SidebarLens,
+  type SidebarArrowMotion,
+  type SidebarFileIcons,
+  type SidebarIconColors,
+  type SidebarIconSet,
   type SidebarLineStyle,
+  type SidebarStickyLevels,
   type SidebarSort,
   type SidebarTabsPrefs,
   type StartupWindows,
@@ -307,6 +319,12 @@ export function sanitizeSidebarTabs(raw: unknown): SidebarTabsPrefs {
 
 /** Each place's hover switch (YAZ-3403), strict — the IPC boundary's check: every place, each a boolean. */
 const isHoverPreviewIn = (v: unknown): v is Record<HoverPlace, boolean> => isRecord(v) && HOVER_PLACES.every((place) => typeof v[place] === 'boolean')
+/** The sidebar's icon colours (YAZ-3440 D4), strict: each entry a known kind and a `#rrggbb`. */
+const isIconColour = ([kind, colour]: [string, unknown]): boolean => (SIDEBAR_ICON_KINDS as readonly string[]).includes(kind) && isHexColour(colour)
+const isSidebarIconColors = (v: unknown): v is SidebarIconColors => isRecord(v) && !Array.isArray(v) && Object.entries(v).every(isIconColour)
+/** The icon colours on load: each entry that does not read (an unknown kind, a colour that is no `#rrggbb`) is dropped, so that kind has its built-in colour. */
+export const sanitizeSidebarIconColors = (raw: unknown): SidebarIconColors => (isSidebarIconColors(raw) ? raw : isRecord(raw) && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw).filter(isIconColour)) : {})
+
 /** The places' hover switches on load (YAZ-3403): each valid one is kept, a missing or broken one reads on — a file from before a place existed shows it. */
 export function sanitizeHoverPreviewIn(raw: unknown): Record<HoverPlace, boolean> {
   const src = isRecord(raw) ? raw : {}
@@ -387,6 +405,14 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   sidebarLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
   sidebarLineStyle: (v): v is SidebarLineStyle => typeof v === 'string' && (SIDEBAR_LINE_STYLES as readonly string[]).includes(v),
   sidebarThreadColor: (v): v is string | null => v === null || isHexColour(v),
+  sidebarStickyLevels: (v): v is SidebarStickyLevels => isFiniteNumber(v) && (SIDEBAR_STICKY_LEVELS as readonly number[]).includes(v),
+  sidebarIconSet: (v): v is SidebarIconSet => typeof v === 'string' && (SIDEBAR_ICON_SETS as readonly string[]).includes(v),
+  sidebarFileIcons: (v): v is SidebarFileIcons => typeof v === 'string' && (SIDEBAR_FILE_ICONS as readonly string[]).includes(v),
+  sidebarFolderIcons: (v): v is boolean => typeof v === 'boolean',
+  sidebarArrowMotion: (v): v is SidebarArrowMotion => typeof v === 'string' && (SIDEBAR_ARROW_MOTIONS as readonly string[]).includes(v),
+  sidebarRevealActive: (v): v is boolean => typeof v === 'boolean',
+  sidebarIconColors: isSidebarIconColors,
+  sidebarIconRules: isIconRules,
   // The canvas prefs (YAZ-3028, Draw's 🔒 YAZ-1775 D9): strict here, the IPC boundary's check; `sanitizeSettings` repairs them field by field.
   canvas: isCanvasPrefs,
   diagramDarkColors: (v): v is DiagramDarkColors => typeof v === 'string' && (DIAGRAM_DARK_COLORS as readonly string[]).includes(v),
@@ -401,6 +427,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   gestureSounds: (v): v is boolean => typeof v === 'boolean',
   hotkeys: isHotkeyOverrides,
   sidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
+  // YAZ-3432: one of the App sizes only; a stored value off them loads as 100 (the default, `sanitizeSettings`).
+  appZoom: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
   codeReadOnly: (v): v is boolean => typeof v === 'boolean',
   codeWrap: (v): v is boolean => typeof v === 'boolean',
   codeMinimap: (v): v is boolean => typeof v === 'boolean',
@@ -424,6 +452,9 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
+  out.sidebarIconColors = sanitizeSidebarIconColors(src.sidebarIconColors)
+  // YAZ-3440 D9: a rule that does not read costs itself alone.
+  out.sidebarIconRules = cleanIconRules(src.sidebarIconRules)
   out.codeOutlineHidden = sanitizeOutlineHidden(src.codeOutlineHidden)
   // YAZ-3389 D7: a number off the steps but inside 50–200 is kept; one outside is clamped, not reset; missing or not a number reads 100.
   if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
@@ -431,7 +462,8 @@ export function sanitizeSettings(raw: unknown): SettingsState {
 }
 
 /** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
-const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys']
+// The icon colours too (YAZ-3440 D4): a colour another Mac reset to its default is a key gone, which a merge by part would bring back.
+const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'sidebarIconColors']
 
 /**
  * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,

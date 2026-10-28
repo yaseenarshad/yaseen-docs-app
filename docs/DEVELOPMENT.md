@@ -41,6 +41,7 @@ open desktop/dist-app/*.dmg
   - `<folder>/.folder.md`: a folder's settings — its views and columns under the single `folder_settings` key, with the folder's own properties and comments beside them (frontmatter only; created by the first change, never by opening the folder).
   - `<vault>/.yaseendocs/properties.json`: the vault-wide property declarations, in the `.obsidian`-style dotfolder.
   - `<vault>/.yaseendocs/favorites.json`: the Favorites (YAZ-1766).
+  - `<vault>/.yaseendocs/icons.json`: the sidebar's one-row icon picks (YAZ-3440), by vault-relative path ("Change icon ▸ This file…"). A pick follows an in-app rename or move and leaves with a delete; sync merges it per pick. The name rules ("Change icon ▸ All .gif files…", Settings › Sidebar › Icon rules) are a setting, `sidebarIconRules`, not in the vault.
   - `<vault>/.yaseendocs/focus.<mac id>.json`: the focus list, one file for each Mac; the newest file is the list, and no window holds one (YAZ-2702).
   - `<vault>/.yaseendocs/shares.json`: which boards are shared as links, and their ids (YAZ-3040). Sync merges it per entry.
   - `<vault>/.yaseendocs/github.json`: the vault's sync switch (YAZ-1081).
@@ -67,7 +68,7 @@ ls "$HOME/Library/Application Support/Yaseen Docs/"
 
 ```bash
 npm test          # vitest suite, FOUR projects: client (jsdom), desktop (node), tools (node — the packaging checks, the budget gate and the perf harness), perf (jsdom — the budget tripwires)
-npm run e2e       # Playwright-Electron suite (desktop/e2e/, 84 specs; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
+npm run e2e       # Playwright-Electron suite (desktop/e2e/, 86 specs; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
 npm run typecheck
 npm run build     # electron-vite build → desktop/out, then the share viewer → share/dist/assets
 npm run perf:budget:ci   # the size and integrity gate on desktop/out (what CI runs, after build)

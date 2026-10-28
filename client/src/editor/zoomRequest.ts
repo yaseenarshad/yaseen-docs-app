@@ -5,8 +5,8 @@ import { readOnlySelectionHolder } from '../lib/readOnlyCaret'
  * ⌘+ / ⌘− / ⌘0 (YAZ-1710): the menu sends a step; the renderer decides where it lands. A
  * bubbling event leaves the focused element, and the note whose section contains the focus
  * claims it with `preventDefault` (see `Editor.tsx`). Nobody claimed it — focus is in the
- * sidebar, a dialog, or nowhere — so `onUnclaimed` runs: the sidebar zoom (YAZ-3389; the window
- * itself never zooms any more).
+ * sidebar, a dialog, or nowhere — so `onUnclaimed` runs: the sidebar zoom (YAZ-3389). The keys
+ * never zoom the window: its App size is mouse only, in the footer's zoom menu (YAZ-3432).
  */
 export const ZOOM_EVENT = 'yaseendocs:zoom'
 

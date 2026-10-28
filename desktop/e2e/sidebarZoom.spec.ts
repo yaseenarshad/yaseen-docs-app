@@ -1,24 +1,29 @@
 /**
- * The SIDEBAR zoom (YAZ-3389), in the REAL app: "Zoom the sidebar in" makes the footer say 125% and
+ * The SIDEBAR zoom (YAZ-3389), in the REAL app, from the footer's zoom chip and its menu (YAZ-3432): the menu's
+ * "Zoom the sidebar in" makes the chip say 125% and
  * a tree row 1.25× taller on screen, while the sidebar's header, its tab row and the footer's cog keep
  * their size and place, and the window's own Chromium zoom stays 0. The value is a setting: it is in
  * the state file after a quit and comes back on the next launch. The percent goes back to 100%, and
  * View › Zoom In / Actual Size with no note focused step the same zoom. A Chromium zoom left from an
  * older build goes back to 0 at the next load (D8). A Files window (D13) zooms its own list: it opens one step above
- * the full window's sidebar zoom, and its footer and View › Zoom In change only its own value.
+ * the full window's sidebar zoom, and its zoom menu and View › Zoom In change only its own value.
  * The footer fits (YAZ-3401): from the narrowest sidebar (180 px) up, with the "Files window" chip, with an update
  * ready (a fake feed, as `update.spec`), and with both, no item runs past the footer and no label is cut.
+ * The APP SIZE (YAZ-3432): the menu's App size row, on top and the same "− 100% +" as the Sidebar row below it, zooms
+ * every window (Chromium's page zoom, a Files window too), a tab 1.25× larger on the screen at 125%, while the menu
+ * keeps its size and its place, so a double click on + takes 100 to 125; it opens right above the chip at 125%, the
+ * footer still fits at 180 px, and the value comes back after a relaunch; its percent goes back to 100%.
  *
  * Serial (the suite's idiom): each step continues the last.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SIDEBAR_MIN_W } from '../../shared/types'
-import { appWindow, buildFixtureVault, clickMenuItem, copyVault, extraWindow, fileRow, launchApp, quitApp, readState, seededState, shoot, winParam } from './helpers'
+import { ARTIFACTS_DIR, activeTab, appWindow, buildFixtureVault, clickMenuItem, copyVault, extraWindow, fileRow, launchApp, quitApp, readState, seededState, shoot, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -28,8 +33,29 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const control = (w: Page) => w.locator('.sidebar__footer [role="group"][aria-label="Sidebar zoom"]')
-const percent = (w: Page) => control(w).locator('.sidebar-zoom__value')
+/** The footer's zoom chip (YAZ-3432): it shows the sidebar zoom and opens the menu. */
+const zoomChip = (w: Page) => w.locator('.sidebar__footer .zoom-chip')
+const zoomMenu = (w: Page) => w.locator('.zoom-menu[role="dialog"]')
+/** The menu's Sidebar row, "− 100% +"; the menu opens first when it is not up. */
+async function control(w: Page) {
+  if ((await zoomMenu(w).count()) === 0) await zoomChip(w).click()
+  return zoomMenu(w).locator('[role="group"][aria-label="Sidebar zoom"]')
+}
+/** The menu's App size row, the same "− 100% +" as the Sidebar row (YAZ-3432), and its percent. */
+const appRow = (w: Page) => zoomMenu(w).locator('[role="group"][aria-label="App size"]')
+const appPercent = (w: Page) => appRow(w).locator('.zoom-stepper__value')
+/** The real Chromium zoom factor of the window with `?win=<id>`, from main. */
+const zoomFactor = (a: ElectronApplication, id = 'w1'): Promise<number> =>
+  a.evaluate(({ BrowserWindow }, winId) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes(`win=${winId}`))!.webContents.getZoomFactor(), id)
+/** An element's box in SCREEN px (page px × `devicePixelRatio`, which Chromium's page zoom raises), rounded to 0.1. */
+const screenBox = (w: Page, selector: string) =>
+  w.locator(selector).first().evaluate(async (el) => {
+    await Promise.all(el.getAnimations().map((a) => a.finished)) // the menu's settle-in moves it 4 px
+    const r = el.getBoundingClientRect()
+    const k = window.devicePixelRatio
+    const round = (v: number) => Math.round(v * k * 10) / 10
+    return { x: round(r.x), y: round(r.y), width: round(r.width), height: round(r.height), dpr: k }
+  })
 /** Where an element is on the screen, in CSS px of the viewport (standardized zoom counts in `getBoundingClientRect`). */
 const box = (w: Page, selector: string) =>
   w.locator(selector).first().evaluate((el) => {
@@ -59,9 +85,9 @@ const footerFaults = (w: Page): Promise<string[]> =>
     const style = getComputedStyle(footer)
     const [left, right] = [box.left + parseFloat(style.paddingLeft), box.right - parseFloat(style.paddingRight)]
     if (footer.scrollWidth > footer.clientWidth) out.push(`footer: content ${footer.scrollWidth} > ${footer.clientWidth}`)
-    // The cog and the whole zoom control always show, on one row.
-    const tops = Array.from(footer.querySelectorAll('.settings-button, .sidebar-zoom > button')).map((el) => (el.getClientRects().length === 0 ? null : Math.round(el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2)))
-    if (tops.length !== 4 || tops.some((t) => t === null || t !== tops[0])) out.push(`the cog and the zoom are not all shown on one row: ${JSON.stringify(tops)}`)
+    // The cog and the zoom chip always show, on one row.
+    const tops = Array.from(footer.querySelectorAll('.settings-button, .zoom-chip')).map((el) => (el.getClientRects().length === 0 ? null : Math.round(el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2)))
+    if (tops.length !== 2 || tops.some((t) => t === null || t !== tops[0])) out.push(`the cog and the zoom chip are not both shown on one row: ${JSON.stringify(tops)}`)
     for (const el of Array.from(footer.querySelectorAll<HTMLElement | SVGElement>('*'))) {
       if (el.getClientRects().length === 0) continue // not rendered
       const name = `${el.tagName.toLowerCase()}.${(el.getAttribute('class') ?? '').split(' ')[0]} "${el.textContent ?? ''}"`
@@ -75,11 +101,11 @@ const footerFaults = (w: Page): Promise<string[]> =>
 /**
  * Each width from the narrowest sidebar to 400 px, in 10 px steps, and each breakpoint's first width: the footer's
  * content box is 17 px narrower than a full window's sidebar (the padding and the resize edge) and 16 px narrower
- * than a Files window. The chip's 212 and 239 (app.css) are Files windows of 228 and 255. The pill's slot is the
- * footer less the cog, the zoom and the chip (update.css): its 119 and 156 are a sidebar of 248 and 285, and a Files
- * window (with "Files window") of 349 and 386.
+ * than a Files window. The chip's 168 and 195 (app.css) are Files windows of 184 and 211. The pill's slot is the
+ * footer less the cog, the zoom chip and the Files window chip (update.css): its 119 and 156 are a sidebar of 204 and
+ * 241, and a Files window (with "Files window") of 305 and 342.
  */
-const WIDTHS = [...new Set([...Array.from({ length: (400 - SIDEBAR_MIN_W) / 10 + 1 }, (_, i) => SIDEBAR_MIN_W + i * 10), 228, 248, 255, 285, 349, 386])].sort((a, b) => a - b)
+const WIDTHS = [...new Set([...Array.from({ length: (400 - SIDEBAR_MIN_W) / 10 + 1 }, (_, i) => SIDEBAR_MIN_W + i * 10), 184, 204, 211, 241, 305, 342])].sort((a, b) => a - b)
 /** Set the outer width of the window with `?win=<id>` from main. A Files window's sidebar is the whole window. */
 const setWindowWidth = (a: ElectronApplication, id: string, width: number): Promise<void> =>
   a.evaluate(({ BrowserWindow }, arg) => {
@@ -135,18 +161,21 @@ test('step 1 — "Zoom the sidebar in": 125%, a tree row 1.25× taller, the head
   // No note open: nothing claims the menu's zoom later, so it reaches the sidebar.
   app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
-  await expect(percent(win)).toHaveText('100%')
+  await expect(zoomChip(win)).toHaveText('100%')
   await expect(fileRow(win, 'Ideas')).toBeVisible()
   expect(await zoomLevel(app)).toBe(0)
 
   const row = await rowHeight(win)
   const chrome = await Promise.all(CHROME.map((s) => box(win, s)))
-  await control(win).getByRole('button', { name: 'Zoom the sidebar in', exact: true }).click()
-  await expect(percent(win)).toHaveText('125%')
+  await (await control(win)).getByRole('button', { name: 'Zoom the sidebar in', exact: true }).click()
+  await expect(zoomChip(win)).toHaveText('125%')
+  await expect((await control(win)).locator('.zoom-stepper__value')).toHaveText('125%')
   await expect.poll(async () => (await rowHeight(win)) / row).toBeCloseTo(1.25, 1)
   expect(await Promise.all(CHROME.map((s) => box(win, s)))).toEqual(chrome)
   expect(await zoomLevel(app)).toBe(0)
   await shoot(win, 'sidebarzoom-01-125')
+  await win.keyboard.press('Escape')
+  await expect(zoomMenu(win)).toHaveCount(0)
 })
 
 test('step 2 — quit and launch again: the state file says 125 and the sidebar comes back at 125%', async () => {
@@ -154,28 +183,29 @@ test('step 2 — quit and launch again: the state file says 125 and the sidebar 
   expect((await readState(userData)).settings.sidebarZoom).toBe(125)
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
-  await expect(percent(win)).toHaveText('125%')
+  await expect(zoomChip(win)).toHaveText('125%')
   expect(await zoomLevel(app)).toBe(0)
 })
 
-test('step 3 — a click on the percent goes back to 100%', async () => {
-  await percent(win).click()
-  await expect(percent(win)).toHaveText('100%')
+test('step 3 — a click on the menu\'s percent goes back to 100%', async () => {
+  await (await control(win)).locator('.zoom-stepper__value').click()
+  await expect(zoomChip(win)).toHaveText('100%')
+  await win.keyboard.press('Escape')
 })
 
 test('step 4 — View › Zoom In and Actual Size, with no note focused, step the sidebar zoom and never the window', async () => {
   await clickMenuItem(app, 'menu.view.zoom-in', 'w1')
-  await expect(percent(win)).toHaveText('125%')
+  await expect(zoomChip(win)).toHaveText('125%')
   await clickMenuItem(app, 'menu.view.zoom-reset', 'w1')
-  await expect(percent(win)).toHaveText('100%')
+  await expect(zoomChip(win)).toHaveText('100%')
   expect(await zoomLevel(app)).toBe(0)
 })
 
-test('step 5 — a Chromium zoom from an older build: the next load sets it back to 0 (D8)', async () => {
+test('step 5 — a Chromium zoom from an older build: the next load sets it back to the App size, 100% (D8, YAZ-3432)', async () => {
   await setZoomLevel(app, 2)
   expect(await zoomLevel(app)).toBe(2)
   await win.reload()
-  await expect(percent(win)).toHaveText('100%')
+  await expect(zoomChip(win)).toHaveText('100%')
   await expect.poll(() => zoomLevel(app)).toBe(0)
 })
 
@@ -183,15 +213,16 @@ test('step 6 — a Files window (D13): it opens one step above (125%), its + and
   await clickMenuItem(app, 'menu.file.new-files-window', 'w1')
   const files = await extraWindow(app, ['w1'])
   const filesId = winParam(files) ?? ''
-  await expect(percent(files)).toHaveText('125%')
+  await expect(zoomChip(files)).toHaveText('125%')
   await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === filesId)?.zoom).toBe(125)
-  await control(files).getByRole('button', { name: 'Zoom the sidebar in', exact: true }).click()
-  await expect(percent(files)).toHaveText('150%')
+  await (await control(files)).getByRole('button', { name: 'Zoom the sidebar in', exact: true }).click()
+  await expect(zoomChip(files)).toHaveText('150%')
+  await files.keyboard.press('Escape')
   await clickMenuItem(app, 'menu.view.zoom-in', filesId)
-  await expect(percent(files)).toHaveText('200%')
+  await expect(zoomChip(files)).toHaveText('200%')
   await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === filesId)?.zoom).toBe(200)
   // The full window and the shared setting never moved; no window has a Chromium zoom.
-  await expect(percent(win)).toHaveText('100%')
+  await expect(zoomChip(win)).toHaveText('100%')
   expect((await readState(userData)).settings.sidebarZoom).toBe(100)
   expect(await zoomLevel(app, filesId)).toBe(0)
   expect(await zoomLevel(app)).toBe(0)
@@ -243,27 +274,27 @@ test('step 8 — YAZ-3401: with an update ready, the footer fits from 180 px up,
     await expect(sheet).toHaveCount(0)
     await expect.poll(() => sidebarW(win)).toBe(SIDEBAR_MIN_W)
 
-    // The full window: the cog, the zoom and the pill.
+    // The full window: the cog, the zoom chip and the pill.
     expect.soft(await footerFaults(win), `full window at ${SIDEBAR_MIN_W} px, update ready`).toEqual([])
     expect.soft(await pillShows(win)).toBe('🎉')
     await shoot(win, `sidebarzoom-08-full-${SIDEBAR_MIN_W}`)
-    await dragSidebarTo(win, 260)
-    expect.soft(await footerFaults(win), 'full window at 260 px, update ready').toEqual([])
+    await dragSidebarTo(win, 220)
+    expect.soft(await footerFaults(win), 'full window at 220 px, update ready').toEqual([])
     expect.soft(await pillShows(win)).toBe('Update')
-    await shoot(win, 'sidebarzoom-08-full-260')
+    await shoot(win, 'sidebarzoom-08-full-220')
     expect.soft(await sweep(win, (width) => dragSidebarTo(win, width)), 'full window, 180–400 px, update ready').toEqual({})
-    // The short words from 248 px, the full words from 285 px: as soon as each fits.
-    await dragSidebarTo(win, 247)
+    // The short words from 204 px, the full words from 241 px: as soon as each fits.
+    await dragSidebarTo(win, 203)
     expect.soft(await pillShows(win)).toBe('🎉')
-    await dragSidebarTo(win, 248)
+    await dragSidebarTo(win, 204)
     expect.soft(await pillShows(win)).toBe('Update')
-    await dragSidebarTo(win, 284)
+    await dragSidebarTo(win, 240)
     expect.soft(await pillShows(win)).toBe('Update')
-    await dragSidebarTo(win, 285)
+    await dragSidebarTo(win, 241)
     expect.soft(await pillShows(win)).toBe('New update ready')
     await expect(pill(win)).toHaveAttribute('title', "Click to see what's new")
 
-    // A Files window: the cog, the zoom, the chip and the pill.
+    // A Files window: the cog, the zoom chip, the Files window chip and the pill.
     await clickMenuItem(app, 'menu.file.new-files-window', 'w1')
     const files = await extraWindow(app, ['w1'])
     const filesId = winParam(files) ?? ''
@@ -284,12 +315,202 @@ test('step 8 — YAZ-3401: with an update ready, the footer fits from 180 px up,
       await expect(chip(files)).toHaveAccessibleName('Files window')
     }
     expect.soft(await sweep(files, fit), 'Files window, 180–400 px, update ready').toEqual({})
-    // Beside the chip, the pill keeps its round 🎉 to 348 px, then its short words, then its full words from 386 px.
-    for (const [width, shows] of [[348, '🎉'], [349, 'Update'], [385, 'Update'], [386, 'New update ready']] as const) {
+    // Beside the chip, the pill keeps its round 🎉 to 304 px, then its short words, then its full words from 342 px.
+    for (const [width, shows] of [[304, '🎉'], [305, 'Update'], [341, 'Update'], [342, 'New update ready']] as const) {
       await fit(width)
       expect.soft(await pillShows(files), `Files window at ${width} px`).toBe(shows)
     }
   } finally {
     await new Promise((resolve) => server.close(resolve))
   }
+})
+
+/**
+ * A step screenshot of a window at an App size other than 100%, from main (`capturePage`): `page.screenshot` sizes its
+ * shot by the page's px and so cuts a zoomed window short. Same name and folder as `shoot`.
+ */
+async function shootZoomed(a: ElectronApplication, w: Page, name: string): Promise<void> {
+  const id = winParam(w) ?? ''
+  const png = await a.evaluate(async ({ BrowserWindow }, winId) => (await BrowserWindow.getAllWindows().find((bw) => bw.webContents.getURL().includes(`win=${winId}`))!.webContents.capturePage()).toPNG().toString('base64'), id)
+  await mkdir(ARTIFACTS_DIR, { recursive: true })
+  await writeFile(path.join(ARTIFACTS_DIR, `${name}.png`), Buffer.from(png, 'base64'))
+}
+/** The Files window step 8 opened (its `?win=` is not w1). */
+const filesPage = (): Page => app.windows().find((p) => p !== win && winParam(p) !== null && winParam(p) !== 'w1')!
+/** The menu's box against the chip's, in page px: how far its bottom is above the chip's top, its left against the chip's, its right against the window's. */
+const menuPlace = (w: Page) =>
+  w.evaluate(async () => {
+    await Promise.all(document.querySelector('.zoom-menu')!.getAnimations().map((a) => a.finished))
+    const m = document.querySelector('.zoom-menu')!.getBoundingClientRect()
+    const c = document.querySelector('.sidebar__footer .zoom-chip')!.getBoundingClientRect()
+    return { above: Math.round((c.top - m.bottom) * 10) / 10, left: Math.round((m.left - c.left) * 10) / 10, room: Math.round((window.innerWidth - m.right) * 10) / 10 }
+  })
+const ACTIVE_TAB = '.tabbar [role="tab"][aria-selected="true"]'
+
+test('step 9 — YAZ-3432: the zoom chip opens the menu right above it, App size on top and Sidebar below, each − % +; Escape and a click outside close it', async () => {
+  await dragSidebarTo(win, 260)
+  await expect(zoomChip(win)).toHaveAttribute('aria-expanded', 'false')
+  await zoomChip(win).click()
+  await expect(zoomMenu(win)).toBeVisible()
+  await expect(zoomChip(win)).toHaveAttribute('aria-expanded', 'true')
+  // App size on top, Sidebar at the bottom next to the chip; both rows the same "− 100% +".
+  await expect(zoomMenu(win).locator('.zoom-menu__label')).toHaveText(['App size', 'Sidebar'])
+  await expect(zoomMenu(win).locator('[role="group"]')).toHaveText(['−100%+', '−100%+'])
+  await expect(appRow(win).getByRole('button', { name: 'Make the app smaller', exact: true })).toBeEnabled()
+  const place = await menuPlace(win)
+  expect(place.above).toBeCloseTo(4, 0)
+  expect(place.left).toBeCloseTo(0, 0)
+  expect(place.room).toBeGreaterThan(0)
+  await shoot(win, 'sidebarzoom-09-menu')
+  await win.keyboard.press('Escape')
+  await expect(zoomMenu(win)).toHaveCount(0)
+  await expect(zoomChip(win)).toBeFocused()
+  await zoomChip(win).click()
+  await expect(zoomMenu(win)).toBeVisible()
+  await win.mouse.click(700, 400) // the page, away from the menu
+  await expect(zoomMenu(win)).toHaveCount(0)
+})
+
+test('step 10 — YAZ-3432: a double click on App size + (100 → 125) zooms every window, a tab 1.25× and the Files window too, while the menu and its + keep their size and place', async () => {
+  const files = filesPage()
+  const filesId = winParam(files) ?? ''
+  await fileRow(win, 'Ideas').click()
+  await expect(activeTab(win)).toBeVisible()
+  const tab = await screenBox(win, ACTIVE_TAB)
+  const filesRow = await screenBox(files, '.tree__row--file')
+  const filesPageW = await sidebarW(files)
+  expect([await zoomFactor(app), await zoomFactor(app, filesId)]).toEqual([1, 1])
+
+  await zoomChip(win).click()
+  const before = await screenBox(win, '.zoom-menu')
+  const plus = appRow(win).getByRole('button', { name: 'Make the app larger', exact: true })
+  const plusBefore = await screenBox(win, '.zoom-menu [aria-label="App size"] button[aria-label="Make the app larger"]')
+  await shoot(win, 'sidebarzoom-10-app-100-menu-open')
+  // A quick double click on + at one point on the screen: both clicks land on +, 100 → 110 → 125, and + is then off.
+  await plus.dblclick()
+  await expect(appPercent(win)).toHaveText('125%')
+  await expect(plus).toBeDisabled()
+  await expect.poll(() => zoomFactor(app)).toBe(1.25)
+  await expect.poll(() => zoomFactor(app, filesId)).toBe(1.25)
+  await expect.poll(async () => (await screenBox(win, ACTIVE_TAB)).height / tab.height).toBeCloseTo(1.25, 1)
+  await expect.poll(async () => (await screenBox(win, ACTIVE_TAB)).width / tab.width).toBeCloseTo(1.25, 1)
+  await expect.poll(async () => (await screenBox(files, '.tree__row--file')).height / filesRow.height).toBeCloseTo(1.25, 1)
+  // YAZ-3441: the open Files window grew by the same factor, so its page keeps its width.
+  await expect.poll(() => sidebarW(files)).toBe(filesPageW)
+  // The menu on the screen: the same size, in the same place, so the buttons stay under the pointer.
+  const after = await screenBox(win, '.zoom-menu')
+  expect(after.dpr / before.dpr).toBeCloseTo(1.25, 2)
+  const plusAfter = await screenBox(win, '.zoom-menu [aria-label="App size"] button[aria-label="Make the app larger"]')
+  for (const k of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(plusAfter[k] - plusBefore[k]), `+ ${k}: ${plusBefore[k]} → ${plusAfter[k]}`).toBeLessThanOrEqual(1.5)
+  for (const k of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(after[k] - before[k]), `menu ${k}: ${before[k]} → ${after[k]}`).toBeLessThanOrEqual(1.5)
+  await expect.poll(async () => (await readState(userData)).settings.appZoom).toBe(125)
+  await shootZoomed(app, win, 'sidebarzoom-10-app-125-menu-open')
+  await shootZoomed(app, files, 'sidebarzoom-10-files-125')
+  // The Files window's own menu says the same.
+  await zoomChip(files).click()
+  await expect(appPercent(files)).toHaveText('125%')
+  await files.keyboard.press('Escape')
+  await expect(zoomMenu(files)).toHaveCount(0)
+})
+
+test('step 11 — YAZ-3432, YAZ-3441: at 125% the menu opens right above the chip and inside the window; the footer still fits at 180 px; a new Files window\'s page is as wide as the 180 px sidebar, with its "Files" tab', async () => {
+  await win.keyboard.press('Escape')
+  await expect(zoomMenu(win)).toHaveCount(0)
+  await zoomChip(win).click()
+  // Within a page px: at 125% the 4 px gap is 5 screen px, snapped to whole device pixels.
+  const place = await menuPlace(win)
+  expect(Math.abs(place.above - 4)).toBeLessThanOrEqual(1)
+  expect(Math.abs(place.left)).toBeLessThanOrEqual(1)
+  expect(place.room).toBeGreaterThan(0)
+  await shootZoomed(app, win, 'sidebarzoom-11-menu-at-125')
+  await win.keyboard.press('Escape')
+
+  await dragSidebarTo(win, SIDEBAR_MIN_W)
+  expect.soft(await footerFaults(win), `full window at ${SIDEBAR_MIN_W} px, App size 125%`).toEqual([])
+  await zoomChip(win).click()
+  await shootZoomed(app, win, `sidebarzoom-11-full-${SIDEBAR_MIN_W}-at-125`)
+  await win.keyboard.press('Escape')
+
+  // YAZ-3441: File › New Files Window from the 180 px sidebar, with no resize by hand. The window is 225 px on the
+  // screen, so its page is 180 px, as wide as the source's sidebar, and the "Files" tab shows (it went to ⋯ at 144 px).
+  const known = app.windows().map(winParam).filter((id): id is string => id !== null)
+  await clickMenuItem(app, 'menu.file.new-files-window', 'w1')
+  const files = await extraWindow(app, known)
+  const filesId = winParam(files) ?? ''
+  await expect.poll(() => sidebarW(files)).toBe(SIDEBAR_MIN_W)
+  expect(await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes(`win=${id}`))!.getBounds().width, filesId)).toBe(SIDEBAR_MIN_W * 1.25)
+  await expect(files.locator('.sidebar__lenses .sidebar__lens').filter({ hasText: /^Files$/ })).toBeVisible()
+  // The menu, wider than the chip's room, moves left to stay inside it (a measure that once looped and blanked the window).
+  expect.soft(await footerFaults(files), `Files window at ${SIDEBAR_MIN_W} px, App size 125%`).toEqual([])
+  await zoomChip(files).click()
+  await expect(zoomMenu(files)).toBeVisible()
+  expect((await menuPlace(files)).room).toBeGreaterThanOrEqual(0)
+  await shootZoomed(app, files, `sidebarzoom-11-files-${SIDEBAR_MIN_W}-at-125`)
+  await files.keyboard.press('Escape')
+})
+
+test('step 12 — YAZ-3432: quit and launch again: the state file says 125 and every window comes back at 125%; a click on the App size percent goes back to 100%', async () => {
+  await quitApp(app)
+  expect((await readState(userData)).settings.appZoom).toBe(125)
+  app = await launchApp({ userData })
+  win = await appWindow(app, 'w1')
+  await expect.poll(() => zoomFactor(app)).toBe(1.25)
+  await expect(activeTab(win)).toBeVisible()
+  await shootZoomed(app, win, 'sidebarzoom-12-relaunch-125')
+  await zoomChip(win).click()
+  await appPercent(win).click()
+  await expect.poll(() => zoomFactor(app)).toBe(1)
+  await expect.poll(async () => (await readState(userData)).settings.appZoom).toBe(100)
+})
+
+/**
+ * Where the centre of `selector` is on the SCREEN, in screen px: the window's content x and y from main, plus the box
+ * in the page × the page's zoom. `screenBox` measures inside the window only, so it cannot see the window move.
+ */
+const onScreen = async (w: Page, selector: string) => {
+  const id = winParam(w) ?? ''
+  const [content, zoom] = await app.evaluate(({ BrowserWindow }, winId) => {
+    const bw = BrowserWindow.getAllWindows().find((b) => b.webContents.getURL().includes(`win=${winId}`))!
+    return [bw.getContentBounds(), bw.webContents.getZoomFactor()] as const
+  }, id)
+  const r = await w.locator(selector).first().evaluate(async (el) => {
+    await Promise.all(el.closest('.zoom-menu')?.getAnimations().map((a) => a.finished) ?? [])
+    const b = el.getBoundingClientRect()
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+  })
+  return { x: Math.round((content.x + r.x * zoom) * 10) / 10, y: Math.round((content.y + r.y * zoom) * 10) / 10 }
+}
+
+test('step 13 — YAZ-3444: in a Files window, a quick double click on its own menu\'s App size + keeps + at one SCREEN point (100 → 125); the window takes its page width back when the menu closes', async () => {
+  // w1 with room on its left: the Files window opens flush left of it, away from the screen's edge.
+  await app.evaluate(({ BrowserWindow }) => {
+    const bw = BrowserWindow.getAllWindows().find((b) => b.webContents.getURL().includes('win=w1'))!
+    bw.setBounds({ ...bw.getBounds(), x: 700 })
+  })
+  const known = app.windows().map(winParam).filter((id): id is string => id !== null)
+  await clickMenuItem(app, 'menu.file.new-files-window', 'w1')
+  const files = await extraWindow(app, known)
+  const filesId = winParam(files) ?? ''
+  await expect(zoomChip(files)).toBeVisible()
+  expect(await zoomFactor(app, filesId)).toBe(1)
+  const pageW = await sidebarW(files)
+
+  await zoomChip(files).click()
+  const PLUS = '.zoom-menu [aria-label="App size"] button[aria-label="Make the app larger"]'
+  const before = await onScreen(files, PLUS)
+  await appRow(files).getByRole('button', { name: 'Make the app larger', exact: true }).dblclick()
+  // Both clicks landed on +: 125%, and the menu is still open.
+  await expect(appPercent(files)).toHaveText('125%')
+  await expect.poll(() => zoomFactor(app, filesId)).toBe(1.25)
+  await expect(zoomMenu(files)).toBeVisible()
+  const after = await onScreen(files, PLUS)
+  expect(Math.abs(after.x - before.x), `+ x on the screen: ${before.x} → ${after.x}`).toBeLessThanOrEqual(1.5)
+  expect(Math.abs(after.y - before.y), `+ y on the screen: ${before.y} → ${after.y}`).toBeLessThanOrEqual(1.5)
+  await shootZoomed(app, files, 'sidebarzoom-13-files-menu-125')
+
+  // The menu closes: the window takes the width that gives its page the width it had at 100%.
+  await files.keyboard.press('Escape')
+  await expect(zoomMenu(files)).toHaveCount(0)
+  await expect.poll(() => sidebarW(files)).toBe(pageW)
+  await shootZoomed(app, files, 'sidebarzoom-13-files-closed-125')
 })

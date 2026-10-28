@@ -3,9 +3,9 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, LOCAL_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, HOVER_PLACES, hoverOn, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, stepSidebarZoom, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { APP_ZOOM_STEPS, DEFAULT_SETTINGS, LOCAL_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, HOVER_PLACES, hoverOn, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, stepSidebarZoom, stepZoom, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
-import { createStore, isSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
+import { createStore, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -441,6 +441,26 @@ describe('createStore: loading', () => {
     for (const zoom of [49, 201, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarZoom: zoom })).toBe(false)
   })
 
+  it('appZoom (YAZ-3432): an older file without the key loads at 100; only 90 · 100 · 110 · 125 are kept, anything else loads at 100; the channel takes those four only', async () => {
+    expect(DEFAULT_SETTINGS.appZoom).toBe(100)
+    expect([...APP_ZOOM_STEPS]).toEqual([90, 100, 110, 125])
+    const { appZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
+    const loaded = async (appZoom: unknown): Promise<number> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', appZoom } }))
+      const { settings } = createStore(file).get()
+      expect(settings.theme).toBe('dark') // one bad field costs that field only
+      return settings.appZoom
+    }
+    for (const zoom of APP_ZOOM_STEPS) expect(await loaded(zoom)).toBe(zoom)
+    for (const zoom of [105, 80, 200, 0, -125, '125', null, true, {}]) expect(await loaded(zoom)).toBe(100)
+    for (const zoom of [NaN, Infinity]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, appZoom: zoom }).appZoom).toBe(100)
+
+    for (const zoom of APP_ZOOM_STEPS) expect(isSettings({ ...DEFAULT_SETTINGS, appZoom: zoom })).toBe(true)
+    for (const zoom of [95, 150, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, appZoom: zoom })).toBe(false)
+  })
+
   it('hoverPreviewIn (YAZ-3403 D7, S37): a file from before reads every place on; a missing or broken place reads on and the others keep their values; the channel takes eight booleans only', async () => {
     const allOn = { ...DEFAULT_SETTINGS.hoverPreviewIn }
     expect(allOn).toEqual(Object.fromEntries(HOVER_PLACES.map((place) => [place, true])))
@@ -468,7 +488,7 @@ describe('createStore: loading', () => {
     expect(hoverOn({ hoverPreview: false, hoverPreviewIn: places }, 'newTab')).toBe(false) // the master off wins (S37)
   })
 
-  it('stepSidebarZoom (YAZ-3389): one step each way along 50–200, an off-step value snaps to the next step that way, a wall stays put', () => {
+  it('stepSidebarZoom (YAZ-3389) and stepZoom (YAZ-3432): one step each way along the steps, an off-step value snaps to the next step that way, a wall stays put', () => {
     const walk = (from: number, dir: 1 | -1): number[] => {
       const out = [from]
       while (out.length < 20 && stepSidebarZoom(out[out.length - 1], dir) !== out[out.length - 1]) out.push(stepSidebarZoom(out[out.length - 1], dir))
@@ -479,6 +499,10 @@ describe('createStore: loading', () => {
     expect([stepSidebarZoom(110, 1), stepSidebarZoom(110, -1)]).toEqual([125, 100])
     expect([stepSidebarZoom(60, 1), stepSidebarZoom(60, -1)]).toEqual([75, 50])
     expect([stepSidebarZoom(50, -1), stepSidebarZoom(200, 1)]).toEqual([50, 200])
+    // The same walk over the App sizes (YAZ-3432): 90 and 125 are the walls; an off-step value snaps.
+    expect([90, 100, 110, 125].map((p) => stepZoom(APP_ZOOM_STEPS, p, 1))).toEqual([100, 110, 125, 125])
+    expect([90, 100, 110, 125].map((p) => stepZoom(APP_ZOOM_STEPS, p, -1))).toEqual([90, 90, 100, 110])
+    expect([stepZoom(APP_ZOOM_STEPS, 105, 1), stepZoom(APP_ZOOM_STEPS, 105, -1)]).toEqual([110, 100])
   })
 
   it('canvas and diagramDarkColors (YAZ-3037 done-when): a yaseendocs.json from before YAZ-3028 loads with the defaults; a file with some canvas prefs keeps them', async () => {
@@ -565,6 +589,48 @@ describe('createStore: loading', () => {
     await store.flush()
     expect((await onDisk()).settings.sidebarLines).toBe('off')
     expect(createStore(file).get().settings.sidebarLines).toBe('off')
+  })
+
+  it('the sidebar tree\'s look (YAZ-3440): an older file without the keys loads the defaults; a bad value loads its default and fails the channel check; a bad icon colour costs its own entry; another Mac\'s colours replace this Mac\'s as a whole', () => {
+    expect([DEFAULT_SETTINGS.sidebarStickyLevels, DEFAULT_SETTINGS.sidebarIconSet, DEFAULT_SETTINGS.sidebarFileIcons, DEFAULT_SETTINGS.sidebarFolderIcons, DEFAULT_SETTINGS.sidebarArrowMotion, DEFAULT_SETTINGS.sidebarIconColors]).toEqual([7, 'material', 'quiet', true, 'instant', {}])
+    const { sidebarStickyLevels: _a, sidebarIconSet: _b, sidebarFileIcons: _c, sidebarFolderIcons: _d, sidebarArrowMotion: _e, sidebarIconColors: _f, ...legacy } = DEFAULT_SETTINGS
+    expect(sanitizeSettings(legacy)).toEqual(DEFAULT_SETTINGS)
+    const good = { sidebarStickyLevels: 3, sidebarIconSet: 'line', sidebarFileIcons: 'grey', sidebarFolderIcons: false, sidebarArrowMotion: 'smooth', sidebarIconColors: { pdf: '#112233' } }
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, ...good })).toEqual({ ...DEFAULT_SETTINGS, ...good })
+    expect(isSettings({ ...DEFAULT_SETTINGS, ...good })).toBe(true)
+    const bad = { sidebarStickyLevels: 4, sidebarIconSet: 'emoji', sidebarFileIcons: 'loud', sidebarFolderIcons: 'yes', sidebarArrowMotion: 'slow' }
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, ...bad })).toEqual(DEFAULT_SETTINGS)
+    for (const [key, value] of Object.entries({ ...bad, sidebarIconColors: { note: 'blue' } })) expect(isSettings({ ...DEFAULT_SETTINGS, [key]: value }), key).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarIconColors: { note: 'blue', text: '#00aa55', nope: '#000000' } }).sidebarIconColors).toEqual({ text: '#00aa55' })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarIconColors: ['#000000'] }).sidebarIconColors).toEqual({})
+    const here = { ...DEFAULT_SETTINGS, sidebarIconColors: { pdf: '#112233', image: '#445566' } }
+    expect(mergeFolderSettings(here, { sidebarIconColors: { pdf: '#112233' } }).sidebarIconColors).toEqual({ pdf: '#112233' })
+    expect(mergeFolderSettings(here, { sidebarIconColors: 'red' }).sidebarIconColors).toEqual(here.sidebarIconColors)
+  })
+
+  it('sidebarRevealActive (YAZ-3440 D13): default off; an older file without it loads off; a bad value loads off and fails the channel check; it travels with the settings folder', () => {
+    expect(DEFAULT_SETTINGS.sidebarRevealActive).toBe(false)
+    const { sidebarRevealActive: _reveal, ...legacy } = DEFAULT_SETTINGS
+    expect(sanitizeSettings(legacy).sidebarRevealActive).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarRevealActive: true }).sidebarRevealActive).toBe(true)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarRevealActive: 'yes' }).sidebarRevealActive).toBe(false)
+    expect([isSettings({ ...DEFAULT_SETTINGS, sidebarRevealActive: true }), isSettings({ ...DEFAULT_SETTINGS, sidebarRevealActive: 1 })]).toEqual([true, false])
+    expect(mergeFolderSettings(DEFAULT_SETTINGS, { sidebarRevealActive: true }).sidebarRevealActive).toBe(true)
+  })
+
+  it('sidebarIconRules (YAZ-3440 D9): an older file without it loads none; a rule that does not read costs itself alone; the channel check takes only rules that all read; it travels whole', () => {
+    expect(DEFAULT_SETTINGS.sidebarIconRules).toEqual([])
+    const { sidebarIconRules: _rules, ...legacy } = DEFAULT_SETTINGS
+    expect(sanitizeSettings(legacy).sidebarIconRules).toEqual([])
+    const good = [{ match: '*.gif', kind: 'file', icon: 'image' }, { match: 'src', kind: 'folder', icon: 'folder-src' }]
+    const raw = [...good, { match: '', kind: 'file', icon: 'image' }, { match: '*.x', kind: 'note', icon: 'image' }, { match: '*.y', kind: 'file', icon: 'not an id' }, 'nope']
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarIconRules: raw }).sidebarIconRules).toEqual(good)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarIconRules: { a: 1 } }).sidebarIconRules).toEqual([])
+    expect(isSettings({ ...DEFAULT_SETTINGS, sidebarIconRules: good })).toBe(true)
+    expect(isSettings({ ...DEFAULT_SETTINGS, sidebarIconRules: raw })).toBe(false)
+    const here = { ...DEFAULT_SETTINGS, sidebarIconRules: good as typeof DEFAULT_SETTINGS.sidebarIconRules }
+    expect(mergeFolderSettings(here, { sidebarIconRules: [good[1]] }).sidebarIconRules).toEqual([good[1]])
+    expect(mergeFolderSettings(here, { sidebarIconRules: 'x' }).sidebarIconRules).toEqual(good)
   })
 
   it("sidebarLineStyle and sidebarThreadColor: an older file without them loads plain lines and the default colour; a bad style loads plain, a bad colour null, and each fails the channel check; good values stay (YAZ-3309 D8, D9)", async () => {

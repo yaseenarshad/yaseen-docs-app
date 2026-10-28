@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type SectionLines, type SidebarLineStyle, type StartupWindows, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -109,6 +109,40 @@ export const TOC_LINES_OPTIONS: readonly Option<TocLines>[] = [
 export const SIDEBAR_LINE_STYLE_OPTIONS: readonly Option<SidebarLineStyle>[] = [
   { label: 'Plain lines', value: 'plain' },
   { label: 'Thread to the row', value: 'thread' },
+]
+
+/** Sticky folders (YAZ-3440 D2, D7): how many levels of open folders stick at the top of the sidebar's list. */
+export const SIDEBAR_STICKY_LEVELS_OPTIONS: readonly Option<SidebarStickyLevels>[] = [
+  { label: 'Off', value: 0 },
+  { label: '3 levels', value: 3 },
+  { label: '5 levels', value: 5 },
+  { label: '7 levels', value: 7 },
+]
+
+/** The sidebar's folder arrows (YAZ-3440 D6): they turn at once, the default, or over 0.12s as before. */
+export const SIDEBAR_ARROW_MOTION_OPTIONS: readonly Option<SidebarArrowMotion>[] = [
+  { label: 'Instant', value: 'instant' },
+  { label: 'Smooth', value: 'smooth' },
+]
+
+/** Each kind's built-in icon colour (YAZ-3440 D4), the light theme's (app.css `--kind-<kind>`): the picker's swatch when the theme's own cannot be read. */
+export const SIDEBAR_ICON_SWATCHES: Record<SidebarIconKind, string> = { note: '#3d8fb8', text: '#3a7fc2', pdf: '#d64545', image: '#1d9e75', drawing: '#c08410', diagram: '#e0682c' }
+
+/** The name of each kind on its colour row (YAZ-3440 D4). */
+export const SIDEBAR_ICON_KIND_LABELS: Record<SidebarIconKind, string> = { note: 'Note', text: 'Text file', pdf: 'PDF', image: 'Image', drawing: 'Drawing', diagram: 'Diagram' }
+
+/** The sidebar's icon set (YAZ-3440 D4): Material Icon Theme's, the default, or the app's own line glyphs. */
+export const SIDEBAR_ICON_SET_OPTIONS: readonly Option<SidebarIconSet>[] = [
+  { label: 'Material', value: 'material' },
+  { label: 'Line', value: 'line' },
+]
+
+/** The sidebar's file icons (YAZ-3440 D4, D7): "Colour" keeps notes grey, "All colour" colours them too. */
+export const SIDEBAR_FILE_ICONS_OPTIONS: readonly Option<SidebarFileIcons>[] = [
+  { label: 'Colour', value: 'quiet' },
+  { label: 'All colour', value: 'color' },
+  { label: 'Grey', value: 'grey' },
+  { label: 'Off', value: 'off' },
 ]
 
 /** The On-first pair the guards use ("Confirm before deleting", GitHub sync): the safe answer leads. */

@@ -38,11 +38,20 @@ describe('settingCandidates', () => {
       'blockGap',
       'textFormatting',
       'commentsOrder',
-      // Appearance › Sidebar level lines (YAZ-3309 D6).
+      'diagramDarkColors',
+      // Settings › Sidebar (YAZ-3440 D7), after Appearance. The Line set's colour rows show only with that set.
       'sidebarLines',
       'sidebarLineStyle',
       'sidebarThreadColor',
-      'diagramDarkColors',
+      'sidebarStickyLevels',
+      'sidebarArrowMotion',
+      'sidebarFolderIcons',
+      'sidebarRevealActive',
+      'sidebarIconSet',
+      'sidebarFileIcons',
+      ...['note', 'text', 'pdf', 'image', 'drawing', 'diagram'].map((k) => `sidebarIconColors.${k}`),
+      // The icon rules (YAZ-3440 D9).
+      'sidebarIconRules',
       // Settings › Notifications (YAZ-3303), under Appearance.
       ...['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds'],
       'bulletThreading',
@@ -101,8 +110,8 @@ describe('settingCandidates', () => {
     const storage: SettingsCtx['storage'] = { stats: null, failed: false, refresh: () => undefined, shrink: async () => ({ shrunk: 0, skipped: 0, bytesMoved: 0 }), lastShrink: null }
     const sharing: SettingsCtx['sharing'] = { root: '/v', status: null, rows: null, listError: null, now: 0, refresh: () => undefined, show: () => undefined }
     const sectionsOf = (c: SettingsCtx) => [...new Set(settingCandidates(c).map((h) => h.section.id))]
-    expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), storage, sharing })).toEqual(['general', 'appearance', 'notifications', 'editor', 'code', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
-    expect(sectionsOf(ctx())).toEqual(['general', 'appearance', 'notifications', 'editor', 'code', 'canvas', 'images', 'files', 'hotkeys'])
+    expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), storage, sharing })).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'code', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
+    expect(sectionsOf(ctx())).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'code', 'canvas', 'images', 'files', 'hotkeys'])
   })
 
   it('a candidate carries label, hint, keywords, group title and section title, case-folded in `lower`', () => {
@@ -162,8 +171,9 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['hotkey-keyboard-table-of-contents', 'settingsFolder', 'tableOfContents', 'tocLines'])
   })
 
-  it('"Level lines" (YAZ-2762, YAZ-3309 D6): the label of the TOC\'s row and the title of the sidebar\'s group find the TOC row and the three rows of the group; "hierarchy", "guide" and "hover" find the two Show rows among the rows that share the word', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'level lines'))).toEqual(['tocLines', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
+  it('"Level lines" (YAZ-2762, YAZ-3309 D6, YAZ-3440 D7): the label of the TOC\'s row and of the sidebar\'s row find those two rows, the sidebar\'s first (its label starts with the words); "hierarchy", "guide" and "hover" find the two Show rows among the rows that share the word', () => {
+    // The sidebar's group is "Level lines" too (YAZ-3440 D7): its other two rows follow, by the group title.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'level lines'))).toEqual(['sidebarLines', 'tocLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'hierarchy'))).toEqual(['sidebarLines', 'tocLines'])
     // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
     expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-drawio-a-shape-s-outline-a-text-s-background'])

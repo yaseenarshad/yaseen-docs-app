@@ -14,6 +14,7 @@ import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, Bo
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { SystemHotkey } from './macosHotkeys'
+import type { VaultIcons } from './vaultIcons'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -297,11 +298,17 @@ export const CONTRACT = {
      */
     filesToNormal: invoke<[], void>('window:files-to-normal', 0),
     /**
-     * THIS Files window's own sidebar zoom in percent (YAZ-3389 D13): the footer's − % + and an unclaimed ⌘+ / ⌘− / ⌘0 there.
+     * THIS Files window's own sidebar zoom in percent (YAZ-3389 D13): the zoom menu's − % + and an unclaimed ⌘+ / ⌘− / ⌘0 there.
      * Main normalizes it (`normalizeFilesZoom`) and stores it as `WindowEntry.zoom`; `window.identity()` gives it back. A
      * full window is refused: its sidebar zoom is the shared `settings.sidebarZoom`.
      */
     filesZoom: invoke<[percent: number], void>('window:files-zoom', 1),
+    /**
+     * THIS Files window's zoom menu opened (true) or closed (false) (YAZ-3444). While it is open, a new App size leaves
+     * this window's size, so the menu stays under the pointer; the close gives it the width that keeps its page width.
+     * A full window is refused: its size never follows the App size.
+     */
+    filesZoomMenu: invoke<[open: boolean], void>('window:files-zoom-menu', 1),
   },
   /** Menu gestures from the main process (B3, GRO-2161; tabs GRO-2232): main sends them to the focused window only. */
   menu: {
@@ -485,6 +492,15 @@ export const CONTRACT = {
     set: invoke<[root: string, paths: readonly string[]], void>('favorites:set', 2),
     /** Fired in every window after any change to a vault's favorites.json, own or external; filter by `root`. */
     onChanged: push<{ root: string }>('favorites:changed'),
+  },
+  /** A vault's one-row icon picks over `.yaseendocs/icons.json` (YAZ-3440 D8), by absolute path (`shared/vaultIcons.ts`); the name rules are `settings.sidebarIconRules`. */
+  icons: {
+    /** The picks; none when the file is absent or malformed. Never creates anything. */
+    get: invoke<[root: string], VaultIcons>('icons:get', 1),
+    /** Replace the picks; every one must be inside `root` (→ `BAD_REQUEST`), a malformed file refuses (→ `INVALID_CONFIG`). Creates the dotfolder and file on the first write. */
+    set: invoke<[root: string, icons: VaultIcons], void>('icons:set', 2),
+    /** Fired in every window after any change to a vault's icons.json, own or external; filter by `root`. */
+    onChanged: push<{ root: string }>('icons:changed'),
   },
   /**
    * A vault's focus list (YAZ-2702): ONE list for each vault, kept in the vault as one file for each

@@ -53,7 +53,7 @@ const button = (id: string, label: string) => [...row(id).querySelectorAll<HTMLB
 describe('Settings › Notifications (YAZ-3303)', () => {
   it('D4, D5, D6: the page under Appearance holds Show for, the three toast types and the sounds; a choice writes its field (S3)', async () => {
     await mountNotifications()
-    expect([...el.querySelectorAll('.settings-nav__item')].map((b) => b.textContent).slice(0, 4)).toEqual(['General', 'Appearance', 'Notifications', 'Editor'])
+    expect([...el.querySelectorAll('.settings-nav__item')].map((b) => b.textContent).slice(0, 5)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor'])
     expect([...el.querySelectorAll<HTMLElement>('[data-setting]')].map((r) => r.dataset.setting)).toEqual(['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds'])
     expect([...row('noticeLength').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['4 s', '8 s', '15 s', 'Until closed'])
     act(() => button('noticeLength', 'Until closed').click())

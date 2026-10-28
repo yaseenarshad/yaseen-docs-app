@@ -11,8 +11,8 @@
  * from `WindowEntry.sidebarLens`.
  *
  * THE DRAG is `dragAbove` (helpers.ts): press on the row, carry the pointer to the target's TOP HALF
- * (the `before` edge, Tree.tsx `edgeOf`), rest there until the target wears `tree__row--drop-before`,
- * release.
+ * (the `before` edge, rowGestures.ts `edgeOf`), rest there until the target wears `tree__row--drop-before`,
+ * release. Since YAZ-3467 D2 the reorder is mouse events that lift LIFT_PX (10 px) from the press.
  *
  * Same harness as the rest of the suite: temp `--user-data-dir`, a COPY of the generated fixture,
  * `favorites-` step screenshots, serial.
@@ -103,6 +103,15 @@ test('step 1 — "Add to favorites" on a file and on a folder writes `.yaseendoc
 // ---------------------------------------------------------------- reorder
 
 test('step 2 — dragging the folder row above the file row rewrites the stored order, on screen and on disk', async () => {
+  // A 6 px slip lifts nothing (YAZ-3467 D2): no pill, no line, and the order stays.
+  const from = await dirRow(win, 'Projects').boundingBox()
+  if (from === null) throw new Error('Projects is not on screen')
+  await win.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await win.mouse.down()
+  await win.mouse.move(from.x + from.width / 2, from.y + from.height / 2 - 6, { steps: 3 })
+  await expect(win.locator('.tree__reorder-pill')).toHaveCount(0)
+  await win.mouse.up()
+  await expect(topLabels(win)).toHaveText(['Ideas', 'Projects'])
   await dragAbove(win, dirRow(win, 'Projects'), fileRow(win, 'Ideas'))
   await expect(topLabels(win)).toHaveText(['Projects', 'Ideas'])
   await expect.poll(favoritesOnDisk).toEqual(['Projects', 'Ideas.md'])

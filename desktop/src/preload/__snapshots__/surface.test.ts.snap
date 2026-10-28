@@ -57,6 +57,9 @@ github.status/1: invoke github:status ["a0"]; => "answer"; !> {"code":"NOT_FOUND
 github.syncNow/1: invoke github:sync-now ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.version/3: invoke github:version ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 hotkeys.recording/1: invoke hotkeys:recording ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+icons.get/1: invoke icons:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+icons.onChanged/1: on icons:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off icons:changed
+icons.set/2: invoke icons:set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 ids.backfill/1: invoke ids:backfill ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 ids.check/1: invoke ids:check ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 ids.onChanged/1: on ids:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off ids:changed
@@ -180,6 +183,7 @@ window.filesPreview/1: invoke window:files-preview ["a0"]; => "answer"; !> {"cod
 window.filesToNormal/0: invoke window:files-to-normal []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.filesWide/1: invoke window:files-wide ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.filesZoom/1: invoke window:files-zoom ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.filesZoomMenu/1: invoke window:files-zoom-menu ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.focusTab/2: invoke window:focus-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.hiddenWindows/0: invoke window:hidden-windows-now []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.highlight/1: invoke window:highlight ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

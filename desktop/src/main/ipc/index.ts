@@ -11,6 +11,7 @@ import { registerComponentsIpc } from './components'
 import { registerDialogIpc } from './dialog'
 import { handle } from './envelope'
 import { registerFavoritesIpc } from './favorites'
+import { registerIconsIpc } from './icons'
 import { registerFocusIpc } from './focus'
 import { registerFsIpc } from './fs'
 import { registerGithubIpc } from './github'
@@ -54,6 +55,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerStateIpc(store, settingsFolder)
   registerVaultConfigIpc(store)
   registerFavoritesIpc(store)
+  registerIconsIpc(store)
   registerFocusIpc(store)
   registerPropertiesIpc(store)
   registerWindowIpc(store, windows)
