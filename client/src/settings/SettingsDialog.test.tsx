@@ -127,7 +127,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 
 /** The rows of each page with no vault open, in registry order (registry.tsx). */
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
-const GENERAL_ROWS = ['settingsFolder', 'startupWindows']
+const GENERAL_ROWS = ['settingsFolder', 'startupWindows', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
 const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'diagramDarkColors']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
@@ -167,7 +167,7 @@ describe('SettingsDialog shell (D1)', () => {
   it('General shows the "Settings folder" row and the "Reopen" row, each under its own group; Files & Links no longer shows "Reopen" (YAZ-3276 D7)', () => {
     const { el } = mount()
     expect(headings(el)).toEqual(['General'])
-    expect(groupTitles(el)).toEqual(['Settings folder', 'When the app starts'])
+    expect(groupTitles(el)).toEqual(['Settings folder', 'When the app starts', 'When a vault opens'])
     expect(rowIds(el)).toEqual(GENERAL_ROWS)
     expect(row(el, 'settingsFolder')?.querySelector('.setting__label')?.textContent).toBe('Settings folder')
     expect(row(el, 'settingsFolder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Settings folder')
@@ -315,7 +315,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     const { el } = mount()
     const hints = () => [...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)
     // General, as it opens (YAZ-3276 D7): two titled groups, no hints.
-    expect(groupTitles(el)).toEqual(['Settings folder', 'When the app starts'])
+    expect(groupTitles(el)).toEqual(['Settings folder', 'When the app starts', 'When a vault opens'])
     expect(hints()).toEqual([])
 
     clickNav(el, 'Appearance')
@@ -853,6 +853,15 @@ describe('SettingsDialog rows write through the popover contracts', () => {
         expect(headings(el), query).toContain('Appearance › Text formatting')
       }
     })
+  })
+
+  it('Open on (YAZ-3487 D15): "A blank tab" · "Its last note" under General › "When a vault opens", blank by default; a click writes the whole object with only it flipped', () => {
+    const { el, onChange } = mount()
+    expect(row(el, 'vaultOpensOn')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('When a vault opens')
+    expect(row(el, 'vaultOpensOn')?.querySelector('.setting__label')?.textContent).toBe('Open on')
+    expect(rowButtons(el, 'vaultOpensOn').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['A blank tab', 'true'], ['Its last note', 'false']])
+    act(() => rowButtons(el, 'vaultOpensOn')[1].click())
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, vaultOpensOn: 'last' })
   })
 
   it('Reopen: All vaults · Last vault · None under General › "When the app starts", Last vault by default; None writes the whole object with only it flipped (YAZ-2589 D2, A3; moved by YAZ-3276 D7)', () => {

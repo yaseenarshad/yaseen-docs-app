@@ -96,6 +96,14 @@ export const EyeIcon = () => (
   </svg>
 )
 
+/** Two sheets, one over the other: "Copy path" in the row, tab and vault menus (YAZ-3487), as the eye marks "Add to focus". */
+export const CopyIcon = () => (
+  <svg {...svg} width={15} height={15} viewBox="0 0 24 24" strokeWidth={2} className="copy-icon">
+    <rect x="8" y="8" width="13" height="13" rx="2" />
+    <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+  </svg>
+)
+
 /** Circled "i", for the vault switcher row's full-path tooltip (YAZ-1974 D2). */
 export const InfoIcon = () => (
   <svg {...svg}>

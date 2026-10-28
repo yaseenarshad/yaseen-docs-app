@@ -29,7 +29,7 @@ let vault2: string
 let app: ElectronApplication
 let win: Page
 
-/** The rows of "Recent", in the order drawn. */
+/** The rows of "Recently viewed" (YAZ-3487 D12; `data-col` stays `recent`), in the order drawn. */
 const recent = (w: Page) => w.locator('.start__column[data-col="recent"] .start__row')
 
 test.beforeAll(async () => {
@@ -57,7 +57,7 @@ test('⌘T, →, ↓, Enter: a recent page opens from the new tab page with no m
 
   // ⌘T — File › New Tab, by its menu id: the page shows under "New tab", and the caret is in the empty search bar.
   await clickMenuItem(app, 'menu.file.new-tab', 'w1')
-  await expect(win.locator('.start__heading')).toHaveText(['Recent', 'Favorites', 'Used a lot, not a favorite yet'])
+  await expect(win.locator('.start__heading')).toHaveText(['Recently closed', 'Recently viewed', 'Favorites'])
   // S12: the newest first, each with its folder. The launch added no use (S10): the page the window opened on is no row.
   await expect(recent(win).locator('.start__name')).toHaveText(['Roadmap', 'Ideas'])
   await expect(recent(win).first().locator('.start__where')).toHaveText('Projects')

@@ -1,4 +1,6 @@
+import { createElement, type ReactNode } from 'react'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { CopyIcon } from '../views/view/icons'
 import type { KeyedVault } from '@shared/types'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { errorText, type MenuAction, type MenuSection } from './menuSections'
@@ -83,9 +85,10 @@ export interface VaultSetMenuHandlers {
 }
 
 /** A clipboard copy that says what it did — or why it could not. */
-const copyItem = (id: string, what: string, text: string, h: VaultMenuHandlers): MenuAction => ({
+const copyItem = (id: string, what: string, text: string, h: VaultMenuHandlers, icon?: ReactNode): MenuAction => ({
   id,
   label: `Copy ${what}`,
+  ...(icon === undefined ? {} : { icon }),
   onSelect: () => {
     void navigator.clipboard.writeText(text).then(
       () => h.onNotice(`Copied ${what}`, 'info', 'clipboard'),
@@ -123,7 +126,7 @@ export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, ren
         ],
       },
     ],
-    [copyItem('copy-name', 'vault name', name, h), copyItem('copy-path', 'path', path, h)],
+    [copyItem('copy-name', 'vault name', name, h), copyItem('copy-path', 'path', path, h, createElement(CopyIcon))],
     [
       { id: 'reveal', label: 'Reveal in Finder', onSelect: () => h.onReveal(path) },
       { id: 'open-vscode', label: 'Open in VS Code', onSelect: () => h.onOpenVsCode(path) },

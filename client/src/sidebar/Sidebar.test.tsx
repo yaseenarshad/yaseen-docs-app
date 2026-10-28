@@ -1739,6 +1739,50 @@ describe('Show in sidebar — Files reveal (YAZ-1063)', () => {
  * Sidebar MOUNTS with is exempt; every later `activeFile` reveals exactly as before. Fresh vault per
  * mount (the expand-all idiom below): the app-state cache is module-level.
  */
+describe('a NEW window starts with every folder closed (YAZ-3487, demo round 3)', () => {
+  const openState = (el: HTMLElement) => el.querySelector('.tree__row[data-path="/v/sub"]')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+  const seeded = async (bridge: ReturnType<typeof installBridge>, startCollapsed: boolean) => {
+    bridge.state.get.mockResolvedValue({ ...defaultAppState(), folders: { '/v': { ...defaultFolderState(), expanded: ['/v/sub'] } } })
+    bridge.window.identity.mockResolvedValue({ id: 'w1', root: '/v', roots: ['/v'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', ...(startCollapsed ? { startCollapsed: true as const } : {}) })
+    await storage.init()
+  }
+
+  it('a window main marks as a new start (⌘⇧N, a new Files window) does not take the vault\'s open folders; any other window does', async () => {
+    const fresh = await mount({}, (bridge) => seeded(bridge, true))
+    expect(openState(fresh.el)).toBe('false')
+    act(() => root?.unmount())
+    container?.remove()
+    const restored = await mount({}, (bridge) => seeded(bridge, false))
+    expect(openState(restored.el)).toBe('true')
+  })
+
+  it('a new window does not write its closed tree over the vault\'s stored open folders (D17: a restored window keeps the vault\'s list; bug YAZ-3513)', async () => {
+    const fresh = await mount({}, (bridge) => seeded(bridge, true))
+    expect(openState(fresh.el)).toBe('false')
+    expect(fresh.bridge.state.setFolder).not.toHaveBeenCalledWith('/v', { expanded: [] })
+  })
+
+  it('a vault that joins a new window does not write its closed tree over the first vault (YAZ-3513, round 2)', async () => {
+    const fresh = await mount({}, (bridge) => seeded(bridge, true))
+    const [v] = fresh.props.vaults
+    await fresh.rerender({ vaults: [v, { ...v, root: '/w', name: 'w' }] })
+    expect(fresh.bridge.state.setFolder).not.toHaveBeenCalledWith('/v', { expanded: [] })
+  })
+
+  it('a vault that leaves a new window does not write its closed tree over the vault that stays (YAZ-3513, round 2)', async () => {
+    const two = async (bridge: ReturnType<typeof installBridge>) => {
+      bridge.state.get.mockResolvedValue({ ...defaultAppState(), folders: { '/v': { ...defaultFolderState(), expanded: ['/v/sub'] } } })
+      bridge.window.identity.mockResolvedValue({ id: 'w1', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', startCollapsed: true as const })
+      await storage.init()
+    }
+    const base = oneVault({})[0]
+    const fresh = await mount({ vaults: [base, { ...base, root: '/w', name: 'w' }] }, two)
+    expect(fresh.bridge.state.setFolder).not.toHaveBeenCalled()
+    await fresh.rerender({ vaults: [base] })
+    expect(fresh.bridge.state.setFolder).not.toHaveBeenCalledWith('/v', { expanded: [] })
+  })
+})
+
 describe('launch: the restored tab is shown, not revealed (YAZ-1642)', () => {
   const note = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 1, mtime: 1, kind: 'markdown' })
   const DEEP = (v: string): TreeNode[] => [
@@ -8183,7 +8227,7 @@ describe('update pill (YAZ-2976 D4)', () => {
   it('sits after the cog in the footer, and its click asks App for the "What\'s new" window', async () => {
     const { el, props } = await mount({ update: { kind: 'ready', version: '1.0.13' } })
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
-    expect(footer).toEqual(['settings-button', 'zoom-chip', 'update-pill-slot'])
+    expect(footer).toEqual(['settings-button', 'zoom-footer', 'update-pill-slot'])
     act(() => el.querySelector<HTMLButtonElement>('.update-pill')?.click())
     expect(props.onOpenWhatsNew).toHaveBeenCalledTimes(1)
   })
@@ -8191,7 +8235,7 @@ describe('update pill (YAZ-2976 D4)', () => {
   it('no update, no pill: the footer has the cog and the zoom chip', async () => {
     const { el } = await mount()
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
-    expect(footer).toEqual(['settings-button', 'zoom-chip'])
+    expect(footer).toEqual(['settings-button', 'zoom-footer'])
   })
 
   it('the sidebar zoom (YAZ-3389): the lists take `--sidebar-zoom` from the setting, the chip shows it, the menu\'s + writes the next step over the other settings, and the same value writes nothing (D6)', async () => {
@@ -8222,7 +8266,7 @@ describe('update pill (YAZ-2976 D4)', () => {
     const onFilesZoom = vi.fn()
     const { el, props } = await mount({ settings: { ...DEFAULT_SETTINGS, sidebarZoom: 100 }, filesZoom: 150, onFilesZoom, onToNormalWindow: vi.fn(), update: { kind: 'ready', version: '1.0.13' } })
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
-    expect(footer).toEqual(['settings-button', 'zoom-chip', 'sidebar__files-chip', 'update-pill-slot'])
+    expect(footer).toEqual(['settings-button', 'zoom-footer', 'sidebar__files-chip', 'update-pill-slot'])
     expect(el.querySelector<HTMLElement>('.sidebar__body')!.style.getPropertyValue('--sidebar-zoom')).toBe('1.5')
     expect(el.querySelector('.zoom-chip')?.textContent).toBe('150%')
     act(() => el.querySelector<HTMLButtonElement>('.zoom-chip')!.click())
@@ -9534,13 +9578,27 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, a))
     await act(async () => itemByLabel(el, 'Open by itself')?.click())
     expect(bridge.window.openAlone).toHaveBeenLastCalledWith(a)
-    expect(error).toHaveBeenCalledWith('[sidebar] window.openAlone failed:', expect.any(Error))
+    expect(error).toHaveBeenCalledWith('[sidebar] open by itself failed:', expect.anything())
     for (const target of [rowByPath(el, `${a}/a.md`), rowByPath(el, `${a}/sub`), body(el)]) {
       rightClick(target)
       expect(itemByLabel(el, 'Open by itself')).toBeUndefined()
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     }
     error.mockRestore()
+  })
+
+  it('"Open by itself": a folder that is gone says so (YAZ-3487 B1, S25); in a Files window it changes THIS window, main opens nothing (D6, S24)', async () => {
+    const { el, b, bridge, props } = await two()
+    bridge.window.openAlone.mockResolvedValueOnce(false)
+    rightClick(rowByPath(el, b))
+    await act(async () => itemByLabel(el, 'Open by itself')?.click())
+    expect(props.onNotice).toHaveBeenLastCalledWith(expect.stringMatching(/^Can't open .+: folder not found$/))
+
+    const files = await two({ onOpenSetHere: vi.fn(async () => true), onOpenVaultHere: vi.fn(async () => true) })
+    rightClick(rowByPath(files.el, files.b))
+    await act(async () => itemByLabel(files.el, 'Open by itself')?.click())
+    expect(files.props.onOpenVaultHere).toHaveBeenCalledExactlyOnceWith(files.b)
+    expect(files.bridge.window.openAlone).not.toHaveBeenCalled()
   })
 
   it('"New note" on a vault row creates in that vault\'s root, as that vault makes a note, and opens the row if it was closed (S13, R4)', async () => {

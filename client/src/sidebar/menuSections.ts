@@ -2,7 +2,7 @@ import { createElement, type ReactNode } from 'react'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
-import { EyeIcon, HeartIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
 import type { MenuTargets } from './Sidebar'
 
 /**
@@ -141,6 +141,10 @@ export interface MenuHandlers {
   onRemoveVault: (root: string) => void
   /** "Open by itself" on a vault row (YAZ-2858 D4): the vault's root, for main's `window.openAlone`. */
   onOpenAlone: (root: string) => void
+  /** "Remove from Recently closed" (YAZ-3487 D14): this note leaves the list. */
+  onForgetClosed: (path: string) => void
+  /** "Clear Recently closed" (YAZ-3487 D14): the list of each vault of this window is emptied. */
+  onClearClosed: () => void
   /** "Info" on one drawing or diagram row (YAZ-3028 D11): the caller opens the board's popover where the menu was. */
   onInfo: (path: string) => void
   /** "Version history" (YAZ-1897 D4, YAZ-3039): open the board's versions — Info's gate. */
@@ -252,6 +256,7 @@ const copyPaths: Leaf = (t, h) => {
   return {
     id: 'copy-paths',
     label: `Copy ${paths.length} paths`,
+    icon: createElement(CopyIcon),
     onSelect: () => {
       void navigator.clipboard.writeText(paths.join('\n')).then(
         () => h.onNotice(`Copied ${paths.length} paths`, 'info', 'clipboard'),
@@ -273,6 +278,7 @@ const copyPath: Leaf = (t, h) => {
   return {
     id: 'copy-path',
     label: 'Copy path',
+    icon: createElement(CopyIcon),
     hint: keyHint('copyPath', t.hotkeys),
     onSelect: () => {
       void navigator.clipboard.writeText(path).then(
@@ -551,6 +557,14 @@ const addVault: Item = (t, h) => {
   }
 }
 
+// A row of "Recently closed" on the new tab page (YAZ-3487 D14): its own group, first.
+const forgetClosed: Leaf = (t, h) => {
+  const path = t.forgetClosed
+  return path === null ? null : { id: 'forget-closed', label: 'Remove from Recently closed', onSelect: () => h.onForgetClosed(path) }
+}
+const clearClosed: Leaf = (t, h) => (t.forgetClosed === null ? null : { id: 'clear-closed', label: 'Clear Recently closed', onSelect: () => h.onClearClosed() })
+
+const CLOSED_GROUP: readonly Item[] = [forgetClosed, clearClosed]
 const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
 const CREATE_GROUP: readonly Item[] = [newNoteMenu, newDrawingMenu, newFolderMenu]
@@ -564,5 +578,6 @@ const build = <T extends MenuItem>(group: readonly ((t: MenuSectionTargets, h: M
 
 /** The six groups of 🔒 D7 (as amended), in order, every null item dropped. An empty group is the component's to skip. */
 export function buildMenuSections(targets: MenuSectionTargets, handlers: MenuHandlers): MenuSection[] {
-  return [OPEN_GROUP, CLIPBOARD_GROUP, CREATE_GROUP, ROW_GROUP, OPEN_IN_GROUP, DELETE_GROUP].map((group) => build(group, targets, handlers))
+  // A row of "Recently closed" (YAZ-3487 D14) adds its own group in front; every other menu keeps its six.
+  return [...(targets.forgetClosed === null ? [] : [CLOSED_GROUP]), OPEN_GROUP, CLIPBOARD_GROUP, CREATE_GROUP, ROW_GROUP, OPEN_IN_GROUP, DELETE_GROUP].map((group) => build(group, targets, handlers))
 }

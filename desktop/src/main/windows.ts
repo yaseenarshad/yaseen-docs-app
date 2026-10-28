@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import { appZoomFactor } from './appZoom'
@@ -175,6 +175,8 @@ export interface WindowManager extends WindowLookup {
   takeStartView(id: string): StartView | undefined
   /** A window `duplicateWindow` or `openBehind` opened (YAZ-3343 D22, D35): `true` ONCE, for its first `window:identity`, so it boots with no tab. */
   takeStartEmpty(id: string): boolean
+  /** A NEW window (YAZ-3487, demo round 3): its tree starts with every folder closed. Once, as `takeStartEmpty`. */
+  takeStartCollapsed(id: string): boolean
   /**
    * The ONE back-end door for "open a recent vault" (YAZ-1767 🔒 D1): the sidebar's vault
    * switcher and App's `openVault` (a vault window's Open Folder… / Open Recent, YAZ-1914) land here via `window:open-recent`, the Window menu's vault rows (⌘1–⌘9, YAZ-2555 D3) call it in main, and so does
@@ -182,27 +184,28 @@ export interface WindowManager extends WindowLookup {
    * the directory FIRST (GRO-2211): a dead folder is pruned from the MRU and opens nothing →
    * `false`. A live one is bumped to the top of the MRU, then (🔒 D9) every live window already
    * on that vault is RAISED — most recently focused on top — and nothing new opens; with none
-   * open, a new window opens on the vault's remembered `folders[root].lastFile` (D2). → `true`.
+   * open, a new window opens on the vault, blank (YAZ-3487 D7; it was the remembered `lastFile`, D2). → `true`.
+   * `from` (YAZ-3487 D1): the window that asked. When it is EMPTY, it takes the vault itself and no window opens.
    */
-  openRecentBeside(path: string): boolean
+  openRecentBeside(path: string, from?: string): boolean
   /**
    * "Open by itself" (YAZ-2858 D1, `window:open-alone`): the `openRecentBeside` door with an EXACT
    * match. It raises only a live window whose vaults are this one vault alone (`sameVaults`); a
-   * window that shows it beside another vault does not count and does not change (S1). With none, a
-   * new window opens on the vault's remembered last file. The probe and the MRU bump are the same:
-   * a dead folder is pruned and opens nothing → `false`. No saved set changes (S7).
+   * window that shows it beside another vault does not count and does not change (S1). With none, the
+   * empty caller takes it, else a new window opens on it, blank (YAZ-3487 D1, D7). The probe and the MRU bump are the same:
+   * a dead folder is pruned and opens nothing → `false`. No saved set changes (S7). `from`: as `openRecentBeside`'s.
    */
-  openAlone(path: string): boolean
+  openAlone(path: string, from?: string): boolean
   /**
    * The door for a saved set of vaults (YAZ-2602 D8, `window:open-set`). Probes each folder: the
    * vaults that are left, in the saved order, are what opens, and the ones that are gone come back
    * in `missing` — the saved set itself keeps them, a folder can come back (S66). Every live window
    * whose vaults are EXACTLY the ones left (`sameVaults`: the order does not count) is raised, as
-   * `openRecentBeside` raises; with none, ONE new window opens on them, on the first vault's
-   * remembered last file (S65). Either way the set becomes the last used. No folder left, or an
+   * `openRecentBeside` raises; with none, the empty caller takes them, else ONE new window opens on them,
+   * blank (S65; YAZ-3487 D1, D7). Either way the set becomes the last used. No folder left, or an
    * unknown `id`, opens nothing and changes nothing → `opened: false`.
    */
-  openVaultSet(id: string): OpenSetResult
+  openVaultSet(id: string, from?: string): OpenSetResult
   /**
    * `window:close-self` (GRO-2232, e.g. ⌘W on the last tab): the REAL `close()` on the live
    * window — the `close` interception above runs the flush handshake — NEVER a bare destroy.
@@ -279,7 +282,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -455,6 +458,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const startViews = new Map<string, StartView>()
   /** The windows `duplicateWindow` and `openBehind` opened, until their first identity read (YAZ-3343): they boot empty. */
   const emptyStarts = new Set<string>()
+  /** The NEW windows (⌘⇧N, the board's "New window", a new Files window) until their first identity read: their tree starts closed (YAZ-3487). */
+  const collapsedStarts = new Set<string>()
   /** The live windows the tab board made, built hidden and not shown yet (YAZ-3343). Never stored. */
   const hiddenWins = new Set<string>()
   /** The live windows minimized in the Dock (YAZ-3343). Never stored. */
@@ -635,6 +640,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // Closed before it asked (YAZ-2951 S20): what it would have read goes with it.
       startViews.delete(id)
       emptyStarts.delete(id)
+      collapsedStarts.delete(id)
       heldLinks.delete(wcId)
       // A lit window goes dark with the window whose row lit it; a closed lit window is forgotten (YAZ-3091 D8).
       const target = lit.get(id)
@@ -653,8 +659,12 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       else if (hiddenWins.size > 0 && [...live.keys()].every((other) => hiddenWins.has(other))) for (const other of [...hiddenWins]) showWindow(other)
       // A user close forgets the window; the LAST one closing quits the app (`window-all-closed`), so that is
       // a quit too: its entry stays, and the vault it was working in is the "last vault" (YAZ-2589 A1, YAZ-2602 A8).
-      if (live.size > 0) store.removeWindow(id)
-      else noteUsed(activeVault(entryOf(id)))
+      if (live.size > 0) {
+        // A window you close puts its notes in "Recently closed" (YAZ-3487 D10). A quit does not: its tabs come back.
+        const entry = entryOf(id)
+        if (entry !== undefined && !isFilesWindow(entry)) store.addClosed(entry.roots, entry.tabs)
+        store.removeWindow(id)
+      } else noteUsed(activeVault(entryOf(id)))
     })
   }
 
@@ -679,6 +689,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const openBlank = (from: WindowEntry, hidden: boolean): string => {
     const id = randomUUID()
     emptyStarts.add(id)
+    collapsedStarts.add(id)
     // From a Files window (YAZ-3357 D8, D14: its ⌘T, ⌘⇧N and the board's "New window") the sidebar shows, and the window stands right of it.
     open({ id, root: from.root, roots: [...from.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: isFilesWindow(from) ? false : from.sidebarCollapsed, sidebarLens: from.sidebarLens, bounds: madeFrom(from) }, hidden)
     return id
@@ -774,7 +785,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
    * The open-recent door (see `WindowManager.openRecentBeside`) and "Open by itself" (`openAlone`,
    * YAZ-2858 D1): one body, and `alone` picks the match. A `const`, like `openWindow`, so `routeToFile` can call it too (YAZ-2556 D1).
    */
-  const openVault = (path: string, alone: boolean): boolean => {
+  const openVault = (path: string, alone: boolean, from?: string): boolean => {
     // Beside never passes through the renderer's validating openRoot, so probe here: a dead
     // folder is pruned from the MRU (mirrors the Welcome/in-place path) and opens nothing.
     if (!host.dirExists(path)) {
@@ -788,13 +799,32 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     // copy. Roots compare like `resolveLinkTarget`: trailing slash off. "Open by itself" counts only a window with this vault alone (YAZ-2858 D1).
     const wanted = stripSlash(path)
     if (raiseWindows((w) => (alone ? sameVaults(w.roots, [wanted]) : w.roots.some((root) => stripSlash(root) === wanted)))) return true
-    openWindow({ root: path, file: store.get().folders[path]?.lastFile ?? null })
+    // No window to raise: an EMPTY window that asked takes the vault itself (YAZ-3487 D1).
+    if (from !== undefined && takeHere(from, [path])) return true
+    openWindow({ root: path, file: startFile(path) })
     return true
   }
-  const openRecentBeside = (path: string): boolean => openVault(path, false)
+  const openRecentBeside = (path: string, from?: string): boolean => openVault(path, false, from)
+
+  /** What a new window on `vault` opens on (YAZ-3487 D15): blank (D7), or with "Its last note" the remembered `lastFile`. */
+  const startFile = (vault: string): string | null => (store.get().settings.vaultOpensOn === 'last' ? (store.get().folders[vault]?.lastFile ?? null) : null)
+
+  /**
+   * YAZ-3487 D1: the window `from` shows `roots` itself when it is EMPTY — no tab, no page, nothing in its right
+   * panel; the blank tab is no tab. A Files window never is: it has its own rule (YAZ-3357 D12). It hears the vault
+   * chip's `link:set-roots` (YAZ-3343 D22) and shows the vaults blank (D3). `false` = not live, or not empty.
+   */
+  const takeHere = (from: string, roots: readonly string[]): boolean => {
+    const win = liveWindow(from)
+    const entry = entryOf(from)
+    if (win === undefined || entry === undefined || isFilesWindow(entry)) return false
+    if (entry.tabs.length > 0 || entry.file !== null || entry.rightPanel.items.length > 0) return false
+    sendLink(win, CONTRACT.link.onSetRoots.channel, [...roots])
+    return true
+  }
 
   /** The door for a saved set of vaults (see `WindowManager.openVaultSet`). */
-  const openVaultSet = (id: string): OpenSetResult => {
+  const openVaultSet = (id: string, from?: string): OpenSetResult => {
     const set = store.get().vaultSets.find((s) => s.id === id)
     if (set === undefined) return { opened: false, missing: [] }
     const missing = set.roots.filter((root) => !host.dirExists(root))
@@ -802,7 +832,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     if (found.length === 0) return { opened: false, missing }
     // The set's window is the one that shows exactly the vaults that are left (S66): a window opened
     // earlier without the missing folder is raised, not doubled.
-    if (!raiseWindows((w) => sameVaults(w.roots, found))) openWindow({ root: found[0], roots: found, file: store.get().folders[found[0]]?.lastFile ?? null })
+    if (!raiseWindows((w) => sameVaults(w.roots, found)) && (from === undefined || !takeHere(from, found))) openWindow({ root: found[0], roots: found, file: startFile(found[0]) })
     store.touchVaultSet(id)
     return { opened: true, missing }
   }
@@ -970,9 +1000,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       return emptyStarts.delete(id)
     },
 
+    takeStartCollapsed(id) {
+      return collapsedStarts.delete(id)
+    },
+
     openRecentBeside,
 
-    openAlone: (path) => openVault(path, true),
+    openAlone: (path, from) => openVault(path, true, from),
 
     openVaultSet,
 
@@ -1049,12 +1083,14 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
             ? clampBounds({ ...at, x: at.x + WINDOW_CASCADE_PX, y: at.y + WINDOW_CASCADE_PX }, areas)
             : filesWindowBounds(at, onScreen(source.sidebarCollapsed ? FILES_WINDOW_DEFAULT_W : store.get().sidebarWidth), areas)
       const vaults = normalizeRoots(roots, roots[0])
-      // Its list one sidebar zoom step above the source's (YAZ-3389 D13, "starting 20% bigger"): a Files window's own
-      // zoom, else the shared `settings.sidebarZoom` (a full window, or no source). At 200% it stays 200%.
-      const sourceZoom = source !== undefined && isFilesWindow(source) ? normalizeFilesZoom(source.zoom) : store.get().settings.sidebarZoom
-      const zoom = stepSidebarZoom(sourceZoom, 1)
+      // Its list at the source's sidebar zoom (YAZ-3487, demo round 3 — it was one step above, YAZ-3389 D13): a Files
+      // window's own zoom, else the shared `settings.sidebarZoom` (a full window, or no source). The App size is shared already.
+      const zoom = source !== undefined && isFilesWindow(source) ? normalizeFilesZoom(source.zoom) : store.get().settings.sidebarZoom
+      // A NEW window: its tree starts with every folder closed (YAZ-3487, demo round 3).
+      const id = randomUUID()
+      collapsedStarts.add(id)
       // The lens comes from the source (D6); the focus list is the vault's, and no name or tab comes along.
-      open({ id: randomUUID(), kind: 'files', root: vaults[0], roots: vaults, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: source?.sidebarLens ?? DEFAULT_SIDEBAR_LENS, bounds, zoom })
+      open({ id, kind: 'files', root: vaults[0], roots: vaults, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: source?.sidebarLens ?? DEFAULT_SIDEBAR_LENS, bounds, zoom })
       return true
     },
 

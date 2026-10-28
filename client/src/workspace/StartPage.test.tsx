@@ -1,7 +1,7 @@
 /**
  * The new tab page (YAZ-2663 D3, D4): three columns off the open history, the favorites and the
  * Files tree. The bridge is the jsdom stub pattern (App.test.tsx), so the real storage, tree feed
- * and api modules run against it. The rules of the third column are `suggestFavorites.test.ts`'s.
+ * and api modules run against it. The rules of the third column are `recentlyClosed.test.ts`'s.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, useState, type ReactNode } from 'react'
@@ -9,14 +9,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type OpenStat, type TreeNode, type WindowIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
 import { StartPage, type StartPageProps } from './StartPage'
-import { suggestFavorites } from './suggestFavorites'
+import { recentlyClosed } from './recentlyClosed'
 import startCss from './startPage.css?inline'
 import { HOVER_PREVIEW_DWELL_MS } from '../sidebar/HoverPreviewHost'
 
 // The REAL rules of the third column behind a counter (R5): a test can say when the page ran them.
-vi.mock('./suggestFavorites', async (importOriginal) => {
-  const real = await importOriginal<typeof import('./suggestFavorites')>()
-  return { ...real, suggestFavorites: vi.fn(real.suggestFavorites) }
+vi.mock('./recentlyClosed', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./recentlyClosed')>()
+  return { ...real, recentlyClosed: vi.fn(real.recentlyClosed) }
 })
 // The sidebar's note panel (YAZ-3403): a stand-in that says which note it shows.
 vi.mock('../sidebar/NotePreview', () => ({ default: ({ name }: { name: string }) => <div className="note-preview" aria-label={`Preview of ${name}`} /> }))
@@ -40,16 +40,18 @@ interface Fixture {
   /** Each vault's tree, by its root: the keys are the vaults of the window, in its order. */
   trees: Record<string, TreeNode[]>
   opens?: Record<string, Record<string, OpenStat>>
+  /** Each vault's closed notes (YAZ-3487 D9): file → when it closed. */
+  closed?: Record<string, Record<string, number>>
   favorites?: Record<string, string[]>
   favoritesOrder?: string[]
 }
 
-function installBridge({ trees, opens = {}, favorites = {}, favoritesOrder = [] }: Fixture) {
+function installBridge({ trees, opens = {}, closed = {}, favorites = {}, favoritesOrder = [] }: Fixture) {
   const stateChanged = new Set<(next: AppState) => void>()
   const favoritesChanged = new Set<(change: { root: string }) => void>()
   const roots = Object.keys(trees)
   // The first two vaults have a name of their own: what the app calls them, and what a row's tag says (S20).
-  const state: AppState = { ...defaultAppState(), favoritesOrder, folders: Object.fromEntries(roots.map((vaultRoot, at) => [vaultRoot, { ...defaultFolderState(), opens: opens[vaultRoot] ?? {}, name: ['Notes', 'Work'][at] ?? null }])) }
+  const state: AppState = { ...defaultAppState(), favoritesOrder, folders: Object.fromEntries(roots.map((vaultRoot, at) => [vaultRoot, { ...defaultFolderState(), opens: opens[vaultRoot] ?? {}, closed: closed[vaultRoot] ?? {}, name: ['Notes', 'Work'][at] ?? null }])) }
   const bridge = {
     tree: vi.fn(async (vaultRoot: string) => ({ root: vaultRoot, tree: trees[vaultRoot] ?? [], generatedAt: 1 })),
     favorites: {
@@ -96,7 +98,7 @@ async function mount(fixture: Fixture, over: Partial<StartPageProps> = {}, Page:
   return { ...b, el: container, props }
 }
 
-type Col = 'recent' | 'favorites' | 'suggested'
+type Col = 'recent' | 'favorites' | 'closed'
 const column = (el: HTMLElement, col: Col) => el.querySelector<HTMLElement>(`.start__column[data-col="${col}"]`)!
 const rowsOf = (el: HTMLElement, col: Col) => [...column(el, col).querySelectorAll<HTMLButtonElement>('button.start__row')]
 const paths = (el: HTMLElement, col: Col) => rowsOf(el, col).map((row) => row.dataset.path)
@@ -149,9 +151,9 @@ describe('StartPage', () => {
       { titles: new Map([[`${v}/Projects/Alpha/plan.md`, 'The plan']]) },
     )
     expect([...el.querySelectorAll('.start__column')].map((col) => [(col as HTMLElement).dataset.col, col.querySelector('h2')?.textContent])).toEqual([
-      ['recent', 'Recent'],
+      ['closed', 'Recently closed'], // first, and "Recent" reads "Recently viewed" (YAZ-3487 D12, D13)
+      ['recent', 'Recently viewed'],
       ['favorites', 'Favorites'],
-      ['suggested', 'Used a lot, not a favorite yet'],
     ])
     // 10 pages in the record of two vaults: the 8 newest, and the two oldest (n6, report.pdf) are not here.
     expect(paths(el, 'recent')).toEqual([`${w}/x.md`, `${v}/Projects/Alpha/plan.md`, ...notes.slice(0, 6)])
@@ -194,20 +196,34 @@ describe('StartPage', () => {
     expect(el.querySelector('.tree__vault')).toBeNull()
   })
 
-  it('S14 to S17: the third column shows the pages and folders that are used a lot and are no favorite, the highest score first', async () => {
+  it('YAZ-3487 S31, S35, S40: "Recently closed" shows the 8 notes closed last, the newest first, from every vault, each with how long ago; a note a tab shows now — here or in another window — is not there', async () => {
     const v = vault()
-    const inProjects = ['a', 'b', 'c'].map((name) => `${v}/Projects/${name}.md`)
-    const { el } = await mount({
-      trees: { [v]: [dir(`${v}/Projects`, inProjects.map((path) => file(path))), file(`${v}/often.md`), file(`${v}/seldom.md`), file(`${v}/fav.md`)] },
-      opens: { [v]: { [inProjects[0]]: used(4), [inProjects[1]]: used(1), [inProjects[2]]: used(1), [`${v}/often.md`]: used(5), [`${v}/seldom.md`]: used(2), [`${v}/fav.md`]: used(9) } },
-      favorites: { [v]: [`${v}/fav.md`] },
-    })
-    // Projects stands for its three pages (6); `seldom` is under 3; `fav` is a favorite.
-    expect(rowsOf(el, 'suggested').map((button) => [button.dataset.path, isDir(button), part(button, 'start__name')])).toEqual([
-      [`${v}/Projects`, true, 'Projects'],
-      [`${v}/often.md`, false, 'often'],
-    ])
-    expect(emptyLine(el, 'suggested')).toBeNull()
+    const w = vault('w')
+    const notes = Array.from({ length: 9 }, (_, n) => `${v}/n${n}.md`)
+    const b = installBridge({ trees: { [v]: notes.map((path) => file(path)), [w]: [file(`${w}/x.md`), file(`${w}/open-there.md`)] } })
+    // Another window shows `open-there.md` in a tab: it is no closed note now (S37).
+    b.state.windows = [{ id: 'w2', root: w, roots: [w], file: `${w}/open-there.md`, tabs: [`${w}/open-there.md`], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } }]
+    b.state.folders[v].closed = Object.fromEntries(notes.map((path, n) => [path, NOW - (n + 1) * HOUR]))
+    b.state.folders[w].closed = { [`${w}/x.md`]: NOW - 30_000, [`${w}/open-there.md`]: NOW, [`${w}/gone.md`]: NOW }
+    await storage.init()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const el = container
+    // This window shows `n0.md` in a tab (S35, S36): it is not there either.
+    await act(async () => root?.render(<StartPage {...doors([v, w])} openTabs={[`${v}/n0.md`]} />))
+    // `gone.md` is not on the disk (S38); `n0` and `open-there` are open; of the rest, the 8 newest.
+    expect(paths(el, 'closed')).toEqual([`${w}/x.md`, ...notes.slice(1, 8)])
+    const [x, n1] = rowsOf(el, 'closed')
+    expect([part(x, 'start__when'), part(x, 'tree__vault'), part(n1, 'start__when')]).toEqual(['now', 'Work', '2h'])
+    expect(emptyLine(el, 'closed')).toBeNull()
+  })
+
+  it('YAZ-3487 D14: a right-click on a row of "Recently closed" asks for the row menu with its two items (the fourth argument is true)', async () => {
+    const v = vault()
+    const { el, props } = await mount({ trees: { [v]: [file(`${v}/a.md`)] }, closed: { [v]: { [`${v}/a.md`]: NOW - HOUR } } })
+    act(() => void rowsOf(el, 'closed')[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 20 })))
+    expect(vi.mocked(props.onRowMenu).mock.calls).toEqual([[`${v}/a.md`, 10, 20, true]])
   })
 
   it('S18, R1: a page that is gone from the disk gives no row and no error; the page asks for ONE tree of each vault when it shows, and none for a row', async () => {
@@ -216,18 +232,19 @@ describe('StartPage', () => {
     const { el, bridge, trees } = await mount({
       trees: { [v]: [file(`${v}/here.md`), file(`${v}/leaving.md`)] },
       opens: { [v]: { [`${v}/here.md`]: used(4, HOUR), [`${v}/gone.md`]: used(9), [`${v}/leaving.md`]: used(5, 2 * HOUR) } },
+      closed: { [v]: { [`${v}/leaving.md`]: NOW - HOUR, [`${v}/here.md`]: NOW - 2 * HOUR, [`${v}/gone.md`]: NOW } },
       favorites: { [v]: [`${v}/gone-favorite.md`] },
     })
     expect(bridge.tree.mock.calls).toEqual([[v]])
     expect(paths(el, 'recent')).toEqual([`${v}/here.md`, `${v}/leaving.md`])
-    expect(paths(el, 'suggested')).toEqual([`${v}/leaving.md`, `${v}/here.md`])
+    expect(paths(el, 'closed')).toEqual([`${v}/leaving.md`, `${v}/here.md`])
     expect(paths(el, 'favorites')).toEqual([])
     // A newer tree lands on the window's one feed, whoever asked for it: the row of a page that left goes.
     trees[v] = [file(`${v}/here.md`)]
     const { fetchTree } = await import('../lib/treeFeed')
     await act(async () => void (await fetchTree(v)))
     expect(paths(el, 'recent')).toEqual([`${v}/here.md`])
-    expect(paths(el, 'suggested')).toEqual([`${v}/here.md`])
+    expect(paths(el, 'closed')).toEqual([`${v}/here.md`])
     expect(errors).not.toHaveBeenCalled()
   })
 
@@ -248,9 +265,10 @@ describe('StartPage', () => {
     expect(el.querySelectorAll('.start__column h2')).toHaveLength(3)
     expect(el.querySelector('.start__empty')).toBeNull()
     await act(async () => land({ root: v, tree: [], generatedAt: 1 }))
-    expect([emptyLine(el, 'recent'), emptyLine(el, 'favorites'), emptyLine(el, 'suggested')]).toEqual(['Pages you open show here.', null, null])
+    // "Recently closed" reads only the tree and the app state (YAZ-3487 S41): it says so with the tree.
+    expect([emptyLine(el, 'recent'), emptyLine(el, 'favorites'), emptyLine(el, 'closed')]).toEqual(['Pages you open show here.', null, 'Notes you close show here.'])
     await act(async () => list([]))
-    expect([emptyLine(el, 'recent'), emptyLine(el, 'favorites'), emptyLine(el, 'suggested')]).toEqual(['Pages you open show here.', 'No favorites yet. Right-click a file or folder → Add to favorites.', 'Nothing to suggest now.'])
+    expect([emptyLine(el, 'recent'), emptyLine(el, 'favorites'), emptyLine(el, 'closed')]).toEqual(['Pages you open show here.', 'No favorites yet. Right-click a file or folder → Add to favorites.', 'Notes you close show here.'])
     expect(el.querySelector('button.start__row')).toBeNull()
   })
 
@@ -290,25 +308,26 @@ describe('StartPage', () => {
     // The browser's own menu does not show over the row.
     expect(rightClick(row(el, `${v}/a.md`), 412, 96).defaultPrevented).toBe(true)
     rightClick(row(el, `${v}/Projects`), 640, 120)
+    // The fourth argument says the row is no row of "Recently closed" (YAZ-3487 D14).
     expect(vi.mocked(props.onRowMenu).mock.calls).toEqual([
-      [`${v}/a.md`, 412, 96],
-      [`${v}/Projects`, 640, 120],
+      [`${v}/a.md`, 412, 96, false],
+      [`${v}/Projects`, 640, 120, false],
     ])
     expect(el.querySelector('.ctx-menu, [role="menu"]')).toBeNull()
     expect([vi.mocked(props.onOpen).mock.calls.length, vi.mocked(props.onShowInFiles).mock.calls.length]).toEqual([0, 0])
   })
 
-  it('S28, S29: "Add to favorites" puts the row in "Favorites" at once and takes it out of the third column; "Remove from favorites" takes it out of "Favorites"', async () => {
+  it('S28, S29: "Add to favorites" puts the row in "Favorites" at once; "Remove from favorites" takes it out of "Favorites"', async () => {
     const v = vault()
     const { el, favorites, emitFavorites } = await mount({ trees: { [v]: [file(`${v}/a.md`), file(`${v}/b.md`)] }, opens: { [v]: { [`${v}/a.md`]: used(5, HOUR), [`${v}/b.md`]: used(4, 2 * HOUR) } }, favorites: { [v]: [`${v}/b.md`] } })
-    expect([paths(el, 'recent'), paths(el, 'favorites'), paths(el, 'suggested')]).toEqual([[`${v}/a.md`, `${v}/b.md`], [`${v}/b.md`], [`${v}/a.md`]])
+    expect([paths(el, 'recent'), paths(el, 'favorites')]).toEqual([[`${v}/a.md`, `${v}/b.md`], [`${v}/b.md`]])
     // The menu item writes the list of the vault, and main says `favorites:changed` (the sidebar's `toggleFavorite`).
     favorites[v] = [`${v}/b.md`, `${v}/a.md`]
     await emitFavorites(v)
-    expect([paths(el, 'recent'), paths(el, 'favorites'), paths(el, 'suggested')]).toEqual([[`${v}/a.md`, `${v}/b.md`], [`${v}/b.md`, `${v}/a.md`], []])
+    expect([paths(el, 'recent'), paths(el, 'favorites')]).toEqual([[`${v}/a.md`, `${v}/b.md`], [`${v}/b.md`, `${v}/a.md`]])
     favorites[v] = [`${v}/a.md`]
     await emitFavorites(v)
-    expect([paths(el, 'favorites'), paths(el, 'suggested')]).toEqual([[`${v}/a.md`], [`${v}/b.md`]])
+    expect(paths(el, 'favorites')).toEqual([`${v}/a.md`])
   })
 
   it('R1: the favorites of each vault are read ONE time when the page shows, and again on `favorites.onChanged` for a vault of the window; the record follows the app state; nothing listens after the page goes', async () => {
@@ -319,14 +338,13 @@ describe('StartPage', () => {
       opens: { [v]: { [`${v}/a.md`]: used(5, HOUR), [`${v}/b.md`]: used(1, 2 * HOUR) } },
     })
     expect(bridge.favorites.get.mock.calls).toEqual([[v], [w]])
-    expect(paths(el, 'suggested')).toEqual([`${v}/a.md`])
-    // "Add to favorites" in any window (S28 of YAZ-2673): the row shows in "Favorites" and leaves the third column.
+    // "Add to favorites" in any window (S28 of YAZ-2673): the row shows in "Favorites".
     favorites[v] = [`${v}/a.md`]
     await emitFavorites('/another-window')
     expect(bridge.favorites.get).toHaveBeenCalledTimes(2)
     await emitFavorites(v)
     expect(bridge.favorites.get.mock.calls).toEqual([[v], [w], [v]])
-    expect([paths(el, 'favorites'), paths(el, 'suggested')]).toEqual([[`${v}/a.md`], []])
+    expect(paths(el, 'favorites')).toEqual([`${v}/a.md`])
     // A use that the main process added (a page came on show in any window) is on the page at once.
     await emitState({ ...state, folders: { ...state.folders, [w]: { ...defaultFolderState(), opens: { [`${w}/x.md`]: used(1) } } } })
     expect(paths(el, 'recent')).toEqual([`${w}/x.md`, `${v}/a.md`, `${v}/b.md`])
@@ -341,11 +359,11 @@ describe('StartPage', () => {
     expect(listens).not.toHaveBeenCalled()
   })
 
-  it('R5: the columns are cut when what they read changes, not on each render — a broadcast of the app state that changes no record, and a new render by App, run the suggestions no second time; a new use, and a new name of a vault, are on the page at once', async () => {
+  it('R5: the columns are cut when what they read changes, not on each render — a broadcast of the app state that changes no record, and a new render by App, run the closed list no second time; a new use, and a new name of a vault, are on the page at once', async () => {
     const v = vault()
     const w = vault('w')
     const { el, props, state, emitState } = await mount({ trees: { [v]: [file(`${v}/a.md`), file(`${v}/b.md`)], [w]: [file(`${w}/x.md`)] }, opens: { [v]: { [`${v}/a.md`]: used(5, HOUR), [`${v}/b.md`]: used(1, 2 * HOUR) } } })
-    const runs = vi.mocked(suggestFavorites).mock.calls
+    const runs = vi.mocked(recentlyClosed).mock.calls
     const settled = runs.length
     expect(settled).toBeGreaterThan(0)
     // Each broadcast is a new COPY of all the app state: a change of a different key (the width of the sidebar) is no change of a record.
@@ -363,10 +381,11 @@ describe('StartPage', () => {
     expect(rowsOf(el, 'recent').map((button) => part(button, 'tree__vault'))).toEqual(['Journal', 'Journal'])
   })
 
-  /** "Recent" has three rows, "Favorites" none, and the third column two: `a` and `b` are used a lot. */
+  /** "Recent" has three rows, "Favorites" none, and the third column two: `a` and `b` were closed. */
   const keysFixture = (v: string): Fixture => ({
     trees: { [v]: [file(`${v}/a.md`), file(`${v}/b.md`), file(`${v}/c.md`)] },
     opens: { [v]: { [`${v}/a.md`]: used(5, HOUR), [`${v}/b.md`]: used(4, 2 * HOUR), [`${v}/c.md`]: used(1, 3 * HOUR) } },
+    closed: { [v]: { [`${v}/a.md`]: NOW - HOUR, [`${v}/b.md`]: NOW - 2 * HOUR } },
   })
 
   it('S33: the way in. The door that the page hands App puts the keyboard focus on the first row of the first column that has rows; with no row it says no; it is gone with the page', async () => {
@@ -397,14 +416,13 @@ describe('StartPage', () => {
   it('S36, S37: → and ← go to the next column that has rows, at the same row number or at its last row; → on the last column does nothing; ← on the first column, and Esc, put the caret in the search bar', async () => {
     const v = vault()
     const { el, props } = await mount(keysFixture(v))
-    expect([paths(el, 'recent').length, paths(el, 'favorites').length, paths(el, 'suggested').length]).toEqual([3, 0, 2])
+    // The columns stand "Recently closed", "Recently viewed", "Favorites" (YAZ-3487 D13).
+    expect([paths(el, 'closed').length, paths(el, 'recent').length, paths(el, 'favorites').length]).toEqual([2, 3, 0])
     act(() => cell(el, 'recent', 2).focus())
-    // "Favorites" has no row: the key goes over it. The third column has two rows: its last one.
-    const walk = ['ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowRight'].map((key) => (press(key), at()))
-    expect(walk).toEqual(['suggested 1', 'suggested 1', 'recent 1', 'recent 0', 'suggested 0'])
+    // "Recently closed" has two rows: ← lands on its last one. "Favorites" has no row: → from "Recently viewed" does nothing.
+    const walk = ['ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowUp', 'ArrowLeft'].map((key) => (press(key), at()))
+    expect(walk).toEqual(['closed 1', 'recent 1', 'recent 1', 'recent 0', 'closed 0'])
     expect(props.onBack).not.toHaveBeenCalled()
-    press('ArrowLeft')
-    expect(at()).toBe('recent 0')
     press('ArrowLeft')
     expect(props.onBack).toHaveBeenCalledTimes(1)
     const esc = press('Escape')
@@ -413,7 +431,7 @@ describe('StartPage', () => {
     expect(props.onBackToSearch).not.toHaveBeenCalled()
     // A key with ⌘, Ctrl or Alt is not the page's: a shortcut of the window stays one.
     const chord = press('ArrowDown', { metaKey: true, altKey: true })
-    expect([chord.defaultPrevented, at()]).toEqual([false, 'recent 0'])
+    expect([chord.defaultPrevented, at()]).toEqual([false, 'closed 0'])
   })
 
   it('YAZ-2663 D12: in a narrow page area the columns are ONE column (S23), so ↓ on the last row of a column goes on to the first row of the next one that has rows, and ↑ on the first row to the last row of the one before; ← goes back from each of them, and → does nothing', async () => {
@@ -421,16 +439,16 @@ describe('StartPage', () => {
     const { el, props } = await mount(keysFixture(v))
     // The page area after ⌘+ a few times, or in a narrow window: at or under the width where the columns stack.
     Object.defineProperty(el.querySelector('.start'), 'clientWidth', { value: 600, configurable: true })
-    act(() => cell(el, 'recent', 1).focus())
-    const walk = ['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowUp', 'ArrowUp'].map((key) => (press(key), at()))
-    expect(walk).toEqual(['recent 2', 'suggested 0', 'suggested 1', 'suggested 1', 'suggested 0', 'recent 2'])
-    expect([press('ArrowRight').defaultPrevented, at()]).toEqual([true, 'recent 2'])
-    act(() => cell(el, 'suggested', 0).focus())
+    act(() => cell(el, 'closed', 0).focus())
+    const walk = ['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowUp', 'ArrowUp', 'ArrowUp', 'ArrowUp'].map((key) => (press(key), at()))
+    expect(walk).toEqual(['closed 1', 'recent 0', 'recent 1', 'recent 2', 'recent 2', 'recent 1', 'recent 0', 'closed 1', 'closed 0'])
+    expect([press('ArrowRight').defaultPrevented, at()]).toEqual([true, 'closed 0'])
+    act(() => cell(el, 'recent', 0).focus())
     press('ArrowLeft')
     expect(props.onBack).toHaveBeenCalledTimes(1)
-    act(() => cell(el, 'recent', 0).focus())
+    act(() => cell(el, 'closed', 0).focus())
     press('ArrowUp')
-    expect(at()).toBe('recent 0') // the first row of the page: ↑ stops
+    expect(at()).toBe('closed 0') // the first row of the page: ↑ stops
   })
 
   it('S38: Enter on a file opens it, ⌘Enter opens it in a background tab, and Shift+Enter shows the row in Files; Enter on a folder shows it in Files; ⌘ is read before Shift', async () => {

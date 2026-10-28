@@ -307,9 +307,12 @@ export const storage = {
   getTabs: (): string[] => identity.tabs,
   /**
    * This window was opened EMPTY on purpose (YAZ-3343 D22, D35): the tab board's "New window", or ⌘⇧N. Main says so
-   * in its first identity; it boots with no tab, never on the vault's last file.
+   * in its first identity; it boots on the blank tab with the caret in the search (every window boots with no tab
+   * of its own now, YAZ-3487 D7; this flag is what puts the caret there).
    */
   isEmptyByChoice: (): boolean => identity.file === null && identity.startEmpty === true,
+  /** A NEW window (⌘⇧N, the board's "New window", a new Files window — YAZ-3487): its Files tree starts with every folder closed. */
+  isCollapsedStart: (): boolean => identity.startCollapsed === true,
   /**
    * The tabs with their copies, display names and active copy (YAZ-3057): boot only, like `getTabs`.
    * A window that stores no strip gives its plain `tabs`, one entry per path.
@@ -319,10 +322,22 @@ export const storage = {
   /** Durable right-panel identity at boot; clone the ordered list so callers cannot mutate the cache. */
   getRightPanel: (): RightPanelIdentity => ({ ...identity.rightPanel, items: [...identity.rightPanel.items] }),
 
+  /** The folder's remembered file: still WRITTEN (`setWorkspace`), no longer read to open a vault (YAZ-3487 D7). The tests read the write through it. */
   getLastFile: (root: string): string | null => folderOf(root).lastFile,
 
   /** A vault's open history (YAZ-2663 D1): page → how much it is used, and when it was last on show. Read-only here: main alone adds a use, and the cache follows the broadcast. */
   getOpens: (root: string): Readonly<Record<string, OpenStat>> => folderOf(root).opens,
+
+  /** A vault's closed notes (YAZ-3487 D9): file → when it closed. Read-only here: main alone adds one, and the cache follows the broadcast. */
+  getClosed: (root: string): Readonly<Record<string, number>> => folderOf(root).closed,
+  /** Tabs closed in this window (YAZ-3487 D10): main puts their notes in "Recently closed". */
+  noteClosed(files: readonly string[]): void {
+    send('window.noteClosed', () => api.window.noteClosed([...files]))
+  },
+  /** "Remove from Recently closed" / "Clear Recently closed" (YAZ-3487 D14): these notes, or with null all of this window's vaults. */
+  forgetClosed(files: readonly string[] | null): void {
+    send('window.forgetClosed', () => api.window.forgetClosed(files === null ? null : [...files]))
+  },
 
   /** A vault's save log (YAZ-3235 D1): file → when the app last saved it. Read-only here: main alone adds a save, and the cache follows the broadcast. */
   getEdits: (root: string): Readonly<Record<string, number>> => folderOf(root).edits,

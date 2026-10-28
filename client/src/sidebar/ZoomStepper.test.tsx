@@ -57,7 +57,7 @@ describe('ZoomStepper', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('app (YAZ-3432): the same control along 90 · 100 · 110 · 125, the walls at 90 and 125, the percent writes 100', () => {
+  it('app (YAZ-3432): the same control along 90 · 100 · 110 · 125 · 150 · 175 · 200, the walls at 90 and 200 (YAZ-3487), the percent writes 100', () => {
     const onChange = vi.fn()
     const el = render('app', 100, onChange)
     expect(el.querySelector('[role="group"][aria-label="App size"]')?.textContent).toBe('−100%+')
@@ -75,7 +75,7 @@ describe('ZoomStepper', () => {
     render('app', 90, onChange)
     expect([out(el).disabled, into(el).disabled]).toEqual([true, false])
     act(() => out(el).click())
-    render('app', 125, onChange)
+    render('app', 200, onChange)
     expect([out(el).disabled, into(el).disabled]).toEqual([false, true])
     act(() => into(el).click())
     expect(onChange).not.toHaveBeenCalled()
@@ -85,13 +85,13 @@ describe('ZoomStepper', () => {
 
   it('YAZ-3434: a step that reaches a wall moves the focus to the percent, so it stays in the row; a step inside the walls keeps it', () => {
     const onChange = vi.fn()
-    // App size: 110 → + → 125, the top wall.
-    let el = render('app', 110, onChange)
+    // App size: 175 → + → 200, the top wall.
+    let el = render('app', 175, onChange)
     into(el).focus()
     act(() => into(el).click())
-    expect(onChange).toHaveBeenLastCalledWith(125)
+    expect(onChange).toHaveBeenLastCalledWith(200)
     expect(document.activeElement).toBe(percent(el))
-    render('app', 125, onChange)
+    render('app', 200, onChange)
     expect(into(el).disabled).toBe(true)
     expect(document.activeElement).toBe(percent(el))
     // App size: 100 → − → 90, the bottom wall.

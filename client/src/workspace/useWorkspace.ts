@@ -668,16 +668,18 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
 /**
  * The boot state (rule 15): `storage`'s identity is valid AT BOOT only (`storage.init()`
  * resolves before the first render). Active-file precedence (GRO-2069/2160): a pasted
- * `#/abs/path` hash wins, then this window's restored file, then the folder's remembered
- * lastFile; a hash file missing from the stored tabs is added (rule 12). Only the active
- * tab's editor mounts.
+ * `#/abs/path` hash wins, then this window's restored file; with neither the window opens blank
+ * (YAZ-3487 D7 — the folder's remembered lastFile no longer fills it). A hash file missing from the
+ * stored tabs is added (rule 12). Only the active tab's editor mounts.
  */
 export function bootTabs(root: string | null): TabsState {
   if (root === null) return EMPTY
-  // A window empty by choice (its strip stored empty, YAZ-3343) stays empty: the vault's last file would be a tab nobody asked for.
   // A Files window (YAZ-3357 D1) has no tabs at all.
   if (storage.isFilesWindow()) return EMPTY
-  const active = hashFilePath(location.hash) ?? storage.getFile() ?? (storage.isEmptyByChoice() ? null : storage.getLastFile(root))
+  // No restored file: the window opens blank (YAZ-3487 D7) — or, with "Open on: Its last note" (D15), on the vault's last
+  // file, unless it was opened empty on purpose (YAZ-3343).
+  const fallback = storage.getSettings().vaultOpensOn === 'last' && !storage.isEmptyByChoice() ? storage.getLastFile(root) : null
+  const active = hashFilePath(location.hash) ?? storage.getFile() ?? fallback
   // The copies and display names come back with the window (YAZ-3057), and with a tab "Move to new window" brought (S19).
   return tabsReducer(EMPTY, { type: 'reset', tabs: storage.getTabStrip(), active })
 }
@@ -728,10 +730,10 @@ export interface UseWorkspace extends WorkspaceState {
   openBackground: (path: string) => void
   /** A tab, by id (YAZ-2940 D1). */
   activate: (id: string) => void
-  /** That tab only: a copy closes alone (S11). */
-  close: (id: string) => void
+  /** That tab only: a copy closes alone (S11). Its note goes to "Recently closed" (YAZ-3487 D10) — not when `moved`: it lives on in another window. */
+  close: (id: string, moved?: boolean) => void
   /** The tab board's closes of several tabs (YAZ-2648 D9, D15), by id: each as `close`, and ONE identity write for all of them. */
-  closeMany: (ids: readonly string[]) => void
+  closeMany: (ids: readonly string[], moved?: boolean) => void
   /** "Restore session" (YAZ-3147 D3): the stored tabs whose page is not open join the end, ONE change and ONE identity write (S27). */
   openStored: (tabs: readonly StoredTab[]) => void
   /** Drag-to-reorder (I3): the tab at `from` lands at final index `to`; activation untouched. */
@@ -838,8 +840,19 @@ export function useWorkspace(root: string | null): UseWorkspace {
   }, [dispatch])
   const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path }), [dispatch])
   const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
-  const close = useCallback((id: string) => dispatch({ type: 'close', id }), [dispatch])
-  const closeMany = useCallback((ids: readonly string[]) => dispatch({ type: 'close-many', ids }), [dispatch])
+  /** YAZ-3487 D10: the notes of the tabs that close go to "Recently closed". A tab that MOVES to another window is no close: its caller says so. */
+  const noteClosed = useCallback((ids: readonly string[]): void => {
+    const paths = stateRef.current.tabs.filter((t) => ids.includes(t.id)).map((t) => t.path)
+    if (paths.length > 0) storage.noteClosed(paths)
+  }, [])
+  const close = useCallback((id: string, moved = false) => {
+    if (!moved) noteClosed([id])
+    dispatch({ type: 'close', id })
+  }, [dispatch, noteClosed])
+  const closeMany = useCallback((ids: readonly string[], moved = false) => {
+    if (!moved) noteClosed(ids)
+    dispatch({ type: 'close-many', ids })
+  }, [dispatch, noteClosed])
   const openStored = useCallback((tabs: readonly StoredTab[]) => dispatch({ type: 'open-stored', tabs }), [dispatch])
   const move = useCallback((from: number, to: number) => dispatch({ type: 'move', from, to }), [dispatch])
   // The blank tab is in no stored field (YAZ-2655 D10): showing it and closing it mirror nothing.
@@ -852,9 +865,10 @@ export function useWorkspace(root: string | null): UseWorkspace {
     }
     const active = stateRef.current.active
     if (active === null) return false
+    noteClosed([active])
     dispatch({ type: 'close', id: active })
     return true
-  }, [dispatch, closeBlank])
+  }, [dispatch, closeBlank, noteClosed])
   const next = useCallback(() => dispatch({ type: 'cycle', dir: 1 }), [dispatch])
   const prev = useCallback(() => dispatch({ type: 'cycle', dir: -1 }), [dispatch])
   const back = useCallback(() => dispatch({ type: 'back' }), [dispatch])

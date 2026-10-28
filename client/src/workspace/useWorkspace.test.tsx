@@ -449,6 +449,7 @@ function installBridge(app: AppState, identity: IdentityFixture) {
         sidebarLens: identity.sidebarLens ?? 'files',
       })),
       setIdentity: vi.fn(async () => undefined),
+      noteClosed: vi.fn(async () => undefined),
     },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
@@ -465,7 +466,7 @@ afterEach(() => {
 describe('bootTabs (rules 12/15)', () => {
   const seeded: AppState = {
     ...defaultAppState(),
-    folders: { '/v': { expanded: [], lastFile: '/v/last.md', folds: {}, baseGroups: {}, opens: {}, edits: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
+    folders: { '/v': { expanded: [], lastFile: '/v/last.md', folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
   }
 
   it('restores the stored tabs with the identity file active; only the active tab mounts', async () => {
@@ -490,11 +491,21 @@ describe('bootTabs (rules 12/15)', () => {
     expect(s.active).toBe(s.tabs[2].id)
   })
 
-  it('a fresh window falls back to the folder lastFile; a null root (Welcome) is empty', async () => {
+  it('a fresh window opens blank — the folder lastFile stays unread (YAZ-3487 D7, S28); a null root (Welcome) is empty', async () => {
     installBridge(seeded, { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
-    expect(byPath(bootTabs('/v'))).toEqual(state(['/v/last.md'], '/v/last.md'))
+    expect(byPath(bootTabs('/v'))).toEqual(state([], null))
     expect(byPath(bootTabs(null))).toEqual(state([], null))
+  })
+
+  it('YAZ-3487 D15: with "Open on: Its last note" a fresh window falls back to the folder lastFile again; a window opened empty on purpose stays empty', async () => {
+    const last: AppState = { ...seeded, settings: { ...seeded.settings, vaultOpensOn: 'last' } }
+    installBridge(last, { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    expect(byPath(bootTabs('/v'))).toEqual(state(['/v/last.md'], '/v/last.md'))
+    installBridge(last, { id: 'w2', root: '/v', file: null, tabs: [], sidebarCollapsed: false, startEmpty: true })
+    await storage.init()
+    expect(byPath(bootTabs('/v'))).toEqual(state([], null))
   })
 
   it('restores right identity with only the expanded editor mounted and lets a pasted hash take ownership', async () => {
@@ -628,6 +639,21 @@ describe('useWorkspace legacy main-tab mirror', () => {
     expect(read().tabs).toEqual(['/v/d.md'])
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/d.md'], '/v/d.md'))
+  })
+
+  it('YAZ-3487 D10 (S31, S32, S43): close, closeMany and closeActive send the closed tabs\' notes to main, one call each; the blank tab sends nothing', () => {
+    for (const path of ['/v/a.md', '/v/b.md', '/v/c.md', '/v/d.md']) act(() => latest.openBackground(path))
+    act(() => latest.close(idOf('/v/a.md')))
+    expect(bridge.window.noteClosed).toHaveBeenLastCalledWith(['/v/a.md'])
+    act(() => latest.closeMany(['/v/b.md', '/v/c.md'].map(idOf)))
+    expect(bridge.window.noteClosed).toHaveBeenLastCalledWith(['/v/b.md', '/v/c.md'])
+    act(() => latest.activate(idOf('/v/d.md')))
+    act(() => void latest.closeActive())
+    expect(bridge.window.noteClosed).toHaveBeenLastCalledWith(['/v/d.md'])
+    expect(bridge.window.noteClosed).toHaveBeenCalledTimes(3)
+    act(() => latest.newTab())
+    act(() => void latest.closeActive())
+    expect(bridge.window.noteClosed).toHaveBeenCalledTimes(3)
   })
 
   it('keep writes nothing — the preview mark is session-only (YAZ-2648 D4) — and openKept is a double click: the previewed page stays, a page not open yet opens kept', () => {

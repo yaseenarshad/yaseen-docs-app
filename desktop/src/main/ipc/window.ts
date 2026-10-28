@@ -177,11 +177,13 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const startView = windows.takeStartView(id)
     // A window the tab board opened empty (YAZ-3343) says so once: it boots with no tab.
     const startEmpty = windows.takeStartEmpty(id)
+    // A NEW window (YAZ-3487): its tree starts with every folder closed. Once, as `startEmpty`.
+    const startCollapsed = windows.takeStartCollapsed(id)
     // A Files window's page that starts (a launch, a reload) starts with its board closed (YAZ-3357 D3, D10; bug YAZ-3392):
     // main ends a wide state left from the page before, so the window is narrow again and the next board grows it.
     if (kind === 'files') windows.filesWide(id, false)
     // The copies and display names (YAZ-3057) go out with EVERY identity read: a reload keeps them, as a restart does.
-    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}) }
+    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(startCollapsed ? { startCollapsed: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
@@ -386,20 +388,33 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     windows.highlight(entryFor(e).id, to === null ? null : requireString(to, 'to'))
   })
 
+  // `window:note-closed` (YAZ-3487 D10): the notes of tabs the caller closed go to "Recently closed" of ITS vaults.
+  handleWithEvent(CONTRACT.window.noteClosed, async (e, files: unknown) => {
+    const roots = entryFor(e).roots
+    if (!Array.isArray(files)) throw new BridgeFailure('BAD_REQUEST', "'files' must be a list of absolute paths")
+    store.addClosed(roots, files.map((file, i) => requireAbsPath(file, `files[${i}]`)))
+  })
+  // `window:forget-closed` (YAZ-3487 D14): drop notes from "Recently closed", or with null clear it, for the caller's vaults.
+  handleWithEvent(CONTRACT.window.forgetClosed, async (e, files: unknown) => {
+    const roots = entryFor(e).roots
+    if (files !== null && !Array.isArray(files)) throw new BridgeFailure('BAD_REQUEST', "'files' must be null or a list of absolute paths")
+    store.forgetClosed(roots, files === null ? null : files.map((file, i) => requireAbsPath(file, `files[${i}]`)))
+  })
+
   // `window:open-recent` (YAZ-1767 D1): the vault switcher's door — an absolute path in, and the
   // manager's verdict out: true = the vault is in front (its windows raised, D9, or a new one
   // opened; MRU bumped), false = the folder is gone and was pruned from the MRU instead. Any
-  // window may ask; the caller is not consulted.
-  handle(CONTRACT.window.openRecent, async (path: unknown): Promise<boolean> => windows.openRecentBeside(requireAbsPath(path, 'path')))
+  // window may ask. The caller counts only when nothing is raised: an EMPTY caller takes the vault itself (YAZ-3487 D1).
+  handleWithEvent(CONTRACT.window.openRecent, async (e, path: unknown): Promise<boolean> => windows.openRecentBeside(requireAbsPath(path, 'path'), windows.idFor(e.sender)))
   // `window:open-alone` (YAZ-2858 D1): "Open by itself" — the same contract, but main raises only a
-  // window that shows this vault alone, else it opens a new one.
-  handle(CONTRACT.window.openAlone, async (path: unknown): Promise<boolean> => windows.openAlone(requireAbsPath(path, 'path')))
+  // window that shows this vault alone, else the empty caller takes it, else it opens a new one.
+  handleWithEvent(CONTRACT.window.openAlone, async (e, path: unknown): Promise<boolean> => windows.openAlone(requireAbsPath(path, 'path'), windows.idFor(e.sender)))
 
   // Saved sets of vaults (YAZ-2602 D8; the user reads "workspace"). `window:open-set` is the
   // manager's door: what opened, and the folders that are gone. Any window may ask it, and may
   // rename or remove a set. `window:save-set` saves the CALLER's own vaults, so the renderer never
   // sends a list; false = the store refused (fewer than two vaults, an empty name, or R12).
-  handle(CONTRACT.window.openSet, async (id: unknown): Promise<OpenSetResult> => windows.openVaultSet(requireString(id, 'id')))
+  handleWithEvent(CONTRACT.window.openSet, async (e, id: unknown): Promise<OpenSetResult> => windows.openVaultSet(requireString(id, 'id'), windows.idFor(e.sender)))
   handleWithEvent(CONTRACT.window.saveSet, async (e, name: unknown): Promise<boolean> => store.saveVaultSet(requireString(name, 'name'), entryFor(e).roots) !== null)
   handle(CONTRACT.window.renameSet, async (id: unknown, name: unknown): Promise<boolean> => store.renameVaultSet(requireString(id, 'id'), requireString(name, 'name')))
   handle(CONTRACT.window.removeSet, async (id: unknown) => {

@@ -87,7 +87,11 @@ export function useVaultTree(
   const loaded = roots.every((vault) => trees.has(vault))
   // One list here, one list PER VAULT in the store (YAZ-2602 D3): the vaults never nest (R8), so
   // each folder is its own vault's, and the write-back below splits them again.
-  const [expanded, dispatch] = useReducer(treeReducer, roots, (all) => all.flatMap(storage.getExpanded))
+  // A NEW window starts with every folder closed (YAZ-3487): the vault's open folders are another window's.
+  const [expanded, dispatch] = useReducer(treeReducer, roots, (all) => (storage.isCollapsedStart() ? [] : all.flatMap(storage.getExpanded)))
+  // A NEW window's closed tree is no choice of the user: it writes nothing until a folder opens or closes here, so the
+  // vault keeps the list its other windows saved (bug YAZ-3513). The reducer answers a new list for each change.
+  const startList = useRef(storage.isCollapsedStart() ? expanded : null)
 
   // What the Files tab draws (YAZ-2602 D3). One vault → its tree. Two or more → one
   // folder row per vault, in the window's order, named as the app names the vault, its tree below it;
@@ -221,9 +225,14 @@ export function useVaultTree(
     const joined = roots.filter((vault) => !before.includes(vault))
     const left = before.filter((vault) => !roots.includes(vault))
     if (joined.length > 0 || left.length > 0) {
-      dispatch({ type: 'setAll', dirs: [...expanded.filter((dir) => rootOfPath(left, dir) === null), ...joined.flatMap(storage.getExpanded)] })
+      const dirs = [...expanded.filter((dir) => rootOfPath(left, dir) === null), ...joined.flatMap(storage.getExpanded)]
+      // A new window that the user has not touched stays untouched: a vault that joins or leaves is no open or close (YAZ-3513).
+      if (expanded === startList.current) startList.current = dirs
+      dispatch({ type: 'setAll', dirs })
       return
     }
+    if (expanded === startList.current) return
+    startList.current = null
     for (const vault of roots) {
       // A folder of no vault of the window stays in the first vault's list, where one vault keeps it.
       const own = roots.length === 1 ? expanded : expanded.filter((dir) => (rootOfPath(roots, dir) ?? roots[0]) === vault)

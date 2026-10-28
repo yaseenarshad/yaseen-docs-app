@@ -304,6 +304,8 @@ export interface SidebarMenuRequest {
   path: string
   x: number
   y: number
+  /** From a row of "Recently closed" (YAZ-3487 D14): the menu leads with "Remove from" and "Clear Recently closed". */
+  closed?: boolean
 }
 
 /** What App's ⌘C / ⌘X / ⌘V / ⌘⌫ listener may ask of the mounted sidebar (D6 amended, YAZ-1674; YAZ-3272 D20); each answers whether it acted. */
@@ -460,6 +462,8 @@ export interface MenuTargets {
   removeVault: string | null
   /** "Open by itself" (YAZ-2858 D4) — a VAULT row only: that vault's root. Equal to `removeVault` today; its OWN field. */
   openAlone: string | null
+  /** A row of the new tab page's "Recently closed" (YAZ-3487 D14): its path, for "Remove from" and "Clear Recently closed". */
+  forgetClosed: string | null
   /**
    * The lens the items act in (🔒 D1, YAZ-2050): the active one, or FILES for a row of the Search
    * tab — a search row is a disk row. Every lens rule in the menu path reads this.
@@ -1042,7 +1046,7 @@ export function Sidebar({
   // first, whose tree-drawing items show it in Files first (S27, S30). It is no pick and no
   // highlight of the panel, and its menu is the menu of one row (S32).
   const openMenuAt = useCallback(
-    (node: MenuRow | null, x: number, y: number, outside = false) => {
+    (node: MenuRow | null, x: number, y: number, outside = false, closed = false) => {
       const filePath = node?.type === 'file' ? node.path : null
       // A right-click on a row the selection does NOT hold is a fresh target, so the selection
       // becomes THAT row (D9, YAZ-1674 — the Finder rule; it used to merely clear), which keeps
@@ -1130,6 +1134,7 @@ export function Sidebar({
         addVaults: node !== null ? null : storage.listVaults().flatMap(({ path, name }) => (roots.includes(path) ? [] : [{ path, name }])),
         removeVault: vaultRow,
         openAlone: vaultRow,
+        forgetClosed: closed && node !== null ? node.path : null,
         infoPath: plural === null && shortcutIn === null && filePath !== null && isBoard(filePath) ? filePath : null,
         folderPaths: node === null ? [] : (plural ?? [node.path]).filter((path) => (path === node.path ? node.type === 'dir' : dirs.includes(path))),
       })
@@ -1165,7 +1170,7 @@ export function Sidebar({
     seenMenuId.current = menuRequest.id
     onMenuConsumed(menuRequest.id)
     const node = findNode(forest, menuRequest.path)
-    if (node !== null) openMenuAt(node, menuRequest.x, menuRequest.y, true)
+    if (node !== null) openMenuAt(node, menuRequest.x, menuRequest.y, true, menuRequest.closed === true)
   }, [menuRequest, forest, trees, favoritesByRoot, rootOf, onMenuConsumed, openMenuAt])
 
   // ---- Delete (GRO-2272): context menu "Delete" or ⌘⌫ → confirm sheet → App trashes the entries ----
@@ -1254,10 +1259,19 @@ export function Sidebar({
     [rootOf],
   )
 
-  /** "Open by itself" on a vault row (YAZ-2858 D4): main raises the window that shows the vault alone, else opens one; this one untouched. */
+  /**
+   * "Open by itself" on a vault row (YAZ-2858 D4): main raises the window that shows the vault alone, else opens one; this one
+   * untouched. A Files window shows it itself, as its keys do (YAZ-3487 D6). A folder that is gone says so, as ⌘1 to ⌘9 do (B1).
+   */
   const openVaultAlone = useCallback((root: string) => {
-    api.window.openAlone(root).catch((err: unknown) => console.error('[sidebar] window.openAlone failed:', err))
-  }, [])
+    const opening = onOpenSetHere === undefined ? api.window.openAlone(root) : onOpenVaultHere(root)
+    opening.then(
+      (opened) => {
+        if (!opened) onNotice(`Can't open ${storage.vaultName(root)}: folder not found`)
+      },
+      (err: unknown) => console.error('[sidebar] open by itself failed:', err),
+    )
+  }, [onOpenSetHere, onOpenVaultHere, onNotice])
 
   const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo)
 
@@ -1803,6 +1817,8 @@ export function Sidebar({
               onPickVault,
               onRemoveVault,
               onOpenAlone: openVaultAlone,
+              onForgetClosed: (path) => storage.forgetClosed([path]),
+              onClearClosed: () => storage.forgetClosed(null),
               onInfo: (path) => setInfoPopover({ x: menu.x, y: menu.y, path, now: Date.now(), info: null }),
               onHistory: (path) => onHistoryFile?.(path),
               onShare: (path) => onShareFile?.(path),
