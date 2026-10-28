@@ -10,7 +10,7 @@ const read = (file) => readFileSync(join(repo, file), 'utf8')
 /**
  * The drawing engine is the app's own source in `engine/` (YAZ-3572). Two things keep the bundle the same as
  * the packed builds were (YAZ-3574): npm links each of the five packages to `engine/`, never to npm's stock
- * copy; and the four readers of the engine keep `preserveSymlinks`, so its imports never reach the build
+ * copy; and the five readers of the engine keep `preserveSymlinks`, so its imports never reach the build
  * tools in `engine/node_modules` (React 19, mermaid 11.12).
  */
 it('links each engine package to engine/, never to a copy from npm', () => {
@@ -22,15 +22,17 @@ it('links each engine package to engine/, never to a copy from npm', () => {
   }
 })
 
-it('reads the engine where it is linked, in the renderer, the share viewer, the client tests and the typecheck', () => {
+it('reads the engine where it is linked, in the renderer, the share viewer, the client tests, the perf tests and the typecheck', () => {
   expect(read('desktop/electron.vite.config.ts')).toMatch(/^\s+preserveSymlinks: true,$/m)
   expect(read('tools/buildShareViewer.mjs')).toMatch(/^\s+preserveSymlinks: true,$/m)
   expect(read('client/vitest.config.ts')).toMatch(/^\s+preserveSymlinks: true,$/m)
+  expect(read('client/vitest.perf.config.ts')).toMatch(/^\s+preserveSymlinks: true,$/m)
   expect(read('client/tsconfig.json')).toMatch(/^\s+"preserveSymlinks": true,$/m)
 })
 
 it("keys CI's engine cache on exactly the files the build reads", () => {
   const files = ENGINE_INPUTS.map((input) => (/\.[a-z]+$/.test(input) ? `'${input}'` : `'${input}/**'`)).join(', ')
+  // `engine/scripts` and the packages are folders; the rest are files (`.env.production` too, by its leading dot).
   for (const workflow of ['.github/workflows/ci.yml', '.github/workflows/release.yml']) {
     expect(read(workflow)).toContain(`key: engine-\${{ runner.os }}-\${{ hashFiles(${files}) }}`)
   }

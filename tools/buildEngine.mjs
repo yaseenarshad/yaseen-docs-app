@@ -16,12 +16,12 @@
  *
  * Idempotent and cheap when nothing changed: the stamp is a hash of the engine files that the build
  * reads, kept INSIDE the excalidraw `dist/`, so CI's cache restores the
- * stamp with the build (`.github/workflows/ci.yml`). `npm run build`, `dev`, `typecheck` and `test`
- * run it first; `npm run engine:build` alone.
+ * stamp with the build (`.github/workflows/ci.yml`). The desktop `build` and `dev`, and the root `typecheck`, `test`
+ * and `drawio:pack`, run it first; `npm run engine:build` alone.
  */
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -33,9 +33,23 @@ const engine = join(repo, 'engine')
 export const ENGINE_PACKAGES = ['common', 'math', 'fractional-indexing', 'element', 'excalidraw']
 
 /** What the build reads. The same list is the cache key in `.github/workflows/ci.yml` and `release.yml`. */
-export const ENGINE_INPUTS = ['engine/package.json', 'engine/yarn.lock', 'engine/scripts', 'engine/tsconfig.json', ...ENGINE_PACKAGES.map((p) => `engine/packages/${p}`)]
+export const ENGINE_INPUTS = [
+  'engine/package.json',
+  'engine/yarn.lock',
+  'engine/tsconfig.json',
+  // The build writes the VITE_APP_* values of these two into the bundle (`engine/scripts/buildPackage.js`).
+  'engine/.env.development',
+  'engine/.env.production',
+  'engine/scripts',
+  'engine/packages/tsconfig.base.json',
+  // Not a package the app uses, but bundled INTO them: the build scripts alias `@excalidraw/utils` to its source.
+  'engine/packages/utils',
+  ...ENGINE_PACKAGES.map((p) => `engine/packages/${p}`),
+]
 
 const STAMP = join(engine, 'packages', 'excalidraw', 'dist', '.docs-app-build')
+/** Vite's pre-bundle of the renderer's packages (electron-vite's default `cacheDir`): it holds a copy of the engine. */
+const VITE_DEPS = join(repo, 'node_modules', '.vite')
 
 function run(cmd, args, cwd) {
   const r = spawnSync(cmd, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' })
@@ -82,6 +96,12 @@ export function buildEngine({ force = false } = {}) {
   // the Excalidraw website, which never builds here; esbuild finds its binary through its platform package without one.
   run(cmd, [...pre, 'install', '--frozen-lockfile', '--ignore-scripts'], engine)
   for (const p of ENGINE_PACKAGES) run(cmd, [...pre, 'build:esm'], join(engine, 'packages', p))
+  // yarn and npm share each engine package's own node_modules (npm's workspace layout, yarn's for the build). The app's
+  // bundle reads it through the link, so it must be npm's, as package-lock.json says: put it back (about a second).
+  run('npm', ['install', '--no-save', '--no-audit', '--no-fund', '--prefer-offline'], repo)
+  // Vite re-bundles its packages only when the lock file or its config changes; an engine change is neither. Drop the
+  // stale copy, so `npm run dev` serves the engine that was just built.
+  rmSync(VITE_DEPS, { recursive: true, force: true })
   if (stamp !== null) writeFileSync(STAMP, stamp)
   console.log('engine: built')
   return true

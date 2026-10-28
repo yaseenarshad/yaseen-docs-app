@@ -88,11 +88,11 @@ jobs:
           cache: npm
       # The drawing engine's build (YAZ-3572 E4): its five dist/ folders and the stamp in them, keyed on every file
       # its build reads (`ENGINE_INPUTS` in tools/buildEngine.mjs). A hit makes `npm run engine:build` a no-op; a miss
-      # builds it (about a minute and a half) and saves it at the end of the job.
+      # builds it (about a minute here; longer on a hosted runner, not measured yet) and saves it at the end of the job.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: engine/packages/*/dist
-          key: engine-${{ runner.os }}-${{ hashFiles('engine/package.json', 'engine/yarn.lock', 'engine/scripts/**', 'engine/tsconfig.json', 'engine/packages/common/**', 'engine/packages/math/**', 'engine/packages/fractional-indexing/**', 'engine/packages/element/**', 'engine/packages/excalidraw/**') }}
+          key: engine-${{ runner.os }}-${{ hashFiles('engine/package.json', 'engine/yarn.lock', 'engine/tsconfig.json', 'engine/.env.development', 'engine/.env.production', 'engine/scripts/**', 'engine/packages/tsconfig.base.json', 'engine/packages/utils/**', 'engine/packages/common/**', 'engine/packages/math/**', 'engine/packages/fractional-indexing/**', 'engine/packages/element/**', 'engine/packages/excalidraw/**') }}
       - run: npm ci
       # The free self-signed certificate "Yaseen Local Signing" (YAZ-2976 D1, made for YAZ-2770), from two
       # repo secrets, in a temporary keychain. `desktop/build/adhocSign.cjs` signs the Mac app with it.

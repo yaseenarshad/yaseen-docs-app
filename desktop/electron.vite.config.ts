@@ -17,7 +17,7 @@ const rendererOut = resolve(here, 'out/renderer')
 /** The package's own `fonts/` tree, wherever npm hoisted the workspace dependency (`shared/excalidrawFonts.ts`, the rule main's share upload uses too). */
 function excalidrawFontsDir(): string {
   const dir = excalidrawPackageFonts(resolve(here, '..')).find((d) => existsSync(d))
-  if (dir === undefined) throw new Error('@excalidraw/excalidraw fonts not found — run `npm install`')
+  if (dir === undefined) throw new Error('@excalidraw/excalidraw fonts not found — run `npm run engine:build`')
   return dir
 }
 

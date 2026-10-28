@@ -10,10 +10,12 @@ Five packages, as npm workspaces of the app (root `package.json`), in this order
 `math`, `fractional-indexing`, `element` and `excalidraw`. The app imports each one's `dist/`, which is
 never committed.
 
-`npm run build`, `dev`, `typecheck` and `test` run `tools/buildEngine.mjs` first. It does nothing when no
-engine file changed; else it installs the engine's own tools (`yarn install` here, from this folder's
-`yarn.lock`) and builds the five packages, in about a minute. `npm run engine:build -- --force` builds
-again anyway. CI keeps the build in its cache, keyed on these files (`.github/workflows/ci.yml`).
+`npm run build`, `dev`, `typecheck`, `test` and `drawio:pack` run `tools/buildEngine.mjs` first. It does
+nothing when no engine file changed (`ENGINE_INPUTS` there lists the files it watches); else it installs the
+engine's own tools (`yarn install` here, from this folder's `yarn.lock`), builds the five packages in about
+a minute, gives each package's `node_modules` back to npm, and drops Vite's stale copy of the engine.
+`npm run engine:build -- --force` builds again anyway. CI keeps the build in its cache, keyed on the same
+files (`.github/workflows/ci.yml`).
 
 Everything else stays as the fork has it — `excalidraw-app/`, `examples/`, `dev-docs/`, the other
 packages — so that an Excalidraw pull has no false clashes (E3). Nothing builds or tests them here.
@@ -25,7 +27,8 @@ mermaid 11.12). The app's bundles must never take a package from there. So the r
 (`desktop/electron.vite.config.ts`), the share viewer (`tools/buildShareViewer.mjs`), the client tests
 (`client/vitest.config.ts`) and the client typecheck (`client/tsconfig.json`) read the engine with
 `preserveSymlinks`: its imports resolve from the app's `node_modules`, as the packed builds did
-(YAZ-3574). `tools/engineWiring.test.mjs` fails when one of the four loses it.
+(YAZ-3574). So do the perf tests (`client/vitest.perf.config.ts`). `tools/engineWiring.test.mjs` fails when
+one of them loses it.
 
 ## Take new Excalidraw changes
 
@@ -34,8 +37,10 @@ git subtree pull --prefix=engine https://github.com/excalidraw/excalidraw.git ma
 ```
 
 Fix each clash. In October 2026, 89 new Excalidraw commits clashed in 64 files (39 of them engine
-source), so plan it as its own piece of work. Then run the drawing tests:
+source), so plan it as its own piece of work. If the pull changes a `package.json` of the five packages, run
+`npm install` at the repo root and commit `package-lock.json` with it; `npm ci` fails until then. Then build
+and run the drawing tests:
 
 ```bash
-npx playwright test --config desktop/e2e/playwright.config.ts drawing.spec.ts yaseendraw.spec.ts
+npm run build && npx playwright test --config desktop/e2e/playwright.config.ts drawing.spec.ts yaseendraw.spec.ts
 ```

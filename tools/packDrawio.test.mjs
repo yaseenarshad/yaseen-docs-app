@@ -66,9 +66,9 @@ describe('packDrawio (🔒 YAZ-1802 D5)', () => {
     expect(shared).toContain(`export const DRAWIO_TAG = '${DRAWIO_TAG}'`)
   })
 
-  it('dev and build pack draw.io first; CI packs before it tests (YAZ-3028 D5)', () => {
+  it('dev and build pack draw.io first, after the engine whose fonts it copies; CI packs before it tests (YAZ-3028 D5, YAZ-3572)', () => {
     const { scripts } = JSON.parse(readFileSync(new URL('../desktop/package.json', import.meta.url), 'utf8'))
-    for (const script of [scripts.dev, scripts.build]) expect(script.startsWith('node ../tools/packDrawio.mjs && ')).toBe(true)
+    for (const script of [scripts.dev, scripts.build]) expect(script.startsWith('node ../tools/buildEngine.mjs && node ../tools/packDrawio.mjs && ')).toBe(true)
     const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
     expect(ci.indexOf('run: npm run drawio:pack')).toBeGreaterThan(-1)
     expect(ci.indexOf('run: npm run drawio:pack')).toBeLessThan(ci.indexOf('run: npm test'))
