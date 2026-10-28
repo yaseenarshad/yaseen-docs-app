@@ -41,7 +41,7 @@ const TREES = new Map([
 const ROOTS = ['/v', '/w']
 const props = { trees: TREES, roots: ROOTS, titles: new Map([['/v/a.md', 'Alpha page']]), activeFile: null as string | null, onOpenFile: vi.fn(), onKeepFile: vi.fn(), onOpenFileBackground: vi.fn(), onMenu: vi.fn() }
 
-async function mount(app: AppState, extra: Partial<typeof props> = {}) {
+async function mount(app: AppState, extra: Partial<Parameters<typeof RecentList>[0]> = {}) {
   b = installBridge(app)
   await storage.init()
   el = document.createElement('div')
