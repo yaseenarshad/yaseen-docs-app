@@ -12,6 +12,12 @@
  * NAMES INSIDE FUNCTIONS (YAZ-3507) are left out where the tree is built (the TS worker, or `buildTree`
  * here), never per render. `setLocals` ("…" › Show › "Variables inside functions") reads again at once.
  *
+ * A LANGUAGE THAT GETS READY LATER (YAZ-3527). Monaco sets up a language's smart help after its first model
+ * exists (a dynamic import): until then a JSON, CSS or HTML file has no symbol provider, and the TS worker
+ * accessor rejects ("TypeScript not registered!"). So the first read of a tab restored at launch, or of the
+ * first such file of a session, answered nothing. The feed reads again when a symbol provider for the model
+ * registers (`onSymbolProviderChange`, `monacoInternals.ts`): an event, no timer.
+ *
  * OFF READS NOTHING. While the Outline is off (Settings › Table of contents › Off), `setActive(false)`
  * stops the reads: an edit arms no timer. Turning it on reads at once.
  *
@@ -19,6 +25,7 @@
  * markers is a new snapshot, with no new read.
  */
 import { monaco } from '../monaco'
+import { onSymbolProviderChange } from '../monacoInternals'
 import { buildTree, type CodeSymbol, type MarkerLike, type OutlineTree } from './outlineModel'
 
 type Model = ReturnType<typeof monaco.editor.createModel>
@@ -93,6 +100,17 @@ export function attachOutlineFeed(editor: Editor, model: Model, read: ReadSymbol
     if (disposed || !uris.some((uri) => uri.toString() === model.uri.toString())) return
     set({ ...snapshot, markers: markersNow() })
   })
+  // The language's providers registered after the first read (YAZ-3527): read again. A TS read asks for the
+  // worker through a dynamic import, so it runs after Monaco's set-up has also made the worker accessor.
+  const providers = onSymbolProviderChange(editor, () => {
+    if (disposed) return
+    if (!on) {
+      stale = true
+      return
+    }
+    clearTimeout(timer)
+    void readNow()
+  })
   if (on) void readNow()
   else stale = true
 
@@ -136,6 +154,7 @@ export function attachOutlineFeed(editor: Editor, model: Model, read: ReadSymbol
       clearTimeout(timer)
       edits.dispose()
       marks.dispose()
+      providers?.dispose()
       listeners.clear()
     },
   }
