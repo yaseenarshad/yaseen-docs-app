@@ -1645,7 +1645,16 @@ export interface SettingsState {
    * the helpers are a download on this Mac.
    */
   codeLanguageHelpers: boolean
+  /**
+   * Where ⌘D goes (YAZ-3556 D2): a sidebar tab, or a folder or a file by its root-relative path (the `newNoteFolder`
+   * rule). Each window reads the path in the vault of its active tab, else its first vault. Travels whole (`WHOLE_FIELDS`).
+   */
+  goTo: GoToPlace
 }
+
+/** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, or a folder or a file by its path inside the vault ('' = the vault root). */
+export type GoToPlace = { kind: 'tab'; tab: SidebarLens } | { kind: 'folder' | 'file'; path: string }
+export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
 
 /**
  * The settings that stay on this Mac when a settings folder is set (YAZ-3276 D1): a path, a panel memory
@@ -1867,6 +1876,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   codeOutlineHidden: [],
   codeOutlineLocals: false,
   codeLanguageHelpers: false,
+  goTo: DEFAULT_GO_TO,
 }
 
 export interface WindowBounds {

@@ -1041,4 +1041,20 @@
   background: rgba(220, 60, 60, 0.12);
   color: #c33;
   font-size: 11px;
+/* Settings › Sidebar › Go to (YAZ-3556 D8): the folder or file ⌘D goes to, beside its "Change…". */
+.settings__place {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: 8px;
+  font-size: 13px;
+}
+
+.settings__place-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
 }

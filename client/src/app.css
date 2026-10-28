@@ -3957,3 +3957,178 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---------- The New… box (⌘N) and the place picker (YAZ-3556 D5, D6) ---------- */
+
+/* Three tiles in a row, the folder under them. */
+.new-item {
+  width: min(420px, calc(100vw - 24px));
+}
+
+.new-item__tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.new-item__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 6px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+}
+
+.new-item__tile:hover {
+  background: var(--bg-hover);
+}
+
+.new-item__tile--active,
+.new-item__tile--active:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* The kind's icon, drawn large: the tile is the icon's place, not a row's. */
+.new-item__tile .file-icon {
+  zoom: 2;
+}
+
+.new-item__tile .file-icon::before {
+  margin-right: 0 !important;
+}
+
+.new-item__where {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.new-item__goes {
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.new-item__place {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-item__change {
+  flex: none;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+/* Over the Settings dialog (z-index 70) too. */
+.confirm-overlay.place-picker-overlay {
+  z-index: 80;
+}
+
+.place-picker {
+  width: min(420px, calc(100vw - 24px));
+  padding: 0 0 6px;
+  overflow: hidden;
+}
+
+/* The path bar: each part goes back to its folder. */
+.place-picker__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 6px 10px 2px;
+  font-size: 12px;
+}
+
+.place-picker__crumb-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+
+.place-picker__sep {
+  padding: 0 2px;
+  color: var(--fg-muted);
+}
+
+.place-picker__crumb {
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: var(--fg-muted);
+}
+
+.place-picker__crumb:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.place-picker__crumb[aria-current] {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.place-picker__list {
+  max-height: 300px;
+  overflow: auto;
+  padding: 4px 6px 0;
+}
+
+.place-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 3px 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.place-picker__row--active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.place-picker__row--choose .place-picker__name {
+  font-weight: 600;
+}
+
+.place-picker__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-picker__where {
+  flex: 1;
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.place-picker__in {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--fg-muted);
+}
+
+.place-picker__more {
+  margin: 4px 8px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}

@@ -53,6 +53,8 @@ describe('settingCandidates', () => {
       ...['note', 'text', 'pdf', 'image', 'drawing', 'diagram'].map((k) => `sidebarIconColors.${k}`),
       // The icon rules (YAZ-3440 D9).
       'sidebarIconRules',
+      // ⌘D's place (YAZ-3556 D8).
+      'goTo',
       // Settings › Notifications (YAZ-3303), under Appearance.
       ...['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds'],
       'bulletThreading',
@@ -90,7 +92,7 @@ describe('settingCandidates', () => {
 
   it('Hotkeys: the changeable commands head Window, then one row per built-in key, the Mac\'s keys, and Reset all — every id unique (YAZ-3397 D5, D8)', () => {
     const rows = hotkeyRows()
-    expect(rows.slice(0, 14)).toEqual(['newTab', 'newWindow', 'newFilesWindow', 'closeTab', 'closeWindow', 'switchVault', 'openFolder', 'search', 'settings', 'toggleSidebar', 'copyPath', 'tabOverview', 'nextTab', 'prevTab'].map((id) => `hotkey-${id}`))
+    expect(rows.slice(0, 16)).toEqual(['newTab', 'newWindow', 'newFilesWindow', 'newItem', 'goTo', 'closeTab', 'closeWindow', 'switchVault', 'openFolder', 'search', 'settings', 'toggleSidebar', 'copyPath', 'tabOverview', 'nextTab', 'prevTab'].map((id) => `hotkey-${id}`))
     expect(rows).toContain('hotkey-keyboard-table-of-contents')
     expect(rows).toContain('hotkey-macos-spotlight')
     expect(rows[rows.length - 1]).toBe('hotkeys-reset-all')

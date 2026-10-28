@@ -39,6 +39,8 @@ import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
+import { GoToControl } from './GoToControl'
+import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
@@ -99,6 +101,8 @@ export interface SettingsCtx {
   systemHotkeys?: readonly SystemHotkey[]
   /** Settings › Hotkeys' filters (YAZ-3564 K7): the dialog holds them while the page is open; absent = no filter. */
   hotkeyFilter?: HotkeyFilter
+  /** The window's vaults for the place picker (YAZ-3556 D6), the active tab's first; absent in a window with no vault. */
+  places?: readonly PlaceVault[]
 }
 
 export interface SettingDef {
@@ -594,6 +598,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
         ],
       },
+      {
+        // YAZ-3556 D8: where "Go to your place" (⌘D) goes.
+        title: 'Go to',
+        items: [
+          {
+            id: 'goTo',
+            label: 'Go to your place goes to',
+            hint: 'Go to your place (⌘D, File menu) shows this tab, folder or file in the sidebar. A drawing, a diagram and code keep their own ⌘D.',
+            keywords: ['sidebar', 'go to', 'place', 'cmd d', 'shortcut', 'folder', 'file', 'tab', 'focus', 'favorites', 'sessions', 'recents'],
+            wide: ({ settings }) => settings.goTo.kind !== 'tab',
+            render: ({ settings, onChange, places }) => <GoToControl settings={settings} onChange={onChange} vaults={places} />,
+          },
+        ],
+      },
     ],
   },
   NOTIFICATIONS_SECTION,
@@ -746,10 +764,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'newNoteLocation',
             label: 'Default location for new notes',
-            keywords: ['folder', 'wikilink'],
+            // YAZ-3556 D3: the New… box uses it too, for notes, drawings and diagrams.
+            hint: 'Where the New… box (⌘N) and a new [[link]] make a page.',
+            keywords: ['folder', 'wikilink', 'new', 'cmd n', 'drawing', 'diagram'],
             // A plain label-left / dropdown-right row, until the folder input needs the width.
             wide: ({ settings }) => settings.newNoteLocation === 'folder',
-            render: ({ settings, onChange }) => <NewNoteLocationControl settings={settings} onChange={onChange} />,
+            render: ({ settings, onChange, places }) => <NewNoteLocationControl settings={settings} onChange={onChange} vaults={places} />,
           },
         ],
       },

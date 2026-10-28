@@ -231,6 +231,29 @@ describe('createStore: loading', () => {
     expect(LOCAL_SETTINGS).toContain('codeLanguageHelpers')
   })
 
+  it('⌘D\'s place (YAZ-3556 D2): a file from before it reads the Files tab; each kind survives a restart; a wrong value reads the default; it travels whole', async () => {
+    const { goTo: _a, ...legacySettings } = DEFAULT_SETTINGS
+    expect(DEFAULT_SETTINGS.goTo).toEqual({ kind: 'tab', tab: 'files' })
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.goTo).toEqual({ kind: 'tab', tab: 'files' })
+    for (const goTo of [{ kind: 'tab', tab: 'recents' }, { kind: 'folder', path: 'Projects/Alpha' }, { kind: 'folder', path: '' }, { kind: 'file', path: 'Inbox/Today.md' }]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, goTo } }))
+      expect(createStore(file).get().settings.goTo).toEqual(goTo)
+    }
+    // A tab the sidebar does not have, an absolute or hidden path, a file with no path, a value with the parts of two kinds.
+    for (const goTo of [{ kind: 'tab', tab: 'search' }, { kind: 'folder', path: '/Users/x' }, { kind: 'folder', path: 'a/.git' }, { kind: 'file', path: '' }, { kind: 'folder', tab: 'files', path: 'a' }, 'files', null]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, goTo } }))
+      expect(createStore(file).get().settings.goTo, JSON.stringify(goTo)).toEqual({ kind: 'tab', tab: 'files' })
+      expect(isSettings({ ...DEFAULT_SETTINGS, goTo })).toBe(false)
+    }
+    // From a settings folder the other Mac's place replaces this one whole: never a mix of a tab and a folder.
+    expect(LOCAL_SETTINGS).not.toContain('goTo')
+    expect(mergeFolderSettings(DEFAULT_SETTINGS, { goTo: { kind: 'folder', path: 'Projects' } }).goTo).toStrictEqual({ kind: 'folder', path: 'Projects' })
+    const here = { ...DEFAULT_SETTINGS, goTo: { kind: 'file' as const, path: 'a.md' } }
+    expect(mergeFolderSettings(here, { goTo: { kind: 'tab', tab: 'focus' } }).goTo).toStrictEqual({ kind: 'tab', tab: 'focus' })
+    expect(mergeFolderSettings(here, { goTo: { kind: 'tab', tab: 'nowhere' } }).goTo).toStrictEqual(here.goTo)
+  })
+
   it('the code Outline (YAZ-3486 S4, S5): a file from before it reads Position and no hidden kind; each value survives a restart; a wrong value is repaired', async () => {
     const { codeOutlineSort: _a, codeOutlineHidden: _b, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))

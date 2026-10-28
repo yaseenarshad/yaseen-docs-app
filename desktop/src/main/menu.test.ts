@@ -15,6 +15,8 @@ const noopHandlers = (): MenuHandlers => ({
   copyAs: vi.fn(),
   pasteAs: vi.fn(),
   newTab: vi.fn(),
+  newItem: vi.fn(),
+  goTo: vi.fn(),
   newWindow: vi.fn(),
   newFilesWindow: vi.fn(),
   closeWindow: vi.fn(),
@@ -96,6 +98,10 @@ describe('buildMenuTemplate', () => {
     expect([file[0].id, file[0].label, file[0].accelerator]).toEqual(['menu.file.new-tab', 'New Tab', 'CmdOrCtrl+T'])
     click(file[0])
     expect(handlers.newTab).toHaveBeenCalledTimes(1)
+    // ⌘N right under it: the New… box (YAZ-3556 D1).
+    expect([file[1].id, file[1].label, file[1].accelerator]).toEqual(['menu.file.new-item', 'New…', 'CmdOrCtrl+N'])
+    click(file[1])
+    expect(handlers.newItem).toHaveBeenCalledTimes(1)
 
     const newWindow = file.find((i) => i.label === 'New Window')
     expect(newWindow?.accelerator).toBe('CmdOrCtrl+Shift+N')
@@ -128,6 +134,11 @@ describe('buildMenuTemplate', () => {
     expect(file.indexOf(search as MenuItemConstructorOptions)).toBe(file.findIndex((i) => i.label === 'Open Recent') + 2)
     click(search)
     expect(handlers.search).toHaveBeenCalledTimes(1)
+    // ⌘D right under it (YAZ-3556 D1): the place of Settings › Sidebar › Go to.
+    const goTo = file[file.indexOf(search as MenuItemConstructorOptions) + 1]
+    expect([goTo.id, goTo.label, goTo.accelerator]).toEqual(['menu.file.go-to', 'Go to Your Place', 'CmdOrCtrl+D'])
+    click(goTo)
+    expect(handlers.goTo).toHaveBeenCalledTimes(1)
 
     // ⌘W is Close Tab (GRO-2232, locked): a click item into the focused renderer, NOT the role.
     const closeTab = file.find((i) => i.label === 'Close Tab')
@@ -318,11 +329,11 @@ describe('buildMenuTemplate', () => {
 
   // ---------- The board items (YAZ-3037, YAZ-3028 D10; ported from Draw's menu.test.ts) ----------
 
-  it('File: Export Image… ⌘⇧E, Export Excalidraw Drawing… ⌘⇧S and Share Link ⌘⇧L, in their own group after Search Vault, each calling its handler', () => {
+  it('File: Export Image… ⌘⇧E, Export Excalidraw Drawing… ⌘⇧S and Share Link ⌘⇧L, in their own group after Search Vault and Go to Your Place, each calling its handler', () => {
     const handlers = noopHandlers()
     const file = menuOf(onTab('drawing', handlers), 'File')
     const at = (id: string) => file.findIndex((i) => i.id === id)
-    expect(at('menu.file.export-image')).toBe(at('menu.file.search') + 2)
+    expect(at('menu.file.export-image')).toBe(at('menu.file.go-to') + 2)
     expect([at('menu.file.export-drawing'), at('menu.file.share-link'), at('menu.file.close-tab')]).toEqual([at('menu.file.export-image') + 1, at('menu.file.export-image') + 2, at('menu.file.export-image') + 4])
     expect(file[at('menu.file.share-link') + 1].type).toBe('separator')
     expect(['menu.file.export-image', 'menu.file.export-drawing', 'menu.file.share-link'].map((id) => [file[at(id)].label, file[at(id)].accelerator, file[at(id)].enabled])).toEqual([
@@ -351,6 +362,14 @@ describe('buildMenuTemplate', () => {
     for (const kind of ['drawing', 'diagram', 'text'] as const) expect(search(kind, { 'app.search': true }), kind).toBeUndefined()
     for (const kind of ['markdown', null] as const) expect(search(kind, { 'app.search': true }), String(kind)).toBe('CmdOrCtrl+K')
     expect(item(onTab('markdown'), 'View', 'menu.view.toggle-sidebar')?.accelerator).toBe('CmdOrCtrl+Shift+B')
+    // ⌘D steps aside by default (YAZ-3556 D1): Duplicate on a board, Add next match in code. A note and no tab keep it; the switch off takes it everywhere.
+    const goTo = (kind: FileKind | null, hotkeysAside?: Record<string, boolean>) =>
+      item(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: kind, hotkeys: {}, hotkeysAside }, noopHandlers()), 'File', 'menu.file.go-to')?.accelerator
+    for (const kind of ['drawing', 'diagram', 'text'] as const) expect(goTo(kind), kind).toBeUndefined()
+    for (const kind of ['markdown', null] as const) expect(goTo(kind), String(kind)).toBe('CmdOrCtrl+D')
+    expect(goTo('drawing', { 'app.goTo': false })).toBe('CmdOrCtrl+D')
+    // ⌘N never steps aside: the New… box answers on every tab.
+    for (const kind of ['drawing', 'diagram', 'text', 'markdown'] as const) expect(item(onTab(kind), 'File', 'menu.file.new-item')?.accelerator, kind).toBe('CmdOrCtrl+N')
   })
 
   it('⌘⇧S belongs to the menu ONLY while Export Excalidraw Drawing… is enabled: off a drawing the review\'s Skip (YAZ-2322) keeps it (D10)', () => {
@@ -676,7 +695,11 @@ describe('createMenuHandlers', () => {
     expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onTabOverview.channel)
     handlers.newTab()
     expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onNewTab.channel)
-    expect(wc.send).toHaveBeenCalledTimes(5)
+    handlers.newItem()
+    expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onNewItem.channel)
+    handlers.goTo()
+    expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onGoTo.channel)
+    expect(wc.send).toHaveBeenCalledTimes(7)
 
     const { handlers: unfocused } = makeHandlers(undefined)
     expect(() => {
@@ -685,6 +708,8 @@ describe('createMenuHandlers', () => {
       unfocused.prevTab()
       unfocused.tabOverview()
       unfocused.newTab()
+      unfocused.newItem()
+      unfocused.goTo()
     }).not.toThrow()
   })
 
@@ -855,13 +880,13 @@ describe('subscribeMenuRebuild', () => {
 // ---------- gateOnBoardKind (YAZ-3044 A32) ----------
 
 describe('gateOnBoardKind', () => {
-  it('apply always builds; applyIfMoved builds only when the front file moves between drawing, diagram and other', () => {
+  it('apply always builds; applyIfMoved builds only when the front file moves between drawing, diagram, code and other', () => {
     let kind: FileKind | null = 'markdown'
     const build = vi.fn()
     const menu = gateOnBoardKind(() => kind, build)
     menu.apply()
     expect(build).toHaveBeenCalledTimes(1)
-    for (const next of ['markdown', 'text', 'pdf', null] as const) {
+    for (const next of ['markdown', 'pdf', 'image', null] as const) {
       kind = next
       menu.applyIfMoved()
     }
@@ -875,8 +900,16 @@ describe('gateOnBoardKind', () => {
     kind = 'markdown'
     menu.applyIfMoved()
     expect(build).toHaveBeenCalledTimes(4)
-    menu.apply() // a recents change still rebuilds
+    // A code tab rebuilds (YAZ-3556): ⌘D steps aside there (YAZ-3564 K9), and a note keeps it.
+    kind = 'text'
+    menu.applyIfMoved()
+    menu.applyIfMoved()
     expect(build).toHaveBeenCalledTimes(5)
+    kind = 'markdown'
+    menu.applyIfMoved()
+    expect(build).toHaveBeenCalledTimes(6)
+    menu.apply() // a recents change still rebuilds
+    expect(build).toHaveBeenCalledTimes(7)
   })
 })
 
