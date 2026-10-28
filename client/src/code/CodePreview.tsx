@@ -17,6 +17,7 @@ import type { WatchSource } from '../hooks/useWatch'
 import { storage } from '../lib/storage'
 import { useAppliedTheme } from '../lib/theme'
 import { applyAppTheme, monaco } from './monaco'
+import { attachMenuLook } from './monacoMenuLook'
 import { monacoThemeName } from './monacoTheme'
 import './codeEditor.css'
 
@@ -69,7 +70,10 @@ export default function CodePreview({ path, watch }: CodePreviewProps) {
       fixedOverflowWidgets: true,
     })
     modelRef.current = model
+    // Its right-click menu in the app's look, as a code tab's (YAZ-3478).
+    const menuLook = attachMenuLook(mount)
     return () => {
+      menuLook.dispose()
       editor.dispose()
       model.dispose()
       modelRef.current = null

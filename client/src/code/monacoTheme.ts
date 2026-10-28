@@ -58,7 +58,7 @@ export function readAppTokens(doc: Document = document): ReadToken {
   return read
 }
 
-const TOKENS = ['--bg', '--bg-side', '--bg-hover', '--fg', '--fg-muted', '--border', '--accent', '--accent-soft', '--danger', '--code-keyword', '--code-string', '--code-number', '--code-function', '--code-type', '--code-key', '--code-selection'] as const
+const TOKENS = ['--bg', '--bg-side', '--bg-hover', '--fg', '--fg-muted', '--border', '--accent', '--accent-soft', '--danger', '--ok', '--code-keyword', '--code-string', '--code-number', '--code-function', '--code-type', '--code-key', '--code-selection'] as const
 
 /** The Monaco theme for `theme`, from the tokens `read` gives. Pure: the tests hand it a table. */
 export function buildMonacoTheme(theme: AppTheme, read: ReadToken): editor.IStandaloneThemeData {
@@ -143,6 +143,9 @@ export function buildMonacoTheme(theme: AppTheme, read: ReadToken): editor.IStan
       rule('annotation', '--code-function'),
       rule('comment', '--fg-muted', 'italic'),
       rule('invalid', '--danger'),
+      // A diff's added and removed lines (YAZ-3479, `monacoLanguages.ts`): the app's own green and red.
+      rule('inserted', '--ok'),
+      rule('deleted', '--danger'),
     ].filter((r) => r.foreground !== undefined),
     colors: Object.fromEntries(Object.entries(colors).filter((e): e is [string, string] => e[1] !== undefined)),
   }

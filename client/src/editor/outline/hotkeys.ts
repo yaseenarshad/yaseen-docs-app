@@ -27,6 +27,7 @@ import type { NodeType } from '@milkdown/kit/prose/model'
 import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
 import { coveredLines, eachVisibleTextblock } from '../lineSelection'
+import { FOLD_KEYS } from './foldKeys'
 import { setOutlineFoldAtSelection, undoLastFold } from './outlineFolding'
 
 /** Priority above Crepe's list/table/base keymaps (default 50). */
@@ -74,8 +75,8 @@ export const obsidianHotkeys = $shortcut((ctx: Ctx) => {
   const strike: Command = () => ctx.get(commandsCtx).call(toggleStrikethroughCommand.key)
   return {
     CycleTask: { key: 'Mod-Enter', priority: PRIORITY, onRun: () => cycleTaskCommand(itemType) },
-    FoldItem: { key: 'Mod-ArrowUp', priority: PRIORITY, onRun: () => setOutlineFoldAtSelection(true) },
-    UnfoldItem: { key: 'Mod-ArrowDown', priority: PRIORITY, onRun: () => setOutlineFoldAtSelection(false) },
+    FoldItem: { key: FOLD_KEYS.foldHere, priority: PRIORITY, onRun: () => setOutlineFoldAtSelection(true) },
+    UnfoldItem: { key: FOLD_KEYS.unfoldHere, priority: PRIORITY, onRun: () => setOutlineFoldAtSelection(false) },
     UndoFold: { key: 'Mod-z', priority: PRIORITY, onRun: () => undoLastFold },
     Strikethrough: { key: 'Mod-Shift-x', priority: PRIORITY, onRun: () => strike },
   }

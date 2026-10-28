@@ -13,6 +13,7 @@ vi.mock('./monaco', () => import('./monacoTestKit'))
 
 import { BridgeRequestError } from '../api'
 import { fakeWatch } from '../documents/boardTestKit'
+import { FOLD_KEYS } from '../editor/outline/foldKeys'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { readPageView } from '../lib/pageView'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
@@ -663,6 +664,150 @@ describe("the app's keys win over Monaco (YAZ-3447)", () => {
     // ⌃Tab is Next tab on both.
     expect(appCommandOf({ ...ctrlK, key: 'Tab', code: 'Tab' }, undefined, true)).toBe('nextTab')
     expect(appCommandOf({ ...ctrlK, key: 'Tab', code: 'Tab' }, undefined, false)).toBe('nextTab')
+  })
+})
+
+describe('collapse all and expand all (YAZ-3478)', () => {
+  const FILE = 'export class Pipeline {\n  step1() {\n    return 1\n  }\n  step2() {\n    return 2\n  }\n}\n'
+  const ALL = ['export class Pipeline {', 'step1() {', 'step2() {']
+  const press = (init: KeyboardEventInit): KeyboardEvent => {
+    const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+    act(() => void editor().input.dispatchEvent(event))
+    return event
+  }
+  const cmdShiftU = { key: 'U', code: 'KeyU', metaKey: true, shiftKey: true }
+  const cmdShiftI = { key: 'I', code: 'KeyI', metaKey: true, shiftKey: true }
+  let platform: PropertyDescriptor | undefined
+  beforeEach(() => {
+    // The keys are the Mac's (⌘); jsdom's platform is empty.
+    platform = Object.getOwnPropertyDescriptor(navigator, 'platform')
+    Object.defineProperty(navigator, 'platform', { configurable: true, value: 'MacIntel' })
+  })
+  afterEach(() => {
+    if (platform === undefined) delete (navigator as unknown as Record<string, unknown>).platform
+    else Object.defineProperty(navigator, 'platform', platform)
+  })
+  /** Opens FILE with the cursor in the code. */
+  async function focused(): Promise<void> {
+    await opened(FILE)
+    act(() => editor().focus())
+  }
+  /** A fold chevron in the gutter, where Monaco draws it. */
+  function chevron(): HTMLElement {
+    const gutter = document.createElement('div')
+    gutter.className = 'margin-view-overlays'
+    const icon = document.createElement('div')
+    icon.className = 'cldr codicon codicon-folding-expanded'
+    gutter.appendChild(icon)
+    editor().mount.appendChild(gutter)
+    return icon
+  }
+  const rightClick = (target: Element): MouseEvent => {
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 120 })
+    act(() => void target.dispatchEvent(event))
+    return event
+  }
+  const menuItems = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+
+  it('S1: ⌘⇧U folds every block; Monaco does not see the key; close and reopen: still folded', async () => {
+    await focused()
+    const event = press(cmdShiftU)
+    expect(event.defaultPrevented).toBe(true)
+    expect(editor().keysSeen).toEqual([])
+    expect(editor().triggered).toEqual(['editor.foldAll'])
+    expect([...editor().folded].sort((a, b) => a - b)).toEqual([1, 2, 5])
+    await after(400)
+    expect(storage.getFolds(ROOT, PATH)).toEqual(ALL)
+    act(() => root?.render(<></>))
+    await opened(FILE)
+    await settle()
+    expect([...editor().folded].sort((a, b) => a - b)).toEqual([1, 2, 5])
+  })
+
+  it('S2: ⌘⇧I opens every block, and the remembered folds are empty again', async () => {
+    await focused()
+    press(cmdShiftU)
+    await after(400)
+    press(cmdShiftI)
+    expect(editor().triggered).toEqual(['editor.foldAll', 'editor.unfoldAll'])
+    expect([...editor().folded]).toEqual([])
+    await after(400)
+    expect(storage.getFolds(ROOT, PATH)).toEqual([])
+  })
+
+  it('S5: ⌘↑ folds the block at the cursor and ⌘↓ unfolds it, as in a note; Monaco never sees them (no top / bottom move)', async () => {
+    await focused()
+    act(() => editor().setPosition({ lineNumber: 6, column: 5 }))
+    const up = press({ key: 'ArrowUp', code: 'ArrowUp', metaKey: true })
+    expect(up.defaultPrevented).toBe(true)
+    expect([...editor().folded]).toEqual([5])
+    expect(editor().position).toEqual({ lineNumber: 6, column: 5 })
+    press({ key: 'ArrowDown', code: 'ArrowDown', metaKey: true })
+    expect([...editor().folded]).toEqual([])
+    expect(editor().triggered).toEqual(['editor.fold', 'editor.unfold'])
+    expect(editor().keysSeen).toEqual([])
+    await after(400)
+    expect(storage.getFolds(ROOT, PATH)).toEqual([])
+  })
+
+  it('⌘Home / ⌘End go to the top / bottom on a Mac (⇧ selects); Monaco does not see them', async () => {
+    await focused()
+    press({ key: 'End', code: 'End', metaKey: true })
+    expect(editor().position).toEqual({ lineNumber: 9, column: 1 })
+    press({ key: 'Home', code: 'Home', metaKey: true })
+    expect(editor().position).toEqual({ lineNumber: 1, column: 1 })
+    press({ key: 'End', code: 'End', metaKey: true, shiftKey: true })
+    expect(editor().triggered).toEqual(['cursorBottom', 'cursorTop', 'cursorBottomSelect'])
+    expect(editor().keysSeen).toEqual([])
+  })
+
+  it('a fold key outside the code (the find box, a chip) is not a fold, and goes on to Monaco', async () => {
+    await opened(FILE)
+    press(cmdShiftU)
+    press({ key: 'ArrowUp', code: 'ArrowUp', metaKey: true })
+    expect(editor().triggered).toEqual([])
+    expect(editor().keysSeen).toEqual(['U', 'ArrowUp'])
+  })
+
+  it("S6: the code tab reads the note's own fold keys (FOLD_KEYS) at each press: a changed key works, the old one does not", async () => {
+    const keys = FOLD_KEYS as unknown as Record<string, string>
+    const before = keys.foldAll
+    keys.foldAll = 'Mod-Shift-y'
+    try {
+      await focused()
+      press(cmdShiftU)
+      expect(editor().triggered).toEqual([])
+      press({ key: 'Y', code: 'KeyY', metaKey: true, shiftKey: true })
+      expect(editor().triggered).toEqual(['editor.foldAll'])
+    } finally {
+      keys.foldAll = before
+    }
+  })
+
+  it('S3, S4: a right-click on a fold chevron opens the app menu, "Collapse all" and "Expand all" with their keys; each row runs Monaco\'s action', async () => {
+    await focused()
+    const event = rightClick(chevron())
+    expect(event.defaultPrevented).toBe(true)
+    expect(menuItems().map((b) => [b.textContent, b.dataset.hint])).toEqual([
+      ['Collapse all', '⌘⇧U'],
+      ['Expand all', '⌘⇧I'],
+    ])
+    act(() => menuItems()[0].click())
+    expect(menuItems()).toEqual([])
+    expect([...editor().folded].sort((a, b) => a - b)).toEqual([1, 2, 5])
+    await after(400)
+    expect(storage.getFolds(ROOT, PATH)).toEqual(ALL)
+    rightClick(chevron())
+    act(() => menuItems()[1].click())
+    expect(editor().triggered).toEqual(['editor.foldAll', 'editor.unfoldAll'])
+    expect([...editor().folded]).toEqual([])
+  })
+
+  it('a right-click on the code, not on a chevron, is left to Monaco', async () => {
+    await focused()
+    const event = rightClick(editor().input)
+    expect(event.defaultPrevented).toBe(false)
+    expect(menuItems()).toEqual([])
   })
 })
 

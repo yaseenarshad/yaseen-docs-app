@@ -29,6 +29,12 @@
  * takes one and the menu's accelerator runs — ⌘K is the vault search, never Monaco's chord prefix.
  * Toggle sidebar, which the renderer owns, is handed up as a diagram does (`onToggleSidebar`). ⌘S
  * saves at once, as on a drawing.
+ *
+ * THE NOTE'S FOLD KEYS (YAZ-3478; YAZ-3439 "The app's own keys win in code tabs"). `FOLD_KEYS`, the note's
+ * own table: ⌘⇧U folds every block, ⌘⇧I unfolds every block, ⌘↑ / ⌘↓ fold / unfold the block at the
+ * cursor. Monaco never sees them, so on a Mac ⌘↑ / ⌘↓ no longer go to the top / bottom of the file: ⌘Home /
+ * ⌘End do (with ⇧, they select). A right-click on a fold chevron opens the app's menu: "Collapse all",
+ * "Expand all". Each one is Monaco's own fold action, so the folds are remembered as any fold is.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { PageView, ZoomStep } from '@shared/types'
@@ -37,18 +43,22 @@ import { api, BridgeRequestError } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
 import { stepZoomByKey } from '../editor/DocumentZoom'
+import { FOLD_KEYS } from '../editor/outline/foldKeys'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
 import type { NoticeKind } from '../lib/notice'
 import { registerPageView } from '../lib/pageView'
 import { storage } from '../lib/storage'
 import { useAppliedTheme } from '../lib/theme'
+import { ContextMenu } from '../sidebar/ContextMenu'
 import { CodeChips } from './CodeChips'
 import { attachFolds } from './codeFolds'
+import { foldKeyHint, foldKeyOf, type FoldKeyId } from './foldKeyMatch'
 import { DEFAULT_CODE_SETTINGS, type CodeSettings } from './codeSettings'
 import { trackCodeTab } from './codeOpener'
 import { attachLanguageClient } from './languageClient'
 import { lineBreakOf, withOneLineBreak } from './lineBreak'
 import { applyAppTheme, monaco } from './monaco'
+import { attachMenuLook } from './monacoMenuLook'
 import { monacoThemeName } from './monacoTheme'
 import { diskEdit } from './reloadEdit'
 import './codeEditor.css'
@@ -99,6 +109,12 @@ export function appCommandOf(event: KeyPress, overrides: HotkeyOverrides | undef
 const BOM = '\uFEFF'
 const BOM_AT_START = /^\uFEFF/
 
+/** Monaco's action for each fold key (YAZ-3478). */
+const FOLD_ACTIONS: Record<FoldKeyId, string> = { foldAll: 'editor.foldAll', unfoldAll: 'editor.unfoldAll', foldHere: 'editor.fold', unfoldHere: 'editor.unfold' }
+
+/** A fold chevron in Monaco's gutter: expanded, collapsed, or a manual fold's. */
+const FOLD_CHEVRON = '.margin-view-overlays [class*="codicon-folding-"]'
+
 /** Each code tab's model needs its own URI (two tabs may hold one file); the path keeps its extension, which picks the language. */
 let nextTab = 0
 
@@ -146,6 +162,13 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
   const born = useRef({ locked, codeWrap, codeMinimap, zoom, startView })
   const openRef = useRef(onOpenFile)
   openRef.current = onOpenFile
+  /** The chevron's right-click menu (YAZ-3478), at the pointer; null while closed. */
+  const [foldMenu, setFoldMenu] = useState<{ x: number; y: number } | null>(null)
+
+  /** A fold key or a menu row: Monaco's own action, so the folds are saved as any fold is (`attachFolds`). */
+  const runFold = (id: FoldKeyId): void => {
+    editorRef.current?.trigger('keyboard', FOLD_ACTIONS[id], null)
+  }
 
   /** The bytes to write: the model's value with its BOM, or the text it held when the tab closed. */
   const textNow = (): string => {
@@ -261,7 +284,22 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
     const helper = attachLanguageClient(model, { root, path })
     const jumps = trackCodeTab(editor, path, (to) => openRef.current?.(to))
 
+    // A right-click on a fold chevron (YAZ-3478): the app's menu, never Monaco's. Capture phase on the
+    // mount, so Monaco's own `contextmenu` listener inside it never runs. A right button folds nothing in
+    // Monaco (its folding reacts to the left and middle buttons only).
+    const onContextMenu = (event: MouseEvent): void => {
+      if (!(event.target instanceof Element) || event.target.closest(FOLD_CHEVRON) === null) return
+      event.preventDefault()
+      event.stopPropagation()
+      setFoldMenu({ x: event.clientX, y: event.clientY })
+    }
+    mount.addEventListener('contextmenu', onContextMenu, true)
+    // Monaco's own right-click menu in the app's look: its spacing (the colors are `codeEditor.css`).
+    const menuLook = attachMenuLook(mount)
+
     return () => {
+      menuLook.dispose()
+      mount.removeEventListener('contextmenu', onContextMenu, true)
       jumps.dispose()
       helper.dispose()
       offPageView?.()
@@ -317,6 +355,8 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
 
   // The app's keys win (see the module doc): capture phase, so Monaco never sees them.
   const { flush } = doc
+  const runFoldRef = useRef(runFold)
+  runFoldRef.current = runFold
   useEffect(() => {
     const host = doc.hostRef.current
     if (host === null) return
@@ -325,6 +365,24 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
         event.preventDefault()
         event.stopPropagation()
         flush()
+        return
+      }
+      const editor = editorRef.current
+      const mac = /Mac/.test(navigator.platform)
+      // The note's fold keys, read at each press (YAZ-3478). Only with the cursor in the code: a key in
+      // the find box or on a chip is not a fold.
+      const fold = editor?.hasTextFocus() === true ? foldKeyOf(event, mac, FOLD_KEYS) : null
+      if (fold !== null) {
+        event.preventDefault()
+        event.stopPropagation()
+        runFoldRef.current(fold)
+        return
+      }
+      // ⌘↑ / ⌘↓ fold now, so ⌘Home / ⌘End go to the top / bottom on a Mac (standalone Monaco binds them only off a Mac).
+      if (mac && editor?.hasTextFocus() === true && event.metaKey && !event.ctrlKey && !event.altKey && (event.key === 'Home' || event.key === 'End')) {
+        event.preventDefault()
+        event.stopPropagation()
+        editor.trigger('keyboard', `${event.key === 'Home' ? 'cursorTop' : 'cursorBottom'}${event.shiftKey ? 'Select' : ''}`, null)
         return
       }
       const command = appCommandOf(event, storage.getSettings()?.hotkeys)
@@ -363,6 +421,22 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
       />
       {doc.conflictBar}
       <div className="code-editor__monaco" ref={mountRef} />
+      {foldMenu !== null && (
+        <ContextMenu
+          x={foldMenu.x}
+          y={foldMenu.y}
+          sections={[
+            [
+              { id: 'collapse-all', label: 'Collapse all', hint: foldKeyHint(FOLD_KEYS.foldAll), onSelect: () => runFold('foldAll') },
+              { id: 'expand-all', label: 'Expand all', hint: foldKeyHint(FOLD_KEYS.unfoldAll), onSelect: () => runFold('unfoldAll') },
+            ],
+          ]}
+          onClose={() => {
+            setFoldMenu(null)
+            editorRef.current?.focus()
+          }}
+        />
+      )}
     </div>
   )
 }

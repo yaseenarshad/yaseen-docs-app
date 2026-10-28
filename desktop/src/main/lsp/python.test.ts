@@ -29,6 +29,18 @@ describe('python helper (YAZ-3455)', () => {
     expect(pyrightPath('/usr/bin:/bin', 'linux')).toBe('/usr/bin:/bin')
   })
 
+  it("YAZ-3480: PATH has no folder of the project, and no relative or empty entry (the working folder is the project)", () => {
+    // An activated venv of the project, an empty entry, `.`, and a relative folder: all out. Folders outside the project stay.
+    expect(pyrightPath(':/proj/.venv/bin:.:bin:/opt/homebrew/bin:/proj-other/bin:/bin', 'linux', '/proj')).toBe('/opt/homebrew/bin:/proj-other/bin:/bin')
+    expect(pyrightPath('/proj:/usr/bin:/bin', 'darwin', '/proj')).toBe('/bin')
+    expect(pyrightPath('C:\\Proj\\.venv\\Scripts;C:\\Python312;;.\\x', 'win32', 'c:\\proj')).toBe('C:\\Python312')
+    const cmd = pyrightServerCommand('/e.js', '/proj', '/Electron', { PATH: '/proj/.venv/bin:/bin' }, 'linux')
+    expect(cmd.env?.PATH).toBe('/bin')
+    expect(cmd.env).not.toHaveProperty('NoDefaultCurrentDirectoryInExePath')
+    // Windows looks in the working folder before PATH unless this is set.
+    expect(pyrightServerCommand('C:\\e.js', 'C:\\proj', 'C:\\Electron.exe', { PATH: 'C:\\Python312' }, 'win32').env).toMatchObject({ NoDefaultCurrentDirectoryInExePath: '1', PATH: 'C:\\Python312' })
+  })
+
   it('the project is the nearest pyproject.toml, setup.py or requirements.txt; else the vault; else the file\'s folder', () => {
     expect(pythonProjectRoot(p('v', 'a', 'pkg', 'm.py'), p('v'), disk(p('v', 'a', 'requirements.txt')))).toBe(p('v', 'a'))
     expect(pythonProjectRoot(p('v', 'a', 'm.py'), p('v'), disk(p('v', 'a', 'setup.py'), p('v', 'pyproject.toml')))).toBe(p('v', 'a'))
@@ -36,12 +48,12 @@ describe('python helper (YAZ-3455)', () => {
     expect(pythonProjectRoot(p('elsewhere', 'm.py'), p('v'), disk())).toBe(p('elsewhere'))
   })
 
-  it('a .venv (or venv) gives its interpreter, when there is one, and every site-packages folder on disk', () => {
+  it('a .venv (or venv) gives every site-packages folder on disk, and never its interpreter (YAZ-3480)', () => {
     const venv = p('proj', '.venv')
     const python = process.platform === 'win32' ? path.join(venv, 'Scripts', 'python.exe') : path.join(venv, 'bin', 'python')
     const exists = disk(path.join(venv, 'pyvenv.cfg'), python, path.join(venv, 'lib', 'python3.12', 'site-packages'))
     const list = (dir: string) => (dir === path.join(venv, 'lib') ? ['python3.12', 'README'] : [])
-    expect(findVenv(p('proj'), exists, list)).toEqual({ pythonPath: python, sitePackages: [path.join(venv, 'lib', 'python3.12', 'site-packages')] })
+    expect(findVenv(p('proj'), exists, list)).toEqual({ sitePackages: [path.join(venv, 'lib', 'python3.12', 'site-packages')] })
     // No interpreter (S3): the libraries still count.
     const noPython = disk(path.join(p('proj', 'venv'), 'pyvenv.cfg'), path.join(p('proj', 'venv'), 'Lib', 'site-packages'))
     expect(findVenv(p('proj'), noPython, () => [])).toEqual({ sitePackages: [path.join(p('proj', 'venv'), 'Lib', 'site-packages')] })
@@ -49,9 +61,10 @@ describe('python helper (YAZ-3455)', () => {
   })
 
   it("answers pyright's workspace/configuration: the python section gets the venv, others null", async () => {
-    const reply = pythonConfigurationReply(p('proj'), { pythonPath: '/proj/.venv/bin/python', sitePackages: ['/sp'] })
+    const reply = pythonConfigurationReply(p('proj'), { sitePackages: ['/sp'] })
     const answer = reply('workspace/configuration', { items: [{ section: 'python' }, { section: 'python.analysis' }, { section: 'pyright' }] }) as unknown[]
-    expect(answer[0]).toEqual({ pythonPath: '/proj/.venv/bin/python', analysis: { autoSearchPaths: true, useLibraryCodeForTypes: true, diagnosticMode: 'openFilesOnly', extraPaths: ['/sp'] } })
+    // YAZ-3480: no `pythonPath`, ever: pyright would run it. The libraries come as folders.
+    expect(answer[0]).toEqual({ analysis: { autoSearchPaths: true, useLibraryCodeForTypes: true, diagnosticMode: 'openFilesOnly', extraPaths: ['/sp'] } })
     expect(answer[1]).toMatchObject({ extraPaths: ['/sp'] })
     expect(answer[2]).toBeNull()
     expect(reply('client/registerCapability', {})).toBeNull()

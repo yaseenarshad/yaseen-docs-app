@@ -17,8 +17,21 @@ import type { LanguageServer, ServerCommand } from './server'
  * - Dev and tests: `node_modules/pyright`, from `appPath` (the `desktop/` folder) upward.
  *
  * PROJECT: the nearest `pyproject.toml`, `setup.py` or `requirements.txt` above the file, else the
- * vault. LIBRARIES: a `.venv` or `venv` in the project gives pyright both its interpreter and its
- * `site-packages` folders, found on disk, so library jumps work even when that Python cannot run.
+ * vault. LIBRARIES: a `.venv` or `venv` in the project gives pyright its `site-packages` folders, found
+ * on disk, as `extraPaths`. pyright reads the simple `.pth` lines in each one itself (an editable install;
+ * its `getPathsFromPthFiles` skips `#` and `import` lines, as Python does). An editable install that uses
+ * an import hook instead (`import __editable___…_finder`) is not found: a known limit.
+ *
+ * THE PROJECT'S OWN PYTHON NEVER RUNS (YAZ-3480). A folder from someone else can hold a fake `python`,
+ * and pyright RUNS the interpreter it is given (`pythonPath`) to ask for its version and its paths. VS
+ * Code asks first (Workspace Trust); this app never asks and never runs it:
+ *  - no `pythonPath` is passed: the libraries come from the folders above, read, never run;
+ *  - with no `pythonPath`, pyright runs `python3` / `python` from `PATH`. So the `PATH` it gets has no
+ *    folder inside the project (an activated venv), no relative or empty entry (that is the working
+ *    folder, which is the project), and on macOS no `/usr/bin` (`pyrightPath`);
+ *  - on Windows a program search looks in the working folder first. `NoDefaultCurrentDirectoryInExePath`
+ *    turns that off (UNCONFIRMED: not tested on Windows).
+ * A Python outside the project (Homebrew's, in a dev run) may still run: it is the user's own.
  */
 
 export const PYTHON_PROJECT_MARKERS = ['pyproject.toml', 'setup.py', 'requirements.txt'] as const
@@ -39,26 +52,45 @@ export function resolvePyright(opts: { isPackaged: boolean; resourcesPath: strin
 }
 
 /**
- * The PATH pyright sees. On macOS `/usr/bin/python3` is a stub when the Command Line Tools are not
- * installed, and running it opens Apple's "install the tools" dialog. pyright runs `python3` to find
- * libraries when no `.venv` names one, so `/usr/bin` is left out: no dialog, ever.
+ * The PATH pyright sees. pyright runs `python3` / `python` from it to find libraries, so:
+ *  - no folder inside `projectRoot` (an activated venv of the project: its `bin/python` is the project's);
+ *  - no relative or empty entry: a program search reads it as the working folder, the project (YAZ-3480);
+ *  - on macOS no `/usr/bin`: `/usr/bin/python3` is a stub when the Command Line Tools are not installed,
+ *    and running it opens Apple's "install the tools" dialog. No dialog, ever.
  */
-export function pyrightPath(envPath: string | undefined, platform: NodeJS.Platform = process.platform): string | undefined {
-  if (platform !== 'darwin' || envPath === undefined) return envPath
+export function pyrightPath(envPath: string | undefined, platform: NodeJS.Platform = process.platform, projectRoot?: string): string | undefined {
+  if (envPath === undefined) return envPath
+  const paths = platform === 'win32' ? path.win32 : path.posix
+  const root = projectRoot === undefined ? undefined : paths.resolve(projectRoot)
   return envPath
-    .split(':')
-    .filter((p) => p !== '/usr/bin' && p !== '/usr/bin/')
-    .join(':')
+    .split(paths.delimiter)
+    .filter((p) => p !== '' && paths.isAbsolute(p))
+    .filter((p) => root === undefined || !isInsidePath(paths, paths.resolve(p), root))
+    .filter((p) => platform !== 'darwin' || (p !== '/usr/bin' && p !== '/usr/bin/'))
+    .join(paths.delimiter)
+}
+
+/** `p` is `root` or inside it (case-blind on Windows). */
+function isInsidePath(paths: typeof path.posix, p: string, root: string): boolean {
+  const fold = (x: string) => (paths === path.win32 ? x.toLowerCase() : x)
+  const rel = paths.relative(fold(root), fold(p))
+  return rel === '' || (!rel.startsWith('..') && !paths.isAbsolute(rel))
 }
 
 /** The command that starts pyright with `projectRoot` as its working folder, on the Node of `execPath`. */
-export function pyrightServerCommand(entry: string, projectRoot: string, execPath: string = process.execPath, env: NodeJS.ProcessEnv = process.env): ServerCommand {
+export function pyrightServerCommand(entry: string, projectRoot: string, execPath: string = process.execPath, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): ServerCommand {
   return {
     name: 'python',
     command: execPath,
     args: [entry, '--stdio'],
     cwd: projectRoot,
-    env: { ...env, ELECTRON_RUN_AS_NODE: '1', PATH: pyrightPath(env.PATH) },
+    env: {
+      ...env,
+      ELECTRON_RUN_AS_NODE: '1',
+      PATH: pyrightPath(env.PATH, platform, projectRoot),
+      // Windows: a program search never looks in the working folder (the project) first (YAZ-3480).
+      ...(platform === 'win32' ? { NoDefaultCurrentDirectoryInExePath: '1' } : {}),
+    },
   }
 }
 
@@ -68,18 +100,15 @@ export function pythonProjectRoot(file: string, vaultRoot: string, exists: (p: s
 }
 
 export interface PythonEnv {
-  /** The venv's interpreter, when the venv has one. */
-  pythonPath?: string
   /** The venv's `site-packages` folders: libraries pyright can read without running Python. */
   sitePackages: string[]
 }
 
-/** The `.venv` or `venv` of a project; null when there is none. */
+/** The `.venv` or `venv` of a project; null when there is none. Its Python is never named, never run (YAZ-3480). */
 export function findVenv(projectRoot: string, exists: (p: string) => boolean = existsSync, list: (dir: string) => string[] = safeList): PythonEnv | null {
   for (const name of VENV_NAMES) {
     const venv = path.join(projectRoot, name)
     if (!exists(path.join(venv, 'pyvenv.cfg'))) continue
-    const python = process.platform === 'win32' ? path.join(venv, 'Scripts', 'python.exe') : path.join(venv, 'bin', 'python')
     const sitePackages: string[] = []
     // POSIX: lib/python3.X/site-packages. Windows: Lib/site-packages.
     for (const lib of ['lib', 'Lib']) {
@@ -89,7 +118,7 @@ export function findVenv(projectRoot: string, exists: (p: string) => boolean = e
         if (/^python\d/.test(entry) && exists(path.join(libDir, entry, 'site-packages'))) sitePackages.push(path.join(libDir, entry, 'site-packages'))
       }
     }
-    return { ...(exists(python) ? { pythonPath: python } : {}), sitePackages: [...new Set(sitePackages)] }
+    return { sitePackages: [...new Set(sitePackages)] }
   }
   return null
 }
@@ -102,10 +131,12 @@ function safeList(dir: string): string[] {
   }
 }
 
-/** pyright's `python` settings for a project: the venv when there is one; the whole workspace searched for imports. */
+/**
+ * pyright's `python` settings for a project: the venv's library folders when there is one; the whole
+ * workspace searched for imports. NEVER a `pythonPath` (YAZ-3480): pyright would run it.
+ */
 export function pythonSettings(projectRoot: string, env: PythonEnv | null): Record<string, unknown> {
   return {
-    ...(env?.pythonPath ? { pythonPath: env.pythonPath } : {}),
     analysis: {
       autoSearchPaths: true,
       useLibraryCodeForTypes: true,

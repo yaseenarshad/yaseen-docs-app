@@ -227,6 +227,58 @@ export class FakeEditor {
     for (const listener of [...this.hiddenListeners]) listener()
   }
 
+  /** Monaco's actions run by id (`editor.trigger`), in order (YAZ-3478). */
+  readonly triggered: string[] = []
+
+  /** The region start lines: each line that ends with `{`, as the folding controller below. */
+  private regionStarts(): number[] {
+    const model = this.options.model
+    const starts: number[] = []
+    for (let line = 1; line <= model.getLineCount(); line++) if (model.getLineContent(line).trimEnd().endsWith('{')) starts.push(line)
+    return starts
+  }
+
+  private hiddenChanged(): void {
+    for (const listener of [...this.hiddenListeners]) listener()
+  }
+
+  /** The cursor's line: where `setPosition` put it, else the view state's. */
+  private cursorLine(): number {
+    return (this.position ?? this.viewState.cursor).lineNumber
+  }
+
+  /** The cursor is in the code: the fake input has the focus. */
+  hasTextFocus(): boolean {
+    return document.activeElement === this.input
+  }
+
+  /**
+   * Monaco's fold actions and the top / bottom moves, as Monaco runs them: fold all, unfold all, and
+   * fold / unfold the innermost region that starts at or above the cursor.
+   */
+  trigger(_source: string, id: string): void {
+    this.triggered.push(id)
+    const starts = this.regionStarts()
+    const line = this.cursorLine()
+    if (id === 'editor.foldAll') {
+      for (const start of starts) this.folded.add(start)
+      this.hiddenChanged()
+    } else if (id === 'editor.unfoldAll') {
+      this.folded.clear()
+      this.hiddenChanged()
+    } else if (id === 'editor.fold') {
+      const start = starts.filter((s) => s <= line && !this.folded.has(s)).at(-1)
+      if (start !== undefined) this.toggleFold(start)
+    } else if (id === 'editor.unfold') {
+      const start = starts.filter((s) => s <= line && this.folded.has(s)).at(-1)
+      if (start !== undefined) this.toggleFold(start)
+    } else if (id === 'cursorTop' || id === 'cursorTopSelect') {
+      this.position = { lineNumber: 1, column: 1 }
+    } else if (id === 'cursorBottom' || id === 'cursorBottomSelect') {
+      this.position = { lineNumber: this.options.model.getLineCount(), column: 1 }
+    }
+  }
+
   /** Only the folding controller: its model's regions start on each line that ends with `{`. */
   getContribution(id: string): unknown {
     if (id !== 'editor.contrib.folding') return null

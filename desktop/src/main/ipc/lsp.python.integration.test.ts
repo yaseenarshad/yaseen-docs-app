@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,6 +21,9 @@ vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }))
  * - S1: a definition from `main.py` to `math_utils.py`, and the references in 3 files.
  * - S2: a project `.venv` with no runnable Python: the jump into its `site-packages` still works.
  * - S4: the last Python tab closes → the pyright process ends.
+ * - YAZ-3480: the project's own Python never runs. A fake `python` in the venv, in the project folder
+ *   and on an activated-venv `PATH` writes a marker file when run; the marker must never appear. The
+ *   jump into the venv's `site-packages` and into an editable install (a `.pth` file) still work.
  */
 
 const desktopDir = fileURLToPath(new URL('../../..', import.meta.url))
@@ -36,7 +39,19 @@ const FILES: Record<string, string> = {
   'proj/.venv/pyvenv.cfg': 'home = /nowhere\n',
   'proj/.venv/lib/python3.12/site-packages/fakelib/__init__.py': 'def helper() -> None:\n    pass\n',
   'vault-script.py': 'def run() -> None:\n    pass\n\nrun()\n',
+  // YAZ-3480: a project from someone else, with a fake Python in each place pyright could look.
+  'trap/pyproject.toml': '[project]\nname = "trap"\n',
+  'trap/main.py': 'import traplib\nimport editpkg\n\ntraplib.helper()\neditpkg.edited()\n',
+  'trap/.venv/pyvenv.cfg': 'home = /nowhere\n',
+  'trap/.venv/lib/python3.12/site-packages/traplib/__init__.py': 'def helper() -> None:\n    pass\n',
+  // An editable install: a `.pth` line with a folder outside the venv (pyright reads it), and an `import` line that must never run.
+  'trap/.venv/lib/python3.12/site-packages/__editable__.editpkg-0.1.pth': '# a comment\n../../../../libs\nimport os; os.system("touch never")\n',
+  'trap/libs/editpkg/__init__.py': 'def edited() -> None:\n    pass\n',
 }
+
+/** The fake Pythons (YAZ-3480): each one writes the marker when anything runs it. */
+const FAKE_PYTHONS = ['trap/.venv/bin/python', 'trap/.venv/bin/python3', 'trap/python', 'trap/python3']
+const MARKER = 'trap-python-ran.txt'
 
 type Envelope<T> = { ok: true; value: T } | { ok: false; error: { code: string } }
 
@@ -77,6 +92,11 @@ describe('lsp:* with pyright (YAZ-3455)', () => {
       await mkdir(path.dirname(at(rel)), { recursive: true })
       await writeFile(at(rel), text)
     }
+    for (const rel of FAKE_PYTHONS) {
+      await mkdir(path.dirname(at(rel)), { recursive: true })
+      await writeFile(at(rel), `#!/bin/sh\necho "$0 $*" >> '${at(MARKER)}'\nexit 1\n`)
+      await chmod(at(rel), 0o755)
+    }
     pool = registerLspIpc({ isPackaged: false, resourcesPath: '', appPath: desktopDir })
   })
 
@@ -107,6 +127,26 @@ describe('lsp:* with pyright (YAZ-3455)', () => {
     await call(CONTRACT.lsp.close, main.handle)
     await until(() => !alive(helper.pid))
     expect(pool.running()).toEqual([])
+  })
+
+  it("YAZ-3480: the project's own Python never runs; the jumps into its venv and its editable install still work", async () => {
+    // As if the app started from a terminal with this venv active, and with an empty PATH entry (the working folder).
+    const before = process.env.PATH
+    process.env.PATH = `:${at('trap/.venv/bin')}:${before ?? ''}`
+    try {
+      const main = (await call<LspOpenResponse | null>(CONTRACT.lsp.open, { root, path: at('trap/main.py'), text: FILES['trap/main.py'] }))!
+      expect(main.projectRoot).toBe(at('trap'))
+      expect(where(await call(CONTRACT.lsp.definition, { handle: main.handle, position: { line: 3, character: 9 } }))).toEqual(['trap/.venv/lib/python3.12/site-packages/traplib/__init__.py:0:4'])
+      expect(where(await call(CONTRACT.lsp.definition, { handle: main.handle, position: { line: 4, character: 9 } }))).toEqual(['trap/libs/editpkg/__init__.py:0:4'])
+      // pyright asks a Python for its paths and its version while it starts, before these answers. Give a late run time too.
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      expect(existsSync(at(MARKER)) ? await readFile(at(MARKER), 'utf8') : '', 'a fake Python ran').toBe('')
+      expect(existsSync(at('trap/never')) || existsSync(path.join(desktopDir, 'never'))).toBe(false)
+      await call(CONTRACT.lsp.close, main.handle)
+      await until(() => pool.running().length === 0)
+    } finally {
+      process.env.PATH = before
+    }
   })
 
   it('a Python file in no project: the vault is the project', async () => {

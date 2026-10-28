@@ -33,6 +33,7 @@ import { Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/ki
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { NOTE_PAGE, claimPage, isShown, pageSelectionHolder } from '../lib/readOnlyCaret'
+import { FOLD_KEYS } from './outline/foldKeys'
 
 const yes = (): boolean => true
 
@@ -63,10 +64,10 @@ export function focusReadOnlyBody(view: EditorView, focus: () => void): void {
 
 /** Whether `event` is one of the view-action chords — matched the way the keymaps match them. */
 const isViewAction = keydownHandler({
-  'Mod-Shift-u': yes,
-  'Mod-Shift-i': yes,
-  'Mod-ArrowUp': yes,
-  'Mod-ArrowDown': yes,
+  [FOLD_KEYS.foldAll]: yes,
+  [FOLD_KEYS.unfoldAll]: yes,
+  [FOLD_KEYS.foldHere]: yes,
+  [FOLD_KEYS.unfoldHere]: yes,
   'Mod-.': yes,
   'Mod-Shift-.': yes,
   'Mod->': yes,
