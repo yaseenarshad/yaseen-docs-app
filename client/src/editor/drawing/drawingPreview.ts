@@ -33,7 +33,7 @@
  *
  * REFRESH: scenes are cached per target for the life of this plugin instance (one editor mount).
  * A `DrawingFeed` poke naming a target drops its entry and pokes the decorations, which re-read
- * and re-render it — the live path the modal's save uses (YAZ-879). No feed → previews still
+ * and re-render it — the live path the modal's close uses after a save (YAZ-879, YAZ-3528). No feed → previews still
  * render, they just never refresh short of a remount.
  */
 import { Plugin, PluginKey, type EditorState, type Selection } from '@milkdown/kit/prose/state'
@@ -53,7 +53,7 @@ export const DRAWING_BROKEN_CLASS = 'drawing-preview__broken'
 export interface DrawingPreviewOptions {
   /** Vault root; the only thing `readAsset` needs beyond the embed's own target. */
   root: string
-  /** Live refresh (YAZ-879's save pokes it). Absent → previews render but never re-read. */
+  /** Live refresh (the modal's close after a save pokes it). Absent → previews render but never re-read. */
   feed?: DrawingFeed
   /** Click on a rendered preview (YAZ-879 opens the modal). Absent → the preview is inert. */
   onOpenDrawing?: (target: string) => void

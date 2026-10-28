@@ -94,7 +94,7 @@ test('step 1 — a state file full of open dirs launches FOLDED, with the deep t
 
 // ---------------------------------------------------------------- the session list is SHARED
 
-test('step 2 — two dirs opened by hand are open in a second window on the same vault', async () => {
+test('step 2 — two dirs opened by hand stay open here; a second window on the same vault starts folded (YAZ-3487 D17) and writes nothing over the list', async () => {
   await expandDirs(win, OPEN_BY_HAND.map((d) => path.join(vault, d)))
   await expect(openDirs(win)).toHaveCount(2)
   await expect(fileRow(win, 'Charter')).toBeVisible()
@@ -102,26 +102,29 @@ test('step 2 — two dirs opened by hand are open in a second window on the same
   await expect(dirRow(win, 'beta')).toBeVisible()
   await expect(fileRow(win, 'Deep note')).toHaveCount(0) // `beta` was left folded on purpose
 
-  // A second window on the same root (⌘⇧N) reads the SAME in-memory list — that is what "session, shared by
-  // every window on the root" means, and it is only observable here. It opens on the blank tab with the caret in
-  // the search (YAZ-3343 D35): its Files tab is one click away.
+  // A second window on the same root (⌘⇧N) starts with every folder closed (YAZ-3487 D17). It opens on the blank
+  // tab with the caret in the search (YAZ-3343 D35): its Files tab is one click away. It writes nothing until the
+  // user opens or closes a folder there (YAZ-3513), so the shared list of this window is not changed.
   await clickMenuItem(app, 'menu.file.new-window', 'w1')
   const dup = await extraWindow(app, ['w1'])
   const dupId = winParam(dup)!
   expect(await windowCount(app)).toBe(2)
   await lensTab(dup, 'Files').click()
-  for (const dir of OPEN_BY_HAND) {
-    await expect(dup.locator(`li[role="treeitem"]:has(> .tree__row--dir[data-path="${path.join(vault, dir)}"])`)).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    )
-  }
-  await expect(fileRow(dup, 'Alpha brief')).toBeVisible()
+  // `Projects` is closed, so `Projects/alpha` is not drawn at all.
+  await expect(dup.locator(`li[role="treeitem"]:has(> .tree__row--dir[data-path="${path.join(vault, OPEN_BY_HAND[0])}"])`)).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  )
+  await expect(openDirs(dup)).toHaveCount(0)
+  await expect(fileRow(dup, 'Alpha brief')).toHaveCount(0)
   await shoot(dup, 'collapsed-02-second-window')
 
   // Back to one window, so the relaunch below restores exactly the one this file follows.
   await closeWindow(app, dupId)
   await expect.poll(() => windowCount(app)).toBe(1)
+  // The first window keeps its two open dirs.
+  await expect(openDirs(win)).toHaveCount(2)
+  await expect(fileRow(win, 'Alpha brief')).toBeVisible()
 })
 
 // ---------------------------------------------------------------- the quit, and the next launch

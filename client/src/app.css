@@ -3744,10 +3744,10 @@ button {
   box-shadow: 0 0 0 1px var(--danger); /* the chip's border, also where the words reach past the chip */
   font-weight: 600;
 }
-/* YAZ-3401, measured: "Files window" needs a 168 px footer (content box), and 195 px beside the round update pill
-   (its slot's last 24 px); 44 px less than beside the "− 100% +" of before YAZ-3432. Narrower, the chip is its icon
-   alone; its title and accessible name keep the words. */
-@container (width < 168px) {
+/* YAZ-3401, measured: "Files window" needs a 212 px footer (content box), and 239 px beside the round update pill
+   (its slot's last 24 px); 44 px more than the chip alone needed, for the footer's − and + (YAZ-3487). Narrower, the
+   chip is its icon alone; its title and accessible name keep the words. */
+@container (width < 212px) {
   .sidebar__files-chip:not(.sidebar__files-chip--armed) span,
   .sidebar__files-chip--armed::after {
     display: none;
@@ -3766,7 +3766,7 @@ button {
     translate: 0 -50%;
   }
 }
-@container (width < 195px) {
+@container (width < 239px) {
   .sidebar__footer:has(.update-pill) .sidebar__files-chip:not(.sidebar__files-chip--armed) span,
   .sidebar__footer:has(.update-pill) .sidebar__files-chip--armed::after {
     display: none;

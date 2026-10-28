@@ -386,7 +386,7 @@ test('step 8 — the ⌘O list shows "Workspaces" first; the workspace opens a N
   expect(await windowCount(app)).toBe(2)
   await expect(vaultRowLabels(winW)).toHaveText([ALPHA, BETA])
   await expect(headerName(winW)).toHaveText(WORKSPACE)
-  await expect.poll(() => winW.title()).toBe(titleOf(SEED_FILE, ALPHA)) // on the first vault's last file
+  await expect.poll(() => winW.title()).toBe(ALPHA) // on a blank tab (YAZ-3487 D7): the title is the vault alone
   await expect(panel(win)).toHaveCount(0)
   await expect(vaultRows(win)).toHaveCount(0)
   await expect(headerName(win)).toHaveText(ALPHA)

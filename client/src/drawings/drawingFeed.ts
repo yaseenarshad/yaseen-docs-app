@@ -8,7 +8,7 @@
  * autosave can see.
  *
  * ONE per editor mount, made by `CrepeHost` and given to BOTH the preview plugin and the modal
- * (YAZ-879, the first and only poker: a save redraws every preview of that target in place).
+ * (YAZ-879, the first and only poker: the modal's close after a save, YAZ-3528, redraws every preview of that target in place).
  * Absent from `createCrepe`, previews still render; they just never live-refresh.
  */
 

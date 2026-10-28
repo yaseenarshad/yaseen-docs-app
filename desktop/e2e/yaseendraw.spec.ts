@@ -8,18 +8,18 @@
  *     `text-decoration="underline"` in the exported SVG — with the offline rule still holding:
  *     not a single request leaves the app
  *   2 the feature round-trips THROUGH the UI: a plain text element, selected in the modal and hit
- *     with the fork's Cmd+B, is saved back to its sidecar with `"fontWeight": "bold"` on disk,
+ *     with the fork's Cmd+B, is autosaved to its sidecar with `"fontWeight": "bold"` on disk,
  *     and the in-page preview redraws bold — proof the swap changed the engine, not the plumbing
  *   3 a STOCK-authored scene (no formatting fields at all) still opens clean in the modal —
- *     Save stays disabled, nothing on disk moves: old drawings are untouched by the new engine
+ *     the label says Saved, nothing on disk moves: old drawings are untouched by the new engine
  *   4 Enter keeps the line format (YAZ-3177): a new line typed after the styled line is saved bold
  *     and underlined too — `lineBolds` / `lineUnderlines` grow to `[true, true]`
  *   5 in the text editor of a per-line bold element, a double click selects one word, a triple
  *     click selects the line, and a drag after a double click keeps its range (YAZ-3175:
  *     Chromium's pointerdown carries no click count)
- *   6 opening a text element's editor and leaving it with no edit leaves the modal clean: Save
- *     stays disabled and ✕ closes without asking (YAZ-3210: the engine bumps the element's version
- *     anyway); a real edit still marks it dirty
+ *   6 opening a text element's editor and leaving it with no edit leaves the modal clean: nothing
+ *     is written and ✕ closes without asking (YAZ-3210: the engine bumps the element's version
+ *     anyway); a real edit is autosaved, and ✕ still closes without asking (YAZ-3528)
  *
  * Same harness as drawing.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `yaseendraw-` step screenshots).
@@ -97,7 +97,9 @@ const rendered = (w: Page) => editorOf(w).locator('.drawing-preview--ready svg')
 const previewOf = (w: Page, target: string) => editorOf(w).locator(`.drawing-preview[data-drawing-target="${target}"]`)
 const modal = (w: Page) => w.locator('.drawing-modal')
 const modalCanvas = (w: Page) => modal(w).locator('.drawing-modal__canvas')
-const saveButton = (w: Page) => modal(w).locator('.drawing-modal__bar .drawing-modal__btn').first()
+/** The save label where the Save button was (YAZ-3528 D2). */
+const saveLabel = (w: Page) => modal(w).locator('.drawing-modal__bar .save-indicator')
+const closeModal = (w: Page) => modal(w).getByRole('button', { name: 'Close drawing' }).click()
 
 const readNote = () => readFile(path.join(vault, NOTE), 'utf8')
 const readSidecar = (name: string) => readFile(path.join(vault, DRAWINGS_DIR, name), 'utf8')
@@ -154,7 +156,7 @@ test('step 2 — Cmd+B in the modal round-trips: `"fontWeight": "bold"` lands in
   await previewOf(win, PLAIN).click()
   await expect(modal(win)).toBeVisible()
   await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
-  await expect(saveButton(win)).toBeDisabled()
+  await expect(saveLabel(win)).toHaveText('Saved')
 
   // Select the one element, then the fork's own shortcut. The canvas needs the pointer's focus
   // first — a click on empty canvas, then select-all, is the gesture a user actually makes.
@@ -164,13 +166,13 @@ test('step 2 — Cmd+B in the modal round-trips: `"fontWeight": "bold"` lands in
   await win.keyboard.press('ControlOrMeta+a')
   await win.keyboard.press('ControlOrMeta+b')
 
-  // The toggle is the change the modal tracks: Save wakes up, and writes the fork's field.
-  await expect(saveButton(win)).toBeEnabled()
+  // The toggle is the change the modal tracks: the autosave writes the fork's field while it is open.
+  await expect.poll(() => readSidecar(PLAIN)).toContain('"fontWeight": "bold"')
+  await expect(saveLabel(win)).toHaveText('Saved')
   await shoot(win, 'yaseendraw-02-bold-toggled')
-  await saveButton(win).click()
+  await closeModal(win)
   await expect(modal(win)).toHaveCount(0)
 
-  await expect.poll(() => readSidecar(PLAIN)).toContain('"fontWeight": "bold"')
   // The in-page preview re-read the sidecar and now draws bold — the whole point of the swap.
   await expect.poll(async () => previewOf(win, PLAIN).locator('svg').innerHTML()).toContain('font-weight="bold"')
   await shoot(win, 'yaseendraw-03-preview-bold')
@@ -179,7 +181,7 @@ test('step 2 — Cmd+B in the modal round-trips: `"fontWeight": "bold"` lands in
   expect(await readNote()).toBe(beforeNote)
 })
 
-test('step 3 — a stock-authored scene opens clean: Save disabled, disk untouched', async () => {
+test('step 3 — a stock-authored scene opens clean: nothing to save, disk untouched', async () => {
   // STYLED stands in for "authored elsewhere" here; what matters is opening WITHOUT editing.
   const before = await readSidecar(STYLED)
 
@@ -187,7 +189,7 @@ test('step 3 — a stock-authored scene opens clean: Save disabled, disk untouch
   await expect(modal(win)).toBeVisible()
   await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
   // Opened and untouched is CLEAN — the new engine does not rewrite old scenes on sight.
-  await expect(saveButton(win)).toBeDisabled()
+  await expect(saveLabel(win)).toHaveText('Saved')
   await shoot(win, 'yaseendraw-04-reopen-clean')
   await win.keyboard.press('Escape')
   await expect(modal(win)).toHaveCount(0)
@@ -215,8 +217,7 @@ test('step 4 — Enter keeps the line format: the new line is saved bold and und
   await win.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.8)
   await shoot(win, 'yaseendraw-05-enter-keeps-format')
 
-  await expect(saveButton(win)).toBeEnabled()
-  await saveButton(win).click()
+  await closeModal(win)
   await expect(modal(win)).toHaveCount(0)
 
   await expect.poll(async () => JSON.parse(await readSidecar(STYLED)).elements[0]).toMatchObject({
@@ -291,26 +292,27 @@ test('step 6 — the text editor left with no edit is not an edit; a typed lette
     await expect(editor).toBeFocused()
   }
 
-  // In and out with Esc, nothing typed: clean, so ✕ just closes.
+  // In and out with Esc, nothing typed: clean, so ✕ just closes and nothing is written.
   await openEditor()
   await win.keyboard.press('Escape')
   await expect(editor).toHaveCount(0)
-  await expect(saveButton(win)).toBeDisabled()
+  await expect(saveLabel(win)).toHaveText('Saved')
   await close()
   await expect(confirm).toHaveCount(0)
   await expect(modal(win)).toHaveCount(0)
+  expect(await readSidecar(STYLED)).toBe(before)
 
-  // One letter typed is an edit: Save wakes, and ✕ asks first.
+  // One letter typed is an edit: the autosave writes it, and ✕ still closes without asking.
   await openEditor()
   await win.keyboard.press('End')
   await win.keyboard.type('!')
   await win.keyboard.press('Escape')
   await expect(editor).toHaveCount(0)
-  await expect(saveButton(win)).toBeEnabled()
-  await shoot(win, 'yaseendraw-07-typed-is-dirty')
+  await expect.poll(async () => JSON.parse(await readSidecar(STYLED)).elements[0].originalText).toContain('!')
+  await expect(saveLabel(win)).toHaveText('Saved')
+  await shoot(win, 'yaseendraw-07-typed-is-saved')
   await close()
-  await confirm.getByRole('button', { name: 'Discard' }).click()
+  await expect(confirm).toHaveCount(0)
   await expect(modal(win)).toHaveCount(0)
-  expect(await readSidecar(STYLED)).toBe(before)
   await quitApp(app)
 })

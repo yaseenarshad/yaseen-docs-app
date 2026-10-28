@@ -59,20 +59,15 @@
   border-radius: 6px;
 }
 
-.drawing-modal__btn:hover:not(:disabled) {
+.drawing-modal__btn:hover {
   background: var(--accent-soft);
-}
-
-.drawing-modal__btn:disabled {
-  color: var(--fg-muted);
-  cursor: default;
 }
 
 .drawing-modal__close {
   padding: 4px 9px;
 }
 
-/* The discard question, INLINE: one strip under the bar, never a sheet stacked on this one. */
+/* The failed-save question, INLINE: one strip under the bar, never a sheet stacked on this one. */
 .drawing-modal__confirm,
 .drawing-modal__error {
   display: flex;
