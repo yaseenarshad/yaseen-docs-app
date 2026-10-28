@@ -43,19 +43,65 @@ export async function launchApp({ userData, seedState, env = {} }: LaunchOptions
   })
 }
 
+/** `quitApp`'s hook prints this on main's stderr right before `app.exit`. */
+const EXIT_MARK = '[e2e] main reached app.exit'
+/** How long `quitApp` waits for the process to end once main reached `app.exit`. */
+const EXIT_GRACE_MS = 3_000
+
 /**
  * The REAL quit path (what ⌘Q runs): Playwright's `app.close()` calls `app.quit()`, which fires
  * `before-quit` — every renderer's autosave and the pending state write flush before `app.exit(0)`.
  * It also drops Playwright's Node inspector session itself. A bare `app.quit()` left that to
  * Playwright spotting "Waiting for the debugger to disconnect..." on stderr, and now and then the
- * exited app sat parked on that line past the 15s below (YAZ-2168). Resolves once the process is
- * actually gone, so the state file on disk is final when this returns.
+ * exited app sat parked on that line past the 15s below (YAZ-2168).
+ *
+ * The 15 s cap is on the app's own quit work: main must reach `app.exit` in time (a hook prints
+ * `EXIT_MARK` on stderr there). `runQuitSequence` calls `app.exit` only after every flush settled,
+ * so the state file on disk is final from that point. The end of the OS process after it is not
+ * the app's work: on a loaded Mac the kernel took from 4 s to over 40 s to tear down a process with
+ * no threads left (YAZ-3502 root cause). So the process gets `EXIT_GRACE_MS` to end, then a
+ * SIGKILL, and this returns without waiting further. Its singleton lock is already gone by then,
+ * so a relaunch on the same profile is safe.
  */
 export async function quitApp(app: ElectronApplication): Promise<void> {
-  await Promise.race([
-    app.close(),
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('app did not exit within 15s of app.close()')), 15_000)),
-  ])
+  const proc = app.process()
+  // An app that is already quitting (its last window closed) can no longer be hooked: then only the process end counts.
+  const hooked = await app
+    .evaluate(({ app: electronApp }, mark) => {
+      const fs = process.mainModule!.require('node:fs') as typeof import('node:fs')
+      const exit = electronApp.exit.bind(electronApp)
+      electronApp.exit = (code?: number) => {
+        fs.writeSync(2, `${mark}\n`) // sync: the process may be gone before an async write lands
+        exit(code)
+      }
+    }, EXIT_MARK)
+    .then(() => true, () => false)
+  const reachedExit = new Promise<void>((resolve) => {
+    let seen = ''
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      seen = (seen + chunk.toString()).slice(-200) // the mark may straddle two chunks
+      if (seen.includes(EXIT_MARK)) resolve()
+    })
+  })
+  const gone = app.close()
+  gone.catch(() => undefined) // it may settle after this returns
+  let timer: NodeJS.Timeout | undefined
+  try {
+    await Promise.race([
+      gone,
+      reachedExit,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(hooked ? 'app did not reach app.exit within 15s of app.close()' : 'app did not exit within 15s of app.close()')), 15_000)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+  const ended = await Promise.race([gone.then(() => true, () => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), EXIT_GRACE_MS))])
+  if (!ended && proc.exitCode === null && proc.signalCode === null) {
+    console.warn(`[quitApp] pid ${proc.pid} reached app.exit but was still there ${EXIT_GRACE_MS} ms later: SIGKILL, not waited for`)
+    proc.kill('SIGKILL')
+  }
 }
 
 export const windowCount = (app: ElectronApplication): Promise<number> =>
