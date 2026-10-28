@@ -263,3 +263,51 @@ describe('the page (D5, D8)', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 })
+
+describe('every place on one page (YAZ-3564)', () => {
+  const chip = (text: string) => button(el.querySelector('.hotkeys__filters') as HTMLElement, text)
+  const toggle = (text: string) => act(() => [...el.querySelectorAll<HTMLLabelElement>('.hotkeys__toggles label')].find((l) => l.textContent?.includes(text))?.querySelector('input')?.click())
+
+  it('a group chip shows one place (K7); a blocked row says who fires first (K3); "Show clashes only" keeps the blocked rows and the App keys that block them', async () => {
+    await mount()
+    click(chip('Drawing'))
+    expect(shownRows().every((id) => id?.startsWith('hotkey-drawing-'))).toBe(true)
+    // ⌘K is Search the vault's: on a Mac the menu fires first, so a drawing's Add link never works.
+    expect(row('hotkey-drawing-link').querySelector('.hotkeys__blocked')?.textContent).toBe(' Blocked: App › Search the vault fires first')
+    expect(row('hotkey-drawing-duplicate').querySelector('.hotkeys__blocked')).toBeNull() // Go to your place lets drawings keep ⌘D (K9)
+    click(chip('All'))
+    toggle('Show clashes only')
+    expect(shownRows()).toContain('hotkey-search')
+    expect(shownRows()).toContain('hotkey-drawing-link')
+    expect(shownRows()).not.toContain('hotkey-drawing-duplicate')
+    expect(shownRows()).not.toContain('hotkey-newTab')
+  })
+
+  it('"Let drawings, diagrams and code keep this key" (K9): off for Go to your place, and a drawing\'s Duplicate is blocked; on again, it writes nothing', async () => {
+    await mount()
+    const aside = () => row('hotkey-goTo').querySelector<HTMLInputElement>('.hotkeys__aside input') as HTMLInputElement
+    expect(aside().checked).toBe(true)
+    act(() => aside().click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo': false } })
+    expect(row('hotkey-drawing-duplicate').querySelector('.hotkeys__blocked')?.textContent).toBe(' Blocked: App › Go to your place fires first')
+    act(() => aside().click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: {} })
+    // Every other App key starts with it off.
+    expect(row('hotkey-search').querySelector<HTMLInputElement>('.hotkeys__aside input')?.checked).toBe(false)
+  })
+
+  it('a place key moves off another place\'s row with "Move it here" (K8), and "Changed from default" shows the changes with "Reset all shown" (K7)', async () => {
+    await mount()
+    // A note's Quote has no key (D10); give it Bold's ⌘B.
+    click(keyButton('note-quote'))
+    press('b', 'KeyB', { metaKey: true })
+    expect(says()).toEqual(['Change the key for Quote?', 'No key → ⌘B', '⌘B is Note › Bold now. It will lose its key.'])
+    click(button(popup() as HTMLElement, 'Move it here'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'note.bold': null, 'note.quote': 'CmdOrCtrl+B' } })
+    toggle('Changed from default')
+    expect(shownRows().filter((id) => id?.startsWith('hotkey-'))).toEqual(['hotkey-note-bold', 'hotkey-note-quote'])
+    click(button(row('hotkeys-reset-all'), 'Reset all shown'))
+    click(button(el.querySelector('.confirm') as HTMLElement, 'Reset 2 hotkeys'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: {} })
+  })
+})
