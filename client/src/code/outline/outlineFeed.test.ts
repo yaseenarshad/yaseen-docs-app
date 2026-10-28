@@ -1,7 +1,8 @@
 /**
  * The code Outline's feed (YAZ-3486): the symbols are read at once, then 300 ms after the LAST edit
  * (never per keystroke, S12); a stale answer is thrown away; a failed read keeps the last tree; Off
- * reads nothing; a marker change is a new snapshot with no read (S6).
+ * reads nothing; a marker change is a new snapshot with no read (S6); a symbol provider that registers
+ * late reads again (YAZ-3527).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -127,6 +128,45 @@ describe('attachOutlineFeed', () => {
     vi.advanceTimersByTime(READ_DELAY_MS * 3)
     expect(read).toHaveBeenCalledTimes(1)
     feed.dispose()
+  })
+
+  it('YAZ-3527: a symbol provider that registers after the first read makes the feed read again (no edit, no timer)', async () => {
+    // Monaco's editor context key service, the part `onSymbolProviderChange` reads.
+    const contextListeners = new Set<(event: { affectsSome(keys: ReadonlySet<string>): boolean }) => void>()
+    const changeKey = (key: string): void => {
+      for (const listener of [...contextListeners]) listener({ affectsSome: (keys) => keys.has(key) })
+    }
+    ;(editor as unknown as { _contextKeyService: object })._contextKeyService = {
+      onDidChangeContext(listener: (event: { affectsSome(keys: ReadonlySet<string>): boolean }) => void) {
+        contextListeners.add(listener)
+        return { dispose: () => contextListeners.delete(listener) }
+      },
+    }
+    // The language is not set up yet: the first read answers no symbol. Then its provider registers.
+    const answers: (readonly CodeSymbol[])[] = [[], [sym('quickRecipes', 1)]]
+    const read = vi.fn(async () => answers.shift() ?? [])
+    const feed = attachOutlineFeed(editor as never, model as never, read)
+    await flush()
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(feed.getState().tree).toBeNull()
+    // Another context key changes: no read.
+    changeKey('editorTextFocus')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(1)
+    changeKey('editorHasDocumentSymbolProvider')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(2)
+    expect(feed.getState().tree!.name).toEqual(['quickRecipes'])
+    // Off: the change waits for the switch-on. After dispose: no listener is left.
+    feed.setActive(false)
+    changeKey('editorHasDocumentSymbolProvider')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(2)
+    feed.setActive(true)
+    await flush()
+    expect(read).toHaveBeenCalledTimes(3)
+    feed.dispose()
+    expect(contextListeners.size).toBe(0)
   })
 
   it('a change of this model\'s markers is a new snapshot, with no read', async () => {
