@@ -1916,6 +1916,13 @@ button {
 
 /* The footer's zoom chip (YAZ-3432): the sidebar zoom's percent, the same quiet button as the menu's percent below;
    open, it stays lit. */
+/* The footer's − chip + (YAZ-3487, demo round 3): the sidebar zoom in one click; the chip opens the menu. */
+.zoom-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
 .zoom-chip {
   flex: none;
   font-size: 11.5px;

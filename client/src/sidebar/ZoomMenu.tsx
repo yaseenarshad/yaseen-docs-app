@@ -1,5 +1,6 @@
 /**
- * THE ZOOM MENU in the footer (YAZ-3432): one quiet chip after the cog that shows the sidebar zoom ("100%"). A click
+ * THE ZOOM MENU in the footer (YAZ-3432): one quiet chip after the cog that shows the sidebar zoom ("100%"), between a −
+ * and a + that step the sidebar zoom in one click, with no menu (YAZ-3487, demo round 3: as before YAZ-3432). A click
  * opens a small menu upward with two rows, each the same "− 100% +" (`ZoomStepper`): App size on top, the App size of
  * every window (`settings.appZoom`, along `APP_ZOOM_STEPS`), and Sidebar at the bottom, next to the chip, the zoom of
  * the sidebar's lists (YAZ-3389; a Files window's own zoom there, D13). The keys never reach the App size: ⌘+ / ⌘− /
@@ -15,6 +16,7 @@
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
+import { SIDEBAR_ZOOM_STEPS, stepZoom } from '@shared/types'
 import { ZoomStepper } from './ZoomStepper'
 
 interface ZoomMenuProps {
@@ -108,8 +110,12 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp,
   const place: CSSProperties | undefined = at === null ? undefined : { left: at.left / scale - shift, bottom: at.bottom / scale }
   // The chip shows the sidebar zoom alone; its tooltip and its accessible name tell both values (D1).
   const both = `Zoom: sidebar ${Math.round(sidebar)}%, App size ${app}%`
+  const [min, max] = [SIDEBAR_ZOOM_STEPS[0], SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]]
   return (
-    <>
+    <div className="zoom-footer" role="group" aria-label="Sidebar zoom in the footer">
+      <button type="button" className="zoom-stepper__step" aria-label="Zoom the sidebar out" title="Zoom the sidebar out (⌘−)" disabled={sidebar <= min} onClick={() => onSidebar(stepZoom(SIDEBAR_ZOOM_STEPS, sidebar, -1))}>
+        −
+      </button>
       <button
         ref={chipRef}
         type="button"
@@ -121,6 +127,9 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp,
         onClick={toggle}
       >
         {Math.round(sidebar)}%
+      </button>
+      <button type="button" className="zoom-stepper__step" aria-label="Zoom the sidebar in" title="Zoom the sidebar in (⌘+)" disabled={sidebar >= max} onClick={() => onSidebar(stepZoom(SIDEBAR_ZOOM_STEPS, sidebar, 1))}>
+        +
       </button>
       {place !== undefined &&
         createPortal(
@@ -135,6 +144,6 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp,
           </div>,
           document.body,
         )}
-    </>
+    </div>
   )
 })

@@ -7739,7 +7739,7 @@ describe('update pill (YAZ-2976 D4)', () => {
   it('sits after the cog in the footer, and its click asks App for the "What\'s new" window', async () => {
     const { el, props } = await mount({ update: { kind: 'ready', version: '1.0.13' } })
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
-    expect(footer).toEqual(['settings-button', 'zoom-chip', 'update-pill-slot'])
+    expect(footer).toEqual(['settings-button', 'zoom-footer', 'update-pill-slot'])
     act(() => el.querySelector<HTMLButtonElement>('.update-pill')?.click())
     expect(props.onOpenWhatsNew).toHaveBeenCalledTimes(1)
   })
@@ -7747,7 +7747,7 @@ describe('update pill (YAZ-2976 D4)', () => {
   it('no update, no pill: the footer has the cog and the zoom chip', async () => {
     const { el } = await mount()
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
-    expect(footer).toEqual(['settings-button', 'zoom-chip'])
+    expect(footer).toEqual(['settings-button', 'zoom-footer'])
   })
 
   it('the sidebar zoom (YAZ-3389): the lists take `--sidebar-zoom` from the setting, the chip shows it, the menu\'s + writes the next step over the other settings, and the same value writes nothing (D6)', async () => {
@@ -7778,7 +7778,7 @@ describe('update pill (YAZ-2976 D4)', () => {
     const onFilesZoom = vi.fn()
     const { el, props } = await mount({ settings: { ...DEFAULT_SETTINGS, sidebarZoom: 100 }, filesZoom: 150, onFilesZoom, onToNormalWindow: vi.fn(), update: { kind: 'ready', version: '1.0.13' } })
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
-    expect(footer).toEqual(['settings-button', 'zoom-chip', 'sidebar__files-chip', 'update-pill-slot'])
+    expect(footer).toEqual(['settings-button', 'zoom-footer', 'sidebar__files-chip', 'update-pill-slot'])
     expect(el.querySelector<HTMLElement>('.sidebar__body')!.style.getPropertyValue('--sidebar-zoom')).toBe('1.5')
     expect(el.querySelector('.zoom-chip')?.textContent).toBe('150%')
     act(() => el.querySelector<HTMLButtonElement>('.zoom-chip')!.click())
