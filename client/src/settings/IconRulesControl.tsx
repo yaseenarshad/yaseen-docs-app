@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import type { IconRule, IconRuleKind } from '@shared/vaultIcons'
 import { IconPicker } from '../sidebar/IconPicker'
 import { suggestIcons } from '../sidebar/iconSuggestions'
-import { iconUrl, isMaterialIcon } from '../sidebar/materialIcons'
+import { iconUrl, isMaterialIcon, useMaterialIcons } from '../sidebar/materialIcons'
 import { Segmented } from './controls'
 import type { Option } from './options'
 
@@ -27,6 +27,7 @@ interface Row extends IconRule {
  * pattern) stays here until it has a pattern: an empty one would be dropped when read.
  */
 export function IconRulesControl({ rules, onChange }: { rules: readonly IconRule[]; onChange: (rules: IconRule[]) => void }) {
+  useMaterialIcons() // the rule icons show once Material's tables are in (YAZ-3470)
   const nextKey = useRef(0)
   const [drafts, setDrafts] = useState<Row[]>([])
   const [picking, setPicking] = useState<{ key: number; anchor: { left: number; top: number; bottom: number } } | null>(null)

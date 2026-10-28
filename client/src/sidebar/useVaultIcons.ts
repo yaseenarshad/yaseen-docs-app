@@ -13,6 +13,7 @@ import { rootOfPath } from '@shared/types'
 import type { IconRule, VaultIcons } from '@shared/vaultIcons'
 import { api } from '../api'
 import type { NoticeKind } from '../lib/notice'
+import { useMaterialIcons } from './materialIcons'
 import { buildRowIcons, type RowIcons } from './rowIcons'
 
 type IconsByRoot = Readonly<Record<string, VaultIcons>>
@@ -79,7 +80,9 @@ export function useVaultIcons(roots: readonly string[], rules: readonly IconRule
     }
   }, [])
 
+  // Material's tables (YAZ-3470) load after the first render: their landing builds the icons again, once.
+  const material = useMaterialIcons()
   const last = useRef<RowIcons | undefined>(undefined)
-  const rowIcons = useMemo(() => (last.current = buildRowIcons(byRoot, roots, rules, last.current)), [byRoot, roots, rules])
+  const rowIcons = useMemo(() => (last.current = buildRowIcons(byRoot, roots, rules, last.current)), [byRoot, roots, rules, material]) // eslint-disable-line react-hooks/exhaustive-deps -- `material` is read by buildRowIcons
   return useMemo(() => ({ rowIcons, pick }), [rowIcons, pick])
 }

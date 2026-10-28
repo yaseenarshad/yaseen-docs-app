@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { PICKER_COLUMNS, PICKER_W } from './iconSuggestions'
-import { iconUrl, pickableIcons } from './materialIcons'
+import { iconUrl, pickableIcons, useMaterialIcons } from './materialIcons'
 
 /**
  * The icon picker (YAZ-3440 C, demo round 2): a panel of Material icons, opened right of the sidebar by "Change
@@ -40,7 +40,9 @@ export function IconPicker({ x, y, anchor, title, current, canReset = current !=
   const [query, setQuery] = useState('')
   const [hovered, setHovered] = useState<string | null>(null)
   const [focused, setFocused] = useState<string | null>(null)
-  const all = useMemo(() => pickableIcons().sort(), [])
+  // Material's tables (YAZ-3470) are in by the time a menu opens the picker; if not, it lists them once they land.
+  const material = useMaterialIcons()
+  const all = useMemo(() => pickableIcons().sort(), [material]) // eslint-disable-line react-hooks/exhaustive-deps -- `material` is read by pickableIcons
   const words = query.trim().toLowerCase().split(/[\s-]+/).filter((w) => w !== '')
   const matches = (id: string) => words.every((w) => id.includes(w))
   const sections = [

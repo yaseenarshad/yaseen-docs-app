@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { globRegExp, type IconRule } from '@shared/vaultIcons'
 import { buildRowIcons, iconsChangedBelow, oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
 import { suggestIcons } from './iconSuggestions'
@@ -92,5 +92,33 @@ describe("the row menu's two scopes (demo round 2)", () => {
     const folder = suggestIcons('docs', 'folder', 'folder-docs')
     expect(folder[0]).toBe('folder-docs')
     expect(folder.every((id) => id.startsWith('folder'))).toBe(true)
+  })
+})
+
+describe("Material's tables load lazily (YAZ-3470)", () => {
+  it('before they land a row has the default icon and a pick waits; their landing is one change for every level, then none', async () => {
+    vi.resetModules()
+    const fresh = await import('./rowIcons')
+    const material = await import('./materialIcons')
+    expect(material.materialIconsLoaded()).toBe(false)
+    const before = fresh.buildRowIcons({ [V]: { paths: { '/v/a.ts': 'lua' } } }, [V], [{ match: '*.md', kind: 'file', icon: 'python' }])
+    expect(before.material).toBe(false)
+    expect(fresh.rowIcon(before, '/v/a.ts', 'a.ts', 'file')).toEqual({ id: 'file', custom: false })
+    expect(fresh.rowIcon(before, '/v/b.md', 'b.md', 'file')).toEqual({ id: 'file', custom: false })
+    expect(fresh.rowIcon(before, '/v/src', 'src', 'folder', true)).toEqual({ id: 'folder', custom: false })
+    expect(material.iconUrl('file')).toBe('/material-icons/file.svg')
+
+    await material.loadMaterialIcons()
+    const after = fresh.buildRowIcons({ [V]: { paths: { '/v/a.ts': 'lua' } } }, [V], [{ match: '*.md', kind: 'file', icon: 'python' }], before)
+    expect(after).not.toBe(before)
+    expect(after.material).toBe(true)
+    expect(fresh.iconsChangedBelow(before, after, () => false)).toBe(true)
+    expect(fresh.rowIcon(after, '/v/a.ts', 'a.ts', 'file')).toEqual({ id: 'lua', custom: true })
+    expect(fresh.rowIcon(after, '/v/b.md', 'b.md', 'file')).toEqual({ id: 'python', custom: true })
+    expect(fresh.rowIcon(after, '/v/src', 'src', 'folder', true)).toEqual({ id: 'folder-src-open', custom: false })
+    // Built again with nothing new: the same object, so no level renders.
+    const again = fresh.buildRowIcons({ [V]: { paths: { '/v/a.ts': 'lua' } } }, [V], [{ match: '*.md', kind: 'file', icon: 'python' }], after)
+    expect(again).toBe(after)
+    expect(fresh.iconsChangedBelow(after, again, () => true)).toBe(false)
   })
 })
