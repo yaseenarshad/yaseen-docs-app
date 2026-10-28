@@ -121,6 +121,9 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
 /** How long a drag holds over a closed folder before it opens (YAZ-3251 D8). */
 export const SPRING_MS = 700
 
+/** How far the pointer moves from the press before a row lifts (YAZ-3467 D1). Chromium alone lifts it at about 4 px. */
+export const LIFT_PX = 10
+
 /**
  * What a row drag carries (YAZ-3251 D5, Finder's rule): a selected row takes the whole selection,
  * in on-screen order (`ordered`); any other row goes alone. A row inside another row that goes is
@@ -184,6 +187,10 @@ export function useTreeDrag(
   const leftWindow = useRef(false)
   const lit = useRef<{ dir: string | null; el: HTMLElement | null }>({ dir: null, el: null })
   const spring = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Where the last press came down (YAZ-3467 D1): a row lifts only LIFT_PX from it.
+  const press = useRef({ x: 0, y: 0 })
+  // The lift of a row whose `dragstart` came, while its pointer is not LIFT_PX from the press yet. Null: none.
+  const armed = useRef<(() => void) | null>(null)
   // What the callbacks read at the moment of the gesture, so the `move` they make keeps ONE identity.
   const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder })
   live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder }
@@ -236,27 +243,33 @@ export function useTreeDrag(
       // An item already in this folder is no move (S7).
       send(dir, paths)
     }
+    /**
+     * The row lifts, and since YAZ-3254 D4 it is the OS drag: main starts one that Finder takes
+     * (copies). The paths stay in the ref, so a drop back in this window is told apart by them (`dropFiles`).
+     */
+    const lift = (path: string, top?: string) => {
+      const { selection: picked, orderedSelectedPaths: ordered, vaultRows: vaults, finder: out, onNotice: say } = live.current
+      const paths = dragSet(path, picked.paths, ordered, (p) => vaults.has(p))
+      dragging.current = paths
+      droppedInside.current = false
+      leftWindow.current = false
+      // An unselected row first becomes the selection (S4), then goes alone.
+      if (!picked.paths.has(path)) picked.set(path, top)
+      if (paths.length === 0) return
+      api.file.dragOut({ paths, icon: dragPill(pillLabel(paths.map(out.nameOf))) }).catch((err: unknown) => {
+        // No OS drag started: nothing is in flight.
+        if (dragging.current === paths) end()
+        say(`Can't drag: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      })
+    }
     return {
       accepts,
       /**
-       * Where every row drag to move begins (D5), and since YAZ-3254 D4 it is the OS drag: the Tree
-       * stops the page's own drag, and main starts one that Finder takes (copies). The paths stay in
-       * the ref, so a drop back in this window is told apart by them (`dropFiles`).
+       * Where every row drag to move begins (D5). The Tree stops the page's own drag at `dragstart`,
+       * and that only ARMS the row (YAZ-3467 D1): it lifts at the first move LIFT_PX from the press.
        */
       start: (path, top) => {
-        const { selection: picked, orderedSelectedPaths: ordered, vaultRows: vaults, finder: out, onNotice: say } = live.current
-        const paths = dragSet(path, picked.paths, ordered, (p) => vaults.has(p))
-        dragging.current = paths
-        droppedInside.current = false
-        leftWindow.current = false
-        // An unselected row first becomes the selection (S4), then goes alone.
-        if (!picked.paths.has(path)) picked.set(path, top)
-        if (paths.length === 0) return
-        api.file.dragOut({ paths, icon: dragPill(pillLabel(paths.map(out.nameOf))) }).catch((err: unknown) => {
-          // No OS drag started: nothing is in flight.
-          if (dragging.current === paths) end()
-          say(`Can't drag: ${err instanceof Error ? err.message : String(err)}`, 'error')
-        })
+        armed.current = () => lift(path, top)
       },
       end,
       hover: light,
@@ -326,8 +339,25 @@ export function useTreeDrag(
       if (outside) live.current.finder.onDraggedOut(paths)
     }
     const moved = (e: MouseEvent) => {
+      // An armed row (YAZ-3467 D1): a release first was a click; LIFT_PX from the press, it lifts.
+      const lift = armed.current
+      if (lift !== null) {
+        if (e.buttons === 0) armed.current = null
+        else if (Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) >= LIFT_PX) {
+          armed.current = null
+          lift()
+        }
+        return
+      }
       if (e.buttons !== 0 || dragging.current.length === 0) return
       ended()
+    }
+    const pressed = (e: MouseEvent) => {
+      press.current = { x: e.clientX, y: e.clientY }
+      armed.current = null
+    }
+    const released = () => {
+      armed.current = null
     }
     window.addEventListener('drop', marked, true)
     window.addEventListener('drop', dropped)
@@ -335,6 +365,8 @@ export function useTreeDrag(
     window.addEventListener('dragover', over, true)
     window.addEventListener('dragleave', left, true)
     window.addEventListener('mousemove', moved)
+    window.addEventListener('mousedown', pressed, true)
+    window.addEventListener('mouseup', released, true)
     const offLanded = api.file.onDragLanded(({ paths }) => {
       if (dragging.current.length > 0 && sameItems(dragging.current, paths)) droppedInside.current = true
     })
@@ -350,6 +382,8 @@ export function useTreeDrag(
       window.removeEventListener('dragover', over, true)
       window.removeEventListener('dragleave', left, true)
       window.removeEventListener('mousemove', moved)
+      window.removeEventListener('mousedown', pressed, true)
+      window.removeEventListener('mouseup', released, true)
     }
   }, [fileMove])
 

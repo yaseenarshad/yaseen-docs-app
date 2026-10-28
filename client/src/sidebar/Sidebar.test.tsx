@@ -68,6 +68,7 @@ vi.mock('./folderShortcuts', async (importOriginal) => {
 })
 
 import { testDoor } from '../testNoteIds'
+import { LIFT_PX } from './hooks/rowGestures'
 import { PREVIEW_FOLLOW_MS } from './hooks/useSidebarSearch'
 import { useSameList } from './hooks/useVaultTree'
 import { useVaultListsHere } from '../lists/useVaultListsHere'
@@ -404,6 +405,17 @@ afterEach(() => {
  * Drawing and diagram rows (YAZ-3028 D11): normal rows that open a tab, named by their full file name,
  * a diagram marked; "Info" on their menu reads the board's head through `fs:board-head`.
  */
+/**
+ * A drag event as a person makes it. A `dragstart` only arms a row (YAZ-3467 D1): it comes between
+ * a press and a move LIFT_PX away with the button down, and that move lifts the row.
+ */
+const asPerson = (type: string, dispatch: () => void): void => {
+  if (type !== 'dragstart') return dispatch()
+  window.dispatchEvent(new MouseEvent('mousedown', { clientX: 0, clientY: 0 }))
+  dispatch()
+  window.dispatchEvent(new MouseEvent('mousemove', { buttons: 1, clientX: LIFT_PX }))
+}
+
 describe('drawing and diagram rows (YAZ-3028 D11)', () => {
   const BOARD_TREE: TreeNode[] = [
     { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
@@ -904,7 +916,7 @@ describe('Sidebar copy link (retired, YAZ-1554)', () => {
 describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
   /** Drag events bubble like the real thing; jsdom has no DragEvent, the handlers guard `dataTransfer` (the TabBar idiom). */
   const fire = (target: Element | null | undefined, type: string) =>
-    act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true })))
+    act(() => asPerson(type, () => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }))))
   const dirRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--dir')
 
   it.each([
@@ -1081,7 +1093,7 @@ describe('the tree drag: folders, the selection, file-row drops, spring open (YA
   /** A synthetic drag event (jsdom has no DragEvent, and the handlers guard `dataTransfer`); answers whether a handler took it. */
   const fire = (target: Element | null | undefined, type: string) => {
     const event = new MouseEvent(type, { bubbles: true, cancelable: true })
-    act(() => void target?.dispatchEvent(event))
+    act(() => asPerson(type, () => void target?.dispatchEvent(event)))
     return event.defaultPrevented
   }
   const shiftClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
@@ -1247,7 +1259,7 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
   const fire = (target: EventTarget | null | undefined, type: string, files?: File[]) => {
     const event = new MouseEvent(type, { bubbles: true, cancelable: true })
     if (files !== undefined) Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files, dropEffect: 'none' } })
-    act(() => void target?.dispatchEvent(event))
+    act(() => asPerson(type, () => void target?.dispatchEvent(event)))
     return event.defaultPrevented
   }
   /** The pointer moves; `buttons` 0 once the OS drag is over. */
@@ -1386,6 +1398,32 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     expect(props.onMoveEntries).not.toHaveBeenCalled()
     expect(bridge.file.import).not.toHaveBeenCalled()
     expect(props.onNotice).not.toHaveBeenCalled()
+  })
+
+  it('a row lifts only LIFT_PX from the press (YAZ-3467 D1): a slip and a release, or a new press, lift nothing; LIFT_PX away with the button down lifts it once', async () => {
+    const { bridge, el } = await mount()
+    const at = (type: string, x: number, buttons = 0) => act(() => void window.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: 0, buttons })))
+    const start = () => act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('dragstart', { bubbles: true, cancelable: true })))
+    // L1, L5: a slip of 6 px and a release is a click; the move after it, with no button, lifts nothing.
+    at('mousedown', 100)
+    start()
+    at('mousemove', 106, 1)
+    at('mouseup', 106)
+    at('mousemove', 100 + LIFT_PX, 0)
+    expect(bridge.file.dragOut).not.toHaveBeenCalled()
+    // L6: a new press clears an armed row.
+    at('mousedown', 100)
+    start()
+    at('mousedown', 300)
+    at('mousemove', 300 + LIFT_PX, 1)
+    expect(bridge.file.dragOut).not.toHaveBeenCalled()
+    // L2, L3: LIFT_PX from the press in a straight line, with the button down, lifts the row once.
+    at('mousedown', 100)
+    start()
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: 106, clientY: 8, buttons: 1 })))
+    expect(bridge.file.dragOut).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md'], icon: expect.any(String) })
+    at('mousemove', 140, 1)
+    expect(bridge.file.dragOut).toHaveBeenCalledOnce()
   })
 
   it('a row drag is the OS drag: dragstart is taken and dragOut gets the drag set and a pill; dropped back on a folder it moves in the app, and no box asks (D4, S30)', async () => {
@@ -5647,7 +5685,7 @@ describe('focus tab (YAZ-2619)', () => {
     await act(async () => itemByLabel(el, label)?.click())
   }
   /** jsdom has no DragEvent: a MouseEvent with the row's edge in `clientY` (the zero rect reads `< 0` as "before"). */
-  const drag = (target: Element | null | undefined, type: string, clientY = 0) => act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+  const drag = (target: Element | null | undefined, type: string, clientY = 0) => act(() => asPerson(type, () => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY }))))
   /** What a drag draws: the line on a row's edge (a reorder), or the fill of a drop folder (a move on disk). */
   const marker = (el: HTMLElement) => el.querySelector('.tree__row--drop-before, .tree__row--drop-after, .tree__row--drop')
   /** The watcher-driven refresh idiom: a new tree answers the next `bridge.tree`, an event triggers it. */
@@ -6060,7 +6098,7 @@ describe('favorites (YAZ-1766)', () => {
   }
   /** jsdom has no DragEvent: a MouseEvent with the row's edge in `clientY` (the zero rect reads `< 0` as "before"). */
   const drag = (target: Element | null | undefined, type: string, clientY = 0) =>
-    act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+    act(() => asPerson(type, () => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY }))))
   /** What a drag draws: the line on a row's edge (a reorder), or the fill of a drop folder (a move on disk). */
   const marker = (el: HTMLElement) => el.querySelector('.tree__row--drop-before, .tree__row--drop-after, .tree__row--drop')
 
@@ -8929,7 +8967,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
   const shiftClick = (row: HTMLElement | null) => act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
   const fire = (target: Element | null | undefined, type: string) => {
     const event = new MouseEvent(type, { bubbles: true, cancelable: true })
-    act(() => void target?.dispatchEvent(event))
+    act(() => asPerson(type, () => void target?.dispatchEvent(event)))
     return event
   }
   const topItems = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu:not(.ctx-menu__sub) > .ctx-menu__group > .ctx-menu__item, .ctx-menu:not(.ctx-menu__sub) > .ctx-menu__group > .ctx-menu__parent > .ctx-menu__item')].map((b) => b.textContent)
@@ -8970,7 +9008,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
   const bodyMsg = (el: HTMLElement) => el.querySelector('.sidebar__body .sidebar__msg')?.textContent ?? null
   const choose = (el: HTMLElement, label: string) => act(async () => itemByLabel(el, label)?.click())
   /** jsdom has no DragEvent: a MouseEvent with the row's edge in `clientY` (the zero rect reads `< 0` as "before"). */
-  const drag = (target: Element | null | undefined, type: string, clientY = 0) => act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+  const drag = (target: Element | null | undefined, type: string, clientY = 0) => act(() => asPerson(type, () => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY }))))
   const marker = (el: HTMLElement) => el.querySelector('.tree__row--drop-before, .tree__row--drop-after, .tree__row--drop')
   /** Each vault's own `favorites.json`, by its root and read as it stands, and main's push that one changed. */
   const favoritesOf = (bridge: Bridge, lists: Record<string, string[]>) => {
