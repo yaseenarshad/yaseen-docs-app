@@ -1037,6 +1037,8 @@ export interface TabSort {
 /** The tabs that sort (YAZ-3227 D5). Search has its own `searchSort` (YAZ-3511); Sessions and Recents (YAZ-3235) have none. */
 export type SortedTab = 'files' | 'focus' | 'favorites'
 export type SidebarSort = Record<SortedTab, TabSort>
+/** The tabs the sort menu serves: the sorted tabs and Search, whose sort is its own (YAZ-3511 D3). */
+export type SortMenuTab = SortedTab | 'search'
 /** Files by name, A to Z (as before YAZ-3227); Focus and Favorites in their own drag order (D6). */
 export const DEFAULT_SIDEBAR_SORT: SidebarSort = { files: { by: 'name', reverse: false }, focus: { by: 'manual', reverse: false }, favorites: { by: 'manual', reverse: false } }
 /** The Search tab's sort (YAZ-3511 D4): by name, A to Z. Never Manual: a search has no drag order. */

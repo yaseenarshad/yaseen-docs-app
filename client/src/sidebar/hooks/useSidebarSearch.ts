@@ -48,10 +48,8 @@ export const PREVIEW_FOLLOW_MS = 120
 /** No fold and no highlight: one object each, so a search that has neither hands the memoised tree nothing new (YAZ-2194). */
 const NO_FOLDS: ReadonlySet<string> = new Set()
 const NO_CURSOR: ReadonlySet<string> = new Set()
-/** No match (YAZ-3511 D2): no rows, one object, so the memoised trees get nothing new. */
+/** No match (YAZ-3511 D2): no cut, and one object, so a save while Search is off screen walks nothing and the memos below keep their values. */
 const NO_FOUND = { top: [] as TreeNode[], rest: [] as TreeNode[], open: new Set<string>(), order: [] as string[] }
-/** A level as it came: the search with no sort of its own. */
-const asIs = (nodes: readonly TreeNode[]): readonly TreeNode[] => nodes
 /** A search has no multi-select (S29, YAZ-2620): shift-click on its tree toggles nothing. */
 const noToggle = (): void => undefined
 
@@ -74,10 +72,10 @@ export function useSidebarSearch(
   previewPath: string | null,
   /** The one door of the preview panel: the file to draw, or `null` for no panel. */
   onPreview: (path: string | null) => void,
+  /** One level of the tree in the order `Tree` draws it (YAZ-3511 D4): the Search sort, so ↑/↓ walk the rows as they show. `top`: the top group's top rows. */
+  level: (nodes: readonly TreeNode[], depth: number, top: boolean) => readonly TreeNode[],
   /** With the focus flag: a NEW search (YAZ-2663 D10). A new tab (⌘T) asks it, and the bar is emptied; ⌘K does not, and keeps its text. */
   pendingSearchClear = false,
-  /** One level of the tree in the order `Tree` draws it (YAZ-3511 D4): the Search tab's sort, so ↑/↓ walk the rows as they show. */
-  level: (nodes: readonly TreeNode[]) => readonly TreeNode[] = asIs,
 ) {
   // The search bar's query (YAZ-801). It lives HERE rather than in the bar because the bar is
   // drawn on the Search tab only (YAZ-2638 D2) and the query stays while a different tab shows;
@@ -129,17 +127,31 @@ export function useSidebarSearch(
   // all, each row on show is a stop, a match or not (YAZ-2662 S48).
   const rows = useMemo(() => {
     const shown: TreeNode[] = []
-    const walk = (nodes: readonly TreeNode[], all: boolean, keep: boolean): void => {
-      for (const node of keep ? nodes : level(nodes)) {
+    const walk = (nodes: readonly TreeNode[], depth: number, all: boolean, top: boolean): void => {
+      for (const node of level(nodes, depth, top)) {
         if (all || hits.has(node.path)) shown.push(node)
-        if (node.type === 'dir' && searchOpen.has(node.path)) walk(node.children, all || full.has(node.path), false)
+        if (node.type === 'dir' && searchOpen.has(node.path)) walk(node.children, depth + 1, all || full.has(node.path), false)
       }
     }
-    // The pinned items keep their order (YAZ-2662 D3), as `Tree` draws them with `keepTop`.
-    walk(found.top, false, true)
-    walk(found.rest, false, false)
+    walk(found.top, 0, false, true)
+    walk(found.rest, 0, false, false)
     return shown
   }, [found, searchOpen, hits, full, level])
+  // Every stop of the cut (`searchTree`'s `order`) in the order on screen, the rows below a closed folder too: where the
+  // highlight goes when its row folds away (S21). The cut's own order is the walk's, not the Search sort's (YAZ-3511 D4).
+  const order = useMemo(() => {
+    const stops = new Set(found.order)
+    const out: string[] = []
+    const walk = (nodes: readonly TreeNode[], depth: number, top: boolean): void => {
+      for (const node of level(nodes, depth, top)) {
+        if (stops.has(node.path)) out.push(node.path)
+        if (node.type === 'dir') walk(node.children, depth + 1, false)
+      }
+    }
+    walk(found.top, 0, true)
+    walk(found.rest, 0, false)
+    return out
+  }, [found, level])
   // The highlight is held by its PATH (`null`: nobody moved it yet), so a fold that moves rows in or
   // out above it leaves it on its match. Unmoved, it is on the BEST match — the ranking's first, a
   // pinned match when there is one (YAZ-2662 S23) — wherever the tree draws it (S19); once its match
@@ -150,10 +162,10 @@ export function useSidebarSearch(
     if (picked === null) return Math.max(0, at(results[0]?.path))
     const held = at(picked)
     if (held !== -1) return held
-    const after = new Set(found.order.slice(found.order.indexOf(picked) + 1))
+    const after = new Set(order.slice(order.indexOf(picked) + 1))
     const next = rows.findIndex((r) => after.has(r.path))
     return next !== -1 ? next : Math.max(0, rows.length - 1)
-  }, [rows, picked, results, found])
+  }, [rows, picked, results, order])
   // The preview panel (YAZ-2662 D5). "A panel is on show" is `previewPath`, App's alone, so the
   // keys here and the ✕ there cannot disagree. `parked` is what App cannot hold: the preview is on
   // and the highlight is on a folder, so no panel is drawn (S38).

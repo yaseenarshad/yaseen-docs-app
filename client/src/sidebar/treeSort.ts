@@ -1,4 +1,5 @@
-import type { SortBy, SortedTab, TabSort, TreeNode, TreeResponse } from '@shared/types'
+import type { SortBy, SortMenuTab, TabSort, TreeNode, TreeResponse } from '@shared/types'
+import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import type { MenuSection } from './menuSections'
 
 /** Names in reading order (YAZ-3227 D8): case-blind, and "Phase 2" before "Phase 10". */
@@ -24,6 +25,18 @@ export function sortLevel(nodes: readonly TreeNode[], sort: TabSort | undefined,
   const base = sort?.by === 'updated' ? (a: TreeNode, b: TreeNode): number => timeOf(b) - timeOf(a) || byName(a, b) : byName
   const order = sort?.reverse === true && sort.by !== 'manual' ? (a: TreeNode, b: TreeNode): number => base(b, a) : base
   return [...nodes.filter((n) => n.type === 'dir').sort(order), ...nodes.filter((n) => n.type === 'file').sort(order)]
+}
+
+/** The label a row shows (YAZ-2420 🔒 D15), which Name sorts by (D8). */
+export const shownLabel = (titles: PathTitles) => (node: TreeNode): string => pageLabel(node.path, node.type === 'dir', titles)
+
+/**
+ * The levels that keep the order they came in, whatever the sort: the top rows of a Manual list (D6), the vault rows
+ * (YAZ-2631 D3) and the search's pinned items, focus before favorites (YAZ-2662 D3). `Tree` draws by this rule, and the
+ * search's ↑/↓ walk by it (YAZ-3511 D4), so the two never disagree.
+ */
+export function keepsOrder(depth: number, sort: TabSort, at: { keepTop?: boolean; copies?: boolean; vaults: boolean }): boolean {
+  return depth === 0 && (at.keepTop === true || (at.copies === true ? sort.by === 'manual' : at.vaults))
 }
 
 const swap = (nodes: TreeNode[], at: number, node: TreeNode): TreeNode[] => nodes.map((n, i) => (i === at ? node : n))
@@ -53,7 +66,7 @@ const WAYS: Record<Exclude<SortBy, 'manual'>, readonly [string, string]> = { nam
  * A new sort starts its natural way; the current one keeps its way, and a pick that changes nothing writes nothing.
  * `dates` is the Search menu's last row (YAZ-3511 D7): the date at the right end of each row, on or off.
  */
-export function sortSections(tab: SortedTab | 'search', sort: TabSort, set: (next: TabSort) => void, dates?: { on: boolean; set: (on: boolean) => void }): MenuSection[] {
+export function sortSections(tab: SortMenuTab, sort: TabSort, set: (next: TabSort) => void, dates?: { on: boolean; set: (on: boolean) => void }): MenuSection[] {
   const pick = (next: TabSort) => () => {
     if (next.by !== sort.by || next.reverse !== sort.reverse) set(next)
   }

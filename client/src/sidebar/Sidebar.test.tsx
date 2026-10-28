@@ -10807,6 +10807,19 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(new Set(rowBuilds.files)).toEqual(new Set([b]))
   })
 
+  it('S7 (YAZ-3511 D4): with two vaults and Z to A, ↑/↓ walk the matches as drawn — the vault rows in the window\'s order, each vault\'s rows sorted', async () => {
+    const { el, input } = await searchTwo({ settings: { ...DEFAULT_SETTINGS, searchSort: { by: 'name', reverse: true } } })
+    await type(input, 'plan')
+    for (let i = 0; i < 12; i++) press(input, 'ArrowUp')
+    const walked = [...cursor(el)]
+    for (let i = 0; i < 12; i++) {
+      press(input, 'ArrowDown')
+      if (cursor(el)[0] !== walked.at(-1)) walked.push(...cursor(el))
+    }
+    expect(walked).toEqual(matches(el))
+    expect(shape(el).filter((row) => !row.startsWith(' '))).toEqual(['Notes', 'Work'])
+  })
+
   it('the limit of 50 counts the matches of every vault together: 30 and 30 show the best 50 and the limit line; fewer than 50 in all show no line (A9; YAZ-2620 S11)', async () => {
     const many = (root: string, n: number): TreeNode[] => Array.from({ length: n }, (_, i) => file(`${root}/note ${String(i + 1).padStart(2, '0')}.md`))
     const { el, a, b, input } = await searchTwo({}, { trees: (at) => ({ [at.a]: many(at.a, 30), [at.b]: many(at.b, 30) }) })
@@ -11019,12 +11032,16 @@ describe('Change icon from the tree (YAZ-3440 D8, D9)', () => {
  * and `settings.searchDates`, never `sidebarSort`.
  */
 describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
-  const NOW = Date.now()
   const H = 3_600_000
   const D = 24 * H
   const note = (path: string, mtime: number): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime, kind: 'markdown' })
   // A folder that leads to two matches (number order), a matched folder with a file inside, an empty matched folder, two notes.
-  const TREE_3511: TreeNode[] = [
+  // Its times count back from the moment each test starts: this file runs for minutes, and "34m" must not turn into "35m".
+  let NOW = Date.now()
+  beforeEach(() => {
+    NOW = Date.now()
+  })
+  const tree3511 = (): TreeNode[] => [
     note('/v/plan b.md', NOW - 34 * 60_000),
     { type: 'dir', name: 'plan old', path: '/v/plan old', children: [note('/v/plan old/x.md', NOW - 150 * D)] },
     note('/v/plan a.md', NOW - 7 * D),
@@ -11032,9 +11049,9 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     { type: 'dir', name: 'plan empty', path: '/v/plan empty', children: [] },
   ]
   const RECORDS = ['/v/plan b.md', '/v/plan a.md', '/v/docs/plan 10.md', '/v/docs/plan 2.md'].map(indexRecord)
-  const search = async (settings: Partial<SettingsState> = {}) => {
+  const search = async (settings: Partial<SettingsState> = {}, tree: TreeNode[] = tree3511()) => {
     const m = await mount({ lens: 'search', settings: { ...DEFAULT_SETTINGS, ...settings } }, (b) => {
-      b.tree.mockResolvedValue({ root: '/v', tree: TREE_3511, generatedAt: 1 })
+      b.tree.mockResolvedValue({ root: '/v', tree, generatedAt: 1 })
       b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1, ids: true } as never)
     })
     const input = searchBar(m.el)!
@@ -11088,6 +11105,27 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect(walked).toEqual(['/v/docs/plan 2.md', '/v/docs/plan 10.md', '/v/plan old', '/v/plan empty', '/v/plan b.md', '/v/plan a.md'])
   })
 
+  it('S7, S21: when the highlighted row folds away, the highlight goes to the next row on screen, by the Search sort', async () => {
+    const { el, input } = await search({ searchSort: { by: 'updated', reverse: false } })
+    for (let i = 0; i < 8; i++) press(input, 'ArrowUp')
+    expect(highlighted(el)).toBe('/v/docs/plan 2.md')
+    act(() => el.querySelector<HTMLElement>('.tree__row[data-path="/v/docs"]')?.click())
+    expect(highlighted(el)).toBe('/v/plan old')
+  })
+
+  it('S7, S13: inside a folder that shows all, ↑/↓ walk its rows by the Search sort too', async () => {
+    const tree: TreeNode[] = [{ type: 'dir', name: 'plan old', path: '/v/plan old', children: [note('/v/plan old/x.md', NOW - 150 * D), note('/v/plan old/y.md', NOW - D)] }]
+    const { el, input } = await search({ searchSort: { by: 'updated', reverse: false } }, tree)
+    expect(highlighted(el)).toBe('/v/plan old')
+    press(input, 'ArrowUp') // the list keys act once ↑ or ↓ moved the highlight (YAZ-2662 D7)
+    press(input, 'ArrowRight')
+    expect(rows(el)).toEqual(['plan old 1d', 'y 1d', 'x 5mo'])
+    press(input, 'ArrowDown')
+    expect(highlighted(el)).toBe('/v/plan old/y.md')
+    press(input, 'ArrowDown')
+    expect(highlighted(el)).toBe('/v/plan old/x.md')
+  })
+
   it('S9, D3, D4, D7: the button opens the Search menu — no Manual, then "Show last updated" — and a pick writes `searchSort` or `searchDates` alone', async () => {
     const { el, props } = await search()
     act(() => sortButton(el)?.click())
@@ -11107,7 +11145,7 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
   it('S17, D2: with the dates on, a save gives its row "now" at once, with no walk', async () => {
     const { watch, fire } = withWatcher()
     const m = await mount({ lens: 'search', watch }, (b) => {
-      b.tree.mockResolvedValue({ root: '/v', tree: TREE_3511, generatedAt: 1 })
+      b.tree.mockResolvedValue({ root: '/v', tree: tree3511(), generatedAt: 1 })
       b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1, ids: true } as never)
     })
     await type(searchBar(m.el)!, 'plan')

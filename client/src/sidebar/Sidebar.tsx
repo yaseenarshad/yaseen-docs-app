@@ -1,13 +1,13 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
-import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
+import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { GridIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
-import { pageLabel, pageName, useAllPathTitles } from '../lib/pageLabel'
+import { pageName, useAllPathTitles } from '../lib/pageLabel'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences, linkingNotes } from '../links/renameLinks'
@@ -26,7 +26,7 @@ import type { VaultIconsHere } from './useVaultIcons'
 import { isIconRules, MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import { oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
 import { PICKER_W, suggestIcons } from './iconSuggestions'
-import { sortLevel, sortSections } from './treeSort'
+import { keepsOrder, shownLabel, sortLevel, sortSections } from './treeSort'
 import { ACTIVE_TAB_SELECTOR, SidebarTabs } from './SidebarTabs'
 import { folderShortcuts } from './folderShortcuts'
 import { datedSeed, targetDirFor, type MenuRow } from './createEntry'
@@ -608,11 +608,13 @@ export function Sidebar({
   onShareFile,
 }: SidebarProps) {
   // The tab the sort button serves (YAZ-3227 D5): Files, Focus, Favorites and Search, whose sort is its own (YAZ-3511 D3). Sessions and Recents have none.
-  const sortedTab: SortedTab | 'search' | null = lens === 'files' || lens === 'focus' || lens === 'favorites' || lens === 'search' ? lens : null
+  const sortedTab: SortMenuTab | null = lens === 'files' || lens === 'focus' || lens === 'favorites' || lens === 'search' ? lens : null
   const stored = sortedTab === null ? undefined : sortedTab === 'search' ? settings.searchSort : settings.sidebarSort[sortedTab]
   // Each state broadcast hands over a new copy of the settings (YAZ-3237): the sort keeps its identity while its
   // value stays, so the memoised levels (YAZ-2194) draw nothing again on a tab click or a window move.
   const sort = useMemo<TabSort | undefined>(() => (stored === undefined ? undefined : { by: stored.by, reverse: stored.reverse }), [stored?.by, stored?.reverse])
+  // The Search sort on its own (YAZ-3511): the search tree and its ↑/↓ keep it whichever tab shows.
+  const searchSort = useMemo<TabSort>(() => ({ by: settings.searchSort.by, reverse: settings.searchSort.reverse }), [settings.searchSort.by, settings.searchSort.reverse])
   const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, sort?.by === 'updated' || settings.searchDates)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
@@ -652,7 +654,7 @@ export function Sidebar({
   const vaultOf = useCallback((path: string): SidebarVault => vaultsRef.current.find((vault) => vault.root === rootOf(path)) ?? vaultsRef.current[0], [rootOf])
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   /** The sort menu (YAZ-3227 D4): the tab it sorts and where its button is, while it is open. */
-  const [sortMenu, setSortMenu] = useState<{ tab: SortedTab | 'search'; x: number; y: number } | null>(null)
+  const [sortMenu, setSortMenu] = useState<{ tab: SortMenuTab; x: number; y: number } | null>(null)
   /**
    * The Files window chip, clicked once (YAZ-3357 D13: "a two click … kinda how in mission control we have for closing
    * a tab"): red "Make full window" until the second click converts, or a move off, Esc or a press elsewhere lets it go.
@@ -869,14 +871,13 @@ export function Sidebar({
   }, [searching, menuOpen, onLeaveToPage])
   // The pinned items (YAZ-2662 D3): the rows of the Focus tab, then those of the Favorites tab. Their matches are the search's top group.
   const pinned = useMemo(() => pinnedRoots([...focusNodes, ...favoriteNodes]), [focusNodes, favoriteNodes])
-  // A level of the search tree as `Tree` draws it (YAZ-3511 D4): the vault rows keep the window's order, any other level
-  // takes the Search sort (the pinned items, the top group's top rows, keep theirs: `keepTop`). ↑/↓ walk these, so the
+  // A level of the search tree as `Tree` draws it (YAZ-3511 D4), by the one rule (`keepsOrder`): ↑/↓ walk these, so the
   // highlight moves to the row below on screen.
   const searchLevel = useCallback(
-    (nodes: readonly TreeNode[]) => (nodes.some((node) => vaultRows.has(node.path)) ? nodes : sortLevel(nodes, sort, (node) => pageLabel(node.path, node.type === 'dir', titles))),
-    [vaultRows, sort, titles],
+    (nodes: readonly TreeNode[], depth: number, top: boolean) => (keepsOrder(depth, searchSort, { keepTop: top, vaults: vaultRows.size > 0 }) ? nodes : sortLevel(nodes, searchSort, shownLabel(titles))),
+    [vaultRows, searchSort, titles],
   )
-  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, pendingSearchClear, searchLevel)
+  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, pendingSearchClear)
   // A new query moves the results under a still pointer: the panel of the row that was there goes (YAZ-3403).
   useEffect(() => closePreview(), [query, closePreview])
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
@@ -1390,7 +1391,7 @@ export function Sidebar({
     onHoverFile: hoverFile,
   }
   // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags.
-  const searchTreeProps = { ...treeProps, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, marks, sort, dates: settings.searchDates }
+  const searchTreeProps = { ...treeProps, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, marks, sort: searchSort, dates: settings.searchDates }
 
   // A vault that could not be read says so on every tab: one line per vault, its own (YAZ-2602).
   const errorLines = errors.map((message, at) => (

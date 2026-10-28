@@ -19,7 +19,7 @@ interface SidebarTabsProps {
   prefs: SidebarTabsPrefs
   /** A new row, from "Hide <tab>" or the Tab row panel (YAZ-3279): one settings write per change. */
   onChangePrefs: (next: SidebarTabsPrefs) => void
-  /** The sort button shows on this tab (YAZ-3227 D5: Files, Focus and Favorites), and whether its menu is open. */
+  /** The sort button shows on this tab (YAZ-3227 D5: Files, Focus and Favorites; Search since YAZ-3511 D3), and whether its menu is open. */
   sortShows: boolean
   sortOpen: boolean
   /** The sort menu at a point — from the Sort button, or from "Sort…" in the ⋯ menu (S15) — or `null` to close it. */
@@ -282,7 +282,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
             <MoreIcon />
           </button>
         )}
-        {/* The sort button (YAZ-3227 D5): left of expand-all, on Files, Focus and Favorites. A second click closes its menu. */}
+        {/* The sort button (YAZ-3227 D5): left of expand-all, on Files, Focus, Favorites and Search (YAZ-3511 D3). A second click closes its menu. */}
         {onBar(prefs, buttons, 'sort') && (
           <button
             type="button"

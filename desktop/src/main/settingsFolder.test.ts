@@ -65,6 +65,13 @@ describe('the rules (D3)', () => {
     expect(out.sidebarSort).toEqual(here.sidebarSort)
   })
 
+  it("YAZ-3511 D1: the Search sort and the date switch travel; a value this build can't read keeps this Mac's", () => {
+    const here: SettingsState = { ...DEFAULT_SETTINGS, searchSort: { by: 'updated', reverse: true }, searchDates: false }
+    expect(mergeFolderSettings(here, { searchSort: { by: 'name', reverse: false }, searchDates: true })).toMatchObject({ searchSort: { by: 'name', reverse: false }, searchDates: true })
+    expect(mergeFolderSettings(here, { searchSort: { by: 'manual', reverse: false }, searchDates: 'yes' })).toMatchObject({ searchSort: here.searchSort, searchDates: false })
+    expect(mergeFolderSettings(here, { theme: 'dark' })).toMatchObject({ searchSort: here.searchSort, searchDates: false })
+  })
+
   it("YAZ-3309: the sidebar's level lines, their style and their colour travel; a file without them, or with a value this build can't read, keeps this Mac's (D3, D8, D9, S10)", () => {
     const here: SettingsState = { ...DEFAULT_SETTINGS, sidebarLines: 'always' }
     expect(mergeFolderSettings(here, { sidebarLines: 'off' }).sidebarLines).toBe('off')

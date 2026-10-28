@@ -11,7 +11,7 @@ import { TOO_LARGE_LABEL } from '../lib/syncAttention'
 import { RenameInline } from './RenameInline'
 import { iconVars } from './materialIcons'
 import { iconsChangedBelow, rowIcon, type RowIcons } from './rowIcons'
-import { sortLevel, timeOf } from './treeSort'
+import { keepsOrder, shownLabel, sortLevel, timeOf } from './treeSort'
 import { shortRelativeTime } from '../lib/relativeTime'
 import { formatDateTime } from '../lib/format'
 
@@ -353,8 +353,8 @@ function TreeLevel({
   // This folder's shortcuts stand among its FILES (YAZ-2290), and the tab's sort orders the level (YAZ-3227 D7).
   // The top rows of a Manual list, the vault rows and the search's pinned items keep their own order; with no sort a level stands as it came.
   const here = shortcuts.get(dirPath)
-  const keep = sort === undefined ? here === undefined : depth === 0 && (keepTop === true || (copies ? sort.by === 'manual' : vaultRows.size > 0))
-  const rows = keep ? nodes : sortLevel(here === undefined ? nodes : [...nodes, ...here], sort, (node) => pageLabel(node.path, node.type === 'dir', titles))
+  const keep = sort === undefined ? here === undefined : keepsOrder(depth, sort, { keepTop, copies, vaults: vaultRows.size > 0 })
+  const rows = keep ? nodes : sortLevel(here === undefined ? nodes : [...nodes, ...here], sort, shownLabel(titles))
   const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
   // The top row a row stands under (YAZ-2845 D1): a top row is its own. It tells the copies of a row
   // that shows twice apart, and a right-click hands it to the menu, so an input mounts in that copy alone.
