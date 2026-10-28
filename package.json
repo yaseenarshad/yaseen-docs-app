@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@milkdown/components": "file:client/vendor/milkdown-components-7.22.1-yaz1410.tgz",
+    "@milkdown/crepe": "file:client/vendor/milkdown-crepe-7.22.1-yaz3550.tgz",
     "@milkdown/plugin-tooltip": "file:client/vendor/milkdown-plugin-tooltip-7.22.1-yaz2238.tgz",
     "esbuild": "^0.28.2",
     "jsdom": "^30.0.1",
@@ -39,6 +40,7 @@
   },
   "overrides": {
     "@milkdown/components": "$@milkdown/components",
+    "@milkdown/crepe": "$@milkdown/crepe",
     "@milkdown/plugin-tooltip": "$@milkdown/plugin-tooltip"
   },
   "optionalDependencies": {
