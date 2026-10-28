@@ -189,6 +189,21 @@ describe('LspPool (YAZ-3454)', () => {
     expect(p2Helpers[1].notes.filter(([m]) => m === 'textDocument/didOpen')).toHaveLength(2)
   })
 
+  it('typing in a tab (its debounced change) counts as use for the 3-helper limit', async () => {
+    const { pool, started, settle } = harness()
+    const h1 = open(pool, file('p1', 'a.ts'))!
+    open(pool, file('p2', 'a.ts'))
+    open(pool, file('p3', 'a.ts'))
+    await settle()
+    // Only typing in p1, no jump: p2 is now the one used longest ago.
+    pool.change(1, h1.handle, 'typed')
+    open(pool, file('p4', 'a.ts'))
+    await settle()
+    expect(pool.running().map((r) => path.basename(r.root)).sort()).toEqual(['p1', 'p3', 'p4'])
+    expect(started.find((s) => s.root === file('p1'))!.stopRequested).toBe(false)
+    expect(started.find((s) => s.root === file('p2'))!.stopRequested).toBe(true)
+  })
+
   it('a helper that crashes starts again once with its documents; a second crash leaves the tab on Monaco (S5)', async () => {
     const { pool, started, settle } = harness({ answers: { 'textDocument/definition': () => [] } })
     const { handle } = open(pool, file('p1', 'a.ts'), 'text now')!

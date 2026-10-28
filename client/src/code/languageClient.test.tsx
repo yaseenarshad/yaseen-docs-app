@@ -51,11 +51,11 @@ async function settle(): Promise<void> {
   })
 }
 
-async function opened(path = A, el = container): Promise<{ editor: FakeEditor; model: FakeModel }> {
+async function opened(path = A, el = container): Promise<{ editor: FakeEditor; model: FakeModel; root: Root }> {
   const r = el === container ? root! : createRoot(el)
   act(() => r.render(<CodeEditor root={ROOT} path={path} watch={watch} sync={{ root: ROOT, state: 'synced' }} onSyncNow={() => undefined} onOpenFile={onOpenFile} />))
   await settle()
-  return { editor: created.editors.at(-1)!, model: created.models.filter((m) => m.uri.scheme === 'code-tab').at(-1)! }
+  return { editor: created.editors.at(-1)!, model: created.models.filter((m) => m.uri.scheme === 'code-tab').at(-1)!, root: r }
 }
 
 const place = (path: string, line: number, character: number, length = 3): LspLocation => ({ path, range: { start: { line, character }, end: { line, character: character + length } } })
@@ -197,7 +197,40 @@ describe('the jump opens the file in this tab (D10)', () => {
     const mathTab = await opened(MATH, other)
     expect(opener().openCodeEditor(editor, monaco.Uri.file(MATH), { lineNumber: 1, column: 17 })).toBe(true)
     expect(mathTab.editor.position).toEqual({ lineNumber: 1, column: 17 })
+    act(() => mathTab.root.unmount())
     other.remove()
+  })
+
+  it('the place is used once: a tab already on the file takes it, so a later new tab on that file opens at its start', async () => {
+    const { editor } = await opened()
+    const other = document.createElement('div')
+    const later = document.createElement('div')
+    document.body.append(other, later)
+    const mathTab = await opened(MATH, other)
+    expect(opener().openCodeEditor(editor, monaco.Uri.file(MATH), { lineNumber: 1, column: 17 })).toBe(true)
+    await act(async () => void vi.advanceTimersByTime(10))
+    const next = await opened(MATH, later)
+    expect(next.editor.position).toBeNull()
+    act(() => mathTab.root.unmount())
+    act(() => next.root.unmount())
+    other.remove()
+    later.remove()
+  })
+
+  it('a tab on the file that closes as the jump lands (the file moves from the right panel to this tab) leaves the place for the new tab', async () => {
+    const { editor } = await opened()
+    const other = document.createElement('div')
+    const moved = document.createElement('div')
+    document.body.append(other, moved)
+    const right = await opened(MATH, other)
+    expect(opener().openCodeEditor(editor, monaco.Uri.file(MATH), { lineNumber: 2, column: 3 })).toBe(true)
+    act(() => right.root.unmount())
+    await act(async () => void vi.advanceTimersByTime(10))
+    const next = await opened(MATH, moved)
+    expect(next.editor.position).toEqual({ lineNumber: 2, column: 3 })
+    act(() => next.root.unmount())
+    other.remove()
+    moved.remove()
   })
 
   it('the peek box\'s own editor opens through the tab last focused; a stub or a non-file target does not open', async () => {

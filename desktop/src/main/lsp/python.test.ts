@@ -81,5 +81,12 @@ describe('python helper (YAZ-3455)', () => {
     await expect(ended).resolves.toBeUndefined()
 
     await expect(pyrightWorkspaceReady(fake().server, 10)).resolves.toBeUndefined()
+
+    // YAZ-3466: a workspace where pyright counts no file (a dot folder, say) logs this line instead.
+    const c = fake()
+    let none = false
+    void pyrightWorkspaceReady(c.server, 60_000).then(() => (none = true))
+    c.say('No source files found.')
+    await vi.waitFor(() => expect(none).toBe(true), { timeout: 500 })
   })
 })

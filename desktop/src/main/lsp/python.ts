@@ -132,8 +132,12 @@ export const WORKSPACE_READY_MS = 10_000
 /**
  * Resolves when pyright logs `Found N source files` (it has the workspace's file list), when it
  * ends, or after `ms`. Measured: under Electron's Node this comes after the first answers, and a
- * search before it misses every file that is not open.
+ * search before it misses every file that is not open. With 0 files (pyright skips dot folders,
+ * `node_modules` and `__pycache__`) it logs `No source files found.` instead: that ends the wait too
+ * (YAZ-3466; before, Shift+F12 waited the full `ms`).
  */
+const WORKSPACE_LISTED = /^(?:Found \d+ source files?|No source files found)/m
+
 export function pyrightWorkspaceReady(server: LanguageServer, ms = WORKSPACE_READY_MS): Promise<void> {
   return new Promise((resolve) => {
     const done = () => {
@@ -144,7 +148,7 @@ export function pyrightWorkspaceReady(server: LanguageServer, ms = WORKSPACE_REA
     const timer = setTimeout(done, ms)
     const off = server.onNotification((method, params) => {
       const message = (params as { message?: unknown } | null)?.message
-      if (method === 'window/logMessage' && typeof message === 'string' && /^Found \d+ source files?/m.test(message)) done()
+      if (method === 'window/logMessage' && typeof message === 'string' && WORKSPACE_LISTED.test(message)) done()
     })
     void server.exited.then(done)
   })

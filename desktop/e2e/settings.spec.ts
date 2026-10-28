@@ -18,7 +18,7 @@ import { appWindow, buildFixtureVault, clickMenuItem, copyVault, launchApp, quit
 test.describe.configure({ mode: 'serial' })
 
 /** The nav as the registry orders it (registry.tsx): the settings pages (General first, YAZ-3276 D7), a divider, the reference pages. */
-const NAV_ORDER = ['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Storage', 'Sharing', 'Hotkeys'] as const
+const NAV_ORDER = ['General', 'Appearance', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Storage', 'Sharing', 'Hotkeys'] as const
 
 // ---------- the dialog's parts, by role and stable class only (never position) ----------
 

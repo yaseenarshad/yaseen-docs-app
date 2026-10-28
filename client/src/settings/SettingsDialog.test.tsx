@@ -399,6 +399,8 @@ describe('Settings › Code (YAZ-3449)', () => {
   it('shows the three switches as the settings are, and each writes the whole SettingsState with only its key changed', () => {
     const { el, onChange } = mountOn('Code', { ...DEFAULT_SETTINGS })
     expect(rowIds(el)).toEqual(CODE_ROWS)
+    // D5 wording here; the code tab's cog row stays "Read only (all code files)" (CodeEditor.test.tsx).
+    expect(CODE_ROWS.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Open code files read only', 'Wrap long lines', 'Minimap'])
     const pressed = (id: string) => rowButtons(el, id).find((b) => b.getAttribute('aria-pressed') === 'true' || b.className.includes('--active'))?.textContent
     expect(CODE_ROWS.map(pressed)).toEqual(['Off', 'On', 'Off'])
     act(() => rowButtons(el, 'codeReadOnly')[0].click()) // On

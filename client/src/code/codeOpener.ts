@@ -6,7 +6,9 @@
  * THE DOOR. The tab's `onOpenFile` — the same one a note's link uses (`navigate`: this tab, with
  * history, or the tab that already shows the file) — so Back returns the way it does for a link.
  * The place rides beside it: `openCodeAt` keeps it for the file, and the code tab that shows the
- * file takes it — a new tab when it mounts, a tab already open at once.
+ * file takes it — a new tab when it mounts, a tab already open at once. One jump, one place: a tab
+ * already open that is still there after the jump uses it up, so a later new tab on that file does
+ * not jump to an old place (YAZ-3454 nit).
  *
  * Only a code file opens (`fileKind` `text`): a jump never hands a stub such as `.pyi` to the OS.
  */
@@ -32,10 +34,19 @@ let installed = false
 
 /** Opens `path` through `open` (the tab's `onOpenFile`) and puts the cursor at `place` there. */
 export function openCodeAt(path: string, place: CodePlace, open: (path: string) => void): void {
-  pending.set(path, { ...place, at: Date.now() })
+  const entry = { ...place, at: Date.now() }
+  pending.set(path, entry)
   open(path)
   // A tab already on this file is where `navigate` goes: it shows the place now.
-  for (const show of shown.get(path) ?? []) show(place)
+  const showing = [...(shown.get(path) ?? [])]
+  for (const show of showing) show(place)
+  if (showing.length === 0) return
+  // Once `navigate` has landed: if one of those tabs is still there, it took the place, so drop it.
+  // If each one closed (the file left the right panel for this tab), the new tab still takes it.
+  setTimeout(() => {
+    const still = shown.get(path)
+    if (pending.get(path) === entry && showing.some((show) => still?.has(show) === true)) pending.delete(path)
+  }, 0)
 }
 
 /** The place a jump left for `path`, once; null when there is none or it is old. */

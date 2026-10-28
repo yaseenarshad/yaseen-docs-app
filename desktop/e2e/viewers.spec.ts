@@ -3,7 +3,8 @@
  * `.pdf` and a `.png` in the vault each open in a tab as a read-only viewer (`PdfViewer.tsx`,
  * `ImageViewer.tsx`, mounted by `editor/Editor.tsx` on `fileKind`), render something REAL, and leave
  * the bytes on disk alone. A `.txt` opens in the code tab (Monaco, YAZ-3448; `TextViewer` is gone,
- * YAZ-3450): opening, closing and quitting it with no edit leaves its bytes alone too.
+ * YAZ-3450): opening, closing and quitting it with no edit leaves its bytes alone too. Quick Look
+ * of a code file is Monaco too, and it fills the panel (YAZ-3461: it was 5 px high).
  *
  * WHAT IT PROVES, and why only the real app can: the bytes cross the bridge through the
  * dedicated bounded reads (`readFile` strict text, `readPdf`, `readImage`) and are rendered by
@@ -21,7 +22,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, editorOf, fileRow, launchApp, layer, md5, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, editorOf, fileRow, launchApp, layer, lensTab, md5, quitApp, searchBar, seededState, shoot, showSearchTab, tabsOf } from './helpers'
 import { SMALL_HEIGHT, SMALL_WIDTH, smallPng } from './imageFixtures'
 
 test.describe.configure({ mode: 'serial' })
@@ -32,6 +33,9 @@ const TEXT_BODY = 'viewer-text-body  two-spaces\tone-tab\nsecond line'
 const PDF_FILE = 'Brief.pdf'
 const IMAGE_FILE = 'Pic.png'
 const IMAGE_BYTES = smallPng(23)
+/** 60 lines: more than the Quick Look panel shows, so its last line needs a scroll. */
+const CODE_FILE = 'lookprobe.ts'
+const CODE_BODY = `${Array.from({ length: 60 }, (_, i) => `export const line${i} = ${i}`).join('\n')}\n`
 
 /**
  * A minimal but WELL-FORMED single-page PDF, xref offsets computed rather than guessed, so the
@@ -71,6 +75,7 @@ const snapshot = async (): Promise<Record<string, string>> => ({
   [TEXT_FILE]: await md5(fixture(TEXT_FILE)),
   [PDF_FILE]: await md5(fixture(PDF_FILE)),
   [IMAGE_FILE]: await md5(fixture(IMAGE_FILE)),
+  [CODE_FILE]: await md5(fixture(CODE_FILE)),
 })
 
 test.beforeAll(async () => {
@@ -81,6 +86,7 @@ test.beforeAll(async () => {
     writeFile(fixture(TEXT_FILE), TEXT_BODY),
     writeFile(fixture(PDF_FILE), tinyPdf()),
     writeFile(fixture(IMAGE_FILE), IMAGE_BYTES),
+    writeFile(fixture(CODE_FILE), CODE_BODY),
   ])
   baseline = await snapshot()
   rootListing = (await readdir(vault)).sort()
@@ -146,7 +152,39 @@ test('step 4 — closing the viewer tab writes nothing: every fixture is byte-id
   await shoot(win, 'viewers-04-closed')
 })
 
-test('step 5 — the real quit path (flush handshake included) leaves them untouched too', async () => {
+test('step 5 — Quick Look on a code file: Monaco fills the panel, and its last line can be scrolled to (YAZ-3461)', async () => {
+  await showSearchTab(win)
+  await expect(async () => {
+    await searchBar(win).fill('lookprobe')
+    await expect(win.locator('.sidebar__body .tree__row .tree__label').first()).toBeVisible()
+  }).toPass({ timeout: 15_000 })
+  await searchBar(win).press('ArrowDown')
+  await searchBar(win).press('Space')
+  const look = win.locator('.quicklook')
+  const monaco = look.locator('.monaco-editor')
+  await expect(monaco).toHaveCount(1)
+  await expect(monaco.locator('.view-lines')).toContainText('line0')
+  // The panel body is about 590 px in the test window; before the fix Monaco was 5 px, one line.
+  await expect.poll(() => monaco.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThan(200)
+  const body = await look.locator('.quicklook__body').evaluate((el) => el.getBoundingClientRect().height)
+  expect(await monaco.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThan(body - 20)
+  expect(await monaco.locator('.view-line').count()).toBeGreaterThan(10)
+  await shoot(win, 'viewers-05-quicklook-code')
+  // Monaco scrolls inside itself: wheel turns over the code bring the last line into sight (each turn
+  // moves a few lines in the hidden window, so the loop turns again until line59 shows).
+  await monaco.locator('.view-lines').hover()
+  await expect(async () => {
+    await win.mouse.wheel(0, 2000)
+    await expect(monaco.locator('.view-lines')).toContainText('line59', { timeout: 200 })
+  }).toPass({ timeout: 20_000, intervals: [100] })
+  expect(await look.locator('.quicklook__body').evaluate((el) => el.scrollTop)).toBe(0) // the panel itself did not scroll
+  await shoot(win, 'viewers-05b-quicklook-code-end')
+  await searchBar(win).press('Escape')
+  await expect(look).toHaveCount(0)
+  await lensTab(win, 'Files').click()
+})
+
+test('step 6 — the real quit path (flush handshake included) leaves them untouched too', async () => {
   // Reopen a viewer so a mounted one is what the close/flush handshake runs over.
   await fileRow(win, TEXT_FILE).click()
   await expect(layer(win).locator('.editor--code .monaco-editor .view-lines')).toContainText('second line')

@@ -19,3 +19,15 @@
   width: 100%;
   background: var(--bg);
 }
+
+/*
+ * Quick Look of a code file (YAZ-3450, `CodePreview.tsx`). `.quicklook__body` is a flex column; the
+ * preview grows in it and is a flex column itself, so `.code-editor__monaco` gets the full height.
+ * Without this rule Monaco measured 0 and drew at its 5 px minimum (YAZ-3461).
+ */
+.code-preview {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}

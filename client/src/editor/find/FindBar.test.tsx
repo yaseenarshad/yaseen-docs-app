@@ -174,6 +174,38 @@ describe('claim rule beside a code tab (YAZ-3451)', () => {
     expect(channel.getState().open).toBe(true)
     codeTab.remove()
   })
+
+  it("an outline view's bar leaves CMD+F alone while the focus is in a code tab (YAZ-3464)", () => {
+    const outlineChannel = createFindChannel()
+    const outlineHost = document.createElement('div')
+    outlineHost.className = 'view-outline-editor'
+    const outlineInput = document.createElement('div')
+    outlineInput.tabIndex = 0
+    outlineHost.appendChild(outlineInput)
+    document.body.appendChild(outlineHost)
+    renderBar(outlineChannel, 'outline', outlineHost)
+    const codeTab = document.createElement('section')
+    codeTab.className = 'editor editor--code'
+    const monacoInput = document.createElement('textarea')
+    codeTab.appendChild(monacoInput)
+    document.body.appendChild(codeTab)
+    monacoInput.focus()
+    const event = pressCmdF(monacoInput)
+    expect(event.defaultPrevented).toBe(false)
+    expect(outlineChannel.getState().open).toBe(false)
+    // The outline still claims it from its own view, and from outside a code tab when no note shows.
+    outlineInput.focus()
+    pressCmdF(outlineInput)
+    expect(outlineChannel.getState().open).toBe(true)
+    act(() => outlineChannel.close())
+    document.body.focus()
+    const outside = pressCmdF(document.body)
+    expect(outside.defaultPrevented).toBe(true)
+    expect(outlineChannel.getState().open).toBe(true)
+    act(() => outlineChannel.close())
+    codeTab.remove()
+    outlineHost.remove()
+  })
 })
 
 describe('the counter and cycling', () => {

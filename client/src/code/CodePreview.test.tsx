@@ -2,6 +2,8 @@
  * A code file in Quick Look (YAZ-3450 S3) with a fake Monaco (`monacoTestKit.ts`): the file's text in
  * one read-only editor, under its own URI, read again on a change; nothing written, the focus left alone.
  */
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -86,6 +88,26 @@ describe('CodePreview (YAZ-3450)', () => {
     await settle()
     expect(container.querySelector('.editor-msg--error')?.textContent).toBe('IO_ERROR: boom')
     expect(created.editors).toHaveLength(0)
+  })
+
+  it('YAZ-3461: the preview fills the Quick Look body, so Monaco gets its full height (not 5 px)', async () => {
+    // jsdom computes no layout, so the proof is the rule itself, read from the stylesheet; the real
+    // height is checked in the app (`desktop/e2e/viewers.spec.ts`, the Quick Look step).
+    const css = readFileSync(resolve(__dirname, 'codeEditor.css'), 'utf8')
+    const rule = /^\.code-preview\s*\{([^}]*)\}/m.exec(css)
+    expect(rule, 'codeEditor.css has a `.code-preview` rule').not.toBeNull()
+    const declarations = Object.fromEntries(
+      (rule?.[1] ?? '')
+        .split(';')
+        .map((d) => d.split(':').map((part) => part.trim()))
+        .filter(([key, value]) => key && value),
+    )
+    expect(declarations).toMatchObject({ display: 'flex', flex: '1', 'flex-direction': 'column', 'min-height': '0' })
+    readFile.mockResolvedValueOnce(disk('a\n'))
+    act(() => root?.render(<CodePreview path={PATH} watch={watch} />))
+    await settle()
+    // Monaco's mount is the preview's own flex child: `.code-editor__monaco` grows in it.
+    expect(container.querySelector('.code-preview > .code-editor__monaco')).not.toBeNull()
   })
 
   it('closing the panel disposes the editor and the model', async () => {

@@ -171,10 +171,12 @@ export class LspPool {
     return { handle, language: spec.language, projectRoot: root }
   }
 
-  /** The tab's whole text now. An unknown handle is ignored. */
+  /** The tab's whole text now. An unknown handle is ignored. Typing counts as use for the 3-helper limit. */
   change(owner: number, handle: string, text: string): void {
     const h = this.handleOf(owner, handle)
-    if (h !== null && h.doc.text !== text) this.setText(h.project, h.doc, text)
+    if (h === null) return
+    h.project.lastUsed = this.now()
+    if (h.doc.text !== text) this.setText(h.project, h.doc, text)
   }
 
   /** The tab closed. The last tab of a file closes its document; the last of a project stops its helper. */
@@ -299,11 +301,16 @@ export class LspPool {
         project.failures++
         this.log(`${project.key}: helper did not start: ${err instanceof Error ? err.message : String(err)}`)
         return null
-      } finally {
-        project.starting = null
       }
     })()
     project.starting = starting
+    // Clear only this start's own mark: a start that was thrown away (a stop raised `epoch`) must not
+    // erase the mark of a newer start of the same project. Else a third start began, and the second
+    // helper ran on with no one to stop it (YAZ-3465). Chained here, after the mark is set, so a start
+    // that fails at once cannot clear it before it exists. It runs before any caller resumes.
+    void starting.finally(() => {
+      if (project.starting === starting) project.starting = null
+    })
     return starting
   }
 

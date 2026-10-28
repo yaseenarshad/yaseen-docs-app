@@ -9,7 +9,8 @@
  * key while focus stands inside its own host, the `note` bar claims it whenever focus is NOT inside
  * any `.view-outline-editor` — and a HIDDEN editor never claims. A folder's tab has no note mount
  * at all, so there CMD+F belongs to the outline even from the sidebar or the title. Exactly one
- * bar answers; the other declines.
+ * bar answers; the other declines. Neither bar claims while focus stands in a code tab
+ * (`.editor--code`): there CMD+F is Monaco's own find box (YAZ-3451, YAZ-3464).
  *
  * Focus: the input does not exist yet on the CMD+F that OPENS the bar, so that focus lands in a
  * layout effect on the open; a CMD+F on an already-open bar has an input to focus and refocuses it
@@ -56,13 +57,14 @@ export function FindBar({ channel, scope, hostRef }: FindBarProps) {
       const active = document.activeElement
       // checkVisibility is absent under jsdom, where nothing is ever hidden — hence the ?? true.
       const shown = (el: Element | null): boolean => el instanceof HTMLElement && (el.checkVisibility?.() ?? true)
+      // Never from a code tab (YAZ-3451, YAZ-3464): its ⌘F is Monaco's find box. A note or an outline view in the other place would take it first.
+      const inCode = active instanceof Element && active.closest('.editor--code') !== null
       const claims =
         scope === 'outline'
           ? shown(hostRef.current) &&
             ((active !== null && hostRef.current !== null && hostRef.current.contains(active)) ||
-              !shown(document.querySelector('.editor-mount .ProseMirror')))
-          : // Never from a code tab (YAZ-3451): its ⌘F is Monaco's find box, and a note in the right panel would take it first.
-            shown(hostRef.current) && (!(active instanceof Element) || (active.closest('.view-outline-editor') === null && active.closest('.editor--code') === null))
+              (!inCode && !shown(document.querySelector('.editor-mount .ProseMirror'))))
+          : shown(hostRef.current) && !inCode && (!(active instanceof Element) || active.closest('.view-outline-editor') === null)
       if (!claims) return
       event.preventDefault()
       event.stopPropagation()

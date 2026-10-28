@@ -3,7 +3,7 @@
  * also a row of a code tab's page cog, which writes the same `SettingsState` field: a change here or there
  * reaches every open code tab at once. In the nav after Editor.
  *
- * - Read only (D5): every code tab opens read only, with the Read only chip. "Allow edits" on a tab's chip
+ * - Open code files read only (D5; the cog row is "Read only (all code files)"): every code tab opens read only, with the Read only chip. "Allow edits" on a tab's chip
  *   unlocks that tab until it closes; the setting stays.
  * - Wrap long lines (D8): on by default. Alt+Z flips one tab and saves nothing; a change here overrides it.
  * - Minimap (D6): off by default.
@@ -23,7 +23,7 @@ export const CODE_SECTION: SettingsSection = {
       items: [
         {
           id: 'codeReadOnly',
-          label: 'Read only',
+          label: 'Open code files read only',
           hint: 'Every code tab opens read only. “Allow edits” on a tab’s Read only chip unlocks that tab until you close it.',
           keywords: [...CODE_WORDS, 'lock', 'locked', 'edit', 'view only'],
           render: ({ settings, onChange }) => (
