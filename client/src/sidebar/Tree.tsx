@@ -6,9 +6,11 @@ import type { EntryKind, MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { isBoard, isMarkdown } from '@shared/fileKind'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
-import { CloudOffIcon, DiagramBadge, LinkIcon, ShortcutIcon } from '../views/view/icons'
+import { CloudOffIcon, LinkIcon, ShortcutIcon } from '../views/view/icons'
 import { TOO_LARGE_LABEL } from '../lib/syncAttention'
 import { RenameInline } from './RenameInline'
+import { iconVars } from './materialIcons'
+import { iconsChangedBelow, rowIcon, type RowIcons } from './rowIcons'
 import { sortLevel } from './treeSort'
 
 /** Inline "New note" / "New folder" input pending inside the tree (GRO-2022). */
@@ -258,6 +260,12 @@ interface TreeProps {
   tooLarge?: ReadonlySet<string>
   /** Shared boards (YAZ-3040, Draw's YAZ-1799): a small link mark on the row, red when the last update failed or the link is stale; the title is the status. A stable Map. */
   shareBadges?: ReadonlyMap<string, ShareBadge>
+  /**
+   * The vaults' own icons (YAZ-3440 B, `.yaseendocs/icons.json`): a row's pick, else its vault's first matching
+   * rule, before Material's match. Absent: Material's match alone. `sameLevel` re-renders a level for a new pick
+   * only where it draws that row; a change of rules re-renders every level.
+   */
+  icons?: RowIcons
   depth?: number
 }
 
@@ -303,9 +311,10 @@ function TreeLevel({
   onHoverFile,
   tooLarge,
   shareBadges,
+  icons,
   depth = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges, sort }
+  const recurse = { vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !(isBoard(path) || isMarkdown(path)) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
@@ -368,6 +377,19 @@ function TreeLevel({
   // In a search tree (🔒 D5, YAZ-2620) a row the query did not match only gives a match its place.
   const context = (path: string) => (marks !== undefined && !marks.hits.has(path) ? ' tree__row--context' : '')
   const needleFor = (path: string) => (marks?.hits.has(path) ? marks.needle : undefined)
+  /**
+   * A row's icon (YAZ-3440 B, D4, D5): the vault's pick or rule, else Material's match by name; a folder's open
+   * twin while it is open. Set during render, as `data-icon` (`data-icon-custom` for the vault's own) and the
+   * inline `--icon` app.css draws, so a row has no node more and a fold restyles only the level that renders for
+   * it anyway. A vault row has none.
+   */
+  const iconOf = (node: TreeNode) => rowIcon(icons, node.path, node.name, node.type === 'dir' ? 'folder' : 'file', node.type === 'dir' && expanded.has(foldOf(node)))
+  const iconAttrs = (node: TreeNode) => {
+    if (node.type === 'dir' && vaultRows.has(node.path)) return {}
+    const { id, custom } = iconOf(node)
+    return { 'data-icon': id, 'data-icon-custom': custom ? '' : undefined }
+  }
+  const iconStyle = (node: TreeNode): CSSProperties => (node.type === 'dir' && vaultRows.has(node.path) ? {} : (iconVars(iconOf(node).id) as CSSProperties))
   /** `YAZ-12 — ` in front of the row of an ID match (YAZ-2677 S70); nothing for any other row. */
   const idFor = (path: string) => (marks?.ids?.has(path) ? `${marks.ids.get(path)} — ` : null)
   return (
@@ -398,25 +420,41 @@ function TreeLevel({
               <button
                 type="button"
                 // The folder itself is a tab (YAZ-2290 D3), so its row is the active one while that tab is.
-                className={`tree__row tree__row--dir${vaultRows.has(node.path) ? ' tree__row--vault' : ''}${isActive(node) ? ' tree__row--active' : ''}${isSelected(node) ? ' tree__row--selected' : ''}${dropEdge(node.path)}${context(node.path)}`}
-                style={{ paddingLeft: 8 + depth * 14 }}
+                // Every folder row sticks at the top while its folder's rows scroll under it (YAZ-3440 D1): CSS alone,
+                // which also stops it below the level cap (D2, `stickyFolders.ts`). `data-kind` (the Line set) and
+                // `data-icon` (Material) draw its folder icon (D5) on the label, so the row has no node more; a vault row has none.
+                className={`tree__row tree__row--dir tree__row--sticky${vaultRows.has(node.path) ? ' tree__row--vault' : ''}${isActive(node) ? ' tree__row--active' : ''}${isSelected(node) ? ' tree__row--selected' : ''}${dropEdge(node.path)}${context(node.path)}`}
+                style={{ paddingLeft: 8 + depth * 14, ...iconStyle(node) }}
                 // Read by `flashTreeRows` (a Files reveal of a FOLDER, YAZ-1491) and by
                 // `orderedSelection`, which puts a selected folder in on-screen order (YAZ-1578).
                 data-path={node.path}
                 data-fold={foldOf(node)}
+                data-kind={vaultRows.has(node.path) ? undefined : 'folder'}
+                {...iconAttrs(node)}
                 // Shift is the SELECTION gesture everywhere (YAZ-1340) and a folder joins the
                 // selection like a file (YAZ-1578, 🔒 D1) — so shift toggles and never folds. A
                 // PLAIN click SELECTS the folder (D9, YAZ-1674 — the Finder rule) and then folds,
                 // so ⌘C / ⌘V have a target the moment a folder is clicked.
                 // Two fast clicks only fold and unfold: a double click opens nothing (YAZ-3377 D1,
                 // overturning YAZ-2290 D3). The menu's "Open folder page" and Enter open the folder.
+                // A click on a STUCK row (YAZ-3440 D3) goes back to the folder, as in VS Code: its li scrolls to the top and
+                // nothing folds. Stuck = the row stands below its li's top (jsdom has no boxes: never stuck). Its arrow, and
+                // Space (a click with `detail === 0`), still fold; then the li scrolls in, so a closed folder does not
+                // vanish above the list. `scroll-margin-top` (app.css) lands it under the rows stuck above it.
                 onClick={(e) => {
                   if (e.shiftKey) {
                     selection.toggle(node.path, copyOf(node))
                     return
                   }
                   selection.set(node.path, copyOf(node))
+                  const item = e.currentTarget.closest('[role="treeitem"]')
+                  const stuck = item !== null && item.getBoundingClientRect().top < e.currentTarget.getBoundingClientRect().top - 1
+                  if (stuck && e.detail !== 0 && !(e.target instanceof Element && e.target.closest('.tree__chevron') !== null)) {
+                    item?.scrollIntoView?.({ block: 'start' })
+                    return
+                  }
                   onToggle(foldOf(node))
+                  if (stuck) requestAnimationFrame(() => item?.scrollIntoView?.({ block: 'start' }))
                 }}
                 // Enter opens the folder, as it opens a file row — there through the button's own click,
                 // which on this row folds. So the key is taken here and Space is left to fold. A vault
@@ -480,7 +518,7 @@ function TreeLevel({
             <button
               type="button"
               className={`tree__row tree__row--file${node.kind === null ? ' tree__row--external' : ''}${isActive(node) ? ' tree__row--active' : ''}${isSelected(node) ? ' tree__row--selected' : ''}${dropEdge(node.path)}${context(node.path)}`}
-              style={{ paddingLeft: 8 + depth * 14 + 14 }}
+              style={{ paddingLeft: 8 + depth * 14 + 14, ...iconStyle(node) }}
               onClick={(e) => {
                 // Shift is the SELECTION gesture and nothing else (YAZ-1336, 🔒 D2): it never
                 // opens, never previews — so it is asked first, before any of the open rules.
@@ -520,6 +558,11 @@ function TreeLevel({
               onContextMenu={(e) => onNodeContextMenu(isShortcutRow(node) ? { type: 'file', path: node.path, shortcutIn: dirPath, top: topOf(node) } : { ...node, top: topOf(node) }, e)}
               title={node.path}
               data-path={node.path}
+              // The file's icon before the name (YAZ-3440 D4), which took the place of the diagram's mark after it: its
+              // kind for the Line set (a file with no viewer in the app is `other`), its Material icon by name (`data-icon`
+              // and the inline `--icon`). app.css draws the one the icon set asks for on the label: no node more.
+              data-kind={node.kind ?? 'other'}
+              {...iconAttrs(node)}
               {...hoverOf(node.path)}
               // A shortcut row never drags (YAZ-2290 D2): the drag would move the note out of the folder it lives in.
               draggable={!noDrag(node)}
@@ -553,7 +596,6 @@ function TreeLevel({
                 {idFor(node.path)}
                 {marked(pageLabel(node.path, false, titles), needleFor(node.path))}
               </span>
-              {node.kind === 'diagram' && <DiagramBadge />}
               {tooLarge?.has(node.path) === true && <CloudOffIcon label={TOO_LARGE_LABEL} />}
               <ShareMark badge={shareBadges?.get(node.path)} />
               {isShortcutRow(node) && <ShortcutIcon />}
@@ -587,7 +629,7 @@ function changedBelow(a: ReadonlySet<string>, b: ReadonlySet<string>, drawn: (pa
 function sameLevel(prev: TreeProps, next: TreeProps): boolean {
   const keys = new Set([...Object.keys(prev), ...Object.keys(next)] as (keyof TreeProps)[])
   for (const key of keys) {
-    if (key === 'expanded' || key === 'activeFile' || key === 'activeTop' || key === 'selection') continue
+    if (key === 'expanded' || key === 'activeFile' || key === 'activeTop' || key === 'selection' || key === 'icons') continue
     if (!Object.is(prev[key], next[key])) return false
   }
   const dir = next.dirPath
@@ -603,6 +645,8 @@ function sameLevel(prev: TreeProps, next: TreeProps): boolean {
   if (prev.activeTop !== next.activeTop && drawn(next.activeFile)) return false
   if (prev.selection.toggle !== next.selection.toggle || prev.selection.set !== next.selection.set) return false
   if (prev.selection.copies !== next.selection.copies && [...next.selection.paths].some(drawn)) return false
+  // A vault's own icons (YAZ-3440 B): a pick re-renders the levels that draw its row, a rule change every level.
+  if (iconsChangedBelow(prev.icons, next.icons, drawn)) return false
   // A copy's fold key (YAZ-3131) is drawn where its PATH half is.
   return !changedBelow(prev.expanded, next.expanded, (key) => below(copyFoldParts(key)?.[1] ?? key, dir)) && !changedBelow(prev.selection.paths, next.selection.paths, drawn)
 }

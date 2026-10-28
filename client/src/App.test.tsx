@@ -485,6 +485,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     app: { sound: vi.fn(async (_kind: 'land' | 'trash') => undefined) },
     // Focus and Favorites of each vault (YAZ-3264 D1): App reads them now, the sidebar draws them. Empty here.
     favorites: { get: vi.fn(async (_root: string): Promise<string[]> => []), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
+    icons: { get: vi.fn(async (_root: string) => ({ paths: {} })), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     focus: { get: vi.fn(async (_root: string): Promise<string[]> => []), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     // No update (YAZ-2976): App reads the state once and follows its pushes; nothing to show here.
     update: {

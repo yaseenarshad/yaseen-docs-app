@@ -944,3 +944,46 @@
     padding: 16px;
   }
 }
+
+/* Settings › Sidebar tree › Icon rules (YAZ-3440 E): one line per rule — its name pattern, File or Folder, its
+   icon (opens the sidebar's icon picker) and remove — then "Add rule". */
+.icon-rules {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.icon-rules__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  width: 100%;
+}
+
+.icon-rules__rule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-rules__match {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.icon-rules__icon,
+.icon-rules__remove {
+  display: inline-grid;
+  place-items: center;
+  min-width: 30px;
+}
+
+.icon-rules__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}

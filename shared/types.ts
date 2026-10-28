@@ -6,6 +6,7 @@
  * jail: any absolute path on the machine may be read or written.
  */
 
+import type { IconRule } from './vaultIcons'
 import type { ReviewEntry } from './reviews'
 import type { HotkeyOverrides } from './hotkeyBindings'
 
@@ -1480,6 +1481,20 @@ export interface SettingsState {
   sidebarLineStyle: SidebarLineStyle
   /** The sidebar tree (YAZ-3309 D9): the colour of its thread, `#rrggbb`; null = the Bullet threading colour, else the app accent. It travels with the settings folder. */
   sidebarThreadColor: string | null
+  /** The sidebar tree (YAZ-3440 D1, D2): how many levels of open folders stick at the top of the list while their rows scroll under them; 0 = off. Fewer stick while the stack would cover more than 40% of the list (`stickyFolders.ts`). It travels with the settings folder. */
+  sidebarStickyLevels: SidebarStickyLevels
+  /** The sidebar tree (YAZ-3440 D4, D5): its file and folder icons — `quiet` (notes and folders grey, the other kinds in colour), `color` (notes in colour too), `grey` (every icon grey) or `off` (no icons). It travels with the settings folder. */
+  /** The sidebar tree (YAZ-3440 D4): which icons its rows show — `material` (Material Icon Theme's, by file name, extension and folder name; the default) or `line` (the app's own line glyphs, one per kind). It travels with the settings folder. */
+  sidebarIconSet: SidebarIconSet
+  sidebarFileIcons: SidebarFileIcons
+  /** The sidebar tree (YAZ-3440 D5): a grey folder icon before each folder's name (a vault row never has one). Independent of `sidebarFileIcons`, which is the file rows' alone. It travels with the settings folder. */
+  sidebarFolderIcons: boolean
+  /** The sidebar tree (YAZ-3440 D6): a folder's arrow turns at once (`instant`, the default) or over 0.12s (`smooth`, as before). Reduce motion always turns it at once. It travels with the settings folder. */
+  sidebarArrowMotion: SidebarArrowMotion
+  /** The sidebar tree (YAZ-3440 D4): each kind's own icon colour, `#rrggbb`; a kind not in it has the built-in colour (`{}` = all built in). It travels with the settings folder, as a whole. */
+  sidebarIconColors: SidebarIconColors
+  /** The sidebar tree (YAZ-3440 B, demo round 2): the name rules, `[{ match, kind, icon }]` (`shared/vaultIcons.ts`), the first that matches a row's name and kind naming its Material icon, after the row's own pick in its vault's `icons.json`. A personal preference: one list for every vault, and it travels with the settings folder. */
+  sidebarIconRules: IconRule[]
   /**
    * The canvas preferences every drawing, every window and every relaunch share (Draw's 🔒 YAZ-1775 D9,
    * YAZ-3028): seeded into a canvas at mount and kept in step with the engine both ways. See `CanvasPrefs`.
@@ -1561,6 +1576,27 @@ export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
 /** The sidebar tree (YAZ-3309 D7, D8): the look of its level lines. */
 export type SidebarLineStyle = 'plain' | 'thread'
 export const SIDEBAR_LINE_STYLES: readonly SidebarLineStyle[] = ['plain', 'thread']
+
+/** The sidebar tree (YAZ-3440 D2): how many levels of folders can stick at the top of the list, in the order Settings shows them; 0 = off. */
+export type SidebarStickyLevels = 0 | 3 | 5 | 7
+export const SIDEBAR_STICKY_LEVELS: readonly SidebarStickyLevels[] = [0, 3, 5, 7]
+
+/** The sidebar tree (YAZ-3440 D4): which icons its rows show, in the order Settings shows them. */
+export type SidebarIconSet = 'material' | 'line'
+export const SIDEBAR_ICON_SETS: readonly SidebarIconSet[] = ['material', 'line']
+
+/** The sidebar tree (YAZ-3440 D4): how its file and folder icons look, in the order Settings shows them. */
+export type SidebarFileIcons = 'quiet' | 'color' | 'grey' | 'off'
+export const SIDEBAR_FILE_ICONS: readonly SidebarFileIcons[] = ['quiet', 'color', 'grey', 'off']
+
+/** The sidebar tree (YAZ-3440 D6): how a folder's arrow turns. */
+export type SidebarArrowMotion = 'instant' | 'smooth'
+export const SIDEBAR_ARROW_MOTIONS: readonly SidebarArrowMotion[] = ['instant', 'smooth']
+
+/** The sidebar tree (YAZ-3440 D4): the kinds whose icon has a colour of its own, in the order Settings shows them. `note` is a Markdown file's, coloured only with "All colour". */
+export const SIDEBAR_ICON_KINDS = ['note', 'text', 'pdf', 'image', 'drawing', 'diagram'] as const
+export type SidebarIconKind = (typeof SIDEBAR_ICON_KINDS)[number]
+export type SidebarIconColors = Partial<Record<SidebarIconKind, string>>
 
 /** Heading styles (YAZ-3049 D5): the levels a style can change, in the order Settings shows them. Since 1.0.16 they are saved in each vault (`shared/textFormatting.ts`, YAZ-3066). */
 export const HEADING_KEYS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const
@@ -1668,6 +1704,13 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarLines: 'hover',
   sidebarLineStyle: 'plain',
   sidebarThreadColor: null,
+  sidebarStickyLevels: 7,
+  sidebarIconSet: 'material',
+  sidebarFileIcons: 'quiet',
+  sidebarFolderIcons: true,
+  sidebarArrowMotion: 'instant',
+  sidebarIconColors: {},
+  sidebarIconRules: [],
   canvas: DEFAULT_CANVAS_PREFS,
   diagramDarkColors: 'adapt',
   libraryFolder: null,

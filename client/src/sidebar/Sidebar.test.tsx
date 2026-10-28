@@ -6,6 +6,7 @@
  * unchanged, and activating a stale tab probes a fresh tree before onFileMissing fires.
  * Real Tree/ContextMenu render against the jsdom bridge stub.
  */
+import type { VaultIcons } from '@shared/vaultIcons'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -143,6 +144,12 @@ function installBridge() {
     favorites: {
       get: vi.fn(async (_root: string): Promise<string[]> => []),
       set: vi.fn(async (_root: string, _paths: readonly string[]) => undefined),
+      onChanged: vi.fn((_listener: (change: { root: string }) => void) => () => undefined),
+    },
+    // A vault's own icons (YAZ-3440 A): none unless a test seeds them.
+    icons: {
+      get: vi.fn(async (_root: string): Promise<VaultIcons> => ({ paths: {} })),
+      set: vi.fn(async (_root: string, _icons: VaultIcons) => undefined),
       onChanged: vi.fn((_listener: (change: { root: string }) => void) => () => undefined),
     },
     // A vault's focus list (YAZ-2702): `.yaseendocs/focus.<mac id>.json` behind main; absolute paths both ways,
@@ -416,15 +423,18 @@ describe('drawing and diagram rows (YAZ-3028 D11)', () => {
   }
   const boardRow = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row--file[title="${path}"]`)
 
-  it('are normal rows: full file name, not external, the draw.io mark on the diagram only, and a click opens a tab', async () => {
+  it('are normal rows: full file name, not external, each with its kind for its icon (YAZ-3440 D4, which took the place of the draw.io mark) and its Material icon, and a click opens a tab', async () => {
     const { el, bridge, props } = await mount({}, withBoards)
     const flow = boardRow(el, '/v/Flow.drawio')
     const sketch = boardRow(el, '/v/Sketch.excalidraw')
     expect(flow?.classList.contains('tree__row--external')).toBe(false)
     expect(sketch?.classList.contains('tree__row--external')).toBe(false)
     expect(flow?.querySelector('.tree__label')?.textContent).toBe('Flow.drawio')
-    expect(flow?.querySelector('.diagram-mark')?.getAttribute('aria-label')).toBe('draw.io diagram')
-    expect(sketch?.querySelector('.diagram-mark')).toBeNull()
+    expect([flow?.dataset.kind, sketch?.dataset.kind]).toEqual(['diagram', 'drawing'])
+    expect([flow?.dataset.icon, sketch?.dataset.icon]).toEqual(['drawio', 'excalidraw'])
+    expect(flow?.style.getPropertyValue('--icon')).toBe('url(/material-icons/drawio.svg)')
+    // The icon is the label's `::before`: the row has no node more, and no mark after the name.
+    expect(flow?.querySelector('.diagram-mark, svg')).toBeNull()
     await act(async () => sketch?.click())
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/Sketch.excalidraw')
     expect(bridge.shell.openDefault).not.toHaveBeenCalled()
@@ -6791,6 +6801,8 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'New drawing',
       'New folder',
       'Rename',
+      // "Change icon ▸" (YAZ-3440 C, one flyout since demo round 3) closes the row's own group, after Rename.
+      'Change icon',
       // The favorite toggle (YAZ-1766 D3) leads the "Open in ▸" group, one hairline above Delete.
       'Add to favorites',
       'Open in',
