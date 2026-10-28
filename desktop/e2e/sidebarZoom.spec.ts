@@ -5,8 +5,8 @@
  * their size and place, and the window's own Chromium zoom stays 0. The value is a setting: it is in
  * the state file after a quit and comes back on the next launch. The percent goes back to 100%, and
  * View › Zoom In / Actual Size with no note focused step the same zoom. A Chromium zoom left from an
- * older build goes back to 0 at the next load (D8). A Files window (D13) zooms its own list: it opens one step above
- * the full window's sidebar zoom, and its zoom menu and View › Zoom In change only its own value.
+ * older build goes back to 0 at the next load (D8). A Files window (D13) zooms its own list: it opens at the sidebar zoom
+ * of the window that opened it (YAZ-3487 D19), and its zoom menu and View › Zoom In change only its own value.
  * The footer fits (YAZ-3401): from the narrowest sidebar (180 px) up, with the "Files window" chip, with an update
  * ready (a fake feed, as `update.spec`), and with both, no item runs past the footer and no label is cut.
  * The APP SIZE (YAZ-3432): the menu's App size row, on top and the same "− 100% +" as the Sidebar row below it, zooms
@@ -101,11 +101,11 @@ const footerFaults = (w: Page): Promise<string[]> =>
 /**
  * Each width from the narrowest sidebar to 400 px, in 10 px steps, and each breakpoint's first width: the footer's
  * content box is 17 px narrower than a full window's sidebar (the padding and the resize edge) and 16 px narrower
- * than a Files window. The chip's 168 and 195 (app.css) are Files windows of 184 and 211. The pill's slot is the
- * footer less the cog, the zoom chip and the Files window chip (update.css): its 119 and 156 are a sidebar of 204 and
- * 241, and a Files window (with "Files window") of 305 and 342.
+ * than a Files window. The chip's 212 and 239 (app.css) are Files windows of 228 and 255. The pill's slot is the
+ * footer less the cog, the zoom chip and the Files window chip (update.css): its 119 and 156 are a sidebar of 248 and
+ * 285, and a Files window (with "Files window") of 349 and 386 (44 px more than before the footer's − and +, YAZ-3487).
  */
-const WIDTHS = [...new Set([...Array.from({ length: (400 - SIDEBAR_MIN_W) / 10 + 1 }, (_, i) => SIDEBAR_MIN_W + i * 10), 184, 204, 211, 241, 305, 342])].sort((a, b) => a - b)
+const WIDTHS = [...new Set([...Array.from({ length: (400 - SIDEBAR_MIN_W) / 10 + 1 }, (_, i) => SIDEBAR_MIN_W + i * 10), 228, 248, 255, 285, 349, 386])].sort((a, b) => a - b)
 /** Set the outer width of the window with `?win=<id>` from main. A Files window's sidebar is the whole window. */
 const setWindowWidth = (a: ElectronApplication, id: string, width: number): Promise<void> =>
   a.evaluate(({ BrowserWindow }, arg) => {
@@ -209,18 +209,18 @@ test('step 5 — a Chromium zoom from an older build: the next load sets it back
   await expect.poll(() => zoomLevel(app)).toBe(0)
 })
 
-test('step 6 — a Files window (D13): it opens one step above (125%), its + and View › Zoom In change only its own zoom, its window zoom stays 0', async () => {
+test('step 6 — a Files window (D13): it opens at the zoom of the window that opened it (100%, YAZ-3487 D19), its + and View › Zoom In change only its own zoom, its window zoom stays 0', async () => {
   await clickMenuItem(app, 'menu.file.new-files-window', 'w1')
   const files = await extraWindow(app, ['w1'])
   const filesId = winParam(files) ?? ''
+  await expect(zoomChip(files)).toHaveText('100%')
+  await (await control(files)).getByRole('button', { name: 'Zoom the sidebar in', exact: true }).click()
   await expect(zoomChip(files)).toHaveText('125%')
   await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === filesId)?.zoom).toBe(125)
-  await (await control(files)).getByRole('button', { name: 'Zoom the sidebar in', exact: true }).click()
-  await expect(zoomChip(files)).toHaveText('150%')
   await files.keyboard.press('Escape')
   await clickMenuItem(app, 'menu.view.zoom-in', filesId)
-  await expect(zoomChip(files)).toHaveText('200%')
-  await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === filesId)?.zoom).toBe(200)
+  await expect(zoomChip(files)).toHaveText('150%')
+  await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === filesId)?.zoom).toBe(150)
   // The full window and the shared setting never moved; no window has a Chromium zoom.
   await expect(zoomChip(win)).toHaveText('100%')
   expect((await readState(userData)).settings.sidebarZoom).toBe(100)
@@ -278,19 +278,19 @@ test('step 8 — YAZ-3401: with an update ready, the footer fits from 180 px up,
     expect.soft(await footerFaults(win), `full window at ${SIDEBAR_MIN_W} px, update ready`).toEqual([])
     expect.soft(await pillShows(win)).toBe('🎉')
     await shoot(win, `sidebarzoom-08-full-${SIDEBAR_MIN_W}`)
-    await dragSidebarTo(win, 220)
-    expect.soft(await footerFaults(win), 'full window at 220 px, update ready').toEqual([])
+    await dragSidebarTo(win, 264)
+    expect.soft(await footerFaults(win), 'full window at 264 px, update ready').toEqual([])
     expect.soft(await pillShows(win)).toBe('Update')
-    await shoot(win, 'sidebarzoom-08-full-220')
+    await shoot(win, 'sidebarzoom-08-full-264')
     expect.soft(await sweep(win, (width) => dragSidebarTo(win, width)), 'full window, 180–400 px, update ready').toEqual({})
-    // The short words from 204 px, the full words from 241 px: as soon as each fits.
-    await dragSidebarTo(win, 203)
+    // The short words from 248 px, the full words from 285 px: as soon as each fits.
+    await dragSidebarTo(win, 247)
     expect.soft(await pillShows(win)).toBe('🎉')
-    await dragSidebarTo(win, 204)
+    await dragSidebarTo(win, 248)
     expect.soft(await pillShows(win)).toBe('Update')
-    await dragSidebarTo(win, 240)
+    await dragSidebarTo(win, 284)
     expect.soft(await pillShows(win)).toBe('Update')
-    await dragSidebarTo(win, 241)
+    await dragSidebarTo(win, 285)
     expect.soft(await pillShows(win)).toBe('New update ready')
     await expect(pill(win)).toHaveAttribute('title', "Click to see what's new")
 
@@ -315,11 +315,13 @@ test('step 8 — YAZ-3401: with an update ready, the footer fits from 180 px up,
       await expect(chip(files)).toHaveAccessibleName('Files window')
     }
     expect.soft(await sweep(files, fit), 'Files window, 180–400 px, update ready').toEqual({})
-    // Beside the chip, the pill keeps its round 🎉 to 304 px, then its short words, then its full words from 342 px.
-    for (const [width, shows] of [[304, '🎉'], [305, 'Update'], [341, 'Update'], [342, 'New update ready']] as const) {
+    // Beside the chip, the pill keeps its round 🎉 to 348 px, then its short words, then its full words from 386 px.
+    for (const [width, shows] of [[348, '🎉'], [349, 'Update'], [385, 'Update'], [386, 'New update ready']] as const) {
       await fit(width)
       expect.soft(await pillShows(files), `Files window at ${width} px`).toBe(shows)
     }
+    // Back to the width step 10 grows by 1.25×, so the grown window stays on the same screen.
+    await fit(342)
   } finally {
     await new Promise((resolve) => server.close(resolve))
   }
@@ -386,10 +388,10 @@ test('step 10 — YAZ-3432: a double click on App size + (100 → 125) zooms eve
   const plus = appRow(win).getByRole('button', { name: 'Make the app larger', exact: true })
   const plusBefore = await screenBox(win, '.zoom-menu [aria-label="App size"] button[aria-label="Make the app larger"]')
   await shoot(win, 'sidebarzoom-10-app-100-menu-open')
-  // A quick double click on + at one point on the screen: both clicks land on +, 100 → 110 → 125, and + is then off.
+  // A quick double click on + at one point on the screen: both clicks land on +, 100 → 110 → 125; + stays on, the top is 200% (YAZ-3487).
   await plus.dblclick()
   await expect(appPercent(win)).toHaveText('125%')
-  await expect(plus).toBeDisabled()
+  await expect(plus).toBeEnabled()
   await expect.poll(() => zoomFactor(app)).toBe(1.25)
   await expect.poll(() => zoomFactor(app, filesId)).toBe(1.25)
   await expect.poll(async () => (await screenBox(win, ACTIVE_TAB)).height / tab.height).toBeCloseTo(1.25, 1)
