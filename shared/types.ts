@@ -2664,6 +2664,11 @@ export interface WindowIdentity {
    * caret in the search (every window boots with no tab of its own now, YAZ-3487 D7). Given out by its FIRST `window:identity` only, as `startView`. Never stored.
    */
   startEmpty?: true
+  /**
+   * A NEW window (⌘⇧N, the board's "New window", a new Files window — YAZ-3487, demo round 3): its Files tree starts with
+   * every folder closed, not with the vault's open folders. Given out by its FIRST `window:identity` only. Never stored.
+   */
+  startCollapsed?: true
   /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */
   kind?: WindowKind
   /** A Files window's own sidebar zoom in percent (YAZ-3389 D13), as `WindowEntry.zoom`; absent on a full window. */

@@ -1674,6 +1674,24 @@ describe('Show in sidebar — Files reveal (YAZ-1063)', () => {
  * Sidebar MOUNTS with is exempt; every later `activeFile` reveals exactly as before. Fresh vault per
  * mount (the expand-all idiom below): the app-state cache is module-level.
  */
+describe('a NEW window starts with every folder closed (YAZ-3487, demo round 3)', () => {
+  const openState = (el: HTMLElement) => el.querySelector('.tree__row[data-path="/v/sub"]')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+  const seeded = async (bridge: ReturnType<typeof installBridge>, startCollapsed: boolean) => {
+    bridge.state.get.mockResolvedValue({ ...defaultAppState(), folders: { '/v': { ...defaultFolderState(), expanded: ['/v/sub'] } } })
+    bridge.window.identity.mockResolvedValue({ id: 'w1', root: '/v', roots: ['/v'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', ...(startCollapsed ? { startCollapsed: true as const } : {}) })
+    await storage.init()
+  }
+
+  it('a window main marks as a new start (⌘⇧N, a new Files window) does not take the vault\'s open folders; any other window does', async () => {
+    const fresh = await mount({}, (bridge) => seeded(bridge, true))
+    expect(openState(fresh.el)).toBe('false')
+    act(() => root?.unmount())
+    container?.remove()
+    const restored = await mount({}, (bridge) => seeded(bridge, false))
+    expect(openState(restored.el)).toBe('true')
+  })
+})
+
 describe('launch: the restored tab is shown, not revealed (YAZ-1642)', () => {
   const note = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 1, mtime: 1, kind: 'markdown' })
   const DEEP = (v: string): TreeNode[] => [

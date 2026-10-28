@@ -2052,21 +2052,23 @@ describe('Files windows (YAZ-3357)', () => {
     expect(f.flushCount()).toBe(1)
   })
 
-  it('YAZ-3389 D13: a Files window opens one sidebar zoom step above its source and keeps its own sidebar zoom; a full window stores none', () => {
+  it('a Files window opens at its source\'s sidebar zoom (YAZ-3487, demo round 3; it was one step above, YAZ-3389 D13) and keeps its own; a full window stores none; a new one starts with its tree closed', () => {
     const { manager, created } = seedFiles()
     const zoomOf = (id: string) => store.get().windows.find((w) => w.id === id)?.zoom
-    // From a full window: one step above the shared sidebar zoom (100 → 125, 150 → 200).
+    // From a full window: the shared sidebar zoom as it is (100 → 100, 150 → 150).
     manager.openFilesWindow('w1', null)
     const made = created.at(-1)!.entry
-    expect(made.zoom).toBe(125)
+    expect(made.zoom).toBe(100)
+    expect(manager.takeStartCollapsed(made.id)).toBe(true)
+    expect(manager.takeStartCollapsed(made.id)).toBe(false) // once
     store.setSettings({ ...store.get().settings, sidebarZoom: 150 })
     manager.openFilesWindow('w2', null)
-    expect(created.at(-1)!.entry.zoom).toBe(200)
-    // From a Files window: one step above ITS zoom, never the shared one; at 200% it stays 200%.
+    expect(created.at(-1)!.entry.zoom).toBe(150)
+    // From a Files window: ITS zoom, never the shared one.
     expect(manager.setFilesZoom(made.id, 75)).toBe(true)
     expect(zoomOf(made.id)).toBe(75)
     manager.openFilesWindow(made.id, null)
-    expect(created.at(-1)!.entry.zoom).toBe(90)
+    expect(created.at(-1)!.entry.zoom).toBe(75)
     manager.setFilesZoom(made.id, 200)
     manager.openFilesWindow(made.id, null)
     expect(created.at(-1)!.entry.zoom).toBe(200)

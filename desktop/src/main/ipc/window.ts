@@ -177,11 +177,13 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const startView = windows.takeStartView(id)
     // A window the tab board opened empty (YAZ-3343) says so once: it boots with no tab.
     const startEmpty = windows.takeStartEmpty(id)
+    // A NEW window (YAZ-3487): its tree starts with every folder closed. Once, as `startEmpty`.
+    const startCollapsed = windows.takeStartCollapsed(id)
     // A Files window's page that starts (a launch, a reload) starts with its board closed (YAZ-3357 D3, D10; bug YAZ-3392):
     // main ends a wide state left from the page before, so the window is narrow again and the next board grows it.
     if (kind === 'files') windows.filesWide(id, false)
     // The copies and display names (YAZ-3057) go out with EVERY identity read: a reload keeps them, as a restart does.
-    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}) }
+    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(startCollapsed ? { startCollapsed: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {

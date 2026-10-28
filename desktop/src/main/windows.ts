@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import { appZoomFactor } from './appZoom'
@@ -175,6 +175,8 @@ export interface WindowManager extends WindowLookup {
   takeStartView(id: string): StartView | undefined
   /** A window `duplicateWindow` or `openBehind` opened (YAZ-3343 D22, D35): `true` ONCE, for its first `window:identity`, so it boots with no tab. */
   takeStartEmpty(id: string): boolean
+  /** A NEW window (YAZ-3487, demo round 3): its tree starts with every folder closed. Once, as `takeStartEmpty`. */
+  takeStartCollapsed(id: string): boolean
   /**
    * The ONE back-end door for "open a recent vault" (YAZ-1767 🔒 D1): the sidebar's vault
    * switcher and App's `openVault` (a vault window's Open Folder… / Open Recent, YAZ-1914) land here via `window:open-recent`, the Window menu's vault rows (⌘1–⌘9, YAZ-2555 D3) call it in main, and so does
@@ -280,7 +282,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -456,6 +458,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const startViews = new Map<string, StartView>()
   /** The windows `duplicateWindow` and `openBehind` opened, until their first identity read (YAZ-3343): they boot empty. */
   const emptyStarts = new Set<string>()
+  /** The NEW windows (⌘⇧N, the board's "New window", a new Files window) until their first identity read: their tree starts closed (YAZ-3487). */
+  const collapsedStarts = new Set<string>()
   /** The live windows the tab board made, built hidden and not shown yet (YAZ-3343). Never stored. */
   const hiddenWins = new Set<string>()
   /** The live windows minimized in the Dock (YAZ-3343). Never stored. */
@@ -636,6 +640,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // Closed before it asked (YAZ-2951 S20): what it would have read goes with it.
       startViews.delete(id)
       emptyStarts.delete(id)
+      collapsedStarts.delete(id)
       heldLinks.delete(wcId)
       // A lit window goes dark with the window whose row lit it; a closed lit window is forgotten (YAZ-3091 D8).
       const target = lit.get(id)
@@ -684,6 +689,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const openBlank = (from: WindowEntry, hidden: boolean): string => {
     const id = randomUUID()
     emptyStarts.add(id)
+    collapsedStarts.add(id)
     // From a Files window (YAZ-3357 D8, D14: its ⌘T, ⌘⇧N and the board's "New window") the sidebar shows, and the window stands right of it.
     open({ id, root: from.root, roots: [...from.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: isFilesWindow(from) ? false : from.sidebarCollapsed, sidebarLens: from.sidebarLens, bounds: madeFrom(from) }, hidden)
     return id
@@ -994,6 +1000,10 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       return emptyStarts.delete(id)
     },
 
+    takeStartCollapsed(id) {
+      return collapsedStarts.delete(id)
+    },
+
     openRecentBeside,
 
     openAlone: (path, from) => openVault(path, true, from),
@@ -1073,12 +1083,14 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
             ? clampBounds({ ...at, x: at.x + WINDOW_CASCADE_PX, y: at.y + WINDOW_CASCADE_PX }, areas)
             : filesWindowBounds(at, onScreen(source.sidebarCollapsed ? FILES_WINDOW_DEFAULT_W : store.get().sidebarWidth), areas)
       const vaults = normalizeRoots(roots, roots[0])
-      // Its list one sidebar zoom step above the source's (YAZ-3389 D13, "starting 20% bigger"): a Files window's own
-      // zoom, else the shared `settings.sidebarZoom` (a full window, or no source). At 200% it stays 200%.
-      const sourceZoom = source !== undefined && isFilesWindow(source) ? normalizeFilesZoom(source.zoom) : store.get().settings.sidebarZoom
-      const zoom = stepSidebarZoom(sourceZoom, 1)
+      // Its list at the source's sidebar zoom (YAZ-3487, demo round 3 — it was one step above, YAZ-3389 D13): a Files
+      // window's own zoom, else the shared `settings.sidebarZoom` (a full window, or no source). The App size is shared already.
+      const zoom = source !== undefined && isFilesWindow(source) ? normalizeFilesZoom(source.zoom) : store.get().settings.sidebarZoom
+      // A NEW window: its tree starts with every folder closed (YAZ-3487, demo round 3).
+      const id = randomUUID()
+      collapsedStarts.add(id)
       // The lens comes from the source (D6); the focus list is the vault's, and no name or tab comes along.
-      open({ id: randomUUID(), kind: 'files', root: vaults[0], roots: vaults, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: source?.sidebarLens ?? DEFAULT_SIDEBAR_LENS, bounds, zoom })
+      open({ id, kind: 'files', root: vaults[0], roots: vaults, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: source?.sidebarLens ?? DEFAULT_SIDEBAR_LENS, bounds, zoom })
       return true
     },
 

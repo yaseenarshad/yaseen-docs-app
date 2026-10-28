@@ -311,6 +311,8 @@ export const storage = {
    * of its own now, YAZ-3487 D7; this flag is what puts the caret there).
    */
   isEmptyByChoice: (): boolean => identity.file === null && identity.startEmpty === true,
+  /** A NEW window (⌘⇧N, the board's "New window", a new Files window — YAZ-3487): its Files tree starts with every folder closed. */
+  isCollapsedStart: (): boolean => identity.startCollapsed === true,
   /**
    * The tabs with their copies, display names and active copy (YAZ-3057): boot only, like `getTabs`.
    * A window that stores no strip gives its plain `tabs`, one entry per path.

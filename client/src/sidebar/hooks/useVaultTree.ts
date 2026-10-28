@@ -87,7 +87,8 @@ export function useVaultTree(
   const loaded = roots.every((vault) => trees.has(vault))
   // One list here, one list PER VAULT in the store (YAZ-2602 D3): the vaults never nest (R8), so
   // each folder is its own vault's, and the write-back below splits them again.
-  const [expanded, dispatch] = useReducer(treeReducer, roots, (all) => all.flatMap(storage.getExpanded))
+  // A NEW window starts with every folder closed (YAZ-3487): the vault's open folders are another window's.
+  const [expanded, dispatch] = useReducer(treeReducer, roots, (all) => (storage.isCollapsedStart() ? [] : all.flatMap(storage.getExpanded)))
 
   // What the Files tab draws (YAZ-2602 D3). One vault → its tree. Two or more → one
   // folder row per vault, in the window's order, named as the app names the vault, its tree below it;
