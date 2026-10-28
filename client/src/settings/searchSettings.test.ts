@@ -93,7 +93,7 @@ describe('settingCandidates', () => {
   it('Hotkeys: the changeable commands head Window, then one row per built-in key, the Mac\'s keys, and Reset all — every id unique (YAZ-3397 D5, D8)', () => {
     const rows = hotkeyRows()
     expect(rows.slice(0, 16)).toEqual(['newTab', 'newWindow', 'newFilesWindow', 'newItem', 'goTo', 'closeTab', 'closeWindow', 'switchVault', 'openFolder', 'search', 'settings', 'toggleSidebar', 'copyPath', 'tabOverview', 'nextTab', 'prevTab'].map((id) => `hotkey-${id}`))
-    expect(rows).toContain('hotkey-keyboard-table-of-contents')
+    expect(rows).toContain('hotkey-note-toc')
     expect(rows).toContain('hotkey-macos-spotlight')
     expect(rows[rows.length - 1]).toBe('hotkeys-reset-all')
     expect(new Set(rows).size).toBe(rows.length)
@@ -149,12 +149,12 @@ describe('searchSettings', () => {
 
   it('matches on a keyword the label does not contain', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'system'))).toEqual(['theme'])
-    // "dark" is also the draw.io row's word (YAZ-3037).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['theme', 'diagramDarkColors'])
+    // "dark" is also the draw.io row's word (YAZ-3037), and draw.io's own key for its dark colours (YAZ-3564).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'theme', 'diagramDarkColors'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'readable line'))).toEqual(['contentWidth'])
     // The sounds of Settings › Notifications (YAZ-3303) say "the Trash" in their hints.
     // "trash" is also the word of ⌘⌫ in the Window hotkeys (YAZ-3272 D20).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'trash'))).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'hotkey-window-move-the-selected-files-and-folders-to-t'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'trash'))).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'hotkey-app-trash'])
   })
 
   it('matches on the section title, returning every row of that section', () => {
@@ -172,7 +172,7 @@ describe('searchSettings', () => {
     for (const query of ['outline', 'headings']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('tableOfContents')
     // The settings folder's hint names the table of contents width, which stays on this Mac (YAZ-3276 D7); General comes first.
     // "Table of contents default" and the ⌘J row's label start with the words, so they rank first (a prefix hit, YAZ-3397 D5).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['tocOnByDefault', 'hotkey-keyboard-table-of-contents', 'settingsFolder', 'tableOfContents', 'tocLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['tocOnByDefault', 'hotkey-note-toc', 'settingsFolder', 'tableOfContents', 'tocLines'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'pin'))[0]).toBe('tableOfContents')
     expect(ids(searchSettings(settingCandidates(ctx()), 'default'))).toEqual(expect.arrayContaining(['tocOnByDefault', 'tableOfContents']))
   })
@@ -182,11 +182,11 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'level lines'))).toEqual(['sidebarLines', 'tocLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'hierarchy'))).toEqual(['sidebarLines', 'tocLines'])
     // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-drawio-a-shape-s-outline-a-text-s-background'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['hotkey-diagram-outline', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-diagram-colourOther'])
     // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['sidebarLines', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sidebarLines', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sidebarLines', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hotkey-code-showHover'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
   })
@@ -229,10 +229,11 @@ describe('searchSettings', () => {
 
   it('a query word splits on . - / _ as a row word does (YAZ-3410): "draw.io bold" finds the draw.io Bold row; the row words are split once, with the candidates', () => {
     const all = settingCandidates(ctx())
-    expect(ids(searchSettings(all, 'draw.io bold'))).toEqual(['hotkey-drawio-bold-underline'])
-    expect(ids(searchSettings(all, 'draw-io bold'))).toEqual(['hotkey-drawio-bold-underline'])
-    const bold = all.find((h) => h.item.id === 'hotkey-drawio-bold-underline')
-    expect(bold?.words).toEqual(expect.arrayContaining(['draw', 'io', 'bold', 'underline']))
+    // A diagram row goes by draw.io's name too (YAZ-3564).
+    expect(ids(searchSettings(all, 'draw.io bold'))).toEqual(['hotkey-diagram-bold'])
+    expect(ids(searchSettings(all, 'draw-io bold'))).toEqual(['hotkey-diagram-bold'])
+    const bold = all.find((h) => h.item.id === 'hotkey-diagram-bold')
+    expect(bold?.words).toEqual(expect.arrayContaining(['draw', 'io', 'bold']))
   })
 
   it('wordMatches: a start of the word, or one slip (wrong, missing, extra or swapped letter) from four letters on', () => {
@@ -247,15 +248,18 @@ describe('searchSettings', () => {
 
   it('a hotkey label or key finds its ONE row (YAZ-3397 D5): "close tab" and "⌘W" → Close tab', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'close tab'))).toEqual(['hotkey-closeTab'])
-    expect(ids(searchSettings(settingCandidates(ctx()), '⌘W'))).toEqual(['hotkey-closeTab'])
+    // ⌥⌘W (the code tab's Match whole word) holds the text "⌘W" too; Close tab comes first.
+    expect(ids(searchSettings(settingCandidates(ctx()), '⌘W'))).toEqual(['hotkey-closeTab', 'hotkey-code-findWholeWord'])
     // "underline" is also a word of Appearance › Text formatting (YAZ-3068); a note and a draw.io diagram both
     // underline with ⌘U (YAZ-3037): both rows answer, the note's first (its label is the word).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-keyboard-underline', 'textFormatting', 'hotkey-drawio-bold-underline'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkey-canvas-export-excalidraw-drawing'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-note-underline', 'hotkey-diagram-underline', 'textFormatting'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkey-app-menuExportExcalidrawDrawing'])
     // A changed key is searched by the key it has NOW.
     const moved = { ...ctx(), settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K' } } }
-    expect(ids(searchSettings(settingCandidates(moved), '⌘⇧K'))).toEqual(['hotkey-search'])
-    expect(ids(searchSettings(settingCandidates(moved), '⌘K'))).toEqual([])
+    // ⌘⇧K is also draw.io's Shapes and the code tab's Delete line (other places, YAZ-3564): Search the vault comes first.
+    expect(ids(searchSettings(settingCandidates(moved), '⌘⇧K'))).toEqual(['hotkey-search', 'hotkey-diagram-toggleShapes', 'hotkey-code-deleteLines'])
+    // ⌘K is no App key now; the places that use it (draw.io's Tags, the code tab's two-step ⌘K keys) still answer.
+    expect(ids(searchSettings(settingCandidates(moved), '⌘K'))).not.toContain('hotkey-search')
   })
 
   it('"review", "upkeep" and "inbox" each find every row of the Review section (YAZ-2322)', () => {

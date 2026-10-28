@@ -31,7 +31,7 @@ import { MACOS_HOTKEYS, type SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
 import { ConfirmSheet } from '../components/ConfirmSheet'
-import { MOUSE_TIPS } from './hotkeys'
+import { MOUSE_TIPS, shortLabel } from './hotkeys'
 import type { SettingDef, SettingsCtx, SettingsGroup, SettingsSection } from './registry'
 
 /** What "keyboard shortcuts" finds: every row, as the tables did before (YAZ-1679). */
@@ -502,8 +502,19 @@ export function KeySearch({ ctx, query, answering, onQuery, filter = NO_FILTER, 
 
 // ---------- the rows ----------
 
+/** The other words a place goes by in the search (D5): its engine's name. */
+const SCOPE_WORDS: Partial<Record<KeyScope, readonly string[]>> = { drawing: ['excalidraw', 'canvas'], diagram: ['draw.io'], code: ['monaco'] }
+
 /** A row's DOM-safe id part: 'note.bold' → 'note-bold'; an App command keeps its bare id ('search'), as before YAZ-3564. */
 const rowDomId = (row: KeyRow): string => (row.scope === 'app' && commandOf(row) !== undefined ? row.id.slice(4) : row.id.replace(/\./g, '-'))
+
+/** A stable id part from a label (never the key, which can change): 'Zoom into that bullet' → 'zoom-into-that-bullet'. */
+const slug = (label: string): string =>
+  label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40)
 
 /** A built-in row: the key as muted text, never a button (D8). */
 const fixedRow = (keys: string, label: ReactNode) => (
@@ -524,7 +535,7 @@ const rowItem = (row: KeyRow): SettingDef => ({
   id: `hotkey-${rowDomId(row)}`,
   label: row.label,
   hint: ({ settings }) => [keysText(keysOf(row, settings.hotkeys)) || 'No key', row.hint].filter(Boolean).join(' '),
-  keywords: [SCOPE_TITLES[row.scope].toLowerCase(), ...ROW_KEYWORDS],
+  keywords: [SCOPE_TITLES[row.scope].toLowerCase(), ...(SCOPE_WORDS[row.scope] ?? []), ...ROW_KEYWORDS],
   bare: true,
   available: (ctx) => inFilter(row, ctx),
   render: (ctx) => (row.changeable ? <HotkeyRow row={row} ctx={ctx} /> : fixedRow(keysText(keysOf(row, ctx.settings.hotkeys)), <>{row.label}{row.hint !== undefined && <span className="hotkeys__hint"> — {row.hint}</span>}</>)),
@@ -561,7 +572,7 @@ const macosItem = (label: string): SettingDef => {
 
 /** The groups' hints (K4): where a change waits for the next open. */
 const SCOPE_HINTS: Partial<Record<KeyScope, string>> = {
-  app: 'App keys fire everywhere: on a Mac the menu takes a key before any page.',
+  app: 'App keys work in every tab: on a Mac the menu takes the key before any page.',
   note: 'A change works in the notes you open after it.',
   diagram: 'A change works in the diagrams you open after it.',
 }
@@ -573,7 +584,7 @@ const groups: SettingsGroup[] = (['app', 'note', 'drawing', 'diagram', 'code', '
 })
 
 /** The mouse tips (YAZ-1679): no key, so no row of the key list; shown while no filter stands. */
-const mouseItems: SettingDef[] = MOUSE_TIPS.map(({ keys, label }, i) => ({ id: `hotkey-mouse-${i + 1}`, label, keywords: [keys, ...ROW_KEYWORDS], bare: true, available: (ctx) => !isFiltered(ctx), render: () => fixedRow(keys, label) }))
+const mouseItems: SettingDef[] = MOUSE_TIPS.map(({ keys, label }) => ({ id: `hotkey-mouse-${slug(shortLabel(label))}`, label, keywords: [keys, ...ROW_KEYWORDS], bare: true, available: (ctx) => !isFiltered(ctx), render: () => fixedRow(keys, label) }))
 
 export const HOTKEYS_SECTION: SettingsSection = {
   id: 'hotkeys',

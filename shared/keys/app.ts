@@ -13,6 +13,9 @@ const BOARD_ITEMS = new Set(['Export image', 'Export Excalidraw drawing', 'Share
 /** The Edit menu's roles (`desktop/src/main/menu.ts`): the page in front gets their key. */
 const EDIT_ROLES = new Set(['Undo', 'Redo', 'Cut', 'Copy', 'Paste', 'Select all'])
 
+/** A stable id from a label: 'Export Excalidraw drawing' → 'exportExcalidrawDrawing'. */
+const camel = (label: string): string => label.toLowerCase().replace(/[^a-z0-9]+(.)/g, (_, c: string) => c.toUpperCase()).replace(/[^a-zA-Z0-9]/g, '')
+
 const ANY_VAULT = Array.from({ length: 9 }, (_, i) => `CmdOrCtrl+${i + 1}`)
 
 export const APP_KEYS: readonly KeyRow[] = [
@@ -26,7 +29,7 @@ export const APP_KEYS: readonly KeyRow[] = [
     ...(c.stepsAsideIn === undefined ? {} : { stepsAsideIn: c.stepsAsideIn }),
   })),
   // The board items carry their key only on a board (K13), so they block no other place.
-  ...MENU_FIXED_KEYS.map((k, i): KeyRow => ({ id: `app.menu${i}`, scope: 'app', label: k.label, keys: [k.accelerator], changeable: false, ...(BOARD_ITEMS.has(k.label) ? { onlyIn: ['drawing', 'diagram'] as const } : {}) })),
+  ...MENU_FIXED_KEYS.map((k, i): KeyRow => ({ id: `app.menu${camel(` ${k.label}`)}${MENU_FIXED_KEYS.findIndex((o) => o.label === k.label) === i ? '' : i}`, scope: 'app', label: k.label, keys: [k.accelerator], changeable: false, ...(BOARD_ITEMS.has(k.label) ? { onlyIn: ['drawing', 'diagram'] as const } : {}) })),
   // The window's own keys (YAZ-1674, YAZ-2555, YAZ-3255, YAZ-3272, GRO-2232, YAZ-2322): built in.
   { id: 'app.vaultNumber', scope: 'app', label: 'Go to the vault with that number', hint: 'Right-click a vault to give it one', keys: ANY_VAULT, changeable: false },
   { id: 'app.cutFiles', scope: 'app', label: 'Cut the selected files and folders', keys: ['CmdOrCtrl+X'], changeable: false, macStandard: true, passesToPages: true },
