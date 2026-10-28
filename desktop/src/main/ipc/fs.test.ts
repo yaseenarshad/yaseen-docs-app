@@ -34,6 +34,8 @@ vi.mock('../favorites', () => ({ renamePath: vi.fn(async () => undefined), remov
 // The focus list's repair (YAZ-2702 R10, R11) rides the same handlers, by the same rule; `focus.test.ts`
 // owns its disk behaviour. Mocked like favorites — the real module imports from the one mocked above.
 vi.mock('../focus', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
+// The vault's own icons (YAZ-3440 D8) ride the same handlers too; `icons.test.ts` owns their disk behaviour.
+vi.mock('../icons', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
 
 type Handler = (event: unknown, ...args: unknown[]) => Promise<Envelope<unknown>>
 

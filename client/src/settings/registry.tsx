@@ -25,7 +25,7 @@ import { useState, type ReactNode } from 'react'
 import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import type { GithubSyncStatus, HoverPlace, IdsState, IndexResponse, SettingsState } from '@shared/types'
+import { SIDEBAR_ICON_KINDS, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -38,12 +38,13 @@ import { HOTKEYS_SECTION } from './hotkeysSection'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
+import { IconRulesControl } from './IconRulesControl'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
 import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, VAULT_OPENS_ON_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 export interface SettingsCtx {
   settings: SettingsState
@@ -117,7 +118,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'general' | 'appearance' | 'notifications' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -143,6 +144,43 @@ export interface SettingsSection {
    */
   standalone?: true
   groups: readonly SettingsGroup[]
+}
+
+/** A kind's built-in icon colour in this theme (app.css `--kind-<kind>` on the root; `.app` carries the set ones), else the light theme's. */
+function builtInIconColour(kind: SidebarIconKind): string {
+  const css = typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(`--kind-${kind}`).trim()
+  return /^#[0-9a-f]{6}$/i.test(css) ? css : SIDEBAR_ICON_SWATCHES[kind]
+}
+
+/** One kind's icon colour (YAZ-3440 D4): the picker of the thread colour's row, and Default, which drops the kind's colour. */
+function iconColourRow(kind: SidebarIconKind): SettingDef {
+  const name = SIDEBAR_ICON_KIND_LABELS[kind]
+  return {
+    id: `sidebarIconColors.${kind}`,
+    label: `${name} colour`,
+    ...(kind === 'note' ? { hint: 'Used with All colour: Colour keeps notes grey.' } : {}),
+    keywords: ['sidebar', 'tree', 'icon', 'color', 'colour', kind === 'note' ? 'markdown' : kind],
+    // The Line set's alone: Material's icons keep their own colours.
+    available: ({ settings }) => settings.sidebarIconSet === 'line' && (settings.sidebarFileIcons === 'quiet' || settings.sidebarFileIcons === 'color'),
+    render: ({ settings, onChange }) => {
+      const own = settings.sidebarIconColors[kind]
+      const drop = (): SettingsState['sidebarIconColors'] => Object.fromEntries(Object.entries(settings.sidebarIconColors).filter(([k]) => k !== kind))
+      return (
+        <>
+          <input
+            type="color"
+            className="settings__color"
+            aria-label={`${name} icon colour in the sidebar`}
+            value={own ?? builtInIconColour(kind)}
+            onChange={(e) => onChange({ ...settings, sidebarIconColors: { ...settings.sidebarIconColors, [kind]: e.target.value } })}
+          />
+          <button type="button" className={`settings__option${own === undefined ? ' settings__option--active' : ''}`} disabled={own === undefined} onClick={() => onChange({ ...settings, sidebarIconColors: drop() })}>
+            Default
+          </button>
+        </>
+      )
+    },
+  }
 }
 
 /** What the section title does not say: the feature's other name, and where its notes turn up. */
@@ -389,16 +427,39 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-3309 D6: the sidebar tree's level lines, a group of its own on Appearance (it was under Files & Links).
-        // The rows take the shape of Editor › Bullet threading: Show, then how the line looks.
-        title: 'Sidebar level lines',
-        hint: 'A thin line below each open folder in the sidebar shows what is inside it.',
+        // YAZ-3037 (Draw's 🔒 YAZ-1802 D16): the default for every diagram; a file that sets its own `adaptiveColors` keeps it.
+        title: 'draw.io diagrams',
+        items: [
+          {
+            id: 'diagramDarkColors',
+            label: 'In dark mode',
+            hint: 'Adapt re-colours diagrams so they stay readable in dark mode. A diagram that asks to keep its own colours always does.',
+            keywords: ['drawio', 'draw.io', 'diagram', 'dark', 'colors', 'colours', 'adaptive'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={DIAGRAM_DARK_COLORS_OPTIONS} value={settings.diagramDarkColors} onChange={(diagramDarkColors) => onChange({ ...settings, diagramDarkColors })} ariaLabel="draw.io diagrams in dark mode" />
+            ),
+          },
+        ],
+      },
+    ],
+  },
+  // YAZ-3303 D4: toasts and sounds, under Appearance.
+  {
+    // YAZ-3440 D7: the sidebar tree's look, a page of its own right after Appearance (it was one long
+    // "Sidebar tree" group there). Layout only: every key and what it does is as before.
+    id: 'sidebar',
+    title: 'Sidebar',
+    groups: [
+      {
+        // YAZ-3309 D6: the level lines' rows keep the shape of Editor › Bullet threading: when, then how the line looks.
+        title: 'Level lines',
         items: [
           {
             // YAZ-3309 D3: when the sidebar tree's level lines show, the three choices of the TOC's own (YAZ-2762).
             id: 'sidebarLines',
-            label: 'Show',
-            keywords: ['sidebar', 'folder', 'tree', 'hierarchy', 'guide', 'indent', 'hover'],
+            label: 'Level lines',
+            hint: 'A thin line below each open folder shows what is inside it.',
+            keywords: ['sidebar', 'folder', 'tree', 'hierarchy', 'guide', 'indent', 'hover', 'show'],
             render: ({ settings, onChange }) => (
               <Segmented options={TOC_LINES_OPTIONS} value={settings.sidebarLines} onChange={(sidebarLines) => onChange({ ...settings, sidebarLines })} ariaLabel="Level lines in the sidebar" />
             ),
@@ -406,7 +467,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             // YAZ-3309 D7, D8: plain grey lines (the default), or the bullet-threading path to the row under the mouse.
             id: 'sidebarLineStyle',
-            label: 'Style',
+            label: 'Line style',
             hint: 'Thread to the row colours the line from each open folder down to the row under the mouse, like bullet threading.',
             keywords: ['sidebar', 'thread', 'bullet threading', 'path'],
             render: ({ settings, onChange }) => (
@@ -441,23 +502,96 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-3037 (Draw's 🔒 YAZ-1802 D16): the default for every diagram; a file that sets its own `adaptiveColors` keeps it.
-        title: 'draw.io diagrams',
+        // YAZ-3440 D1, D2, D5, D6: how folder rows stick, turn and look.
+        title: 'Folders',
         items: [
           {
-            id: 'diagramDarkColors',
-            label: 'In dark mode',
-            hint: 'Adapt re-colours diagrams so they stay readable in dark mode. A diagram that asks to keep its own colours always does.',
-            keywords: ['drawio', 'draw.io', 'diagram', 'dark', 'colors', 'colours', 'adaptive'],
+            // YAZ-3440 D1, D2: the open folders' rows stick at the top while their rows scroll under them, as VS Code's
+            // explorer does; never more than 40% of the list, so a short sidebar sticks fewer.
+            id: 'sidebarStickyLevels',
+            label: 'Sticky folders',
+            hint: 'The rows of the open folders above stay at the top of the list while you scroll. A click on one goes back to it.',
+            keywords: ['sidebar', 'folder', 'tree', 'sticky', 'scroll', 'pin', 'header', 'explorer'],
             render: ({ settings, onChange }) => (
-              <Segmented options={DIAGRAM_DARK_COLORS_OPTIONS} value={settings.diagramDarkColors} onChange={(diagramDarkColors) => onChange({ ...settings, diagramDarkColors })} ariaLabel="draw.io diagrams in dark mode" />
+              <Segmented options={SIDEBAR_STICKY_LEVELS_OPTIONS} value={settings.sidebarStickyLevels} onChange={(sidebarStickyLevels) => onChange({ ...settings, sidebarStickyLevels })} ariaLabel="Sticky folders in the sidebar" />
             ),
+          },
+          {
+            // YAZ-3440 D6: the arrow turns at once (the default) or over 0.12s, as it did before. Reduce motion always turns it at once.
+            id: 'sidebarArrowMotion',
+            label: 'Arrow',
+            hint: 'How a folder\'s arrow turns when it opens or closes.',
+            keywords: ['sidebar', 'folder', 'tree', 'chevron', 'arrow', 'animation', 'motion', 'turn'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={SIDEBAR_ARROW_MOTION_OPTIONS} value={settings.sidebarArrowMotion} onChange={(sidebarArrowMotion) => onChange({ ...settings, sidebarArrowMotion })} ariaLabel="Folder arrow in the sidebar" />
+            ),
+          },
+          {
+            // YAZ-3440 D5 (amended): a folder icon before each folder's name, the icon set's (Material: by folder name; Line: a grey folder); a vault row never has one. The file rows' icons are their own row below.
+            id: 'sidebarFolderIcons',
+            label: 'Folder icons',
+            keywords: ['sidebar', 'folder', 'tree', 'icon', 'icons'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.sidebarFolderIcons} onChange={(sidebarFolderIcons) => onChange({ ...settings, sidebarFolderIcons })} ariaLabel="Folder icons in the sidebar" />
+            ),
+          },
+          {
+            // YAZ-3440 D13: the Files tab follows the open tab, as VS Code's "Auto Reveal". Off by default: the tree starts closed (YAZ-1642).
+            id: 'sidebarRevealActive',
+            label: 'Reveal the open file',
+            hint: 'Files opens the folders down to the open tab\'s file and scrolls to it.',
+            keywords: ['sidebar', 'folder', 'tree', 'reveal', 'follow', 'open file', 'active', 'auto reveal', 'explorer', 'scroll'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.sidebarRevealActive} onChange={(sidebarRevealActive) => onChange({ ...settings, sidebarRevealActive })} ariaLabel="Reveal the open file in the sidebar" />
+            ),
+          },
+        ],
+      },
+      {
+        // YAZ-3440 D4: which icons the rows show, and the Line set's colours.
+        title: 'File icons',
+        items: [
+          {
+            // YAZ-3440 D4: Material Icon Theme's icons (the default), matched by name as in VS Code, or the app's own line glyphs.
+            id: 'sidebarIconSet',
+            label: 'Icon set',
+            hint: 'Material shows an icon for each file type and for common folder names, as VS Code\'s Material Icon Theme does. Line shows one quiet glyph per kind.',
+            keywords: ['sidebar', 'tree', 'icon', 'icons', 'material', 'line', 'theme', 'vs code', 'file type'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={SIDEBAR_ICON_SET_OPTIONS} value={settings.sidebarIconSet} onChange={(sidebarIconSet) => onChange({ ...settings, sidebarIconSet })} ariaLabel="Icon set in the sidebar" />
+            ),
+          },
+          {
+            // YAZ-3440 D4: an icon before each file's name for its kind; "Colour" leaves the notes grey, so the other kinds stand out.
+            id: 'sidebarFileIcons',
+            label: 'File icons',
+            hint: 'Colour leaves notes grey, so the other kinds stand out; All colour colours notes too; Grey draws every file icon grey.',
+            keywords: ['sidebar', 'tree', 'icon', 'icons', 'file type', 'kind', 'color', 'colour', 'folder'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={SIDEBAR_FILE_ICONS_OPTIONS} value={settings.sidebarFileIcons} onChange={(sidebarFileIcons) => onChange({ ...settings, sidebarFileIcons })} ariaLabel="File icons in the sidebar" />
+            ),
+          },
+          // YAZ-3440 D4: a colour of its own for each kind, while the icons have colour; a note's shows with "All colour" alone.
+          ...SIDEBAR_ICON_KINDS.map(iconColourRow),
+        ],
+      },
+      {
+        // YAZ-3440 D9: the name rules, one list for every vault.
+        title: 'Icon rules',
+        items: [
+          {
+            // YAZ-3440 D9: the name rules are a setting, one list for every vault; a row's own pick wins over them.
+            id: 'sidebarIconRules',
+            label: 'Icon rules',
+            hint: 'Give each file or folder whose name matches a pattern its own icon, in every vault and both icon sets. * stands for any characters. The first rule that matches wins; a row\'s own icon (right-click, Change icon ▸ This file…) wins over every rule.',
+            keywords: ['sidebar', 'tree', 'icon', 'icons', 'rule', 'rules', 'pattern', 'glob', 'custom'],
+            wide: true,
+            render: ({ settings, onChange }) => <IconRulesControl rules={settings.sidebarIconRules} onChange={(sidebarIconRules) => onChange({ ...settings, sidebarIconRules })} />,
           },
         ],
       },
     ],
   },
-  // YAZ-3303 D4: toasts and sounds, under Appearance.
   NOTIFICATIONS_SECTION,
   {
     id: 'editor',

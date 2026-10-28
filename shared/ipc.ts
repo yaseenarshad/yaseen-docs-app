@@ -12,6 +12,7 @@
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
 import type { SystemHotkey } from './macosHotkeys'
+import type { VaultIcons } from './vaultIcons'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -493,6 +494,15 @@ export const CONTRACT = {
     set: invoke<[root: string, paths: readonly string[]], void>('favorites:set', 2),
     /** Fired in every window after any change to a vault's favorites.json, own or external; filter by `root`. */
     onChanged: push<{ root: string }>('favorites:changed'),
+  },
+  /** A vault's one-row icon picks over `.yaseendocs/icons.json` (YAZ-3440 D8), by absolute path (`shared/vaultIcons.ts`); the name rules are `settings.sidebarIconRules`. */
+  icons: {
+    /** The picks; none when the file is absent or malformed. Never creates anything. */
+    get: invoke<[root: string], VaultIcons>('icons:get', 1),
+    /** Replace the picks; every one must be inside `root` (→ `BAD_REQUEST`), a malformed file refuses (→ `INVALID_CONFIG`). Creates the dotfolder and file on the first write. */
+    set: invoke<[root: string, icons: VaultIcons], void>('icons:set', 2),
+    /** Fired in every window after any change to a vault's icons.json, own or external; filter by `root`. */
+    onChanged: push<{ root: string }>('icons:changed'),
   },
   /**
    * A vault's focus list (YAZ-2702): ONE list for each vault, kept in the vault as one file for each

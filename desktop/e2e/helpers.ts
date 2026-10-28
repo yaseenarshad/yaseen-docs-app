@@ -152,7 +152,7 @@ async function centre(row: Locator): Promise<{ x: number; y: number }> {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 }
 
-/** A point in the TOP quarter of `row`, squarely inside its `before` drop edge (Tree.tsx `edgeOf`). */
+/** A point in the TOP quarter of `row`, squarely inside its `before` drop edge (rowGestures.ts `edgeOf`). */
 async function beforeEdge(row: Locator): Promise<{ x: number; y: number }> {
   const box = await row.boundingBox()
   if (box === null) throw new Error('a row with no box cannot be a drop target')
@@ -162,10 +162,9 @@ async function beforeEdge(row: Locator): Promise<{ x: number; y: number }> {
 /**
  * TOP ROW ABOVE TOP ROW — the reorder drag of a favorite (YAZ-1766 D4) and of a vault row
  * (YAZ-2631 D5): press on `source`, carry the pointer into `target`'s top half, REST there —
- * re-issuing the move — until the target says the drop lands before it, release. A synthetic HTML5
- * drag over CDP delivers only a fraction of its `dragover`s, so the rest is what makes the drop land
- * where a real held pointer would. The wait is an assertion: the edge IS the `dragover` handler the
- * drop needs.
+ * re-issuing the move — until the target says the drop lands before it, release. Since YAZ-3467 D2
+ * the reorder is mouse events: the row lifts 10 px from the press, and each held move finds the row
+ * under the pointer. The wait is an assertion: the edge IS what the release drops on.
  */
 export async function dragAbove(w: Page, source: Locator, target: Locator): Promise<void> {
   const from = await centre(source)

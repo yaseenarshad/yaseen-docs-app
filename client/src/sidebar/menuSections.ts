@@ -123,6 +123,14 @@ export interface MenuHandlers {
   /** "Remove shortcut" on a shortcut row (YAZ-2290 E5): the note, and the folder it stops appearing in. */
   onRemoveShortcut: (path: string, dir: string) => void
   onRename: (path: string) => void
+  /** "Change icon ▸ This file…" (YAZ-3440 D8): the row, or every row of the 2+ selection; the caller opens the icon picker for their picks. */
+  onChangeIcon: (paths: string[]) => void
+  /** "Change icon ▸ All .gif files…" (D9): the caller opens the icon picker for that name rule of the settings. */
+  onChangeIconRule: (rule: { match: string; kind: 'file' | 'folder'; label: string }) => void
+  /** "Reset this file" (D8): the rows' picks leave their vaults' `icons.json`. */
+  onResetIcon: (paths: string[]) => void
+  /** "Reset all .gif files" (D8): that name rule leaves the settings. */
+  onResetIconRule: (rule: { match: string; kind: 'file' | 'folder'; label: string }) => void
   /** Delete (GRO-2272): the row, or the ordered 2+ selection that holds it (YAZ-3272 D21); the caller asks first. */
   onDelete: (paths: string[]) => void
   /** "Add vault to this window ▸" (YAZ-2602 D2): a known vault's path; the caller checks it and says why it cannot be added. */
@@ -351,6 +359,32 @@ const rename: Leaf = (t, h) => {
 }
 
 /**
+ * "Change icon ▸" (YAZ-3440 D8; one item): a flyout that says what each choice changes.
+ * "This file…" (a folder: "This folder…", a 2+ selection: "These N items…") is the rows' own pick in their vault's
+ * `icons.json`; "All .gif files…" (else "All files named Makefile…", "All folders named src…") is the name rule of
+ * the settings for every row like it, in every vault, and a selection whose rows want different rules has none.
+ * Below a separator, "Reset this file" and "Reset all .gif files" where there is a pick or that rule to remove.
+ * Each "…" opens the icon picker. A file or folder row or its selection, never a vault row, a shortcut row (its icon
+ * is its note's) or blank space.
+ */
+const changeIcon: Item = (t, h) => {
+  const paths = t.iconPaths
+  if (paths === null) return null
+  const what = paths.length > 1 ? `these ${paths.length} items` : t.rowKind === 'dir' ? 'this folder' : 'this file'
+  const rule = t.iconRule
+  const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
+  const choose: MenuAction[] = [
+    { id: 'change-icon-pick', label: `${cap(what)}…`, onSelect: () => h.onChangeIcon(paths) },
+    ...(rule === null ? [] : [{ id: 'change-icon-rule', label: `${cap(rule.label)}…`, onSelect: () => h.onChangeIconRule(rule) }]),
+  ]
+  const reset: MenuAction[] = [
+    ...(t.iconHasPick ? [{ id: 'reset-icon-pick', label: `Reset ${what}`, onSelect: () => h.onResetIcon(paths) }] : []),
+    ...(rule !== null && t.iconRuleSet ? [{ id: 'reset-icon-rule', label: `Reset ${rule.label}`, onSelect: () => h.onResetIconRule(rule) }] : []),
+  ]
+  return { id: 'change-icon', label: 'Change icon', children: [choose, reset] }
+}
+
+/**
  * The favorite toggle (YAZ-1766 D3): ONE state-aware item on every ROW — file or dir, any lens —
  * never on blank space. Inside a 2+ selection it names the whole ordered selection and counts it
  * ("Add 3 to favorites"); `favoriteIsOn` is true only when EVERY path is already a favorite, so a
@@ -534,7 +568,7 @@ const CLOSED_GROUP: readonly Item[] = [forgetClosed, clearClosed]
 const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
 const CREATE_GROUP: readonly Item[] = [newNoteMenu, newDrawingMenu, newFolderMenu]
-const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename]
+const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename, changeIcon]
 const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openAlone, openIn, addVault]
 const DELETE_GROUP: readonly Item[] = [share, history, info, del, removeShortcut, removeVault]
 

@@ -18,7 +18,7 @@ import { appWindow, buildFixtureVault, clickMenuItem, copyVault, launchApp, quit
 test.describe.configure({ mode: 'serial' })
 
 /** The nav as the registry orders it (registry.tsx): the settings pages (General first, YAZ-3276 D7), a divider, the reference pages. */
-const NAV_ORDER = ['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Storage', 'Sharing', 'Hotkeys'] as const
+const NAV_ORDER = ['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Storage', 'Sharing', 'Hotkeys'] as const
 
 // ---------- the dialog's parts, by role and stable class only (never position) ----------
 
@@ -143,7 +143,7 @@ test('step 3 — search narrows the page to hits under breadcrumbs, and a hit st
   // the next group's hint too, which names Bullet threading (YAZ-2709): that group's two rows
   // follow under their own breadcrumb. The sidebar's line style row names it too (YAZ-3309 D7).
   await search(win).fill('threading')
-  await expect(headings(win)).toHaveText(['Appearance › Sidebar level lines', 'Editor › Bullet threading', 'Editor › Section indent'])
+  await expect(headings(win)).toHaveText(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent'])
   await expect(rows(win)).toHaveCount(6)
   await expect(row(win, 'sidebarLineStyle')).toBeVisible()
   await expect(row(win, 'bulletThreading')).toBeVisible()
@@ -257,7 +257,7 @@ test('step 5 — a nav click swaps the page: Sync, then Hotkeys under the divide
   await expect(dialog(win)).toHaveCount(0)
 })
 
-test('step 6 — Appearance › "Sidebar level lines" (YAZ-3309 D3, D6–D10): each choice reaches the state file and `.app`; the grey line below the open folder follows the mouse and the keyboard (S2, S3), and the thread the resting mouse', async () => {
+test('step 6 — Sidebar › "Level lines" (YAZ-3309 D3, D6–D10; the page since YAZ-3440 D7): each choice reaches the state file and `.app`; the grey line below the open folder follows the mouse and the keyboard (S2, S3), and the thread the resting mouse', async () => {
   // Projects/ open in Files: its nested level is the one that draws a line, below the folder's chevron.
   const folder = win.locator('li[role="treeitem"]:has(> .tree__row--dir[data-path$="/Projects"])')
   if ((await folder.getAttribute('aria-expanded')) !== 'true') await folder.locator('> .tree__row--dir').click()
@@ -277,7 +277,7 @@ test('step 6 — Appearance › "Sidebar level lines" (YAZ-3309 D3, D6–D10): e
   const choose = async (id: 'sidebarLines' | 'sidebarLineStyle', label: string, value: string) => {
     await cog(win).click()
     await expect(dialog(win)).toBeVisible()
-    await navItem(win, 'Appearance').click()
+    await navItem(win, 'Sidebar').click()
     await row(win, id).getByRole('button', { name: label, exact: true }).click()
     await expect(row(win, id).getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect.poll(async () => (await readState(userData)).settings[id]).toBe(value)
@@ -288,9 +288,9 @@ test('step 6 — Appearance › "Sidebar level lines" (YAZ-3309 D3, D6–D10): e
 
   await cog(win).click()
   await expect(dialog(win)).toBeVisible()
-  await navItem(win, 'Appearance').click()
-  // Its own group on Appearance (D6); its rows and their defaults are SettingsDialog.test's.
-  await expect(row(win, 'sidebarLines').locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " settings-group ")][1]').locator('.settings-group__title')).toHaveText('Sidebar level lines')
+  await navItem(win, 'Sidebar').click()
+  // The first group of Settings › Sidebar (YAZ-3440 D7); its rows and their defaults are SettingsDialog.test's.
+  await expect(row(win, 'sidebarLines').locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " settings-group ")][1]').locator('.settings-group__title')).toHaveText('Level lines')
   await shoot(win, 'settings-11-sidebar-level-lines-group')
   await win.keyboard.press('Escape')
   await expect(win.locator('.app')).toHaveAttribute('data-sidebar-lines', 'hover')

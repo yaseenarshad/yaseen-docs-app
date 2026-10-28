@@ -5,9 +5,11 @@
  * selection is owned by the caller, since the keyboard drives it from the search input — and so
  * is ACTIVATION (🔒 D3, YAZ-1491): a click reports the row and the ⌘ flag. Folder rows look like
  * folders (🔒 D4): a glyph before the label and a `, folder` suffix on the aria-label. A
- * right-click reports the row the same way (YAZ-2050).
+ * right-click reports the row the same way (YAZ-2050). Each row shows its tree row's icon before the label (YAZ-3440
+ * D11, `FileIcon`); with folder icons Off a folder keeps the D4 glyph (app.css hides it while folder icons show).
  */
 import { useEffect, useRef } from 'react'
+import { FileIcon } from '../sidebar/FileIcon'
 import { FolderIcon } from '../views/view/icons'
 import type { SearchCandidate } from './searchCandidates'
 
@@ -57,6 +59,7 @@ export function SearchResults({ results, selected, onSelect, onActivate, onRowCo
           }}
         >
           <span className="search-results__label">
+            <FileIcon path={r.path} folder={r.kind === 'dir'} />
             {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
             {r.label}
           </span>

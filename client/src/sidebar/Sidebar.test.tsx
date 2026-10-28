@@ -6,6 +6,7 @@
  * unchanged, and activating a stale tab probes a fresh tree before onFileMissing fires.
  * Real Tree/ContextMenu render against the jsdom bridge stub.
  */
+import { MAX_ICON_MATCH, MAX_ICON_RULES, type VaultIcons } from '@shared/vaultIcons'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -68,9 +69,12 @@ vi.mock('./folderShortcuts', async (importOriginal) => {
 })
 
 import { testDoor } from '../testNoteIds'
+import { LIFT_PX } from './hooks/rowGestures'
 import { PREVIEW_FOLLOW_MS } from './hooks/useSidebarSearch'
 import { useSameList } from './hooks/useVaultTree'
 import { useVaultListsHere } from '../lists/useVaultListsHere'
+import { useVaultIcons } from './useVaultIcons'
+import { loadMaterialIcons } from './materialIcons'
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -145,6 +149,12 @@ function installBridge() {
       set: vi.fn(async (_root: string, _paths: readonly string[]) => undefined),
       onChanged: vi.fn((_listener: (change: { root: string }) => void) => () => undefined),
     },
+    // A vault's own icons (YAZ-3440 D8): none unless a test seeds them.
+    icons: {
+      get: vi.fn(async (_root: string): Promise<VaultIcons> => ({ paths: {} })),
+      set: vi.fn(async (_root: string, _icons: VaultIcons) => undefined),
+      onChanged: vi.fn((_listener: (change: { root: string }) => void) => () => undefined),
+    },
     // A vault's focus list (YAZ-2702): `.yaseendocs/focus.<mac id>.json` behind main; absolute paths both ways,
     // the same three calls as `favorites`. Empty by default; the focus blocks seed `get` and capture the `onChanged` listener.
     focus: {
@@ -170,8 +180,8 @@ let container: HTMLElement | null = null
 /** The mounted panel's tab switch, as App does it (YAZ-2638 D2): the same Sidebar, a new `lens`. Null between tests. */
 let showTab: ((lens: SidebarTab) => void) | null = null
 
-/** The panel's props but `lists`: the harness holds the window's Focus and Favorites, as App does (YAZ-3264 D1). */
-type PanelProps = Omit<Parameters<typeof Sidebar>[0], 'lists'>
+/** The panel's props but `lists` and `icons`: the harness holds the window's Focus and Favorites and its vaults' icons, as App does (YAZ-3264 D1, YAZ-3440 D11). */
+type PanelProps = Omit<Parameters<typeof Sidebar>[0], 'lists' | 'icons'>
 /** App's half of the preview panel of the search (YAZ-2662 D5), of the mounted panel: the path on show, and App's ✕. Null between tests. */
 let previewPanel: { path: string | null; close: () => void } | null = null
 /**
@@ -182,13 +192,15 @@ let previewPanel: { path: string | null; close: () => void } | null = null
 function WithPreview(props: PanelProps) {
   const [path, setPath] = useState<string | null>(null)
   const { onPreview } = props
-  const lists = useVaultListsHere(useSameList(props.vaults.map((vault) => vault.root)), props.onNotice)
+  const roots = useSameList(props.vaults.map((vault) => vault.root))
+  const lists = useVaultListsHere(roots, props.onNotice)
+  const icons = useVaultIcons(roots, props.settings.sidebarIconRules, props.onNotice)
   const show = useCallback((next: string | null) => {
     setPath(next)
     onPreview(next)
   }, [onPreview])
   previewPanel = { path, close: () => setPath(null) }
-  return <Sidebar {...props} lists={lists} previewPath={path} onPreview={show} />
+  return <Sidebar {...props} lists={lists} icons={icons} previewPath={path} onPreview={show} />
 }
 type Vault = PanelProps['vaults'][number]
 /** A vault's own review facts (YAZ-2602 R5): upkeep on or off, what is due, whether its review is open; and the Inbox row's click. */
@@ -404,6 +416,27 @@ afterEach(() => {
  * Drawing and diagram rows (YAZ-3028 D11): normal rows that open a tab, named by their full file name,
  * a diagram marked; "Info" on their menu reads the board's head through `fs:board-head`.
  */
+/**
+ * A drag event as a person makes it (YAZ-3467). A `dragstart` only arms a row (D1): it comes between
+ * a press and a move LIFT_PX away with the button down, and that move lifts the row. A lifted move is
+ * the OS drag, which the page sees as `dragover` and `drop`; a lifted reorder is mouse events (D2): a
+ * move with the button down over the row, the release on it, and a move with no button for a
+ * `dragend`. The test sends both, and each gesture takes only its own. The release comes where the
+ * last move was, as a person's does.
+ */
+let lastMove: MouseEventInit = {}
+const asPerson = (type: string, target: EventTarget | null | undefined, dispatch: () => void, init: MouseEventInit = {}): void => {
+  if (type === 'dragstart') window.dispatchEvent(new MouseEvent('mousedown', { clientX: 0, clientY: 0 }))
+  dispatch()
+  if (type === 'dragstart') window.dispatchEvent(new MouseEvent('mousemove', { buttons: 1, clientX: LIFT_PX }))
+  if (type === 'dragover') {
+    lastMove = init
+    target?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, buttons: 1, ...init }))
+  }
+  if (type === 'drop') target?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, ...lastMove }))
+  if (type === 'dragend') window.dispatchEvent(new MouseEvent('mousemove', { buttons: 0 }))
+}
+
 describe('drawing and diagram rows (YAZ-3028 D11)', () => {
   const BOARD_TREE: TreeNode[] = [
     { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
@@ -416,15 +449,18 @@ describe('drawing and diagram rows (YAZ-3028 D11)', () => {
   }
   const boardRow = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row--file[title="${path}"]`)
 
-  it('are normal rows: full file name, not external, the draw.io mark on the diagram only, and a click opens a tab', async () => {
+  it('are normal rows: full file name, not external, each with its kind for its icon (YAZ-3440 D4, which took the place of the draw.io mark) and its Material icon, and a click opens a tab', async () => {
     const { el, bridge, props } = await mount({}, withBoards)
     const flow = boardRow(el, '/v/Flow.drawio')
     const sketch = boardRow(el, '/v/Sketch.excalidraw')
     expect(flow?.classList.contains('tree__row--external')).toBe(false)
     expect(sketch?.classList.contains('tree__row--external')).toBe(false)
     expect(flow?.querySelector('.tree__label')?.textContent).toBe('Flow.drawio')
-    expect(flow?.querySelector('.diagram-mark')?.getAttribute('aria-label')).toBe('draw.io diagram')
-    expect(sketch?.querySelector('.diagram-mark')).toBeNull()
+    expect([flow?.dataset.kind, sketch?.dataset.kind]).toEqual(['diagram', 'drawing'])
+    expect([flow?.dataset.icon, sketch?.dataset.icon]).toEqual(['drawio', 'excalidraw'])
+    expect(flow?.style.getPropertyValue('--icon')).toBe('url(/material-icons/drawio.svg)')
+    // The icon is the label's `::before`: the row has no node more, and no mark after the name.
+    expect(flow?.querySelector('.diagram-mark, svg')).toBeNull()
     await act(async () => sketch?.click())
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/Sketch.excalidraw')
     expect(bridge.shell.openDefault).not.toHaveBeenCalled()
@@ -904,7 +940,7 @@ describe('Sidebar copy link (retired, YAZ-1554)', () => {
 describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
   /** Drag events bubble like the real thing; jsdom has no DragEvent, the handlers guard `dataTransfer` (the TabBar idiom). */
   const fire = (target: Element | null | undefined, type: string) =>
-    act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true })))
+    act(() => asPerson(type, target, () => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }))))
   const dirRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--dir')
 
   it.each([
@@ -1081,7 +1117,7 @@ describe('the tree drag: folders, the selection, file-row drops, spring open (YA
   /** A synthetic drag event (jsdom has no DragEvent, and the handlers guard `dataTransfer`); answers whether a handler took it. */
   const fire = (target: Element | null | undefined, type: string) => {
     const event = new MouseEvent(type, { bubbles: true, cancelable: true })
-    act(() => void target?.dispatchEvent(event))
+    act(() => asPerson(type, target, () => void target?.dispatchEvent(event)))
     return event.defaultPrevented
   }
   const shiftClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
@@ -1247,7 +1283,7 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
   const fire = (target: EventTarget | null | undefined, type: string, files?: File[]) => {
     const event = new MouseEvent(type, { bubbles: true, cancelable: true })
     if (files !== undefined) Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files, dropEffect: 'none' } })
-    act(() => void target?.dispatchEvent(event))
+    act(() => asPerson(type, target, () => void target?.dispatchEvent(event)))
     return event.defaultPrevented
   }
   /** The pointer moves; `buttons` 0 once the OS drag is over. */
@@ -1386,6 +1422,35 @@ describe('drags between Finder and the sidebar (YAZ-3253, YAZ-3254)', () => {
     expect(props.onMoveEntries).not.toHaveBeenCalled()
     expect(bridge.file.import).not.toHaveBeenCalled()
     expect(props.onNotice).not.toHaveBeenCalled()
+  })
+
+  it('a row lifts only LIFT_PX from the press (YAZ-3467 D1): a slip and a release, or a new press, lift nothing; LIFT_PX away with the button down lifts it once', async () => {
+    const { bridge, el } = await mount()
+    const at = (type: string, x: number, buttons = 0) => act(() => void window.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: 0, buttons })))
+    const start = () => act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('dragstart', { bubbles: true, cancelable: true })))
+    // L1, L5: a slip of 6 px and a release is a click; the move after it, with no button, lifts nothing.
+    at('mousedown', 100)
+    start()
+    at('mousemove', 106, 1)
+    // L4: the row becomes the selection at the lift, not at the press or the `dragstart`.
+    expect(fileRow(el)?.classList.contains('tree__row--selected')).toBe(false)
+    at('mouseup', 106)
+    at('mousemove', 100 + LIFT_PX, 0)
+    expect(bridge.file.dragOut).not.toHaveBeenCalled()
+    // L6: a new press clears an armed row.
+    at('mousedown', 100)
+    start()
+    at('mousedown', 300)
+    at('mousemove', 300 + LIFT_PX, 1)
+    expect(bridge.file.dragOut).not.toHaveBeenCalled()
+    // L2, L3: LIFT_PX from the press in a straight line, with the button down, lifts the row once.
+    at('mousedown', 100)
+    start()
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: 106, clientY: 8, buttons: 1 })))
+    expect(bridge.file.dragOut).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md'], icon: expect.any(String) })
+    expect(fileRow(el)?.classList.contains('tree__row--selected')).toBe(true)
+    at('mousemove', 140, 1)
+    expect(bridge.file.dragOut).toHaveBeenCalledOnce()
   })
 
   it('a row drag is the OS drag: dragstart is taken and dragOut gets the drag set and a pill; dropped back on a folder it moves in the app, and no box asks (D4, S30)', async () => {
@@ -3793,13 +3858,16 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
   ]
 
   let vaults = 0
-  /** A fresh vault and a fresh window per mount — the folds persist per root across this file — over an index of the vault's three notes. */
-  const mountVault = async (over: Partial<SidebarProps> = {}) => {
+  /**
+   * A fresh vault and a fresh window per mount — the folds persist per root across this file — over an index of the vault's three notes.
+   * `more`: rows added at the top of the vault, and paths (below the vault) added to the focus list and the favorites (YAZ-3440 D12).
+   */
+  const mountVault = async (over: Partial<SidebarProps> = {}, more: { rows?: (v: string) => TreeNode[]; listed?: string[] } = {}) => {
     const v = `/v-keys-${++vaults}`
-    const listed = [`${v}/Projects`, `${v}/top.md`]
+    const listed = [`${v}/Projects`, ...(more.listed ?? []).map((rel) => `${v}${rel}`), `${v}/top.md`]
     const records = ['/Projects/Alpha/a.md', '/Projects/plan.md', '/top.md'].map((rel) => ({ ...indexRecord(`${v}${rel}`), folder: rel.slice(1, Math.max(1, rel.lastIndexOf('/'))) }))
     const m = await mount({ root: v, ...over }, async (b) => {
-      b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
+      b.tree.mockResolvedValue({ root: v, tree: [...VAULT(v), ...(more.rows?.(v) ?? [])], generatedAt: 1 })
       b.index.mockResolvedValue({ root: v, records, folders: [], generatedAt: 1, ids: true } as never)
       b.favorites.get.mockResolvedValue(listed)
       b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
@@ -3949,7 +4017,7 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     for (const open of [props.onOpenFile, props.onOpenFileBackground, props.onKeepFile]) expect(open).not.toHaveBeenCalled()
   })
 
-  it('S62, S63: → opens a closed folder row and ← closes an open one, and the focus stays on the row; → on an open folder, ← on a closed folder, and both on a file row do nothing', async () => {
+  it('S62, S63, YAZ-3440 D12: → opens a closed folder row and ← closes an open one, and the focus stays on the row; at the top level ← on a closed folder, and both on a file row with no new tab page, do nothing', async () => {
     const { el, v, props } = await mountVault()
     const dir = `${v}/Projects`
     act(() => row(el, dir)?.focus())
@@ -3957,9 +4025,10 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
       key(document.activeElement, name)
       return [isOpen(el, dir), focused()]
     }
-    expect(fold('ArrowLeft')).toEqual(['false', 'Projects']) // closed already
+    expect(fold('ArrowLeft')).toEqual(['false', 'Projects']) // closed already, and a top row: no folder above it
     expect(fold('ArrowRight')).toEqual(['true', 'Projects'])
-    expect(fold('ArrowRight')).toEqual(['true', 'Projects']) // open already: the focus does not go into it
+    expect(fold('ArrowLeft')).toEqual(['false', 'Projects'])
+    expect(fold('ArrowRight')).toEqual(['true', 'Projects'])
     expect(fold('ArrowLeft')).toEqual(['false', 'Projects'])
     act(() => row(el, `${v}/top.md`)?.focus())
     const rows = labels(el)
@@ -3969,7 +4038,7 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     for (const open of [props.onOpenFile, props.onOpenFileBackground, props.onKeepFile]) expect(open).not.toHaveBeenCalled()
   })
 
-  it.each(['files', 'focus', 'favorites'] as const)('YAZ-2663 D8: on the %s tab → on a row that has nothing to open — a file row, an open folder row — asks for the new tab page; a closed folder still opens and does not ask, and ← never asks; when the page says no, and with no page, the key does what it did', async (lens) => {
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-2663 D8, YAZ-3440 D12: on the %s tab → on a file row asks for the new tab page; a closed folder still opens and an open folder goes to its first row, and neither asks; ← never asks; when the page says no, and with no page, the key does what it did', async (lens) => {
     const onLeaveToPage = vi.fn(() => true)
     const { el, v, rerender } = await mountVault()
     await rerender({ lens, onLeaveToPage })
@@ -3977,24 +4046,172 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     act(() => row(el, dir)?.focus())
     key(document.activeElement, 'ArrowRight') // closed: it opens, and the page is not asked
     expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['true', 0])
-    expect(key(document.activeElement, 'ArrowRight').defaultPrevented).toBe(true) // open already: nothing to open
-    expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['true', 1])
+    expect(key(document.activeElement, 'ArrowRight').defaultPrevented).toBe(true) // open already: its first row (D12)
+    expect([isOpen(el, dir), focused(), onLeaveToPage.mock.calls.length]).toEqual(['true', 'Alpha', 0])
+    act(() => row(el, dir)?.focus())
     key(document.activeElement, 'ArrowLeft')
-    expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['false', 1])
+    expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['false', 0])
     act(() => row(el, `${v}/top.md`)?.focus())
     key(document.activeElement, 'ArrowLeft')
-    expect(onLeaveToPage).toHaveBeenCalledTimes(1)
+    expect(onLeaveToPage).toHaveBeenCalledTimes(0)
     key(document.activeElement, 'ArrowRight')
-    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    expect(onLeaveToPage).toHaveBeenCalledTimes(1)
     // A → with a modifier is a shortcut of the window: the page is not asked.
     key(document.activeElement, 'ArrowRight', { metaKey: true })
-    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    expect(onLeaveToPage).toHaveBeenCalledTimes(1)
     // The page says no (no column has a row), and then no page shows: the focus stays on the row (S62).
     onLeaveToPage.mockReturnValue(false)
     key(document.activeElement, 'ArrowRight')
     await rerender({ onLeaveToPage: undefined })
     key(document.activeElement, 'ArrowRight')
-    expect([onLeaveToPage.mock.calls.length, focused()]).toEqual([3, 'top'])
+    expect([onLeaveToPage.mock.calls.length, focused()]).toEqual([2, 'top'])
+  })
+
+  /** Every row of `path` on show: in Focus and Favorites a row can show in two copies (YAZ-3131). */
+  const rowsOf = (el: HTMLElement, path: string) => [...el.querySelectorAll<HTMLElement>(`.sidebar__body .tree__row[data-path="${path}"]`)]
+  /** The keys of D12 select nothing and open nothing (YAZ-2662 D11). */
+  const nothingPicked = (el: HTMLElement, props: SidebarProps) => {
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
+    for (const open of [props.onOpenFile, props.onOpenFileBackground, props.onKeepFile]) expect(open).not.toHaveBeenCalled()
+  }
+
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-3440 D12: on the %s tab ← on a file row or a closed folder row moves the focus to the row of its folder, and folds nothing; on a top row it does nothing', async (lens) => {
+    const { el, v, props, rerender } = await mountVault()
+    await rerender({ lens })
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    for (const path of [`${v}/Projects/plan.md`, `${v}/Projects/Alpha`]) {
+      act(() => row(el, path)?.focus())
+      expect([key(document.activeElement, 'ArrowLeft').defaultPrevented, focused(), isOpen(el, `${v}/Projects`)]).toEqual([true, 'Projects', 'true'])
+    }
+    // A file deeper down: its folder, then that folder's folder.
+    act(() => row(el, `${v}/Projects/Alpha`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    act(() => row(el, `${v}/Projects/Alpha/a.md`)?.focus())
+    key(document.activeElement, 'ArrowLeft')
+    expect(focused()).toBe('Alpha')
+    key(document.activeElement, 'ArrowLeft') // Alpha is open: it folds, and the focus stays
+    key(document.activeElement, 'ArrowLeft') // closed now: up to Projects
+    expect([focused(), isOpen(el, `${v}/Projects/Alpha`)]).toEqual(['Projects', 'false'])
+    // The top level: no folder above, so the focus stays.
+    act(() => row(el, `${v}/top.md`)?.focus())
+    key(document.activeElement, 'ArrowLeft')
+    expect(focused()).toBe('top')
+    nothingPicked(el, props)
+  })
+
+  it.each(['focus', 'favorites'] as const)('YAZ-3440 D12, YAZ-3131: on the %s tab a folder that shows in two copies — ← on a row inside it goes to the folder row of the same copy', async (lens) => {
+    const { el, v, props, rerender } = await mountVault({}, { listed: ['/Projects/Alpha'] })
+    await rerender({ lens })
+    const alpha = `${v}/Projects/Alpha`
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    const copies = rowsOf(el, alpha)
+    expect(copies).toHaveLength(2)
+    for (const copy of copies) {
+      act(() => copy.focus())
+      key(copy, 'ArrowRight')
+    }
+    const files = rowsOf(el, `${alpha}/a.md`)
+    expect(files).toHaveLength(2)
+    // Each a.md goes up to the Alpha row whose item holds it: its own copy.
+    const landed = files.map((file) => {
+      act(() => file.focus())
+      key(file, 'ArrowLeft')
+      return copies.indexOf(document.activeElement as HTMLElement)
+    })
+    expect(landed).toEqual(files.map((file) => copies.findIndex((copy) => copy.closest('[role="treeitem"]')?.contains(file))))
+    expect(new Set(landed).size).toBe(2)
+    nothingPicked(el, props)
+  })
+
+  it('YAZ-3440 D12: ← on an open folder row folds it, and → on a closed folder row opens it — the focus stays on the row', async () => {
+    const { el, v, props } = await mountVault()
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    act(() => row(el, `${v}/Projects/Alpha`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    expect([isOpen(el, `${v}/Projects/Alpha`), focused()]).toEqual(['true', 'Alpha'])
+    key(document.activeElement, 'ArrowLeft')
+    expect([isOpen(el, `${v}/Projects/Alpha`), isOpen(el, `${v}/Projects`), focused()]).toEqual(['false', 'true', 'Alpha'])
+    nothingPicked(el, props)
+  })
+
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-3440 D12: on the %s tab → on an open folder row moves the focus to its first row; on an open empty folder it does nothing, and the new tab page is not asked', async (lens) => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, v, props, rerender } = await mountVault({}, { rows: (v) => [folder(`${v}/Empty`, [])], listed: ['/Empty'] })
+    await rerender({ lens, onLeaveToPage })
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    key(document.activeElement, 'ArrowRight')
+    expect(focused()).toBe('Alpha')
+    key(document.activeElement, 'ArrowRight') // Alpha opens
+    key(document.activeElement, 'ArrowRight')
+    expect(focused()).toBe('a')
+    act(() => row(el, `${v}/Empty`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    expect(isOpen(el, `${v}/Empty`)).toBe('true')
+    expect([key(document.activeElement, 'ArrowRight').defaultPrevented, focused(), onLeaveToPage.mock.calls.length]).toEqual([true, 'Empty', 0])
+    nothingPicked(el, props)
+  })
+
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-3440 D12, YAZ-2663 D8: on the %s tab → on a file row asks for the new tab page, at the top level and inside a folder', async (lens) => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, v, props, rerender } = await mountVault()
+    await rerender({ lens, onLeaveToPage })
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    for (const path of [`${v}/top.md`, `${v}/Projects/plan.md`]) {
+      act(() => row(el, path)?.focus())
+      expect(key(document.activeElement, 'ArrowRight').defaultPrevented).toBe(true)
+    }
+    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    nothingPicked(el, props)
+  })
+
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-3440 D12: on the %s tab Home and End move the focus to the first and the last row on show; with a modifier they are not the tree\'s', async (lens) => {
+    const { el, v, props, rerender } = await mountVault()
+    await rerender({ lens })
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    act(() => row(el, `${v}/Projects/plan.md`)?.focus())
+    expect([key(document.activeElement, 'End').defaultPrevented, focused()]).toEqual([true, 'top'])
+    expect([key(document.activeElement, 'Home').defaultPrevented, focused()]).toEqual([true, 'Projects'])
+    expect([key(document.activeElement, 'End', { shiftKey: true }).defaultPrevented, focused()]).toEqual([false, 'Projects'])
+    expect(isOpen(el, `${v}/Projects`)).toBe('true') // they fold nothing
+    nothingPicked(el, props)
+  })
+
+  it('YAZ-3440 D12, YAZ-2662 D11: the new keys select nothing and open nothing; a rename box and a create box keep Home, End, ← and → (the Search tab: the D11 case below)', async () => {
+    const { el, v, props } = await mountVault()
+    act(() => row(el, `${v}/Projects`)?.focus())
+    for (const name of ['ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowLeft', 'End', 'Home', 'ArrowRight', 'End', 'ArrowLeft']) key(document.activeElement, name)
+    nothingPicked(el, props)
+    const box = () => el.querySelector<HTMLInputElement>('.sidebar__body .create-inline__input')
+    for (const item of ['Rename', 'New note']) {
+      rightClick(row(el, `${v}/top.md`))
+      act(() => itemByLabel(el, item)?.click())
+      const taken = ['Home', 'End', 'ArrowLeft', 'ArrowRight'].map((name) => key(box(), name).defaultPrevented)
+      expect([item, taken, document.activeElement === box()]).toEqual([item, [false, false, false, false], true])
+      key(box(), 'Escape')
+    }
+  })
+
+  it('YAZ-3440 D12, D1: a row the keys move to scrolls into view — `.focus()` with no `preventScroll` — and its scroll margin keeps it below the stuck folder rows', async () => {
+    const { el, v } = await mountVault()
+    act(() => row(el, `${v}/Projects`)?.focus())
+    key(document.activeElement, 'ArrowRight')
+    const spy = vi.spyOn(HTMLElement.prototype, 'focus')
+    try {
+      act(() => row(el, `${v}/Projects/plan.md`)?.focus())
+      spy.mockClear()
+      for (const name of ['ArrowLeft', 'ArrowRight', 'End', 'Home']) key(document.activeElement, name)
+      expect(spy).toHaveBeenCalledTimes(4)
+      for (const call of spy.mock.calls) expect(call[0]?.preventScroll).not.toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(appCss).toMatch(/\.tree__row,\n\.tree > li \{\n {2}scroll-margin-top: calc\(min\(var\(--tree-depth, 0\), var\(--sticky-levels, 7\)\) \* 25\.5px\);/)
   })
 
   it.each(['files', 'focus', 'favorites'] as const)('YAZ-2663 D10: on the %s tab, with the keyboard on nothing or on a tab button of the sidebar, ↓ or ↑ puts the focus on a row, and → asks for the new tab page; a field, a modifier and a row keep their keys', async (lens) => {
@@ -4256,10 +4473,186 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     }
   })
 
-  it('D11 names Files, Focus and Favorites: a row of the search tree is not walked — its keys are the search bar\'s', async () => {
+  /**
+   * Files follows the open tab (YAZ-3440 D13, `sidebarRevealActive`, default off): a new active tab in a vault of
+   * the window opens the folders above its row and scrolls the row to the centre if it was off screen. No flash, no
+   * focus change, no notice. While another tab of the sidebar shows nothing happens; Files that shows later reveals
+   * the open tab one time. It is the reveal path of `revealRequest` with its `quiet` option.
+   * The folders of a tab opened after the mount open with the setting off too (`useVaultTree`, YAZ-1642): what the
+   * setting adds is the scroll, the tab the window starts with, and a folder tab's own folders.
+   */
+  describe('Files follows the open tab (YAZ-3440 D13)', () => {
+    const ON = { settings: { ...DEFAULT_SETTINGS, sidebarRevealActive: true } }
+    /** The rows `scrollIntoView` was called on, with its options; restored by the test. */
+    const scrolls = () => {
+      const calls: [string | undefined, unknown][] = []
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value(this: HTMLElement, arg: unknown) { calls.push([this.dataset.path, arg]) } })
+      return calls
+    }
+    const unscroll = () => delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView
+    /** The list's box and some rows' boxes, by path; any other row has jsdom's empty box. */
+    const boxes = (list: { top: number; bottom: number }, rows: Record<string, { top: number; bottom: number }>) =>
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const r = this.classList.contains('sidebar__body') ? list : rows[this.dataset.path ?? '']
+        return DOMRect.fromRect({ x: 0, y: r?.top ?? 0, width: 200, height: r === undefined ? 0 : r.bottom - r.top })
+      })
+
+    it('on: a new open tab opens the folders above its row in Files; the row does not flash, the keyboard focus stays, and no notice shows', async () => {
+      const { el, v, props, rerender } = await mountVault(ON)
+      const file = `${v}/Projects/Alpha/a.md`
+      act(() => row(el, `${v}/top.md`)?.focus())
+      await rerender({ activeFile: file })
+      expect([isOpen(el, `${v}/Projects`), isOpen(el, `${v}/Projects/Alpha`), row(el, file) !== null]).toEqual(['true', 'true', true])
+      expect([flashes(el, file), el.querySelector('.tree__row--revealed'), focused()]).toEqual([false, null, 'top'])
+      expect(props.onNotice).not.toHaveBeenCalled()
+      // A folder tab: the folders above it open, the folder itself stays closed.
+      await rerender({ activeFile: `${v}/Projects/Alpha` })
+      expect(isOpen(el, `${v}/Projects/Alpha`)).toBe('true') // open from before: nothing folds
+      act(() => row(el, `${v}/Projects/Alpha`)?.click()) // the user folds it
+      await rerender({ activeFile: `${v}/top.md` })
+      await rerender({ activeFile: `${v}/Projects/Alpha` })
+      expect([isOpen(el, `${v}/Projects`), isOpen(el, `${v}/Projects/Alpha`)]).toEqual(['true', 'false'])
+    })
+
+    it('off (the default): a row off screen does not scroll — its folders open, as before the setting (`useVaultTree`)', async () => {
+      expect(DEFAULT_SETTINGS.sidebarRevealActive).toBe(false)
+      const calls = scrolls()
+      try {
+        const { el, v, rerender } = await mountVault()
+        const file = `${v}/Projects/Alpha/a.md`
+        boxes({ top: 0, bottom: 100 }, { [file]: { top: 400, bottom: 420 } })
+        await rerender({ activeFile: file })
+        expect([row(el, file) !== null, calls.filter(([path]) => path === file)]).toEqual([true, []])
+      } finally {
+        unscroll()
+      }
+    })
+
+    it.each([[false, 'false'], [true, 'true']] as const)('the tab the window starts with: with the setting %s its folders are open: %s (off: the tree starts closed, YAZ-1642)', async (on, open) => {
+      const v = `/v-keys-${vaults + 1}` // the vault `mountVault` makes next
+      const { el } = await mountVault({ ...(on ? ON : {}), activeFile: `${v}/Projects/Alpha/a.md` })
+      expect([isOpen(el, `${v}/Projects`), row(el, `${v}/Projects/Alpha/a.md`) !== null]).toEqual([open, on])
+    })
+
+    it('a row that was off screen scrolls to the centre of the list, one time', async () => {
+      const calls = scrolls()
+      try {
+        const { el, v, rerender } = await mountVault(ON)
+        const file = `${v}/Projects/Alpha/a.md`
+        boxes({ top: 0, bottom: 100 }, { [file]: { top: 400, bottom: 420 } })
+        await rerender({ activeFile: file })
+        expect(calls.filter(([path]) => path === file)).toEqual([[file, { block: 'center' }]])
+        // A folder above it that closes and opens again moves nothing: the reveal was one time.
+        act(() => row(el, `${v}/Projects`)?.click())
+        act(() => row(el, `${v}/Projects`)?.click())
+        expect([isOpen(el, `${v}/Projects`), calls.filter(([path]) => path === file).length]).toEqual(['true', 1])
+      } finally {
+        unscroll()
+      }
+    })
+
+    it('a row that shows does not move — under the stuck rows counts as off screen', async () => {
+      const calls = scrolls()
+      try {
+        const { el, v, rerender } = await mountVault(ON)
+        const plan = `${v}/Projects/plan.md`
+        boxes({ top: 0, bottom: 300 }, { [plan]: { top: 60, bottom: 80 }, [`${v}/top.md`]: { top: 10, bottom: 30 } })
+        await rerender({ activeFile: plan })
+        expect(row(el, plan)).not.toBeNull()
+        expect(calls.filter(([path]) => path === plan)).toEqual([])
+        // top.md stands at 10px, inside the list's box but under one stuck row (`scroll-margin-top`, 20px here).
+        row(el, `${v}/top.md`)!.style.scrollMarginTop = '20px'
+        await rerender({ activeFile: `${v}/top.md` })
+        expect(calls.filter(([path]) => path === `${v}/top.md`)).toEqual([[`${v}/top.md`, { block: 'center' }]])
+      } finally {
+        unscroll()
+      }
+    })
+
+    it('while another tab of the sidebar shows nothing scrolls; Files that shows later reveals the open tab one time', async () => {
+      const calls = scrolls()
+      try {
+        const { el, v, rerender } = await mountVault({ ...ON, lens: 'favorites' })
+        const file = `${v}/Projects/Alpha/a.md`
+        boxes({ top: 0, bottom: 100 }, { [file]: { top: 400, bottom: 420 } })
+        await rerender({ activeFile: file })
+        expect(calls).toEqual([])
+        await rerender({ lens: 'files', activeFile: file }) // a rerender's props are the mount's and these
+        expect([isOpen(el, `${v}/Projects`), isOpen(el, `${v}/Projects/Alpha`), flashes(el, file), document.activeElement === document.body]).toEqual(['true', 'true', false, true])
+        expect(calls.filter(([path]) => path === file)).toEqual([[file, { block: 'center' }]])
+        // One time: a render that changes no tab scrolls nothing.
+        await rerender({ lens: 'files', activeFile: file, width: 280 })
+        expect(calls.filter(([path]) => path === file)).toHaveLength(1)
+      } finally {
+        unscroll()
+      }
+    })
+
+    it('while another tab shows, the change is not kept for later: with the setting off by the time Files shows, nothing scrolls', async () => {
+      const calls = scrolls()
+      try {
+        const { v, rerender } = await mountVault({ ...ON, lens: 'focus' })
+        const file = `${v}/Projects/Alpha/a.md`
+        boxes({ top: 0, bottom: 100 }, { [file]: { top: 400, bottom: 420 } })
+        await rerender({ activeFile: file })
+        await rerender({ lens: 'files', activeFile: file, settings: { ...DEFAULT_SETTINGS } })
+        expect(calls.filter(([path]) => path === file)).toEqual([])
+      } finally {
+        unscroll()
+      }
+    })
+
+    it('a path outside the window\'s vaults and a path the tree does not hold do nothing — no notice, no scroll, no vault opens', async () => {
+      const calls = scrolls()
+      try {
+        const { v, props, rerender } = await mountVault(ON)
+        boxes({ top: 0, bottom: 100 }, {})
+        await rerender({ activeFile: '/elsewhere/Projects/x.md' })
+        await rerender({ activeFile: `${v}/Projects/Gone.md` })
+        expect([vi.mocked(props.onNotice).mock.calls, calls, vi.mocked(props.onSetVaultOpen).mock.calls]).toEqual([[], [], []])
+      } finally {
+        unscroll()
+      }
+    })
+
+    it('a path in a vault row the user closed opens that row, then its folders, and scrolls to the row (Yaseen\'s change to D13); with the setting off the row stays closed (YAZ-2602 R9)', async () => {
+      const calls = scrolls()
+      try {
+        const plan = (v: string) => `${v}/Projects/Alpha/a.md`
+        const on = await mountVault(ON)
+        boxes({ top: 0, bottom: 100 }, { [plan(on.v)]: { top: 400, bottom: 420 } }) // off screen
+        await on.rerender({ activeFile: plan(on.v), closedVaults: [on.v] })
+        expect(vi.mocked(on.props.onSetVaultOpen).mock.calls).toEqual([[on.v, true]])
+        expect(isOpen(on.el, `${on.v}/Projects`)).toBe('true')
+        // The scroll waits for the row: App opens the vault row and hands the list back down.
+        expect(calls).toEqual([])
+        await on.rerender({ closedVaults: [] })
+        expect(calls).toEqual([[plan(on.v), { block: 'center' }]])
+        expect(vi.mocked(on.props.onNotice)).not.toHaveBeenCalled()
+
+        act(() => root?.unmount())
+        container?.remove()
+        calls.length = 0
+        const off = await mountVault()
+        await off.rerender({ activeFile: plan(off.v), closedVaults: [off.v] })
+        expect([vi.mocked(off.props.onSetVaultOpen).mock.calls, calls]).toEqual([[], []])
+      } finally {
+        unscroll()
+      }
+    })
+
+    it('a "Show in sidebar" request in the same render wins: its row flashes', async () => {
+      const { el, v, rerender } = await mountVault({ ...ON, lens: 'focus' })
+      const plan = `${v}/Projects/plan.md`
+      await rerender({ lens: 'files', activeFile: `${v}/top.md`, revealRequest: { id: 1, path: plan } })
+      expect([isOpen(el, `${v}/Projects`), flashes(el, plan)]).toEqual(['true', true])
+    })
+  })
+
+  it('D11 names Files, Focus and Favorites: a row of the search tree is not walked — its keys are the search bar\'s, Home and End too (YAZ-3440 D12)', async () => {
     const { el, v } = await search('alpha')
     act(() => row(el, `${v}/Projects`)?.focus())
-    expect(['ArrowDown', 'ArrowRight', 'ArrowLeft'].map((name) => key(document.activeElement, name).defaultPrevented)).toEqual([false, false, false])
+    expect(['ArrowDown', 'ArrowRight', 'ArrowLeft', 'Home', 'End'].map((name) => key(document.activeElement, name).defaultPrevented)).toEqual([false, false, false, false, false])
     expect([focused(), labels(el)]).toEqual(['Projects', ['Projects', 'Alpha']])
   })
 })
@@ -5665,7 +6058,7 @@ describe('focus tab (YAZ-2619)', () => {
     await act(async () => itemByLabel(el, label)?.click())
   }
   /** jsdom has no DragEvent: a MouseEvent with the row's edge in `clientY` (the zero rect reads `< 0` as "before"). */
-  const drag = (target: Element | null | undefined, type: string, clientY = 0) => act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+  const drag = (target: Element | null | undefined, type: string, clientY = 0) => act(() => asPerson(type, target, () => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })), { clientY }))
   /** What a drag draws: the line on a row's edge (a reorder), or the fill of a drop folder (a move on disk). */
   const marker = (el: HTMLElement) => el.querySelector('.tree__row--drop-before, .tree__row--drop-after, .tree__row--drop')
   /** The watcher-driven refresh idiom: a new tree answers the next `bridge.tree`, an event triggers it. */
@@ -6078,7 +6471,7 @@ describe('favorites (YAZ-1766)', () => {
   }
   /** jsdom has no DragEvent: a MouseEvent with the row's edge in `clientY` (the zero rect reads `< 0` as "before"). */
   const drag = (target: Element | null | undefined, type: string, clientY = 0) =>
-    act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+    act(() => asPerson(type, target, () => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })), { clientY }))
   /** What a drag draws: the line on a row's edge (a reorder), or the fill of a drop folder (a move on disk). */
   const marker = (el: HTMLElement) => el.querySelector('.tree__row--drop-before, .tree__row--drop-after, .tree__row--drop')
 
@@ -6282,6 +6675,73 @@ describe('favorites (YAZ-1766)', () => {
     expect(props.onRenameFile).not.toHaveBeenCalled()
     expect(bridge.state.setFavoritesOrder).not.toHaveBeenCalled()
     expect(el.querySelector('.tree__vault')).toBeNull()
+  })
+
+  it('a reorder lifts only LIFT_PX from the press, as mouse events (YAZ-3467 D2, D3): a slip saves nothing; lifted, a pill follows the pointer and the row stays; a release off the list, Esc, the blur and a move with no button save nothing', async () => {
+    const { el, v, bridge, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects', '/top.md'] })
+    const top = () => rowByPath(el, `${v}/top.md`)
+    const notes = () => rowByPath(el, `${v}/Notes`)
+    const mouse = (target: EventTarget | null | undefined, type: string, init: MouseEventInit = {}) => act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init })))
+    const pill = () => document.querySelector<HTMLImageElement>('.tree__reorder-pill')
+    const line = () => el.querySelector('.tree__row--drop-before, .tree__row--drop-after')
+    const lift = () => {
+      mouse(window, 'mousedown', { clientX: 0, clientY: 0 })
+      mouse(top(), 'dragstart')
+      mouse(window, 'mousemove', { clientX: LIFT_PX, buttons: 1 })
+    }
+    const writes = bridge.favorites.set.mock.calls.length
+    // R2: a slip of 6 px and a release is a click: no pill, no line.
+    mouse(window, 'mousedown', { clientX: 0, clientY: 0 })
+    mouse(top(), 'dragstart')
+    mouse(notes(), 'mousemove', { clientX: 6, clientY: -1, buttons: 1 })
+    expect(pill()).toBeNull()
+    expect(line()).toBeNull()
+    mouse(notes(), 'mouseup')
+    // R3, R4: lifted, the pill follows the pointer, the line shows on the list row under it, and the row stays.
+    lift()
+    expect(pill()).not.toBeNull()
+    mouse(notes(), 'mousemove', { clientX: 40, clientY: -1, buttons: 1 })
+    expect(pill()?.style.transform).toBe('translate(52px, 7px)')
+    expect(notes()?.classList.contains('tree__row--drop-before')).toBe(true)
+    expect(topLabels(el)).toEqual(['Notes', 'Projects', 'top'])
+    // R5: over no row of the list there is no line, and the release there saves nothing.
+    mouse(document.body, 'mousemove', { clientX: 40, clientY: 400, buttons: 1 })
+    expect(line()).toBeNull()
+    mouse(document.body, 'mouseup')
+    expect(pill()).toBeNull()
+    // R6: a release on the row it started from is no click of that row (audit 1); the next click is.
+    lift()
+    act(() => {
+      top()?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, buttons: 1 }))
+      top()?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+      top()?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    })
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    await act(() => new Promise((resolve) => setTimeout(resolve)))
+    act(() => top()?.click())
+    expect(props.onOpenFile).toHaveBeenCalledOnce()
+    // R7, R8: Esc, the window's blur, and a move with no button end it; the release after it drops nothing.
+    const ends = [
+      // That Esc is the reorder's alone (audit 2): the row it lands on does not take it.
+      () => {
+        const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+        act(() => void top()?.dispatchEvent(esc))
+        expect(esc.defaultPrevented).toBe(true)
+      },
+      () => act(() => void window.dispatchEvent(new Event('blur'))),
+      () => mouse(window, 'mousemove', { buttons: 0 }),
+    ]
+    for (const end of ends) {
+      lift()
+      mouse(notes(), 'mousemove', { clientY: -1, buttons: 1 })
+      expect(line()).not.toBeNull()
+      end()
+      expect(pill()).toBeNull()
+      expect(line()).toBeNull()
+      mouse(notes(), 'mouseup')
+    }
+    expect(bridge.favorites.set.mock.calls.length).toBe(writes)
+    expect(topLabels(el)).toEqual(['Notes', 'Projects', 'top'])
   })
 
   it('YAZ-2631 S30, S33, S34, S35, S40: a file inside a favorited folder drags into a folder and moves on disk, and finds no place on a top file row; a reorder drag over a deeper row shows no line and no fill, a drop there or on itself changes nothing, and dragend takes the line with it', async () => {
@@ -6809,6 +7269,8 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'New drawing',
       'New folder',
       'Rename',
+      // "Change icon ▸" (YAZ-3440 D8, one flyout) closes the row's own group, after Rename.
+      'Change icon',
       // The favorite toggle (YAZ-1766 D3) leads the "Open in ▸" group, one hairline above Delete.
       'Add to favorites',
       'Open in',
@@ -8947,7 +9409,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
   const shiftClick = (row: HTMLElement | null) => act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
   const fire = (target: Element | null | undefined, type: string) => {
     const event = new MouseEvent(type, { bubbles: true, cancelable: true })
-    act(() => void target?.dispatchEvent(event))
+    act(() => asPerson(type, target, () => void target?.dispatchEvent(event)))
     return event
   }
   const topItems = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu:not(.ctx-menu__sub) > .ctx-menu__group > .ctx-menu__item, .ctx-menu:not(.ctx-menu__sub) > .ctx-menu__group > .ctx-menu__parent > .ctx-menu__item')].map((b) => b.textContent)
@@ -8988,7 +9450,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
   const bodyMsg = (el: HTMLElement) => el.querySelector('.sidebar__body .sidebar__msg')?.textContent ?? null
   const choose = (el: HTMLElement, label: string) => act(async () => itemByLabel(el, label)?.click())
   /** jsdom has no DragEvent: a MouseEvent with the row's edge in `clientY` (the zero rect reads `< 0` as "before"). */
-  const drag = (target: Element | null | undefined, type: string, clientY = 0) => act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+  const drag = (target: Element | null | undefined, type: string, clientY = 0) => act(() => asPerson(type, target, () => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })), { clientY }))
   const marker = (el: HTMLElement) => el.querySelector('.tree__row--drop-before, .tree__row--drop-after, .tree__row--drop')
   /** Each vault's own `favorites.json`, by its root and read as it stands, and main's push that one changed. */
   const favoritesOf = (bridge: Bridge, lists: Record<string, string[]>) => {
@@ -9207,7 +9669,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     shiftClick(rowByPath(el, `${a}/a.md`))
     expect(fire(rowByPath(el, `${a}/a.md`), 'dragstart').defaultPrevented).toBe(true)
     expect(bridge.file.dragOut).toHaveBeenCalledExactlyOnceWith({ paths: [`${a}/a.md`], icon: expect.any(String) })
-    expect(fire(rowByPath(el, b), 'dragstart').defaultPrevented).toBe(false)
+    // The vault row's drag is its reorder: mouse events since YAZ-3467 D2, so the page's drag stops too — and no OS drag.
+    expect(fire(rowByPath(el, b), 'dragstart').defaultPrevented).toBe(true)
     expect(bridge.file.dragOut).toHaveBeenCalledOnce()
     fire(rowByPath(el, b), 'dragend')
 
@@ -10450,5 +10913,65 @@ describe('Sidebar: the Files window chip (YAZ-3357 D13)', () => {
     container?.remove()
     const normal = await mount()
     expect(normal.el.querySelector('.sidebar__files-chip')).toBeNull()
+  })
+})
+
+/**
+ * "Change icon ▸" from the tree (YAZ-3440 D8, D9): the menu opens the icon picker, a pick shows on the row at once
+ * and goes to `api.icons.set` for the row's vault; a refused write toasts and shows what the file holds. "All .md
+ * files…" writes the name rule into the settings, and a rule list the settings check would refuse is not written.
+ */
+describe('Change icon from the tree (YAZ-3440 D8, D9)', () => {
+  const rowA = (el: HTMLElement) => el.querySelector<HTMLElement>('.tree__row--file[data-path="/v/a.md"]') as HTMLElement
+  const openPicker = (el: HTMLElement, choice: string) => {
+    act(() => void rowA(el).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    clickSub(el, choice, 'Change icon')
+    expect(el.ownerDocument.querySelector('.icon-picker')).not.toBeNull()
+  }
+  const pickIcon = async (id: string) => {
+    const button = document.querySelector<HTMLButtonElement>(`.icon-picker__icon[aria-label="${id}"]`)
+    expect(button).not.toBeNull()
+    await act(async () => button?.click())
+  }
+  const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve)))
+
+  it("a pick for this file shows on its row at once and is written to its vault's icons.json; a refused write toasts and puts the file's icons back", async () => {
+    await loadMaterialIcons()
+    const { el, bridge, props } = await mount()
+    expect(rowA(el).getAttribute('data-icon')).toBe('markdown')
+    openPicker(el, 'This file…')
+    expect(document.querySelector('.icon-picker__head')?.textContent).toBe('Icon for this file: a.md')
+    await pickIcon('python')
+    expect(document.querySelector('.icon-picker')).toBeNull()
+    expect(rowA(el).getAttribute('data-icon')).toBe('python')
+    expect(rowA(el).hasAttribute('data-icon-custom')).toBe(true)
+    expect(bridge.icons.set).toHaveBeenLastCalledWith('/v', { paths: { '/v/a.md': 'python' } })
+
+    // The file holds no pick (a malformed icons.json reads as none), and main refuses the write.
+    bridge.icons.set.mockRejectedValueOnce(new Error('icons.json is malformed; fix or delete it'))
+    openPicker(el, 'This file…')
+    await pickIcon('rust')
+    await settle()
+    expect(props.onNotice).toHaveBeenCalledWith("Can't save the icon: icons.json is malformed; fix or delete it", 'error')
+    expect(rowA(el).getAttribute('data-icon')).toBe('markdown')
+    expect(rowA(el).hasAttribute('data-icon-custom')).toBe(false)
+  })
+
+  it('"All .md files…" writes the rule into the settings; past the settings check it toasts and writes nothing', async () => {
+    await loadMaterialIcons()
+    const { el, props } = await mount()
+    openPicker(el, 'All .md files…')
+    expect(document.querySelector('.icon-picker__head')?.textContent).toBe('Icon for all .md files')
+    await pickIcon('python')
+    expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, sidebarIconRules: [{ match: '*.md', kind: 'file', icon: 'python' }] })
+
+    act(() => root?.unmount())
+    container?.remove()
+    const full = Array.from({ length: MAX_ICON_RULES }, (_, k) => ({ match: `*.x${k}`, kind: 'file' as const, icon: 'file' }))
+    const again = await mount({ settings: { ...DEFAULT_SETTINGS, sidebarIconRules: full } })
+    openPicker(again.el, 'All .md files…')
+    await pickIcon('python')
+    expect(again.props.onChangeSettings).not.toHaveBeenCalled()
+    expect(again.props.onNotice).toHaveBeenCalledWith(`Can't add the rule: the list holds ${MAX_ICON_RULES} rules at most, each up to ${MAX_ICON_MATCH} characters`, 'error')
   })
 })

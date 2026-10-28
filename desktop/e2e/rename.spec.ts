@@ -79,8 +79,8 @@ async function startRename(w: Page, label: string): Promise<void> {
 
 /**
  * A row drag as the app takes it (YAZ-3254 D4): the press and the first moves fire the row's
- * `dragstart`, which stops the page's own drag and asks main for the OS drag (recorded, not started,
- * in the hidden mode). The drop then lands on `target` as a drop in the window does, and the button
+ * `dragstart`, which stops the page's own drag; the move LIFT_PX from the press (YAZ-3467 D1) asks
+ * main for the OS drag (recorded, not started, in the hidden mode). The drop then lands on `target` as a drop in the window does, and the button
  * comes up there, so no row takes a click.
  */
 async function dragRow(w: Page, row: Locator, target: Locator): Promise<void> {
@@ -309,6 +309,15 @@ test('step 5 — folder rename via its context menu: disk moves, PATHED link rew
 test('step 6 — drag a file row onto a folder row: the file moves there, bare link unchanged, pathed link rewritten', async () => {
   await dirRow(win, 'Target').click() // expand to reveal M
   await expect(fileRow(win, 'M')).toBeVisible()
+  // A 6 px slip lifts nothing (YAZ-3467 D1): main is asked for no OS drag, and nothing moves.
+  const before = (await dragOuts()).length
+  const m = await fileRow(win, 'M').boundingBox()
+  if (m === null) throw new Error('M is not on screen')
+  await win.mouse.move(m.x + m.width / 2, m.y + m.height / 2)
+  await win.mouse.down()
+  await win.mouse.move(m.x + m.width / 2 + 6, m.y + m.height / 2, { steps: 3 })
+  await win.mouse.up()
+  expect(await dragOuts()).toHaveLength(before)
   await dragRow(win, fileRow(win, 'M'), dirRow(win, 'Notes'))
   // Main was asked for the OS drag of the one row, and in the hidden mode started none.
   expect((await dragOuts()).at(-1)).toEqual([path.join(vault, 'Target', 'M.md')])

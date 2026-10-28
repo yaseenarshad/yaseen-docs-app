@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
+import { MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import type { TextFormatting } from '@shared/textFormatting'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
 import { idsAskMessage, idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
@@ -128,7 +129,9 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
 const GENERAL_ROWS = ['settingsFolder', 'startupWindows', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'diagramDarkColors']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'diagramDarkColors']
+/** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
+const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
 const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines']
@@ -176,6 +179,59 @@ describe('SettingsDialog shell (D1)', () => {
     expect([...el.querySelectorAll('.setting__label')].map((l) => l.textContent)).not.toContain('Reopen')
   })
 
+  it('the icon picker of Settings › Sidebar › Icon rules (YAZ-3440 D8): Escape, its × and a click outside close the picker alone; the dialog stays open and nothing changes', () => {
+    const { el, onChange, onClose } = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconRules: [{ match: '*.test.ts', kind: 'file', icon: 'test-ts' }] })
+    const open = () => {
+      act(() => el.querySelector<HTMLButtonElement>('[aria-label="Icon: test-ts"]')?.click())
+      expect(el.querySelector('.icon-picker')).not.toBeNull()
+      expect(el.querySelector('.icon-picker__head')?.textContent).toBe('Icon for rule *.test.ts')
+    }
+    open()
+    pressEscape(el.querySelector<HTMLInputElement>('.icon-picker__search')!)
+    expect(el.querySelector('.icon-picker')).toBeNull()
+    open()
+    // Escape from an icon of the grid too.
+    pressEscape(el.querySelector<HTMLButtonElement>('.icon-picker__icon')!)
+    expect(el.querySelector('.icon-picker')).toBeNull()
+    open()
+    act(() => el.querySelector<HTMLButtonElement>('.icon-picker [aria-label="Close"]')?.click())
+    expect(el.querySelector('.icon-picker')).toBeNull()
+    open()
+    const outside = el.querySelector<HTMLElement>('.icon-picker__outside')!
+    act(() => {
+      outside.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      outside.click()
+    })
+    expect(el.querySelector('.icon-picker')).toBeNull()
+    expect(el.querySelector('.settings-dialog')).not.toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('Settings › Sidebar shows a colour row per kind with the Line set, while its icons have colour; Material, Grey and Off show none (YAZ-3440 D4)', () => {
+    const colourRows = ['note', 'text', 'pdf', 'image', 'drawing', 'diagram'].map((kind) => `sidebarIconColors.${kind}`)
+    const { el } = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconSet: 'line' })
+    expect(rowIds(el)).toEqual([...SIDEBAR_ROWS.slice(0, -1), ...colourRows, 'sidebarIconRules'])
+    for (const files of ['grey', 'off'] as const) {
+      act(() => root?.unmount())
+      container?.remove()
+      const again = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconSet: 'line', sidebarFileIcons: files })
+      expect(rowIds(again.el)).toEqual(SIDEBAR_ROWS)
+    }
+  })
+
+  it('Settings › Sidebar › Icon rules stops at the settings check: no rule past MAX_ICON_RULES, no pattern past MAX_ICON_MATCH characters (YAZ-3440 D9)', () => {
+    const full = Array.from({ length: MAX_ICON_RULES }, (_, k) => ({ match: `*.x${k}`, kind: 'file' as const, icon: 'file' }))
+    const { el } = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconRules: full })
+    const add = [...(row(el, 'sidebarIconRules')?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Add rule')
+    expect(add?.disabled).toBe(true)
+    expect(el.querySelector<HTMLInputElement>('.icon-rules__match')?.maxLength).toBe(MAX_ICON_MATCH)
+    act(() => root?.unmount())
+    container?.remove()
+    const fewer = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconRules: full.slice(1) })
+    expect([...(row(fewer.el, 'sidebarIconRules')?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Add rule')?.disabled).toBe(false)
+  })
+
   it('Escape with no query closes; a mousedown on the overlay closes; one inside the dialog does not', () => {
     const { el, onClose } = mount()
     pressEscape(searchInput(el))
@@ -204,17 +260,17 @@ describe('SettingsDialog shell (D1)', () => {
 describe('SettingsDialog: a page for each section (YAZ-2709, amending the one long page)', () => {
   it('the nav: the settings pages (Review only with a vault, Sync only with the engine), a divider, then the Hotkeys reference page', () => {
     const { el } = mount()
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
     unmount()
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
-    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', '—', 'Hotkeys'])
+    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', '—', 'Hotkeys'])
     unmount()
     const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
-    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
+    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
   })
 
   it('the registry order once both YAZ-3028 halves land: canvas and images after Editor (YAZ-3037, YAZ-3038), storage and sharing after Sync (YAZ-3039, YAZ-3040), Hotkeys last', () => {
-    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'appearance', 'notifications', 'editor', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
+    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
   })
 
   it('opens on General, the first page: the one section in the pane, anchored by id, with only its rows — no row of a later section is there (YAZ-3276 D7)', () => {
@@ -243,6 +299,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(seen).toEqual([
       page('General', 'settings-general', GENERAL_ROWS),
       page('Appearance', 'settings-appearance', APPEARANCE_ROWS),
+      page('Sidebar', 'settings-sidebar', SIDEBAR_ROWS),
       page('Notifications', 'settings-notifications', NOTIFICATIONS_ROWS),
       page('Editor', 'settings-editor', EDITOR_ROWS),
       page('Excalidraw canvas', 'settings-canvas', CANVAS_ROWS),
@@ -262,14 +319,19 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(hints()).toEqual([])
 
     clickNav(el, 'Appearance')
-    // Appearance with no vault: Spacing, Comments, Sidebar level lines (YAZ-3309 D6), then draw.io diagrams (YAZ-3037). Text formatting needs a vault (YAZ-3068).
-    expect(groupTitles(el)).toEqual(['Spacing', 'Comments', 'Sidebar level lines', 'draw.io diagrams'])
-    expect(hints()).toEqual(['A thin line below each open folder in the sidebar shows what is inside it.'])
+    // Appearance with no vault: Spacing, Comments (the sidebar's groups have their own page since YAZ-3440 D7), then draw.io diagrams (YAZ-3037). Text formatting needs a vault (YAZ-3068).
+    expect(groupTitles(el)).toEqual(['Spacing', 'Comments', 'draw.io diagrams'])
+    expect(hints()).toEqual([])
     expect(row(el, 'commentsOrder')?.querySelector('.setting__label')?.textContent).toBe('Order')
     expect(row(el, 'commentsOrder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Comments')
     // It starts with an untitled group: Theme and Content width sit straight under the section title.
     expect(el.querySelector('#settings-appearance .settings-group')).not.toBeNull()
     expect(el.querySelector('#settings-appearance .settings-group')?.querySelector('.settings-group__title')).toBeNull()
+
+    // Sidebar (YAZ-3440 D7): its four groups; the Icon rules are a setting, so they need no vault (D9).
+    clickNav(el, 'Sidebar')
+    expect(groupTitles(el)).toEqual(['Level lines', 'Folders', 'File icons', 'Icon rules'])
+    expect(hints()).toEqual([])
 
     clickNav(el, 'Editor')
     expect(groupTitles(el)).toEqual(EDITOR_GROUPS)
@@ -293,6 +355,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(notes).toEqual([
       ['General', []],
       ['Appearance', []],
+      ['Sidebar', []],
       ['Notifications', []],
       ['Editor', []],
       ['Excalidraw canvas', []],
@@ -315,6 +378,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(lines(el)).toEqual([
       ['General', []],
       ['Appearance', []],
+      ['Sidebar', []],
       ['Notifications', []],
       ['Editor', []],
       ['Excalidraw canvas', []],
@@ -354,7 +418,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Sync')
     expect(currentNav(el)).toBe('Sync')
     act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange }} onClose={onClose} />))
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
     expect(headings(el)).toEqual(['General'])
     expect(currentNav(el)).toBe('General')
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
@@ -474,12 +538,12 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, confirmRename: false })
   })
 
-  it('Sidebar level lines (YAZ-3309 D6–D9): Show, Style and Thread colour in one group; each choice writes the whole object with only its own field changed (the group\'s place and hint: "group titles and hints render on their own page")', () => {
-    const { el, onChange } = mountOn('Appearance')
+  it('Sidebar › Level lines (YAZ-3440 D7; the level lines YAZ-3309 D6–D9): Level lines, Line style and Thread colour in one group; each choice writes the whole object with only its own field changed (the group\'s place and hint: "group titles and hints render on their own page")', () => {
+    const { el, onChange } = mountOn('Sidebar')
     const group = row(el, 'sidebarLines')?.closest('.settings-group')
-    expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Sidebar level lines')
+    expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Level lines')
     expect([...(group?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual(['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
-    expect(['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Show', 'Style', 'Thread colour'])
+    expect(['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Level lines', 'Line style', 'Thread colour'])
     // Show: the TOC's three choices, On hover by default (D3).
     expect(row(el, 'sidebarLines')?.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Level lines in the sidebar')
     expect(rowButtons(el, 'sidebarLines').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On hover', 'true'], ['Always show', 'false'], ['Never', 'false']])
@@ -499,7 +563,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     ])
     unmount()
     // Saved values come back; "Default" clears the colour alone; the TOC's and the editor's thread fields are their own.
-    const saved = mountOn('Appearance', { ...DEFAULT_SETTINGS, sidebarLines: 'always', sidebarLineStyle: 'thread', sidebarThreadColor: '#112233', tocLines: 'off', threadColor: '#ff0000' })
+    const saved = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarLines: 'always', sidebarLineStyle: 'thread', sidebarThreadColor: '#112233', tocLines: 'off', threadColor: '#ff0000' })
     expect(rowButtons(saved.el, 'sidebarLines').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
     expect(rowButtons(saved.el, 'sidebarLineStyle').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
     expect(row(saved.el, 'sidebarThreadColor')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#112233')
@@ -507,7 +571,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(saved.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarLines: 'always', sidebarLineStyle: 'thread', sidebarThreadColor: null, tocLines: 'off', threadColor: '#ff0000' })
     unmount()
     // With no colour of its own, the swatch shows the editor's thread colour, which the thread then uses.
-    expect(row(mountOn('Appearance', { ...DEFAULT_SETTINGS, threadColor: '#ff0000' }).el, 'sidebarThreadColor')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#ff0000')
+    expect(row(mountOn('Sidebar', { ...DEFAULT_SETTINGS, threadColor: '#ff0000' }).el, 'sidebarThreadColor')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#ff0000')
   })
 
   it('Section indent: two rows under Editor, in the last group of the page, after Bullet threading; each writes the whole object with only its field changed (YAZ-2709)', () => {
@@ -643,7 +707,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 
     it('one vault: the group "Text formatting" after Spacing, its hint, one bare row (no label on screen, no gap) and no dropdown; a Text line, then H1 to H6 at their rounded default sizes', () => {
       const { el } = mountTf([vaultOf('/notes', 'Notes')])
-      expect(groupTitles(el)).toEqual(['Spacing', 'Text formatting', 'Comments', 'Sidebar level lines', 'draw.io diagrams'])
+      expect(groupTitles(el)).toEqual(['Spacing', 'Text formatting', 'Comments', 'draw.io diagrams'])
       const group = tf(el).closest('.settings-group') as HTMLElement
       expect(group.querySelector('.settings-group__hint')?.textContent).toBe(TEXT_FORMATTING_HINT)
       // No "Vault: name" line: the dropdown replaces it (D15), and with one vault there is none.
@@ -872,7 +936,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
     const { el } = mount()
     expect(navByTitle(el, 'Review')).toBeUndefined()
     const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'baseDays')])
-    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Hotkeys'])
+    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Excalidraw canvas', 'Images', 'Files & Links', 'Hotkeys'])
     for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 
@@ -998,9 +1062,9 @@ describe('SettingsDialog search (D6)', () => {
     // "threading" is in one group's title and in the hint of Section indent, which names that group: both groups' rows, each under its own breadcrumb (Table of contents, between them, has no hit).
     // The sidebar's line style names bullet threading too (YAZ-3309 D7): its one row, under its own breadcrumb, first in registry order.
     type(searchInput(el), 'threading')
-    expect(headings(el)).toEqual(['Appearance › Sidebar level lines', 'Editor › Bullet threading', 'Editor › Section indent'])
+    expect(headings(el)).toEqual(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent'])
     expect(groupTitles(el)).toEqual([])
-    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual(['A thin line below each open folder in the sidebar shows what is inside it.', THREADING_HINT, SECTION_INDENT_HINT])
+    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([THREADING_HINT, SECTION_INDENT_HINT])
     expect(rowIds(el)).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines'])
     // "guide lines" is the first group's hint alone: its three rows, under the one breadcrumb.
     type(searchInput(el), 'guide lines')
@@ -1018,7 +1082,7 @@ describe('SettingsDialog search (D6)', () => {
     // breadcrumbs, registry order, never rank.
     // The sidebar's line style (YAZ-3309 D7) names bullet threading: it leads, on Appearance.
     type(searchInput(el), 'bullet')
-    expect(headings(el)).toEqual(['Appearance › Sidebar level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
+    expect(headings(el)).toEqual(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
     // A Hotkeys hit is the ONE row that names a bullet, not its whole table (YAZ-3397 D5).
     expect(rowIds(el)).toEqual([
       ...['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines'],

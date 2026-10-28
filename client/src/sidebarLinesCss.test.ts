@@ -71,6 +71,11 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
     const CHEVRON_REST = `${ON} .sidebar__body .tree > li[aria-expanded]:not([data-renaming])::after`
     const CHEVRON_OPEN = `${ON} .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming])::after`
     const CHEVRON = `${ON} .sidebar__body .tree > li[aria-expanded]:not([data-renaming]):hover::after`
+    // "Smooth" (YAZ-3440 D6): the 0.12s turn of before, by choice only.
+    const SMOOTH = `${ON}[data-sidebar-arrow='smooth']`
+    const CHEVRON_SMOOTH_REST = `${SMOOTH} .sidebar__body .tree > li[aria-expanded]:not([data-renaming])::after`
+    const CHEVRON_SMOOTH = `${SMOOTH} .sidebar__body .tree > li[aria-expanded]:not([data-renaming]):hover::after`
+    const GREY_SMOOTH = ".app[data-sidebar-arrow='smooth'] .tree__chevron::before"
     // One custom property holds the colour chain of D9: its own, else Bullet threading's, else the accent.
     const THREAD = /var\(--sidebar-thread\)/
     const threadRules = media.rest.filter((rule) => rule.selectors.some((s) => s.includes('data-sidebar-line-style')))
@@ -79,7 +84,8 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
       expect(threadRules.length).toBeGreaterThan(0)
       for (const { selectors } of threadRules) for (const s of selectors) expect(s, s).toMatch(/^\.app\[data-sidebar-line-style='thread'\]/)
       const [group] = body(`${STYLE} .tree[role='group']`)
-      expect(group).toMatch(/z-index:\s*0;/)
+      // z 3 in its parent's (YAZ-3440 D1): a row stuck inside it stays over the parent's line (z 1) and thread (z 2).
+      expect(group).toMatch(/z-index:\s*3;/)
       expect(group).toMatch(/overflow-y:\s*clip;/)
       expect(body(`${STYLE} .tree[role='group']::before`)[0]).toMatch(/z-index:\s*1;/)
       // One rule makes each li of the tree hold its pieces; Recents and Sessions have no `role='tree'`.
@@ -110,25 +116,30 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
       for (const { selectors } of threadRules.filter((rule) => /content:|opacity:\s*1/.test(rule.body))) for (const s of selectors) expect(s, s).toContain(ON)
     })
 
-    it('calm (D10): it shows after an 80ms rest and fades in over 140ms, fades out over 180ms with no wait; the wait is on `:hover` alone', () => {
+    it('calm (D10): it shows after an 80ms rest and fades in over 140ms, fades out over 180ms with no wait; the wait is on `:hover` alone; the arrow turns at once unless "Smooth" (YAZ-3440 D6)', () => {
       expect(body(PIECE)[0]).toMatch(/transition:\s*opacity 180ms ease;/)
       expect(body(PIECE_HOVER)[0]).toMatch(/transition:\s*opacity 140ms ease 80ms;/)
-      expect(body(CHEVRON_REST)[0]).toMatch(/transition:\s*transform 0\.12s;/)
-      expect(body(CHEVRON)[0]).toMatch(/transition:\s*transform 0\.12s, opacity 140ms ease 80ms;/)
+      expect(body(CHEVRON_REST)[0]).not.toMatch(/transition:/)
+      expect(body(CHEVRON)[0]).toMatch(/transition:\s*opacity 140ms ease 80ms;/)
+      expect(rules.find((rule) => rule.selectors.includes('.tree__chevron::before'))?.body).not.toMatch(/transition:/)
+      expect(body(GREY_SMOOTH)[0]).toMatch(/transition:\s*transform 0\.12s;/)
+      expect(body(CHEVRON_SMOOTH_REST)[0]).toMatch(/transition:\s*transform 0\.12s;/)
+      expect(body(CHEVRON_SMOOTH)[0]).toMatch(/transition:\s*transform 0\.12s, opacity 140ms ease 80ms;/)
       for (const { selectors } of threadRules.filter((rule) => /\b80ms\b/.test(rule.body))) for (const s of selectors) expect(s, s).toContain(':hover')
     })
 
-    it('Reduce motion (D10): the block names every selector of a rule that fades, the grey line\'s too (as toc.css does), so it wins by coming last, and it fades nothing; the chevron keeps its turn', () => {
+    it('Reduce motion (D10): the block names every selector of a rule that fades, the grey line\'s too (as toc.css does), so it wins by coming last, and it fades nothing; the arrows turn at once even with "Smooth" (YAZ-3440 D6)', () => {
       const fades = [...threadRules, ...media.rest.filter((rule) => rule.selectors.includes(LINE))].filter((rule) => /transition:[^;]*\d+ms/.test(rule.body))
-      expect(fades.length).toBe(4)
+      // The four of before, "Smooth" (YAZ-3440 D6), and the open row's elbow and arrow copies at rest and on hover (D1).
+      expect(fades.length).toBe(9)
       const inBlock = media.block.flatMap((rule) => rule.selectors)
       for (const { selectors } of fades) for (const s of selectors) expect(inBlock, s).toContain(s)
       for (const rule of media.block) expect(rule.body, rule.selectors.join()).not.toMatch(/\d+ms/)
       expect(media.block.find((rule) => rule.selectors.includes(PIECE))?.body).toMatch(/transition:\s*none;/)
       expect(media.block.find((rule) => rule.selectors.includes(LINE))?.body).toMatch(/transition:\s*none;/)
-      expect(media.block.find((rule) => rule.selectors.includes(CHEVRON))?.body).toMatch(/transition:\s*transform 0\.12s;/)
+      for (const s of [CHEVRON, CHEVRON_SMOOTH_REST, CHEVRON_SMOOTH, GREY_SMOOTH]) expect(media.block.find((rule) => rule.selectors.includes(s))?.body, s).toMatch(/transition:\s*none;/)
       // The block comes after each rule it must beat (their first place in the sheet).
-      for (const s of [LINE, PIECE, PIECE_HOVER, CHEVRON]) expect(appCss.indexOf(s), s).toBeLessThan(media.start)
+      for (const s of [LINE, PIECE, PIECE_HOVER, CHEVRON, CHEVRON_SMOOTH_REST, CHEVRON_SMOOTH, GREY_SMOOTH]) expect(appCss.indexOf(s), s).toBeLessThan(media.start)
     })
 
     it('the coloured chevron is a copy of the grey one, laid exactly on it: the same box, border and turn, at the chevron\'s place in its row (D7, bug YAZ-3329)', () => {
@@ -151,7 +162,8 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
 
     it('bug YAZ-3342: a folder in inline rename (`li[data-renaming]`, its row is the input) draws no coloured chevron, and its elbow stops 2px short of the input, as a folder\'s stops short of its chevron', () => {
       const afters = threadRules.filter((rule) => rule.selectors.some((s) => s.endsWith('::after')))
-      expect(afters.length).toBe(3)
+      // The rest, open and hover copies, the rest and hover copies of "Smooth" (YAZ-3440 D6), and the open row's own (D1).
+      expect(afters.length).toBe(7)
       for (const { selectors } of [...afters, ...media.block.filter((rule) => rule.selectors.some((s) => s.endsWith('::after')))]) for (const s of selectors) expect(s, s).toContain(':not([data-renaming])')
       // The input starts where the chevron did, 8 + depth * 14 px in; the piece starts at depth * 14 + 1 - width / 2.
       const folder = body(`${STYLE} .sidebar__body .tree[role='group'] > li[aria-expanded]::before`)[0]

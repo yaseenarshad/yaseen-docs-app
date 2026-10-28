@@ -486,6 +486,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     app: { sound: vi.fn(async (_kind: 'land' | 'trash') => undefined) },
     // Focus and Favorites of each vault (YAZ-3264 D1): App reads them now, the sidebar draws them. Empty here.
     favorites: { get: vi.fn(async (_root: string): Promise<string[]> => []), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
+    icons: { get: vi.fn(async (_root: string) => ({ paths: {} })), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     focus: { get: vi.fn(async (_root: string): Promise<string[]> => []), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     // No update (YAZ-2976): App reads the state once and follows its pushes; nothing to show here.
     update: {
@@ -1323,6 +1324,23 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     expect(app.style.getPropertyValue('--thread-color')).toBe('#ff0000')
     act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS } }))
     expect(app.getAttribute('data-sidebar-line-style')).toBe('plain')
+    expect(captured.editors.length).toBe(renders)
+  })
+
+  it("hands the sidebar's icon set, file icons, folder icons, arrow and icon colours to app.css; a change lands live and renders no editor (YAZ-3440 D4, D5, D6)", async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    const attrs = () => ['icon-set', 'file-icons', 'folder-icons', 'arrow'].map((name) => app.getAttribute(`data-sidebar-${name}`))
+    // The defaults: Material, "Colour", folder icons on, the arrow at once, and the built-in colours.
+    expect(attrs()).toEqual(['material', 'quiet', 'on', 'instant'])
+    expect(app.style.getPropertyValue('--kind-pdf')).toBe('')
+    const renders = captured.editors.length
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarIconSet: 'line', sidebarFileIcons: 'grey', sidebarFolderIcons: false, sidebarArrowMotion: 'smooth', sidebarIconColors: { pdf: '#123456' } } }))
+    expect(attrs()).toEqual(['line', 'grey', 'off', 'smooth'])
+    expect(app.style.getPropertyValue('--kind-pdf')).toBe('#123456')
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarFileIcons: 'off' } }))
+    expect(attrs()).toEqual(['material', 'off', 'on', 'instant'])
+    expect(app.style.getPropertyValue('--kind-pdf')).toBe('')
     expect(captured.editors.length).toBe(renders)
   })
 })
