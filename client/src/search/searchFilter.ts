@@ -3,29 +3,36 @@
  * saved (D15): a new search starts with all types at any time. They run on the candidates BEFORE the ranking cuts at
  * `SEARCH_CAP` (D16), so "PDFs" finds the PDFs past the first 50 matches.
  */
-import { IMAGE_EXTENSIONS, MARKDOWN_EXTENSIONS, PDF_EXTENSIONS } from '@shared/types'
+import { createElement, type ReactNode } from 'react'
+import { fileKind } from '@shared/fileKind'
+import { IMAGE_EXTENSIONS, type TreeNode } from '@shared/types'
+import { FileIcon } from '../sidebar/FileIcon'
 import type { MenuSection } from '../sidebar/menuSections'
+import { timeOf } from '../sidebar/treeSort'
 import type { SearchCandidate } from './searchCandidates'
 
-export type SearchType = 'all' | 'notes' | 'folders' | 'images' | 'pdfs' | 'other'
+export type SearchType = 'all' | 'markdown' | 'excalidraw' | 'drawio' | 'folders' | 'images' | 'pdfs' | 'other'
 export type SearchTime = 'any' | 'today' | 'week' | 'month' | 'year'
 export interface SearchFilter {
   type: SearchType
   time: SearchTime
 }
 
-/** No filter: one object, so a search with none hands the ranking nothing new. */
+/** No filter: what a new search starts with (D15). */
 export const NO_FILTER: SearchFilter = { type: 'all', time: 'any' }
 
 export const filterOn = (filter: SearchFilter): boolean => filter.type !== 'all' || filter.time !== 'any'
 
-const TYPES: ReadonlyArray<[SearchType, string]> = [
+/** Each type with a name of its kind, whose icon the menu row shows: the icon a tree row of that kind shows (`FileIcon`). */
+const TYPES: ReadonlyArray<[SearchType, string, string?]> = [
   ['all', 'All types'],
-  ['notes', 'Notes'],
-  ['folders', 'Folders'],
-  ['images', 'Images'],
-  ['pdfs', 'PDFs'],
-  ['other', 'Other'],
+  ['markdown', 'Markdown', 'note.md'],
+  ['excalidraw', 'Excalidraw', 'drawing.excalidraw'],
+  ['drawio', 'draw.io', 'diagram.drawio'],
+  ['folders', 'Folders', 'folder'],
+  ['images', 'Images', 'image.png'],
+  ['pdfs', 'PDFs', 'file.pdf'],
+  ['other', 'Other', 'file'],
 ]
 const TIMES: ReadonlyArray<[SearchTime, string]> = [
   ['any', 'Any time'],
@@ -35,21 +42,22 @@ const TIMES: ReadonlyArray<[SearchTime, string]> = [
   ['year', 'This year'],
 ]
 
-const IMAGES = new Set<string>(IMAGE_EXTENSIONS.map((ext) => `.${ext}`))
-const NOTES = new Set<string>(MARKDOWN_EXTENSIONS)
-const PDFS = new Set<string>(PDF_EXTENSIONS)
+/** The type of each file kind (D13): the app's own kinds, so a type holds what its icon shows in the tree. Text files are Other. */
+const OF_KIND = { markdown: 'markdown', drawing: 'excalidraw', diagram: 'drawio', image: 'images', pdf: 'pdfs', text: 'other' } as const
+/** An image the app does not view as one, as `.svg` (a text file to the app), is still an Image to the eye. */
+const IMAGES = new Set<string>(IMAGE_EXTENSIONS)
 
-/** A row's type (D13): a folder, else its file's extension, case-blind. */
+/** A row's type (D13): a folder, else its file's kind (`fileKind`, by the extension, case-blind). */
 export function typeOf(row: Pick<SearchCandidate, 'kind' | 'path'>): Exclude<SearchType, 'all'> {
   if (row.kind === 'dir') return 'folders'
-  const name = row.path.slice(row.path.lastIndexOf('/') + 1)
-  const dot = name.lastIndexOf('.')
-  const ext = dot <= 0 ? '' : name.slice(dot).toLowerCase()
-  return NOTES.has(ext) ? 'notes' : IMAGES.has(ext) ? 'images' : PDFS.has(ext) ? 'pdfs' : 'other'
+  const kind = fileKind(row.path)
+  if (kind !== null && kind !== 'text') return OF_KIND[kind]
+  return IMAGES.has(row.path.slice(row.path.lastIndexOf('.') + 1).toLowerCase()) ? 'images' : 'other'
 }
 
-/** Where a range starts (D14), on the local calendar of `now`: 00:00 today, Monday 00:00, the 1st, January 1. */
-export function timeStart(time: Exclude<SearchTime, 'any'>, now: number): number {
+/** Where a range starts (D14), on the local calendar of `now`: 00:00 today, Monday 00:00, the 1st, January 1; none for Any time. */
+export function timeStart(time: SearchTime, now: number): number | undefined {
+  if (time === 'any') return undefined
   const at = new Date(now)
   at.setHours(0, 0, 0, 0)
   if (time === 'week') at.setDate(at.getDate() - ((at.getDay() + 6) % 7))
@@ -59,21 +67,40 @@ export function timeStart(time: Exclude<SearchTime, 'any'>, now: number): number
 }
 
 /**
- * The test a candidate must pass, or `undefined` with no filter. `timeOf` is a row's time by its path — a file's mtime,
- * a folder's newest file anywhere inside (D14) — and is read only while a time range is on. An empty folder (0) never passes.
+ * The test a candidate must pass, or `undefined` with no filter. `from` is where the time range starts (`timeStart`), and
+ * `timeOf` a row's time by its path — a file's mtime, a folder's newest file anywhere inside (D14). An empty folder (0) never passes.
  */
-export function filterTest(filter: SearchFilter, timeOf: (path: string) => number, now: number): ((row: SearchCandidate) => boolean) | undefined {
+export function filterTest(filter: SearchFilter, timeOf: (path: string) => number, from: number | undefined): ((row: SearchCandidate) => boolean) | undefined {
   if (!filterOn(filter)) return undefined
-  const from = filter.time === 'any' ? undefined : timeStart(filter.time, now)
-  return (row) => (filter.type === 'all' || typeOf(row) === filter.type) && (from === undefined || (timeOf(row.path) >= from && timeOf(row.path) > 0))
+  return (row) => (filter.type === 'all' || typeOf(row) === filter.type) && (from === undefined || timeOf(row.path) >= from)
 }
+
+/** No times: a search with no time range reads none. */
+export const NO_TIMES: ReadonlyMap<string, number> = new Map()
+
+/** Each row's time by its path (D14), over the whole tree: a file's mtime, a folder's newest file anywhere inside (`timeOf`). */
+export function timesByPath(trees: readonly TreeNode[]): ReadonlyMap<string, number> {
+  const out = new Map<string, number>()
+  const walk = (nodes: readonly TreeNode[]): void => {
+    for (const node of nodes) {
+      out.set(node.path, timeOf(node))
+      if (node.type === 'dir') walk(node.children)
+    }
+  }
+  walk(trees)
+  return out
+}
+
+/** A type's icon in the menu: a tree row's, for a name of that kind. */
+const typeIcon = (name: string): ReactNode => createElement(FileIcon, { path: name, folder: name === 'folder' })
 
 /** The Search menu's Type and Time rows (D13, D14): each a flyout with its "all" choice apart, ✓ on the pick, the pick as the row's hint. */
 export function filterSection(filter: SearchFilter, set: (next: SearchFilter) => void): MenuSection {
-  const flyout = <K extends keyof SearchFilter>(key: K, choices: ReadonlyArray<[SearchFilter[K], string]>, id: string, label: string) => {
-    const leaf = ([value, text]: [SearchFilter[K], string]) => ({
+  const flyout = <K extends keyof SearchFilter>(key: K, choices: ReadonlyArray<[SearchFilter[K], string, string?]>, id: string, label: string) => {
+    const leaf = ([value, text, iconOf]: [SearchFilter[K], string, string?]) => ({
       id: `${id}-${value}`,
       label: text,
+      ...(iconOf !== undefined && { icon: typeIcon(iconOf) }),
       hint: filter[key] === value ? '✓' : undefined,
       onSelect: () => {
         if (filter[key] !== value) set({ ...filter, [key]: value })

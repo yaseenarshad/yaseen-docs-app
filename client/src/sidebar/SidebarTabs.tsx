@@ -289,7 +289,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
           <button
             type="button"
             className={sortFiltered ? 'sidebar__sort sidebar__sort--filtered' : 'sidebar__sort'}
-            aria-label="Sort"
+            aria-label={sortFiltered ? 'Sort, filters on' : 'Sort'}
             title={sortFiltered ? 'Sort · Filters on' : 'Sort'}
             aria-haspopup="menu"
             aria-expanded={sortOpen}

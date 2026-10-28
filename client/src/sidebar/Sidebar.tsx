@@ -618,8 +618,9 @@ export function Sidebar({
   const searchSort = useMemo<TabSort>(() => ({ by: settings.searchSort.by, reverse: settings.searchSort.reverse }), [settings.searchSort.by, settings.searchSort.reverse])
   // The Search tab's filters (YAZ-3511 D13 to D15): held here, never saved, so a time range keeps the file times live below.
   const [searchFilter, setSearchFilter] = useState<SearchFilter>(NO_FILTER)
-  // The file times stay live (D2) while something reads them: the tab's Last updated sort, its dates (D10), Search's dates, or a time range (D14).
-  const liveTimes = sort?.by === 'updated' || (sortedTab !== null && settings.rowDates[sortedTab]) || settings.rowDates.search || searchFilter.time !== 'any'
+  // The file times stay live (D2) while something reads them: the tab's Last updated sort, any tab's dates (D10), or a
+  // time filter (D14). Any tab's, not the shown one's: a tab change then reads no vault again (6 µs a save, not 42 ms a switch).
+  const liveTimes = sort?.by === 'updated' || Object.values(settings.rowDates).some(Boolean) || searchFilter.time !== 'any'
   const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]

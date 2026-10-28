@@ -184,7 +184,7 @@ export function useVaultTree(
       const burst = leadingTrailing(() => refresh(vault), WATCH_BURST_QUIET_MS)
       const offWatch = watches[at].subscribe((ev) => {
         if (ev.type === 'error') return setFailure(vault, ev.message)
-        // A save moves no row by name; by Last updated it does (YAZ-3227 D2), and it changes the search row's date (YAZ-3511 D2). Patch the one file's time, no walk.
+        // A save moves no row by name; by Last updated it does (YAZ-3227 D2), and it changes a row's date and a time filter (YAZ-3511 D2, D14). Patch the one file's time, no walk.
         if (ev.type === 'change') return live.current.liveTimes ? setTrees((prev) => withTime(prev, vault, ev.path, ev.mtime)) : undefined
         if (ev.type === 'ready') return burst.flush()
         burst.call()
@@ -203,7 +203,7 @@ export function useVaultTree(
     })
     started.current = true
   }, [roots, watches, refresh, setFailure])
-  // The tree's times are as old as its last walk (a save walks nothing): turning Last updated or the search dates on walks each vault once.
+  // The tree's times are as old as its last walk (a save walks nothing): turning Last updated, a date switch or a time filter on walks each vault once.
   useEffect(() => {
     if (liveTimes) for (const vault of live.current.roots) refresh(vault)
   }, [liveTimes, refresh])

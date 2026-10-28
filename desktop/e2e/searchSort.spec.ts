@@ -109,11 +109,18 @@ test('step 3 — a note written on disk reads "now" and moves up at once (D2)', 
   await expect.poll(() => dated(win)).toContain('plan old now')
 })
 
-test('step 4 — Type ▸ PDFs keeps the PDF; Notes keeps the notes and their folder; the sort button says a filter is on (D13, D17)', async () => {
+test('step 4 — Type ▸ PDFs keeps the PDF; Markdown keeps the notes and their folder; the sort button says a filter is on (D13, D17)', async () => {
+  // The Type list: each type with the tree's own icon for its kind (D13).
+  await sortButton(win).click()
+  await menuItem(win, 'Type').click()
+  await expect(win.locator('.ctx-menu__sub .file-icon')).toHaveCount(7)
+  await shoot(win, 'search-sort-04-type-list')
+  await win.keyboard.press('Escape')
+  await win.keyboard.press('Escape')
   await filter('Type', 'PDFs')
   await expect(labels(win)).toHaveText(['plan scan.pdf'])
   await expect(sortButton(win)).toHaveClass(/sidebar__sort--filtered/)
-  await filter('Type', 'Notes')
+  await filter('Type', 'Markdown')
   await expect(labels(win)).toHaveText(['Plans', 'plan b', 'plan 10', 'plan old', 'Project plan', 'plan new', 'plan'])
   await shoot(win, 'search-sort-04-notes')
 })
@@ -135,7 +142,9 @@ test('step 6 — "Show last updated" turns the dates off', async () => {
   await expect(win.locator('.sidebar__body .tree__date')).toHaveCount(0)
 })
 
-test('step 7 — the sort and the date switches are in the state file and come back after a relaunch; Files keeps its own sort and its own switch, off until picked (D1, D10)', async () => {
+test('step 7 — the sort and the date switches are in the state file and come back after a relaunch, the filters do not; Files keeps its own sort and its own switch, off until picked (D1, D10, D15)', async () => {
+  await filter('Type', 'PDFs')
+  await expect(labels(win)).toHaveText(['plan scan.pdf'])
   await quitApp(app)
   const { settings } = await readState(userData)
   expect(settings.searchSort).toEqual({ by: 'updated', reverse: false })

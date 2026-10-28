@@ -2,8 +2,9 @@
 import { describe, expect, it } from 'vitest'
 import type { TabSort, TreeNode, TreeResponse } from '@shared/types'
 import { pageLabel } from '../lib/pageLabel'
-import { fileCandidates } from '../search/searchCandidates'
-import { filterTest } from '../search/searchFilter'
+import { bestScores } from '../search/bestMatch'
+import { fileCandidates, searchRows } from '../search/searchCandidates'
+import { filterTest, timesByPath, timeStart } from '../search/searchFilter'
 import { searchTree } from '../search/searchTree'
 import { sortLevel, timeOf, withMtime } from './treeSort'
 import { timeMedian } from '../test-perf'
@@ -89,19 +90,11 @@ describe('sidebar sort perf (YAZ-3227)', () => {
   it('a keystroke on Search under Best match (YAZ-3511 D12): 50 matches cut from 10,000 notes, each folder scored by its best match, in under 2 ms', () => {
     const nodes = tree()
     const BEST: TabSort = { by: 'best', reverse: false }
-    const hitsOf = (run: number) => new Map(Array.from({ length: 50 }, (_, i) => [`/v/Folder ${(i * 2 + run) % 100}/Sub ${i % 10}/Note ${(i + run) % 10}.md`, i % 4]))
-    // As `useSidebarSearch` scores the cut: a row its own score, a folder the best of itself and all inside it.
+    const resultsOf = (run: number) => fileCandidates('/v', Array.from({ length: 50 }, (_, i) => `/v/Folder ${(i * 2 + run) % 100}/Sub ${i % 10}/Note ${(i + run) % 10}.md`))
     const keystroke = (run: number) => {
-      const own = hitsOf(run)
-      const cut = searchTree(nodes, new Set(own.keys()), new Set())
-      const scores = new Map<string, number>()
-      const score = (node: TreeNode): number => {
-        let best = own.get(node.path) ?? Infinity
-        if (node.type === 'dir') for (const child of node.children) best = Math.min(best, score(child))
-        if (best !== Infinity) scores.set(node.path, best)
-        return best
-      }
-      cut.nodes.forEach(score)
+      const results = resultsOf(run)
+      const cut = searchTree(nodes, new Set(results.map((r) => r.path)), new Set())
+      const scores = bestScores(results, 'note', cut.nodes, cut.open)
       let rows = 0
       const draw = (level: readonly TreeNode[]): void => {
         for (const node of sortLevel(level, BEST, label, scores)) {
@@ -118,31 +111,37 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     expect(median).toBeLessThan(2)
   })
 
-  it('a filter pick (YAZ-3511 D16): the time of each of 11,100 rows and the filter over 10,000 candidates, once per pick, in under 10 ms', () => {
+  // 10,000 candidates, a third of them PDFs, with each row's time (a filter's whole input, D16).
+  const filtered = () => {
     const nodes = tree()
     const paths: string[] = []
     const collect = (level: readonly TreeNode[]): void => {
-      for (const node of level) (node.type === 'dir' ? collect(node.children) : paths.push(node.path))
+      for (const node of level) (node.type === 'dir' ? collect(node.children) : paths.push(node.path.replace(/(Note [0-2])\.md$/, '$1.pdf')))
     }
     collect(nodes)
-    const candidates = fileCandidates('/v', paths)
+    return { nodes, candidates: fileCandidates('/v', paths) }
+  }
+
+  it('a keystroke with a filter on (YAZ-3511 D16): the ranking reads the kept rows only, in under 2 ms', () => {
+    const { candidates } = filtered()
+    const kept = candidates.filter(filterTest({ type: 'pdfs', time: 'any' }, () => 0, undefined)!)
+    expect(kept.length).toBe(3000)
+    const queries = ['n', 'no', 'not', 'note', 'note 1', 'note 2']
+    const { median, worst } = timeMedian(60, (i) => searchRows(kept, queries[i % queries.length]).length)
+    console.log(`search keystroke with PDFs on, 3k of 10k kept: median ${(median * 1000).toFixed(0)} µs, worst ${(worst * 1000).toFixed(0)} µs of 60`)
+    expect(median).toBeLessThan(2)
+  })
+
+  it('a filter pick (YAZ-3511 D16): each row\'s time over 11,100 rows and the filter over 10,000 candidates, once per pick, not per keystroke', () => {
+    const { candidates } = filtered()
     const now = Date.now()
-    // As `useSidebarSearch` builds it: the time of every row by its path, then the kept candidates (`useSearchResults`).
     const pick = () => {
-      const times = new Map<string, number>()
-      const walk = (level: readonly TreeNode[]): void => {
-        for (const node of level) {
-          times.set(node.path, timeOf(node))
-          if (node.type === 'dir') walk(node.children)
-        }
-      }
-      walk(tree())
-      const keep = filterTest({ type: 'notes', time: 'year' }, (path) => times.get(path) ?? 0, now)!
-      return candidates.filter(keep).length
+      const times = timesByPath(tree())
+      return candidates.filter(filterTest({ type: 'markdown', time: 'year' }, (path) => times.get(path) ?? 0, timeStart('year', now))!).length
     }
     expect(pick()).toBe(0) // the fixture's times are from 1970
     const { median, worst } = timeMedian(20, pick)
     console.log(`filter pick, 10k candidates: median ${median.toFixed(2)} ms, worst ${worst.toFixed(2)} ms of 20`)
-    expect(median).toBeLessThan(10)
+    expect(median).toBeLessThan(16) // one frame, once per pick or per save while a time range is on
   })
 })

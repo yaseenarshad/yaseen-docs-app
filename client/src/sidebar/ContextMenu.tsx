@@ -104,10 +104,12 @@ function Flyout({ anchor, sections, onClose, onCloseFlyout }: { anchor: RefObjec
     setPos({ left, top: Math.max(0, Math.min(p.top, window.innerHeight - r.height)) })
   }, [anchor])
 
+  // A glyph on any row (the Search menu's Type list, YAZ-3511 D13): the rows without one line up after its slot.
+  const glyphs = sections.some((section) => section.some((item) => item.icon !== undefined))
   return (
     <div
       ref={ref}
-      className="ctx-menu ctx-menu__sub"
+      className={`ctx-menu ctx-menu__sub${glyphs ? ' ctx-menu--glyphs' : ''}`}
       role="menu"
       style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos === null ? 'hidden' : undefined }}
       onMouseDown={(e) => e.stopPropagation()}

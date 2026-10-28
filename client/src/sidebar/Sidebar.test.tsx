@@ -11192,15 +11192,15 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect(walked).toEqual(['/v/Plan.md', '/v/Archive/plan.md', '/v/Plan B.md', '/v/Project plan.md'])
   })
 
-  it('S40, S57, S58, D13, D17: Type ▸ Notes keeps the notes and their folders; the sort button says a filter is on; PDFs with none says so', async () => {
+  it('S40, S57, S58, D13, D17: Type ▸ Markdown keeps the notes and their folders; the sort button says a filter is on; PDFs with none says so', async () => {
     const { el } = await search(NAME)
     act(() => sortButton(el)?.click())
-    clickSub(el, 'Notes', 'Type')
+    clickSub(el, 'Markdown', 'Type')
     expect(rows(el)).toEqual(['docs 3h', 'plan 2 3h', 'plan 10 2d', 'plan a 1w', 'plan b 34m'])
     expect(sortButton(el)?.classList.contains('sidebar__sort--filtered')).toBe(true)
     expect(sortButton(el)?.title).toBe('Sort · Filters on')
     act(() => sortButton(el)?.click())
-    expect(items(el)).toContain('TypeNotes')
+    expect(items(el)).toContain('TypeMarkdown')
     clickSub(el, 'PDFs', 'Type')
     expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('No matches with these filters.')
   })
@@ -11219,6 +11219,48 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect(sortButton(el)?.classList.contains('sidebar__sort--filtered')).toBe(false)
     await type(searchBar(el)!, 'plan')
     expect(rows(el)).toHaveLength(7)
+  })
+
+  it('S54, D15: ⌘T, a new search, resets the filters, a filter picked before any text too', async () => {
+    const { el, rerender } = await search(NAME)
+    act(() => sortButton(el)?.click())
+    clickSub(el, 'Folders', 'Type')
+    await rerender({ lens: 'search', pendingSearchFocus: true, pendingSearchClear: true })
+    await rerender({ pendingSearchFocus: false, pendingSearchClear: false })
+    expect(sortButton(el)?.classList.contains('sidebar__sort--filtered')).toBe(false)
+    act(() => sortButton(el)?.click())
+    clickSub(el, 'Folders', 'Type') // the bar is empty now
+    expect(sortButton(el)?.classList.contains('sidebar__sort--filtered')).toBe(true)
+    await rerender({ lens: 'search', pendingSearchFocus: true, pendingSearchClear: true })
+    expect(sortButton(el)?.classList.contains('sidebar__sort--filtered')).toBe(false)
+  })
+
+  it('S58, D17: the sort button is lit on Search alone; on Files, with the filter still on, it looks as before', async () => {
+    const { el, rerender } = await search(NAME)
+    act(() => sortButton(el)?.click())
+    clickSub(el, 'PDFs', 'Type')
+    expect(sortButton(el)?.getAttribute('aria-label')).toBe('Sort, filters on')
+    await rerender({ lens: 'files' })
+    expect(sortButton(el)?.classList.contains('sidebar__sort--filtered')).toBe(false)
+    expect(sortButton(el)?.getAttribute('aria-label')).toBe('Sort')
+  })
+
+  it('S49, D14: with Today on, a save of a matching note from before today brings it into the list at once', async () => {
+    const { watch, fire } = withWatcher()
+    const today = new Date(NOW).setHours(0, 0, 0, 0)
+    const tree: TreeNode[] = [note('/v/plan new.md', today + 1000), note('/v/plan old.md', today - 5 * D)]
+    const m = await mount({ lens: 'search', watch, settings: { ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, search: false } } }, (b) => {
+      b.tree.mockResolvedValue({ root: '/v', tree, generatedAt: 1 })
+      b.index.mockResolvedValue({ root: '/v', records: ['/v/plan new.md', '/v/plan old.md'].map(indexRecord), folders: [], generatedAt: 1, ids: true } as never)
+    })
+    await type(searchBar(m.el)!, 'plan')
+    act(() => sortButton(m.el)?.click())
+    clickSub(m.el, 'Today', 'Time')
+    await wait(50)
+    expect(rows(m.el)).toEqual(['plan new -'])
+    act(() => fire({ type: 'change', path: '/v/plan old.md', mtime: Date.now() }))
+    await wait(150)
+    expect(rows(m.el)).toEqual(['plan new -', 'plan old -'])
   })
 
   it('S45, S47, S48, D14: Time ▸ Today keeps what changed since 00:00, and a folder by its newest file inside', async () => {

@@ -19,15 +19,19 @@ export function timeOf(node: TreeNode): number {
   return time
 }
 
+/** The score of a row that is no match and holds none: after every match (a row a folder that shows all holds, YAZ-2662 D6). */
+const NO_SCORE = 4
+const NO_BEST: ReadonlyMap<string, number> = new Map()
+
 /**
  * One level in the tab's order (D7): folders first, then files, each by the same rule. No sort, or Manual below the top rows: Name, A to Z.
  * Best match (YAZ-3511 D12) is the search's alone: `best` holds the score of each row, lower first, then the newer row, then the name.
  * It puts no folder first, so the best match is on top.
  */
-export function sortLevel(nodes: readonly TreeNode[], sort: TabSort | undefined, label: (node: TreeNode) => string, best?: ReadonlyMap<string, number>): TreeNode[] {
+export function sortLevel(nodes: readonly TreeNode[], sort: TabSort | undefined, label: (node: TreeNode) => string, best: ReadonlyMap<string, number> = NO_BEST): TreeNode[] {
   const byName = (a: TreeNode, b: TreeNode): number => collator.compare(label(a), label(b))
   const byTime = (a: TreeNode, b: TreeNode): number => timeOf(b) - timeOf(a) || byName(a, b)
-  if (sort?.by === 'best' && best !== undefined) {
+  if (sort?.by === 'best') {
     const score = (node: TreeNode): number => best.get(node.path) ?? NO_SCORE
     return [...nodes].sort((a, b) => score(a) - score(b) || byTime(a, b))
   }
@@ -35,9 +39,6 @@ export function sortLevel(nodes: readonly TreeNode[], sort: TabSort | undefined,
   const order = sort?.reverse === true && sort.by !== 'manual' ? (a: TreeNode, b: TreeNode): number => base(b, a) : base
   return [...nodes.filter((n) => n.type === 'dir').sort(order), ...nodes.filter((n) => n.type === 'file').sort(order)]
 }
-
-/** The score of a row that is no match and holds none: after every match (a row a folder that shows all holds, YAZ-2662 D6). */
-const NO_SCORE = 4
 
 /** The label a row shows (YAZ-2420 🔒 D15), which Name sorts by (D8). */
 export const shownLabel = (titles: PathTitles) => (node: TreeNode): string => pageLabel(node.path, node.type === 'dir', titles)

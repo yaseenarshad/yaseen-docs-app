@@ -12,12 +12,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import type { TreeNode } from '@shared/types'
 import { withoutPaths } from '../../lib/treeState'
-import { filterOn, filterTest, NO_FILTER, type SearchFilter } from '../../search/searchFilter'
+import { bestScores, NO_SCORES } from '../../search/bestMatch'
+import { filterOn, filterTest, NO_FILTER, NO_TIMES, timesByPath, timeStart, type SearchFilter } from '../../search/searchFilter'
 import { searchTree } from '../../search/searchTree'
 import { useSearchResults, type SearchVault } from '../../search/useSearchResults'
-import type { SearchCandidate } from '../../search/searchCandidates'
 import type { TreeMarks, TreeSelection } from '../Tree'
-import { timeOf } from '../treeSort'
 
 /**
  * The keys of a result list driven from its input (YAZ-803), shared by the search bar and the
@@ -53,18 +52,6 @@ const NO_FOLDS: ReadonlySet<string> = new Set()
 const NO_CURSOR: ReadonlySet<string> = new Set()
 /** No match (YAZ-3511 D2): no cut, and one object, so a save while Search is off screen walks nothing and the memos below keep their values. */
 const NO_FOUND = { top: [] as TreeNode[], rest: [] as TreeNode[], open: new Set<string>(), order: [] as string[] }
-/** No score map: the Search sort is not Best match. */
-const NO_SCORES: ReadonlyMap<string, number> = new Map()
-
-/**
- * A row's Best match score (YAZ-3511 D12), lower first, from the matcher's own groups: 0 an ID match (its name does not
- * hold the text), 1 the same name, 2 a name that starts with it, 3 a name that holds it.
- */
-export function matchScore(row: Pick<SearchCandidate, 'lower'>, needle: string): number {
-  const at = row.lower.indexOf(needle)
-  return at === -1 ? 0 : row.lower === needle ? 1 : at === 0 ? 2 : 3
-}
-
 /** A search has no multi-select (S29, YAZ-2620): shift-click on its tree toggles nothing. */
 const noToggle = (): void => undefined
 
@@ -104,25 +91,18 @@ export function useSidebarSearch(
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
   const pinnedPaths = useMemo(() => new Set(pinned.map((node) => node.path)), [pinned])
+  // The filters' test (D16), built when the filters, the file times or the day change, never on a keystroke, and only
+  // while the search shows and has text: a save on Files with a filter on does no search work. A time range reads each
+  // row's time by its path off the whole tree — a folder's newest file anywhere inside (D14); its start is read on each
+  // render, so "Today" turns at midnight with no save.
+  const ranking = active && query.trim() !== ''
+  const from = timeStart(filter.time, Date.now())
+  const timedTree = ranking && from !== undefined ? tree : null
+  const times = useMemo(() => (timedTree === null ? NO_TIMES : timesByPath(timedTree)), [timedTree])
+  const keep = useMemo(() => (ranking ? filterTest(filter, (path) => times.get(path) ?? 0, from) : undefined), [ranking, filter, times, from])
   // A search that is not on screen ranks nothing (YAZ-2638 D2): with no results it has no highlight,
   // so it scrolls no row of the tab that shows. The ranking is synchronous, so the results are back
   // in the render that shows the Search tab again. A match of a pinned item ranks first (YAZ-2662 D4).
-  // The filters' test (D16): built when the filters or the file times change, never on a keystroke. A time range reads
-  // each row's time by its path off the whole tree — a folder's newest file anywhere inside (D14).
-  const timed = filter.time !== 'any'
-  const times = useMemo(() => {
-    const out = new Map<string, number>()
-    if (!timed) return out
-    const walk = (nodes: readonly TreeNode[]): void => {
-      for (const node of nodes) {
-        out.set(node.path, timeOf(node))
-        if (node.type === 'dir') walk(node.children)
-      }
-    }
-    walk(tree)
-    return out
-  }, [tree, timed])
-  const keep = useMemo(() => filterTest(filter, (path) => times.get(path) ?? 0, Date.now()), [filter, times])
   const results = useSearchResults(vaults, active ? query : '', pinnedPaths, keep)
   // The results as a tree (YAZ-2620 🔒 D1): the Files tree — the WHOLE vault's, whichever tab or
   // focus is showing (S33) — cut down to the matches and their parents. A vault's row is a parent
@@ -151,22 +131,8 @@ export function useSidebarSearch(
     const ids = new Map(results.flatMap((r) => (r.id !== undefined && r.label.startsWith(`${r.id} — `) ? [[r.path, r.id] as const] : [])))
     return { hits, needle: query.trim().toLowerCase(), ...(ids.size > 0 && { ids }) }
   }, [hits, query, results])
-  // Best match's score of each row of the cut (D12): a note takes the best of its rows (its aliases), a folder the best
-  // of itself and every match inside it. Only while Best match sorts.
-  const scores = useMemo(() => {
-    if (!bestMatch || hits.size === 0) return NO_SCORES
-    const own = new Map<string, number>()
-    for (const r of results) own.set(r.path, Math.min(own.get(r.path) ?? Infinity, matchScore(r, marks.needle)))
-    const out = new Map<string, number>()
-    const score = (node: TreeNode): number => {
-      let best = own.get(node.path) ?? Infinity
-      if (node.type === 'dir') for (const child of node.children) best = Math.min(best, score(child))
-      if (best !== Infinity) out.set(node.path, best)
-      return best
-    }
-    for (const node of [...found.top, ...found.rest]) score(node)
-    return out
-  }, [bestMatch, hits, results, marks.needle, found])
+  // Best match's score of each row of the cut (D12), only while Best match sorts.
+  const scores = useMemo(() => (bestMatch && found !== NO_FOUND ? bestScores(results, query, [...found.top, ...found.rest], found.open) : NO_SCORES), [bestMatch, results, query, found])
   // A fold clicked during a search lasts as long as its query (S15, S16) and lives here alone (R4):
   // the Files tree's folds, and the store behind them, stay as they were (S17).
   const [flipped, setFlipped] = useState<ReadonlySet<string>>(NO_FOLDS)
@@ -300,6 +266,7 @@ export function useSidebarSearch(
   const changeQuery = (e: ChangeEvent<HTMLInputElement>) => setText(e.target.value)
   fresh.current = () => {
     if (query !== '') setText('')
+    else if (filterOn(filter)) onFilter(NO_FILTER) // a filter picked before any text goes too (edge case 54)
   }
 
   // The keys of the bar, which keeps the focus while the tree is driven from it (YAZ-803): ↑, ↓ and
