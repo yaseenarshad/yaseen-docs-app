@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { MAX_WINDOW_ROOTS, rootOfPath, type IndexRecord, type TreeResponse } from '@shared/types'
-import { boardBaseName, isBoard } from '@shared/fileKind'
+import { boardBaseName } from '@shared/fileKind'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { basename, dirname, stripExt } from './paths'
 import { fetchTree, latestTree, onTree } from './treeFeed'
@@ -65,7 +65,11 @@ export function pathTitles(records: readonly IndexRecord[], folders: readonly In
 export const pageLabel = (path: string, folder: boolean, titles: PathTitles): string => titles.get(path) ?? (folder ? basename(path) : fileLabel(basename(path)))
 
 /** A file name with one app extension hidden at most: `Flow.md.excalidraw` → `Flow.md`, `Flow.excalidraw.md` → `Flow.excalidraw` (YAZ-3536). */
-const fileLabel = (name: string): string => (isBoard(name) ? boardBaseName(name) : stripExt(name))
+const fileLabel = (name: string): string => {
+  // `boardBaseName` is the board test too (its name whole = no board): one look at the extension, not `fileKind`'s six lists, on every row.
+  const bare = boardBaseName(name)
+  return bare !== name ? bare : stripExt(name)
+}
 
 /** `pageLabel` of a path the Files tree says the kind of (`isFolderPath`). */
 export const pageName = (root: string | null, path: string, titles: PathTitles): string => pageLabel(path, isFolderPath(root, path), titles)
