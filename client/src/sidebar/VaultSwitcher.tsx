@@ -28,7 +28,9 @@
  * ⌥⏎ / ⌥-click on a vault row are the menu's "Open by itself" instead (YAZ-2858 D3): main's
  * `window.openAlone(path)` raises the window that shows the vault ALONE, else opens one — a
  * workspace window that shows it does not count. ⌥ wins over ⇧; a workspace row and "Open folder…"
- * ignore ⌥, as they ignore ⇧. The same `settle` rule answers it.
+ * ignore ⌥, as they ignore ⇧. The same `settle` rule answers it. ⇧ on a vault of this workspace
+ * window has nothing to open here, so it is "Open by itself" too (YAZ-3487 D4). Main's doors know
+ * which window asked: an EMPTY one takes the vault itself, and no window opens (YAZ-3487 D1).
  *
  * Names (YAZ-1974 D4): the trigger and every row show the vault's display name, the folder name
  * when none is set — the trigger through `storage.vaultName`, a row as `listVaults` names it. The
@@ -41,7 +43,8 @@
  * the last-used OTHER vault, an open one first, like ⌘Tab — with a typed query on the top row, and with no match on
  * Open folder…. ↑/↓ clamp at both ends (the `[[` picker's no-wrap rule), hover moves it too, ⏎
  * activates it — ⇧⏎ / ⇧-click open it IN this window instead, the menu's verb (YAZ-1974 D8), and
- * while ⇧ is held the highlighted row says so: "Open here" in its time slot (D9) — Esc
+ * while ⇧ is held the highlighted row says so: "Open here" in its time slot (D9); while ⌥ is held,
+ * or ⇧ on a vault of this workspace window, it says "Open by itself" (YAZ-3487 D5) — Esc
  * closes (the menu convention). Typing never leaves the input: rows swallow their own mousedown. "Open folder…" is not a candidate, so
  * it is visible whatever the query; a query with no vault match shows "No matching vaults" above it.
  *
@@ -165,6 +168,8 @@ export const MISSING_TEXT = 'Folder not found'
 export const OPEN_FOLDER_TEXT = 'Open folder…'
 /** The highlighted row's time slot while ⇧ is held (YAZ-1974 D9): what ⇧⏎ / ⇧-click will do. */
 export const OPEN_HERE_TEXT = 'Open here'
+/** The same slot while ⌥ is held, or ⇧ on a vault of this workspace window (YAZ-3487 D5): ⏎ opens the vault by itself. */
+export const OPEN_ALONE_TEXT = 'Open by itself'
 /** The two groups' labels (YAZ-2555 D1): the vaults that have a window, then the ones that have none. */
 export const GROUP_OPEN_TEXT = 'Open'
 export const GROUP_NOT_OPEN_TEXT = 'Not open'
@@ -230,8 +235,8 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   const [pathTip, setPathTip] = useState<{ path: string; rect: DOMRect } | null>(null)
   /** Set by a row's mousedown mid-rename, so the click it starts only ends the rename (D5). */
   const dropClick = useRef(false)
-  /** ⇧ held while the panel is up (YAZ-1974 D9) — tracked on window so the cue shows before any ⏎ or click. */
-  const [shiftHeld, setShiftHeld] = useState(false)
+  /** The key held while the panel is up (YAZ-1974 D9, YAZ-3487 D5) — tracked on window so the cue shows before any ⏎ or click. ⌥ wins over ⇧. */
+  const [held, setHeld] = useState<'shift' | 'alt' | null>(null)
   // The trigger's text, live: a change made in ANY window lands through `storage.subscribe`. The saved workspace that is
   // exactly this window's vaults (YAZ-2602 S15) — the first that matches — else each vault's display name (YAZ-1974 D4).
   // One vault is never a workspace (S70), so its header asks the saved ones nothing.
@@ -268,8 +273,8 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
 
   useEffect(() => {
     if (!open) return
-    // ⌥ wins over ⇧ (YAZ-2858 D3): with both held, ⏎ opens by itself, so the row does not say "Open here".
-    const sync = (e: globalThis.KeyboardEvent) => setShiftHeld(e.shiftKey && !e.altKey)
+    // ⌥ wins over ⇧ (YAZ-2858 D3): with both held, ⏎ opens by itself, and the row says so.
+    const sync = (e: globalThis.KeyboardEvent) => setHeld(e.altKey ? 'alt' : e.shiftKey ? 'shift' : null)
     window.addEventListener('keydown', sync)
     window.addEventListener('keyup', sync)
     // The panel goes when its window loses focus (YAZ-2555 A4), and the ⇧ cue with it (the cleanup below).
@@ -278,7 +283,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
       window.removeEventListener('keydown', sync)
       window.removeEventListener('keyup', sync)
       window.removeEventListener('blur', closePanel)
-      setShiftHeld(false)
+      setHeld(null)
     }
   }, [open, closePanel])
 
@@ -501,8 +506,10 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
     if (onOpenSetHere !== undefined) {
       if (roots.length === 1 && roots[0] === row.path) closePanel()
       else settle(row.path, onOpenHere(row.path), 'openHere')
-    } else if (alone) chooseAlone(row.path)
-    else if (here && !roots.includes(row.path)) settle(row.path, onOpenHere(row.path), 'openHere')
+    } else if (alone || (here && multi && roots.includes(row.path))) {
+      // ⇧ on a vault of this workspace window has nothing to open here: it opens the vault by itself (YAZ-3487 D4).
+      chooseAlone(row.path)
+    } else if (here && !roots.includes(row.path)) settle(row.path, onOpenHere(row.path), 'openHere')
     else choose(row.path)
   }
   const clickRow = (index: number, e: MouseEvent): void => {
@@ -613,10 +620,13 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
               {matches.map((row, at) => {
                 const i = first + at
                 const gone = missing.has(row.path)
-                const here = shiftHeld && i === active && !roots.includes(row.path) && !gone
+                const cued = i === active && !gone && !(roots.length === 1 && roots[0] === row.path)
+                const here = cued && held === 'shift' && !roots.includes(row.path)
+                // What ⏎ does by itself now (YAZ-3487 D5): ⌥ on any vault, ⇧ on a vault of this workspace window (D4).
+                const alone = cued && (held === 'alt' || (held === 'shift' && multi && roots.includes(row.path)))
                 const when = (
-                  <span className={`vault-switcher__when${gone ? ' vault-switcher__when--missing' : here ? ' vault-switcher__when--here' : ''}`}>
-                    {gone ? MISSING_TEXT : here ? OPEN_HERE_TEXT : row.lastUsed === null ? '' : relativeTime(row.lastUsed, panel.now)}
+                  <span className={`vault-switcher__when${gone ? ' vault-switcher__when--missing' : here || alone ? ' vault-switcher__when--here' : ''}`}>
+                    {gone ? MISSING_TEXT : here ? OPEN_HERE_TEXT : alone ? OPEN_ALONE_TEXT : row.lastUsed === null ? '' : relativeTime(row.lastUsed, panel.now)}
                   </span>
                 )
                 // A group's label stands above its first row (YAZ-2555 D1) — not a row itself, so outside the highlight's index space.
@@ -704,7 +714,8 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
           sections={buildVaultMenuSections(
             menuTarget(vaultMenu.path),
             {
-              onOpenAlone: chooseAlone,
+              // A Files window shows the vault alone itself, as its keys do (YAZ-3487 D6).
+              onOpenAlone: onOpenSetHere === undefined ? chooseAlone : (path) => settle(path, onOpenHere(path), 'openHere'),
               // YAZ-3357 D5: a Files window on this vault, beside this window; the panel closes, as for any window that opens.
               onOpenFilesWindow: (path) => {
                 closePanel()

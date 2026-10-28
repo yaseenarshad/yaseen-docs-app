@@ -9072,13 +9072,27 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, a))
     await act(async () => itemByLabel(el, 'Open by itself')?.click())
     expect(bridge.window.openAlone).toHaveBeenLastCalledWith(a)
-    expect(error).toHaveBeenCalledWith('[sidebar] window.openAlone failed:', expect.any(Error))
+    expect(error).toHaveBeenCalledWith('[sidebar] open by itself failed:', expect.anything())
     for (const target of [rowByPath(el, `${a}/a.md`), rowByPath(el, `${a}/sub`), body(el)]) {
       rightClick(target)
       expect(itemByLabel(el, 'Open by itself')).toBeUndefined()
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     }
     error.mockRestore()
+  })
+
+  it('"Open by itself": a folder that is gone says so (YAZ-3487 B1, S25); in a Files window it changes THIS window, main opens nothing (D6, S24)', async () => {
+    const { el, b, bridge, props } = await two()
+    bridge.window.openAlone.mockResolvedValueOnce(false)
+    rightClick(rowByPath(el, b))
+    await act(async () => itemByLabel(el, 'Open by itself')?.click())
+    expect(props.onNotice).toHaveBeenLastCalledWith(expect.stringMatching(/^Can't open .+: folder not found$/))
+
+    const files = await two({ onOpenSetHere: vi.fn(async () => true), onOpenVaultHere: vi.fn(async () => true) })
+    rightClick(rowByPath(files.el, files.b))
+    await act(async () => itemByLabel(files.el, 'Open by itself')?.click())
+    expect(files.props.onOpenVaultHere).toHaveBeenCalledExactlyOnceWith(files.b)
+    expect(files.bridge.window.openAlone).not.toHaveBeenCalled()
   })
 
   it('"New note" on a vault row creates in that vault\'s root, as that vault makes a note, and opens the row if it was closed (S13, R4)', async () => {

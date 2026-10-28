@@ -1164,10 +1164,19 @@ export function Sidebar({
     [rootOf],
   )
 
-  /** "Open by itself" on a vault row (YAZ-2858 D4): main raises the window that shows the vault alone, else opens one; this one untouched. */
+  /**
+   * "Open by itself" on a vault row (YAZ-2858 D4): main raises the window that shows the vault alone, else opens one; this one
+   * untouched. A Files window shows it itself, as its keys do (YAZ-3487 D6). A folder that is gone says so, as ⌘1 to ⌘9 do (B1).
+   */
   const openVaultAlone = useCallback((root: string) => {
-    api.window.openAlone(root).catch((err: unknown) => console.error('[sidebar] window.openAlone failed:', err))
-  }, [])
+    const opening = onOpenSetHere === undefined ? api.window.openAlone(root) : onOpenVaultHere(root)
+    opening.then(
+      (opened) => {
+        if (!opened) onNotice(`Can't open ${storage.vaultName(root)}: folder not found`)
+      },
+      (err: unknown) => console.error('[sidebar] open by itself failed:', err),
+    )
+  }, [onOpenSetHere, onOpenVaultHere, onNotice])
 
   const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo)
 
