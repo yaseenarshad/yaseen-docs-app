@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { isBoard, isViewOnly } from '@shared/fileKind'
+import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
+import type { KeyScope } from '@shared/keys'
 import type { TextFormatting } from '@shared/textFormatting'
 import { BETWEEN_VAULTS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import { api, BridgeRequestError } from './api'
@@ -8,6 +9,8 @@ import { Editor } from './editor/Editor'
 import { newNoteBase } from './editor/wikilink/createFromLink'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useLinkEvents } from './hooks/useLinkEvents'
+import { KeySheet } from './keys/KeySheet'
+import { onKeySheetRequest } from './keys/keySheetRequest'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { useVaultStorage } from './hooks/useVaultStorage'
 import { requestZoom } from './editor/zoomRequest'
@@ -256,6 +259,13 @@ function bootStartView(tab: string | null, file: string | null): Map<string, Pag
   return new Map(tab !== null && start !== undefined && start.path === file ? [[tab, start.view]] : [])
 }
 
+
+/** The place of a tab for its keys (YAZ-3564 K11): a note, a drawing, a diagram or code; null for any other tab. */
+function keyPlaceOf(file: string | null): KeyScope | null {
+  if (file === null) return null
+  const kind = fileKind(file)
+  return kind === 'markdown' ? 'note' : kind === 'drawing' ? 'drawing' : kind === 'diagram' ? 'diagram' : kind === 'text' ? 'code' : null
+}
 export function App() {
   /**
    * A Files window (YAZ-3357 D1): only the sidebar. Its clicks go to a full window (`askFromFiles`), it has no tab
@@ -925,7 +935,7 @@ export function App() {
   // because `useMenuEvents` resubscribes whenever a callback identity changes.
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Which page the dialog opens on: the first, or Sharing from the Share dialog's "Open Settings › Sharing" (YAZ-3040).
-  const [settingsPage, setSettingsPage] = useState<'sharing' | undefined>(undefined)
+  const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | undefined>(undefined)
   const openSettings = useCallback(() => {
     setSettingsPage(undefined)
     setSettingsOpen(true)
@@ -935,6 +945,17 @@ export function App() {
     setSettingsOpen(true)
   }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
+
+  // The keys of this tab (YAZ-3564 K11): Help › Keys of This Tab…, its App key, and ? on a drawing (`requestKeySheet`).
+  const [keySheetOpen, setKeySheetOpen] = useState(false)
+  const openKeySheet = useCallback(() => setKeySheetOpen(true), [])
+  const closeKeySheet = useCallback(() => setKeySheetOpen(false), [])
+  useEffect(() => onKeySheetRequest(openKeySheet), [openKeySheet])
+  const changeKeys = useCallback(() => {
+    setKeySheetOpen(false)
+    setSettingsPage('hotkeys')
+    setSettingsOpen(true)
+  }, [])
 
   // The updater (YAZ-2976): the sidebar's pill (D4) and Help › What's New… (D8) open the ONE
   // "What's new" sheet, App's for the same reason as the settings dialog. Closing it leaves the
@@ -1490,6 +1511,7 @@ export function App() {
     onGoTo: goToPlace,
     onZoom: zoom,
     onWhatsNew: openWhatsNew,
+    onKeySheet: openKeySheet,
     onExportImage: exportImage,
     onExportDrawing: reviewer === null ? exportDrawing : review.skip,
     onShareLink: shareActiveBoard,
@@ -2585,6 +2607,7 @@ export function App() {
       {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Note (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
+      {keySheetOpen && <KeySheet place={keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
       {whatsNewOpen && (
         <Suspense fallback={null}>
           <WhatsNewSheet update={update} onClose={closeWhatsNew} />

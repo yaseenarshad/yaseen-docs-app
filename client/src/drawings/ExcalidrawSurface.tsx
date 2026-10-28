@@ -63,6 +63,7 @@
  * none of it: it keeps the engine's own menu at top-left, and a note's drawing has no library
  * (rule 28). Which mode a surface is in is read ONCE, at mount.
  */
+import { requestKeySheet } from '../keys/keySheetRequest'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
@@ -363,6 +364,22 @@ export function ExcalidrawSurface({
   const onDock = useCallback((docked: boolean) => rememberPanel({ docked }), [rememberPanel])
 
   /**
+   * ? opens the app's "Keys of this tab" (YAZ-3564 K11) in place of the engine's own help dialog, which shows only the
+   * engine's defaults. A bare ?, outside a text field and with no text being edited; true when it took the key.
+   */
+  const onHelpKey = useCallback((event: ReactKeyboardEvent): boolean => {
+    if (event.key !== '?' || event.metaKey || event.ctrlKey || event.altKey || event.repeat || event.nativeEvent.isComposing) return false
+    const target = event.target
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return false
+    if (target instanceof HTMLElement && (target.isContentEditable || target.closest("[contenteditable='true']") !== null)) return false
+    if ((rawApiRef.current?.getAppState() as unknown as Record<string, unknown> | undefined)?.editingTextElement) return false
+    event.preventDefault()
+    event.stopPropagation()
+    requestKeySheet()
+    return true
+  }, [])
+
+  /**
    * ⌘C → Components and ⌘F → Images (Draw's port of the web app's `c` / `f`, `AppSidebar.tsx:983-1078`; the keys
    * as the user set them, YAZ-3564),
    * with its guards: the primary modifier alone, no repeat, no IME composition, no editable target, no
@@ -372,6 +389,7 @@ export function ExcalidrawSurface({
    */
   const onKeyDownCapture = useCallback(
     (event: ReactKeyboardEvent) => {
+      if (onHelpKey(event)) return
       const api = rawApiRef.current
       if (api === null) return
       const keys = hotkeysRef.current
@@ -392,7 +410,7 @@ export function ExcalidrawSurface({
       if (tab === 'image-studio' && rail.getState().activeTab !== tab) setSearchFocusPending(true)
       rail.openTab(tab)
     },
-    [rail],
+    [rail, onHelpKey],
   )
 
   // Shell → engine (🔒 D9): a prop that differs from what was last applied is pushed, changed keys
@@ -562,7 +580,7 @@ export function ExcalidrawSurface({
   const { Excalidraw } = engine
   return (
     // The surface's own element, so ⌘F / ⌘C are heard here and nowhere else in the shell (the tab only).
-    <div ref={rootRef} className="drawing-surface" onKeyDownCapture={withPanel ? onKeyDownCapture : undefined}>
+    <div ref={rootRef} className="drawing-surface" onKeyDownCapture={withPanel ? onKeyDownCapture : onHelpKey}>
       <Excalidraw
         initialData={initialData}
         initialState={initialState}

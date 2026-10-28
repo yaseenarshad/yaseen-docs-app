@@ -31,6 +31,7 @@ export type HotkeyId =
   | 'tabOverview'
   | 'nextTab'
   | 'prevTab'
+  | 'keySheet'
 
 export interface HotkeyCommand {
   id: HotkeyId
@@ -71,6 +72,8 @@ export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
   { id: 'tabOverview', label: 'Tab overview', hint: 'The same key opens it and closes it', key: 'CmdOrCtrl+Shift+M' },
   { id: 'nextTab', label: 'Next tab', key: 'Control+Tab' },
   { id: 'prevTab', label: 'Previous tab', key: 'Control+Shift+Tab' },
+  // YAZ-3564 K11: no key by default, since every free key is some editor's; Help › Keys of This Tab… and ? on a drawing open it too.
+  { id: 'keySheet', label: 'Keys of this tab', hint: 'The keys of the note, drawing, diagram or code in front, with your changes', key: null },
 ]
 
 /**

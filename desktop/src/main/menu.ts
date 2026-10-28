@@ -60,6 +60,8 @@ export interface MenuHandlers {
   checkForUpdates(): void
   /** Help › What's New… (YAZ-2976 D8): the focused window's renderer opens its "What's new" sheet. */
   whatsNew(): void
+  /** Help › Keys of This Tab… (YAZ-3564 K11): the focused window's renderer shows the keys of its tab in front. */
+  keySheet(): void
   /**
    * File › Export Image… (⌘⇧E, YAZ-3037; Draw's 🔒 YAZ-1775 D10): the focused renderer's visible board exports a
    * picture — a drawing through the engine's export dialog, a diagram through its own renderer.
@@ -274,6 +276,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
       label: 'Help',
       role: 'help',
       submenu: [
+        { id: 'menu.help.key-sheet', label: 'Keys of This Tab…', ...key('keySheet'), click: () => handlers.keySheet() },
         { id: 'menu.help.whats-new', label: "What's New…", click: () => handlers.whatsNew() },
         { id: 'menu.help.github', label: 'Yaseen Docs on GitHub', click: () => handlers.openHelp() },
       ],
@@ -496,6 +499,9 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     },
     whatsNew() {
       host.focusedWebContents()?.send(CONTRACT.menu.onWhatsNew.channel)
+    },
+    keySheet() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onKeySheet.channel)
     },
     exportImage() {
       host.focusedWebContents()?.send(CONTRACT.menu.onExportImage.channel)

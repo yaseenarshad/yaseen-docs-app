@@ -28,6 +28,7 @@ function installBridge() {
   const goToListeners = new Set<() => void>()
   const zoomListeners = new Set<(step: -1 | 0 | 1) => void>()
   const whatsNewListeners = new Set<() => void>()
+  const keySheetListeners = new Set<() => void>()
   // The board gestures (YAZ-3037).
   const exportImageListeners = new Set<() => void>()
   const exportDrawingListeners = new Set<() => void>()
@@ -56,6 +57,7 @@ function installBridge() {
       onGoTo: sub(goToListeners),
       onZoom: sub(zoomListeners),
       onWhatsNew: sub(whatsNewListeners),
+      onKeySheet: sub(keySheetListeners),
       onExportImage: sub(exportImageListeners),
       onExportDrawing: sub(exportDrawingListeners),
       onShareLink: sub(shareLinkListeners),
@@ -80,6 +82,7 @@ function installBridge() {
     emitGoTo: () => goToListeners.forEach((l) => l()),
     emitZoom: (step: -1 | 0 | 1) => zoomListeners.forEach((l) => l(step)),
     emitWhatsNew: () => whatsNewListeners.forEach((l) => l()),
+    emitKeySheet: () => keySheetListeners.forEach((l) => l()),
     emitExportImage: () => exportImageListeners.forEach((l) => l()),
     emitExportDrawing: () => exportDrawingListeners.forEach((l) => l()),
     emitShareLink: () => shareLinkListeners.forEach((l) => l()),
@@ -101,6 +104,7 @@ function installBridge() {
       goToListeners.size +
       zoomListeners.size +
       whatsNewListeners.size +
+      keySheetListeners.size +
       exportImageListeners.size +
       exportDrawingListeners.size +
       shareLinkListeners.size +
@@ -125,6 +129,7 @@ interface ProbeProps {
   onGoTo: () => void
   onZoom: (step: -1 | 0 | 1) => void
   onWhatsNew: () => void
+  onKeySheet: () => void
   onExportImage: () => void
   onExportDrawing: () => void
   onShareLink: () => void
@@ -146,7 +151,7 @@ afterEach(() => {
 describe('useMenuEvents', () => {
   it('routes menu gestures to the callbacks and unsubscribes on unmount', () => {
     const b = installBridge()
-    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onTabOverview: vi.fn(), onNewTab: vi.fn(), onNewWindow: vi.fn(), onNewItem: vi.fn(), onGoTo: vi.fn(), onZoom: vi.fn(), onWhatsNew: vi.fn(), onExportImage: vi.fn(), onExportDrawing: vi.fn(), onShareLink: vi.fn(), onCanvasBackground: vi.fn() }
+    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onTabOverview: vi.fn(), onNewTab: vi.fn(), onNewWindow: vi.fn(), onNewItem: vi.fn(), onGoTo: vi.fn(), onZoom: vi.fn(), onWhatsNew: vi.fn(), onKeySheet: vi.fn(), onExportImage: vi.fn(), onExportDrawing: vi.fn(), onShareLink: vi.fn(), onCanvasBackground: vi.fn() }
     root = createRoot(document.createElement('div'))
     act(() => root?.render(<Probe {...handlers} />))
 
@@ -182,6 +187,8 @@ describe('useMenuEvents', () => {
     expect(handlers.onZoom).toHaveBeenCalledExactlyOnceWith(-1)
     act(() => b.emitWhatsNew())
     expect(handlers.onWhatsNew).toHaveBeenCalledTimes(1)
+    act(() => b.emitKeySheet())
+    expect(handlers.onKeySheet).toHaveBeenCalledTimes(1)
     act(() => b.emitExportImage())
     expect(handlers.onExportImage).toHaveBeenCalledTimes(1)
     act(() => b.emitExportDrawing())

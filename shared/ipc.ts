@@ -354,6 +354,8 @@ export const CONTRACT = {
     onGoTo: push('menu:go-to'),
     /** Help › What's New… (YAZ-2976 D8): the window opens its "What's new" window. */
     onWhatsNew: push('menu:whats-new'),
+    /** Help › Keys of This Tab… (YAZ-3564 K11): show the keys of the tab in front. */
+    onKeySheet: push('menu:key-sheet'),
     // The board gestures from Draw's application menu (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D10). The
     // renderer routes each to the VISIBLE board (`documents/boardCommand.ts`); main enables them only while
     // the focused window's active tab is a board of a kind they work for.

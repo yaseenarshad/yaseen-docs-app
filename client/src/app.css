@@ -4132,3 +4132,36 @@ button {
   font-size: 11px;
   color: var(--fg-muted);
 }
+
+/* The keys of this tab (YAZ-3564 K11): two columns, the key then what it does; the list scrolls inside the sheet. */
+.confirm.key-sheet {
+  width: min(520px, 92vw);
+  max-height: min(640px, 86vh);
+  overflow: auto;
+}
+.key-sheet__group + .key-sheet__group {
+  margin-top: 12px;
+}
+.key-sheet__title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.key-sheet__rows {
+  margin: 0;
+}
+.key-sheet__row {
+  display: grid;
+  grid-template-columns: 9em 1fr;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 13px;
+}
+.key-sheet__keys {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.key-sheet__label {
+  margin: 0;
+}
