@@ -20,6 +20,7 @@ import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { CodeEditor } from './CodeEditor'
 import { MAX_PREVIEWS, SYNC_DEBOUNCE_MS } from './languageClient'
 import { setLanguageHelpers } from './languageHelpers'
+import type { CodeSymbol } from './outline/outlineModel'
 import { readSymbols } from './outline/symbolSource'
 import { created, monaco, registered, resetFakeMonaco, type FakeEditor, type FakeModel, type FakeUri } from './monacoTestKit'
 
@@ -155,7 +156,9 @@ describe('the switch: "Jump across files", off by default (YAZ-3500)', () => {
     files['/vault/shapes.py'] = 'class Shape:\n    def area(self):\n        return 0\n\n\ndef make():\n    return Shape()\n'
     const { editor, model } = await opened('/vault/shapes.py')
     const symbols = await readSymbols(editor as never, model as never)
-    expect(symbols?.map((s) => [s.name, s.children?.map((c) => c.name) ?? []])).toEqual([
+    // Python answers symbols, never a packed TS tree (YAZ-3501).
+    if (!Array.isArray(symbols)) throw new Error('expected Python symbols')
+    expect((symbols as readonly CodeSymbol[]).map((s) => [s.name, s.children?.map((c) => c.name) ?? []])).toEqual([
       ['Shape', ['area']],
       ['make', []],
     ])
