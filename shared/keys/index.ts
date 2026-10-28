@@ -3,7 +3,7 @@
  * place (`types.ts`); the user's changes are `SettingsState.hotkeys` (K2) and the step-aside switches
  * `SettingsState.hotkeysAside` (K9). Pure and Electron-free: main, the renderer and the tests read it alike.
  */
-import { isUsableKey, parseAccelerator, sameKey, scopedId, type HotkeyOverrides } from '../hotkeyBindings'
+import { isUsableKey, normalizeKey, parseAccelerator, sameKey, scopedId, type HotkeyOverrides } from '../hotkeyBindings'
 import { APP_KEYS } from './app'
 import { CODE_KEYS } from './code'
 import { DIAGRAM_KEYS } from './diagram'
@@ -29,9 +29,9 @@ export function keysOf(row: KeyRow, overrides: HotkeyOverrides | undefined): rea
   return own === undefined ? row.keys : own === null ? [] : [own]
 }
 
-/** Whether an App row lets `place` keep its own key on it (K9): the user's switch, else the row's default. */
+/** Whether an App row lets `place` keep its own key on it (K9): the user's switch, else the row's default. A Mac standard key never does. */
 export function stepsAside(row: KeyRow, place: KeyScope, aside: HotkeyAside | undefined): boolean {
-  if (row.scope !== 'app' || !(['drawing', 'diagram', 'code'] as string[]).includes(place)) return false
+  if (row.scope !== 'app' || row.macStandard === true || !(['drawing', 'diagram', 'code'] as string[]).includes(place)) return false
   const own = aside?.[row.id]
   return own === undefined ? (row.stepsAsideIn ?? []).includes(place as AsidePlace) : own
 }
@@ -40,23 +40,50 @@ export function stepsAside(row: KeyRow, place: KeyScope, aside: HotkeyAside | un
 const firstStep = (key: string): string => key.split(' ')[0]
 
 /**
+ * The rows that could clash on a key, by its normal form: each row under its keys and under their first steps. Built
+ * once per set of changes (the Hotkeys page asks for every row on each render; a scan of all rows per row was ~50 ms).
+ */
+let index: { overrides: HotkeyOverrides | undefined; byKey: Map<string, KeyRow[]> } | null = null
+function rowsNear(key: string, overrides: HotkeyOverrides | undefined): KeyRow[] {
+  if (index === null || index.overrides !== overrides) {
+    const byKey = new Map<string, KeyRow[]>()
+    const add = (k: string, row: KeyRow) => {
+      const n = normalizeKey(k)
+      if (n === null) return
+      const list = byKey.get(n)
+      if (list === undefined) byKey.set(n, [row])
+      else if (list[list.length - 1] !== row) list.push(row)
+    }
+    for (const row of ALL_KEYS) for (const k of keysOf(row, overrides)) {
+      add(k, row)
+      add(firstStep(k), row)
+    }
+    index = { overrides, byKey }
+  }
+  const near = new Set([key, firstStep(key)].flatMap((k) => index?.byKey.get(normalizeKey(k) ?? '') ?? []))
+  return [...near].sort((a, b) => (POSITION.get(a) ?? 0) - (POSITION.get(b) ?? 0))
+}
+const POSITION = new Map(ALL_KEYS.map((row, i) => [row, i]))
+
+/**
  * The rows that keep `row` from firing with `key` (K3): a row of the same place with the same key; an App row with
  * it, or with its first step, since on a Mac the menu fires first (unless that App key steps aside in this place, K9);
  * and, for an App `key`, every row of a place that holds it, or begins with it. A Mac standard key blocks every place.
  */
-export function clashesOf(row: KeyRow, key: string, overrides: HotkeyOverrides | undefined, aside: HotkeyAside | undefined, rows: readonly KeyRow[] = ALL_KEYS): KeyRow[] {
-  return rows.filter((other) => {
+export function clashesOf(row: KeyRow, key: string, overrides: HotkeyOverrides | undefined, aside: HotkeyAside | undefined, rows?: readonly KeyRow[]): KeyRow[] {
+  // Only the rows on this key or its first step can clash; the order stays the list's.
+  return (rows ?? rowsNear(key, overrides)).filter((other) => {
     if (other.id === row.id) return false
     const theirs = keysOf(other, overrides)
     if (other.scope === row.scope) return theirs.some((k) => sameKey(k, key))
-    if (other.scope === 'app') return (other.onlyIn === undefined || other.onlyIn.includes(row.scope)) && (other.macStandard === true || !stepsAside(other, row.scope, aside)) && theirs.some((k) => sameKey(k, firstStep(key)))
+    if (other.scope === 'app') return (other.onlyIn === undefined || other.onlyIn.includes(row.scope)) && !stepsAside(other, row.scope, aside) && theirs.some((k) => sameKey(k, firstStep(key)))
     if (row.scope === 'app') return row.passesToPages !== true && (row.onlyIn === undefined || row.onlyIn.includes(other.scope)) && !stepsAside(row, other.scope, aside) && theirs.some((k) => sameKey(firstStep(k), key))
     return false
   })
 }
 
 /** The rows that block a row's own key now (K3): each place's row shows "Blocked: <owner> fires first" while one does. */
-export function blockersOf(row: KeyRow, overrides: HotkeyOverrides | undefined, aside: HotkeyAside | undefined, rows: readonly KeyRow[] = ALL_KEYS): KeyRow[] {
+export function blockersOf(row: KeyRow, overrides: HotkeyOverrides | undefined, aside: HotkeyAside | undefined, rows?: readonly KeyRow[]): KeyRow[] {
   if (row.scope === 'app') return []
   // An App key that hands its key to the page (an Edit role, the file clipboard) is no blocker (K3); recording still refuses it.
   return keysOf(row, overrides).flatMap((key) => clashesOf(row, key, overrides, aside, rows).filter((other) => other.scope === 'app' && other.passesToPages !== true))

@@ -24,6 +24,8 @@
 import { useState, type ReactNode } from 'react'
 import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
+import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
+import { keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
 import { SIDEBAR_ICON_KINDS, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
@@ -294,6 +296,12 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
 const HOVER_WORDS = ['hover', 'preview', 'note', 'markdown', 'drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse']
 
 /** Settings › Files & Links › Preview on hover (YAZ-3403): one row per place, under the master switch. */
+/** An App command's key as the user set it, for a hint (YAZ-3564: no hint hard-codes a key); null for "No key". */
+const menuKey = (id: HotkeyId, settings: SettingsState): string | null => {
+  const key = keyFor(id, settings.hotkeys)
+  return key === null ? null : toDisplay(key)
+}
+
 const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string; hint?: string; keywords: string[] }[] = [
   { place: 'sidebar', label: 'Sidebar', hint: 'Files, Focus, Favorites and Recents.', keywords: ['sidebar', 'files', 'tree', 'focus', 'favorites', 'recents'] },
   { place: 'search', label: 'Search results', keywords: ['search', 'results', 'find'] },
@@ -605,7 +613,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'goTo',
             label: 'Go to your place goes to',
-            hint: 'Go to your place (⌘D, File menu) shows this tab, folder or file in the sidebar. A drawing, a diagram and code keep their own ⌘D.',
+            hint: ({ settings }) => {
+              const key = menuKey('goTo', settings)
+              const row = keyRow('app.goTo')
+              const keeps = key !== null && row !== undefined && stepsAside(row, 'drawing', settings.hotkeysAside)
+              return `Go to your place (${key ?? 'no key'}, File menu) shows this tab, folder or file in the sidebar.${keeps ? ` A drawing, a diagram and code keep their own ${key}.` : ''}`
+            },
             keywords: ['sidebar', 'go to', 'place', 'cmd d', 'shortcut', 'folder', 'file', 'tab', 'focus', 'favorites', 'sessions', 'recents'],
             wide: ({ settings }) => settings.goTo.kind !== 'tab',
             render: ({ settings, onChange, places }) => <GoToControl settings={settings} onChange={onChange} vaults={places} />,
@@ -765,7 +778,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             id: 'newNoteLocation',
             label: 'Default location for new notes',
             // YAZ-3556 D3: the New… box uses it too, for notes, drawings and diagrams.
-            hint: 'Where the New… box (⌘N) and a new [[link]] make a page.',
+            hint: ({ settings }) => {
+              const key = menuKey('newItem', settings)
+              return `Where the New… box${key === null ? '' : ` (${key})`} and a new [[link]] make a page.`
+            },
             keywords: ['folder', 'wikilink', 'new', 'cmd n', 'drawing', 'diagram'],
             // A plain label-left / dropdown-right row, until the folder input needs the width.
             wide: ({ settings }) => settings.newNoteLocation === 'folder',

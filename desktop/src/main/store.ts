@@ -384,10 +384,15 @@ const isHotkeyOverrides = (v: unknown): v is HotkeyOverrides => isRecord(v) && O
 export function sanitizeHotkeys(raw: unknown): HotkeyOverrides {
   if (!isRecord(raw)) return {}
   if (Object.keys(raw).every((id) => id.includes('.')) && isHotkeyOverrides(raw)) return raw
-  // An old unscoped App id reads as `app.<id>` (YAZ-3564 K2); a scoped one wins over it.
+  // An old unscoped App id reads as `app.<id>` (YAZ-3564 K2); a scoped one wins over it. An old change that is the
+  // default now goes (⌘⇧B for Toggle sidebar, D10), so the page does not show it as changed.
   const scoped: HotkeyOverrides = {}
+  const isDefault = (id: string, key: string | null): boolean => {
+    const defaults = keyRow(id)?.keys ?? []
+    return key === null ? defaults.length === 0 : defaults.length === 1 && sameKey(key, defaults[0])
+  }
   for (const [id, key] of Object.entries(raw)) {
-    if (isHotkeyEntry([id, key]) && (id.includes('.') || !(scopedId(id) in raw))) scoped[scopedId(id)] = key as string | null
+    if (isHotkeyEntry([id, key]) && (id.includes('.') || !(scopedId(id) in raw)) && !isDefault(id, key as string | null)) scoped[scopedId(id)] = key as string | null
   }
   for (let loser = clashLoser(scoped); loser !== null; loser = clashLoser(scoped)) delete scoped[appKeyId(loser as HotkeyId)]
   return scoped

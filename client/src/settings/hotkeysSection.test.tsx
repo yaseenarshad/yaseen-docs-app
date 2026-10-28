@@ -62,11 +62,11 @@ afterEach(() => {
 
 const flush = () => act(async () => await Promise.resolve())
 
-async function mount(hotkeys: SettingsState['hotkeys'] = {}) {
+async function mount(hotkeys: SettingsState['hotkeys'] = {}, hotkeysAside: SettingsState['hotkeysAside'] = {}) {
   el = document.createElement('div')
   document.body.appendChild(el)
   root = createRoot(el)
-  act(() => root?.render(<Harness start={{ ...DEFAULT_SETTINGS, hotkeys }} />))
+  act(() => root?.render(<Harness start={{ ...DEFAULT_SETTINGS, hotkeys, hotkeysAside }} />))
   await flush()
   await flush()
 }
@@ -294,6 +294,17 @@ describe('every place on one page (YAZ-3564)', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: {} })
     // Every other App key starts with it off.
     expect(row('hotkey-search').querySelector<HTMLInputElement>('.hotkeys__aside input')?.checked).toBe(false)
+  })
+
+  it('the switch shows only where the menu can let a key go (Copy path, which the page handles, and a row with no key have none); a changed switch is a change Reset undoes', async () => {
+    await mount({ 'app.search': null }, { 'app.goTo': false })
+    const hasSwitch = (id: string) => row(id).querySelector('.hotkeys__aside') !== null
+    expect([hasSwitch('hotkey-goTo'), hasSwitch('hotkey-newTab'), hasSwitch('hotkey-copyPath'), hasSwitch('hotkey-search')]).toEqual([true, true, false, false])
+    toggle('Changed from default')
+    expect(shownRows().filter((id) => id?.startsWith('hotkey-'))).toEqual(['hotkey-goTo', 'hotkey-search'])
+    click(button(row('hotkey-goTo'), 'Reset'))
+    click(button(popup() as HTMLElement, 'Reset'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': null }, hotkeysAside: {} })
   })
 
   it('a place key moves off another place\'s row with "Move it here" (K8), and "Changed from default" shows the changes with "Reset all shown" (K7)', async () => {

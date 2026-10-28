@@ -494,6 +494,8 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+B' } })).toBe(false)
     // Two changes on one key: the one LAST in `HOTKEY_COMMANDS` order goes (Copy path after Search the vault).
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Alt+J', copyPath: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Alt+J' })
+    // An old change that is the default now goes (YAZ-3564 D10: Toggle sidebar's ⌘⇧B), so the page shows no Reset for it.
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { toggleSidebar: 'CmdOrCtrl+Shift+B', search: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Alt+J' })
     // Dropping one change can uncover the next clash: Tab overview's ⌘⇧M comes back, so Search the vault's ⌘⇧M goes too.
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+M', copyPath: 'CmdOrCtrl+Alt+J', tabOverview: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ 'app.copyPath': 'CmdOrCtrl+Alt+J' })
     // A move (D6) is no clash: the key left New Files window, which has "No key" now.
