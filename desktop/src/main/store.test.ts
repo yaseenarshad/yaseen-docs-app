@@ -560,6 +560,16 @@ describe('createStore: loading', () => {
     expect(mergeFolderSettings(here, { sidebarIconColors: 'red' }).sidebarIconColors).toEqual(here.sidebarIconColors)
   })
 
+  it('sidebarRevealActive (YAZ-3440 D13): default off; an older file without it loads off; a bad value loads off and fails the channel check; it travels with the settings folder', () => {
+    expect(DEFAULT_SETTINGS.sidebarRevealActive).toBe(false)
+    const { sidebarRevealActive: _reveal, ...legacy } = DEFAULT_SETTINGS
+    expect(sanitizeSettings(legacy).sidebarRevealActive).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarRevealActive: true }).sidebarRevealActive).toBe(true)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarRevealActive: 'yes' }).sidebarRevealActive).toBe(false)
+    expect([isSettings({ ...DEFAULT_SETTINGS, sidebarRevealActive: true }), isSettings({ ...DEFAULT_SETTINGS, sidebarRevealActive: 1 })]).toEqual([true, false])
+    expect(mergeFolderSettings(DEFAULT_SETTINGS, { sidebarRevealActive: true }).sidebarRevealActive).toBe(true)
+  })
+
   it('sidebarIconRules (YAZ-3440 B, demo round 2): an older file without it loads none; a rule that does not read costs itself alone; the channel check takes only rules that all read; it travels whole', () => {
     expect(DEFAULT_SETTINGS.sidebarIconRules).toEqual([])
     const { sidebarIconRules: _rules, ...legacy } = DEFAULT_SETTINGS

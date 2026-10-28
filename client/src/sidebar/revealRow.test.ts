@@ -80,6 +80,27 @@ describe('flashTreeRows (YAZ-1065)', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
+  it('quiet (YAZ-3440 D13): no flash, no focus, no timer; the first row scrolls to the centre only if it is outside the host', () => {
+    vi.useFakeTimers()
+    const scroll = vi.fn()
+    ;(HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView = scroll
+    const focused = document.createElement('button')
+    const host = document.createElement('div')
+    const first = row('/v/Note.md')
+    host.append(first, row('/v/Note.md'))
+    document.body.append(focused, host)
+    focused.focus()
+    const timers = vi.getTimerCount()
+    // jsdom's empty boxes: the row shows, so nothing scrolls.
+    expect(flashTreeRows(host, '/v/Note.md', true, { quiet: true })).toBeTypeOf('function')
+    expect([scroll.mock.calls, host.querySelectorAll('.tree__row--revealed').length, document.activeElement, vi.getTimerCount()]).toEqual([[], 0, focused, timers])
+    vi.spyOn(host, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ x: 0, y: 0, width: 100, height: 100 }))
+    vi.spyOn(first, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ x: 0, y: 150, width: 100, height: 20 }))
+    flashTreeRows(host, '/v/Note.md', false, { quiet: true })
+    expect(scroll.mock.calls).toEqual([[{ block: 'center' }]])
+    expect(scroll.mock.contexts).toEqual([first])
+  })
+
   it('returns null and schedules nothing when the exact row is absent', () => {
     vi.useFakeTimers()
     const host = document.createElement('div')

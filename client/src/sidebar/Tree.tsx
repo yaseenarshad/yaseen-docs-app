@@ -120,25 +120,50 @@ const edgeOf = (e: React.DragEvent): 'before' | 'after' => {
 }
 
 /**
- * The arrows on a row of Files, Focus or Favorites (YAZ-2662 D11): ↓ and ↑ move the keyboard focus
- * to the next row on show and to the row before, and stop at both ends; → opens a closed folder row
- * and ← closes an open one. They read the rows as drawn, select nothing and open no page. A rename
- * box or a create box is no row, so its arrows stay its own (S64).
+ * The arrows on a row of Files, Focus or Favorites (YAZ-2662 D11; VS Code's moves since YAZ-3440 D12):
+ * - ↓ and ↑ move the keyboard focus to the next row on show and to the row before, and stop at both ends.
+ * - Home and End move it to the first and to the last row on show (D12).
+ * - → opens a closed folder row, and ← closes an open one.
+ * - ← on a file row or a closed folder row moves it to the row of the folder that holds it (D12). In Focus
+ *   and Favorites that is the folder inside the same copy (YAZ-3131): the parent is read from the rows as
+ *   drawn. A top row has no folder above it, so nothing happens.
+ * - → on an open folder row moves it to the folder's first row (D12, which changes YAZ-2663 D8 for an
+ *   open folder only). An empty folder has no first row, so nothing happens.
+ * - → on a file row goes to the new tab page (YAZ-2663 D8).
+ * They read the rows as drawn, select nothing and open no page. A rename box or a create box is no
+ * row, so its arrows stay its own (S64). The browser's `.focus()` scrolls the row into view, and
+ * `scroll-margin-top` (app.css) keeps it below the stuck rows (YAZ-3440 D1).
  */
 function rowArrows(e: React.KeyboardEvent<HTMLElement>, onToggle: (dir: string) => void, onLeaveToPage?: () => boolean): void {
   const row = e.target instanceof HTMLElement && e.target.matches('.tree__row') ? e.target : null
   const path = row?.dataset.path
   if (row === null || path === undefined) return
+  const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)
+  const rows = () => [...e.currentTarget.querySelectorAll<HTMLElement>('.tree__row[data-path]')]
+  // A folder's item says whether it is open; a file's says nothing (null).
+  const item = row.closest('[role="treeitem"]')
+  const open = item?.getAttribute('aria-expanded') ?? null
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    const rows = [...e.currentTarget.querySelectorAll<HTMLElement>('.tree__row[data-path]')]
-    rows[rows.indexOf(row) + (e.key === 'ArrowDown' ? 1 : -1)]?.focus()
+    const all = rows()
+    all[all.indexOf(row) + (e.key === 'ArrowDown' ? 1 : -1)]?.focus()
+  } else if ((e.key === 'Home' || e.key === 'End') && plain) {
+    const all = rows()
+    all[e.key === 'Home' ? 0 : all.length - 1]?.focus()
   } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-    // A folder's item says whether it is open; a file's says nothing, so neither key acts on it.
     // A folder row of a copy (YAZ-3131) folds under its own key, which the row carries in `data-fold`.
-    if (row.closest('[role="treeitem"]')?.getAttribute('aria-expanded') === String(e.key === 'ArrowLeft')) onToggle(row.dataset.fold ?? path)
-    // → with nothing to open — a file row, a folder that is open — goes to the new tab page, when
-    // it shows and has a row (YAZ-2663 D8). With no such page the key does nothing, as before (S62).
-    else if (e.key === 'ArrowRight' && !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)) onLeaveToPage?.()
+    if (open === String(e.key === 'ArrowLeft')) onToggle(row.dataset.fold ?? path)
+    // ← with nothing to close (D12): the row of the folder this row is drawn in — its item's level is a
+    // group, and that group's item is the folder's. The tree's own level is no group: a top row stops here.
+    else if (e.key === 'ArrowLeft') {
+      if (plain) item?.parentElement?.closest('[role="treeitem"]')?.querySelector<HTMLElement>(':scope > .tree__row[data-path]')?.focus()
+    }
+    // → on an open folder (D12): its first row, if it holds one.
+    else if (open === 'true') {
+      if (plain) item?.querySelector<HTMLElement>(':scope > [role="group"] .tree__row[data-path]')?.focus()
+    }
+    // → on a file row goes to the new tab page, when it shows and has a row (YAZ-2663 D8). With no such
+    // page the key does nothing, as before (S62).
+    else if (plain) onLeaveToPage?.()
   } else return
   e.preventDefault()
 }
@@ -246,7 +271,7 @@ interface TreeProps {
    * matched folder — is drawn dim. Without it a tree draws, and re-renders, exactly as before.
    */
   marks?: TreeMarks
-  /** The way to the new tab page from a row of Files, Focus or Favorites (YAZ-2663 D8): → on a row that has nothing to open asks it. The top level's alone. */
+  /** The way to the new tab page from a row of Files, Focus or Favorites (YAZ-2663 D8): → on a file row asks it. An open folder's → goes to its first row since YAZ-3440 D12. The top level's alone. */
   onLeaveToPage?: () => boolean
   /** The top row this level stands under (YAZ-2845 D1); none at the top level. It tells the copies of a row that shows twice apart. */
   top?: string
@@ -393,7 +418,7 @@ function TreeLevel({
   /** `YAZ-12 — ` in front of the row of an ID match (YAZ-2677 S70); nothing for any other row. */
   const idFor = (path: string) => (marks?.ids?.has(path) ? `${marks.ids.get(path)} — ` : null)
   return (
-    // The arrows are the whole tree's, taken once at its top (YAZ-2662 D11) — not a search tree's, whose keys are the search bar's.
+    // The arrows, Home and End are the whole tree's, taken once at its top (YAZ-2662 D11, YAZ-3440 D12) — not a search tree's, whose keys are the search bar's.
     // A held Enter is stopped there too, in each tree.
     // A nested level carries its depth (YAZ-3309): app.css draws its level line below the chevron of the folder that holds it.
     <ul className="tree" role={depth === 0 ? 'tree' : 'group'} style={depth > 0 ? ({ '--tree-depth': depth } as CSSProperties) : undefined} onKeyDownCapture={depth === 0 ? heldEnter : undefined} onKeyDown={depth === 0 && marks === undefined ? (e) => rowArrows(e, onToggle, onLeaveToPage) : undefined}>
