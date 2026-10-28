@@ -189,8 +189,8 @@ export interface WindowManager extends WindowLookup {
   /**
    * "Open by itself" (YAZ-2858 D1, `window:open-alone`): the `openRecentBeside` door with an EXACT
    * match. It raises only a live window whose vaults are this one vault alone (`sameVaults`); a
-   * window that shows it beside another vault does not count and does not change (S1). With none, a
-   * new window opens on the vault's remembered last file. The probe and the MRU bump are the same:
+   * window that shows it beside another vault does not count and does not change (S1). With none, the
+   * empty caller takes it, else a new window opens on it, blank (YAZ-3487 D1, D7). The probe and the MRU bump are the same:
    * a dead folder is pruned and opens nothing → `false`. No saved set changes (S7). `from`: as `openRecentBeside`'s.
    */
   openAlone(path: string, from?: string): boolean
@@ -199,8 +199,8 @@ export interface WindowManager extends WindowLookup {
    * vaults that are left, in the saved order, are what opens, and the ones that are gone come back
    * in `missing` — the saved set itself keeps them, a folder can come back (S66). Every live window
    * whose vaults are EXACTLY the ones left (`sameVaults`: the order does not count) is raised, as
-   * `openRecentBeside` raises; with none, ONE new window opens on them, on the first vault's
-   * remembered last file (S65). Either way the set becomes the last used. No folder left, or an
+   * `openRecentBeside` raises; with none, the empty caller takes them, else ONE new window opens on them,
+   * blank (S65; YAZ-3487 D1, D7). Either way the set becomes the last used. No folder left, or an
    * unknown `id`, opens nothing and changes nothing → `opened: false`.
    */
   openVaultSet(id: string, from?: string): OpenSetResult

@@ -307,7 +307,8 @@ export const storage = {
   getTabs: (): string[] => identity.tabs,
   /**
    * This window was opened EMPTY on purpose (YAZ-3343 D22, D35): the tab board's "New window", or ⌘⇧N. Main says so
-   * in its first identity; it boots with no tab, never on the vault's last file.
+   * in its first identity; it boots on the blank tab with the caret in the search (every window boots with no tab
+   * of its own now, YAZ-3487 D7; this flag is what puts the caret there).
    */
   isEmptyByChoice: (): boolean => identity.file === null && identity.startEmpty === true,
   /**
@@ -319,6 +320,7 @@ export const storage = {
   /** Durable right-panel identity at boot; clone the ordered list so callers cannot mutate the cache. */
   getRightPanel: (): RightPanelIdentity => ({ ...identity.rightPanel, items: [...identity.rightPanel.items] }),
 
+  /** The folder's remembered file: still WRITTEN (`setWorkspace`), no longer read to open a vault (YAZ-3487 D7). The tests read the write through it. */
   getLastFile: (root: string): string | null => folderOf(root).lastFile,
 
   /** A vault's open history (YAZ-2663 D1): page → how much it is used, and when it was last on show. Read-only here: main alone adds a use, and the cache follows the broadcast. */

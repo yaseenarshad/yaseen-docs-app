@@ -2274,6 +2274,13 @@ describe('createWindowManager: the empty-window door (YAZ-3487 D1, D2, D3)', () 
     expect(win('e').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/b', '/v/a'])
   })
 
+  it('S10, S12: a Welcome window (no vault) in front counts as empty: ⌘<n> sends it the vault, and no window opens', () => {
+    const { manager, created, win } = seed({ ...entry('wel', ['/x']), root: null, roots: [] })
+    expect(manager.openRecentBeside('/v/c', 'wel')).toBe(true)
+    expect(created).toHaveLength(1)
+    expect(win('wel').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/c'])
+  })
+
   it('S13: a folder that is gone → false; nothing is sent, nothing opens', () => {
     store.upsertWindow(entry('e', ['/v/a']))
     const { host, created } = makeHost(undefined, undefined, (p) => p !== '/v/gone')

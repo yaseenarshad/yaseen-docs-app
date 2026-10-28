@@ -246,9 +246,9 @@ export const CONTRACT = {
     onHiddenWindows: push<string[]>('window:hidden-windows'),
     /** The windows minimized in the Dock (YAZ-3343), to every window on each change. */
     onMinimizedWindows: push<string[]>('window:minimized-windows'),
-    /** The vault switcher's one door (YAZ-1767 🔒 D1, D9): raise that vault's windows or open a new one on its last file; `false` = the folder is gone and was pruned from the MRU. */
+    /** The vault switcher's one door (YAZ-1767 🔒 D1, D9): raise that vault's windows, else the EMPTY caller takes it, else open a new one on it, blank (YAZ-3487 D1, D7); `false` = the folder is gone and was pruned from the MRU. */
     openRecent: invoke<[path: string], boolean>('window:open-recent', 1),
-    /** "Open by itself" (YAZ-2858 D1): raise the window that shows ONLY this vault, else open a new one on its last file; a workspace window that shows it does not count and does not change. `false` = the folder is gone and was pruned from the MRU. */
+    /** "Open by itself" (YAZ-2858 D1): raise the window that shows ONLY this vault, else the EMPTY caller takes it, else open a new one on it, blank (YAZ-3487 D1, D7); a workspace window that shows it does not count and does not change. `false` = the folder is gone and was pruned from the MRU. */
     openAlone: invoke<[path: string], boolean>('window:open-alone', 1),
     /** Tabs closed in THIS window (YAZ-3487 D10): main puts their notes in "Recently closed" of the window's vaults. */
     noteClosed: invoke<[files: readonly string[]], void>('window:note-closed', 1),

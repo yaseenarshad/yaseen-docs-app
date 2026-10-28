@@ -2653,8 +2653,8 @@ export interface WindowIdentity {
    */
   startView?: StartView
   /**
-   * This window was opened EMPTY on purpose (YAZ-3343, the tab board's "New window"): it boots with no tab, never on
-   * the vault's last file. Given out by its FIRST `window:identity` only, as `startView`. Never stored.
+   * This window was opened EMPTY on purpose (YAZ-3343, the tab board's "New window"): it boots on the blank tab with the
+   * caret in the search (every window boots with no tab of its own now, YAZ-3487 D7). Given out by its FIRST `window:identity` only, as `startView`. Never stored.
    */
   startEmpty?: true
   /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */

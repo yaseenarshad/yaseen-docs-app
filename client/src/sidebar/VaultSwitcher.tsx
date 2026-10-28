@@ -21,7 +21,7 @@
  *
  * ONE rule for every vault row (D1/D3): activating it — click or ⏎ — asks main's one open-recent
  * door, `window.openRecent(path)`, which brings that vault to the front: its open windows raised
- * (D9) or, with none, a NEW window on its remembered last file (D2) — and bumps the MRU either
+ * (D9) or, with none, this window when it is EMPTY, else a NEW window, blank (YAZ-3487 D1, D7) — and bumps the MRU either
  * way; the current vault's row simply raises this window. A folder that is gone answers `false`:
  * the row is disabled with "Folder not found" in the time slot and the panel STAYS open
  * (Welcome's behaviour), so the next choice is one keystroke away. `true` closes the panel.

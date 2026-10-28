@@ -728,10 +728,10 @@ export interface UseWorkspace extends WorkspaceState {
   openBackground: (path: string) => void
   /** A tab, by id (YAZ-2940 D1). */
   activate: (id: string) => void
-  /** That tab only: a copy closes alone (S11). */
-  close: (id: string) => void
+  /** That tab only: a copy closes alone (S11). Its note goes to "Recently closed" (YAZ-3487 D10) — not when `moved`: it lives on in another window. */
+  close: (id: string, moved?: boolean) => void
   /** The tab board's closes of several tabs (YAZ-2648 D9, D15), by id: each as `close`, and ONE identity write for all of them. */
-  closeMany: (ids: readonly string[]) => void
+  closeMany: (ids: readonly string[], moved?: boolean) => void
   /** "Restore session" (YAZ-3147 D3): the stored tabs whose page is not open join the end, ONE change and ONE identity write (S27). */
   openStored: (tabs: readonly StoredTab[]) => void
   /** Drag-to-reorder (I3): the tab at `from` lands at final index `to`; activation untouched. */
@@ -838,17 +838,17 @@ export function useWorkspace(root: string | null): UseWorkspace {
   }, [dispatch])
   const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path }), [dispatch])
   const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
-  /** YAZ-3487 D10: the notes of the tabs that close go to "Recently closed". A tab that moves is open there, so the page hides it. */
+  /** YAZ-3487 D10: the notes of the tabs that close go to "Recently closed". A tab that MOVES to another window is no close: its caller says so. */
   const noteClosed = useCallback((ids: readonly string[]): void => {
     const paths = stateRef.current.tabs.filter((t) => ids.includes(t.id)).map((t) => t.path)
     if (paths.length > 0) storage.noteClosed(paths)
   }, [])
-  const close = useCallback((id: string) => {
-    noteClosed([id])
+  const close = useCallback((id: string, moved = false) => {
+    if (!moved) noteClosed([id])
     dispatch({ type: 'close', id })
   }, [dispatch, noteClosed])
-  const closeMany = useCallback((ids: readonly string[]) => {
-    noteClosed(ids)
+  const closeMany = useCallback((ids: readonly string[], moved = false) => {
+    if (!moved) noteClosed(ids)
     dispatch({ type: 'close-many', ids })
   }, [dispatch, noteClosed])
   const openStored = useCallback((tabs: readonly StoredTab[]) => dispatch({ type: 'open-stored', tabs }), [dispatch])

@@ -386,6 +386,13 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     windows.highlight(entryFor(e).id, to === null ? null : requireString(to, 'to'))
   })
 
+  // `window:note-closed` (YAZ-3487 D10): the notes of tabs the caller closed go to "Recently closed" of ITS vaults.
+  handleWithEvent(CONTRACT.window.noteClosed, async (e, files: unknown) => {
+    const roots = entryFor(e).roots
+    if (!Array.isArray(files)) throw new BridgeFailure('BAD_REQUEST', "'files' must be a list of absolute paths")
+    store.addClosed(roots, files.map((file, i) => requireAbsPath(file, `files[${i}]`)))
+  })
+
   // `window:open-recent` (YAZ-1767 D1): the vault switcher's door — an absolute path in, and the
   // manager's verdict out: true = the vault is in front (its windows raised, D9, or a new one
   // opened; MRU bumped), false = the folder is gone and was pruned from the MRU instead. Any
@@ -399,12 +406,6 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // manager's door: what opened, and the folders that are gone. Any window may ask it, and may
   // rename or remove a set. `window:save-set` saves the CALLER's own vaults, so the renderer never
   // sends a list; false = the store refused (fewer than two vaults, an empty name, or R12).
-  // `window:note-closed` (YAZ-3487 D10): the notes of tabs the caller closed go to "Recently closed" of ITS vaults.
-  handleWithEvent(CONTRACT.window.noteClosed, async (e, files: unknown) => {
-    const roots = entryFor(e).roots
-    if (!Array.isArray(files)) throw new BridgeFailure('BAD_REQUEST', "'files' must be a list of absolute paths")
-    store.addClosed(roots, files.map((file, i) => requireAbsPath(file, `files[${i}]`)))
-  })
   handleWithEvent(CONTRACT.window.openSet, async (e, id: unknown): Promise<OpenSetResult> => windows.openVaultSet(requireString(id, 'id'), windows.idFor(e.sender)))
   handleWithEvent(CONTRACT.window.saveSet, async (e, name: unknown): Promise<boolean> => store.saveVaultSet(requireString(name, 'name'), entryFor(e).roots) !== null)
   handle(CONTRACT.window.renameSet, async (id: unknown, name: unknown): Promise<boolean> => store.renameVaultSet(requireString(id, 'id'), requireString(name, 'name')))

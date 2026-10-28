@@ -53,13 +53,14 @@ function sameRecord(a: VaultRecord, b: VaultRecord): boolean {
     a.root === b.root &&
     a.name === b.name &&
     paths.length === Object.keys(b.opens).length &&
-    paths.every((path) => path in b.opens && b.opens[path].last === a.opens[path].last && b.opens[path].score === a.opens[path].score) &&
+    // "Recent" reads `last` alone: a new `score` with the same `last` changes no row (the suggestions that read it left, YAZ-3487 D8).
+    paths.every((path) => path in b.opens && b.opens[path].last === a.opens[path].last) &&
     closed.length === Object.keys(b.closed).length &&
     closed.every((path) => b.closed[path] === a.closed[path])
   )
 }
 
-/** A row: a path the Files tree holds, as its node there, and the vault that holds it. `last` is when it was last on show ("Recent" alone says it). */
+/** A row: a path the Files tree holds, as its node there, and the vault that holds it. `last` is when it was last on show ("Recent") or closed ("Recently closed", YAZ-3487). */
 interface Row {
   path: string
   node: TreeNode

@@ -294,6 +294,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       duplicate: vi.fn(async (_view?: PageView) => undefined),
       // A tab's "Move to new window" (YAZ-2933): main opens the window; the tab leaves this one after.
       popOut: vi.fn(async (_path: string, _carry?: { view?: PageView }) => undefined),
+      noteClosed: vi.fn(async (_files: readonly string[]) => undefined),
       // A tab's "Move to ▸ <window>" (YAZ-3091 D1): main hands the tab to that window; the tab leaves this one after.
       moveTo: vi.fn(async (_to: string, _path: string, _carry?: { view?: PageView; name?: string }) => undefined),
       closeSelf: vi.fn(async () => undefined),
@@ -1542,7 +1543,35 @@ describe('App tab board across windows (YAZ-3343)', () => {
     expect(tabNames(el)).toEqual([])
     // Empty now: a vault chip's pick switches this window's vaults.
     act(() => emitSetRoots(['/w']))
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ roots: ['/w'] }))
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith(expect.objectContaining({ roots: ['/w'] }))
+  })
+
+  it('YAZ-3487 D1, S6, S14: main\'s push takes an EMPTY window — the blank tab is no tab — onto the vaults, on Files; a window with a tab, or a right-panel item, stays as it is', async () => {
+    const empty = { id: 'w9', root: '/v', file: null, tabs: [], startEmpty: true as const, sidebarLens: 'favorites' as const }
+    const first = await mount(withWindows(), empty)
+    expect(tabNames(first.el)).toEqual(['New tab'])
+    act(() => first.emitSetRoots(['/w']))
+    expect(first.bridge.window.setIdentity).toHaveBeenCalledWith(expect.objectContaining({ roots: ['/w'] }))
+    expect(first.bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ sidebarLens: 'files' }))
+    act(() => root?.unmount())
+    container?.remove()
+
+    const busy = await mount(withWindows(), ME)
+    busy.bridge.window.setIdentity.mockClear()
+    act(() => busy.emitSetRoots(['/w']))
+    expect(busy.bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ roots: ['/w'] }))
+  })
+
+  it('YAZ-3487 D10: a tab MOVED to a new window is no close; "Open in this window" closes the tabs it drops', async () => {
+    const { bridge, el } = await mount(withWindows(), ME)
+    const before = tabNames(el)
+    act(() => void el.querySelectorAll('.tabbar__tab')[0]?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Move to new window')?.click())
+    await act(async () => {})
+    expect(tabNames(el)).toHaveLength(before.length - 1)
+    expect(bridge.window.noteClosed).not.toHaveBeenCalled()
+    await act(async () => void (await captured.sidebar?.onOpenVaultHere('/w')))
+    expect(bridge.window.noteClosed).toHaveBeenCalledExactlyOnceWith(['/v/b.md', '/v/c.md'])
   })
 
   it('YAZ-3343 D22, S47: a window opened EMPTY from the board (its first identity says so) boots with no tab — not the vault\'s last file — and a tab moved in quietly is its ONE tab, active', async () => {
