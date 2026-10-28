@@ -1,50 +1,11 @@
-# Vendored drawing engine (yaseendraw)
+# Vendored packages
 
-The five `yaseendraw-*-<forkCommit>.tgz` tarballs are the `@excalidraw/excalidraw` package
-and its four monorepo siblings (`common`, `element`, `math`, `fractional-indexing`), built
-from Yasin's fork (github.com/yaseenarshad/yaseen-excalidraw) at the commit named in every
-filename. Milkdown consumes them via the `file:` dependencies in `client/package.json`
-(YAZ-868: rulings D1/D2 — consume the fork build as-is, pinned tarballs in-repo).
+The drawing engine is not here any more (YAZ-3572 E1). Its source lives in `engine/`, moved with its full
+history from the fork repo (github.com/yaseenarshad/yaseen-excalidraw, now read-only) at `1caba0b6`, the
+commit the five packed builds that used to sit here were made from. `engine/README-docs-app.md` tells how
+it builds and how to take new Excalidraw changes.
 
-Why five and not one: the fork's package build externalizes its siblings as real runtime
-imports, and those don't exist on npm at the fork's versions — so the siblings ship too
-(they're tiny; the main tarball's ~31 MB is mostly fonts plus the dev build the exports
-map requires).
-
-**Pin:** fork commit `1caba0b6`: YAZ-3177 (Enter keeps the line format) and YAZ-3175 (a double
-click selects the word and a triple click the line in styled text). Drawing tabs and note embeds
-run this one engine. It was `57727ef6` (YAZ-3177), `10fa3958` (YAZ-3028 D3) and `9e63bdf2` before
-that. Yaseen Draw is legacy and stays on `10fa3958`. `@excalidraw/laser-pointer` (1.3.1) and
-`@excalidraw/utils` are not vendored: the fork does not touch them, and they resolve from the
-registry as the engine's own dependencies. Do not pack them.
-
-## Sync a fork change into milkdown
-
-```bash
-cd ~/Documents/GitHub/yaseen-excalidraw && git pull
-yarn install
-HASH=$(git rev-parse --short HEAD)
-V=~/Documents/GitHub/yaseen-docs-app/client/vendor
-for p in excalidraw common element math fractional-indexing; do
-  yarn --cwd ./packages/$p build:esm
-  (cd packages/$p && npm pack --pack-destination /tmp)
-  ver=$(node -p "require('./packages/$p/package.json').version")
-  mv /tmp/excalidraw-$p-$ver.tgz $V/yaseendraw-$p-$ver-$HASH.tgz
-done
-```
-
-Then in milkdown: delete the old tarballs, point the five `file:` entries in
-`client/package.json` at the new filenames, run `npm install`, build, run the e2e drawing
-specs, commit all of it together. The fork hash in the filenames is deliberate — it pins
-provenance and busts npm's `file:` tarball cache on every bump.
-
-Then check `package-lock.json`: every `resolved` of the five must name the new hash, and each
-`integrity` must be the sha512 of the new tarball (`openssl dgst -sha512 -binary <tgz> | base64`).
-npm keys `file:` deps on content, so a package that builds byte-identically across two commits
-(`fractional-indexing` does) can keep its old `resolved` path. `npm install` hides that; a clean
-`npm ci` then fails on the deleted tarball. `grep -c <old hash> package-lock.json` must print 0.
-
-## Also here: three patched Milkdown packages
+## Three patched Milkdown packages
 
 - `milkdown-components-7.22.1-yaz1410.*`: `@milkdown/components` 7.22.1 with the YAZ-1410 CSS
   zoom fix and the YAZ-2131 list-item caret restore (🔒 D2). Provenance and rebuild:

@@ -59,6 +59,8 @@ async function main() {
     conditions: ['production'],
     outdir: OUT,
     alias: { react: pkgDir('react'), 'react-dom': pkgDir('react-dom') },
+    // As the renderer (electron.vite.config.ts, YAZ-3574): the engine's imports resolve from the app's node_modules.
+    preserveSymlinks: true,
     define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env.DEV': 'false', 'import.meta.env.PROD': 'true' },
     loader: { '.woff2': 'file', '.png': 'dataurl', '.svg': 'dataurl' },
     logLevel: 'warning',

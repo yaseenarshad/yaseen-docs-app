@@ -66,19 +66,20 @@ describe('packDrawio (🔒 YAZ-1802 D5)', () => {
     expect(shared).toContain(`export const DRAWIO_TAG = '${DRAWIO_TAG}'`)
   })
 
-  it('dev and build pack draw.io first; CI packs before it tests (YAZ-3028 D5)', () => {
+  it('dev and build pack draw.io first, after the engine whose fonts it copies; CI packs before it tests (YAZ-3028 D5, YAZ-3572)', () => {
     const { scripts } = JSON.parse(readFileSync(new URL('../desktop/package.json', import.meta.url), 'utf8'))
-    for (const script of [scripts.dev, scripts.build]) expect(script.startsWith('node ../tools/packDrawio.mjs && ')).toBe(true)
+    for (const script of [scripts.dev, scripts.build]) expect(script.startsWith('node ../tools/buildEngine.mjs && node ../tools/packDrawio.mjs && ')).toBe(true)
     const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
     expect(ci.indexOf('run: npm run drawio:pack')).toBeGreaterThan(-1)
     expect(ci.indexOf('run: npm run drawio:pack')).toBeLessThan(ci.indexOf('run: npm test'))
   })
 
-  it('the workflows use only the actions the repo allows: checkout, setup-node and the release action (YAZ-3028)', () => {
-    // Any other `uses:` (actions/cache was one) makes GitHub refuse the whole workflow at startup.
+  it('the workflows use only the actions the repo allows: checkout, setup-node, cache and the release action (YAZ-3028, YAZ-3572)', () => {
+    // Any other `uses:` makes GitHub refuse the whole workflow at startup. actions/cache joined the repo's list on 2026-10-28
+    // for the engine build (YAZ-3572 E4): a new action needs that setting first (Settings › Actions › General).
     for (const file of ['ci.yml', 'release.yml']) {
       const yml = readFileSync(new URL(`../.github/workflows/${file}`, import.meta.url), 'utf8')
-      for (const [, action] of yml.matchAll(/uses:\s*([^@\s]+)@/g)) expect(['actions/checkout', 'actions/setup-node', 'softprops/action-gh-release']).toContain(action)
+      for (const [, action] of yml.matchAll(/uses:\s*([^@\s]+)@/g)) expect(['actions/checkout', 'actions/setup-node', 'actions/cache', 'softprops/action-gh-release']).toContain(action)
     }
   })
 })

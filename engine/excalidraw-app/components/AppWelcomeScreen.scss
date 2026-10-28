@@ -1,0 +1,45 @@
+.excalidraw {
+  .yaseen-welcome-lockup {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    text-align: center;
+  }
+
+  .yaseen-welcome-lockup__logo {
+    width: 5rem;
+    height: 5rem;
+    display: block;
+  }
+
+  .yaseen-welcome-lockup__title {
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    font-size: 2.25rem;
+    font-weight: 400;
+    line-height: 1.1;
+  }
+
+  &.excalidraw--mobile {
+    .yaseen-welcome-lockup {
+      gap: 0.75rem;
+    }
+
+    .yaseen-welcome-lockup__logo {
+      width: 4rem;
+      height: 4rem;
+    }
+
+    .yaseen-welcome-lockup__title {
+      font-size: 1.75rem;
+    }
+  }
+
+  @media (max-height: 500px), (max-width: 320px) {
+    .yaseen-welcome-lockup {
+      display: none;
+    }
+  }
+}

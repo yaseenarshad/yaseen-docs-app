@@ -1,0 +1,93 @@
+import clsx from "clsx";
+
+import {
+  COLOR_OUTLINE_CONTRAST_THRESHOLD,
+  COLOR_PALETTE,
+  DEFAULT_CANVAS_BACKGROUND_PICKS,
+  DEFAULT_ELEMENT_BACKGROUND_PICKS,
+  DEFAULT_ELEMENT_STROKE_PICKS,
+  isColorDark,
+} from "@excalidraw/common";
+
+import { t } from "../../i18n";
+
+import { getColorNameAndShadeFromColor } from "./colorPickerUtils";
+
+import type { TranslationKeys } from "../../i18n";
+
+import type { ColorPickerType } from "./colorPickerUtils";
+
+interface TopPicksProps {
+  onChange: (color: string) => void;
+  type: ColorPickerType;
+  activeColor: string | null;
+  topPicks?: readonly string[];
+}
+
+export const TopPicks = ({
+  onChange,
+  type,
+  activeColor,
+  topPicks,
+}: TopPicksProps) => {
+  let colors;
+  if (type === "elementStroke") {
+    colors = DEFAULT_ELEMENT_STROKE_PICKS;
+  }
+
+  if (type === "elementBackground") {
+    colors = DEFAULT_ELEMENT_BACKGROUND_PICKS;
+  }
+
+  if (type === "canvasBackground") {
+    colors = DEFAULT_CANVAS_BACKGROUND_PICKS;
+  }
+
+  // this one can overwrite defaults
+  if (topPicks) {
+    colors = topPicks;
+  }
+
+  if (!colors) {
+    console.error("Invalid type for TopPicks");
+    return null;
+  }
+
+  return (
+    <div className="color-picker__top-picks">
+      {colors.map((color: string) => {
+        const colorName = getColorNameAndShadeFromColor({
+          color,
+          palette: COLOR_PALETTE,
+        })?.colorName;
+        const label = colorName
+          ? t(`colors.${colorName}` as TranslationKeys)
+          : color;
+
+        return (
+          <button
+            className={clsx("color-picker__button", {
+              active: color === activeColor,
+              "is-transparent": color === "transparent" || !color,
+              "is-canonical-white": color === COLOR_PALETTE.white,
+              "has-outline": !isColorDark(
+                color,
+                COLOR_OUTLINE_CONTRAST_THRESHOLD,
+              ),
+            })}
+            style={{ "--swatch-color": color }}
+            key={color}
+            type="button"
+            title={label}
+            aria-label={label}
+            aria-pressed={color === activeColor}
+            onClick={() => onChange(color)}
+            data-testid={`color-top-pick-${color}`}
+          >
+            <div className="color-picker__button-outline" />
+          </button>
+        );
+      })}
+    </div>
+  );
+};

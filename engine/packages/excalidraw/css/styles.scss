@@ -1,0 +1,1632 @@
+@use "./variables.module" as *;
+@use "./theme";
+
+:root {
+  --zIndex-canvas: 1;
+  --zIndex-interactiveCanvas: 2;
+  --zIndex-svgLayer: 3;
+  --zIndex-wysiwyg: 3;
+  --zIndex-canvasButtons: 3;
+  --zIndex-layerUI: 4;
+  --zIndex-eyeDropperBackdrop: 5;
+  --zIndex-eyeDropperPreview: 6;
+  --zIndex-hyperlinkContainer: 7;
+  --zIndex-cursorHint: 8;
+
+  --zIndex-ui-bottom: 60;
+  --zIndex-ui-context-menu: 90;
+  --zIndex-ui-styles-popup: 100;
+  --zIndex-ui-top: 100;
+  --zIndex-ui-main-menu: 110;
+  --zIndex-ui-library: 120;
+
+  --zIndex-modal: 1000;
+  --zIndex-popup: 1001;
+  --zIndex-toast: 999999;
+
+  --sab: env(safe-area-inset-bottom);
+  --sal: env(safe-area-inset-left);
+  --sar: env(safe-area-inset-right);
+  --sat: env(safe-area-inset-top);
+}
+
+body.excalidraw-cursor-resize,
+body.excalidraw-cursor-resize a:hover,
+body.excalidraw-cursor-resize * {
+  cursor: ew-resize;
+}
+
+.excalidraw {
+  --ui-font: Assistant, system-ui, BlinkMacSystemFont, -apple-system, Segoe UI,
+    Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--ui-font);
+
+  .excalidraw-wysiwyg-visual-selection::selection {
+    background: transparent;
+  }
+
+  .excalidraw-wysiwyg-selection {
+    background: color-mix(in srgb, var(--color-selection) 35%, transparent);
+  }
+
+  .excalidraw-wysiwyg-caret {
+    animation: excalidraw-wysiwyg-caret-blink 1s steps(1) infinite;
+  }
+
+  position: relative;
+  overflow: hidden;
+  color: var(--text-primary-color);
+  display: flex;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  width: 100%;
+
+  button {
+    // browser default. Looks kinda good on low-dpi.
+    font-size: 0.8333rem;
+  }
+
+  button,
+  label {
+    @include buttonNoHighlight;
+  }
+
+  button {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  &:focus {
+    outline: none;
+  }
+
+  // serves 2 purposes:
+  // 1. prevent selecting text outside the component when double-clicking or
+  //    dragging inside it (e.g. on canvas)
+  // 2. prevent selecting UI, both from the inside, and from outside the
+  //    component (e.g. if you select text in a sidebar)
+  user-select: none;
+
+  .excalidraw-link,
+  a {
+    font-weight: 500;
+    text-decoration: none;
+    color: var(--link-color);
+    user-select: none;
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+    }
+    &:active {
+      text-decoration: none;
+    }
+  }
+
+  canvas {
+    touch-action: none;
+
+    // following props improve blurriness at certain devicePixelRatios.
+    // AFAIK it doesn't affect export (in fact, export seems sharp either way).
+
+    image-rendering: pixelated; // chromium
+    // NOTE: must be declared *after* the above
+    image-rendering: -moz-crisp-edges; // FF
+
+    z-index: var(--zIndex-canvas);
+
+    &.interactive {
+      z-index: var(--zIndex-interactiveCanvas);
+      // Apply theme filter only to interactive canvas for UI elements
+      // (resize handles, selection boxes, etc.)
+      filter: var(--theme-filter);
+    }
+
+    // Remove the main canvas from document flow to avoid resizeObserver
+    // feedback loop (see https://github.com/excalidraw/excalidraw/pull/3379)
+  }
+
+  &__canvas-wrapper,
+  &__canvas.static {
+    pointer-events: none;
+  }
+
+  &__canvas {
+    position: absolute;
+  }
+
+  &__embeddable {
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+
+  &__embeddable-container {
+    position: absolute;
+    z-index: 2;
+    transform-origin: top left;
+    pointer-events: none;
+  }
+
+  .FixedSideContainer {
+    padding-top: var(--sat, 0);
+    padding-right: var(--sar, 0);
+    padding-bottom: var(--sab, 0);
+    padding-left: var(--sal, 0);
+  }
+
+  .panelRow {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .selected-shape-actions {
+    display: flex;
+    flex-direction: column;
+    row-gap: 0.75rem;
+
+    h3,
+    legend,
+    .control-label {
+      margin: 0;
+      margin-bottom: 0.25rem;
+      font-size: 0.75rem;
+      color: var(--text-primary-color);
+      font-weight: 400;
+      display: block;
+    }
+
+    .control-label input {
+      display: block;
+      width: 100%;
+    }
+
+    legend {
+      padding: 0;
+    }
+
+    .iconSelectList {
+      flex-wrap: wrap;
+      position: relative;
+    }
+
+    .buttonList {
+      flex-wrap: wrap;
+      display: flex;
+      column-gap: 0.5rem;
+      row-gap: 0.5rem;
+
+      label {
+        font-size: 0.75rem;
+      }
+
+      input[type="radio"],
+      input[type="button"] {
+        opacity: 0;
+        position: absolute;
+        pointer-events: none;
+      }
+
+      .iconRow {
+        margin-top: 8px;
+      }
+    }
+
+    .font-size-custom {
+      align-items: center;
+      display: flex;
+      gap: 0.35rem;
+      margin-top: 0.4rem;
+
+      > label {
+        align-items: center;
+        display: flex;
+        gap: 0.35rem;
+      }
+
+      input {
+        background: var(--input-bg-color);
+        border: 1px solid var(--default-border-color);
+        border-radius: var(--border-radius-md);
+        color: var(--text-primary-color);
+        font: inherit;
+        height: 2rem;
+        min-width: 0;
+        padding: 0 0.45rem;
+        width: 4.5rem;
+      }
+
+      span {
+        color: var(--text-secondary-color);
+        font-size: 0.75rem;
+      }
+    }
+
+    .line-height-custom {
+      align-items: center;
+      display: flex;
+      gap: 0.35rem;
+
+      > label {
+        align-items: center;
+        display: flex;
+        gap: 0.35rem;
+      }
+
+      input {
+        background: var(--input-bg-color);
+        border: 1px solid var(--default-border-color);
+        border-radius: var(--border-radius-md);
+        color: var(--text-primary-color);
+        font: inherit;
+        height: 2rem;
+        padding: 0 0.45rem;
+        width: 4.5rem;
+      }
+
+      &__icon {
+        color: var(--text-secondary-color);
+      }
+    }
+
+    .linear-stroke-width-fieldset--contextual {
+      align-items: center;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      min-width: 9rem;
+      width: 9rem;
+
+      .linear-stroke-width-range--contextual {
+        margin: 0;
+        width: 100%;
+
+        .range-wrapper {
+          padding: 0;
+        }
+
+        .range-input {
+          display: block;
+          margin: 0;
+          width: 100%;
+        }
+
+        .zero-label,
+        .max-label {
+          display: none;
+        }
+      }
+
+      .linear-stroke-width-contextual-meta {
+        align-items: center;
+        display: flex;
+        justify-content: center;
+        width: 100%;
+      }
+
+      .linear-stroke-width-custom {
+        flex: 0 0 auto;
+        margin: 0;
+
+        input {
+          border-radius: var(--border-radius-sm);
+          font-size: 0.7rem;
+          height: 1.25rem;
+          padding: 0 0.15rem;
+          width: 3rem;
+        }
+
+        span {
+          display: none;
+        }
+      }
+    }
+
+    .linear-stroke-width-fieldset {
+      .linear-stroke-width-presets {
+        display: flex;
+        gap: 0.25rem;
+        justify-content: center;
+        margin-bottom: 0.2rem;
+
+        .ToolIcon {
+          height: 1.75rem;
+          width: 1.75rem;
+        }
+      }
+
+      .linear-stroke-width-range {
+        margin-bottom: 0;
+
+        .range-wrapper {
+          padding: 4px 0;
+        }
+
+        .range-input {
+          display: block;
+          margin: 0;
+        }
+
+        .zero-label,
+        .max-label {
+          bottom: 2px;
+          line-height: 12px;
+        }
+
+        .zero-label {
+          left: 0;
+        }
+
+        .max-label {
+          right: 0;
+        }
+      }
+    }
+
+    .linear-stroke-width-custom {
+      align-items: center;
+      display: flex;
+      gap: 0.35rem;
+      justify-content: center;
+      margin-top: 4px;
+
+      > label {
+        align-items: center;
+        display: flex;
+        gap: 0.3rem;
+      }
+
+      input {
+        background: var(--input-bg-color);
+        border: 1px solid var(--default-border-color);
+        border-radius: var(--border-radius-md);
+        color: var(--text-primary-color);
+        font: inherit;
+        height: 2rem;
+        min-width: 0;
+        padding: 0 0.35rem;
+        text-align: center;
+        width: 4rem;
+      }
+
+      span {
+        color: var(--text-secondary-color);
+        font-size: 0.75rem;
+      }
+    }
+
+    .corner-radius-fieldset {
+      display: grid;
+      gap: 0.25rem;
+      grid-template-columns: auto minmax(7rem, 1fr) auto;
+      min-width: 17rem;
+
+      .corner-radius-presets {
+        display: flex;
+        gap: 0.2rem;
+
+        button {
+          background: var(--button-bg);
+          border: 1px solid transparent;
+          border-radius: var(--border-radius-sm);
+          color: var(--text-primary-color);
+          cursor: pointer;
+          font: 500 0.625rem/1 var(--ui-font);
+          height: 1.75rem;
+          min-width: 1.75rem;
+          padding: 0 0.25rem;
+
+          &[aria-pressed="true"] {
+            background: var(--color-primary-light);
+            border-color: var(--color-primary);
+          }
+        }
+      }
+
+      .corner-radius-range {
+        margin: 0;
+
+        .range-wrapper {
+          padding: 0;
+        }
+
+        .range-input {
+          display: block;
+          margin: 0;
+          width: 100%;
+        }
+
+        .zero-label,
+        .max-label {
+          display: none;
+        }
+      }
+
+      .corner-radius-input {
+        align-items: center;
+        color: var(--text-secondary-color);
+        display: flex;
+        font: 500 0.625rem/0.75rem var(--ui-font);
+
+        input {
+          appearance: textfield;
+          background: transparent;
+          border: 0;
+          color: inherit;
+          font: inherit;
+          max-width: 4ch;
+          padding: 0;
+          text-align: right;
+
+          &::-webkit-inner-spin-button,
+          &::-webkit-outer-spin-button {
+            appearance: none;
+          }
+
+          &:focus-visible {
+            outline: 1px solid var(--focus-highlight-color);
+          }
+        }
+      }
+    }
+
+    .text-bullets-icon {
+      align-items: center;
+      display: inline-flex;
+      gap: 0.08rem;
+      line-height: 1;
+    }
+
+    fieldset {
+      margin: 0;
+      padding: 0;
+      border: none;
+    }
+  }
+
+  .contextual-properties-toolbar {
+    --button-bg: var(--color-surface-mid);
+    --button-border: transparent;
+    align-items: center;
+    display: flex;
+    gap: 0.35rem;
+    left: 50%;
+    max-width: calc(100% - 2rem);
+    min-height: 2.75rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    pointer-events: var(--ui-pointerEvents);
+    position: absolute;
+    scrollbar-width: none;
+    top: 4.6rem;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    width: max-content;
+    z-index: var(--zIndex-ui-top);
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+
+    fieldset {
+      align-items: center;
+      border: 0;
+      display: flex;
+      margin: 0;
+      padding: 0;
+    }
+
+    .linear-stroke-width-fieldset--contextual {
+      display: grid;
+      grid-template-columns: auto 8.25rem;
+      grid-template-rows: 0.875rem 1.75rem;
+      min-width: 0;
+
+      .linear-stroke-width-presets {
+        grid-column: 1;
+        grid-row: 1 / 3;
+        margin: 0;
+      }
+
+      .linear-stroke-width-range--contextual {
+        align-self: start;
+        grid-column: 2;
+        grid-row: 2;
+        margin: 0;
+        width: 100%;
+
+        .range-wrapper {
+          padding: 0;
+        }
+
+        .range-input {
+          display: block;
+          margin: 0;
+          width: 100%;
+        }
+
+        .zero-label,
+        .max-label {
+          display: none;
+        }
+      }
+
+      .linear-stroke-width-contextual-meta {
+        align-items: flex-end;
+        display: flex;
+        grid-column: 2;
+        grid-row: 1;
+        justify-content: flex-end;
+        width: 100%;
+      }
+
+      .linear-stroke-width-custom,
+      .linear-stroke-width-custom > label {
+        align-items: center;
+        display: flex;
+        gap: 0;
+        height: 0.75rem;
+        justify-content: center;
+        margin: 0;
+      }
+
+      .linear-stroke-width-custom input {
+        appearance: textfield;
+        background: transparent;
+        border: 0;
+        border-radius: 2px;
+        color: var(--text-secondary-color);
+        field-sizing: content;
+        font: 500 0.625rem/0.75rem var(--ui-font);
+        height: 0.75rem;
+        margin: 0;
+        max-width: 5ch;
+        min-width: 1ch;
+        padding: 0;
+        text-align: right;
+        width: auto;
+
+        &::-webkit-inner-spin-button,
+        &::-webkit-outer-spin-button {
+          appearance: none;
+          margin: 0;
+        }
+
+        &:focus-visible {
+          outline: 1px solid var(--focus-highlight-color);
+          outline-offset: 1px;
+        }
+      }
+
+      .linear-stroke-width-custom span {
+        color: var(--text-secondary-color);
+        display: inline;
+        font: 500 0.625rem/0.75rem var(--ui-font);
+      }
+    }
+
+    legend {
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      height: 1px;
+      overflow: hidden;
+      position: absolute;
+      white-space: nowrap;
+      width: 1px;
+    }
+
+    .context-fieldset,
+    .buttonList,
+    .font-size-custom,
+    .font-size-custom > label,
+    .line-height-custom,
+    .line-height-custom > label {
+      align-items: center;
+      display: flex;
+    }
+
+    .buttonList {
+      flex-wrap: nowrap;
+      gap: 0.25rem;
+
+      input[type="radio"],
+      input[type="button"] {
+        opacity: 0;
+        pointer-events: none;
+        position: absolute;
+      }
+
+      label,
+      button {
+        @include outlineButtonIconStyles;
+      }
+    }
+
+    &__font {
+      align-items: center;
+      display: flex;
+      gap: 0.25rem;
+      min-width: 0;
+
+      > span {
+        color: var(--text-primary-color);
+        font-size: 0.8rem;
+        font-weight: 600;
+        max-width: 7rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+
+    &__divider {
+      align-self: stretch;
+      background: var(--default-border-color);
+      margin: 0.25rem 0.15rem;
+      width: 1px;
+    }
+
+    &__label {
+      color: var(--text-secondary-color);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0 0.25rem;
+    }
+
+    &__popover-trigger {
+      align-items: center;
+      background: transparent;
+      border: 0;
+      border-radius: var(--border-radius-md);
+      color: var(--text-primary-color);
+      cursor: pointer;
+      display: inline-flex;
+      height: 2rem;
+      justify-content: center;
+      padding: 0;
+      width: 2rem;
+
+      &:hover,
+      &[data-state="open"] {
+        background: var(--button-hover-bg);
+      }
+
+      svg {
+        height: 1rem;
+        width: 1rem;
+      }
+    }
+
+    .font-size-custom {
+      gap: 0.2rem;
+      margin: 0;
+
+      > button {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        border-radius: var(--border-radius-md);
+        color: var(--text-primary-color);
+        cursor: pointer;
+        display: flex;
+        font-size: 1rem;
+        height: 2rem;
+        justify-content: center;
+        width: 1.75rem;
+
+        &:hover {
+          background: var(--button-hover-bg);
+        }
+      }
+
+      > label {
+        gap: 0.15rem;
+      }
+
+      input {
+        appearance: textfield;
+        background: var(--input-bg-color);
+        border: 1px solid var(--default-border-color);
+        border-radius: var(--border-radius-md);
+        color: var(--text-primary-color);
+        field-sizing: content;
+        font: inherit;
+        height: 2rem;
+        max-width: 5ch;
+        min-width: 2ch;
+        padding: 0 0.2rem;
+        text-align: center;
+        width: auto;
+
+        &::-webkit-inner-spin-button,
+        &::-webkit-outer-spin-button {
+          appearance: none;
+          margin: 0;
+        }
+      }
+
+      span {
+        color: var(--text-secondary-color);
+        font-size: 0.7rem;
+      }
+    }
+
+    .line-height-custom {
+      gap: 0.2rem;
+      margin: 0;
+
+      > button {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        border-radius: var(--border-radius-md);
+        color: var(--text-primary-color);
+        cursor: pointer;
+        display: flex;
+        font-size: 1rem;
+        height: 2rem;
+        justify-content: center;
+        width: 1.5rem;
+
+        &:hover {
+          background: var(--button-hover-bg);
+        }
+      }
+
+      > label {
+        gap: 0.15rem;
+      }
+
+      input {
+        background: var(--input-bg-color);
+        border: 1px solid var(--default-border-color);
+        border-radius: var(--border-radius-md);
+        color: var(--text-primary-color);
+        font: inherit;
+        height: 2rem;
+        padding: 0 0.25rem;
+        text-align: center;
+        width: 3rem;
+      }
+
+      &__icon {
+        color: var(--text-secondary-color);
+        font-size: 0.85rem;
+      }
+    }
+
+    .text-bullets-icon {
+      align-items: center;
+      display: inline-flex;
+      font-size: 0.8rem;
+      gap: 0.08rem;
+      line-height: 1;
+    }
+  }
+
+  .contextual-properties-toolbar__popover {
+    max-height: min(32rem, calc(100vh - 8rem));
+    max-width: min(28rem, calc(100vw - 2rem));
+    overflow-x: hidden;
+    overflow-y: auto;
+
+    .contextual-properties-toolbar__secondary-properties {
+      align-items: flex-end;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      max-width: 100%;
+
+      fieldset {
+        border: 0;
+        display: grid;
+        gap: 0.35rem;
+        margin: 0;
+        padding: 0;
+      }
+
+      legend,
+      .control-label {
+        color: var(--text-secondary-color);
+        font-size: 0.7rem;
+        font-weight: 600;
+      }
+
+      .buttonList {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 0.25rem;
+      }
+
+      .control-label {
+        margin: 0;
+        min-width: 9rem;
+      }
+
+      &__opacity {
+        flex: 1 0 100%;
+        min-width: 0;
+        width: 100%;
+
+        .control-label {
+          display: block;
+          min-width: 0;
+          width: 100%;
+        }
+
+        .range-wrapper {
+          box-sizing: border-box;
+          padding-inline: 0.75rem;
+          width: 100%;
+        }
+      }
+
+      .text-background-padding-fieldset {
+        align-items: center;
+        display: grid;
+        gap: 0.4rem;
+        grid-template-columns: minmax(7rem, 1fr) auto;
+        min-width: 12rem;
+
+        legend {
+          grid-column: 1 / -1;
+        }
+
+        .text-background-padding-range {
+          margin: 0;
+          min-width: 0;
+
+          .range-wrapper {
+            padding: 0;
+          }
+
+          .range-input {
+            display: block;
+            margin: 0;
+            width: 100%;
+          }
+
+          .zero-label,
+          .max-label {
+            display: none;
+          }
+        }
+
+        .text-background-padding-input {
+          align-items: center;
+          color: var(--text-secondary-color);
+          display: flex;
+          font-size: 0.7rem;
+          gap: 0.15rem;
+
+          input {
+            background: var(--input-bg-color);
+            border: 1px solid var(--default-border-color);
+            border-radius: var(--border-radius-sm);
+            color: var(--text-primary-color);
+            font: inherit;
+            height: 1.5rem;
+            padding: 0 0.2rem;
+            text-align: center;
+            width: 3.25rem;
+          }
+        }
+      }
+    }
+
+    .selected-shape-actions {
+      display: grid;
+      gap: 0.75rem;
+    }
+  }
+
+  .divider {
+    width: 1px;
+    background-color: $color-gray-2;
+    margin: 1px;
+  }
+
+  .welcome-screen-menu-item:focus-visible,
+  .dropdown-menu-item:focus-visible,
+  button:focus-visible,
+  .buttonList label:focus-within,
+  input:focus-visible {
+    outline: transparent;
+    box-shadow: 0 0 0 1px var(--color-brand-hover);
+  }
+
+  // radix doesn't allow differntiating between hover and keyboard active
+  // states (it's forcing :focus on both).
+  //
+  // proper handling would be to disable :focus-visible by default, and enable
+  // on keyboard arrows (it'd then have to be disabled again, e.g. on keydown
+  // or container focus)
+  //
+  // alas, that is left for another day
+  [data-radix-collection-item]:focus-visible {
+    box-shadow: none !important;
+  }
+
+  .buttonList {
+    .ToolIcon__icon {
+      all: unset !important;
+      display: flex !important;
+    }
+
+    button {
+      background-color: transparent;
+    }
+
+    label,
+    button,
+    .zIndexButton {
+      @include outlineButtonIconStyles;
+    }
+  }
+
+  // an icon button rendered outside a .buttonList context (e.g. the font
+  // picker trigger)
+  button.standalone {
+    @include outlineButtonIconStyles;
+
+    .ToolIcon__icon {
+      all: unset !important;
+      display: flex !important;
+    }
+
+    & > * {
+      // disallow pointer events on children, so we always have event.target
+      // on the button itself
+      pointer-events: none;
+    }
+  }
+
+  .App-top-bar {
+    z-index: var(--zIndex-ui-top);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .App-welcome-screen {
+    z-index: var(--zIndex-layerUI);
+  }
+
+  .App-bottom-bar {
+    position: absolute;
+    // account for margins
+    width: calc(100% - 28px);
+    max-width: 450px;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    --bar-padding: calc(4 * var(--space-factor));
+    z-index: var(--zIndex-ui-bottom);
+    display: flex;
+    flex-direction: column;
+
+    pointer-events: none;
+    justify-content: center;
+
+    > .Island {
+      box-sizing: border-box;
+      max-height: 100%;
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      pointer-events: var(--ui-pointerEvents);
+    }
+  }
+
+  .App-toolbar {
+    display: flex;
+    justify-content: center;
+
+    .eraser {
+      &.ToolIcon:hover {
+        --icon-fill-color: #fff;
+        --keybinding-color: #fff;
+      }
+      &.active {
+        background-color: var(--color-primary);
+      }
+    }
+  }
+
+  .excalidraw-ui-top-left,
+  .excalidraw-ui-top-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .App-toolbar-content {
+    display: flex;
+    flex-direction: column;
+
+    pointer-events: none;
+
+    & > * {
+      pointer-events: var(--ui-pointerEvents);
+    }
+  }
+
+  .App-mobile-menu {
+    width: 100%;
+    overflow-x: visible;
+    overflow-y: auto;
+    box-sizing: border-box;
+    margin-bottom: var(--bar-padding);
+
+    .selected-shape-actions {
+      padding: 8px 8px 0 8px;
+    }
+  }
+
+  .App-menu {
+    display: grid;
+    color: var(--icon-fill-color);
+  }
+
+  .shapes-section {
+    display: flex;
+    justify-content: center;
+    pointer-events: none !important;
+
+    & > * {
+      pointer-events: var(--ui-pointerEvents);
+    }
+  }
+
+  .App-menu_top {
+    grid-template-columns: 1fr 2fr 1fr;
+    grid-gap: 1rem;
+    align-items: flex-start;
+    cursor: default;
+    pointer-events: none !important;
+
+    & > * {
+      pointer-events: var(--ui-pointerEvents);
+    }
+
+    @media (min-width: 1536px) {
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-gap: 3rem;
+    }
+  }
+
+  .App-menu_top > .App-menu_top__left {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .App-menu_top > .shapes-section {
+    grid-column: 2;
+  }
+
+  .selected-shape-actions-container {
+    width: fit-content;
+
+    &--compact {
+      min-width: 48px;
+    }
+  }
+
+  .App-menu_top > .layer-ui__wrapper__top-right {
+    grid-column: 3;
+    justify-self: end;
+  }
+
+  .App-menu_bottom {
+    position: absolute;
+    bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    cursor: default;
+    pointer-events: none !important;
+    box-sizing: border-box;
+    padding: 0 1rem;
+
+    &--transition-left {
+      section {
+        width: 185px;
+      }
+    }
+
+    section {
+      display: flex;
+    }
+  }
+
+  .App-menu_bottom > *:first-child {
+    justify-self: flex-start;
+  }
+
+  .App-menu_bottom > *:last-child {
+    justify-self: flex-end;
+  }
+
+  .App-menu_left {
+    grid-template-rows: 1fr auto 1fr;
+    height: 100%;
+  }
+
+  .App-menu_right {
+    grid-template-rows: 1fr;
+    height: 100%;
+  }
+
+  .App-menu__left {
+    overflow-y: auto;
+    padding: 0.75rem;
+    width: 12.5rem;
+    box-sizing: border-box;
+    position: absolute;
+  }
+
+  .dropdown-select {
+    height: 1.5rem;
+    padding: 0;
+    padding-inline-start: 0.5rem;
+    padding-inline-end: 1.5rem;
+    color: var(--icon-fill-color);
+    background-color: var(--button-gray-1);
+    border-radius: var(--space-factor);
+    border: 1px solid var(--button-gray-2);
+    font-size: 0.8rem;
+    font-family: inherit;
+    outline: none;
+    appearance: none;
+    background-image: var(--dropdown-icon);
+    background-repeat: no-repeat;
+    background-position: right 0.7rem top 50%, 0 0;
+
+    :root[dir="rtl"] & {
+      background-position: left 0.7rem top 50%, 0 0;
+    }
+
+    background-size: 0.65em auto, 100%;
+
+    &:focus {
+      box-shadow: 0 0 0 2px var(--focus-highlight-color);
+    }
+
+    &:hover {
+      background-color: var(--button-gray-2);
+    }
+
+    &:active {
+      background-color: var(--button-gray-2);
+    }
+
+    &__language {
+      height: 2rem;
+      background-color: var(--island-bg-color);
+      border-color: var(--default-border-color) !important;
+      cursor: pointer;
+
+      &:hover {
+        background-color: var(--island-bg-color);
+      }
+    }
+  }
+
+  .scroll-back-to-content {
+    border-radius: var(--border-radius-lg);
+    background-color: var(--island-bg-color);
+    color: var(--icon-fill-color);
+
+    border: 1px solid var(--default-border-color);
+    padding: 10px 20px;
+    position: absolute;
+    left: 50%;
+    bottom: 30px;
+    transform: translateX(-50%);
+    pointer-events: var(--ui-pointerEvents);
+    font-family: inherit;
+
+    &:hover {
+      background-color: var(--button-hover-bg);
+    }
+
+    &:active {
+      border: 1px solid var(--button-active-border);
+    }
+  }
+
+  .floating-status-stack {
+    position: absolute;
+    left: 50%;
+    bottom: 30px;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    pointer-events: none;
+
+    .scroll-back-to-content {
+      position: static;
+      left: auto;
+      bottom: auto;
+      transform: none;
+      pointer-events: var(--ui-pointerEvents);
+    }
+  }
+
+  .help-icon {
+    @include outlineButtonStyles;
+    @include filledButtonOnCanvas;
+
+    width: var(--lg-button-size);
+    height: var(--lg-button-size);
+
+    svg {
+      width: var(--lg-icon-size);
+      height: var(--lg-icon-size);
+    }
+  }
+
+  .reset-zoom-button {
+    font-family: var(--ui-font);
+  }
+
+  .finalize-button {
+    display: grid;
+    grid-auto-flow: column;
+    gap: 0.4em;
+    margin-top: auto;
+    margin-bottom: auto;
+    margin-inline-start: 0.6em;
+  }
+
+  .undo-redo-buttons,
+  .eraser-buttons {
+    display: grid;
+    grid-auto-flow: column;
+    margin-top: auto;
+    margin-bottom: auto;
+    margin-inline-start: 0.6em;
+  }
+
+  @include isMobile {
+    aside {
+      display: none;
+    }
+
+    .floating-status-stack {
+      bottom: calc(30px + var(--sab, 0));
+      z-index: var(--zIndex-ui-bottom);
+    }
+
+    .scroll-back-to-content {
+      bottom: calc(100px + var(--sab, 0));
+      z-index: -1;
+    }
+
+    .floating-status-stack .scroll-back-to-content {
+      bottom: auto;
+      z-index: auto;
+    }
+  }
+
+  .rtl-mirror {
+    :root[dir="rtl"] & {
+      transform: scaleX(-1);
+    }
+  }
+
+  .zen-mode-visibility {
+    visibility: visible;
+    opacity: 1;
+    height: auto;
+    width: auto;
+    transition: opacity 0.5s;
+
+    &.zen-mode-visibility--hidden {
+      visibility: hidden;
+      opacity: 0;
+      height: 0;
+      width: 0;
+      transition: opacity 0.5s;
+    }
+  }
+
+  .disable-pointerEvents {
+    pointer-events: none !important;
+  }
+
+  &.excalidraw--view-mode {
+    .App-menu {
+      display: flex;
+      justify-content: space-between;
+    }
+  }
+
+  &.excalidraw--non-interactive {
+    user-select: none;
+
+    canvas {
+      // let the page handle scrolling over the editor, but not the browser
+      // zoom gestures (pinch, double-tap)
+      touch-action: pan-x pan-y;
+      // no !important — inline cursor styles must win so that
+      // `interaction: { enabled: { links: true } }` can show a pointer over
+      // links
+      cursor: default;
+    }
+
+    &.excalidraw--allow-browser-zoom canvas {
+      touch-action: auto;
+    }
+
+    // with navigation allowed, touch input drives the canvas pan/zoom again
+    &.excalidraw--navigation canvas {
+      touch-action: none;
+    }
+
+    // with the active tool allowed (`interaction.enabled.tools`), touch
+    // input drives the tool again — e.g. laser strokes must not scroll the
+    // page
+    &.excalidraw--tools canvas {
+      touch-action: none;
+    }
+
+    // override inline pointer-events set when embeddable is active
+    // (also covers custom `renderEmbeddable` content) — unless embeds are
+    // an allowed interaction, in which case the inline (activation-driven)
+    // pointer-events apply, same as in view mode
+    &:not(.excalidraw--embeds) .excalidraw__embeddable-container__inner {
+      pointer-events: none !important;
+    }
+  }
+
+  input.is-redacted {
+    // we don't use type=password because browsers (chrome?) prompt
+    // you to save it which is annoying
+    -webkit-text-security: disc;
+  }
+
+  input[type="text"],
+  textarea:not(.excalidraw-wysiwyg) {
+    color: var(--text-primary-color);
+    border: 1.5px solid var(--input-border-color);
+    padding: 0.75rem;
+    white-space: nowrap;
+    border-radius: var(--space-factor);
+    background-color: var(--input-bg-color);
+
+    &:not(:focus) {
+      &:hover {
+        border-color: var(--color-brand-hover);
+      }
+    }
+
+    &:focus {
+      outline: none;
+      border-color: var(--color-brand-hover);
+    }
+  }
+
+  @media print {
+    .App-bottom-bar,
+    .FixedSideContainer,
+    .layer-ui__wrapper {
+      display: none;
+    }
+  }
+
+  // use custom, minimalistic scrollbar
+  // (doesn't work in Firefox)
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 3px;
+  }
+
+  select::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+  ::-webkit-scrollbar-thumb:active {
+    background: var(--scrollbar-thumb);
+  }
+
+  .mobile-misc-tools-container {
+    position: absolute;
+    top: calc(5rem - var(--editor-container-padding));
+    right: calc(var(--editor-container-padding) * -1);
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--sidebar-border-color);
+    border-top-left-radius: var(--border-radius-lg);
+    border-bottom-left-radius: var(--border-radius-lg);
+    border-right: 0;
+    overflow: hidden;
+
+    background-color: var(--island-bg-color);
+
+    .ToolIcon__icon {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 0;
+    }
+
+    .default-sidebar-trigger {
+      border: 0;
+    }
+  }
+
+  .App-toolbar--mobile {
+    overflow: visible;
+    max-width: 98vw;
+
+    .ToolIcon__keybinding {
+      display: none;
+    }
+  }
+  .UserList-Wrapper {
+    margin: 0;
+    padding: 0;
+    border: none;
+    text-align: left;
+
+    legend {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 400;
+      margin: 0 0 0.25rem;
+      padding: 0;
+    }
+  }
+
+  .main-menu {
+    z-index: var(--zIndex-ui-main-menu);
+  }
+  .main-menu-trigger {
+    @include filledButtonOnCanvas;
+  }
+
+  .App-mobile-menu,
+  .App-menu__left {
+    --button-border: transparent;
+    --button-bg: var(--color-surface-mid);
+  }
+
+  @at-root .excalidraw.theme--dark#{&} {
+    .App-mobile-menu,
+    .App-menu__left {
+      --button-hover-bg: #363541;
+      --button-bg: var(--color-surface-high);
+    }
+  }
+
+  .App-menu__left {
+    .buttonList {
+      padding: 0.25rem 0;
+    }
+  }
+
+  .excalidraw__paragraph {
+    margin: 1rem 0;
+  }
+
+  .Modal__content {
+    .excalidraw__paragraph:first-child {
+      margin-top: 0;
+    }
+    .excalidraw__paragraph + .excalidraw__paragraph {
+      margin-top: 0rem;
+    }
+  }
+
+  .link-button {
+    display: flex;
+    text-decoration: none !important;
+  }
+}
+
+@keyframes excalidraw-wysiwyg-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.ErrorSplash.excalidraw {
+  min-height: 100vh;
+  padding: 20px 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: text;
+
+  .ErrorSplash-messageContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    padding: 40px;
+    background-color: $color-red-1;
+    border: 3px solid $color-red-9;
+  }
+
+  .ErrorSplash-paragraph {
+    margin: 15px 0;
+    max-width: 600px;
+
+    &.align-center {
+      text-align: center;
+    }
+  }
+
+  .bigger,
+  .bigger button {
+    font-size: 1.1em;
+  }
+
+  .smaller,
+  .smaller button {
+    font-size: 0.9em;
+  }
+
+  .ErrorSplash-details {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+
+    textarea {
+      width: 100%;
+      margin: 10px 0;
+      font-family: "Cascadia";
+      font-size: 0.8em;
+    }
+  }
+}
+
+.excalidraw__embeddable-container {
+  .excalidraw__embeddable-container__inner {
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--embeddable-radius);
+  }
+
+  .excalidraw__embeddable__outer {
+    width: 100%;
+    height: 100%;
+  }
+
+  .excalidraw__embeddable__content {
+    width: 100%;
+    height: 100%;
+    transform-origin: top left;
+
+    &,
+    & > * {
+      border-radius: var(--embeddable-radius);
+    }
+  }
+
+  .excalidraw__embeddable-hint {
+    position: absolute;
+    z-index: 1;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 1rem 1.6rem;
+    border-radius: 12px;
+    color: #fff;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    font-family: "Assistant";
+  }
+}

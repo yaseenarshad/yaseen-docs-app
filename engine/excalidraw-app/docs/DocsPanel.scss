@@ -1,0 +1,117 @@
+.docs-panel {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  overflow: auto;
+
+  &__toolbar,
+  &__new-folder,
+  &__folder-header,
+  &__doc {
+    display: flex;
+    min-width: 0;
+    gap: 0.4rem;
+    align-items: center;
+  }
+
+  &__toolbar {
+    flex-wrap: wrap;
+
+    input {
+      min-width: 8rem;
+      flex: 1 1 9rem;
+    }
+  }
+
+  input,
+  select,
+  button {
+    min-height: 2rem;
+  }
+
+  &__folders {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  &__folder {
+    padding: 0.35rem;
+    border: 1px solid var(--color-gray-20);
+    border-radius: 0.5rem;
+  }
+
+  &__folder-header {
+    input,
+    strong {
+      min-width: 0;
+      flex: 1;
+    }
+  }
+
+  ul {
+    display: grid;
+    gap: 0.3rem;
+    margin: 0.4rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__doc {
+    flex-wrap: wrap;
+    padding: 0.25rem;
+    border-radius: 0.35rem;
+    background: var(--color-surface-low);
+
+    input {
+      min-width: 4rem;
+      flex: 1 1 8rem;
+    }
+
+    select {
+      max-width: 7rem;
+    }
+  }
+
+  &__open {
+    flex: 0 0 auto;
+  }
+
+  &__empty,
+  &__error {
+    padding: 1rem;
+    color: var(--text-secondary-color);
+    text-align: center;
+  }
+
+  &__error {
+    color: var(--color-danger);
+  }
+
+  &__sentinel {
+    height: 1px;
+  }
+
+  &__trash {
+    margin-top: auto;
+  }
+
+  &__trash-item {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem;
+    border-radius: 0.35rem;
+    background: var(--color-surface-low);
+  }
+
+  &__trash-title {
+    min-width: 0;
+    flex: 1 1 8rem;
+    overflow-wrap: anywhere;
+  }
+}

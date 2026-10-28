@@ -17,6 +17,8 @@ export default defineConfig({
     alias: {
       '@shared': fileURLToPath(new URL('../shared', import.meta.url)),
     },
+    // As the client project (YAZ-3574): the engine's imports resolve from the app's node_modules.
+    preserveSymlinks: true,
   },
   test: {
     name: 'perf',

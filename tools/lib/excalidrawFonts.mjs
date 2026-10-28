@@ -15,5 +15,5 @@ export function excalidrawFontsDir() {
     const dir = join(base, 'node_modules/@excalidraw/excalidraw/dist/prod/fonts')
     if (existsSync(dir)) return dir
   }
-  throw new Error('@excalidraw/excalidraw fonts not found — run `npm install`')
+  throw new Error('@excalidraw/excalidraw fonts not found — run `npm run engine:build`')
 }

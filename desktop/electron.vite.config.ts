@@ -17,7 +17,7 @@ const rendererOut = resolve(here, 'out/renderer')
 /** The package's own `fonts/` tree, wherever npm hoisted the workspace dependency (`shared/excalidrawFonts.ts`, the rule main's share upload uses too). */
 function excalidrawFontsDir(): string {
   const dir = excalidrawPackageFonts(resolve(here, '..')).find((d) => existsSync(d))
-  if (dir === undefined) throw new Error('@excalidraw/excalidraw fonts not found — run `npm install`')
+  if (dir === undefined) throw new Error('@excalidraw/excalidraw fonts not found — run `npm run engine:build`')
   return dir
 }
 
@@ -153,6 +153,10 @@ export default defineConfig({
        * `exportToSvg` and render no components at all.
        */
       dedupe: ['react', 'react-dom'],
+      // The engine is a workspace link into engine/ (YAZ-3574). Followed to its real folder, its imports would
+      // find engine/node_modules — the engine's own build tools, with other versions (mermaid 11.12, React 19)
+      // than the app's. Kept at the link, they resolve from the app's node_modules, as the packed engine did.
+      preserveSymlinks: true,
     },
     // electron-vite 5 leaves the renderer unminified; Vite's esbuild minifier cuts its JS 19.1 → 11.8 MB
     // and the entry chunk every window parses 4.85 → 2.3 MB. Main, preload and the cli stay unminified,

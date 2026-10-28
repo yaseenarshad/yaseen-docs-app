@@ -1,0 +1,29 @@
+import clsx from "clsx";
+import { Tabs as RadixTabs } from "radix-ui";
+
+import type { SidebarTabName } from "../../types";
+
+export const SidebarTabTrigger = ({
+  children,
+  tab,
+  onSelect,
+  className,
+  ...rest
+}: {
+  children: React.ReactNode;
+  tab: SidebarTabName;
+  onSelect?: React.ReactEventHandler<HTMLButtonElement> | undefined;
+} & Omit<React.HTMLAttributes<HTMLButtonElement>, "onSelect">) => {
+  return (
+    <RadixTabs.Trigger value={tab} asChild onSelect={onSelect}>
+      <button
+        type={"button"}
+        className={clsx("excalidraw-button sidebar-tab-trigger", className)}
+        {...rest}
+      >
+        {children}
+      </button>
+    </RadixTabs.Trigger>
+  );
+};
+SidebarTabTrigger.displayName = "SidebarTabTrigger";

@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["esnext"],
+    "types": ["@cloudflare/workers-types"],
+    "noEmit": true
+  },
+  "include": ["./index.ts", "./imageStudio.ts", "./backgroundRemovalAssets.ts", "./boardScenes.ts", "../image-studio/types.ts", "../board-scenes/types.ts", "../background-removal-assets.json"],
+  "exclude": []
+}
