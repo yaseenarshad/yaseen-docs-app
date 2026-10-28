@@ -231,6 +231,9 @@ test('step 5 — a double click selects a word, a triple click the line, and a d
   const before = await readSidecar(STYLED)
   await previewOf(win, STYLED).click()
   await expect(modal(win)).toBeVisible()
+  // The modal shows before the engine mounts in it: until the canvas is up, the click, select-all
+  // and Enter below reach only the overlay and the editor never opens.
+  await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
   const box = await modalCanvas(win).boundingBox()
   if (box === null) throw new Error('the modal canvas has no box')
   await win.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.8)
