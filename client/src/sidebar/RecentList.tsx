@@ -3,6 +3,7 @@ import { isBoard, isMarkdown } from '@shared/fileKind'
 import type { TreeResponse } from '@shared/types'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
+import { FileIcon } from './FileIcon'
 import { MAX_RECENTS, recentDays, recentFiles, timeOf, type RecentFile } from './recents'
 
 type Log = Readonly<Record<string, number>>
@@ -157,7 +158,11 @@ function RecentRow({ file, active, titles, onOpenFile, onKeepFile, onOpenFileBac
         onContextMenu={(e) => onMenu(path, e)}
         {...hover}
       >
-        <span className="tree__label">{pageLabel(path, false, titles)}</span>
+        {/* The file's icon, as its Files row has it (YAZ-3440 D11). */}
+        <span className="tree__label">
+          <FileIcon path={path} />
+          {pageLabel(path, false, titles)}
+        </span>
         <span className="tree__count">{timeOf(edited)}</span>
       </button>
     </li>

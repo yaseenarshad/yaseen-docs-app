@@ -1,0 +1,1 @@
+Material Icon Theme 5.40.0 (https://github.com/material-extensions/vscode-material-icon-theme, MIT, see LICENSE), commit 045291ff033062a25441dd297fd51546326866f2, from the npm release `material-icon-theme@5.40.0`. Written by `tools/materialIcons.mjs`; do not edit by hand.

@@ -29,6 +29,11 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   focusPaths: null,
   focusIsOn: false,
   favoritePaths: null,
+  // "Change icon…" (YAZ-3440 D8): null is blank space; the rows' fixtures below leave it out.
+  iconPaths: null,
+  iconRule: null,
+  iconHasPick: false,
+  iconRuleSet: false,
   favoriteIsOn: false,
   reviewDir: null,
   reviewPath: null,
@@ -55,6 +60,10 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
 
 const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onOpen: vi.fn(),
+  onChangeIcon: vi.fn(),
+  onChangeIconRule: vi.fn(),
+  onResetIcon: vi.fn(),
+  onResetIconRule: vi.fn(),
   onOpenInNewTabs: vi.fn(),
   onShowInSidebar: vi.fn(),
   onOpenNewWindow: vi.fn(),
@@ -828,5 +837,36 @@ describe('Share item (YAZ-3040)', () => {
     const onShare = vi.fn()
     select(build(BOARD_ROW, { onShare }), 'Share')
     expect(onShare).toHaveBeenCalledExactlyOnceWith('/v/Flow.drawio')
+  })
+})
+
+describe('"Change icon ▸" (YAZ-3440 D8)', () => {
+  const flyout = (over: Partial<MenuSectionTargets>, h = handlers()) => {
+    const item = buildMenuSections(targets(over), h).flat().find((i) => i.id === 'change-icon')
+    return { item, h, labels: item?.children?.map((section) => section.map((leaf) => leaf.label)) }
+  }
+  const GIF = { match: '*.gif', kind: 'file' as const, label: 'all .gif files' }
+
+  it('one item with a flyout: this row\'s pick, then the rule for every row like it; no reset while there is nothing to reset', () => {
+    expect(flyout({ iconPaths: ['/v/mixed 24.gif'], rowKind: 'file', iconRule: GIF }).labels).toEqual([['This file…', 'All .gif files…'], []])
+    expect(flyout({ iconPaths: ['/v/src'], rowKind: 'dir', iconRule: { match: 'src', kind: 'folder', label: 'all folders named src' } }).labels).toEqual([['This folder…', 'All folders named src…'], []])
+    // A mixed selection has no rule.
+    expect(flyout({ iconPaths: ['/v/a.gif', '/v/b.png'], rowKind: 'file', iconRule: null }).labels).toEqual([['These 2 items…'], []])
+    expect(flyout({ iconPaths: null }).item).toBeUndefined()
+  })
+
+  it('a pick or a set rule adds its reset below a separator; each item calls its own handler', () => {
+    const { item, h, labels } = flyout({ iconPaths: ['/v/mixed 24.gif'], rowKind: 'file', iconRule: GIF, iconHasPick: true, iconRuleSet: true })
+    expect(labels).toEqual([['This file…', 'All .gif files…'], ['Reset this file', 'Reset all .gif files']])
+    const [choose, reset] = item?.children ?? []
+    choose[0].onSelect?.()
+    choose[1].onSelect?.()
+    reset[0].onSelect?.()
+    reset[1].onSelect?.()
+    expect(h.onChangeIcon).toHaveBeenCalledWith(['/v/mixed 24.gif'])
+    expect(h.onChangeIconRule).toHaveBeenCalledWith(GIF)
+    expect(h.onResetIcon).toHaveBeenCalledWith(['/v/mixed 24.gif'])
+    expect(h.onResetIconRule).toHaveBeenCalledWith(GIF)
+    expect(flyout({ iconPaths: ['/v/a.gif'], rowKind: 'file', iconRule: GIF, iconRuleSet: true }).labels).toEqual([['This file…', 'All .gif files…'], ['Reset all .gif files']])
   })
 })

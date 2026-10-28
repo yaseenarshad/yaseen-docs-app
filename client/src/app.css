@@ -19,6 +19,14 @@
   --fg-dir: #444444;
   --reveal-bg: #ffe36e;
   --reveal-fg: #2d2500;
+  /* The sidebar tree's file icons (YAZ-3440 D4): one colour per kind; a note's only with "All colour", a PDF's is
+     the danger red. `sidebarIconColors` overrides each one on `.app`. Folders, notes and other files stay grey. */
+  --kind-note: #3d8fb8;
+  --kind-text: #3a7fc2;
+  --kind-pdf: var(--danger);
+  --kind-image: #1d9e75;
+  --kind-drawing: #c08410;
+  --kind-diagram: #e0682c;
   /* `==highlight==` wash (YAZ-1480): translucent, so text colour and selection show through in both themes. */
   --mark-bg: rgba(255, 213, 0, 0.4);
   --mark-bg-green: rgba(80, 200, 120, 0.35);
@@ -66,6 +74,11 @@
   --fg-dir: #b8b8bd;
   --reveal-bg: #d9b72a;
   --reveal-fg: #1e1900;
+  --kind-note: #6cb2d6;
+  --kind-text: #6aa7e0;
+  --kind-image: #4cc79a;
+  --kind-drawing: #e0aa3e;
+  --kind-diagram: #f08d5a;
   --notice-fg: #e6c878;
   --notice-bg: #3a300f;
   --notice-border: #5c4d1d;
@@ -1787,11 +1800,16 @@ button {
 .sidebar__body {
   flex: 1;
   overflow: auto;
-  padding: 6px 0 24px;
+  /* Its top padding is a property, so a sticky folder row can stick flush at the top edge (YAZ-3440 D1). */
+  --sidebar-pad-top: 6px;
+  padding: var(--sidebar-pad-top) 0 24px;
   /* The sidebar zoom (YAZ-3389): the lists scale, the box stays where it is. Standardized CSS zoom,
      so `getBoundingClientRect` and the pointer agree. A menu or a sheet opened from a list goes to
      `document.body`, out of the zoom (`SessionList`). */
   zoom: var(--sidebar-zoom, 1);
+  /* Sticky folders (YAZ-3440 D1): the stuck rows' z-index stays inside the list, so it never lifts a row over
+     the resize edge (z 1) that overlaps the sidebar's right side. Nothing inside the list is fixed: menus portal out. */
+  isolation: isolate;
 }
 
 .sidebar__msg {
@@ -1875,6 +1893,11 @@ button {
   margin-right: 6px;
   vertical-align: -1px;
   opacity: 0.7;
+}
+
+/* The folder's own icon stands in its place while folder icons show (YAZ-3440 D11, `FileIcon`); Off brings it back. */
+.app:not([data-sidebar-folder-icons='off']) .search-results__glyph {
+  display: none;
 }
 
 /* ---------- settings (GRO-2024; the dialog itself is settings/settings.css since YAZ-1679) ---------- */
@@ -2365,14 +2388,16 @@ button {
    from far above it down to the middle of its own row, then an elbow into its chevron (folder) or its name (file).
    Each nested level clips what pokes above its top, so the pieces join into one path, as in the editor. A row is
    13px * 1.5 + 2 * 3px tall, so its middle is 12.75px down. Each level is its own stacking context, so the grey
-   line (z 1) stays over the row fills and the thread (z 2) over the grey line, without leaking out of the tree.
+   line (z 1) stays over the row fills and the thread (z 2) over the grey line, without leaking out of the tree. A
+   nested level is z 3 in its parent's (YAZ-3440 D10): a row stuck inside it stays over the parent's
+   lines and thread, which pass behind it.
    `--sidebar-thread` is its colour (D9): its own, else Bullet threading's, else the accent. */
 .app[data-sidebar-line-style='thread'] {
   --sidebar-thread: var(--sidebar-thread-color, var(--thread-color, var(--accent)));
 }
 
 .app[data-sidebar-line-style='thread'] .tree[role='group'] {
-  z-index: 0;
+  z-index: 3;
   overflow-y: clip;
 }
 
@@ -2437,7 +2462,6 @@ button {
   border-bottom: 1.75px solid var(--sidebar-thread);
   transform: rotate(-45deg);
   opacity: 0;
-  transition: transform 0.12s;
   pointer-events: none;
 }
 
@@ -2448,12 +2472,74 @@ button {
 
 .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]:not([data-renaming]):hover::after {
   opacity: 1;
+  transition: opacity 140ms ease 80ms;
+}
+
+/* An open folder's row can stick (YAZ-3440 D1), so it stands over the thread (z 4 and up): its hover fill would hide
+   its own elbow and coloured arrow. While it is not stuck the row draws a copy of both over its fill, laid exactly
+   on the li's (`::before` the elbow from the row's top, `::after` the open arrow), with the li's rest and fade.
+   While it is stuck the same two pseudo-elements are its block (above), and the li's own pieces pass behind it. */
+@container not scroll-state(stuck: top) {
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::before {
+    content: '';
+    opacity: 0;
+    transition: opacity 180ms ease;
+    position: absolute;
+    top: 0;
+    left: calc(var(--tree-depth) * 14px + 1px - var(--thread-width) / 2);
+    box-sizing: border-box;
+    width: calc(9px + var(--thread-width) / 2);
+    height: calc(12.75px + var(--thread-width) / 2);
+    border-left: var(--thread-width) solid var(--sidebar-thread);
+    border-bottom: var(--thread-width) solid var(--sidebar-thread);
+    border-bottom-left-radius: 6px;
+    pointer-events: none;
+  }
+
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::before {
+    opacity: 1;
+    transition: opacity 140ms ease 80ms;
+  }
+
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::after {
+    content: '';
+    position: absolute;
+    left: calc(var(--tree-depth, 0) * 14px + 12px);
+    top: 6.75px;
+    width: 7px;
+    height: 7px;
+    border-right: 1.75px solid var(--sidebar-thread);
+    border-bottom: 1.75px solid var(--sidebar-thread);
+    transform: rotate(45deg);
+    opacity: 0;
+    transition: opacity 180ms ease;
+    pointer-events: none;
+  }
+
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::after {
+    opacity: 1;
+    transition: opacity 140ms ease 80ms;
+  }
+}
+
+/* The arrow turns at once (YAZ-3440 D6): a fold shows its new rows at once, and a turn that trailed them read as
+   lag. "Smooth" (`sidebarArrowMotion`, `data-sidebar-arrow` on `.app`) brings back the 0.12s turn, the grey arrow's
+   and its coloured copy's alike; Reduce motion turns it at once all the same (the block below). */
+.app[data-sidebar-arrow='smooth'] .tree__chevron::before {
+  transition: transform 0.12s;
+}
+
+.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off'])[data-sidebar-arrow='smooth'] .sidebar__body .tree > li[aria-expanded]:not([data-renaming])::after {
+  transition: transform 0.12s;
+}
+
+.app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off'])[data-sidebar-arrow='smooth'] .sidebar__body .tree > li[aria-expanded]:not([data-renaming]):hover::after {
   transition: transform 0.12s, opacity 140ms ease 80ms;
 }
 
 /* Reduce motion (D10): no rest and no fade, for the grey lines too, as toc.css does for its own. The selectors of
-   the rules that fade, so this block wins by coming last (a rule in `@media` gets no extra weight); the chevron
-   keeps its turn and loses only its colour fade. */
+   the rules that fade, so this block wins by coming last (a rule in `@media` gets no extra weight); the arrows
+   turn at once even with "Smooth" (YAZ-3440 D6), and the coloured one loses its fade. */
 @media (prefers-reduced-motion: reduce) {
   .tree[role='group']::before,
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li::before,
@@ -2461,8 +2547,21 @@ button {
     transition: none;
   }
 
-  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]:not([data-renaming]):hover::after {
-    transition: transform 0.12s;
+  .app[data-sidebar-arrow='smooth'] .tree__chevron::before {
+    transition: none;
+  }
+
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::before,
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::before,
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::after,
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::after {
+    transition: none;
+  }
+
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]:not([data-renaming]):hover::after,
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off'])[data-sidebar-arrow='smooth'] .sidebar__body .tree > li[aria-expanded]:not([data-renaming])::after,
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off'])[data-sidebar-arrow='smooth'] .sidebar__body .tree > li[aria-expanded]:not([data-renaming]):hover::after {
+    transition: none;
   }
 }
 
@@ -2479,6 +2578,13 @@ button {
   color: var(--fg);
 }
 
+/* Sticky folders (YAZ-3440 D1): a row, and a li (a reveal, D3's scroll back), scrolled into view lands below the
+   rows that stick above it: one per level above it, up to the cap (D2). `--sticky-levels` comes from the cap. */
+.tree__row,
+.tree > li {
+  scroll-margin-top: calc(min(var(--tree-depth, 0), var(--sticky-levels, 7)) * 25.5px);
+}
+
 /* The keyboard walk (YAZ-921) needs a visible "you are here" — the hover wash, plus an inset
    accent ring so mouse-hover and key-focus stay tellable apart. */
 .tree__row:focus-visible {
@@ -2493,6 +2599,65 @@ button {
 
 .tree__row--dir {
   color: var(--fg-dir);
+}
+
+/* Sticky folders (YAZ-3440 D1, VS Code's sticky scroll): each OPEN folder's row sticks at the top of the list while
+   its rows scroll under it, one row below the folder that holds it (a row is 13px * 1.5 + 2 * 3px = 25.5px tall),
+   and leaves with its last row; a closed folder has nothing to scroll under it, so it stays an ordinary row. CSS
+   alone: no script runs on a scroll. Chromium sticks below the list's top padding, so `top` takes that padding back
+   (`--sidebar-pad-top`) and the stack starts flush at the top edge (D10). The shallower row stays on top, and
+   every row that can stick is z 4 and up, over the level lines and the thread (z 1, 2 inside their level), so they
+   pass behind the stuck stack (D10). An unstuck row has no fill of its own, so the lines still show through it; only
+   while it is stuck (its own `::before` and `::after` read its own stuck state) does a square block of the side's
+   colour back it, with a copy of its fill, edge and corners on top and the thin line under it (D10). */
+.tree > li[aria-expanded='true'] > .tree__row--sticky {
+  position: sticky;
+  top: calc(var(--tree-depth, 0) * 25.5px - var(--sidebar-pad-top, 0px));
+  z-index: calc(10 - var(--tree-depth, 0));
+}
+
+.tree__row--sticky {
+  container-type: scroll-state;
+}
+
+@container scroll-state(stuck: top) {
+  /* The block: square, so nothing shows at the corners, 1px taller upward so a fractional zoom leaves no seam,
+     and the line under it as its shadow. */
+  .tree__row--sticky::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: -1px 0 0;
+    background: var(--bg-side);
+    box-shadow: 0 1px 0 var(--border);
+    pointer-events: none;
+  }
+
+  /* The row's own fill, edge and corners (hover, active, selected, revealed, the focus ring) over the block. */
+  .tree__row--sticky::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    border-radius: inherit;
+    background-color: inherit;
+    box-shadow: inherit;
+    pointer-events: none;
+  }
+}
+
+/* How many levels stick (YAZ-3440 D2): `stickyFolders.ts` writes the cap on the list — the setting, cut to the
+   rows that fit in 40% of the list — as `data-sticky-levels`, and a folder row N levels deep or more does not stick.
+   Never more than 7. The same write sets `--sticky-levels`, the cap as a number, for `scroll-margin-top`. */
+.sidebar__body[data-sticky-levels='0'] li[aria-expanded='true'] > .tree__row--sticky,
+.sidebar__body[data-sticky-levels='1'] .tree[role='group'] li[aria-expanded='true'] > .tree__row--sticky,
+.sidebar__body[data-sticky-levels='2'] .tree[role='group'] .tree[role='group'] li[aria-expanded='true'] > .tree__row--sticky,
+.sidebar__body[data-sticky-levels='3'] .tree[role='group'] .tree[role='group'] .tree[role='group'] li[aria-expanded='true'] > .tree__row--sticky,
+.sidebar__body[data-sticky-levels='4'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] li[aria-expanded='true'] > .tree__row--sticky,
+.sidebar__body[data-sticky-levels='5'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] li[aria-expanded='true'] > .tree__row--sticky,
+.sidebar__body[data-sticky-levels='6'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] li[aria-expanded='true'] > .tree__row--sticky,
+.tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] li[aria-expanded='true'] > .tree__row--sticky {
+  position: static;
 }
 
 /* A vault row (YAZ-2602 D3): a folder row that is a whole vault, so its name reads as the parent
@@ -2594,6 +2759,111 @@ button {
   white-space: nowrap;
 }
 
+/* File and folder icons (YAZ-3440 D4, D5): one before the name, on the label's `::before`, so a row has no node
+   more. Two sets (`sidebarIconSet`, `data-sidebar-icon-set` on `.app`): Material Icon Theme's (below) and the
+   app's own Line glyphs (here), one per kind by the row's `data-kind` (Tree.tsx), drawn as a mask: 14px glyphs on a
+   16px grid, 1.2px strokes. The file rows' look is `data-sidebar-file-icons` (`sidebarFileIcons`): "Colour"
+   (`quiet`, the default) colours each kind but notes, "All colour" (`color`) notes too, `grey` none, `off` hides
+   them. The folders' is `data-sidebar-folder-icons` (`sidebarFolderIcons`), on its own: grey, open while the folder
+   is. A vault row has none. A row in rename is an input: no icon.
+   The same rules draw a file's icon outside the tree (D11, YAZ-3471: tabs, search results, Recents): there the
+   `.file-icon` span (`FileIcon.tsx`, inline, first in the name's label) carries the row's attributes and draws on
+   its own `::before`; with the icons off it is empty and takes no room. Each rule names both in one `:is()`, whose
+   weight is the tree's, so the two can never draw apart. */
+.app[data-sidebar-icon-set='line']:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-kind]:not([data-icon-custom]) .tree__label, .file-icon--file[data-kind]:not([data-icon-custom]))::before,
+.app[data-sidebar-icon-set='line']:not([data-sidebar-folder-icons='off']) :is(.tree__row--dir[data-kind]:not([data-icon-custom]) .tree__label, .file-icon--dir[data-kind]:not([data-icon-custom]))::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  background: var(--kind-color, var(--fg-muted));
+  mask: var(--kind-icon) center / 14px 14px no-repeat;
+}
+
+:is(.tree__row, .file-icon)[data-kind='other'] {
+  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3'/%3E%3C/svg%3E");
+}
+
+:is(.tree__row, .file-icon)[data-kind='markdown'] {
+  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3M6 8.5h4.5M6 11h4.5'/%3E%3C/svg%3E");
+}
+
+:is(.tree__row, .file-icon)[data-kind='text'] {
+  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3M7 8.5 5.75 10 7 11.5M9.5 8.5l1.25 1.5-1.25 1.5'/%3E%3C/svg%3E");
+  --kind-color: var(--kind-text);
+}
+
+:is(.tree__row, .file-icon)[data-kind='pdf'] {
+  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3M5.75 9.5h5v3h-5z'/%3E%3C/svg%3E");
+  --kind-color: var(--kind-pdf);
+}
+
+:is(.tree__row, .file-icon)[data-kind='image'] {
+  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 3.5h12v9H2zM2 11l3.5-3.5 3 3 2-2 3.5 3.5'/%3E%3Ccircle cx='10.5' cy='6' r='1'/%3E%3C/svg%3E");
+  --kind-color: var(--kind-image);
+}
+
+:is(.tree__row, .file-icon)[data-kind='drawing'] {
+  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 13l.8-3.2L11 2.6l2.4 2.4-7.2 7.2zM9.5 4l2.5 2.5'/%3E%3C/svg%3E");
+  --kind-color: var(--kind-drawing);
+}
+
+:is(.tree__row, .file-icon)[data-kind='diagram'] {
+  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 2.5h5v4H2zM9 9.5h5v4H9zM4.5 6.5v3a1 1 0 0 0 1 1H9'/%3E%3C/svg%3E");
+  --kind-color: var(--kind-diagram);
+}
+
+:is(.tree__row, .file-icon)[data-kind='folder'] {
+  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 4.5a1 1 0 0 1 1-1h3.4l1.6 1.6h6a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z'/%3E%3C/svg%3E");
+}
+
+.tree > li[aria-expanded='true'] > .tree__row[data-kind='folder'] {
+  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 12.5v-8a1 1 0 0 1 1-1h3.4l1.6 1.6h5a1 1 0 0 1 1 1V7M1.5 12.5 3.5 7h11l-2 5.5z'/%3E%3C/svg%3E");
+}
+
+.app[data-sidebar-file-icons='color'] :is(.tree__row, .file-icon)[data-kind='markdown'] {
+  --kind-color: var(--kind-note);
+}
+
+.app[data-sidebar-file-icons='grey'] :is(.tree__row, .file-icon)[data-kind] {
+  --kind-color: var(--fg-muted);
+}
+
+/* Material Icon Theme's icons (YAZ-3440 D4): many colours each, so an image, not a mask. Tree.tsx puts the icon on
+   the row as the inline `--icon` (and `--icon-light`, its light theme twin, when it has one), with its id as
+   `data-icon`: any of Material's icons shows with no rule of its own, and a row loads only its own file
+   (`/material-icons/`, `materialIcons.ts`). Folders keep their colours; `grey` draws the file icons as grey
+   silhouettes (the icon as a mask), and `quiet` every note's (`data-kind='markdown'`, whatever its name icon:
+   README.md, SKILL.md, todo.md too, D4). A row the user gave its own icon (a pick in `.yaseendocs/icons.json`, D8,
+   or a rule in settings, D9: `data-icon-custom`) shows it in the Line set too, and in its own colours in `quiet`. */
+.app[data-sidebar-icon-set='material']:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-icon] .tree__label, .file-icon--file[data-icon])::before,
+.app[data-sidebar-icon-set='material']:not([data-sidebar-folder-icons='off']) :is(.tree__row--dir[data-icon] .tree__label, .file-icon--dir[data-icon])::before,
+.app:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-icon-custom] .tree__label, .file-icon--file[data-icon-custom])::before,
+.app:not([data-sidebar-folder-icons='off']) :is(.tree__row--dir[data-icon-custom] .tree__label, .file-icon--dir[data-icon-custom])::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  background: var(--icon) center / 14px 14px no-repeat;
+}
+
+[data-theme='light'] .app[data-sidebar-icon-set='material'] :is(.tree__row[data-icon] .tree__label, .file-icon[data-icon])::before,
+[data-theme='light'] .app :is(.tree__row[data-icon-custom] .tree__label, .file-icon[data-icon-custom])::before {
+  background-image: var(--icon-light, var(--icon));
+}
+
+/* After the light rule, which has the same weight: a silhouette has no image. */
+.app[data-sidebar-icon-set='material'][data-sidebar-file-icons='grey'] :is(.tree__row--file[data-icon] .tree__label, .file-icon--file[data-icon])::before,
+.app[data-sidebar-file-icons='grey'] :is(.tree__row--file[data-icon-custom] .tree__label, .file-icon--file[data-icon-custom])::before,
+.app[data-sidebar-icon-set='material'][data-sidebar-file-icons='quiet'] :is(.tree__row--file[data-kind='markdown'][data-icon]:not([data-icon-custom]) .tree__label, .file-icon--file[data-kind='markdown'][data-icon]:not([data-icon-custom]))::before {
+  background: var(--fg-muted);
+  mask: var(--icon) center / 14px 14px no-repeat;
+}
+
 /* Search (YAZ-2620 🔒 D5): the typed text, where it sits in a match — the `==highlight==` wash
    (`--mark-bg`) and weight. Weight alone was too faint at this size (Yasin's walk). The wash is
    translucent and the text keeps its colour, so it holds on the open and the highlighted row, in both themes. */
@@ -2621,7 +2891,6 @@ button {
   border-right: 1.75px solid var(--fg-muted);
   border-bottom: 1.75px solid var(--fg-muted);
   transform: rotate(-45deg);
-  transition: transform 0.12s;
 }
 
 .tree__chevron--open::before {
@@ -2665,14 +2934,6 @@ button {
   flex: none;
   margin-left: 3px;
   vertical-align: -1px;
-  color: var(--fg-muted);
-}
-
-/* A draw.io diagram's mark after its row's name (YAZ-3028 D11): the shortcut mark's place and tone. */
-.diagram-mark {
-  display: inline-flex;
-  flex: none;
-  margin-left: 4px;
   color: var(--fg-muted);
 }
 
@@ -3359,4 +3620,167 @@ button {
     height: 20px;
     translate: 0 -50%;
   }
+}
+
+/* The icon picker (YAZ-3440 D8): a menu surface right of the sidebar (and over the Settings dialog, z 70),
+   out of the sidebar zoom, so in screen px: 480px wide, up to 520px tall. Its head says what it changes, then the
+   search box, "Reset to default", "Suggested" and "All icons" (28px icons in 44px cells, 10 to a row:
+   `PICKER_COLUMNS`), each loaded when in view, and a footer with the name of the icon under the mouse or the keys. */
+.ctx-menu.icon-picker {
+  z-index: 75;
+  padding: 0;
+  font-size: 13px;
+}
+
+/* The layer that takes a click outside the picker (D8): it closes the picker and nothing under it hears it. */
+.icon-picker__outside {
+  position: fixed;
+  inset: 0;
+  z-index: 74;
+}
+
+.icon-picker__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(520px, calc(100vh - 16px));
+  padding: 8px;
+}
+
+/* Every line of the panel keeps its height; only the grid scrolls. */
+.icon-picker__panel > * {
+  flex: none;
+}
+
+.icon-picker__panel > .icon-picker__scroll {
+  flex: 1 1 auto;
+}
+
+.icon-picker__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-picker__close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border-radius: 5px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--fg-muted);
+}
+
+.icon-picker__close:hover,
+.icon-picker__close:focus-visible {
+  background: var(--bg-hover-row);
+  color: var(--fg);
+  outline: none;
+}
+
+.icon-picker__head {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 2px;
+  font-weight: 600;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-picker__search {
+  padding: 6px 10px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-side);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.icon-picker__search:focus-visible {
+  border-color: var(--accent);
+}
+
+.icon-picker__reset {
+  margin-bottom: 2px;
+}
+
+.icon-picker__reset:disabled {
+  color: var(--fg-muted);
+  cursor: default;
+}
+
+.icon-picker__scroll {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* A heading is a row of its own, over the cells that scroll under it: no cell or its fill ever covers it. */
+.icon-picker__label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: block;
+  height: 26px;
+  margin-bottom: 4px;
+  padding: 8px 2px 0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--fg-muted);
+  background: var(--bg);
+}
+
+.icon-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(10, 44px);
+  gap: 0;
+}
+
+.icon-picker__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+}
+
+.icon-picker__icon img {
+  width: 28px;
+  height: 28px;
+}
+
+.icon-picker__icon:hover,
+.icon-picker__icon:focus-visible {
+  background: var(--bg-hover-row);
+  outline: none;
+}
+
+.icon-picker__icon:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.icon-picker__icon--current {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.icon-picker__empty {
+  padding: 8px 2px;
+  color: var(--fg-muted);
+}
+
+.icon-picker__foot {
+  padding: 4px 2px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

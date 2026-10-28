@@ -4,6 +4,7 @@ import { rootOfPath, type DiagramDarkColors } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, insertionSlot } from '../lib/dragSlot'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
+import { FileIcon } from '../sidebar/FileIcon'
 import { GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
 import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import type { Tab } from '../workspace/useWorkspace'
@@ -450,7 +451,11 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
                   if (e.button === 1) onClose(id)
                 }}
               >
-                <span className="tabbar__label">{label}</span>
+                {/* The file's icon, as its tree row has it (YAZ-3440 D11): a folder page's is the folder's, and a display name keeps the file's. */}
+                <span className="tabbar__label">
+                  <FileIcon path={path} folder={isFolder(path)} />
+                  {label}
+                </span>
               </button>
               )}
               <button type="button" className="tabbar__close" aria-label={`Close ${label}`} title={`Close ${label}`} onClick={() => onClose(id)}>
