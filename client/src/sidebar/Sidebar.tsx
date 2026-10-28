@@ -1,7 +1,7 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
-import { hoverOn, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
+import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortedTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { GridIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -879,6 +879,30 @@ export function Sidebar({
     row?.scrollIntoView?.({ block: 'nearest' })
   }, [searchCursor.paths])
 
+  // Files follows the open tab (YAZ-3440 D13, `sidebarRevealActive`): a new active tab, or Files that shows
+  // again, is a QUIET request on the one reveal path below (no flash, no focus, no notice). It is asked one
+  // time for each change — turning the setting on reveals nothing — and only while Files shows: on another
+  // tab nothing happens, and Files that shows later reveals the open tab then. The tab the window starts
+  // with is revealed too; with the setting off the tree starts closed (YAZ-1642). A path in no vault of the
+  // window asks nothing, and nor does one in a vault row the user closed (YAZ-2602 R9, as `useVaultTree`'s
+  // own opening of a new tab's folders). Declared before App's requests, so an App request in the same commit wins.
+  const revealActive = settings.sidebarRevealActive
+  const filesShows = lens === 'files'
+  const vaultsNow = useRef({ roots, closedVaults })
+  vaultsNow.current = { roots, closedVaults }
+  const followed = useRef<{ path: string | null | undefined; files: boolean; id: number }>({ path: undefined, files: false, id: 0 })
+  useEffect(() => {
+    const last = followed.current
+    const moved = last.path !== activeFile || (filesShows && !last.files)
+    followed.current = { ...last, path: activeFile, files: filesShows }
+    if (!revealActive || !filesShows || !moved || activeFile === null) return
+    const vault = rootOfPath(vaultsNow.current.roots, activeFile)
+    if (vault === null || vaultsNow.current.closedVaults.includes(vault)) return
+    // Its own ids, below zero: App's count up from one, and each id is handled one time (`handledFilesRevealId`).
+    followed.current.id -= 1
+    setPendingReveal({ id: followed.current.id, path: activeFile, quiet: true })
+  }, [revealActive, filesShows, activeFile])
+
   useEffect(() => {
     if (revealRequest === null || seenRevealId.current === revealRequest.id) return
     seenRevealId.current = revealRequest.id
@@ -984,12 +1008,14 @@ export function Sidebar({
   useEffect(() => {
     if (revealTree === null || pendingReveal === null || handledFilesRevealId.current === pendingReveal.id) return
     handledFilesRevealId.current = pendingReveal.id
+    // A quiet reveal (YAZ-3440 D13) of a row that is not there says nothing: the user asked for no reveal.
     if (!revealTargetPresent) {
-      onNotice(revealMissingMessage(nameOf(pendingReveal.path)), 'error')
+      if (pendingReveal.quiet !== true) onNotice(revealMissingMessage(nameOf(pendingReveal.path)), 'error')
       return
     }
     // A folder opens ITSELF too — the synthetic-child idiom the create menu already uses. Its vault's row opens with it.
-    openTo(revealIsDir ? `${pendingReveal.path}/x` : pendingReveal.path)
+    // A quiet reveal opens only the folders above the row (D13).
+    openTo(revealIsDir && pendingReveal.quiet !== true ? `${pendingReveal.path}/x` : pendingReveal.path)
   }, [nameOf, onNotice, openTo, pendingReveal, revealIsDir, revealTargetPresent, revealTree])
 
   const filesRevealReady = revealTargetPresent && !closedVaults.includes(revealRoot) && ancestorDirs(revealRoot, pendingReveal.path).every((dir) => expanded.includes(dir))
@@ -998,9 +1024,12 @@ export function Sidebar({
     if (!filesRevealReady || pendingReveal === null || bodyRef.current === null) return
     // The keyboard focus goes to the row one time for each request (YAZ-2662 D1, D8): a folder above
     // it that is opened again later flashes the row and moves no focus.
-    const focus = pendingReveal.focus === true && focusedRevealId.current !== pendingReveal.id
+    const again = focusedRevealId.current === pendingReveal.id
+    const focus = pendingReveal.focus === true && !again
     focusedRevealId.current = pendingReveal.id
-    return flashTreeRows(bodyRef.current, pendingReveal.path, focus) ?? undefined
+    // A quiet reveal (YAZ-3440 D13) scrolls one time: a folder above it that opens again later moves nothing.
+    if (pendingReveal.quiet === true && again) return
+    return flashTreeRows(bodyRef.current, pendingReveal.path, focus, { quiet: pendingReveal.quiet === true }) ?? undefined
   }, [filesRevealReady, pendingReveal])
 
   // ---- New note / new folder (GRO-2022): right-click menu → inline name input ----

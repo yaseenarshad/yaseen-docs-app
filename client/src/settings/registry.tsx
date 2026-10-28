@@ -520,6 +520,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={ON_OFF_OPTIONS} value={settings.sidebarFolderIcons} onChange={(sidebarFolderIcons) => onChange({ ...settings, sidebarFolderIcons })} ariaLabel="Folder icons in the sidebar" />
             ),
           },
+          {
+            // YAZ-3440 D13: the Files tab follows the open tab, as VS Code's "Auto Reveal". Off by default: the tree starts closed (YAZ-1642).
+            id: 'sidebarRevealActive',
+            label: 'Reveal the open file',
+            hint: 'Files opens the folders down to the open tab\'s file and scrolls to it.',
+            keywords: ['sidebar', 'folder', 'tree', 'reveal', 'follow', 'open file', 'active', 'auto reveal', 'explorer', 'scroll'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.sidebarRevealActive} onChange={(sidebarRevealActive) => onChange({ ...settings, sidebarRevealActive })} ariaLabel="Reveal the open file in the sidebar" />
+            ),
+          },
         ],
       },
       {

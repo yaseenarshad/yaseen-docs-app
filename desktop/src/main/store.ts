@@ -395,6 +395,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   sidebarFileIcons: (v): v is SidebarFileIcons => typeof v === 'string' && (SIDEBAR_FILE_ICONS as readonly string[]).includes(v),
   sidebarFolderIcons: (v): v is boolean => typeof v === 'boolean',
   sidebarArrowMotion: (v): v is SidebarArrowMotion => typeof v === 'string' && (SIDEBAR_ARROW_MOTIONS as readonly string[]).includes(v),
+  sidebarRevealActive: (v): v is boolean => typeof v === 'boolean',
   sidebarIconColors: isSidebarIconColors,
   sidebarIconRules: isIconRules,
   // The canvas prefs (YAZ-3028, Draw's 🔒 YAZ-1775 D9): strict here, the IPC boundary's check; `sanitizeSettings` repairs them field by field.

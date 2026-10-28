@@ -46,6 +46,7 @@ describe('settingCandidates', () => {
       'sidebarStickyLevels',
       'sidebarArrowMotion',
       'sidebarFolderIcons',
+      'sidebarRevealActive',
       'sidebarIconSet',
       'sidebarFileIcons',
       ...['note', 'text', 'pdf', 'image', 'drawing', 'diagram'].map((k) => `sidebarIconColors.${k}`),

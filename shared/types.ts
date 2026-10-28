@@ -1491,6 +1491,14 @@ export interface SettingsState {
   sidebarFolderIcons: boolean
   /** The sidebar tree (YAZ-3440 D6): a folder's arrow turns at once (`instant`, the default) or over 0.12s (`smooth`, as before). Reduce motion always turns it at once. It travels with the settings folder. */
   sidebarArrowMotion: SidebarArrowMotion
+  /**
+   * The sidebar tree (YAZ-3440 D13): the Files tab follows the open tab, as VS Code's "Auto Reveal" does. When the
+   * active tab changes to a file or a folder in a vault of the window, Files opens the folders above it and scrolls
+   * its row into view: to the centre if it was off screen, not at all if it shows. No flash, no focus change; while
+   * another tab of the sidebar shows, it waits until Files shows. Off by default: the tree starts closed (YAZ-1642).
+   * It travels with the settings folder.
+   */
+  sidebarRevealActive: boolean
   /** The sidebar tree (YAZ-3440 D4): each kind's own icon colour, `#rrggbb`; a kind not in it has the built-in colour (`{}` = all built in). It travels with the settings folder, as a whole. */
   sidebarIconColors: SidebarIconColors
   /** The sidebar tree (YAZ-3440 B, demo round 2): the name rules, `[{ match, kind, icon }]` (`shared/vaultIcons.ts`), the first that matches a row's name and kind naming its Material icon, after the row's own pick in its vault's `icons.json`. A personal preference: one list for every vault, and it travels with the settings folder. */
@@ -1715,6 +1723,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarFileIcons: 'quiet',
   sidebarFolderIcons: true,
   sidebarArrowMotion: 'instant',
+  sidebarRevealActive: false,
   sidebarIconColors: {},
   sidebarIconRules: [],
   canvas: DEFAULT_CANVAS_PREFS,

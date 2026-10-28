@@ -4400,6 +4400,160 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     }
   })
 
+  /**
+   * Files follows the open tab (YAZ-3440 D13, `sidebarRevealActive`, default off): a new active tab in a vault of
+   * the window opens the folders above its row and scrolls the row to the centre if it was off screen. No flash, no
+   * focus change, no notice. While another tab of the sidebar shows nothing happens; Files that shows later reveals
+   * the open tab one time. It is the reveal path of `revealRequest` with its `quiet` option.
+   * The folders of a tab opened after the mount open with the setting off too (`useVaultTree`, YAZ-1642): what the
+   * setting adds is the scroll, the tab the window starts with, and a folder tab's own folders.
+   */
+  describe('Files follows the open tab (YAZ-3440 D13)', () => {
+    const ON = { settings: { ...DEFAULT_SETTINGS, sidebarRevealActive: true } }
+    /** The rows `scrollIntoView` was called on, with its options; restored by the test. */
+    const scrolls = () => {
+      const calls: [string | undefined, unknown][] = []
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value(this: HTMLElement, arg: unknown) { calls.push([this.dataset.path, arg]) } })
+      return calls
+    }
+    const unscroll = () => delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView
+    /** The list's box and some rows' boxes, by path; any other row has jsdom's empty box. */
+    const boxes = (list: { top: number; bottom: number }, rows: Record<string, { top: number; bottom: number }>) =>
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const r = this.classList.contains('sidebar__body') ? list : rows[this.dataset.path ?? '']
+        return DOMRect.fromRect({ x: 0, y: r?.top ?? 0, width: 200, height: r === undefined ? 0 : r.bottom - r.top })
+      })
+
+    it('on: a new open tab opens the folders above its row in Files; the row does not flash, the keyboard focus stays, and no notice shows', async () => {
+      const { el, v, props, rerender } = await mountVault(ON)
+      const file = `${v}/Projects/Alpha/a.md`
+      act(() => row(el, `${v}/top.md`)?.focus())
+      await rerender({ activeFile: file })
+      expect([isOpen(el, `${v}/Projects`), isOpen(el, `${v}/Projects/Alpha`), row(el, file) !== null]).toEqual(['true', 'true', true])
+      expect([flashes(el, file), el.querySelector('.tree__row--revealed'), focused()]).toEqual([false, null, 'top'])
+      expect(props.onNotice).not.toHaveBeenCalled()
+      // A folder tab: the folders above it open, the folder itself stays closed.
+      await rerender({ activeFile: `${v}/Projects/Alpha` })
+      expect(isOpen(el, `${v}/Projects/Alpha`)).toBe('true') // open from before: nothing folds
+      act(() => row(el, `${v}/Projects/Alpha`)?.click()) // the user folds it
+      await rerender({ activeFile: `${v}/top.md` })
+      await rerender({ activeFile: `${v}/Projects/Alpha` })
+      expect([isOpen(el, `${v}/Projects`), isOpen(el, `${v}/Projects/Alpha`)]).toEqual(['true', 'false'])
+    })
+
+    it('off (the default): a row off screen does not scroll — its folders open, as before the setting (`useVaultTree`)', async () => {
+      expect(DEFAULT_SETTINGS.sidebarRevealActive).toBe(false)
+      const calls = scrolls()
+      try {
+        const { el, v, rerender } = await mountVault()
+        const file = `${v}/Projects/Alpha/a.md`
+        boxes({ top: 0, bottom: 100 }, { [file]: { top: 400, bottom: 420 } })
+        await rerender({ activeFile: file })
+        expect([row(el, file) !== null, calls.filter(([path]) => path === file)]).toEqual([true, []])
+      } finally {
+        unscroll()
+      }
+    })
+
+    it.each([[false, 'false'], [true, 'true']] as const)('the tab the window starts with: with the setting %s its folders are open: %s (off: the tree starts closed, YAZ-1642)', async (on, open) => {
+      const v = `/v-keys-${vaults + 1}` // the vault `mountVault` makes next
+      const { el } = await mountVault({ ...(on ? ON : {}), activeFile: `${v}/Projects/Alpha/a.md` })
+      expect([isOpen(el, `${v}/Projects`), row(el, `${v}/Projects/Alpha/a.md`) !== null]).toEqual([open, on])
+    })
+
+    it('a row that was off screen scrolls to the centre of the list, one time', async () => {
+      const calls = scrolls()
+      try {
+        const { el, v, rerender } = await mountVault(ON)
+        const file = `${v}/Projects/Alpha/a.md`
+        boxes({ top: 0, bottom: 100 }, { [file]: { top: 400, bottom: 420 } })
+        await rerender({ activeFile: file })
+        expect(calls.filter(([path]) => path === file)).toEqual([[file, { block: 'center' }]])
+        // A folder above it that closes and opens again moves nothing: the reveal was one time.
+        act(() => row(el, `${v}/Projects`)?.click())
+        act(() => row(el, `${v}/Projects`)?.click())
+        expect([isOpen(el, `${v}/Projects`), calls.filter(([path]) => path === file).length]).toEqual(['true', 1])
+      } finally {
+        unscroll()
+      }
+    })
+
+    it('a row that shows does not move — under the stuck rows counts as off screen', async () => {
+      const calls = scrolls()
+      try {
+        const { el, v, rerender } = await mountVault(ON)
+        const plan = `${v}/Projects/plan.md`
+        boxes({ top: 0, bottom: 300 }, { [plan]: { top: 60, bottom: 80 }, [`${v}/top.md`]: { top: 10, bottom: 30 } })
+        await rerender({ activeFile: plan })
+        expect(row(el, plan)).not.toBeNull()
+        expect(calls.filter(([path]) => path === plan)).toEqual([])
+        // top.md stands at 10px, inside the list's box but under one stuck row (`scroll-margin-top`, 20px here).
+        row(el, `${v}/top.md`)!.style.scrollMarginTop = '20px'
+        await rerender({ activeFile: `${v}/top.md` })
+        expect(calls.filter(([path]) => path === `${v}/top.md`)).toEqual([[`${v}/top.md`, { block: 'center' }]])
+      } finally {
+        unscroll()
+      }
+    })
+
+    it('while another tab of the sidebar shows nothing scrolls; Files that shows later reveals the open tab one time', async () => {
+      const calls = scrolls()
+      try {
+        const { el, v, rerender } = await mountVault({ ...ON, lens: 'favorites' })
+        const file = `${v}/Projects/Alpha/a.md`
+        boxes({ top: 0, bottom: 100 }, { [file]: { top: 400, bottom: 420 } })
+        await rerender({ activeFile: file })
+        expect(calls).toEqual([])
+        await rerender({ lens: 'files', activeFile: file }) // a rerender's props are the mount's and these
+        expect([isOpen(el, `${v}/Projects`), isOpen(el, `${v}/Projects/Alpha`), flashes(el, file), document.activeElement === document.body]).toEqual(['true', 'true', false, true])
+        expect(calls.filter(([path]) => path === file)).toEqual([[file, { block: 'center' }]])
+        // One time: a render that changes no tab scrolls nothing.
+        await rerender({ lens: 'files', activeFile: file, width: 280 })
+        expect(calls.filter(([path]) => path === file)).toHaveLength(1)
+      } finally {
+        unscroll()
+      }
+    })
+
+    it('while another tab shows, the change is not kept for later: with the setting off by the time Files shows, nothing scrolls', async () => {
+      const calls = scrolls()
+      try {
+        const { v, rerender } = await mountVault({ ...ON, lens: 'focus' })
+        const file = `${v}/Projects/Alpha/a.md`
+        boxes({ top: 0, bottom: 100 }, { [file]: { top: 400, bottom: 420 } })
+        await rerender({ activeFile: file })
+        await rerender({ lens: 'files', activeFile: file, settings: { ...DEFAULT_SETTINGS } })
+        expect(calls.filter(([path]) => path === file)).toEqual([])
+      } finally {
+        unscroll()
+      }
+    })
+
+    it('a path outside the window\'s vaults, a path the tree does not hold, and a path in a vault row the user closed do nothing — no notice, no scroll, no vault opens', async () => {
+      const calls = scrolls()
+      try {
+        const { v, props, rerender } = await mountVault(ON)
+        boxes({ top: 0, bottom: 100 }, {})
+        await rerender({ activeFile: '/elsewhere/Projects/x.md' })
+        await rerender({ activeFile: `${v}/Projects/Gone.md` })
+        expect([vi.mocked(props.onNotice).mock.calls, calls]).toEqual([[], []])
+        boxes({ top: 0, bottom: 100 }, { [`${v}/top.md`]: { top: 400, bottom: 420 }, [`${v}/Projects/plan.md`]: { top: 400, bottom: 420 } }) // off screen: a reveal would scroll
+        await rerender({ activeFile: `${v}/top.md`, closedVaults: [v] })
+        await rerender({ activeFile: `${v}/Projects/plan.md`, closedVaults: [v] })
+        expect([vi.mocked(props.onSetVaultOpen).mock.calls, calls]).toEqual([[], []])
+      } finally {
+        unscroll()
+      }
+    })
+
+    it('a "Show in sidebar" request in the same render wins: its row flashes', async () => {
+      const { el, v, rerender } = await mountVault({ ...ON, lens: 'focus' })
+      const plan = `${v}/Projects/plan.md`
+      await rerender({ lens: 'files', activeFile: `${v}/top.md`, revealRequest: { id: 1, path: plan } })
+      expect([isOpen(el, `${v}/Projects`), flashes(el, plan)]).toEqual(['true', true])
+    })
+  })
+
   it('D11 names Files, Focus and Favorites: a row of the search tree is not walked — its keys are the search bar\'s, Home and End too (YAZ-3440 D12)', async () => {
     const { el, v } = await search('alpha')
     act(() => row(el, `${v}/Projects`)?.focus())
