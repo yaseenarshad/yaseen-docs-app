@@ -14,6 +14,7 @@ import { api } from '../api'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import type { NoticeKind } from '../lib/notice'
 import { pageLabel, useLatestTrees, type PathTitles } from '../lib/pageLabel'
+import { NameEnding } from '../sidebar/FileIcon'
 import { dirname, relTo } from '../lib/paths'
 import { shortRelativeTime } from '../lib/relativeTime'
 import { storage } from '../lib/storage'
@@ -412,7 +413,11 @@ export function StartPage({ roots, openTabs = NO_TABS, titles, onOpen, onOpenBac
                       <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} style={top ? undefined : { paddingLeft: (folder ? 8 : 26) + row.depth * 14 }} aria-expanded={folder ? open : undefined} data-path={row.path} data-col={col} data-row={at} title={row.path} onMouseEnter={folder ? undefined : () => rowPreview.hoverCard(`${col} ${at}`, row.path)} onMouseLeave={() => rowPreview.leaveCard(`${col} ${at}`)} onClick={(e) => activate(row, e.metaKey)} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY, col === 'closed'))}>
                         {/* The chevron is the mouse's Space (D13): it opens and closes the folder here, and the row's own click — the folder in Files — does not follow. */}
                         {folder && <span className={`tree__chevron${open ? ' tree__chevron--open' : ''}`} onClick={(e) => (e.stopPropagation(), toggleDir(col, row.path))} />}
-                        <span className="start__name">{pageLabel(row.path, folder, titles)}</span>
+                        {/* A start-page row has no icon, so a board always names its kind (YAZ-3536 D4, S29). */}
+                        <span className="start__name">
+                          {pageLabel(row.path, folder, titles)}
+                          {!folder && <NameEnding path={row.path} always />}
+                        </span>
                         {/* The folder the row is in, as the tab board names it; a row at the top of its vault names none. */}
                         {top && dir !== stripSlash(vault) && <span className="start__where">{relTo(vault, dir).split('/').join(' / ')}</span>}
                         {/* S20: the tag of a top row of the Favorites tab (YAZ-2631 D4), by what the app calls the vault. */}

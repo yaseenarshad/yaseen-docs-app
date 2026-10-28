@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type M
 import { RIGHT_PANEL_MAX_W, RIGHT_PANEL_MIN_W } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
+import { NameEnding } from '../sidebar/FileIcon'
 import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import './right-panel.css'
 
@@ -232,7 +233,11 @@ export function RightPanel({ roots, titles, items, expanded, width, overlay, can
                 onClick={() => onToggle(path)}
               >
                 <Chevron d={isExpanded ? 'm4 6 4 4 4-4' : 'm6 4 4 4-4 4'} />
-                <span className="right-panel__label">{label}</span>
+                {/* A right-panel row has no icon, so a board always names its kind (YAZ-3536 D4, S29). */}
+                <span className="right-panel__label">
+                  {label}
+                  {!isFolder(path) && <NameEnding path={path} always />}
+                </span>
               </button>
               <button type="button" className="right-panel__close" aria-label={`Close ${label}`} title={`Close ${label}`} onClick={() => close(path, index)}>
                 ×

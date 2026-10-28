@@ -32,7 +32,7 @@ let container: HTMLElement | null = null
 let seq = 0
 const vault = (name = 'v') => `/${name}${++seq}`
 
-const file = (path: string, kind: 'markdown' | 'pdf' | null = 'markdown'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind })
+const file = (path: string, kind: 'markdown' | 'pdf' | 'drawing' | null = 'markdown'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind })
 const dir = (path: string, children: TreeNode[] = []): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
 const used = (score: number, ago = 0): OpenStat => ({ score, last: NOW - ago })
 
@@ -136,6 +136,15 @@ afterEach(() => {
 })
 
 describe('StartPage', () => {
+  it('a board row has no icon, so it always names its kind: its extension shows after the name; a note shows none (YAZ-3536 D4, S29)', async () => {
+    const v = vault()
+    const { el } = await mount({ trees: { [v]: [file(`${v}/Sketch.excalidraw`, 'drawing'), file(`${v}/plan.md`)] }, opens: { [v]: { [`${v}/Sketch.excalidraw`]: used(1, HOUR), [`${v}/plan.md`]: used(1, 2 * HOUR) } } })
+    const [sketch, plan] = rowsOf(el, 'recent')
+    expect([part(sketch, 'start__name'), part(plan, 'start__name')]).toEqual(['Sketch.excalidraw', 'plan'])
+    expect(sketch.querySelector('.name-ending')?.className).toBe('name-ending name-ending--always')
+    expect(plan.querySelector('.name-ending')).toBeNull()
+  })
+
   it('S11, S12, S24: three columns; "Recent" shows the 8 pages last on show, the newest first, from every vault, each with its name, its folder and how long ago; the old line is gone', async () => {
     const v = vault()
     const w = vault('w')

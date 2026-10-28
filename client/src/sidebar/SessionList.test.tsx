@@ -113,6 +113,15 @@ describe('SessionList (YAZ-3147 D6)', () => {
     expect(rows().map((r) => r.getAttribute('aria-expanded'))).toEqual(['false', 'false'])
   })
 
+  it('a board tab row has no icon, so it always names its kind: its extension shows after the name; a display name and a note get none (YAZ-3536 D4)', async () => {
+    const BOARDS: Session = { id: 's3', name: 'Boards', tabs: [{ path: '/v/Flow.drawio' }, { path: '/v/Map.excalidraw', name: 'Roadmap' }, { path: '/v/c.md' }], roots: ['/v'], lastUsed: 30 }
+    await mount([BOARDS])
+    act(() => rows()[0].click())
+    const endings = tabRows().map((row) => row.querySelector('.name-ending')?.className ?? null)
+    expect(endings).toEqual(['name-ending name-ending--always', null, null])
+    expect(tabRows()[0].querySelector('.tree__label')?.textContent).toBe('Flow.drawio')
+  })
+
   it('a rename needs two clicks on the NAME within RENAME_CLICK_GAP_MS: slower clicks, or clicks on the arrow or the count, only fold and unfold', async () => {
     await mount([WORK, SOLO])
     const now = vi.spyOn(performance, 'now')

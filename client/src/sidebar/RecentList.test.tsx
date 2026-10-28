@@ -104,6 +104,17 @@ describe('RecentList (YAZ-3235 D3 to D7)', () => {
     expect(rows()[0].querySelector('.tree__label')?.textContent).toBe('Alpha page')
   })
 
+  it("a board row holds its extension after its name, for File icons Off to show (YAZ-3536 D4); a note's has none", async () => {
+    const board: TreeNode = { type: 'file', name: 'Flow.drawio', path: '/v/Flow.drawio', size: 1, mtime: 1, kind: 'diagram' }
+    const trees = new Map([['/v', { root: '/v', tree: [note('/v/a.md'), board], generatedAt: 1 }]])
+    await mount(stateWith({ '/v': { '/v/Flow.drawio': at(2026, 10, 23, 9, 5), '/v/a.md': at(2026, 10, 23, 8) } }), { trees })
+    const label = (row: Element) => row.querySelector('.tree__label')
+    expect(label(rows()[0])?.firstChild?.nextSibling?.textContent).toBe('Flow')
+    expect(rows()[0].querySelector('.name-ending')?.className).toBe('name-ending')
+    expect(rows()[0].querySelector('.name-ending')?.textContent).toBe('.drawio')
+    expect(rows()[1].querySelector('.name-ending')).toBeNull()
+  })
+
   it('S17: a click on a day heading folds it, and a second click opens it; all days start open', async () => {
     await mount(stateWith({ '/v': { '/v/a.md': at(2026, 10, 23, 9), '/v/b.md': at(2026, 10, 22, 18) } }))
     expect(days().map((d) => [d.getAttribute('aria-expanded'), d.querySelector('.tree__chevron--open') !== null])).toEqual([['true', true], ['true', true]])

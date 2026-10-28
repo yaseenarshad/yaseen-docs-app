@@ -8,6 +8,7 @@ import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
 import { TextField } from '../views/view/TextField'
 import { ContextMenu } from './ContextMenu'
+import { NameEnding } from './FileIcon'
 import type { MenuSection } from './menuSections'
 
 /** The help line of an empty Sessions tab (YAZ-3147 S37). */
@@ -213,7 +214,11 @@ const SessionRow = memo(function SessionRow({ session, open, renaming, titles, o
               // A session may hold two copies of one page: the place in the list is the key.
               <li key={i}>
                 <button type="button" className="tree__row" style={{ paddingLeft: 36 }} title={tab.path} onClick={() => onOpenFile(tab.path)} onContextMenu={(e) => onMenu(e, id, i)}>
-                  <span className="tree__label">{tab.name ?? pageLabel(tab.path, false, titles)}</span>
+                  {/* A Sessions row has no icon, so a board always names its kind (YAZ-3536 D4); a display name is the user's own words. */}
+                  <span className="tree__label">
+                    {tab.name ?? pageLabel(tab.path, false, titles)}
+                    {tab.name === undefined && <NameEnding path={tab.path} always />}
+                  </span>
                   {vault !== null && <span className="tree__vault">{storage.vaultName(vault)}</span>}
                 </button>
               </li>

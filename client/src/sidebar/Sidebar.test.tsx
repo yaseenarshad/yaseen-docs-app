@@ -420,8 +420,8 @@ afterEach(() => {
 })
 
 /**
- * Drawing and diagram rows (YAZ-3028 D11): normal rows that open a tab, named by their full file name,
- * a diagram marked; "Info" on their menu reads the board's head through `fs:board-head`.
+ * Drawing and diagram rows (YAZ-3028 D11): normal rows that open a tab, named without their extension
+ * (YAZ-3536 D1), which only File icons Off shows (D4); "Info" on their menu reads the board's head through `fs:board-head`.
  */
 /**
  * A drag event as a person makes it (YAZ-3467). A `dragstart` only arms a row (D1): it comes between
@@ -456,13 +456,17 @@ describe('drawing and diagram rows (YAZ-3028 D11)', () => {
   }
   const boardRow = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row--file[title="${path}"]`)
 
-  it('are normal rows: full file name, not external, each with its kind for its icon (YAZ-3440 D4, which took the place of the draw.io mark) and its Material icon, and a click opens a tab', async () => {
+  it('are normal rows: the name without its extension (YAZ-3536 D1), not external, each with its kind for its icon (YAZ-3440 D4, which took the place of the draw.io mark) and its Material icon, and a click opens a tab', async () => {
     const { el, bridge, props } = await mount({}, withBoards)
     const flow = boardRow(el, '/v/Flow.drawio')
     const sketch = boardRow(el, '/v/Sketch.excalidraw')
     expect(flow?.classList.contains('tree__row--external')).toBe(false)
     expect(sketch?.classList.contains('tree__row--external')).toBe(false)
-    expect(flow?.querySelector('.tree__label')?.textContent).toBe('Flow.drawio')
+    // The name, then the extension in its own span, which app.css shows only with File icons Off (YAZ-3536 D4, D5).
+    expect(flow?.querySelector('.tree__label')?.firstChild?.textContent).toBe('Flow')
+    expect(flow?.querySelector('.name-ending')?.textContent).toBe('.drawio')
+    expect(sketch?.querySelector('.name-ending')?.textContent).toBe('.excalidraw')
+    expect(boardRow(el, '/v/a.md')?.querySelector('.name-ending')).toBeNull()
     expect([flow?.dataset.kind, sketch?.dataset.kind]).toEqual(['diagram', 'drawing'])
     expect([flow?.dataset.icon, sketch?.dataset.icon]).toEqual(['drawio', 'excalidraw'])
     expect(flow?.style.getPropertyValue('--icon')).toBe('url(/material-icons/drawio.svg)')
