@@ -85,7 +85,8 @@ export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selec
 /** The preview tab (YAZ-2648 D1): the one tab a sidebar click reuses, its name italic. None when every tab is a kept tab. */
 export const previewTab = (w: Page) => w.locator('.tabbar .tabbar__tab--preview [role="tab"]')
 /** A file row of the sidebar tree by its exact label. */
-export const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
+// Matched on the LABEL span, as `dirRow` is: a search row also ends with its Last updated (`.tree__date`, YAZ-3511 D5).
+export const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ has: w.locator('.tree__label').filter({ hasText: new RegExp(`^${label}$`) }) })
 /**
  * A folder row of the sidebar tree by its exact label. Matched on the LABEL span, never on the
  * row's whole text: a top row of the Focus tab or of the Favorites tab also carries its vault's name
