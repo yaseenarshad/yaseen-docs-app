@@ -38,4 +38,6 @@ export interface KeyRow {
    * move's undo, ⌘⌫). It blocks no place (K3); a place's row still cannot take it, since it is a Mac standard or built in.
    */
   passesToPages?: true
+  /** An App key that exists only while a tab of these places is in front (the board items of the File menu, YAZ-3564 K13): it blocks only them. */
+  onlyIn?: readonly KeyScope[]
 }

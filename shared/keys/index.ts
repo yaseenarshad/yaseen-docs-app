@@ -49,8 +49,8 @@ export function clashesOf(row: KeyRow, key: string, overrides: HotkeyOverrides |
     if (other.id === row.id) return false
     const theirs = keysOf(other, overrides)
     if (other.scope === row.scope) return theirs.some((k) => sameKey(k, key))
-    if (other.scope === 'app') return (other.macStandard === true || !stepsAside(other, row.scope, aside)) && theirs.some((k) => sameKey(k, firstStep(key)))
-    if (row.scope === 'app') return row.passesToPages !== true && !stepsAside(row, other.scope, aside) && theirs.some((k) => sameKey(firstStep(k), key))
+    if (other.scope === 'app') return (other.onlyIn === undefined || other.onlyIn.includes(row.scope)) && (other.macStandard === true || !stepsAside(other, row.scope, aside)) && theirs.some((k) => sameKey(k, firstStep(key)))
+    if (row.scope === 'app') return row.passesToPages !== true && (row.onlyIn === undefined || row.onlyIn.includes(other.scope)) && !stepsAside(row, other.scope, aside) && theirs.some((k) => sameKey(firstStep(k), key))
     return false
   })
 }
