@@ -136,6 +136,18 @@ let nextTab = 0
 /** Monaco's text size at 100 %; the tab's zoom scales it. */
 const FONT_SIZE = 13
 
+/**
+ * A LARGE CODE FILE (YAZ-3501): from this many characters (512 KB of ASCII), sticky scroll reads the
+ * file's indentation, not its symbols. Monaco's symbol path runs on the page's thread after each pause in
+ * the typing: about 500 ms for `big-5mb.ts`, and in proportion below it. The indentation model costs
+ * nothing that a key waits for, and it pins the same lines in code that is indented as usual. Monaco turns
+ * sticky scroll off by itself only from 20 MB or 300 000 lines. The size is read when the tab opens.
+ */
+export const LARGE_CODE_CHARS = 512 * 1024
+
+/** Sticky scroll's source for a text of `length` characters: the symbols, or the indentation for a large file. */
+export const stickyModelFor = (length: number): 'outlineModel' | 'indentationModel' => (length >= LARGE_CODE_CHARS ? 'indentationModel' : 'outlineModel')
+
 /** The model's line break for a file's text (YAZ-3445 D3). */
 const eolOf = (text: string) => (lineBreakOf(text) === '\r\n' ? monaco.editor.EndOfLineSequence.CRLF : monaco.editor.EndOfLineSequence.LF)
 
@@ -255,7 +267,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
       // D6's quiet layout; wrap, the minimap and read only are Settings › Code (YAZ-3449).
       lineNumbers: 'on',
       showFoldingControls: 'always',
-      stickyScroll: { enabled: true },
+      stickyScroll: { enabled: true, defaultModel: stickyModelFor(model.getValueLength()) },
       bracketPairColorization: { enabled: true },
       minimap: { enabled: born.current.codeMinimap },
       wordWrap: born.current.codeWrap ? 'on' : 'off',

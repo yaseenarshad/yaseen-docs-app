@@ -1,4 +1,8 @@
 :root {
+  /* A menu row's padding (YAZ-3503): the app's `.ctx-menu__item` and Monaco's right-click menu
+     (`code/monacoMenuLook.ts`) both read it. Each row is this padding around one line of 13 px text at
+     `line-height: normal`, so the two menus' rows are the same height on every Mac and every font. */
+  --menu-row-padding: 6px 10px;
   --bg: #ffffff;
   --bg-side: #f6f6f7;
   --fg: #1f1f1f;
@@ -2123,7 +2127,7 @@ button {
   justify-content: space-between;
   gap: 16px;
   width: 100%;
-  padding: 6px 10px;
+  padding: var(--menu-row-padding);
   border-radius: 5px;
   font-size: 13px;
   text-align: left;

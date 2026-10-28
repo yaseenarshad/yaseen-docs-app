@@ -84,7 +84,9 @@ A code file shows its **Outline** where a note shows its table of contents: at t
 - **Error marks**: a row whose code has an error or a warning shows a red or yellow dot; a collapsed row shows the worst one it hides.
 - **Go to a row**: a click glides the code to the symbol, opens any fold in the way, and puts the cursor on its name. ⌘J from the keyboard: type to filter, `↑` / `↓` pick, `⏎` goes, `Esc` clears the filter and returns to the code; `←` / `→` collapse and open the picked row while the filter is empty.
 
-The symbols are Monaco's own for TS, JS, React, JSON, CSS and HTML. A Python file's are read from its text (`class`, `def`, `async def`, decorators, top-level `UPPER_CASE` constants): no language helper is needed. A file with neither (`.lua`, …) shows no Outline. The Outline reads the symbols 300 ms after the last edit, never on a keystroke, and draws only the rows on screen, so a 5 MB file stays smooth. View-only — the file is never touched.
+The symbols are Monaco's own for TS, JS, React, JSON, CSS and HTML. A Python file's are read from its text (`class`, `def`, `async def`, decorators, top-level `UPPER_CASE` constants): no language helper is needed. A file with neither (`.lua`, …) shows no Outline. The Outline reads the symbols 300 ms after the last edit, never on a keystroke, and draws only the rows on screen. For TS, JS and React files the background worker that reads the symbols also builds the whole list, so typing in a 5 MB file stays smooth (each key draws within one frame). View-only — the file is never touched.
+
+**A large code file** (512 KB or more): sticky scroll pins the lines that start each indented block (Monaco's indentation model), not the symbols, so typing stays smooth; in code indented as usual it pins the same lines. Everything else stays on: colours, folds, errors, bracket colours, the Outline.
 
 ### Jump by meaning in code files
 

@@ -25,6 +25,8 @@ import { abba, loadSensitive, overCeilings, summarizeRuns } from './lib/stats.mj
 import * as launch from './scenarios/launch.mjs'
 import * as openBig from './scenarios/open-big.mjs'
 import * as typing from './scenarios/typing.mjs'
+import * as openBigCode from './scenarios/open-big-code.mjs'
+import * as typingCode from './scenarios/typing-code.mjs'
 import * as sidebarResize from './scenarios/sidebar-resize.mjs'
 import * as tabSwitch from './scenarios/tab-switch.mjs'
 import * as multiVault from './scenarios/multi-vault.mjs'
@@ -34,7 +36,7 @@ import * as idle from './scenarios/idle.mjs'
 import * as quit from './scenarios/quit.mjs'
 import * as drawio from './scenarios/drawio.mjs'
 
-const SCENARIOS = { launch, 'open-big': openBig, typing, 'sidebar-resize': sidebarResize, 'tab-switch': tabSwitch, 'multi-vault': multiVault, storm, watcher, idle, quit, drawio }
+const SCENARIOS = { launch, 'open-big': openBig, typing, 'open-big-code': openBigCode, 'typing-code': typingCode, 'sidebar-resize': sidebarResize, 'tab-switch': tabSwitch, 'multi-vault': multiVault, storm, watcher, idle, quit, drawio }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 /** The timing ceilings (YAZ-3044 A19): budget.json's `perf` rows, checked against each scenario's medians. */

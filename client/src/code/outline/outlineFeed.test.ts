@@ -9,7 +9,7 @@ vi.mock('../monaco', () => import('../monacoTestKit'))
 
 import { FakeEditor, FakeModel, resetFakeMonaco, setMarkers } from '../monacoTestKit'
 import { attachOutlineFeed, READ_DELAY_MS } from './outlineFeed'
-import type { CodeSymbol } from './outlineModel'
+import { buildTree, type CodeSymbol } from './outlineModel'
 
 const sym = (name: string, line: number): CodeSymbol => ({ name, kind: 11, range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 20 }, selectionRange: { startLineNumber: line, startColumn: 10, endLineNumber: line, endColumn: 14 } })
 const uri = { scheme: 'code-tab', authority: 't1', path: '/v/a.ts', fsPath: '/v/a.ts', toString: () => 'code-tab://t1/v/a.ts' }
@@ -44,6 +44,20 @@ describe('attachOutlineFeed', () => {
     vi.advanceTimersByTime(READ_DELAY_MS)
     await flush()
     expect(read).toHaveBeenCalledTimes(2)
+    feed.dispose()
+  })
+
+  it('YAZ-3501: a tree the TS worker built is taken as it is; an empty tree is a file with no symbol', async () => {
+    const built = buildTree([sym('a', 1), sym('b', 2)])
+    const answers = [built, buildTree([])]
+    const read = vi.fn(async () => answers.shift()!)
+    const feed = attachOutlineFeed(editor as never, model as never, read)
+    await flush()
+    expect(feed.getState().tree).toBe(built)
+    model.type('x')
+    vi.advanceTimersByTime(READ_DELAY_MS)
+    await flush()
+    expect(feed.getState().tree).toBeNull()
     feed.dispose()
   })
 

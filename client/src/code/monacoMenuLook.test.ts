@@ -48,6 +48,12 @@ describe('attachMenuLook', () => {
     expect(looks(late)).toHaveLength(0)
   })
 
+  it('a row is the app row: its padding token around one line at the normal line height, never a fixed height (YAZ-3503)', () => {
+    expect(MENU_LOOK_CSS).toMatch(/\.action-menu-item \{[^}]*height: auto;/)
+    expect(MENU_LOOK_CSS).toMatch(/\.action-label:not\(\.separator\) \{[^}]*padding: var\(--menu-row-padding, 6px 10px\);[^}]*line-height: normal;/)
+    expect(MENU_LOOK_CSS).not.toMatch(/height: \d+px/)
+  })
+
   it('every rule has one class more than Monaco’s, so it wins in any order', () => {
     for (const rule of MENU_LOOK_CSS.split('}').filter((r) => r.includes('{'))) expect(rule.trim()).toMatch(/^\.context-view \.monaco-menu\.monaco-menu/)
   })

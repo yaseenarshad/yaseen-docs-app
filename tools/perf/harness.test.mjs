@@ -9,6 +9,7 @@ import { flowDiagram } from './scenarios/drawio.mjs'
 import { claimWorkDir, writeState } from './lib/work.mjs'
 import { RING, crosses, seedVaults } from './scenarios/multi-vault.mjs'
 import { NOTES } from './scenarios/typing.mjs'
+import { BIG_CODE_LINES, bigCodeText, writeBigCode } from './scenarios/bigCode.mjs'
 
 const made = []
 const tmp = () => {
@@ -127,5 +128,19 @@ describe('fixtures', () => {
       ['Alpha 2', 'Beta 1', true],
       ['Beta 1', 'Beta 2', false],
     ])
+  })
+})
+
+describe('the 5 MB code file of open-big-code and typing-code (YAZ-3501)', () => {
+  it('is big-5mb.ts: a comment, then 52,000 constants, about 5 MB, written afresh each time', () => {
+    const text = bigCodeText()
+    const lines = text.split('\n')
+    expect(lines).toHaveLength(BIG_CODE_LINES + 2)
+    expect(lines[1]).toBe("export const value0 = { id: 0, name: 'row 0', tags: ['alpha', 'beta', 'gamma'], active: false }")
+    expect(text.length).toBeGreaterThan(5_000_000)
+    const dir = tmp()
+    const file = writeBigCode(dir)
+    fs.writeFileSync(file, 'typed into')
+    expect(fs.readFileSync(writeBigCode(dir), 'utf8')).toBe(text)
   })
 })
