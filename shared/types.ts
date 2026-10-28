@@ -1094,9 +1094,12 @@ export const DEFAULT_SEARCH_SORT: TabSort = { by: 'best', reverse: false }
 export type RowDates = Record<SortMenuTab, boolean>
 export const DEFAULT_ROW_DATES: RowDates = { files: false, focus: false, favorites: false, search: true }
 
-/** `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. */
+/**
+ * `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. The max is only a
+ * bound on a stored value since YAZ-3511 D18: the sidebar grows until the page keeps `MAIN_WORKSPACE_MIN_W`.
+ */
 export const SIDEBAR_MIN_W = 180
-export const SIDEBAR_MAX_W = 520
+export const SIDEBAR_MAX_W = 2000
 export const SIDEBAR_DEFAULT_W = 260
 
 /** Per-window right-panel geometry. Width persists even while the panel is hidden. */

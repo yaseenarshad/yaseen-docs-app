@@ -1213,6 +1213,12 @@ button {
   user-select: none;
 }
 
+/* The page keeps 360 px, MAIN_WORKSPACE_MIN_W (YAZ-3511 D18): in a narrower window a wide sidebar is drawn narrower, and
+   its stored width comes back when the window does. A Files window is only the sidebar. */
+.app:not(.app--files) > .sidebar {
+  max-width: calc(100vw - 360px);
+}
+
 /* A Files window (YAZ-3357 D1, D8) is only the sidebar: it fills the window, with no edge to drag. While Tabs Mission
    Control shows, the window is wide and the sidebar keeps its narrow width (set on it), the board right of it. */
 .app--files:not(.app--files-board) > .sidebar {

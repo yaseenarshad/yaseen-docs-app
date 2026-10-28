@@ -1364,6 +1364,16 @@ describe('App sidebar resize (YAZ-738)', () => {
     expect(bridge.state.setSidebarWidth.mock.calls).toEqual([[380]])
   })
 
+  it('YAZ-3511 D18, edge case 62: a drag goes well past 520 px and stops where the page keeps 360 px', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1600 })
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => drag(el, 640))
+    expect(sideW()).toBe(900)
+    act(() => drag(el, 5000))
+    expect(sideW()).toBe(1600 - 360)
+    expect(bridge.state.setSidebarWidth.mock.calls.at(-1)).toEqual([1240])
+  })
+
   it('the width goes to the sidebar alone, never to the whole window as an inherited variable (YAZ-2194)', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => drag(el, 120))

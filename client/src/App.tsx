@@ -435,9 +435,11 @@ export function App() {
     return () => window.removeEventListener('resize', resize)
   }, [])
 
-  const visibleSidebarWidth = root !== null && !sidebarCollapsed ? sidebarWidth : 0
+  // The page keeps MAIN_WORKSPACE_MIN_W (YAZ-3511 D18): a sidebar wider than the window allows is drawn narrower (app.css), its stored width kept.
+  const drawnSidebarWidth = (width: number) => Math.min(width, windowWidth - MAIN_WORKSPACE_MIN_W)
+  const visibleSidebarWidth = root !== null && !sidebarCollapsed ? drawnSidebarWidth(sidebarWidth) : 0
   /** Whether the right panel overlays the workspace beside a sidebar this wide; a resize drag asks it per move. */
-  const overlayAt = (sideWidth: number) => rightPanel.open && windowWidth < sideWidth + rightPanel.width + MAIN_WORKSPACE_MIN_W
+  const overlayAt = (sideWidth: number) => rightPanel.open && windowWidth < drawnSidebarWidth(sideWidth) + rightPanel.width + MAIN_WORKSPACE_MIN_W
   const overlayAtRef = useRef(overlayAt)
   overlayAtRef.current = overlayAt
   const rightOverlay = overlayAt(visibleSidebarWidth)
@@ -478,7 +480,8 @@ export function App() {
       // split and overlay, so that still happens live, and on mouseup.
       const move = (ev: MouseEvent) => {
         raw = start + ev.clientX - x0
-        width = Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, raw))
+        // As wide as the page lets it (YAZ-3511 D18): the page keeps MAIN_WORKSPACE_MIN_W.
+        width = Math.max(SIDEBAR_MIN_W, Math.min(SIDEBAR_MAX_W, window.innerWidth - MAIN_WORKSPACE_MIN_W, raw))
         if (sidebarRef.current !== null) sidebarRef.current.style.width = `${width}px`
         if (overlayAtRef.current(width) !== overlayAtRef.current(rendered)) {
           rendered = width
