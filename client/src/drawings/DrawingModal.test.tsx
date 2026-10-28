@@ -337,6 +337,55 @@ describe('autosave (YAZ-3528 D1)', () => {
     expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
   })
 
+  it('YAZ-3552: Reload closes the strip with the bar it answers', async () => {
+    await open('ok', 100)
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await click(closeBtn())
+    expect(strip()).toContain(DISCARD_PROMPT)
+    readAsset.mockResolvedValue(asset(555))
+    await click(byText('Reload'))
+    expect(strip()).toBeNull()
+    expect(conflictBar()).toBeNull()
+  })
+
+  it('a snapshot from the canvas a Reload replaced never starts the autosave', async () => {
+    await open('ok', 100)
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await idle()
+    const oldCanvas = seam.props?.onSnapshot
+    readAsset.mockResolvedValue(asset(555))
+    await click(byText('Reload'))
+    // The replaced canvas reports one more change on its way out: it must not become the baseline.
+    act(() => oldCanvas?.({ version: 50, serialize: () => ({ json: '', files: {}, referenced: new Set() }), standalone: () => BYTES }))
+    emit(9) // the new canvas's mount snapshot: the real baseline
+    await idle()
+    expect(writeAsset).toHaveBeenCalledTimes(1)
+    emit(10)
+    await idle()
+    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
+  })
+
+  it('Discard while a close is still retrying leaves ONCE', async () => {
+    const { onClose } = await open()
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    await idle()
+    await click(closeBtn())
+    expect(strip()).toContain(DISCARD_PROMPT)
+    let land: (() => void) | null = null
+    writeAsset.mockImplementationOnce(() => new Promise((resolve) => (land = () => resolve({ path: PATH, mtime: 999, size: BYTES.length }))))
+    await click(closeBtn()) // a retry starts
+    await click(byText('Discard'))
+    await act(async () => land?.())
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('A4: a CONFLICT that carries no mtime re-reads the file for it — the read is only for the guard', async () => {
     await open('ok', 100)
     emit(1)

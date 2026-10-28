@@ -97,6 +97,8 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
   const stale = useRef(false)
   /** A close is saving: a second Esc / ✕ / click-away while it does is the same close, not another. */
   const closing = useRef(false)
+  /** The modal has left (closed or discarded): a close still saving must not leave it a second time. */
+  const left = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   /** The disk's mtime while the conflict bar is up (YAZ-3044 A4); null when there is no conflict. */
@@ -211,18 +213,22 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
       const failed = (): boolean => statusRef.current === 'error' || conflictRef.current !== null
       if (a.dirty && !failed()) await a.flush()
       closing.current = false
+      if (left.current) return
       // A failed write or a conflict keeps it pending: the error line or the conflict bar says why.
       if (a.dirty) {
         setConfirming(true)
         return
       }
     }
+    left.current = true
     if (stale.current) feed?.poke(target)
     onClose()
   }
 
   /** Discard: what failed to save stays off disk — disposed first, so the unmount flush writes nothing. */
   const discard = (): void => {
+    if (left.current) return
+    left.current = true
     autosave.current?.dispose()
     if (stale.current) feed?.poke(target)
     onClose()
