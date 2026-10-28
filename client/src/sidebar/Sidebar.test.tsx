@@ -3155,13 +3155,13 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     expect(taken('ArrowUp')).toBe(true)
   })
 
-  it('S17, S19: the Search tab has no expand-all button and no blank-space menu — not even the OS one — with text or with none', async () => {
+  it('S17, S19: on the Search tab the expand-all button stays, dimmed with no text (YAZ-3511 D19), and there is no blank-space menu — not even the OS one — with text or with none', async () => {
     const { el, rerender } = await open()
     expect(allButton(el)).not.toBeNull() // Files has folders to unfold
     await rerender({ lens: 'search' })
     for (const text of ['', 'anchor']) {
       if (text !== '') await type(searchBar(el)!, text)
-      expect([text, allButton(el)]).toEqual([text, null])
+      expect([text, (allButton(el) as HTMLButtonElement | null)?.disabled]).toEqual([text, text === ''])
       let reached = true
       act(() => void (reached = el.querySelector('.sidebar__body')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))))
       expect([text, reached, el.querySelector('.ctx-menu')]).toEqual([text, false, null])
@@ -5453,14 +5453,14 @@ describe('lens tabs (🔒 D4, YAZ-847; YAZ-2638 D2)', () => {
     expect(searchBar(favorites.el)).toBeNull() // the bar is in the Search tab only (YAZ-2638 S6)
   })
 
-  it('the Sessions tab (YAZ-3147 D4, S37): a glyph labelled "Sessions"; its body is the session list — no file tree, no expand-all button, and its blank space has no tree menu', async () => {
+  it('the Sessions tab (YAZ-3147 D4, S37): a glyph labelled "Sessions"; its body is the session list — no file tree, the expand-all button dimmed (YAZ-3511 D19), and its blank space has no tree menu', async () => {
     const { el, props } = await mount({ lens: 'sessions' })
     const sessions = tabByLabel(el, 'Sessions')
     expect(sessions?.getAttribute('title')).toBe('Sessions')
     expect(sessions?.querySelector('svg.stack-icon')).not.toBeNull()
     expect(selectedTabs(el)).toEqual(['Sessions'])
     expect(el.querySelector('.sidebar__body .tree')).toBeNull()
-    expect(el.querySelector('.sidebar__expand-all')).toBeNull()
+    expect(el.querySelector<HTMLButtonElement>('.sidebar__expand-all')?.disabled).toBe(true) // on every tab, dimmed with nothing to fold (YAZ-3511 D19)
     expect(el.querySelector('.sidebar__body .sidebar__focus-bar')?.textContent).toBe('No sessionsSave open tabs')
     expect(bodyMsg(el)).toBe('Save your open tabs as a session. Restore them later in one click.')
     const blank = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
@@ -5471,7 +5471,7 @@ describe('lens tabs (🔒 D4, YAZ-847; YAZ-2638 D2)', () => {
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
   })
 
-  it('the Recents tab (YAZ-3235 D4, S13, S20, S22): the last tab, a clock glyph labelled "Recents", and a stored lens; its body is the save list — no file tree, no expand-all button, and its blank space has no tree menu', async () => {
+  it('the Recents tab (YAZ-3235 D4, S13, S20, S22): the last tab, a clock glyph labelled "Recents", and a stored lens; its body is the save list — no file tree, the expand-all button dimmed (YAZ-3511 D19), and its blank space has no tree menu', async () => {
     const files = await mount({ lens: 'files' })
     act(() => tabByLabel(files.el, 'Recents')?.click())
     expect(files.props.onLensChange).toHaveBeenCalledExactlyOnceWith('recents')
@@ -5481,7 +5481,7 @@ describe('lens tabs (🔒 D4, YAZ-847; YAZ-2638 D2)', () => {
     expect([tabName(recents!), recents?.getAttribute('title'), recents?.querySelector('svg.clock-icon') !== null]).toEqual(['Recents', 'Recents', true])
     expect(selectedTabs(el)).toEqual(['Recents'])
     expect(el.querySelector('.sidebar__body .tree')).toBeNull()
-    expect(el.querySelector('.sidebar__expand-all')).toBeNull()
+    expect(el.querySelector<HTMLButtonElement>('.sidebar__expand-all')?.disabled).toBe(true) // on every tab, dimmed with nothing to fold (YAZ-3511 D19)
     expect(bodyMsg(el)).toBe('Files you edit show here.')
     const blank = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(blank))
@@ -5689,9 +5689,10 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(items(el)).toEqual(['Sort…', fold === 'Expand all' ? 'Collapse all' : 'Expand all', 'Edit tab row…']) // the fold ran, as the button's click does
   })
 
-  it('S5: on Sessions neither Sort nor fold shows, so a hidden one is not in the menu either: no ⋯', async () => {
+  it('S5: on Sessions Sort does not show, so a hidden Sort is not in the menu; the fold shows on every tab (YAZ-3511 D19), so a hidden fold is', async () => {
     const { el } = await mount({ lens: 'sessions', ...withTabs({ hiddenButtons: ['sort', 'fold'] }) })
-    expect(more(el)).toBeNull()
+    mouseClick(more(el))
+    expect(items(el)).toEqual(['Expand all', 'Edit tab row…'])
   })
 
   it('S16: Enter on ⋯ puts the focus in the menu; ↑ ↓ walk its items, from the tabs with no room past the line to the hidden tabs; ← → and ↓ do nothing else; Esc closes it and the focus is back on ⋯', async () => {
@@ -5859,13 +5860,14 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     })
 
     it('S30: a width change that keeps the count keeps the row as it is; the row is measured on each change', async () => {
+      // Recents has the fold since YAZ-3511 D19: 47 + 31 × 3 + 30 (⋯) + 30 (fold) = 200 ≤ each width.
       const { el } = await mount({ lens: 'recents' })
-      resize(200)
+      resize(215)
       const before = tabs(el)
       const spy = vi.mocked(HTMLElement.prototype.getBoundingClientRect)
       spy.mockClear()
-      resize(195)
-      resize(190)
+      resize(210)
+      resize(205)
       expect(tabs(el)).toEqual(before) // the same four buttons: no tab came or went
       expect(spy).toHaveBeenCalled()
     })
@@ -5930,19 +5932,19 @@ describe('expand / collapse all (⚡ YAZ-862)', () => {
     expect(props.onSetVaultOpen).not.toHaveBeenCalled()
   })
 
-  it('there is no button on the Search tab (YAZ-2638 S17), or in a vault with no folders', async () => {
+  it('on the Search tab the button folds the search tree, and stays dimmed with no text (YAZ-3511 D19); in a vault with no folders it is dimmed', async () => {
     const searched = await mountVault()
     const input = searchInput(searched.el)!
     await type(input, 'a')
-    expect(allButton(searched.el)).toBeNull()
+    expect(allButton(searched.el)).not.toBeNull()
     await type(input, '')
-    expect(allButton(searched.el)).toBeNull()
+    expect(allButton(searched.el)?.disabled).toBe(true)
     await searched.rerender({ lens: 'files' })
     expect(allButton(searched.el)).not.toBeNull() // back with the tree it belongs to
 
     const flat = await mountVault((v) => [note(`${v}/n.md`)])
     expect(flat.el.querySelector('.tree__row--file')).not.toBeNull()
-    expect(allButton(flat.el)).toBeNull()
+    expect(allButton(flat.el)?.disabled).toBe(true)
   })
 
   it('each open level carries its depth for the level line, the top level none; a fold takes the level away (YAZ-3309 D1)', async () => {
@@ -6221,7 +6223,8 @@ describe('focus tab (YAZ-2619)', () => {
     expect(eye.title).toBe('Focus')
     expect(eye.className).toBe('sidebar__lens sidebar__lens--glyph sidebar__lens--active') // the accent rides on these two classes (app.css)
     expect(eye.getAttribute('aria-selected')).toBe('true')
-    expect(el.querySelectorAll('.sidebar__lenses button')).toHaveLength(7) // the six tabs and the sort button (YAZ-3227 D5): no eye button at the far end, nothing to unfold
+    expect(el.querySelectorAll('.sidebar__lenses button')).toHaveLength(8) // the six tabs, the sort button (YAZ-3227 D5) and the fold, dimmed: nothing to unfold (YAZ-3511 D19)
+    expect(el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__expand-all')?.disabled).toBe(true)
     expect(el.querySelector('.sidebar__lenses .sidebar__sort')).not.toBeNull()
     expect(bodyMsg(el)).toBe(EMPTY)
     expect(countLine(el)).toBeNull()
@@ -6241,7 +6244,7 @@ describe('focus tab (YAZ-2619)', () => {
     expect(storage.getExpanded(v)).toEqual([copyFoldKey(`${v}/Projects`, `${v}/Projects`), copyFoldKey(`${v}/Projects`, `${v}/Projects/Alpha`)])
     await pick(el, `${v}/Projects`, 'Remove from focus')
     expect(topLabels(el)).toEqual(['top'])
-    expect(allButton(el)).toBeNull() // a file is no folder to unfold (S21)
+    expect(allButton(el)?.disabled).toBe(true) // a file is no folder to unfold (S21): dimmed (YAZ-3511 D19)
     await act(async () => clearButton(el)?.click())
     expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [])
     expect(bodyMsg(el)).toBe(EMPTY)
@@ -9806,7 +9809,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(allLabel(bare.el)).toBe('Expand all')
     for (const lens of ['focus', 'favorites'] as const) {
       await bare.rerender({ closedVaults: doors.closed(), lens })
-      expect(allButton(bare.el), lens).toBeNull()
+      expect(allButton(bare.el)?.disabled, lens).toBe(true)
     }
     act(() => root?.unmount())
     container?.remove()
@@ -11290,6 +11293,18 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     act(() => sortButton(m.el)?.click())
     clickSub(m.el, 'PDFs', 'Type')
     expect(rows(m.el).map((r) => r.split(' ').slice(0, -1).join(' '))).toEqual(['plan scan 1.pdf', 'plan scan 2.pdf', 'plan scan 3.pdf'])
+  })
+
+  it('S67, D19: on Search the expand-all button closes every folder of the search tree and opens them again; the Files folds do not change', async () => {
+    const { el, props } = await search(NAME)
+    const fold = () => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__expand-all')!
+    expect(fold().getAttribute('aria-label')).toBe('Collapse all')
+    act(() => fold().click())
+    expect(rows(el)).toEqual(['docs 3h', 'plan empty -', 'plan old 5mo', 'plan a 1w', 'plan b 34m'])
+    expect(fold().getAttribute('aria-label')).toBe('Expand all')
+    act(() => fold().click())
+    expect(rows(el)).toEqual(['docs 3h', 'plan 2 3h', 'plan 10 2d', 'plan empty -', 'plan old 5mo', 'plan a 1w', 'plan b 34m'])
+    expect(props.onSetVaultOpen).not.toHaveBeenCalled()
   })
 
   it('S22, S25, D10: Files has its own date switch, off by default; on, its rows show a date and Search keeps its own', async () => {

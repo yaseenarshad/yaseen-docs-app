@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type MouseEvent } from 'react'
 import { hasHoverPreview } from './hoverPreviewKinds'
 import type { TreeResponse } from '@shared/types'
+import type { OnListFold } from './listFold'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
 import { FileIcon } from './FileIcon'
@@ -55,6 +56,8 @@ function useToday(): string {
 }
 
 interface RecentListProps {
+  /** The days' fold, for the expand-all button (YAZ-3511 D19). */
+  onFold?: OnListFold
   /** The trees of the window's vaults: a logged file draws a row only while its vault's tree has it (S7, S22). */
   trees: ReadonlyMap<string, TreeResponse>
   /** The window's vaults: their save logs make one list (S14). */
@@ -81,13 +84,20 @@ interface RecentListProps {
  * the tab shows. Memo: App draws again on each app-state broadcast; the list draws only when its own
  * props, a save log or the day change.
  */
-export const RecentList = memo(function RecentList({ trees, roots, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile }: RecentListProps) {
+export const RecentList = memo(function RecentList({ trees, roots, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold }: RecentListProps) {
   const edits = useEdits(roots)
   const today = useToday()
   const files = useMemo(() => recentFiles(trees, roots, edits), [trees, roots, edits])
   const days = useMemo(() => recentDays(files, new Date()), [files, today]) // eslint-disable-line react-hooks/exhaustive-deps -- a new day draws the headings again (S16)
   // The days folded shut (D5): all open at mount, never stored. By date, so a fold stays when "Today" becomes "Yesterday".
   const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set())
+  // The days' fold for the expand-all button (YAZ-3511 D19).
+  useEffect(() => {
+    if (onFold === undefined) return
+    const keys = days.map((day) => day.key)
+    onFold({ open: keys.some((key) => !shut.has(key)), any: keys.length > 0, setAll: (all) => setShut(all ? new Set() : new Set(keys)) })
+  }, [onFold, days, shut])
+  useEffect(() => (onFold === undefined ? undefined : () => onFold(null)), [onFold])
   const toggle = useCallback(
     (key: string) =>
       setShut((was) => {

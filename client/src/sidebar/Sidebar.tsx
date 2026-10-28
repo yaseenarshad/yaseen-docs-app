@@ -35,6 +35,7 @@ import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
 import { ZoomMenu } from './ZoomMenu'
 import { buildMenuSections } from './menuSections'
+import type { ListFold } from './listFold'
 import { RecentList } from './RecentList'
 import { SessionList } from './SessionList'
 import { ShortcutPicker } from './ShortcutPicker'
@@ -884,7 +885,7 @@ export function Sidebar({
       keepsOrder(depth, searchSort, { keepTop: top, vaults: vaultRows.size > 0 }) ? nodes : sortLevel(nodes, searchSort, shownLabel(titles), scores),
     [vaultRows, searchSort, titles],
   )
-  const { searchInput, query, results, typed, found, scores, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear)
+  const { searchInput, query, results, typed, found, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear)
   // A new query moves the results under a still pointer: the panel of the row that was there goes (YAZ-3403).
   useEffect(() => closePreview(), [query, closePreview])
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
@@ -945,7 +946,12 @@ export function Sidebar({
   // On Files with two or more vaults, the vault rows fold with the rest (YAZ-2631 D6).
   const foldVaults = multi && lens === 'files'
   const anyExpanded = bodyDirs.some((d) => expanded.includes(d)) || (foldVaults && roots.some((vault) => !closedVaults.includes(vault)))
-  const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
+  // The button is on every tab (YAZ-3511 D19): Search folds its own tree, Sessions and Recents their rows (`ListFold`).
+  const [listFold, setListFold] = useState<ListFold | null>(null)
+  const ownFold = searching ? searchFold : lens === 'sessions' || lens === 'recents' ? listFold : null
+  const foldOpen = ownFold === null ? anyExpanded : ownFold.open
+  const foldDisabled = ownFold === null ? bodyDirs.length === 0 && !foldVaults : !ownFold.any
+  const allLabel = foldOpen ? 'Collapse all' : 'Expand all'
   // The tab row (YAZ-3273 D8): like the sort, it keeps its identity while its value stays, so the memoised row draws nothing again on a broadcast.
   const storedTabs = settings.sidebarTabs
   const tabPrefs = useMemo(() => storedTabs, [storedTabs.order.join(), storedTabs.hidden.join(), storedTabs.hiddenButtons.join()])
@@ -958,6 +964,7 @@ export function Sidebar({
   }, [])
   const foldRef = useRef(() => {})
   foldRef.current = () => {
+    if (ownFold !== null) return ownFold.setAll(!ownFold.open)
     if (foldVaults) for (const vault of roots) onSetVaultOpen(vault, !anyExpanded)
     // Only the active lens' dirs move (YAZ-1605): a fold the tab does not show is exactly as it was.
     dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !bodyDirs.includes(d)) : [...new Set([...expanded, ...bodyDirs])] })
@@ -1502,7 +1509,8 @@ export function Sidebar({
         sortOpen={sortMenu !== null && sortMenu.tab === sortedTab}
         sortFiltered={searching && filterOn(searchFilter)}
         onSort={openSort}
-        foldShows={!searching && (bodyDirs.length > 0 || foldVaults)}
+        foldShows
+        foldDisabled={foldDisabled}
         foldLabel={allLabel}
         onFold={foldAll}
       />
@@ -1689,10 +1697,10 @@ export function Sidebar({
           )
         ) : lens === 'sessions' ? (
           // The Sessions tab (YAZ-3147 D4, D6): the saved sessions of the app, not a tree of a vault.
-          <SessionList titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} renameRequest={sessionNameRequest} onRenameConsumed={onSessionNameConsumed} />
+          <SessionList onFold={setListFold} titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} renameRequest={sessionNameRequest} onRenameConsumed={onSessionNameConsumed} />
         ) : lens === 'recents' ? (
           // The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window, by day.
-          <RecentList trees={trees} roots={roots} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+          <RecentList onFold={setListFold} trees={trees} roots={roots} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and

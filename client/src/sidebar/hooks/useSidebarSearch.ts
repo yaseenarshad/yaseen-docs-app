@@ -16,6 +16,7 @@ import { bestScores, NO_SCORES } from '../../search/bestMatch'
 import { filterOn, filterTest, NO_FILTER, NO_TIMES, timesByPath, timeStart, type SearchFilter } from '../../search/searchFilter'
 import { searchTree } from '../../search/searchTree'
 import { useSearchResults, type SearchVault } from '../../search/useSearchResults'
+import type { ListFold } from '../listFold'
 import type { TreeMarks, TreeSelection } from '../Tree'
 
 /**
@@ -138,6 +139,12 @@ export function useSidebarSearch(
   const [flipped, setFlipped] = useState<ReadonlySet<string>>(NO_FOLDS)
   const searchOpen = useMemo(() => new Set([...found.open, ...flipped].filter((dir) => found.open.has(dir) !== flipped.has(dir))), [found, flipped])
   const toggleSearchDir = useCallback((dir: string) => setFlipped((prev) => new Set(prev.has(dir) ? [...prev].filter((d) => d !== dir) : [...prev, dir])), [])
+  // The expand-all button on Search (YAZ-3511 D19): "Collapse all" closes every folder of the cut, "Expand all" opens the
+  // cut as it came, each folder that leads to a match. A matched folder with no match inside stays closed, as it starts (S2).
+  const searchFold: ListFold = useMemo(
+    () => ({ open: searchOpen.size > 0, any: found.open.size > 0 || [...found.top, ...found.rest].some((node) => node.type === 'dir'), setAll: (all) => setFlipped(all ? NO_FOLDS : new Set(found.open)) }),
+    [searchOpen, found],
+  )
   // ↑/↓ walk the MATCHES in the order the tree draws them (🔒 D4) — the top group, then the rest
   // (YAZ-2662 S22); a note and its alias rows are one row (S9), and a match below a folder the user
   // closed is not on screen, so it is no stop (S21). Read off the two trees as drawn: the rows above
@@ -339,5 +346,5 @@ export function useSidebarSearch(
   // and it is on the first row. The bar then hands ↑ to the tabs of the panel. The FIRST ↑ on a
   // highlight that nobody moved is still the search's: it makes the list keys work (YAZ-2662 D7).
   const atTop = rows.length === 0 || (picked !== null && sel === 0)
-  return { query, searchInput, results, typed, found, scores, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop }
+  return { query, searchInput, results, typed, found, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop }
 }

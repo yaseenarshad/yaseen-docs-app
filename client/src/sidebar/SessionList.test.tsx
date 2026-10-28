@@ -102,6 +102,17 @@ describe('SessionList (YAZ-3147 D6)', () => {
     expect(tabRows()).toEqual([])
   })
 
+  it('YAZ-3511 D19, edge case 68: the list reports its fold, and the expand-all button opens and closes every row', async () => {
+    const onFold = vi.fn()
+    await mount([WORK, SOLO], { onFold })
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: false, any: true })
+    act(() => onFold.mock.lastCall?.[0].setAll(true))
+    expect(rows().map((r) => r.getAttribute('aria-expanded'))).toEqual(['true', 'true'])
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: true })
+    act(() => onFold.mock.lastCall?.[0].setAll(false))
+    expect(rows().map((r) => r.getAttribute('aria-expanded'))).toEqual(['false', 'false'])
+  })
+
   it('a rename needs two clicks on the NAME within RENAME_CLICK_GAP_MS: slower clicks, or clicks on the arrow or the count, only fold and unfold', async () => {
     await mount([WORK, SOLO])
     const now = vi.spyOn(performance, 'now')

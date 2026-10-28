@@ -1567,6 +1567,15 @@ button {
   background: var(--bg-hover);
 }
 
+/* Nothing to fold on this tab (YAZ-3511 D19): the button stays in its place, dimmed, with no hover. */
+.sidebar__expand-all:disabled,
+.sidebar__expand-all:disabled:hover {
+  opacity: 0.35;
+  color: var(--fg-muted);
+  background: none;
+  cursor: default;
+}
+
 /* A Search filter is on (YAZ-3511 D17): the button says so, as rows are hidden, and keeps it under the hover above. */
 .sidebar__sort--filtered,
 .sidebar__sort--filtered:hover {

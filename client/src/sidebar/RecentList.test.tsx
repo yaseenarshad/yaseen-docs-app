@@ -115,6 +115,17 @@ describe('RecentList (YAZ-3235 D3 to D7)', () => {
     expect(rows().map((r) => r.title)).toEqual(['/v/a.md', '/v/b.md'])
   })
 
+  it('YAZ-3511 D19, edge case 68: the list reports its fold, and the expand-all button closes and opens every day', async () => {
+    const onFold = vi.fn()
+    await mount(stateWith({ '/v': { '/v/a.md': at(2026, 10, 23, 9), '/v/b.md': at(2026, 10, 22, 18) } }), { onFold })
+    expect(onFold.mock.lastCall?.[0]).toMatchObject({ open: true, any: true })
+    act(() => onFold.mock.lastCall?.[0].setAll(false))
+    expect(days().map((d) => d.getAttribute('aria-expanded'))).toEqual(['false', 'false'])
+    expect(rows()).toEqual([])
+    act(() => onFold.mock.lastCall?.[0].setAll(true))
+    expect(rows().map((r) => r.title)).toEqual(['/v/a.md', '/v/b.md'])
+  })
+
   it('S19, S20: a click previews, a ⌘-click opens a background tab, a double-click keeps the tab; a right-click hands the path and the event to the menu', async () => {
     await mount(stateWith({ '/v': { '/v/a.md': at(2026, 10, 23, 9) } }))
     const [row] = rows()

@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react'
+import type { OnListFold } from './listFold'
 import { createPortal } from 'react-dom'
 import { MAX_VAULT_NAME, cleanVaultName, rootOfPath, type Session } from '@shared/types'
 import { api } from '../api'
@@ -36,6 +37,8 @@ interface SessionListProps {
   renameRequest: string | null
   /** The request was acted on: it must not open the field again. */
   onRenameConsumed: () => void
+  /** The rows' fold, for the expand-all button (YAZ-3511 D19). */
+  onFold?: OnListFold
 }
 
 type Menu = { x: number; y: number; id: string; tab: number | null }
@@ -48,7 +51,7 @@ type Menu = { x: number; y: number; id: string; tab: number | null }
  * renders again only then (and for its own folds, menus and field).
  * Memo: App draws again on each app-state broadcast; the list draws only when its own props or the sessions change.
  */
-export const SessionList = memo(function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate, renameRequest, onRenameConsumed }: SessionListProps) {
+export const SessionList = memo(function SessionList({ titles, onOpenFile, onRestore, onSave, onUpdate, renameRequest, onRenameConsumed, onFold }: SessionListProps) {
   const sessions = useSyncExternalStore(storage.subscribe, storage.getSessions)
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set())
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -60,6 +63,14 @@ export const SessionList = memo(function SessionList({ titles, onOpenFile, onRes
     setRenaming(renameRequest)
     onRenameConsumed()
   }, [renameRequest, sessions, onRenameConsumed])
+
+  // The rows' fold for the expand-all button (YAZ-3511 D19): a row of a session that is gone counts for nothing.
+  useEffect(() => {
+    if (onFold === undefined) return
+    const ids = sessions.map((s) => s.id)
+    onFold({ open: ids.some((id) => open.has(id)), any: ids.length > 0, setAll: (all) => setOpen(all ? new Set(ids) : new Set()) })
+  }, [onFold, sessions, open])
+  useEffect(() => (onFold === undefined ? undefined : () => onFold(null)), [onFold])
 
   const toggle = useCallback((id: string) => setOpen((was) => {
     const next = new Set(was)
