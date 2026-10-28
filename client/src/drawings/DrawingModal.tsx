@@ -44,6 +44,7 @@
  * open with its error line and the canvas untouched — a save that failed must not eat the drawing.
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { api } from '../api'
 import { ConflictBar } from '../documents/ConflictBar'
 import { SaveIndicator } from '../editor/SaveIndicator'
@@ -78,9 +79,11 @@ interface DrawingModalProps {
   feed?: MutableDrawingFeed
   /** Close: the host drops the modal (it is unmounted, never hidden). */
   onClose: () => void
+  /** `settings.hotkeys` (YAZ-3564 K5): the drawing keys as the user set them. Omitted = the defaults. */
+  hotkeys?: HotkeyOverrides
 }
 
-export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModalProps) {
+export function DrawingModal({ root, target, theme, feed, onClose, hotkeys }: DrawingModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState<LoadedDrawing | null>(null)
   const loadedRef = useRef<LoadedDrawing | null>(null)
@@ -305,7 +308,7 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
         <div className="drawing-modal__canvas">
           {loaded !== null && (
             <Suspense fallback={null}>
-              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} />
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} hotkeys={hotkeys} />
             </Suspense>
           )}
         </div>
