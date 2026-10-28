@@ -2576,6 +2576,18 @@ button {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
+/* The pill under the pointer while a top row reorders (YAZ-3467 D3): the picture of a move's drag
+   (`dragPill`, drawn at the screen's pixel ratio), shown in the page. It takes no pointer events, so
+   the row under the pointer stays the target. */
+.tree__reorder-pill {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 22px; /* the pill's own height: `HEIGHT` in dragPill.ts */
+  pointer-events: none;
+  z-index: 1000;
+}
+
 .tree__label {
   overflow: hidden;
   text-overflow: ellipsis;
