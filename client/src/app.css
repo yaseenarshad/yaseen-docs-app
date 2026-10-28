@@ -1552,6 +1552,12 @@ button {
   margin-left: 0;
 }
 
+/* A Search filter is on (YAZ-3511 D17): the button says so, as rows are hidden. */
+.sidebar__sort--filtered,
+.sidebar__sort--filtered:hover {
+  color: var(--accent);
+}
+
 /* "More tabs" (YAZ-3273 D2) shares the hover, and keeps it while its menu is open. */
 .sidebar__sort:hover,
 .sidebar__expand-all:hover,
@@ -2174,6 +2180,22 @@ button {
   opacity: 0.6;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5l7 7-7 7'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5l7 7-7 7'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* A parent's hint (the Search menu's "Type ▸ Notes", YAZ-3511 D13) stands left of its chevron. */
+.ctx-menu__item--parent[data-hint]::before {
+  content: attr(data-hint);
+  order: 1;
+  margin-left: auto;
+  opacity: 0.5;
+  font-size: 11px;
+}
+
+/* …and keeps its chevron: the hint rule above would draw the hint there. */
+.ctx-menu__item--parent[data-hint]::after {
+  content: '';
+  order: 2;
+  opacity: 0.6;
 }
 
 .ctx-menu__sub {

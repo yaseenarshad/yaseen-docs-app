@@ -19,13 +19,25 @@ export function timeOf(node: TreeNode): number {
   return time
 }
 
-/** One level in the tab's order (D7): folders first, then files, each by the same rule. No sort, or Manual below the top rows: Name, A to Z. */
-export function sortLevel(nodes: readonly TreeNode[], sort: TabSort | undefined, label: (node: TreeNode) => string): TreeNode[] {
+/**
+ * One level in the tab's order (D7): folders first, then files, each by the same rule. No sort, or Manual below the top rows: Name, A to Z.
+ * Best match (YAZ-3511 D12) is the search's alone: `best` holds the score of each row, lower first, then the newer row, then the name.
+ * It puts no folder first, so the best match is on top.
+ */
+export function sortLevel(nodes: readonly TreeNode[], sort: TabSort | undefined, label: (node: TreeNode) => string, best?: ReadonlyMap<string, number>): TreeNode[] {
   const byName = (a: TreeNode, b: TreeNode): number => collator.compare(label(a), label(b))
-  const base = sort?.by === 'updated' ? (a: TreeNode, b: TreeNode): number => timeOf(b) - timeOf(a) || byName(a, b) : byName
+  const byTime = (a: TreeNode, b: TreeNode): number => timeOf(b) - timeOf(a) || byName(a, b)
+  if (sort?.by === 'best' && best !== undefined) {
+    const score = (node: TreeNode): number => best.get(node.path) ?? NO_SCORE
+    return [...nodes].sort((a, b) => score(a) - score(b) || byTime(a, b))
+  }
+  const base = sort?.by === 'updated' ? byTime : byName
   const order = sort?.reverse === true && sort.by !== 'manual' ? (a: TreeNode, b: TreeNode): number => base(b, a) : base
   return [...nodes.filter((n) => n.type === 'dir').sort(order), ...nodes.filter((n) => n.type === 'file').sort(order)]
 }
+
+/** The score of a row that is no match and holds none: after every match (a row a folder that shows all holds, YAZ-2662 D6). */
+const NO_SCORE = 4
 
 /** The label a row shows (YAZ-2420 🔒 D15), which Name sorts by (D8). */
 export const shownLabel = (titles: PathTitles) => (node: TreeNode): string => pageLabel(node.path, node.type === 'dir', titles)
@@ -57,24 +69,24 @@ export function withMtime(trees: ReadonlyMap<string, TreeResponse>, vault: strin
   return tree === held.tree ? trees : new Map(trees).set(vault, { ...held, tree })
 }
 
-const BY_LABEL: Record<SortBy, string> = { manual: 'Manual', name: 'Name', updated: 'Last updated' }
-/** The two ways of each sort (D4): the natural way first. */
-const WAYS: Record<Exclude<SortBy, 'manual'>, readonly [string, string]> = { name: ['A to Z', 'Z to A'], updated: ['Newest first', 'Oldest first'] }
+const BY_LABEL: Record<SortBy, string> = { manual: 'Manual', name: 'Name', updated: 'Last updated', best: 'Best match' }
+/** The two ways of each sort (D4): the natural way first. Best match has one way: the best first (YAZ-3511 D12). */
+const WAYS: Partial<Record<SortBy, readonly [string, string]>> = { name: ['A to Z', 'Z to A'], updated: ['Newest first', 'Oldest first'] }
+/** What each tab sorts by (D4): Files and Search have no drag order, so no Manual (YAZ-3511 D4); Best match is Search's (D12). */
+const BYS: Record<SortMenuTab, readonly SortBy[]> = { files: ['name', 'updated'], focus: ['manual', 'name', 'updated'], favorites: ['manual', 'name', 'updated'], search: ['best', 'name', 'updated'] }
 
 /**
- * The sort menu (D4): what to sort by, then, unless Manual, which way. ✓ marks the current pick (Draw's YAZ-1835 D5).
+ * The sort menu (D4): what to sort by, then, where the sort has two, which way. ✓ marks the current pick (Draw's YAZ-1835 D5).
  * A new sort starts its natural way; the current one keeps its way, and a pick that changes nothing writes nothing.
- * `dates` is the Search menu's last row (YAZ-3511 D7): the date at the right end of each row, on or off.
+ * `dates` is the last row of each tab's menu (YAZ-3511 D7, D10): the date at the right end of each row, on or off. `filters`
+ * are the Search menu's Type and Time rows (D13, D14), after it.
  */
-export function sortSections(tab: SortMenuTab, sort: TabSort, set: (next: TabSort) => void, dates?: { on: boolean; set: (on: boolean) => void }): MenuSection[] {
+export function sortSections(tab: SortMenuTab, sort: TabSort, set: (next: TabSort) => void, dates: { on: boolean; set: (on: boolean) => void }, filters?: MenuSection): MenuSection[] {
   const pick = (next: TabSort) => () => {
     if (next.by !== sort.by || next.reverse !== sort.reverse) set(next)
   }
-  // Files and Search have no drag order, so no Manual (YAZ-3511 D4).
-  const bys: SortBy[] = tab === 'files' || tab === 'search' ? ['name', 'updated'] : ['manual', 'name', 'updated']
-  const by = bys.map((b) => ({ id: `sort-${b}`, label: BY_LABEL[b], hint: sort.by === b ? '✓' : undefined, onSelect: pick(sort.by === b ? sort : { by: b, reverse: false }) }))
-  if (sort.by === 'manual') return [by]
-  const ways = WAYS[sort.by].map((label, i) => ({ id: `sort-way-${i}`, label, hint: sort.reverse === (i === 1) ? '✓' : undefined, onSelect: pick({ ...sort, reverse: i === 1 }) }))
-  if (dates === undefined) return [by, ways]
-  return [by, ways, [{ id: 'sort-dates', label: 'Show last updated', hint: dates.on ? '✓' : undefined, onSelect: () => dates.set(!dates.on) }]]
+  const by = BYS[tab].map((b) => ({ id: `sort-${b}`, label: BY_LABEL[b], hint: sort.by === b ? '✓' : undefined, onSelect: pick(sort.by === b ? sort : { by: b, reverse: false }) }))
+  const ways = (WAYS[sort.by] ?? []).map((label, i) => ({ id: `sort-way-${i}`, label, hint: sort.reverse === (i === 1) ? '✓' : undefined, onSelect: pick({ ...sort, reverse: i === 1 }) }))
+  const shown = [{ id: 'sort-dates', label: 'Show last updated', hint: dates.on ? '✓' : undefined, onSelect: () => dates.set(!dates.on) }]
+  return [by, ...(ways.length > 0 ? [ways] : []), shown, ...(filters === undefined ? [] : [filters])]
 }

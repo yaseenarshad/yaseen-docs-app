@@ -152,6 +152,7 @@ function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { i
         aria-haspopup="menu"
         aria-expanded={open}
         className="ctx-menu__item ctx-menu__item--parent"
+        data-hint={item.hint}
         onClick={choose}
         onKeyDown={(e) => {
           if (e.key !== 'ArrowRight' && e.key !== 'Enter') return

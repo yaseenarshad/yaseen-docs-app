@@ -56,7 +56,7 @@ export function useVaultTree(
   onFileMissing: () => void,
   /** The window's Focus and Favorites (YAZ-3264 D1): App's, so they live on while the panel is hidden. */
   lists: VaultListsHere,
-  /** The shown tab sorts by Last updated (YAZ-3227 D2), or the search shows its dates (YAZ-3511 D2): each save puts its file's time into the tree. */
+  /** Something reads the file times (YAZ-3227 D2, YAZ-3511 D2): a Last updated sort, a tab's dates (D10) or a time filter (D14). Each save puts its file's time into the tree. */
   liveTimes = false,
 ) {
   // The window's vaults (YAZ-2602 D1), in the window's order. `root` is the FIRST.

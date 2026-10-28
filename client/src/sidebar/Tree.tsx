@@ -261,8 +261,10 @@ interface TreeProps {
   reorder?: TreeReorder
   /** The tab's sort (YAZ-3227); the Search tab's own since YAZ-3511 (`searchSort`). */
   sort?: TabSort
-  /** Search only (YAZ-3511 D6): each row but a vault row shows its Last updated at the right end. */
+  /** Each row but a vault row shows its Last updated at the right end (YAZ-3511 D6): the tab's own switch (D10). */
   dates?: boolean
+  /** Search under Best match (YAZ-3511 D12): the score of each row, lower first (`sortLevel`). */
+  scores?: ReadonlyMap<string, number>
   /** The top rows keep the order they came in, whatever the sort (YAZ-3511): the search's pinned items, focus before favorites (YAZ-2662 D3). The top level's alone. */
   keepTop?: boolean
   /**
@@ -331,6 +333,7 @@ function TreeLevel({
   reorder,
   sort,
   dates,
+  scores,
   keepTop,
   marks,
   onLeaveToPage,
@@ -341,7 +344,7 @@ function TreeLevel({
   icons,
   depth = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates }
+  const recurse = { vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
@@ -354,7 +357,7 @@ function TreeLevel({
   // The top rows of a Manual list, the vault rows and the search's pinned items keep their own order; with no sort a level stands as it came.
   const here = shortcuts.get(dirPath)
   const keep = sort === undefined ? here === undefined : keepsOrder(depth, sort, { keepTop, copies, vaults: vaultRows.size > 0 })
-  const rows = keep ? nodes : sortLevel(here === undefined ? nodes : [...nodes, ...here], sort, shownLabel(titles))
+  const rows = keep ? nodes : sortLevel(here === undefined ? nodes : [...nodes, ...here], sort, shownLabel(titles), scores)
   const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
   // The top row a row stands under (YAZ-2845 D1): a top row is its own. It tells the copies of a row
   // that shows twice apart, and a right-click hands it to the menu, so an input mounts in that copy alone.

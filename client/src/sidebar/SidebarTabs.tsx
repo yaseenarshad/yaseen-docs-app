@@ -22,6 +22,8 @@ interface SidebarTabsProps {
   /** The sort button shows on this tab (YAZ-3227 D5: Files, Focus and Favorites; Search since YAZ-3511 D3), and whether its menu is open. */
   sortShows: boolean
   sortOpen: boolean
+  /** A Search filter is on (YAZ-3511 D17): the button wears the accent color, and its tooltip says so. */
+  sortFiltered?: boolean
   /** The sort menu at a point — from the Sort button, or from "Sort…" in the ⋯ menu (S15) — or `null` to close it. */
   onSort: (at: { x: number; y: number } | null) => void
   /** The fold button shows (YAZ-862: not on Search, and only with something to fold), its label, and its action. */
@@ -58,7 +60,7 @@ const isMenuKey = (e: { key: string; shiftKey: boolean; metaKey: boolean; ctrlKe
  * the row again only when a tab comes or goes (S30). With no observer, or no layout (jsdom), nothing
  * is measured and every tab fits.
  */
-export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs, onChangePrefs, sortShows, sortOpen, onSort, foldShows, foldLabel, onFold }: SidebarTabsProps) {
+export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs, onChangePrefs, sortShows, sortOpen, sortFiltered = false, onSort, foldShows, foldLabel, onFold }: SidebarTabsProps) {
   const buttons: RowButtons = { sort: sortShows, fold: foldShows }
   const [fit, setFit] = useState(Number.POSITIVE_INFINITY)
   const layout = rowLayout(prefs, lens, fit, buttons)
@@ -286,9 +288,9 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
         {onBar(prefs, buttons, 'sort') && (
           <button
             type="button"
-            className="sidebar__sort"
+            className={sortFiltered ? 'sidebar__sort sidebar__sort--filtered' : 'sidebar__sort'}
             aria-label="Sort"
-            title="Sort"
+            title={sortFiltered ? 'Sort · Filters on' : 'Sort'}
             aria-haspopup="menu"
             aria-expanded={sortOpen}
             // The menu closes on any window mousedown; without this a second click would close and reopen it (the vault header's rule).
