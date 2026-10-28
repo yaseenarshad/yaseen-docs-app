@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
  * Each pin names the ONE file of ours that depends on it, and the no-stale-pin check reads only that
  * file: `.sidebar` and `.sidebar__header` are the app's own sidebar classes too, so a check across
  * every file would always pass (YAZ-2073 8B).
- * An engine bump (`client/vendor/README.md`) re-runs this; the canvas panel's pins came with YAZ-3038.
+ * An engine change (`engine/README-docs-app.md`) re-runs this; the canvas panel's pins came with YAZ-3038.
  */
 const ENGINE_CLASSES: Record<string, [file: string, why: string]> = {
   excalidraw: ['drawings/drawingEditor.css', 'scopes every in-engine rule of the tab under it'],

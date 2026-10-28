@@ -5,22 +5,28 @@
   "description": "Yaseen Docs: local markdown editor as an Electron desktop app (React + Milkdown Crepe renderer, main-process file layer)",
   "workspaces": [
     "client",
-    "desktop"
+    "desktop",
+    "engine/packages/common",
+    "engine/packages/math",
+    "engine/packages/fractional-indexing",
+    "engine/packages/element",
+    "engine/packages/excalidraw"
   ],
   "scripts": {
-    "dev": "npm run dev -w desktop",
-    "build": "npm run build -w desktop",
+    "dev": "npm run engine:build && npm run dev -w desktop",
+    "build": "npm run engine:build && npm run build -w desktop",
+    "engine:build": "node tools/buildEngine.mjs",
     "drawio:pack": "node tools/packDrawio.mjs",
-    "desktop:build": "npm run build -w desktop && node tools/packDesktop.mjs --mac",
-    "desktop:build:win": "npm run build -w desktop && node tools/packDesktop.mjs --win",
-    "typecheck": "tsc -p client/tsconfig.json --noEmit && tsc -p shared/tsconfig.json --noEmit && tsc -p desktop/tsconfig.json --noEmit",
-    "test": "vitest run",
-    "e2e": "npm run build -w desktop && playwright test --config desktop/e2e/playwright.config.ts",
+    "desktop:build": "npm run build && node tools/packDesktop.mjs --mac",
+    "desktop:build:win": "npm run build && node tools/packDesktop.mjs --win",
+    "typecheck": "npm run engine:build && tsc -p client/tsconfig.json --noEmit && tsc -p shared/tsconfig.json --noEmit && tsc -p desktop/tsconfig.json --noEmit",
+    "test": "npm run engine:build && vitest run",
+    "e2e": "npm run build && playwright test --config desktop/e2e/playwright.config.ts",
     "e2e:only": "playwright test --config desktop/e2e/playwright.config.ts",
     "perf": "node tools/perf/run.mjs",
     "perf:budget": "node tools/perf/measureBudget.mjs",
     "perf:budget:ci": "node tools/perf/measureBudget.mjs --out-only",
-    "test:watch": "vitest"
+    "test:watch": "npm run engine:build && vitest"
   },
   "devDependencies": {
     "@milkdown/components": "file:client/vendor/milkdown-components-7.22.1-yaz1410.tgz",

@@ -6,6 +6,8 @@ export default defineConfig({
     alias: {
       '@shared': fileURLToPath(new URL('../shared', import.meta.url)),
     },
+    // The engine is a workspace link (YAZ-3574): its imports resolve from the app's node_modules, as in the build.
+    preserveSymlinks: true,
   },
   test: {
     name: 'client',

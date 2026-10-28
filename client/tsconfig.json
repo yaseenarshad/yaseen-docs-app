@@ -1,6 +1,8 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
+    // The engine is a workspace link (YAZ-3574): read it where it is linked, so its types find the app's @types, not engine/node_modules.
+    "preserveSymlinks": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "types": ["vite/client"],
