@@ -1,0 +1,53 @@
+{
+  "version": "v1",
+  "modelId": "isnet-general-use-onnx",
+  "sourceRepository": "Ko033/isnet-general-use-onnx",
+  "sourceRevision": "5349b617911fd60c619b52f32e2b593517b78df3",
+  "transformersVersion": "3.8.1",
+  "assetRoute": "/api/background-removal-assets/v1-5349b617/",
+  "r2Prefix": "public-models/background-removal/v1/",
+  "assets": [
+    {
+      "path": "models/isnet-general-use-onnx/config.json",
+      "sourcePath": "config.json",
+      "size": 60,
+      "sha256": "426dfb95a85e2553794c4bc4aaaf8d341ca888950db9a42e80c2a5048046b139",
+      "contentType": "application/json"
+    },
+    {
+      "path": "models/isnet-general-use-onnx/preprocessor_config.json",
+      "sourcePath": "preprocessor_config.json",
+      "size": 380,
+      "sha256": "08fd8cb8d1c6976d62659f4e4f18e848ba0469767b755210c07003683bfdfb26",
+      "contentType": "application/json"
+    },
+    {
+      "path": "models/isnet-general-use-onnx/onnx/model_fp16.onnx",
+      "sourcePath": "onnx/model_fp16.onnx",
+      "size": 88141111,
+      "sha256": "0857167263ad816d67c26852b99c2861e46a86c9a889527061a5eb2a6f90d32c",
+      "contentType": "application/octet-stream"
+    },
+    {
+      "path": "models/isnet-general-use-onnx/onnx/model_quantized.onnx",
+      "sourcePath": "onnx/model_quantized.onnx",
+      "size": 45902969,
+      "sha256": "5039225b9a4ac3df55f185d24b7a92d640c86cc4747002d7f23351e394de03a6",
+      "contentType": "application/octet-stream"
+    },
+    {
+      "path": "runtime/ort-wasm-simd-threaded.jsep.wasm",
+      "localPath": "node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.wasm",
+      "size": 21596019,
+      "sha256": "c46655e8a94afc45338d4cb2b840475f88e5012d524509916e505079c00bfa39",
+      "contentType": "application/wasm"
+    },
+    {
+      "path": "runtime/ort-wasm-simd-threaded.jsep.mjs",
+      "localPath": "node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.mjs",
+      "size": 44484,
+      "sha256": "08fb86ec433c78bfb032c5d84a68b8e8e5a8d81268fa39e24314179a5767a5b9",
+      "contentType": "text/javascript; charset=utf-8"
+    }
+  ]
+}

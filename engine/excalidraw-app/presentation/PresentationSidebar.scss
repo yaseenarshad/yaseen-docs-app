@@ -1,0 +1,246 @@
+.presentation-sidebar {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  color: var(--color-on-surface);
+
+  &__header {
+    padding: 0.75rem 0.85rem 0.6rem;
+    border-bottom: 1px solid var(--color-surface-high);
+
+    h2,
+    p {
+      margin: 0;
+    }
+
+    h2 {
+      font-size: 1.05rem;
+    }
+
+    p {
+      margin-top: 0.2rem;
+      color: var(--text-secondary-color);
+      font-size: 0.75rem;
+    }
+  }
+
+  &__slides {
+    display: flex;
+    overflow: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0.35rem;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.15rem;
+    list-style: none;
+  }
+
+  &__slide {
+    display: flex;
+    min-height: 2.25rem;
+    padding-right: 0.15rem;
+    border-radius: 0.45rem;
+    align-items: center;
+    gap: 0.15rem;
+
+    &:hover {
+      background: var(--color-surface-high);
+    }
+
+    &--active {
+      background: var(--color-primary-light);
+
+      .presentation-sidebar__name {
+        font-weight: 600;
+      }
+    }
+
+    &--dragging {
+      background: var(--color-surface-high);
+      opacity: 0.6;
+    }
+
+    &--drop-before {
+      box-shadow: inset 0 2px 0 var(--color-primary);
+    }
+
+    &--drop-after {
+      box-shadow: inset 0 -2px 0 var(--color-primary);
+    }
+  }
+
+  &__handle {
+    display: grid;
+    width: 1.1rem;
+    height: 1.5rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary-color);
+    // Always discoverable: dim at rest, full on hover/focus/drag.
+    opacity: 0.45;
+    place-items: center;
+    touch-action: none;
+    cursor: grab;
+
+    &:active {
+      cursor: grabbing;
+    }
+
+    svg {
+      width: 0.9rem;
+      height: 0.9rem;
+    }
+  }
+
+  &__open {
+    display: flex;
+    overflow: hidden;
+    min-width: 0;
+    padding: 0.35rem 0.2rem 0.35rem 0.35rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    flex: 1;
+    align-items: center;
+    gap: 0.5rem;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  &__number {
+    min-width: 1.15rem;
+    color: var(--text-secondary-color);
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  &__name {
+    overflow: hidden;
+    // Without this a flex item refuses to shrink below its text, so a long
+    // slide name would push the row wide instead of ellipsising.
+    min-width: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
+  }
+
+  &__rename {
+    width: 100%;
+    min-height: 1.9rem;
+    margin: 0.15rem 0.2rem;
+    padding: 0.2rem 0.4rem;
+    border: 1px solid var(--color-primary);
+    border-radius: 0.35rem;
+    background: var(--island-bg-color);
+    color: inherit;
+    font: inherit;
+    font-size: 0.8rem;
+  }
+
+  &__actions {
+    display: flex;
+    opacity: 0;
+    gap: 0.1rem;
+
+    button {
+      display: grid;
+      width: 1.5rem;
+      height: 1.5rem;
+      padding: 0;
+      border: 0;
+      border-radius: 0.35rem;
+      background: transparent;
+      color: var(--text-secondary-color);
+      place-items: center;
+      cursor: pointer;
+
+      &:hover:not(:disabled) {
+        background: var(--color-surface-lowest);
+        color: var(--color-on-surface);
+      }
+
+      &:disabled {
+        opacity: 0.3;
+        cursor: default;
+      }
+
+      svg {
+        width: 0.9rem;
+        height: 0.9rem;
+      }
+    }
+  }
+
+  &__slide:hover &__actions,
+  &__slide:focus-within &__actions,
+  &__slide:hover &__handle,
+  &__slide:focus-within &__handle,
+  &__slide--dragging &__handle {
+    opacity: 1;
+  }
+
+  &__footer {
+    padding: 0.65rem;
+    border-top: 1px solid var(--color-surface-high);
+
+    button {
+      display: flex;
+      width: 100%;
+      min-height: 2.7rem;
+      padding: 0.6rem 0.85rem;
+      border: 0;
+      border-radius: 0.6rem;
+      background: var(--color-primary);
+      color: white;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  }
+
+  &__live {
+    position: absolute;
+    overflow: hidden;
+    width: 1px;
+    height: 1px;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  &--empty {
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+    gap: 1rem;
+    text-align: center;
+
+    h2,
+    p {
+      margin: 0;
+    }
+
+    p {
+      margin-top: 0.4rem;
+      color: var(--text-secondary-color);
+      line-height: 1.45;
+    }
+
+    button {
+      padding: 0.65rem 0.9rem;
+      border: 0;
+      border-radius: 0.55rem;
+      background: var(--color-primary);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+  }
+}

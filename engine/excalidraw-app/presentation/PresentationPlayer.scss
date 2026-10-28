@@ -1,0 +1,119 @@
+// The overlay never takes the pointer: presenting is free-form (D9), the canvas
+// underneath pans/zooms and double-click presents a slide. Only the control bar
+// is ours to click.
+.presentation-player {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  outline: none;
+  pointer-events: none;
+
+  &__status {
+    position: absolute;
+    overflow: hidden;
+    width: 1px;
+    height: 1px;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  // GRO-1938 (D5): a compact icon-only pill — 42px tall, ~196px wide. No
+  // counter, no frame name; both live in the `__status` live region above.
+  &__controls {
+    position: absolute;
+    display: flex;
+    pointer-events: auto;
+    padding: 0.25rem;
+    border: 1px solid rgb(255 255 255 / 30%);
+    border-radius: 999px;
+    background: rgb(20 37 31 / 88%);
+    box-shadow: 0 0.8rem 2rem rgb(20 37 31 / 20%);
+    color: white;
+    inset-block-end: 1rem;
+    inset-inline-start: 50%;
+    align-items: center;
+    gap: 0.25rem;
+    transform: translateX(-50%);
+    backdrop-filter: blur(14px);
+    cursor: default;
+
+    button {
+      display: grid;
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: inherit;
+      place-items: center;
+      cursor: pointer;
+
+      svg {
+        width: 1.15rem;
+        height: 1.15rem;
+      }
+
+      &:hover:not(:disabled) {
+        background: rgb(255 255 255 / 18%);
+      }
+
+      &:focus-visible {
+        outline: 2px solid rgb(255 255 255 / 85%);
+        outline-offset: 1px;
+      }
+
+      &:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+    }
+  }
+
+  // The editor's icon set only ships a right arrow.
+  &__previous svg {
+    transform: scaleX(-1);
+  }
+
+  &__divider {
+    width: 1px;
+    height: 1.15rem;
+    background: rgb(255 255 255 / 25%);
+  }
+}
+
+// GRO-1939: on a phone the bar is driven by a thumb — 40px targets, more room
+// between them, and clear of the home indicator.
+@media (max-width: 40rem) {
+  .presentation-player__controls {
+    gap: 0.5rem;
+    inset-block-end: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+
+    button {
+      width: 2.5rem;
+      height: 2.5rem;
+    }
+  }
+}
+
+// GRO-1935 (D1): hide the editor chrome while presenting. Pure CSS keyed on the
+// body class the player already owns — no zen/view mode, no appState churn — so
+// nothing can leak into a saved scene. The `:not()` lets the tools toggle
+// (GRO-1936) bring the chrome back.
+//
+// - `.layer-ui__wrapper`: desktop toolbar, main menu, contextual properties
+//   toolbar, footer/zoom, and the top-left/top-right app slots.
+// - `.sidebar`: the workspace panel, rendered as a sibling of the wrapper.
+// - `.App-top-bar` / `.App-bottom-bar`: phone chrome — `.layer-ui__wrapper` is
+//   not rendered at that form factor.
+//
+// Everything else stays painted: the canvases, the presentation overlay (it is
+// portalled to `body`, outside `.excalidraw`), and hosted animation iframes.
+body.yaseendraw-presentation-active:not(.yaseendraw-presentation-tools) {
+  .layer-ui__wrapper,
+  .sidebar,
+  .App-top-bar,
+  .App-bottom-bar {
+    display: none !important;
+  }
+}

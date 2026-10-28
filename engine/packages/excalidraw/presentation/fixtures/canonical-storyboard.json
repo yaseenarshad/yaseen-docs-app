@@ -1,0 +1,61 @@
+{
+  "presentationId": "foundations-of-ai",
+  "generatorVersion": "canvas-skill@1.0.0",
+  "slides": [
+    {
+      "id": "slide-image",
+      "order": 1,
+      "eyebrow": "Foundations of AI",
+      "headline": "Prediction is the primitive",
+      "body": "Models estimate what is likely to come next.",
+      "cards": [
+        {
+          "id": "probability",
+          "headline": "Probability",
+          "body": "A useful model ranks plausible continuations."
+        }
+      ],
+      "templateId": "foundations-editorial",
+      "templateVersion": "1.0.0",
+      "renderMode": "image",
+      "visual": {
+        "kind": "image",
+        "assetId": "asset-prediction-diagram"
+      }
+    },
+    {
+      "id": "slide-animation",
+      "order": 2,
+      "eyebrow": "Teaching moment",
+      "headline": "Tokens resolve over time",
+      "body": "Animate only the teaching visual inside the shared plate.",
+      "cards": [],
+      "templateId": "foundations-editorial",
+      "templateVersion": "1.0.0",
+      "renderMode": "animation",
+      "visual": {
+        "kind": "animation",
+        "source": {
+          "kind": "embedded-html",
+          "html": "<!doctype html><title>Token animation</title>"
+        },
+        "previewAssetId": "asset-token-preview"
+      }
+    },
+    {
+      "id": "slide-native",
+      "order": 3,
+      "eyebrow": "Whiteboard",
+      "headline": "Build the idea with native elements",
+      "body": "Every teaching object remains directly editable.",
+      "cards": [],
+      "templateId": "foundations-editorial",
+      "templateVersion": "1.0.0",
+      "renderMode": "full-native",
+      "visual": {
+        "kind": "native",
+        "sourceId": "native-composition-automation-levels"
+      }
+    }
+  ]
+}
