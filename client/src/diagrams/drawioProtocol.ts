@@ -22,7 +22,9 @@
  * pressed inside draw.io, where the host page never sees the key (see `DrawioMessage`).
  */
 import { DRAWIO_ORIGIN } from '@shared/drawio'
-import { HOTKEY_COMMANDS, drawioChordFor, keyFor, type DrawioChord, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { HOTKEY_COMMANDS, appKeyId, drawioChordFor, keyFor, parseAccelerator, toAccelerator, type DrawioChord, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { keyRow, keysOf, stepsAside, type HotkeyAside } from '@shared/keys'
+import { DIAGRAM_ACTIONS, DIAGRAM_EXTRA_CODES, DIAGRAM_KEYS } from '@shared/keys/diagram'
 import type { DiagramDarkColors } from '@shared/types'
 
 /**
@@ -85,24 +87,93 @@ const OPEN_COLOUR_GRID = [
 ]
 
 /**
+ * One entry of draw.io's `keyboardShortcuts` config, as `EditorUi.installKeyboardShortcut` reads it: `control` is
+ * ⌘ or ⌃, `action` a named draw.io action, null to clear the key. Our PostConfig.js reads two more kinds itself
+ * (YAZ-3564): `yaseenUnlabel` (an action with no key now loses its shown key, K12) and `yaseenMacCtrl` (a ⌃ key on
+ * a Mac, which draw.io's own table cannot hold apart from ⌘, K15; `cmd` is ⌘ held with it).
+ */
+export type DrawioShortcut =
+  | { keyCode: number | string; control?: true; shift?: true; alt?: true; action: string | null }
+  | { yaseenUnlabel: string }
+  | { yaseenMacCtrl: true; keyCode: number; cmd?: true; shift?: true; alt?: true; action: string }
+
+/**
  * 🔒 YAZ-1802 D12b, the NO-SELECTION half of the keymap (PostConfig.js has the selection half):
  * Excalidraw's tool letters on draw.io's own insert actions, and draw.io's clashing S (note) and
  * F (ellipse — Excalidraw's F is the frame tool, which draw.io has not got) cleared. X already is
- * draw.io's freehand pen.
+ * draw.io's freehand pen. The last key bound is the one draw.io shows, so A and P come last.
+ * These are the app's defaults on draw.io's table: the `diagram.*` rows (`shared/keys/diagram.ts`) say the
+ * same, and `tools/drawioOverlay.test.mjs` checks the two against the pinned bundle.
  */
-const TOOL_KEYS = [
+const TOOL_KEYS: readonly DrawioShortcut[] = [
   { keyCode: 'R', action: 'insertRectangle' },
   { keyCode: 'O', action: 'insertEllipse' },
   { keyCode: 'T', action: 'insertText' },
-  { keyCode: 'A', action: 'insertEdge' },
   { keyCode: 'D', action: 'insertEdge' },
   { keyCode: 'L', action: 'insertEdge' },
+  { keyCode: 'A', action: 'insertEdge' },
   { keyCode: 'W', action: 'insertFreehand' },
   { keyCode: 'P', action: 'insertFreehand' },
   { keyCode: 'S', action: null },
   { keyCode: 'F', action: null },
   { keyCode: 220, control: true, action: 'removeFormat' }, // ⌘\ clears the formatting
+  { keyCode: 88, control: true, shift: true, action: 'yaseenStrikethrough' }, // ⌘⇧X, PostConfig.js's action
 ]
+
+/** A key as draw.io's table holds it: the keyCode and the modifiers, `control` for ⌘ or ⌃; null for a key it cannot name. */
+export interface DrawioKey {
+  keyCode: number
+  control?: true
+  shift?: true
+  alt?: true
+}
+
+/**
+ * `accelerator` as draw.io's table holds it. `drawioChordFor` knows the keyCodes of a ⌘ key, so a key without ⌘
+ * asks it for the same key with ⌘ and drops the `control` again.
+ */
+export function drawioKeyOf(accelerator: string): DrawioKey | null {
+  const chord = parseAccelerator(accelerator)
+  if (chord === null) return null
+  const found = drawioChordFor(toAccelerator({ ...chord, cmd: true, ctrl: false }), false)
+  if (found === null) return null
+  const { keyCode, shift, alt } = found
+  return { keyCode, ...(chord.cmd || chord.ctrl ? { control: true as const } : {}), ...(shift ? { shift } : {}), ...(alt ? { alt } : {}) }
+}
+
+/**
+ * The user's diagram keys (YAZ-3564 K4): each changed row clears its default keys (and their other codes,
+ * `DIAGRAM_EXTRA_CODES`) and binds its new key to its action. Every clear comes before every bind, so a key one
+ * row gave up can go to another. A row with no key now takes its shown key off its action (K12): draw.io sets
+ * an action's `.shortcut` only when it binds one. On a Mac a ⌃ key goes to PostConfig.js's own table (K15).
+ */
+function diagramKeys(hotkeys: HotkeyOverrides, mac: boolean): DrawioShortcut[] {
+  const clears: DrawioShortcut[] = []
+  const binds: DrawioShortcut[] = []
+  const unlabels: DrawioShortcut[] = []
+  for (const row of DIAGRAM_KEYS) {
+    const action = DIAGRAM_ACTIONS[row.id]
+    if (!row.changeable || action === undefined) continue
+    const now = keysOf(row, hotkeys)
+    if (hotkeys[row.id] !== undefined) {
+      for (const key of row.keys) {
+        const k = drawioKeyOf(key)
+        if (k === null) continue
+        for (const keyCode of [k.keyCode, ...(DIAGRAM_EXTRA_CODES[row.id] ?? [])]) clears.push({ ...k, keyCode, action: null })
+      }
+      for (const key of now) {
+        const k = drawioKeyOf(key)
+        const chord = parseAccelerator(key)
+        if (k === null || chord === null) continue
+        if (mac && chord.ctrl) {
+          binds.push({ yaseenMacCtrl: true, keyCode: k.keyCode, ...(chord.cmd ? { cmd: true as const } : {}), ...(k.shift ? { shift: k.shift } : {}), ...(k.alt ? { alt: k.alt } : {}), action })
+        } else binds.push({ ...k, action })
+      }
+    }
+    if (now.length === 0) unlabels.push({ yaseenUnlabel: action })
+  }
+  return [...clears, ...binds, ...unlabels]
+}
 
 /**
  * draw.io's own bindings on chords the app's MENU owns (`desktop/src/main/menu.ts`), cleared so the
@@ -125,10 +196,12 @@ const MENU_COMMANDS = HOTKEY_COMMANDS.filter((c) => c.rendererOwned !== true).ma
 /**
  * Every menu chord draw.io must let through: the fixed ones, and the changeable ones as they are NOW
  * (YAZ-3397 D2). Read at `configure`, so a key changed while a diagram is open reaches it the next time it opens.
+ * A key that lets diagrams keep it (YAZ-3564 K9) is off the menu on a diagram tab, so draw.io keeps its own.
  */
-function menuChords(hotkeys: HotkeyOverrides = {}): DrawioChord[] {
+function menuChords(hotkeys: HotkeyOverrides, aside: HotkeyAside, mac: boolean): DrawioChord[] {
   const changeable = MENU_COMMANDS.flatMap((id) => {
-    const chord = drawioChordFor(keyFor(id, hotkeys))
+    const row = keyRow(appKeyId(id))
+    const chord = row !== undefined && stepsAside(row, 'diagram', aside) ? null : drawioChordFor(keyFor(id, hotkeys), mac)
     return chord === null ? [] : [chord]
   })
   return [...FIXED_MENU_CHORDS, ...changeable]
@@ -136,12 +209,13 @@ function menuChords(hotkeys: HotkeyOverrides = {}): DrawioChord[] {
 
 /**
  * The `configure` reply (🔒 YAZ-1802 D3 / D12a / D12b). Every key is one draw.io v31.5.2 reads in
- * `Editor.configure` (in the pinned `js/app.min.js`), and every action name one it defines
- * (`tools/drawioOverlay.test.mjs` checks the pinned bundle). Fonts are NOT here: their
+ * `Editor.configure` (in the pinned `js/app.min.js`), and every action name one it defines or our
+ * PostConfig.js adds (`yaseen…`; `tools/drawioOverlay.test.mjs` checks the pinned bundle). Fonts are NOT here: their
  * `@font-face` sheet lives on the drawio origin and our PostConfig.js hands it to
- * `Editor.configureFontCss` itself, so the host never needs to know the files.
+ * `Editor.configureFontCss` itself, so the host never needs to know the files. `hotkeys` and `aside` are the
+ * user's key changes and step-aside switches (YAZ-3564 K2, K9); `mac` whether ⌃ and ⌘ are two keys (K15).
  */
-export function drawioConfig(darkColors: DiagramDarkColors, hotkeys: HotkeyOverrides = {}): Record<string, unknown> {
+export function drawioConfig(darkColors: DiagramDarkColors, hotkeys: HotkeyOverrides = {}, aside: HotkeyAside = {}, mac = true): Record<string, unknown> {
   return {
     // D3: plain, uncompressed XML on every save (sets Editor.compressXml and defaultCompressed).
     compressXml: false,
@@ -162,7 +236,8 @@ export function drawioConfig(darkColors: DiagramDarkColors, hotkeys: HotkeyOverr
     // Excalidraw's quick picks: transparent, black and its four stroke colours, its four backgrounds.
     presetColors: ['none', '1E1E1E', 'E03131', '2F9E44', '1971C2', 'F08C00', 'FFC9C9', 'B2F2BB', 'A5D8FF', 'FFEC99'],
     defaultColors: [...OPEN_COLOUR_GRID, 'none', 'FFFFFF', '1E1E1E'],
-    keyboardShortcuts: [...TOOL_KEYS, ...menuChords(hotkeys)],
+    // The app's defaults, the user's diagram keys (K4), then the menu's chords: the menu fires first (K3).
+    keyboardShortcuts: [...TOOL_KEYS, ...diagramKeys(hotkeys, mac), ...menuChords(hotkeys, aside, mac)],
   }
 }
 

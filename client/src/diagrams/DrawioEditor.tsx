@@ -121,8 +121,9 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     if (h.configured || !h.configureAsked) return
     h.configured = true
     shownColors.current = wantedColors.current
-    // The menu's keys as they are now (YAZ-3397 D2): a change reaches a diagram the next time it opens.
-    post({ action: 'configure', config: drawioConfig(wantedColors.current, storage.getSettings()?.hotkeys) })
+    // The menu's and the diagram's keys as they are now (YAZ-3397 D2, YAZ-3564 K4): a change reaches a diagram the next time it opens.
+    const settings = storage.getSettings()
+    post({ action: 'configure', config: drawioConfig(wantedColors.current, settings?.hotkeys, settings?.hotkeysAside, /Mac/.test(navigator.platform)) })
   }, [post])
 
   /** Show the app's theme, once draw.io listens: its own `darkMode` / `lightMode` action. */
