@@ -58,6 +58,14 @@ describe('a file\'s icon outside the tree (YAZ-3440 D11)', () => {
     expect(fileIconAttrs(null, '/v/a.py', false)['data-icon']).toBe('python')
   })
 
+  it('Folder icons "Plain" (YAZ-3554 S8, S9): a folder in a vault and one outside both get the default folder; a pick in the vault still wins', () => {
+    const plain: IconsHere = { rowIcons: buildRowIcons({ '/v': { paths: { '/v/trips': 'folder-images' } } }, ['/v'], [], false), roots: ['/v'] }
+    expect(fileIconAttrs(plain, '/v/src', true)['data-icon']).toBe('folder')
+    expect(fileIconAttrs(plain, '/elsewhere/src', true)['data-icon']).toBe('folder')
+    expect(fileIconAttrs(plain, '/v/trips', true)).toMatchObject({ 'data-icon': 'folder-images', 'data-icon-custom': '' })
+    expect(fileIconAttrs(plain, '/v/a.ts', false)['data-icon']).toBe('typescript')
+  })
+
   it('draws one aria-hidden span with the attributes; a new pick from App draws it again', () => {
     const el = draw(<IconsContext.Provider value={here()}><FileIcon path="/v/a.md" /></IconsContext.Provider>)
     const span = el.querySelector<HTMLElement>('.file-icon')!

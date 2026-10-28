@@ -2,7 +2,8 @@
  * FOLDER ICONS, END TO END (YAZ-3554 D1, D3, D4, D5): with the Material set, Settings › Sidebar › Folders ›
  * "Folder icons" is Plain (the default), By name or Off. Plain gives every folder Material's default folder, so
  * `src` and `docs` look like any other folder; a folder with its own pick keeps it (D4). By name gives each its
- * folder-name icon, as before; Off draws none. The tree, the tabs, search and Recents use the same rule (`rowIcon`, D1).
+ * folder-name icon, as before; Off draws none. This spec checks the tree; the tabs, search and Recents use the same
+ * rule (`rowIcon`, D1), which `FileIcon.test.tsx` covers.
  *
  * The unit tests pin the rule (`rowIcons.test.ts`) and the CSS (`fileIconsCss.test.ts`); only the real app shows
  * the setting reaching the tree and the tab bar through the store and the IPC. The clicks are Playwright's, sent to
