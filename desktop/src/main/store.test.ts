@@ -217,6 +217,24 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, codeWrap: false })).toBe(true)
   })
 
+  it('the code Outline (YAZ-3486 S4, S5): a file from before it reads Position and no hidden kind; each value survives a restart; a wrong value is repaired', async () => {
+    const { codeOutlineSort: _a, codeOutlineHidden: _b, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ codeOutlineSort: 'position', codeOutlineHidden: [] })
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeOutlineSort: 'type', codeOutlineHidden: ['variable', 'constant'] } }))
+    expect(createStore(file).get().settings).toMatchObject({ codeOutlineSort: 'type', codeOutlineHidden: ['variable', 'constant'] })
+
+    // A kind a later build removed, and a repeat, are dropped; the rest is kept. A sort that is no sort reads Position.
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeOutlineSort: 'size', codeOutlineHidden: ['variable', 'gadget', 'variable', 7] } }))
+    expect(createStore(file).get().settings).toMatchObject({ codeOutlineSort: 'position', codeOutlineHidden: ['variable'] })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, codeOutlineHidden: 'variable' }).codeOutlineHidden).toEqual([])
+    // The IPC boundary refuses the whole object (it never repairs).
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeOutlineHidden: ['gadget'] })).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeOutlineHidden: ['field', 'field'] })).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeOutlineSort: 'name', codeOutlineHidden: ['field'] })).toBe(true)
+  })
+
   it('commentsOrder: a pre-1515 file without the key sanitizes to oldest; both orders survive; junk falls back (YAZ-1515)', async () => {
     const { commentsOrder: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))

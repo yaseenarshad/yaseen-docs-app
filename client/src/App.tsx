@@ -556,7 +556,8 @@ export function App() {
   // A drawing's engine moved a canvas pref (YAZ-3028, Draw's 🔒 YAZ-1775 D9): the same stable door.
   const changeCanvasPrefs = useCallback((canvas: CanvasPrefs) => changeSettings({ ...newNoteFolderInputs.current.settings, canvas }), [changeSettings])
   // A code tab's cog row (YAZ-3449): Settings › Code, for every code file, through the same stable door.
-  const changeCodeSettings = useCallback((patch: Partial<Pick<SettingsState, 'codeReadOnly' | 'codeWrap' | 'codeMinimap'>>) => changeSettings({ ...newNoteFolderInputs.current.settings, ...patch }), [changeSettings])
+  // The code Outline's "…" menu (YAZ-3486) writes its sort and hidden kinds through it too.
+  const changeCodeSettings = useCallback((patch: Partial<Pick<SettingsState, 'codeReadOnly' | 'codeWrap' | 'codeMinimap' | 'codeOutlineSort' | 'codeOutlineHidden'>>) => changeSettings({ ...newNoteFolderInputs.current.settings, ...patch }), [changeSettings])
   // The canvas panel's tab and dock choice (YAZ-3038): the same stable door; a choice that did not move is no write.
   const changeCanvasPanel = useCallback(
     (canvasPanel: CanvasPanelState) => {
@@ -2314,6 +2315,9 @@ export function App() {
       codeWrap: settings.codeWrap,
       codeMinimap: settings.codeMinimap,
       onChangeCodeSettings: changeCodeSettings,
+      // YAZ-3486: the code Outline's sort and hidden kinds, each a SETTING.
+      codeOutlineSort: settings.codeOutlineSort,
+      codeOutlineHidden: settings.codeOutlineHidden,
       // YAZ-3403: the hover panel of a note's [[links]], its linked mentions and a folder's views, each its own SETTING.
       hoverLinks: hoverOn(settings, 'links'),
       hoverBacklinks: hoverOn(settings, 'backlinks'),

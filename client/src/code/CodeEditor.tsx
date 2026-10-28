@@ -35,9 +35,13 @@
  * cursor. Monaco never sees them, so on a Mac ⌘↑ / ⌘↓ no longer go to the top / bottom of the file: ⌘Home /
  * ⌘End do (with ⇧, they select). A right-click on a fold chevron opens the app's menu: "Collapse all",
  * "Expand all". Each one is Monaco's own fold action, so the folds are remembered as any fold is.
+ *
+ * THE OUTLINE (YAZ-3486): VS Code's Outline in the note table of contents' place and frame
+ * (`outline/CodeOutline.tsx`), on the same setting and width. Its feed (`outline/outlineFeed.ts`) is
+ * made with the editor and goes with it.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { PageView, ZoomStep } from '@shared/types'
+import { TOC_DEFAULT_W, type CodeOutlineSort, type CodeSymbolKind, type PageView, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
 import { HOTKEY_COMMANDS, fromKeyEvent, keyFor, sameKey, type HotkeyId, type HotkeyOverrides, type KeyPress } from '@shared/hotkeyBindings'
 import { api, BridgeRequestError } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
@@ -53,13 +57,16 @@ import { ContextMenu } from '../sidebar/ContextMenu'
 import { CodeChips } from './CodeChips'
 import { attachFolds } from './codeFolds'
 import { foldKeyHint, foldKeyOf, type FoldKeyId } from './foldKeyMatch'
-import { DEFAULT_CODE_SETTINGS, type CodeSettings } from './codeSettings'
+import { DEFAULT_CODE_SETTINGS, type CodeSettingsPatch } from './codeSettings'
 import { trackCodeTab } from './codeOpener'
 import { attachLanguageClient } from './languageClient'
 import { lineBreakOf, withOneLineBreak } from './lineBreak'
 import { applyAppTheme, monaco } from './monaco'
 import { attachMenuLook } from './monacoMenuLook'
 import { monacoThemeName } from './monacoTheme'
+import { CodeOutline, type OutlineEditorLike } from './outline/CodeOutline'
+import { attachOutlineFeed, type OutlineFeed } from './outline/outlineFeed'
+import { readSymbols } from './outline/symbolSource'
 import { diskEdit } from './reloadEdit'
 import './codeEditor.css'
 
@@ -75,8 +82,16 @@ export interface CodeEditorProps extends DocumentHostProps {
   codeReadOnly?: boolean
   codeWrap?: boolean
   codeMinimap?: boolean
-  /** The cog's rows write these settings for every code file; absent = no cog. */
-  onChangeCodeSettings?: (patch: Partial<CodeSettings>) => void
+  /** The cog's rows and the Outline's "…" menu write these settings for every code file; absent = no cog. */
+  onChangeCodeSettings?: (patch: CodeSettingsPatch) => void
+  /** The Outline (YAZ-3486) on the note's setting (Settings › Table of contents) and width; absent = off. */
+  tableOfContents?: TableOfContentsMode
+  onChangeTableOfContents?: (mode: TableOfContentsMode) => void
+  tableOfContentsWidth?: number
+  onChangeTableOfContentsWidth?: (width: number) => void
+  /** The Outline's "…" menu: Sort by, and the kinds it hides. Absent = Position, none hidden. */
+  codeOutlineSort?: CodeOutlineSort
+  codeOutlineHidden?: readonly CodeSymbolKind[]
   /** A copied tab's start (YAZ-2951 D1, YAZ-3451 S5): its source's folds, scroll and text size. Read at mount only. */
   startView?: PageView
   /** A jump to another file (YAZ-3454, D10): the tab's own link door, so Back returns. */
@@ -124,6 +139,9 @@ const FONT_SIZE = 13
 /** The model's line break for a file's text (YAZ-3445 D3). */
 const eolOf = (text: string) => (lineBreakOf(text) === '\r\n' ? monaco.editor.EndOfLineSequence.CRLF : monaco.editor.EndOfLineSequence.LF)
 
+const NO_KINDS: readonly CodeSymbolKind[] = []
+const noChange = (): void => undefined
+
 export function CodeEditor(props: CodeEditorProps) {
   return (
     <DocumentShell root={props.root} path={props.path} className="editor--code" load={loadCode} errorText={brokenCode}>
@@ -137,7 +155,7 @@ interface CodeHostProps extends CodeEditorProps {
 }
 
 /** Mounts exactly one Monaco editor and model for `loaded`; the document host owns everything that writes. */
-function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar, codeReadOnly = DEFAULT_CODE_SETTINGS.codeReadOnly, codeWrap = DEFAULT_CODE_SETTINGS.codeWrap, codeMinimap = DEFAULT_CODE_SETTINGS.codeMinimap, onChangeCodeSettings, startView, onOpenFile }: CodeHostProps) {
+function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar, codeReadOnly = DEFAULT_CODE_SETTINGS.codeReadOnly, codeWrap = DEFAULT_CODE_SETTINGS.codeWrap, codeMinimap = DEFAULT_CODE_SETTINGS.codeMinimap, onChangeCodeSettings, startView, onOpenFile, tableOfContents = 'off', onChangeTableOfContents = noChange, tableOfContentsWidth = TOC_DEFAULT_W, onChangeTableOfContentsWidth = noChange, codeOutlineSort = 'position', codeOutlineHidden = NO_KINDS }: CodeHostProps) {
   const theme = useAppliedTheme()
   const mountRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<ReturnType<typeof monaco.editor.create> | null>(null)
@@ -159,11 +177,13 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
   /** The values the editor is born with; the effects below follow every change after. */
-  const born = useRef({ locked, codeWrap, codeMinimap, zoom, startView })
+  const born = useRef({ locked, codeWrap, codeMinimap, zoom, startView, outlineOn: tableOfContents !== 'off' })
   const openRef = useRef(onOpenFile)
   openRef.current = onOpenFile
   /** The chevron's right-click menu (YAZ-3478), at the pointer; null while closed. */
   const [foldMenu, setFoldMenu] = useState<{ x: number; y: number } | null>(null)
+  /** The Outline's editor and feed (YAZ-3486): set once the editor exists, cleared with it. */
+  const [outline, setOutline] = useState<{ editor: OutlineEditorLike; feed: OutlineFeed } | null>(null)
 
   /** A fold key or a menu row: Monaco's own action, so the folds are saved as any fold is (`attachFolds`). */
   const runFold = (id: FoldKeyId): void => {
@@ -297,7 +317,13 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
     // Monaco's own right-click menu in the app's look: its spacing (the colors are `codeEditor.css`).
     const menuLook = attachMenuLook(mount)
 
+    // The Outline (YAZ-3486): symbols 300 ms after the last edit, never per keystroke.
+    const outlineFeed = attachOutlineFeed(editor, model, readSymbols, born.current.outlineOn)
+    setOutline({ editor, feed: outlineFeed })
+
     return () => {
+      setOutline(null)
+      outlineFeed.dispose()
       menuLook.dispose()
       mount.removeEventListener('contextmenu', onContextMenu, true)
       jumps.dispose()
@@ -421,6 +447,22 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
       />
       {doc.conflictBar}
       <div className="code-editor__monaco" ref={mountRef} />
+      {outline !== null && (
+        <CodeOutline
+          feed={outline.feed}
+          editor={outline.editor}
+          lineHeight={() => (editorRef.current?.getOption(monaco.editor.EditorOption.lineHeight) as number | undefined) ?? 19}
+          mode={tableOfContents}
+          onChangeMode={onChangeTableOfContents}
+          width={tableOfContentsWidth}
+          onChangeWidth={onChangeTableOfContentsWidth}
+          sort={codeOutlineSort}
+          hidden={codeOutlineHidden}
+          onChangeView={(patch) => onChangeCodeSettings?.(patch)}
+          hostRef={mountRef}
+          onReturnFocus={() => editorRef.current?.focus()}
+        />
+      )}
       {foldMenu !== null && (
         <ContextMenu
           x={foldMenu.x}

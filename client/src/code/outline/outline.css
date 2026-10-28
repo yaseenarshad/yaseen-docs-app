@@ -1,0 +1,277 @@
+/* The code Outline (YAZ-3486): CodeOutline.tsx.
+
+   THE FRAME IS THE NOTE'S. The Outline is a `nav.toc` with the note table of contents' classes and
+   look (toc.css): the names column at the tab's right edge (`data-names`) with its drag edge, or the
+   rail of small lines and its card. Only what a code tab needs more is here: the toolbar (filter,
+   Collapse all, "…"), a row with a ⌄, a type icon and an error mark, and the room Monaco gives up.
+
+   THE ROWS ARE THE NOTE'S NAMES: 12px, the hairline on the left with the accent marker riding on
+   it, the accent's soft wash under the mouse, the current row in the accent colour (never a shaded
+   row). Top level in the text colour, one level in a step quieter, deeper rows muted.
+
+   LEVEL LINES as the note's (YAZ-2762, Settings › Table of contents › Level lines): one thin line
+   below each parent's ⌄, in the grey of `--toc-rest`, and the path from the current row up to its
+   parents in `--toc-path`. A row draws them as two repeating backgrounds, one line every
+   `--outline-indent`, as wide as its depth (grey) and its share of the path (accent): no element
+   per line, and no cap on the depth. */
+
+.outline {
+  --outline-indent: 12px;
+  --outline-pad: 6px;
+  /* The ⌄'s box: the level lines run below its middle. */
+  --outline-twisty: 12px;
+  --outline-row-h: 24px;
+}
+
+/* The names column takes its width from Monaco, which lays itself out again (`automaticLayout`). */
+.code-editor:has(> .outline[data-names]) > .code-editor__monaco {
+  width: auto;
+  margin-right: var(--toc-width);
+}
+
+/* The rail stands left of Monaco's own scrollbar and minimap (`--outline-right`, measured). */
+.outline .toc__hover {
+  margin-right: var(--outline-right, 20px);
+}
+
+/* ---------- the toolbar: filter, Collapse all, "…" ---------- */
+
+.outline__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 0 0 8px 0;
+}
+
+.outline__filter {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.outline__filter::placeholder {
+  color: var(--fg-muted);
+}
+
+.outline__filter:focus {
+  border-color: var(--accent);
+}
+
+/* The toolbar's buttons: the pin's look (toc.css `.toc__pin`), square. */
+.outline__tool {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--fg-muted);
+  border-radius: 5px;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.outline__tool:hover,
+.outline__tool[aria-expanded='true'] {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.outline__tool:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ---------- the list: only the rows on screen are drawn ---------- */
+
+.outline__list {
+  /* One scroll box with one tall runner; the rows stand in it at their own top. */
+  display: block;
+}
+
+.outline__runner {
+  position: relative;
+  width: 100%;
+}
+
+.outline__row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--outline-row-h);
+  padding: 0 8px 0 calc(var(--outline-pad) + var(--depth, 0) * var(--outline-indent));
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  /* The level lines: the path first (on top), then the grey ones. */
+  background-image:
+    repeating-linear-gradient(to right, var(--toc-path) 0 1px, transparent 1px var(--outline-indent)),
+    repeating-linear-gradient(to right, var(--toc-rest) 0 1px, transparent 1px var(--outline-indent));
+  background-repeat: no-repeat;
+  background-position:
+    calc(var(--outline-pad) + var(--outline-twisty) / 2) 0,
+    calc(var(--outline-pad) + var(--outline-twisty) / 2) 0;
+  background-size:
+    calc(var(--path, 0) * var(--outline-indent)) 100%,
+    calc(var(--depth, 0) * var(--outline-indent)) 100%;
+  border-left: 1px solid var(--border);
+  border-radius: 0 5px 5px 0;
+  transition: color 80ms ease, background-color 80ms ease;
+}
+
+.outline__row[data-depth='0'] {
+  color: var(--fg);
+}
+
+.outline__row[data-depth='1'] {
+  color: color-mix(in srgb, var(--fg) 55%, var(--fg-muted));
+}
+
+.outline__row:hover {
+  color: var(--fg);
+  background-color: var(--accent-soft);
+}
+
+/* The current row: the accent, under the mouse too. */
+.outline__list .outline__row[aria-current='true'] {
+  color: var(--accent);
+}
+
+/* The row ↑ / ↓ picked from the filter box: the focus ring the note's names wear. */
+.outline__row[data-picked] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The ⌄: open points down, collapsed points right. A leaf keeps the room, so the icons line up. */
+.outline__twisty {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--outline-twisty);
+  height: var(--outline-twisty);
+  color: var(--fg-muted);
+  border-radius: 3px;
+}
+
+.outline__twisty > svg {
+  transition: transform 120ms ease;
+}
+
+.outline__twisty[data-collapsed] > svg {
+  transform: rotate(-90deg);
+}
+
+.outline__twisty:not([data-leaf]):hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.outline__icon {
+  flex: none;
+}
+
+/* Each family of kinds in the app theme's code colours (`--code-*`), so light and dark follow. */
+.outline__icon[data-family='class'],
+.outline__icon[data-family='enum'] {
+  color: var(--code-type);
+}
+
+.outline__icon[data-family='method'] {
+  color: var(--code-function);
+}
+
+.outline__icon[data-family='field'],
+.outline__icon[data-family='interface'] {
+  color: var(--code-key);
+}
+
+.outline__icon[data-family='variable'],
+.outline__icon[data-family='constant'] {
+  color: var(--code-number);
+}
+
+.outline__icon[data-family='value'] {
+  color: var(--code-string);
+}
+
+.outline__icon[data-family='module'] {
+  color: var(--fg-muted);
+}
+
+.outline__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The part of a name the filter matched. */
+.outline__hit {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+/* An error or a warning in the row's code (S6): a dot at the row's end, the app's danger and warn colours. */
+.outline__mark {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.outline__mark[data-mark='error'] {
+  background: var(--danger);
+}
+
+.outline__mark[data-mark='warning'] {
+  background: var(--warn);
+}
+
+/* The card is a little wider than the note's: code names are long. */
+.outline .toc__card {
+  flex-basis: 280px;
+}
+
+/* The line a jump landed on: one flash, the note's band (tocMotion.ts: held, then faded). */
+.code-outline-flash {
+  animation: code-outline-flash 1300ms ease-out;
+}
+
+@keyframes code-outline-flash {
+  0%,
+  45% {
+    background: color-mix(in srgb, var(--accent) 34%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .outline__row,
+  .outline__twisty > svg,
+  .outline__filter {
+    transition: none;
+  }
+
+  .code-outline-flash {
+    animation: none;
+  }
+}

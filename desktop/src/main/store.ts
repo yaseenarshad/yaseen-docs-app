@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
 import {
+  CODE_OUTLINE_SORTS,
+  CODE_SYMBOL_KINDS,
   COMMENTS_ORDERS,
   CONTENT_WIDTHS,
   DEFAULT_SETTINGS,
@@ -56,6 +58,8 @@ import {
   rootOfPath,
   stripSlash,
   type AppState,
+  type CodeOutlineSort,
+  type CodeSymbolKind,
   type CommentsOrder,
   type ContentWidth,
   type FolderPatch,
@@ -345,6 +349,17 @@ export function sanitizeHotkeys(raw: unknown): HotkeyOverrides {
   return out
 }
 
+/** The code Outline's hidden kinds (YAZ-3486), strict: known kinds, each once. The IPC boundary rejects anything else. */
+const isOutlineHidden = (v: unknown): v is CodeSymbolKind[] =>
+  Array.isArray(v) && v.every((k) => typeof k === 'string' && (CODE_SYMBOL_KINDS as readonly string[]).includes(k)) && new Set(v).size === v.length
+
+/** A stored list of hidden kinds with each kind a later build removed, and each repeat, dropped; [] when it is no list. */
+export function sanitizeOutlineHidden(raw: unknown): CodeSymbolKind[] {
+  if (isOutlineHidden(raw)) return raw
+  if (!Array.isArray(raw)) return []
+  return [...new Set(raw.filter((k): k is CodeSymbolKind => typeof k === 'string' && (CODE_SYMBOL_KINDS as readonly string[]).includes(k)))]
+}
+
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
 const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is SettingsState[K] } = {
   lineSpacing: isFiniteNumber,
@@ -389,6 +404,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   codeReadOnly: (v): v is boolean => typeof v === 'boolean',
   codeWrap: (v): v is boolean => typeof v === 'boolean',
   codeMinimap: (v): v is boolean => typeof v === 'boolean',
+  codeOutlineSort: (v): v is CodeOutlineSort => typeof v === 'string' && (CODE_OUTLINE_SORTS as readonly string[]).includes(v),
+  codeOutlineHidden: isOutlineHidden,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -406,6 +423,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
+  out.codeOutlineHidden = sanitizeOutlineHidden(src.codeOutlineHidden)
   // YAZ-3389 D7: a number off the steps but inside 50–200 is kept; one outside is clamped, not reset; missing or not a number reads 100.
   if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
   return out

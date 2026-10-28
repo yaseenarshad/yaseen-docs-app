@@ -73,6 +73,19 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 - **Spelling**: misspellings get the OS squiggle; right-click for suggestions, "Add to Dictionary", and cut/copy/paste.
 - **Round-trip**: the first real edit rewrites the file in remark's normalised form (bullet markers, 2-space indent, …); empty items are written as a bare `*` / `* [ ]`. Typing without changes never writes.
 
+### Outline of a code file
+
+A code file shows its **Outline** where a note shows its table of contents: at the tab's right edge, on the same setting (Settings › Editor › Table of contents: When there is room / Always / Off) and the same width. "When there is room" shows the names when 800 px of code still fit beside them; else small lines, and the mouse on them (or ⌘J) opens the card. **Pin** in the card is "Always".
+
+- **Rows**: every symbol of the file, nested as a tree with no depth limit — classes, methods, functions, constructors, interfaces, types, enums and their members, variables, constants, fields, properties. A type icon on each row. A ⌄ on each row with children collapses it; **Collapse all** at the top.
+- **Filter**: the box at the top keeps the rows that hold the typed text and their parents.
+- **"…" menu**: **Sort by** Position (the default), Name or Type; **Show** turns each kind of symbol of this file on or off (all on by default, as in VS Code; a hidden kind hides its children too); Expand all, Collapse all. Sort by and Show are remembered for every code file.
+- **Follow the cursor**: the row that holds the cursor is the accent colour (while you scroll with the cursor off screen, the row at the top of the view), and the list keeps it in view.
+- **Error marks**: a row whose code has an error or a warning shows a red or yellow dot; a collapsed row shows the worst one it hides.
+- **Go to a row**: a click glides the code to the symbol, opens any fold in the way, and puts the cursor on its name. ⌘J from the keyboard: type to filter, `↑` / `↓` pick, `⏎` goes, `Esc` clears the filter and returns to the code; `←` / `→` collapse and open the picked row while the filter is empty.
+
+The symbols are Monaco's own for TS, JS, React, JSON, CSS and HTML. A Python file's are read from its text (`class`, `def`, `async def`, decorators, top-level `UPPER_CASE` constants): no language helper is needed. A file with neither (`.lua`, …) shows no Outline. The Outline reads the symbols 300 ms after the last edit, never on a keystroke, and draws only the rows on screen, so a 5 MB file stays smooth. View-only — the file is never touched.
+
 ### Jump by meaning in code files
 
 A code file that opens in a tab (TS, JS, React, Python) gets VS Code's two jumps:

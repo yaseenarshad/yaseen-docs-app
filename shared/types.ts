@@ -1549,6 +1549,10 @@ export interface SettingsState {
   codeWrap: boolean
   /** Code files (YAZ-3438 D6): every code tab shows Monaco's minimap. */
   codeMinimap: boolean
+  /** The code Outline (YAZ-3486): how its rows are sorted, from its "…" menu. One value for every code tab. */
+  codeOutlineSort: CodeOutlineSort
+  /** The code Outline (YAZ-3486): the kinds of symbol it hides, from its "…" menu. Empty = every kind shows, as in VS Code. */
+  codeOutlineHidden: CodeSymbolKind[]
 }
 
 /**
@@ -1647,6 +1651,17 @@ export const TOC_MIN_W = 160
 export const TOC_MAX_W = 480
 export const TOC_DEFAULT_W = 200
 
+/** The code Outline (YAZ-3486): its rows by where they are in the file (the default), by name, or by kind ("Type"). */
+export type CodeOutlineSort = 'position' | 'name' | 'type'
+export const CODE_OUTLINE_SORTS: readonly CodeOutlineSort[] = ['position', 'name', 'type']
+
+/**
+ * The kinds of a code symbol (YAZ-3486), in Monaco's `SymbolKind` order: the index is Monaco's number,
+ * and LSP's number is the index plus 1. The code Outline's "…" › Show hides a kind by this name.
+ */
+export const CODE_SYMBOL_KINDS = ['file', 'module', 'namespace', 'package', 'class', 'method', 'property', 'field', 'constructor', 'enum', 'interface', 'function', 'variable', 'constant', 'string', 'number', 'boolean', 'array', 'object', 'key', 'null', 'enumMember', 'struct', 'event', 'operator', 'typeParameter'] as const
+export type CodeSymbolKind = (typeof CODE_SYMBOL_KINDS)[number]
+
 /**
  * What ONE note's table of contents is built from when the reader chose (YAZ-2700 D14): `headings`
  * is every H1-H5 of the note (YAZ-3051), the ones inside bullets too; `bullets` is its bullets, however many
@@ -1710,6 +1725,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   codeReadOnly: false,
   codeWrap: true,
   codeMinimap: false,
+  codeOutlineSort: 'position',
+  codeOutlineHidden: [],
 }
 
 export interface WindowBounds {

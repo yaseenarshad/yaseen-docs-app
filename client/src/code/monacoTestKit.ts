@@ -79,6 +79,12 @@ export class FakeModel {
     return this.lines[lineNumber - 1] ?? ''
   }
 
+  /** The first column that is not a space or a tab; 0 for a blank line (Monaco's rule). */
+  getLineFirstNonWhitespaceColumn(lineNumber: number): number {
+    const at = this.getLineContent(lineNumber).search(/[^ \t]/)
+    return at === -1 ? 0 : at + 1
+  }
+
   pushStackElement(): void {}
 
   /** Monaco's rule: the inserted text takes the model's EOL; here lines are kept apart, so `\n` splits them. */
@@ -187,6 +193,79 @@ export class FakeEditor {
 
   setPosition(position: { lineNumber: number; column: number }): void {
     this.position = { ...position }
+    for (const listener of [...this.cursorListeners]) listener()
+  }
+
+  /** The code Outline (YAZ-3486): the cursor, the view, the layout, and the jump's moves. */
+  private cursorListeners = new Set<() => void>()
+  private scrollListeners = new Set<(event: { scrollTopChanged: boolean }) => void>()
+  private layoutListeners = new Set<() => void>()
+  /** The lines on screen, 1-based; a test moves it with `scrollToLine`. */
+  visible = { startLineNumber: 1, endLineNumber: 40 }
+  /** Every `createDecorationsCollection` call: the jump's flash. */
+  readonly decorations: unknown[][] = []
+  /** Every selection set (a jump puts the cursor on the symbol's name). */
+  readonly selections: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }[] = []
+
+  getPosition(): { lineNumber: number; column: number } | null {
+    return this.position ?? this.viewState.cursor
+  }
+
+  setSelection(range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }): void {
+    this.selections.push({ ...range })
+    this.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn })
+  }
+
+  onDidChangeCursorPosition(listener: () => void): { dispose: () => void } {
+    this.cursorListeners.add(listener)
+    return { dispose: () => void this.cursorListeners.delete(listener) }
+  }
+
+  onDidScrollChange(listener: (event: { scrollTopChanged: boolean }) => void): { dispose: () => void } {
+    this.scrollListeners.add(listener)
+    return { dispose: () => void this.scrollListeners.delete(listener) }
+  }
+
+  onDidLayoutChange(listener: () => void): { dispose: () => void } {
+    this.layoutListeners.add(listener)
+    return { dispose: () => void this.layoutListeners.delete(listener) }
+  }
+
+  getVisibleRanges(): { startLineNumber: number; endLineNumber: number }[] {
+    return [{ ...this.visible }]
+  }
+
+  /** The user scrolls the code so `line` is the first on screen. */
+  scrollToLine(line: number): void {
+    const span = this.visible.endLineNumber - this.visible.startLineNumber
+    this.visible = { startLineNumber: line, endLineNumber: line + span }
+    this.viewState.scrollTop = (line - 1) * 19
+    for (const listener of [...this.scrollListeners]) listener({ scrollTopChanged: true })
+  }
+
+  getLayoutInfo(): { height: number; verticalScrollbarWidth: number; minimap: { minimapWidth: number } } {
+    return { height: 760, verticalScrollbarWidth: 14, minimap: { minimapWidth: 0 } }
+  }
+
+  getTopForLineNumber(lineNumber: number): number {
+    return (lineNumber - 1) * 19
+  }
+
+  getScrollHeight(): number {
+    return this.options.model.getLineCount() * 19 + 760
+  }
+
+  getOption(): number {
+    return 19
+  }
+
+  getDomNode(): HTMLElement {
+    return this.mount
+  }
+
+  createDecorationsCollection(decorations: unknown[]): { clear: () => void } {
+    this.decorations.push(decorations)
+    return { clear: () => undefined }
   }
 
   revealPositionInCenter(position: { lineNumber: number; column: number }): void {
@@ -213,6 +292,7 @@ export class FakeEditor {
 
   setScrollTop(top: number): void {
     this.viewState.scrollTop = top
+    for (const listener of [...this.scrollListeners]) listener({ scrollTopChanged: true })
   }
 
   onDidChangeHiddenAreas(listener: () => void): { dispose: () => void } {
@@ -279,6 +359,17 @@ export class FakeEditor {
     }
   }
 
+  /** The line of the `}` that closes the region starting on `start` (brace count). */
+  private regionEnd(start: number): number {
+    const model = this.options.model
+    let depth = 0
+    for (let line = start; line <= model.getLineCount(); line++) {
+      for (const ch of model.getLineContent(line)) depth += ch === '{' ? 1 : ch === '}' ? -1 : 0
+      if (depth <= 0 && line > start) return line
+    }
+    return model.getLineCount()
+  }
+
   /** Only the folding controller: its model's regions start on each line that ends with `{`. */
   getContribution(id: string): unknown {
     if (id !== 'editor.contrib.folding') return null
@@ -288,7 +379,7 @@ export class FakeEditor {
         const starts: number[] = []
         for (let line = 1; line <= model.getLineCount(); line++) if (model.getLineContent(line).trimEnd().endsWith('{')) starts.push(line)
         return {
-          regions: { length: starts.length, getStartLineNumber: (i: number) => starts[i], isCollapsed: (i: number) => this.folded.has(starts[i]), toRegion: (i: number) => starts[i] },
+          regions: { length: starts.length, getStartLineNumber: (i: number) => starts[i], getEndLineNumber: (i: number) => this.regionEnd(starts[i]), isCollapsed: (i: number) => this.folded.has(starts[i]), toRegion: (i: number) => starts[i] },
           toggleCollapseState: (regions: number[]) => {
             for (const line of regions) this.toggleFold(line)
           },
@@ -367,6 +458,13 @@ export const monaco = {
     registerHoverProvider: register(registered.hover),
   },
   editor: {
+    /** The markers of each model by URI (the code Outline's error marks); a test sets them with `setMarkers`. */
+    getModelMarkers: ({ resource }: { resource: FakeUri }) => markers.get(resource.toString()) ?? [],
+    onDidChangeMarkers: (listener: (uris: FakeUri[]) => void) => {
+      markerListeners.add(listener)
+      return { dispose: () => void markerListeners.delete(listener) }
+    },
+    EditorOption: { lineHeight: 75 },
     registerEditorOpener: (opener: unknown) => {
       registered.openers.push(opener)
       return { dispose: () => void registered.openers.splice(registered.openers.indexOf(opener), 1) }
@@ -389,9 +487,21 @@ export const monaco = {
 
 export const applyAppTheme = vi.fn<(theme: 'light' | 'dark') => void>()
 
+/** Monaco's markers (the code Outline, YAZ-3486): by model URI. */
+const markers = new Map<string, { severity: number; startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number; message: string }[]>()
+const markerListeners = new Set<(uris: FakeUri[]) => void>()
+
+/** The TS worker reports `list` for `model` (Monaco's `setModelMarkers`). */
+export function setMarkers(model: FakeModel, list: { severity: number; startLineNumber: number; startColumn: number; endLineNumber?: number; endColumn?: number; message?: string }[]): void {
+  markers.set(model.uri.toString(), list.map((m) => ({ endLineNumber: m.startLineNumber, endColumn: m.startColumn + 1, message: '', ...m })))
+  for (const listener of [...markerListeners]) listener([model.uri])
+}
+
 /** Between tests: forget every editor and model made. */
 export function resetFakeMonaco(): void {
   created.editors.length = 0
   created.models.length = 0
   applyAppTheme.mockClear()
+  markers.clear()
+  markerListeners.clear()
 }

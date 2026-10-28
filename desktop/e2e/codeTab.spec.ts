@@ -9,6 +9,10 @@
  *   Monaco's own right-click menu in the app's `.ctx-menu` look (light and dark), above the chips row.
  * - YAZ-3479: the 8 file types Monaco does not know get colours: each file shows its keyword, string,
  *   comment and number in the app theme's code colours (`--code-keyword`, …), not in one plain colour.
+ * - YAZ-3486: the code Outline with the real Monaco symbols and the real Python helper: ⌘J opens it,
+ *   Pin keeps it beside the code, the rows, the filter, collapse, Sort by and Show, the error mark, the
+ *   current row following the cursor, a click that opens the folds and jumps, a `.py` file's rows, no
+ *   Outline for a `.lua` file, and the 5 MB file: its rows, and the long frames while typing in it.
  *
  * Same harness as viewers.spec.ts: temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `codeTab-` screenshots, hidden windows. Keys and the wheel go to the page through Playwright, never
@@ -18,7 +22,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, fileRow, launchApp, layer, menuItem, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, fileRow, launchApp, layer, menuItem, menuListItem, quitApp, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -39,6 +43,17 @@ const TYPED: Record<string, { body: string; keyword: string; string: string; com
   'demo.patch': { body: '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old line\n+new line\n\\ No newline at end of file\n', keyword: '--- a/x', string: '+new line', comment: '\\ No newline at end of file' },
 }
 
+/** YAZ-3486: `long-class-for-folding.ts`'s shape — `Pipeline` with 40 short methods — and a type error in `step3`. */
+const OUTLINE_FILE = 'outline-pipeline.ts'
+const outlineMethod = (n: number) => (n === 3 ? `  step3() {\n    const broken: number = 'text'\n    return broken\n  }` : `  step${n}() {\n    const value${n} = ${n}\n    return value${n}\n  }`)
+const OUTLINE_BODY = `export class Pipeline {\n${Array.from({ length: 40 }, (_, i) => outlineMethod(i + 1)).join('\n\n')}\n}\n\nexport const LIMIT = 40\n`
+const PY_FILE = 'outline_demo.py'
+const PY_BODY = 'class Greeter:\n    def hello(self, name: str) -> str:\n        return "hi " + name\n\n\ndef main() -> None:\n    print(Greeter().hello("you"))\n'
+const LUA_FILE = 'outline-none.lua'
+/** `speed/big-5mb.ts`'s shape: 52 000 exported constants, each an object literal of 4 properties. */
+const BIG_FILE = 'outline-big-5mb.ts'
+const BIG_BODY = `// About 5 MB.\n${Array.from({ length: 52_000 }, (_, i) => `export const value${i} = { id: ${i}, name: 'row ${i}', tags: ['alpha', 'beta', 'gamma'], active: ${i % 2 === 0 ? 'false' : 'true'} }`).join('\n')}\n`
+
 let userData: string
 let vaultSrc: string
 let vault: string
@@ -51,6 +66,7 @@ test.beforeAll(async () => {
   vault = await copyVault(vaultSrc)
   await writeFile(path.join(vault, FILE), FILE_BODY)
   await Promise.all(Object.entries(TYPED).map(([name, t]) => writeFile(path.join(vault, name), t.body)))
+  await Promise.all([writeFile(path.join(vault, OUTLINE_FILE), OUTLINE_BODY), writeFile(path.join(vault, PY_FILE), PY_BODY), writeFile(path.join(vault, LUA_FILE), 'local x = 1\nprint(x)\n'), writeFile(path.join(vault, BIG_FILE), BIG_BODY)])
 })
 
 test.afterAll(async () => {
@@ -246,6 +262,161 @@ test('step 8 — YAZ-3479: each of the 8 types Monaco lacked shows the app code 
   await shoot(win, 'codeTab-07-new-types')
 })
 
-test('step 9 — quit', async () => {
+const outline = (w: Page) => layer(w).locator('nav.outline')
+const outlineRows = (w: Page) => outline(w).locator('.outline__row')
+const outlineRow = (w: Page, name: string) => outlineRows(w).filter({ has: w.locator('.outline__name', { hasText: new RegExp(`^${name}$`) }) })
+const rowNames = (w: Page) => outlineRows(w).locator('.outline__name').allInnerTexts()
+
+test('step 9 — YAZ-3486: the code Outline lists the symbols; filter, collapse, the menu, the mark, follow the cursor, and a click jumps', async () => {
+  test.setTimeout(90_000)
+  await fileRow(win, OUTLINE_FILE).click()
+  await expect(lines(win)).toContainText('export class Pipeline')
+  // At 1100 px the window has no room for 800 px of code beside the names: the rail. ⌘J opens its card, the focus in the filter.
+  await expect(outline(win).locator('.toc__rail')).toBeVisible()
+  await code(win).locator('.view-line', { hasText: 'export class Pipeline' }).click()
+  await win.keyboard.press('Meta+j')
+  await expect(outline(win).locator('.toc__card')).toBeVisible()
+  await expect(outline(win).locator('.outline__filter')).toBeFocused()
+  await shoot(win, 'codeTab-08-outline-card')
+  // Pin: the names stay beside the code (the setting "Always").
+  await outline(win).locator('.toc__pin').click()
+  await expect(outline(win)).toHaveAttribute('data-names', '')
+
+  // S1: Pipeline, its 40 methods, each with its icon; the variable in each method; LIMIT.
+  await expect.poll(() => rowNames(win)).toEqual(expect.arrayContaining(['Pipeline', 'step1', 'value1', 'step2']))
+  expect((await rowNames(win))[0]).toBe('Pipeline')
+  const runner = await outline(win).locator('.outline__runner').evaluate((el) => el.getBoundingClientRect().height)
+  expect(runner).toBe((1 + 40 * 2 + 1) * 24)
+  await expect(outlineRow(win, 'Pipeline').locator('.outline__icon')).toHaveAttribute('data-family', 'class')
+  await expect(outlineRow(win, 'step1').locator('.outline__icon')).toHaveAttribute('data-family', 'method')
+  await shoot(win, 'codeTab-09-outline-names')
+
+  // S6: the TS worker's error marks the row that holds it red: `broken`, inside step3. Collapsed, step3 shows it.
+  await expect(outlineRow(win, 'broken').locator('.outline__mark')).toHaveAttribute('data-mark', 'error', { timeout: 15_000 })
+  await expect(outlineRow(win, 'step3').locator('.outline__mark')).toHaveCount(0)
+  await outlineRow(win, 'step3').locator('.outline__twisty').click()
+  await expect(outlineRow(win, 'step3').locator('.outline__mark')).toHaveAttribute('data-mark', 'error')
+  await shoot(win, 'codeTab-09b-outline-error-mark')
+  await outlineRow(win, 'step3').locator('.outline__twisty').click()
+
+  // S3: the filter keeps step3, step30–39 and their parent.
+  await outline(win).locator('.outline__filter').fill('step3')
+  await expect.poll(() => rowNames(win)).toEqual(['Pipeline', 'step3', ...Array.from({ length: 10 }, (_, i) => `step${30 + i}`)])
+  await shoot(win, 'codeTab-10-outline-filter')
+  await outline(win).locator('.outline__filter').press('Escape')
+  await expect(outline(win).locator('.outline__filter')).toHaveValue('')
+
+  // S2: collapse Pipeline, then Collapse all.
+  await outlineRow(win, 'Pipeline').locator('.outline__twisty').click()
+  await expect.poll(() => rowNames(win)).toEqual(['Pipeline', 'LIMIT'])
+  await outlineRow(win, 'Pipeline').locator('.outline__twisty').click()
+  await outline(win).getByRole('button', { name: 'Collapse all' }).click()
+  await expect.poll(() => rowNames(win)).toEqual(['Pipeline', 'LIMIT'])
+  await outlineRow(win, 'Pipeline').locator('.outline__twisty').click()
+  await expect.poll(() => (rowNames(win)).then((n) => n.slice(0, 3))).toEqual(['Pipeline', 'step1', 'step2'])
+  await outline(win).getByRole('button', { name: 'More actions' }).click()
+  await menuItem(win, 'Expand all').click()
+
+  // S4, S5: Sort by Name, then Type; Show › Variables off; then back to Position and on.
+  await outline(win).getByRole('button', { name: 'More actions' }).click()
+  await menuItem(win, 'Sort by').click()
+  await menuListItem(win, 'Name').click()
+  await expect.poll(() => rowNames(win).then((n) => n.slice(0, 2))).toEqual(['LIMIT', 'Pipeline'])
+  await outline(win).getByRole('button', { name: 'More actions' }).click()
+  await menuItem(win, 'Show').click()
+  await menuListItem(win, 'Variables').click()
+  await expect.poll(() => rowNames(win).then((n) => n.filter((x) => x.startsWith('value')).length)).toBe(0)
+  await shoot(win, 'codeTab-11-outline-sorted-no-variables')
+  await outline(win).getByRole('button', { name: 'More actions' }).click()
+  await menuItem(win, 'Show').click()
+  await menuListItem(win, 'Variables').click()
+  await outline(win).getByRole('button', { name: 'More actions' }).click()
+  await menuItem(win, 'Sort by').click()
+  await menuListItem(win, 'Position').click()
+  await expect.poll(() => rowNames(win).then((n) => n.slice(0, 3))).toEqual(['Pipeline', 'step1', 'value1'])
+
+  // S7: the cursor in step2 makes step2's variable the current row; the accent marks it.
+  await code(win).locator('.view-line', { hasText: 'const value2 = 2' }).click()
+  await expect(outline(win).locator('.outline__row[aria-current="true"] .outline__name')).toHaveText('value2')
+
+  // S8: every block folded, then a click on step25: the folds open, the code glides there, the cursor is on its name.
+  await win.keyboard.press('Meta+Shift+U')
+  await expect(lines(win)).not.toContainText('step25()')
+  await outline(win).locator('.outline__list').evaluate((el) => (el.scrollTop = 25 * 2 * 24))
+  await outlineRow(win, 'step25').click()
+  await expect(lines(win)).toContainText('step25() {')
+  await expect(lines(win)).toContainText('const value25 = 25')
+  await expect.poll(() => win.evaluate(() => (document.activeElement as HTMLElement | null)?.closest('.monaco-editor') != null)).toBe(true)
+  await expect(outline(win).locator('.outline__row[aria-current="true"] .outline__name')).toHaveText('step25')
+  await shoot(win, 'codeTab-12-outline-jump')
+  await win.keyboard.press('Meta+Shift+I')
+})
+
+test('step 10 — YAZ-3486 S10, S11: a .py file lists its class and functions; a .lua file has no Outline', async () => {
+  test.setTimeout(60_000)
+  await fileRow(win, PY_FILE).click()
+  await expect(lines(win)).toContainText('class Greeter')
+  await expect.poll(() => rowNames(win), { timeout: 30_000 }).toEqual(expect.arrayContaining(['Greeter', 'hello', 'main']))
+  await expect(outlineRow(win, 'Greeter').locator('.outline__icon')).toHaveAttribute('data-family', 'class')
+  await shoot(win, 'codeTab-13-outline-python')
+  await fileRow(win, LUA_FILE).click()
+  await expect(lines(win)).toContainText('local x = 1')
+  await win.waitForTimeout(800)
+  await expect(outline(win)).toHaveCount(0)
+})
+
+/** Types 20 keys at the start of a line of the big file, then waits 2.5 s (the 300 ms read and its answer): the long tasks of it all, ms. */
+async function typeAndWatch(w: Page, lineText: string): Promise<{ typedMs: number; long: number[] }> {
+  await code(w).locator('.view-line', { hasText: lineText }).first().click()
+  await w.evaluate(() => {
+    const g = window as unknown as { __long: number[]; __observer?: PerformanceObserver }
+    g.__observer?.disconnect()
+    g.__long = []
+    g.__observer = new PerformanceObserver((list) => list.getEntries().forEach((e) => g.__long.push(Math.round(e.duration))))
+    g.__observer.observe({ type: 'longtask' })
+  })
+  const k0 = Date.now()
+  for (let i = 0; i < 20; i++) await w.keyboard.type('x', { delay: 40 })
+  const typedMs = Date.now() - k0
+  await w.waitForTimeout(2500)
+  const long = await w.evaluate(() => (window as unknown as { __long: number[] }).__long)
+  for (let i = 0; i < 20; i++) await w.keyboard.press('Backspace')
+  await w.waitForTimeout(1500)
+  return { typedMs, long }
+}
+
+/** Settings › Editor › Table of contents, for the whole app. */
+async function setTableOfContents(w: Page, label: 'Off' | 'Always' | 'When there is room'): Promise<void> {
+  await w.getByRole('button', { name: 'Settings', exact: true }).click()
+  const dialog = w.locator('.settings-dialog[role="dialog"]')
+  await expect(dialog).toBeVisible()
+  await dialog.locator('.settings-nav__item', { hasText: /^Editor$/ }).click()
+  await dialog.locator('[data-setting="tableOfContents"]').getByRole('button', { name: label, exact: true }).click()
+  await w.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+}
+
+test('step 11 — YAZ-3486 S12: the 5 MB file: its Outline, and typing stays smooth (with the Outline, and Off for the baseline)', async () => {
+  test.setTimeout(120_000)
+  const t0 = Date.now()
+  await fileRow(win, BIG_FILE).click()
+  await expect(lines(win)).toContainText('export const value0', { timeout: 30_000 })
+  const shownMs = Date.now() - t0
+  await expect(outlineRow(win, 'value0')).toBeVisible({ timeout: 30_000 })
+  const outlineMs = Date.now() - t0
+  const runner = await outline(win).locator('.outline__runner').evaluate((el) => el.getBoundingClientRect().height)
+  const drawn = await outlineRows(win).count()
+  expect(runner / 24).toBe(260_000)
+  expect(drawn).toBeLessThan(100)
+  await shoot(win, 'codeTab-14-outline-big')
+  const withOutline = await typeAndWatch(win, 'export const value3 =')
+  await setTableOfContents(win, 'Off')
+  await expect(outline(win)).toHaveCount(0)
+  const off = await typeAndWatch(win, 'export const value3 =')
+  console.log(`[YAZ-3486 S12] ${BIG_FILE}: code shown ${shownMs} ms, Outline rows ${outlineMs} ms after the click; ${runner / 24} rows, ${drawn} drawn. 20 keys + 2.5 s — with the Outline: ${withOutline.typedMs} ms, long tasks [${withOutline.long.join(', ')}] ms; Outline Off: ${off.typedMs} ms, long tasks [${off.long.join(', ')}] ms`)
+  await setTableOfContents(win, 'Always')
+})
+
+test('step 12 — quit', async () => {
   await quitApp(app)
 })
