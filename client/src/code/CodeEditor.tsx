@@ -42,7 +42,7 @@
  * turns it off for this file only, saved with the file as a note's is (`tocSwitches`, `usePageSwitch`).
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { TOC_DEFAULT_W, type CodeOutlineSort, type CodeSymbolKind, type PageView, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
+import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CodeOutlineSort, type CodeSymbolKind, type PageView, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
 import { HOTKEY_COMMANDS, fromKeyEvent, keyFor, sameKey, type HotkeyId, type HotkeyOverrides, type KeyPress } from '@shared/hotkeyBindings'
 import { api, BridgeRequestError } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
@@ -59,8 +59,8 @@ import { ContextMenu } from '../sidebar/ContextMenu'
 import { CodeChips } from './CodeChips'
 import { attachFolds } from './codeFolds'
 import { foldKeyHint, foldKeyOf, type FoldKeyId } from './foldKeyMatch'
-import { DEFAULT_CODE_SETTINGS, type CodeSettingsPatch } from './codeSettings'
-import { trackCodeTab } from './codeOpener'
+import type { CodeSettingsPatch } from './codeSettings'
+import { keepBackView, takeBackView, trackCodeTab } from './codeOpener'
 import { attachLanguageClient } from './languageClient'
 import { lineBreakOf, withOneLineBreak } from './lineBreak'
 import { applyAppTheme, monaco } from './monaco'
@@ -68,7 +68,7 @@ import { attachMenuLook } from './monacoMenuLook'
 import { monacoThemeName } from './monacoTheme'
 import { CodeOutline, type OutlineEditorLike } from './outline/CodeOutline'
 import { attachOutlineFeed, type OutlineFeed } from './outline/outlineFeed'
-import { readSymbols } from './outline/symbolSource'
+import { LARGE_CODE_CHARS, readSymbols } from './outline/symbolSource'
 import { diskEdit } from './reloadEdit'
 import './codeEditor.css'
 
@@ -100,6 +100,8 @@ export interface CodeEditorProps extends DocumentHostProps {
   startView?: PageView
   /** A jump to another file (YAZ-3454, D10): the tab's own link door, so Back returns. */
   onOpenFile?: (path: string) => void
+  /** This tab's history entry (App: `<tab id>:<index>`): Back or Forward to it puts back the cursor and scroll it was left with. */
+  viewKey?: string
 }
 
 interface LoadedCode {
@@ -141,15 +143,12 @@ let nextTab = 0
 const FONT_SIZE = 13
 
 /**
- * A LARGE CODE FILE (YAZ-3501): from this many characters (512 KB of ASCII), sticky scroll reads the
- * file's indentation, not its symbols. Monaco's symbol path runs on the page's thread after each pause in
- * the typing: about 500 ms for `big-5mb.ts`, and in proportion below it. The indentation model costs
- * nothing that a key waits for, and it pins the same lines in code that is indented as usual. Monaco turns
- * sticky scroll off by itself only from 20 MB or 300 000 lines. The size is read when the tab opens.
+ * Sticky scroll's source for a text of `length` characters: the symbols, or, from `LARGE_CODE_CHARS` (YAZ-3501),
+ * the file's indentation. Monaco's symbol path runs on the page's thread after each pause in the typing: about
+ * 500 ms for `big-5mb.ts`, and in proportion below it. The indentation model costs nothing that a key waits for,
+ * and it pins the same lines in code that is indented as usual. Monaco turns sticky scroll off by itself only
+ * from 20 MB or 300 000 lines. The size is read when the tab opens.
  */
-export const LARGE_CODE_CHARS = 512 * 1024
-
-/** Sticky scroll's source for a text of `length` characters: the symbols, or the indentation for a large file. */
 export const stickyModelFor = (length: number): 'outlineModel' | 'indentationModel' => (length >= LARGE_CODE_CHARS ? 'indentationModel' : 'outlineModel')
 
 /** The model's line break for a file's text (YAZ-3445 D3). */
@@ -171,7 +170,7 @@ interface CodeHostProps extends CodeEditorProps {
 }
 
 /** Mounts exactly one Monaco editor and model for `loaded`; the document host owns everything that writes. */
-function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar, codeReadOnly = DEFAULT_CODE_SETTINGS.codeReadOnly, codeWrap = DEFAULT_CODE_SETTINGS.codeWrap, codeMinimap = DEFAULT_CODE_SETTINGS.codeMinimap, onChangeCodeSettings, startView, onOpenFile, tableOfContents = 'off', onChangeTableOfContents = noChange, tableOfContentsWidth = TOC_DEFAULT_W, onChangeTableOfContentsWidth = noChange, codeOutlineSort = 'position', codeOutlineHidden = NO_KINDS, codeOutlineLocals = false }: CodeHostProps) {
+function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar, codeReadOnly = DEFAULT_SETTINGS.codeReadOnly, codeWrap = DEFAULT_SETTINGS.codeWrap, codeMinimap = DEFAULT_SETTINGS.codeMinimap, onChangeCodeSettings, startView, onOpenFile, viewKey, tableOfContents = 'off', onChangeTableOfContents = noChange, tableOfContentsWidth = TOC_DEFAULT_W, onChangeTableOfContentsWidth = noChange, codeOutlineSort = 'position', codeOutlineHidden = NO_KINDS, codeOutlineLocals = false }: CodeHostProps) {
   const theme = useAppliedTheme()
   const mountRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<ReturnType<typeof monaco.editor.create> | null>(null)
@@ -200,6 +199,9 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
   const born = useRef({ locked, codeWrap, codeMinimap, zoom, startView, outlineOn: tocMode !== 'off', outlineLocals: codeOutlineLocals })
   const openRef = useRef(onOpenFile)
   openRef.current = onOpenFile
+  // A rename or a delete elsewhere in the stack can move this entry's index while the tab stays mounted.
+  const backKeyRef = useRef(viewKey === undefined ? undefined : `${viewKey}\0${path}`)
+  backKeyRef.current = viewKey === undefined ? undefined : `${viewKey}\0${path}`
   /** The chevron's right-click menu (YAZ-3478), at the pointer; null while closed. */
   const [foldMenu, setFoldMenu] = useState<{ x: number; y: number } | null>(null)
   /** The Outline's editor and feed (YAZ-3486): set once the editor exists, cleared with it. */
@@ -304,8 +306,12 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
     start(model.getAlternativeVersionId(), loaded.mtime)
 
     // Folds (S1–S4): a copy starts with its source's live folds and writes none until one changes in it;
-    // a tab that a delete or a rename retired writes none at all. Then a copy's scroll spot (S5).
+    // a tab that a delete or a rename retired writes none at all. Then a copy's scroll spot (S5), or the
+    // cursor and scroll that Back returns to (YAZ-3458) — unless a jump brought this tab to a place.
     const copy = born.current.startView
+    const back = copy === undefined && backKeyRef.current !== undefined ? takeBackView(backKeyRef.current) : undefined
+    // Jump by meaning (YAZ-3454, YAZ-3455): Cmd+click through `onOpenFile`, and the place a jump left for this tab.
+    const jumps = trackCodeTab(editor, path, (to) => openRef.current?.(to))
     const folds = attachFolds(editor, {
       seed: copy?.folds ?? storage.getFolds(root, path),
       cleanup: copy === undefined,
@@ -315,14 +321,14 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
       // After the folds: they change the height above the spot. Never on a closed tab (`attachFolds`).
       onRestored: () => {
         if (copy !== undefined) editor.setScrollTop(copy.scrollTop)
+        else if (back !== undefined && !jumps.placed) editor.restoreViewState(back)
       },
     })
     const host = mount.closest('.code-editor')
     const offPageView = host === null ? null : registerPageView(host, () => ({ scrollTop: editor.getScrollTop(), zoomKey: null, folds: folds.keys(), magnification: zoomRef.current }))
 
-    // Jump by meaning (YAZ-3454, YAZ-3455): the project's helper, and Cmd+click through `onOpenFile`.
+    // The project's helper for the jumps across files.
     const helper = attachLanguageClient(model, { root, path })
-    const jumps = trackCodeTab(editor, path, (to) => openRef.current?.(to))
 
     // A right-click on a fold chevron (YAZ-3478): the app's menu, never Monaco's. Capture phase on the
     // mount, so Monaco's own `contextmenu` listener inside it never runs. A right button folds nothing in
@@ -353,6 +359,8 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
       changes.dispose()
       toggleWrap.dispose()
       closedText.current = model.getValue(monaco.editor.EndOfLinePreference.TextDefined, true)
+      const left = editor.saveViewState()
+      if (backKeyRef.current !== undefined && left !== null) keepBackView(backKeyRef.current, left)
       editor.dispose()
       model.dispose()
       editorRef.current = null
@@ -417,7 +425,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
       const mac = /Mac/.test(navigator.platform)
       // The note's fold keys, read at each press (YAZ-3478). Only with the cursor in the code: a key in
       // the find box or on a chip is not a fold.
-      const fold = editor?.hasTextFocus() === true ? foldKeyOf(event, mac, FOLD_KEYS) : null
+      const fold = editor?.hasTextFocus() === true ? foldKeyOf(event) : null
       if (fold !== null) {
         event.preventDefault()
         event.stopPropagation()

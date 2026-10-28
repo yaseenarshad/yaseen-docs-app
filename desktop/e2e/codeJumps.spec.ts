@@ -5,6 +5,7 @@
  *
  * - F12 on an imported function opens its file IN THIS TAB, at the line of the function (S1).
  * - Shift+F12 opens Monaco's peek box with the places in all 3 files of the project (S2).
+ * - Back returns to the cursor the jump left; Forward to the target's (YAZ-3458).
  * - The last code tab of the project closes → its helper stops (S6).
  * - Python: F12 jumps to the other `.py` file at the right line; quit leaves no helper.
  *
@@ -173,6 +174,19 @@ test('step 2 — TS: Shift+F12 opens the peek box with the places in all 3 files
   await shoot(win, 'codeJumps-02-references')
   await win.keyboard.press('Escape')
   await expect(code().locator('.peekview-widget')).toHaveCount(0)
+})
+
+test('step 2b — YAZ-3458: Back puts the cursor back where the jump left it, as VS Code does; Forward returns', async () => {
+  const nav = (label: 'Back' | 'Forward') => win.locator(`.tabbar-nav [aria-label="${label}"]`)
+  await nav('Back').click()
+  await expect(tabsOf(win)).toHaveText(['use.ts'])
+  await expect(code().locator('.view-lines')).toContainText('addNumbers(1, 2)')
+  // The F12 of step 1b was on line 3; before, Back mounted the file again at line 1.
+  await expect(code().locator('.active-line-number')).toHaveText('3')
+  await shoot(win, 'codeJumps-02b-back')
+  await nav('Forward').click()
+  await expect(tabsOf(win)).toHaveText(['math.ts'])
+  await expect(code().locator('.active-line-number')).toHaveText('3')
 })
 
 test('step 3 — TS: the last code tab of the project closes, and its helper stops (S6)', async () => {

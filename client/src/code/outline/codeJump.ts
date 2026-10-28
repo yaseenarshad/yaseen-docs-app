@@ -10,28 +10,16 @@
  *  4. One flash on the symbol's line. Under "Reduce Motion" the code lands at once, with no flash.
  *
  * Folds: Monaco has no public "open the folds around line n". The folding controller's model is the
- * one internal door `codeFolds.ts` already uses; when it is missing, nothing opens and nothing throws.
+ * internal door `codeFolds.ts` uses too (`foldingModelOf`, `monacoInternals.ts`); when it is missing,
+ * nothing opens and nothing throws.
  */
+import { foldingModelOf, type FoldingModelLike } from '../monacoInternals'
 import { FLASH_MS, GLIDE_MS, GLIDE_SCREENS, glideEase, LANDING_PX, reducedMotion } from '../../editor/toc/tocMotion'
 
-const FOLDING = 'editor.contrib.folding'
 /** Monaco's `ScrollType.Immediate`: a glide moves the code itself, frame by frame. */
 const IMMEDIATE = 1
 /** Monaco shows at most this many sticky scroll lines by default (`stickyScroll.maxLineCount`). */
 const STICKY_MOST = 5
-
-/** The part of Monaco's folding model a jump uses (internal API, see the module doc). */
-interface FoldRegionsLike {
-  length: number
-  getStartLineNumber(index: number): number
-  getEndLineNumber(index: number): number
-  isCollapsed(index: number): boolean
-  toRegion(index: number): unknown
-}
-interface FoldingModelLike {
-  regions: FoldRegionsLike
-  toggleCollapseState(regions: unknown[]): void
-}
 
 /** What a jump needs of the editor: public Monaco API, plus `getContribution` for the folds. */
 export interface JumpEditorLike {
@@ -72,9 +60,8 @@ function foldsInTheWay(folding: FoldingModelLike, line: number): unknown[] {
 /** Opens the folds in the way, then lands. Resolves once the cursor is placed (the glide runs on). */
 export async function jumpTo(editor: JumpEditorLike, target: JumpTarget, lineHeight: number): Promise<void> {
   gliding.get(editor)?.()
-  const controller = editor.getContribution(FOLDING) as { getFoldingModel?: () => Promise<FoldingModelLike | null> | null } | null
   try {
-    const folding = (await controller?.getFoldingModel?.()) ?? null
+    const folding = (await foldingModelOf(editor)) ?? null
     if (folding !== null) {
       const open = foldsInTheWay(folding, target.line)
       if (open.length > 0) folding.toggleCollapseState(open)

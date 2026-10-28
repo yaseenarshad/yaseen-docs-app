@@ -1,33 +1,33 @@
-/** The one table of fold keys (YAZ-3478) and its matcher: a code tab folds with exactly the keys a note does. */
+/** The one table of fold keys (YAZ-3478), matched by the note's own keymap: a code tab folds with exactly the keys a note does. */
 import { describe, expect, it } from 'vitest'
 import { FOLD_KEYS } from '../editor/outline/foldKeys'
-import { foldKeyHint, foldKeyOf, keyMatches } from './foldKeyMatch'
+import { foldKeyHint, foldKeyOf } from './foldKeyMatch'
 
-const press = (init: Partial<{ key: string; code: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }>) => ({ key: '', code: '', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...init })
+// ProseMirror's keymap reads the platform once, when it loads: `Mod` is ⌘ on a Mac, Ctrl elsewhere (jsdom: elsewhere).
+const MOD = /Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true }
+const press = (init: KeyboardEventInit): KeyboardEvent => new KeyboardEvent('keydown', init)
 
 describe('FOLD_KEYS', () => {
   it("holds the note's keys: ⌘⇧U, ⌘⇧I, ⌘↑, ⌘↓", () => {
     expect(FOLD_KEYS).toEqual({ foldAll: 'Mod-Shift-u', unfoldAll: 'Mod-Shift-i', foldHere: 'Mod-ArrowUp', unfoldHere: 'Mod-ArrowDown' })
   })
 
-  it('on a Mac, Mod is ⌘; elsewhere it is Ctrl', () => {
-    expect(foldKeyOf(press({ key: 'U', code: 'KeyU', metaKey: true, shiftKey: true }), true)).toBe('foldAll')
-    expect(foldKeyOf(press({ key: 'U', code: 'KeyU', metaKey: true, shiftKey: true }), false)).toBeNull()
-    expect(foldKeyOf(press({ key: 'U', code: 'KeyU', ctrlKey: true, shiftKey: true }), false)).toBe('foldAll')
-    expect(foldKeyOf(press({ key: 'ArrowUp', code: 'ArrowUp', metaKey: true }), true)).toBe('foldHere')
-    expect(foldKeyOf(press({ key: 'ArrowDown', code: 'ArrowDown', metaKey: true }), true)).toBe('unfoldHere')
-    expect(foldKeyOf(press({ key: 'I', code: 'KeyI', metaKey: true, shiftKey: true }), true)).toBe('unfoldAll')
+  it('reads each key as the note does', () => {
+    expect(foldKeyOf(press({ key: 'U', code: 'KeyU', keyCode: 85, shiftKey: true, ...MOD }))).toBe('foldAll')
+    expect(foldKeyOf(press({ key: 'I', code: 'KeyI', keyCode: 73, shiftKey: true, ...MOD }))).toBe('unfoldAll')
+    expect(foldKeyOf(press({ key: 'ArrowUp', code: 'ArrowUp', keyCode: 38, ...MOD }))).toBe('foldHere')
+    expect(foldKeyOf(press({ key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, ...MOD }))).toBe('unfoldHere')
   })
 
   it('needs the exact modifiers: no more, no less', () => {
-    expect(keyMatches(press({ key: 'u', code: 'KeyU', metaKey: true }), FOLD_KEYS.foldAll, true)).toBe(false)
-    expect(keyMatches(press({ key: 'U', code: 'KeyU', metaKey: true, shiftKey: true, altKey: true }), FOLD_KEYS.foldAll, true)).toBe(false)
-    expect(keyMatches(press({ key: 'ArrowUp', code: 'ArrowUp', metaKey: true, shiftKey: true }), FOLD_KEYS.foldHere, true)).toBe(false)
-    expect(keyMatches(press({ key: 'ArrowUp', code: 'ArrowUp' }), FOLD_KEYS.foldHere, true)).toBe(false)
+    expect(foldKeyOf(press({ key: 'u', code: 'KeyU', keyCode: 85, ...MOD }))).toBeNull()
+    expect(foldKeyOf(press({ key: 'U', code: 'KeyU', keyCode: 85, shiftKey: true, altKey: true, ...MOD }))).toBeNull()
+    expect(foldKeyOf(press({ key: 'ArrowUp', code: 'ArrowUp', keyCode: 38, shiftKey: true, ...MOD }))).toBeNull()
+    expect(foldKeyOf(press({ key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 }))).toBeNull()
   })
 
-  it('a letter also matches by its code (another layout gives another `key`)', () => {
-    expect(keyMatches(press({ key: 'Г', code: 'KeyU', metaKey: true, shiftKey: true }), FOLD_KEYS.foldAll, true)).toBe(true)
+  it('a letter also matches by its key code (another layout gives another `key`)', () => {
+    expect(foldKeyOf(press({ key: 'Г', code: 'KeyU', keyCode: 85, shiftKey: true, ...MOD }))).toBe('foldAll')
   })
 
   it('names a key as a Mac menu does', () => {

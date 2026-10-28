@@ -12,7 +12,7 @@ import { initialize, TypeScriptWorker } from 'monaco-editor/languages/features/t
 import { outlineOfNavigation, type NavigationItem } from './outline/navigationOutline'
 import { packTree } from './outline/outlinePack'
 
-/** The parts of Monaco's worker this class uses (they are not in Monaco's types). */
+/** The parts of Monaco's worker this class uses (they are not in Monaco's types; rule 42 and `monacoInternals.ts` list them). */
 interface MonacoWorkerParts {
   _getModel(fileName: string): { positionAt(offset: number): { lineNumber: number; column: number } } | null
   getLanguageService(): { getNavigationTree(fileName: string): NavigationItem }

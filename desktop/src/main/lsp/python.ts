@@ -2,13 +2,13 @@ import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import type { LanguageSpec } from './pool'
-import { helperFolder } from './download'
+import { helperFolder, PYRIGHT_ENTRY } from './download'
 import { PYRIGHT_PIN } from './pins'
 import { findProjectRoot, isInside } from './projectRoot'
 import type { RequestHandler } from './rpc'
 import { defaultServerReply } from './rpc'
 import type { LanguageServer, ServerCommand } from './server'
-import type { LspPlaces } from './typescript'
+import { onceFound, type LspPlaces } from './typescript'
 
 /**
  * The Python helper (YAZ-3455 4C, D9): `pyright` (pinned in the root `devDependencies`), a Node
@@ -38,7 +38,6 @@ import type { LspPlaces } from './typescript'
  */
 
 export const PYTHON_PROJECT_MARKERS = ['pyproject.toml', 'setup.py', 'requirements.txt'] as const
-export const PYRIGHT_ENTRY = 'langserver.index.js'
 const VENV_NAMES = ['.venv', 'venv'] as const
 
 /** The pyright entry script; null when it is not there. */
@@ -137,7 +136,7 @@ function safeList(dir: string): string[] {
  * pyright's `python` settings for a project: the venv's library folders when there is one; the whole
  * workspace searched for imports. NEVER a `pythonPath` (YAZ-3480): pyright would run it.
  */
-export function pythonSettings(projectRoot: string, env: PythonEnv | null): Record<string, unknown> {
+export function pythonSettings(env: PythonEnv | null): Record<string, unknown> {
   return {
     analysis: {
       autoSearchPaths: true,
@@ -150,8 +149,8 @@ export function pythonSettings(projectRoot: string, env: PythonEnv | null): Reco
 }
 
 /** The answer to pyright's `workspace/configuration`: `python` gets `pythonSettings`, every other section `null`. */
-export function pythonConfigurationReply(projectRoot: string, env: PythonEnv | null): RequestHandler {
-  const settings = pythonSettings(projectRoot, env)
+export function pythonConfigurationReply(env: PythonEnv | null): RequestHandler {
+  const settings = pythonSettings(env)
   return (method, params) => {
     if (method !== 'workspace/configuration') return defaultServerReply(method, params)
     const items = (params as { items?: { section?: string }[] } | null)?.items
@@ -189,20 +188,20 @@ export function pyrightWorkspaceReady(server: LanguageServer, ms = WORKSPACE_REA
 
 /** pyright for Python files (YAZ-3455). */
 export function pythonSpec(places: LspPlaces, exists: (p: string) => boolean = existsSync): LanguageSpec {
-  let entry: string | null | undefined
+  const entry = onceFound(() => resolvePyright({ ...places, exists }))
   return {
     language: 'python',
     projectRoot: (file, vaultRoot) => pythonProjectRoot(file, vaultRoot, exists),
     command: (root) => {
-      entry ??= resolvePyright({ ...places, exists })
-      return entry === null ? null : pyrightServerCommand(entry, root)
+      const script = entry()
+      return script === null ? null : pyrightServerCommand(script, root)
     },
-    startOptions: (root) => ({ onServerRequest: pythonConfigurationReply(root, findVenv(root, exists)) }),
+    startOptions: (root) => ({ onServerRequest: pythonConfigurationReply(findVenv(root, exists)) }),
     workspaceReady: (server) => pyrightWorkspaceReady(server),
     // `dist/typeshed-fallback` (the standard library's stubs) sits beside the entry.
     ownFolder: () => {
-      entry ??= resolvePyright({ ...places, exists })
-      return entry === null ? null : path.dirname(entry)
+      const script = entry()
+      return script === null ? null : path.dirname(script)
     },
   }
 }

@@ -11,11 +11,17 @@
  * not jump to an old place (YAZ-3454 nit).
  *
  * Only a code file opens (`fileKind` `text`): a jump never hands a stub such as `.pyi` to the OS.
+ *
+ * BACK RETURNS TO THE PLACE (YAZ-3458), as in VS Code: a code tab that a jump or a link leaves keeps its
+ * cursor and scroll under its history entry (`keepBackView`), and that entry, mounted again by Back or
+ * Forward, takes them (`takeBackView`). The folds are not in it: they are the file's (`codeFolds.ts`).
+ * At most `MAX_BACK_VIEWS` are kept, the oldest go first.
  */
 import { fileKind } from '@shared/fileKind'
 import { monaco } from './monaco'
 
 type Editor = ReturnType<typeof monaco.editor.create>
+type ViewState = NonNullable<ReturnType<Editor['saveViewState']>>
 
 export interface CodePlace {
   /** 1-based, as Monaco counts. */
@@ -25,6 +31,24 @@ export interface CodePlace {
 
 /** How long a place waits for its tab to mount: a cold tab loads its file first. */
 const PLACE_TTL_MS = 10_000
+/** How many left history entries keep their place: each one is a few numbers. */
+export const MAX_BACK_VIEWS = 100
+
+const backViews = new Map<string, ViewState>()
+
+/** Keeps the cursor and scroll of the history entry `key` that a code tab leaves (folds aside). */
+export function keepBackView(key: string, view: ViewState): void {
+  backViews.delete(key)
+  backViews.set(key, { ...view, contributionsState: {} })
+  if (backViews.size > MAX_BACK_VIEWS) backViews.delete(backViews.keys().next().value as string)
+}
+
+/** The cursor and scroll the history entry `key` was left with, once; undefined when none. */
+export function takeBackView(key: string): ViewState | undefined {
+  const view = backViews.get(key)
+  backViews.delete(key)
+  return view
+}
 
 const pending = new Map<string, CodePlace & { at: number }>()
 const shown = new Map<string, Set<(place: CodePlace) => void>>()
@@ -87,9 +111,9 @@ function install(): void {
 
 /**
  * Makes `editor` a code tab that jumps: its targets open through `onOpenFile`, and a jump to its
- * own `path` from another tab shows the place here. Shows the place a jump left for this tab.
+ * own `path` from another tab shows the place here. Shows the place a jump left for this tab (`placed`).
  */
-export function trackCodeTab(editor: Editor, path: string, onOpenFile: ((path: string) => void) | undefined): { dispose(): void } {
+export function trackCodeTab(editor: Editor, path: string, onOpenFile: ((path: string) => void) | undefined): { placed: boolean; dispose(): void } {
   install()
   if (onOpenFile !== undefined) openers.set(editor, onOpenFile)
   const focus = editor.onDidFocusEditorWidget(() => void (lastFocused = editor))
@@ -100,6 +124,7 @@ export function trackCodeTab(editor: Editor, path: string, onOpenFile: ((path: s
   const place = takePlace(path)
   if (place !== null) show(place)
   return {
+    placed: place !== null,
     dispose() {
       focus.dispose()
       openers.delete(editor)

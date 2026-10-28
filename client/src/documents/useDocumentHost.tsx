@@ -16,12 +16,12 @@
  * disk and a DIRTY one raises the conflict bar (Reload / Keep mine). A `CONFLICT` from the save
  * door itself — a stale `expectedMtime`, i.e. the other window got there first — raises the same
  * bar, and `Autosave` blocks further writes until one of the two buttons answers it. Two windows
- * on one board is exactly this rule seen from both sides.
+ * on one document is exactly this rule seen from both sides.
  *
  * RENAME AND DELETE. The host registers the shell's rename-continuity handle for its path, so a
  * rename flushes these bytes before the file moves and a DELETE retires the controller — without
  * which closing the tab would flush on unmount and resurrect the file that was just trashed. A
- * board stashes no buffer across a rename (`capture` answers null): it is flushed first, and the
+ * document stashes no buffer across a rename (`capture` answers null): it is flushed first, and the
  * tab at the new path reads it back off disk.
  *
  * THE READ-ONLY SWITCH (YAZ-3076 D1) is stored IN a board's file, so the host holds it as the file last
@@ -34,10 +34,11 @@
  * no `board:set-read-only` call, ever.
  *
  * THE APPLICATION MENU'S BOARD COMMANDS (Draw's 🔒 YAZ-1775 D10; the menu items are YAZ-3037) and the
- * TAB-REVEAL focus handoff (🔒 YAZ-1812) are both claimed on THIS host's own element: the shell keeps several boards
+ * TAB-REVEAL focus handoff (🔒 YAZ-1812) are both claimed on THIS host's own element: the shell keeps several documents
  * mounted, and exactly one of them is in front.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { isBoard } from '@shared/fileKind'
 import type { GithubSyncStatus, SaveDrawingResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { PageSettings } from '../editor/PageSettings'
@@ -121,7 +122,8 @@ export function useDocumentHost(options: DocumentHostOptions) {
       try {
         const res = await engine.current.write(expectedMtime)
         // Always-live share links (Draw's YAZ-1799, YAZ-3040): a shared board re-uploads once its saves settle.
-        noteBoardSaved(engine.current.root, engine.current.path)
+        // Only a board can be shared, so a code save never arms the share timer (YAZ-3458).
+        if (isBoard(engine.current.path)) noteBoardSaved(engine.current.root, engine.current.path)
         return res
       } catch (err) {
         // A stale guard is the conflict bar's business, not an error chip.
@@ -148,8 +150,8 @@ export function useDocumentHost(options: DocumentHostOptions) {
       if (typeof nowReadOnly === 'boolean') setReadOnlyShown(nowReadOnly)
       setConflictMtime(null)
     } catch {
-      // The file went, or stopped being a board: keep what is on screen and let the next save
-      // say so. A reload that cannot read must never blank the board in front of the user.
+      // The file went, or stopped being its kind: keep what is on screen and let the next save
+      // say so. A reload that cannot read must never blank the document in front of the user.
     }
   }, [])
 
@@ -200,7 +202,7 @@ export function useDocumentHost(options: DocumentHostOptions) {
         flush: async () => {
           if (!retired.current) await autosave.current?.flush()
         },
-        // A board stashes no buffer (see the module doc): flushed first, read back at the new path.
+        // A document stashes no buffer (see the module doc): flushed first, read back at the new path.
         capture: () => null,
         // …but Settings › Storage's shrink must know it has unsaved edits (YAZ-3039).
         dirty: () => autosave.current?.dirty === true,

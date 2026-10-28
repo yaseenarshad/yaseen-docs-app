@@ -3,10 +3,11 @@
  * in a note's order: the page cog, the text size pill (YAZ-3451), then the Read only chip while the tab
  * is locked. The sync and save chips follow from the host.
  *
- * The cog's first three rows are APP SETTINGS (YAZ-3438 D5, D6, D8), each labelled "(all code files)": each one
- * changes every code tab at once, the same field as its row in Settings › Code. The fourth, "Table of contents"
- * (YAZ-3506), is THIS file's, as a note's cog row is: saved with the file in the app state (`tocSwitches`). The
- * chip is this tab's: "Allow edits" unlocks this tab until it closes, and the setting stays on.
+ * The cog's first three rows are APP SETTINGS (YAZ-3438 D5, D6, D8), under the heading "All code files", each row
+ * on one line: each one changes every code tab at once, the same field as its row in Settings › Code. The fourth,
+ * "Table of contents" (YAZ-3506), after a line, is THIS file's, as a note's cog row is: saved with the file in the
+ * app state (`tocSwitches`). The chip is this tab's: "Allow edits" unlocks this tab until it closes, and the
+ * setting stays on.
  */
 import { DocumentZoom } from '../editor/DocumentZoom'
 import { PageSettings, type PageSwitch } from '../editor/PageSettings'
@@ -32,12 +33,11 @@ export interface CodeChipsProps {
 
 export function CodeChips({ settings, onChangeSettings, tableOfContents, zoom, onZoom, locked, asking, onAsk, onAllow, onCancel }: CodeChipsProps) {
   const row = (label: string, key: keyof CodeSettings): PageSwitch => ({ label, on: settings[key], onToggle: () => onChangeSettings?.({ [key]: !settings[key] }) })
-  const toc: PageSwitch[] = tableOfContents === undefined ? [] : [{ label: 'Table of contents', ...tableOfContents }]
   // No door to the settings (a test, a host that has none): no cog, since its rows could change nothing.
-  const switches = onChangeSettings === undefined ? null : [row('Read only (all code files)', 'codeReadOnly'), row('Wrap long lines (all code files)', 'codeWrap'), row('Minimap (all code files)', 'codeMinimap'), ...toc]
+  const switches = onChangeSettings === undefined ? null : [row('Read only', 'codeReadOnly'), row('Wrap long lines', 'codeWrap'), row('Minimap', 'codeMinimap')]
   return (
     <>
-      {switches !== null && <PageSettings switches={switches} />}
+      {switches !== null && <PageSettings switches={switches} switchesHeading="All code files" tableOfContents={tableOfContents?.on} onToggleTableOfContents={tableOfContents?.onToggle} />}
       <DocumentZoom value={zoom} onChange={onZoom} />
       {locked && <ReadOnlyChip asking={asking} onAsk={onAsk} onAllow={onAllow} onCancel={onCancel} />}
     </>

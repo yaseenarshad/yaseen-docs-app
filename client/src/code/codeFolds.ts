@@ -11,18 +11,16 @@
  * starts one timer; when it fires, the folded start lines are read from `saveViewState()` and the keys
  * written only when they changed. The pending keys are written when the tab closes.
  *
- * THE ONE INTERNAL DOOR. Monaco has no public "fold the region that starts on line n": the restore asks
- * the folding controller (`editor.contrib.folding`) for its model. That use is here alone, behind
- * `FoldingModelLike`; when it is missing (a file too big to fold, a later Monaco), nothing folds and
- * nothing throws.
+ * THE INTERNAL DOOR. Monaco has no public "fold the region that starts on line n": the restore asks
+ * the folding controller for its model (`foldingModelOf`, `monacoInternals.ts`); when it is missing (a
+ * file too big to fold, a later Monaco), nothing folds and nothing throws.
  */
+import { FOLDING, foldingModelOf } from './monacoInternals'
 
 /** Longest first-line text a key keeps: a minified line must not put a page of code into the app state. */
 export const MAX_KEY_TEXT = 200
 /** The wait after the last fold change before the keys are written. */
 export const FOLD_WRITE_DELAY_MS = 400
-
-const FOLDING = 'editor.contrib.folding'
 
 /** What the keys need of a text model: its lines, 1-based. */
 export interface LinesLike {
@@ -87,12 +85,6 @@ export function foldLinesOf(model: LinesLike, keys: readonly string[]): { lines:
   return { lines, missing: keys.filter((key) => !found.has(key)) }
 }
 
-/** The part of Monaco's folding model the restore uses (internal API, see the module doc). */
-interface FoldingModelLike {
-  regions: { length: number; getStartLineNumber(index: number): number; isCollapsed(index: number): boolean; toRegion(index: number): unknown }
-  toggleCollapseState(regions: unknown[]): void
-}
-
 /** What the folds need of the editor: public Monaco API, plus `getContribution` for the restore. */
 export interface FoldEditorLike {
   getModel(): LinesLike | null
@@ -143,8 +135,7 @@ export function attachFolds(editor: FoldEditorLike, options: { seed: readonly st
   }
 
   if (restoring) {
-    const controller = editor.getContribution(FOLDING) as { getFoldingModel?: () => Promise<FoldingModelLike | null> | null } | null
-    const ready = controller?.getFoldingModel?.() ?? null
+    const ready = foldingModelOf(editor)
     if (ready === null) restored()
     else
       void ready

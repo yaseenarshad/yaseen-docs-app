@@ -18,7 +18,9 @@ import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { readPageView } from '../lib/pageView'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
-import { BROKEN_CODE_DOCUMENT, CodeEditor, LARGE_CODE_CHARS, appCommandOf, stickyModelFor } from './CodeEditor'
+import { BROKEN_CODE_DOCUMENT, CodeEditor, appCommandOf, stickyModelFor } from './CodeEditor'
+import { LARGE_CODE_CHARS } from './outline/symbolSource'
+import { keepBackView, MAX_BACK_VIEWS, openCodeAt, takeBackView } from './codeOpener'
 import { applyAppTheme, created, resetFakeMonaco } from './monacoTestKit'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -365,8 +367,11 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
 
   it('the cog has the three rows, in order, with the settings as they are; each row writes its setting for all code files', async () => {
     await openTwo({ codeReadOnly: false, codeWrap: true, codeMinimap: false })
-    expect(cogRows('a')).toEqual(['Read only (all code files)', 'Wrap long lines (all code files)✓', 'Minimap (all code files)'])
+    expect(cogRows('a')).toEqual(['Read only', 'Wrap long lines✓', 'Minimap'])
     clickRow('a', 'Read only')
+    // One line each, under one heading that says they change every code file (the checker's nit on YAZ-3458).
+    expect(tab('a').querySelector('.page-settings__menu [role="group"]')?.getAttribute('aria-label')).toBe('All code files')
+    expect(tab('a').querySelector('.page-settings__menu .page-settings__label')?.textContent).toBe('All code files')
     expect(changeCode).toHaveBeenLastCalledWith({ codeReadOnly: true })
     clickRow('a', 'Wrap long lines')
     expect(changeCode).toHaveBeenLastCalledWith({ codeWrap: false })
@@ -384,7 +389,7 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     expect(created.editors.map((e) => e.options.readOnly)).toEqual([true, true])
     expect(chipIn('a')).not.toBeNull()
     expect(chipIn('b')).not.toBeNull()
-    expect(cogRows('a')[0]).toBe('Read only (all code files)✓')
+    expect(cogRows('a')[0]).toBe('Read only✓')
     // Nothing is written: the switch is a setting, never the file's.
     expect(setBoardReadOnly).not.toHaveBeenCalled()
   })
@@ -491,7 +496,7 @@ describe('the cog\'s "Table of contents" row: this file only (YAZ-3506)', () => 
   it('the row is labelled "Table of contents", on by default, after the rows for all code files; the panel is called "Table of contents"', async () => {
     twoTabs('pinned')
     await settle()
-    expect(openCog('a').map((b) => b.textContent)).toEqual(['Read only (all code files)', 'Wrap long lines (all code files)✓', 'Minimap (all code files)', 'Table of contents✓'])
+    expect(openCog('a').map((b) => b.textContent)).toEqual(['Read only', 'Wrap long lines✓', 'Minimap', 'Table of contents✓'])
     expect(toc('a')!.getAttribute('aria-label')).toBe('Table of contents')
     expect(tab('a').textContent).not.toContain('Outline')
   })
@@ -524,7 +529,7 @@ describe('the cog\'s "Table of contents" row: this file only (YAZ-3506)', () => 
     twoTabs('off')
     await settle()
     expect(toc('a')).toBeNull()
-    expect(openCog('a').map((b) => b.textContent)).toEqual(['Read only (all code files)', 'Wrap long lines (all code files)✓', 'Minimap (all code files)'])
+    expect(openCog('a').map((b) => b.textContent)).toEqual(['Read only', 'Wrap long lines✓', 'Minimap'])
   })
 })
 
@@ -632,6 +637,48 @@ describe('text size, scroll and Duplicate tab (YAZ-3451)', () => {
     // And it answers for itself the same way, live, for the next copy.
     act(() => editor().setScrollTop(300))
     expect(readPageView('copy')).toEqual({ scrollTop: 300, zoomKey: null, folds: ['function b() {'], magnification: 150 })
+  })
+})
+
+describe('Back returns to the place (YAZ-3458)', () => {
+  const FILE = 'a\nfunction b() {\n  c\n}\n'
+  async function at(viewKey: string, path = PATH): Promise<void> {
+    readFile.mockResolvedValueOnce(disk(FILE, 100, path))
+    act(() => root?.render(<CodeEditor root={ROOT} path={path} watch={watch} viewKey={viewKey} />))
+    await settle()
+  }
+  const leave = (): void => act(() => root?.render(<></>))
+
+  it('the entry a link or a jump leaves keeps its cursor and scroll; Back to it puts them back, once', async () => {
+    await at('tab-1:0')
+    expect(editor().restored).toEqual([])
+    editor().viewState = { cursor: { lineNumber: 3, column: 2 }, scrollTop: 57 }
+    leave()
+    await at('tab-1:0')
+    // The folds are the file's (`codeFolds.ts`), so the view state carries none.
+    expect(editor().restored).toEqual([{ cursor: { lineNumber: 3, column: 2 }, scrollTop: 57, contributionsState: {} }])
+    leave()
+    editor().restored.length = 0
+    await at('tab-1:1')
+    expect(editor().restored).toEqual([])
+  })
+
+  it('a jump to a place wins over the place the entry was left at', async () => {
+    await at('tab-2:0')
+    editor().viewState = { cursor: { lineNumber: 3, column: 2 }, scrollTop: 57 }
+    leave()
+    openCodeAt(PATH, { lineNumber: 2, column: 1 }, () => undefined)
+    await at('tab-2:0')
+    expect(editor().restored).toEqual([])
+    expect(editor().position).toEqual({ lineNumber: 2, column: 1 })
+  })
+
+  it(`keeps the last ${MAX_BACK_VIEWS} entries left, the oldest out first`, () => {
+    const view = { cursor: { lineNumber: 1, column: 1 }, scrollTop: 0 } as unknown as Parameters<typeof keepBackView>[1]
+    for (let i = 0; i <= MAX_BACK_VIEWS; i++) keepBackView(`limit:${i}`, view)
+    expect(takeBackView('limit:0')).toBeUndefined()
+    expect(takeBackView('limit:1')).toBeDefined()
+    expect(takeBackView(`limit:${MAX_BACK_VIEWS}`)).toBeDefined()
   })
 })
 
@@ -766,8 +813,13 @@ describe('collapse all and expand all (YAZ-3478)', () => {
     act(() => void editor().input.dispatchEvent(event))
     return event
   }
-  const cmdShiftU = { key: 'U', code: 'KeyU', metaKey: true, shiftKey: true }
-  const cmdShiftI = { key: 'I', code: 'KeyI', metaKey: true, shiftKey: true }
+  // The fold keys are matched by ProseMirror's keymap, which read the platform when it loaded (jsdom's: not a
+  // Mac), so `Mod` is the modifier that load chose; the rest of the tab reads the platform at each press.
+  const MOD = /Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true }
+  const cmdShiftU = { key: 'U', code: 'KeyU', keyCode: 85, shiftKey: true, ...MOD }
+  const cmdShiftI = { key: 'I', code: 'KeyI', keyCode: 73, shiftKey: true, ...MOD }
+  const cmdUp = { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38, ...MOD }
+  const cmdDown = { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, ...MOD }
   let platform: PropertyDescriptor | undefined
   beforeEach(() => {
     // The keys are the Mac's (⌘); jsdom's platform is empty.
@@ -829,11 +881,11 @@ describe('collapse all and expand all (YAZ-3478)', () => {
   it('S5: ⌘↑ folds the block at the cursor and ⌘↓ unfolds it, as in a note; Monaco never sees them (no top / bottom move)', async () => {
     await focused()
     act(() => editor().setPosition({ lineNumber: 6, column: 5 }))
-    const up = press({ key: 'ArrowUp', code: 'ArrowUp', metaKey: true })
+    const up = press(cmdUp)
     expect(up.defaultPrevented).toBe(true)
     expect([...editor().folded]).toEqual([5])
     expect(editor().position).toEqual({ lineNumber: 6, column: 5 })
-    press({ key: 'ArrowDown', code: 'ArrowDown', metaKey: true })
+    press(cmdDown)
     expect([...editor().folded]).toEqual([])
     expect(editor().triggered).toEqual(['editor.fold', 'editor.unfold'])
     expect(editor().keysSeen).toEqual([])
@@ -855,12 +907,12 @@ describe('collapse all and expand all (YAZ-3478)', () => {
   it('a fold key outside the code (the find box, a chip) is not a fold, and goes on to Monaco', async () => {
     await opened(FILE)
     press(cmdShiftU)
-    press({ key: 'ArrowUp', code: 'ArrowUp', metaKey: true })
+    press(cmdUp)
     expect(editor().triggered).toEqual([])
     expect(editor().keysSeen).toEqual(['U', 'ArrowUp'])
   })
 
-  it("S6: the code tab reads the note's own fold keys (FOLD_KEYS) at each press: a changed key works, the old one does not", async () => {
+  it("one table: the code tab matches the note's FOLD_KEYS at each press, with no copy (a changed entry works, the old key does not)", async () => {
     const keys = FOLD_KEYS as unknown as Record<string, string>
     const before = keys.foldAll
     keys.foldAll = 'Mod-Shift-y'
@@ -868,7 +920,7 @@ describe('collapse all and expand all (YAZ-3478)', () => {
       await focused()
       press(cmdShiftU)
       expect(editor().triggered).toEqual([])
-      press({ key: 'Y', code: 'KeyY', metaKey: true, shiftKey: true })
+      press({ key: 'Y', code: 'KeyY', keyCode: 89, shiftKey: true, ...MOD })
       expect(editor().triggered).toEqual(['editor.foldAll'])
     } finally {
       keys.foldAll = before

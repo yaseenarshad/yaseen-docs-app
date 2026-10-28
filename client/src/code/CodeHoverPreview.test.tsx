@@ -73,6 +73,23 @@ describe('CodeHoverPreview', () => {
     expect(card.querySelector('.board-preview__folder')!.textContent).toBe('src')
   })
 
+  it('defines and sets the theme only when the appearance changes, never for each card (the checker on YAZ-3458)', async () => {
+    readTextHead.mockImplementation(head('const a = 1\n'))
+    document.documentElement.dataset.theme = 'light'
+    await show()
+    act(() => root?.unmount())
+    applyAppTheme.mockClear()
+    await show('/v/src/other.ts')
+    expect(applyAppTheme).not.toHaveBeenCalled()
+    document.documentElement.dataset.theme = 'dark'
+    await act(async () => new Promise((r) => setTimeout(r, 0)))
+    expect(applyAppTheme).toHaveBeenCalledExactlyOnceWith('dark')
+    act(() => root?.unmount())
+    await show('/v/src/third.ts')
+    expect(applyAppTheme).toHaveBeenCalledTimes(1)
+    delete document.documentElement.dataset.theme
+  })
+
   it('a Dockerfile is coloured as a Dockerfile; a file Monaco has no language for is plain text', async () => {
     readTextHead.mockImplementation(head('FROM node:22\n'))
     await show('/v/Dockerfile')

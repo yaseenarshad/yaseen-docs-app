@@ -1,9 +1,9 @@
 /**
- * SETTINGS › CODE (YAZ-3449; YAZ-3438 D5, D6, D8): the three switches every code tab shares. Each one is
- * also a row of a code tab's page cog, which writes the same `SettingsState` field: a change here or there
+ * SETTINGS › CODE (YAZ-3449; YAZ-3438 D5, D6, D8): the four switches every code tab shares. The first three
+ * are also rows of a code tab's page cog, which write the same `SettingsState` field: a change here or there
  * reaches every open code tab at once. In the nav after Editor.
  *
- * - Open code files read only (D5; the cog row is "Read only (all code files)"): every code tab opens read only, with the Read only chip. "Allow edits" on a tab's chip
+ * - Open code files read only (D5; the cog row is "Read only", under "All code files"): every code tab opens read only, with the Read only chip. "Allow edits" on a tab's chip
  *   unlocks that tab until it closes; the setting stays.
  * - Wrap long lines (D8): on by default. Alt+Z flips one tab and saves nothing; a change here overrides it.
  * - Minimap (D6): off by default.
@@ -23,7 +23,7 @@ export const CODE_SECTION: SettingsSection = {
   title: 'Code',
   groups: [
     {
-      hint: 'For every code file (.ts, .py, .json, …). Each code tab’s page cog has the same switches, marked “(all code files)”.',
+      hint: 'For every code file (.ts, .py, .json, …). Each code tab’s page cog has the first three, under “All code files”.',
       items: [
         {
           id: 'codeReadOnly',

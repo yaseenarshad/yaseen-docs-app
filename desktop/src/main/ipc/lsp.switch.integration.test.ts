@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { CONTRACT } from '@shared/ipc'
 import type { LspLocation, LspOpenResponse } from '@shared/lsp'
 import type { LspHelpersState, LspInstallResult } from '@shared/lspInstall'
+import { MAX_FILE_BYTES } from '@shared/types'
 import { stopAllLanguageServers } from '../lsp/server'
 import { resolveTypescriptServer } from '../lsp/typescript'
 import type { LspPool } from '../lsp/pool'
@@ -95,6 +96,10 @@ describe.skipIf(binary === null)('the "Jump across files" switch at lsp:* (YAZ-3
     expect(pool.running()).toEqual([])
     // A bad request is still refused while off.
     await expect(call(CONTRACT.lsp.open, { root, path: 'p/src/a.ts', text: '' })).rejects.toMatchObject({ code: 'NOT_ABSOLUTE' })
+    // YAZ-3458: no text bigger than a file the code tab can read (`MAX_FILE_BYTES`, as `fs:read`).
+    const tooBig = 'x'.repeat(MAX_FILE_BYTES + 1)
+    await expect(call(CONTRACT.lsp.open, { root, path: file('p/src/a.ts'), text: tooBig })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(call(CONTRACT.lsp.change, 'h1', tooBig)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   })
 
   it('S3 then S4: on, a jump crosses files; off with the tab open, every helper stops within 2 s', async () => {

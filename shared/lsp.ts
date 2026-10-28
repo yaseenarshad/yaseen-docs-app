@@ -54,18 +54,15 @@ export interface LspHover {
   range?: LspRange
 }
 
-/** The LSP `languageId` of each extension the helpers take. */
+/** The LSP `languageId` of each extension the helpers take: only `text` kinds a tab opens (no `.mts`, `.cts`, `.pyi`). */
 const LANGUAGE_IDS: Record<string, { language: LspLanguage; languageId: string }> = {
   '.ts': { language: 'typescript', languageId: 'typescript' },
-  '.mts': { language: 'typescript', languageId: 'typescript' },
-  '.cts': { language: 'typescript', languageId: 'typescript' },
   '.tsx': { language: 'typescript', languageId: 'typescriptreact' },
   '.js': { language: 'typescript', languageId: 'javascript' },
   '.mjs': { language: 'typescript', languageId: 'javascript' },
   '.cjs': { language: 'typescript', languageId: 'javascript' },
   '.jsx': { language: 'typescript', languageId: 'javascriptreact' },
   '.py': { language: 'python', languageId: 'python' },
-  '.pyi': { language: 'python', languageId: 'python' },
 }
 
 /** The helper of a file and its LSP `languageId`; null for a file no helper takes. */

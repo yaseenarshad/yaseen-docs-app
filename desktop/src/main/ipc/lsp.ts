@@ -1,7 +1,9 @@
+import { Buffer } from 'node:buffer'
 import { existsSync } from 'node:fs'
 import { net, type IpcMainInvokeEvent } from 'electron'
 import { CONTRACT } from '@shared/ipc'
 import type { LspOpenRequest, LspPosition, LspPositionRequest } from '@shared/lsp'
+import { MAX_FILE_BYTES } from '@shared/types'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { requireRequest } from '../fs/validate'
 import { HelperInstaller, helpersFor, type Fetch } from '../lsp/download'
@@ -23,10 +25,16 @@ function requireHandle(raw: unknown): string {
   return raw
 }
 
+/** A file's text for a helper: no bigger than a file the code tab can read (`MAX_FILE_BYTES`, as `fs:read`). */
+function requireText(raw: unknown): string {
+  if (typeof raw !== 'string') throw new BridgeFailure('BAD_REQUEST', "'text' must be a string")
+  if (Buffer.byteLength(raw, 'utf8') > MAX_FILE_BYTES) throw new BridgeFailure('BAD_REQUEST', `'text' exceeds ${MAX_FILE_BYTES} bytes`)
+  return raw
+}
+
 function requireOpen(raw: unknown): LspOpenRequest {
   const req = requireRequest(raw)
-  if (typeof req.text !== 'string') throw new BridgeFailure('BAD_REQUEST', "'text' must be a string")
-  return { root: requireAbsPath(req.root, 'root'), path: requireAbsPath(req.path, 'path'), text: req.text }
+  return { root: requireAbsPath(req.root, 'root'), path: requireAbsPath(req.path, 'path'), text: requireText(req.text) }
 }
 
 function requirePositionRequest(raw: unknown): LspPositionRequest {
@@ -103,8 +111,7 @@ export function registerLspIpc(places: LspPlaces, helpersSwitch?: HelpersSwitch,
     return switchOn() ? pool.open(ownerOf(e), open) : null
   })
   handleWithEvent(CONTRACT.lsp.change, async (e, handle: unknown, text: unknown) => {
-    if (typeof text !== 'string') throw new BridgeFailure('BAD_REQUEST', "'text' must be a string")
-    pool.change(ownerOf(e), requireHandle(handle), text)
+    pool.change(ownerOf(e), requireHandle(handle), requireText(text))
   })
   handleWithEvent(CONTRACT.lsp.close, async (e, handle: unknown) => pool.close(ownerOf(e), requireHandle(handle)))
   handleWithEvent(CONTRACT.lsp.definition, async (e, req: unknown) => {

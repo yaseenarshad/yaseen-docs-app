@@ -6,8 +6,8 @@
  *
  * LIGHT. No editor and no model: `monaco.editor.colorize` turns the first `TEXT_HEAD_LINES` lines into coloured
  * spans, with the language Monaco would give a tab of this file (`languageForPath`), in the app's Monaco theme
- * (`applyAppTheme`, light and dark). Its own chunk, with Monaco's: the hover host starts loading it when a code
- * row's dwell starts.
+ * (`applyAppTheme`, light and dark), defined and set only when the appearance changes, never for each card. Its
+ * own chunk, with Monaco's: the hover host starts loading it when a code row's dwell starts.
  *
  * SMALL READS. `api.readTextHead` reads at most `TEXT_HEAD_READ_BYTES` off disk, so a rest on a 5 MB file sends a
  * few KB. A file the code tab cannot open (too big, not UTF-8, a NUL) shows "Preview unavailable", as a note
@@ -39,6 +39,9 @@ export interface CodeHoverPreviewProps {
 
 type Card = { kind: 'loading' } | { kind: 'ready'; html: string; empty: boolean } | { kind: 'gone' }
 
+/** The appearance the cards last set Monaco's theme for. The theme is one for the page, so a card only sets a new one. */
+let themedFor: 'light' | 'dark' | null = null
+
 /** The first `TEXT_HEAD_LINES` lines of `text` as Monaco's coloured HTML (escaped by Monaco), for `path`'s language. */
 export function colorizeHead(text: string, path: string): Promise<string> {
   const head = text.split('\n').slice(0, TEXT_HEAD_LINES).join('\n')
@@ -50,7 +53,11 @@ export default function CodeHoverPreview({ root, path, name, anchor }: CodeHover
   const placement = usePlacement(anchor, 'note')
   const [card, setCard] = useState<Card>({ kind: 'loading' })
   // The app's colours for the `mtkN` classes: the same theme a code tab sets, again on each Appearance change.
-  useEffect(() => applyAppTheme(theme), [theme])
+  useEffect(() => {
+    if (themedFor === theme) return
+    themedFor = theme
+    applyAppTheme(theme)
+  }, [theme])
   useEffect(() => {
     let live = true
     api

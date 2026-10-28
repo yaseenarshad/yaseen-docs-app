@@ -21,7 +21,7 @@ import { CodeEditor } from './CodeEditor'
 import { MAX_PREVIEWS, SYNC_DEBOUNCE_MS } from './languageClient'
 import { setLanguageHelpers } from './languageHelpers'
 import type { CodeSymbol } from './outline/outlineModel'
-import { readSymbols } from './outline/symbolSource'
+import { LARGE_CODE_CHARS, readSymbols } from './outline/symbolSource'
 import { created, monaco, registered, resetFakeMonaco, type FakeEditor, type FakeModel, type FakeUri } from './monacoTestKit'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -163,6 +163,17 @@ describe('the switch: "Jump across files", off by default (YAZ-3500)', () => {
       ['make', []],
     ])
     expect(lsp.open).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-3458: a .py file from LARGE_CODE_CHARS reads no symbol on the page (its cost grows with the file)', async () => {
+    offByDefault()
+    const big = 'class Shape:\n    def area(self):\n        return 0\n'.repeat(Math.ceil(LARGE_CODE_CHARS / 48))
+    files['/vault/big.py'] = big
+    const { editor, model } = await opened('/vault/big.py')
+    expect(await readSymbols(editor as never, model as never)).toEqual([])
+    files['/vault/small.py'] = big.slice(0, LARGE_CODE_CHARS - 100)
+    const small = await opened('/vault/small.py')
+    expect(((await readSymbols(small.editor as never, small.model as never)) as readonly CodeSymbol[]).length).toBeGreaterThan(1000)
   })
 })
 

@@ -5,15 +5,15 @@ import { RpcConnection, type NotificationHandler, type RequestHandler } from './
 /**
  * Starts one language server (LSP) as a child process of the main process and owns its life
  * (YAZ-3453, 4A of the code tab's jump-by-meaning, D9). A server is a command, its arguments
- * and a working folder, so the TypeScript helper (`typescript.ts`) and a later Python one
- * (`pyright`, 4C, which runs on Electron's own Node: `process.execPath` + `ELECTRON_RUN_AS_NODE=1`)
+ * and a working folder, so the TypeScript helper (`typescript.ts`) and the Python one
+ * (`pyright`, `python.ts`, which runs on Electron's own Node: `process.execPath` + `ELECTRON_RUN_AS_NODE=1`)
  * use the same code.
  *
  * `child_process.spawn`, not Electron's `utilityProcess`: `utilityProcess.fork` starts a Node
  * script, and the TypeScript 7 helper is a native binary. Talk is JSON-RPC over the child's
  * stdin and stdout (`rpc.ts`); stderr is kept, last 8 KB, for the error message of a failed start.
  *
- * No renderer talks to it yet: 4B adds the IPC door. Every started server is in one set, and
+ * The renderer reaches it through `ipc/lsp.ts` and the pool (`pool.ts`). Every started server is in one set, and
  * `stopAllLanguageServers` (the quit sequence) stops each one: `shutdown`, `exit`, then a kill.
  */
 

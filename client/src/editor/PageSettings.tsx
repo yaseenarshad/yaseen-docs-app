@@ -28,10 +28,11 @@ export interface PageSwitch {
  * While read only is on, the row closes the menu and the host opens the chip's "Allow edits?" box
  * (D4, S47); while it is off, the row turns it on at once and the menu stays open (S43).
  *
- * A code tab (YAZ-3449) passes its own rows instead, as `switches`: "Read only (all code files)", "Wrap long
- * lines", "Minimap". Each one changes an app setting for every code file; the menu stays open, as for any row.
+ * A code tab (YAZ-3449) passes its own rows instead, as `switches`: "Read only", "Wrap long lines" and
+ * "Minimap", under the heading "All code files", each one an app setting for every code file; then "Table of
+ * contents" (YAZ-3506), this file's only. The menu stays open, as for any row.
  */
-export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, switches, readText }: {
+export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, switches, switchesHeading, readText }: {
   /** The file's read-only switch (YAZ-3076 D1): a note, a drawing and a diagram have it. */
   readOnly?: boolean
   /** Off → the host turns it on; on → the host opens the "Allow edits?" box (this menu closes first). Absent → no row (a file with no switch, YAZ-3448). */
@@ -55,6 +56,8 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   onChangeTocSource?: (source: TocSource | null) => void
   /** Plain rows after "Read only" (a code tab's three, YAZ-3449); absent or empty → none. */
   switches?: readonly PageSwitch[]
+  /** A small heading over `switches`, which then form one group (a code tab: "All code files"), and a line after it. */
+  switchesHeading?: string
   /** The page's plain text. Read once when the menu opens, never while it is closed. Absent → no counts (a board). */
   readText?: () => string
 }) {
@@ -93,6 +96,10 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
     }
   }, [open])
 
+  const switchRows = switches?.map(({ label, on, onToggle }) => <button key={label} type="button" aria-pressed={on} onClick={onToggle}>
+    <span>{label}</span><span aria-hidden="true">{on ? '✓' : ''}</span>
+  </button>)
+
   return (
     <div ref={rootRef} className="page-settings"
       onKeyDown={(event) => {
@@ -114,9 +121,13 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         }}>
           <span>Read only</span><span aria-hidden="true">{readOnly ? '✓' : ''}</span>
         </button>}
-        {switches?.map(({ label, on, onToggle }) => <button key={label} type="button" aria-pressed={on} onClick={onToggle}>
-          <span>{label}</span><span aria-hidden="true">{on ? '✓' : ''}</span>
-        </button>)}
+        {switchesHeading === undefined ? switchRows : <>
+          <div role="group" aria-label={switchesHeading}>
+            <p className="page-settings__label" aria-hidden="true">{switchesHeading}</p>
+            {switchRows}
+          </div>
+          <div className="page-settings__divider" aria-hidden="true" />
+        </>}
         {onToggleLineNumbers !== undefined && <button type="button" aria-pressed={lineNumbers} onClick={onToggleLineNumbers}>
           <span>Line numbers</span><span aria-hidden="true">{lineNumbers ? '✓' : ''}</span>
         </button>}

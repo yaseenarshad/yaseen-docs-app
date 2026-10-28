@@ -48,6 +48,7 @@ import { fetchTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
+import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
@@ -279,7 +280,7 @@ export function App() {
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
     tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
-    closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
+    closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, history: tabHistory, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
     moveRight, transferMainToRight, transferRightToMain,
@@ -566,7 +567,7 @@ export function App() {
   const changeCanvasPrefs = useCallback((canvas: CanvasPrefs) => changeSettings({ ...newNoteFolderInputs.current.settings, canvas }), [changeSettings])
   // A code tab's cog row (YAZ-3449): Settings › Code, for every code file, through the same stable door.
   // The code Outline's "…" menu (YAZ-3486) writes its sort and hidden kinds through it too.
-  const changeCodeSettings = useCallback((patch: Partial<Pick<SettingsState, 'codeReadOnly' | 'codeWrap' | 'codeMinimap' | 'codeOutlineSort' | 'codeOutlineHidden' | 'codeOutlineLocals'>>) => changeSettings({ ...newNoteFolderInputs.current.settings, ...patch }), [changeSettings])
+  const changeCodeSettings = useCallback((patch: CodeSettingsPatch) => changeSettings({ ...newNoteFolderInputs.current.settings, ...patch }), [changeSettings])
   // The canvas panel's tab and dock choice (YAZ-3038): the same stable door; a choice that did not move is no write.
   const changeCanvasPanel = useCallback(
     (canvasPanel: CanvasPanelState) => {
@@ -2748,7 +2749,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} />
+                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`${id}:${tabHistory[id]?.index ?? 0}`} />
                 </div>
               )
             })}

@@ -1,7 +1,7 @@
 /**
  * WHERE THE CODE OUTLINE'S SYMBOLS COME FROM (YAZ-3486). No language helper, for any language
  * (YAZ-3439 "The Python Outline is read from the text, with no helper"):
- *  - A `.py` / `.pyi` file: the text itself (`pythonSymbols.ts`). Monaco has no symbols for Python.
+ *  - A `.py` file: the text itself (`pythonSymbols.ts`). Monaco has no symbols for Python.
  *  - A TS, JS or React file: the TS worker makes the whole tree and hands over one packed buffer
  *    (`getOutlineTree`, `code/tsWorker.ts`; YAZ-3501). The symbols are the ones Monaco's TS provider
  *    gives, by the same rules; only the work moves off the page's thread. Monaco's own path cost the
@@ -12,15 +12,18 @@
  *    its sticky scroll and Go to Symbol read.
  * A file with neither (`.lua`, `.md` as code) answers no symbol: no Outline, and no error (S11).
  *
- * THE ONE INTERNAL DOOR. Monaco has no public "give me the document symbols of this model". Its
- * command `_executeDocumentSymbolProvider` gives them (every provider of the model's language, merged
- * as VS Code's Outline merges them), and the editor's own command service runs it. That service is a
- * private field of the editor (`_commandService`); its use is here alone, behind
- * `CommandServiceLike`. When it is missing (a later Monaco), the answer is null: no Outline, nothing
- * throws. A deep import of Monaco's services was the other way, and it would make Vite's dev server
- * bundle Monaco twice.
+ * A LARGE FILE (`LARGE_CODE_CHARS`) reads symbols only in the TS worker. The Python reader and Monaco's other
+ * providers run on the page's thread, and their cost grows with the file (YAZ-3458, measured with
+ * `codeTab.spec.ts` step 11's probe, the table of contents on, then Off): a pause in the typing gave a long task
+ * of 720–960 ms in a 5.4 MB JSON file, 340–460 ms in 6 MB of HTML, 90 ms in 5.3 MB of Python, and none with the
+ * table of contents Off. So above the limit such a file has no symbol: no table of contents.
+ *
+ * THE INTERNAL DOOR. Monaco has no public "give me the document symbols of this model": the editor's
+ * own command service gives them (`documentSymbolsOf`, `monacoInternals.ts`). When it is missing (a later
+ * Monaco), the answer is null: no table of contents, nothing throws.
  */
 import { monaco } from '../monaco'
+import { documentSymbolsOf } from '../monacoInternals'
 import { pythonSymbols } from '../pythonSymbols'
 import type { CodeSymbol, OutlineTree } from './outlineModel'
 import { unpackTree } from './outlinePack'
@@ -28,12 +31,8 @@ import { unpackTree } from './outlinePack'
 type Model = ReturnType<typeof monaco.editor.createModel>
 type Editor = ReturnType<typeof monaco.editor.create>
 
-/** The part of Monaco's command service the read uses (internal API, see the module doc). */
-interface CommandServiceLike {
-  executeCommand(id: string, ...args: unknown[]): Promise<unknown>
-}
-
-const DOCUMENT_SYMBOLS = '_executeDocumentSymbolProvider'
+/** A LARGE CODE FILE (YAZ-3501) from this many characters (512 KB of ASCII): sticky scroll reads its indentation, and only the TS worker reads its symbols. */
+export const LARGE_CODE_CHARS = 512 * 1024
 
 /** What the TS worker's proxy answers for the Outline (`code/tsWorker.ts`). */
 interface OutlineWorker {
@@ -61,18 +60,12 @@ async function readTsTree(model: Model, showLocals: boolean): Promise<OutlineTre
  */
 export async function readSymbols(editor: Editor, model: Model, showLocals = false): Promise<OutlineTree | readonly CodeSymbol[] | null> {
   const language = model.getLanguageId()
-  if (language === 'python') return pythonSymbols(model.getValue())
   if (language === 'typescript' || language === 'javascript') {
     const tree = await readTsTree(model, showLocals)
     if (tree !== undefined) return tree
   }
-  const commands = (editor as unknown as { _commandService?: CommandServiceLike })._commandService
-  if (typeof commands?.executeCommand !== 'function') return null
-  try {
-    const symbols = await commands.executeCommand(DOCUMENT_SYMBOLS, model.uri)
-    return Array.isArray(symbols) ? (symbols as CodeSymbol[]) : null
-  } catch {
-    // A provider that failed, a model gone under the request: no answer this time.
-    return null
-  }
+  // The page's thread: nothing that grows with a large file (see the module doc).
+  if (model.getValueLength() >= LARGE_CODE_CHARS) return []
+  if (language === 'python') return pythonSymbols(model.getValue())
+  return (await documentSymbolsOf(editor, model.uri)) as CodeSymbol[] | null
 }

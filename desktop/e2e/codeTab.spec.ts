@@ -18,6 +18,7 @@
  * - YAZ-3501 (bug): typing in the 5 MB file: each key draws within a frame, with no long task after a pause.
  * - YAZ-3502 (bug): a quit right after an edit of the 5 MB file: the flush and the app's quit steps are quick.
  * - YAZ-3503 (bug): Monaco's menu rows are the app's menu rows to the pixel (step 6).
+ * - YAZ-3458: LF, CRLF, mixed and BOM files keep their bytes through an edit, a save and a reopen (step 10b).
  *
  * Same harness as viewers.spec.ts: temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `codeTab-` screenshots, hidden windows. Keys and the wheel go to the page through Playwright, never
@@ -27,7 +28,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, fileRow, launchApp, layer, menuItem, menuListItem, seededState, shoot, tabsOf } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, fileRow, launchApp, layer, menuItem, menuListItem, readState, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -65,9 +66,25 @@ const OUTLINE_BODY = `export class Pipeline {\n${Array.from({ length: 40 }, (_, 
 const PY_FILE = 'outline_demo.py'
 const PY_BODY = 'class Greeter:\n    def hello(self, name: str) -> str:\n        return "hi " + name\n\n\ndef main() -> None:\n    print(Greeter().hello("you"))\n'
 const LUA_FILE = 'outline-none.lua'
+/** YAZ-3458: a `.py` file over `LARGE_CODE_CHARS` (512 Ki characters): its symbols would be read on the page, so it has none. */
+const BIG_PY_FILE = 'outline-big.py'
+const BIG_PY_BODY = Array.from({ length: 13_000 }, (_, i) => `class Row${i}:\n    def value(self) -> int:\n        return ${i}\n`).join('\n')
 /** `speed/big-5mb.ts`'s shape: 52 000 exported constants, each an object literal of 4 properties. */
 const BIG_FILE = 'outline-big-5mb.ts'
 const BIG_BODY = `// About 5 MB.\n${Array.from({ length: 52_000 }, (_, i) => `export const value${i} = { id: ${i}, name: 'row ${i}', tags: ['alpha', 'beta', 'gamma'], active: ${i % 2 === 0 ? 'false' : 'true'} }`).join('\n')}\n`
+
+/**
+ * YAZ-3458 (audit item 3; YAZ-3439 "Verification expectations"; YAZ-3445 S1–S4): the real Monaco's line breaks
+ * and BOM, byte for byte. Each file gets one key at its very start; the save writes it; the tab closes and opens
+ * again; the bytes on disk are the expected bytes, every line break and the BOM kept (a mixed file saves every
+ * line with its first break, rule 42).
+ */
+const BYTES: Record<string, { before: string; after: string }> = {
+  'bytes-lf.ts': { before: 'const a = 1\nconst b = 2\n', after: 'qconst a = 1\nconst b = 2\n' },
+  'bytes-crlf.json': { before: '{\r\n  "a": 1\r\n}\r\n', after: 'q{\r\n  "a": 1\r\n}\r\n' },
+  'bytes-mixed.py': { before: 'first = 1\r\nsecond = 2\nthird = 3\r\n', after: 'qfirst = 1\r\nsecond = 2\r\nthird = 3\r\n' },
+  'bytes-bom.ps1': { before: '\ufeffWrite-Host "a"\r\nexit 0\r\n', after: '\ufeffqWrite-Host "a"\r\nexit 0\r\n' },
+}
 
 let userData: string
 let vaultSrc: string
@@ -82,7 +99,8 @@ test.beforeAll(async () => {
   await writeFile(path.join(vault, FILE), FILE_BODY)
   await Promise.all(Object.entries(TYPED).map(([name, t]) => writeFile(path.join(vault, name), t.body)))
   await Promise.all(Object.entries(NAMED).map(([name, t]) => writeFile(path.join(vault, name), t.body)))
-  await Promise.all([writeFile(path.join(vault, OUTLINE_FILE), OUTLINE_BODY), writeFile(path.join(vault, PY_FILE), PY_BODY), writeFile(path.join(vault, LUA_FILE), 'local x = 1\nprint(x)\n'), writeFile(path.join(vault, BIG_FILE), BIG_BODY)])
+  await Promise.all(Object.entries(BYTES).map(([name, { before }]) => writeFile(path.join(vault, name), before)))
+  await Promise.all([writeFile(path.join(vault, OUTLINE_FILE), OUTLINE_BODY), writeFile(path.join(vault, PY_FILE), PY_BODY), writeFile(path.join(vault, LUA_FILE), 'local x = 1\nprint(x)\n'), writeFile(path.join(vault, BIG_PY_FILE), BIG_PY_BODY), writeFile(path.join(vault, BIG_FILE), BIG_BODY)])
 })
 
 test.afterAll(async () => {
@@ -111,7 +129,10 @@ test('step 1 — YAZ-3477: the cog menu shows above the sticky scroll lines', as
 
   await layer(win).locator('.page-settings__trigger').click()
   const rows = layer(win).locator('.page-settings__menu button')
-  await expect(rows).toHaveText(['Read only (all code files)', 'Wrap long lines (all code files)', 'Minimap (all code files)', 'Table of contents'].map((label) => new RegExp(`^${label.replace(/[()]/g, '\\$&')}`)))
+  await expect(rows).toHaveText(['Read only', 'Wrap long lines', 'Minimap', 'Table of contents'].map((label) => new RegExp(`^${label}`)))
+  // The checker's nit (YAZ-3458): the first three sit under one heading, "All code files", and each row is one line.
+  await expect(layer(win).locator('.page-settings__menu [role="group"]')).toHaveAttribute('aria-label', 'All code files')
+  for (const row of await rows.all()) expect((await row.boundingBox())!.height, await row.innerText()).toBeLessThan(30)
   await shoot(win, 'codeTab-01-cog-over-sticky')
   for (const row of await rows.all()) {
     const box = await row.boundingBox()
@@ -148,7 +169,8 @@ test('step 2 — YAZ-3478 S1: ⌘⇧U folds every block; close the tab and reope
   await expect(lines(win)).not.toContainText('step1()')
   await expect(collapsed(win)).toHaveCount(1) // the class line, with every method folded inside it
   await shoot(win, 'codeTab-03-fold-all')
-  await win.waitForTimeout(600) // the 400 ms fold write
+  // The 400 ms fold write: the keys reach the app state file.
+  await expect.poll(async () => (await readState(userData)).folders[vault]?.folds[path.join(vault, FILE)] ?? [], { timeout: 10_000 }).toEqual(['export class Pipeline {', 'step1() {', 'step2() {', 'step3() {', 'step4() {'])
   await tabsOf(win).filter({ hasText: FILE }).locator('..').locator('.tabbar__close').click()
   await expect(code(win)).toHaveCount(0)
   await fileRow(win, FILE).click()
@@ -409,7 +431,7 @@ test('step 9 — YAZ-3486: the code Outline lists the symbols; filter, collapse,
   await expect(outline(win).locator('.outline__row[aria-current="true"] .outline__name')).toHaveText('step25')
 })
 
-test('step 10 — YAZ-3486 S10, S11: a .py file lists its class and functions; a .lua file has no Outline', async () => {
+test('step 10 — YAZ-3486 S10, S11: a .py file lists its class and functions; a .lua file has no Outline; nor has a large .py file (YAZ-3458)', async () => {
   test.setTimeout(60_000)
   await fileRow(win, PY_FILE).click()
   await expect(lines(win)).toContainText('class Greeter')
@@ -420,6 +442,32 @@ test('step 10 — YAZ-3486 S10, S11: a .py file lists its class and functions; a
   await expect(lines(win)).toContainText('local x = 1')
   await win.waitForTimeout(800)
   await expect(outline(win)).toHaveCount(0)
+  // YAZ-3458: a large .py file reads no symbol on the page, so it has no table of contents.
+  expect(BIG_PY_BODY.length).toBeGreaterThan(512 * 1024)
+  await fileRow(win, BIG_PY_FILE).click()
+  await expect(lines(win)).toContainText('class Row0')
+  await win.waitForTimeout(800)
+  await expect(outline(win)).toHaveCount(0)
+})
+
+test('step 10b — YAZ-3458: LF, CRLF, mixed and BOM files: one key, the save, close and reopen: the bytes on disk are exact', async () => {
+  test.setTimeout(60_000)
+  for (const [name, { before, after }] of Object.entries(BYTES)) {
+    const file = path.join(vault, name)
+    await fileRow(win, name).click()
+    await expect(lines(win)).toContainText(before.replace('\ufeff', '').split(/\r?\n/)[0])
+    await code(win).locator('.view-line').first().click()
+    await win.keyboard.press('Meta+Home')
+    await win.keyboard.type('q')
+    await expect.poll(async () => (await readFile(file)).equals(Buffer.from(after, 'utf8')), { timeout: 10_000, message: name }).toBe(true)
+    await tabsOf(win).filter({ hasText: name }).locator('..').locator('.tabbar__close').click()
+    await expect(code(win)).toHaveCount(0)
+    await fileRow(win, name).click()
+    await expect(lines(win)).toContainText(`q${before.replace('\ufeff', '').split(/\r?\n/)[0]}`)
+    // Opening writes nothing: the bytes stay the ones the save wrote.
+    await win.waitForTimeout(700)
+    expect((await readFile(file)).equals(Buffer.from(after, 'utf8')), name).toBe(true)
+  }
 })
 
 /**

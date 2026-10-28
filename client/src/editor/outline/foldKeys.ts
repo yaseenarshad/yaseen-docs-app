@@ -7,8 +7,8 @@
  * The names are ProseMirror's (`Mod` is ⌘ on a Mac, Ctrl elsewhere). These keys are built in: Settings ›
  * Hotkeys shows them as text (`settings/hotkeys.ts`), and no override changes them today.
  *
- * Only the table here: this module is in the eager chunk (the note keymaps), so the matcher a code tab
- * uses lives in its own lazy chunk (`code/foldKeyMatch.ts`). No import.
+ * Only the table here: this module is in the eager chunk (the note keymaps). A code tab matches it with
+ * ProseMirror's own keymap, as a read-only note does (`code/foldKeyMatch.ts`). No import.
  */
 export const FOLD_KEYS = {
   /** Fold every bullet and heading; in a code tab, every block. */

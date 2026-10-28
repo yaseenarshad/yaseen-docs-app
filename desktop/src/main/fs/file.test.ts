@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mkdir, readdir, readFile as fsReadFile, utimes, writeFile as fsWriteFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile as fsReadFile, rm, utimes, writeFile as fsWriteFile } from 'node:fs/promises'
 import path from 'node:path'
 import { readFile, writeFile } from './file'
 import { failure, makeFixture } from './testFixture'
@@ -140,6 +140,31 @@ describe('writeFile', () => {
 
     it('S9 (D2): a .yaml file that starts with --- saves whole, nothing split as frontmatter', () =>
       roundTrip('compose.yaml', '---\nname: a\n---\nb: 1\n', '---\nname: a\n---\nb: 2\n'))
+
+    // YAZ-3458 (audit item 1): the door writes a code file, it never makes one.
+    it('a missing code file with no expectedMtime is NOT_FOUND and nothing is created', async () => {
+      for (const name of ['new.sh', 'Makefile', 'fresh.env']) {
+        const file = path.join(root, name)
+        expect(await code(writeFile({ path: file, content: 'x\n' })), name).toBe('NOT_FOUND')
+        expect((await readdir(root)).filter((n) => n.startsWith(name)), name).toEqual([])
+      }
+    })
+
+    it('a code file read, then deleted by another app, is put back by the save (as VS Code does)', async () => {
+      const file = path.join(root, 'gone.ts')
+      await fsWriteFile(file, 'export const v = 1\n')
+      const read = await readFile(file)
+      await rm(file)
+      await writeFile({ path: file, content: 'export const v = 2\n', expectedMtime: read.mtime })
+      expect(await fsReadFile(file, 'utf8')).toBe('export const v = 2\n')
+    })
+
+    it('a code file path that is a folder is NOT_A_FILE', async () => {
+      const dir = path.join(root, 'folder.ts')
+      await mkdir(dir)
+      expect(await code(writeFile({ path: dir, content: 'x' }))).toBe('NOT_A_FILE')
+      expect(await code(writeFile({ path: dir, content: 'x', expectedMtime: 1 }))).toBe('NOT_A_FILE')
+    })
 
     it('CONFLICT: a stale mtime rejects with the disk mtime and writes nothing', async () => {
       const file = path.join(root, 'stale.ts')

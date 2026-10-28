@@ -11,11 +11,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { GithubSyncStatus } from '@shared/types'
 
 import { BridgeRequestError } from '../api'
+import { noteBoardSaved } from '../share/liveShare'
 import type { Autosave } from '../lib/autosave'
 import { _resetRenameContinuity, flushRenamedPath, retireDeletedPath } from '../lib/renameContinuity'
 import { BOARD_COMMAND_EVENT, requestBoardCommand } from './boardCommand'
 import { fakeWatch, withRevealObserver } from './boardTestKit'
 import { DocumentChips, exportWithNotice, useDocumentHost } from './useDocumentHost'
+
+vi.mock('../share/liveShare', () => ({ noteBoardSaved: vi.fn() }))
 
 const ROOT = '/vault'
 const PATH = '/vault/Board.excalidraw'
@@ -36,8 +39,8 @@ let root: Root | null = null
 let container: HTMLElement
 
 /** The engine's stand-in: the hook, its bar and its chips in a board section. */
-function Host({ sync, onSyncNow, readOnly = false, readOnlySwitch }: { sync?: GithubSyncStatus | null; onSyncNow?: () => void; readOnly?: boolean; readOnlySwitch?: boolean }) {
-  board = useDocumentHost({ root: ROOT, path: PATH, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus, readOnly, readOnlySwitch, onNotice })
+function Host({ path = PATH, sync, onSyncNow, readOnly = false, readOnlySwitch }: { path?: string; sync?: GithubSyncStatus | null; onSyncNow?: () => void; readOnly?: boolean; readOnlySwitch?: boolean }) {
+  board = useDocumentHost({ root: ROOT, path, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus, readOnly, readOnlySwitch, onNotice })
   return (
     <section className="editor editor--drawing">
       <div ref={board.hostRef}>
@@ -480,6 +483,19 @@ describe('a file with no read-only switch (YAZ-3448: a code file)', () => {
     await after(500)
     expect(write).toHaveBeenCalledExactlyOnceWith(100)
     expect(setBoardReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-3458: a code save never runs the share upload; a board save does', async () => {
+    opened({ path: '/vault/app.ts', readOnlySwitch: false })
+    edit(1)
+    await after(500)
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(noteBoardSaved).not.toHaveBeenCalled()
+    act(() => root?.render(null))
+    opened()
+    edit(1)
+    await after(500)
+    expect(noteBoardSaved).toHaveBeenCalledExactlyOnceWith(ROOT, PATH)
   })
 
   it('a reload that answers nothing leaves it off', async () => {

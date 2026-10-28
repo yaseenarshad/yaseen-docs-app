@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import type { LanguageSpec } from './pool'
-import { helperFolder, typescriptPin } from './download'
-import { findProjectRoot } from './projectRoot'
+import { helperFolder, tscBinary, typescriptPin } from './download'
+import { findProjectRoot, isInside } from './projectRoot'
 import type { ServerCommand } from './server'
 
 /**
@@ -26,10 +26,6 @@ export function typescriptPackage(platform: NodeJS.Platform, arch: string): stri
   return `@typescript/typescript-${platform}-${arch}`
 }
 
-function binaryName(platform: NodeJS.Platform): string {
-  return platform === 'win32' ? 'tsc.exe' : 'tsc'
-}
-
 /**
  * The binary's path: the downloaded copy of the pinned version under `lspRoot`, else (`devCopies`, a dev
  * build) the first `node_modules` copy from `appPath` (the `desktop/` folder) upward that `exists`; null when
@@ -43,7 +39,7 @@ export function resolveTypescriptServer(opts: {
   arch: string
   exists: (p: string) => boolean
 }): string | null {
-  const exe = binaryName(opts.platform)
+  const exe = tscBinary(opts.platform)
   const pin = typescriptPin(opts.platform, opts.arch)
   if (pin !== null) {
     const downloaded = path.join(helperFolder(opts.lspRoot, pin), 'lib', exe)
@@ -76,18 +72,22 @@ export interface LspPlaces {
   appPath: string
 }
 
-/** A memo of one lookup on disk that found the binary: it does not move while the app runs. A miss is asked again (a download may come). */
-function onceFound<T>(fn: () => T | null): () => T | null {
+/** A memo of one lookup on disk that found a helper: it does not move while the app runs. A miss is asked again (a download may come). */
+export function onceFound<T>(fn: () => T | null): () => T | null {
   let value: T | null = null
   return () => (value ??= fn())
 }
 
-/** TypeScript 7 for TS, JS and React (YAZ-3454): the project is the nearest `tsconfig.json`, `jsconfig.json` or `package.json`; none = no helper (S7). */
+/**
+ * TypeScript 7 for TS, JS and React (YAZ-3454): the project is the nearest `tsconfig.json`, `jsconfig.json` or
+ * `package.json`, in the vault (YAZ-3458: a marker above the vault would start a helper over that whole folder);
+ * none = no helper (S7).
+ */
 export function typescriptSpec(places: LspPlaces, exists: (p: string) => boolean = existsSync): LanguageSpec {
   const binary = onceFound(() => resolveTypescriptServer({ ...places, platform: process.platform, arch: process.arch, exists }))
   return {
     language: 'typescript',
-    projectRoot: (file) => findProjectRoot(file, TYPESCRIPT_PROJECT_MARKERS, exists, [homedir()]),
+    projectRoot: (file, vaultRoot) => findProjectRoot(file, TYPESCRIPT_PROJECT_MARKERS, exists, [homedir()], isInside(file, vaultRoot) ? vaultRoot : undefined),
     command: (root) => {
       const bin = binary()
       return bin === null ? null : typescriptServerCommand(bin, root)

@@ -4,7 +4,7 @@
  * markers. `CodeOutline.tsx` subscribes (`useSyncExternalStore`).
  *
  * NEVER ON THE KEYSTROKE PATH. An edit only re-arms one timer; `READ_DELAY_MS` after the last edit
- * the symbols are read again (a worker or the helper does the work), and the tree is built once
+ * the symbols are read again (a worker does the work; a `.py` file is read from its text), and the tree is built once
  * when the answer comes. A TS or JS file's answer is the tree itself, built in the TS worker
  * (YAZ-3501): the page only takes it. An answer that a newer read overtook is thrown away. The first
  * read is at once, so a file opens with its Outline.
@@ -15,7 +15,7 @@
  * OFF READS NOTHING. While the Outline is off (Settings › Table of contents › Off), `setActive(false)`
  * stops the reads: an edit arms no timer. Turning it on reads at once.
  *
- * Markers come from Monaco (the TS worker's errors, the helper's none): a change of this model's
+ * Markers come from Monaco's own workers (`getModelMarkers`): a change of this model's
  * markers is a new snapshot, with no new read.
  */
 import { monaco } from '../monaco'
@@ -73,7 +73,7 @@ export function attachOutlineFeed(editor: Editor, model: Model, read: ReadSymbol
     const mine = ++asked
     const asLocals = locals
     const symbols = await read(editor, model, asLocals).catch(() => null)
-    // No answer (a helper that timed out, a provider that failed): the last tree stands, so the
+    // No answer (a worker that failed, a provider that failed): the last tree stands, so the
     // Outline never blinks away for one bad read. An empty answer is a file with no symbol now.
     if (disposed || mine !== asked || model.isDisposed() || symbols === null) return
     const tree = isTree(symbols) ? (symbols.size === 0 ? null : symbols) : symbols.length === 0 ? null : buildTree(symbols, asLocals)

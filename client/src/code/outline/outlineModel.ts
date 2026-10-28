@@ -5,7 +5,7 @@
  *
  * A SYMBOL is Monaco's `DocumentSymbol` shape (`CodeSymbol`): a name, a kind (Monaco's `SymbolKind`
  * number, 0-25), a range with 1-based lines and columns, the range of its name, and its children.
- * Monaco's providers give it as it is; the Python helper's answer is put in the same shape.
+ * Monaco's providers give it as it is; the Python reader (`code/pythonSymbols.ts`) gives the same shape.
  *
  * ONE TREE, IN FLAT ARRAYS. A file of 5 MB has hundreds of thousands of symbols, so the tree is a
  * set of typed arrays, indexed by node, in document order (`buildTree`). Each question walks these

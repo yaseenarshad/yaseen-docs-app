@@ -2,10 +2,8 @@ import { Buffer } from 'node:buffer'
 import { open } from 'node:fs/promises'
 import { fileKind } from '@shared/fileKind'
 import { MAX_FILE_BYTES, TEXT_HEAD_LINES, TEXT_HEAD_READ_BYTES, type TextHead } from '@shared/types'
+import { decodeViewOnlyText } from './file'
 import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
-
-// Strict, as `readFile` reads view-only text; the BOM goes (`ignoreBOM: false`), the card shows text.
-const strictUtf8 = new TextDecoder('utf-8', { fatal: true })
 
 /** How many bytes at the end of `bytes` begin a character the read cut off (0 when the last one is whole). */
 export function cutCharBytes(bytes: Uint8Array): number {
@@ -40,13 +38,8 @@ export async function readTextHead(raw: unknown): Promise<TextHead> {
       let bytes = buffer.subarray(0, bytesRead)
       // The read stopped inside a character: its first bytes are not a fault of the file.
       if (more) bytes = bytes.subarray(0, bytes.length - cutCharBytes(bytes))
-      let text: string
-      try {
-        text = strictUtf8.decode(bytes)
-      } catch {
-        throw new BridgeFailure('IO_ERROR', 'file is not valid UTF-8 text', { path: p })
-      }
-      if (text.includes('\0')) throw new BridgeFailure('IO_ERROR', 'text file contains NUL bytes', { path: p })
+      // Strict, as `readFile` reads it; the BOM goes, the card shows text.
+      const text = decodeViewOnlyText(bytes, p).replace(/^\uFEFF/, '')
       const lines = text.split(/\r\n|\r|\n/)
       // A last line the read cut off is a whole line only when the file ended there.
       if (more && lines.length > 1) lines.pop()

@@ -1,11 +1,19 @@
 import { DIAGRAM_EXTENSIONS, DRAWING_VIEW_EXTENSIONS, IMAGE_VIEW_EXTENSIONS, MARKDOWN_EXTENSIONS, PDF_EXTENSIONS, TEXT_VIEW_EXTENSIONS, WELL_KNOWN_TEXT_NAMES, WELL_KNOWN_TEXT_PREFIXES, type BoardKind, type FileKind } from './types'
 
 /**
+ * The last part of a name or path, after its last `/` or `\` (YAZ-3516: main resolves a Windows path with
+ * `\`, so a `/` split alone kept the whole path and `C:\v\Dockerfile` was no kind).
+ */
+function basenameOf(name: string): string {
+  return name.slice(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1)
+}
+
+/**
  * Lower-cased extension of a file name or path, dot included; `null` when there is none. A leading
  * dot alone is not an extension (`.md` the file has none), matching Node's `path.extname`.
  */
 function extensionOf(name: string): string | null {
-  const basename = name.slice(name.lastIndexOf('/') + 1)
+  const basename = basenameOf(name)
   const dot = basename.lastIndexOf('.')
   return dot <= 0 ? null : basename.slice(dot).toLowerCase()
 }
@@ -15,7 +23,7 @@ function extensionOf(name: string): string | null {
  * `Dockerfile.<anything>`. Never a dot-file.
  */
 function isWellKnownText(name: string): boolean {
-  const basename = name.slice(name.lastIndexOf('/') + 1)
+  const basename = basenameOf(name)
   return (WELL_KNOWN_TEXT_NAMES as readonly string[]).includes(basename) || WELL_KNOWN_TEXT_PREFIXES.some((prefix) => basename.length > prefix.length && basename.startsWith(prefix))
 }
 

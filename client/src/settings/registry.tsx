@@ -683,7 +683,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
     ],
   },
-  // YAZ-3449: the three switches every code tab shares (its page cog has them too).
+  // YAZ-3449: the four switches every code tab shares (its page cog has the first three).
   CODE_SECTION,
   // YAZ-3037 (YAZ-3028 D10): the user-level Excalidraw canvas preferences, declared in their own module
   // because there are fourteen of them and they are the one section with a mapping behind it (`shared/canvasPrefs.ts`).

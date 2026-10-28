@@ -41,6 +41,11 @@ export interface HelperPin {
   integrity: string
 }
 
+/** The TypeScript 7 binary's name in its package's `lib/`. */
+export const tscBinary = (platform: NodeJS.Platform): string => (platform === 'win32' ? 'tsc.exe' : 'tsc')
+/** pyright's entry script, at its package's top. */
+export const PYRIGHT_ENTRY = 'langserver.index.js'
+
 export interface PlatformHelper {
   helper: LspLanguage
   pin: HelperPin
@@ -62,8 +67,8 @@ export function helpersFor(platform: NodeJS.Platform, arch: string): PlatformHel
   const ts = typescriptPin(platform, arch)
   if (ts === null) return null
   return [
-    { helper: 'typescript', pin: ts, entry: path.join('lib', platform === 'win32' ? 'tsc.exe' : 'tsc') },
-    { helper: 'python', pin: PYRIGHT_PIN, entry: 'langserver.index.js' },
+    { helper: 'typescript', pin: ts, entry: path.join('lib', tscBinary(platform)) },
+    { helper: 'python', pin: PYRIGHT_PIN, entry: PYRIGHT_ENTRY },
   ]
 }
 

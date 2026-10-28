@@ -424,6 +424,20 @@ describe('PageSettings: Read only', () => {
     expect(menu()!.textContent).not.toContain('words')
   })
 
+  it('a heading over the code rows (YAZ-3458): one group with its name, a line, then this page\'s "Table of contents"', () => {
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    const switches = ['Read only', 'Wrap long lines', 'Minimap'].map((label) => ({ label, on: false, onToggle: () => undefined }))
+    act(() => root.render(<PageSettings switches={switches} switchesHeading="All code files" tableOfContents onToggleTableOfContents={() => undefined} />))
+    click(cog())
+    const group = menu()!.querySelector('[role="group"]')!
+    expect(group.getAttribute('aria-label')).toBe('All code files')
+    expect([...group.children].map((child) => child.textContent)).toEqual(['All code files', 'Read only', 'Wrap long lines', 'Minimap'])
+    expect([...menu()!.children].map((child) => child.className)).toEqual(['', 'page-settings__divider', ''])
+    expect(menu()!.lastElementChild!.textContent).toBe('Table of contents\u2713')
+  })
+
   it('S41: a board\u2019s menu has only that row, and no counts', () => {
     mountReadOnly({ board: true })
     expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Read only'])

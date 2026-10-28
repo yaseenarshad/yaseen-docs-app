@@ -31,7 +31,7 @@
  * ⌘J opens it with the focus in the filter box: typing filters, ↑ / ↓ pick, ⏎ goes, Esc clears the
  * filter and returns to the code. ← / → collapse and open the picked row while the box is empty.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { CODE_SYMBOL_KINDS, type CodeOutlineSort, type CodeSymbolKind, type TableOfContents as TableOfContentsMode } from '@shared/types'
 import { NAMES_FLOOR, namesRoom, namesShow, railPitch } from '../../editor/toc/TableOfContents'
@@ -40,7 +40,7 @@ import { ContextMenu } from '../../sidebar/ContextMenu'
 import type { MenuAction } from '../../sidebar/menuSections'
 import { jumpTo, type JumpEditorLike } from './codeJump'
 import { kindId, kindLabel, kindName, OutlineIcon } from './OutlineIcon'
-import type { OutlineFeed, OutlineSnapshot } from './outlineFeed'
+import type { OutlineFeed } from './outlineFeed'
 import { allKeys, displayOrder, kindsIn, markSymbols, Mark, pathDepth, rowMark, symbolAt, visibleRows, KIND_COUNT, type OutlineRows, type OutlineTree } from './outlineModel'
 import '../../editor/toc/toc.css'
 import './outline.css'
@@ -87,11 +87,10 @@ export interface CodeOutlineProps {
   onReturnFocus: () => void
 }
 
-const NO_SNAPSHOT: OutlineSnapshot = { tree: null, markers: [] }
-const noFeed = (): (() => void) => () => undefined
-
 export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, width, onChangeWidth, sort, hidden, locals = false, onChangeView, hostRef, onReturnFocus }: CodeOutlineProps) {
-  const { tree, markers } = useSyncExternalStore(feed?.subscribe ?? noFeed, feed?.getState ?? (() => NO_SNAPSHOT))
+  const { tree, markers } = useSyncExternalStore(feed.subscribe, feed.getState)
+  // Code tabs stay mounted in hidden layers: each tab's rows get their own ids, so the filter box never points into another tab.
+  const rowsId = useId()
   const shows = mode !== 'off' && tree !== null
   // Off reads nothing (`outlineFeed.ts`): no symbols are read for an Outline nobody sees.
   useEffect(() => feed.setActive(mode !== 'off'), [feed, mode])
@@ -338,11 +337,11 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
         className="outline__filter"
         type="text"
         placeholder="Filter"
-        aria-label="Filter the outline"
+        aria-label="Filter the table of contents"
         role="combobox"
         aria-expanded
-        aria-controls="code-outline-rows"
-        aria-activedescendant={active === null ? undefined : `code-outline-row-${active}`}
+        aria-controls={rowsId}
+        aria-activedescendant={active === null ? undefined : `${rowsId}-${active}`}
         spellCheck={false}
         value={filter}
         onChange={(event) => setFilter(event.currentTarget.value)}
@@ -356,7 +355,7 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
       </button>
     </div>
   )
-  const list = <OutlineList tree={tree} rows={rows} marks={marks} at={at} pick={pick} collapsed={collapsed} filter={filter} onToggle={(node) => toggle(node)} onPick={jump} />
+  const list = <OutlineList id={rowsId} tree={tree} rows={rows} marks={marks} at={at} pick={pick} collapsed={collapsed} filter={filter} onToggle={(node) => toggle(node)} onPick={jump} />
 
   /** The height the rail's lines may take. */
   const railRoom = box.height - 2 * EDGE_PX - RAIL_PADDING_PX
@@ -468,6 +467,8 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
 }
 
 interface OutlineListProps {
+  /** The list's element id; row `r` is `<id>-<r>`. */
+  id: string
   tree: OutlineTree
   rows: OutlineRows
   marks: ReturnType<typeof markSymbols>
@@ -484,7 +485,7 @@ interface OutlineListProps {
  * `OVERSCAN` more each way). The accent marker rides the hairline to the current row, as in a note.
  * The current row, and the picked one, stay in view: the list scrolls when they leave it.
  */
-function OutlineList({ tree, rows, marks, at, pick, collapsed, filter, onToggle, onPick }: OutlineListProps) {
+function OutlineList({ id, tree, rows, marks, at, pick, collapsed, filter, onToggle, onPick }: OutlineListProps) {
   const listRef = useRef<HTMLDivElement>(null)
   const markerRef = useRef<HTMLSpanElement>(null)
   const [view, setView] = useState({ top: 0, height: 480 })
@@ -552,7 +553,7 @@ function OutlineList({ tree, rows, marks, at, pick, collapsed, filter, onToggle,
     drawn.push(
       <div
         key={node}
-        id={`code-outline-row-${r}`}
+        id={`${id}-${r}`}
         role="treeitem"
         className="outline__row"
         data-depth={Math.min(tree.depth[node], 2)}
@@ -586,7 +587,7 @@ function OutlineList({ tree, rows, marks, at, pick, collapsed, filter, onToggle,
   }
 
   return (
-    <div ref={listRef} id="code-outline-rows" className="toc__names outline__list" role="tree" aria-label="Symbols" onScroll={read}>
+    <div ref={listRef} id={id} className="toc__names outline__list" role="tree" aria-label="Symbols" onScroll={read}>
       <div className="outline__runner" style={{ height: count * ROW_H }}>
         {at >= 0 && <span ref={markerRef} className="toc__marker" aria-hidden="true" style={{ transform: `translateY(${at * ROW_H}px)`, height: ROW_H }} />}
         {drawn}

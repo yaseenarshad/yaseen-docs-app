@@ -65,7 +65,7 @@ describe('python helper (YAZ-3455)', () => {
   })
 
   it("answers pyright's workspace/configuration: the python section gets the venv, others null", async () => {
-    const reply = pythonConfigurationReply(p('proj'), { sitePackages: ['/sp'] })
+    const reply = pythonConfigurationReply({ sitePackages: ['/sp'] })
     const answer = reply('workspace/configuration', { items: [{ section: 'python' }, { section: 'python.analysis' }, { section: 'pyright' }] }) as unknown[]
     // YAZ-3480: no `pythonPath`, ever: pyright would run it. The libraries come as folders.
     expect(answer[0]).toEqual({ analysis: { autoSearchPaths: true, useLibraryCodeForTypes: true, diagnosticMode: 'openFilesOnly', extraPaths: ['/sp'] } })
@@ -73,7 +73,7 @@ describe('python helper (YAZ-3455)', () => {
     expect(answer[2]).toBeNull()
     expect(reply('client/registerCapability', {})).toBeNull()
     expect((reply('workspace/configuration', { items: [{ section: 'python' }] }) as Record<string, unknown>[])[0]).not.toHaveProperty('venvPath')
-    expect((pythonConfigurationReply(p('proj'), null)('workspace/configuration', { items: [{ section: 'python' }] }) as Record<string, unknown>[])[0]).not.toHaveProperty('pythonPath')
+    expect((pythonConfigurationReply(null)('workspace/configuration', { items: [{ section: 'python' }] }) as Record<string, unknown>[])[0]).not.toHaveProperty('pythonPath')
   })
 
   it("references wait for pyright's file list: its log line, its end, or the time limit", async () => {

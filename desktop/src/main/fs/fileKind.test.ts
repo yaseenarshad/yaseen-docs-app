@@ -36,6 +36,12 @@ describe('fileKind', () => {
     for (const name of ['Dockerfile.dev', '/vault/deploy/Dockerfile.prod', 'Dockerfile.x']) expect(fileKind(name), name).toBe('text')
   })
 
+  it('YAZ-3516: a well-known name is text in a Windows path too', () => {
+    for (const p of ['C:\\v\\Dockerfile', 'C:\\v\\app\\Makefile', 'C:\\v\\Dockerfile.dev']) expect(fileKind(p), p).toBe('text')
+    expect(fileKind('C:\\v.x\\makefile')).toBeNull()
+    expect(fileKind('C:\\v.md\\LICENSE')).toBe('text')
+  })
+
   it('YAZ-3505: near misses are not: another case, another name, a suffix; an extension that is a kind wins; dot-files stay skipped', () => {
     for (const name of ['makefile.bak', 'makefile', 'dockerfile', 'MAKEFILE', 'License', 'LICENSE.bak', 'Makefile.old', 'Dockerfile.', 'CMakeLists', 'Gemfile2', '/vault/.r', '/vault/.lua']) expect(fileKind(name), name).toBeNull()
     // `CMakeLists.txt` and `LICENSE.txt` are text by their `.txt`, as before; `Dockerfile.md` is a note.
