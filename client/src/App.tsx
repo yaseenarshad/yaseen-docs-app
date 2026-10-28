@@ -345,7 +345,7 @@ export function App() {
   // Focus and Favorites of the window's vaults (YAZ-3264 D1): here, not in the sidebar, which unmounts
   // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
   const lists = useVaultListsHere(roots, notify)
-  // The vaults' own icons (YAZ-3440 B; D11, YAZ-3471): here too, so the tabs, the search results and Recents show a
+  // The vaults' own icons (YAZ-3440 D8, D9; D11, YAZ-3471): here too, so the tabs, the search results and Recents show a
   // row's icon with the sidebar hidden. The sidebar's tree reads the same object.
   const vaultIcons = useVaultIcons(roots, settings.sidebarIconRules, notify)
   const iconsHere = useMemo(() => ({ rowIcons: vaultIcons.rowIcons, roots }), [vaultIcons.rowIcons, roots])

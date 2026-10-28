@@ -73,12 +73,19 @@ describe('sticky folder rows CSS contract (YAZ-3440 D1, D2, D3, D10)', () => {
     expect(backing).toMatch(/background:\s*var\(--bg-side\);/)
     expect(backing).toMatch(/box-shadow:\s*0 1px 0 var\(--border\);/)
     expect(backing).toMatch(/pointer-events:\s*none;/)
+    expect(backing).not.toMatch(/border-radius/)
+    // Over the block, the row's own fill, edge and rounded corners (hover, active, selected, the focus ring).
+    const [fill] = stuck.inside.filter((rule) => rule.selectors.includes('.tree__row--sticky::after')).map((rule) => rule.body)
+    for (const prop of ['border-radius', 'background-color', 'box-shadow']) expect(fill).toMatch(new RegExp(`${prop}:\\s*inherit;`))
+    expect(fill).toMatch(/z-index:\s*-1;/)
+    expect(css.indexOf('.tree__row--sticky::before {')).toBeLessThan(css.indexOf('.tree__row--sticky::after {'))
     // The side colour is opaque in each theme, so nothing shows through a stuck row.
     const sides = [...css.matchAll(/--bg-side:\s*([^;]+);/g)].map(([, value]) => value.trim())
     expect(sides.length).toBeGreaterThanOrEqual(2)
     for (const side of sides) expect(side).toMatch(/^#[0-9a-f]{6}$/i)
-    // The block is the stuck state's alone: outside the query no rule gives a sticky row the side colour.
+    // The block is the stuck state's alone: outside the query no rule gives a sticky row the side colour, or any fill.
     expect(rules.filter((rule) => rule.selectors.some((s) => s.includes('.tree__row--sticky')) && /--bg-side/.test(rule.body))).toEqual([])
+    expect(bodies(STICKY).join('')).not.toMatch(/background/)
   })
 
   it('a row or li scrolled into view lands below the rows stuck above it, up to the cap (D2, D3)', () => {
@@ -93,7 +100,7 @@ describe('sticky folder rows CSS contract (YAZ-3440 D1, D2, D3, D10)', () => {
     const stops = [...[0, 1, 2, 3, 4, 5, 6].map((n) => `.sidebar__body[data-sticky-levels='${n}']${groups(n)}${tail}`), `${groups(7).trim()}${tail}`]
     const statics = rules.filter((rule) => rule.selectors.some((s) => s.includes('.tree__row--sticky')) && /position:\s*static;/.test(rule.body))
     expect(statics.map((rule) => rule.selectors)).toEqual([stops])
-    // The cap as a number, for `scroll-margin-top`.
-    for (let n = 0; n <= 7; n++) expect(bodies(`.sidebar__body[data-sticky-levels='${n}']`).join('')).toMatch(new RegExp(`--sticky-levels:\\s*${n};`))
+    // The cap as a number, for `scroll-margin-top`, is `stickyFolders.ts`'s inline `--sticky-levels`: no rule sets it.
+    expect(rules.filter((rule) => /--sticky-levels:/.test(rule.body))).toEqual([])
   })
 })

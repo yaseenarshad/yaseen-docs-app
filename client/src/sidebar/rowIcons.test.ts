@@ -3,11 +3,11 @@ import { globRegExp, type IconRule } from '@shared/vaultIcons'
 import { buildRowIcons, iconsChangedBelow, oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
 import { suggestIcons } from './iconSuggestions'
 
-/** Which icon a row shows (YAZ-3440 B): its pick, then the first matching name rule of the settings, then Material's match, then the default. */
+/** Which icon a row shows (YAZ-3440 D8, D9): its pick, then the first matching name rule of the settings, then Material's match, then the default. */
 const V = '/v'
 const icons = (paths: Record<string, string> = {}, rules: IconRule[] = []) => buildRowIcons({ [V]: { paths } }, [V], rules)
 
-describe('the matching order (YAZ-3440 B)', () => {
+describe('the matching order (YAZ-3440 D8, D9)', () => {
   it("(1) a row's own pick wins over every rule and over Material", () => {
     const i = icons({ '/v/a.test.ts': 'lua' }, [{ match: '*.ts', kind: 'file', icon: 'python' }])
     expect(rowIcon(i, '/v/a.test.ts', 'a.test.ts', 'file')).toEqual({ id: 'lua', custom: true })
@@ -45,7 +45,7 @@ describe('the matching order (YAZ-3440 B)', () => {
   })
 })
 
-describe('what re-renders (YAZ-3440 C)', () => {
+describe('what re-renders (YAZ-3440 D8)', () => {
   it('the same picks and rules give the same object; a new pick keeps the rules, so only the levels that draw its row re-render', () => {
     const rules: IconRule[] = [{ match: '*.py', kind: 'file', icon: 'lua' }]
     const a = icons({ '/v/x.md': 'lua' }, rules)
@@ -61,13 +61,29 @@ describe('what re-renders (YAZ-3440 C)', () => {
   })
 })
 
-describe("the row menu's two scopes (demo round 2)", () => {
+describe("the row menu's two scopes (D8, D9)", () => {
   it('the rule for a row: its extension, else its name; a folder by its name', () => {
     expect(ruleFor('mixed 24.GIF', 'file')).toEqual({ match: '*.gif', kind: 'file', label: 'all .gif files' })
     expect(ruleFor('a.test.ts', 'file')).toEqual({ match: '*.ts', kind: 'file', label: 'all .ts files' })
     expect(ruleFor('Makefile', 'file')).toEqual({ match: 'Makefile', kind: 'file', label: 'all files named Makefile' })
     expect(ruleFor('.gitignore', 'file')).toEqual({ match: '.gitignore', kind: 'file', label: 'all files named .gitignore' })
     expect(ruleFor('src', 'folder')).toEqual({ match: 'src', kind: 'folder', label: 'all folders named src' })
+  })
+
+  it("a name's own glob characters are escaped: the rule matches that name, and no other", () => {
+    const braces = ruleFor('{a,b}', 'folder')
+    expect(braces).toEqual({ match: '\\{a\\,b\\}', kind: 'folder', label: 'all folders named {a,b}' })
+    expect(globRegExp(braces.match).test('{a,b}')).toBe(true)
+    expect(globRegExp(braces.match).test('a')).toBe(false)
+    const star = ruleFor('a*', 'file')
+    expect(star.match).toBe('a\\*')
+    expect(globRegExp(star.match).test('a*')).toBe(true)
+    expect(globRegExp(star.match).test('abc')).toBe(false)
+    expect(globRegExp(ruleFor('what?', 'file').match).test('whats')).toBe(false)
+    expect(globRegExp(ruleFor('back\\slash', 'file').match).test('back\\slash')).toBe(true)
+    // An extension is escaped too, and a glob the user typed keeps its meaning.
+    expect(ruleFor('x.{b}', 'file').match).toBe('*.\\{b\\}')
+    expect(globRegExp('*.{png,gif}').test('a.gif')).toBe(true)
   })
 
   it('a selection has a rule only when every row wants the same one', () => {

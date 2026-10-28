@@ -1,6 +1,6 @@
 /**
- * Which icon a tree row shows (YAZ-3440 B): (1) its own pick in its vault's `icons.json` `paths`, (2) the first of
- * the name rules (`settings.sidebarIconRules`, one list for every vault since demo round 2) whose glob matches the
+ * Which icon a tree row shows (YAZ-3440 D8, D9): (1) its own pick in its vault's `icons.json` `paths`, (2) the first of
+ * the name rules (`settings.sidebarIconRules`, one list for every vault, D9) whose glob matches the
  * row's NAME and kind, (3) Material's match by name, extension or folder name (`materialIcons.ts`), (4) Material's
  * default. A pick or a rule is a Material icon in BOTH icon sets (the row says so as `data-icon-custom`), and an id
  * Material does not ship reads as no pick.
@@ -12,7 +12,7 @@
 import { globRegExp, type IconRule, type IconRuleKind, type VaultIcons } from '@shared/vaultIcons'
 import { isMaterialIcon, materialFileIcon, materialFolderIcon, materialIconsLoaded, openIcon } from './materialIcons'
 
-export interface CompiledRule {
+interface CompiledRule {
   match: string
   test: RegExp
   kind: IconRuleKind
@@ -56,7 +56,7 @@ export function buildRowIcons(byRoot: Readonly<Record<string, VaultIcons>>, root
 }
 
 /** The row's pick or first matching rule (1, 2), or null: Material's match then decides (3, 4). */
-export function customIcon(icons: RowIcons | undefined, path: string, name: string, kind: IconRuleKind): string | null {
+function customIcon(icons: RowIcons | undefined, path: string, name: string, kind: IconRuleKind): string | null {
   if (icons === undefined) return null
   const pick = icons.paths.get(path)
   if (pick !== undefined) return pick
@@ -85,16 +85,19 @@ export function iconsChangedBelow(prev: RowIcons | undefined, next: RowIcons | u
   return false
 }
 
-// ---- The row menu's two scopes (demo round 2): this row's pick, or the rule for every row like it ----
+// ---- The row menu's two scopes (D8, D9): this row's pick, or the rule for every row like it ----
 
-/** The rule "Change icon for all … " writes for a row: `*.<ext>` for a file with an extension, else its name; a folder by its name. */
+/** A name as a glob that matches that name alone: its own `*`, `?`, `{`, `}`, `,` and `\` are escaped (`globRegExp`). */
+const literalGlob = (name: string): string => name.replace(/[*?{},\\]/g, '\\$&')
+
+/** The rule "Change icon ▸ All …" writes for a row: `*.<ext>` for a file with an extension, else its name; a folder by its name. */
 export function ruleFor(name: string, kind: IconRuleKind): { match: string; kind: IconRuleKind; label: string } {
-  if (kind === 'folder') return { match: name, kind, label: `all folders named ${name}` }
+  if (kind === 'folder') return { match: literalGlob(name), kind, label: `all folders named ${name}` }
   const dot = name.lastIndexOf('.')
   // A dot file (`.gitignore`) or a name with no dot has no extension of its own.
-  if (dot <= 0 || dot === name.length - 1) return { match: name, kind, label: `all files named ${name}` }
+  if (dot <= 0 || dot === name.length - 1) return { match: literalGlob(name), kind, label: `all files named ${name}` }
   const ext = name.slice(dot + 1).toLowerCase()
-  return { match: `*.${ext}`, kind, label: `all .${ext} files` }
+  return { match: `*.${literalGlob(ext)}`, kind, label: `all .${ext} files` }
 }
 
 /** The one rule a selection wants (each row's `ruleFor`), or null when its rows want different ones. */

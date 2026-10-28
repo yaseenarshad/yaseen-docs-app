@@ -45,7 +45,7 @@ import { repairShares, shareFsHooks } from '../share/fsHooks'
 const repairFavorites = (p: Promise<void>): Promise<void> => p.catch((err: unknown) => console.warn(`[favorites] repair failed: ${String(err)}`))
 /** The focus list's repair (YAZ-2702 R10, R11), by the same rule: this Mac's focus file follows a rename and a delete, and a repair that fails is warned about and nothing more. */
 const repairFocus = (p: Promise<void>): Promise<void> => p.catch((err: unknown) => console.warn(`[focus] repair failed: ${String(err)}`))
-/** The vault's own icons (YAZ-3440 D), by the same rule: a pick follows a rename or a move and leaves with a delete; a repair that fails is warned about. */
+/** The vault's own icons (YAZ-3440 D8), by the same rule: a pick follows a rename or a move and leaves with a delete; a repair that fails is warned about. */
 const repairIcons = (p: Promise<void>): Promise<void> => p.catch((err: unknown) => console.warn(`[icons] repair failed: ${String(err)}`))
 
 /** The fs half of `window.yaseenDocs` (`dialog:pick-folder` lives in `./dialog`). */

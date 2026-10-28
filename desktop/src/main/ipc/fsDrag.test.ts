@@ -32,7 +32,7 @@ vi.mock('../dragWatch', () => ({ whenMouseUp: vi.fn() }))
 vi.mock('../fs/watchers', () => ({ subscribe: vi.fn(() => () => undefined), activeWatcherRoots: () => [] }))
 vi.mock('../favorites', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
 vi.mock('../focus', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
-// The vault's own icons (YAZ-3440 D) ride the same handlers too; `icons.test.ts` owns their disk behaviour.
+// The vault's own icons (YAZ-3440 D8) ride the same handlers too; `icons.test.ts` owns their disk behaviour.
 vi.mock('../icons', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
 // Another disk, injected (D9A): `fs.rename` across volumes fails `EXDEV`; a temp folder is on one disk.
 vi.mock('../fs/rename', async (importOriginal) => {

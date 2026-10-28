@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
+import { MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import type { TextFormatting } from '@shared/textFormatting'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
 import { idsAskMessage, idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
@@ -129,7 +130,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 const GENERAL_ROWS = ['settingsFolder', 'startupWindows']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
 const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'diagramDarkColors']
-/** Settings › Sidebar (YAZ-3440 D7, demo round 1): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
+/** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
@@ -178,7 +179,7 @@ describe('SettingsDialog shell (D1)', () => {
     expect([...el.querySelectorAll('.setting__label')].map((l) => l.textContent)).not.toContain('Reopen')
   })
 
-  it('the icon picker of Settings › Sidebar › Icon rules (YAZ-3440, demo round 3): Escape, its × and a click outside close the picker alone; the dialog stays open and nothing changes', () => {
+  it('the icon picker of Settings › Sidebar › Icon rules (YAZ-3440 D8): Escape, its × and a click outside close the picker alone; the dialog stays open and nothing changes', () => {
     const { el, onChange, onClose } = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconRules: [{ match: '*.test.ts', kind: 'file', icon: 'test-ts' }] })
     const open = () => {
       act(() => el.querySelector<HTMLButtonElement>('[aria-label="Icon: test-ts"]')?.click())
@@ -205,6 +206,30 @@ describe('SettingsDialog shell (D1)', () => {
     expect(el.querySelector('.settings-dialog')).not.toBeNull()
     expect(onClose).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('Settings › Sidebar shows a colour row per kind with the Line set, while its icons have colour; Material, Grey and Off show none (YAZ-3440 D4)', () => {
+    const colourRows = ['note', 'text', 'pdf', 'image', 'drawing', 'diagram'].map((kind) => `sidebarIconColors.${kind}`)
+    const { el } = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconSet: 'line' })
+    expect(rowIds(el)).toEqual([...SIDEBAR_ROWS.slice(0, -1), ...colourRows, 'sidebarIconRules'])
+    for (const files of ['grey', 'off'] as const) {
+      act(() => root?.unmount())
+      container?.remove()
+      const again = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconSet: 'line', sidebarFileIcons: files })
+      expect(rowIds(again.el)).toEqual(SIDEBAR_ROWS)
+    }
+  })
+
+  it('Settings › Sidebar › Icon rules stops at the settings check: no rule past MAX_ICON_RULES, no pattern past MAX_ICON_MATCH characters (YAZ-3440 D9)', () => {
+    const full = Array.from({ length: MAX_ICON_RULES }, (_, k) => ({ match: `*.x${k}`, kind: 'file' as const, icon: 'file' }))
+    const { el } = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconRules: full })
+    const add = [...(row(el, 'sidebarIconRules')?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Add rule')
+    expect(add?.disabled).toBe(true)
+    expect(el.querySelector<HTMLInputElement>('.icon-rules__match')?.maxLength).toBe(MAX_ICON_MATCH)
+    act(() => root?.unmount())
+    container?.remove()
+    const fewer = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconRules: full.slice(1) })
+    expect([...(row(fewer.el, 'sidebarIconRules')?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Add rule')?.disabled).toBe(false)
   })
 
   it('Escape with no query closes; a mousedown on the overlay closes; one inside the dialog does not', () => {
@@ -303,7 +328,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(el.querySelector('#settings-appearance .settings-group')).not.toBeNull()
     expect(el.querySelector('#settings-appearance .settings-group')?.querySelector('.settings-group__title')).toBeNull()
 
-    // Sidebar (YAZ-3440 D7, demo round 1): its four groups; the Icon rules are a setting, so they need no vault (round 2).
+    // Sidebar (YAZ-3440 D7): its four groups; the Icon rules are a setting, so they need no vault (D9).
     clickNav(el, 'Sidebar')
     expect(groupTitles(el)).toEqual(['Level lines', 'Folders', 'File icons', 'Icon rules'])
     expect(hints()).toEqual([])

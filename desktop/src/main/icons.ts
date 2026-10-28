@@ -6,8 +6,8 @@ import { deletedAt, owningRoot, renamedTo, toAbs, toRel, under } from './favorit
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
 
 /**
- * A vault's one-row icon picks in the vault (YAZ-3440 A): `<root>/.yaseendocs/icons.json` (`shared/vaultIcons.ts` has
- * the shape; the name rules are a setting since demo round 2, `sidebarIconRules`), favorites.json's idiom over the vaultConfig plumbing: VAULT-RELATIVE paths in the file so sync carries
+ * A vault's one-row icon picks in the vault (YAZ-3440 D8): `<root>/.yaseendocs/icons.json` (`shared/vaultIcons.ts` has
+ * the shape; the name rules are a setting (D9), `sidebarIconRules`), favorites.json's idiom over the vaultConfig plumbing: VAULT-RELATIVE paths in the file so sync carries
  * it, ABSOLUTE paths on the bridge, created on the first write and never by a read, written atomically, watched
  * (an own write or an external edit pushes `icons:changed`), and merged by sync (`mergeIconsFile`).
  *

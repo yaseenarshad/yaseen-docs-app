@@ -39,7 +39,7 @@ describe('settingCandidates', () => {
       'textFormatting',
       'commentsOrder',
       'diagramDarkColors',
-      // Settings › Sidebar (YAZ-3440 D7, demo round 1), after Appearance. The Line set's colour rows show only with that set.
+      // Settings › Sidebar (YAZ-3440 D7), after Appearance. The Line set's colour rows show only with that set.
       'sidebarLines',
       'sidebarLineStyle',
       'sidebarThreadColor',
@@ -50,7 +50,7 @@ describe('settingCandidates', () => {
       'sidebarIconSet',
       'sidebarFileIcons',
       ...['note', 'text', 'pdf', 'image', 'drawing', 'diagram'].map((k) => `sidebarIconColors.${k}`),
-      // The active vault's icon rules (YAZ-3440 E).
+      // The icon rules (YAZ-3440 D9).
       'sidebarIconRules',
       // Settings › Notifications (YAZ-3303), under Appearance.
       ...['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds'],
@@ -167,7 +167,7 @@ describe('searchSettings', () => {
   })
 
   it('"Level lines" (YAZ-2762, YAZ-3309 D6, YAZ-3440 D7): the label of the TOC\'s row and of the sidebar\'s row find those two rows, the sidebar\'s first (its label starts with the words); "hierarchy", "guide" and "hover" find the two Show rows among the rows that share the word', () => {
-    // The sidebar's group is "Level lines" too (YAZ-3440 D7, demo round 1): its other two rows follow, by the group title.
+    // The sidebar's group is "Level lines" too (YAZ-3440 D7): its other two rows follow, by the group title.
     expect(ids(searchSettings(settingCandidates(ctx()), 'level lines'))).toEqual(['sidebarLines', 'tocLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'hierarchy'))).toEqual(['sidebarLines', 'tocLines'])
     // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).

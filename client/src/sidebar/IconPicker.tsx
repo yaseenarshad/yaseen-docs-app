@@ -4,8 +4,8 @@ import { PICKER_COLUMNS, PICKER_W } from './iconSuggestions'
 import { iconUrl, pickableIcons, useMaterialIcons } from './materialIcons'
 
 /**
- * The icon picker (YAZ-3440 C, demo round 2): a panel of Material icons, opened right of the sidebar by "Change
- * icon for this file…" and "Change icon for all .gif files…", and by Settings › Sidebar › Icon rules. Its header
+ * The icon picker (YAZ-3440 D8): a panel of Material icons, opened right of the sidebar by "Change icon ▸
+ * This file…" and "Change icon ▸ All .gif files…", and by Settings › Sidebar › Icon rules (D9). Its header
  * says what it changes; "Reset to default" removes the pick or the rule. A "Suggested" row (the row's icon, icons
  * of its kind, the common ones), then "All icons" A to Z; the search box filters both by name. Each icon is an
  * `<img loading="lazy">`, so opening it fetches only the icons in view. Out of the sidebar zoom (fixed, at `x`,
@@ -13,7 +13,7 @@ import { iconUrl, pickableIcons, useMaterialIcons } from './materialIcons'
  * in the footer. Keys: the arrows move in the grid (ArrowDown from the search box goes to the first icon), Enter
  * picks, Escape closes.
  *
- * Closing (demo round 3): the × in its header, Escape, or a click outside. Each closes the picker ALONE: Escape stops
+ * Closing (D8): the × in its header, Escape, or a click outside. Each closes the picker ALONE: Escape stops
  * at the picker, and a transparent layer under it takes the outside click, so the Settings dialog behind it (or a
  * row of the tree) gets nothing. Closing without a pick changes nothing.
  */
@@ -25,7 +25,7 @@ export function IconPicker({ x, y, anchor, title, current, canReset = current !=
    * room below, so the row it edits stays in view. Without one it opens at `x`, `y` (right of the sidebar).
    */
   anchor?: { left: number; top: number; bottom: number }
-  /** What it changes: "Icon for mixed 24.gif", "Icon for all .gif files", "Icon for 3 items". */
+  /** What it changes: "Icon for this file: mixed 24.gif", "Icon for all .gif files", "Icon for 3 items". */
   title: string
   /** The icon the pick or rule has now, marked in the grid; null for none of its own. */
   current: string | null

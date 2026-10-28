@@ -1,12 +1,11 @@
 /**
- * The icon picker's "Suggested" row (YAZ-3440 C, demo round 2): what the row shows now, the icons whose names are
+ * The icon picker's "Suggested" row (YAZ-3440 D8): what the row shows now, the icons whose names are
  * of its kind (an image's: image, gif, svg…; a folder's: folder-*), then the common file icons. Pure.
  */
 import { isMaterialIcon, materialFileIcon, materialFolderIcon, pickableIcons } from './materialIcons'
 
-/** The picker's size in screen px (it is out of the sidebar zoom): about 10 cells of 44px, plus its padding. */
+/** The picker's width in screen px (it is out of the sidebar zoom): about 10 cells of 44px, plus its padding. Its height is app.css's (`.icon-picker`, up to 520px). */
 export const PICKER_W = 480
-export const PICKER_MAX_H = 520
 /** Cells per row of the grid, for the arrow keys (app.css lays out the same number). */
 export const PICKER_COLUMNS = 10
 

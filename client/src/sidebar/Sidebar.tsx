@@ -23,6 +23,7 @@ import { levelLinesHover } from './levelLinesHover'
 import { stickyFolders } from './stickyFolders'
 import { IconPicker } from './IconPicker'
 import type { VaultIconsHere } from './useVaultIcons'
+import { isIconRules, MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import { oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
 import { PICKER_W, suggestIcons } from './iconSuggestions'
 import { sortSections } from './treeSort'
@@ -82,7 +83,7 @@ interface SidebarProps {
   vaults: readonly SidebarVault[]
   /** The window's Focus and Favorites (YAZ-3264 D1): App holds them, so the tab menu reaches them while this panel is hidden. */
   lists: VaultListsHere
-  /** The vaults' own icons (YAZ-3440 B): App holds them, so the tabs, the search results and Recents show them too (D11). */
+  /** The vaults' own icons (YAZ-3440 D8, D9): App holds them, so the tabs, the search results and Recents show them too (D11). */
   icons: VaultIconsHere
   /** The vault rows the user closed (YAZ-2602 R9): App's, so they stay closed while this panel is unmounted. */
   closedVaults: readonly string[]
@@ -313,6 +314,17 @@ export interface SidebarClipboard {
   delete: () => boolean
 }
 
+/** The icon picker as it stands (YAZ-3440 D8): where, for which row, and what it changes. */
+interface IconPickerAt {
+  x: number
+  y: number
+  /** The right-clicked row: its name and kind give the suggestions. */
+  path: string
+  kind: 'file' | 'folder'
+  /** The rows' own picks, or one name rule of the settings. */
+  scope: { paths: string[] } | { rule: { match: string; kind: 'file' | 'folder'; label: string } }
+}
+
 /**
  * What the open context menu targets (GRO-2296). Every item has its OWN field: no item
  * derives its target — or its visibility — from another item's value.
@@ -324,17 +336,6 @@ export interface SidebarClipboard {
  * Before the split, `renamePath` was literally `menu.copyPath` and the two would have moved
  * together silently.
  */
-/** The icon picker as it stands (YAZ-3440 C, demo round 2): where, for which row, and what it changes. */
-interface IconPickerAt {
-  x: number
-  y: number
-  /** The right-clicked row: its name and kind give the suggestions. */
-  path: string
-  kind: 'file' | 'folder'
-  /** The rows' own picks, or one name rule of the settings. */
-  scope: { paths: string[] } | { rule: { match: string; kind: 'file' | 'folder'; label: string } }
-}
-
 export interface MenuTargets {
   x: number
   y: number
@@ -420,13 +421,13 @@ export interface MenuTargets {
    * selection holding it — files and folders alike, every lens; null on blank space. Its OWN field.
    */
   favoritePaths: string[] | null
-  /** "Change icon for this file…" (YAZ-3440 C): the row, or the ordered 2+ selection holding it; null on blank space, a vault row, a shortcut row, and a selection that holds a vault. */
+  /** "Change icon ▸ This file…" (YAZ-3440 D8): the row, or the ordered 2+ selection holding it; null on blank space, a vault row, a shortcut row, and a selection that holds a vault. */
   iconPaths: string[] | null
-  /** "Change icon for all .gif files…" (demo round 2): the name rule every row of `iconPaths` wants; null when they want different ones. */
+  /** "Change icon ▸ All .gif files…" (D9): the name rule every row of `iconPaths` wants; null when they want different ones. */
   iconRule: { match: string; kind: 'file' | 'folder'; label: string } | null
-  /** Some row of `iconPaths` has a pick of its own: "Reset this file" (demo round 3). */
+  /** Some row of `iconPaths` has a pick of its own: "Reset this file" (D8). */
   iconHasPick: boolean
-  /** The settings hold `iconRule`: "Reset all .gif files" (demo round 3). */
+  /** The settings hold `iconRule`: "Reset all .gif files" (D8). */
   iconRuleSet: boolean
   /** True only when EVERY `favoritePaths` entry is already a favorite — a mixed selection reads as Add. */
   favoriteIsOn: boolean
@@ -613,21 +614,19 @@ export function Sidebar({
   const root = roots[0]
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
   const multi = roots.length > 1
-  // The vaults' own icons (YAZ-3440 A, B): `.yaseendocs/icons.json` of each vault of the window, for the tree's rows. App's (D11).
+  // The vaults' own icons (YAZ-3440 D8, D9): `.yaseendocs/icons.json` of each vault of the window, for the tree's rows. App's (D11).
   const { rowIcons, pick: pickIcons } = icons
-  // The two "Change icon" items (YAZ-3440 C, demo round 2): the picker, right of the sidebar at the row, for the rows' picks or for one name rule.
+  // The two "Change icon" items (YAZ-3440 D8): the picker, right of the sidebar at the row, for the rows' picks or for one name rule.
   const [iconPicker, setIconPicker] = useState<IconPickerAt | null>(null)
-  // What the "Change icon ▸" flyout reads as the menu opens (demo round 3), through a ref so the menu's callback keeps its identity.
+  // What the "Change icon ▸" flyout reads as the menu opens (D8), through a ref so the menu's callback keeps its identity.
   const iconLive = useRef({ rowIcons, rules: settings.sidebarIconRules })
   iconLive.current = { rowIcons, rules: settings.sidebarIconRules }
-  const iconTargets = useCallback((paths: string[] | null, isDir: (path: string) => boolean): { iconHasPick: boolean; iconRuleSet: boolean } => {
-    if (paths === null) return { iconHasPick: false, iconRuleSet: false }
+  const iconTargets = useCallback((paths: string[] | null, rule: { match: string; kind: 'file' | 'folder' } | null): { iconHasPick: boolean; iconRuleSet: boolean } => {
     const { rowIcons: now, rules } = iconLive.current
-    const rule = oneRule(paths.map((path) => ruleFor(path.slice(path.lastIndexOf('/') + 1), isDir(path) ? 'folder' : 'file')))
-    return { iconHasPick: paths.some((path) => now.paths.has(path)), iconRuleSet: rule !== null && rules.some((r) => r.kind === rule.kind && r.match.toLowerCase() === rule.match.toLowerCase()) }
+    return { iconHasPick: paths?.some((path) => now.paths.has(path)) ?? false, iconRuleSet: rule !== null && rules.some((r) => r.kind === rule.kind && r.match.toLowerCase() === rule.match.toLowerCase()) }
   }, [])
   /**
-   * Where the picker opens: right of the sidebar, its top at the row, so the tree stays in view (demo round 2); in a
+   * Where the picker opens: right of the sidebar, its top at the row, so the tree stays in view (D8); in a
    * window too narrow for that, under the row's name; the row off screen, where the menu was. Screen px: the picker
    * is out of the sidebar zoom.
    */
@@ -887,20 +886,20 @@ export function Sidebar({
   // time for each change — turning the setting on reveals nothing — and only while Files shows: on another
   // tab nothing happens, and Files that shows later reveals the open tab then. The tab the window starts
   // with is revealed too; with the setting off the tree starts closed (YAZ-1642). A path in no vault of the
-  // window asks nothing, and nor does one in a vault row the user closed (YAZ-2602 R9, as `useVaultTree`'s
-  // own opening of a new tab's folders). Declared before App's requests, so an App request in the same commit wins.
+  // window asks nothing. A path in a vault row the user closed opens that row (`openTo`, Yaseen's change to D13):
+  // with the setting on, the open tab wins over YAZ-2602 R9; with it off, `useVaultTree`'s own opening of a new
+  // tab's folders still leaves that row closed (R9). Declared before App's requests, so an App request in the same commit wins.
   const revealActive = settings.sidebarRevealActive
   const filesShows = lens === 'files'
-  const vaultsNow = useRef({ roots, closedVaults })
-  vaultsNow.current = { roots, closedVaults }
+  const rootsNow = useRef(roots)
+  rootsNow.current = roots
   const followed = useRef<{ path: string | null | undefined; files: boolean; id: number }>({ path: undefined, files: false, id: 0 })
   useEffect(() => {
     const last = followed.current
     const moved = last.path !== activeFile || (filesShows && !last.files)
     followed.current = { ...last, path: activeFile, files: filesShows }
     if (!revealActive || !filesShows || !moved || activeFile === null) return
-    const vault = rootOfPath(vaultsNow.current.roots, activeFile)
-    if (vault === null || vaultsNow.current.closedVaults.includes(vault)) return
+    if (rootOfPath(rootsNow.current, activeFile) === null) return
     // Its own ids, below zero: App's count up from one, and each id is handled one time (`handledFilesRevealId`).
     followed.current.id -= 1
     setPendingReveal({ id: followed.current.id, path: activeFile, quiet: true })
@@ -1075,6 +1074,9 @@ export function Sidebar({
       const menuLens: SidebarLens = asSearch ? 'files' : lens
       // A shortcut row (YAZ-2290 E5): `node.path` is the note where it LIVES, this the folder the row stands in.
       const shortcutIn = node?.shortcutIn ?? null
+      // "Change icon ▸" (YAZ-3440 D8, D9): the row or its selection (never a vault row, a shortcut row or blank space), and the one name rule its rows want.
+      const iconPaths = node === null || vaultRow !== null || shortcutIn !== null || holdsVault ? null : plural ?? [node.path]
+      const iconRule = iconPaths === null ? null : oneRule(iconPaths.map((path) => ruleFor(path.slice(path.lastIndexOf('/') + 1), (path === node?.path ? node.type === 'dir' : dirs.includes(path)) ? 'folder' : 'file')))
       setMenu({
         x,
         y,
@@ -1112,9 +1114,9 @@ export function Sidebar({
         focusIsOn: node !== null && (plural ?? [node.path]).every((p) => focusList.includes(p)),
         // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
         favoritePaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
-        iconPaths: node === null || vaultRow !== null || shortcutIn !== null || holdsVault ? null : plural ?? [node.path],
-        ...iconTargets(node === null || vaultRow !== null || shortcutIn !== null || holdsVault ? null : plural ?? [node.path], (path) => (path === node?.path ? node.type === 'dir' : dirs.includes(path))),
-        iconRule: node === null || vaultRow !== null || shortcutIn !== null || holdsVault ? null : oneRule((plural ?? [node.path]).map((path) => ruleFor(path.slice(path.lastIndexOf('/') + 1), (path === node.path ? node.type === 'dir' : dirs.includes(path)) ? 'folder' : 'file'))),
+        iconPaths,
+        iconRule,
+        ...iconTargets(iconPaths, iconRule),
         // Each row by the list of the vault that holds it (YAZ-2631 D1).
         favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favoritesByRoot[rootOf(p)]?.includes(p) === true),
         // By the upkeep of the vault that holds the folder (R5).
@@ -1825,7 +1827,12 @@ export function Sidebar({
             suggested={suggestIcons(name, kind, shown)}
             onPick={(id) => {
               if ('paths' in scope) pickIcons(scope.paths, id)
-              else onChangeSettings({ ...settings, sidebarIconRules: withRule(settings.sidebarIconRules, scope.rule.match, scope.rule.kind, id) })
+              else {
+                // A list the settings check refuses (more than MAX_ICON_RULES, or a pattern too long) would refuse every setting with it: say so instead.
+                const next = withRule(settings.sidebarIconRules, scope.rule.match, scope.rule.kind, id)
+                if (isIconRules(next)) onChangeSettings({ ...settings, sidebarIconRules: next })
+                else onNotice(`Can't add the rule: the list holds ${MAX_ICON_RULES} rules at most, each up to ${MAX_ICON_MATCH} characters`, 'error')
+              }
             }}
             onClose={() => setIconPicker(null)}
           />

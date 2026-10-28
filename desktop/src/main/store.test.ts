@@ -570,7 +570,7 @@ describe('createStore: loading', () => {
     expect(mergeFolderSettings(DEFAULT_SETTINGS, { sidebarRevealActive: true }).sidebarRevealActive).toBe(true)
   })
 
-  it('sidebarIconRules (YAZ-3440 B, demo round 2): an older file without it loads none; a rule that does not read costs itself alone; the channel check takes only rules that all read; it travels whole', () => {
+  it('sidebarIconRules (YAZ-3440 D9): an older file without it loads none; a rule that does not read costs itself alone; the channel check takes only rules that all read; it travels whole', () => {
     expect(DEFAULT_SETTINGS.sidebarIconRules).toEqual([])
     const { sidebarIconRules: _rules, ...legacy } = DEFAULT_SETTINGS
     expect(sanitizeSettings(legacy).sidebarIconRules).toEqual([])

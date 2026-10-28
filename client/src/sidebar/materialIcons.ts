@@ -71,10 +71,10 @@ export function useMaterialIcons(): boolean {
   return useSyncExternalStore(subscribe, materialIconsLoaded)
 }
 
-export const DEFAULT_FILE_ICON = 'file'
-export const DEFAULT_FOLDER_ICON = 'folder'
+const DEFAULT_FILE_ICON = 'file'
+const DEFAULT_FOLDER_ICON = 'folder'
 
-/** True for an id Material ships: a pick or a rule naming any other reads as no pick (YAZ-3440 C). */
+/** True for an id Material ships: a pick or a rule naming any other reads as no pick (YAZ-3440 D8). */
 export const isMaterialIcon = (id: string): boolean => tables?.ids.has(id) === true
 
 /** The icon of a file named `name` (its base name, not a path). */
@@ -112,7 +112,7 @@ export const openIcon = (id: string): string => (tables?.ids.has(`${id}-open`) =
 export const iconUrl = (id: string): string => `/material-icons/${id}${tables?.clones.has(id) === true ? '.clone' : ''}.svg`
 
 /** The `_light` twin of an icon, for the light theme, or null when it has none. */
-export const lightIcon = (id: string): string | null => (tables?.ids.has(`${id}_light`) === true ? `${id}_light` : null)
+const lightIcon = (id: string): string | null => (tables?.ids.has(`${id}_light`) === true ? `${id}_light` : null)
 
 /**
  * The inline custom properties that draw `id` on a row (app.css reads them on `.tree__label::before`): its URL,

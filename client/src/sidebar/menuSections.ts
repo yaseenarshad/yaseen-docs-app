@@ -123,13 +123,13 @@ export interface MenuHandlers {
   /** "Remove shortcut" on a shortcut row (YAZ-2290 E5): the note, and the folder it stops appearing in. */
   onRemoveShortcut: (path: string, dir: string) => void
   onRename: (path: string) => void
-  /** "Change icon ▸ This file…" (YAZ-3440 C): the row, or every row of the 2+ selection; the caller opens the icon picker for their picks. */
+  /** "Change icon ▸ This file…" (YAZ-3440 D8): the row, or every row of the 2+ selection; the caller opens the icon picker for their picks. */
   onChangeIcon: (paths: string[]) => void
-  /** "Change icon ▸ All .gif files…" (demo round 2): the caller opens the icon picker for that name rule of the settings. */
+  /** "Change icon ▸ All .gif files…" (D9): the caller opens the icon picker for that name rule of the settings. */
   onChangeIconRule: (rule: { match: string; kind: 'file' | 'folder'; label: string }) => void
-  /** "Reset this file" (demo round 3): the rows' picks leave their vaults' `icons.json`. */
+  /** "Reset this file" (D8): the rows' picks leave their vaults' `icons.json`. */
   onResetIcon: (paths: string[]) => void
-  /** "Reset all .gif files" (demo round 3): that name rule leaves the settings. */
+  /** "Reset all .gif files" (D8): that name rule leaves the settings. */
   onResetIconRule: (rule: { match: string; kind: 'file' | 'folder'; label: string }) => void
   /** Delete (GRO-2272): the row, or the ordered 2+ selection that holds it (YAZ-3272 D21); the caller asks first. */
   onDelete: (paths: string[]) => void
@@ -353,7 +353,7 @@ const rename: Leaf = (t, h) => {
 }
 
 /**
- * "Change icon ▸" (YAZ-3440 C; one item since demo round 3): a flyout that says what each choice changes.
+ * "Change icon ▸" (YAZ-3440 D8; one item): a flyout that says what each choice changes.
  * "This file…" (a folder: "This folder…", a 2+ selection: "These N items…") is the rows' own pick in their vault's
  * `icons.json`; "All .gif files…" (else "All files named Makefile…", "All folders named src…") is the name rule of
  * the settings for every row like it, in every vault, and a selection whose rows want different rules has none.

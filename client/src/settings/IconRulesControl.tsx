@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import type { IconRule, IconRuleKind } from '@shared/vaultIcons'
+import { MAX_ICON_MATCH, MAX_ICON_RULES, type IconRule, type IconRuleKind } from '@shared/vaultIcons'
 import { IconPicker } from '../sidebar/IconPicker'
 import { suggestIcons } from '../sidebar/iconSuggestions'
 import { iconUrl, isMaterialIcon, useMaterialIcons } from '../sidebar/materialIcons'
@@ -20,11 +20,13 @@ interface Row extends IconRule {
 }
 
 /**
- * Settings › Sidebar › Icon rules (YAZ-3440 E; a setting since demo round 2): `settings.sidebarIconRules`, one list
+ * Settings › Sidebar › Icon rules (YAZ-3440 D9: a setting): `settings.sidebarIconRules`, one list
  * for every vault. Each rule: a pattern on the NAME (`*` any run, `?` one character, `{a,b}` either; any case), File
  * or Folder, an icon (the sidebar's picker) and a remove button; then "Add rule". The first rule that matches a row
- * wins, and a row's own pick ("Change icon for this file…") wins over every rule. A rule being written (an empty
- * pattern) stays here until it has a pattern: an empty one would be dropped when read.
+ * wins, and a row's own pick ("Change icon ▸ This file…") wins over every rule. A rule being written (an empty
+ * pattern) stays here until it has a pattern: an empty one would be dropped when read. The list stops at
+ * `MAX_ICON_RULES` rules and a pattern at `MAX_ICON_MATCH` characters, the settings check's limits: past them it
+ * would refuse the whole settings object.
  */
 export function IconRulesControl({ rules, onChange }: { rules: readonly IconRule[]; onChange: (rules: IconRule[]) => void }) {
   useMaterialIcons() // the rule icons show once Material's tables are in (YAZ-3470)
@@ -57,6 +59,7 @@ export function IconRulesControl({ rules, onChange }: { rules: readonly IconRule
                 aria-label="Name pattern"
                 placeholder="*.test.ts"
                 spellCheck={false}
+                maxLength={MAX_ICON_MATCH}
                 defaultValue={row.match}
                 onBlur={(e) => {
                   if (e.target.value !== row.match) change(row.key, { match: e.target.value })
@@ -72,7 +75,7 @@ export function IconRulesControl({ rules, onChange }: { rules: readonly IconRule
                 aria-label={`Icon: ${row.icon}`}
                 title={row.icon}
                 onClick={(e) => {
-                  // Anchored to this button, below it or above it, so the rule's row stays in view (demo round 3).
+                  // Anchored to this button, below it or above it, so the rule's row stays in view (D8).
                   const box = e.currentTarget.getBoundingClientRect()
                   setPicking({ key: row.key, anchor: { left: box.left, top: box.top, bottom: box.bottom } })
                 }}
@@ -86,7 +89,13 @@ export function IconRulesControl({ rules, onChange }: { rules: readonly IconRule
           ))}
         </ul>
       )}
-      <button type="button" className="settings__option" onClick={() => setDrafts([...drafts, { key: nextKey.current++, match: '', kind: 'file', icon: 'file' }])}>
+      <button
+        type="button"
+        className="settings__option"
+        disabled={rows.length >= MAX_ICON_RULES}
+        title={rows.length >= MAX_ICON_RULES ? `${MAX_ICON_RULES} rules at most` : undefined}
+        onClick={() => setDrafts([...drafts, { key: nextKey.current++, match: '', kind: 'file', icon: 'file' }])}
+      >
         Add rule
       </button>
       {picking !== null && current !== undefined && (

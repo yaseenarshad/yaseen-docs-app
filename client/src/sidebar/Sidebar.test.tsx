@@ -6,7 +6,7 @@
  * unchanged, and activating a stale tab probes a fresh tree before onFileMissing fires.
  * Real Tree/ContextMenu render against the jsdom bridge stub.
  */
-import type { VaultIcons } from '@shared/vaultIcons'
+import { MAX_ICON_MATCH, MAX_ICON_RULES, type VaultIcons } from '@shared/vaultIcons'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -73,6 +73,7 @@ import { PREVIEW_FOLLOW_MS } from './hooks/useSidebarSearch'
 import { useSameList } from './hooks/useVaultTree'
 import { useVaultListsHere } from '../lists/useVaultListsHere'
 import { useVaultIcons } from './useVaultIcons'
+import { loadMaterialIcons } from './materialIcons'
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -147,7 +148,7 @@ function installBridge() {
       set: vi.fn(async (_root: string, _paths: readonly string[]) => undefined),
       onChanged: vi.fn((_listener: (change: { root: string }) => void) => () => undefined),
     },
-    // A vault's own icons (YAZ-3440 A): none unless a test seeds them.
+    // A vault's own icons (YAZ-3440 D8): none unless a test seeds them.
     icons: {
       get: vi.fn(async (_root: string): Promise<VaultIcons> => ({ paths: {} })),
       set: vi.fn(async (_root: string, _icons: VaultIcons) => undefined),
@@ -4532,18 +4533,40 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
       }
     })
 
-    it('a path outside the window\'s vaults, a path the tree does not hold, and a path in a vault row the user closed do nothing — no notice, no scroll, no vault opens', async () => {
+    it('a path outside the window\'s vaults and a path the tree does not hold do nothing — no notice, no scroll, no vault opens', async () => {
       const calls = scrolls()
       try {
         const { v, props, rerender } = await mountVault(ON)
         boxes({ top: 0, bottom: 100 }, {})
         await rerender({ activeFile: '/elsewhere/Projects/x.md' })
         await rerender({ activeFile: `${v}/Projects/Gone.md` })
-        expect([vi.mocked(props.onNotice).mock.calls, calls]).toEqual([[], []])
-        boxes({ top: 0, bottom: 100 }, { [`${v}/top.md`]: { top: 400, bottom: 420 }, [`${v}/Projects/plan.md`]: { top: 400, bottom: 420 } }) // off screen: a reveal would scroll
-        await rerender({ activeFile: `${v}/top.md`, closedVaults: [v] })
-        await rerender({ activeFile: `${v}/Projects/plan.md`, closedVaults: [v] })
-        expect([vi.mocked(props.onSetVaultOpen).mock.calls, calls]).toEqual([[], []])
+        expect([vi.mocked(props.onNotice).mock.calls, calls, vi.mocked(props.onSetVaultOpen).mock.calls]).toEqual([[], [], []])
+      } finally {
+        unscroll()
+      }
+    })
+
+    it('a path in a vault row the user closed opens that row, then its folders, and scrolls to the row (Yaseen\'s change to D13); with the setting off the row stays closed (YAZ-2602 R9)', async () => {
+      const calls = scrolls()
+      try {
+        const plan = (v: string) => `${v}/Projects/Alpha/a.md`
+        const on = await mountVault(ON)
+        boxes({ top: 0, bottom: 100 }, { [plan(on.v)]: { top: 400, bottom: 420 } }) // off screen
+        await on.rerender({ activeFile: plan(on.v), closedVaults: [on.v] })
+        expect(vi.mocked(on.props.onSetVaultOpen).mock.calls).toEqual([[on.v, true]])
+        expect(isOpen(on.el, `${on.v}/Projects`)).toBe('true')
+        // The scroll waits for the row: App opens the vault row and hands the list back down.
+        expect(calls).toEqual([])
+        await on.rerender({ closedVaults: [] })
+        expect(calls).toEqual([[plan(on.v), { block: 'center' }]])
+        expect(vi.mocked(on.props.onNotice)).not.toHaveBeenCalled()
+
+        act(() => root?.unmount())
+        container?.remove()
+        calls.length = 0
+        const off = await mountVault()
+        await off.rerender({ activeFile: plan(off.v), closedVaults: [off.v] })
+        expect([vi.mocked(off.props.onSetVaultOpen).mock.calls, calls]).toEqual([[], []])
       } finally {
         unscroll()
       }
@@ -7110,7 +7133,7 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'New drawing',
       'New folder',
       'Rename',
-      // "Change icon ▸" (YAZ-3440 C, one flyout since demo round 3) closes the row's own group, after Rename.
+      // "Change icon ▸" (YAZ-3440 D8, one flyout) closes the row's own group, after Rename.
       'Change icon',
       // The favorite toggle (YAZ-1766 D3) leads the "Open in ▸" group, one hairline above Delete.
       'Add to favorites',
@@ -10739,5 +10762,65 @@ describe('Sidebar: the Files window chip (YAZ-3357 D13)', () => {
     container?.remove()
     const normal = await mount()
     expect(normal.el.querySelector('.sidebar__files-chip')).toBeNull()
+  })
+})
+
+/**
+ * "Change icon ▸" from the tree (YAZ-3440 D8, D9): the menu opens the icon picker, a pick shows on the row at once
+ * and goes to `api.icons.set` for the row's vault; a refused write toasts and shows what the file holds. "All .md
+ * files…" writes the name rule into the settings, and a rule list the settings check would refuse is not written.
+ */
+describe('Change icon from the tree (YAZ-3440 D8, D9)', () => {
+  const rowA = (el: HTMLElement) => el.querySelector<HTMLElement>('.tree__row--file[data-path="/v/a.md"]') as HTMLElement
+  const openPicker = (el: HTMLElement, choice: string) => {
+    act(() => void rowA(el).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    clickSub(el, choice, 'Change icon')
+    expect(el.ownerDocument.querySelector('.icon-picker')).not.toBeNull()
+  }
+  const pickIcon = async (id: string) => {
+    const button = document.querySelector<HTMLButtonElement>(`.icon-picker__icon[aria-label="${id}"]`)
+    expect(button).not.toBeNull()
+    await act(async () => button?.click())
+  }
+  const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve)))
+
+  it("a pick for this file shows on its row at once and is written to its vault's icons.json; a refused write toasts and puts the file's icons back", async () => {
+    await loadMaterialIcons()
+    const { el, bridge, props } = await mount()
+    expect(rowA(el).getAttribute('data-icon')).toBe('markdown')
+    openPicker(el, 'This file…')
+    expect(document.querySelector('.icon-picker__head')?.textContent).toBe('Icon for this file: a.md')
+    await pickIcon('python')
+    expect(document.querySelector('.icon-picker')).toBeNull()
+    expect(rowA(el).getAttribute('data-icon')).toBe('python')
+    expect(rowA(el).hasAttribute('data-icon-custom')).toBe(true)
+    expect(bridge.icons.set).toHaveBeenLastCalledWith('/v', { paths: { '/v/a.md': 'python' } })
+
+    // The file holds no pick (a malformed icons.json reads as none), and main refuses the write.
+    bridge.icons.set.mockRejectedValueOnce(new Error('icons.json is malformed; fix or delete it'))
+    openPicker(el, 'This file…')
+    await pickIcon('rust')
+    await settle()
+    expect(props.onNotice).toHaveBeenCalledWith("Can't save the icon: icons.json is malformed; fix or delete it", 'error')
+    expect(rowA(el).getAttribute('data-icon')).toBe('markdown')
+    expect(rowA(el).hasAttribute('data-icon-custom')).toBe(false)
+  })
+
+  it('"All .md files…" writes the rule into the settings; past the settings check it toasts and writes nothing', async () => {
+    await loadMaterialIcons()
+    const { el, props } = await mount()
+    openPicker(el, 'All .md files…')
+    expect(document.querySelector('.icon-picker__head')?.textContent).toBe('Icon for all .md files')
+    await pickIcon('python')
+    expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, sidebarIconRules: [{ match: '*.md', kind: 'file', icon: 'python' }] })
+
+    act(() => root?.unmount())
+    container?.remove()
+    const full = Array.from({ length: MAX_ICON_RULES }, (_, k) => ({ match: `*.x${k}`, kind: 'file' as const, icon: 'file' }))
+    const again = await mount({ settings: { ...DEFAULT_SETTINGS, sidebarIconRules: full } })
+    openPicker(again.el, 'All .md files…')
+    await pickIcon('python')
+    expect(again.props.onChangeSettings).not.toHaveBeenCalled()
+    expect(again.props.onNotice).toHaveBeenCalledWith(`Can't add the rule: the list holds ${MAX_ICON_RULES} rules at most, each up to ${MAX_ICON_MATCH} characters`, 'error')
   })
 })

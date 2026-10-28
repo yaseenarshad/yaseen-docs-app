@@ -1483,11 +1483,11 @@ export interface SettingsState {
   sidebarThreadColor: string | null
   /** The sidebar tree (YAZ-3440 D1, D2): how many levels of open folders stick at the top of the list while their rows scroll under them; 0 = off. Fewer stick while the stack would cover more than 40% of the list (`stickyFolders.ts`). It travels with the settings folder. */
   sidebarStickyLevels: SidebarStickyLevels
-  /** The sidebar tree (YAZ-3440 D4, D5): its file and folder icons — `quiet` (notes and folders grey, the other kinds in colour), `color` (notes in colour too), `grey` (every icon grey) or `off` (no icons). It travels with the settings folder. */
   /** The sidebar tree (YAZ-3440 D4): which icons its rows show — `material` (Material Icon Theme's, by file name, extension and folder name; the default) or `line` (the app's own line glyphs, one per kind). It travels with the settings folder. */
   sidebarIconSet: SidebarIconSet
+  /** The sidebar tree (YAZ-3440 D4): its file icons — `quiet` (every note grey, the other kinds in colour; the default), `color` (notes in colour too), `grey` (every file icon grey) or `off` (no file icons). A row's own pick or a rule keeps its colours in `quiet`. Folder icons are `sidebarFolderIcons`. It travels with the settings folder. */
   sidebarFileIcons: SidebarFileIcons
-  /** The sidebar tree (YAZ-3440 D5): a grey folder icon before each folder's name (a vault row never has one). Independent of `sidebarFileIcons`, which is the file rows' alone. It travels with the settings folder. */
+  /** The sidebar tree (YAZ-3440 D5 amended): a folder icon before each folder's name — with Material its folder-name icon or the default folder, with Line a grey folder; the open twin while it is open. A vault row never has one. Independent of `sidebarFileIcons`, which is the file rows' alone. It travels with the settings folder. */
   sidebarFolderIcons: boolean
   /** The sidebar tree (YAZ-3440 D6): a folder's arrow turns at once (`instant`, the default) or over 0.12s (`smooth`, as before). Reduce motion always turns it at once. It travels with the settings folder. */
   sidebarArrowMotion: SidebarArrowMotion
@@ -1495,13 +1495,13 @@ export interface SettingsState {
    * The sidebar tree (YAZ-3440 D13): the Files tab follows the open tab, as VS Code's "Auto Reveal" does. When the
    * active tab changes to a file or a folder in a vault of the window, Files opens the folders above it and scrolls
    * its row into view: to the centre if it was off screen, not at all if it shows. No flash, no focus change; while
-   * another tab of the sidebar shows, it waits until Files shows. Off by default: the tree starts closed (YAZ-1642).
+   * another tab of the sidebar shows, it waits until Files shows. A vault row the user closed opens for it (over YAZ-2602 R9). Off by default: the tree starts closed (YAZ-1642).
    * It travels with the settings folder.
    */
   sidebarRevealActive: boolean
   /** The sidebar tree (YAZ-3440 D4): each kind's own icon colour, `#rrggbb`; a kind not in it has the built-in colour (`{}` = all built in). It travels with the settings folder, as a whole. */
   sidebarIconColors: SidebarIconColors
-  /** The sidebar tree (YAZ-3440 B, demo round 2): the name rules, `[{ match, kind, icon }]` (`shared/vaultIcons.ts`), the first that matches a row's name and kind naming its Material icon, after the row's own pick in its vault's `icons.json`. A personal preference: one list for every vault, and it travels with the settings folder. */
+  /** The sidebar tree (YAZ-3440 D9): the name rules, `[{ match, kind, icon }]` (`shared/vaultIcons.ts`), the first that matches a row's name and kind naming its Material icon, after the row's own pick in its vault's `icons.json`. A personal preference: one list for every vault, and it travels with the settings folder. */
   sidebarIconRules: IconRule[]
   /**
    * The canvas preferences every drawing, every window and every relaunch share (Draw's 🔒 YAZ-1775 D9,

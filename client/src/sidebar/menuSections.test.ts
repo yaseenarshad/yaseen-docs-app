@@ -29,7 +29,7 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   focusPaths: null,
   focusIsOn: false,
   favoritePaths: null,
-  // "Change icon…" (YAZ-3440 C): null is blank space; the rows' fixtures below leave it out.
+  // "Change icon…" (YAZ-3440 D8): null is blank space; the rows' fixtures below leave it out.
   iconPaths: null,
   iconRule: null,
   iconHasPick: false,
@@ -840,7 +840,7 @@ describe('Share item (YAZ-3040)', () => {
   })
 })
 
-describe('"Change icon ▸" (YAZ-3440 C, demo round 3)', () => {
+describe('"Change icon ▸" (YAZ-3440 D8)', () => {
   const flyout = (over: Partial<MenuSectionTargets>, h = handlers()) => {
     const item = buildMenuSections(targets(over), h).flat().find((i) => i.id === 'change-icon')
     return { item, h, labels: item?.children?.map((section) => section.map((leaf) => leaf.label)) }

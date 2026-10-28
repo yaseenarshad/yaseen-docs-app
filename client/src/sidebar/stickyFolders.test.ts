@@ -13,11 +13,13 @@ describe('how many folder levels stick (YAZ-3440 D2)', () => {
     expect(stickyCap(7, 300, TREE_ROW_H * 2)).toBe(2)
   })
 
-  it('writes the cap on the list as one attribute, and clears it on cleanup', () => {
+  it('writes the cap on the list as the attribute and as `--sticky-levels`, and clears both on cleanup', () => {
     const body = document.createElement('div')
     const stop = stickyFolders(body, 5, 1)
     expect(body.getAttribute('data-sticky-levels')).toBe('5')
+    expect(body.style.getPropertyValue('--sticky-levels')).toBe('5')
     stop()
     expect(body.hasAttribute('data-sticky-levels')).toBe(false)
+    expect(body.style.getPropertyValue('--sticky-levels')).toBe('')
   })
 })

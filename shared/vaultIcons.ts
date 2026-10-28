@@ -1,8 +1,8 @@
 /**
- * The sidebar's own icons (YAZ-3440 A, B). Two homes:
+ * The sidebar's own icons (YAZ-3440 D8, D9). Two homes:
  * - a vault's one-row picks, `<root>/.yaseendocs/icons.json` = `{ version: 1, paths: { "<vault-relative path>": "<icon id>" } }`;
  * - the name rules, `settings.sidebarIconRules` = `[{ match, kind, icon }]`: a personal preference, so they travel
- *   with the settings folder and work in every vault (demo round 2).
+ *   with the settings folder and work in every vault (D9).
  * An icon id is a Material Icon Theme name (`python`, `folder-docs`). Pure: main reads and writes the file
  * (`desktop/src/main/icons.ts`) and validates the setting (`store.ts`); the sidebar matches rows (`rowIcons.ts`).
  *
@@ -17,11 +17,13 @@ export const ICONS_FILE = 'icons.json'
 /** At most this many picks and rules: a hand edit must not grow either without end. */
 export const MAX_ICON_PATHS = 5000
 export const MAX_ICON_RULES = 200
+/** A rule's pattern is at most this long. */
+export const MAX_ICON_MATCH = 200
 
 export type IconRuleKind = 'file' | 'folder'
 
 export interface IconRule {
-  /** A glob on the file or folder NAME, any case: `*` any run, `?` one character, `{a,b}` either. */
+  /** A glob on the file or folder NAME, any case: `*` any run, `?` one character, `{a,b}` either, `\*` a literal `*`. */
   match: string
   kind: IconRuleKind
   icon: string
@@ -46,7 +48,7 @@ export const isSafeRelPath = (p: unknown): p is string => typeof p === 'string' 
 
 /** One rule of `settings.sidebarIconRules`. */
 export const isIconRule = (v: unknown): v is IconRule =>
-  isRecord(v) && typeof v.match === 'string' && v.match.trim() !== '' && v.match.length <= 200 && (v.kind === 'file' || v.kind === 'folder') && isIconId(v.icon)
+  isRecord(v) && typeof v.match === 'string' && v.match.trim() !== '' && v.match.length <= MAX_ICON_MATCH && (v.kind === 'file' || v.kind === 'folder') && isIconId(v.icon)
 
 /** The setting, strict (the IPC boundary): every rule reads, and no more than the cap. */
 export const isIconRules = (v: unknown): v is IconRule[] => Array.isArray(v) && v.length <= MAX_ICON_RULES && v.every(isIconRule)
@@ -72,12 +74,20 @@ export function parseIconsConfig(v: unknown): IconsConfig | null {
   return { version: 1, paths: cleanIconPaths(v.paths, isSafeRelPath) }
 }
 
-/** A rule's glob as a RegExp over the whole name, any case. `*` any run, `?` one character, `{a,b}` either; the rest literal. */
+/**
+ * A rule's glob as a RegExp over the whole name, any case. `*` any run, `?` one character, `{a,b}` either; `\` makes
+ * the next character literal (`ruleFor` escapes a name's own `*`, `?`, `{`, `}`, `,`); the rest literal.
+ */
 export function globRegExp(glob: string): RegExp {
   let out = ''
   let inBraces = false
+  let escaped = false
   for (const ch of glob) {
-    if (ch === '*') out += '.*'
+    if (escaped) {
+      escaped = false
+      out += ch.replace(/[.*+?^$()|[\]\\/{}]/g, '\\$&')
+    } else if (ch === '\\') escaped = true
+    else if (ch === '*') out += '.*'
     else if (ch === '?') out += '.'
     else if (ch === '{' && !inBraces) {
       inBraces = true
@@ -88,12 +98,13 @@ export function globRegExp(glob: string): RegExp {
     } else if (ch === ',' && inBraces) out += '|'
     else out += ch.replace(/[.+^$()|[\]\\/{}]/g, '\\$&')
   }
+  if (escaped) out += '\\\\'
   if (inBraces) out += ')'
   return new RegExp(`^${out}$`, 'i')
 }
 
 /**
- * `paths` after a rename or a delete inside the app (YAZ-3440 D): `map` answers an entry's new absolute path,
+ * `paths` after a rename or a delete inside the app (YAZ-3440 D8): `map` answers an entry's new absolute path,
  * or null to drop it; a folder's move carries every pick below it. Null when nothing changed, so the caller
  * writes nothing. Keys are ABSOLUTE here.
  */

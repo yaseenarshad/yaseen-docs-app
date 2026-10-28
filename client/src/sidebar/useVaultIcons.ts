@@ -1,16 +1,18 @@
 /**
- * The window's vaults' one-row icon picks (YAZ-3440 A, B), `.yaseendocs/icons.json` through main, with the name
+ * The window's vaults' one-row icon picks (YAZ-3440 D8, D9), `.yaseendocs/icons.json` through main, with the name
  * rules of the settings (`sidebarIconRules`, the caller's): each vault read when
  * it joins and again on every `icons:changed` for it (an own write's echo, another window's, a sync), dropped
  * when it leaves; the favorites idiom (`useVaultListsHere`). `rowIcons` is the one object the tree reads; it
  * keeps its identity while nothing it holds changed (`buildRowIcons`).
  *
- * `save` is the one writer: optimistic, then main writes the vault's file; a refusal (a malformed file →
- * INVALID_CONFIG) puts the vault's icons back and toasts.
+ * `pick` is the one writer: optimistic, then main writes the vault's file. Each pick builds on the latest picks,
+ * a pick of the same tick included. A refusal (a malformed file → INVALID_CONFIG) toasts and reads the vault's
+ * file again: it holds what did save, a later pick's included. A pick past `MAX_ICON_PATHS` is refused at once,
+ * with a toast: main would drop it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { rootOfPath } from '@shared/types'
-import type { IconRule, VaultIcons } from '@shared/vaultIcons'
+import { MAX_ICON_PATHS, type IconRule, type VaultIcons } from '@shared/vaultIcons'
 import { api } from '../api'
 import type { NoticeKind } from '../lib/notice'
 import { useMaterialIcons } from './materialIcons'
@@ -66,19 +68,24 @@ export function useVaultIcons(roots: readonly string[], rules: readonly IconRule
       if (root !== null && root !== p) byVault.set(root, [...(byVault.get(root) ?? []), p])
     }
     for (const [root, mine] of byVault) {
-      const before = held.current[root] ?? { paths: {} }
-      const next: VaultIcons = { paths: { ...before.paths } }
+      const next: VaultIcons = { paths: { ...(held.current[root]?.paths ?? {}) } }
       for (const p of mine) {
         if (id === null) delete next.paths[p]
         else next.paths[p] = id
       }
+      if (Object.keys(next.paths).length > MAX_ICON_PATHS) {
+        notice.current(`Can't save the icon: a vault holds ${MAX_ICON_PATHS} icons of its own at most`, 'error')
+        continue
+      }
+      // Now, not at the next render: a second pick in the same tick builds on this one.
+      held.current = { ...held.current, [root]: next }
       setByRoot((all) => ({ ...all, [root]: next }))
       api.icons.set(root, next).catch((err: unknown) => {
-        if (live.current.includes(root)) setByRoot((all) => ({ ...all, [root]: before }))
+        if (live.current.includes(root)) load(root)
         notice.current(`Can't save the icon: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     }
-  }, [])
+  }, [load])
 
   // Material's tables (YAZ-3470) load after the first render: their landing builds the icons again, once.
   const material = useMaterialIcons()

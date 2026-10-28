@@ -430,7 +430,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   // YAZ-3303 D4: toasts and sounds, under Appearance.
   {
-    // YAZ-3440 D7 (demo round 1): the sidebar tree's look, a page of its own right after Appearance (it was one long
+    // YAZ-3440 D7: the sidebar tree's look, a page of its own right after Appearance (it was one long
     // "Sidebar tree" group there). Layout only: every key and what it does is as before.
     id: 'sidebar',
     title: 'Sidebar',
@@ -512,7 +512,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // YAZ-3440 D5: a grey folder before each folder's name; a vault row never has one. The file rows' icons are their own row below.
+            // YAZ-3440 D5 (amended): a folder icon before each folder's name, the icon set's (Material: by folder name; Line: a grey folder); a vault row never has one. The file rows' icons are their own row below.
             id: 'sidebarFolderIcons',
             label: 'Folder icons',
             keywords: ['sidebar', 'folder', 'tree', 'icon', 'icons'],
@@ -561,14 +561,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-3440 E: the name rules, one list for every vault (demo round 2).
+        // YAZ-3440 D9: the name rules, one list for every vault.
         title: 'Icon rules',
         items: [
           {
-            // YAZ-3440 E (demo round 2): the name rules are a setting, one list for every vault; a row's own pick wins over them.
+            // YAZ-3440 D9: the name rules are a setting, one list for every vault; a row's own pick wins over them.
             id: 'sidebarIconRules',
             label: 'Icon rules',
-            hint: 'Give each file or folder whose name matches a pattern its own icon, in every vault and both icon sets. * stands for any characters. The first rule that matches wins; a row\'s own icon (right-click, Change icon for this file…) wins over every rule.',
+            hint: 'Give each file or folder whose name matches a pattern its own icon, in every vault and both icon sets. * stands for any characters. The first rule that matches wins; a row\'s own icon (right-click, Change icon ▸ This file…) wins over every rule.',
             keywords: ['sidebar', 'tree', 'icon', 'icons', 'rule', 'rules', 'pattern', 'glob', 'custom'],
             wide: true,
             render: ({ settings, onChange }) => <IconRulesControl rules={settings.sidebarIconRules} onChange={(sidebarIconRules) => onChange({ ...settings, sidebarIconRules })} />,

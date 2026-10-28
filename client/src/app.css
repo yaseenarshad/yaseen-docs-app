@@ -76,7 +76,6 @@
   --reveal-fg: #1e1900;
   --kind-note: #6cb2d6;
   --kind-text: #6aa7e0;
-  --kind-pdf: var(--danger);
   --kind-image: #4cc79a;
   --kind-drawing: #e0aa3e;
   --kind-diagram: #f08d5a;
@@ -2390,7 +2389,7 @@ button {
    Each nested level clips what pokes above its top, so the pieces join into one path, as in the editor. A row is
    13px * 1.5 + 2 * 3px tall, so its middle is 12.75px down. Each level is its own stacking context, so the grey
    line (z 1) stays over the row fills and the thread (z 2) over the grey line, without leaking out of the tree. A
-   nested level is z 3 in its parent's (YAZ-3440 D1, round 1 1b): a row stuck inside it stays over the parent's
+   nested level is z 3 in its parent's (YAZ-3440 D10): a row stuck inside it stays over the parent's
    lines and thread, which pass behind it.
    `--sidebar-thread` is its colour (D9): its own, else Bullet threading's, else the accent. */
 .app[data-sidebar-line-style='thread'] {
@@ -2606,11 +2605,11 @@ button {
    its rows scroll under it, one row below the folder that holds it (a row is 13px * 1.5 + 2 * 3px = 25.5px tall),
    and leaves with its last row; a closed folder has nothing to scroll under it, so it stays an ordinary row. CSS
    alone: no script runs on a scroll. Chromium sticks below the list's top padding, so `top` takes that padding back
-   (`--sidebar-pad-top`) and the stack starts flush at the top edge (round 1, 1a). The shallower row stays on top, and
+   (`--sidebar-pad-top`) and the stack starts flush at the top edge (D10). The shallower row stays on top, and
    every row that can stick is z 4 and up, over the level lines and the thread (z 1, 2 inside their level), so they
-   pass behind the stuck stack (1b). An unstuck row has no fill of its own, so the lines still show through it; only
+   pass behind the stuck stack (D10). An unstuck row has no fill of its own, so the lines still show through it; only
    while it is stuck (its own `::before` and `::after` read its own stuck state) does a square block of the side's
-   colour back it, with a copy of its fill, edge and corners on top (1c) and the thin line under it (1d). */
+   colour back it, with a copy of its fill, edge and corners on top and the thin line under it (D10). */
 .tree > li[aria-expanded='true'] > .tree__row--sticky {
   position: sticky;
   top: calc(var(--tree-depth, 0) * 25.5px - var(--sidebar-pad-top, 0px));
@@ -2648,7 +2647,8 @@ button {
 }
 
 /* How many levels stick (YAZ-3440 D2): `stickyFolders.ts` writes the cap on the list — the setting, cut to the
-   rows that fit in 40% of the list — and a folder row N levels deep or more does not stick. Never more than 7. */
+   rows that fit in 40% of the list — as `data-sticky-levels`, and a folder row N levels deep or more does not stick.
+   Never more than 7. The same write sets `--sticky-levels`, the cap as a number, for `scroll-margin-top`. */
 .sidebar__body[data-sticky-levels='0'] li[aria-expanded='true'] > .tree__row--sticky,
 .sidebar__body[data-sticky-levels='1'] .tree[role='group'] li[aria-expanded='true'] > .tree__row--sticky,
 .sidebar__body[data-sticky-levels='2'] .tree[role='group'] .tree[role='group'] li[aria-expanded='true'] > .tree__row--sticky,
@@ -2658,38 +2658,6 @@ button {
 .sidebar__body[data-sticky-levels='6'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] li[aria-expanded='true'] > .tree__row--sticky,
 .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] .tree[role='group'] li[aria-expanded='true'] > .tree__row--sticky {
   position: static;
-}
-
-.sidebar__body[data-sticky-levels='0'] {
-  --sticky-levels: 0;
-}
-
-.sidebar__body[data-sticky-levels='1'] {
-  --sticky-levels: 1;
-}
-
-.sidebar__body[data-sticky-levels='2'] {
-  --sticky-levels: 2;
-}
-
-.sidebar__body[data-sticky-levels='3'] {
-  --sticky-levels: 3;
-}
-
-.sidebar__body[data-sticky-levels='4'] {
-  --sticky-levels: 4;
-}
-
-.sidebar__body[data-sticky-levels='5'] {
-  --sticky-levels: 5;
-}
-
-.sidebar__body[data-sticky-levels='6'] {
-  --sticky-levels: 6;
-}
-
-.sidebar__body[data-sticky-levels='7'] {
-  --sticky-levels: 7;
 }
 
 /* A vault row (YAZ-2602 D3): a folder row that is a whole vault, so its name reads as the parent
@@ -2855,8 +2823,9 @@ button {
    the row as the inline `--icon` (and `--icon-light`, its light theme twin, when it has one), with its id as
    `data-icon`: any of Material's icons shows with no rule of its own, and a row loads only its own file
    (`/material-icons/`, `materialIcons.ts`). Folders keep their colours; `grey` draws the file icons as grey
-   silhouettes (the icon as a mask), and `quiet` the notes' alone. A row the vault gave its own icon (a pick or a
-   rule in `.yaseendocs/icons.json`, YAZ-3440 B: `data-icon-custom`) shows it in the Line set too. */
+   silhouettes (the icon as a mask), and `quiet` every note's (`data-kind='markdown'`, whatever its name icon:
+   README.md, SKILL.md, todo.md too, D4). A row the user gave its own icon (a pick in `.yaseendocs/icons.json`, D8,
+   or a rule in settings, D9: `data-icon-custom`) shows it in the Line set too, and in its own colours in `quiet`. */
 .app[data-sidebar-icon-set='material']:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-icon] .tree__label, .file-icon--file[data-icon])::before,
 .app[data-sidebar-icon-set='material']:not([data-sidebar-folder-icons='off']) :is(.tree__row--dir[data-icon] .tree__label, .file-icon--dir[data-icon])::before,
 .app:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-icon-custom] .tree__label, .file-icon--file[data-icon-custom])::before,
@@ -2878,7 +2847,7 @@ button {
 /* After the light rule, which has the same weight: a silhouette has no image. */
 .app[data-sidebar-icon-set='material'][data-sidebar-file-icons='grey'] :is(.tree__row--file[data-icon] .tree__label, .file-icon--file[data-icon])::before,
 .app[data-sidebar-file-icons='grey'] :is(.tree__row--file[data-icon-custom] .tree__label, .file-icon--file[data-icon-custom])::before,
-.app[data-sidebar-icon-set='material'][data-sidebar-file-icons='quiet'] :is(.tree__row--file[data-icon='markdown'] .tree__label, .file-icon--file[data-icon='markdown'])::before {
+.app[data-sidebar-icon-set='material'][data-sidebar-file-icons='quiet'] :is(.tree__row--file[data-kind='markdown'][data-icon]:not([data-icon-custom]) .tree__label, .file-icon--file[data-kind='markdown'][data-icon]:not([data-icon-custom]))::before {
   background: var(--fg-muted);
   mask: var(--icon) center / 14px 14px no-repeat;
 }
@@ -3641,7 +3610,7 @@ button {
   }
 }
 
-/* The icon picker (YAZ-3440 C, demo round 2): a menu surface right of the sidebar (and over the Settings dialog, z 70),
+/* The icon picker (YAZ-3440 D8): a menu surface right of the sidebar (and over the Settings dialog, z 70),
    out of the sidebar zoom, so in screen px: 480px wide, up to 520px tall. Its head says what it changes, then the
    search box, "Reset to default", "Suggested" and "All icons" (28px icons in 44px cells, 10 to a row:
    `PICKER_COLUMNS`), each loaded when in view, and a footer with the name of the icon under the mouse or the keys. */
@@ -3651,7 +3620,7 @@ button {
   font-size: 13px;
 }
 
-/* The layer that takes a click outside the picker (demo round 3): it closes the picker and nothing under it hears it. */
+/* The layer that takes a click outside the picker (D8): it closes the picker and nothing under it hears it. */
 .icon-picker__outside {
   position: fixed;
   inset: 0;

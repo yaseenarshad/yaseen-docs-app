@@ -6,7 +6,7 @@ import { VAULT_CONFIG_DIR } from '@shared/types'
 import { ICONS_FILE, mergeIconsFile } from '@shared/vaultIcons'
 import { getIcons, removePath, renamePath, setIcons } from './icons'
 
-/** A vault's own icons (YAZ-3440 A, D): `.yaseendocs/icons.json` in real tmp vaults, as favorites.test does. */
+/** A vault's own icons (YAZ-3440 D8): `.yaseendocs/icons.json` in real tmp vaults, as favorites.test does. */
 
 const roots: string[] = []
 afterEach(async () => {
@@ -26,7 +26,7 @@ const seed = async (root: string, content: string) => {
 }
 const exists = (p: string) => stat(p).then(() => true, () => false)
 
-describe('icons.json (YAZ-3440 A)', () => {
+describe('icons.json (YAZ-3440 D8)', () => {
   it('a read creates nothing; the first write creates the file, relative on disk and absolute on the bridge', async () => {
     const root = await makeVault()
     expect(await getIcons(root)).toEqual({ paths: {} })
@@ -52,7 +52,7 @@ describe('icons.json (YAZ-3440 A)', () => {
   })
 })
 
-describe('the rename carry-over (YAZ-3440 D)', () => {
+describe('the rename carry-over (YAZ-3440 D8)', () => {
   it('a renamed file takes its pick; a moved folder takes its own and every pick below it; the rest stand', async () => {
     const root = await makeVault()
     const at = (...p: string[]) => path.join(root, ...p)

@@ -491,7 +491,7 @@ export const CONTRACT = {
     /** Fired in every window after any change to a vault's favorites.json, own or external; filter by `root`. */
     onChanged: push<{ root: string }>('favorites:changed'),
   },
-  /** A vault's one-row icon picks over `.yaseendocs/icons.json` (YAZ-3440 A), by absolute path (`shared/vaultIcons.ts`); the name rules are `settings.sidebarIconRules`. */
+  /** A vault's one-row icon picks over `.yaseendocs/icons.json` (YAZ-3440 D8), by absolute path (`shared/vaultIcons.ts`); the name rules are `settings.sidebarIconRules`. */
   icons: {
     /** The picks; none when the file is absent or malformed. Never creates anything. */
     get: invoke<[root: string], VaultIcons>('icons:get', 1),

@@ -23,7 +23,7 @@ import { git, zList } from './exec'
  *  - a DIAGRAM (`.drawio`) KEEPS BOTH (YAZ-1802 D8): the remote's version at the path, ours beside
  *    it as `<name> (conflict, YYYY-MM-DD).drawio`. So does a drawing that will not parse, or two
  *    unrelated new drawings at one path;
- *  - the vault's `shares.json`, `favorites.json` and `icons.json` (YAZ-3440 A) merge per entry;
+ *  - the vault's `shares.json`, `favorites.json` and `icons.json` (YAZ-3440 D8) merge per entry;
  *  - a board one side deleted and the other edited keeps the edit.
  *
  * DOCS IS THE FIRST-CLASS APP (YAZ-3028 D12). Everything else — a NOTE above all, any other file,

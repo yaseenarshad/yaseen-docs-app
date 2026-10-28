@@ -945,7 +945,7 @@
   }
 }
 
-/* Settings › Sidebar tree › Icon rules (YAZ-3440 E): one line per rule — its name pattern, File or Folder, its
+/* Settings › Sidebar › Icon rules (YAZ-3440 D9): one line per rule — its name pattern, File or Folder, its
    icon (opens the sidebar's icon picker) and remove — then "Add rule". */
 .icon-rules {
   display: flex;
