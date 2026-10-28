@@ -186,6 +186,11 @@ export const CONTRACT = {
      * hears it, and recording ⌘W must not close the tab. A window that closes or reloads stops by itself.
      */
     recording: invoke<[on: boolean], void>('hotkeys:recording', 1),
+    /**
+     * A drawing opened over a note in the calling window, or closed (YAZ-3564 K9): while it is open, main builds the
+     * menu as for a drawing tab, so ⌘D duplicates instead of going to your place. A reload or close ends it by itself.
+     */
+    drawingInFront: invoke<[on: boolean], void>('hotkeys:drawing-in-front', 1),
   },
   window: {
     /** Who am I: main answers from `AppState.windows` by the `?win=<id>` in the window's URL. */

@@ -4134,6 +4134,10 @@ button {
 }
 
 /* The keys of this tab (YAZ-3564 K11): two columns, the key then what it does; the list scrolls inside the sheet. */
+/* Above a drawing open over a note (z-index 70), whose ? opens it (YAZ-3564 K11). */
+.confirm-overlay:has(> .key-sheet) {
+  z-index: 80;
+}
 .confirm.key-sheet {
   width: min(520px, 92vw);
   max-height: min(640px, 86vh);

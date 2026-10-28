@@ -372,6 +372,10 @@ describe('buildMenuTemplate', () => {
     for (const kind of ['drawing', 'diagram', 'text'] as const) expect(goTo(kind), kind).toBeUndefined()
     for (const kind of ['markdown', null] as const) expect(goTo(kind), String(kind)).toBe('CmdOrCtrl+D')
     expect(goTo('drawing', { 'app.goTo': false })).toBe('CmdOrCtrl+D')
+    // A drawing open over a note is in front (the checker's YAZ-3605 find): ⌘D duplicates there, and the board items stay the note's.
+    const overNote = buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: 'markdown', frontKind: 'drawing', hotkeys: {} }, noopHandlers())
+    expect(item(overNote, 'File', 'menu.file.go-to')?.accelerator).toBeUndefined()
+    expect(item(overNote, 'File', 'menu.file.export-image')?.enabled).toBe(false)
     // ⌘N never steps aside: the New… box answers on every tab.
     for (const kind of ['drawing', 'diagram', 'text', 'markdown'] as const) expect(item(onTab(kind), 'File', 'menu.file.new-item')?.accelerator, kind).toBe('CmdOrCtrl+N')
   })
@@ -914,6 +918,16 @@ describe('gateOnBoardKind', () => {
     expect(build).toHaveBeenCalledTimes(6)
     menu.apply() // a recents change still rebuilds
     expect(build).toHaveBeenCalledTimes(7)
+    // A drawing opened over the note moves what is in front, not the tab (YAZ-3564 K9): one rebuild each way.
+    let front: FileKind | null = 'markdown'
+    const over = gateOnBoardKind(() => 'markdown', build, () => front)
+    over.apply()
+    front = 'drawing'
+    over.applyIfMoved()
+    over.applyIfMoved()
+    front = 'markdown'
+    over.applyIfMoved()
+    expect(build).toHaveBeenCalledTimes(10)
   })
 })
 

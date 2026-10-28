@@ -90,6 +90,8 @@ export interface MenuInputs {
    * `subscribeMenuRebuildOnActiveFile` and the focus hook are what make a rebuild happen.
    */
   activeKind: FileKind | null
+  /** What is in front when it is not the tab's file: a drawing open over a note (YAZ-3564 K9). The keys follow it. */
+  frontKind?: FileKind | null
   /**
    * The user's key changes (YAZ-3397 D2), straight from `settings.hotkeys`: every changeable item takes its
    * key from `keyFor`, and one with no key now has none. `subscribeMenuRebuild` rebuilds when they change.
@@ -128,7 +130,7 @@ const menuLabel = (text: string): string => text.replace(/&/g, '&&')
  * The whole menu bar as a template. Item `id`s are stable so a live check (Playwright) can
  * drive items through `Menu.getApplicationMenu().getMenuItemById(...)`.
  */
-export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hotkeys, hotkeysAside, suspendKeys = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
+export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, frontKind = activeKind, hotkeys, hotkeysAside, suspendKeys = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
   const recentItems: MenuItemConstructorOptions[] =
     recents.length === 0
       ? [{ label: 'No Recent Folders', enabled: false }]
@@ -140,7 +142,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
   const onBoard = activeKind === 'drawing' || activeKind === 'diagram'
   const onDrawing = activeKind === 'drawing'
   /** The place of the tab in front, for the App keys that let it keep its own key (YAZ-3564 K9). */
-  const place: KeyScope | null = onBoard ? (activeKind as KeyScope) : activeKind === 'text' ? 'code' : null
+  const place: KeyScope | null = frontKind === 'drawing' || frontKind === 'diagram' ? frontKind : frontKind === 'text' ? 'code' : null
   /**
    * A changeable item's key (YAZ-3397 D2): the user's, else the default; none at all for "No key", and none while a tab
    * of a place it steps aside in is in front (YAZ-3564 K9), so that place keeps its own key.
@@ -560,12 +562,11 @@ export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => v
  * asked window going between a drawing, a diagram, code and anything else. A focus change or a tab switch
  * from note to note then costs one `fileKind`, not a whole new menu.
  */
-export function gateOnBoardKind(kindNow: () => FileKind | null, apply: () => void): { apply: () => void; applyIfMoved: () => void } {
+export function gateOnBoardKind(kindNow: () => FileKind | null, apply: () => void, frontNow: () => FileKind | null = kindNow): { apply: () => void; applyIfMoved: () => void } {
   // A code tab is a bucket of its own (YAZ-3556): the App keys that step aside in code (YAZ-3564 K9) change with it.
-  const bucket = (): 'drawing' | 'diagram' | 'code' | 'other' => {
-    const kind = kindNow()
-    return kind === 'drawing' || kind === 'diagram' ? kind : kind === 'text' ? 'code' : 'other'
-  }
+  const of = (kind: FileKind | null): 'drawing' | 'diagram' | 'code' | 'other' => (kind === 'drawing' || kind === 'diagram' ? kind : kind === 'text' ? 'code' : 'other')
+  // The tab's kind gates the board items; what is in front (a drawing over a note, YAZ-3564 K9) gates the keys.
+  const bucket = (): string => `${of(kindNow())}|${of(frontNow())}`
   let last: ReturnType<typeof bucket> | null = null
   const always = (): void => {
     last = bucket()

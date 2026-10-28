@@ -46,6 +46,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { api } from '../api'
+import { setPlaceOverTab } from '../keys/keySheetRequest'
 import { ConflictBar } from '../documents/ConflictBar'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
@@ -149,6 +150,17 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys }: Dr
 
   // Focus lands here on mount so Esc works before the canvas exists (and stays inside afterwards).
   useEffect(() => overlayRef.current?.focus(), [])
+
+  // A drawing is in front of the note while this is open (YAZ-3564 K9, K11): main's menu lets it keep ⌘D, and the
+  // key sheet lists its keys. Best effort: a failed send only leaves the note's menu keys.
+  useEffect(() => {
+    setPlaceOverTab('drawing')
+    void api.hotkeys.drawingInFront(true).catch(() => undefined)
+    return () => {
+      setPlaceOverTab(null)
+      void api.hotkeys.drawingInFront(false).catch(() => undefined)
+    }
+  }, [])
 
   /** The drawing's own file says read only (YAZ-3076 D2, S28): the engine's view mode, and nothing to save. */
   const readOnly = loaded?.scene.readOnly === true
