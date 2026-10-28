@@ -35,7 +35,7 @@ import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented } from './controls'
-import { HOTKEYS_SECTION } from './hotkeysSection'
+import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
@@ -97,6 +97,8 @@ export interface SettingsCtx {
    * until main answers.
    */
   systemHotkeys?: readonly SystemHotkey[]
+  /** Settings › Hotkeys' filters (YAZ-3564 K7): the dialog holds them while the page is open; absent = no filter. */
+  hotkeyFilter?: HotkeyFilter
 }
 
 export interface SettingDef {
