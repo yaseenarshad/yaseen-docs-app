@@ -379,7 +379,8 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
 
   it('the cog has the three rows, in order, with the settings as they are; each row writes its setting for all code files', async () => {
     await openTwo({ codeReadOnly: false, codeWrap: true, codeMinimap: false })
-    expect(cogRows('a')).toEqual(['Read only', 'Wrap long lines✓', 'Minimap'])
+    // Then the file's own "Table of contents" row, which every code file has (YAZ-3558 D1).
+    expect(cogRows('a')).toEqual(['Read only', 'Wrap long lines✓', 'Minimap', 'Table of contents✓'])
     clickRow('a', 'Read only')
     // One line each, under one heading that says they change every code file (the checker's nit on YAZ-3458).
     expect(tab('a').querySelector('.page-settings__menu [role="group"]')?.getAttribute('aria-label')).toBe('All code files')
@@ -537,11 +538,27 @@ describe('the cog\'s "Table of contents" row: this file only (YAZ-3506)', () => 
     expect(setTocSwitch).toHaveBeenLastCalledWith(ROOT, PY_A, true)
   })
 
-  it('Settings › Table of contents Off applies on top: no panel and no row', async () => {
-    twoTabs('off')
+  it('"Table of contents default" Off: no panel and the row unchecked; a click turns THIS file on and stores `true`, and the other file stays off (YAZ-3558 D1, S25)', async () => {
+    // Two files that made no choice yet (the ones above did).
+    const PY_C = '/vault/app/c.py'
+    const PY_D = '/vault/app/d.py'
+    act(() =>
+      root?.render(
+        <>
+          <div data-tab="a"><CodeEditor root={ROOT} path={PY_C} watch={watch} onChangeCodeSettings={() => undefined} tableOfContents="pinned" tocOnByDefault={false} /></div>
+          <div data-tab="b"><CodeEditor root={ROOT} path={PY_D} watch={watch} onChangeCodeSettings={() => undefined} tableOfContents="pinned" tocOnByDefault={false} /></div>
+        </>,
+      ),
+    )
     await settle()
     expect(toc('a')).toBeNull()
-    expect(openCog('a').map((b) => b.textContent)).toEqual(['Read only', 'Wrap long lines✓', 'Minimap'])
+    expect(openCog('a').map((b) => `${b.textContent}:${b.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Wrap long lines✓:true', 'Minimap:false', 'Table of contents:false'])
+    clickToc('a')
+    await settle()
+    expect(toc('a')).not.toBeNull()
+    expect(toc('b')).toBeNull()
+    expect(setTocSwitch).toHaveBeenLastCalledWith(ROOT, PY_C, true)
+    expect(storage.getTocSwitch(ROOT, PY_D)).toBeUndefined()
   })
 })
 

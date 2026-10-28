@@ -1517,8 +1517,10 @@ export interface SettingsState {
   sectionStep: number
   /** Section indent (YAZ-2709): the grey section lines show always, or only while the pointer is over the note. */
   sectionLines: SectionLines
-  /** The table of contents at a note's right edge (YAZ-2700): how you READ, global, never part of a note. */
+  /** The table of contents at a note's right edge (YAZ-2700): how you READ, global, never part of a note. Settings › "Pin default"; the card's "Pin" and "Unpin" write it too. */
   tableOfContents: TableOfContents
+  /** Settings › "Table of contents default" (YAZ-3558 D2): on or off for each page that made no choice in its cog (`tocSwitches`). A page's choice wins. */
+  tocOnByDefault: boolean
   /** The width of the table of contents' names column (YAZ-2752): whole px, `TOC_MIN_W` to `TOC_MAX_W`. The reader drags the column's edge; one width for every note and window. */
   tableOfContentsWidth: number
   /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
@@ -1737,10 +1739,12 @@ export const VAULT_OPENS_ON: readonly VaultOpensOn[] = ['blank', 'last']
 /**
  * A note's table of contents (YAZ-2700): `auto` shows the names of its rows — its headings, or its
  * bullets (`TocSource`) — when the window has room beside the text and small lines when it has
- * not, `pinned` keeps the names open, `off` shows nothing.
+ * not, `pinned` keeps the names open, `off` shows nothing. `off` is the editor's mode for a page that
+ * shows none, never a stored setting (YAZ-3558 D2: on or off is `tocOnByDefault` and the page's own choice).
  */
 export type TableOfContents = 'auto' | 'pinned' | 'off'
-export const TABLE_OF_CONTENTS: readonly TableOfContents[] = ['auto', 'pinned', 'off']
+/** The values the setting stores. */
+export const TABLE_OF_CONTENTS: readonly TableOfContents[] = ['auto', 'pinned']
 
 /** The names column of the table of contents (YAZ-2752): the narrowest and the widest a drag makes it, and its width until the reader drags. */
 export const TOC_MIN_W = 160
@@ -1803,6 +1807,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sectionStep: 30,
   sectionLines: 'always',
   tableOfContents: 'auto',
+  tocOnByDefault: true,
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
   sidebarLines: 'hover',

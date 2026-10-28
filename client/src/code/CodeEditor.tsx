@@ -88,6 +88,8 @@ export interface CodeEditorProps extends DocumentHostProps {
   onChangeCodeSettings?: (patch: CodeSettingsPatch) => void
   /** The Outline (YAZ-3486) on the note's setting (Settings › Table of contents) and width; absent = off. */
   tableOfContents?: TableOfContentsMode
+  /** Settings › "Table of contents default" (YAZ-3558): for a file that made no choice in its cog. Absent = the default, on. */
+  tocOnByDefault?: boolean
   onChangeTableOfContents?: (mode: TableOfContentsMode) => void
   tableOfContentsWidth?: number
   onChangeTableOfContentsWidth?: (width: number) => void
@@ -183,7 +185,7 @@ interface CodeHostProps extends CodeEditorProps {
 }
 
 /** Mounts exactly one Monaco editor and model for `loaded`; the document host owns everything that writes. */
-function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar, codeReadOnly = DEFAULT_SETTINGS.codeReadOnly, codeWrap = DEFAULT_SETTINGS.codeWrap, codeMinimap = DEFAULT_SETTINGS.codeMinimap, onChangeCodeSettings, startView, onOpenFile, viewKey, tableOfContents = 'off', onChangeTableOfContents = noChange, tableOfContentsWidth = TOC_DEFAULT_W, onChangeTableOfContentsWidth = noChange, codeOutlineSort = 'position', codeOutlineHidden = NO_KINDS, codeOutlineLocals = false }: CodeHostProps) {
+function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar, codeReadOnly = DEFAULT_SETTINGS.codeReadOnly, codeWrap = DEFAULT_SETTINGS.codeWrap, codeMinimap = DEFAULT_SETTINGS.codeMinimap, onChangeCodeSettings, startView, onOpenFile, viewKey, tableOfContents = 'off', tocOnByDefault = DEFAULT_SETTINGS.tocOnByDefault, onChangeTableOfContents = noChange, tableOfContentsWidth = TOC_DEFAULT_W, onChangeTableOfContentsWidth = noChange, codeOutlineSort = 'position', codeOutlineHidden = NO_KINDS, codeOutlineLocals = false }: CodeHostProps) {
   const theme = useAppliedTheme()
   const mountRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<ReturnType<typeof monaco.editor.create> | null>(null)
@@ -204,9 +206,9 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
   const [zoom, setZoom] = useState(startView?.magnification ?? 100)
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
-  // This file's "Table of contents" row (YAZ-3506): on for every file, and this file can turn its own off. Saved with
-  // the file in the app state, as a note's is; Settings › Table of contents still applies on top.
-  const [tocOn, toggleToc] = usePageSwitch(root, path, storage.getTocSwitch, storage.setTocSwitch)
+  // This file's "Table of contents" row (YAZ-3506): Settings › "Table of contents default" until this file makes its own
+  // choice, which wins, also over Off (YAZ-3558 D1). Saved with the file in the app state, as a note's is.
+  const [tocOn, toggleToc] = usePageSwitch(root, path, storage.getTocSwitch, storage.setTocSwitch, tocOnByDefault)
   const tocMode: TableOfContentsMode = tocOn ? tableOfContents : 'off'
   /** The values the editor is born with; the effects below follow every change after. */
   const born = useRef({ locked, codeWrap, codeMinimap, zoom, startView, outlineOn: tocMode !== 'off', outlineLocals: codeOutlineLocals })
@@ -473,7 +475,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
           <CodeChips
             settings={{ codeReadOnly, codeWrap, codeMinimap }}
             onChangeSettings={onChangeCodeSettings}
-            tableOfContents={tableOfContents === 'off' ? undefined : { on: tocOn, onToggle: toggleToc }}
+            tableOfContents={{ on: tocOn, onToggle: toggleToc }}
             zoom={zoom}
             onZoom={setZoom}
             locked={locked}

@@ -38,14 +38,13 @@ export const COMMENTS_ORDER_OPTIONS: readonly Option<CommentsOrder>[] = [
 ]
 
 /**
- * A note's table of contents (YAZ-2700): the names of its rows (headings, or bullets) beside the
- * text when the window has room for them, always, or nothing. The editor owns what "room" means
- * (`namesShow`, editor/toc).
+ * "Pin default" (YAZ-2700; YAZ-3558 D2a): On keeps the names of a note's rows (headings, or bullets)
+ * open beside the text; Off shows them when the window has room for them. The editor owns what
+ * "room" means (`namesShow`, editor/toc). On or off for the page itself is "Table of contents default".
  */
 export const TABLE_OF_CONTENTS_OPTIONS: readonly Option<TableOfContents>[] = [
-  { label: 'When there is room', value: 'auto' },
-  { label: 'Always', value: 'pinned' },
-  { label: 'Off', value: 'off' },
+  { label: 'On', value: 'pinned' },
+  { label: 'Off', value: 'auto' },
 ]
 
 /** What a plain launch brings back (YAZ-2589 D2); the main process reads the field when the app starts. */

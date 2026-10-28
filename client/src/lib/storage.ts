@@ -452,8 +452,8 @@ export const storage = {
     send('state.setSectionIndent', () => api.state.setSectionIndent(root, file, on))
   },
 
-  /** This note's "Table of contents" switch (YAZ-2950). A note with no entry is on. */
-  getTocSwitch: (root: string, file: string): boolean => folderOf(root).tocSwitches[file] !== false,
+  /** This note's own "Table of contents" choice (YAZ-2950). No entry is `undefined`: Settings › "Table of contents default" decides (YAZ-3558 D1). */
+  getTocSwitch: (root: string, file: string): boolean | undefined => folderOf(root).tocSwitches[file],
   /** The reader's switch for one note. On and off are both stored; the same value again writes nothing. */
   setTocSwitch(root: string, file: string, on: boolean): void {
     if (on === folderOf(root).tocSwitches[file]) return

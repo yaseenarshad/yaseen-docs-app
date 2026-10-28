@@ -19,7 +19,7 @@ describe('usePageSwitch', () => {
     host = null
   })
 
-  /** A store like `tocSwitches`: no entry = on. */
+  /** A store like `tocSwitches` read with the default On: no entry = on. */
   const makeStore = () => {
     const saved: Record<string, boolean> = {}
     return {
@@ -72,5 +72,34 @@ describe('usePageSwitch', () => {
     act(() => m.toggles[0]())
     expect(store.write).toHaveBeenLastCalledWith('/w', '/w/b.md', false)
     expect(store.saved).toEqual({ '/v/a.md': false, '/w/b.md': false })
+  })
+
+  it('a page with no choice is `fallback`, followed live and never written; a click stores the opposite of what shows, and that choice wins over each later fallback (YAZ-3558 D1)', () => {
+    const saved: Record<string, boolean> = {}
+    const read = (_root: string, path: string): boolean | undefined => saved[path]
+    const write = vi.fn((_root: string, path: string, on: boolean) => void (saved[path] = on))
+    let toggle = (): void => undefined
+    function Probe({ fallback }: { fallback: boolean }) {
+      const [on, flip] = usePageSwitch('/v', '/v/a.md', read, write, fallback)
+      toggle = flip
+      return <span>{on ? 'on' : 'off'}</span>
+    }
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    const render = (fallback: boolean) => act(() => root!.render(<Probe fallback={fallback} />))
+    render(false)
+    expect(host.textContent).toBe('off')
+    render(true)
+    expect(host.textContent).toBe('on')
+    expect(write).not.toHaveBeenCalled()
+    // The default is Off; the page turns its own on, and keeps it through each fallback.
+    render(false)
+    act(() => toggle())
+    expect(write).toHaveBeenCalledExactlyOnceWith('/v', '/v/a.md', true)
+    for (const fallback of [true, false]) {
+      render(fallback)
+      expect(host.textContent).toBe('on')
+    }
   })
 })

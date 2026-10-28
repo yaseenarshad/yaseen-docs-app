@@ -408,6 +408,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   sectionStep: (v): v is number => isFiniteNumber(v) && SECTION_STEPS.includes(v),
   sectionLines: (v): v is SectionLines => typeof v === 'string' && (SECTION_LINES as readonly string[]).includes(v),
   tableOfContents: (v): v is TableOfContents => typeof v === 'string' && (TABLE_OF_CONTENTS as readonly string[]).includes(v),
+  tocOnByDefault: (v): v is boolean => typeof v === 'boolean',
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
   sidebarLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
@@ -467,6 +468,8 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.codeOutlineHidden = sanitizeOutlineHidden(src.codeOutlineHidden)
   // YAZ-3389 D7: a number off the steps but inside 50–200 is kept; one outside is clamped, not reset; missing or not a number reads 100.
   if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
+  // YAZ-3558 D2: a store from before the split said Off in `tableOfContents`. It reads as "Table of contents default" Off, and "Pin default" Off (`auto`).
+  if (src.tableOfContents === 'off' && typeof src.tocOnByDefault !== 'boolean') out.tocOnByDefault = false
   return out
 }
 

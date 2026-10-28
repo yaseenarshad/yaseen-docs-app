@@ -354,12 +354,12 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ startupWindows: 'last' })
   })
 
-  it('tableOfContents: an older file without the key sanitizes to auto; the three values survive; junk falls back (YAZ-2700)', async () => {
+  it('tableOfContents: an older file without the key sanitizes to auto; the two stored values survive; junk falls back (YAZ-2700)', async () => {
     const { tableOfContents: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))
     expect(createStore(file).get().settings).toMatchObject({ tableOfContents: 'auto' })
 
-    for (const tableOfContents of ['auto', 'pinned', 'off']) {
+    for (const tableOfContents of ['auto', 'pinned']) {
       await seed(valid({ settings: { ...DEFAULT_SETTINGS, tableOfContents } }))
       expect(createStore(file).get().settings).toMatchObject({ tableOfContents })
     }
@@ -368,6 +368,25 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ tableOfContents: 'auto' })
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, tableOfContents: true } }))
     expect(createStore(file).get().settings).toMatchObject({ tableOfContents: 'auto' })
+  })
+
+  it('tocOnByDefault: the split of the old Off (YAZ-3558 D2, S19–S22): an old `off` reads as default Off and Pin default Off; `pinned` and `auto` read as default On; a file that has the field keeps it; a sync from an older Mac keeps this Mac\'s values', async () => {
+    const { tocOnByDefault: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    expect(DEFAULT_SETTINGS.tocOnByDefault).toBe(true)
+    await seed(valid({ settings: { ...legacySettings, tableOfContents: 'off' } }))
+    expect(createStore(file).get().settings).toMatchObject({ tocOnByDefault: false, tableOfContents: 'auto' })
+    for (const tableOfContents of ['pinned', 'auto'] as const) {
+      await seed(valid({ settings: { ...legacySettings, tableOfContents } }))
+      expect(createStore(file).get().settings).toMatchObject({ tocOnByDefault: true, tableOfContents })
+    }
+    // The field is there: it wins, and a stray `off` beside it loads as Pin default Off.
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, tocOnByDefault: true, tableOfContents: 'off' } }))
+    expect(createStore(file).get().settings).toMatchObject({ tocOnByDefault: true, tableOfContents: 'auto' })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, tocOnByDefault: 'no' } }))
+    expect(createStore(file).get().settings).toMatchObject({ tocOnByDefault: true })
+    // An older Mac's settings file sends `off` and no `tocOnByDefault`: neither value moves this Mac (YAZ-3276 D3).
+    const here = { ...DEFAULT_SETTINGS, tocOnByDefault: false, tableOfContents: 'pinned' as const }
+    expect(mergeFolderSettings(here, { tableOfContents: 'off' })).toMatchObject({ tocOnByDefault: false, tableOfContents: 'pinned' })
   })
 
   it('tableOfContentsWidth: an older file without the key loads with 200; 160 to 480 load as they are; anything else loads as 200, never clamped, and fails the channel check (YAZ-2752 D1, D3)', async () => {
@@ -550,10 +569,10 @@ describe('createStore: loading', () => {
     await seed(valid({ settings: { ...legacySettings, tableOfContents: 'pinned', tableOfContentsWidth: 320 } }))
     expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, tableOfContents: 'pinned', tableOfContentsWidth: 320 })
     const loaded = async (tocLines: unknown): Promise<string> => {
-      await seed(valid({ settings: { ...DEFAULT_SETTINGS, tableOfContents: 'off', tocLines } }))
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, tableOfContents: 'pinned', tocLines } }))
       const { settings } = createStore(file).get()
       // One bad field costs that field only: the mode beside it loads as stored.
-      expect(settings.tableOfContents).toBe('off')
+      expect(settings.tableOfContents).toBe('pinned')
       return settings.tocLines
     }
 

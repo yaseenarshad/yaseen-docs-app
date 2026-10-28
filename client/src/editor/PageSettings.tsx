@@ -48,7 +48,7 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   onToggleHeadingLevels?: () => void
   /** This page shows its table of contents (YAZ-2700). On unless the reader turns it off for this page. */
   tableOfContents?: boolean
-  /** Absent → the menu has no "Table of contents" row (the app-wide setting is Off: there is nothing to turn off here). */
+  /** Absent → the menu has no "Table of contents" row (a board, a drawing, a diagram). Settings' "Table of contents default" Off does not hide it (YAZ-3558 D1). */
   onToggleTableOfContents?: () => void
   /** What this page's table of contents is built from (YAZ-2700 D14): its headings, its bullets, or `null` — Auto, the page's own structure decides. */
   tocSource?: TocSource | null

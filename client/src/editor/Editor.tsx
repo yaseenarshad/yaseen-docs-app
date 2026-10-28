@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
-import { TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
+import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
@@ -141,6 +141,8 @@ interface EditorProps {
    * a mount that threads none of the five props below shows no table of contents.
    */
   tableOfContents?: TableOfContentsMode
+  /** Settings › "Table of contents default" (YAZ-3558 D2): for a page that made no choice in its cog. Absent → the default, on (with `tableOfContents` absent, nothing shows anyway). */
+  tocOnByDefault?: boolean
   /** The content width setting: with the note's own width it decides whether `auto` shows names or lines. Absent → `narrow`, the default. */
   contentWidth?: ContentWidth
   /** The table of contents' own "Pin" / "Unpin" write the SETTING through this. */
@@ -195,7 +197,7 @@ interface EditorProps {
   previewScope?: (path: string) => PreviewScope
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', onToggleSidebar, codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', onToggleSidebar, codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -218,7 +220,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     // Outline (YAZ-3486) reads the note's table of contents setting and width.
     return (
       <Suspense fallback={<section className="editor" />}>
-        <CodeEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} onNotice={onNotice} onToggleSidebar={onToggleSidebar} codeReadOnly={codeReadOnly} codeWrap={codeWrap} codeMinimap={codeMinimap} onChangeCodeSettings={onChangeCodeSettings} startView={startViewRef.current} onOpenFile={onOpenFile} viewKey={viewKey} tableOfContents={tableOfContents} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} codeOutlineSort={codeOutlineSort} codeOutlineHidden={codeOutlineHidden} codeOutlineLocals={codeOutlineLocals} />
+        <CodeEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} onNotice={onNotice} onToggleSidebar={onToggleSidebar} codeReadOnly={codeReadOnly} codeWrap={codeWrap} codeMinimap={codeMinimap} onChangeCodeSettings={onChangeCodeSettings} startView={startViewRef.current} onOpenFile={onOpenFile} viewKey={viewKey} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} codeOutlineSort={codeOutlineSort} codeOutlineHidden={codeOutlineHidden} codeOutlineLocals={codeOutlineLocals} />
       </Suspense>
     )
   }
@@ -261,11 +263,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} />
 }
 
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, diagramDarkColors = 'adapt', hoverLinks = false, hoverBacklinks = false, previewScope }: EditorProps) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, diagramDarkColors = 'adapt', hoverLinks = false, hoverBacklinks = false, previewScope }: EditorProps) {
   const state = useFile(path)
   const titles = usePathTitles(wikilinks)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
@@ -274,7 +276,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} />
+        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} />
       )}
     </section>
   )
@@ -304,6 +306,7 @@ function CrepeHost({
   commentsOrder,
   onChangeCommentsOrder,
   tableOfContents = 'off',
+  tocOnByDefault = DEFAULT_SETTINGS.tocOnByDefault,
   contentWidth = 'narrow',
   onChangeTableOfContents = noTableOfContentsChange,
   tableOfContentsWidth = TOC_DEFAULT_W,
@@ -335,6 +338,7 @@ function CrepeHost({
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
   tableOfContents?: TableOfContentsMode
+  tocOnByDefault?: boolean
   contentWidth?: ContentWidth
   onChangeTableOfContents?: (mode: TableOfContentsMode) => void
   tableOfContentsWidth?: number
@@ -358,9 +362,9 @@ function CrepeHost({
   const [sectionIndentOn, toggleSectionIndent] = usePageSwitch(root, file.path, storage.getSectionIndent, storage.setSectionIndent)
   // The same kind of switch (YAZ-2700): every heading of THIS page says its level. Per page, never stored.
   const [headingLevelsOn, setHeadingLevelsOn] = useState(false)
-  // And the other way round: the table of contents is ON for every page, and this page can turn its own off.
-  // Saved with the note, as "Section indent" is (YAZ-2950, which replaces YAZ-2700 D15).
-  const [tableOfContentsOn, toggleTableOfContents] = usePageSwitch(root, file.path, storage.getTocSwitch, storage.setTocSwitch)
+  // The table of contents follows Settings › "Table of contents default" until this page makes its own choice, which
+  // wins, also over Off (YAZ-3558 D1). Saved with the note, as "Section indent" is (YAZ-2950, which replaces YAZ-2700 D15).
+  const [tableOfContentsOn, toggleTableOfContents] = usePageSwitch(root, file.path, storage.getTocSwitch, storage.setTocSwitch, tocOnByDefault)
   // What this page's table of contents is built from (YAZ-2700 D14). Stored, as "Section indent"
   // above is: with the note in the app state, as its folds are, and `null` (Auto) is no entry.
   const [tocSource, setTocSource] = useState<TocSource | null>(() => storage.getTocSource(root, file.path))
@@ -820,7 +824,7 @@ function CrepeHost({
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
       <div className="status-chips">
-        <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={tableOfContents === 'off' ? undefined : toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContents === 'off' || !tableOfContentsOn ? undefined : changeTocSource} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
+        <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContentsOn ? changeTocSource : undefined} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
         <DocumentZoom value={documentZoom} onChange={changeZoom} />
         {readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={() => setAskingUnlock(true)} onAllow={() => { setAskingUnlock(false); void setReadOnly(false) }} onCancel={() => setAskingUnlock(false)} />}
         {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}

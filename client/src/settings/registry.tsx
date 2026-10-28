@@ -673,17 +673,27 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // "Show the names" (YAZ-2700) is the same field the table of contents' own "Pin" and "Unpin" buttons write.
+        // "Table of contents default" (YAZ-3558 D2) is a default: each page's cog can turn its own on or off.
+        // "Pin default" (YAZ-2700, named by YAZ-3558 D2a) is the same field the table of contents' own "Pin" and "Unpin" buttons write.
         // "Level lines" (YAZ-2762) says when the lines of its names show.
         title: 'Table of contents',
         hint: 'The headings or the bullets of a note, at its right edge.',
         items: [
           {
-            id: 'tableOfContents',
-            label: 'Show the names',
-            keywords: ['outline', 'toc', 'headings', 'jump'],
+            id: 'tocOnByDefault',
+            label: 'Table of contents default',
+            hint: 'Off: a page can still turn it on in its cog.',
+            keywords: ['outline', 'toc', 'headings', 'default', 'off'],
             render: ({ settings, onChange }) => (
-              <Segmented options={TABLE_OF_CONTENTS_OPTIONS} value={settings.tableOfContents} onChange={(tableOfContents) => onChange({ ...settings, tableOfContents })} ariaLabel="Table of contents" />
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tocOnByDefault} onChange={(tocOnByDefault) => onChange({ ...settings, tocOnByDefault })} ariaLabel="Table of contents default" />
+            ),
+          },
+          {
+            id: 'tableOfContents',
+            label: 'Pin default',
+            keywords: ['outline', 'toc', 'headings', 'jump', 'pin', 'default'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TABLE_OF_CONTENTS_OPTIONS} value={settings.tableOfContents} onChange={(tableOfContents) => onChange({ ...settings, tableOfContents })} ariaLabel="Pin default" />
             ),
           },
           {
