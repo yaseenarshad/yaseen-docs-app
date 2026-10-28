@@ -389,17 +389,17 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // `window:open-recent` (YAZ-1767 D1): the vault switcher's door — an absolute path in, and the
   // manager's verdict out: true = the vault is in front (its windows raised, D9, or a new one
   // opened; MRU bumped), false = the folder is gone and was pruned from the MRU instead. Any
-  // window may ask; the caller is not consulted.
-  handle(CONTRACT.window.openRecent, async (path: unknown): Promise<boolean> => windows.openRecentBeside(requireAbsPath(path, 'path')))
+  // window may ask. The caller counts only when nothing is raised: an EMPTY caller takes the vault itself (YAZ-3487 D1).
+  handleWithEvent(CONTRACT.window.openRecent, async (e, path: unknown): Promise<boolean> => windows.openRecentBeside(requireAbsPath(path, 'path'), windows.idFor(e.sender)))
   // `window:open-alone` (YAZ-2858 D1): "Open by itself" — the same contract, but main raises only a
-  // window that shows this vault alone, else it opens a new one.
-  handle(CONTRACT.window.openAlone, async (path: unknown): Promise<boolean> => windows.openAlone(requireAbsPath(path, 'path')))
+  // window that shows this vault alone, else the empty caller takes it, else it opens a new one.
+  handleWithEvent(CONTRACT.window.openAlone, async (e, path: unknown): Promise<boolean> => windows.openAlone(requireAbsPath(path, 'path'), windows.idFor(e.sender)))
 
   // Saved sets of vaults (YAZ-2602 D8; the user reads "workspace"). `window:open-set` is the
   // manager's door: what opened, and the folders that are gone. Any window may ask it, and may
   // rename or remove a set. `window:save-set` saves the CALLER's own vaults, so the renderer never
   // sends a list; false = the store refused (fewer than two vaults, an empty name, or R12).
-  handle(CONTRACT.window.openSet, async (id: unknown): Promise<OpenSetResult> => windows.openVaultSet(requireString(id, 'id')))
+  handleWithEvent(CONTRACT.window.openSet, async (e, id: unknown): Promise<OpenSetResult> => windows.openVaultSet(requireString(id, 'id'), windows.idFor(e.sender)))
   handleWithEvent(CONTRACT.window.saveSet, async (e, name: unknown): Promise<boolean> => store.saveVaultSet(requireString(name, 'name'), entryFor(e).roots) !== null)
   handle(CONTRACT.window.renameSet, async (id: unknown, name: unknown): Promise<boolean> => store.renameVaultSet(requireString(id, 'id'), requireString(name, 'name')))
   handle(CONTRACT.window.removeSet, async (id: unknown) => {

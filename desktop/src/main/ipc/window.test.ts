@@ -329,7 +329,7 @@ describe('registerWindowIpc', () => {
 
   it('window:open-recent validates the path and returns the door\'s verdict (YAZ-1767 D1)', async () => {
     expect(await registered(CONTRACT.window.openRecent.channel)({ sender }, '/v/other')).toEqual(ok(true))
-    expect(manager.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/v/other')
+    expect(manager.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/v/other', 'w1') // the caller, for the empty-window door (YAZ-3487 D1)
     manager.openRecentBeside.mockReturnValueOnce(false)
     expect(await registered(CONTRACT.window.openRecent.channel)({ sender }, '/v/gone')).toEqual(ok(false))
     expect(await registered(CONTRACT.window.openRecent.channel)({ sender }, 'rel')).toEqual(bad('NOT_ABSOLUTE'))
@@ -339,7 +339,7 @@ describe('registerWindowIpc', () => {
 
   it('window:open-alone validates the path and returns the door\'s verdict; it never touches the open-recent door (YAZ-2858 D1)', async () => {
     expect(await registered(CONTRACT.window.openAlone.channel)({ sender }, '/v/other')).toEqual(ok(true))
-    expect(manager.openAlone).toHaveBeenCalledExactlyOnceWith('/v/other')
+    expect(manager.openAlone).toHaveBeenCalledExactlyOnceWith('/v/other', 'w1')
     manager.openAlone.mockReturnValueOnce(false)
     expect(await registered(CONTRACT.window.openAlone.channel)({ sender: stranger }, '/v/gone')).toEqual(ok(false)) // any window may ask
     expect(await registered(CONTRACT.window.openAlone.channel)({ sender }, 'rel')).toEqual(bad('NOT_ABSOLUTE'))
@@ -354,7 +354,7 @@ describe('registerWindowIpc', () => {
 
     it('window:open-set validates the id and returns the door\'s answer: what opened, and the folders that are gone (S65, S66)', async () => {
       expect(await registered(CONTRACT.window.openSet.channel)({ sender }, 's1')).toEqual(ok({ opened: true, missing: [] }))
-      expect(manager.openVaultSet).toHaveBeenCalledExactlyOnceWith('s1')
+      expect(manager.openVaultSet).toHaveBeenCalledExactlyOnceWith('s1', 'w1')
       manager.openVaultSet.mockReturnValueOnce({ opened: false, missing: ['/v', '/w'] })
       expect(await registered(CONTRACT.window.openSet.channel)({ sender: stranger }, 's2')).toEqual(ok({ opened: false, missing: ['/v', '/w'] })) // any window may ask
       for (const junk of [undefined, 5, null, ['s1']]) expect(await registered(CONTRACT.window.openSet.channel)({ sender }, junk)).toEqual(bad('BAD_REQUEST'))

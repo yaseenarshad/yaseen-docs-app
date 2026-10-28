@@ -433,8 +433,9 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
       // Straight to the door in main, never through the focused renderer (YAZ-2555 A5): a Welcome
       // window would switch in place, and with every window minimized no renderer is in front.
       // A folder that is gone says so in a window; a key that does nothing is the worst answer.
-      // The door pruned it from the recents; its number stays (A3).
-      if (!windows.openRecentBeside(path)) windows.linkNotice(`Can't open ${name}: folder not found`)
+      // The door pruned it from the recents; its number stays (A3). An EMPTY window in front takes the vault itself (YAZ-3487 D2).
+      const focused = host.focusedWebContents()
+      if (!windows.openRecentBeside(path, focused === undefined ? undefined : windows.idFor(focused))) windows.linkNotice(`Can't open ${name}: folder not found`)
     },
     search() {
       host.focusedWebContents()?.send(CONTRACT.menu.onSearch.channel)

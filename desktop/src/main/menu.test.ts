@@ -634,18 +634,19 @@ describe('createMenuHandlers', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers, windows } = makeHandlers(wc)
     handlers.goToVault('/vaults/work', 'Work')
-    expect(windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work')
+    // The window in front comes along: an EMPTY one takes the vault itself (YAZ-3487 D2).
+    expect(windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work', 'w1')
     expect(windows.linkNotice).not.toHaveBeenCalled()
     expect(wc.send).not.toHaveBeenCalled()
 
     // No focused window at all (every window minimized, S30): the door is still called.
     const unfocused = makeHandlers(undefined)
     unfocused.handlers.goToVault('/vaults/work', 'Work')
-    expect(unfocused.windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work')
+    expect(unfocused.windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work', undefined)
 
     const gone = makeHandlers(wc, false)
     gone.handlers.goToVault('/vaults/work', 'Work')
-    expect(gone.windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work')
+    expect(gone.windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work', 'w1')
     expect(gone.windows.linkNotice).toHaveBeenCalledExactlyOnceWith("Can't open Work: folder not found")
     expect(wc.send).not.toHaveBeenCalled()
   })

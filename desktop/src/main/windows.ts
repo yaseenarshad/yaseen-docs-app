@@ -183,16 +183,17 @@ export interface WindowManager extends WindowLookup {
    * `false`. A live one is bumped to the top of the MRU, then (🔒 D9) every live window already
    * on that vault is RAISED — most recently focused on top — and nothing new opens; with none
    * open, a new window opens on the vault's remembered `folders[root].lastFile` (D2). → `true`.
+   * `from` (YAZ-3487 D1): the window that asked. When it is EMPTY, it takes the vault itself and no window opens.
    */
-  openRecentBeside(path: string): boolean
+  openRecentBeside(path: string, from?: string): boolean
   /**
    * "Open by itself" (YAZ-2858 D1, `window:open-alone`): the `openRecentBeside` door with an EXACT
    * match. It raises only a live window whose vaults are this one vault alone (`sameVaults`); a
    * window that shows it beside another vault does not count and does not change (S1). With none, a
    * new window opens on the vault's remembered last file. The probe and the MRU bump are the same:
-   * a dead folder is pruned and opens nothing → `false`. No saved set changes (S7).
+   * a dead folder is pruned and opens nothing → `false`. No saved set changes (S7). `from`: as `openRecentBeside`'s.
    */
-  openAlone(path: string): boolean
+  openAlone(path: string, from?: string): boolean
   /**
    * The door for a saved set of vaults (YAZ-2602 D8, `window:open-set`). Probes each folder: the
    * vaults that are left, in the saved order, are what opens, and the ones that are gone come back
@@ -202,7 +203,7 @@ export interface WindowManager extends WindowLookup {
    * remembered last file (S65). Either way the set becomes the last used. No folder left, or an
    * unknown `id`, opens nothing and changes nothing → `opened: false`.
    */
-  openVaultSet(id: string): OpenSetResult
+  openVaultSet(id: string, from?: string): OpenSetResult
   /**
    * `window:close-self` (GRO-2232, e.g. ⌘W on the last tab): the REAL `close()` on the live
    * window — the `close` interception above runs the flush handshake — NEVER a bare destroy.
@@ -774,7 +775,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
    * The open-recent door (see `WindowManager.openRecentBeside`) and "Open by itself" (`openAlone`,
    * YAZ-2858 D1): one body, and `alone` picks the match. A `const`, like `openWindow`, so `routeToFile` can call it too (YAZ-2556 D1).
    */
-  const openVault = (path: string, alone: boolean): boolean => {
+  const openVault = (path: string, alone: boolean, from?: string): boolean => {
     // Beside never passes through the renderer's validating openRoot, so probe here: a dead
     // folder is pruned from the MRU (mirrors the Welcome/in-place path) and opens nothing.
     if (!host.dirExists(path)) {
@@ -788,13 +789,29 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     // copy. Roots compare like `resolveLinkTarget`: trailing slash off. "Open by itself" counts only a window with this vault alone (YAZ-2858 D1).
     const wanted = stripSlash(path)
     if (raiseWindows((w) => (alone ? sameVaults(w.roots, [wanted]) : w.roots.some((root) => stripSlash(root) === wanted)))) return true
+    // No window to raise: an EMPTY window that asked takes the vault itself (YAZ-3487 D1).
+    if (from !== undefined && takeHere(from, [path])) return true
     openWindow({ root: path, file: store.get().folders[path]?.lastFile ?? null })
     return true
   }
-  const openRecentBeside = (path: string): boolean => openVault(path, false)
+  const openRecentBeside = (path: string, from?: string): boolean => openVault(path, false, from)
+
+  /**
+   * YAZ-3487 D1: the window `from` shows `roots` itself when it is EMPTY — no tab, no page, nothing in its right
+   * panel; the blank tab is no tab. A Files window never is: it has its own rule (YAZ-3357 D12). It hears the vault
+   * chip's `link:set-roots` (YAZ-3343 D22) and shows the vaults blank (D3). `false` = not live, or not empty.
+   */
+  const takeHere = (from: string, roots: readonly string[]): boolean => {
+    const win = liveWindow(from)
+    const entry = entryOf(from)
+    if (win === undefined || entry === undefined || isFilesWindow(entry)) return false
+    if (entry.tabs.length > 0 || entry.file !== null || entry.rightPanel.items.length > 0) return false
+    sendLink(win, CONTRACT.link.onSetRoots.channel, [...roots])
+    return true
+  }
 
   /** The door for a saved set of vaults (see `WindowManager.openVaultSet`). */
-  const openVaultSet = (id: string): OpenSetResult => {
+  const openVaultSet = (id: string, from?: string): OpenSetResult => {
     const set = store.get().vaultSets.find((s) => s.id === id)
     if (set === undefined) return { opened: false, missing: [] }
     const missing = set.roots.filter((root) => !host.dirExists(root))
@@ -802,7 +819,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     if (found.length === 0) return { opened: false, missing }
     // The set's window is the one that shows exactly the vaults that are left (S66): a window opened
     // earlier without the missing folder is raised, not doubled.
-    if (!raiseWindows((w) => sameVaults(w.roots, found))) openWindow({ root: found[0], roots: found, file: store.get().folders[found[0]]?.lastFile ?? null })
+    if (!raiseWindows((w) => sameVaults(w.roots, found)) && (from === undefined || !takeHere(from, found))) openWindow({ root: found[0], roots: found, file: store.get().folders[found[0]]?.lastFile ?? null })
     store.touchVaultSet(id)
     return { opened: true, missing }
   }
@@ -972,7 +989,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     openRecentBeside,
 
-    openAlone: (path) => openVault(path, true),
+    openAlone: (path, from) => openVault(path, true, from),
 
     openVaultSet,
 

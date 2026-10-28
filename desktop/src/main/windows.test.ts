@@ -2209,3 +2209,80 @@ describe('Files windows (YAZ-3357)', () => {
     expect(previews.at(-1)).toEqual([f, { x: 400, y: 188, width: 500, height: 300 }])
   })
 })
+
+describe('createWindowManager: the empty-window door (YAZ-3487 D1, D2, D3)', () => {
+  const bounds = { x: 0, y: 0, width: 800, height: 600 }
+  /** A stored window on `roots`: `tabs` open, the first on show; none = an EMPTY window. */
+  const entry = (id: string, roots: string[], tabs: string[] = [], extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: roots[0], roots, file: tabs[0] ?? null, tabs, rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds, ...extra })
+  /** The windows restored and each one ready for `link:*` messages. */
+  const seed = (...entries: WindowEntry[]) => {
+    for (const e of entries) store.upsertWindow(e)
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    for (const c of created) manager.handleLinkReady(c.win.webContents)
+    const win = (id: string) => created.find((c) => c.entry.id === id)!.win
+    return { manager, created, win }
+  }
+
+  it('S3: an EMPTY window asks for a vault with no window → it hears link:set-roots, no window opens, the MRU is bumped', () => {
+    const { manager, created, win } = seed(entry('e', ['/v/a']))
+    expect(manager.openRecentBeside('/v/c', 'e')).toBe(true)
+    expect(created).toHaveLength(1)
+    expect(win('e').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/c'])
+    expect(store.get().recents[0]?.path).toBe('/v/c')
+  })
+
+  it('S4: the vault has a window → that window comes to the front; the empty window hears nothing (YAZ-2602 D6)', () => {
+    const { manager, created, win } = seed(entry('e', ['/v/a']), entry('b', ['/v/b'], ['/v/b/x.md']))
+    const focused = win('b').focusCount
+    expect(manager.openRecentBeside('/v/b', 'e')).toBe(true)
+    expect(created).toHaveLength(2)
+    expect(win('b').focusCount).toBe(focused + 1)
+    expect(win('e').webContents.send).not.toHaveBeenCalledWith(CONTRACT.link.onSetRoots.channel, expect.anything())
+  })
+
+  it('S1, S5: "Open by itself" — a window with a tab gets a NEW window; an empty workspace window takes the vault alone', () => {
+    const busy = seed(entry('ab', ['/v/a', '/v/b'], ['/v/a/x.md']))
+    expect(busy.manager.openAlone('/v/b', 'ab')).toBe(true)
+    expect(busy.created).toHaveLength(2)
+    expect(busy.created[1].entry).toMatchObject({ roots: ['/v/b'], file: null, tabs: [] })
+    expect(store.get().windows.find((w) => w.id === 'ab')?.roots).toEqual(['/v/a', '/v/b'])
+
+    const empty = seed(entry('ab2', ['/v/c', '/v/d']))
+    const before = empty.created.length // every stored window comes back, the first test's too
+    expect(empty.manager.openAlone('/v/d', 'ab2')).toBe(true)
+    expect(empty.created).toHaveLength(before)
+    expect(empty.win('ab2').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/d'])
+  })
+
+  it('S6, S7, S8: the blank tab is no tab; a right-panel item, a page on show, or a Files window is NOT empty → a new window opens', () => {
+    const { manager, created } = seed(
+      entry('right', ['/v/a'], [], { rightPanel: { ...defaultRightPanelIdentity(), items: ['/v/a/side.md'] } }),
+      entry('files', ['/v/a'], [], { kind: 'files' }),
+    )
+    expect(manager.openRecentBeside('/v/c', 'right')).toBe(true)
+    expect(manager.openRecentBeside('/v/d', 'files')).toBe(true)
+    expect(created.slice(2).map((c) => c.entry.roots)).toEqual([['/v/c'], ['/v/d']])
+  })
+
+  it('S9: a workspace row in an EMPTY window → the window takes the set\'s vaults that are left; the set becomes the last used', () => {
+    const work = store.saveVaultSet('Work', ['/v/b', '/v/a'], 1)!
+    const { manager, created, win } = seed(entry('e', ['/v/x']))
+    expect(manager.openVaultSet(work.id, 'e')).toEqual({ opened: true, missing: [] })
+    expect(created).toHaveLength(1)
+    expect(win('e').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/b', '/v/a'])
+  })
+
+  it('S13: a folder that is gone → false; nothing is sent, nothing opens', () => {
+    store.upsertWindow(entry('e', ['/v/a']))
+    const { host, created } = makeHost(undefined, undefined, (p) => p !== '/v/gone')
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    manager.handleLinkReady(created[0].win.webContents)
+    expect(manager.openRecentBeside('/v/gone', 'e')).toBe(false)
+    expect(manager.openAlone('/v/gone', 'e')).toBe(false)
+    expect(created).toHaveLength(1)
+    expect(created[0].win.webContents.send).not.toHaveBeenCalledWith(CONTRACT.link.onSetRoots.channel, expect.anything())
+  })
+})
