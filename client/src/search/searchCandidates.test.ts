@@ -119,6 +119,12 @@ describe('fileCandidates (🔒 D3, YAZ-2620)', () => {
     expect(fileCandidates('/vault/', ['/vault/a/b.txt']).map((c) => c.folder)).toEqual(['a'])
   })
 
+  it('a drawing or a diagram row shows its name without the extension, and its extension still matches (YAZ-3536 D2, S16, S17)', () => {
+    const rows = fileCandidates('/vault', ['/vault/Flow.excalidraw', '/vault/Map.drawio'])
+    expect(rows.map((c) => c.label)).toEqual(['Flow', 'Map'])
+    expect(searchTitles(rows, 'excalidraw').map((c) => c.path)).toEqual(['/vault/Flow.excalidraw'])
+  })
+
   it('S12, S19: a note still matches by its title and aliases, never by its file name; a tie is folder, then note, then other file', () => {
     const notes = searchCandidates([rec('/vault/up-001-abdul.md', ['Plan'], 'UP-001 - Abdul')])
     const rows = [...folderCandidates('/vault', ['/vault/plan'], []), ...notes, ...fileCandidates('/vault', ['/vault/bin/plan', '/vault/up-001-abdul.py'])]

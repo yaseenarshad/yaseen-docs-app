@@ -2893,6 +2893,16 @@ button {
   mask: var(--icon) center / 14px 14px no-repeat;
 }
 
+/* A drawing's or a diagram's extension (YAZ-3536 D4, D5): hidden while its icon says the kind; with File icons
+   Off nothing else says it, so it shows. A note has none: no extension reads as a note. */
+.name-ending {
+  display: none;
+}
+.app[data-sidebar-file-icons='off'] .name-ending,
+.name-ending--always {
+  display: inline;
+}
+
 /* Search (YAZ-2620 🔒 D5): the typed text, where it sits in a match — the `==highlight==` wash
    (`--mark-bg`) and weight. Weight alone was too faint at this size (Yasin's walk). The wash is
    translucent and the text keeps its colour, so it holds on the open and the highlighted row, in both themes. */

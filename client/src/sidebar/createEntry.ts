@@ -4,7 +4,7 @@
  * The UI (context menu + inline input) lives in Sidebar/Tree; the main process
  * enforces the same rules again (absolute path, vault extension, no overwrite).
  */
-import { BOARD_EXTENSION, fileKind } from '@shared/fileKind'
+import { BOARD_EXTENSION, boardBaseName, fileKind } from '@shared/fileKind'
 import type { BoardKind } from '@shared/types'
 import { basename, dirname } from '../lib/paths'
 
@@ -80,8 +80,14 @@ export function targetDirFor(node: MenuRow | null, root: string): string {
  */
 export function renamedPath(oldPath: string, newName: string): string {
   let final = newName.trim()
-  if (final === basename(oldPath)) return oldPath
-  if (fileKind(final) === null) final += oldPath.slice(oldPath.lastIndexOf('.'))
+  const old = basename(oldPath)
+  if (final === old) return oldPath
+  // A board's box shows its name without its extension (YAZ-3536 D3). When that name itself ends in one
+  // (`Flow.md` of `Flow.md.excalidraw`), the box showed it, the user did not type it: only a board
+  // extension typed in full counts (bug YAZ-3553). After a plain name (`Flow`), a typed `.png` stays a kind change.
+  const shown = boardBaseName(old)
+  const shownHasKind = shown !== old && fileKind(shown) !== null
+  if (fileKind(final) === null || (shownHasKind && boardBaseName(final) === final)) final += oldPath.slice(oldPath.lastIndexOf('.'))
   return `${dirname(oldPath)}/${final}`
 }
 

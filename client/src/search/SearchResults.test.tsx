@@ -58,6 +58,14 @@ describe('SearchResults (YAZ-803)', () => {
     expect(rows(el).map((r) => r.querySelector('.search-results__label')?.textContent)).toEqual(['Beta', 'Alpha'])
   })
 
+  it("a board row holds its extension after its label, for File icons Off to show (YAZ-3536 D4); a note and a folder named like a board hold none", () => {
+    const board: SearchCandidate = { kind: 'file', name: 'Flow.drawio', lower: 'flow.drawio', label: 'Flow', path: '/v/Flow.drawio', folder: '' }
+    const { el } = render([board, cand('Plan'), { ...dir('Map.drawio') }])
+    const ending = (i: number) => rows(el)[i].querySelector('.name-ending')
+    expect(ending(0)?.textContent).toBe('.drawio')
+    expect([ending(1), ending(2)]).toEqual([null, null])
+  })
+
   it('shows the folder only for rows that have one', () => {
     const { el } = render([cand('Root note'), cand('Nested', 'Docs/Deep')])
     expect(rows(el)[0].querySelector('.search-results__folder')).toBeNull()

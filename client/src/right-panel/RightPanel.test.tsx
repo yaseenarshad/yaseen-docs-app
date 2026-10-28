@@ -72,6 +72,13 @@ describe('RightPanel', () => {
     expect(el.querySelector('[aria-label="Close UP-001 - Abdul"]')).not.toBeNull()
   })
 
+  it('a board row has no icon, so it always names its kind: its extension shows after the name; a note shows none (YAZ-3536 D4, S29)', () => {
+    const el = mount({ ...base(), items: ['/v/Flow.drawio', '/v/Beta.md'], expanded: null })
+    expect([...el.querySelectorAll('.right-panel__label')].map((label) => label.textContent)).toEqual(['Flow.drawio', 'Beta'])
+    expect(el.querySelector('.right-panel__label .name-ending')?.className).toBe('name-ending name-ending--always')
+    expect(el.querySelector('[aria-label="Close Flow"]')).not.toBeNull()
+  })
+
   it('a folder named like a file keeps its whole name once the Files tree says it is a folder (YAZ-2290)', async () => {
     const el = mount({ ...base(), roots: ['/named'], items: ['/named/Notes.md', '/named/Plan.md'], expanded: null })
     const labels = () => [...el.querySelectorAll('.right-panel__label')].map((label) => label.textContent)
