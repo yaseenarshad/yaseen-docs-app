@@ -2913,7 +2913,8 @@ button {
    16px grid, 1.2px strokes. The file rows' look is `data-sidebar-file-icons` (`sidebarFileIcons`): "Colour"
    (`quiet`, the default) colours each kind but notes, "All colour" (`color`) notes too, `grey` none, `off` hides
    them. The folders' is `data-sidebar-folder-icons` (`sidebarFolderIcons`), on its own: grey, open while the folder
-   is. A vault row has none. A row in rename is an input: no icon.
+   is; `off` hides them. `plain` and `named` draw alike here: which Material folder a row has is `rowIcon`'s
+   (YAZ-3554), in its `data-icon`. A vault row has none. A row in rename is an input: no icon.
    The same rules draw a file's icon outside the tree (D11, YAZ-3471: tabs, search results, Recents): there the
    `.file-icon` span (`FileIcon.tsx`, inline, first in the name's label) carries the row's attributes and draws on
    its own `::before`; with the icons off it is empty and takes no room. Each rule names both in one `:is()`, whose

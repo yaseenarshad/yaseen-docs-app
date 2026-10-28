@@ -1,6 +1,7 @@
 /**
  * The window's vaults' one-row icon picks (YAZ-3440 D8, D9), `.yaseendocs/icons.json` through main, with the name
- * rules of the settings (`sidebarIconRules`, the caller's): each vault read when
+ * rules of the settings (`sidebarIconRules`, the caller's) and whether folders get Material's icon by their name
+ * (`folderNames`: Folder icons "By name", YAZ-3554): each vault read when
  * it joins and again on every `icons:changed` for it (an own write's echo, another window's, a sync), dropped
  * when it leaves; the favorites idiom (`useVaultListsHere`). `rowIcons` is the one object the tree reads; it
  * keeps its identity while nothing it holds changed (`buildRowIcons`).
@@ -26,7 +27,7 @@ export interface VaultIconsHere {
   pick: (paths: readonly string[], id: string | null) => void
 }
 
-export function useVaultIcons(roots: readonly string[], rules: readonly IconRule[], onNotice: (message: string, kind?: NoticeKind) => void): VaultIconsHere {
+export function useVaultIcons(roots: readonly string[], rules: readonly IconRule[], folderNames: boolean, onNotice: (message: string, kind?: NoticeKind) => void): VaultIconsHere {
   const [byRoot, setByRoot] = useState<IconsByRoot>({})
   const held = useRef(byRoot)
   held.current = byRoot
@@ -90,6 +91,6 @@ export function useVaultIcons(roots: readonly string[], rules: readonly IconRule
   // Material's tables (YAZ-3470) load after the first render: their landing builds the icons again, once.
   const material = useMaterialIcons()
   const last = useRef<RowIcons | undefined>(undefined)
-  const rowIcons = useMemo(() => (last.current = buildRowIcons(byRoot, roots, rules, last.current)), [byRoot, roots, rules, material]) // eslint-disable-line react-hooks/exhaustive-deps -- `material` is read by buildRowIcons
+  const rowIcons = useMemo(() => (last.current = buildRowIcons(byRoot, roots, rules, folderNames, last.current)), [byRoot, roots, rules, folderNames, material]) // eslint-disable-line react-hooks/exhaustive-deps -- `material` is read by buildRowIcons
   return useMemo(() => ({ rowIcons, pick }), [rowIcons, pick])
 }
