@@ -7,13 +7,15 @@
  * version, Keep mine overwrites it. Before, the modal refreshed the guard and wrote again in
  * silence, so the modal always won and a tab's save was lost without a question.
  *
- * So a `CONFLICT` becomes a `DrawingConflict` carrying the disk's mtime: the guard Keep mine
- * writes over. Two scenes still never merge — Keep mine writes the canvas's bytes as they are.
+ * So a `CONFLICT` becomes a `SaveConflict` (the autosave's own, YAZ-3528) carrying the disk's mtime:
+ * the autosave blocks on it, and it is the guard Keep mine writes over. Two scenes still never
+ * merge — Keep mine writes the canvas's bytes as they are.
  *
  * The path is the ABSOLUTE one `openDrawing` resolved, never the embed's fuzzy target: `readAsset`
  * roams by basename, `writeAsset` never does (🔒 YAZ-876).
  */
 import { api, BridgeRequestError } from '../api'
+import { SaveConflict } from '../lib/autosave'
 
 export interface SaveDrawingRequest {
   /** Vault root — the re-read's door, and the boundary the write is checked against. */
@@ -28,15 +30,7 @@ export interface SaveDrawingRequest {
   expectedMtime: number
 }
 
-/** The drawing changed on disk since the modal read it. `mtime` is the disk's: Keep mine writes over it. */
-export class DrawingConflict extends Error {
-  constructor(readonly mtime: number) {
-    super('The drawing changed on disk.')
-    this.name = 'DrawingConflict'
-  }
-}
-
-/** Writes the scene once; resolves the new mtime. A stale guard rejects with `DrawingConflict`, anything else as it came. */
+/** Writes the scene once; resolves the new mtime. A stale guard rejects with `SaveConflict`, anything else as it came. */
 export async function saveDrawing(req: SaveDrawingRequest): Promise<number> {
   const { root, target, path, content, expectedMtime } = req
   try {
@@ -44,7 +38,7 @@ export async function saveDrawing(req: SaveDrawingRequest): Promise<number> {
   } catch (err) {
     if (!(err instanceof BridgeRequestError) || err.code !== 'CONFLICT') throw err
     // The main process sends the disk mtime with a CONFLICT; the re-read is only the fallback for it.
-    throw new DrawingConflict(err.mtime ?? (await api.readAsset(root, target)).mtime)
+    throw new SaveConflict(err.mtime ?? (await api.readAsset(root, target)).mtime)
   }
 }
 

@@ -1,7 +1,7 @@
 /**
  * THE DRAWING MODAL (YAZ-879, fourth build unit of the Excalidraw embed YAZ-852): click a preview
- * → the scene opens full-size → edit → Save writes the sidecar back → every preview of that target
- * re-renders.
+ * → the scene opens full-size → edit → the modal AUTOSAVES the sidecar (YAZ-3528) → close, and
+ * every preview of that target re-renders.
  *
  * 🔒 A MODAL, NEVER A NODE VIEW. The embed stays plain markdown text under decorations (rule 27),
  * so there is no node to host an editor in — and a full drawing canvas inside a text column would
@@ -22,25 +22,35 @@
  * same tick. Bound to the overlay, it only ever hears what happens inside itself — and the overlay
  * takes focus on mount so Esc reaches it before the canvas exists.
  *
- * DIRTY: the surface reports a cheap version per change; the FIRST one is the baseline, so a
- * drawing opened and not touched is clean and Save is DISABLED. Esc / click-away / ✕ close a clean
- * modal outright; a dirty one raises the inline confirm strip below the title bar — deliberately
- * not a second sheet stacked over this one, which is a modal over a modal for a one-line question.
+ * AUTOSAVE ON THE VERSION, NOT THE BYTES (YAZ-3528 D1, the tab's rule): `Autosave<number>` is fed
+ * the surface's cheap version and serializes ONCE, inside `write`, 500 ms after the last change.
+ * The FIRST snapshot is the clean baseline, so a drawing opened and not touched is never written.
+ * Only the save STATUS is state, so a drag re-renders nothing here. The quit handshake
+ * (`window.onFlush`) and an unmount both save what is pending.
+ *
+ * LEAVING (YAZ-3528 D3): Esc / click-away / ✕ are one gesture — save what is left, poke the
+ * previews once if anything landed, close. Only a save that FAILED, or one a conflict blocks,
+ * raises the inline strip below the title bar — deliberately not a second sheet stacked over this
+ * one, which is a modal over a modal for a one-line question. Discard then writes nothing more.
  *
  * A CONFLICT (YAZ-3044 A4) — the same drawing saved from a tab since this modal read it — shows the
- * tab's own `ConflictBar` under the title bar: Reload opens the disk's version here (this canvas's
- * edits are dropped), Keep mine writes this canvas over it. The modal never wins in silence.
+ * tab's own `ConflictBar` under the title bar and blocks the autosave: Reload opens the disk's
+ * version here (this canvas's edits are dropped), Keep mine writes this canvas over it. The modal
+ * never wins in silence.
  *
  * FAILURES are inline and never a dialog: a sidecar that is missing, unreadable or not a scene
  * opens as the error state (message + close, nothing to save), and a failed write leaves the modal
  * open with its error line and the canvas untouched — a save that failed must not eat the drawing.
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { api } from '../api'
 import { ConflictBar } from '../documents/ConflictBar'
+import { SaveIndicator } from '../editor/SaveIndicator'
+import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
 import type { DrawingSnapshot } from './ExcalidrawSurface'
-import { DrawingConflict, saveDrawing, saveErrorMessage } from './saveDrawing'
+import { saveDrawing, saveErrorMessage } from './saveDrawing'
 import './drawingModal.css'
 
 /**
@@ -53,8 +63,8 @@ const ExcalidrawSurface = lazy(() => import('./ExcalidrawSurface').then((m) => (
 /** What a sidecar that will not open says — the modal's twin of the preview's broken chip. */
 export const BROKEN_DRAWING_MESSAGE = "This drawing can't be opened: its file is missing or is not a scene."
 
-/** The inline confirm's LOCKED copy (an in-modal strip, not a sheet). */
-export const DISCARD_PROMPT = 'Discard drawing changes?'
+/** The inline confirm's copy (an in-modal strip, not a sheet), asked only when the last save failed. */
+export const DISCARD_PROMPT = 'Changes are not saved. Discard them?'
 
 interface DrawingModalProps {
   /** Vault root; with the target it is all `openDrawing` needs. */
@@ -63,7 +73,7 @@ interface DrawingModalProps {
   target: string
   /** The app's resolved appearance, handed straight to the surface. */
   theme: 'light' | 'dark'
-  /** Poked after a successful save so every preview of this target re-reads (YAZ-878's feed). */
+  /** Poked on close when a save landed, so every preview of this target re-reads (YAZ-878's feed). */
   feed?: MutableDrawingFeed
   /** Close: the host drops the modal (it is unmounted, never hidden). */
   onClose: () => void
@@ -72,17 +82,16 @@ interface DrawingModalProps {
 export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState<LoadedDrawing | null>(null)
-  /**
-   * The latest snapshot lives in a REF and only its VERSION is state: the engine reports a change
-   * per pointer move, and re-rendering this component that often would re-render the canvas with
-   * it. React bails out on an unchanged number, so a drag costs one render, not hundreds.
-   */
+  const loadedRef = useRef<LoadedDrawing | null>(null)
+  loadedRef.current = loaded
+  /** The latest snapshot; read only when a save fires (see the module doc). */
   const snapshot = useRef<DrawingSnapshot | null>(null)
-  const [version, setVersion] = useState<number | null>(null)
-  /** The version the drawing opened on; set once, by the surface's mount snapshot. */
-  const baseline = useRef<number | null>(null)
+  /** Made by the surface's FIRST snapshot, the clean baseline; null until then and after a Reload. */
+  const autosave = useRef<Autosave<number> | null>(null)
+  const [status, setStatus] = useState<SaveStatus>('saved')
+  /** A save landed: close pokes the previews once, not after every save behind the scrim. */
+  const wrote = useRef(false)
   const [error, setError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
   /** The disk's mtime while the conflict bar is up (YAZ-3044 A4); null when there is no conflict. */
   const [conflict, setConflict] = useState<number | null>(null)
@@ -108,49 +117,87 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
   // Focus lands here on mount so Esc works before the canvas exists (and stays inside afterwards).
   useEffect(() => overlayRef.current?.focus(), [])
 
-  const onSnapshot = useCallback((next: DrawingSnapshot) => {
-    snapshot.current = next
-    baseline.current ??= next.version
-    setVersion(next.version)
-  }, [])
-
   /** The drawing's own file says read only (YAZ-3076 D2, S28): the engine's view mode, and nothing to save. */
   const readOnly = loaded?.scene.readOnly === true
-  const dirty = !readOnly && version !== null && baseline.current !== null && version !== baseline.current
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
 
-  /** Esc, click-away and ✕ are ONE gesture: leave, asking first only when there is something to lose. */
-  const requestClose = (): void => {
-    if (dirty) setConfirming(true)
-    else onClose()
-  }
+  /** One guarded write of the live scene; `Autosave` calls it once per save, never once per change. */
+  const write = useCallback(
+    async (_version: number, expectedMtime: number): Promise<{ mtime: number }> => {
+      const current = snapshot.current
+      const drawing = loadedRef.current
+      if (current === null || drawing === null) throw new Error('nothing to save')
+      try {
+        const mtime = await saveDrawing({ root, target, path: drawing.path, content: current.standalone(), expectedMtime })
+        wrote.current = true
+        setError(null)
+        return { mtime }
+      } catch (err) {
+        // A conflict raises the bar (`onConflict`); anything else is the inline error line.
+        if (!(err instanceof SaveConflict)) setError(saveErrorMessage(err))
+        throw err
+      }
+    },
+    [root, target],
+  )
 
-  /** One guarded write at `expectedMtime`: success pokes the previews and closes; a CONFLICT raises the bar. */
-  const write = async (expectedMtime: number): Promise<void> => {
-    const current = snapshot.current
-    if (loaded === null || current === null || saving) return
-    setSaving(true)
-    setError(null)
-    setConflict(null)
-    try {
-      await saveDrawing({ root, target, path: loaded.path, content: current.standalone(), expectedMtime })
-      // The previews re-read from disk on this; the modal's own job is over.
-      feed?.poke(target)
-      onClose()
-    } catch (err) {
-      if (err instanceof DrawingConflict) setConflict(err.mtime)
-      else setError(saveErrorMessage(err))
-      setSaving(false)
+  const onSnapshot = useCallback(
+    (next: DrawingSnapshot) => {
+      snapshot.current = next
+      const a = autosave.current
+      const drawing = loadedRef.current
+      // The first snapshot IS the clean baseline (the surface restored the disk scene first).
+      if (a === null) {
+        if (drawing !== null) autosave.current = new Autosave<number>({ content: next.version, mtime: drawing.mtime, delayMs: 500, save: write, onStatus: setStatus, onConflict: setConflict })
+        return
+      }
+      // Read only: never an edit.
+      if (!readOnlyRef.current) a.update(next.version)
+    },
+    [write],
+  )
+
+  // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
+  useEffect(() => api.window.onFlush(async () => autosave.current?.flush()), [])
+
+  // Unmounted any other way (the note closed under it): save what is pending, then never write again.
+  useEffect(
+    () => () => {
+      const a = autosave.current
+      void a?.flush()
+      a?.dispose()
+    },
+    [],
+  )
+
+  /** Esc, click-away and ✕ are ONE gesture: save what is left, then leave. Ask only when that save failed. */
+  const requestClose = async (): Promise<void> => {
+    const a = autosave.current
+    if (a !== null) {
+      await a.flush()
+      // A failed write or a conflict keeps it pending: the error line or the conflict bar says why.
+      if (a.dirty) {
+        setConfirming(true)
+        return
+      }
     }
+    if (wrote.current) feed?.poke(target)
+    onClose()
   }
 
-  const save = async (): Promise<void> => {
-    if (loaded === null || !dirty) return
-    await write(loaded.mtime)
+  /** Discard: what failed to save stays off disk — disposed first, so the unmount flush writes nothing. */
+  const discard = (): void => {
+    autosave.current?.dispose()
+    if (wrote.current) feed?.poke(target)
+    onClose()
   }
 
   /** Keep mine: this canvas over the disk's version, guarded by the mtime the conflict reported. */
   const keepMine = (): void => {
-    if (conflict !== null) void write(conflict)
+    if (conflict === null) return
+    setConflict(null)
+    void autosave.current?.adopt(conflict)
   }
 
   /** Reload: the disk's version replaces this canvas. The surface remounts on it, clean. */
@@ -159,9 +206,11 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
     setError(null)
     try {
       const drawing = await openDrawing(root, target)
+      autosave.current?.dispose()
+      // The remounted surface's first snapshot is the new baseline.
+      autosave.current = null
       snapshot.current = null
-      baseline.current = null
-      setVersion(null)
+      setStatus('saved')
       setLoaded(drawing)
       setGeneration((g) => g + 1)
       feed?.poke(target)
@@ -176,20 +225,18 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
     e.stopPropagation()
     // While the strip is up, Esc answers IT — a second Esc must not skip the question.
     if (confirming) setConfirming(false)
-    else requestClose()
+    else void requestClose()
   }
 
   return (
-    <div ref={overlayRef} className="drawing-modal-overlay" tabIndex={-1} onMouseDown={requestClose} onKeyDown={onKeyDown}>
+    <div ref={overlayRef} className="drawing-modal-overlay" tabIndex={-1} onMouseDown={() => void requestClose()} onKeyDown={onKeyDown}>
       <div className="drawing-modal" role="dialog" aria-modal="true" aria-label={`Drawing ${target}`} onMouseDown={(e) => e.stopPropagation()}>
         <header className="drawing-modal__bar">
           <span className="drawing-modal__title" title={target}>
             {target}
           </span>
-          <button type="button" className="drawing-modal__btn" onClick={() => void save()} disabled={!dirty || saving} title={readOnly ? 'This drawing is read only' : undefined}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          <button type="button" className="drawing-modal__btn drawing-modal__close" aria-label="Close drawing" onClick={requestClose}>
+          {loaded !== null && !readOnly && <SaveIndicator status={status} />}
+          <button type="button" className="drawing-modal__btn drawing-modal__close" aria-label="Close drawing" onClick={() => void requestClose()}>
             ✕
           </button>
         </header>
@@ -199,7 +246,7 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
             <button type="button" className="drawing-modal__btn" onClick={() => setConfirming(false)}>
               Cancel
             </button>
-            <button type="button" className="drawing-modal__btn" onClick={onClose}>
+            <button type="button" className="drawing-modal__btn" onClick={discard}>
               Discard
             </button>
           </div>

@@ -15,9 +15,10 @@
  *     drawing" chip with its embed text visible and editable again — no crash, no rewrite: the
  *     note is still byte-identical and the healthy drawing beside it still renders
  *   4 clicking a preview opens the MODAL (YAZ-879): a rectangle drawn there with the real mouse
- *     is written back to the sidecar on Save — same shape, still pretty-printed — the in-page
- *     preview redraws WITHOUT a remount (the feed's poke), and reopening the saved drawing is
- *     clean: Save is disabled and Esc closes it outright. The note never moves.
+ *     is AUTOSAVED to the sidecar while the modal is open (YAZ-3528) — same shape, still
+ *     pretty-printed — a second one drawn just before ✕ is saved by the close itself, the in-page
+ *     preview redraws WITHOUT a remount (the feed's poke), and reopening the saved drawing writes
+ *     nothing: the label says Saved and Esc closes it outright. The note never moves.
  *   5 the saved rectangle SURVIVES the app (YAZ-880): quit, relaunch, and it is back on the page
  *     read cold from the sidecar alone — still without a single request leaving the app
  *   6 and it was never the note's drawing: a SECOND note embedding the same `![[…]]` line draws
@@ -127,7 +128,8 @@ const previewOf = (w: Page, target: string) => editorOf(w).locator(`.drawing-pre
 /** The YAZ-879 modal and its parts; the canvas inside it is the engine's, mounted by the seam. */
 const modal = (w: Page) => w.locator('.drawing-modal')
 const modalCanvas = (w: Page) => modal(w).locator('.drawing-modal__canvas')
-const saveButton = (w: Page) => modal(w).locator('.drawing-modal__bar .drawing-modal__btn').first()
+/** The save label where the Save button was (YAZ-3528 D2). */
+const saveLabel = (w: Page) => modal(w).locator('.drawing-modal__bar .save-indicator')
 
 const readNote = () => readFile(path.join(vault, NOTE), 'utf8')
 const readSidecar = (name: string) => readFile(path.join(vault, DRAWINGS_DIR, name), 'utf8')
@@ -297,8 +299,9 @@ test('step 5 — a preview opens the modal; a rectangle DRAWN there is saved bac
   await previewOf(win, second).click()
   await expect(modal(win)).toBeVisible()
   await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
-  // Opened and untouched is CLEAN: there is nothing to write, so there is no button to press.
-  await expect(saveButton(win)).toBeDisabled()
+  // Opened and untouched is CLEAN, and there is no Save button: the modal saves by itself.
+  await expect(saveLabel(win)).toHaveText('Saved')
+  await expect(modal(win).getByRole('button', { name: 'Save', exact: true })).toHaveCount(0)
   await shoot(win, 'drawing-07-modal-open')
 
   // --- draw, with the real mouse on the engine's own toolbar and canvas ---
@@ -310,25 +313,31 @@ test('step 5 — a preview opens the modal; a rectangle DRAWN there is saved bac
   if (box === null) throw new Error('the modal canvas has no box')
   // Right of centre and below the toolbar: the tool islands hug the top-left of the canvas.
   const x = box.x + box.width * 0.55
-  const y = box.y + box.height * 0.5
-  await win.mouse.move(x, y)
-  await win.mouse.down()
-  await win.mouse.move(x + 180, y + 130, { steps: 12 })
-  await win.mouse.up()
+  const y = box.y + box.height * 0.4
+  const drag = async (fromY: number): Promise<void> => {
+    await win.mouse.move(x, fromY)
+    await win.mouse.down()
+    await win.mouse.move(x + 180, fromY + 90, { steps: 12 })
+    await win.mouse.up()
+  }
+  await drag(y)
 
-  // The drag is the change the modal tracks: Save wakes up.
-  await expect(saveButton(win)).toBeEnabled()
+  // --- autosave: the rectangle reaches the sidecar while the modal is still open ---
+  await expect.poll(async () => (await readScene(second)).elements.length).toBe(1)
+  await expect(modal(win)).toBeVisible()
+  await expect(saveLabel(win)).toHaveText('Saved')
   await shoot(win, 'drawing-08-rectangle-drawn')
 
-  // --- save ---
-  await saveButton(win).click()
+  // --- close: a second rectangle drawn just before ✕ is saved by the close itself ---
+  await modal(win).locator('[data-testid="toolbar-rectangle"]').click()
+  await drag(y + 140)
+  await modal(win).getByRole('button', { name: 'Close drawing' }).click()
   await expect(modal(win)).toHaveCount(0)
 
-  // On disk: the sidecar GAINED the rectangle, and it is still the same kind of file — the shape
+  // On disk: the sidecar GAINED both rectangles, and it is still the same kind of file — the shape
   // YAZ-877 created, pretty-printed with a trailing newline and its `files` map intact.
-  await expect.poll(async () => (await readScene(second)).elements.length).toBe(1)
+  expect((await readScene(second)).elements.map((e) => e.type)).toEqual(['rectangle', 'rectangle'])
   const saved = await readScene(second)
-  expect(saved.elements[0].type).toBe('rectangle')
   expect(saved.type).toBe('excalidraw')
   expect(saved.source).toBe('yaseen-docs')
   expect(saved.files).toEqual({})
@@ -342,12 +351,13 @@ test('step 5 — a preview opens the modal; a rectangle DRAWN there is saved bac
   expect(savedSvg.length).toBeGreaterThan(0)
   await shoot(win, 'drawing-09-preview-redrawn')
 
-  // --- reopen: the saved drawing opens CLEAN, and Esc closes it outright ---
+  // --- reopen: the saved drawing opens CLEAN, and Esc closes it outright without a write ---
   await previewOf(win, second).click()
   await expect(modal(win)).toBeVisible()
-  await expect(saveButton(win)).toBeDisabled()
+  await expect(saveLabel(win)).toHaveText('Saved')
   await win.keyboard.press('Escape')
   await expect(modal(win)).toHaveCount(0)
+  expect(await readSidecar(second)).toBe(raw)
 
   // The NOTE never moved: the modal edits a sidecar, never the page (decorations only, rule 27).
   expect(await readNote()).toBe(before)
