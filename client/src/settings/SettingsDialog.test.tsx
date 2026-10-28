@@ -222,6 +222,15 @@ describe('SettingsDialog shell (D1)', () => {
     }
   })
 
+  it('Settings › Sidebar › Folder icons is Plain, By name or Off, Plain first and chosen by default (YAZ-3554 D3, D5)', () => {
+    const { el, onChange } = mountOn('Sidebar')
+    const buttons = [...(row(el, 'sidebarFolderIcons')?.querySelectorAll('button') ?? [])]
+    expect(buttons.map((b) => b.textContent)).toEqual(['Plain', 'By name', 'Off'])
+    expect(buttons[0].className).toContain('settings__option--active')
+    act(() => buttons[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, sidebarFolderIcons: 'named' })
+  })
+
   it('Settings › Sidebar › Icon rules stops at the settings check: no rule past MAX_ICON_RULES, no pattern past MAX_ICON_MATCH characters (YAZ-3440 D9)', () => {
     const full = Array.from({ length: MAX_ICON_RULES }, (_, k) => ({ match: `*.x${k}`, kind: 'file' as const, icon: 'file' }))
     const { el } = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconRules: full })

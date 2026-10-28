@@ -218,7 +218,7 @@ describe('TabBar', () => {
   })
 
   it("each tab shows its file's tree icon before its name: a folder page the folder's, a display name its file's, a file outside the vaults Material's (YAZ-3440 D11)", async () => {
-    const icons = buildRowIcons({ '/v': { paths: { '/v/mine.md': 'lua', '/out/b.md': 'lua' } } }, ['/v'], [])
+    const icons = buildRowIcons({ '/v': { paths: { '/v/mine.md': 'lua', '/out/b.md': 'lua' } } }, ['/v'], [], true)
     container = document.body.appendChild(document.createElement('div'))
     root = createRoot(container)
     vi.mocked(api.tree).mockResolvedValueOnce({ root: '/v', tree: [{ type: 'dir', name: 'src', path: '/v/src', children: [] }], generatedAt: 1 })

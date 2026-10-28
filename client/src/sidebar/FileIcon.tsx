@@ -6,7 +6,8 @@
  * the same settings apply in each place: the icon set, the file icon style and the folder icons. "Off" hides them.
  *
  * The icons come from App (`IconsContext`): the window's vaults' picks and the name rules, so they show while the
- * sidebar is hidden too. A path outside the window's vaults has no pick and no rule: Material's icon alone (D11).
+ * sidebar is hidden too. A path outside the window's vaults has no pick and no rule: Material's icon alone (D11), and
+ * Folder icons "Plain" (YAZ-3554) applies there too.
  * One small `<span>`, memoised on its path: a tab bar that draws again on a keystroke or a hover draws no icon again.
  */
 import { createContext, memo, useContext, type CSSProperties } from 'react'
@@ -28,7 +29,7 @@ export const IconsContext = createContext<IconsHere | null>(null)
 export function fileIconAttrs(here: IconsHere | null, path: string, folder: boolean): { 'data-kind': string; 'data-icon': string; 'data-icon-custom'?: ''; style: CSSProperties } {
   const name = basename(path)
   const inside = here !== null && rootOfPath(here.roots, path) !== null
-  const { id, custom } = rowIcon(inside ? here.rowIcons : undefined, path, name, folder ? 'folder' : 'file')
+  const { id, custom } = rowIcon(here?.rowIcons, path, name, folder ? 'folder' : 'file', false, inside)
   return { 'data-kind': folder ? 'folder' : (fileKind(name) ?? 'other'), 'data-icon': id, ...(custom ? { 'data-icon-custom': '' as const } : {}), style: iconVars(id) as CSSProperties }
 }
 

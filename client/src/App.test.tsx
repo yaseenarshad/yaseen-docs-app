@@ -1331,15 +1331,15 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     const app = el.querySelector<HTMLElement>('.app')!
     const attrs = () => ['icon-set', 'file-icons', 'folder-icons', 'arrow'].map((name) => app.getAttribute(`data-sidebar-${name}`))
-    // The defaults: Material, "Colour", folder icons on, the arrow at once, and the built-in colours.
-    expect(attrs()).toEqual(['material', 'quiet', 'on', 'instant'])
+    // The defaults: Material, "Colour", plain folder icons (YAZ-3554 D5), the arrow at once, and the built-in colours.
+    expect(attrs()).toEqual(['material', 'quiet', 'plain', 'instant'])
     expect(app.style.getPropertyValue('--kind-pdf')).toBe('')
     const renders = captured.editors.length
-    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarIconSet: 'line', sidebarFileIcons: 'grey', sidebarFolderIcons: false, sidebarArrowMotion: 'smooth', sidebarIconColors: { pdf: '#123456' } } }))
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarIconSet: 'line', sidebarFileIcons: 'grey', sidebarFolderIcons: 'off', sidebarArrowMotion: 'smooth', sidebarIconColors: { pdf: '#123456' } } }))
     expect(attrs()).toEqual(['line', 'grey', 'off', 'smooth'])
     expect(app.style.getPropertyValue('--kind-pdf')).toBe('#123456')
     act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarFileIcons: 'off' } }))
-    expect(attrs()).toEqual(['material', 'off', 'on', 'instant'])
+    expect(attrs()).toEqual(['material', 'off', 'plain', 'instant'])
     expect(app.style.getPropertyValue('--kind-pdf')).toBe('')
     expect(captured.editors.length).toBe(renders)
   })

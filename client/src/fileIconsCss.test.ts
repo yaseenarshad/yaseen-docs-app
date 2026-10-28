@@ -36,7 +36,7 @@ const SILHOUETTE = rules.find((rule) => /background:\s*var\(--fg-muted\);/.test(
 /** The Line set's colour for a note: "All colour" alone. */
 const NOTE_COLOUR = rules.find((rule) => /--kind-color:\s*var\(--kind-note\)/.test(rule.body))
 
-type App = { set: 'material' | 'line'; files: 'quiet' | 'color' | 'grey' | 'off'; folders?: 'on' | 'off' }
+type App = { set: 'material' | 'line'; files: 'quiet' | 'color' | 'grey' | 'off'; folders?: 'plain' | 'named' | 'off' }
 type Row = { folder?: boolean; kind?: string; icon?: string; custom?: boolean }
 
 /** The element that draws the icon: the tree row's label, or the `.file-icon` span itself (D11). */
@@ -45,7 +45,7 @@ function build(app: App, row: Row, where: 'tree' | 'outside'): Element {
   shell.className = 'app'
   shell.dataset.sidebarIconSet = app.set
   shell.dataset.sidebarFileIcons = app.files
-  shell.dataset.sidebarFolderIcons = app.folders ?? 'on'
+  shell.dataset.sidebarFolderIcons = app.folders ?? 'plain'
   const ul = shell.appendChild(document.createElement('ul'))
   ul.className = 'tree'
   const li = ul.appendChild(document.createElement('li'))

@@ -21,7 +21,7 @@ vi.mock('../api', async (importOriginal) => ({ ...(await importOriginal<typeof i
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 const RULES: IconRule[] = [{ match: '*.py', kind: 'file', icon: 'lua' }]
-const here = (paths: VaultIcons['paths'] = {}, rules: IconRule[] = RULES): IconsHere => ({ rowIcons: buildRowIcons({ '/v': { paths } }, ['/v'], rules), roots: ['/v'] })
+const here = (paths: VaultIcons['paths'] = {}, rules: IconRule[] = RULES): IconsHere => ({ rowIcons: buildRowIcons({ '/v': { paths } }, ['/v'], rules, true), roots: ['/v'] })
 
 let root: Root | null = null
 let container: HTMLElement | null = null

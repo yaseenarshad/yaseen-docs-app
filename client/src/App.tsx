@@ -352,7 +352,7 @@ export function App() {
   const lists = useVaultListsHere(roots, notify)
   // The vaults' own icons (YAZ-3440 D8, D9; D11, YAZ-3471): here too, so the tabs, the search results and Recents show a
   // row's icon with the sidebar hidden. The sidebar's tree reads the same object.
-  const vaultIcons = useVaultIcons(roots, settings.sidebarIconRules, notify)
+  const vaultIcons = useVaultIcons(roots, settings.sidebarIconRules, settings.sidebarFolderIcons === 'named', notify)
   const iconsHere = useMemo(() => ({ rowIcons: vaultIcons.rowIcons, roots }), [vaultIcons.rowIcons, roots])
   // The toast's clock is the toast's own (`NoticeToast`, YAZ-3303 D9): App only says how long and closes it.
   const closeNotice = useCallback(() => setNotice(null), [])
@@ -2487,7 +2487,7 @@ export function App() {
   return (
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons ? 'on' : 'off'} data-sidebar-arrow={settings.sidebarArrowMotion}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion}>
       {glow && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands

@@ -194,7 +194,7 @@ function WithPreview(props: PanelProps) {
   const { onPreview } = props
   const roots = useSameList(props.vaults.map((vault) => vault.root))
   const lists = useVaultListsHere(roots, props.onNotice)
-  const icons = useVaultIcons(roots, props.settings.sidebarIconRules, props.onNotice)
+  const icons = useVaultIcons(roots, props.settings.sidebarIconRules, props.settings.sidebarFolderIcons === 'named', props.onNotice)
   const show = useCallback((next: string | null) => {
     setPath(next)
     onPreview(next)

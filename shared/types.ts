@@ -1535,8 +1535,8 @@ export interface SettingsState {
   sidebarIconSet: SidebarIconSet
   /** The sidebar tree (YAZ-3440 D4): its file icons — `quiet` (every note grey, the other kinds in colour; the default), `color` (notes in colour too), `grey` (every file icon grey) or `off` (no file icons). A row's own pick or a rule keeps its colours in `quiet`. Folder icons are `sidebarFolderIcons`. It travels with the settings folder. */
   sidebarFileIcons: SidebarFileIcons
-  /** The sidebar tree (YAZ-3440 D5 amended): a folder icon before each folder's name — with Material its folder-name icon or the default folder, with Line a grey folder; the open twin while it is open. A vault row never has one. Independent of `sidebarFileIcons`, which is the file rows' alone. It travels with the settings folder. */
-  sidebarFolderIcons: boolean
+  /** The sidebar tree (YAZ-3440 D5 amended, YAZ-3554): a folder icon before each folder's name — `plain` (with Material its default folder for every folder; the default), `named` (with Material its folder-name icon, else the default folder) or `off`. With Line it is a grey folder either way; a pick or a rule still wins; the open twin while it is open. A vault row never has one. A stored boolean (before YAZ-3554) is not read: it becomes the default (D2). Independent of `sidebarFileIcons`, which is the file rows' alone. It travels with the settings folder. */
+  sidebarFolderIcons: SidebarFolderIcons
   /** The sidebar tree (YAZ-3440 D6): a folder's arrow turns at once (`instant`, the default) or over 0.12s (`smooth`, as before). Reduce motion always turns it at once. It travels with the settings folder. */
   sidebarArrowMotion: SidebarArrowMotion
   /**
@@ -1677,6 +1677,10 @@ export const SIDEBAR_ICON_SETS: readonly SidebarIconSet[] = ['material', 'line']
 export type SidebarFileIcons = 'quiet' | 'color' | 'grey' | 'off'
 export const SIDEBAR_FILE_ICONS: readonly SidebarFileIcons[] = ['quiet', 'color', 'grey', 'off']
 
+/** The sidebar tree (YAZ-3554): how its folder icons look, in the order Settings shows them. */
+export type SidebarFolderIcons = 'plain' | 'named' | 'off'
+export const SIDEBAR_FOLDER_ICONS: readonly SidebarFolderIcons[] = ['plain', 'named', 'off']
+
 /** The sidebar tree (YAZ-3440 D6): how a folder's arrow turns. */
 export type SidebarArrowMotion = 'instant' | 'smooth'
 export const SIDEBAR_ARROW_MOTIONS: readonly SidebarArrowMotion[] = ['instant', 'smooth']
@@ -1811,7 +1815,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarStickyLevels: 7,
   sidebarIconSet: 'material',
   sidebarFileIcons: 'quiet',
-  sidebarFolderIcons: true,
+  sidebarFolderIcons: 'plain',
   sidebarArrowMotion: 'instant',
   sidebarRevealActive: false,
   sidebarIconColors: {},

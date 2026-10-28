@@ -72,7 +72,8 @@ export function useMaterialIcons(): boolean {
 }
 
 const DEFAULT_FILE_ICON = 'file'
-const DEFAULT_FOLDER_ICON = 'folder'
+/** Material's default folder: every folder's icon with "Plain" (YAZ-3554), and any folder before the tables load. */
+export const DEFAULT_FOLDER_ICON = 'folder'
 
 /** True for an id Material ships: a pick or a rule naming any other reads as no pick (YAZ-3440 D8). */
 export const isMaterialIcon = (id: string): boolean => tables?.ids.has(id) === true
