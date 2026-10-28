@@ -21,13 +21,13 @@
  *     File › Export Image… and View › Canvas Background are enabled; the rail's hamburger opens the
  *     panel with its three tabs, and ⌘C on an empty selection opens Components. No search is typed:
  *     the Image Studio would reach a provider.
- *   7 the names (YAZ-3536 D1–D5): a drawing and a diagram read without their extension in the tree and the
- *     tab; Rename shows the name alone and keeps the extension on disk; with File icons Off the board's
- *     extension shows again, and a note stays bare.
  *   6 the draw.io panels and an outside change (YAZ-3420 D1, D2): with draw.io's own saved state
  *     saying Format and Layers were open, a 2-page diagram with 2 layers opens with Shapes, Format
  *     and Layers closed. On Page-2, zoomed in, a write from outside shows on Page-2 at the same zoom
  *     and place, and nothing is written back.
+ *   7 the names (YAZ-3536 D1–D5): a drawing and a diagram read without their extension in the tree and the
+ *     tab; Rename shows the name alone and keeps the extension on disk; with File icons Off the board's
+ *     extension shows again, and a note stays bare.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
