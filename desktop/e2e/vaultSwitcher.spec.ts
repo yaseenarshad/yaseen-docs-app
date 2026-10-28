@@ -189,7 +189,7 @@ test('step 2 — ⌘O then ⏎ opens the other vault BESIDE, blank (YAZ-3487 D7)
   const winBId = winParam(winB)!
   expect(await windowCount(app)).toBe(2)
   await expect.poll(() => winB.title()).toBe(BETA)
-  await expect(winB.locator('.start__heading')).toHaveText(['Recent', 'Favorites', 'Recently closed'])
+  await expect(winB.locator('.start__heading')).toHaveText(['Recently closed', 'Recently viewed', 'Favorites'])
   await expect(panel(win)).toHaveCount(0) // `true` from the door closes the panel
   await expect.poll(() => win.title()).toBe(titleOf(SEED_FILE, ALPHA))
   await expect(headerName(win)).toHaveText(ALPHA)

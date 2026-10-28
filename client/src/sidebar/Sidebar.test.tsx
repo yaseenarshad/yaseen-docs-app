@@ -1755,6 +1755,12 @@ describe('a NEW window starts with every folder closed (YAZ-3487, demo round 3)'
     const restored = await mount({}, (bridge) => seeded(bridge, false))
     expect(openState(restored.el)).toBe('true')
   })
+
+  it('a new window does not write its closed tree over the vault\'s stored open folders (D17: a restored window keeps the vault\'s list; bug YAZ-3513)', async () => {
+    const fresh = await mount({}, (bridge) => seeded(bridge, true))
+    expect(openState(fresh.el)).toBe('false')
+    expect(fresh.bridge.state.setFolder).not.toHaveBeenCalledWith('/v', { expanded: [] })
+  })
 })
 
 describe('launch: the restored tab is shown, not revealed (YAZ-1642)', () => {
