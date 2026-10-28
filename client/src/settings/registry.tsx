@@ -45,7 +45,7 @@ import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberContr
 import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 export interface SettingsCtx {
   settings: SettingsState
@@ -528,12 +528,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // YAZ-3440 D5 (amended): a folder icon before each folder's name, the icon set's (Material: by folder name; Line: a grey folder); a vault row never has one. The file rows' icons are their own row below.
+            // YAZ-3440 D5 (amended), YAZ-3554: a folder icon before each folder's name, the icon set's (Material: its default folder with Plain, the default, or by folder name; Line: a grey folder); a vault row never has one. The file rows' icons are their own row below.
             id: 'sidebarFolderIcons',
             label: 'Folder icons',
-            keywords: ['sidebar', 'folder', 'tree', 'icon', 'icons'],
+            hint: 'Plain gives every folder Material\'s default folder. By name gives common folders (src, docs, tools) their own Material icon and colour. Your own icons and icon rules still show. The Line set always shows a grey folder.',
+            keywords: ['sidebar', 'folder', 'tree', 'icon', 'icons', 'plain', 'default', 'by name', 'colour', 'color', 'material'],
             render: ({ settings, onChange }) => (
-              <Segmented options={ON_OFF_OPTIONS} value={settings.sidebarFolderIcons} onChange={(sidebarFolderIcons) => onChange({ ...settings, sidebarFolderIcons })} ariaLabel="Folder icons in the sidebar" />
+              <Segmented options={SIDEBAR_FOLDER_ICONS_OPTIONS} value={settings.sidebarFolderIcons} onChange={(sidebarFolderIcons) => onChange({ ...settings, sidebarFolderIcons })} ariaLabel="Folder icons in the sidebar" />
             ),
           },
           {

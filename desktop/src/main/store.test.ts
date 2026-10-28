@@ -650,11 +650,18 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings.sidebarLines).toBe('off')
   })
 
+  it('folder icons (YAZ-3554 D2, D5): the three words load; an old boolean, a missing key or a bad value loads Plain, with no conversion; another Mac\'s old boolean keeps this Mac\'s choice', () => {
+    for (const v of ['plain', 'named', 'off'] as const) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarFolderIcons: v }).sidebarFolderIcons).toBe(v)
+    for (const v of [true, false, 'yes', undefined]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarFolderIcons: v }).sidebarFolderIcons).toBe('plain')
+    expect(isSettings({ ...DEFAULT_SETTINGS, sidebarFolderIcons: true })).toBe(false)
+    expect(mergeFolderSettings({ ...DEFAULT_SETTINGS, sidebarFolderIcons: 'named' }, { sidebarFolderIcons: true }).sidebarFolderIcons).toBe('named')
+  })
+
   it('the sidebar tree\'s look (YAZ-3440): an older file without the keys loads the defaults; a bad value loads its default and fails the channel check; a bad icon colour costs its own entry; another Mac\'s colours replace this Mac\'s as a whole', () => {
-    expect([DEFAULT_SETTINGS.sidebarStickyLevels, DEFAULT_SETTINGS.sidebarIconSet, DEFAULT_SETTINGS.sidebarFileIcons, DEFAULT_SETTINGS.sidebarFolderIcons, DEFAULT_SETTINGS.sidebarArrowMotion, DEFAULT_SETTINGS.sidebarIconColors]).toEqual([7, 'material', 'quiet', true, 'instant', {}])
+    expect([DEFAULT_SETTINGS.sidebarStickyLevels, DEFAULT_SETTINGS.sidebarIconSet, DEFAULT_SETTINGS.sidebarFileIcons, DEFAULT_SETTINGS.sidebarFolderIcons, DEFAULT_SETTINGS.sidebarArrowMotion, DEFAULT_SETTINGS.sidebarIconColors]).toEqual([7, 'material', 'quiet', 'plain', 'instant', {}])
     const { sidebarStickyLevels: _a, sidebarIconSet: _b, sidebarFileIcons: _c, sidebarFolderIcons: _d, sidebarArrowMotion: _e, sidebarIconColors: _f, ...legacy } = DEFAULT_SETTINGS
     expect(sanitizeSettings(legacy)).toEqual(DEFAULT_SETTINGS)
-    const good = { sidebarStickyLevels: 3, sidebarIconSet: 'line', sidebarFileIcons: 'grey', sidebarFolderIcons: false, sidebarArrowMotion: 'smooth', sidebarIconColors: { pdf: '#112233' } }
+    const good = { sidebarStickyLevels: 3, sidebarIconSet: 'line', sidebarFileIcons: 'grey', sidebarFolderIcons: 'named', sidebarArrowMotion: 'smooth', sidebarIconColors: { pdf: '#112233' } }
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, ...good })).toEqual({ ...DEFAULT_SETTINGS, ...good })
     expect(isSettings({ ...DEFAULT_SETTINGS, ...good })).toBe(true)
     const bad = { sidebarStickyLevels: 4, sidebarIconSet: 'emoji', sidebarFileIcons: 'loud', sidebarFolderIcons: 'yes', sidebarArrowMotion: 'slow' }

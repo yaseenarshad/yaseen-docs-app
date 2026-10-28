@@ -21,7 +21,7 @@ vi.mock('../api', async (importOriginal) => ({ ...(await importOriginal<typeof i
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 const RULES: IconRule[] = [{ match: '*.py', kind: 'file', icon: 'lua' }]
-const here = (paths: VaultIcons['paths'] = {}, rules: IconRule[] = RULES): IconsHere => ({ rowIcons: buildRowIcons({ '/v': { paths } }, ['/v'], rules), roots: ['/v'] })
+const here = (paths: VaultIcons['paths'] = {}, rules: IconRule[] = RULES): IconsHere => ({ rowIcons: buildRowIcons({ '/v': { paths } }, ['/v'], rules, true), roots: ['/v'] })
 
 let root: Root | null = null
 let container: HTMLElement | null = null
@@ -56,6 +56,14 @@ describe('a file\'s icon outside the tree (YAZ-3440 D11)', () => {
     expect(fileIconAttrs(h, '/elsewhere/a.py', false)).toMatchObject({ 'data-icon': 'python' })
     expect(fileIconAttrs(h, '/elsewhere/a.py', false)['data-icon-custom']).toBeUndefined()
     expect(fileIconAttrs(null, '/v/a.py', false)['data-icon']).toBe('python')
+  })
+
+  it('Folder icons "Plain" (YAZ-3554 S8, S9): a folder in a vault and one outside both get the default folder; a pick in the vault still wins', () => {
+    const plain: IconsHere = { rowIcons: buildRowIcons({ '/v': { paths: { '/v/trips': 'folder-images' } } }, ['/v'], [], false), roots: ['/v'] }
+    expect(fileIconAttrs(plain, '/v/src', true)['data-icon']).toBe('folder')
+    expect(fileIconAttrs(plain, '/elsewhere/src', true)['data-icon']).toBe('folder')
+    expect(fileIconAttrs(plain, '/v/trips', true)).toMatchObject({ 'data-icon': 'folder-images', 'data-icon-custom': '' })
+    expect(fileIconAttrs(plain, '/v/a.ts', false)['data-icon']).toBe('typescript')
   })
 
   it('draws one aria-hidden span with the attributes; a new pick from App draws it again', () => {

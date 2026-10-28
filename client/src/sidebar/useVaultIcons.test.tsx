@@ -36,7 +36,7 @@ let hook: VaultIconsHere | null = null
 const onNotice = vi.fn()
 const NO_RULES: IconRule[] = []
 function Probe({ roots }: { roots: readonly string[] }) {
-  hook = useVaultIcons(roots, NO_RULES, onNotice)
+  hook = useVaultIcons(roots, NO_RULES, true, onNotice)
   return null
 }
 const here = (): VaultIconsHere => {
