@@ -508,7 +508,7 @@ function CrepeHost({
   const [diskLandings, diskLanded] = useReducer((count: number) => count + 1, 0)
   /**
    * The drawing wiring (YAZ-879), ONE per host: the preview plugin subscribes to this feed and the
-   * modal's save pokes it, so a scene written back re-renders every preview of it in this editor
+   * modal pokes it on close after a save (YAZ-3528), so a scene written back re-renders every preview of it in this editor
    * without a remount. Stable identity — a new feed would silently orphan the subscription.
    */
   const drawingFeed = useMemo(() => createDrawingFeed(), [])
@@ -626,7 +626,7 @@ function CrepeHost({
       drawing: { create: () => createDrawing(root), onNotice },
       // Drawing previews (YAZ-878): the root is all a preview needs — the embed's own target
       // carries the rest and `readAsset` resolves it. Both live wires are YAZ-879's: the feed
-      // the modal's save pokes, and the click that opens that modal.
+      // the modal pokes on close after a save, and the click that opens that modal.
       drawingPreview: { root, feed: drawingFeed, onOpenDrawing: setOpenDrawing },
       // First-class images (YAZ-1656): the root and THIS note's absolute path are what a relative
       // src resolves against (main's `app://vault/` protocol); double-click opens the lightbox

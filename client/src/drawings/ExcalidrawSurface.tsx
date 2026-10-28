@@ -184,7 +184,7 @@ export const ENGINE_LOAD_FAILED = "Can't open the drawing editor."
 const PREFS_DEBOUNCE_MS = 300
 
 /**
- * The file belongs to its host's ONE writer (the tab's autosave, the modal's Save), so the engine's
+ * The file belongs to its host's ONE writer (the tab's autosave, the modal's autosave), so the engine's
  * own open, save-to-file and JSON-export doors stay shut — a second writer would race the first.
  * `clearCanvas` is off for the web app's own reason (a destructive action with no undo affordance
  * here). Image export is untouched: it writes somewhere else entirely. `getFormFactor` is Draw's
