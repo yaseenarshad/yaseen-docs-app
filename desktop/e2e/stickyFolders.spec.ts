@@ -2,15 +2,18 @@
  * STICKY FOLDER ROWS, END TO END (YAZ-3440 D1, D2, D3; proven for YAZ-3469): in a long open folder, the
  * folder rows above the first visible row stay at the top of the list, one row per level, flush at its top
  * edge. A click on a stuck row's NAME scrolls the list back to that folder and leaves it open (D3, as in
- * VS Code); a click on its ARROW folds it, and the folder stays in view.
+ * VS Code); a click on its ARROW folds it, and the folder stays in view. A row that the keyboard focus or
+ * "Show in sidebar" brings into view lands right below the stuck rows, never under them (D1 `scroll-margin-top`,
+ * D12; the reviewer's ask on YAZ-3469 and YAZ-3472).
  *
  * The CSS contract (`client/src/stickyFoldersCss.test.ts`) pins the rules, and the headless check
  * (`tools/perf/sidebarLinesRecalc.mjs`) proves the stack and the paint order in real Chromium. Only the
- * real app can show the rest: the cap that `stickyFolders.ts` writes on the real list, and React's own
- * click handler on the stuck row.
+ * real app can show the rest: the cap that `stickyFolders.ts` writes on the real list, React's own
+ * click handler on the stuck row, and where Chromium's own focus scroll and the reveal's `scrollIntoView`
+ * leave a row under the real stack.
  *
- * The list is scrolled through `scrollTop`, as a wheel would leave it. The clicks are Playwright's, sent
- * to the page: in the hidden run (`YASEEN_DOCS_E2E_HIDDEN=1`, the default) no window shows, and the Mac's
+ * The list is scrolled through `scrollTop`, as a wheel would leave it. The clicks and keys are Playwright's,
+ * sent to the page: in the hidden run (`YASEEN_DOCS_E2E_HIDDEN=1`, the default) no window shows, and the Mac's
  * mouse and keyboard are never used.
  *
  * Same harness as the rest of the suite: temp `--user-data-dir`, a generated vault, `sticky-` step
@@ -20,7 +23,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, dirRow, expandDirs, launchApp, quitApp, seededState, shoot } from './helpers'
+import { activeTab, appWindow, dirRow, expandDirs, launchApp, menuItem, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -68,6 +71,20 @@ async function scrollToNote(k: number): Promise<void> {
 
 /** Within 1px: the list's scroll offset snaps to whole px, and a row is 25.5px tall at 100%. */
 const near = (a: number, b: number) => Math.abs(a - b) <= 1
+
+/** Where note `k`'s row is (screen px), and whether it has the keyboard focus. */
+const noteAt = (k: number): Promise<{ top: number; focused: boolean }> =>
+  win.evaluate((label) => {
+    const row = Array.from(document.querySelectorAll<HTMLElement>('.sidebar__body .tree__row--file')).find((r) => r.textContent === label) as HTMLElement
+    return { top: row.getBoundingClientRect().top, focused: document.activeElement === row }
+  }, name(k))
+
+/** Both folders are stuck, and note `k`'s row stands right below the stack: not under it, and not lower. */
+async function landsBelowStack(k: number): Promise<boolean> {
+  const [r, note] = [await rects(), await noteAt(k)]
+  const stuck = r.parent.item < r.parent.row - 1 && r.long.item < r.long.row - 1
+  return stuck && near(note.top, r.long.row + r.long.height)
+}
 
 async function buildVault(): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), 'yaz3469-vault-'))
@@ -149,5 +166,43 @@ test('step 3 — a click on the stuck folder row’s arrow folds the folder, and
     .toBe(true)
   await expect(itemOf(PARENT)).toHaveAttribute('aria-expanded', 'true')
   await shoot(win, 'sticky-3-folded')
+})
+
+// ---------------------------------------------------------------- D1, D12: the keyboard focus
+
+test('step 4 — ↑ to a row behind the stuck rows: Chromium scrolls it into view right below them, never under them (D1, D12)', async () => {
+  await dirRow(win, 'Long').locator('.tree__chevron').click()
+  await expect(itemOf(LONG)).toHaveAttribute('aria-expanded', 'true')
+  await scrollToNote(60)
+  // The first note row that shows below the stack: the keys start there.
+  const first = await win.evaluate(() => {
+    const body = document.querySelector('.sidebar__body') as HTMLElement
+    const stack = Array.from(body.querySelectorAll<HTMLElement>('.tree__row--dir')).reduce((bottom, row) => Math.max(bottom, row.getBoundingClientRect().bottom), 0)
+    const row = Array.from(body.querySelectorAll<HTMLElement>('.tree__row--file')).find((r) => r.getBoundingClientRect().top >= stack - 1) as HTMLElement
+    row.focus({ preventScroll: true })
+    return Number(row.textContent?.replace('Note ', ''))
+  })
+  // Each ↑ moves the focus to the row before, which stands behind the stuck rows until the focus scrolls it.
+  for (const k of [first - 1, first - 2, first - 3]) {
+    await win.keyboard.press('ArrowUp')
+    await expect.poll(async () => (await noteAt(k)).focused).toBe(true)
+    await expect.poll(() => landsBelowStack(k)).toBe(true)
+  }
+  await shoot(win, 'sticky-4-key-focus')
+})
+
+// ---------------------------------------------------------------- D1: "Show in sidebar"
+
+test('step 5 — "Show in sidebar" on the tab of a note far above: its row lands right below the stuck rows (D1)', async () => {
+  await scrollToNote(40)
+  await win.locator('.tree__row--file').filter({ hasText: new RegExp(`^${name(40)}$`) }).click()
+  await expect(activeTab(win)).toContainText(name(40))
+  // Far down: note 40 is out of view above the list.
+  await scrollToNote(100)
+  await expect.poll(async () => (await noteAt(40)).top < (await rects()).list).toBe(true)
+  await activeTab(win).click({ button: 'right' })
+  await menuItem(win, 'Show in sidebar').click()
+  await expect.poll(() => landsBelowStack(40)).toBe(true)
+  await shoot(win, 'sticky-5-show-in-sidebar')
   await quitApp(app)
 })
