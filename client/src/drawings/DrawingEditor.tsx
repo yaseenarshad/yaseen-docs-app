@@ -38,6 +38,7 @@
 import { useCallback, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse } from '@shared/types'
 import { unpersistedFiles } from '@shared/drawingAssets'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { api } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, exportWithNotice, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
@@ -47,6 +48,7 @@ import { useAppliedTheme } from '../lib/theme'
 import { exportFileName } from './exportDrawing'
 import { parseSceneText, type DrawingScene } from './drawingScene'
 import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi } from './ExcalidrawSurface'
+import { pressed } from './drawingKeys'
 import './drawingEditor.css'
 
 /** What a document that will not open says — one message for its three causes (missing, corrupt, empty). */
@@ -69,6 +71,8 @@ export interface DrawingEditorProps extends DocumentHostProps {
   onCanvasPanelChange?: (next: CanvasPanelState) => void
   /** The window's ONE passive notice: where an export landed, or why it did not (🔒 YAZ-1775 D3, YAZ-1821). */
   onNotice?: (text: string, icon?: NoticeKind) => void
+  /** `settings.hotkeys` (YAZ-3564): the drawing keys as the user set them, live. Omitted = the defaults. */
+  hotkeys?: HotkeyOverrides
 }
 
 /** A loaded document: the scene the canvas opens on, and the mtime the first save guards with. */
@@ -112,7 +116,7 @@ interface DrawingHostProps extends DrawingEditorProps {
 const FORGET_PANEL = (): void => undefined
 
 /** Mounts exactly one canvas for `loaded`; its board document owns everything that writes. */
-function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, onFailed }: DrawingHostProps) {
+function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, onFailed }: DrawingHostProps) {
   const theme = useAppliedTheme()
   /** The latest snapshot; read only when a save fires (see the module doc). */
   const snapshot = useRef<DrawingSnapshot | null>(null)
@@ -237,9 +241,9 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     await exportWithNotice(() => api.dialog.saveDrawing({ defaultName: exportFileName(basename(path)), content: s.exportScene() }), EXPORT_FAILED, onNotice)
   }
 
-  /** ⌘S flushes now — caught before the engine's own keymap, and never on `window`. */
+  /** ⌘S (or the user's key for it, YAZ-3564) flushes now — caught before the engine's own keymap, and never on `window`. */
   const onKeyDownCapture = (e: ReactKeyboardEvent): void => {
-    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's') {
+    if (pressed(e, 'drawing.saveNow', hotkeys)) {
       e.preventDefault()
       e.stopPropagation()
       board.flush()
@@ -262,6 +266,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
           onApi={onApi}
           renderTopRight={renderTopRight}
           readOnly={readOnly}
+          hotkeys={hotkeys}
           autoFocus
         />
       </div>

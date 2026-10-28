@@ -7,6 +7,7 @@ import type { PointerType } from "@excalidraw/element/types";
 
 import { trackEvent } from "../analytics";
 import { t } from "../i18n";
+import { boundShortcut, toolMovedAway } from "../keyRemap";
 import { getShortcutKey } from "../shortcut";
 
 import { IconButton } from "./IconButton";
@@ -147,6 +148,11 @@ export const TOGGLE_TOOLS: readonly (ToolType | "custom")[] = (
 ).filter((type) => TOOLS[type].toggle);
 
 export const getToolLetter = (type: ToolbarToolType) => {
+  // Yaseen Docs (YAZ-3564 K12): the user's key, when they changed it
+  const bound = boundShortcut(`tool:${type}`);
+  if (bound !== undefined) {
+    return bound;
+  }
   const { letterKey, shiftKey } = TOOLS[type];
   if (!letterKey) {
     return letterKey;
@@ -159,6 +165,11 @@ export const getToolLetter = (type: ToolbarToolType) => {
 
 /** human-readable shortcut hint, e.g. "D or L", used in tooltips */
 export const getToolShortcut = (type: ToolbarToolType) => {
+  // Yaseen Docs (YAZ-3564 K12)
+  const bound = boundShortcut(`tool:${type}`);
+  if (bound !== undefined) {
+    return bound;
+  }
   const { letterKey, shiftKey } = TOOLS[type];
   const letters = letterKey
     ? (typeof letterKey === "string" ? [letterKey] : letterKey).map((key) => {
@@ -171,6 +182,11 @@ export const getToolShortcut = (type: ToolbarToolType) => {
 
 /** valid ARIA key tokens for each alternate shortcut, e.g. "D L" */
 export const getToolAriaKeyShortcuts = (type: ToolbarToolType) => {
+  // Yaseen Docs (YAZ-3564 K12)
+  const bound = boundShortcut(`tool:${type}`, (text) => text);
+  if (bound !== undefined) {
+    return bound;
+  }
   const { letterKey, shiftKey } = TOOLS[type];
   const letters = letterKey
     ? (typeof letterKey === "string" ? [letterKey] : letterKey).map((key) => {
@@ -185,7 +201,14 @@ export const findShapeByKey = (
   key: string,
   app: AppClassProperties,
   shiftKey: boolean = false,
+  // Yaseen Docs (YAZ-3564 K5): the tool the user's key picks (`boundTool`)
+  bound: string | null = null,
 ) => {
+  if (bound !== null) {
+    return bound === "selection"
+      ? app.state.preferredSelectionTool.type
+      : (bound as ToolbarToolType);
+  }
   // CapsLock-insensitive: the caller excludes every modifier but shift, and
   // shift is matched explicitly below, so a capital letter on its own means
   // CapsLock
@@ -194,7 +217,8 @@ export const findShapeByKey = (
   for (const type of Object.keys(TOOLS) as ToolbarToolType[]) {
     const { letterKey, shiftKey: requiresShift } = TOOLS[type];
     // shift-bound tools require shift; plain-bound ones require its absence
-    if (shiftKey !== Boolean(requiresShift)) {
+    // Yaseen Docs (YAZ-3564 K5): a tool the user moved keeps no letter
+    if (shiftKey !== Boolean(requiresShift) || toolMovedAway(type)) {
       continue;
     }
     if (
