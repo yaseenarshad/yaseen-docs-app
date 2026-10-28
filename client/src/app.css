@@ -2898,7 +2898,8 @@ button {
 .name-ending {
   display: none;
 }
-.app[data-sidebar-file-icons='off'] .name-ending {
+.app[data-sidebar-file-icons='off'] .name-ending,
+.name-ending--always {
   display: inline;
 }
 

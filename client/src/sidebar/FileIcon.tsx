@@ -10,7 +10,7 @@
  * One small `<span>`, memoised on its path: a tab bar that draws again on a keystroke or a hover draws no icon again.
  */
 import { createContext, memo, useContext, type CSSProperties } from 'react'
-import { fileKind, isBoard } from '@shared/fileKind'
+import { boardBaseName, fileKind } from '@shared/fileKind'
 import { basename, rootOfPath } from '@shared/types'
 import { iconVars } from './materialIcons'
 import { rowIcon, type RowIcons } from './rowIcons'
@@ -42,8 +42,10 @@ export const FileIcon = memo(function FileIcon({ path, folder = false }: { path:
 /**
  * A drawing's or a diagram's extension after its name (YAZ-3536 D4): app.css shows it only with File icons Off,
  * when no icon says the kind; any other file has none (D5). CSS, not a setting read here: a switch re-renders nothing.
+ * `always`: a row that never has an icon (a Sessions row) shows it whatever the setting.
  */
-export function NameEnding({ path }: { path: string }) {
+export function NameEnding({ path, always = false }: { path: string; always?: boolean }) {
   const name = basename(path)
-  return isBoard(name) ? <span className="name-ending">{name.slice(name.lastIndexOf('.'))}</span> : null
+  const bare = boardBaseName(name)
+  return bare === name ? null : <span className={always ? 'name-ending name-ending--always' : 'name-ending'}>{name.slice(bare.length)}</span>
 }
