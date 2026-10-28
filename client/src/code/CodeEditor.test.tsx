@@ -18,7 +18,7 @@ import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { readPageView } from '../lib/pageView'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
-import { BROKEN_CODE_DOCUMENT, CodeEditor, appCommandOf, stickyModelFor } from './CodeEditor'
+import { BROKEN_CODE_DOCUMENT, CodeEditor, appCommandOf, findersFor, stickyModelFor } from './CodeEditor'
 import { LARGE_CODE_CHARS } from './outline/symbolSource'
 import { keepBackView, MAX_BACK_VIEWS, openCodeAt, takeBackView } from './codeOpener'
 import { applyAppTheme, created, resetFakeMonaco } from './monacoTestKit'
@@ -130,6 +130,18 @@ describe('loading', () => {
   it('YAZ-3501: a file of 512 KB or more opens with sticky scroll on the indentation model', async () => {
     await opened(`${'export const value = 1\n'.repeat(Math.ceil(LARGE_CODE_CHARS / 23))}`)
     expect(editor().options).toMatchObject({ stickyScroll: { enabled: true, defaultModel: 'indentationModel' } })
+  })
+
+  it('YAZ-3526: a normal file keeps Monaco’s colour and link finders; from LARGE_CODE_CHARS both are off', async () => {
+    await opened('a { color: #fff }\n')
+    expect(editor().options).toMatchObject({ colorDecorators: true, links: true })
+    expect(findersFor(LARGE_CODE_CHARS - 1)).toEqual({ colorDecorators: true, links: true })
+    expect(findersFor(LARGE_CODE_CHARS)).toEqual({ colorDecorators: false, links: false })
+  })
+
+  it('YAZ-3526: a file of 512 KB or more opens with no colour finder and no link finder', async () => {
+    await opened(`${'a { color: #fff }\n'.repeat(Math.ceil(LARGE_CODE_CHARS / 18))}`)
+    expect(editor().options).toMatchObject({ colorDecorators: false, links: false })
   })
 
   it('a file that will not open is one readable state, and no editor mounts', async () => {

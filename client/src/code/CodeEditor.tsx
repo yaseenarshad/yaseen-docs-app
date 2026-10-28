@@ -151,6 +151,19 @@ const FONT_SIZE = 13
  */
 export const stickyModelFor = (length: number): 'outlineModel' | 'indentationModel' => (length >= LARGE_CODE_CHARS ? 'indentationModel' : 'outlineModel')
 
+/**
+ * Monaco's colour finder and link finder for a text of `length` characters (YAZ-3526). After each pause in the
+ * typing, each finder reads the whole file in a worker. Each colour or link that it finds then becomes one
+ * decoration on the page's thread, and each frame walks them all. A 7 MB CSS file (144 000 colours) cost about
+ * 300 to 400 ms; a 6 MB HTML file (52 000 links) about 200 ms. From `LARGE_CODE_CHARS` both finders are off:
+ * no colour swatch, and a link is plain text. Below it both stay on, as in VS Code. The size is read when the
+ * tab opens.
+ */
+export const findersFor = (length: number): { colorDecorators: boolean; links: boolean } => {
+  const on = length < LARGE_CODE_CHARS
+  return { colorDecorators: on, links: on }
+}
+
 /** The model's line break for a file's text (YAZ-3445 D3). */
 const eolOf = (text: string) => (lineBreakOf(text) === '\r\n' ? monaco.editor.EndOfLineSequence.CRLF : monaco.editor.EndOfLineSequence.LF)
 
@@ -278,6 +291,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
       lineNumbers: 'on',
       showFoldingControls: 'always',
       stickyScroll: { enabled: true, defaultModel: stickyModelFor(model.getValueLength()) },
+      ...findersFor(model.getValueLength()),
       bracketPairColorization: { enabled: true },
       minimap: { enabled: born.current.codeMinimap },
       wordWrap: born.current.codeWrap ? 'on' : 'off',

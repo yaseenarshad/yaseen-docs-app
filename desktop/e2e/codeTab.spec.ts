@@ -17,6 +17,7 @@
  *   Outline for a `.lua` file, and the 5 MB file: its rows, and the long frames while typing in it.
  * - YAZ-3501 (bug): typing in the 5 MB file: each key draws within a frame, with no long task after a pause.
  * - YAZ-3502 (bug): a quit right after an edit of the 5 MB file: the flush and the app's quit steps are quick.
+ * - YAZ-3526 (bug): typing in large CSS, JSON and HTML files: no long task after a pause (step 11b).
  * - YAZ-3503 (bug): Monaco's menu rows are the app's menu rows to the pixel (step 6).
  * - YAZ-3458: LF, CRLF, mixed and BOM files keep their bytes through an edit, a save and a reopen (step 10b).
  *
@@ -74,6 +75,24 @@ const BIG_FILE = 'outline-big-5mb.ts'
 const BIG_BODY = `// About 5 MB.\n${Array.from({ length: 52_000 }, (_, i) => `export const value${i} = { id: ${i}, name: 'row ${i}', tags: ['alpha', 'beta', 'gamma'], active: ${i % 2 === 0 ? 'false' : 'true'} }`).join('\n')}\n`
 
 /**
+ * YAZ-3526 (bug): large CSS, JSON and HTML files, each over `LARGE_CODE_CHARS`, with a colour and a link on most
+ * lines. Monaco's colour and link finders read the whole file after each pause in the typing, and each found
+ * colour or link became one decoration on the page's thread.
+ */
+const hexOf = (i: number) => ((i * 2654435761) >>> 8).toString(16).padStart(6, '0').slice(0, 6)
+const BIG_CSS_FILE = 'big-7mb.css'
+const BIG_CSS = `${Array.from({ length: 72_000 }, (_, i) => `.row-${i} > .cell { color: #${hexOf(i)}; background-color: rgba(${i % 255}, 20, 30, 0.5); margin: 0 4px; }`).join('\n')}\n`
+const BIG_JSON_FILE = 'big-5mb.json'
+const BIG_JSON = `${JSON.stringify(Array.from({ length: 46_000 }, (_, i) => ({ id: i, name: `row ${i}`, color: `#${hexOf(i)}`, url: `https://example.com/rows/${i}` })), null, 2)}\n`
+const BIG_HTML_FILE = 'big-6mb.html'
+const BIG_HTML = `<!doctype html>\n<html>\n<body>\n${Array.from({ length: 52_000 }, (_, i) => `  <div class="row-${i}" style="color: #${hexOf(i)}"><a href="https://example.com/${i}">row ${i}</a> <span>text ${i}</span></div>`).join('\n')}\n</body>\n</html>\n`
+const BIG_WEB: { file: string; body: string; line: string }[] = [
+  { file: BIG_CSS_FILE, body: BIG_CSS, line: '.row-3 > .cell' },
+  { file: BIG_JSON_FILE, body: BIG_JSON, line: '"name": "row 3"' },
+  { file: BIG_HTML_FILE, body: BIG_HTML, line: 'class="row-3"' },
+]
+
+/**
  * YAZ-3458 (audit item 3; YAZ-3439 "Verification expectations"; YAZ-3445 S1–S4): the real Monaco's line breaks
  * and BOM, byte for byte. Each file gets one key at its very start; the save writes it; the tab closes and opens
  * again; the bytes on disk are the expected bytes, every line break and the BOM kept (a mixed file saves every
@@ -100,7 +119,7 @@ test.beforeAll(async () => {
   await Promise.all(Object.entries(TYPED).map(([name, t]) => writeFile(path.join(vault, name), t.body)))
   await Promise.all(Object.entries(NAMED).map(([name, t]) => writeFile(path.join(vault, name), t.body)))
   await Promise.all(Object.entries(BYTES).map(([name, { before }]) => writeFile(path.join(vault, name), before)))
-  await Promise.all([writeFile(path.join(vault, OUTLINE_FILE), OUTLINE_BODY), writeFile(path.join(vault, PY_FILE), PY_BODY), writeFile(path.join(vault, LUA_FILE), 'local x = 1\nprint(x)\n'), writeFile(path.join(vault, BIG_PY_FILE), BIG_PY_BODY), writeFile(path.join(vault, BIG_FILE), BIG_BODY)])
+  await Promise.all([writeFile(path.join(vault, OUTLINE_FILE), OUTLINE_BODY), writeFile(path.join(vault, PY_FILE), PY_BODY), writeFile(path.join(vault, LUA_FILE), 'local x = 1\nprint(x)\n'), writeFile(path.join(vault, BIG_PY_FILE), BIG_PY_BODY), writeFile(path.join(vault, BIG_FILE), BIG_BODY), ...BIG_WEB.map(({ file, body }) => writeFile(path.join(vault, file), body))])
 })
 
 test.afterAll(async () => {
@@ -554,6 +573,29 @@ test('step 11 — YAZ-3486 S12, YAZ-3501: the 5 MB file: its Outline, and each k
  * Mac with a load average over 100 it took from 1.6 s to over 60 s, for a 100-line file as for this one
  * (YAZ-3502 root cause). So the wait for the process to end has a wider cap than `quitApp`'s 15 s.
  */
+test('step 11b — YAZ-3526: large CSS, JSON and HTML files: each key draws at once, and no long task after a pause', async () => {
+  test.setTimeout(240_000)
+  const runs: { keys: number[]; long: number[] }[] = []
+  for (const { file, body, line } of BIG_WEB) {
+    expect(body.length).toBeGreaterThan(5 * 1024 * 1024)
+    await fileRow(win, file).click()
+    await expect(lines(win)).toContainText(line, { timeout: 30_000 })
+    // The first read of the whole file (the open itself) is not what this step measures.
+    await win.waitForTimeout(3000)
+    const run = await typeAndWatch(win, line)
+    runs.push(run)
+    console.log(`[YAZ-3526] ${file} (${(body.length / 1024 / 1024).toFixed(1)} MB): keys [${run.keys.join(', ')}] ms, long tasks [${run.long.join(', ')}] ms`)
+  }
+  // Before the fix a 7 MB CSS file gave a long task of 300 to 390 ms after a pause (the colour finder), and a
+  // 6 MB HTML file one of about 200 ms (the link finder). A key typed during one of them waited for it.
+  for (const run of runs) {
+    expect(run.keys).toHaveLength(20)
+    expect(median(run.keys)).toBeLessThan(16)
+    expect(Math.max(...run.keys)).toBeLessThan(100)
+    expect(Math.max(0, ...run.long)).toBeLessThan(200)
+  }
+})
+
 test('step 12 — YAZ-3502: quit right after an edit of the 5 MB file: the flush and the app\'s quit steps are quick, and the edit is on disk', async () => {
   test.setTimeout(120_000)
   await fileRow(win, BIG_FILE).click()
