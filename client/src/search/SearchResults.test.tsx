@@ -9,6 +9,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { SearchCandidate } from './searchCandidates'
 import { SearchResults } from './SearchResults'
+import { rowIcon } from '../sidebar/rowIcons'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -108,5 +109,17 @@ describe('SearchResults (YAZ-803)', () => {
     expect(note.classList.contains('search-results__row--dir')).toBe(false)
     expect(note.getAttribute('aria-label')).toBe('Search result Archive')
     expect(note.querySelector('.search-results__glyph')).toBeNull()
+  })
+
+  it("each row shows its tree row's icon first in its label, a folder its folder icon (YAZ-3440 D11); the label's text is the name alone", () => {
+    const { el } = render([dir('src'), cand('Archive')])
+    const [folder, note] = rows(el)
+    const icon = (row: Element) => row.querySelector<HTMLElement>('.search-results__label > .file-icon:first-child')!
+    expect(icon(folder).className).toBe('file-icon file-icon--dir')
+    expect(icon(folder).dataset.icon).toBe(rowIcon(undefined, '/v/src', 'src', 'folder').id)
+    expect(icon(note).className).toBe('file-icon file-icon--file')
+    expect(icon(note).dataset.icon).toBe(rowIcon(undefined, '/v/Archive.md', 'Archive.md', 'file').id)
+    expect(icon(note).dataset.kind).toBe('markdown')
+    expect(note.querySelector('.search-results__label')?.textContent).toBe('Archive')
   })
 })

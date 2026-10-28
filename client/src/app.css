@@ -1896,6 +1896,11 @@ button {
   opacity: 0.7;
 }
 
+/* The folder's own icon stands in its place while folder icons show (YAZ-3440 D11, `FileIcon`); Off brings it back. */
+.app:not([data-sidebar-folder-icons='off']) .search-results__glyph {
+  display: none;
+}
+
 /* ---------- settings (GRO-2024; the dialog itself is settings/settings.css since YAZ-1679) ---------- */
 
 /* The footer's ONE height (YAZ-1674): 6px + 6px padding around the 26px cog (5px + 16px svg + 5px)
@@ -2780,9 +2785,13 @@ button {
    16px grid, 1.2px strokes. The file rows' look is `data-sidebar-file-icons` (`sidebarFileIcons`): "Colour"
    (`quiet`, the default) colours each kind but notes, "All colour" (`color`) notes too, `grey` none, `off` hides
    them. The folders' is `data-sidebar-folder-icons` (`sidebarFolderIcons`), on its own: grey, open while the folder
-   is. A vault row has none. A row in rename is an input: no icon. */
-.app[data-sidebar-icon-set='line']:not([data-sidebar-file-icons='off']) .tree__row--file[data-kind]:not([data-icon-custom]) .tree__label::before,
-.app[data-sidebar-icon-set='line']:not([data-sidebar-folder-icons='off']) .tree__row--dir[data-kind]:not([data-icon-custom]) .tree__label::before {
+   is. A vault row has none. A row in rename is an input: no icon.
+   The same rules draw a file's icon outside the tree (D11, YAZ-3471: tabs, search results, Recents): there the
+   `.file-icon` span (`FileIcon.tsx`, inline, first in the name's label) carries the row's attributes and draws on
+   its own `::before`; with the icons off it is empty and takes no room. Each rule names both in one `:is()`, whose
+   weight is the tree's, so the two can never draw apart. */
+.app[data-sidebar-icon-set='line']:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-kind]:not([data-icon-custom]) .tree__label, .file-icon--file[data-kind]:not([data-icon-custom]))::before,
+.app[data-sidebar-icon-set='line']:not([data-sidebar-folder-icons='off']) :is(.tree__row--dir[data-kind]:not([data-icon-custom]) .tree__label, .file-icon--dir[data-kind]:not([data-icon-custom]))::before {
   content: '';
   display: inline-block;
   width: 14px;
@@ -2793,40 +2802,40 @@ button {
   mask: var(--kind-icon) center / 14px 14px no-repeat;
 }
 
-.tree__row[data-kind='other'] {
+:is(.tree__row, .file-icon)[data-kind='other'] {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3'/%3E%3C/svg%3E");
 }
 
-.tree__row[data-kind='markdown'] {
+:is(.tree__row, .file-icon)[data-kind='markdown'] {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3M6 8.5h4.5M6 11h4.5'/%3E%3C/svg%3E");
 }
 
-.tree__row[data-kind='text'] {
+:is(.tree__row, .file-icon)[data-kind='text'] {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3M7 8.5 5.75 10 7 11.5M9.5 8.5l1.25 1.5-1.25 1.5'/%3E%3C/svg%3E");
   --kind-color: var(--kind-text);
 }
 
-.tree__row[data-kind='pdf'] {
+:is(.tree__row, .file-icon)[data-kind='pdf'] {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3M5.75 9.5h5v3h-5z'/%3E%3C/svg%3E");
   --kind-color: var(--kind-pdf);
 }
 
-.tree__row[data-kind='image'] {
+:is(.tree__row, .file-icon)[data-kind='image'] {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 3.5h12v9H2zM2 11l3.5-3.5 3 3 2-2 3.5 3.5'/%3E%3Ccircle cx='10.5' cy='6' r='1'/%3E%3C/svg%3E");
   --kind-color: var(--kind-image);
 }
 
-.tree__row[data-kind='drawing'] {
+:is(.tree__row, .file-icon)[data-kind='drawing'] {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 13l.8-3.2L11 2.6l2.4 2.4-7.2 7.2zM9.5 4l2.5 2.5'/%3E%3C/svg%3E");
   --kind-color: var(--kind-drawing);
 }
 
-.tree__row[data-kind='diagram'] {
+:is(.tree__row, .file-icon)[data-kind='diagram'] {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 2.5h5v4H2zM9 9.5h5v4H9zM4.5 6.5v3a1 1 0 0 0 1 1H9'/%3E%3C/svg%3E");
   --kind-color: var(--kind-diagram);
 }
 
-.tree__row[data-kind='folder'] {
+:is(.tree__row, .file-icon)[data-kind='folder'] {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 4.5a1 1 0 0 1 1-1h3.4l1.6 1.6h6a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z'/%3E%3C/svg%3E");
 }
 
@@ -2834,11 +2843,11 @@ button {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 12.5v-8a1 1 0 0 1 1-1h3.4l1.6 1.6h5a1 1 0 0 1 1 1V7M1.5 12.5 3.5 7h11l-2 5.5z'/%3E%3C/svg%3E");
 }
 
-.app[data-sidebar-file-icons='color'] .tree__row[data-kind='markdown'] {
+.app[data-sidebar-file-icons='color'] :is(.tree__row, .file-icon)[data-kind='markdown'] {
   --kind-color: var(--kind-note);
 }
 
-.app[data-sidebar-file-icons='grey'] .tree__row[data-kind] {
+.app[data-sidebar-file-icons='grey'] :is(.tree__row, .file-icon)[data-kind] {
   --kind-color: var(--fg-muted);
 }
 
@@ -2848,10 +2857,10 @@ button {
    (`/material-icons/`, `materialIcons.ts`). Folders keep their colours; `grey` draws the file icons as grey
    silhouettes (the icon as a mask), and `quiet` the notes' alone. A row the vault gave its own icon (a pick or a
    rule in `.yaseendocs/icons.json`, YAZ-3440 B: `data-icon-custom`) shows it in the Line set too. */
-.app[data-sidebar-icon-set='material']:not([data-sidebar-file-icons='off']) .tree__row--file[data-icon] .tree__label::before,
-.app[data-sidebar-icon-set='material']:not([data-sidebar-folder-icons='off']) .tree__row--dir[data-icon] .tree__label::before,
-.app:not([data-sidebar-file-icons='off']) .tree__row--file[data-icon-custom] .tree__label::before,
-.app:not([data-sidebar-folder-icons='off']) .tree__row--dir[data-icon-custom] .tree__label::before {
+.app[data-sidebar-icon-set='material']:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-icon] .tree__label, .file-icon--file[data-icon])::before,
+.app[data-sidebar-icon-set='material']:not([data-sidebar-folder-icons='off']) :is(.tree__row--dir[data-icon] .tree__label, .file-icon--dir[data-icon])::before,
+.app:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-icon-custom] .tree__label, .file-icon--file[data-icon-custom])::before,
+.app:not([data-sidebar-folder-icons='off']) :is(.tree__row--dir[data-icon-custom] .tree__label, .file-icon--dir[data-icon-custom])::before {
   content: '';
   display: inline-block;
   width: 14px;
@@ -2861,15 +2870,15 @@ button {
   background: var(--icon) center / 14px 14px no-repeat;
 }
 
-[data-theme='light'] .app[data-sidebar-icon-set='material'] .tree__row[data-icon] .tree__label::before,
-[data-theme='light'] .app .tree__row[data-icon-custom] .tree__label::before {
+[data-theme='light'] .app[data-sidebar-icon-set='material'] :is(.tree__row[data-icon] .tree__label, .file-icon[data-icon])::before,
+[data-theme='light'] .app :is(.tree__row[data-icon-custom] .tree__label, .file-icon[data-icon-custom])::before {
   background-image: var(--icon-light, var(--icon));
 }
 
 /* After the light rule, which has the same weight: a silhouette has no image. */
-.app[data-sidebar-icon-set='material'][data-sidebar-file-icons='grey'] .tree__row--file[data-icon] .tree__label::before,
-.app[data-sidebar-file-icons='grey'] .tree__row--file[data-icon-custom] .tree__label::before,
-.app[data-sidebar-icon-set='material'][data-sidebar-file-icons='quiet'] .tree__row--file[data-icon='markdown'] .tree__label::before {
+.app[data-sidebar-icon-set='material'][data-sidebar-file-icons='grey'] :is(.tree__row--file[data-icon] .tree__label, .file-icon--file[data-icon])::before,
+.app[data-sidebar-file-icons='grey'] :is(.tree__row--file[data-icon-custom] .tree__label, .file-icon--file[data-icon-custom])::before,
+.app[data-sidebar-icon-set='material'][data-sidebar-file-icons='quiet'] :is(.tree__row--file[data-icon='markdown'] .tree__label, .file-icon--file[data-icon='markdown'])::before {
   background: var(--fg-muted);
   mask: var(--icon) center / 14px 14px no-repeat;
 }

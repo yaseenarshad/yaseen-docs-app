@@ -72,6 +72,7 @@ import { testDoor } from '../testNoteIds'
 import { PREVIEW_FOLLOW_MS } from './hooks/useSidebarSearch'
 import { useSameList } from './hooks/useVaultTree'
 import { useVaultListsHere } from '../lists/useVaultListsHere'
+import { useVaultIcons } from './useVaultIcons'
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -177,8 +178,8 @@ let container: HTMLElement | null = null
 /** The mounted panel's tab switch, as App does it (YAZ-2638 D2): the same Sidebar, a new `lens`. Null between tests. */
 let showTab: ((lens: SidebarTab) => void) | null = null
 
-/** The panel's props but `lists`: the harness holds the window's Focus and Favorites, as App does (YAZ-3264 D1). */
-type PanelProps = Omit<Parameters<typeof Sidebar>[0], 'lists'>
+/** The panel's props but `lists` and `icons`: the harness holds the window's Focus and Favorites and its vaults' icons, as App does (YAZ-3264 D1, YAZ-3440 D11). */
+type PanelProps = Omit<Parameters<typeof Sidebar>[0], 'lists' | 'icons'>
 /** App's half of the preview panel of the search (YAZ-2662 D5), of the mounted panel: the path on show, and App's ✕. Null between tests. */
 let previewPanel: { path: string | null; close: () => void } | null = null
 /**
@@ -189,13 +190,15 @@ let previewPanel: { path: string | null; close: () => void } | null = null
 function WithPreview(props: PanelProps) {
   const [path, setPath] = useState<string | null>(null)
   const { onPreview } = props
-  const lists = useVaultListsHere(useSameList(props.vaults.map((vault) => vault.root)), props.onNotice)
+  const roots = useSameList(props.vaults.map((vault) => vault.root))
+  const lists = useVaultListsHere(roots, props.onNotice)
+  const icons = useVaultIcons(roots, props.settings.sidebarIconRules, props.onNotice)
   const show = useCallback((next: string | null) => {
     setPath(next)
     onPreview(next)
   }, [onPreview])
   previewPanel = { path, close: () => setPath(null) }
-  return <Sidebar {...props} lists={lists} previewPath={path} onPreview={show} />
+  return <Sidebar {...props} lists={lists} icons={icons} previewPath={path} onPreview={show} />
 }
 type Vault = PanelProps['vaults'][number]
 /** A vault's own review facts (YAZ-2602 R5): upkeep on or off, what is due, whether its review is open; and the Inbox row's click. */

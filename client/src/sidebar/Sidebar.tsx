@@ -22,7 +22,7 @@ import { ContextMenu } from './ContextMenu'
 import { levelLinesHover } from './levelLinesHover'
 import { stickyFolders } from './stickyFolders'
 import { IconPicker } from './IconPicker'
-import { useVaultIcons } from './useVaultIcons'
+import type { VaultIconsHere } from './useVaultIcons'
 import { oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
 import { PICKER_W, suggestIcons } from './iconSuggestions'
 import { sortSections } from './treeSort'
@@ -82,6 +82,8 @@ interface SidebarProps {
   vaults: readonly SidebarVault[]
   /** The window's Focus and Favorites (YAZ-3264 D1): App holds them, so the tab menu reaches them while this panel is hidden. */
   lists: VaultListsHere
+  /** The vaults' own icons (YAZ-3440 B): App holds them, so the tabs, the search results and Recents show them too (D11). */
+  icons: VaultIconsHere
   /** The vault rows the user closed (YAZ-2602 R9): App's, so they stay closed while this panel is unmounted. */
   closedVaults: readonly string[]
   onSetVaultOpen: (root: string, open: boolean) => void
@@ -532,6 +534,7 @@ const NO_DIRS: readonly string[] = []
 export function Sidebar({
   vaults,
   lists,
+  icons,
   closedVaults,
   onSetVaultOpen,
   onAddVault,
@@ -610,8 +613,8 @@ export function Sidebar({
   const root = roots[0]
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
   const multi = roots.length > 1
-  // The vaults' own icons (YAZ-3440 A, B): `.yaseendocs/icons.json` of each vault of the window, for the tree's rows.
-  const { rowIcons, pick: pickIcons } = useVaultIcons(roots, settings.sidebarIconRules, onNotice)
+  // The vaults' own icons (YAZ-3440 A, B): `.yaseendocs/icons.json` of each vault of the window, for the tree's rows. App's (D11).
+  const { rowIcons, pick: pickIcons } = icons
   // The two "Change icon" items (YAZ-3440 C, demo round 2): the picker, right of the sidebar at the row, for the rows' picks or for one name rule.
   const [iconPicker, setIconPicker] = useState<IconPickerAt | null>(null)
   // What the "Change icon ▸" flyout reads as the menu opens (demo round 3), through a ref so the menu's callback keeps its identity.

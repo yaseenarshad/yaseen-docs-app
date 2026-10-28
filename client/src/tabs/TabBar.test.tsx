@@ -12,6 +12,8 @@ import { TabBar as IdTabBar, type TabBarProps as IdTabBarProps } from './TabBar'
 import tabsCss from './tabs.css?inline'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 import { setBoardHighlight } from './boardHighlight'
+import { IconsContext } from '../sidebar/FileIcon'
+import { buildRowIcons, rowIcon } from '../sidebar/rowIcons'
 
 // The OS-action items call the bridge (YAZ-963): stub the verbs, keep BridgeRequestError real.
 vi.mock('../api', async (importOriginal) => ({
@@ -213,6 +215,26 @@ describe('TabBar', () => {
     await act(async () => void (await fetchTree('/named')))
     expect(labels()).toEqual(['Notes.md', 'Plan'])
     expect(el.querySelector('[aria-label="Close Notes.md"]')).not.toBeNull()
+  })
+
+  it("each tab shows its file's tree icon before its name: a folder page the folder's, a display name its file's, a file outside the vaults Material's (YAZ-3440 D11)", async () => {
+    const icons = buildRowIcons({ '/v': { paths: { '/v/mine.md': 'lua', '/out/b.md': 'lua' } } }, ['/v'], [])
+    container = document.body.appendChild(document.createElement('div'))
+    root = createRoot(container)
+    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/v', tree: [{ type: 'dir', name: 'src', path: '/v/src', children: [] }], generatedAt: 1 })
+    const tabs = [{ id: 'a', path: '/v/a.ts' }, { id: 'm', path: '/v/mine.md', name: 'My page' }, { id: 's', path: '/v/src' }, { id: 'o', path: '/out/b.md' }]
+    act(() => root?.render(<IconsContext.Provider value={{ rowIcons: icons, roots: ['/v'] }}><IdTabBar roots={['/v']} titles={new Map()} tabs={tabs} active="a" {...noop} {...noNav} /></IconsContext.Provider>))
+    await act(async () => void (await fetchTree('/v')))
+    const icon = (id: string) => container!.querySelector<HTMLElement>(`[data-tab="${id}"] .tabbar__label > .file-icon:first-child`)!
+    // The same id the tree row of that path shows.
+    expect(icon('a').dataset.icon).toBe(rowIcon(icons, '/v/a.ts', 'a.ts', 'file').id)
+    expect(icon('m').dataset.icon).toBe('lua')
+    expect(icon('m').hasAttribute('data-icon-custom')).toBe(true)
+    expect(container!.querySelector('[data-tab="m"] .tabbar__label')?.textContent).toBe('My page')
+    expect(icon('s').className).toBe('file-icon file-icon--dir')
+    expect(icon('s').dataset.icon).toBe('folder-src')
+    expect(icon('o').dataset.icon).toBe('markdown')
+    expect(icon('o').hasAttribute('data-icon-custom')).toBe(false)
   })
 
   it('marks only the active tab: aria-selected + the active modifier', () => {
