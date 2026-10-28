@@ -12,6 +12,7 @@ import { getContextMenuLabel } from "../components/hyperlink/Hyperlink";
 import { LinkIcon } from "../components/icons";
 import { t } from "../i18n";
 import { getSelectedElements } from "../scene";
+import { boundShortcut } from "../keyRemap";
 import { getShortcutKey } from "../shortcut";
 
 import { register } from "./register";
@@ -52,11 +53,12 @@ export const actionLink = register({
         aria-label={t(
           getContextMenuLabel(getNonDeletedElements(elements), appState),
         )}
+        // Yaseen Docs (YAZ-3564 K12)
         title={`${
           isEmbeddableElement(elements[0])
             ? t("labels.link.labelEmbed")
             : t("labels.link.label")
-        } - ${getShortcutKey("CtrlOrCmd+K")}`}
+        } - ${boundShortcut("hyperlink") ?? getShortcutKey("CtrlOrCmd+K")}`}
         onSelect={() => updateData(null)}
         checked={selectedElements.length === 1 && !!selectedElements[0].link}
       />

@@ -43,6 +43,7 @@ import { t } from "../i18n";
 
 import { isSomeElementSelected } from "../scene";
 
+import { boundShortcut } from "../keyRemap";
 import { getShortcutKey } from "../shortcut";
 
 import { register } from "./register";
@@ -204,7 +205,10 @@ export const actionGroup = register({
       type="button"
       icon={<GroupIcon theme={appState.theme} />}
       onClick={() => updateData(null)}
-      title={`${t("labels.group")} — ${getShortcutKey("CtrlOrCmd+G")}`}
+      // Yaseen Docs (YAZ-3564 K12)
+      title={`${t("labels.group")} — ${
+        boundShortcut("group") ?? getShortcutKey("CtrlOrCmd+G")
+      }`}
       aria-label={t("labels.group")}
       visible={isSomeElementSelected(getNonDeletedElements(elements), appState)}
     ></IconButton>
@@ -312,7 +316,10 @@ export const actionUngroup = register({
       hidden={getSelectedGroupIds(appState).length === 0}
       icon={<UngroupIcon theme={appState.theme} />}
       onClick={() => updateData(null)}
-      title={`${t("labels.ungroup")} — ${getShortcutKey("CtrlOrCmd+Shift+G")}`}
+      // Yaseen Docs (YAZ-3564 K12)
+      title={`${t("labels.ungroup")} — ${
+        boundShortcut("ungroup") ?? getShortcutKey("CtrlOrCmd+Shift+G")
+      }`}
       aria-label={t("labels.ungroup")}
       visible={isSomeElementSelected(getNonDeletedElements(elements), appState)}
     ></IconButton>

@@ -166,4 +166,11 @@ describe('a moved drawing key in the real engine (K5)', () => {
     expect(title('ellipse')).not.toMatch(/—/) // no key, no hint
     expect(title('arrow')).toMatch(/— A$/)
   })
+
+  it('names the new key in an action button tooltip too (K12): the zoom buttons', async () => {
+    const { container } = await mount({ 'drawing.zoomIn': 'CmdOrCtrl+Alt+I' })
+    const title = (button: string) => container.querySelector(`.${button}`)?.getAttribute('title')
+    expect(title('zoom-in-button')).toBe('Zoom in — Cmd+Option+I')
+    expect(title('zoom-out-button')).toBe('Zoom out — Cmd+-') // not moved: the engine's own
+  })
 })

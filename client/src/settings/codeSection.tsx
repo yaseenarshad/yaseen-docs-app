@@ -5,11 +5,14 @@
  *
  * - Open code files read only (D5; the cog row is "Read only", under "All code files"): every code tab opens read only, with the Read only chip. "Allow edits" on a tab's chip
  *   unlocks that tab until it closes; the setting stays.
- * - Wrap long lines (D8): on by default. Alt+Z flips one tab and saves nothing; a change here overrides it.
+ * - Wrap long lines (D8): on by default. Its key (⌥Z, or the user's: YAZ-3564 K12) flips one tab and saves nothing;
+ *   a change here overrides it.
  * - Minimap (D6): off by default.
  * - Jump across files (YAZ-3500): off by default. The language helpers start only with it on; the first
  *   switch-on asks, then downloads them (`LanguageHelpersControl`). Not on the cog: it is not about one tab.
  */
+import { toDisplay, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { keyRow, keysOf } from '@shared/keys'
 import { Segmented } from './controls'
 import { storage } from '../lib/storage'
 import { LanguageHelpersControl } from './LanguageHelpersControl'
@@ -17,6 +20,13 @@ import { ON_OFF_OPTIONS } from './options'
 import type { SettingsSection } from './registry'
 
 const CODE_WORDS = ['code', 'monaco', 'source', 'programming', 'vs code']
+
+/** The word wrap key as it is now (YAZ-3564 K12): the user's, when they changed it; a two-step key shows both steps. */
+const wrapHint = (hotkeys: HotkeyOverrides | undefined): string => {
+  const row = keyRow('code.toggleWordWrap')
+  const key = row === undefined ? undefined : keysOf(row, hotkeys)[0]
+  return key === undefined ? 'Toggle word wrap has no key now. Set one on the Hotkeys page to flip one tab.' : `${key.split(' ').map(toDisplay).join(' ')} flips one tab until you close it.`
+}
 
 export const CODE_SECTION: SettingsSection = {
   id: 'code',
@@ -37,7 +47,7 @@ export const CODE_SECTION: SettingsSection = {
         {
           id: 'codeWrap',
           label: 'Wrap long lines',
-          hint: '⌥Z flips one tab until you close it.',
+          hint: ({ settings }) => wrapHint(settings.hotkeys),
           keywords: [...CODE_WORDS, 'word wrap', 'soft wrap', 'line wrap', 'horizontal scroll'],
           render: ({ settings, onChange }) => (
             <Segmented options={ON_OFF_OPTIONS} value={settings.codeWrap} onChange={(codeWrap) => onChange({ ...settings, codeWrap })} ariaLabel="Wrap long lines in code files" />
