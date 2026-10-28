@@ -1882,8 +1882,8 @@ export interface WindowEntry {
   /**
    * A Files window's own sidebar zoom in percent (YAZ-3389 D13, which replaced YAZ-3357 D11's Chromium level): only
    * its list grows, as `settings.sidebarZoom` does in a full window, and the zoom menu's − % + and an unclaimed ⌘+ / ⌘− / ⌘0
-   * there change this value, never the shared one. ⌘⇧W starts it one `SIDEBAR_ZOOM_STEPS` step above the window it came
-   * from. Kept by the store on every Files window (`normalizeFilesZoom`); absent on a full window.
+   * there change this value, never the shared one. ⌘⇧W starts it AT the sidebar zoom of the window it came
+   * from (YAZ-3487; it was one step above). Kept by the store on every Files window (`normalizeFilesZoom`); absent on a full window.
    */
   zoom?: number
 }
@@ -2791,8 +2791,8 @@ export const SIDEBAR_ZOOM_STEPS = [50, 75, 90, 100, 125, 150, 200] as const
 export const SIDEBAR_ZOOM_MIN = SIDEBAR_ZOOM_STEPS[0]
 export const SIDEBAR_ZOOM_MAX = SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]
 
-/** The App sizes in percent (YAZ-3432): the zoom menu's App size row walks them with − and +. */
-export const APP_ZOOM_STEPS = [90, 100, 110, 125] as const
+/** The App sizes in percent (YAZ-3432): the zoom menu's App size row walks them with − and +. Up to 200% (YAZ-3487, demo round 3). */
+export const APP_ZOOM_STEPS = [90, 100, 110, 125, 150, 175, 200] as const
 
 /**
  * One zoom step along `steps` (ascending): the next step in `direction`. A value between two steps snaps to the next

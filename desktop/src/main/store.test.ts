@@ -393,9 +393,9 @@ describe('createStore: loading', () => {
     for (const zoom of [49, 201, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarZoom: zoom })).toBe(false)
   })
 
-  it('appZoom (YAZ-3432): an older file without the key loads at 100; only 90 · 100 · 110 · 125 are kept, anything else loads at 100; the channel takes those four only', async () => {
+  it('appZoom (YAZ-3432): an older file without the key loads at 100; only 90 · 100 · 110 · 125 · 150 · 175 · 200 are kept (200 since YAZ-3487), anything else loads at 100; the channel takes those only', async () => {
     expect(DEFAULT_SETTINGS.appZoom).toBe(100)
-    expect([...APP_ZOOM_STEPS]).toEqual([90, 100, 110, 125])
+    expect([...APP_ZOOM_STEPS]).toEqual([90, 100, 110, 125, 150, 175, 200])
     const { appZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))
     expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
@@ -406,11 +406,11 @@ describe('createStore: loading', () => {
       return settings.appZoom
     }
     for (const zoom of APP_ZOOM_STEPS) expect(await loaded(zoom)).toBe(zoom)
-    for (const zoom of [105, 80, 200, 0, -125, '125', null, true, {}]) expect(await loaded(zoom)).toBe(100)
+    for (const zoom of [105, 80, 250, 0, -125, '125', null, true, {}]) expect(await loaded(zoom)).toBe(100)
     for (const zoom of [NaN, Infinity]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, appZoom: zoom }).appZoom).toBe(100)
 
     for (const zoom of APP_ZOOM_STEPS) expect(isSettings({ ...DEFAULT_SETTINGS, appZoom: zoom })).toBe(true)
-    for (const zoom of [95, 150, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, appZoom: zoom })).toBe(false)
+    for (const zoom of [95, 160, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, appZoom: zoom })).toBe(false)
   })
 
   it('hoverPreviewIn (YAZ-3403 D7, S37): a file from before reads every place on; a missing or broken place reads on and the others keep their values; the channel takes eight booleans only', async () => {
@@ -452,7 +452,7 @@ describe('createStore: loading', () => {
     expect([stepSidebarZoom(60, 1), stepSidebarZoom(60, -1)]).toEqual([75, 50])
     expect([stepSidebarZoom(50, -1), stepSidebarZoom(200, 1)]).toEqual([50, 200])
     // The same walk over the App sizes (YAZ-3432): 90 and 125 are the walls; an off-step value snaps.
-    expect([90, 100, 110, 125].map((p) => stepZoom(APP_ZOOM_STEPS, p, 1))).toEqual([100, 110, 125, 125])
+    expect([90, 100, 110, 125, 200].map((p) => stepZoom(APP_ZOOM_STEPS, p, 1))).toEqual([100, 110, 125, 150, 200])
     expect([90, 100, 110, 125].map((p) => stepZoom(APP_ZOOM_STEPS, p, -1))).toEqual([90, 90, 100, 110])
     expect([stepZoom(APP_ZOOM_STEPS, 105, 1), stepZoom(APP_ZOOM_STEPS, 105, -1)]).toEqual([110, 100])
   })
