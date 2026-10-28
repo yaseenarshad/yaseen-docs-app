@@ -389,6 +389,55 @@ describe('PageSettings: Read only', () => {
     expect(menu()!.querySelector('button')?.textContent).toBe('Read only')
   })
 
+  it('a host with no switch (a code file, YAZ-3448) hands no handler, and gets no row', () => {
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined} />))
+    click(cog())
+    expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Line numbers'])
+  })
+
+  it('a code tab (YAZ-3449) passes its own rows: each shows its check mark, a click calls only its handler, and the menu stays open', () => {
+    const calls: string[] = []
+    function Harness() {
+      const [rows, setRows] = useState({ 'Read only (all code files)': false, 'Wrap long lines': true, Minimap: false })
+      const switches = Object.entries(rows).map(([label, on]) => ({ label, on, onToggle: () => {
+        calls.push(label)
+        setRows((now) => ({ ...now, [label]: !on }))
+      } }))
+      return <PageSettings switches={switches} />
+    }
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<Harness />))
+    click(cog())
+    expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Read only (all code files)', 'Wrap long lines\u2713', 'Minimap'])
+    expect(switchNamed('Wrap long lines').getAttribute('aria-pressed')).toBe('true')
+    click(switchNamed('Read only (all code files)'))
+    click(switchNamed('Minimap'))
+    expect(calls).toEqual(['Read only (all code files)', 'Minimap'])
+    expect(menu()).not.toBeNull()
+    expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Read only (all code files)\u2713', 'Wrap long lines\u2713', 'Minimap\u2713'])
+    // No counts: a code tab hands no `readText`.
+    expect(menu()!.textContent).not.toContain('words')
+  })
+
+  it('a heading over the code rows (YAZ-3458): one group with its name, a line, then this page\'s "Table of contents"', () => {
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    const switches = ['Read only', 'Wrap long lines', 'Minimap'].map((label) => ({ label, on: false, onToggle: () => undefined }))
+    act(() => root.render(<PageSettings switches={switches} switchesHeading="All code files" tableOfContents onToggleTableOfContents={() => undefined} />))
+    click(cog())
+    const group = menu()!.querySelector('[role="group"]')!
+    expect(group.getAttribute('aria-label')).toBe('All code files')
+    expect([...group.children].map((child) => child.textContent)).toEqual(['All code files', 'Read only', 'Wrap long lines', 'Minimap'])
+    expect([...menu()!.children].map((child) => child.className)).toEqual(['', 'page-settings__divider', ''])
+    expect(menu()!.lastElementChild!.textContent).toBe('Table of contents\u2713')
+  })
+
   it('S41: a board\u2019s menu has only that row, and no counts', () => {
     mountReadOnly({ board: true })
     expect([...menu()!.children].map((child) => child.textContent)).toEqual(['Read only'])

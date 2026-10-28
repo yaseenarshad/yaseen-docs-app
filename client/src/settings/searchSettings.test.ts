@@ -62,6 +62,11 @@ describe('settingCandidates', () => {
       'sectionLines',
       'tableOfContents',
       'tocLines',
+      // Settings › Code (YAZ-3449).
+      'codeReadOnly',
+      'codeWrap',
+      'codeMinimap',
+      'codeLanguageHelpers',
       // Settings › Excalidraw canvas (YAZ-3037).
       ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`),
       // Settings › Images (YAZ-3038).
@@ -106,8 +111,8 @@ describe('settingCandidates', () => {
     const storage: SettingsCtx['storage'] = { stats: null, failed: false, refresh: () => undefined, shrink: async () => ({ shrunk: 0, skipped: 0, bytesMoved: 0 }), lastShrink: null }
     const sharing: SettingsCtx['sharing'] = { root: '/v', status: null, rows: null, listError: null, now: 0, refresh: () => undefined, show: () => undefined }
     const sectionsOf = (c: SettingsCtx) => [...new Set(settingCandidates(c).map((h) => h.section.id))]
-    expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), storage, sharing })).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
-    expect(sectionsOf(ctx())).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'canvas', 'images', 'files', 'hotkeys'])
+    expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), storage, sharing })).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'code', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
+    expect(sectionsOf(ctx())).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'code', 'canvas', 'images', 'files', 'hotkeys'])
   })
 
   it('a candidate carries label, hint, keywords, group title and section title, case-folded in `lower`', () => {
@@ -157,9 +162,9 @@ describe('searchSettings', () => {
     for (const query of ['startup', 'launch', 'when the app starts']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['startupWindows'])
   })
 
-  it('"toc" finds the two rows of the table of contents and "jump" the first alone; "outline" and "headings" find it among others; the group\'s name finds both rows and the ⌘J line of the Hotkeys table (YAZ-2700, YAZ-2762)', () => {
+  it('"toc" finds the two rows of the table of contents and "jump" the first and the code tab\'s "Jump across files" (YAZ-3500); "outline" and "headings" find it among others; the group\'s name finds both rows and the ⌘J line of the Hotkeys table (YAZ-2700, YAZ-2762)', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'toc'))).toEqual(['tableOfContents', 'tocLines'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'jump'))).toEqual(['tableOfContents'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'jump')).sort()).toEqual(['codeLanguageHelpers', 'tableOfContents'])
     // The words the app already uses for the bullet features and the fold keys: the row is one of the answers.
     for (const query of ['outline', 'headings']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('tableOfContents')
     // The settings folder's hint names the table of contents width, which stays on this Mac (YAZ-3276 D7); General comes first.

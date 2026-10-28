@@ -23,9 +23,9 @@ export interface HotkeyEntry {
 }
 
 export const HOTKEYS: readonly HotkeyEntry[] = [
-  { keys: '⌘↑ / ⌘↓', label: 'Fold / unfold the bullet or heading section at the caret' },
-  { keys: '⌘⇧U', label: 'Fold all bullets and headings' },
-  { keys: '⌘⇧I', label: 'Unfold all bullets and headings' },
+  { keys: '⌘↑ / ⌘↓', label: 'Fold / unfold the bullet or heading section at the caret — in a code file, the block at the cursor' },
+  { keys: '⌘⇧U', label: 'Fold all bullets and headings — in a code file, every block' },
+  { keys: '⌘⇧I', label: 'Unfold all bullets and headings — in a code file, every block' },
   { keys: '⌘Z', label: 'Undo — also reverts the latest fold or zoom' },
   { keys: '⌘⇧Z', label: 'Redo' },
   { keys: '⌘.', label: 'Zoom into the bullet at the caret' },

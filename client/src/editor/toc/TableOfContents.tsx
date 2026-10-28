@@ -48,10 +48,14 @@
  * `section.editor`; with focus inside no `section.editor` at all, the first visible one in
  * document order claims. A hidden editor never claims, and a note that shows no table of contents
  * never does either.
+ *
+ * THE FRAME — the measure, the width and its drag, ⌘J, the card's open and close — is
+ * `tocFrame.tsx` since YAZ-3486: the code tab's Outline uses the same one.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from 'react'
-import { TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W, type ContentWidth, type TableOfContents as TableOfContentsMode } from '@shared/types'
+import { TOC_DEFAULT_W, TOC_MAX_W, type ContentWidth, type TableOfContents as TableOfContentsMode } from '@shared/types'
 import { ENOUGH_ROWS, type TocChannel, type TocRow } from './tocChannel'
+import { beginTocResize, CLICK_GUARD_MS, EDGE_PX, PinIcon, RAIL_PADDING_PX, shown, useTocBox, useTocCard, useTocLinger, useTocShortcut, useTocWidthVar } from './tocFrame'
 import './toc.css'
 
 /**
@@ -138,34 +142,8 @@ export const railPitch = (height: number, count: number): { pitch: number; fits:
   return { pitch, fits: pitch * count <= height }
 }
 
-/** The card stays this long after the mouse or the keyboard leaves it. */
-const GRACE_MS = 200
 /** The path in the names stays this long after the last turn of the wheel (`data-reading`). */
 const WHEEL_LINGER_MS = 1500
-/** A click on the rail right after the mouse opened the card does not close it again. */
-const CLICK_GUARD_MS = 300
-/** Room the card keeps clear above and below itself. */
-const EDGE_PX = 16
-/** What the rail's lines give up of the height that is left, for the rail's own padding. */
-const RAIL_PADDING_PX = 16
-/** A closed card stays mounted this long, so toc.css can fade it out (`data-leaving`). */
-const EXIT_MS = 140
-
-interface Box {
-  /** Width of `section.editor`: what `namesShow` reads. */
-  width: number
-  /** Where the scroller starts inside the section: below the status chips, and a conflict bar when there is one. */
-  top: number
-  /** Height of the scroller. */
-  height: number
-  /** Width of the scroller's own scrollbar: 0 when the system overlays it. The table of contents stands left of it. */
-  gutter: number
-}
-
-const NO_BOX: Box = { width: 0, top: 0, height: 0, gutter: 0 }
-
-/** checkVisibility is absent under jsdom, where nothing is ever hidden — hence the ?? true. */
-const shown = (el: Element | null | undefined): el is HTMLElement => el instanceof HTMLElement && (el.checkVisibility?.() ?? true)
 
 export interface TableOfContentsProps {
   /** The host's one channel per editor mount — the very instance `createCrepe` was given. */
@@ -191,11 +169,15 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   const rows = useMemo(() => shownRows(all), [all])
   const shows = mode !== 'off' && !hidden && rows.length >= ENOUGH_ROWS
 
-  const [box, setBox] = useState(NO_BOX)
+  const scrollerOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('.editor-host') ?? null
+  const sectionOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('section.editor') ?? null
+
+  // The measure (`tocFrame.tsx`): the section's width picks the look, the scroller's top and height place it.
+  const box = useTocBox(shows, scrollerOf, hostRef)
   const [current, setCurrent] = useState(0)
   // Mirror for the scroll spy, which sets state only when the index is a new one.
   const currentRef = useRef(0)
-  const [open, setOpen] = useState(false)
+  const { open, setOpen, hoverRef, openedAt, openCard, closeSoon, cancelGrace } = useTocCard()
   const columnMax = COLUMN_MAX[contentWidth]
   const names = shows && namesShow(mode, box.width, columnMax)
   // Read only while the names show: the saved width, or the room this note has when that is less.
@@ -204,12 +186,9 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   const at = Math.min(current, rows.length - 1)
 
   const navRef = useRef<HTMLElement>(null)
-  const hoverRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLSpanElement>(null)
   /** The row a jump landed on, held as current until the reader moves the note themselves. */
   const lock = useRef<number | null>(null)
-  const graceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const openedAt = useRef(0)
   /** ⌘J on a closed card: the names do not exist yet, so the focus lands in a layout effect on the open. */
   const pendingFocus = useRef(false)
   /** Ends the drag of the column's edge that is under way, with nothing saved. */
@@ -217,30 +196,6 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   /** The wheel effect's `turn`, for a wheel over the table of contents that moves the note (`onWheelOverToc`). */
   const wheelTurn = useRef<(() => void) | null>(null)
 
-  const scrollerOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('.editor-host') ?? null
-  const sectionOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('section.editor') ?? null
-
-  /** The mouse is on the rail or the card, or the keyboard is inside them. */
-  const held = (): boolean => {
-    const el = hoverRef.current
-    return el !== null && (el.matches(':hover') || el.contains(document.activeElement))
-  }
-  const cancelGrace = (): void => {
-    if (graceTimer.current !== null) clearTimeout(graceTimer.current)
-    graceTimer.current = null
-  }
-  const closeSoon = (): void => {
-    cancelGrace()
-    graceTimer.current = setTimeout(() => {
-      graceTimer.current = null
-      if (!held()) setOpen(false)
-    }, GRACE_MS)
-  }
-  const openCard = (): void => {
-    cancelGrace()
-    openedAt.current = performance.now()
-    setOpen(true)
-  }
   const focusCurrent = (): void => {
     const nav = navRef.current
     ;(nav?.querySelector<HTMLElement>('.toc__name[aria-current="true"]') ?? nav?.querySelector<HTMLElement>('.toc__name'))?.focus()
@@ -272,42 +227,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   const live = useRef({ enter, leave })
   live.current = { enter, leave }
 
-  // The measure: the section's width picks the look, the scroller's top and height place it. A
-  // ResizeObserver, so it costs nothing on a scroll or a keystroke — the scroller's BOX does not
-  // grow with the note. A hidden tab is not measured (its layout is skipped, YAZ-2195); the
-  // observer reports it when it shows.
-  useLayoutEffect(() => {
-    if (!shows) return
-    const scroller = scrollerOf()
-    const section = scroller?.closest<HTMLElement>('.editor')
-    if (!scroller || !section) return
-    const measure = (): void =>
-      setBox((previous) => {
-        const next = { width: section.clientWidth, top: scroller.offsetTop, height: scroller.clientHeight, gutter: scroller.offsetWidth - scroller.clientWidth }
-        return next.width === previous.width && next.top === previous.top && next.height === previous.height && next.gutter === previous.gutter ? previous : next
-      })
-    if (shown(section)) measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(section)
-    observer.observe(scroller)
-    return () => observer.disconnect()
-  }, [shows, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
-
-  // The width of the names column, as the ONE variable toc.css's column, the scroller's padding
-  // and the find bar's place all read. It is there only while the names show. A drag writes the
-  // same variable itself (`startResize`), so after its release this finds the width already there
-  // and the column does not jump. Names that go away under a drag — the editor closes, the window
-  // narrows, the note zooms — end it.
-  useLayoutEffect(() => {
-    if (!names) return
-    const section = sectionOf()
-    if (section === null) return
-    section.style.setProperty('--toc-width', `${shownWidth}px`)
-    return () => {
-      endResize.current?.()
-      section.style.removeProperty('--toc-width')
-    }
-  }, [names, shownWidth, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `sectionOf` reads only `hostRef`
+  // The width of the names column, `--toc-width` on the section (`tocFrame.tsx`).
+  useTocWidthVar(names, shownWidth, sectionOf, hostRef, endResize)
 
   // The scroll spy. At most `MAX_ROWS` rows are read per frame and nothing is written. A new
   // list of rows, a new measure (a resize moves every row), a change of look (the names column
@@ -399,26 +320,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     }
   }, [shows, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- the rest is read through `live` and refs
 
-  // 🔒 ⌘J, the claim rule in the header.
-  useEffect(() => {
-    if (!shows) return
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (!event.metaKey || event.shiftKey || event.altKey || event.ctrlKey || event.key !== 'j') return
-      const section = hostRef.current?.closest('section.editor')
-      if (!shown(section)) return
-      const active = document.activeElement
-      const holder = active instanceof Element ? active.closest('section.editor') : null
-      const claims = holder !== null ? holder === section : [...document.querySelectorAll('section.editor')].find(shown) === section
-      if (!claims) return
-      event.preventDefault()
-      event.stopPropagation()
-      // A second ⌘J from inside the table of contents is Esc.
-      if (navRef.current !== null && navRef.current.contains(active)) live.current.leave()
-      else live.current.enter()
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [shows, hostRef])
+  // 🔒 ⌘J, the claim rule in the header (`tocFrame.tsx`). A second ⌘J from inside the table of contents is Esc.
+  useTocShortcut(shows, hostRef, navRef, live)
 
   // A card that lost its reason to be open (names took over, the note zoomed, the setting went
   // off) must not come back open when the lines do.
@@ -426,19 +329,9 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     if (!shows || names) setOpen(false)
   }, [shows, names])
 
-  useEffect(() => cancelGrace, []) // eslint-disable-line react-hooks/exhaustive-deps -- on unmount; it reads a ref
-
   const card = shows && !names && open
   // A closed card stays in the page for `EXIT_MS` as `data-leaving`, so it fades out instead of vanishing.
-  const [lingers, setLingers] = useState(false)
-  useEffect(() => {
-    if (card) {
-      setLingers(true)
-      return
-    }
-    const timer = setTimeout(() => setLingers(false), EXIT_MS)
-    return () => clearTimeout(timer)
-  }, [card])
+  const lingers = useTocLinger(card)
   useLayoutEffect(() => {
     if (!card || !pendingFocus.current) return
     pendingFocus.current = false
@@ -498,43 +391,10 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   }
 
   /**
-   * The drag of the column's left edge, the sidebar edge's way (YAZ-2239): each move writes the
-   * width straight to the section's `--toc-width` and sets NO state — the note's text flows again
-   * for every move, and a render on top of that is what made such a drag stutter. The setting is
-   * written once, on the release, and only when the width is a new one. Left is wider. The width
-   * is whole px and stops at `TOC_MIN_W` and at the room this note has.
+   * The drag of the column's left edge (`tocFrame.tsx`): each move writes `--toc-width` with no
+   * render, and the release writes the setting once. It stops at `TOC_MIN_W` and at the room this note has.
    */
-  const startResize = (event: ReactMouseEvent<HTMLElement>): void => {
-    const section = sectionOf()
-    // The left button only: a right press opens the system's menu, and its release may never come.
-    if (section === null || event.button !== 0) return
-    // No text selection under the drag.
-    event.preventDefault()
-    const edge = event.currentTarget
-    const start = shownWidth
-    const x0 = event.clientX
-    let next = start
-    const move = (ev: MouseEvent): void => {
-      next = Math.min(room, Math.max(TOC_MIN_W, Math.round(start + x0 - ev.clientX)))
-      section.style.setProperty('--toc-width', `${next}px`)
-    }
-    const end = (): void => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-      document.body.style.cursor = ''
-      edge.toggleAttribute('data-active', false)
-      endResize.current = null
-    }
-    const up = (): void => {
-      end()
-      if (next !== start) onChangeWidth(next)
-    }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-    document.body.style.cursor = 'col-resize'
-    edge.toggleAttribute('data-active', true)
-    endResize.current = end
-  }
+  const startResize = (event: ReactMouseEvent<HTMLElement>): void => beginTocResize(event, sectionOf(), shownWidth, room, onChangeWidth, endResize)
 
   const nameList = <Names rows={rows} at={at} onPick={jump} />
 
@@ -616,14 +476,6 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     </nav>
   )
 }
-
-/** A pin for "Pin"; struck through for "Unpin". The find bar's stroke, so the two read as one family. */
-const PinIcon = ({ off = false }: { off?: boolean }) => (
-  <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d="M6 2h4l-.5 4 2 2.5h-7l2-2.5L6 2ZM8 8.5V14" />
-    {off && <path d="M3 3l10 10" />}
-  </svg>
-)
 
 /**
  * The names themselves: the column's list and the card's. A thin accent MARKER slides to the

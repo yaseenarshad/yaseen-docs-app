@@ -13,6 +13,7 @@
  * ordering note in `createCrepe.ts`.
  */
 import { $shortcut } from '@milkdown/kit/utils'
+import { FOLD_KEYS } from './foldKeys'
 import { setHeadingFoldAtSelection, undoLastHeadingFold } from './headingFolding'
 
 /** Priority above Crepe's list/table/base keymaps (default 50). */
@@ -20,7 +21,7 @@ const PRIORITY = 100
 
 /** Keymap plugin; register with `editor.use(headingHotkeys)`. */
 export const headingHotkeys = $shortcut(() => ({
-  FoldHeading: { key: 'Mod-ArrowUp', priority: PRIORITY, onRun: () => setHeadingFoldAtSelection(true) },
-  UnfoldHeading: { key: 'Mod-ArrowDown', priority: PRIORITY, onRun: () => setHeadingFoldAtSelection(false) },
+  FoldHeading: { key: FOLD_KEYS.foldHere, priority: PRIORITY, onRun: () => setHeadingFoldAtSelection(true) },
+  UnfoldHeading: { key: FOLD_KEYS.unfoldHere, priority: PRIORITY, onRun: () => setHeadingFoldAtSelection(false) },
   UndoHeadingFold: { key: 'Mod-z', priority: PRIORITY, onRun: () => undoLastHeadingFold },
 }))

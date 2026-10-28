@@ -4,6 +4,8 @@ import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
 import {
   APP_ZOOM_STEPS,
+  CODE_OUTLINE_SORTS,
+  CODE_SYMBOL_KINDS,
   COMMENTS_ORDERS,
   CONTENT_WIDTHS,
   DEFAULT_SETTINGS,
@@ -65,6 +67,8 @@ import {
   rootOfPath,
   stripSlash,
   type AppState,
+  type CodeOutlineSort,
+  type CodeSymbolKind,
   type CommentsOrder,
   type ContentWidth,
   type FolderPatch,
@@ -370,6 +374,17 @@ export function sanitizeHotkeys(raw: unknown): HotkeyOverrides {
   return out
 }
 
+/** The code Outline's hidden kinds (YAZ-3486), strict: known kinds, each once. The IPC boundary rejects anything else. */
+const isOutlineHidden = (v: unknown): v is CodeSymbolKind[] =>
+  Array.isArray(v) && v.every((k) => typeof k === 'string' && (CODE_SYMBOL_KINDS as readonly string[]).includes(k)) && new Set(v).size === v.length
+
+/** A stored list of hidden kinds with each kind a later build removed, and each repeat, dropped; [] when it is no list. */
+export function sanitizeOutlineHidden(raw: unknown): CodeSymbolKind[] {
+  if (isOutlineHidden(raw)) return raw
+  if (!Array.isArray(raw)) return []
+  return [...new Set(raw.filter((k): k is CodeSymbolKind => typeof k === 'string' && (CODE_SYMBOL_KINDS as readonly string[]).includes(k)))]
+}
+
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
 const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is SettingsState[K] } = {
   lineSpacing: isFiniteNumber,
@@ -422,6 +437,13 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   sidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
   // YAZ-3432: one of the App sizes only; a stored value off them loads as 100 (the default, `sanitizeSettings`).
   appZoom: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
+  codeReadOnly: (v): v is boolean => typeof v === 'boolean',
+  codeWrap: (v): v is boolean => typeof v === 'boolean',
+  codeMinimap: (v): v is boolean => typeof v === 'boolean',
+  codeOutlineSort: (v): v is CodeOutlineSort => typeof v === 'string' && (CODE_OUTLINE_SORTS as readonly string[]).includes(v),
+  codeOutlineHidden: isOutlineHidden,
+  codeOutlineLocals: (v): v is boolean => typeof v === 'boolean',
+  codeLanguageHelpers: (v): v is boolean => typeof v === 'boolean',
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -442,6 +464,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.sidebarIconColors = sanitizeSidebarIconColors(src.sidebarIconColors)
   // YAZ-3440 D9: a rule that does not read costs itself alone.
   out.sidebarIconRules = cleanIconRules(src.sidebarIconRules)
+  out.codeOutlineHidden = sanitizeOutlineHidden(src.codeOutlineHidden)
   // YAZ-3389 D7: a number off the steps but inside 50–200 is kept; one outside is clamped, not reset; missing or not a number reads 100.
   if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
   return out

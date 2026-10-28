@@ -79,6 +79,16 @@ link.onSetRoots/1: on link:set-roots -> listener[[{"id":"0-0-0-0-0","ev":"ev","r
 link.onTabAction/1: on link:tab-action -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:tab-action
 link.onTakeTab/1: on link:take-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:take-tab
 link.ready/0: invoke link:ready []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+lsp.cancelInstall/0: invoke lsp:cancel-install []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+lsp.change/2: invoke lsp:change ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+lsp.close/1: invoke lsp:close ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+lsp.definition/1: invoke lsp:definition ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+lsp.helpers/0: invoke lsp:helpers []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+lsp.hover/1: invoke lsp:hover ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+lsp.install/0: invoke lsp:install []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+lsp.onInstallProgress/1: on lsp:install-progress -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off lsp:install-progress
+lsp.open/1: invoke lsp:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+lsp.references/1: invoke lsp:references ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.favorites/1: invoke media:favorites ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.import/1: invoke media:import ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.onChanged/1: on media:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off media:changed
@@ -116,6 +126,7 @@ readFile/1: invoke fs:read ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message"
 readHeads/1: invoke fs:read-heads ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 readImage/1: invoke fs:read-image ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 readPdf/1: invoke fs:read-pdf ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+readTextHead/1: invoke fs:read-text-head ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 secrets.has/1: invoke secrets:has ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 secrets.set/1: invoke secrets:set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardReadOnly/1: invoke board:set-read-only ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

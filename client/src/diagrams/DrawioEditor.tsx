@@ -1,6 +1,6 @@
 /**
  * A `.drawio` open in a tab (YAZ-3028 D2, Draw's YAZ-1802): `DrawingEditor`'s twin — save and sync chips, conflict bar,
- * debounced autosave, quit flush, rename continuity, all from `useBoardDocument` (YAZ-2073 🔒 D16) —
+ * debounced autosave, quit flush, rename continuity, all from `useDocumentHost` (YAZ-2073 🔒 D16) —
  * with draw.io where the canvas is.
  *
  * 🔒 D4: draw.io runs in an iframe on its own origin and is talked to by postMessage only
@@ -15,8 +15,8 @@ import { boardBaseName } from '@shared/fileKind'
 import { isDiagramReadOnly, setDiagramReadOnly } from '@shared/readOnly'
 import type { DiagramDarkColors } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { BoardDocumentShell } from '../documents/BoardDocumentShell'
-import { BoardChips, exportWithNotice, useBoardDocument, type BoardDocumentProps } from '../documents/useBoardDocument'
+import { DocumentShell } from '../documents/DocumentShell'
+import { DocumentChips, exportWithNotice, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
 import { namingTab } from '../lib/focusHandoff'
 import type { NoticeKind } from '../lib/notice'
 import { storage } from '../lib/storage'
@@ -38,7 +38,7 @@ const EXPORT_EMPTY = 'This draw.io diagram is empty, so there is no image to exp
  */
 const READY_FALLBACK_MS = 3000
 
-export interface DrawioEditorProps extends BoardDocumentProps {
+export interface DrawioEditorProps extends DocumentHostProps {
   /** 🔒 YAZ-1802 D16: the app's dark-mode colour setting, applied live (see the module doc). */
   darkColors: DiagramDarkColors
   /** The window's ONE passive notice: where an exported image landed, or why it did not. */
@@ -62,9 +62,9 @@ function brokenDiagram(err: unknown): string {
 
 export function DrawioEditor(props: DrawioEditorProps) {
   return (
-    <BoardDocumentShell root={props.root} path={props.path} className="editor--diagram" load={loadDiagram} errorText={brokenDiagram}>
+    <DocumentShell root={props.root} path={props.path} className="editor--diagram" load={loadDiagram} errorText={brokenDiagram}>
       {(loaded) => <DiagramHost {...props} loaded={loaded} />}
-    </BoardDocumentShell>
+    </DocumentShell>
   )
 }
 
@@ -165,7 +165,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     )
 
   // Fresh closures every render are fine: the hook reads them through its `engine` ref, never stale.
-  const board = useBoardDocument({
+  const board = useDocumentHost({
     root,
     path,
     watch,
@@ -278,7 +278,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
   return (
     <div className="drawio-editor" ref={board.hostRef}>
       {board.conflictBar}
-      <BoardChips store={board.chips} className="drawio-editor__chips" />
+      <DocumentChips store={board.chips} className="drawio-editor__chips" />
       <iframe ref={frameRef} className="drawio-editor__frame" src={src} title={`${boardBaseName(basename(path))} — draw.io`} />
     </div>
   )

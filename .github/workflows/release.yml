@@ -122,6 +122,8 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           # A Mac build without the certificate fails instead of falling back to ad-hoc (YAZ-2976 S27).
           REQUIRE_SIGN_IDENTITY: ${{ runner.os == 'macOS' && '1' || '0' }}
+          # Monaco (the code tab, YAZ-3438) needs more build heap than Node's default on the hosted runners.
+          NODE_OPTIONS: --max-old-space-size=6144
       - name: Show the signature
         if: runner.os == 'macOS'
         run: codesign -d -r- "desktop/dist-app/mac-arm64/Yaseen Docs.app"

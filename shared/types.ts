@@ -90,7 +90,35 @@ export const TEXT_VIEW_EXTENSIONS = [
   '.mdx',
   '.rst',
   '.tex',
+  // YAZ-3438 D4 (YAZ-3450): 18 more code types. Names with no extension are `WELL_KNOWN_TEXT_NAMES` (YAZ-3505).
+  '.lua',
+  '.r',
+  '.dart',
+  '.scala',
+  '.hs',
+  '.clj',
+  '.pl',
+  '.proto',
+  '.diff',
+  '.patch',
+  '.gradle',
+  '.groovy',
+  '.ml',
+  '.erl',
+  '.jl',
+  '.cmake',
+  '.fs',
+  '.elm',
 ] as const
+/**
+ * Well-known files with no extension that open as `text` (YAZ-3505, 2D3; YAZ-3439 "Decision — Demo round 2"
+ * reverses the D4 exclusion). The exact base name, case-sensitive as on disk; `Dockerfile.<anything>` too
+ * (`WELL_KNOWN_TEXT_PREFIXES`) when its extension is no kind of its own. Dot-files (`.gitignore`) stay hidden
+ * (`isSkipped`).
+ */
+export const WELL_KNOWN_TEXT_NAMES = ['Dockerfile', 'Makefile', 'Procfile', 'Gemfile', 'Jenkinsfile', 'Vagrantfile', 'LICENSE', 'CODEOWNERS'] as const
+/** `Dockerfile.dev`, `Dockerfile.prod`: a base name that starts with one of these, and goes on. */
+export const WELL_KNOWN_TEXT_PREFIXES = ['Dockerfile.'] as const
 export const PDF_EXTENSIONS = ['.pdf'] as const
 export const IMAGE_VIEW_MIME = {
   '.png': 'image/png',
@@ -296,6 +324,24 @@ export interface FileHead {
   mtime: number
   /** The first `HEAD_CHARS` of the body, the frontmatter block off; '' when the block alone fills the bytes read. */
   text: string
+}
+
+// ---------- readTextHead(path) (YAZ-3508) ----------
+
+/** How many bytes of a code file `readTextHead` reads off disk at most: room for `TEXT_HEAD_LINES` lines of code. */
+export const TEXT_HEAD_READ_BYTES = 16384
+/** How many lines of a code file the hover card shows, at most. */
+export const TEXT_HEAD_LINES = 60
+
+/** The top of one code file, for its hover card (YAZ-3508): never the whole file. */
+export interface TextHead {
+  path: string
+  mtime: number
+  size: number
+  /** The first `TEXT_HEAD_LINES` lines (at most `TEXT_HEAD_READ_BYTES` bytes), each break as `\n`, no BOM. */
+  text: string
+  /** The file goes on after `text`. */
+  cut: boolean
 }
 
 /** Dedicated binary response for the native PDF viewer; never base64-encoded or sent through `readFile`. */
@@ -1552,13 +1598,39 @@ export interface SettingsState {
    * zoom menu writes it, never ⌘+ / ⌘− / ⌘0. The sidebar zoom and a note's zoom stack on it.
    */
   appZoom: number
+  /**
+   * Code files (YAZ-3449, YAZ-3438 D5): every code tab opens read only, and shows the Read only chip. One app setting
+   * for all code files, never stored with a file. "Allow edits" on a tab's chip unlocks that tab until it closes.
+   */
+  codeReadOnly: boolean
+  /** Code files (YAZ-3438 D8): long lines wrap in every code tab. Alt+Z flips one tab and saves nothing. */
+  codeWrap: boolean
+  /** Code files (YAZ-3438 D6): every code tab shows Monaco's minimap. */
+  codeMinimap: boolean
+  /** The code Outline (YAZ-3486): how its rows are sorted, from its "…" menu. One value for every code tab. */
+  codeOutlineSort: CodeOutlineSort
+  /** The code Outline (YAZ-3486): the kinds of symbol it hides, from its "…" menu. Empty = every kind shows, as in VS Code. */
+  codeOutlineHidden: CodeSymbolKind[]
+  /**
+   * The code Outline (YAZ-3507): "…" › Show › "Variables inside functions". Off (the default): a variable or
+   * constant declared inside a function, method or arrow function is not a row. One value for every code tab.
+   */
+  codeOutlineLocals: boolean
+  /**
+   * Code files (YAZ-3500): "Jump across files (Cmd+click, Shift+F12)". Off (the default): no language helper
+   * ever starts, and Cmd+click / Shift+F12 work inside one file only (Monaco's own help). On: the helpers of
+   * YAZ-3454 / YAZ-3455. The first switch-on downloads them (`lsp.install`). Stays on this Mac (`LOCAL_SETTINGS`):
+   * the helpers are a download on this Mac.
+   */
+  codeLanguageHelpers: boolean
 }
 
 /**
  * The settings that stay on this Mac when a settings folder is set (YAZ-3276 D1): a path, a panel memory
- * and a drag width each fit one Mac only, like `AppState.sidebarWidth`. Every other field travels.
+ * and a drag width each fit one Mac only, like `AppState.sidebarWidth`. So does the code tab's helper switch
+ * (YAZ-3500): its helpers are a download on this Mac. Every other field travels.
  */
-export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth']
+export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers']
 
 /** The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover. */
 export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'links'
@@ -1675,6 +1747,17 @@ export const TOC_MIN_W = 160
 export const TOC_MAX_W = 480
 export const TOC_DEFAULT_W = 200
 
+/** The code Outline (YAZ-3486): its rows by where they are in the file (the default), by name, or by kind ("Type"). */
+export type CodeOutlineSort = 'position' | 'name' | 'type'
+export const CODE_OUTLINE_SORTS: readonly CodeOutlineSort[] = ['position', 'name', 'type']
+
+/**
+ * The kinds of a code symbol (YAZ-3486), in Monaco's `SymbolKind` order: the index is Monaco's number,
+ * and LSP's number is the index plus 1. The code Outline's "…" › Show hides a kind by this name.
+ */
+export const CODE_SYMBOL_KINDS = ['file', 'module', 'namespace', 'package', 'class', 'method', 'property', 'field', 'constructor', 'enum', 'interface', 'function', 'variable', 'constant', 'string', 'number', 'boolean', 'array', 'object', 'key', 'null', 'enumMember', 'struct', 'event', 'operator', 'typeParameter'] as const
+export type CodeSymbolKind = (typeof CODE_SYMBOL_KINDS)[number]
+
 /**
  * What ONE note's table of contents is built from when the reader chose (YAZ-2700 D14): `headings`
  * is every H1-H5 of the note (YAZ-3051), the ones inside bullets too; `bullets` is its bullets, however many
@@ -1745,6 +1828,13 @@ export const DEFAULT_SETTINGS: SettingsState = {
   hotkeys: {},
   sidebarZoom: 100,
   appZoom: 100,
+  codeReadOnly: false,
+  codeWrap: true,
+  codeMinimap: false,
+  codeOutlineSort: 'position',
+  codeOutlineHidden: [],
+  codeOutlineLocals: false,
+  codeLanguageHelpers: false,
 }
 
 export interface WindowBounds {

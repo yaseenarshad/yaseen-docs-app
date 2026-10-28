@@ -7,6 +7,9 @@
  * under a Unix shell; on Windows npm runs scripts through cmd.exe and the literal string
  * reached electron-builder ("Invalid major number"). Reading the version here works on both.
  *
+ * The language helpers of the code tab are not packed (YAZ-3500): the app downloads them the first time
+ * Settings › Code › "Jump across files" is turned on (`desktop/src/main/lsp/download.ts`).
+ *
  * `--mac` then recompresses the dmg zlib → lzma (`lzmaDmg`, YAZ-2181).
  *
  * Two-number versions (YAZ-3209 release, 2.1 on): package.json keeps `2.1.0` (npm and

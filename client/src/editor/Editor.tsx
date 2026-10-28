@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
-import { TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
+import { TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
@@ -43,6 +43,7 @@ import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
 import { usePageSwitch } from './usePageSwitch'
 import type { ZoomStep } from '@shared/types'
+import type { CodeSettingsPatch } from '../code/codeSettings'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
 import type { WatchSource } from '../hooks/useWatch'
@@ -57,7 +58,6 @@ import { registerPageView } from '../lib/pageView'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { transformFile } from '../views/writeProperty'
-import { TextViewer } from '../viewers/TextViewer'
 import { PdfViewer } from '../viewers/PdfViewer'
 import { ImageViewer } from '../viewers/ImageViewer'
 import type { NoticeKind } from '../lib/notice'
@@ -71,6 +71,8 @@ import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/card
 const DrawingEditor = lazy(() => import('../drawings/DrawingEditor').then((m) => ({ default: m.DrawingEditor })))
 /** A diagram tab (YAZ-3028 D5): the same rule — its host in its own chunk, and draw.io in its own origin's iframe. */
 const DrawioEditor = lazy(() => import('../diagrams/DrawioEditor').then((m) => ({ default: m.DrawioEditor })))
+/** A code tab (YAZ-3448, D1/D2): the same rule — its host in its own chunk, and Monaco in the next (`code/monaco.ts`). */
+const CodeEditor = lazy(() => import('../code/CodeEditor').then((m) => ({ default: m.CodeEditor })))
 
 /**
  * A save flips the chip unsaved → saving → saved, and each flip re-renders CrepeHost; these sections
@@ -160,6 +162,8 @@ interface EditorProps {
    * Read at mount only; the scroll is applied once, when the first content lands (YAZ-2940 D7).
    */
   startView?: PageView
+  /** A main tab's history entry (`<tab id>:<index>`): a code tab keeps its cursor and scroll under it for Back (YAZ-3458). */
+  viewKey?: string
   /** The canvas preferences every drawing shares (YAZ-3028, Draw's 🔒 YAZ-1775 D9): `SettingsState.canvas`. Absent → the defaults. */
   canvasPrefs?: CanvasPrefs
   /** A drawing's engine moved a pref: App writes the SETTING through this. */
@@ -171,6 +175,16 @@ interface EditorProps {
   diagramDarkColors?: DiagramDarkColors
   /** ⌘B pressed inside a diagram's draw.io frame, where the window never sees the key: App's sidebar toggle. */
   onToggleSidebar?: () => void
+  /** Settings › Code (YAZ-3449): the code tab's read only, wrap and minimap, one value for every code file, and App's door that writes them. */
+  codeReadOnly?: boolean
+  codeWrap?: boolean
+  codeMinimap?: boolean
+  onChangeCodeSettings?: (patch: CodeSettingsPatch) => void
+  /** The code Outline's "…" menu (YAZ-3486): its sort and the kinds it hides, one value for every code file. */
+  codeOutlineSort?: SettingsState['codeOutlineSort']
+  codeOutlineHidden?: SettingsState['codeOutlineHidden']
+  /** "…" › Show › "Variables inside functions" (YAZ-3507), one value for every code file. */
+  codeOutlineLocals?: SettingsState['codeOutlineLocals']
   /** Settings › Preview on hover › Links in notes (YAZ-3403): resting on a resolved [[link]] shows the sidebar's panel beside it. */
   hoverLinks?: boolean
   /** Settings › Preview on hover › Linked mentions (YAZ-3403): resting on an entry shows the linking note beside the list. */
@@ -181,7 +195,7 @@ interface EditorProps {
   previewScope?: (path: string) => PreviewScope
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', onToggleSidebar, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', onToggleSidebar, codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -200,10 +214,12 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
   }
   const kind = fileKind(path)
   if (kind === 'text') {
+    // The document host renders its own `section.editor editor--code`, as a board's does. The code
+    // Outline (YAZ-3486) reads the note's table of contents setting and width.
     return (
-      <section className="editor">
-        <TextViewer path={path} watch={watch} />
-      </section>
+      <Suspense fallback={<section className="editor" />}>
+        <CodeEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} onNotice={onNotice} onToggleSidebar={onToggleSidebar} codeReadOnly={codeReadOnly} codeWrap={codeWrap} codeMinimap={codeMinimap} onChangeCodeSettings={onChangeCodeSettings} startView={startViewRef.current} onOpenFile={onOpenFile} viewKey={viewKey} tableOfContents={tableOfContents} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} codeOutlineSort={codeOutlineSort} codeOutlineHidden={codeOutlineHidden} codeOutlineLocals={codeOutlineLocals} />
+      </Suspense>
     )
   }
   if (kind === 'pdf') {

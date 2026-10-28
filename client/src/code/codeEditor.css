@@ -1,0 +1,71 @@
+/*
+ * The code tab (YAZ-3448) — classes applied by CodeEditor.tsx.
+ *
+ * The host is `.drawio-editor`'s shape: a flex column inside `section.editor`, the chips row (the
+ * note's `.status-chips`, top right), the conflict bar when there is one, then Monaco taking every
+ * remaining pixel. Monaco measures its parent (`automaticLayout`), so `min-height: 0` matters.
+ */
+
+.code-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.code-editor__monaco {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background: var(--bg);
+}
+
+/*
+ * `isolation: isolate` (YAZ-3477): Monaco's layers stay INSIDE its editor. `.monaco-editor` is positioned
+ * with no z-index, so without it the sticky scroll lines (z-index 4), the scrollbar (11), the find box
+ * (35) and the hovers (40) stacked against the chips row (`.status-chips`, z-index 2) and drew over the
+ * cog's menu. Now the editor is one layer under the chips, and its own order inside is unchanged.
+ * NOT on `.code-editor__monaco`: Monaco's right-click menu is a sibling of `.monaco-editor` in it (the
+ * shadow root host below, z-index 2575), and it must stay above the chips.
+ */
+.code-editor__monaco > .monaco-editor {
+  isolation: isolate;
+}
+
+/*
+ * Monaco's right-click menu in the app's look (YAZ-3478; YAZ-3439 "The same judgment for features and
+ * looks"): the `.ctx-menu` of `app.css`. Monaco draws the menu in an open shadow root, on a host it adds
+ * to this box, so these rules can not reach the menu itself. Two things do reach it:
+ *  - custom properties inherit into a shadow tree (Monaco's `:host { all: initial }` leaves them), and
+ *    the menu reads its colors, corners, border and shadow from them. Monaco defines them only on
+ *    `.monaco-editor`, so before this the menu had NO background.
+ *  - a rule out here on the host beats the shadow root's own `:host` rules: the font.
+ * The spacing lives in rules inside the shadow root (`monacoMenuLook.ts`).
+ */
+.code-editor__monaco > .shadow-root-host {
+  --vscode-menu-background: var(--bg);
+  --vscode-menu-foreground: var(--fg);
+  --vscode-menu-border: var(--border);
+  --vscode-menu-separatorBackground: var(--border);
+  --vscode-menu-selectionBorder: transparent;
+  --vscode-list-hoverBackground: var(--accent-soft);
+  --vscode-list-hoverForeground: var(--fg);
+  --vscode-disabledForeground: var(--fg-muted);
+  --vscode-cornerRadius-large: 8px;
+  --vscode-cornerRadius-medium: 5px;
+  --vscode-strokeThickness: 1px;
+  --vscode-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  font-family: var(--font);
+}
+
+/*
+ * Quick Look of a code file (YAZ-3450, `CodePreview.tsx`). `.quicklook__body` is a flex column; the
+ * preview grows in it and is a flex column itself, so `.code-editor__monaco` gets the full height.
+ * Without this rule Monaco measured 0 and drew at its 5 px minimum (YAZ-3461).
+ */
+.code-preview {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}

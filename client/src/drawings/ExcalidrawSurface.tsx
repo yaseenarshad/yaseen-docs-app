@@ -5,7 +5,7 @@
  * 🔒 ONE FILE OWNS THE CANVAS. This is the only component that mounts `<Excalidraw>`, the only
  * one that knows how a scene serializes, and the only one that knows what "changed" means to the
  * engine. Its two hosts — `DrawingModal` (the note embed, rule 28) and `DrawingEditor` (a tab, with
- * the `useBoardDocument` chrome) — import this module's TYPES and this component and nothing
+ * the `useDocumentHost` chrome) — import this module's TYPES and this component and nothing
  * else. `DrawingModal.test.tsx` pins the boundary as source; `DrawingEditor.test.tsx` mocks this
  * one module and drives the host through it.
  *

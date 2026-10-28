@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useState, type ReactNode } from 'react'
 
-interface BoardDocumentShellProps<T> {
+interface DocumentShellProps<T> {
   root: string
   path: string
-  /** `editor--drawing` or `editor--diagram`: the section `boardCommand.ts` dispatches on. */
+  /** `editor--drawing` or `editor--diagram` (the sections `boardCommand.ts` dispatches on), or `editor--code`. */
   className: string
   /** Module-level, so its identity never changes; a rejection is `errorText`'s error pane. */
   load: (req: { root: string; path: string }) => Promise<T>
@@ -13,12 +13,12 @@ interface BoardDocumentShellProps<T> {
 }
 
 /**
- * A board's outer section (YAZ-2073 🔒 D16): the document is read BEFORE any engine mounts, so a
+ * A document's outer section (YAZ-2073 🔒 D16; any engine since YAZ-3448): the document is read BEFORE any engine mounts, so a
  * file that will not open is ONE readable state — never a blank pane, and never an engine that
  * could autosave over it. The host is keyed by path, so a rename mounts a fresh one rather than
  * re-pointing a live engine.
  */
-export function BoardDocumentShell<T>({ root, path, className, load, errorText, children }: BoardDocumentShellProps<T>) {
+export function DocumentShell<T>({ root, path, className, load, errorText, children }: DocumentShellProps<T>) {
   const [loaded, setLoaded] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
 

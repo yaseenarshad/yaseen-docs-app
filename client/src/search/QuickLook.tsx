@@ -6,7 +6,9 @@
  *
  * READ, NEVER OPEN: a note is `ReadOnlyNote` — the saved text (S44) in the read-only render, the
  * same note the sidebar's hover preview shows (YAZ-3075 D1); never `Editor`, which would start an
- * autosave, store folds and take the caret. Each other kind is the read-only viewer of its page.
+ * autosave, store folds and take the caret. Each other kind is the read-only viewer of its page. A
+ * code file is the code tab's Monaco, read only (`CodePreview`, YAZ-3450), in its own chunk: Monaco
+ * loads only when a code file is held up.
  */
 import { lazy, Suspense, type CSSProperties } from 'react'
 import { fileKind } from '@shared/fileKind'
@@ -16,11 +18,12 @@ import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { ImageViewer } from '../viewers/ImageViewer'
 import { PdfViewer } from '../viewers/PdfViewer'
-import { TextViewer } from '../viewers/TextViewer'
 import './quickLook.css'
 
 /** A board's picture (YAZ-3044 A22), in its own chunk with the preview cache it shares with the hover panel. */
 const QuickLookBoard = lazy(() => import('./QuickLookBoard'))
+/** A code file (YAZ-3450): Monaco, read only, in its own chunk with Monaco behind it. */
+const CodePreview = lazy(() => import('../code/CodePreview'))
 
 interface QuickLookProps {
   /** The file on preview. */
@@ -69,7 +72,9 @@ export function QuickLook({ path, title, watch, wikilinks, root = null, darkColo
           // A note that is gone, or that the app cannot read (S41), named as the tree names it.
           <ReadOnlyNote key={path} className="quicklook__note" path={path} wikilinks={wikilinks} unreadable={<>Can&apos;t preview &quot;{title}&quot; — it is no longer there</>} />
         ) : kind === 'text' ? (
-          <TextViewer path={path} watch={watch} />
+          <Suspense fallback={null}>
+            <CodePreview key={path} path={path} watch={watch} />
+          </Suspense>
         ) : kind === 'pdf' ? (
           <PdfViewer path={path} watch={watch} />
         ) : kind === 'image' ? (

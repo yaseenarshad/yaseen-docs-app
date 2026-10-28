@@ -54,25 +54,15 @@ import { findNestedLists, isListItem, itemLabelText, LIST_NODE_NAMES, UNTITLED_I
 import { collapsedItemsHiding, isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos } from '../outline/zoom'
 import { DEEPEST_TOC_LEVEL, ENOUGH_ROWS, type TocChannel, type TocController, type TocLevel, type TocRow } from './tocChannel'
+import { FLASH_COLOUR, FLASH_HOLD, FLASH_MS, GLIDE_MS, GLIDE_SCREENS, glideEase, LANDING_PX, reducedMotion } from './tocMotion'
 
 /** How long the document must rest before it is scanned again. */
 export const SCAN_DELAY_MS = 150
-/** How long a jump's glide takes, however far it goes. */
-const GLIDE_MS = 420
-/** A glide never crosses more than this many windows of the note. */
-const GLIDE_SCREENS = 3
-/** Where a row lands below the scroller's top edge. */
-const LANDING_PX = 24
 
 /** A row is current once its top is this far below the scroller's top, or higher. */
 const CURRENT_LINE_PX = 40
 
-/** One flash of the row a jump landed on: held, then faded. */
-const FLASH_MS = 1300
-/** The flash holds for this share of `FLASH_MS` before it fades. */
-const FLASH_HOLD = 0.45
-/** The landing flash: the accent at a third of its strength — `--accent-soft` is nearly the page's own colour in the dark theme. */
-const FLASH_COLOUR = 'color-mix(in srgb, var(--accent) 34%, transparent)'
+/** The glide and the flash are `tocMotion.ts`'s: the code Outline moves the same way. */
 /** A band, not a tight box: the shadow carries the colour 6px past the text on every side. */
 const FLASH_ON = { background: FLASH_COLOUR, boxShadow: `0 0 0 6px ${FLASH_COLOUR}`, borderRadius: '4px' }
 const FLASH_OFF = { background: 'transparent', boxShadow: '0 0 0 6px transparent', borderRadius: '4px' }
@@ -235,7 +225,6 @@ const landingTop = (scroller: HTMLElement, element: HTMLElement): number =>
   Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, scroller.scrollTop + element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - LANDING_PX))
 
 /** jsdom has no `matchMedia`, and the contract runs there. */
-const reducedMotion = (): boolean => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 export const createTableOfContents = (channel: TocChannel) =>
   $prose(
@@ -323,7 +312,7 @@ export const createTableOfContents = (channel: TocChannel) =>
             const step = (now: number): void => {
               const t = Math.min(1, (now - started) / GLIDE_MS)
               // Ease in and out (cubic): it leaves gently and settles gently.
-              const eased = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
+              const eased = glideEase(t)
               scroller.scrollTop = from + (to - from) * eased
               if (t < 1) {
                 frame = requestAnimationFrame(step)
