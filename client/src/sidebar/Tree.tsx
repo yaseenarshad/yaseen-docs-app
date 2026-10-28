@@ -44,7 +44,7 @@ export interface PendingRename {
 /**
  * Drag a row onto a FOLDER to move it there (E1b, GRO-2241): a file, a folder, or the selection
  * (YAZ-3251 D5). Since YAZ-3254 D4 it is the OS drag: the row stops the page's own drag at
- * `dragstart`, main starts one that Finder can take, and a drop back in the window comes as files
+ * `dragstart`, and LIFT_PX from the press (YAZ-3467 D1) main starts one that Finder can take; a drop back in the window comes as files
  * (`dataTransfer` is guarded — jsdom's synthetic drags have none, and drop through `drop`). No
  * `dragend` comes back. The drag lives in refs, not React state (D2): this object keeps ONE identity for the
  * Sidebar's life, so `sameLevel` sees no change and a hover renders no level; the lit target wears
@@ -54,7 +54,7 @@ export interface PendingRename {
 export interface TreeFileMove {
   /** A drop into `dir` would land: false for a dragged folder and for every folder inside it (S6). `files`: the drag comes from the OS (YAZ-3253), which lands in any folder when no row drag is in flight. */
   accepts: (dir: string, files?: boolean) => boolean
-  /** A row drag to move begins (D5): the ONE place, and the OS drag since YAZ-3254 D4. `top`: the copy the row stands in (YAZ-3131). */
+  /** A row drag to move begins (D5): the ONE place. It arms the row, which lifts into the OS drag (YAZ-3254 D4) LIFT_PX from the press (YAZ-3467 D1). `top`: the copy the row stands in (YAZ-3131). */
   start: (path: string, top?: string) => void
   end: () => void
   /** The drag is over `dir`, whose row `el` lights (null: none does). `open` arms the spring of a closed folder (D8). */
@@ -85,19 +85,19 @@ function folderRowOf(row: HTMLElement): HTMLElement | null {
 }
 
 /**
- * Drag a TOP row to reorder (YAZ-1766 D4; one rule for every tab, YAZ-2631 D3): the SAME HTML5 idiom
- * as `TreeFileMove`, but a separate mechanism — it rewrites the tab's LIST and never touches disk.
- * On the top rows only, a file or a folder: a deeper row, file or folder, still moves on disk (YAZ-3251 D5).
+ * Drag a TOP row to reorder (YAZ-1766 D4; one rule for every tab, YAZ-2631 D3): a separate mechanism
+ * from `TreeFileMove` — it rewrites the tab's LIST and never touches disk. On the top rows only, a file
+ * or a folder: a deeper row, file or folder, still moves on disk (YAZ-3251 D5). Since YAZ-3467 D2 it is
+ * mouse events, owned by the hook: a top row marks itself `data-reorder`, and the Tree draws the line.
  */
+/** The hovered top row of a reorder and the edge of it the drop lands on (YAZ-2631 D3). */
+export type ReorderOver = { path: string; edge: 'before' | 'after' }
+
 export interface TreeReorder {
-  /** The dragged top row's path; null when no drag is in flight. */
-  dragging: string | null
-  /** The hovered top row and which edge of it the drop lands on. */
-  over: { path: string; edge: 'before' | 'after' } | null
+  /** The hovered top row and which edge of it the drop lands on; null when no line shows. */
+  over: ReorderOver | null
+  /** A row's `dragstart` arms the reorder: it lifts LIFT_PX from the press, as a move does. */
   start: (path: string) => void
-  hover: (path: string, edge: 'before' | 'after') => void
-  drop: () => void
-  end: () => void
 }
 
 /** `label` with the typed text marked where it first sits (🔒 D5, YAZ-2620); a label that does not hold it (an alias or an id matched) is drawn plain. */
@@ -111,12 +111,6 @@ function marked(label: string, needle: string | undefined) {
       {label.slice(at + needle.length)}
     </>
   )
-}
-
-/** Which half of the hovered row the pointer is in — jsdom's zero rect and 0 clientY read as `after`. */
-const edgeOf = (e: React.DragEvent): 'before' | 'after' => {
-  const r = e.currentTarget.getBoundingClientRect()
-  return e.clientY < r.top + r.height / 2 ? 'before' : 'after'
 }
 
 /**
@@ -342,7 +336,12 @@ function TreeLevel({
   const recurse = { vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
-    onHoverFile === undefined || !(isBoard(path) || isMarkdown(path)) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
+    onHoverFile === undefined || !(isBoard(path) || isMarkdown(path)) ? {} : {
+          // A pointer that comes in with a button down is in a press or a reorder, not a hover (YAZ-3467, audit 4).
+          onMouseEnter: (e: React.MouseEvent) => {
+            if (e.buttons === 0) onHoverFile({ path })
+          },
+          onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
   // This folder's shortcuts stand among its FILES (YAZ-2290), and the tab's sort orders the level (YAZ-3227 D7).
   // The top rows of a Manual list, and the vault rows, keep their own order; with no sort (Search) a level stands as it came.
   const here = shortcuts.get(dirPath)
@@ -380,16 +379,13 @@ function TreeLevel({
   // a vault row moves nothing on disk (YAZ-3251 S8): it drags only where its tree reorders.
   const noDrag = (node: TreeNode): boolean => isShortcutRow(node) || (copies && depth === 0 && rowReorder === null) || (vaultRows.has(node.path) && rowReorder === null)
   /**
-   * A row drag begins: the move or the reorder takes it (YAZ-3251 D5). A move is the OS drag
-   * (YAZ-3254 D4): the page's own drag stops here, and `start` asks main for one Finder can take.
-   * A reorder stays the page's drag (S15): it never leaves the window.
+   * A row drag begins: the move or the reorder takes it (YAZ-3251 D5). The page's own drag stops
+   * here for both, and `start` arms the row: it lifts LIFT_PX from the press (YAZ-3467 D1, D2). A
+   * move lifts into the OS drag (YAZ-3254 D4), which Finder can take. A reorder lifts into mouse
+   * events (S15): it never leaves the window.
    */
   const dragStart = (node: TreeNode) => (e: React.DragEvent) => {
-    if (rowDrag === move) e.preventDefault()
-    else if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = 'move'
-      e.dataTransfer.setData('text/plain', node.path)
-    }
+    e.preventDefault()
     rowDrag.start(node.path, copyOf(node))
   }
   /**
@@ -490,14 +486,8 @@ function TreeLevel({
                 onContextMenu={(e) => onNodeContextMenu({ ...node, top: topOf(node) }, e)}
                 draggable={!noDrag(node)}
                 onDragStart={noDrag(node) ? undefined : dragStart(node)}
-                // A move's page drag stops at `dragstart`, so its `dragend` never comes: only a reorder ends here.
-                onDragEnd={noDrag(node) ? undefined : rowReorder?.end}
+                data-reorder={rowReorder === null ? undefined : ''}
                 onDragOver={(e) => {
-                  if (rowReorder !== null && rowReorder.dragging !== null) {
-                    e.preventDefault()
-                    rowReorder.hover(node.path, edgeOf(e))
-                    return
-                  }
                   if (!move.accepts(node.path, hasFiles(e))) return
                   e.preventDefault() // a dir row is a valid drop target while a row drag, or a drag from Finder, is in flight
                   if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
@@ -513,8 +503,7 @@ function TreeLevel({
                 }}
                 onDrop={(e) => {
                   e.preventDefault()
-                  if (rowReorder !== null && rowReorder.dragging !== null) rowReorder.drop()
-                  else dropOn(move, e, node.path)
+                  dropOn(move, e, node.path)
                 }}
               >
                 <span className={`tree__chevron${expanded.has(foldOf(node)) ? ' tree__chevron--open' : ''}`} />
@@ -588,13 +577,8 @@ function TreeLevel({
               // A shortcut row never drags (YAZ-2290 D2): the drag would move the note out of the folder it lives in.
               draggable={!noDrag(node)}
               onDragStart={noDrag(node) ? undefined : dragStart(node)}
-              onDragEnd={noDrag(node) ? undefined : rowReorder?.end}
+              data-reorder={rowReorder === null ? undefined : ''}
               onDragOver={(e) => {
-                if (rowReorder !== null && rowReorder.dragging !== null) {
-                  e.preventDefault()
-                  rowReorder.hover(node.path, edgeOf(e))
-                  return
-                }
                 if (!fileDrop || !move.accepts(dirPath, hasFiles(e))) return
                 e.preventDefault()
                 if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
@@ -604,13 +588,9 @@ function TreeLevel({
                 if (leftTarget(e)) move.leave(dirPath)
               } : undefined}
               onDrop={(e) => {
-                if (rowReorder !== null && rowReorder.dragging !== null) {
-                  e.preventDefault()
-                  rowReorder.drop()
-                } else if (fileDrop) {
-                  e.preventDefault()
-                  dropOn(move, e, dirPath)
-                }
+                if (!fileDrop) return
+                e.preventDefault()
+                dropOn(move, e, dirPath)
               }}
             >
               <span className="tree__label">

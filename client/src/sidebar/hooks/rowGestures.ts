@@ -22,7 +22,7 @@ import { transformFile } from '../../views/writeProperty'
 import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
 import { dragPill, pillLabel } from '../dragPill'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
-import type { PendingCreate, PendingRename, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
+import type { PendingCreate, PendingRename, ReorderOver, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
 
 /**
  * A new board (YAZ-3028 D9): name first, then birth. `fs:create-board` writes the empty scene or the
@@ -121,6 +121,15 @@ export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: r
 /** How long a drag holds over a closed folder before it opens (YAZ-3251 D8). */
 export const SPRING_MS = 700
 
+/** How far the pointer moves from the press before a row lifts (YAZ-3467 D1). Chromium alone lifts it at about 4 px. */
+export const LIFT_PX = 10
+
+/** Which half of `row` the pointer is in — jsdom's zero rect and 0 clientY read as `after`. */
+const edgeOf = (clientY: number, row: HTMLElement): 'before' | 'after' => {
+  const r = row.getBoundingClientRect()
+  return clientY < r.top + r.height / 2 ? 'before' : 'after'
+}
+
 /**
  * What a row drag carries (YAZ-3251 D5, Finder's rule): a selected row takes the whole selection,
  * in on-screen order (`ordered`); any other row goes alone. A row inside another row that goes is
@@ -184,12 +193,20 @@ export function useTreeDrag(
   const leftWindow = useRef(false)
   const lit = useRef<{ dir: string | null; el: HTMLElement | null }>({ dir: null, el: null })
   const spring = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Where the last press came down (YAZ-3467 D1): a row lifts only LIFT_PX from it.
+  const press = useRef({ x: 0, y: 0 })
+  // The lift of a row whose `dragstart` came, while its pointer is not LIFT_PX from the press yet. Null: none.
+  const armed = useRef<(() => void) | null>(null)
   // What the callbacks read at the moment of the gesture, so the `move` they make keeps ONE identity.
-  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder })
-  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder }
-  // Drag-to-reorder (YAZ-2631 D3), ONE state for the tab that is shown: the dragged top row + the hovered row and edge.
-  const [reorderDragging, setReorderDragging] = useState<string | null>(null)
-  const [reorderOver, setReorderOver] = useState<{ path: string; edge: 'before' | 'after' } | null>(null)
+  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder })
+  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder }
+  // Drag-to-reorder (YAZ-2631 D3), ONE for the tab that is shown. Since YAZ-3467 D2 it is mouse events, not the
+  // page's HTML5 drag: the dragged top row, the hovered row and edge, and the pill live in refs. The hovered row
+  // and edge are state too, ONLY to draw the line: they change when the row or the edge does, not at each move.
+  const reorderFrom = useRef<string | null>(null)
+  const reorderAt = useRef<ReorderOver | null>(null)
+  const pill = useRef<HTMLImageElement | null>(null)
+  const [reorderOver, setReorderOver] = useState<ReorderOver | null>(null)
 
   const fileMove: TreeFileMove = useMemo(() => {
     /**
@@ -236,27 +253,33 @@ export function useTreeDrag(
       // An item already in this folder is no move (S7).
       send(dir, paths)
     }
+    /**
+     * The row lifts, and since YAZ-3254 D4 it is the OS drag: main starts one that Finder takes
+     * (copies). The paths stay in the ref, so a drop back in this window is told apart by them (`dropFiles`).
+     */
+    const lift = (path: string, top?: string) => {
+      const { selection: picked, orderedSelectedPaths: ordered, vaultRows: vaults, finder: out, onNotice: say } = live.current
+      const paths = dragSet(path, picked.paths, ordered, (p) => vaults.has(p))
+      dragging.current = paths
+      droppedInside.current = false
+      leftWindow.current = false
+      // An unselected row first becomes the selection (S4), then goes alone.
+      if (!picked.paths.has(path)) picked.set(path, top)
+      if (paths.length === 0) return
+      api.file.dragOut({ paths, icon: dragPill(pillLabel(paths.map(out.nameOf))) }).catch((err: unknown) => {
+        // No OS drag started: nothing is in flight.
+        if (dragging.current === paths) end()
+        say(`Can't drag: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      })
+    }
     return {
       accepts,
       /**
-       * Where every row drag to move begins (D5), and since YAZ-3254 D4 it is the OS drag: the Tree
-       * stops the page's own drag, and main starts one that Finder takes (copies). The paths stay in
-       * the ref, so a drop back in this window is told apart by them (`dropFiles`).
+       * Where every row drag to move begins (D5). The Tree stops the page's own drag at `dragstart`,
+       * and that only ARMS the row (YAZ-3467 D1): it lifts at the first move LIFT_PX from the press.
        */
       start: (path, top) => {
-        const { selection: picked, orderedSelectedPaths: ordered, vaultRows: vaults, finder: out, onNotice: say } = live.current
-        const paths = dragSet(path, picked.paths, ordered, (p) => vaults.has(p))
-        dragging.current = paths
-        droppedInside.current = false
-        leftWindow.current = false
-        // An unselected row first becomes the selection (S4), then goes alone.
-        if (!picked.paths.has(path)) picked.set(path, top)
-        if (paths.length === 0) return
-        api.file.dragOut({ paths, icon: dragPill(pillLabel(paths.map(out.nameOf))) }).catch((err: unknown) => {
-          // No OS drag started: nothing is in flight.
-          if (dragging.current === paths) end()
-          say(`Can't drag: ${err instanceof Error ? err.message : String(err)}`, 'error')
-        })
+        armed.current = () => lift(path, top)
       },
       end,
       hover: light,
@@ -282,10 +305,73 @@ export function useTreeDrag(
       },
     }
   }, [])
+  /**
+   * The reorder of a top row as mouse events (YAZ-3467 D2, D3). It lifts LIFT_PX from the press, as a
+   * move does; then a pill of the row's name follows the pointer, and the row stays in its place. The
+   * row under the pointer is the event's target: a top row of a list that reorders (`data-reorder`)
+   * takes the line at the half the pointer is in, and anything else takes none (R5). The release
+   * drops; Esc, the window's blur, and a move with no button end it with no drop (R7, R8).
+   */
+  const reorderGesture = useMemo(() => {
+    const show = (next: ReorderOver | null) => {
+      const now = reorderAt.current
+      if (now === next || (now !== null && next !== null && now.path === next.path && now.edge === next.edge)) return
+      reorderAt.current = next
+      setReorderOver(next)
+    }
+    /** The top row of a list that reorders under the pointer, and the half of it the pointer is in; null over anything else (R5). */
+    const overAt = (e: MouseEvent): ReorderOver | null => {
+      const row = e.target instanceof Element ? e.target.closest<HTMLElement>('.tree__row[data-reorder]') : null
+      const path = row?.dataset.path
+      return row === null || path === undefined ? null : { path, edge: edgeOf(e.clientY, row) }
+    }
+    const end = () => {
+      reorderFrom.current = null
+      pill.current?.remove()
+      pill.current = null
+      show(null)
+    }
+    return {
+      lift: (path: string) => {
+        end() // a reorder still in flight goes first, with its pill (audit 5)
+        reorderFrom.current = path
+        const img = document.createElement('img')
+        img.className = 'tree__reorder-pill'
+        img.alt = ''
+        img.src = dragPill(pillLabel([live.current.finder.nameOf(path)]))
+        document.body.append(img)
+        pill.current = img
+      },
+      track: (e: MouseEvent) => {
+        if (e.buttons === 0) return end()
+        // The row's box is read before the pill moves, so a move costs one layout, not two.
+        show(overAt(e))
+        pill.current?.style.setProperty('transform', `translate(${e.clientX + 12}px, ${e.clientY + 8}px)`)
+      },
+      /** The release drops on the row under IT, not on the last move's (audit 3): a release off the list saves nothing. */
+      drop: (e: MouseEvent) => {
+        show(overAt(e))
+        const from = reorderFrom.current
+        const over = reorderAt.current
+        end()
+        if (from === null || over === null || over.path === from) return
+        const order = orderRef.current
+        if (!order.includes(from)) return // not a row of the shown tab's list (YAZ-2631 R24): nothing is written
+        const without = order.filter((p) => p !== from)
+        const i = without.indexOf(over.path)
+        if (i < 0) return
+        const at = over.edge === 'before' ? i : i + 1
+        if (order[at] === from) return // the row already stands there: nothing is written
+        live.current.saveOrder([...without.slice(0, at), from, ...without.slice(at)])
+      },
+      end,
+    }
+  }, [orderRef])
   // A spring left armed when the panel goes would open a folder of a tree that is gone.
   useEffect(
     () => () => {
       if (spring.current !== null) clearTimeout(spring.current)
+      pill.current?.remove()
     },
     [],
   )
@@ -326,15 +412,73 @@ export function useTreeDrag(
       if (outside) live.current.finder.onDraggedOut(paths)
     }
     const moved = (e: MouseEvent) => {
-      if (e.buttons !== 0 || dragging.current.length === 0) return
+      // An armed row (YAZ-3467 D1): a release first was a click; LIFT_PX from the press, it lifts.
+      const pending = armed.current
+      if (pending !== null) {
+        if (e.buttons === 0) armed.current = null
+        else if (Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) >= LIFT_PX) {
+          armed.current = null
+          pending()
+        }
+      }
+      if (reorderFrom.current !== null) return reorderGesture.track(e)
+      if (pending !== null || e.buttons !== 0 || dragging.current.length === 0) return
       ended()
+    }
+    const pressed = (e: MouseEvent) => {
+      press.current = { x: e.clientX, y: e.clientY }
+      armed.current = null
+      if (reorderFrom.current !== null) reorderGesture.end()
+    }
+    // A reorder's release is no click (audit 1): Chromium still clicks a row after its stopped
+    // `dragstart`, and the old HTML5 drag never did. A click follows a release only on the row the
+    // press was on: so only a release on the dragged row arms this, and it takes only the next click,
+    // and only on that row. Any other click, or the next task, clears it.
+    let releasedOn: Element | null = null
+    const swallow = (e: MouseEvent) => {
+      const row = releasedOn
+      releasedOn = null
+      window.removeEventListener('click', swallow, true)
+      if (row === null || !(e.target instanceof Node) || !row.contains(e.target)) return
+      e.stopPropagation()
+      e.preventDefault()
+    }
+    // The release: an armed row was a click (D1); a reorder drops on the row under it (D2).
+    const released = (e: MouseEvent) => {
+      armed.current = null
+      const from = reorderFrom.current
+      if (from === null) return
+      reorderGesture.drop(e)
+      const row = e.target instanceof Element ? e.target.closest<HTMLElement>('.tree__row') : null
+      if (row?.dataset.path !== from) return
+      releasedOn = row
+      window.addEventListener('click', swallow, true)
+      setTimeout(() => {
+        releasedOn = null
+        window.removeEventListener('click', swallow, true)
+      })
+    }
+    // Esc, or the window losing focus, ends a reorder and saves nothing (D2). That Esc is the reorder's
+    // alone (audit 2): the row under it does not also clear the selection.
+    const keyed = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || reorderFrom.current === null) return
+      e.preventDefault()
+      e.stopPropagation()
+      reorderGesture.end()
+    }
+    const blurred = () => {
+      if (reorderFrom.current !== null) reorderGesture.end()
     }
     window.addEventListener('drop', marked, true)
     window.addEventListener('drop', dropped)
     window.addEventListener('dragenter', over, true)
     window.addEventListener('dragover', over, true)
     window.addEventListener('dragleave', left, true)
-    window.addEventListener('mousemove', moved)
+    window.addEventListener('mousemove', moved, true)
+    window.addEventListener('mousedown', pressed, true)
+    window.addEventListener('mouseup', released, true)
+    window.addEventListener('keydown', keyed, true)
+    window.addEventListener('blur', blurred)
     const offLanded = api.file.onDragLanded(({ paths }) => {
       if (dragging.current.length > 0 && sameItems(dragging.current, paths)) droppedInside.current = true
     })
@@ -349,38 +493,24 @@ export function useTreeDrag(
       window.removeEventListener('dragenter', over, true)
       window.removeEventListener('dragover', over, true)
       window.removeEventListener('dragleave', left, true)
-      window.removeEventListener('mousemove', moved)
+      window.removeEventListener('mousemove', moved, true)
+      window.removeEventListener('click', swallow, true)
+      window.removeEventListener('mousedown', pressed, true)
+      window.removeEventListener('mouseup', released, true)
+      window.removeEventListener('keydown', keyed, true)
+      window.removeEventListener('blur', blurred)
     }
-  }, [fileMove])
-
-  const dropReorder = useCallback(() => {
-    const from = reorderDragging
-    const over = reorderOver
-    setReorderDragging(null)
-    setReorderOver(null)
-    if (from === null || over === null || over.path === from) return
-    if (!orderRef.current.includes(from)) return // not a row of the shown tab's list (YAZ-2631 R24): nothing is written
-    const without = orderRef.current.filter((p) => p !== from)
-    const i = without.indexOf(over.path)
-    if (i < 0) return
-    const at = over.edge === 'before' ? i : i + 1
-    if (orderRef.current[at] === from) return // the row already stands there: nothing is written
-    saveOrder([...without.slice(0, at), from, ...without.slice(at)])
-  }, [reorderDragging, reorderOver, orderRef, saveOrder])
+  }, [fileMove, reorderGesture])
 
   const reorder: TreeReorder = useMemo(
     () => ({
-      dragging: reorderDragging,
       over: reorderOver,
-      start: setReorderDragging,
-      hover: (path, edge) => setReorderOver((prev) => (prev?.path === path && prev.edge === edge ? prev : { path, edge })),
-      drop: dropReorder,
-      end: () => {
-        setReorderDragging(null)
-        setReorderOver(null)
+      // The reorder arms as a move does (YAZ-3467 D2), and lifts LIFT_PX from the press.
+      start: (path) => {
+        armed.current = () => reorderGesture.lift(path)
       },
     }),
-    [reorderDragging, reorderOver, dropReorder],
+    [reorderOver, reorderGesture],
   )
 
   return { fileMove, reorder }
