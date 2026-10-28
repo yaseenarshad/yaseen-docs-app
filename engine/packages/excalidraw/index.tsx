@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -24,6 +25,7 @@ import LiveCollaborationTrigger from "./components/live-collaboration/LiveCollab
 import MainMenu from "./components/main-menu/MainMenu";
 import WelcomeScreen from "./components/welcome-screen/WelcomeScreen";
 import { defaultLang } from "./i18n";
+import { setKeyBindings } from "./keyRemap";
 import {
   useAppStateValue as _useAppStateValue,
   useOnAppStateChange as _useOnAppStateChange,
@@ -95,6 +97,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
     onPaste,
     detectScroll = true,
     handleKeyboardGlobally = false,
+    keyBindings,
     onLibraryChange,
     autoFocus = false,
     generateIdForFile,
@@ -151,6 +154,9 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
   };
 
   const setExcalidrawAPI = useContext(ExcalidrawAPISetContext);
+
+  // Yaseen Docs (YAZ-3564 K5): set before App renders, so its labels read them
+  useMemo(() => setKeyBindings(keyBindings), [keyBindings]);
 
   const onExcalidrawAPIRef = useRef(onExcalidrawAPI);
   onExcalidrawAPIRef.current = onExcalidrawAPI;
@@ -463,6 +469,11 @@ export {
   useExcalidrawAPI,
   ExcalidrawAPIContext,
 } from "./components/App";
+
+// Yaseen Docs (YAZ-3564 K5): the host's key list checks itself against these
+export { actions as registeredActions } from "./actions/register";
+export { TOOLS } from "./components/Tools";
+export type { KeyBinding, KeyChord } from "./keyRemap";
 
 export { WelcomeScreen };
 export { LiveCollaborationTrigger };

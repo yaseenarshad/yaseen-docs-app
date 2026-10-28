@@ -67,6 +67,7 @@ import type { ImportedDataState } from "./data/types";
 import type { SetViewportOptions } from "./viewport";
 
 import type { Language } from "./i18n";
+import type { KeyBinding } from "./keyRemap";
 import type { isOverScrollBars } from "./scene/scrollbars";
 import type React from "react";
 import type { JSX } from "react";
@@ -953,6 +954,8 @@ export interface ExcalidrawProps {
   imageOptions?: ImageOptions;
   detectScroll?: boolean;
   handleKeyboardGlobally?: boolean;
+  /** Yaseen Docs (YAZ-3564 K5): the user's keys for actions and tools (`keyRemap.ts`) */
+  keyBindings?: readonly KeyBinding[];
   onLibraryChange?: (libraryItems: LibraryItems) => void | Promise<any>;
   autoFocus?: boolean;
   generateIdForFile?: (file: File) => string | Promise<string>;

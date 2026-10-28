@@ -8,6 +8,7 @@ import type {
 } from "@excalidraw/element/types";
 
 import { trackEvent } from "../analytics";
+import { keyMovedAway } from "../keyRemap";
 
 import type { AppClassProperties, AppState } from "../types";
 import type {
@@ -125,6 +126,8 @@ export class ActionManager {
       .sort((a, b) => (b.keyPriority || 0) - (a.keyPriority || 0))
       .filter(
         (action) =>
+          // Yaseen Docs (YAZ-3564 K5): a moved action hears only the user's key
+          !keyMovedAway(action.name, event) &&
           (action.name in canvasActions
             ? canvasActions[action.name as keyof typeof canvasActions]
             : true) &&

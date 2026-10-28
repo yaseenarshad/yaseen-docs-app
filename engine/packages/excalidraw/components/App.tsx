@@ -372,7 +372,8 @@ import { getResponsiveTextFontSize } from "../textCreation";
 import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 import { ActionManager } from "../actions/manager";
 import { actions } from "../actions/register";
-import { getShortcutFromShortcutName } from "../actions/shortcuts";
+// Yaseen Docs (YAZ-3564 K5): the user's drawing keys
+import { boundTool, remapKeyDown, remapKeyUp } from "../keyRemap";
 import { trackEvent } from "../analytics";
 import {
   getDefaultAppState,
@@ -3347,7 +3348,8 @@ class App extends React.Component<AppProps, AppState> {
       event.preventDefault();
       return;
     }
-    this.actionManager.handleKeyDown(event);
+    // Yaseen Docs (YAZ-3564 K5): the user's key for a zoom action
+    this.actionManager.handleKeyDown(remapKeyDown(event) ?? event);
   };
 
   /**
@@ -5823,6 +5825,17 @@ class App extends React.Component<AppProps, AppState> {
         return;
       }
 
+      // Yaseen Docs (YAZ-3564 K5): the user's key for an action runs that
+      // action alone, as its default key would; text fields are never remapped
+      const remapped = remapKeyDown(event);
+      if (
+        remapped &&
+        this.state.openDialog?.name !== "elementLinkSelector" &&
+        this.actionManager.handleKeyDown(remapped)
+      ) {
+        return;
+      }
+
       if (
         event.key === KEYS.ESCAPE &&
         this.state.activeEmbeddable?.state === "active"
@@ -5927,20 +5940,8 @@ class App extends React.Component<AppProps, AppState> {
         }
       }
 
-      if (
-        event[KEYS.CTRL_OR_CMD] &&
-        event.key === KEYS.P &&
-        !event.shiftKey &&
-        !event.altKey
-      ) {
-        this.setToast({
-          message: t("commandPalette.shortcutHint", {
-            shortcut: getShortcutFromShortcutName("commandPalette"),
-          }),
-        });
-        event.preventDefault();
-        return;
-      }
+      // Yaseen Docs (YAZ-3564): no ⌘P toast — it named a command palette the
+      // host does not render
 
       if (event[KEYS.CTRL_OR_CMD] && event.key.toLowerCase() === KEYS.V) {
         IS_PLAIN_PASTE = event.shiftKey;
@@ -6036,18 +6037,26 @@ class App extends React.Component<AppProps, AppState> {
         return;
       }
 
+      // Yaseen Docs (YAZ-3564 K5): the user's key for a tool, modifiers and all
+      const boundShape = boundTool(event);
       if (
         !shouldPreventToolSwitching &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.metaKey &&
+        (boundShape !== null ||
+          (!event.ctrlKey && !event.altKey && !event.metaKey)) &&
         !this.state.newElement &&
         !this.state.selectionElement &&
         !this.state.selectedElementsAreBeingDragged
       ) {
+        const shape = findShapeByKey(
+          event.key,
+          this,
+          event.shiftKey,
+          boundShape,
+        );
+
         if (
-          event.key.toLowerCase() === KEYS.T &&
-          !event.shiftKey &&
+          // Yaseen Docs (YAZ-3564 K5): the text tool's key, wherever it is
+          shape === "text" &&
           !this.state.viewModeEnabled &&
           !this.state.editingTextElement &&
           !this.state.openDialog
@@ -6057,8 +6066,6 @@ class App extends React.Component<AppProps, AppState> {
           event.stopPropagation();
           return;
         }
-
-        const shape = findShapeByKey(event.key, this, event.shiftKey);
 
         if (this.state.viewModeEnabled && !oneOf(shape, ["laser", "hand"])) {
           return;
@@ -6342,6 +6349,8 @@ class App extends React.Component<AppProps, AppState> {
     if (!this.isInteractionEnabled()) {
       return;
     }
+    // Yaseen Docs (YAZ-3564 K5): key down and up stay paired
+    event = remapKeyUp(event);
     if (event.key === KEYS.SPACE) {
       if (
         (this.state.viewModeEnabled &&
