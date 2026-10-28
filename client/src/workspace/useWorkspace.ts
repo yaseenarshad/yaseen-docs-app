@@ -676,8 +676,10 @@ export function bootTabs(root: string | null): TabsState {
   if (root === null) return EMPTY
   // A Files window (YAZ-3357 D1) has no tabs at all.
   if (storage.isFilesWindow()) return EMPTY
-  // No restored file: the window opens blank (YAZ-3487 D7). The vault's last file would be a tab nobody asked for.
-  const active = hashFilePath(location.hash) ?? storage.getFile()
+  // No restored file: the window opens blank (YAZ-3487 D7) — or, with "Open on: Its last note" (D15), on the vault's last
+  // file, unless it was opened empty on purpose (YAZ-3343).
+  const fallback = storage.getSettings().vaultOpensOn === 'last' && !storage.isEmptyByChoice() ? storage.getLastFile(root) : null
+  const active = hashFilePath(location.hash) ?? storage.getFile() ?? fallback
   // The copies and display names come back with the window (YAZ-3057), and with a tab "Move to new window" brought (S19).
   return tabsReducer(EMPTY, { type: 'reset', tabs: storage.getTabStrip(), active })
 }

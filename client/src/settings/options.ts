@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type SectionLines, type SidebarLineStyle, type StartupWindows, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type SectionLines, type SidebarLineStyle, type StartupWindows, VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -53,6 +53,12 @@ export const STARTUP_WINDOWS_OPTIONS: readonly Option<StartupWindows>[] = [
   { label: 'All vaults', value: 'all' },
   { label: 'Last vault', value: 'last' },
   { label: 'None', value: 'none' },
+]
+
+/** Settings › General › When a vault opens › Open on (YAZ-3487 D15): every vault open reads it. */
+export const VAULT_OPENS_ON_OPTIONS: readonly Option<VaultOpensOn>[] = [
+  { label: 'A blank tab', value: 'blank' },
+  { label: 'Its last note', value: 'last' },
 ]
 
 /** Settings › Notifications › Show for (YAZ-3303 D5): how long a toast stays. */

@@ -1,6 +1,6 @@
 import { api, BridgeRequestError } from '../api'
 import { ContextMenu } from '../sidebar/ContextMenu'
-import { EyeIcon, HeartIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
 import type { MenuAction, MenuSection } from '../sidebar/menuSections'
 import type { ListState } from '../lists/useVaultListsHere'
 
@@ -105,7 +105,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     [
       { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => onShowInSidebar?.(menu.path) },
       ...(lists === null || onToggleFocus === undefined ? [] : [{ id: 'focus', label: lists.focus ? 'Remove from focus' : 'Add to focus', icon: <EyeIcon />, onSelect: () => onToggleFocus([menu.path], lists.focus) }]),
-      { id: 'copy-path', label: 'Copy path', onSelect: () => void navigator.clipboard.writeText(menu.path) },
+      { id: 'copy-path', label: 'Copy path', icon: <CopyIcon />, onSelect: () => void navigator.clipboard.writeText(menu.path) },
     ],
     [
       // Never "Rename": that word renames on disk in the file menu (YAZ-2949 D3, the vault menu's words).

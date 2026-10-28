@@ -795,11 +795,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     if (raiseWindows((w) => (alone ? sameVaults(w.roots, [wanted]) : w.roots.some((root) => stripSlash(root) === wanted)))) return true
     // No window to raise: an EMPTY window that asked takes the vault itself (YAZ-3487 D1).
     if (from !== undefined && takeHere(from, [path])) return true
-    // A vault opens blank (YAZ-3487 D7): no note you did not ask for.
-    openWindow({ root: path, file: null })
+    openWindow({ root: path, file: startFile(path) })
     return true
   }
   const openRecentBeside = (path: string, from?: string): boolean => openVault(path, false, from)
+
+  /** What a new window on `vault` opens on (YAZ-3487 D15): blank (D7), or with "Its last note" the remembered `lastFile`. */
+  const startFile = (vault: string): string | null => (store.get().settings.vaultOpensOn === 'last' ? (store.get().folders[vault]?.lastFile ?? null) : null)
 
   /**
    * YAZ-3487 D1: the window `from` shows `roots` itself when it is EMPTY — no tab, no page, nothing in its right
@@ -824,7 +826,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     if (found.length === 0) return { opened: false, missing }
     // The set's window is the one that shows exactly the vaults that are left (S66): a window opened
     // earlier without the missing folder is raised, not doubled.
-    if (!raiseWindows((w) => sameVaults(w.roots, found)) && (from === undefined || !takeHere(from, found))) openWindow({ root: found[0], roots: found, file: null })
+    if (!raiseWindows((w) => sameVaults(w.roots, found)) && (from === undefined || !takeHere(from, found))) openWindow({ root: found[0], roots: found, file: startFile(found[0]) })
     store.touchVaultSet(id)
     return { opened: true, missing }
   }

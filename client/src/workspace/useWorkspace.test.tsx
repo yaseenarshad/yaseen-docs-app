@@ -498,6 +498,16 @@ describe('bootTabs (rules 12/15)', () => {
     expect(byPath(bootTabs(null))).toEqual(state([], null))
   })
 
+  it('YAZ-3487 D15: with "Open on: Its last note" a fresh window falls back to the folder lastFile again; a window opened empty on purpose stays empty', async () => {
+    const last: AppState = { ...seeded, settings: { ...seeded.settings, vaultOpensOn: 'last' } }
+    installBridge(last, { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    expect(byPath(bootTabs('/v'))).toEqual(state(['/v/last.md'], '/v/last.md'))
+    installBridge(last, { id: 'w2', root: '/v', file: null, tabs: [], sidebarCollapsed: false, startEmpty: true })
+    await storage.init()
+    expect(byPath(bootTabs('/v'))).toEqual(state([], null))
+  })
+
   it('restores right identity with only the expanded editor mounted and lets a pasted hash take ownership', async () => {
     installBridge(seeded, {
       id: 'w1',

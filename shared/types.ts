@@ -1464,6 +1464,8 @@ export interface SettingsState {
   sidebarTabs: SidebarTabsPrefs
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
+  /** What a vault opens on (YAZ-3487 D15): every vault open reads it — main's new windows, `openRoot`, `bootTabs`, the empty-window door. */
+  vaultOpensOn: VaultOpensOn
   /** Section indent (YAZ-2709): the width of one step in px, 24 | 30 | 36. On or off is per page (the page cog), never here. View-only. */
   sectionStep: number
   /** Section indent (YAZ-2709): the grey section lines show always, or only while the pointer is over the note. */
@@ -1612,6 +1614,10 @@ export const COMMENTS_ORDERS: readonly CommentsOrder[] = ['oldest', 'newest']
 export type StartupWindows = 'all' | 'last' | 'none'
 export const STARTUP_WINDOWS: readonly StartupWindows[] = ['all', 'last', 'none']
 
+/** What a vault opens on (YAZ-3487 D15): a blank tab (the default, D7), or its remembered last note (the old YAZ-1767 D2). */
+export type VaultOpensOn = 'blank' | 'last'
+export const VAULT_OPENS_ON: readonly VaultOpensOn[] = ['blank', 'last']
+
 /**
  * A note's table of contents (YAZ-2700): `auto` shows the names of its rows — its headings, or its
  * bullets (`TocSource`) — when the window has room beside the text and small lines when it has
@@ -1666,6 +1672,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarSort: DEFAULT_SIDEBAR_SORT,
   sidebarTabs: DEFAULT_SIDEBAR_TABS,
   startupWindows: 'last',
+  vaultOpensOn: 'blank',
   sectionStep: 30,
   sectionLines: 'always',
   tableOfContents: 'auto',

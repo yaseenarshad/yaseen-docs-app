@@ -656,10 +656,10 @@ export function App() {
     setSidebarLens(storage.getSidebarLens()) // the vault lands on Files (🔒 D2, YAZ-1846)
     setSidebarRevealRequest(null)
     setRoots(storage.getRoots()) // that ONE vault: every other vault of the window leaves (YAZ-2602 S61)
-    // A vault opens blank (YAZ-3487 D7): no note you did not ask for; reset mirrors it down. A Files window has no tab (YAZ-3357 D1).
-    resetTabs(path, null)
+    // A vault opens blank (YAZ-3487 D7) — or on its last note, as Settings › Open on says (D15); reset mirrors it down. A Files window has no tab (YAZ-3357 D1).
+    resetTabs(path, filesWindow || storage.getSettings().vaultOpensOn !== 'last' ? null : storage.getLastFile(path))
     return true
-  }, [resetTabs])
+  }, [resetTabs, filesWindow])
 
   /**
    * The ONE vault-open rule (YAZ-1914): a window that already shows a vault never changes vault —
@@ -1279,7 +1279,10 @@ export function App() {
     // The vaults land on Files, as every vault open does (YAZ-1846 D2): a ⌘⇧N window boots on the search.
     storage.setSidebarLens(DEFAULT_SIDEBAR_LENS)
     setSidebarLens(DEFAULT_SIDEBAR_LENS)
-  }, [openRoot])
+    // "Open on: Its last note" (YAZ-3487 D15): the first vault's last note, as a new window would. A Files window has no tab.
+    const last = filesWindow || storage.getSettings().vaultOpensOn !== 'last' ? null : storage.getLastFile(next[0])
+    if (last !== null) resetTabs(next[0], last)
+  }, [openRoot, filesWindow, resetTabs])
   /** Another window's board: "Move to new window" on a card of THIS window (YAZ-3343) — moved quietly, its text saved first. */
   const popOutTabHere = useCallback((ref: TabRef) => {
     const tab = tabOfRef(now.current.tabs, ref)

@@ -32,6 +32,7 @@ describe('settingCandidates', () => {
       // General (YAZ-3276 D7): the settings folder, then Reopen, moved here from Files & Links.
       'settingsFolder',
       'startupWindows',
+      'vaultOpensOn',
       'theme',
       'contentWidth',
       'lineSpacing',

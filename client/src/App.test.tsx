@@ -987,6 +987,14 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
     expect(captured.sidebar?.lens).toBe('files') // the Welcome window's stored lens was Favorites; the vault lands on Files (YAZ-1846 D2)
   })
 
+  it('YAZ-3487 D15: with "Open on: Its last note" File › Open Recent opens the folder on its lastFile, as before D7', async () => {
+    const state = withFolder(defaultAppState(), '/w', '/w/b.md')
+    state.settings = { ...state.settings, vaultOpensOn: 'last' }
+    const { el, emitOpenRoot } = await mount(state, { id: 'w1', root: null, file: null, tabs: [] })
+    await act(async () => emitOpenRoot('/w'))
+    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/w/b.md')
+  })
+
   it('switching to a folder with no remembered last file leaves no file open', async () => {
     const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
     await act(async () => emitOpenRoot('/w'))

@@ -846,3 +846,11 @@ describe('buildMenuSections: a row of "Recently closed" (YAZ-3487 D14)', () => {
     expect(labelsOf(buildMenuSections(targets(), handlers()))).not.toContain('Remove from Recently closed')
   })
 })
+
+describe('Copy path has its glyph (YAZ-3487)', () => {
+  it('"Copy path" and "Copy N paths" carry the copy icon, as "Add to focus" carries the eye', () => {
+    const one = buildMenuSections(targets({ copyPath: '/v/a.md' }), handlers()).flat().find((i) => i.id === 'copy-path')
+    const many = buildMenuSections(targets({ copyPaths: ['/v/a.md', '/v/b.md'] }), handlers()).flat().find((i) => i.id === 'copy-paths')
+    expect([one, many].every((item) => item !== undefined && "icon" in item && item.icon !== undefined)).toBe(true)
+  })
+})

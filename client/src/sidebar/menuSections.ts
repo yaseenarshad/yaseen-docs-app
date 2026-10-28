@@ -2,7 +2,7 @@ import { createElement, type ReactNode } from 'react'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
-import { EyeIcon, HeartIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
 import type { MenuTargets } from './Sidebar'
 
 /**
@@ -248,6 +248,7 @@ const copyPaths: Leaf = (t, h) => {
   return {
     id: 'copy-paths',
     label: `Copy ${paths.length} paths`,
+    icon: createElement(CopyIcon),
     onSelect: () => {
       void navigator.clipboard.writeText(paths.join('\n')).then(
         () => h.onNotice(`Copied ${paths.length} paths`, 'info', 'clipboard'),
@@ -269,6 +270,7 @@ const copyPath: Leaf = (t, h) => {
   return {
     id: 'copy-path',
     label: 'Copy path',
+    icon: createElement(CopyIcon),
     hint: keyHint('copyPath', t.hotkeys),
     onSelect: () => {
       void navigator.clipboard.writeText(path).then(

@@ -2281,6 +2281,17 @@ describe('createWindowManager: the empty-window door (YAZ-3487 D1, D2, D3)', () 
     expect(win('wel').webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/v/c'])
   })
 
+  it('D15: with "Open on: Its last note" a new window opens on the vault\'s last file, as before YAZ-3487; blank is the default', () => {
+    store.setFolder('/v/c', { lastFile: '/v/c/Start here.md' })
+    const blank = seed(entry('b', ['/v/a'], ['/v/a/x.md']))
+    blank.manager.openRecentBeside('/v/c', 'b')
+    expect(blank.created.at(-1)!.entry.file).toBeNull()
+    store.setFolder('/v/d', { lastFile: '/v/d/Notes.md' })
+    store.setSettings({ ...store.get().settings, vaultOpensOn: 'last' })
+    blank.manager.openAlone('/v/d', 'b')
+    expect(blank.created.at(-1)!.entry).toMatchObject({ roots: ['/v/d'], file: '/v/d/Notes.md', tabs: ['/v/d/Notes.md'] })
+  })
+
   it('S13: a folder that is gone → false; nothing is sent, nothing opens', () => {
     store.upsertWindow(entry('e', ['/v/a']))
     const { host, created } = makeHost(undefined, undefined, (p) => p !== '/v/gone')
