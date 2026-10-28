@@ -17,6 +17,7 @@ const noopHandlers = (): MenuHandlers => ({
   newTab: vi.fn(),
   newItem: vi.fn(),
   goTo: vi.fn(),
+  keySheet: vi.fn(),
   newWindow: vi.fn(),
   newFilesWindow: vi.fn(),
   closeWindow: vi.fn(),
@@ -300,17 +301,20 @@ describe('buildMenuTemplate', () => {
     expect([...(menuOf(amp, 'File').find((i) => i.id === 'menu.file.open-recent')?.submenu as MenuItemConstructorOptions[]), ...menuOf(amp, 'Window').filter((i) => i.id === 'menu.window.vault.1')].map((i) => i.label)).toEqual(['/vaults/R&&D', 'R&&D'])
   })
 
-  it("Help menu: role help, What's New… (YAZ-2976 D8) before the GitHub link item", () => {
+  it("Help menu: role help, Keys of This Tab… (YAZ-3564 K11), What's New… (YAZ-2976 D8) before the GitHub link item", () => {
     const handlers = noopHandlers()
     const template = build(RECENTS, false, handlers)
     const top = template.find((m) => m.label === 'Help')
     expect(top?.role).toBe('help')
     const items = top?.submenu as MenuItemConstructorOptions[]
-    expect(items.map((i) => [i.id, i.label])).toEqual([['menu.help.whats-new', "What's New…"], ['menu.help.github', 'Yaseen Docs on GitHub']])
-    click(items[1])
+    expect(items.map((i) => [i.id, i.label])).toEqual([['menu.help.key-sheet', 'Keys of This Tab…'], ['menu.help.whats-new', "What's New…"], ['menu.help.github', 'Yaseen Docs on GitHub']])
+    click(items[2])
     expect(handlers.openHelp).toHaveBeenCalledTimes(1)
-    click(items[0])
+    click(items[1])
     expect(handlers.whatsNew).toHaveBeenCalledTimes(1)
+    // YAZ-3564 K11: the cheat sheet of the tab on show.
+    click(items[0])
+    expect(handlers.keySheet).toHaveBeenCalledTimes(1)
   })
 
   it('actionable items carry stable ids so a live check can drive them', () => {
@@ -324,7 +328,7 @@ describe('buildMenuTemplate', () => {
     const recent = file.find((i) => i.label === 'Open Recent')?.submenu as MenuItemConstructorOptions[]
     expect(recent.map((i) => i.id)).toEqual(['menu.file.open-recent.0', 'menu.file.open-recent.1', 'menu.file.open-recent.2'])
     expect(menuOf(build(), 'View').find((i) => i.label === 'Toggle Sidebar')?.id).toBe('menu.view.toggle-sidebar')
-    expect((build().find((m) => m.label === 'Help')?.submenu as MenuItemConstructorOptions[]).map((i) => i.id)).toEqual(['menu.help.whats-new', 'menu.help.github'])
+    expect((build().find((m) => m.label === 'Help')?.submenu as MenuItemConstructorOptions[]).map((i) => i.id)).toEqual(['menu.help.key-sheet', 'menu.help.whats-new', 'menu.help.github'])
   })
 
   // ---------- The board items (YAZ-3037, YAZ-3028 D10; ported from Draw's menu.test.ts) ----------

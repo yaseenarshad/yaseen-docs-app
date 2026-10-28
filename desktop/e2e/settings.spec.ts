@@ -127,10 +127,13 @@ test('step 3 — search narrows the page to hits under breadcrumbs, and a hit st
 
   // "dark" is a Theme keyword and the draw.io diagrams' "In dark mode" row (YAZ-3028 D10): two rows,
   // both on the Appearance page, Theme first under the untitled group's breadcrumb (just the section).
+  // Every key is searchable since YAZ-3564: a drawing's and a diagram's dark-mode keys follow on Hotkeys.
   await search(win).fill('dark')
-  await expect(rows(win)).toHaveCount(2)
+  await expect(rows(win)).toHaveCount(4)
   await expect(row(win, 'theme')).toBeVisible()
   await expect(row(win, 'diagramDarkColors')).toBeVisible()
+  await expect(row(win, 'hotkey-drawing-toggleTheme')).toBeVisible()
+  await expect(row(win, 'hotkey-diagram-adaptiveColors')).toBeVisible()
   await expect(headings(win).first()).toHaveText('Appearance')
   await shoot(win, 'settings-04-search-dark')
 

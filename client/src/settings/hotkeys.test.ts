@@ -47,6 +47,7 @@ describe('HOTKEYS source of truth', () => {
       ['tabOverview', '⌘⇧M'],
       ['nextTab', '⌃Tab'],
       ['prevTab', '⌃⇧Tab'],
+      ['keySheet', ''],
     ])
     expect(HOTKEY_COMMANDS.filter((c) => c.macStandard === true).map((c) => c.id)).toEqual(['newTab', 'newWindow', 'newItem', 'closeTab', 'switchVault', 'settings'])
     for (const command of HOTKEY_COMMANDS) if (command.key !== null) expect(keys, command.id).not.toContain(toDisplay(command.key))

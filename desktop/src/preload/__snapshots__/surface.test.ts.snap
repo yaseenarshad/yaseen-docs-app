@@ -101,6 +101,7 @@ menu.onCopyAs/1: (no IPC)
 menu.onExportDrawing/1: on menu:export-drawing -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:export-drawing
 menu.onExportImage/1: on menu:export-image -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:export-image
 menu.onGoTo/1: on menu:go-to -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:go-to
+menu.onKeySheet/1: on menu:key-sheet -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:key-sheet
 menu.onNewItem/1: on menu:new-item -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:new-item
 menu.onNewTab/1: on menu:new-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:new-tab
 menu.onNewWindow/1: on menu:new-window -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:new-window

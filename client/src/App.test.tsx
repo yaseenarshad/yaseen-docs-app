@@ -361,6 +361,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onNewWindow: menuSub(menuNewWindow),
       onNewItem: menuSub(menuNewItem),
       onGoTo: menuSub(menuGoTo),
+      onKeySheet: menuSub(new Set()),
       onZoom: vi.fn((l: (step: ZoomStep) => void) => {
         menuZoom.add(l)
         return () => menuZoom.delete(l)
