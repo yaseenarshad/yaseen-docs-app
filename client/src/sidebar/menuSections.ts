@@ -42,7 +42,7 @@ interface MenuItemBase {
 export interface MenuAction extends MenuItemBase {
   onSelect: () => void
   children?: undefined
-  /** A glyph before the label (YAZ-3279: the tab row's menu). An SVG only, so `textContent` stays the bare label. Only a leaf draws one. */
+  /** A glyph before the label (YAZ-3279: the tab row's menu): an SVG, or a `FileIcon` (the Search menu's Type list, YAZ-3511 D13). It holds no text, so `textContent` stays the bare label. Only a leaf draws one. */
   icon?: ReactNode
   /** Rendered but inert — Paste with an empty clipboard, for discoverability (🔒 D5, YAZ-1674). Only a leaf can be. */
   disabled?: boolean

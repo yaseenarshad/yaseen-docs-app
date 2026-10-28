@@ -1073,22 +1073,33 @@ export interface SidebarTabsPrefs {
 }
 /** The `SIDEBAR_TABS` order, nothing hidden: the row before YAZ-3273. */
 export const DEFAULT_SIDEBAR_TABS: SidebarTabsPrefs = { order: [...SIDEBAR_TABS], hidden: [], hiddenButtons: [] }
-/** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites; Files has none. */
-export type SortBy = 'manual' | 'name' | 'updated'
+/** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites; Files has none. `best` is Search's alone (YAZ-3511 D12). */
+export type SortBy = 'manual' | 'name' | 'updated' | 'best'
 /** One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first. */
 export interface TabSort {
   by: SortBy
   reverse: boolean
 }
-/** The tabs that sort (YAZ-3227 D5): Search, Sessions and Recents (YAZ-3235) have no sort. */
+/** The tabs that sort (YAZ-3227 D5). Search has its own `searchSort` (YAZ-3511); Sessions and Recents (YAZ-3235) have none. */
 export type SortedTab = 'files' | 'focus' | 'favorites'
 export type SidebarSort = Record<SortedTab, TabSort>
+/** The tabs the sort menu serves: the sorted tabs and Search, whose sort is its own (YAZ-3511 D3). */
+export type SortMenuTab = SortedTab | 'search'
+export const SORT_MENU_TABS: readonly SortMenuTab[] = ['files', 'focus', 'favorites', 'search']
 /** Files by name, A to Z (as before YAZ-3227); Focus and Favorites in their own drag order (D6). */
 export const DEFAULT_SIDEBAR_SORT: SidebarSort = { files: { by: 'name', reverse: false }, focus: { by: 'manual', reverse: false }, favorites: { by: 'manual', reverse: false } }
+/** The Search tab's sort (YAZ-3511 D12): Best match. Never Manual: a search has no drag order. */
+export const DEFAULT_SEARCH_SORT: TabSort = { by: 'best', reverse: false }
+/** Which tabs show the last updated date at the right end of each row (YAZ-3511 D10): one switch for each tab, on for Search only. */
+export type RowDates = Record<SortMenuTab, boolean>
+export const DEFAULT_ROW_DATES: RowDates = { files: false, focus: false, favorites: false, search: true }
 
-/** `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. */
+/**
+ * `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. The max is only a
+ * bound on a stored value since YAZ-3511 D18: the sidebar grows until the page keeps `MAIN_WORKSPACE_MIN_W`.
+ */
 export const SIDEBAR_MIN_W = 180
-export const SIDEBAR_MAX_W = 520
+export const SIDEBAR_MAX_W = 2000
 export const SIDEBAR_DEFAULT_W = 260
 
 /** Per-window right-panel geometry. Width persists even while the panel is hidden. */
@@ -1507,6 +1518,10 @@ export interface SettingsState {
   commentsOrder: CommentsOrder
   /** Each sidebar tab's sort (YAZ-3227 D1): how you READ, global to this Mac, never part of a vault. */
   sidebarSort: SidebarSort
+  /** The Search tab's own sort (YAZ-3511 D1, D12): Files can stay by name while a search shows the best match first. */
+  searchSort: TabSort
+  /** Which tabs show each row's Last updated at the right end (YAZ-3511 D7, D10): one switch for each tab of the sort menu. */
+  rowDates: RowDates
   /** The tab row's order, its hidden tabs and its hidden buttons (YAZ-3273 D8): global to this Mac, never part of a vault. */
   sidebarTabs: SidebarTabsPrefs
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
@@ -1801,6 +1816,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, links: true },
   commentsOrder: 'oldest',
   sidebarSort: DEFAULT_SIDEBAR_SORT,
+  searchSort: DEFAULT_SEARCH_SORT,
+  rowDates: DEFAULT_ROW_DATES,
   sidebarTabs: DEFAULT_SIDEBAR_TABS,
   startupWindows: 'last',
   vaultOpensOn: 'blank',

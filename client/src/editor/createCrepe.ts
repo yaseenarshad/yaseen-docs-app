@@ -83,6 +83,10 @@
  *  - Drawing slash item (YAZ-877, `drawingMenu.ts`): rides Crepe's OWN BlockEdit menu via
  *    `featureConfigs[BlockEdit].buildMenu` — never a parallel slash plugin. Registered only when
  *    `opts.drawing` supplies the creator; the shared config always omits Ordered List.
+ *  - The slash menu in a list item and "Current time" (YAZ-3550, `slashMenu.ts`; YAZ-3511 D21, D22):
+ *    the patched Crepe (`client/vendor/milkdown-crepe-7.22.1-yaz3550.*`) opens the menu in a
+ *    bullet too and filters by a row's `keywords`; Divider and Bullet List are hidden there.
+ *    "Current time" (`h:mmam - `, plain text) ends the Text group on every editor.
  *  - Drawing previews (YAZ-878, `drawing/drawingPreview.ts`): `![[x.excalidraw]]` renders as the
  *    scene through inline decorations only (the match's text hidden, a widget in its place,
  *    caret-inside reveals the raw syntax) — never a schema or serializer change. Registered only
@@ -184,6 +188,7 @@ import { createBlockHandleMenu } from './blockHandleMenu'
 import { breakMarks } from './breakMarks'
 import { createDrawingPreview, type DrawingPreviewOptions } from './drawing/drawingPreview'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
+import { createSlashMenu } from './slashMenu'
 import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
 import { createImageView } from './image/imageView'
 import type { FindChannel } from './find/findChannel'
@@ -384,6 +389,7 @@ const escapeToSidebar = $shortcut(() => ({
 }))
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
+  const slashMenu = createSlashMenu(opts.drawing === undefined ? undefined : drawingMenu(opts.drawing))
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
@@ -391,10 +397,11 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     featureConfigs: {
       // Crepe feature customisation #1 (YAZ-1329/YAZ-877): Number children is the only editor
       // command that creates ordered children, so the stock Ordered List row is absent. Drawing
-      // still composes into this same BlockEdit config when the host supplies a creator.
+      // still composes into this same BlockEdit config when the host supplies a creator, after
+      // Current time and before the list rule (YAZ-3550, `slashMenu.ts`).
       [CrepeFeature.BlockEdit]: {
         listGroup: { orderedList: null },
-        ...(opts.drawing === undefined ? {} : { buildMenu: drawingMenu(opts.drawing) }),
+        buildMenu: slashMenu.buildMenu,
       },
       // #2 (YAZ-923): the selection toolbar SAYS the block's level — a Heading group whose
       // active button is the answer to "what is this?", and whose click is the switch. The
@@ -416,6 +423,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     extendListItemSchemaForTask.extendSchema((prev) => (ctx) => ({ ...prev(ctx), content: 'block+' })),
   )
   crepe.editor.use(listItemRoundTrip)
+  // The slash menu's "in a list" flag (YAZ-3550): which stock rows a list item hides.
+  crepe.editor.use(slashMenu.inListWatch)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.

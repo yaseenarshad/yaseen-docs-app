@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, type SettingsState } from '@shared/types'
+import { DEFAULT_ROW_DATES, DEFAULT_SETTINGS, type SettingsState } from '@shared/types'
 import { newestFile, parseSettingsFile, SETTINGS_FILE_RE, settingsFileName, settingsFileText, type SettingsFile } from '@shared/settingsSync'
 import { until } from './fs/testFixture'
 import { followSettingsFolder, type SettingsFolder } from './settingsFolder'
@@ -63,6 +63,16 @@ describe('the rules (D3)', () => {
     const here: SettingsState = { ...DEFAULT_SETTINGS, sidebarSort: { files: { by: 'updated', reverse: true }, focus: { by: 'name', reverse: false }, favorites: { by: 'name', reverse: true } } }
     const out = mergeFolderSettings(here, { sidebarSort: { files: { by: 'created', reverse: false }, focus: { by: 'manual', reverse: false }, favorites: { by: 'updated', reverse: false } } })
     expect(out.sidebarSort).toEqual(here.sidebarSort)
+  })
+
+  it("YAZ-3511 D1, D10: the Search sort and the date switches travel; a value this build can't read keeps this Mac's", () => {
+    const mine = { files: true, focus: false, favorites: false, search: false }
+    const here: SettingsState = { ...DEFAULT_SETTINGS, searchSort: { by: 'updated', reverse: true }, rowDates: mine }
+    expect(mergeFolderSettings(here, { searchSort: { by: 'best', reverse: false }, rowDates: DEFAULT_ROW_DATES })).toMatchObject({ searchSort: { by: 'best', reverse: false }, rowDates: DEFAULT_ROW_DATES })
+    expect(mergeFolderSettings(here, { searchSort: { by: 'manual', reverse: false }, rowDates: { search: 'yes' } })).toMatchObject({ searchSort: here.searchSort, rowDates: mine })
+    // A record merges by its parts, as every object field does: one tab from the other Mac, the rest this Mac's.
+    expect(mergeFolderSettings(here, { rowDates: { search: true } })).toMatchObject({ rowDates: { ...mine, search: true } })
+    expect(mergeFolderSettings(here, { theme: 'dark' })).toMatchObject({ searchSort: here.searchSort, rowDates: mine })
   })
 
   it("YAZ-3309: the sidebar's level lines, their style and their colour travel; a file without them, or with a value this build can't read, keeps this Mac's (D3, D8, D9, S10)", () => {

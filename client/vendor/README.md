@@ -44,16 +44,19 @@ npm keys `file:` deps on content, so a package that builds byte-identically acro
 (`fractional-indexing` does) can keep its old `resolved` path. `npm install` hides that; a clean
 `npm ci` then fails on the deleted tarball. `grep -c <old hash> package-lock.json` must print 0.
 
-## Also here: two patched Milkdown packages
+## Also here: three patched Milkdown packages
 
 - `milkdown-components-7.22.1-yaz1410.*`: `@milkdown/components` 7.22.1 with the YAZ-1410 CSS
   zoom fix and the YAZ-2131 list-item caret restore (🔒 D2). Provenance and rebuild:
   `milkdown-components-7.22.1-yaz1410.md`.
 - `milkdown-plugin-tooltip-7.22.1-yaz2238.*`: `@milkdown/plugin-tooltip` 7.22.1 with the YAZ-2238
   throttled-update fix. Provenance and rebuild: `milkdown-plugin-tooltip-7.22.1-yaz2238.md`.
+- `milkdown-crepe-7.22.1-yaz3550.*`: `@milkdown/crepe` 7.22.1 with the YAZ-3550 slash menu in a list
+  item and its filter keywords. Provenance and rebuild: `milkdown-crepe-7.22.1-yaz3550.md`.
 
-Each ships as a `.tgz`, the readable `.patch` it was built from, and an `.md`. Both are installed
+Each ships as a `.tgz`, the readable `.patch` it was built from, and an `.md`. All are installed
 through the root `package.json` (`file:` devDependencies plus `overrides`, so every Milkdown package
 resolves the patched copy) and rebuilt by one script: `node tools/buildMilkdownPatch.mjs
-<components|plugin-tooltip>`. The upstream Milkdown PRs for both fixes are in
-`client/vendor/upstream/`: prepared, not opened; Yasin's call.
+<components|plugin-tooltip|crepe>`. The upstream Milkdown PRs for the first two fixes are in
+`client/vendor/upstream/`: prepared, not opened; Yasin's call. The Crepe change is app policy, with no
+upstream PR.
