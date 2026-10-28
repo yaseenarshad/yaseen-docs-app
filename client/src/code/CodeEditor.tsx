@@ -86,7 +86,7 @@ export interface CodeEditorProps extends DocumentHostProps {
   codeMinimap?: boolean
   /** The cog's rows and the Outline's "…" menu write these settings for every code file; absent = no cog. */
   onChangeCodeSettings?: (patch: CodeSettingsPatch) => void
-  /** The Outline (YAZ-3486) on the note's setting (Settings › Table of contents) and width; absent = off. */
+  /** The Outline (YAZ-3486) on the note's setting (Settings › "Pin default") and width; absent = off. */
   tableOfContents?: TableOfContentsMode
   /** Settings › "Table of contents default" (YAZ-3558): for a file that made no choice in its cog. Absent = the default, on. */
   tocOnByDefault?: boolean

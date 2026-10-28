@@ -559,6 +559,21 @@ describe('the cog\'s "Table of contents" row: this file only (YAZ-3506)', () => 
     expect(toc('b')).toBeNull()
     expect(setTocSwitch).toHaveBeenLastCalledWith(ROOT, PY_C, true)
     expect(storage.getTocSwitch(ROOT, PY_D)).toBeUndefined()
+    // The default comes back On in the open tabs (S6, S7): the file with no choice follows, the file with one keeps it.
+    act(() =>
+      root?.render(
+        <>
+          <div data-tab="a"><CodeEditor root={ROOT} path={PY_C} watch={watch} onChangeCodeSettings={() => undefined} tableOfContents="pinned" tocOnByDefault /></div>
+          <div data-tab="b"><CodeEditor root={ROOT} path={PY_D} watch={watch} onChangeCodeSettings={() => undefined} tableOfContents="pinned" tocOnByDefault /></div>
+        </>,
+      ),
+    )
+    await settle()
+    expect(toc('a')).not.toBeNull()
+    expect(toc('b')).not.toBeNull()
+    clickToc('a')
+    await settle()
+    expect(toc('a')).toBeNull()
   })
 })
 

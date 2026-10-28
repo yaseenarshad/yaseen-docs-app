@@ -196,7 +196,7 @@ describe('S1 and S11: what shows', () => {
     expect(row('Pipeline').title).toBe('Class Pipeline')
   })
 
-  it('S11: a file with no symbol source shows no Outline; the setting Off shows none either', () => {
+  it('S11: a file with no symbol source shows no Outline; mode off (the file shows none) shows none either', () => {
     mount({ symbols: null })
     expect(nav()).toBeNull()
     act(() => root?.unmount())

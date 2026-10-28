@@ -18,7 +18,7 @@
  * first such file of a session, answered nothing. The feed reads again when a symbol provider for the model
  * registers (`onSymbolProviderChange`, `monacoInternals.ts`): an event, no timer.
  *
- * OFF READS NOTHING. While the Outline is off (Settings › Table of contents › Off), `setActive(false)`
+ * OFF READS NOTHING. While the Outline is off (this file shows no table of contents, YAZ-3558), `setActive(false)`
  * stops the reads: an edit arms no timer. Turning it on reads at once.
  *
  * Markers come from Monaco's own workers (`getModelMarkers`): a change of this model's

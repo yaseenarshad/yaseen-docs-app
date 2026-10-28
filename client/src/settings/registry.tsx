@@ -683,7 +683,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             id: 'tocOnByDefault',
             label: 'Table of contents default',
             hint: 'Off: a page can still turn it on in its cog.',
-            keywords: ['outline', 'toc', 'headings', 'default', 'off'],
+            keywords: ['outline', 'toc', 'headings', 'default'],
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.tocOnByDefault} onChange={(tocOnByDefault) => onChange({ ...settings, tocOnByDefault })} ariaLabel="Table of contents default" />
             ),

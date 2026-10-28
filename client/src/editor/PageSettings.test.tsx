@@ -111,7 +111,7 @@ describe('PageSettings', () => {
   it('"Line numbers" is the first switch: it flips the host state and leaves the menu open (S5, S6)', () => {
     mount()
     click(cog())
-    // This host hands no table of contents handler, as the app does with the setting Off: three switches.
+    // This host hands no table of contents handler, as a board, a drawing and a diagram do: four switches.
     expect([...menu()!.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Read only', 'Line numbers', 'Section indent', 'Heading levels'])
     expect(toggle().textContent).toContain('Line numbers')
     expect(toggle().getAttribute('aria-pressed')).toBe('false')
@@ -352,7 +352,7 @@ describe('PageSettings: Heading levels and Table of contents', () => {
     expect(menu()).not.toBeNull()
   })
 
-  it('a host that hands no handler for "Table of contents" gets no row for it: the app-wide setting is Off, so there is nothing to turn off here', () => {
+  it('a host that hands no handler for "Table of contents" gets no row for it: a board, a drawing and a diagram have no table of contents (YAZ-3558 D1: a note always hands one)', () => {
     mountSwitches(false)
     expect(state()).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false'])
   })

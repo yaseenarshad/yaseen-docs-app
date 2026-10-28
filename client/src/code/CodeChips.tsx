@@ -17,7 +17,7 @@ import type { CodeSettings } from './codeSettings'
 export interface CodeChipsProps {
   settings: CodeSettings
   onChangeSettings?: (patch: Partial<CodeSettings>) => void
-  /** This file's "Table of contents" switch (YAZ-3506). Absent → no row (Settings › Table of contents is Off). */
+  /** This file's "Table of contents" switch (YAZ-3506). The tab always passes it (YAZ-3558 D1); absent → no row. */
   tableOfContents?: { on: boolean; onToggle: () => void }
   /** This tab's text size, percent (YAZ-3451): the note's pill, never stored. */
   zoom: number

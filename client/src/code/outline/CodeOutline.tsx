@@ -45,7 +45,7 @@ import { allKeys, displayOrder, kindsIn, markSymbols, Mark, pathDepth, rowMark, 
 import '../../editor/toc/toc.css'
 import './outline.css'
 
-/** The code "When there is room" keeps beside the names, px: about 100 characters at 13 px. */
+/** The code that "Pin default" Off (`auto`) keeps beside the names, px: about 100 characters at 13 px. */
 export const CODE_COLUMN = 800
 /** One row of the list, px: `outline.css`'s `--outline-row-h`. */
 export const ROW_H = 24

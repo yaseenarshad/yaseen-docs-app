@@ -62,11 +62,11 @@ describe('namesShow: names or lines', () => {
 describe('namesRoom: how wide the names column may get (YAZ-2752 D2, D3)', () => {
   it('pinned leaves the text 500px, auto takes the empty margin and no more, and neither goes past 480', () => {
     expect([TOC_MIN_W, TOC_WIDTH, TOC_MAX_W, TEXT_FLOOR]).toEqual([160, TOC_DEFAULT_W, 480, 500])
-    // "Always": the text has 500px at the floor today (700 of note, 200 of names) and never less.
+    // "Pin default" On: the text has 500px at the floor today (700 of note, 200 of names) and never less.
     expect([700, 820, 980, 981, 4000].map((note) => namesRoom('pinned', note, COLUMN_MAX.narrow))).toEqual([200, 320, 480, 480, 480])
     // The content width does not count for pinned names.
     expect(namesRoom('pinned', 900, COLUMN_MAX.full)).toBe(400)
-    // "When there is room", a narrow column (1040) and a medium one (1440).
+    // "Pin default" Off, a narrow column (1040) and a medium one (1440).
     expect([1240, 1360, 1520, 1521, 4000].map((note) => namesRoom('auto', note, COLUMN_MAX.narrow))).toEqual([200, 320, 480, 480, 480])
     expect([1640, 1760, 1920, 4000].map((note) => namesRoom('auto', note, COLUMN_MAX.medium))).toEqual([200, 320, 480, 480])
     // The note's own scrollbar (11px in the real app) is not margin: a column that took it would narrow the text.
@@ -801,14 +801,14 @@ describe('names: the column', () => {
   })
 
   it('"Unpin" and "Pin" are offered only where they change what the reader sees, each with its pin and its tooltip', () => {
-    // Always, and "When there is room" would give the names here too: nothing to unpin.
+    // "Pin default" On, and "Pin default" Off would give the names here too: nothing to unpin.
     const roomy = mount('pinned', HEADINGS, 1040 + TOC_WIDTH)
     expect(nav(roomy)?.hasAttribute('data-names')).toBe(true)
     expect(buttonNamed(roomy, 'Unpin')).toBeUndefined()
-    // The same window with a medium column: the names stand only because of "Always".
+    // The same window with a medium column: the names stand only because of "Pin default" On.
     roomy.render('pinned', 'medium')
     expect(buttonNamed(roomy, 'Unpin')).toBeDefined()
-    // One pixel short of room, and a full-width column at any width: "When there is room" would give lines.
+    // One pixel short of room, and a full-width column at any width: "Pin default" Off would give lines.
     const tight = mount('pinned', HEADINGS, 1040 + TOC_WIDTH - 1)
     const unpin = buttonNamed(tight, 'Unpin')
     expect(unpin?.title).toBe('Unpin: go back to the small lines')
@@ -980,7 +980,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
       act(() => heard.forEach((callback) => callback()))
     }
 
-    // "Always" at its floor: 200px of room. The saved 320 comes back as the window grows, and stops there.
+    // "Pin default" On at its floor: 200px of room. The saved 320 comes back as the window grows, and stops there.
     const pinned = mount('pinned', HEADINGS, NAMES_FLOOR, 320)
     expect(widthOf(pinned)).toBe('200px')
     resize(pinned, 760)
@@ -992,12 +992,12 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
     expect(nav(pinned)?.hasAttribute('data-names')).toBe(false)
     expect(widthOf(pinned)).toBe('')
 
-    // "When there is room": the column stops at the empty margin, so the text is never narrower.
+    // "Pin default" Off: the column stops at the empty margin, so the text is never narrower.
     const auto = mount('auto', HEADINGS, 1360, 400)
     expect(widthOf(auto)).toBe('320px')
     resize(auto, 1520)
     expect(widthOf(auto)).toBe('400px')
-    // The same window, pinned: the room is the one of "Always".
+    // The same window, pinned: the room is the one of "Pin default" On.
     resize(auto, 1360)
     auto.render('pinned')
     expect(widthOf(auto)).toBe('400px')
@@ -1068,7 +1068,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
     expect(m.current.mock.calls.length).toBe(asked + 1)
   })
 
-  it('a drag stops at 160 and at 480, at the empty margin with "When there is room", and at 500px of text with "Always" — it never unpins or closes the column', () => {
+  it('a drag stops at 160 and at 480, at the empty margin with "Pin default" Off, and at 500px of text with "Pin default" On — it never unpins or closes the column', () => {
     /** Drag the edge as far as the mouse goes each way; what the column is at each end, and what the release saved. */
     const dragBothWays = (m: Mounted): { widest: string; narrowest: string } => {
       press(m, 1000)

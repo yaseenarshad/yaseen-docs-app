@@ -15,7 +15,9 @@ import { useCallback, useState } from 'react'
  * The choice is read when the editor mounts and not followed after that: an editor that opens the page
  * later starts with the stored switch, and two editors that are open on one page at the same time
  * (a tab and the right panel, or two windows) each keep what they show until they mount again.
- * `fallback` IS followed: a page with no choice changes at once when the setting does.
+ * `fallback` IS followed: a page with no choice changes at once when the setting does. So when a second
+ * editor on the same page stores a choice, this one, which still holds no choice, keeps following the
+ * setting until it mounts again (YAZ-3558 audit A9: a live read of the store would break YAZ-2950 D2).
  */
 export function usePageSwitch(root: string, path: string, read: (root: string, path: string) => boolean | undefined, write: (root: string, path: string, on: boolean) => void, fallback = false): [on: boolean, toggle: () => void] {
   const [held, setHeld] = useState(() => ({ root, path, choice: read(root, path) }))

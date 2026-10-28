@@ -109,6 +109,9 @@ let userData: string
 let vault: string
 let chaptersPath: string
 let bulletsPath: string
+/** A third note that never makes a choice (YAZ-3558 step 8c): it follows "Table of contents default". */
+let recipesPath: string
+const RECIPES = `## Soup\n\n${filler('Soup', 3)}\n\n## Bread\n\n${filler('Bread', 3)}\n`
 let app: ElectronApplication
 let win: Page
 
@@ -248,7 +251,8 @@ test.beforeAll(async () => {
   vault = await mkdtemp(path.join(tmpdir(), 'toc-vault-'))
   chaptersPath = path.join(vault, 'Chapters.md')
   bulletsPath = path.join(vault, 'Bullets.md')
-  await Promise.all([writeFile(chaptersPath, CHAPTERS), writeFile(bulletsPath, BULLETS)])
+  recipesPath = path.join(vault, 'Recipes.md')
+  await Promise.all([writeFile(chaptersPath, CHAPTERS), writeFile(bulletsPath, BULLETS), writeFile(recipesPath, RECIPES)])
 })
 
 test.afterAll(async () => {
@@ -279,7 +283,7 @@ test('step 1 — a wide window shows the names of the headings beside the text',
   await expect(host(win)).toHaveCSS('padding-right', '200px')
   await expect(rail(win)).toHaveCount(0)
   await expect(card(win)).toHaveCount(0)
-  // "When there is room" on a wide window: no button, the names would show in each case.
+  // "Pin default" Off on a wide window: no button, the names would show in each case.
   await expect(toc(win).locator('.toc__pin')).toHaveCount(0)
   await shoot(win, 'toc-01-names')
 })
@@ -309,7 +313,7 @@ test('step 2 — a narrow window shows the lines; the mouse on them opens the ca
   await expect(rail(win)).toHaveAttribute('aria-expanded', 'true')
   await expect(card(win).locator('.toc__title')).toHaveText('Table of contents')
   await expect(card(win).locator('.toc__name')).toHaveText(HEADING_ROWS)
-  // The note area is 700px wide or more, and the setting is "When there is room": "Pin" is offered.
+  // The note area is 700px wide or more, and the setting is "Pin default" Off: "Pin" is offered.
   await expect(card(win).locator('.toc__pin')).toHaveText('Pin')
   await shoot(win, 'toc-03-card')
 })
@@ -781,6 +785,15 @@ test('step 8c — "Table of contents default" Off: a page with no choice shows n
   const state = await readState(userData)
   expect(state.settings).toMatchObject({ tocOnByDefault: false, tableOfContents: 'pinned' })
   expect(await readFile(bulletsPath, 'utf8')).toBe(BULLETS)
+  // And a page with no choice is still off (S2 after a restart).
+  await fileRow(win, 'Recipes').click()
+  await expect(activeTab(win)).toContainText('Recipes')
+  await expect(editorOf(win).locator('h2').first()).toBeVisible()
+  await expect(toc(win)).toHaveCount(0)
+  await cog(win).click()
+  await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
+  await win.keyboard.press('Escape')
+  expect(state.folders[vault]?.tocSwitches[recipesPath]).toBeUndefined()
 
   // The suite ends as it started: the default On, "Pin default" Off.
   await choose('tableOfContents', 'Off')

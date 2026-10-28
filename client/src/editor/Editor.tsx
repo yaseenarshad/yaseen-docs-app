@@ -138,7 +138,7 @@ interface EditorProps {
   onChangeCommentsOrder: (order: CommentsOrder) => void
   /**
    * The table of contents setting (YAZ-2700), threaded down like the comments' order. Absent → `off`:
-   * a mount that threads none of the five props below shows no table of contents.
+   * a mount that threads none of the six props below shows no table of contents.
    */
   tableOfContents?: TableOfContentsMode
   /** Settings › "Table of contents default" (YAZ-3558 D2): for a page that made no choice in its cog. Absent → the default, on (with `tableOfContents` absent, nothing shows anyway). */
@@ -883,8 +883,8 @@ function CrepeHost({
       <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
       {/* The table of contents (YAZ-2700) floats beside that scroller the same way: at the
           section's right edge, from the scroller's top to its bottom. It draws nothing for a note
-          with fewer than two rows (its headings or its bullets), with the setting off, and while
-          a bullet is zoomed. */}
+          with fewer than two rows (its headings or its bullets), while this page shows none (its
+          choice, else "Table of contents default", YAZ-3558), and while a bullet is zoomed. */}
       <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={contentWidth} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusNote} />
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the

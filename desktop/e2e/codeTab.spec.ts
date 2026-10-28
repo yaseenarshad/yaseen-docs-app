@@ -353,7 +353,7 @@ test('step 9 — YAZ-3486: the code Outline lists the symbols; filter, collapse,
   await expect(outline(win).locator('.toc__card')).toBeVisible()
   await expect(outline(win).locator('.outline__filter')).toBeFocused()
   await shoot(win, 'codeTab-08-outline-card')
-  // Pin: the names stay beside the code (the setting "Always").
+  // Pin: the names stay beside the code ("Pin default" On).
   await outline(win).locator('.toc__pin').click()
   await expect(outline(win)).toHaveAttribute('data-names', '')
 
