@@ -837,9 +837,10 @@ export function App() {
   // A right-click on a row of the new tab page (YAZ-2663 D6): the sidebar opens its OWN row menu
   // for that path at the mouse, so the page has no menu and no rule is written twice. With the
   // sidebar hidden it shows first, and it mounts with the request already set (S31).
-  const showRowMenu = useCallback((path: string, x: number, y: number) => {
+  const showRowMenu = useCallback((path: string, x: number, y: number, closed = false) => {
     if (sidebarCollapsed) toggleSidebar()
-    setSidebarMenuRequest({ id: ++sidebarMenuId.current, path, x, y })
+    // A row of "Recently closed" asks for its two items too (YAZ-3487 D14).
+    setSidebarMenuRequest({ id: ++sidebarMenuId.current, path, x, y, ...(closed ? { closed } : {}) })
   }, [sidebarCollapsed, toggleSidebar])
   const consumeSidebarMenu = useCallback((id: number) => {
     setSidebarMenuRequest((request) => request?.id === id ? null : request)

@@ -1,7 +1,7 @@
 /**
  * The new tab page (YAZ-2663 D3): what a new tab (⌘T) and a window with no tabs show in the page
- * area. Three columns of rows: the pages last on show, the favorites, and the notes you closed last
- * (YAZ-3487 D8; it was "Used a lot, not a favorite yet"). App mounts it only while it shows (R1), so
+ * area. Three columns of rows: the notes you closed last (YAZ-3487 D8, D13; it was "Used a lot, not a
+ * favorite yet", the third column), the pages last on show ("Recently viewed", D12), and the favorites. App mounts it only while it shows (R1), so
  * everything here is read when the page shows and followed while it does:
  *   - the open history, the closed notes, the other windows' tabs and the order of the favorites
  *     across vaults, off the app state the window already holds (`storage`);
@@ -32,9 +32,10 @@ const START_ROWS = 8
 
 /** The columns in their order, each with the one grey line it shows when it has no rows (S19). */
 const COLUMNS = [
-  { col: 'recent', label: 'Recent', empty: 'Pages you open show here.' },
-  { col: 'favorites', label: 'Favorites', empty: 'No favorites yet. Right-click a file or folder → Add to favorites.' },
+  // "Recently closed" stands first (YAZ-3487 D13), and "Recent" reads "Recently viewed" beside it (D12): each says what it holds.
   { col: 'closed', label: 'Recently closed', empty: 'Notes you close show here.' },
+  { col: 'recent', label: 'Recently viewed', empty: 'Pages you open show here.' },
+  { col: 'favorites', label: 'Favorites', empty: 'No favorites yet. Right-click a file or folder → Add to favorites.' },
 ] as const
 
 /** What the page reads of the app state for one vault of the window (R1): what the app calls the vault, its open history, and its closed notes (YAZ-3487 D9). */
@@ -89,7 +90,7 @@ export interface StartPageProps {
   /** A click or Enter on a folder (S22), and Shift+Enter on any row (S38): App shows the row in Files — a folder open — with the keyboard focus on it. */
   onShowInFiles: (path: string) => void
   /** A right-click on a row (YAZ-2663 D6): App asks the sidebar for its own row menu of that path, at the mouse. The page has no menu. */
-  onRowMenu: (path: string, x: number, y: number) => void
+  onRowMenu: (path: string, x: number, y: number, closed?: boolean) => void
   /** ← on the first column that has rows, and Esc (S37, D8): the keyboard goes back to where it came from — a row of a sidebar tree, else the search bar. */
   onBack: () => void
   /** A typed letter (S41): App puts the caret in the search bar. */
@@ -408,7 +409,7 @@ export function StartPage({ roots, openTabs = NO_TABS, titles, onOpen, onOpenBac
                   return (
                     <li key={`${row.depth} ${row.path}`}>
                       {/* `data-col` and `data-row` say where the row stands: the arrow keys walk by them (YAZ-2674). */}
-                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} style={top ? undefined : { paddingLeft: (folder ? 8 : 26) + row.depth * 14 }} aria-expanded={folder ? open : undefined} data-path={row.path} data-col={col} data-row={at} title={row.path} onMouseEnter={folder ? undefined : () => rowPreview.hoverCard(`${col} ${at}`, row.path)} onMouseLeave={() => rowPreview.leaveCard(`${col} ${at}`)} onClick={(e) => activate(row, e.metaKey)} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY))}>
+                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} style={top ? undefined : { paddingLeft: (folder ? 8 : 26) + row.depth * 14 }} aria-expanded={folder ? open : undefined} data-path={row.path} data-col={col} data-row={at} title={row.path} onMouseEnter={folder ? undefined : () => rowPreview.hoverCard(`${col} ${at}`, row.path)} onMouseLeave={() => rowPreview.leaveCard(`${col} ${at}`)} onClick={(e) => activate(row, e.metaKey)} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY, col === 'closed'))}>
                         {/* The chevron is the mouse's Space (D13): it opens and closes the folder here, and the row's own click — the folder in Files — does not follow. */}
                         {folder && <span className={`tree__chevron${open ? ' tree__chevron--open' : ''}`} onClick={(e) => (e.stopPropagation(), toggleDir(col, row.path))} />}
                         <span className="start__name">{pageLabel(row.path, folder, titles)}</span>

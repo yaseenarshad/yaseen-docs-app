@@ -39,6 +39,7 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   addVaults: null,
   removeVault: null,
   openAlone: null,
+  forgetClosed: null,
   lens: 'files',
   leaveSearchTo: null,
   // "Show in sidebar" (YAZ-2638): null is a row of the Files tab, and blank space.
@@ -84,6 +85,8 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onPickVault: vi.fn(),
   onRemoveVault: vi.fn(),
   onOpenAlone: vi.fn(),
+  onForgetClosed: vi.fn(),
+  onClearClosed: vi.fn(),
   onInfo: vi.fn(),
   onHistory: vi.fn(),
   onShare: vi.fn(),
@@ -828,5 +831,18 @@ describe('Share item (YAZ-3040)', () => {
     const onShare = vi.fn()
     select(build(BOARD_ROW, { onShare }), 'Share')
     expect(onShare).toHaveBeenCalledExactlyOnceWith('/v/Flow.drawio')
+  })
+})
+
+describe('buildMenuSections: a row of "Recently closed" (YAZ-3487 D14)', () => {
+  it('a right-click from that column leads with "Remove from Recently closed" and "Clear Recently closed", each running its handler; any other row has neither', () => {
+    const h = handlers()
+    const sections = buildMenuSections(targets({ forgetClosed: '/v/a.md' }), h)
+    expect(sections[0].map((i) => i.label)).toEqual(['Remove from Recently closed', 'Clear Recently closed'])
+    ;(sections[0][0] as { onSelect: () => void }).onSelect()
+    ;(sections[0][1] as { onSelect: () => void }).onSelect()
+    expect(h.onForgetClosed).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(h.onClearClosed).toHaveBeenCalledTimes(1)
+    expect(labelsOf(buildMenuSections(targets(), handlers()))).not.toContain('Remove from Recently closed')
   })
 })

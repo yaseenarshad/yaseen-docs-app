@@ -392,6 +392,12 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     if (!Array.isArray(files)) throw new BridgeFailure('BAD_REQUEST', "'files' must be a list of absolute paths")
     store.addClosed(roots, files.map((file, i) => requireAbsPath(file, `files[${i}]`)))
   })
+  // `window:forget-closed` (YAZ-3487 D14): drop notes from "Recently closed", or with null clear it, for the caller's vaults.
+  handleWithEvent(CONTRACT.window.forgetClosed, async (e, files: unknown) => {
+    const roots = entryFor(e).roots
+    if (files !== null && !Array.isArray(files)) throw new BridgeFailure('BAD_REQUEST', "'files' must be null or a list of absolute paths")
+    store.forgetClosed(roots, files === null ? null : files.map((file, i) => requireAbsPath(file, `files[${i}]`)))
+  })
 
   // `window:open-recent` (YAZ-1767 D1): the vault switcher's door — an absolute path in, and the
   // manager's verdict out: true = the vault is in front (its windows raised, D9, or a new one

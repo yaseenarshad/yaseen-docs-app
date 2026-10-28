@@ -169,6 +169,8 @@ export interface Store {
   addEdit(roots: readonly string[], file: string, now?: number): void
   /** Closed notes (YAZ-3487 D9): each of `files` goes to the vault of `roots` that holds it (the most specific), at `now`, in ONE commit. A file no vault holds is left out; nothing left commits nothing. */
   addClosed(roots: readonly string[], files: readonly string[], now?: number): void
+  /** "Remove from Recently closed" (YAZ-3487 D14): drop `files` from their vaults' lists; with `null`, clear the list of each vault of `roots`. ONE commit; nothing to drop commits nothing. */
+  forgetClosed(roots: readonly string[], files: readonly string[] | null): void
   /** Several ids go in one commit (YAZ-2589 D3: the windows a launch does not bring back). Their moved cards on the tab board go in the same commit (YAZ-3343 D1). */
   removeWindow(...ids: string[]): void
   /**
@@ -1042,6 +1044,20 @@ export function createStore(filePath: string): Store {
         if (vault === null) continue
         const folder = folders[vault] ?? folderOf(vault)
         folders[vault] = { ...folder, closed: addClosed(folder.closed, [file], now) }
+        changed = true
+      }
+      if (changed) commit({ ...state, folders })
+    },
+
+    forgetClosed(roots, files) {
+      const folders = { ...state.folders }
+      let changed = false
+      for (const vault of roots) {
+        const closed = folders[vault]?.closed
+        if (closed === undefined) continue
+        const kept = files === null ? {} : Object.fromEntries(Object.entries(closed).filter(([path]) => !files.includes(path)))
+        if (Object.keys(kept).length === Object.keys(closed).length) continue
+        folders[vault] = { ...folders[vault], closed: kept }
         changed = true
       }
       if (changed) commit({ ...state, folders })

@@ -332,6 +332,10 @@ export const storage = {
   noteClosed(files: readonly string[]): void {
     send('window.noteClosed', () => api.window.noteClosed([...files]))
   },
+  /** "Remove from Recently closed" / "Clear Recently closed" (YAZ-3487 D14): these notes, or with null all of this window's vaults. */
+  forgetClosed(files: readonly string[] | null): void {
+    send('window.forgetClosed', () => api.window.forgetClosed(files === null ? null : [...files]))
+  },
 
   /** A vault's save log (YAZ-3235 D1): file → when the app last saved it. Read-only here: main alone adds a save, and the cache follows the broadcast. */
   getEdits: (root: string): Readonly<Record<string, number>> => folderOf(root).edits,

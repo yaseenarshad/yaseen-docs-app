@@ -2634,6 +2634,20 @@ describe('the closed notes (YAZ-3487 D9, "Recently closed")', () => {
     expect(createStore(file).get().folders['/v'].closed).toEqual({ '/v/a.md': T })
   })
 
+  it('D14: forgetClosed drops the files named, or with null every closed note of the roots\' vaults, in ONE commit; other vaults keep theirs', () => {
+    const store = createStore(file)
+    store.addClosed(['/v', '/w', '/u'], ['/v/a.md', '/v/b.md', '/w/c.md', '/u/d.md'], T)
+    const seen: AppState[] = []
+    store.onChange((s) => seen.push(s))
+    store.forgetClosed(['/v', '/w'], ['/v/a.md'])
+    expect(store.get().folders['/v'].closed).toEqual({ '/v/b.md': T })
+    store.forgetClosed(['/v', '/w'], null)
+    expect([store.get().folders['/v'].closed, store.get().folders['/w'].closed, store.get().folders['/u'].closed]).toEqual([{}, {}, { '/u/d.md': T }])
+    expect(seen).toHaveLength(2)
+    store.forgetClosed(['/v'], null) // nothing left: no commit
+    expect(seen).toHaveLength(2)
+  })
+
   it('S38, S39: a renamed note keeps its entry under the new path; a deleted note drops it', () => {
     const store = createStore(file)
     store.addClosed(['/v'], ['/v/a.md', '/v/docs/b.md'], T)

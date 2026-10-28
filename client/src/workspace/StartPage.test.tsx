@@ -151,9 +151,9 @@ describe('StartPage', () => {
       { titles: new Map([[`${v}/Projects/Alpha/plan.md`, 'The plan']]) },
     )
     expect([...el.querySelectorAll('.start__column')].map((col) => [(col as HTMLElement).dataset.col, col.querySelector('h2')?.textContent])).toEqual([
-      ['recent', 'Recent'],
+      ['closed', 'Recently closed'], // first, and "Recent" reads "Recently viewed" (YAZ-3487 D12, D13)
+      ['recent', 'Recently viewed'],
       ['favorites', 'Favorites'],
-      ['closed', 'Recently closed'],
     ])
     // 10 pages in the record of two vaults: the 8 newest, and the two oldest (n6, report.pdf) are not here.
     expect(paths(el, 'recent')).toEqual([`${w}/x.md`, `${v}/Projects/Alpha/plan.md`, ...notes.slice(0, 6)])
@@ -217,6 +217,13 @@ describe('StartPage', () => {
     const [x, n1] = rowsOf(el, 'closed')
     expect([part(x, 'start__when'), part(x, 'tree__vault'), part(n1, 'start__when')]).toEqual(['now', 'Work', '2h'])
     expect(emptyLine(el, 'closed')).toBeNull()
+  })
+
+  it('YAZ-3487 D14: a right-click on a row of "Recently closed" asks for the row menu with its two items (the fourth argument is true)', async () => {
+    const v = vault()
+    const { el, props } = await mount({ trees: { [v]: [file(`${v}/a.md`)] }, closed: { [v]: { [`${v}/a.md`]: NOW - HOUR } } })
+    act(() => void rowsOf(el, 'closed')[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 20 })))
+    expect(vi.mocked(props.onRowMenu).mock.calls).toEqual([[`${v}/a.md`, 10, 20, true]])
   })
 
   it('S18, R1: a page that is gone from the disk gives no row and no error; the page asks for ONE tree of each vault when it shows, and none for a row', async () => {
@@ -301,9 +308,10 @@ describe('StartPage', () => {
     // The browser's own menu does not show over the row.
     expect(rightClick(row(el, `${v}/a.md`), 412, 96).defaultPrevented).toBe(true)
     rightClick(row(el, `${v}/Projects`), 640, 120)
+    // The fourth argument says the row is no row of "Recently closed" (YAZ-3487 D14).
     expect(vi.mocked(props.onRowMenu).mock.calls).toEqual([
-      [`${v}/a.md`, 412, 96],
-      [`${v}/Projects`, 640, 120],
+      [`${v}/a.md`, 412, 96, false],
+      [`${v}/Projects`, 640, 120, false],
     ])
     expect(el.querySelector('.ctx-menu, [role="menu"]')).toBeNull()
     expect([vi.mocked(props.onOpen).mock.calls.length, vi.mocked(props.onShowInFiles).mock.calls.length]).toEqual([0, 0])
@@ -408,14 +416,13 @@ describe('StartPage', () => {
   it('S36, S37: → and ← go to the next column that has rows, at the same row number or at its last row; → on the last column does nothing; ← on the first column, and Esc, put the caret in the search bar', async () => {
     const v = vault()
     const { el, props } = await mount(keysFixture(v))
-    expect([paths(el, 'recent').length, paths(el, 'favorites').length, paths(el, 'closed').length]).toEqual([3, 0, 2])
+    // The columns stand "Recently closed", "Recently viewed", "Favorites" (YAZ-3487 D13).
+    expect([paths(el, 'closed').length, paths(el, 'recent').length, paths(el, 'favorites').length]).toEqual([2, 3, 0])
     act(() => cell(el, 'recent', 2).focus())
-    // "Favorites" has no row: the key goes over it. The third column has two rows: its last one.
-    const walk = ['ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowRight'].map((key) => (press(key), at()))
-    expect(walk).toEqual(['closed 1', 'closed 1', 'recent 1', 'recent 0', 'closed 0'])
+    // "Recently closed" has two rows: ← lands on its last one. "Favorites" has no row: → from "Recently viewed" does nothing.
+    const walk = ['ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowUp', 'ArrowLeft'].map((key) => (press(key), at()))
+    expect(walk).toEqual(['closed 1', 'recent 1', 'recent 1', 'recent 0', 'closed 0'])
     expect(props.onBack).not.toHaveBeenCalled()
-    press('ArrowLeft')
-    expect(at()).toBe('recent 0')
     press('ArrowLeft')
     expect(props.onBack).toHaveBeenCalledTimes(1)
     const esc = press('Escape')
@@ -424,7 +431,7 @@ describe('StartPage', () => {
     expect(props.onBackToSearch).not.toHaveBeenCalled()
     // A key with ⌘, Ctrl or Alt is not the page's: a shortcut of the window stays one.
     const chord = press('ArrowDown', { metaKey: true, altKey: true })
-    expect([chord.defaultPrevented, at()]).toEqual([false, 'recent 0'])
+    expect([chord.defaultPrevented, at()]).toEqual([false, 'closed 0'])
   })
 
   it('YAZ-2663 D12: in a narrow page area the columns are ONE column (S23), so ↓ on the last row of a column goes on to the first row of the next one that has rows, and ↑ on the first row to the last row of the one before; ← goes back from each of them, and → does nothing', async () => {
@@ -432,16 +439,16 @@ describe('StartPage', () => {
     const { el, props } = await mount(keysFixture(v))
     // The page area after ⌘+ a few times, or in a narrow window: at or under the width where the columns stack.
     Object.defineProperty(el.querySelector('.start'), 'clientWidth', { value: 600, configurable: true })
-    act(() => cell(el, 'recent', 1).focus())
-    const walk = ['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowUp', 'ArrowUp'].map((key) => (press(key), at()))
-    expect(walk).toEqual(['recent 2', 'closed 0', 'closed 1', 'closed 1', 'closed 0', 'recent 2'])
-    expect([press('ArrowRight').defaultPrevented, at()]).toEqual([true, 'recent 2'])
     act(() => cell(el, 'closed', 0).focus())
+    const walk = ['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowUp', 'ArrowUp', 'ArrowUp', 'ArrowUp'].map((key) => (press(key), at()))
+    expect(walk).toEqual(['closed 1', 'recent 0', 'recent 1', 'recent 2', 'recent 2', 'recent 1', 'recent 0', 'closed 1', 'closed 0'])
+    expect([press('ArrowRight').defaultPrevented, at()]).toEqual([true, 'closed 0'])
+    act(() => cell(el, 'recent', 0).focus())
     press('ArrowLeft')
     expect(props.onBack).toHaveBeenCalledTimes(1)
-    act(() => cell(el, 'recent', 0).focus())
+    act(() => cell(el, 'closed', 0).focus())
     press('ArrowUp')
-    expect(at()).toBe('recent 0') // the first row of the page: ↑ stops
+    expect(at()).toBe('closed 0') // the first row of the page: ↑ stops
   })
 
   it('S38: Enter on a file opens it, ⌘Enter opens it in a background tab, and Shift+Enter shows the row in Files; Enter on a folder shows it in Files; ⌘ is read before Shift', async () => {
