@@ -1,14 +1,17 @@
 /**
- * The drawing modal (YAZ-879): open → edit → Save writes the sidecar back and pokes the feed.
+ * The drawing modal (YAZ-879): open → edit → the modal AUTOSAVES the sidecar (YAZ-3528) → close
+ * pokes the feed.
  *
  * The ENGINE is mocked and nothing else is: `ExcalidrawSurface` — the ONE seam that owns the
  * canvas — stands in as a component that hands its props back, so every rule pinned here is the
- * MODAL's own (dirty tracking, the discard strip, the key scope, the conflict bar) and none of
+ * MODAL's own (the autosave, the failed-save strip, the key scope, the conflict bar) and none of
  * it depends on Excalidraw. The real package cannot load in jsdom anyway (it imports
  * `roughjs/bin/rough` extensionlessly), which is exactly why the seam is a component boundary.
  *
- * `api` is mocked one level down instead of `saveDrawing`, so the write the user's Save actually
- * makes — bytes, path, `expectedMtime`, and the CONFLICT bar's two answers — is the thing under test.
+ * `api` is mocked one level down instead of `saveDrawing`, so the write the autosave actually
+ * makes — bytes, path, `expectedMtime`, and the CONFLICT bar's two answers — is the thing under
+ * test. Timers are fake: the 500 ms quiet period is advanced by hand (`idle`). The S-numbers are
+ * the approved scenarios on the YAZ-3528 working log.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -23,7 +26,7 @@ import type { DrawingSurfaceProps } from './ExcalidrawSurface'
 
 vi.mock('../api', async (original) => ({
   ...(await original<typeof import('../api')>()),
-  api: { readAsset: vi.fn(), writeAsset: vi.fn() },
+  api: { readAsset: vi.fn(), writeAsset: vi.fn(), window: { onFlush: vi.fn() } },
 }))
 
 /** The stand-in engine: it renders nothing and reports the props the modal handed it. */
@@ -39,11 +42,14 @@ vi.mock('./ExcalidrawSurface', () => ({
 
 const readAsset = vi.mocked(api.readAsset)
 const writeAsset = vi.mocked(api.writeAsset)
+const onFlush = vi.mocked(api.window.onFlush)
+/** The quit handshake's listener, as the modal registered it (main calls it before a window closes). */
+let quitFlush: (() => Promise<void> | void) | null = null
 
 const ROOT = '/v'
 const TARGET = 'Sketch.excalidraw'
 const PATH = '/v/assets/drawings/Sketch.excalidraw'
-/** What the mocked seam's `serialize()` returns — the exact bytes a save must carry. */
+/** What the mocked seam's `standalone()` returns — the exact bytes a save must carry. */
 const BYTES = '{"type":"excalidraw","elements":[1]}\n'
 
 const asset = (mtime: number) => ({
@@ -65,10 +71,20 @@ beforeEach(() => {
   readAsset.mockReset()
   writeAsset.mockReset()
   writeAsset.mockResolvedValue({ path: PATH, mtime: 999, size: BYTES.length })
+  quitFlush = null
+  onFlush.mockReset()
+  onFlush.mockImplementation((listener) => {
+    quitFlush = listener
+    return () => {
+      if (quitFlush === listener) quitFlush = null
+    }
+  })
+  vi.useFakeTimers()
 })
 
 afterEach(() => {
   act(() => root?.unmount())
+  vi.useRealTimers()
   root = null
   container?.remove()
   container = null
@@ -104,9 +120,11 @@ async function open(read: 'ok' | 'broken' = 'ok', mtime = 100): Promise<Mounted>
   return { overlay, onClose, feed, poked }
 }
 
-const saveBtn = (): HTMLButtonElement => {
-  const btn = container?.querySelector<HTMLButtonElement>('.drawing-modal__bar .drawing-modal__btn')
-  if (btn === null || btn === undefined) throw new Error('missing Save')
+/** The save label in the title bar (D2: it stands where the Save button was); null when there is none. */
+const label = () => container?.querySelector('.drawing-modal__bar .save-indicator')?.textContent ?? null
+const closeBtn = (): HTMLButtonElement => {
+  const btn = container?.querySelector<HTMLButtonElement>('.drawing-modal__close')
+  if (btn === null || btn === undefined) throw new Error('missing ✕')
   return btn
 }
 const byText = (text: string): HTMLButtonElement | undefined =>
@@ -120,15 +138,26 @@ function emit(version: number): void {
   act(() => seam.props?.onSnapshot({ version, serialize: () => ({ json: '', files: {}, referenced: new Set() }), standalone: () => BYTES }))
 }
 
-const escOn = (el: Node): void => {
-  act(() => {
+/** The autosave's quiet period passes (500 ms after the last change), and its write settles. */
+async function idle(ms = 500): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms)
+  })
+}
+
+// Leaving is async (it saves first), so every gesture settles inside an async act.
+const escOn = async (el: Node): Promise<void> => {
+  await act(async () => {
     el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   })
 }
-const mousedownOn = (el: Node): void => {
-  act(() => {
+const mousedownOn = async (el: Node): Promise<void> => {
+  await act(async () => {
     el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
   })
+}
+const click = async (btn: HTMLButtonElement | undefined): Promise<void> => {
+  await act(async () => btn?.click())
 }
 
 describe('opening', () => {
@@ -141,42 +170,37 @@ describe('opening', () => {
     expect(container?.querySelector('.fake-surface')).not.toBeNull()
   })
 
-  it('a drawing opened and not touched is CLEAN: Save is disabled', async () => {
-    await open()
+  it('S1: a drawing opened and not touched is CLEAN — the label says Saved (D2: no Save button), nothing is written, ✕ closes, the previews are not poked', async () => {
+    const { onClose, poked } = await open()
     emit(7) // the surface's mount snapshot — the baseline, not an edit
-    expect(saveBtn().disabled).toBe(true)
-  })
-
-  it('the first change enables Save', async () => {
-    await open()
-    emit(7)
-    emit(8)
-    expect(saveBtn().disabled).toBe(false)
-  })
-
-  it('a scene back at its opening version is clean again — the baseline is a value, not a flag', async () => {
-    await open()
-    emit(7)
-    emit(8)
-    emit(7)
-    expect(saveBtn().disabled).toBe(true)
+    expect(label()).toBe('Saved')
+    expect(byText('Save')).toBeUndefined()
+    await idle(2000)
+    expect(writeAsset).not.toHaveBeenCalled()
+    await click(closeBtn())
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(poked).toEqual([])
   })
 })
 
 describe('read only (YAZ-3076 S28)', () => {
-  it('a drawing whose file says read only opens in the engine\u2019s view mode, and nothing can be saved', async () => {
+  it('S15: a drawing whose file says read only opens in view mode, shows no label, and never writes', async () => {
     readAsset.mockResolvedValue({ ...asset(100), data: btoa('{"yaseendraw":{"createdAt":1,"updatedAt":2,"readonly":true},"type":"excalidraw","elements":[]}') })
+    const onClose = vi.fn()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
     await act(async () => {
-      root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={vi.fn()} />)
+      root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={onClose} />)
     })
     expect(seam.props?.readOnly).toBe(true)
+    expect(label()).toBeNull()
     emit(7)
-    emit(8)
-    expect(saveBtn().disabled).toBe(true)
-    expect(saveBtn().title).toBe('This drawing is read only')
+    emit(8) // a version that moves anyway is never an edit
+    await idle()
+    await click(closeBtn())
+    expect(writeAsset).not.toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('an editable drawing does not', async () => {
@@ -185,64 +209,181 @@ describe('read only (YAZ-3076 S28)', () => {
   })
 })
 
-describe('saving', () => {
-  it('writes the serialized scene to the RESOLVED path with the loaded mtime, pokes the feed and closes', async () => {
+describe('autosave (YAZ-3528 D1)', () => {
+  it('S2/S3: saves ONCE, 500 ms after the LAST change, to the RESOLVED path with the loaded mtime', async () => {
     const { onClose, poked } = await open('ok', 4242)
     emit(1)
     emit(2)
-    await act(async () => saveBtn().click())
+    expect(label()).toBe('Unsaved')
+    await idle(300)
+    emit(3) // a change inside the quiet period restarts it
+    await idle(300)
+    expect(writeAsset).not.toHaveBeenCalled()
+    await idle(200)
     expect(writeAsset).toHaveBeenCalledTimes(1)
     expect(writeAsset).toHaveBeenCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 4242 })
-    // Every preview of this target re-reads on the poke (YAZ-878's feed).
-    expect(poked).toEqual([TARGET])
-    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(label()).toBe('Saved')
+    // The modal stays open, and the previews behind the scrim wait for the close.
+    expect(onClose).not.toHaveBeenCalled()
+    expect(poked).toEqual([])
   })
 
-  it('YAZ-3044 A4: a CONFLICT never wins in silence — it writes once and shows the tab\'s conflict bar', async () => {
+  it('the next save is guarded by the mtime the last one returned', async () => {
+    await open('ok', 100)
+    emit(1)
+    emit(2)
+    await idle()
+    emit(3)
+    await idle()
+    expect(writeAsset).toHaveBeenCalledTimes(2)
+    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 999 })
+  })
+
+  // S17 as corrected after the checker's round 1 (YAZ-3551): the real engine's version only grows,
+  // so an UNDO is one harmless extra save (rule 36's own trade, `contentVersion.ts`). What the
+  // baseline-as-a-value still buys is the engine reporting the saved version again (YAZ-3210).
+  it('a snapshot back at the saved version before the quiet period ends writes nothing — the baseline is a value', async () => {
+    await open()
+    emit(7)
+    emit(8)
+    emit(7)
+    expect(label()).toBe('Saved')
+    await idle()
+    expect(writeAsset).not.toHaveBeenCalled()
+  })
+
+  it('S6: a failed write is an INLINE error and the label says so; the canvas stays, and the next change tries again', async () => {
+    const { onClose } = await open()
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    await idle()
+    expect(errorLine()).toContain('disk is full')
+    expect(label()).toBe('Save failed')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(container?.querySelector('.fake-surface')).not.toBeNull()
+    emit(3)
+    await idle()
+    expect(writeAsset).toHaveBeenCalledTimes(2)
+    expect(errorLine()).toBeNull()
+    expect(label()).toBe('Saved')
+  })
+
+  it('S10 (YAZ-3044 A4): a CONFLICT never wins in silence — the bar shows and the autosave stops writing', async () => {
     const { onClose, poked } = await open('ok', 100)
     emit(1)
     emit(2)
     writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
-    await act(async () => saveBtn().click())
+    await idle()
     expect(writeAsset).toHaveBeenCalledTimes(1)
     expect(conflictBar()).toBe('File changed on disk.ReloadKeep mine')
     expect(errorLine()).toBeNull()
+    expect(label()).toBe('Unsaved')
+    emit(3)
+    await idle()
+    expect(writeAsset).toHaveBeenCalledTimes(1)
     expect(poked).toEqual([])
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('A4: Keep mine writes this canvas over the disk mtime the conflict reported, then pokes and closes', async () => {
-    const { onClose, poked } = await open('ok', 100)
+  it('S12: Keep mine writes this canvas over the disk mtime the conflict reported, and the autosave goes on', async () => {
+    await open('ok', 100)
     emit(1)
     emit(2)
     writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
-    await act(async () => saveBtn().click())
-    await act(async () => byText('Keep mine')?.click())
+    await idle()
+    await click(byText('Keep mine'))
     expect(writeAsset).toHaveBeenCalledTimes(2)
     expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
-    expect(poked).toEqual([TARGET])
-    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(conflictBar()).toBeNull()
+    emit(3)
+    await idle()
+    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 999 })
   })
 
-  it('A4: Reload opens the disk\'s version in a fresh, clean canvas and writes nothing', async () => {
+  it('S11: Reload opens the disk\'s version in a fresh, clean canvas and writes nothing', async () => {
     const { onClose } = await open('ok', 100)
     emit(1)
     emit(2)
     writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
-    await act(async () => saveBtn().click())
+    await idle()
     readAsset.mockResolvedValue(asset(555))
     const mounts = seam.mounts
-    await act(async () => byText('Reload')?.click())
+    await click(byText('Reload'))
     expect(seam.mounts).toBeGreaterThan(mounts)
     expect(conflictBar()).toBeNull()
     emit(9) // the new surface's mount snapshot: the new baseline
-    expect(saveBtn().disabled).toBe(true)
+    await idle()
+    expect(label()).toBe('Saved')
     expect(writeAsset).toHaveBeenCalledTimes(1)
     expect(onClose).not.toHaveBeenCalled()
     // A save after the reload is guarded by the disk's new mtime.
     emit(10)
-    await act(async () => saveBtn().click())
+    await idle()
     expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
+  })
+
+  it('S11: a Reload whose read FAILS keeps the bar up and says why — Keep mine still writes the edits', async () => {
+    await open('ok', 100)
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await idle()
+    readAsset.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no such asset'))
+    await click(byText('Reload'))
+    expect(conflictBar()).not.toBeNull()
+    expect(errorLine()).toBe(BROKEN_DRAWING_MESSAGE)
+    await click(byText('Keep mine'))
+    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
+  })
+
+  it('YAZ-3552: Reload closes the strip with the bar it answers', async () => {
+    await open('ok', 100)
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await click(closeBtn())
+    expect(strip()).toContain(DISCARD_PROMPT)
+    readAsset.mockResolvedValue(asset(555))
+    await click(byText('Reload'))
+    expect(strip()).toBeNull()
+    expect(conflictBar()).toBeNull()
+  })
+
+  it('a snapshot from the canvas a Reload replaced never starts the autosave', async () => {
+    await open('ok', 100)
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await idle()
+    const oldCanvas = seam.props?.onSnapshot
+    readAsset.mockResolvedValue(asset(555))
+    await click(byText('Reload'))
+    // The replaced canvas reports one more change on its way out: it must not become the baseline.
+    act(() => oldCanvas?.({ version: 50, serialize: () => ({ json: '', files: {}, referenced: new Set() }), standalone: () => BYTES }))
+    emit(9) // the new canvas's mount snapshot: the real baseline
+    await idle()
+    expect(writeAsset).toHaveBeenCalledTimes(1)
+    emit(10)
+    await idle()
+    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
+  })
+
+  it('Discard while a close is still retrying leaves ONCE', async () => {
+    const { onClose } = await open()
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    await idle()
+    await click(closeBtn())
+    expect(strip()).toContain(DISCARD_PROMPT)
+    let land: (() => void) | null = null
+    writeAsset.mockImplementationOnce(() => new Promise((resolve) => (land = () => resolve({ path: PATH, mtime: 999, size: BYTES.length }))))
+    await click(closeBtn()) // a retry starts
+    await click(byText('Discard'))
+    await act(async () => land?.())
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('A4: a CONFLICT that carries no mtime re-reads the file for it — the read is only for the guard', async () => {
@@ -251,22 +392,9 @@ describe('saving', () => {
     emit(2)
     writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk'))
     readAsset.mockResolvedValue(asset(777))
-    await act(async () => saveBtn().click())
-    await act(async () => byText('Keep mine')?.click())
+    await idle()
+    await click(byText('Keep mine'))
     expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 777 })
-  })
-
-  it('a failed write is an INLINE error and never a dialog: the modal stays open with the canvas intact', async () => {
-    const { onClose } = await open()
-    emit(1)
-    emit(2)
-    writeAsset.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk is full'))
-    await act(async () => saveBtn().click())
-    expect(errorLine()).toContain('disk is full')
-    expect(onClose).not.toHaveBeenCalled()
-    expect(container?.querySelector('.fake-surface')).not.toBeNull()
-    // Still dirty, so the user can try again.
-    expect(saveBtn().disabled).toBe(false)
   })
 
   it('A4: a second CONFLICT on Keep mine shows the bar again — it never loops', async () => {
@@ -274,81 +402,192 @@ describe('saving', () => {
     emit(1)
     emit(2)
     writeAsset.mockRejectedValue(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 7))
-    await act(async () => saveBtn().click())
-    await act(async () => byText('Keep mine')?.click())
+    await idle()
+    await click(byText('Keep mine'))
+    await idle(2000)
     expect(writeAsset).toHaveBeenCalledTimes(2)
     expect(conflictBar()).not.toBeNull()
     expect(onClose).not.toHaveBeenCalled()
   })
+
+  it('S14: the quit handshake saves a change the quiet period has not reached yet', async () => {
+    await open('ok', 100)
+    emit(1)
+    emit(2)
+    expect(quitFlush).not.toBeNull()
+    await act(async () => {
+      await quitFlush?.()
+    })
+    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(writeAsset).toHaveBeenCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 100 })
+  })
+
+  it('S19: an unmount for any other reason saves what is pending, then never writes again', async () => {
+    await open()
+    emit(1)
+    emit(2)
+    await act(async () => root?.unmount())
+    root = null
+    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(quitFlush).toBeNull()
+    await idle(2000)
+    expect(writeAsset).toHaveBeenCalledTimes(1)
+  })
 })
 
-describe('leaving', () => {
-  it('Esc on a CLEAN modal closes it outright', async () => {
-    const { overlay, onClose } = await open()
+describe('leaving (YAZ-3528 D3)', () => {
+  it('S4: ✕ with a change not yet saved saves it NOW, pokes the previews once, and closes — no question', async () => {
+    const { onClose, poked } = await open('ok', 100)
     emit(1)
-    escOn(overlay)
-    expect(onClose).toHaveBeenCalledTimes(1)
+    emit(2)
+    await click(closeBtn())
+    expect(writeAsset).toHaveBeenCalledTimes(1)
     expect(strip()).toBeNull()
+    expect(poked).toEqual([TARGET])
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('Esc on a DIRTY modal asks inline first; Discard closes and writes nothing', async () => {
+  it('a second ✕ while the close is still saving is the SAME close — one write, one poke, one onClose', async () => {
+    const { onClose, poked } = await open()
+    emit(1)
+    emit(2)
+    let land: (() => void) | null = null
+    writeAsset.mockImplementationOnce(() => new Promise((resolve) => (land = () => resolve({ path: PATH, mtime: 999, size: BYTES.length }))))
+    await click(closeBtn())
+    await click(closeBtn())
+    expect(onClose).not.toHaveBeenCalled()
+    await act(async () => land?.())
+    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(poked).toEqual([TARGET])
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('S5: Esc after the autosave already saved closes at once — one write, one poke', async () => {
+    const { overlay, onClose, poked } = await open()
+    emit(1)
+    emit(2)
+    await idle()
+    await escOn(overlay)
+    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(poked).toEqual([TARGET])
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('click-away is the same gesture — and a click INSIDE the sheet does nothing', async () => {
     const { overlay, onClose } = await open()
     emit(1)
     emit(2)
-    escOn(overlay)
+    await mousedownOn(overlay.querySelector('.drawing-modal') as Node)
     expect(onClose).not.toHaveBeenCalled()
+    await mousedownOn(overlay)
+    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('YAZ-3552: the strip goes when the problem does — a later save that lands, or Keep mine', async () => {
+    await open()
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    await click(closeBtn())
     expect(strip()).toContain(DISCARD_PROMPT)
-    act(() => byText('Discard')?.click())
-    expect(onClose).toHaveBeenCalledTimes(1)
-    expect(writeAsset).not.toHaveBeenCalled()
+    emit(3)
+    await idle()
+    expect(label()).toBe('Saved')
+    expect(strip()).toBeNull()
+
+    emit(4)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await click(closeBtn())
+    expect(strip()).toContain(DISCARD_PROMPT)
+    await click(byText('Keep mine'))
+    expect(strip()).toBeNull()
+    expect(conflictBar()).toBeNull()
   })
 
-  it('Cancel on the strip stays put — nothing closes and nothing is written', async () => {
-    const { overlay, onClose } = await open()
+  it('a conflict after a failed save shows the bar alone — the older error line goes', async () => {
+    await open()
     emit(1)
     emit(2)
-    escOn(overlay)
-    act(() => byText('Cancel')?.click())
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    await idle()
+    expect(errorLine()).toContain('disk is full')
+    emit(3)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await idle()
+    expect(conflictBar()).not.toBeNull()
+    expect(errorLine()).toBeNull()
+  })
+
+  it('a change made while the close is saving is saved too — no question, because nothing failed', async () => {
+    const { onClose } = await open()
+    emit(1)
+    emit(2)
+    let land: (() => void) | null = null
+    writeAsset.mockImplementationOnce(() => new Promise((resolve) => (land = () => resolve({ path: PATH, mtime: 999, size: BYTES.length }))))
+    await click(closeBtn())
+    emit(3)
+    await act(async () => land?.())
+    expect(writeAsset).toHaveBeenCalledTimes(2)
+    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 999 })
+    expect(strip()).toBeNull()
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('S7/S8: ✕ after a failed save tries once more; when that fails too, the strip asks and Cancel stays put', async () => {
+    const { onClose } = await open()
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    await idle()
+    await click(closeBtn())
+    expect(writeAsset).toHaveBeenCalledTimes(2)
+    expect(strip()).toContain(DISCARD_PROMPT)
+    expect(onClose).not.toHaveBeenCalled()
+    await click(byText('Cancel'))
     expect(strip()).toBeNull()
     expect(onClose).not.toHaveBeenCalled()
-    expect(writeAsset).not.toHaveBeenCalled()
     expect(container?.querySelector('.fake-surface')).not.toBeNull()
+  })
+
+  it('S9: Discard closes and writes nothing more — the unmount flush included', async () => {
+    const { onClose } = await open()
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    await click(closeBtn())
+    expect(strip()).toContain(DISCARD_PROMPT)
+    await click(byText('Discard'))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    await act(async () => root?.unmount())
+    root = null
+    await idle(2000)
+    expect(writeAsset).toHaveBeenCalledTimes(1)
+  })
+
+  it('S13: ✕ while the conflict bar is up asks; Discard keeps the disk\'s version', async () => {
+    const { onClose } = await open()
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await idle()
+    await click(closeBtn())
+    expect(strip()).toContain(DISCARD_PROMPT)
+    await click(byText('Discard'))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(writeAsset).toHaveBeenCalledTimes(1)
   })
 
   it('Esc while the strip is up answers the STRIP, not the modal', async () => {
     const { overlay, onClose } = await open()
     emit(1)
     emit(2)
-    escOn(overlay)
-    escOn(overlay)
+    writeAsset.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    await escOn(overlay)
+    expect(strip()).toContain(DISCARD_PROMPT)
+    await escOn(overlay)
     expect(strip()).toBeNull()
     expect(onClose).not.toHaveBeenCalled()
-  })
-
-  it('click-away mirrors Esc: clean closes, dirty asks — and a click INSIDE the sheet does neither', async () => {
-    const clean = await open()
-    emit(1)
-    mousedownOn(clean.overlay.querySelector('.drawing-modal') as Node)
-    expect(clean.onClose).not.toHaveBeenCalled()
-    mousedownOn(clean.overlay)
-    expect(clean.onClose).toHaveBeenCalledTimes(1)
-
-    act(() => root?.unmount())
-    container?.remove()
-    outside?.remove()
-    const dirty = await open()
-    emit(1)
-    emit(2)
-    mousedownOn(dirty.overlay)
-    expect(dirty.onClose).not.toHaveBeenCalled()
-    expect(strip()).toContain(DISCARD_PROMPT)
-  })
-
-  it('✕ is the same gesture', async () => {
-    const { onClose } = await open()
-    emit(1)
-    act(() => container?.querySelector<HTMLButtonElement>('.drawing-modal__close')?.click())
-    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -361,30 +600,30 @@ describe('key scope (⚡ the YAZ-888 lesson)', () => {
   it('an Escape dispatched OUTSIDE the overlay does nothing at all', async () => {
     const { onClose } = await open()
     emit(1)
-    escOn(outside as Node)
-    escOn(document.body)
+    await escOn(outside as Node)
+    await escOn(document.body)
     expect(onClose).not.toHaveBeenCalled()
   })
 
   it('a mousedown OUTSIDE the overlay does nothing either', async () => {
     const { onClose } = await open()
     emit(1)
-    mousedownOn(outside as Node)
+    await mousedownOn(outside as Node)
     expect(onClose).not.toHaveBeenCalled()
   })
 })
 
 describe('a sidecar that will not open', () => {
-  it('is the error state: a message, no canvas, and no way to write', async () => {
+  it('S18: is the error state — a message, no canvas, no label, and no way to write', async () => {
     const { onClose } = await open('broken')
     expect(errorLine()).toBe(BROKEN_DRAWING_MESSAGE)
     expect(seam.mounts).toBe(0)
     expect(container?.querySelector('.fake-surface')).toBeNull()
-    expect(saveBtn().disabled).toBe(true)
-    expect(writeAsset).not.toHaveBeenCalled()
+    expect(label()).toBeNull()
     // Closing is all it offers, and it needs no confirm — there is nothing to discard.
-    act(() => container?.querySelector<HTMLButtonElement>('.drawing-modal__close')?.click())
+    await click(closeBtn())
     expect(onClose).toHaveBeenCalledTimes(1)
+    expect(writeAsset).not.toHaveBeenCalled()
   })
 })
 
