@@ -77,6 +77,7 @@ import { useVaultListsHere } from '../lists/useVaultListsHere'
 import { useVaultIcons } from './useVaultIcons'
 import { loadMaterialIcons } from './materialIcons'
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
+import { DATE_TIP_MS } from './RowDateTip'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -11092,9 +11093,17 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect(rows(el)).toEqual(['docs 3h', 'plan 2 3h', 'plan 10 2d', 'plan empty -', 'plan old 5mo', 'plan a 1w', 'plan b 34m'])
   })
 
-  it('S15: a hover on the date shows the full date and time', async () => {
+  it('S15, D25: a rest on the date shows the full date and time after DATE_TIP_MS, sooner than a system tooltip; leaving it hides it', async () => {
     const { el } = await search(NAME)
-    expect(el.querySelector<HTMLElement>('.tree__row[data-path="/v/plan a.md"] .tree__date')?.title).toBe(formatDateTime(NOW - 7 * D))
+    const date = el.querySelector<HTMLElement>('.tree__row[data-path="/v/plan a.md"] .tree__date')!
+    expect(date.title).toBe('')
+    expect(date.getAttribute('aria-label')).toBe(formatDateTime(NOW - 7 * D))
+    act(() => void date.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    expect(el.querySelector('.tree__date-tip')).toBeNull()
+    await wait(DATE_TIP_MS + 50)
+    expect(el.querySelector('.tree__date-tip')?.textContent).toBe(formatDateTime(NOW - 7 * D))
+    act(() => void date.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })))
+    expect(el.querySelector('.tree__date-tip')).toBeNull()
   })
 
   it('S4, S5: Last updated puts the newest first at each level, a folder as new as its newest row, folders above files; Oldest first flips it', async () => {
@@ -11206,6 +11215,27 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect(items(el)).toContain('TypeMarkdown')
     clickSub(el, 'PDFs', 'Type')
     expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('No matches with these filters.')
+  })
+
+  it('D24: a bar under the search box names each filter that is on; its × takes that one off, and Clear takes both', async () => {
+    const { el } = await search(NAME)
+    const chips = () => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__filters .sidebar__filter-chip')]
+    expect(el.querySelector('.sidebar__filters')).toBeNull()
+    act(() => sortButton(el)?.click())
+    clickSub(el, 'Markdown', 'Type')
+    expect(chips().map((c) => c.textContent)).toEqual(['Markdown'])
+    expect(chips()[0].querySelector('.file-icon')?.getAttribute('data-kind')).toBe('markdown')
+    expect(el.querySelector('.sidebar__filter-clear')).toBeNull()
+    act(() => sortButton(el)?.click())
+    clickSub(el, 'Today', 'Time')
+    expect(chips().map((c) => c.textContent)).toEqual(['Markdown', 'Today'])
+    act(() => chips()[0].click())
+    expect(chips().map((c) => c.textContent)).toEqual(['Today'])
+    act(() => sortButton(el)?.click())
+    clickSub(el, 'Folders', 'Type')
+    act(() => el.querySelector<HTMLButtonElement>('.sidebar__filter-clear')?.click())
+    expect(el.querySelector('.sidebar__filters')).toBeNull()
+    expect(rows(el)).toHaveLength(7)
   })
 
   it('S51, S52, S53, D15: the filters stay while the text changes and on another tab, and go when the bar is empty', async () => {

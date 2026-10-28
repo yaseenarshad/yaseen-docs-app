@@ -94,6 +94,16 @@ export function timesByPath(trees: readonly TreeNode[]): ReadonlyMap<string, num
 /** A type's icon in the menu: a tree row's, for a name of that kind. */
 const typeIcon = (name: string): ReactNode => createElement(FileIcon, { path: name, folder: name === 'folder' })
 
+/** The filters that are on, as the bar under the search box names them (YAZ-3511 D24): the type with its icon, then the time. */
+export function filterChips(filter: SearchFilter): { key: keyof SearchFilter; label: string; icon?: ReactNode }[] {
+  const type = TYPES.find(([value]) => value === filter.type)
+  const time = TIMES.find(([value]) => value === filter.time)
+  return [
+    ...(filter.type === 'all' || type === undefined ? [] : [{ key: 'type' as const, label: type[1], ...(type[2] !== undefined && { icon: typeIcon(type[2]) }) }]),
+    ...(filter.time === 'any' || time === undefined ? [] : [{ key: 'time' as const, label: time[1] }]),
+  ]
+}
+
 /** The Search menu's Type and Time rows (D13, D14): each a flyout with its "all" choice apart, ✓ on the pick, the pick as the row's hint. */
 export function filterSection(filter: SearchFilter, set: (next: SearchFilter) => void): MenuSection {
   const flyout = <K extends keyof SearchFilter>(key: K, choices: ReadonlyArray<[SearchFilter[K], string, string?]>, id: string, label: string) => {

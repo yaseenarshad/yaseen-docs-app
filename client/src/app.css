@@ -1567,6 +1567,76 @@ button {
   background: var(--bg-hover);
 }
 
+/* The filters that are on (YAZ-3511 D24): a thin bar under the search box, a chip for each, its × takes it off. */
+.sidebar__filters {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px 10px 5px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.sidebar__filters-icon {
+  flex: none;
+}
+
+.sidebar__filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px 1px 7px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.sidebar__filter-chip .file-icon {
+  display: inline-flex;
+}
+
+.sidebar__filter-x::before {
+  content: '×';
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  opacity: 0.7;
+}
+
+.sidebar__filter-chip:hover .sidebar__filter-x::before {
+  opacity: 1;
+}
+
+.sidebar__filter-clear {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.sidebar__filter-clear:hover {
+  color: var(--fg);
+}
+
+/* The full date over a row's short date (YAZ-3511 D25): above it, its right edge on the date's. */
+.tree__date-tip {
+  position: fixed;
+  z-index: 50;
+  transform: translateY(calc(-100% - 4px));
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 11px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  pointer-events: none;
+}
+
 /* Nothing to fold on this tab (YAZ-3511 D19): the button stays in its place, dimmed, with no hover. */
 .sidebar__expand-all:disabled,
 .sidebar__expand-all:disabled:hover {

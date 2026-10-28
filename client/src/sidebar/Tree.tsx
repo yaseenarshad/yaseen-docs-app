@@ -670,5 +670,6 @@ export const Tree = memo(TreeLevel, sameLevel)
 /** A row's Last updated (YAZ-3511 D5): "3h", "2d", "5mo", the full date and time on hover. A folder's is its newest row in this tree (D6); an empty one shows none. */
 function RowDate({ node }: { node: TreeNode }) {
   const time = timeOf(node)
-  return time > 0 ? <span className="tree__date" title={formatDateTime(time)}>{shortRelativeTime(time, Date.now())}</span> : null
+  // The full date and time is `RowDateTip`'s (YAZ-3511 D25), sooner than a `title`; the label says it to a screen reader.
+  return time > 0 ? <span className="tree__date" data-full={formatDateTime(time)} aria-label={formatDateTime(time)}>{shortRelativeTime(time, Date.now())}</span> : null
 }

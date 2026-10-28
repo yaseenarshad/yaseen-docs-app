@@ -37,6 +37,8 @@ import { ZoomMenu } from './ZoomMenu'
 import { buildMenuSections } from './menuSections'
 import type { ListFold } from './listFold'
 import { RecentList } from './RecentList'
+import { RowDateTip } from './RowDateTip'
+import { SearchFilterBar } from './SearchFilterBar'
 import { SessionList } from './SessionList'
 import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind, NoticeType } from '../lib/notice'
@@ -1552,6 +1554,7 @@ export function Sidebar({
           </button>
         </div>
       )}
+      {searching && <SearchFilterBar filter={searchFilter} onFilter={setSearchFilter} />}
       {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
           Search tab has no such target, so right-clicking its blank space offers nothing (YAZ-803)
           — not even Electron's text menu, which leaked through until YAZ-2050. Its ROWS get the
@@ -1774,6 +1777,7 @@ export function Sidebar({
         )}
         <UpdatePill update={update} onOpen={onOpenWhatsNew} />
       </div>
+      <RowDateTip body={bodyRef} />
       {/* The sort menu (YAZ-3227 D4): it sorts the tab it opened on, and a tab switch leaves it unmounted. */}
       {sortMenu !== null && sortMenu.tab === sortedTab && sort !== undefined && (
         <ContextMenu
