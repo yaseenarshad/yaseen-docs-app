@@ -74,11 +74,12 @@ describe('packDrawio (🔒 YAZ-1802 D5)', () => {
     expect(ci.indexOf('run: npm run drawio:pack')).toBeLessThan(ci.indexOf('run: npm test'))
   })
 
-  it('the workflows use only the actions the repo allows: checkout, setup-node and the release action (YAZ-3028)', () => {
-    // Any other `uses:` (actions/cache was one) makes GitHub refuse the whole workflow at startup.
+  it('the workflows use only the actions the repo allows: checkout, setup-node, cache and the release action (YAZ-3028, YAZ-3572)', () => {
+    // Any other `uses:` makes GitHub refuse the whole workflow at startup. actions/cache joined the repo's list on 2026-10-28
+    // for the engine build (YAZ-3572 E4): a new action needs that setting first (Settings › Actions › General).
     for (const file of ['ci.yml', 'release.yml']) {
       const yml = readFileSync(new URL(`../.github/workflows/${file}`, import.meta.url), 'utf8')
-      for (const [, action] of yml.matchAll(/uses:\s*([^@\s]+)@/g)) expect(['actions/checkout', 'actions/setup-node', 'softprops/action-gh-release']).toContain(action)
+      for (const [, action] of yml.matchAll(/uses:\s*([^@\s]+)@/g)) expect(['actions/checkout', 'actions/setup-node', 'actions/cache', 'softprops/action-gh-release']).toContain(action)
     }
   })
 })
