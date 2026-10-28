@@ -33,6 +33,11 @@ describe('languageForPath', () => {
     expect(languageForPath('/vault/base.tsconfig.json', LANGS)).toBe('jsonc')
   })
 
+  it('a Windows path names the file after its last backslash (YAZ-3516)', () => {
+    expect(languageForPath('C:\\v\\Dockerfile', LANGS)).toBe('dockerfile')
+    expect(languageForPath('C:\\v\\deploy\\Dockerfile.dev', LANGS)).toBe('dockerfile')
+  })
+
   it('nothing known: plain text (LICENSE, Procfile, CODEOWNERS)', () => {
     for (const name of ['LICENSE', 'Procfile', 'CODEOWNERS', 'data.unknown']) expect(languageForPath(`/vault/${name}`, LANGS), name).toBe('plaintext')
   })

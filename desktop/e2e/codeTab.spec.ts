@@ -565,14 +565,6 @@ test('step 11 — YAZ-3486 S12, YAZ-3501: the 5 MB file: its Outline, and each k
   await setTableOfContents(win, 'Always')
 })
 
-/**
- * YAZ-3502: quit right after an edit of the 5 MB file. Main writes a time stamp at each step of the quit
- * (`before-quit`, the window's `app:flushed`, the window gone, `app.exit`) into a file of the temp profile,
- * because the process is gone when the test reads them. The app's own quit work must be quick, and the
- * edit must be on disk. The end of the Electron process after `app.exit(0)` is not the app's work: on a
- * Mac with a load average over 100 it took from 1.6 s to over 60 s, for a 100-line file as for this one
- * (YAZ-3502 root cause). So the wait for the process to end has a wider cap than `quitApp`'s 15 s.
- */
 test('step 11b — YAZ-3526: large CSS, JSON and HTML files: each key draws at once, and no long task after a pause', async () => {
   test.setTimeout(240_000)
   const runs: { keys: number[]; long: number[] }[] = []
@@ -596,6 +588,14 @@ test('step 11b — YAZ-3526: large CSS, JSON and HTML files: each key draws at o
   }
 })
 
+/**
+ * YAZ-3502: quit right after an edit of the 5 MB file. Main writes a time stamp at each step of the quit
+ * (`before-quit`, the window's `app:flushed`, the window gone, `app.exit`) into a file of the temp profile,
+ * because the process is gone when the test reads them. The app's own quit work must be quick, and the
+ * edit must be on disk. The end of the Electron process after `app.exit(0)` is not the app's work: on a
+ * Mac with a load average over 100 it took from 1.6 s to over 60 s, for a 100-line file as for this one
+ * (YAZ-3502 root cause). So the wait for the process to end has a wider cap than `quitApp`'s 15 s.
+ */
 test('step 12 — YAZ-3502: quit right after an edit of the 5 MB file: the flush and the app\'s quit steps are quick, and the edit is on disk', async () => {
   test.setTimeout(120_000)
   await fileRow(win, BIG_FILE).click()

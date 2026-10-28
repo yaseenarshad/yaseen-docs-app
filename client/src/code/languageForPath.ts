@@ -18,7 +18,8 @@ export interface LanguageEntry {
 const globRegExp = (glob: string): RegExp => new RegExp(`^${glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, 'i')
 
 export function languageForPath(path: string, languages: readonly LanguageEntry[]): string {
-  const name = path.slice(path.lastIndexOf('/') + 1)
+  // The base name after `/` or `\` (a Windows path, YAZ-3516), as `fileKind` reads it.
+  const name = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
   const lower = name.toLowerCase()
   for (const lang of languages) if (lang.filenames?.some((f) => f.toLowerCase() === lower)) return lang.id
   for (const lang of languages) if (lang.filenamePatterns?.some((p) => globRegExp(p).test(name))) return lang.id
