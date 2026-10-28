@@ -490,10 +490,10 @@ describe('bootTabs (rules 12/15)', () => {
     expect(s.active).toBe(s.tabs[2].id)
   })
 
-  it('a fresh window falls back to the folder lastFile; a null root (Welcome) is empty', async () => {
+  it('a fresh window opens blank — the folder lastFile stays unread (YAZ-3487 D7, S28); a null root (Welcome) is empty', async () => {
     installBridge(seeded, { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
-    expect(byPath(bootTabs('/v'))).toEqual(state(['/v/last.md'], '/v/last.md'))
+    expect(byPath(bootTabs('/v'))).toEqual(state([], null))
     expect(byPath(bootTabs(null))).toEqual(state([], null))
   })
 

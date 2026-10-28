@@ -651,10 +651,10 @@ export function App() {
     setSidebarLens(storage.getSidebarLens()) // the vault lands on Files (🔒 D2, YAZ-1846)
     setSidebarRevealRequest(null)
     setRoots(storage.getRoots()) // that ONE vault: every other vault of the window leaves (YAZ-2602 S61)
-    // The folder's remembered file becomes the sole restored tab (D6); reset mirrors it down. A Files window has no tab (YAZ-3357 D1).
-    resetTabs(path, filesWindow ? null : storage.getLastFile(path))
+    // A vault opens blank (YAZ-3487 D7): no note you did not ask for; reset mirrors it down. A Files window has no tab (YAZ-3357 D1).
+    resetTabs(path, null)
     return true
-  }, [resetTabs, filesWindow])
+  }, [resetTabs])
 
   /**
    * The ONE vault-open rule (YAZ-1914): a window that already shows a vault never changes vault —

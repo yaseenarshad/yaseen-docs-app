@@ -182,7 +182,7 @@ export interface WindowManager extends WindowLookup {
    * the directory FIRST (GRO-2211): a dead folder is pruned from the MRU and opens nothing →
    * `false`. A live one is bumped to the top of the MRU, then (🔒 D9) every live window already
    * on that vault is RAISED — most recently focused on top — and nothing new opens; with none
-   * open, a new window opens on the vault's remembered `folders[root].lastFile` (D2). → `true`.
+   * open, a new window opens on the vault, blank (YAZ-3487 D7; it was the remembered `lastFile`, D2). → `true`.
    * `from` (YAZ-3487 D1): the window that asked. When it is EMPTY, it takes the vault itself and no window opens.
    */
   openRecentBeside(path: string, from?: string): boolean
@@ -791,7 +791,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     if (raiseWindows((w) => (alone ? sameVaults(w.roots, [wanted]) : w.roots.some((root) => stripSlash(root) === wanted)))) return true
     // No window to raise: an EMPTY window that asked takes the vault itself (YAZ-3487 D1).
     if (from !== undefined && takeHere(from, [path])) return true
-    openWindow({ root: path, file: store.get().folders[path]?.lastFile ?? null })
+    // A vault opens blank (YAZ-3487 D7): no note you did not ask for.
+    openWindow({ root: path, file: null })
     return true
   }
   const openRecentBeside = (path: string, from?: string): boolean => openVault(path, false, from)
@@ -819,7 +820,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     if (found.length === 0) return { opened: false, missing }
     // The set's window is the one that shows exactly the vaults that are left (S66): a window opened
     // earlier without the missing folder is raised, not doubled.
-    if (!raiseWindows((w) => sameVaults(w.roots, found)) && (from === undefined || !takeHere(from, found))) openWindow({ root: found[0], roots: found, file: store.get().folders[found[0]]?.lastFile ?? null })
+    if (!raiseWindows((w) => sameVaults(w.roots, found)) && (from === undefined || !takeHere(from, found))) openWindow({ root: found[0], roots: found, file: null })
     store.touchVaultSet(id)
     return { opened: true, missing }
   }

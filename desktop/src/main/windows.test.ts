@@ -413,14 +413,14 @@ describe('createWindowManager: what a launch brings back (YAZ-2589)', () => {
     expect(ids(store.get().windows)).toEqual(['a', 'c'])
   })
 
-  it('D1 (S2, S18): asked for a vault with no saved window → nothing comes back and no Welcome window opens; the request then opens the vault in a new window on its last page, and a second request for that vault waits for that window\'s page', () => {
+  it('D1 (S2, S18): asked for a vault with no saved window → nothing comes back and no Welcome window opens; the request then opens the vault in a new window, blank (YAZ-3487 D7), and a second request for that vault waits for that window\'s page', () => {
     const { manager, created } = seedSaved(['/v/b', '/v/a'], (p) => p === '/v/a/note.md', (p) => p === '/v/a' || p === '/v/a/')
     store.removeWindow('a')
     manager.restore([manager.rootFor('/v/a/')!])
     expect(created).toHaveLength(0)
     expect(store.get().windows).toEqual([])
     manager.routeToFile('/v/a/')
-    expect(created.map((c) => [c.entry.root, c.entry.file])).toEqual([['/v/a', '/v/a/Start here.md']])
+    expect(created.map((c) => [c.entry.root, c.entry.file])).toEqual([['/v/a', null]])
     expect(store.get().folders['/v/a']).toMatchObject({ key: 1, name: 'Alpha' })
     // A window that a request opened is still loading too: the hold is per window, not only for the ones `restore` brought back.
     const win = created[0].win
@@ -592,7 +592,7 @@ describe('createWindowManager: a request that cannot open is not a request (YAZ-
 })
 
 describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-recent door)', () => {
-  it('a live folder: bumps it to the top of the MRU, opens a window on its remembered last file (D2), returns true', () => {
+  it('a live folder: bumps it to the top of the MRU, opens a window on it BLANK — its remembered last file stays unread (YAZ-3487 D7, was D2) — returns true', () => {
     store.pushRecent('/v/other', 1)
     store.pushRecent('/v/notes', 2)
     store.setFolder('/v/other', { lastFile: '/v/other/Start here.md' })
@@ -601,8 +601,8 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
     expect(manager.openRecentBeside('/v/other')).toBe(true)
     expect(created).toHaveLength(1)
     expect(created[0].entry.root).toBe('/v/other')
-    expect(created[0].entry.file).toBe('/v/other/Start here.md')
-    expect(created[0].entry.tabs).toEqual(['/v/other/Start here.md'])
+    expect(created[0].entry.file).toBeNull()
+    expect(created[0].entry.tabs).toEqual([])
     expect(created[0].entry.sidebarLens).toBe('files') // ⌘O onto a vault with no window lands on Files (YAZ-1846)
     expect(store.get().recents.map((r) => r.path)).toEqual(['/v/other', '/v/notes'])
     expect(store.get().windows).toEqual([created[0].entry])
@@ -752,7 +752,7 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
 describe('createWindowManager: openAlone (YAZ-2858 D1 — "Open by itself": a window with this vault alone)', () => {
   const entry = (id: string, ...roots: string[]) => ({ id, root: roots[0], roots, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, bounds: { x: 0, y: 0, width: 800, height: 600 } })
 
-  it('S1: the vault is open ONLY in a workspace window → a new window with it alone, on its last file; the workspace window is not raised and does not change', () => {
+  it('S1: the vault is open ONLY in a workspace window → a new window with it alone, blank (YAZ-3487 D7); the workspace window is not raised and does not change', () => {
     store.upsertWindow(entry('ab', '/v/a', '/v/b'))
     store.setFolder('/v/b', { lastFile: '/v/b/Start here.md' })
     const { host, created } = makeHost()
@@ -764,8 +764,8 @@ describe('createWindowManager: openAlone (YAZ-2858 D1 — "Open by itself": a wi
     expect(created).toHaveLength(2)
     expect(created[1].entry.root).toBe('/v/b')
     expect(created[1].entry.roots).toEqual(['/v/b'])
-    expect(created[1].entry.file).toBe('/v/b/Start here.md')
-    expect(created[1].entry.tabs).toEqual(['/v/b/Start here.md'])
+    expect(created[1].entry.file).toBeNull() // blank (YAZ-3487 D7)
+    expect(created[1].entry.tabs).toEqual([])
     expect(ab.focusCount).toBe(0)
     expect(store.get().windows[0]).toEqual(before)
   })
@@ -894,7 +894,7 @@ describe('createWindowManager: openVaultSet (YAZ-2602 D8 — a saved set of vaul
   }
   const setIds = () => store.get().vaultSets.map((s) => s.id)
 
-  it('S65: no window shows exactly the set → ONE new window on its vaults in the SAVED order, on the first vault\'s last file; the set becomes the last used', () => {
+  it('S65: no window shows exactly the set → ONE new window on its vaults in the SAVED order, blank (YAZ-3487 D7); the set becomes the last used', () => {
     const { work, home, three } = seedSets()
     store.setFolder('/v/b', { lastFile: '/v/b/Start here.md' })
     store.setFolder('/v/a', { lastFile: '/v/a/Other.md' })
@@ -909,7 +909,7 @@ describe('createWindowManager: openVaultSet (YAZ-2602 D8 — a saved set of vaul
     expect(manager.openVaultSet(work.id)).toEqual({ opened: true, missing: [] })
     expect(created).toHaveLength(4)
     expect(created.slice(0, 3).map((c) => c.win.focusCount)).toEqual([0, 0, 0])
-    expect(created[3].entry).toMatchObject({ root: '/v/b', roots: ['/v/b', '/v/a'], file: '/v/b/Start here.md', tabs: ['/v/b/Start here.md'] })
+    expect(created[3].entry).toMatchObject({ root: '/v/b', roots: ['/v/b', '/v/a'], file: null, tabs: [] }) // blank (YAZ-3487 D7)
     expect(store.get().windows).toHaveLength(4)
     expect(store.get().windows[3]).toEqual(created[3].entry)
     expect(setIds()).toEqual([work.id, three.id, home.id])
@@ -980,7 +980,7 @@ describe('createWindowManager: openVaultSet (YAZ-2602 D8 — a saved set of vaul
     // `/v/a` is gone: "Three" opens on b and c, in the saved order, on the last file of the first vault that is left.
     expect(manager.openVaultSet(three.id)).toEqual({ opened: true, missing: ['/v/a'] })
     expect(created).toHaveLength(1)
-    expect(created[0].entry).toMatchObject({ root: '/v/b', roots: ['/v/b', '/v/c'], file: '/v/b/Start here.md' })
+    expect(created[0].entry).toMatchObject({ root: '/v/b', roots: ['/v/b', '/v/c'], file: null }) // blank (YAZ-3487 D7)
     // The folder can come back (a drive that is not mounted): the set is as it was saved, and it is the last used.
     expect(store.get().vaultSets[0]).toMatchObject({ id: three.id, roots: ['/v/a', '/v/b', '/v/c'] })
     // Again: the window that opened without the folder is the set's window now. It is raised; no second one opens.
@@ -1729,25 +1729,25 @@ describe('createWindowManager: routeToFile (E1)', () => {
     expect(store.get().recents[0]?.path).toBe('/v') // the door's bump: the vault is "last used"
   })
 
-  it('S2: a known vault\'s folder with no window → a new window on its remembered last file', () => {
+  it('S2: a known vault\'s folder with no window → a new window on it, blank (YAZ-3487 D7: its last file stays unread)', () => {
     const { manager, created, w1 } = seedFolder('/w')
     store.pushRecent('/w', 1)
     store.setFolder('/w', { lastFile: '/w/Start here.md' })
     manager.routeToFile('/w')
     expect(created).toHaveLength(3)
     expect(created[2].entry.root).toBe('/w')
-    expect(created[2].entry.file).toBe('/w/Start here.md')
+    expect(created[2].entry.file).toBeNull()
     expect(w1.focusCount).toBe(0)
   })
 
-  it('S2: the same folder with a trailing slash (a link keeps it) is the SAME vault: the window is on the stored root and its last file, and the recents hold it once', () => {
+  it('S2: the same folder with a trailing slash (a link keeps it) is the SAME vault: the window is on the stored root, blank (YAZ-3487 D7), and the recents hold it once', () => {
     const { manager, created } = seedRouting(() => false, (p) => p === '/w' || p === '/w/')
     store.pushRecent('/w', 1)
     store.setFolder('/w', { lastFile: '/w/Start here.md' })
     manager.routeToFile('/w/')
     expect(created).toHaveLength(3)
     expect(created[2].entry.root).toBe('/w')
-    expect(created[2].entry.file).toBe('/w/Start here.md')
+    expect(created[2].entry.file).toBeNull()
     expect(store.get().recents.map((r) => r.path)).toEqual(['/w'])
   })
 

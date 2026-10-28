@@ -668,16 +668,16 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
 /**
  * The boot state (rule 15): `storage`'s identity is valid AT BOOT only (`storage.init()`
  * resolves before the first render). Active-file precedence (GRO-2069/2160): a pasted
- * `#/abs/path` hash wins, then this window's restored file, then the folder's remembered
- * lastFile; a hash file missing from the stored tabs is added (rule 12). Only the active
- * tab's editor mounts.
+ * `#/abs/path` hash wins, then this window's restored file; with neither the window opens blank
+ * (YAZ-3487 D7 — the folder's remembered lastFile no longer fills it). A hash file missing from the
+ * stored tabs is added (rule 12). Only the active tab's editor mounts.
  */
 export function bootTabs(root: string | null): TabsState {
   if (root === null) return EMPTY
-  // A window empty by choice (its strip stored empty, YAZ-3343) stays empty: the vault's last file would be a tab nobody asked for.
   // A Files window (YAZ-3357 D1) has no tabs at all.
   if (storage.isFilesWindow()) return EMPTY
-  const active = hashFilePath(location.hash) ?? storage.getFile() ?? (storage.isEmptyByChoice() ? null : storage.getLastFile(root))
+  // No restored file: the window opens blank (YAZ-3487 D7). The vault's last file would be a tab nobody asked for.
+  const active = hashFilePath(location.hash) ?? storage.getFile()
   // The copies and display names come back with the window (YAZ-3057), and with a tab "Move to new window" brought (S19).
   return tabsReducer(EMPTY, { type: 'reset', tabs: storage.getTabStrip(), active })
 }

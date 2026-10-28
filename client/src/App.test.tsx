@@ -946,14 +946,15 @@ describe('App on a null root (C2, GRO-2164)', () => {
     expect(el.querySelector('.tabbar')).toBeNull() // the tab strip never shows on Welcome (rule 2)
   })
 
-  it('clicking a live recent opens that folder in place, on its remembered last file', async () => {
+  it('clicking a live recent opens that folder in place, blank — its remembered last file stays unread (YAZ-3487 D7)', async () => {
     const state = withFolder({ ...defaultAppState(), recents: [recent('/vaults/notes')] }, '/vaults/notes', '/vaults/notes/a.md')
     const { bridge, el } = await mount(state, { id: 'w1', root: null, file: null, tabs: [] })
     await act(async () => el.querySelector<HTMLButtonElement>('.welcome__recent')?.click())
     expect(el.querySelector('.welcome')).toBeNull()
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/vaults/notes')
-    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/vaults/notes/a.md')
-    expect(location.hash).toBe('#/vaults/notes/a.md')
+    expect(el.querySelector('[data-editor]')).toBeNull()
+    expect(el.querySelector('[data-start-page]')?.getAttribute('data-roots')).toBe('/vaults/notes')
+    expect(location.hash).toBe('')
     expect(bridge.state.pushRecent).toHaveBeenCalledWith('/vaults/notes')
   })
 
@@ -970,22 +971,18 @@ describe('App on a null root (C2, GRO-2164)', () => {
 })
 
 describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
-  it('File › Open Recent switches the Welcome window in place: sidebar keyed, file ← the folder\'s lastFile as the sole tab, hash synced', async () => {
+  it('File › Open Recent switches the Welcome window in place: sidebar keyed, blank — the folder\'s lastFile stays unread (YAZ-3487 D7)', async () => {
     const state = withFolder(defaultAppState(), '/w', '/w/b.md')
     const { bridge, el, emitOpenRoot } = await mount(state, { id: 'w1', root: null, file: null, tabs: [] })
     await act(async () => emitOpenRoot('/w'))
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/w')
-    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/w/b.md')
-    expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual(['b'])
-    expect(location.hash).toBe('#/w/b.md')
+    expect(el.querySelector('[data-editor]')).toBeNull()
+    expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual([])
+    expect(location.hash).toBe('')
     expect(bridge.state.pushRecent).toHaveBeenCalledWith('/w')
     expect(bridge.window.openRecent).not.toHaveBeenCalled()
-    // The window entry records the switch (D6, tabs rule 13): ONE write clears root's file+tabs,
-    // then ONE {tabs, file} write restores the folder's remembered file.
-    expect(bridge.window.setIdentity.mock.calls).toEqual([
-      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' }],
-      [wrote(['/w/b.md'], '/w/b.md')],
-    ])
+    // The window entry records the switch (D6, tabs rule 13): ONE write clears root's file+tabs, and no tab follows.
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' }]])
     expect(captured.sidebar?.lens).toBe('files') // the Welcome window's stored lens was Favorites; the vault lands on Files (YAZ-1846 D2)
   })
 
@@ -1071,11 +1068,12 @@ describe('App boot on a window entry with a file (D2, GRO-2168)', () => {
 })
 
 describe('App window title (C3, GRO-2165; vault first, YAZ-2555 D6)', () => {
-  it('is the app name on Welcome, then "<folder> — <file>" once a folder with a file opens', async () => {
-    const state = withFolder(defaultAppState(), '/vaults/w', '/vaults/w/Note.md')
-    const { emitOpenRoot } = await mount(state, { id: 'w1', root: null, file: null, tabs: [] })
+  it('is the app name on Welcome, then the folder once it opens (blank, YAZ-3487 D7), then "<folder> — <file>" once a file opens', async () => {
+    const { emitOpenRoot, emitLinkOpenFile } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
     expect(document.title).toBe('Yaseen Docs')
     await act(async () => emitOpenRoot('/vaults/w'))
+    expect(document.title).toBe('w')
+    await act(async () => emitLinkOpenFile('/vaults/w/Note.md'))
     expect(document.title).toBe('w — Note')
   })
 
@@ -1557,9 +1555,9 @@ describe('App tab board across windows (YAZ-3343)', () => {
     expect(activeName(el)).toBe('today')
   })
 
-  it('an empty window that is NOT one by choice still opens on the vault\'s last file, as before', async () => {
+  it('an empty window that is NOT one by choice opens blank too: the vault\'s last file stays unread (YAZ-3487 D7, S28)', async () => {
     const { el } = await mount(withFolder(withWindows(), '/v', '/v/today.md'), { id: 'w9', root: '/v', file: null, tabs: [] })
-    expect(tabNames(el)).toEqual(['today'])
+    expect(tabNames(el)).toEqual([])
   })
 
   it('YAZ-3343 D37, S38: "Move to new window" asked by another window\'s board pops this tab out QUIETLY (behind), its text saved first; the strip\'s own stays in front', async () => {
@@ -5550,7 +5548,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ root: expect.anything() }))
   })
 
-  it('"Open in this window" on a third vault leaves the window on that one vault, with the tabs reset and the two scopes unloaded (S61)', async () => {
+  it('"Open in this window" on a third vault leaves the window on that one vault, blank (YAZ-3487 D7), with the tabs reset and the two scopes unloaded (S61)', async () => {
     const offs: Record<string, ReturnType<typeof vi.fn>[]> = {}
     const { bridge, el } = await mount(withFolder(defaultAppState(), '/z', '/z/last.md'), TWO, {}, (b) => {
       NOTES(b)
@@ -5567,19 +5565,16 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     await act(async () => void (await captured.sidebar?.onOpenVaultHere('/z')))
     expect(storage.getRoots()).toEqual(['/z'])
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/z')
-    expect(stripLabels(el)).toEqual(['last'])
-    expect([...el.querySelectorAll('[data-editor]')].map((e) => [e.getAttribute('data-root'), e.getAttribute('data-path')])).toEqual([['/z', '/z/last.md']])
-    expect(bridge.window.setIdentity.mock.calls).toEqual([
-      [{ root: '/z', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' }],
-      [wrote(['/z/last.md'], '/z/last.md')],
-    ])
+    expect(stripLabels(el)).toEqual([])
+    expect([...el.querySelectorAll('[data-editor]')]).toEqual([])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/z', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' }]])
     // A vault that leaves the window unloads its scope: each of its watcher subscriptions ended.
     for (const vault of ['/v', '/w']) expect(offs[vault].map((off) => off.mock.calls.length)).toEqual(offs[vault].map(() => 1))
     // …and its index left the window's memory: the slot's sources are empty until a vault takes it.
     expect(left.map(records).filter((paths) => paths.some((path) => !path.startsWith('/z/')))).toEqual([])
     expect(offs['/z'].some((off) => off.mock.calls.length === 0)).toBe(true)
     expect(callsFor(bridge.index, '/z')).toBeGreaterThan(0)
-    expect(document.title).toBe('z — last')
+    expect(document.title).toBe('z') // blank: the vault alone (YAZ-3487 D7)
   })
 
   it('the first vault\'s folder is gone: that vault leaves the window with its tabs, and /w stays loaded as it was (S53)', async () => {
