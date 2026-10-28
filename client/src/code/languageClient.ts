@@ -13,6 +13,10 @@
  * never one IPC for each keystroke. Two tabs can hold one file; main keeps one document for it, and
  * a whole text from either tab is always right.
  *
+ * THE SWITCH (YAZ-3500): Settings › Code › "Jump across files" (`languageHelpers.ts`), off by default. Off, a
+ * tab never opens its file with a helper (no `lsp.open`), and the providers give Monaco's one-file answer.
+ * Turned on, every open code tab opens its file; turned off, every tab closes it, and main stops the helpers.
+ *
  * THE PEEK BOX shows a place in another file only when a model for that file exists. Each file the
  * helper names is read once (`api.readFile`) into a read-only `file://` model, at most
  * `MAX_PREVIEWS` of them, the oldest dropped first; all go with the last code tab. A place whose
@@ -21,6 +25,7 @@
 import type { LspLocation, LspPosition } from '@shared/lsp'
 import { lspLanguageOf } from '@shared/lsp'
 import { api } from '../api'
+import { languageHelpersOn, onLanguageHelpers } from './languageHelpers'
 import { monaco } from './monaco'
 
 type Model = ReturnType<typeof monaco.editor.createModel>
@@ -153,12 +158,34 @@ function install(): void {
 }
 
 /**
- * Connects one code tab's model to the helper of its file. `dispose` closes it there (the helper
- * stops with the last tab of its project). A file no helper takes gets the providers and nothing else.
+ * Connects one code tab's model to the helper of its file while the switch is on (YAZ-3500). `dispose`
+ * closes it there (the helper stops with the last tab of its project). A file no helper takes gets the
+ * providers and nothing else.
  */
 export function attachLanguageClient(model: Model, opts: { root: string; path: string }): { dispose(): void } {
   install()
   if (lspLanguageOf(opts.path) === null) return { dispose: () => undefined }
+  let session: { dispose(): void } | null = null
+  const follow = (on: boolean): void => {
+    if (on && session === null && !model.isDisposed()) session = openSession(model, opts)
+    else if (!on && session !== null) {
+      session.dispose()
+      session = null
+    }
+  }
+  follow(languageHelpersOn())
+  const off = onLanguageHelpers(follow)
+  return {
+    dispose() {
+      off()
+      session?.dispose()
+      session = null
+    },
+  }
+}
+
+/** The tab's file open with its helper: from `lsp.open` to `lsp.close`. */
+function openSession(model: Model, opts: { root: string; path: string }): { dispose(): void } {
   const key = model.uri.toString()
   const handle: Promise<string | null> = api.lsp
     .open({ root: opts.root, path: opts.path, text: model.getValue() })

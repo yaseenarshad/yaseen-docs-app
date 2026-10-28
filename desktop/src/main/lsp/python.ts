@@ -2,19 +2,22 @@ import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import type { LanguageSpec } from './pool'
+import { helperFolder } from './download'
+import { PYRIGHT_PIN } from './pins'
 import { findProjectRoot, isInside } from './projectRoot'
 import type { RequestHandler } from './rpc'
 import { defaultServerReply } from './rpc'
 import type { LanguageServer, ServerCommand } from './server'
+import type { LspPlaces } from './typescript'
 
 /**
  * The Python helper (YAZ-3455 4C, D9): `pyright` (pinned in the root `devDependencies`), a Node
  * program, run on Electron's own Node — `process.execPath` with `ELECTRON_RUN_AS_NODE=1` — so no
  * Python and no Node install is needed to start it. Same launcher as TypeScript (`server.ts`).
  *
- * - Packaged: `tools/packDesktop.mjs` stages the package into `desktop/.cache/lsp/pyright/` and
- *   electron-builder copies it to `Resources/lsp/pyright/` (`extraResources`, as TypeScript).
- * - Dev and tests: `node_modules/pyright`, from `appPath` (the `desktop/` folder) upward.
+ * WHERE (YAZ-3500), as TypeScript: the downloaded copy `<userData>/lsp/pyright-<version>/`, the pinned
+ * version only (`download.ts`); then, in a dev build and tests, `node_modules/pyright` from `appPath` (the
+ * `desktop/` folder) upward. Else none.
  *
  * PROJECT: the nearest `pyproject.toml`, `setup.py` or `requirements.txt` above the file, else the
  * vault. LIBRARIES: a `.venv` or `venv` in the project gives pyright its `site-packages` folders, found
@@ -39,11 +42,10 @@ export const PYRIGHT_ENTRY = 'langserver.index.js'
 const VENV_NAMES = ['.venv', 'venv'] as const
 
 /** The pyright entry script; null when it is not there. */
-export function resolvePyright(opts: { isPackaged: boolean; resourcesPath: string; appPath: string; exists: (p: string) => boolean }): string | null {
-  if (opts.isPackaged) {
-    const bundled = path.join(opts.resourcesPath, 'lsp', 'pyright', PYRIGHT_ENTRY)
-    return opts.exists(bundled) ? bundled : null
-  }
+export function resolvePyright(opts: { lspRoot: string; devCopies: boolean; appPath: string; exists: (p: string) => boolean }): string | null {
+  const downloaded = path.join(helperFolder(opts.lspRoot, PYRIGHT_PIN), PYRIGHT_ENTRY)
+  if (opts.exists(downloaded)) return downloaded
+  if (!opts.devCopies) return null
   for (let dir = path.resolve(opts.appPath); ; dir = path.dirname(dir)) {
     const candidate = path.join(dir, 'node_modules', 'pyright', PYRIGHT_ENTRY)
     if (opts.exists(candidate)) return candidate
@@ -186,7 +188,7 @@ export function pyrightWorkspaceReady(server: LanguageServer, ms = WORKSPACE_REA
 }
 
 /** pyright for Python files (YAZ-3455). */
-export function pythonSpec(places: { isPackaged: boolean; resourcesPath: string; appPath: string }, exists: (p: string) => boolean = existsSync): LanguageSpec {
+export function pythonSpec(places: LspPlaces, exists: (p: string) => boolean = existsSync): LanguageSpec {
   let entry: string | null | undefined
   return {
     language: 'python',

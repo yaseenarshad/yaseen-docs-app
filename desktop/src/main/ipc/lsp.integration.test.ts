@@ -26,7 +26,7 @@ vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }))
  */
 
 const desktopDir = fileURLToPath(new URL('../../..', import.meta.url))
-const binary = resolveTypescriptServer({ isPackaged: false, resourcesPath: '', appPath: desktopDir, platform: process.platform, arch: process.arch, exists: existsSync })
+const binary = resolveTypescriptServer({ lspRoot: path.join(tmpdir(), 'yaz-3500-no-downloads'), devCopies: true, appPath: desktopDir, platform: process.platform, arch: process.arch, exists: existsSync })
 const shipped = ['darwin-arm64', 'darwin-x64', 'win32-x64'].includes(`${process.platform}-${process.arch}`)
 
 const TSCONFIG = JSON.stringify({ compilerOptions: { strict: true, module: 'esnext', moduleResolution: 'bundler', target: 'es2022', noEmit: true }, include: ['src'] })
@@ -85,7 +85,7 @@ describe.skipIf(!shipped && binary === null)('lsp:* with the TypeScript 7 helper
       await mkdir(path.dirname(at(rel)), { recursive: true })
       await writeFile(at(rel), text)
     }
-    pool = registerLspIpc({ isPackaged: false, resourcesPath: '', appPath: desktopDir })
+    pool = registerLspIpc({ lspRoot: path.join(tmpdir(), 'yaz-3500-no-downloads'), devCopies: true, appPath: desktopDir })
   })
 
   afterAll(async () => {

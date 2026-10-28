@@ -406,6 +406,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   codeMinimap: (v): v is boolean => typeof v === 'boolean',
   codeOutlineSort: (v): v is CodeOutlineSort => typeof v === 'string' && (CODE_OUTLINE_SORTS as readonly string[]).includes(v),
   codeOutlineHidden: isOutlineHidden,
+  codeLanguageHelpers: (v): v is boolean => typeof v === 'boolean',
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 

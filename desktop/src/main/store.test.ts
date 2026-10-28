@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, HOVER_PLACES, hoverOn, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, stepSidebarZoom, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, LOCAL_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, HOVER_PLACES, hoverOn, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, stepSidebarZoom, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { createStore, isSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
 
@@ -215,6 +215,20 @@ describe('createStore: loading', () => {
     // The IPC boundary refuses the whole object (it never repairs).
     expect(isSettings({ ...DEFAULT_SETTINGS, codeWrap: 'off' })).toBe(false)
     expect(isSettings({ ...DEFAULT_SETTINGS, codeWrap: false })).toBe(true)
+  })
+
+  it('"Jump across files" (YAZ-3500): a file from before it reads off; on survives a restart; a wrong value reads off; it stays on this Mac', async () => {
+    const { codeLanguageHelpers: _a, ...legacySettings } = DEFAULT_SETTINGS
+    expect(DEFAULT_SETTINGS.codeLanguageHelpers).toBe(false)
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.codeLanguageHelpers).toBe(false)
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeLanguageHelpers: true } }))
+    expect(createStore(file).get().settings.codeLanguageHelpers).toBe(true)
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, codeLanguageHelpers: 'yes' } }))
+    expect(createStore(file).get().settings.codeLanguageHelpers).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, codeLanguageHelpers: 1 })).toBe(false)
+    // The helpers are a download on this Mac: the switch never travels in a settings folder.
+    expect(LOCAL_SETTINGS).toContain('codeLanguageHelpers')
   })
 
   it('the code Outline (YAZ-3486 S4, S5): a file from before it reads Position and no hidden kind; each value survives a restart; a wrong value is repaired', async () => {

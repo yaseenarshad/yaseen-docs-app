@@ -2204,6 +2204,24 @@ button {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
+/* A sheet with a title line over its text (YAZ-3500, "Turn on jump across files?"). */
+.confirm__title {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+/* The sheet's one line under the text: a download's progress, or why it failed (YAZ-3500). */
+.confirm__status {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.confirm__status--error {
+  color: var(--danger);
+}
+
 /* A sheet that waits for input (YAZ-2677 D2): its confirm button does nothing yet. */
 .confirm__btn:disabled {
   opacity: 0.45;

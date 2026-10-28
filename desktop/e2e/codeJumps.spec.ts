@@ -8,6 +8,13 @@
  * - The last code tab of the project closes → its helper stops (S6).
  * - Python: F12 jumps to the other `.py` file at the right line; quit leaves no helper.
  *
+ * "JUMP ACROSS FILES" (YAZ-3500) is off by default: step 1 proves S1 first (F12 on the import opens no
+ * other file, and no helper runs), then turns the switch on in Settings › Code. This dev build finds the
+ * helpers in `node_modules`, so no box. Step 4 turns it off with a code tab open: every helper stops
+ * within 2 s (S4). Step 5 starts a second app that sees no `node_modules` copy
+ * (`YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1`), as a packaged app on its first switch-on: the box shows in the
+ * approved words, and Cancel keeps the switch off with nothing downloaded. No step reaches the network.
+ *
  * Helpers are counted only among the processes under THIS app (`app.process().pid`), so a helper
  * of another app or worktree never counts. Keys go to the page through Playwright, never to the
  * person's screen. Same harness as viewers.spec.ts: temp `--user-data-dir`, a COPY of a generated
@@ -16,10 +23,10 @@
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, clickMenuItem, copyVault, expandDirs, fileRow, launchApp, layer, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { appWindow, buildFixtureVault, clickMenuItem, confirmSheet, copyVault, expandDirs, fileRow, launchApp, layer, quitApp, readState, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -73,6 +80,21 @@ const alive = (pid: number): boolean => {
 }
 
 const code = () => layer(win).locator('.editor--code .monaco-editor')
+const dialog = (w: Page) => w.locator('.settings-dialog[role="dialog"]')
+const jumpRow = (w: Page) => dialog(w).locator('[data-setting="codeLanguageHelpers"]')
+
+/** Settings › Code, open on the page of the "Jump across files" row. */
+async function openCodeSettings(a: ElectronApplication, w: Page): Promise<void> {
+  await clickMenuItem(a, 'menu.app.settings', 'w1')
+  await expect(dialog(w)).toBeVisible()
+  await dialog(w).locator('.settings-nav__item', { hasText: /^Code$/ }).click()
+  await expect(jumpRow(w)).toBeVisible()
+}
+
+async function closeSettings(w: Page): Promise<void> {
+  await dialog(w).getByRole('button', { name: 'Close settings', exact: true }).click()
+  await expect(dialog(w)).toHaveCount(0)
+}
 
 /** Puts the cursor in the line that has `text`, `column` characters in (from Home). */
 async function cursorAt(text: string, column: number): Promise<void> {
@@ -104,12 +126,32 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — TS: F12 on an imported function opens its file in this tab, at the line of the function (S1)', async () => {
+test('step 1 — default settings (YAZ-3500 S1): F12 on the import opens no other file, and no helper runs; then the switch goes on', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'tsproj', 'src', 'use.ts')) })
   win = await appWindow(app, 'w1')
   await expect(code().locator('.view-lines')).toContainText('addNumbers(1, 2)')
-  // The helper starts with the first tab of its project.
+  expect((await readState(userData)).settings.codeLanguageHelpers ?? false).toBe(false)
+  await cursorAt('total', 23)
+  await win.keyboard.press('F12')
+  // Monaco's one-file help: the import's name in this file. No tab of math.ts, no helper, for 3 s.
+  await win.waitForTimeout(3_000)
+  await expect(tabsOf(win)).toHaveText(['use.ts'])
+  expect(helpers()).toEqual({ ts: [], py: [] })
+  await shoot(win, 'codeJumps-00-off-by-default')
+
+  // Settings › Code › "Jump across files" → On. This dev build has the helpers in node_modules: no box.
+  await openCodeSettings(app, win)
+  await expect(jumpRow(win).getByRole('button', { name: 'Off', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await jumpRow(win).getByRole('button', { name: 'On', exact: true }).click()
+  await expect(jumpRow(win).getByRole('button', { name: 'On', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(confirmSheet(win)).toHaveCount(0)
+  await expect.poll(async () => (await readState(userData)).settings.codeLanguageHelpers).toBe(true)
+  await closeSettings(win)
+  // The open code tab attaches at once: its project's helper starts.
   await expect.poll(() => helpers().ts.length, { timeout: 15_000 }).toBe(1)
+})
+
+test('step 1b — TS: F12 on an imported function opens its file in this tab, at the line of the function (YAZ-3454 S1; YAZ-3500 S3)', async () => {
   // "export const total = " is 21 characters: 23 puts the cursor inside `addNumbers`.
   await cursorAt('total', 23)
   await win.keyboard.press('F12')
@@ -153,6 +195,51 @@ test('step 4 — Python: F12 jumps to the other .py file at the line of the func
   await expect(code().locator('.active-line-number')).toHaveText('4')
   await shoot(win, 'codeJumps-04-python-f12')
   expect(seen.size).toBeGreaterThanOrEqual(2) // one tsc, one pyright
+
+  // YAZ-3500 S4: the switch goes off with the code tab open, and every helper stops within 2 s.
+  const running = helpers().py
+  expect(running).toHaveLength(1)
+  await openCodeSettings(app, win)
+  await jumpRow(win).getByRole('button', { name: 'Off', exact: true }).click()
+  const t0 = Date.now()
+  await expect.poll(() => running.filter(alive), { timeout: 2_000, intervals: [50] }).toEqual([])
+  console.log(`[YAZ-3500] S4: every helper stopped ${Date.now() - t0} ms after the switch went off`)
+  expect(helpers()).toEqual({ ts: [], py: [] })
+  await closeSettings(win)
   await quitApp(app)
   await expect.poll(() => [...seen].filter(alive), { timeout: 10_000 }).toEqual([])
+})
+
+test('step 5 — the first switch-on with no helpers (a packaged app): the box in the approved words; Cancel keeps it off and downloads nothing (YAZ-3500)', async () => {
+  const fresh = await mkdtemp(path.join(tmpdir(), 'codeJumps-box-userdata-'))
+  try {
+    app = await launchApp({ userData: fresh, seedState: seededState(vault, path.join(vault, 'tsproj', 'src', 'use.ts')), env: { YASEEN_DOCS_LSP_DOWNLOAD_ONLY: '1' } })
+    win = await appWindow(app, 'w1')
+    await expect(code().locator('.view-lines')).toContainText('addNumbers(1, 2)')
+    await openCodeSettings(app, win)
+    await jumpRow(win).getByRole('button', { name: 'On', exact: true }).click()
+    const box = confirmSheet(win)
+    await expect(box).toBeVisible()
+    await expect(box.locator('.confirm__title')).toHaveText('Turn on jump across files?')
+    await expect(box.locator('.confirm__text')).toContainText(
+      "Cmd+click a name to open the file where it's made. Shift+F12 lists every place that uses it. This works for TypeScript, JavaScript, React and Python. It needs two helper tools (about 15 MB). They run only while a code file is open.",
+    )
+    await expect(box.getByRole('button')).toHaveText(['Cancel', 'Download and turn on'])
+    // Asking wrote nothing.
+    await expect(jumpRow(win).getByRole('button', { name: 'Off', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await shoot(win, 'codeJumps-05-box')
+    await box.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect(box).toHaveCount(0)
+    // The box's Cancel closes the box, not Settings.
+    await expect(dialog(win)).toBeVisible()
+    await expect(jumpRow(win).getByRole('button', { name: 'Off', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await win.waitForTimeout(500)
+    expect((await readState(fresh)).settings.codeLanguageHelpers ?? false).toBe(false)
+    expect(await readdir(path.join(fresh, 'lsp')).catch(() => [])).toEqual([])
+    expect(helpers()).toEqual({ ts: [], py: [] })
+    await closeSettings(win)
+    await quitApp(app)
+  } finally {
+    await rm(fresh, { recursive: true, force: true })
+  }
 })

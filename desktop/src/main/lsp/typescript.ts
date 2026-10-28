@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import type { LanguageSpec } from './pool'
+import { helperFolder, typescriptPin } from './download'
 import { findProjectRoot } from './projectRoot'
 import type { ServerCommand } from './server'
 
@@ -13,9 +14,9 @@ import type { ServerCommand } from './server'
  * `lib.*.d.ts` files beside it, which it reads. `tsc --lsp --stdio` is the language server over
  * stdio (`tsc --lsp --help` lists `-stdio`, `-pipe`, `-socket`).
  *
- * - Packaged: `tools/packDesktop.mjs` stages that `lib/` folder and electron-builder copies it to
- *   `Resources/lsp/typescript/` (`extraResources`; a binary cannot run from inside `app.asar`).
- * - Dev: the root `optionalDependencies` install the package of this Mac in `node_modules`.
+ * WHERE (YAZ-3500): the app ships no helper. First the downloaded copy (`download.ts`):
+ * `<userData>/lsp/typescript-<platform>-<arch>-<version>/lib/tsc`, the pinned version only. Then, in a dev
+ * build, the `node_modules` copy (the root `optionalDependencies` install the package of this Mac). Else none.
  */
 
 export const TYPESCRIPT_LSP_ARGS = ['--lsp', '--stdio'] as const
@@ -30,23 +31,25 @@ function binaryName(platform: NodeJS.Platform): string {
 }
 
 /**
- * The binary's path. Packaged: inside `resourcesPath`. Dev: the first `node_modules` copy from
- * `appPath` (the `desktop/` folder) upward that `exists`; null when there is none (an unsupported
- * platform, or `npm install --omit=optional`).
+ * The binary's path: the downloaded copy of the pinned version under `lspRoot`, else (`devCopies`, a dev
+ * build) the first `node_modules` copy from `appPath` (the `desktop/` folder) upward that `exists`; null when
+ * there is none (not downloaded yet, an unsupported platform, `npm install --omit=optional`).
  */
 export function resolveTypescriptServer(opts: {
-  isPackaged: boolean
-  resourcesPath: string
+  lspRoot: string
+  devCopies: boolean
   appPath: string
   platform: NodeJS.Platform
   arch: string
   exists: (p: string) => boolean
 }): string | null {
   const exe = binaryName(opts.platform)
-  if (opts.isPackaged) {
-    const bundled = path.join(opts.resourcesPath, 'lsp', 'typescript', exe)
-    return opts.exists(bundled) ? bundled : null
+  const pin = typescriptPin(opts.platform, opts.arch)
+  if (pin !== null) {
+    const downloaded = path.join(helperFolder(opts.lspRoot, pin), 'lib', exe)
+    if (opts.exists(downloaded)) return downloaded
   }
+  if (!opts.devCopies) return null
   const pkg = typescriptPackage(opts.platform, opts.arch)
   for (let dir = path.resolve(opts.appPath); ; dir = path.dirname(dir)) {
     const candidate = path.join(dir, 'node_modules', ...pkg.split('/'), 'lib', exe)
@@ -63,30 +66,25 @@ export function typescriptServerCommand(binary: string, projectRoot: string): Se
 /** The files that make a folder a TS or JS project (YAZ-3454): the nearest one above the file wins. */
 export const TYPESCRIPT_PROJECT_MARKERS = ['tsconfig.json', 'jsconfig.json', 'package.json'] as const
 
-/** Where the shipped helpers are: `Resources/lsp/` packaged, `node_modules` in dev (YAZ-3453, YAZ-3455). */
+/** Where the helpers are (YAZ-3500): the downloaded copies, and a dev build's `node_modules` copies. */
 export interface LspPlaces {
-  isPackaged: boolean
-  resourcesPath: string
+  /** `<userData>/lsp`: the downloaded helpers (`download.ts`). */
+  lspRoot: string
+  /** Also the `node_modules` copies: a dev build, unless `YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1`. Never packaged. */
+  devCopies: boolean
   /** `app.getAppPath()`: the `desktop/` folder in dev. */
   appPath: string
 }
 
-/** A memo of one lookup on disk: the helper binary does not move while the app runs. */
-function once<T>(fn: () => T): () => T {
-  let done = false
-  let value: T
-  return () => {
-    if (!done) {
-      value = fn()
-      done = true
-    }
-    return value
-  }
+/** A memo of one lookup on disk that found the binary: it does not move while the app runs. A miss is asked again (a download may come). */
+function onceFound<T>(fn: () => T | null): () => T | null {
+  let value: T | null = null
+  return () => (value ??= fn())
 }
 
 /** TypeScript 7 for TS, JS and React (YAZ-3454): the project is the nearest `tsconfig.json`, `jsconfig.json` or `package.json`; none = no helper (S7). */
 export function typescriptSpec(places: LspPlaces, exists: (p: string) => boolean = existsSync): LanguageSpec {
-  const binary = once(() => resolveTypescriptServer({ ...places, platform: process.platform, arch: process.arch, exists }))
+  const binary = onceFound(() => resolveTypescriptServer({ ...places, platform: process.platform, arch: process.arch, exists }))
   return {
     language: 'typescript',
     projectRoot: (file) => findProjectRoot(file, TYPESCRIPT_PROJECT_MARKERS, exists, [homedir()]),

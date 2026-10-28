@@ -4,6 +4,8 @@
  * debounced, and at once before a request; the providers turn the helper's places into Monaco's (the
  * tab's own file is its own model, another file gets a read-only preview model); `null` falls back to
  * Monaco's one-file worker; a jump opens the file through the tab's `onOpenFile` and shows the place.
+ * THE SWITCH (YAZ-3500): Settings › Code › "Jump across files", off by default — every test but the
+ * switch's own turns it on first.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -17,6 +19,8 @@ import { fakeWatch } from '../documents/boardTestKit'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { CodeEditor } from './CodeEditor'
 import { MAX_PREVIEWS, SYNC_DEBOUNCE_MS } from './languageClient'
+import { setLanguageHelpers } from './languageHelpers'
+import { readSymbols } from './outline/symbolSource'
 import { created, monaco, registered, resetFakeMonaco, type FakeEditor, type FakeModel, type FakeUri } from './monacoTestKit'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -71,6 +75,7 @@ beforeEach(() => {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
+  setLanguageHelpers(true)
 })
 
 afterEach(() => {
@@ -80,6 +85,82 @@ afterEach(() => {
   _resetRenameContinuity()
   vi.useRealTimers()
   vi.clearAllMocks()
+  setLanguageHelpers(false)
+})
+
+describe('the switch: "Jump across files", off by default (YAZ-3500)', () => {
+  const offByDefault = (): void => {
+    setLanguageHelpers(false)
+  }
+
+  it('S1: off, a code tab never opens its file with a helper, and a Cmd+click on an imported name opens no other file', async () => {
+    offByDefault()
+    const { model } = await opened()
+    expect(lsp.open).not.toHaveBeenCalled()
+    // Monaco's one-file worker answers: the import's own line, never math.ts.
+    const worker = { getDefinitionAtPosition: vi.fn(async (fileName: string) => [{ fileName, textSpan: { start: 9, length: 3 } }, { fileName: 'file:///vault/src/math.ts', textSpan: { start: 16, length: 3 } }]) }
+    Object.assign(monaco, { typescript: { getTypeScriptWorker: async () => async () => worker } })
+    Object.assign(model, { getOffsetAt: () => 40, getPositionAt: (offset: number) => ({ lineNumber: 1, column: offset + 1 }) })
+    const answer = await definitionOf().provideDefinition(model, { lineNumber: 3, column: 22 })
+    expect(answer).toEqual([{ uri: model.uri, range: new monaco.Range(1, 10, 1, 13) }])
+    expect(lsp.definition).not.toHaveBeenCalled()
+    expect(readFile).toHaveBeenCalledTimes(1) // the tab's own file only: no preview of math.ts
+    delete (monaco as Record<string, unknown>).typescript
+  })
+
+  it('S2: off, Cmd+click on a name defined in the same file jumps inside it (Monaco\'s one-file help)', async () => {
+    offByDefault()
+    const { model } = await opened()
+    const worker = { getReferencesAtPosition: vi.fn(async (fileName: string) => [{ fileName, textSpan: { start: 0, length: 5 } }, { fileName, textSpan: { start: 30, length: 5 } }]) }
+    Object.assign(monaco, { typescript: { getTypeScriptWorker: async () => async () => worker } })
+    Object.assign(model, { getOffsetAt: () => 30, getPositionAt: (offset: number) => ({ lineNumber: 1, column: offset + 1 }) })
+    const answer = await referencesOf().provideReferences(model, { lineNumber: 1, column: 31 })
+    expect(answer.map((l) => l.uri)).toEqual([model.uri, model.uri])
+    expect(lsp.references).not.toHaveBeenCalled()
+    delete (monaco as Record<string, unknown>).typescript
+  })
+
+  it('S3/S4: turned on, every open code tab opens its file; turned off, every tab closes it at once', async () => {
+    offByDefault()
+    files['/vault/app.py'] = 'print(1)\n'
+    await opened()
+    const second = document.createElement('div')
+    document.body.appendChild(second)
+    const other = await opened('/vault/app.py', second)
+    expect(lsp.open).not.toHaveBeenCalled()
+    act(() => setLanguageHelpers(true))
+    await settle()
+    expect(lsp.open.mock.calls.map(([req]) => req.path).sort()).toEqual(['/vault/app.py', A])
+    act(() => setLanguageHelpers(false))
+    await settle()
+    expect((lsp.close.mock.calls as unknown as [string][]).map(([h]) => h).sort()).toEqual([`h:/vault/app.py`, `h:${A}`])
+    // Off again: a request asks no helper.
+    await definitionOf().provideDefinition(created.models.find((m) => m.uri.path === A && m.uri.scheme === 'code-tab')!, { lineNumber: 1, column: 1 })
+    expect(lsp.definition).not.toHaveBeenCalled()
+    act(() => other.root.unmount())
+    second.remove()
+  })
+
+  it('a tab that closes while the switch is off sends nothing; the text it had is what a later switch-on sends', async () => {
+    offByDefault()
+    const { model } = await opened()
+    act(() => model.type('edited while off'))
+    act(() => setLanguageHelpers(true))
+    await settle()
+    expect(lsp.open).toHaveBeenCalledWith({ root: ROOT, path: A, text: 'edited while off' })
+  })
+
+  it('S5: off, a .py tab has its Outline from the text, and no helper', async () => {
+    offByDefault()
+    files['/vault/shapes.py'] = 'class Shape:\n    def area(self):\n        return 0\n\n\ndef make():\n    return Shape()\n'
+    const { editor, model } = await opened('/vault/shapes.py')
+    const symbols = await readSymbols(editor as never, model as never)
+    expect(symbols?.map((s) => [s.name, s.children?.map((c) => c.name) ?? []])).toEqual([
+      ['Shape', ['area']],
+      ['make', []],
+    ])
+    expect(lsp.open).not.toHaveBeenCalled()
+  })
 })
 
 describe('the tab and its helper', () => {

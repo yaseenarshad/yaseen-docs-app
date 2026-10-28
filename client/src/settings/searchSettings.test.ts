@@ -56,6 +56,7 @@ describe('settingCandidates', () => {
       'codeReadOnly',
       'codeWrap',
       'codeMinimap',
+      'codeLanguageHelpers',
       // Settings › Excalidraw canvas (YAZ-3037).
       ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`),
       // Settings › Images (YAZ-3038).
@@ -151,9 +152,9 @@ describe('searchSettings', () => {
     for (const query of ['startup', 'launch', 'when the app starts']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['startupWindows'])
   })
 
-  it('"toc" finds the two rows of the table of contents and "jump" the first alone; "outline" and "headings" find it among others; the group\'s name finds both rows and the ⌘J line of the Hotkeys table (YAZ-2700, YAZ-2762)', () => {
+  it('"toc" finds the two rows of the table of contents and "jump" the first and the code tab\'s "Jump across files" (YAZ-3500); "outline" and "headings" find it among others; the group\'s name finds both rows and the ⌘J line of the Hotkeys table (YAZ-2700, YAZ-2762)', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'toc'))).toEqual(['tableOfContents', 'tocLines'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'jump'))).toEqual(['tableOfContents'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'jump')).sort()).toEqual(['codeLanguageHelpers', 'tableOfContents'])
     // The words the app already uses for the bullet features and the fold keys: the row is one of the answers.
     for (const query of ['outline', 'headings']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('tableOfContents')
     // The settings folder's hint names the table of contents width, which stays on this Mac (YAZ-3276 D7); General comes first.

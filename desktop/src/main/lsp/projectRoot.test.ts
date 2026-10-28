@@ -1,5 +1,7 @@
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { helperFolder, typescriptPin } from './download'
+import { TYPESCRIPT_PINS } from './pins'
 import { findProjectRoot, isInside } from './projectRoot'
 import { typescriptSpec } from './typescript'
 
@@ -27,13 +29,14 @@ describe('findProjectRoot (YAZ-3454)', () => {
   })
 
   it('the TypeScript spec: no binary, no helper; the lib folder beside the binary is its own', () => {
-    const bin = path.resolve('/app/Resources/lsp/typescript/tsc')
-    const spec = typescriptSpec({ isPackaged: true, resourcesPath: path.resolve('/app/Resources'), appPath: '' }, disk(bin, '/w/p/tsconfig.json'))
+    const lspRoot = path.resolve('/data/lsp')
+    const bin = path.join(helperFolder(lspRoot, typescriptPin(process.platform, process.arch) ?? TYPESCRIPT_PINS['darwin-arm64']), 'lib', process.platform === 'win32' ? 'tsc.exe' : 'tsc')
+    const spec = typescriptSpec({ lspRoot, devCopies: false, appPath: '' }, disk(bin, '/w/p/tsconfig.json'))
     expect(spec.projectRoot(path.resolve('/w/p/src/a.ts'), '/w')).toBe(path.resolve('/w/p'))
-    if (process.platform !== 'win32') {
+    if (process.platform !== 'win32' && typescriptPin(process.platform, process.arch) !== null) {
       expect(spec.command('/w/p')).toMatchObject({ command: bin, args: ['--lsp', '--stdio'], cwd: '/w/p' })
       expect(spec.ownFolder?.()).toBe(path.dirname(bin))
     }
-    expect(typescriptSpec({ isPackaged: true, resourcesPath: '/none', appPath: '' }, disk()).command('/w/p')).toBeNull()
+    expect(typescriptSpec({ lspRoot, devCopies: false, appPath: '' }, disk()).command('/w/p')).toBeNull()
   })
 })

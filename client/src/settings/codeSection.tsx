@@ -7,8 +7,11 @@
  *   unlocks that tab until it closes; the setting stays.
  * - Wrap long lines (D8): on by default. Alt+Z flips one tab and saves nothing; a change here overrides it.
  * - Minimap (D6): off by default.
+ * - Jump across files (YAZ-3500): off by default. The language helpers start only with it on; the first
+ *   switch-on asks, then downloads them (`LanguageHelpersControl`). Not on the cog: it is not about one tab.
  */
 import { Segmented } from './controls'
+import { LanguageHelpersControl } from './LanguageHelpersControl'
 import { ON_OFF_OPTIONS } from './options'
 import type { SettingsSection } from './registry'
 
@@ -47,6 +50,13 @@ export const CODE_SECTION: SettingsSection = {
           render: ({ settings, onChange }) => (
             <Segmented options={ON_OFF_OPTIONS} value={settings.codeMinimap} onChange={(codeMinimap) => onChange({ ...settings, codeMinimap })} ariaLabel="Minimap in code files" />
           ),
+        },
+        {
+          id: 'codeLanguageHelpers',
+          label: 'Jump across files (Cmd+click, Shift+F12)',
+          hint: 'For TypeScript, JavaScript, React and Python. The first time, it downloads two helper tools.',
+          keywords: [...CODE_WORDS, 'go to definition', 'definition', 'references', 'find references', 'language server', 'lsp', 'typescript', 'python', 'pyright', 'f12', 'cmd click'],
+          render: ({ settings, onChange }) => <LanguageHelpersControl on={settings.codeLanguageHelpers === true} onSet={(codeLanguageHelpers) => onChange({ ...settings, codeLanguageHelpers })} />,
         },
       ],
     },

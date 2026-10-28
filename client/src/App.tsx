@@ -47,6 +47,7 @@ import { isFolderPath, pageName, pathTitles, useAllPathTitles } from './lib/page
 import { fetchTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
+import { setLanguageHelpers } from './code/languageHelpers'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
@@ -499,6 +500,8 @@ export function App() {
     storage.setSettings(next)
     setSettings(next)
   }, [])
+  // "Jump across files" (YAZ-3500): every code tab of this page follows the switch (`code/languageHelpers.ts`).
+  useEffect(() => setLanguageHelpers(settings.codeLanguageHelpers === true), [settings.codeLanguageHelpers])
 
   // A Files window's own sidebar zoom (YAZ-3389 D13): only this window writes it, so a local copy stays true.
   const [filesZoom, setFilesZoomState] = useState(() => (filesWindow ? storage.getFilesZoom() : 100))

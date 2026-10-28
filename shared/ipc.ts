@@ -12,6 +12,7 @@
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
+import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { SystemHotkey } from './macosHotkeys'
 
 /**
@@ -583,6 +584,18 @@ export const CONTRACT = {
     definition: invoke<[req: LspPositionRequest], LspLocation[] | null>('lsp:definition', 1),
     references: invoke<[req: LspPositionRequest], LspLocation[] | null>('lsp:references', 1),
     hover: invoke<[req: LspPositionRequest], LspHover | null>('lsp:hover', 1),
+    /** Are the helpers of this platform there (YAZ-3500)? `ready` = a switch-on needs no box and no download. */
+    helpers: invoke<[], LspHelpersState>('lsp:helpers', 0),
+    /**
+     * "Download and turn on" (YAZ-3500): main downloads the pinned packages of this platform, checks each
+     * one's sha512, unpacks it to `<userData>/lsp/<name>-<version>/`. Resolves when done or failed (never
+     * rejects for a failed download); the switch is the renderer's to set after `{ ok: true }`. A second
+     * call while one runs joins it. Progress arrives on `onInstallProgress`.
+     */
+    install: invoke<[], LspInstallResult>('lsp:install', 0),
+    /** The box's Cancel during a download: stops it and deletes what it wrote. */
+    cancelInstall: invoke<[], void>('lsp:cancel-install', 0),
+    onInstallProgress: push<LspInstallProgress>('lsp:install-progress'),
   },
 } as const
 

@@ -132,8 +132,8 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
 const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines']
-/** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too. */
-const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap']
+/** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
+const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
 const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents']
 /** Settings › Excalidraw canvas (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
@@ -400,9 +400,9 @@ describe('Settings › Code (YAZ-3449)', () => {
     const { el, onChange } = mountOn('Code', { ...DEFAULT_SETTINGS })
     expect(rowIds(el)).toEqual(CODE_ROWS)
     // D5 wording here; the code tab's cog row stays "Read only (all code files)" (CodeEditor.test.tsx).
-    expect(CODE_ROWS.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Open code files read only', 'Wrap long lines', 'Minimap'])
+    expect(CODE_ROWS.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Open code files read only', 'Wrap long lines', 'Minimap', 'Jump across files (Cmd+click, Shift+F12)'])
     const pressed = (id: string) => rowButtons(el, id).find((b) => b.getAttribute('aria-pressed') === 'true' || b.className.includes('--active'))?.textContent
-    expect(CODE_ROWS.map(pressed)).toEqual(['Off', 'On', 'Off'])
+    expect(CODE_ROWS.map(pressed)).toEqual(['Off', 'On', 'Off', 'Off'])
     act(() => rowButtons(el, 'codeReadOnly')[0].click()) // On
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, codeReadOnly: true })
     act(() => rowButtons(el, 'codeWrap')[1].click()) // Off
@@ -415,6 +415,8 @@ describe('Settings › Code (YAZ-3449)', () => {
     const { el } = mount()
     type(searchInput(el), 'word wrap')
     expect(rowIds(el)).toContain('codeWrap')
+    type(searchInput(el), 'go to definition')
+    expect(rowIds(el)).toContain('codeLanguageHelpers')
   })
 })
 

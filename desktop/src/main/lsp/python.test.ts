@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { findVenv, pyrightPath, pyrightServerCommand, pyrightWorkspaceReady, pythonConfigurationReply, pythonProjectRoot, resolvePyright } from './python'
+import { PYRIGHT_PIN } from './pins'
 import type { NotificationHandler } from './rpc'
 import type { LanguageServer, ServerExit } from './server'
 
@@ -14,11 +15,14 @@ const disk = (...files: string[]) => {
 }
 
 describe('python helper (YAZ-3455)', () => {
-  it('finds pyright inside the app when packaged, in node_modules above the app in dev', () => {
-    const exists = disk(p('Resources', 'lsp', 'pyright', 'langserver.index.js'), p('repo', 'node_modules', 'pyright', 'langserver.index.js'))
-    expect(resolvePyright({ isPackaged: true, resourcesPath: p('Resources'), appPath: '', exists })).toBe(p('Resources', 'lsp', 'pyright', 'langserver.index.js'))
-    expect(resolvePyright({ isPackaged: false, resourcesPath: '', appPath: p('repo', 'desktop'), exists })).toBe(p('repo', 'node_modules', 'pyright', 'langserver.index.js'))
-    expect(resolvePyright({ isPackaged: true, resourcesPath: p('Other'), appPath: '', exists })).toBeNull()
+  it('finds the downloaded pyright of the pinned version first, then (dev) node_modules above the app (YAZ-3500)', () => {
+    const downloaded = p('data', 'lsp', `pyright-${PYRIGHT_PIN.version}`, 'langserver.index.js')
+    const dev = p('repo', 'node_modules', 'pyright', 'langserver.index.js')
+    const exists = disk(downloaded, dev)
+    expect(resolvePyright({ lspRoot: p('data', 'lsp'), devCopies: true, appPath: p('repo', 'desktop'), exists })).toBe(downloaded)
+    expect(resolvePyright({ lspRoot: p('other'), devCopies: true, appPath: p('repo', 'desktop'), exists })).toBe(dev)
+    expect(resolvePyright({ lspRoot: p('other'), devCopies: false, appPath: p('repo', 'desktop'), exists })).toBeNull()
+    expect(resolvePyright({ lspRoot: p('data', 'lsp'), devCopies: false, appPath: '', exists: disk(p('data', 'lsp', 'pyright-0.0.1', 'langserver.index.js')) })).toBeNull()
   })
 
   it("runs on the app's own Node with ELECTRON_RUN_AS_NODE, in the project folder, with /usr/bin out of PATH on macOS", () => {

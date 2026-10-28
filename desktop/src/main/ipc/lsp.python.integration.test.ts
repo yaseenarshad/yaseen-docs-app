@@ -27,7 +27,7 @@ vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }))
  */
 
 const desktopDir = fileURLToPath(new URL('../../..', import.meta.url))
-const entry = resolvePyright({ isPackaged: false, resourcesPath: '', appPath: desktopDir, exists: existsSync })
+const entry = resolvePyright({ lspRoot: path.join(tmpdir(), 'yaz-3500-no-downloads'), devCopies: true, appPath: desktopDir, exists: existsSync })
 
 const FILES: Record<string, string> = {
   'proj/pyproject.toml': '[project]\nname = "proj"\n',
@@ -97,7 +97,7 @@ describe('lsp:* with pyright (YAZ-3455)', () => {
       await writeFile(at(rel), `#!/bin/sh\necho "$0 $*" >> '${at(MARKER)}'\nexit 1\n`)
       await chmod(at(rel), 0o755)
     }
-    pool = registerLspIpc({ isPackaged: false, resourcesPath: '', appPath: desktopDir })
+    pool = registerLspIpc({ lspRoot: path.join(tmpdir(), 'yaz-3500-no-downloads'), devCopies: true, appPath: desktopDir })
   })
 
   afterAll(async () => {

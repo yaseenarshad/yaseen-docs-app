@@ -21,7 +21,7 @@
     "productName": "Yaseen Docs",
     "directories": { "output": "dist-app" },
     "files": ["out/**", "!node_modules/@typescript/**"],
-    "extraResources": [{ "from": "build/bin", "to": "bin" }, { "from": "../share/dist/assets", "to": "share-viewer" }, { "from": ".cache/lsp/typescript/${os}-${arch}", "to": "lsp/typescript" }, { "from": ".cache/lsp/pyright", "to": "lsp/pyright" }],
+    "extraResources": [{ "from": "build/bin", "to": "bin" }, { "from": "../share/dist/assets", "to": "share-viewer" }],
     "afterPack": "build/adhocSign.cjs",
     "mac": {
       "target": [

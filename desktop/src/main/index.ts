@@ -14,6 +14,7 @@ import { resolveDrawioDir, serveDrawio } from './drawio/assets'
 import { excalidrawFontsDir, viewerAssetsDir } from './ipc/share'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
+import { cancelHelperInstall } from './ipc/lsp'
 import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
@@ -344,7 +345,6 @@ app.whenReady().then(() => {
     drawioDir: DRAWIO_DIR,
     fontsDir: excalidrawFontsDir({ isPackaged: app.isPackaged, mainDir: __dirname, appPath: app.getAppPath(), exists: existsSync }),
     isPackaged: app.isPackaged,
-    resourcesPath: process.resourcesPath,
     appPath: app.getAppPath(),
   }, settingsFolder)
   // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
@@ -407,7 +407,8 @@ app.on('before-quit', (event) => {
     flushIndex: () => Promise.all([flushIndexCache(), flushDiaries()]).then(() => undefined),
     flushSync: () => gitSync?.flushForQuit(),
     // No language server outlives the app (YAZ-3453). Each also ends by itself when its stdin closes.
-    stopHelpers: () => stopAllLanguageServers(),
+    // A helper download under way stops, and leaves no half folder (YAZ-3500).
+    stopHelpers: () => Promise.all([stopAllLanguageServers(), cancelHelperInstall()]).then(() => undefined),
     // The swap waits for this process to end (S21, S22): start it last, then exit.
     exit: () => {
       updater.installOnExit(reopenAfterQuit)

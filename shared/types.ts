@@ -1553,13 +1553,21 @@ export interface SettingsState {
   codeOutlineSort: CodeOutlineSort
   /** The code Outline (YAZ-3486): the kinds of symbol it hides, from its "…" menu. Empty = every kind shows, as in VS Code. */
   codeOutlineHidden: CodeSymbolKind[]
+  /**
+   * Code files (YAZ-3500): "Jump across files (Cmd+click, Shift+F12)". Off (the default): no language helper
+   * ever starts, and Cmd+click / Shift+F12 work inside one file only (Monaco's own help). On: the helpers of
+   * YAZ-3454 / YAZ-3455. The first switch-on downloads them (`lsp.install`). Stays on this Mac (`LOCAL_SETTINGS`):
+   * the helpers are a download on this Mac.
+   */
+  codeLanguageHelpers: boolean
 }
 
 /**
  * The settings that stay on this Mac when a settings folder is set (YAZ-3276 D1): a path, a panel memory
- * and a drag width each fit one Mac only, like `AppState.sidebarWidth`. Every other field travels.
+ * and a drag width each fit one Mac only, like `AppState.sidebarWidth`. So does the code tab's helper switch
+ * (YAZ-3500): its helpers are a download on this Mac. Every other field travels.
  */
-export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth']
+export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers']
 
 /** The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover. */
 export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'links'
@@ -1727,6 +1735,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   codeMinimap: false,
   codeOutlineSort: 'position',
   codeOutlineHidden: [],
+  codeLanguageHelpers: false,
 }
 
 export interface WindowBounds {

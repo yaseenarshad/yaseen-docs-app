@@ -37,7 +37,7 @@ export interface LanguageSpec {
   startOptions?(projectRoot: string): Partial<StartOptions>
   /**
    * The helper's own install folder (its `lib.*.d.ts`, pyright's typeshed): a place in it is dropped.
-   * Packaged, it is inside the app, and a tab must never write there.
+   * It is the app's own download (`<userData>/lsp/`, YAZ-3500), and a tab must never write there.
    */
   ownFolder?(): string | null
   /**

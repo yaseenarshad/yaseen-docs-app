@@ -14,7 +14,7 @@ import { resolveTypescriptServer, typescriptServerCommand } from './typescript'
  */
 
 const desktopDir = fileURLToPath(new URL('../../..', import.meta.url))
-const binary = resolveTypescriptServer({ isPackaged: false, resourcesPath: '', appPath: desktopDir, platform: process.platform, arch: process.arch, exists: existsSync })
+const binary = resolveTypescriptServer({ lspRoot: path.join(tmpdir(), 'yaz-3500-no-downloads'), devCopies: true, appPath: desktopDir, platform: process.platform, arch: process.arch, exists: existsSync })
 // The app ships for these; on them the binary must be installed (root `optionalDependencies`).
 const shipped = ['darwin-arm64', 'darwin-x64', 'win32-x64'].includes(`${process.platform}-${process.arch}`)
 
