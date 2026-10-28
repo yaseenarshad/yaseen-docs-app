@@ -15,6 +15,7 @@
  * the bare name. Search opens `path` directly, so there is nothing to disambiguate — every note
  * gets a row under its own title, and duplicates are told apart by the folder they stand in.
  */
+import { boardBaseName } from '@shared/fileKind'
 import { holdsId } from '@shared/noteId'
 import type { IndexRecord } from '@shared/types'
 import { basename, relTo } from '../lib/paths'
@@ -94,7 +95,8 @@ export function fileCandidates(root: string, files: readonly string[]): SearchCa
     const name = basename(path)
     const rel = relTo(root, path)
     const cut = rel.lastIndexOf('/')
-    return { kind: 'file', name, lower: name.toLowerCase(), label: name, path, folder: cut === -1 ? '' : rel.slice(0, cut) }
+    // Matched by the whole name ("excalidraw" finds a drawing); shown as the tree shows it (YAZ-3536 D2).
+    return { kind: 'file', name, lower: name.toLowerCase(), label: boardBaseName(name), path, folder: cut === -1 ? '' : rel.slice(0, cut) }
   })
 }
 

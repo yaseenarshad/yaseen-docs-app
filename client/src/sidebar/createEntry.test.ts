@@ -52,6 +52,16 @@ describe('renamedPath (Links E1, GRO-2194): a view-only file', () => {
     expect(renamedPath('/r/report.PDF', 'brief')).toBe('/r/brief.PDF')
   })
 
+  it('a board renamed from its bare name keeps its extension, also when the bare name ends in .md or .tsx (YAZ-3536 D3, bug YAZ-3553)', () => {
+    expect(renamedPath('/v/Flow.md.excalidraw', 'Chart.md')).toBe('/v/Chart.md.excalidraw')
+    expect(renamedPath('/v/App.tsx.drawio', 'Shell.tsx')).toBe('/v/Shell.tsx.drawio')
+    expect(renamedPath('/v/Flow.md.excalidraw', 'Chart.md.excalidraw')).toBe('/v/Chart.md.excalidraw')
+    expect(renamedPath('/v/Flow.excalidraw', 'Flow v2')).toBe('/v/Flow v2.excalidraw')
+    // S14, S15 stay: an extension typed after a plain name is a kind change, and main refuses it.
+    expect(renamedPath('/v/Flow.excalidraw', 'Flow.png')).toBe('/v/Flow.png')
+    expect(renamedPath('/v/Flow.excalidraw', 'Flow.drawio')).toBe('/v/Flow.drawio')
+  })
+
   it('respects explicit supported extensions, including mixed-case same-kind text extensions', () => {
     expect(renamedPath('/r/data.JSON', 'profile.json')).toBe('/r/profile.json')
     expect(renamedPath('/r/data.JSON', 'profile.Py')).toBe('/r/profile.Py')

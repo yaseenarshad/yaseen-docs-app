@@ -25,12 +25,15 @@
  *     saying Format and Layers were open, a 2-page diagram with 2 layers opens with Shapes, Format
  *     and Layers closed. On Page-2, zoomed in, a write from outside shows on Page-2 at the same zoom
  *     and place, and nothing is written back.
+ *   7 the names (YAZ-3536 D1–D5): a drawing and a diagram read without their extension in the tree and the
+ *     tab; Rename shows the name alone and keeps the extension on disk; with File icons Off the board's
+ *     extension shows again, and a note stays bare.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, copyVault, dirRow, fileRow, launchApp, layer, menuListItem, menuParent, quitApp, seededState, shoot } from './helpers'
+import { SEED_FILE, activeTab, appWindow, buildFixtureVault, confirmSheet, copyVault, dirRow, fileRow, launchApp, layer, menuListItem, menuParent, quitApp, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -321,4 +324,40 @@ test('step 6 — every draw.io panel opens closed, and an outside change keeps t
   await win.waitForTimeout(1500) // past the 500 ms autosave
   expect(await readFile(path.join(vault, PAGES), 'utf8')).toBe(edited)
   await shoot(win, 'boards-09-diagram-outside-change')
+})
+
+test('step 7 — a board reads without its extension, renames by its name alone, and shows its extension with File icons Off (YAZ-3536)', async () => {
+  if (app === null) throw new Error('step 1 did not launch the app')
+  // `innerText`, not `textContent`: the extension is in the DOM, hidden by app.css until File icons Off (D4).
+  const shown = (row: ReturnType<typeof fileRow>) => row.locator('.tree__label')
+  await expect(shown(fileRow(win, DIAGRAM))).toHaveText('Flow', { useInnerText: true })
+  await expect(shown(fileRow(win, BOARD))).toHaveText('Board', { useInnerText: true })
+  await fileRow(win, DIAGRAM).click()
+  await expect(activeTab(win).locator('.tabbar__label')).toHaveText('Flow', { useInnerText: true })
+
+  // D3: the box holds the name alone; the extension stays on disk.
+  await fileRow(win, BOARD).click({ button: 'right' })
+  await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Rename' }).click()
+  const input = win.locator('.create-inline__input')
+  await expect(input).toHaveValue('Board')
+  await input.fill('Board v2')
+  await input.press('Enter')
+  const sheet = confirmSheet(win)
+  if (await sheet.isVisible().catch(() => false)) await sheet.locator('.confirm__btn', { hasText: 'Rename' }).click()
+  await expect.poll(async () => (await readScene('Board v2.excalidraw')).type, { timeout: 10_000 }).toBe('excalidraw')
+  await expect(shown(fileRow(win, 'Board v2.excalidraw'))).toHaveText('Board v2', { useInnerText: true })
+  await shoot(win, 'boards-10-names-bare')
+
+  // D4, D5: with File icons Off, a board names its kind; a note stays bare.
+  await quitApp(app)
+  const state = await readState(userData)
+  state.settings.sidebarFileIcons = 'off'
+  app = await launchApp({ userData, seedState: state })
+  win = await appWindow(app, 'w1')
+  await expect(shown(fileRow(win, DIAGRAM))).toHaveText('Flow.drawio', { useInnerText: true })
+  await expect(activeTab(win).locator('.tabbar__label')).toHaveText('Flow.drawio', { useInnerText: true })
+  const note = fileRow(win, SEED_FILE.replace(/\.md$/, ''))
+  await expect(note).toBeVisible()
+  await expect(note.locator('.name-ending')).toHaveCount(0)
+  await shoot(win, 'boards-11-names-icons-off')
 })

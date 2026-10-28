@@ -9,7 +9,7 @@
  * D11, `FileIcon`); with folder icons Off a folder keeps the D4 glyph (app.css hides it while folder icons show).
  */
 import { useEffect, useRef } from 'react'
-import { FileIcon } from '../sidebar/FileIcon'
+import { FileIcon, NameEnding } from '../sidebar/FileIcon'
 import { FolderIcon } from '../views/view/icons'
 import type { SearchCandidate } from './searchCandidates'
 
@@ -62,6 +62,7 @@ export function SearchResults({ results, selected, onSelect, onActivate, onRowCo
             <FileIcon path={r.path} folder={r.kind === 'dir'} />
             {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
             {r.label}
+            {r.kind === 'file' && <NameEnding path={r.path} />}
           </span>
           {r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}
         </li>
