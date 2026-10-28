@@ -324,6 +324,13 @@ export const storage = {
   /** A vault's open history (YAZ-2663 D1): page → how much it is used, and when it was last on show. Read-only here: main alone adds a use, and the cache follows the broadcast. */
   getOpens: (root: string): Readonly<Record<string, OpenStat>> => folderOf(root).opens,
 
+  /** A vault's closed notes (YAZ-3487 D9): file → when it closed. Read-only here: main alone adds one, and the cache follows the broadcast. */
+  getClosed: (root: string): Readonly<Record<string, number>> => folderOf(root).closed,
+  /** Tabs closed in this window (YAZ-3487 D10): main puts their notes in "Recently closed". */
+  noteClosed(files: readonly string[]): void {
+    send('window.noteClosed', () => api.window.noteClosed([...files]))
+  },
+
   /** A vault's save log (YAZ-3235 D1): file → when the app last saved it. Read-only here: main alone adds a save, and the cache follows the broadcast. */
   getEdits: (root: string): Readonly<Record<string, number>> => folderOf(root).edits,
 

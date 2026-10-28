@@ -2286,3 +2286,29 @@ describe('createWindowManager: the empty-window door (YAZ-3487 D1, D2, D3)', () 
     expect(created[0].win.webContents.send).not.toHaveBeenCalledWith(CONTRACT.link.onSetRoots.channel, expect.anything())
   })
 })
+
+describe('createWindowManager: a closed window\'s notes go to "Recently closed" (YAZ-3487 D10)', () => {
+  const close = async (manager: ReturnType<typeof createWindowManager>, win: FakeWindow) => {
+    win.close()
+    manager.handleFlushed(win.webContents)
+    await vi.advanceTimersByTimeAsync(0)
+  }
+
+  it('S33: a window you close while others stay puts each of its notes in its vault\'s list', async () => {
+    vi.setSystemTime(7000)
+    const { manager, w1 } = seedTwo()
+    await close(manager, w1)
+    expect(store.get().folders['/v'].closed).toEqual({ '/v/a.md': 7000 })
+  })
+
+  it('S34, S44: the last window (a quit) and a Files window put nothing in the list', async () => {
+    store.upsertWindow({ id: 'f', kind: 'files', root: '/v', roots: ['/v'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 300, height: 600 } })
+    store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    await close(manager, created[0].win)
+    await close(manager, created[1].win)
+    expect(store.get().folders['/v']?.closed ?? {}).toEqual({})
+  })
+})

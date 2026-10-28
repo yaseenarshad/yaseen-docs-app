@@ -654,8 +654,12 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       else if (hiddenWins.size > 0 && [...live.keys()].every((other) => hiddenWins.has(other))) for (const other of [...hiddenWins]) showWindow(other)
       // A user close forgets the window; the LAST one closing quits the app (`window-all-closed`), so that is
       // a quit too: its entry stays, and the vault it was working in is the "last vault" (YAZ-2589 A1, YAZ-2602 A8).
-      if (live.size > 0) store.removeWindow(id)
-      else noteUsed(activeVault(entryOf(id)))
+      if (live.size > 0) {
+        // A window you close puts its notes in "Recently closed" (YAZ-3487 D10). A quit does not: its tabs come back.
+        const entry = entryOf(id)
+        if (entry !== undefined && !isFilesWindow(entry)) store.addClosed(entry.roots, entry.tabs)
+        store.removeWindow(id)
+      } else noteUsed(activeVault(entryOf(id)))
     })
   }
 

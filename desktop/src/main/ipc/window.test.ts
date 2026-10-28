@@ -98,7 +98,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes, `link:ready` and the paste fallback (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.window.filesZoom.channel, CONTRACT.window.filesZoomMenu.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.noteClosed.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.window.filesZoom.channel, CONTRACT.window.filesZoomMenu.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -325,6 +325,16 @@ describe('registerWindowIpc', () => {
     expect(await registered(CONTRACT.window.open.channel)({ sender }, { root: 5 })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.window.open.channel)({ sender }, { root: 'rel' })).toEqual(bad('NOT_ABSOLUTE'))
     expect(manager.openWindow).toHaveBeenCalledTimes(2)
+  })
+
+  it('window:note-closed (YAZ-3487 D10): the closed notes go to the vaults of the CALLER\'s window; a wrong list is refused', async () => {
+    const addClosed = vi.spyOn(store, 'addClosed')
+    expect(await registered(CONTRACT.window.noteClosed.channel)({ sender }, ['/v/a.md'])).toEqual(ok(undefined))
+    expect(addClosed).toHaveBeenCalledExactlyOnceWith(['/v'], ['/v/a.md'])
+    expect(await registered(CONTRACT.window.noteClosed.channel)({ sender }, '/v/a.md')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.window.noteClosed.channel)({ sender }, ['rel.md'])).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CONTRACT.window.noteClosed.channel)({ sender: stranger }, ['/v/a.md'])).toEqual(bad('BAD_REQUEST'))
+    expect(addClosed).toHaveBeenCalledTimes(1)
   })
 
   it('window:open-recent validates the path and returns the door\'s verdict (YAZ-1767 D1)', async () => {

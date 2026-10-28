@@ -250,6 +250,8 @@ export const CONTRACT = {
     openRecent: invoke<[path: string], boolean>('window:open-recent', 1),
     /** "Open by itself" (YAZ-2858 D1): raise the window that shows ONLY this vault, else open a new one on its last file; a workspace window that shows it does not count and does not change. `false` = the folder is gone and was pruned from the MRU. */
     openAlone: invoke<[path: string], boolean>('window:open-alone', 1),
+    /** Tabs closed in THIS window (YAZ-3487 D10): main puts their notes in "Recently closed" of the window's vaults. */
+    noteClosed: invoke<[files: readonly string[]], void>('window:note-closed', 1),
     /** Open a saved set of vaults (YAZ-2602 D8, S65, S66): raise the window that shows exactly its vaults, else open one on them; a vault whose folder is gone is left out and named in `missing`; `opened: false` = no folder is left. */
     openSet: invoke<[id: string], OpenSetResult>('window:open-set', 1),
     /** Save THIS window's vaults as a set under `name` (S63); the same name replaces. `false` = refused: fewer than two vaults, an empty name, or a new name when MAX_VAULT_SETS exist (R12). */

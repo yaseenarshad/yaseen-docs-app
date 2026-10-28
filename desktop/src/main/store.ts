@@ -40,6 +40,7 @@ import {
   TOC_LINES,
   TOC_MAX_W,
   TOC_MIN_W,
+  addClosed,
   addEdit,
   addOpen,
   addRecentRoot,
@@ -166,6 +167,8 @@ export interface Store {
    * or of a hidden file of the vault (a dot name inside it), commits nothing.
    */
   addEdit(roots: readonly string[], file: string, now?: number): void
+  /** Closed notes (YAZ-3487 D9): each of `files` goes to the vault of `roots` that holds it (the most specific), at `now`, in ONE commit. A file no vault holds is left out; nothing left commits nothing. */
+  addClosed(roots: readonly string[], files: readonly string[], now?: number): void
   /** Several ids go in one commit (YAZ-2589 D3: the windows a launch does not bring back). Their moved cards on the tab board go in the same commit (YAZ-3343 D1). */
   removeWindow(...ids: string[]): void
   /**
@@ -627,6 +630,8 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
     opens: sanitizeOpens(raw.opens),
     edits: sanitizeEdits(raw.edits),
+    // The same shape as the save log, cut at its own limit (YAZ-3487 D9).
+    closed: addClosed(sanitizeEdits(raw.closed), [], 0),
     tocSources: sanitizeTocSources(raw.tocSources),
     sectionIndents: sanitizeSwitches(raw.sectionIndents),
     tocSwitches: sanitizeSwitches(raw.tocSwitches),
@@ -1029,6 +1034,19 @@ export function createStore(filePath: string): Store {
       if (edits !== null) commit({ ...state, folders: { ...state.folders, [vault]: { ...folderOf(vault), edits } } })
     },
 
+    addClosed(roots, files, now = Date.now()) {
+      const folders = { ...state.folders }
+      let changed = false
+      for (const file of files) {
+        const vault = rootOfPath(roots, file)
+        if (vault === null) continue
+        const folder = folders[vault] ?? folderOf(vault)
+        folders[vault] = { ...folder, closed: addClosed(folder.closed, [file], now) }
+        changed = true
+      }
+      if (changed) commit({ ...state, folders })
+    },
+
     removeWindow(...ids) {
       if (!state.windows.some((w) => ids.includes(w.id))) return
       // The moved cards of a window that goes go with it (YAZ-3343 D1): an id is never used again.
@@ -1117,6 +1135,8 @@ export function createStore(filePath: string): Store {
             opens: remapKeys(folder.opens, remap),
             // The save log (YAZ-3235 S5), keyed by file as well: a renamed file keeps its last save.
             edits: remapKeys(folder.edits, remap),
+            // And the closed notes (YAZ-3487 D9): a renamed note stays in "Recently closed".
+            closed: remapKeys(folder.closed, remap),
             // And the table of contents source (YAZ-2700 D14), keyed the same way: the choice follows its note.
             tocSources: remapKeys(folder.tocSources, remap),
             // And the "Section indent" switch (YAZ-2709 D2), on the same terms.
@@ -1215,6 +1235,7 @@ export function createStore(filePath: string): Store {
               baseGroups: dropKeys(folder.baseGroups, baseGroupGone),
               opens: dropKeys(folder.opens, gone),
               edits: dropKeys(folder.edits, gone),
+              closed: dropKeys(folder.closed, gone),
               tocSources: dropKeys(folder.tocSources, gone),
               sectionIndents: dropKeys(folder.sectionIndents, gone),
               tocSwitches: dropKeys(folder.tocSwitches, gone),

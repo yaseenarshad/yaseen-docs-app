@@ -838,8 +838,19 @@ export function useWorkspace(root: string | null): UseWorkspace {
   }, [dispatch])
   const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path }), [dispatch])
   const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
-  const close = useCallback((id: string) => dispatch({ type: 'close', id }), [dispatch])
-  const closeMany = useCallback((ids: readonly string[]) => dispatch({ type: 'close-many', ids }), [dispatch])
+  /** YAZ-3487 D10: the notes of the tabs that close go to "Recently closed". A tab that moves is open there, so the page hides it. */
+  const noteClosed = useCallback((ids: readonly string[]): void => {
+    const paths = stateRef.current.tabs.filter((t) => ids.includes(t.id)).map((t) => t.path)
+    if (paths.length > 0) storage.noteClosed(paths)
+  }, [])
+  const close = useCallback((id: string) => {
+    noteClosed([id])
+    dispatch({ type: 'close', id })
+  }, [dispatch, noteClosed])
+  const closeMany = useCallback((ids: readonly string[]) => {
+    noteClosed(ids)
+    dispatch({ type: 'close-many', ids })
+  }, [dispatch, noteClosed])
   const openStored = useCallback((tabs: readonly StoredTab[]) => dispatch({ type: 'open-stored', tabs }), [dispatch])
   const move = useCallback((from: number, to: number) => dispatch({ type: 'move', from, to }), [dispatch])
   // The blank tab is in no stored field (YAZ-2655 D10): showing it and closing it mirror nothing.
@@ -852,9 +863,10 @@ export function useWorkspace(root: string | null): UseWorkspace {
     }
     const active = stateRef.current.active
     if (active === null) return false
+    noteClosed([active])
     dispatch({ type: 'close', id: active })
     return true
-  }, [dispatch, closeBlank])
+  }, [dispatch, closeBlank, noteClosed])
   const next = useCallback(() => dispatch({ type: 'cycle', dir: 1 }), [dispatch])
   const prev = useCallback(() => dispatch({ type: 'cycle', dir: -1 }), [dispatch])
   const back = useCallback(() => dispatch({ type: 'back' }), [dispatch])
