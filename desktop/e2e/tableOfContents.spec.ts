@@ -23,6 +23,9 @@
  *    levels" shows each heading's level tag. "Heading levels" is not stored. "Table of contents"
  *    is, since YAZ-2950 (decisions D1–D3 on YAZ-2953): `folders[root].tocSwitches`, so a page
  *    that is off stays off after a reopen, in a new window (⌘⇧N) and after a restart.
+ *  - THE DEFAULT (YAZ-3558, decisions D1–D3 and S1–S26 on YAZ-3559): Settings › "Table of contents
+ *    default" Off hides it on each page with no choice, and the cog's row still turns one page on.
+ *    "Pin" in the card writes "Pin default" and leaves the default Off.
  *
  * The widths: the names need a note area of 1240px at content width "Narrow" (1040 + 200). The
  * window starts 1480px wide with the sidebar at its minimum, 180px, so the note area is 1300px.
@@ -709,4 +712,78 @@ test('step 8b — a page turned off stays off: after a reopen, in a new window (
   await pageSwitch(win, 'Table of contents').click()
   await win.keyboard.press('Escape')
   await expect(lines(win)).toHaveCount(CHAPTER_BULLETS.length)
+})
+
+test('step 8c — "Table of contents default" Off: a page with no choice shows none, the cog turns ONE page on, "Pin" leaves the default Off, and all of it is there after a restart (YAZ-3558 D1, D2, S2, S3, S7, S11, S15, S16)', async () => {
+  /** Read from `win` each time: the restart below gives a new window. */
+  const settingsDialog = (): Locator => win.locator('.settings-dialog[role="dialog"]')
+  let dialog = settingsDialog()
+  /** Settings › Editor › Table of contents: select one choice of one row, and close the dialog. */
+  const choose = async (setting: 'tocOnByDefault' | 'tableOfContents', label: 'On' | 'Off'): Promise<void> => {
+    dialog = settingsDialog()
+    await clickMenuItem(app, 'menu.app.settings', 'w1')
+    await expect(dialog).toBeVisible()
+    await dialog.locator('.settings-nav__item', { hasText: /^Editor$/ }).click()
+    await dialog.locator(`[data-setting="${setting}"]`).getByRole('button', { name: label, exact: true }).click()
+    await win.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+  }
+
+  // S15, S16: the two rows, their labels and the hint.
+  await clickMenuItem(app, 'menu.app.settings', 'w1')
+  await dialog.locator('.settings-nav__item', { hasText: /^Editor$/ }).click()
+  const group = dialog.locator('.settings-group', { has: win.locator('[data-setting="tocLines"]') })
+  await expect(group.locator('.setting__label')).toHaveText(['Table of contents default', 'Pin default', 'Level lines'])
+  await expect(dialog.locator('[data-setting="tocOnByDefault"]')).toContainText('Off: a page can still turn it on in its cog.')
+  await shoot(win, 'toc-08c-settings-rows')
+  await win.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+
+  await choose('tocOnByDefault', 'Off')
+  await expect.poll(async () => (await readState(userData)).settings.tocOnByDefault).toBe(false)
+  // S7: Chapters made its own choice (on, at the end of step 8b): it keeps it.
+  await expect(activeTab(win)).toContainText('Chapters')
+  await expect(lines(win)).toHaveCount(CHAPTER_BULLETS.length)
+
+  // S2: Bullets made no choice: no table of contents, and the row is there, unchecked.
+  await fileRow(win, 'Bullets').click()
+  await expect(activeTab(win)).toContainText('Bullets')
+  await expect(editorOf(win).locator('li').first()).toBeVisible()
+  await expect(toc(win)).toHaveCount(0)
+  await cog(win).click()
+  await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
+  await expect(menu(win).locator('.page-settings__choices')).toHaveCount(0)
+  await shoot(win, 'toc-08c-default-off-cog')
+
+  // S3: the row turns THIS page on, with "TOC made from:", and the page stores `true`.
+  await pageSwitch(win, 'Table of contents').click()
+  await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'true')
+  await expect(menu(win).locator('.page-settings__choices')).toHaveCount(1)
+  await win.keyboard.press('Escape')
+  await expect(toc(win)).toHaveCount(1)
+  await expect.poll(async () => (await readState(userData)).folders[vault]?.tocSwitches[bulletsPath], { timeout: 10_000 }).toBe(true)
+  await shoot(win, 'toc-08c-default-off-page-on')
+
+  // S11: "Pin" in the card writes "Pin default" for all pages, and the default stays Off.
+  await openCardByMouse(win)
+  await card(win).locator('.toc__pin').click()
+  await expect(toc(win)).toHaveAttribute('data-names', '')
+  await expect.poll(async () => (await readState(userData)).settings.tableOfContents).toBe('pinned')
+  expect((await readState(userData)).settings.tocOnByDefault).toBe(false)
+
+  // After a restart: the default is still Off, and Bullets is still on and pinned.
+  await quitApp(app)
+  app = await launchApp({ userData })
+  win = await appWindow(app, 'w1')
+  await expect(activeTab(win)).toContainText('Bullets')
+  await expect(editorOf(win).locator('li').first()).toBeVisible()
+  await expect(toc(win)).toHaveAttribute('data-names', '')
+  const state = await readState(userData)
+  expect(state.settings).toMatchObject({ tocOnByDefault: false, tableOfContents: 'pinned' })
+  expect(await readFile(bulletsPath, 'utf8')).toBe(BULLETS)
+
+  // The suite ends as it started: the default On, "Pin default" Off.
+  await choose('tableOfContents', 'Off')
+  await choose('tocOnByDefault', 'On')
+  await expect.poll(async () => (await readState(userData)).settings).toMatchObject({ tocOnByDefault: true, tableOfContents: 'auto' })
 })

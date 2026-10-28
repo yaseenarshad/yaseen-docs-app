@@ -5,8 +5,8 @@
  *
  * THE FRAME IS THE NOTE'S (`TableOfContents.tsx`, `tocFrame.tsx`): the same `nav.toc` at the tab's
  * right edge, the same two looks — the names column when there is room (`namesShow`), else the rail
- * of small lines and its card —, the same setting (Settings › Table of contents: When there is room
- * / Always / Off), the same width and drag edge, the same ⌘J. "When there is room" means room for
+ * of small lines and its card —, the same settings (Settings › Table of contents: "Table of contents
+ * default" and "Pin default", YAZ-3558), the same width and drag edge, the same ⌘J. `auto` means room for
  * `CODE_COLUMN` px of code beside the names: about 100 characters at the default text size.
  *
  * THE ROWS ARE VS CODE'S: a tree of every symbol (no depth cap, no row cap), a type icon on each, a ⌄
@@ -70,7 +70,7 @@ export interface CodeOutlineProps {
   editor: OutlineEditorLike
   /** Monaco's line height now, px: a jump lands below the sticky lines. */
   lineHeight: () => number
-  /** Settings › Table of contents: When there is room (`auto`) / Always (`pinned`) / Off. */
+  /** Settings › "Pin default": Off (`auto`) / On (`pinned`); `off` while this file shows no table of contents. */
   mode: TableOfContentsMode
   onChangeMode: (mode: TableOfContentsMode) => void
   /** The names column's width, the note's setting (YAZ-2752). */
