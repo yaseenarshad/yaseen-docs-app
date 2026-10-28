@@ -49,7 +49,7 @@ let quitFlush: (() => Promise<void> | void) | null = null
 const ROOT = '/v'
 const TARGET = 'Sketch.excalidraw'
 const PATH = '/v/assets/drawings/Sketch.excalidraw'
-/** What the mocked seam's `serialize()` returns — the exact bytes a save must carry. */
+/** What the mocked seam's `standalone()` returns — the exact bytes a save must carry. */
 const BYTES = '{"type":"excalidraw","elements":[1]}\n'
 
 const asset = (mtime: number) => ({
@@ -170,16 +170,11 @@ describe('opening', () => {
     expect(container?.querySelector('.fake-surface')).not.toBeNull()
   })
 
-  it('D2: the bar shows the save label where the Save button was, and no Save button', async () => {
-    await open()
-    emit(7)
-    expect(label()).toBe('Saved')
-    expect(byText('Save')).toBeUndefined()
-  })
-
-  it('S1: a drawing opened and not touched is CLEAN — nothing is written, ✕ closes, the previews are not poked', async () => {
+  it('S1: a drawing opened and not touched is CLEAN — the label says Saved (D2: no Save button), nothing is written, ✕ closes, the previews are not poked', async () => {
     const { onClose, poked } = await open()
     emit(7) // the surface's mount snapshot — the baseline, not an edit
+    expect(label()).toBe('Saved')
+    expect(byText('Save')).toBeUndefined()
     await idle(2000)
     expect(writeAsset).not.toHaveBeenCalled()
     await click(closeBtn())
@@ -325,6 +320,20 @@ describe('autosave (YAZ-3528 D1)', () => {
     expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
   })
 
+  it('S11: a Reload whose read FAILS keeps the bar up and says why — Keep mine still writes the edits', async () => {
+    await open('ok', 100)
+    emit(1)
+    emit(2)
+    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    await idle()
+    readAsset.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no such asset'))
+    await click(byText('Reload'))
+    expect(conflictBar()).not.toBeNull()
+    expect(errorLine()).toBe(BROKEN_DRAWING_MESSAGE)
+    await click(byText('Keep mine'))
+    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
+  })
+
   it('A4: a CONFLICT that carries no mtime re-reads the file for it — the read is only for the guard', async () => {
     await open('ok', 100)
     emit(1)
@@ -382,6 +391,21 @@ describe('leaving (YAZ-3528 D3)', () => {
     await click(closeBtn())
     expect(writeAsset).toHaveBeenCalledTimes(1)
     expect(strip()).toBeNull()
+    expect(poked).toEqual([TARGET])
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('a second ✕ while the close is still saving is the SAME close — one write, one poke, one onClose', async () => {
+    const { onClose, poked } = await open()
+    emit(1)
+    emit(2)
+    let land: (() => void) | null = null
+    writeAsset.mockImplementationOnce(() => new Promise((resolve) => (land = () => resolve({ path: PATH, mtime: 999, size: BYTES.length }))))
+    await click(closeBtn())
+    await click(closeBtn())
+    expect(onClose).not.toHaveBeenCalled()
+    await act(async () => land?.())
+    expect(writeAsset).toHaveBeenCalledTimes(1)
     expect(poked).toEqual([TARGET])
     expect(onClose).toHaveBeenCalledTimes(1)
   })

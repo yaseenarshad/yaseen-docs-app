@@ -16,7 +16,7 @@
  *     note is still byte-identical and the healthy drawing beside it still renders
  *   4 clicking a preview opens the MODAL (YAZ-879): a rectangle drawn there with the real mouse
  *     is AUTOSAVED to the sidecar while the modal is open (YAZ-3528) — same shape, still
- *     pretty-printed — a second one drawn just before ✕ is saved by the close itself, the in-page
+ *     pretty-printed — a second one drawn just before ✕ is on disk once the modal is gone, the in-page
  *     preview redraws WITHOUT a remount (the feed's poke), and reopening the saved drawing writes
  *     nothing: the label says Saved and Esc closes it outright. The note never moves.
  *   5 the saved rectangle SURVIVES the app (YAZ-880): quit, relaunch, and it is back on the page
@@ -328,7 +328,8 @@ test('step 5 — a preview opens the modal; a rectangle DRAWN there is saved bac
   await expect(saveLabel(win)).toHaveText('Saved')
   await shoot(win, 'drawing-08-rectangle-drawn')
 
-  // --- close: a second rectangle drawn just before ✕ is saved by the close itself ---
+  // --- close: a second rectangle drawn just before ✕ is on disk once the modal is gone (the close
+  // saves it when the 500 ms timer has not; unit test S4 pins the close's own save) ---
   await modal(win).locator('[data-testid="toolbar-rectangle"]').click()
   await drag(y + 140)
   await modal(win).getByRole('button', { name: 'Close drawing' }).click()

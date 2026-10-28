@@ -25,8 +25,9 @@
  * AUTOSAVE ON THE VERSION, NOT THE BYTES (YAZ-3528 D1, the tab's rule): `Autosave<number>` is fed
  * the surface's cheap version and serializes ONCE, inside `write`, 500 ms after the last change.
  * The FIRST snapshot is the clean baseline, so a drawing opened and not touched is never written.
- * Only the save STATUS is state, so a drag re-renders nothing here. The quit handshake
- * (`window.onFlush`) and an unmount both save what is pending.
+ * Only the save STATUS is state, so a drag costs at most one render here (Saved → Unsaved), never
+ * one per pointer move. The quit handshake (`window.onFlush`) and an unmount both save what is
+ * pending. A read-only drawing gets no autosave at all.
  *
  * LEAVING (YAZ-3528 D3): Esc / click-away / ✕ are one gesture — save what is left, poke the
  * previews once if anything landed, close. Only a save that FAILED, or one a conflict blocks,
@@ -63,7 +64,7 @@ const ExcalidrawSurface = lazy(() => import('./ExcalidrawSurface').then((m) => (
 /** What a sidecar that will not open says — the modal's twin of the preview's broken chip. */
 export const BROKEN_DRAWING_MESSAGE = "This drawing can't be opened: its file is missing or is not a scene."
 
-/** The inline confirm's copy (an in-modal strip, not a sheet), asked only when the last save failed. */
+/** The inline confirm's copy (an in-modal strip, not a sheet), asked only when a save failed or a conflict blocks it. */
 export const DISCARD_PROMPT = 'Changes are not saved. Discard them?'
 
 interface DrawingModalProps {
@@ -89,8 +90,10 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
   /** Made by the surface's FIRST snapshot, the clean baseline; null until then and after a Reload. */
   const autosave = useRef<Autosave<number> | null>(null)
   const [status, setStatus] = useState<SaveStatus>('saved')
-  /** A save landed: close pokes the previews once, not after every save behind the scrim. */
-  const wrote = useRef(false)
+  /** The disk moved under the previews (a save landed, or Reload read a newer scene): close pokes them once. */
+  const stale = useRef(false)
+  /** A close is saving: a second Esc / ✕ / click-away while it does is the same close, not another. */
+  const closing = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   /** The disk's mtime while the conflict bar is up (YAZ-3044 A4); null when there is no conflict. */
@@ -119,8 +122,6 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
 
   /** The drawing's own file says read only (YAZ-3076 D2, S28): the engine's view mode, and nothing to save. */
   const readOnly = loaded?.scene.readOnly === true
-  const readOnlyRef = useRef(readOnly)
-  readOnlyRef.current = readOnly
 
   /** One guarded write of the live scene; `Autosave` calls it once per save, never once per change. */
   const write = useCallback(
@@ -130,7 +131,7 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
       if (current === null || drawing === null) throw new Error('nothing to save')
       try {
         const mtime = await saveDrawing({ root, target, path: drawing.path, content: current.standalone(), expectedMtime })
-        wrote.current = true
+        stale.current = true
         setError(null)
         return { mtime }
       } catch (err) {
@@ -145,51 +146,56 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
   const onSnapshot = useCallback(
     (next: DrawingSnapshot) => {
       snapshot.current = next
-      const a = autosave.current
       const drawing = loadedRef.current
+      // Read only: never an edit, so there is nothing to autosave.
+      if (drawing === null || drawing.scene.readOnly === true) return
+      const a = autosave.current
       // The first snapshot IS the clean baseline (the surface restored the disk scene first).
-      if (a === null) {
-        if (drawing !== null) autosave.current = new Autosave<number>({ content: next.version, mtime: drawing.mtime, delayMs: 500, save: write, onStatus: setStatus, onConflict: setConflict })
-        return
-      }
-      // Read only: never an edit.
-      if (!readOnlyRef.current) a.update(next.version)
+      if (a === null) autosave.current = new Autosave<number>({ content: next.version, mtime: drawing.mtime, delayMs: 500, save: write, onStatus: setStatus, onConflict: setConflict })
+      else a.update(next.version)
     },
     [write],
   )
 
   // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
-  useEffect(() => api.window.onFlush(async () => autosave.current?.flush()), [])
-
   // Unmounted any other way (the note closed under it): save what is pending, then never write again.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const offFlush = api.window.onFlush(async () => {
+      await autosave.current?.flush()
+    })
+    return () => {
+      offFlush()
       const a = autosave.current
-      void a?.flush()
-      a?.dispose()
-    },
-    [],
-  )
+      if (a !== null) {
+        void a.flush()
+        a.dispose()
+      }
+      autosave.current = null
+    }
+  }, [])
 
   /** Esc, click-away and ✕ are ONE gesture: save what is left, then leave. Ask only when that save failed. */
   const requestClose = async (): Promise<void> => {
+    if (closing.current) return
     const a = autosave.current
     if (a !== null) {
+      closing.current = true
       await a.flush()
+      closing.current = false
       // A failed write or a conflict keeps it pending: the error line or the conflict bar says why.
       if (a.dirty) {
         setConfirming(true)
         return
       }
     }
-    if (wrote.current) feed?.poke(target)
+    if (stale.current) feed?.poke(target)
     onClose()
   }
 
   /** Discard: what failed to save stays off disk — disposed first, so the unmount flush writes nothing. */
   const discard = (): void => {
     autosave.current?.dispose()
-    if (wrote.current) feed?.poke(target)
+    if (stale.current) feed?.poke(target)
     onClose()
   }
 
@@ -200,20 +206,23 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
     void autosave.current?.adopt(conflict)
   }
 
-  /** Reload: the disk's version replaces this canvas. The surface remounts on it, clean. */
+  /**
+   * Reload: the disk's version replaces this canvas. The surface remounts on it, clean. A read that
+   * fails keeps the bar up (Keep mine still works) and says why: it must never strand the edits.
+   */
   const reload = async (): Promise<void> => {
-    setConflict(null)
     setError(null)
     try {
       const drawing = await openDrawing(root, target)
+      setConflict(null)
       autosave.current?.dispose()
       // The remounted surface's first snapshot is the new baseline.
       autosave.current = null
       snapshot.current = null
+      stale.current = true
       setStatus('saved')
       setLoaded(drawing)
       setGeneration((g) => g + 1)
-      feed?.poke(target)
     } catch {
       setError(BROKEN_DRAWING_MESSAGE)
     }
