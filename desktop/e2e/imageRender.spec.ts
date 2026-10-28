@@ -212,7 +212,7 @@ test('step 3 — Copy Image puts real pixels on the system clipboard', async () 
   const box = await imgByAlt(win, 'a').boundingBox()
   if (box === null) throw new Error('the image has no box')
   // `copyImageAt` takes DIPs measured from the top-left of the WEB CONTENTS, which is exactly
-  // what `boundingBox()` returns (CSS px from the viewport origin) — the app never zooms, so
+  // what `boundingBox()` returns (CSS px from the viewport origin) — the App size is 100% here, so
   // 1 CSS px = 1 DIP and the numbers pass straight through. devicePixelRatio scales the BITMAP
   // Chromium copies, never the coordinates it is asked for, so nothing is divided here.
   await app.evaluate(({ BrowserWindow }, point) => {

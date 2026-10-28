@@ -35,7 +35,8 @@ const pill = (w: Page) => layer(w).locator('[role="group"][aria-label="Document 
 /**
  * Every place in the state file where a zoom could hide (YAZ-3400): each key and each string value that matches
  * `/zoom/i`, as a dotted path (`windows.0.file`). The vault's temp path is removed first, because its name has "zoom".
- * The sidebar zoom's own keys (YAZ-3389) are left out: `settings.sidebarZoom`, and `zoom` on a Files window.
+ * The sidebar zoom's own keys (YAZ-3389) are left out: `settings.sidebarZoom`, and `zoom` on a Files window; and the
+ * App size, `settings.appZoom` (YAZ-3432), the whole window's zoom, never a note's.
  */
 const zoomPaths = (state: unknown, vault: string): string[] => {
   const out: string[] = []
@@ -47,8 +48,8 @@ const zoomPaths = (state: unknown, vault: string): string[] => {
     if (v === null || typeof v !== 'object') return
     for (const [k, child] of Object.entries(v)) {
       const here = at === '' ? k : `${at}.${k}`
-      const sidebarZoom = here === 'settings.sidebarZoom' || (/^windows\.\d+\.zoom$/.test(here) && (v as { kind?: unknown }).kind === 'files')
-      if (/zoom/i.test(k.replaceAll(vault, '')) && !sidebarZoom) out.push(here)
+      const notNote = here === 'settings.sidebarZoom' || here === 'settings.appZoom' || (/^windows\.\d+\.zoom$/.test(here) && (v as { kind?: unknown }).kind === 'files')
+      if (/zoom/i.test(k.replaceAll(vault, '')) && !notNote) out.push(here)
       walk(child, here)
     }
   }
@@ -120,12 +121,13 @@ test('step 3 — the magnification pill steps presets and takes a custom value, 
 })
 
 test('step 4 — magnification is temporary: nothing persists, and reopening the note starts at 100%', async () => {
-  // Nothing zoom-shaped in the state file except the sidebar zoom (YAZ-3389), which is not the note's. Every key and
-  // string value is checked (the vault's own temp name, `zoom-vault-…`, aside; the note is `Outline.md`). The sidebar
-  // zoom stays at its default: the note's 150% did not leak into it (YAZ-3400).
+  // Nothing zoom-shaped in the state file except the sidebar zoom (YAZ-3389) and the App size (YAZ-3432), neither of
+  // them the note's. Every key and string value is checked (the vault's own temp name, `zoom-vault-…`, aside; the note
+  // is `Outline.md`). Both stay at their default: the note's 150% did not leak into them (YAZ-3400).
   const state = await readState(userData)
   expect(zoomPaths(state, vault)).toEqual([])
   expect(state.settings.sidebarZoom).toBe(100)
+  expect(state.settings.appZoom).toBe(100)
   expect(await readFile(notePath, 'utf8')).toBe(BODY)
 
   await clickMenuItem(app, 'menu.file.close-tab', 'w1')

@@ -1914,7 +1914,9 @@ button {
   height: var(--sidebar-footer-h);
   padding: 6px 8px;
   border-top: 1px solid var(--border);
-  /* YAZ-3401: the Files window chip shortens by this width; the update pill by its own slot (update.css). The cog and the zoom never do. */
+  /* The armed Files window chip's words in a narrow footer stand on this box (YAZ-3432). */
+  position: relative;
+  /* YAZ-3401: the Files window chip shortens by this width; the update pill by its own slot (update.css). The cog and the zoom chip never do. */
   container-type: inline-size;
 }
 
@@ -1931,17 +1933,59 @@ button {
   background: var(--bg-hover);
 }
 
-/* The footer's sidebar zoom (YAZ-3389): borderless and quiet, the cog's colour and hover. The number
-   keeps one width, so 90% and 100% never shift the row. */
-.sidebar-zoom {
-  display: flex;
-  align-items: center;
+/* The footer's zoom chip (YAZ-3432): the sidebar zoom's percent, the same quiet button as the menu's percent below;
+   open, it stays lit. */
+.zoom-chip {
+  flex: none;
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
 
-.sidebar-zoom__step,
-.sidebar-zoom__value {
+/* The zoom menu (YAZ-3432): on `document.body`, above the chip; its place is inline (ZoomMenu.tsx). The body is
+   zoomed by 1 / the page's zoom, so the borders and the shadow below scale with the page and the controls do not. */
+.zoom-menu {
+  position: fixed;
+  z-index: 40;
+  width: max-content;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  animation: zoom-menu-in 120ms ease-out;
+}
+
+@keyframes zoom-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.zoom-menu__body {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 4px 4px 4px 10px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.zoom-menu__label {
+  color: var(--fg-muted);
+}
+
+/* The zoom menu's two rows (YAZ-3432; the sidebar's sat in the footer, YAZ-3389): "− 100% +". The chip and each
+   percent keep one width, so 90% and 100% never shift the footer or a row, and the menu never changes its width;
+   all three are borderless and quiet, the cog's colour and hover. */
+.zoom-stepper {
+  display: flex;
+  align-items: center;
+}
+
+.zoom-chip,
+.zoom-stepper__step,
+.zoom-stepper__value {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1951,29 +1995,33 @@ button {
   line-height: 1;
 }
 
-.sidebar-zoom__step {
+.zoom-stepper__step {
   width: 22px;
   font-size: 13px;
 }
 
-.sidebar-zoom__value {
+.zoom-chip,
+.zoom-stepper__value {
   min-width: 38px;
   padding: 0 3px;
 }
 
-.sidebar-zoom__step:hover:enabled,
-.sidebar-zoom__value:hover {
+.zoom-chip:hover,
+.zoom-chip--open,
+.zoom-stepper__step:hover:enabled,
+.zoom-stepper__value:hover {
   color: var(--fg);
   background: var(--bg-hover);
 }
 
-.sidebar-zoom__step:focus-visible,
-.sidebar-zoom__value:focus-visible {
+.zoom-chip:focus-visible,
+.zoom-stepper__step:focus-visible,
+.zoom-stepper__value:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
-.sidebar-zoom__step:disabled {
+.zoom-stepper__step:disabled {
   opacity: 0.4;
   cursor: default;
 }
@@ -3526,7 +3574,7 @@ button {
   color: #fff;
   background: var(--danger);
 }
-/* YAZ-3401: the red words cover the chip from its right edge leftward, over the zoom in a narrow footer. A hidden
+/* YAZ-3401: the red words cover the chip from its right edge leftward, over the zoom chip in a narrow footer. A hidden
    copy of "Files window" keeps the chip's width, so nothing moves under the pointer between the two clicks. */
 .sidebar__files-chip--armed::after {
   content: 'Files window';
@@ -3544,9 +3592,10 @@ button {
   box-shadow: 0 0 0 1px var(--danger); /* the chip's border, also where the words reach past the chip */
   font-weight: 600;
 }
-/* YAZ-3401, measured: "Files window" needs a 212 px footer (content box), and 239 px beside the round update pill
-   (its slot's last 24 px). Narrower, the chip is its icon alone; its title and accessible name keep the words. */
-@container (width < 212px) {
+/* YAZ-3401, measured: "Files window" needs a 168 px footer (content box), and 195 px beside the round update pill
+   (its slot's last 24 px); 44 px less than beside the "− 100% +" of before YAZ-3432. Narrower, the chip is its icon
+   alone; its title and accessible name keep the words. */
+@container (width < 168px) {
   .sidebar__files-chip:not(.sidebar__files-chip--armed) span,
   .sidebar__files-chip--armed::after {
     display: none;
@@ -3554,14 +3603,32 @@ button {
   .sidebar__files-chip {
     padding: 3px 5px;
   }
+  /* YAZ-3432: right of the narrow zoom chip there is no room leftward for the red words, so they start at the footer's
+     left edge instead, over the cog and the zoom chip, and still cover the chip under the pointer. */
+  .sidebar__files-chip--armed {
+    position: static;
+  }
+  .sidebar__files-chip--armed span {
+    inset: 50% auto auto 8px;
+    height: 20px;
+    translate: 0 -50%;
+  }
 }
-@container (width < 239px) {
+@container (width < 195px) {
   .sidebar__footer:has(.update-pill) .sidebar__files-chip:not(.sidebar__files-chip--armed) span,
   .sidebar__footer:has(.update-pill) .sidebar__files-chip--armed::after {
     display: none;
   }
   .sidebar__footer:has(.update-pill) .sidebar__files-chip {
     padding: 3px 5px;
+  }
+  .sidebar__footer:has(.update-pill) .sidebar__files-chip--armed {
+    position: static;
+  }
+  .sidebar__footer:has(.update-pill) .sidebar__files-chip--armed span {
+    inset: 50% auto auto 8px;
+    height: 20px;
+    translate: 0 -50%;
   }
 }
 

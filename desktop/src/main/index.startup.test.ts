@@ -109,6 +109,7 @@ vi.mock('./updater', async (importOriginal) => ({ shortVersion: (await importOri
 vi.mock('./ipc/clipboard', () => ({ registerClipboardIpc: h.registerClipboardIpc }))
 vi.mock('./drawImport', async (importOriginal) => ({ ...(await importOriginal<typeof import('./drawImport')>()), startDrawImport: h.startDrawImport }))
 vi.mock('./theme', () => ({ subscribeNativeTheme: vi.fn(), windowBackgroundColor: vi.fn() }))
+vi.mock('./appZoom', () => ({ subscribeAppZoom: vi.fn(), appZoomFactor: () => 1 }))
 vi.mock('./menu', () => ({
   buildContextMenuTemplate: vi.fn(),
   buildMenuTemplate: vi.fn(() => []),
