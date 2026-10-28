@@ -118,7 +118,7 @@ describe('a changeable key (D6, D7)', () => {
 
     click(button(popup() as HTMLElement, 'Save'))
     expect(popup()).toBeNull()
-    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K' } })
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': 'CmdOrCtrl+Shift+K' } })
     expect(keyButton('search').textContent).toBe('⌘⇧K')
     expect(keyButton('search').classList.contains('hotkeys__key--changed')).toBe(true)
 
@@ -168,7 +168,7 @@ describe('a changeable key (D6, D7)', () => {
     press('W', 'KeyW', { metaKey: true, shiftKey: true })
     expect(says()).toEqual(['Change the key for Search the vault?', '⌘K → ⌘⇧W', '⌘⇧W is New Files window now. It will lose its key.'])
     click(button(popup() as HTMLElement, 'Move it here'))
-    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+W', newFilesWindow: null } })
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': 'CmdOrCtrl+Shift+W', 'app.newFilesWindow': null } })
     expect(keyButton('newFilesWindow').textContent).toBe('No key')
 
     click(keyButton('closeTab'))
@@ -183,7 +183,7 @@ describe('a changeable key (D6, D7)', () => {
     press('Backspace', 'Backspace')
     expect(says()).toEqual(['Remove the key from Close tab?', '⌘W → No key', '⌘W is the Mac standard for Close tab. Most Mac apps use it.'])
     click(button(popup() as HTMLElement, 'Remove'))
-    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+W', newFilesWindow: null, closeTab: null } })
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'app.search': 'CmdOrCtrl+Shift+W', 'app.newFilesWindow': null, 'app.closeTab': null } })
   })
 
   it('"Reset all hotkeys" is there only with a change, and asks in the confirm sheet with the list of changes', async () => {

@@ -27,8 +27,7 @@
  * THE APP'S KEYS WIN (YAZ-3447). A keydown in the capture phase, on this tab's own element, before
  * Monaco: the menu's commands (`HOTKEY_COMMANDS`, as the user set them) stop there, so Monaco never
  * takes one and the menu's accelerator runs — ⌘K is the vault search, never Monaco's chord prefix.
- * Toggle sidebar, which the renderer owns, is handed up as a diagram does (`onToggleSidebar`). ⌘S
- * saves at once, as on a drawing.
+ * Toggle sidebar is a menu key too since YAZ-3564 D10. ⌘S saves at once, as on a drawing.
  *
  * THE NOTE'S FOLD KEYS (YAZ-3478; YAZ-3439 "The app's own keys win in code tabs"). `FOLD_KEYS`, the note's
  * own table: ⌘⇧U folds every block, ⌘⇧I unfolds every block, ⌘↑ / ⌘↓ fold / unfold the block at the
@@ -78,8 +77,6 @@ export const BROKEN_CODE_DOCUMENT = "This file can't be opened"
 export interface CodeEditorProps extends DocumentHostProps {
   /** The window's ONE passive notice. */
   onNotice?: (text: string, icon?: NoticeKind) => void
-  /** App's sidebar toggle: the renderer owns ⌘B, and Monaco's element would never pass it up. */
-  onToggleSidebar?: () => void
   /** Settings › Code (YAZ-3449): one value for every code tab; absent = the default. */
   codeReadOnly?: boolean
   codeWrap?: boolean
@@ -185,7 +182,7 @@ interface CodeHostProps extends CodeEditorProps {
 }
 
 /** Mounts exactly one Monaco editor and model for `loaded`; the document host owns everything that writes. */
-function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar, codeReadOnly = DEFAULT_SETTINGS.codeReadOnly, codeWrap = DEFAULT_SETTINGS.codeWrap, codeMinimap = DEFAULT_SETTINGS.codeMinimap, onChangeCodeSettings, startView, onOpenFile, viewKey, tableOfContents = 'off', tocOnByDefault = DEFAULT_SETTINGS.tocOnByDefault, onChangeTableOfContents = noChange, tableOfContentsWidth = TOC_DEFAULT_W, onChangeTableOfContentsWidth = noChange, codeOutlineSort = 'position', codeOutlineHidden = NO_KINDS, codeOutlineLocals = false }: CodeHostProps) {
+function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeReadOnly = DEFAULT_SETTINGS.codeReadOnly, codeWrap = DEFAULT_SETTINGS.codeWrap, codeMinimap = DEFAULT_SETTINGS.codeMinimap, onChangeCodeSettings, startView, onOpenFile, viewKey, tableOfContents = 'off', tocOnByDefault = DEFAULT_SETTINGS.tocOnByDefault, onChangeTableOfContents = noChange, tableOfContentsWidth = TOC_DEFAULT_W, onChangeTableOfContentsWidth = noChange, codeOutlineSort = 'position', codeOutlineHidden = NO_KINDS, codeOutlineLocals = false }: CodeHostProps) {
   const theme = useAppliedTheme()
   const mountRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<ReturnType<typeof monaco.editor.create> | null>(null)
@@ -194,8 +191,6 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
   const closedText = useRef<string | null>(null)
   /** True while a reload puts disk truth in: those changes are not edits. */
   const applyingDisk = useRef(false)
-  const sidebarRef = useRef(onToggleSidebar)
-  sidebarRef.current = onToggleSidebar
   /** "Allow edits" on this tab's chip (YAZ-3449 S2): this tab only, until it closes. */
   const [unlocked, setUnlocked] = useState(false)
   const [askingUnlock, setAskingUnlock] = useState(false)
@@ -457,10 +452,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
       }
       const command = appCommandOf(event, storage.getSettings()?.hotkeys)
       if (command === null || command === 'copyPath') return
-      event.stopPropagation()
-      if (command !== 'toggleSidebar') return // a menu accelerator: the menu runs it
-      event.preventDefault()
-      sidebarRef.current?.()
+      event.stopPropagation() // a menu accelerator: the menu runs it (Toggle sidebar too, since YAZ-3564 D10)
     }
     host.addEventListener('keydown', onKeyDown, true)
     return () => host.removeEventListener('keydown', onKeyDown, true)

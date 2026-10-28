@@ -624,20 +624,13 @@ describe('App per-window sidebar visibility (YAZ-1280)', () => {
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
   })
 
-  it('plain Cmd+B on app chrome prevents default, toggles once, and the listener is removed on unmount', async () => {
+  it('⌘B on app chrome toggles nothing: Toggle sidebar is the menu\'s ⌘⇧B since YAZ-3564 D10, and the menu sends it (above)', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     const event = new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })
     act(() => void el.querySelector('.app')?.dispatchEvent(event))
-    expect(event.defaultPrevented).toBe(true)
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
-    expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith({ sidebarCollapsed: true })
-
-    act(() => root?.unmount())
-    root = null
-    const afterUnmount = new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })
-    document.body.dispatchEvent(afterUnmount)
-    expect(afterUnmount.defaultPrevented).toBe(false)
-    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
+    expect(event.defaultPrevented).toBe(false)
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith({ sidebarCollapsed: true })
   })
 })
 
@@ -1355,7 +1348,6 @@ describe('App sidebar resize (YAZ-738)', () => {
   const sideW = () => captured.sidebar?.width
   /** One App render as the stub counts it: `mount` renders under StrictMode, which renders twice. */
   const STRICT_RENDER = 2
-  const toggle = (el: HTMLElement) => act(() => void el.querySelector('.app')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })))
 
   it('a drag widens the sidebar live and persists the new width once', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
@@ -1414,12 +1406,12 @@ describe('App sidebar resize (YAZ-738)', () => {
   })
 
   it('dragging well past the minimum collapses the sidebar instead of writing a sliver width', async () => {
-    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const { bridge, el, emitToggleSidebar } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => drag(el, 50 - 260))
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: true })
     expect(bridge.state.setSidebarWidth).not.toHaveBeenCalled()
-    toggle(el)
+    act(() => emitToggleSidebar())
     expect(el.querySelector('[data-sidebar]')).not.toBeNull()
     expect(sideW()).toBe(260)
   })

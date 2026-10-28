@@ -179,7 +179,6 @@ export type DrawioMessage =
   | { event: 'load'; xml?: string }
   | { event: 'autosave'; xml: string }
   | { event: 'save'; xml: string }
-  | { event: 'shortcut'; command: 'toggleSidebar' }
 
 /**
  * One `message` event, if it is the iframe speaking: the right window, the right origin, a JSON
@@ -206,8 +205,6 @@ export function readDrawioMessage(ev: { source: unknown; origin: string; data: u
     case 'autosave':
     case 'save':
       return typeof xml === 'string' ? { event, xml } : null
-    case 'shortcut':
-      return command === 'toggleSidebar' ? { event, command } : null
     default:
       return null
   }

@@ -528,24 +528,6 @@ window.ICON_SERVICE_PATH = null;
 		{
 			graph.toggleCellStyleFlags(mxConstants.STYLE_FONTSTYLE, mxConstants.FONT_STRIKETHROUGH);
 		});
-
-		// ⌘B is draw.io's bold on a selection. With nothing selected it is the app's sidebar toggle
-		// (the default decided on YAZ-1948), which the host page owns — and a key pressed in this
-		// frame never reaches that page, so it is passed up as draw.io's own `shortcut` event (what
-		// its `passThroughKeys` config sends, which cannot ask about the selection).
-		var bold = keys.controlKeys[66];
-
-		keys.bindControlKey(66, function()
-		{
-			if (graph.isSelectionEmpty())
-			{
-				postToHost({event: 'shortcut', command: 'toggleSidebar'});
-			}
-			else
-			{
-				bold.apply(this, arguments);
-			}
-		});
 	}
 
 	var installKeyboardShortcuts = EditorUi.prototype.installKeyboardShortcuts;

@@ -445,13 +445,14 @@ describe('createStore: loading', () => {
   })
 
   it('hotkeys (YAZ-3397 D2): a file from before has none and loads `{}`; a bad id or key costs that entry only; the IPC guard is strict', async () => {
-    const { hotkeys: _hotkeys, ...legacySettings } = DEFAULT_SETTINGS
+    const { hotkeys: _hotkeys, hotkeysAside: _aside, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: { ...legacySettings, theme: 'dark' } }))
     expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, theme: 'dark' })
     expect(createStore(file).get().settings.hotkeys).toEqual({})
 
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K', closeTab: null, quit: 'CmdOrCtrl+Q', newTab: 7, openFolder: 'Not+A+Key' } } }))
-    expect(createStore(file).get().settings.hotkeys).toEqual({ search: 'CmdOrCtrl+Shift+K', closeTab: null })
+    // An old unscoped id loads as its scoped one (YAZ-3564 K2).
+    expect(createStore(file).get().settings.hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Shift+K', 'app.closeTab': null })
     for (const junk of [null, 'x', [], 3]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: junk }).hotkeys).toEqual({})
 
     expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K', closeTab: null } })).toBe(true)
@@ -462,19 +463,19 @@ describe('createStore: loading', () => {
     // A bare letter would take every typed "a" in every window; ⌘Q is the app's Quit (App standard).
     // ⌘⇧V and ⌘= are fixed keys of the menu (YAZ-3419): Paste as plain text and Zoom In's hidden twin.
     for (const key of ['A', 'Shift+A', 'CmdOrCtrl+Q', 'CmdOrCtrl+Shift+V', 'CmdOrCtrl+=']) {
-      expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: key, closeTab: null } }).hotkeys, key).toEqual({ closeTab: null })
+      expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: key, closeTab: null } }).hotkeys, key).toEqual({ 'app.closeTab': null })
       expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: key } }), key).toBe(false)
     }
-    // ⌘B is Toggle sidebar's default: the change that clashes with it goes, and Search the vault has ⌘K again.
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+B', closeTab: null } }).hotkeys).toEqual({ closeTab: null })
-    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+B' } })).toBe(false)
+    // ⌘⇧B is Toggle sidebar's default (YAZ-3564 D10): the change that clashes with it goes, and Search the vault has ⌘K again.
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+B', closeTab: null } }).hotkeys).toEqual({ 'app.closeTab': null })
+    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+B' } })).toBe(false)
     // Two changes on one key: the one LAST in `HOTKEY_COMMANDS` order goes (Copy path after Search the vault).
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Alt+J', copyPath: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ search: 'CmdOrCtrl+Alt+J' })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Alt+J', copyPath: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Alt+J' })
     // Dropping one change can uncover the next clash: Tab overview's ⌘⇧M comes back, so Search the vault's ⌘⇧M goes too.
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+M', copyPath: 'CmdOrCtrl+Alt+J', tabOverview: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ copyPath: 'CmdOrCtrl+Alt+J' })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+M', copyPath: 'CmdOrCtrl+Alt+J', tabOverview: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ 'app.copyPath': 'CmdOrCtrl+Alt+J' })
     // A move (D6) is no clash: the key left New Files window, which has "No key" now.
     const moved = { search: 'CmdOrCtrl+Shift+W', newFilesWindow: null }
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: moved }).hotkeys).toEqual(moved)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: moved }).hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Shift+W', 'app.newFilesWindow': null })
     expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: moved })).toBe(true)
   })
 

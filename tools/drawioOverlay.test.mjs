@@ -408,18 +408,15 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     expect(text.style.fontStyle).toBe(0)
   })
 
-  it('⌘B with nothing selected goes up to the host as the app’s sidebar key; with a selection it stays draw.io’s bold', async () => {
+  it('⌘B is draw.io’s bold and nothing else: the sidebar key is the menu’s ⌘⇧B since YAZ-3564 D10, so nothing goes up to the host', async () => {
     const { env, posted } = loadPostConfig()
     await settle()
     const shape = cell(RECT)
     const editor = openEditor(env)
-    editor.press('b', { metaKey: true })
-    expect(posted.at(-1)).toEqual({ event: 'shortcut', command: 'toggleSidebar', origin: '*' })
-    expect(editor.bold).not.toHaveBeenCalled()
     editor.select(shape)
     editor.press('b', { metaKey: true })
     expect(editor.bold).toHaveBeenCalledOnce()
-    expect(posted.filter((m) => m.event === 'shortcut')).toHaveLength(1)
+    expect(posted.filter((m) => m.event === 'shortcut')).toHaveLength(0)
   })
 
   it('the host’s yaseenAdaptiveColors moves draw.io’s DEFAULT and re-draws — a file’s own value is kept, and draw.io never sees the message (🔒 YAZ-1802 D16)', () => {

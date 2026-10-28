@@ -40,7 +40,7 @@ describe('HOTKEYS source of truth', () => {
       ['openFolder', '⌘⇧O'],
       ['search', '⌘K'],
       ['settings', '⌘,'],
-      ['toggleSidebar', '⌘B'],
+      ['toggleSidebar', '⌘⇧B'],
       ['copyPath', '⌘⇧C'],
       ['tabOverview', '⌘⇧M'],
       ['nextTab', '⌃Tab'],
@@ -55,7 +55,8 @@ describe('HOTKEYS source of truth', () => {
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘1 … ⌘9')?.label).toMatch(/vault with that number.*right-click a vault/i)
     // ⌘⇧C (🔒 D4, YAZ-1338): the multi-selection FIRST, the open file as the fallback.
     expect(HOTKEY_COMMANDS.find((c) => c.id === 'copyPath')?.hint).toMatch(/selection.*else the open file/i)
-    expect(HOTKEY_COMMANDS.find((c) => c.id === 'toggleSidebar')?.hint).toMatch(/outside editing surfaces/i)
+    // A menu key since YAZ-3564 D10: it works inside every editor too.
+    expect(HOTKEY_COMMANDS.find((c) => c.id === 'toggleSidebar')?.hint).toMatch(/note, a drawing, a diagram and code/i)
     // A move's undo (YAZ-3255 D10, audit 11): right after the file clipboard, and it says where a page keeps the keys.
     expect(keys[keys.indexOf('⌘V') + 1]).toBe('⌘Z / ⌘⇧Z')
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘Z / ⌘⇧Z')?.label).toMatch(/undo.*redo.*move.*outside a note/i)

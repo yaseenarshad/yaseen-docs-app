@@ -33,7 +33,6 @@ const writeFile = vi.fn<(req: FileWriteRequest) => Promise<FileWriteResponse>>()
 const setBoardReadOnly = vi.fn()
 const setFolds = vi.fn(async () => undefined)
 const setTocSwitch = vi.fn(async () => undefined)
-const toggleSidebar = vi.fn()
 
 const { watch, watcherSaw } = fakeWatch()
 
@@ -58,7 +57,7 @@ async function after(ms: number): Promise<void> {
 /** Mount a code tab on `content` (at mtime 100) and wait for its editor. */
 async function opened(content: string, path = PATH): Promise<void> {
   readFile.mockResolvedValueOnce(disk(content, 100, path))
-  act(() => root?.render(<CodeEditor root={ROOT} path={path} watch={watch} sync={{ root: ROOT, state: 'synced' }} onSyncNow={() => undefined} onToggleSidebar={toggleSidebar} />))
+  act(() => root?.render(<CodeEditor root={ROOT} path={path} watch={watch} sync={{ root: ROOT, state: 'synced' }} onSyncNow={() => undefined} />))
   await settle()
 }
 
@@ -807,11 +806,9 @@ describe("the app's keys win over Monaco (YAZ-3447)", () => {
     expect(editor().keysSeen).toEqual([])
   })
 
-  it('S4: ⌘B toggles the sidebar, as in a diagram', async () => {
+  it('S4: Toggle sidebar (⌘⇧B, a menu key since YAZ-3564 D10) stops before Monaco, and the menu runs it', async () => {
     await opened('a\n')
-    const event = press({ key: 'b', code: 'KeyB', metaKey: true })
-    expect(toggleSidebar).toHaveBeenCalledTimes(1)
-    expect(event.defaultPrevented).toBe(true)
+    press({ key: 'B', code: 'KeyB', metaKey: true, shiftKey: true })
     expect(editor().keysSeen).toEqual([])
   })
 

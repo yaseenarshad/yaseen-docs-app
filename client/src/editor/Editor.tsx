@@ -175,8 +175,6 @@ interface EditorProps {
   onChangeCanvasPanel?: (next: CanvasPanelState) => void
   /** How draw.io diagrams look in dark mode (YAZ-3028, Draw's 🔒 YAZ-1802 D16): `SettingsState.diagramDarkColors`. Absent → `adapt`. */
   diagramDarkColors?: DiagramDarkColors
-  /** ⌘B pressed inside a diagram's draw.io frame, where the window never sees the key: App's sidebar toggle. */
-  onToggleSidebar?: () => void
   /** Settings › Code (YAZ-3449): the code tab's read only, wrap and minimap, one value for every code file, and App's door that writes them. */
   codeReadOnly?: boolean
   codeWrap?: boolean
@@ -197,7 +195,7 @@ interface EditorProps {
   previewScope?: (path: string) => PreviewScope
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', onToggleSidebar, codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -220,7 +218,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     // Outline (YAZ-3486) reads the note's table of contents setting and width.
     return (
       <Suspense fallback={<section className="editor" />}>
-        <CodeEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} onNotice={onNotice} onToggleSidebar={onToggleSidebar} codeReadOnly={codeReadOnly} codeWrap={codeWrap} codeMinimap={codeMinimap} onChangeCodeSettings={onChangeCodeSettings} startView={startViewRef.current} onOpenFile={onOpenFile} viewKey={viewKey} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} codeOutlineSort={codeOutlineSort} codeOutlineHidden={codeOutlineHidden} codeOutlineLocals={codeOutlineLocals} />
+        <CodeEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} onNotice={onNotice} codeReadOnly={codeReadOnly} codeWrap={codeWrap} codeMinimap={codeMinimap} onChangeCodeSettings={onChangeCodeSettings} startView={startViewRef.current} onOpenFile={onOpenFile} viewKey={viewKey} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} codeOutlineSort={codeOutlineSort} codeOutlineHidden={codeOutlineHidden} codeOutlineLocals={codeOutlineLocals} />
       </Suspense>
     )
   }
@@ -250,7 +248,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
   if (kind === 'diagram') {
     return (
       <Suspense fallback={<section className="editor" />}>
-        <DrawioEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} darkColors={diagramDarkColors} onNotice={onNotice} onToggleSidebar={onToggleSidebar} />
+        <DrawioEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} darkColors={diagramDarkColors} onNotice={onNotice} />
       </Suspense>
     )
   }

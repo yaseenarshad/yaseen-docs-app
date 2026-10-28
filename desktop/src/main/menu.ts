@@ -8,7 +8,8 @@
 import type { MenuItemConstructorOptions } from 'electron'
 import { keyedVaults, type AppState, type ClipboardPasteRequest, type FileKind, type KeyedVault, type RecentRoots, type ZoomStep } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
-import { keyFor, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { appKeyId, keyFor, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { keyRow, stepsAside, type HotkeyAside, type KeyScope } from '@shared/keys'
 import type { Store } from './store'
 import type { WindowManager } from './windows'
 
@@ -88,6 +89,8 @@ export interface MenuInputs {
    * key from `keyFor`, and one with no key now has none. `subscribeMenuRebuild` rebuilds when they change.
    */
   hotkeys: HotkeyOverrides
+  /** The App keys' "Let drawings, diagrams and code keep this key" switches (YAZ-3564 K9). Absent = every default. */
+  hotkeysAside?: HotkeyAside
   /**
    * A key recorder is listening in some window (YAZ-3397 D6): the menu is built with NO key at all, the
    * roles' own included, so the keys pressed reach the page. On macOS a menu key fires before the page
@@ -119,7 +122,7 @@ const menuLabel = (text: string): string => text.replace(/&/g, '&&')
  * The whole menu bar as a template. Item `id`s are stable so a live check (Playwright) can
  * drive items through `Menu.getApplicationMenu().getMenuItemById(...)`.
  */
-export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hotkeys, suspendKeys = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
+export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hotkeys, hotkeysAside, suspendKeys = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
   const recentItems: MenuItemConstructorOptions[] =
     recents.length === 0
       ? [{ label: 'No Recent Folders', enabled: false }]
@@ -130,10 +133,17 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
         }))
   const onBoard = activeKind === 'drawing' || activeKind === 'diagram'
   const onDrawing = activeKind === 'drawing'
-  /** A changeable item's key (YAZ-3397 D2): the user's, else the default; none at all for "No key". */
+  /** The place of the tab in front, for the App keys that let it keep its own key (YAZ-3564 K9). */
+  const place: KeyScope | null = onBoard ? (activeKind as KeyScope) : activeKind === 'text' ? 'code' : null
+  /**
+   * A changeable item's key (YAZ-3397 D2): the user's, else the default; none at all for "No key", and none while a tab
+   * of a place it steps aside in is in front (YAZ-3564 K9), so that place keeps its own key.
+   */
   const key = (id: HotkeyId): { accelerator?: string } => {
     const accelerator = keyFor(id, hotkeys)
-    return accelerator === null ? {} : { accelerator }
+    const row = keyRow(appKeyId(id))
+    if (accelerator === null || (place !== null && row !== undefined && stepsAside(row, place, hotkeysAside))) return {}
+    return { accelerator }
   }
   const template: MenuItemConstructorOptions[] = [
     // macOS titles the first menu with the running app's name; the label only matters off-mac.
@@ -176,12 +186,13 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
         // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D3 / D10, YAZ-1799): greyed out unless
         // the active tab is a board they work for. Export Image… and Share Link work on any board, Export
         // Excalidraw Drawing… only on a drawing. ⌘⇧E and ⌘⇧L clash with no in-page key of Docs.
-        { id: 'menu.file.export-image', label: 'Export Image…', accelerator: 'CmdOrCtrl+Shift+E', enabled: onBoard, click: () => handlers.exportImage() },
+        // A greyed-out item holds no key (YAZ-3564 K13): on macOS a disabled item still takes its key from the page.
+        { id: 'menu.file.export-image', label: 'Export Image…', ...(onBoard ? { accelerator: 'CmdOrCtrl+Shift+E' } : {}), enabled: onBoard, click: () => handlers.exportImage() },
         // ⌘⇧S is also the review's Skip (YAZ-2322), and the note keeps its key (D10): a registered
         // accelerator never reaches the page on macOS, so the item carries the key ONLY while it is
         // enabled. On a note tab nothing in the menu owns ⌘⇧S; a review over a drawing tab is App's to route.
         { id: 'menu.file.export-drawing', label: 'Export Excalidraw Drawing…', ...(onDrawing ? { accelerator: EXPORT_DRAWING_ACCELERATOR } : {}), enabled: onDrawing, click: () => handlers.exportDrawing() },
-        { id: 'menu.file.share-link', label: 'Share Link', accelerator: 'CmdOrCtrl+Shift+L', enabled: onBoard, click: () => handlers.shareLink() },
+        { id: 'menu.file.share-link', label: 'Share Link', ...(onBoard ? { accelerator: 'CmdOrCtrl+Shift+L' } : {}), enabled: onBoard, click: () => handlers.shareLink() },
         { type: 'separator' },
         // ⌘W is Close Tab (GRO-2232, locked): the renderer owns tab state, so the gesture goes to
         // the focused window's renderer. Close Window has NO key since YAZ-3357 D15 (⌘⇧W opens a Files window), so it
@@ -197,9 +208,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
     {
       label: 'View',
       submenu: [
-        // No key here: ⌘B is the RENDERER's (YAZ-1280), so an editor that binds it keeps it. Its key, changed
-        // or not, lives in `ownsSidebarHotkey` (YAZ-3397 D2).
-        { id: 'menu.view.toggle-sidebar', label: 'Toggle Sidebar', click: () => handlers.toggleSidebar() },
+        // ⌘⇧B, a menu key since YAZ-3564 D10: it fires in a note too, where ⌘B is Bold. A note's Quote gave the key up.
+        { id: 'menu.view.toggle-sidebar', label: 'Toggle Sidebar', ...key('toggleSidebar'), click: () => handlers.toggleSidebar() },
         { type: 'separator' },
         { role: 'reload' },
         ...(isDev ? [{ role: 'toggleDevTools' } satisfies MenuItemConstructorOptions] : []),
@@ -505,14 +515,17 @@ export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => v
   let lastFolders = store.get().folders
   let lastVaults = JSON.stringify(menuKeyedVaults(store.get()))
   let lastHotkeys = store.get().settings.hotkeys
-  let lastKeys = JSON.stringify(lastHotkeys)
+  let lastAside = store.get().settings.hotkeysAside
+  let lastKeys = JSON.stringify([lastHotkeys, lastAside])
   return store.onChange((state) => {
     const vaults = state.folders === lastFolders ? lastVaults : JSON.stringify(menuKeyedVaults(state))
     lastFolders = state.folders
     // The key changes (YAZ-3397 D2): by reference first, then by value — a settings write from a renderer
     // arrives as a new object even when no key moved, and a theme change must not rebuild the menu.
-    const keys = state.settings.hotkeys === lastHotkeys ? lastKeys : JSON.stringify(state.settings.hotkeys)
+    // The step-aside switches (YAZ-3564 K9) change an item's key too.
+    const keys = state.settings.hotkeys === lastHotkeys && state.settings.hotkeysAside === lastAside ? lastKeys : JSON.stringify([state.settings.hotkeys, state.settings.hotkeysAside])
     lastHotkeys = state.settings.hotkeys
+    lastAside = state.settings.hotkeysAside
     if (state.recents === last && vaults === lastVaults && keys === lastKeys) return
     last = state.recents
     lastVaults = vaults

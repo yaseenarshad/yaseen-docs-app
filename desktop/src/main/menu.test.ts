@@ -344,6 +344,15 @@ describe('buildMenuTemplate', () => {
     for (const kind of ['markdown', 'pdf', 'image', 'text', null] as const) expect(enabled(kind), String(kind)).toEqual([false, false, false, false])
   })
 
+  it('an App key that lets drawings, diagrams and code keep it has no accelerator while one of them is in front (YAZ-3564 K9); Toggle sidebar is ⌘⇧B (D10)', () => {
+    const search = (kind: FileKind | null, hotkeysAside?: Record<string, boolean>) =>
+      item(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: kind, hotkeys: {}, hotkeysAside }, noopHandlers()), 'File', 'menu.file.search')?.accelerator
+    expect(search('drawing')).toBe('CmdOrCtrl+K')
+    for (const kind of ['drawing', 'diagram', 'text'] as const) expect(search(kind, { 'app.search': true }), kind).toBeUndefined()
+    for (const kind of ['markdown', null] as const) expect(search(kind, { 'app.search': true }), String(kind)).toBe('CmdOrCtrl+K')
+    expect(item(onTab('markdown'), 'View', 'menu.view.toggle-sidebar')?.accelerator).toBe('CmdOrCtrl+Shift+B')
+  })
+
   it('⌘⇧S belongs to the menu ONLY while Export Excalidraw Drawing… is enabled: off a drawing the review\'s Skip (YAZ-2322) keeps it (D10)', () => {
     const accelerators = (kind: FileKind | null) =>
       onTab(kind)
@@ -353,8 +362,11 @@ describe('buildMenuTemplate', () => {
         .filter((a): a is string => a !== undefined)
     expect(accelerators('drawing').filter((a) => a === 'CmdOrCtrl+Shift+S')).toHaveLength(1)
     for (const kind of ['markdown', 'diagram', null] as const) expect(accelerators(kind), String(kind)).not.toContain('CmdOrCtrl+Shift+S')
-    // ⌘⇧E and ⌘⇧L clash with no in-page key of Docs, so they stay on the greyed rows; each is claimed once.
-    for (const key of ['CmdOrCtrl+Shift+E', 'CmdOrCtrl+Shift+L']) expect(accelerators('markdown').filter((a) => a === key)).toEqual([key])
+    // A greyed-out row holds no key (YAZ-3564 K13): on macOS it would still take ⌘⇧L from code (Select all occurrences).
+    for (const key of ['CmdOrCtrl+Shift+E', 'CmdOrCtrl+Shift+L']) {
+      expect(accelerators('markdown').filter((a) => a === key)).toEqual([])
+      expect(accelerators('drawing').filter((a) => a === key)).toEqual([key])
+    }
   })
 
   it('View › Canvas Background carries the engine\'s five picks after the zoom items, greyed off a drawing; a pick hands its colour over', () => {

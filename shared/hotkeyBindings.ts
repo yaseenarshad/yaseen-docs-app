@@ -45,6 +45,8 @@ export interface HotkeyCommand {
    * diagram keeps its own binding on it (`drawioProtocol.ts` clears only the menu's keys).
    */
   rendererOwned?: true
+  /** The places that keep their own key on this one by default (YAZ-3564 K9): the menu drops it while one is in front. */
+  stepsAsideIn?: readonly ('drawing' | 'diagram' | 'code')[]
 }
 
 export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
@@ -57,24 +59,33 @@ export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
   { id: 'openFolder', label: 'Open folder…', key: 'CmdOrCtrl+Shift+O' },
   { id: 'search', label: 'Search the vault', key: 'CmdOrCtrl+K' },
   { id: 'settings', label: 'Settings', key: 'CmdOrCtrl+,', macStandard: true },
-  { id: 'toggleSidebar', label: 'Toggle sidebar', hint: 'Outside editing surfaces', key: 'CmdOrCtrl+B', rendererOwned: true },
+  // A menu key since YAZ-3564 D10 (it was the renderer's ⌘B, which a note kept for Bold): it fires in a note too.
+  { id: 'toggleSidebar', label: 'Toggle sidebar', hint: 'In a note, a drawing, a diagram and code too', key: 'CmdOrCtrl+Shift+B' },
   { id: 'copyPath', label: 'Copy path', hint: 'The row of the new tab page that the keyboard is on, else the sidebar selection when one is standing, else the open file', key: 'CmdOrCtrl+Shift+C', rendererOwned: true },
   { id: 'tabOverview', label: 'Tab overview', hint: 'The same key opens it and closes it', key: 'CmdOrCtrl+Shift+M' },
   { id: 'nextTab', label: 'Next tab', key: 'Control+Tab' },
   { id: 'prevTab', label: 'Previous tab', key: 'Control+Shift+Tab' },
 ]
 
-/** Only the user's changes (D2); null = "No key". */
-export type HotkeyOverrides = Partial<Record<HotkeyId, string | null>>
+/**
+ * Only the user's changes (D2), for every key of the app (YAZ-3564 K2): by `<scope>.<name>` ('app.newTab', 'note.bold');
+ * null = "No key". An id with no scope is an App command from before YAZ-3564 ('newTab'): it reads as 'app.newTab'.
+ */
+export type HotkeyOverrides = Partial<Record<string, string | null>>
+
+/** The stored id of an App command (YAZ-3564 K2). */
+export const appKeyId = (id: HotkeyId): string => `app.${id}`
+/** Any stored id in its scoped form: an old App id gets `app.` in front. */
+export const scopedId = (id: string): string => (id.includes('.') ? id : `app.${id}`)
 
 export const HOTKEY_IDS: readonly HotkeyId[] = HOTKEY_COMMANDS.map((c) => c.id)
 export const isHotkeyId = (v: unknown): v is HotkeyId => typeof v === 'string' && (HOTKEY_IDS as readonly string[]).includes(v)
 
 export const hotkeyCommand = (id: HotkeyId): HotkeyCommand => HOTKEY_COMMANDS.find((c) => c.id === id) as HotkeyCommand
 
-/** The key `id` has now: the user's change, else the default. */
+/** The key `id` has now: the user's change (scoped, or an old unscoped one), else the default. */
 export function keyFor(id: HotkeyId, overrides: HotkeyOverrides | undefined): string | null {
-  const own = overrides?.[id]
+  const own = overrides?.[appKeyId(id)] !== undefined ? overrides[appKeyId(id)] : overrides?.[id]
   return own === undefined ? hotkeyCommand(id).key : own
 }
 
@@ -84,9 +95,10 @@ export function keyFor(id: HotkeyId, overrides: HotkeyOverrides | undefined): st
  */
 export function withKey(overrides: HotkeyOverrides, id: HotkeyId, key: string | null): HotkeyOverrides {
   const next = { ...overrides }
+  delete next[id] // an old unscoped entry goes: the scoped one is the change now (YAZ-3564 K2)
   const def = hotkeyCommand(id).key
-  if (key === null ? def === null : def !== null && sameKey(key, def)) delete next[id]
-  else next[id] = key
+  if (key === null ? def === null : def !== null && sameKey(key, def)) delete next[appKeyId(id)]
+  else next[appKeyId(id)] = key
   return next
 }
 

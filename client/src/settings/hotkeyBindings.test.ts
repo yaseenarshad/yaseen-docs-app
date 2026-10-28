@@ -61,9 +61,12 @@ describe('keyFor / withKey', () => {
     expect(keyFor('closeWindow', {})).toBeNull()
     expect(keyFor('search', undefined)).toBe('CmdOrCtrl+K')
 
-    expect(withKey({}, 'search', 'CmdOrCtrl+Shift+K')).toEqual({ search: 'CmdOrCtrl+Shift+K' })
+    // A change is stored by its scoped id since YAZ-3564 (K2); an old unscoped one still reads, and a write replaces it.
+    expect(keyFor('search', { 'app.search': 'CmdOrCtrl+Shift+K' })).toBe('CmdOrCtrl+Shift+K')
+    expect(withKey({}, 'search', 'CmdOrCtrl+Shift+K')).toEqual({ 'app.search': 'CmdOrCtrl+Shift+K' })
     expect(withKey({ search: 'CmdOrCtrl+Shift+K' }, 'search', 'Command+K')).toEqual({})
-    expect(withKey({}, 'closeTab', null)).toEqual({ closeTab: null })
+    expect(withKey({ search: 'CmdOrCtrl+Shift+K' }, 'search', 'CmdOrCtrl+J')).toEqual({ 'app.search': 'CmdOrCtrl+J' })
+    expect(withKey({}, 'closeTab', null)).toEqual({ 'app.closeTab': null })
     expect(withKey({ closeWindow: 'CmdOrCtrl+Alt+W' }, 'closeWindow', null)).toEqual({})
   })
 
@@ -92,7 +95,7 @@ describe('ownersOf (D5, D6)', () => {
 
 describe('the renderer and draw.io follow the key (D2)', () => {
   it('windowChordFor: the key as it is now, or null for "No key"', () => {
-    expect(windowChordFor('toggleSidebar', {})).toEqual({ key: 'b', shift: false, alt: false, ctrl: false, meta: true })
+    expect(windowChordFor('toggleSidebar', {})).toEqual({ key: 'b', shift: true, alt: false, ctrl: false, meta: true })
     expect(windowChordFor('copyPath', { copyPath: 'Control+Alt+P' })).toEqual({ key: 'p', shift: false, alt: true, ctrl: true, meta: false })
     expect(windowChordFor('toggleSidebar', { toggleSidebar: null })).toBeNull()
   })

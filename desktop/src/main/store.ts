@@ -126,7 +126,8 @@ import {
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
-import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, isHotkeyId, isUsableKey, keyFor, sameKey, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId, keyFor, sameKey, scopedId, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { isUsableFor, keyRow, type HotkeyAside } from '@shared/keys'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { travellingChanged, travels } from '@shared/settingsSync'
 import { atomicWrite } from './fs/fsUtils'
@@ -349,34 +350,52 @@ export function sanitizeHoverPreviewIn(raw: unknown): Record<HoverPlace, boolean
  * UI never writes anything else, so this is the only stop for a hand-edited file: a menu item with the key
  * `A` would take every typed "a" in every window.
  */
-const isHotkeyEntry = ([id, key]: [string, unknown]): boolean =>
-  isHotkeyId(id) && (key === null || (typeof key === 'string' && isUsableKey(key) && ![...APP_STANDARD_KEYS, ...MENU_FIXED_KEYS].some((k) => sameKey(k.accelerator, key))))
+const isHotkeyEntry = ([id, key]: [string, unknown]): boolean => {
+  // Any place's key since YAZ-3564 (K2): a scoped id of a changeable row ('note.bold'), or an old unscoped App id.
+  const row = keyRow(id)
+  if (row === undefined || !row.changeable) return false
+  if (key === null) return true
+  if (typeof key !== 'string' || !isUsableFor(row, key)) return false
+  // No row takes a Mac standard key (⌘Q is Quit); an App key also never takes a fixed key of the menu (YAZ-3419).
+  return ![...APP_STANDARD_KEYS, ...(row.scope === 'app' ? MENU_FIXED_KEYS : [])].some((k) => sameKey(k.accelerator, key.split(' ')[0]))
+}
 
 /**
  * The command whose change goes when two commands have one key now (YAZ-3410), or null when no two do: of the
  * commands in a clash, the LAST in `HOTKEY_COMMANDS` order that has a change (it gets its default back). The
  * defaults never clash with each other, so a clash always has a change in it.
  */
-function clashLoser(overrides: HotkeyOverrides): HotkeyId | null {
+function clashLoser(overrides: HotkeyOverrides): string | null {
+  // Two App commands on one key (YAZ-3397): a menu holds one item per key. A place's key that an App key blocks is
+  // allowed: the Hotkeys page shows it as blocked (YAZ-3564 K3), so the user decides.
   const keyOf = (id: HotkeyId) => keyFor(id, overrides)
   const inClash = HOTKEY_COMMANDS.filter((c) => HOTKEY_COMMANDS.some((o) => o.id !== c.id && sameKey(keyOf(c.id), keyOf(o.id))))
-  return inClash.filter((c) => overrides[c.id] !== undefined).at(-1)?.id ?? null
+  return inClash.filter((c) => overrides[appKeyId(c.id)] !== undefined || overrides[c.id] !== undefined).at(-1)?.id ?? null
 }
 
 /** The user's key changes, strict: every entry reads (`isHotkeyEntry`) and no two commands share a key. The IPC boundary rejects anything else; `sanitizeHotkeys` repairs a stored one. */
-const isHotkeyOverrides = (v: unknown): v is HotkeyOverrides => isRecord(v) && Object.entries(v).every(isHotkeyEntry) && clashLoser(v) === null
+const isHotkeyOverrides = (v: unknown): v is HotkeyOverrides => isRecord(v) && Object.entries(v).every(isHotkeyEntry) && clashLoser(v as HotkeyOverrides) === null
 
 /**
  * A stored `hotkeys` with each entry that does not read dropped (an id a later build removed, a key that is no
  * key), then the clashes undone one change at a time (`clashLoser`); the same object when all read.
  */
 export function sanitizeHotkeys(raw: unknown): HotkeyOverrides {
-  if (isHotkeyOverrides(raw)) return raw
   if (!isRecord(raw)) return {}
-  const out: HotkeyOverrides = Object.fromEntries(Object.entries(raw).filter(isHotkeyEntry))
-  for (let loser = clashLoser(out); loser !== null; loser = clashLoser(out)) delete out[loser]
-  return out
+  if (Object.keys(raw).every((id) => id.includes('.')) && isHotkeyOverrides(raw)) return raw
+  // An old unscoped App id reads as `app.<id>` (YAZ-3564 K2); a scoped one wins over it.
+  const scoped: HotkeyOverrides = {}
+  for (const [id, key] of Object.entries(raw)) {
+    if (isHotkeyEntry([id, key]) && (id.includes('.') || !(scopedId(id) in raw))) scoped[scopedId(id)] = key as string | null
+  }
+  for (let loser = clashLoser(scoped); loser !== null; loser = clashLoser(scoped)) delete scoped[appKeyId(loser as HotkeyId)]
+  return scoped
 }
+
+/** The step-aside switches (YAZ-3564 K9): App rows only, booleans only; a stored one this build does not know is dropped. */
+const isHotkeyAside = (v: unknown): v is HotkeyAside => isRecord(v) && Object.entries(v).every(([id, on]) => keyRow(id)?.scope === 'app' && typeof on === 'boolean')
+export const sanitizeHotkeyAside = (raw: unknown): HotkeyAside =>
+  isHotkeyAside(raw) ? raw : isRecord(raw) ? (Object.fromEntries(Object.entries(raw).filter(([id, on]) => keyRow(id)?.scope === 'app' && typeof on === 'boolean')) as HotkeyAside) : {}
 
 /** The code Outline's hidden kinds (YAZ-3486), strict: known kinds, each once. The IPC boundary rejects anything else. */
 const isOutlineHidden = (v: unknown): v is CodeSymbolKind[] =>
@@ -441,6 +460,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   noticeLists: (v): v is boolean => typeof v === 'boolean',
   gestureSounds: (v): v is boolean => typeof v === 'boolean',
   hotkeys: isHotkeyOverrides,
+  hotkeysAside: isHotkeyAside,
   sidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
   // YAZ-3432: one of the App sizes only; a stored value off them loads as 100 (the default, `sanitizeSettings`).
   appZoom: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
@@ -468,6 +488,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
+  out.hotkeysAside = sanitizeHotkeyAside(src.hotkeysAside)
   out.sidebarIconColors = sanitizeSidebarIconColors(src.sidebarIconColors)
   // YAZ-3440 D9: a rule that does not read costs itself alone.
   out.sidebarIconRules = cleanIconRules(src.sidebarIconRules)
@@ -481,7 +502,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
 
 /** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
 // The icon colours too (YAZ-3440 D4): a colour another Mac reset to its default is a key gone, which a merge by part would bring back.
-const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'sidebarIconColors']
+const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors']
 
 /**
  * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,

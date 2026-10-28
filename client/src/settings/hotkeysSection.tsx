@@ -25,7 +25,7 @@
  * because on macOS a menu key fires before the page sees it — recording ⌘W must not close the tab.
  */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { HOTKEY_COMMANDS, hotkeyCommand, isUsableKey, keyFor, ownersOf, sameKey, toDisplay, withKey, fromKeyEvent, type HotkeyId, type HotkeyOverrides, type HotkeyOwner } from '@shared/hotkeyBindings'
+import { HOTKEY_COMMANDS, appKeyId, hotkeyCommand, isUsableKey, keyFor, ownersOf, sameKey, toDisplay, withKey, fromKeyEvent, type HotkeyId, type HotkeyOverrides, type HotkeyOwner } from '@shared/hotkeyBindings'
 import { MACOS_HOTKEYS, type SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
@@ -137,7 +137,7 @@ function HotkeyCommandRow({ id, ctx }: { id: HotkeyId; ctx: SettingsCtx }) {
   const command = hotkeyCommand(id)
   const overrides = ctx.settings.hotkeys
   const current = keyFor(id, overrides)
-  const changed = overrides[id] !== undefined
+  const changed = overrides[appKeyId(id)] !== undefined || overrides[id] !== undefined
   const [mode, setMode] = useState<RowMode>({ kind: 'idle' })
   const rowRef = useRef<HTMLDivElement>(null)
   const keyButton = useRef<HTMLButtonElement>(null)
@@ -278,7 +278,7 @@ function HotkeyCommandRow({ id, ctx }: { id: HotkeyId; ctx: SettingsCtx }) {
 /** "Reset all hotkeys" (D7): there only with a change, and it asks in the app's confirm sheet first. */
 function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
   const [asking, setAsking] = useState(false)
-  const changes = HOTKEY_COMMANDS.filter((c) => ctx.settings.hotkeys[c.id] !== undefined)
+  const changes = HOTKEY_COMMANDS.filter((c) => ctx.settings.hotkeys[appKeyId(c.id)] !== undefined || ctx.settings.hotkeys[c.id] !== undefined)
   const n = changes.length
   const plural = n === 1 ? 'hotkey' : 'hotkeys'
   return (

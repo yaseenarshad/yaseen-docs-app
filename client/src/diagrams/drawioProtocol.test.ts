@@ -98,11 +98,9 @@ describe('readDrawioMessage — only THAT iframe, only the drawio origin (🔒 Y
     expect(msg('{"event":"save","xml":"<mxfile/>","exit":false}')).toEqual({ event: 'save', xml: '<mxfile/>' })
   })
 
-  it('reads a forwarded app shortcut only when it is one the host knows', () => {
-    expect(msg('{"event":"shortcut","command":"toggleSidebar"}')).toEqual({ event: 'shortcut', command: 'toggleSidebar' })
-    expect(msg('{"event":"shortcut","command":"closeTab"}')).toBeNull()
+  it('reads no forwarded shortcut: Toggle sidebar is a menu key since YAZ-3564 D10, so no key has to come up from the frame', () => {
+    expect(msg('{"event":"shortcut","command":"toggleSidebar"}')).toBeNull()
     expect(msg('{"event":"shortcut"}')).toBeNull()
-    expect(msg('{"event":"shortcut","command":"toggleSidebar"}', { origin: 'https://app.diagrams.net' })).toBeNull()
   })
 
   it('ignores another window, another origin, a missing frame, non-strings, junk and unknown events', () => {

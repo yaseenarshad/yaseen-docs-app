@@ -32,7 +32,6 @@ import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
 import { useVaultListsHere } from './lists/useVaultListsHere'
 import { readPageView } from './lib/pageView'
-import { ownsSidebarHotkey } from './lib/sidebarHotkey'
 import { buildSetupPrompt } from './lib/syncAttention'
 import { mergeNotice } from './history/mergeNotice'
 import { noteBoardRenamed, noteBoardSaved } from './share/liveShare'
@@ -453,16 +452,6 @@ export function App() {
     setSidebarCollapsed(next)
   }, [])
 
-  // Renderer bubble phase is deliberate: Milkdown and other focused tools get first ownership.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (!ownsSidebarHotkey(event, hotkeysRef.current)) return
-      event.preventDefault()
-      toggleSidebar()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [toggleSidebar])
 
   // Dragging past 60% of the minimum reads as "close it" rather than "make it tiny" — the
   // sidebar collapses and the remembered width stays whatever it was before the drag.
@@ -2343,9 +2332,8 @@ export function App() {
       onChangeCanvasPrefs: changeCanvasPrefs,
       canvasPanel: settings.canvasPanel,
       onChangeCanvasPanel: changeCanvasPanel,
-      // A diagram tab's dark-mode colours, and ⌘B pressed inside its draw.io frame.
+      // A diagram tab's dark-mode colours.
       diagramDarkColors: settings.diagramDarkColors,
-      onToggleSidebar: toggleSidebar,
       // YAZ-3449: every code tab's read only, wrap and minimap, each a SETTING, and its cog's door that writes them.
       codeReadOnly: settings.codeReadOnly,
       codeWrap: settings.codeWrap,

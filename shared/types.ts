@@ -1604,6 +1604,11 @@ export interface SettingsState {
    */
   hotkeys: HotkeyOverrides
   /**
+   * The "Let drawings, diagrams and code keep this key" switches of App keys (YAZ-3564 K9): only the changes, by App
+   * row id ('app.goTo'); `{}` is every default. It travels with the other settings.
+   */
+  hotkeysAside: Partial<Record<string, boolean>>
+  /**
    * The zoom of the sidebar's lists in percent (YAZ-3389): the tree, the search results and every other
    * tab's list, never the sidebar's header, tab row or footer. One value for every window. The steps are
    * `SIDEBAR_ZOOM_STEPS`; a stored value is kept within 50–200 (`SIDEBAR_ZOOM_MIN` / `_MAX`).
@@ -1852,6 +1857,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   noticeLists: true,
   gestureSounds: true,
   hotkeys: {},
+  hotkeysAside: {},
   sidebarZoom: 100,
   appZoom: 100,
   codeReadOnly: false,
