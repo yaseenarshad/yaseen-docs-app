@@ -1588,6 +1588,16 @@ describe('App tab board across windows (YAZ-3343)', () => {
     expect(busy.bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ roots: ['/w'] }))
   })
 
+  it('YAZ-3487: a NEW window on two vaults starts with each vault row closed, as "Collapse all" leaves them; any other window has them open', async () => {
+    const fresh = await mount(withWindows(), { id: 'w9', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], startEmpty: true as const, startCollapsed: true as const })
+    expect(captured.sidebar?.closedVaults).toEqual(['/v', '/w'])
+    act(() => root?.unmount())
+    container?.remove()
+    await mount(withWindows(), { id: 'w8', root: '/v', roots: ['/v', '/w'], file: null, tabs: [] })
+    expect(captured.sidebar?.closedVaults).toEqual([])
+    void fresh
+  })
+
   it('YAZ-3487 D10: a tab MOVED to a new window is no close; "Open in this window" closes the tabs it drops', async () => {
     const { bridge, el } = await mount(withWindows(), ME)
     const before = tabNames(el)

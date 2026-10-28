@@ -270,7 +270,8 @@ export function App() {
   if (sidebarKey.current === null || !roots.includes(sidebarKey.current)) sidebarKey.current = root
   // The vault rows the user closed (YAZ-2602 R9): for the session and for this window, so never in
   // the store — and App's, like the lens below: the sidebar unmounts while it is hidden.
-  const [closedVaults, setClosedVaults] = useState<readonly string[]>([])
+  // A NEW window starts with every vault row closed too, as "Collapse all" leaves them (YAZ-3487, YAZ-2631 D6).
+  const [closedVaults, setClosedVaults] = useState<readonly string[]>(() => (storage.isCollapsedStart() && storage.getRoots().length > 1 ? storage.getRoots() : []))
   const setVaultOpen = useCallback((vault: string, open: boolean) => setClosedVaults((closed) => (closed.includes(vault) === !open ? closed : open ? closed.filter((v) => v !== vault) : [...closed, vault])), [])
   // Workspace (Tabs I2 + YAZ-966): one renderer-owned model, seeded from the boot identity snapshot
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab's path is this
