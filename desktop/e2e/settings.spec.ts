@@ -238,10 +238,11 @@ test('step 5 — a nav click swaps the page: Sync, then Hotkeys under the divide
   await expect(popup).toHaveCount(0)
   await expect(row(win, 'hotkey-search').locator('.hotkeys__key')).toHaveText('⌘K')
   // A built-in key is refused in RED (D6, S9): its line's colour is not the colour of the hint line under it.
+  // ⌘⌫ is the window's own Trash key (⌘J can change since YAZ-3564, so it would move instead).
   await row(win, 'hotkey-search').locator('.hotkeys__key').click()
-  await win.keyboard.press('Meta+J')
+  await win.keyboard.press('Meta+Backspace')
   const refused = row(win, 'hotkey-search').locator('.hotkeys__line--refused')
-  await expect(refused).toHaveText('⌘J is built in: Table of contents. Pick a different key.')
+  await expect(refused).toHaveText('⌘⌫ is built in: App › Move the selected files and folders to the Trash. Pick a different key.')
   const colour = (line: typeof refused) => line.evaluate((p) => getComputedStyle(p).color)
   const hint = row(win, 'hotkey-search').locator('.hotkeys__line:not(.hotkeys__line--refused)')
   expect(await colour(refused)).not.toBe(await colour(hint))
