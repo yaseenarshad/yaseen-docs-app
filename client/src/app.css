@@ -2935,6 +2935,20 @@ button {
   color: color-mix(in srgb, var(--fg-muted) 60%, transparent);
 }
 
+/* A search row's Last updated (YAZ-3511 D5): as quiet as the vault tag, at the right end; the name gives way first. */
+.tree__date {
+  flex: none;
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--fg-muted) 60%, transparent);
+}
+.tree__vault + .tree__date {
+  margin-left: 0;
+}
+
 /* The shortcut mark (YAZ-2290 D2): this note shows here and lives elsewhere. Quiet, after the
    name, never squeezed by a long one — one rule for the tree row and for a title in a folder's views. */
 .shortcut-mark {

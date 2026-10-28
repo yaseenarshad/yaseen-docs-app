@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { TabSort, TreeNode, TreeResponse } from '@shared/types'
 import type { MenuAction, MenuSection } from './menuSections'
-import { sortLevel, sortSections, withMtime } from './treeSort'
+import { sortLevel, sortSections, timeOf, withMtime } from './treeSort'
 
 const file = (path: string, mtime: number): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 1, mtime, kind: 'markdown' })
 const dir = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.split('/').pop()!, path, children })
@@ -102,5 +102,38 @@ describe('sortSections (YAZ-3227 D4)', () => {
     item(reversed, 'Name').onSelect()
     item(reversed, 'Z to A').onSelect()
     expect(set).not.toHaveBeenCalled()
+  })
+
+  it('Search (YAZ-3511 D4, D7): Name and Last updated, then the way, then "Show last updated"; no Manual. The date row flips the switch and writes no sort', () => {
+    const set = vi.fn()
+    const flip = vi.fn()
+    const on = sortSections('search', NAME, set, { on: true, set: flip })
+    expect(labels(on)).toEqual([['Name✓', 'Last updated'], ['A to Z✓', 'Z to A'], ['Show last updated✓']])
+    item(on, 'Show last updated').onSelect()
+    expect(flip).toHaveBeenCalledExactlyOnceWith(false)
+    expect(set).not.toHaveBeenCalled()
+    const off = sortSections('search', { by: 'updated', reverse: true }, set, { on: false, set: flip })
+    expect(labels(off)).toEqual([['Name', 'Last updated✓'], ['Newest first', 'Oldest first✓'], ['Show last updated']])
+    item(off, 'Show last updated').onSelect()
+    expect(flip).toHaveBeenLastCalledWith(true)
+  })
+
+  it('a tab with no date switch has no date row (YAZ-3511 D7)', () => {
+    expect(sortSections('files', NAME, vi.fn()).flat().some((i) => i.label === 'Show last updated')).toBe(false)
+  })
+})
+
+describe('timeOf (YAZ-3511 D6)', () => {
+  it('a file is its mtime; a folder is its newest file anywhere inside; an empty folder is 0', () => {
+    const [, old, , empty] = level()
+    expect(timeOf(file('/v/x.md', 42))).toBe(42)
+    expect(timeOf(old)).toBe(90)
+    expect(timeOf(empty)).toBe(0)
+  })
+
+  it('a cut folder is as new as the rows it still holds: the search tree\'s own time, not the folder\'s on Files', () => {
+    const [, old] = level()
+    if (old.type !== 'dir') throw new Error('a folder')
+    expect(timeOf({ ...old, children: [old.children[0]] })).toBe(10)
   })
 })

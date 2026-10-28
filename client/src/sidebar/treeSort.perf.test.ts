@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import type { TabSort, TreeNode, TreeResponse } from '@shared/types'
 import { pageLabel } from '../lib/pageLabel'
-import { sortLevel, withMtime } from './treeSort'
+import { searchTree } from '../search/searchTree'
+import { sortLevel, timeOf, withMtime } from './treeSort'
 import { timeMedian } from '../test-perf'
 
 // 100 folders × 10 subfolders × 10 notes = 10,000 notes, each with its own time; plus a level of 108 rows, the largest one a real vault has.
@@ -59,5 +60,27 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     const { median: each, worst } = timeMedian(100, (i) => (trees = withMtime(trees, '/v', `/v/Folder ${i}/Sub 9/Note 9.md`, 20_000 + i)))
     console.log(`withMtime 10k: median ${(each * 1000).toFixed(0)} µs per save, worst ${(worst * 1000).toFixed(0)} µs of 100`)
     expect(each).toBeLessThan(1)
+  })
+
+  it('a keystroke on Search (YAZ-3511): 50 matches cut from 10,000 notes, sorted by Last updated, each row\'s date, in under 2 ms', () => {
+    const nodes = tree()
+    // 50 matches spread over the vault, a new set each run: each keystroke cuts a new tree, so no folder time is warm.
+    const hitsOf = (run: number) => new Set(Array.from({ length: 50 }, (_, i) => `/v/Folder ${(i * 2 + run) % 100}/Sub ${i % 10}/Note ${(i + run) % 10}.md`))
+    const keystroke = (run: number) => {
+      const cut = searchTree(nodes, hitsOf(run), new Set())
+      let dated = 0
+      const draw = (level: readonly TreeNode[]): void => {
+        for (const node of sortLevel(level, UPDATED, label)) {
+          if (timeOf(node) > 0) dated += 1
+          if (node.type === 'dir') draw(node.children)
+        }
+      }
+      draw(cut.nodes)
+      return dated
+    }
+    expect(keystroke(0)).toBeGreaterThanOrEqual(50)
+    const { median, worst } = timeMedian(100, keystroke)
+    console.log(`search keystroke, 50 of 10k by Last updated: median ${(median * 1000).toFixed(0)} µs, worst ${(worst * 1000).toFixed(0)} µs of 100`)
+    expect(median).toBeLessThan(2)
   })
 })

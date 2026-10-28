@@ -8,7 +8,7 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'bas
 const newest = new WeakMap<TreeNode, number>()
 
 /** A row's time for Last updated (D7): a file's mtime; a folder's newest file anywhere inside, 0 when empty. */
-function timeOf(node: TreeNode): number {
+export function timeOf(node: TreeNode): number {
   if (node.type === 'file') return node.mtime
   let time = newest.get(node)
   if (time === undefined) {
@@ -51,14 +51,17 @@ const WAYS: Record<Exclude<SortBy, 'manual'>, readonly [string, string]> = { nam
 /**
  * The sort menu (D4): what to sort by, then, unless Manual, which way. ✓ marks the current pick (Draw's YAZ-1835 D5).
  * A new sort starts its natural way; the current one keeps its way, and a pick that changes nothing writes nothing.
+ * `dates` is the Search menu's last row (YAZ-3511 D7): the date at the right end of each row, on or off.
  */
-export function sortSections(tab: SortedTab, sort: TabSort, set: (next: TabSort) => void): MenuSection[] {
+export function sortSections(tab: SortedTab | 'search', sort: TabSort, set: (next: TabSort) => void, dates?: { on: boolean; set: (on: boolean) => void }): MenuSection[] {
   const pick = (next: TabSort) => () => {
     if (next.by !== sort.by || next.reverse !== sort.reverse) set(next)
   }
-  const bys: SortBy[] = tab === 'files' ? ['name', 'updated'] : ['manual', 'name', 'updated']
+  // Files and Search have no drag order, so no Manual (YAZ-3511 D4).
+  const bys: SortBy[] = tab === 'files' || tab === 'search' ? ['name', 'updated'] : ['manual', 'name', 'updated']
   const by = bys.map((b) => ({ id: `sort-${b}`, label: BY_LABEL[b], hint: sort.by === b ? '✓' : undefined, onSelect: pick(sort.by === b ? sort : { by: b, reverse: false }) }))
   if (sort.by === 'manual') return [by]
   const ways = WAYS[sort.by].map((label, i) => ({ id: `sort-way-${i}`, label, hint: sort.reverse === (i === 1) ? '✓' : undefined, onSelect: pick({ ...sort, reverse: i === 1 }) }))
-  return [by, ways]
+  if (dates === undefined) return [by, ways]
+  return [by, ways, [{ id: 'sort-dates', label: 'Show last updated', hint: dates.on ? '✓' : undefined, onSelect: () => dates.set(!dates.on) }]]
 }

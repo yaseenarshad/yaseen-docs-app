@@ -387,6 +387,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   hoverPreviewIn: isHoverPreviewIn,
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
   sidebarSort: isSidebarSort,
+  searchSort: (v): v is TabSort => isTabSort(v, false),
+  searchDates: (v): v is boolean => typeof v === 'boolean',
   sidebarTabs: isSidebarTabs,
   startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
   vaultOpensOn: (v): v is VaultOpensOn => typeof v === 'string' && (VAULT_OPENS_ON as readonly string[]).includes(v),

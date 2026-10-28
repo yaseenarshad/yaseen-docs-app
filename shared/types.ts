@@ -1034,11 +1034,13 @@ export interface TabSort {
   by: SortBy
   reverse: boolean
 }
-/** The tabs that sort (YAZ-3227 D5): Search, Sessions and Recents (YAZ-3235) have no sort. */
+/** The tabs that sort (YAZ-3227 D5). Search has its own `searchSort` (YAZ-3511); Sessions and Recents (YAZ-3235) have none. */
 export type SortedTab = 'files' | 'focus' | 'favorites'
 export type SidebarSort = Record<SortedTab, TabSort>
 /** Files by name, A to Z (as before YAZ-3227); Focus and Favorites in their own drag order (D6). */
 export const DEFAULT_SIDEBAR_SORT: SidebarSort = { files: { by: 'name', reverse: false }, focus: { by: 'manual', reverse: false }, favorites: { by: 'manual', reverse: false } }
+/** The Search tab's sort (YAZ-3511 D4): by name, A to Z. Never Manual: a search has no drag order. */
+export const DEFAULT_SEARCH_SORT: TabSort = { by: 'name', reverse: false }
 
 /** `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. */
 export const SIDEBAR_MIN_W = 180
@@ -1461,6 +1463,10 @@ export interface SettingsState {
   commentsOrder: CommentsOrder
   /** Each sidebar tab's sort (YAZ-3227 D1): how you READ, global to this Mac, never part of a vault. */
   sidebarSort: SidebarSort
+  /** The Search tab's own sort (YAZ-3511 D1): Files can stay by name while a search shows the newest first. */
+  searchSort: TabSort
+  /** Each search row shows its Last updated at the right end (YAZ-3511 D7). */
+  searchDates: boolean
   /** The tab row's order, its hidden tabs and its hidden buttons (YAZ-3273 D8): global to this Mac, never part of a vault. */
   sidebarTabs: SidebarTabsPrefs
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
@@ -1714,6 +1720,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, links: true },
   commentsOrder: 'oldest',
   sidebarSort: DEFAULT_SIDEBAR_SORT,
+  searchSort: DEFAULT_SEARCH_SORT,
+  searchDates: true,
   sidebarTabs: DEFAULT_SIDEBAR_TABS,
   startupWindows: 'last',
   vaultOpensOn: 'blank',

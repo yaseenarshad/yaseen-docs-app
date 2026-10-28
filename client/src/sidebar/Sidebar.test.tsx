@@ -12,8 +12,9 @@ import { StrictMode, act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { copyFoldKey } from '@shared/foldKey'
 import { parseFrontmatter } from '@shared/frontmatter'
-import { CLIP_CHANGED, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type ImportResponse, type IndexRecord, type PasteRequest, type PasteResponse, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity, type SidebarTabsPrefs } from '@shared/types'
+import { CLIP_CHANGED, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type ImportResponse, type IndexRecord, type PasteRequest, type PasteResponse, type SettingsState, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity, type SidebarTabsPrefs } from '@shared/types'
 import appCss from '../app.css?inline'
+import { formatDateTime } from '../lib/format'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { EMPTY_SELECTION } from '../lib/selection'
 // The focus list's persistence is the REAL storage module (no mock in this file): `storage.init()`
@@ -1600,11 +1601,12 @@ describe('Sidebar tree refresh is coalesced (YAZ-2191)', () => {
   it('YAZ-3227 D2: under Last updated a `change` moves the saved note to the top with no read; turning it on reads the vault once', async () => {
     const { watch, fire } = withWatcher()
     const notes = [{ type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' }, { type: 'file', name: 'b.md', path: '/v/b.md', size: 1, mtime: 5, kind: 'markdown' }] as TreeNode[]
-    const { el, bridge, rerender } = await mount({ watch }, (b) => b.tree.mockResolvedValue({ root: '/v', tree: notes, generatedAt: 1 } as never))
+    // The search dates off (YAZ-3511 D2): they too keep the times fresh, and they are on by default.
+    const { el, bridge, rerender } = await mount({ watch, settings: { ...DEFAULT_SETTINGS, searchDates: false } }, (b) => b.tree.mockResolvedValue({ root: '/v', tree: notes, generatedAt: 1 } as never))
     const labels = () => [...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((n) => n.textContent)
     expect(labels()).toEqual(['a', 'b']) // Name, A to Z
     const before = bridge.tree.mock.calls.length
-    await rerender({ settings: { ...DEFAULT_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } } })
+    await rerender({ settings: { ...DEFAULT_SETTINGS, searchDates: false, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } } })
     expect(bridge.tree.mock.calls.length).toBe(before + 1) // the one walk that makes the times fresh
     expect(labels()).toEqual(['b', 'a'])
     act(() => fire({ type: 'change', path: '/v/a.md', mtime: 9 }))
@@ -3380,8 +3382,8 @@ describe('the way from the empty search bar to the new tab page (YAZ-2663 D7)', 
 
   it('S34: with text in the bar → and ↓ do what the search says, and the page is not asked', async () => {
     const onLeaveToPage = vi.fn(() => true)
-    const records = ['/v/a.md', '/v/zed/ab.md'].map(indexRecord)
-    const tree: TreeNode[] = [TREE[1], { type: 'dir', name: 'zed', path: '/v/zed', children: [{ type: 'file', name: 'ab.md', path: '/v/zed/ab.md', size: 1, mtime: 1, kind: 'markdown' }] }]
+    const records = ['/v/a.md', '/v/ab.md'].map(indexRecord)
+    const tree: TreeNode[] = [TREE[1], { type: 'file', name: 'ab.md', path: '/v/ab.md', size: 1, mtime: 1, kind: 'markdown' }]
     const { el } = await mount({ lens: 'search', onLeaveToPage }, (b) => {
       b.tree.mockResolvedValue({ root: '/v', tree, generatedAt: 1 })
       b.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true } as never)
@@ -3391,7 +3393,7 @@ describe('the way from the empty search bar to the new tab page (YAZ-2663 D7)', 
     expect(highlighted(el)).toBe('/v/a.md')
     // ↓ moves the highlight (YAZ-803), and → is the text's key: the caret moves (YAZ-2662 S50).
     expect(press(input, 'ArrowDown').defaultPrevented).toBe(true)
-    expect(highlighted(el)).toBe('/v/zed/ab.md')
+    expect(highlighted(el)).toBe('/v/ab.md')
     expect(press(input, 'ArrowRight').defaultPrevented).toBe(false)
     // A bar that holds only a space is not empty: → moves the caret over the space.
     await type(input, ' ')
@@ -7219,7 +7221,7 @@ describe('favorites (YAZ-1766)', () => {
     const items = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)
     const withSort = (tab: 'files' | 'focus' | 'favorites', by: 'manual' | 'name' | 'updated', reverse = false) => ({ settings: { ...DEFAULT_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, [tab]: { by, reverse } } } })
 
-    it('D4, D5: the button stands left of expand-all on Files, Focus and Favorites only; Files offers no Manual; a pick saves the tab\'s sort', async () => {
+    it('D4, D5: the button stands left of expand-all on Files, Focus, Favorites and Search (YAZ-3511 D3), not Sessions; Files offers no Manual; a pick saves the tab\'s sort', async () => {
       const { el, props, rerender } = await mountVault({ lens: 'files' })
       expect(sortButton(el)?.nextElementSibling?.classList.contains('sidebar__expand-all')).toBe(true)
       openSort(el)
@@ -7227,10 +7229,10 @@ describe('favorites (YAZ-1766)', () => {
       await act(async () => itemByLabel(el, 'Last updated')?.click())
       expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files: { by: 'updated', reverse: false } } })
       expect(items(el)).toEqual([]) // a pick closes the menu
-      for (const lens of ['search', 'sessions'] as const) {
-        await rerender({ lens })
-        expect(sortButton(el)).toBeNull()
-      }
+      await rerender({ lens: 'search' })
+      expect(sortButton(el)).not.toBeNull()
+      await rerender({ lens: 'sessions' })
+      expect(sortButton(el)).toBeNull()
     })
 
     it('D5: a second click on the button closes its menu', async () => {
@@ -10171,8 +10173,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
   it('the vault name\'s rule is its own: 10px, the muted colour at 60%, 40% of the row at most with an ellipsis (YAZ-2631 S41, S44, R10)', () => {
     const rule = appCss.match(/\n\.tree__vault \{([^}]*)\}/)?.[1]
     for (const declaration of ['font-size: 10px;', 'color: color-mix(in srgb, var(--fg-muted) 60%, transparent);', 'max-width: 40%;', 'text-overflow: ellipsis;']) expect(rule).toContain(declaration)
-    // No other rule names the vault name: none shares the number's, none follows a count.
-    expect(appCss.match(/\.tree__vault[^{]*\{/g)).toEqual(['.tree__vault {'])
+    // No other rule names the vault name: none shares the number's, none follows a count. A search row's date after it gives up its own push to the right (YAZ-3511 D5).
+    expect(appCss.match(/\.tree__vault[^{]*\{/g)).toEqual(['.tree__vault {', '.tree__vault + .tree__date {'])
   })
 
   it('a selection across two vaults goes in, in panel order; a remove on a row of the second vault keeps the tab; a mixed selection reads Add and puts in the missing row; all in reads "Remove 2 from focus" (A7)', async () => {
@@ -10779,6 +10781,14 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(shape(el)).toEqual(['Notes', '  sub', '    plan notes', '  old plan', 'Work', '  docs', '    plan d', '  plan', '  plan.py', '  planet'])
   })
 
+  it('S12 (YAZ-3511 D6): a vault row of the search shows no date; its file and folder rows do', async () => {
+    const { el } = await searchTwo()
+    await type(searchInput(el)!, 'plan')
+    const dated = (label: string) => [...el.querySelectorAll<HTMLElement>('.sidebar__body .tree__row')].find((row) => row.querySelector('.tree__label')?.textContent === label)?.querySelector('.tree__date') ?? null
+    expect([dated('Notes'), dated('Work')]).toEqual([null, null])
+    expect([dated('sub'), dated('plan')].every((date) => date !== null)).toBe(true)
+  })
+
   it('a tree of one vault is that vault\'s alone: the search builds the folder rows and the file rows of the vault whose tree landed, and no row of the other vault (R2)', async () => {
     const work = watcher()
     const { el, a, b, input, bridge, trees } = await searchTwo({}, { work })
@@ -10790,7 +10800,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
 
     trees[b] = [...trees[b], { type: 'dir', name: 'plans', path: `${b}/plans`, children: [] }]
     await act(async () => work.fire({ type: 'ready' } as WatchEvent))
-    expect(shape(el)).toEqual(['Notes', '  sub', '    plan notes', '  old plan', 'Work', '  docs', '    plan d', '  plan', '  plan.py', '  plans'])
+    // Folders stand above files, as on Files (YAZ-3511 D4).
+    expect(shape(el)).toEqual(['Notes', '  sub', '    plan notes', '  old plan', 'Work', '  docs', '    plan d', '  plans', '  plan', '  plan.py'])
     expect(bridge.tree.mock.calls.filter(([root]) => root === a)).toHaveLength(treesOfA)
     expect(new Set(rowBuilds.folders)).toEqual(new Set([b]))
     expect(new Set(rowBuilds.files)).toEqual(new Set([b]))
@@ -10999,5 +11010,118 @@ describe('Change icon from the tree (YAZ-3440 D8, D9)', () => {
     await pickIcon('python')
     expect(again.props.onChangeSettings).not.toHaveBeenCalled()
     expect(again.props.onNotice).toHaveBeenCalledWith(`Can't add the rule: the list holds ${MAX_ICON_RULES} rules at most, each up to ${MAX_ICON_MATCH} characters`, 'error')
+  })
+})
+
+/**
+ * The Search tab's own sort and dates (YAZ-3511 D1 to D7; scenarios 1 to 21 on YAZ-3512): the sort button of the tab
+ * row serves Search too, with Name or Last updated, the way, and "Show last updated". The pick is `settings.searchSort`
+ * and `settings.searchDates`, never `sidebarSort`.
+ */
+describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
+  const NOW = Date.now()
+  const H = 3_600_000
+  const D = 24 * H
+  const note = (path: string, mtime: number): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime, kind: 'markdown' })
+  // A folder that leads to two matches (number order), a matched folder with a file inside, an empty matched folder, two notes.
+  const TREE_3511: TreeNode[] = [
+    note('/v/plan b.md', NOW - 34 * 60_000),
+    { type: 'dir', name: 'plan old', path: '/v/plan old', children: [note('/v/plan old/x.md', NOW - 150 * D)] },
+    note('/v/plan a.md', NOW - 7 * D),
+    { type: 'dir', name: 'docs', path: '/v/docs', children: [note('/v/docs/plan 10.md', NOW - 2 * D), note('/v/docs/plan 2.md', NOW - 3 * H)] },
+    { type: 'dir', name: 'plan empty', path: '/v/plan empty', children: [] },
+  ]
+  const RECORDS = ['/v/plan b.md', '/v/plan a.md', '/v/docs/plan 10.md', '/v/docs/plan 2.md'].map(indexRecord)
+  const search = async (settings: Partial<SettingsState> = {}) => {
+    const m = await mount({ lens: 'search', settings: { ...DEFAULT_SETTINGS, ...settings } }, (b) => {
+      b.tree.mockResolvedValue({ root: '/v', tree: TREE_3511, generatedAt: 1 })
+      b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1, ids: true } as never)
+    })
+    const input = searchBar(m.el)!
+    await type(input, 'plan')
+    return { ...m, input }
+  }
+  const sortButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__sort')
+  const items = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)
+  /** Each row as the eye reads it: its label, then its date or "-". */
+  const rows = (el: HTMLElement) =>
+    [...el.querySelectorAll<HTMLElement>('.sidebar__body .tree__row')].map((row) => `${row.querySelector('.tree__label')?.textContent} ${row.querySelector('.tree__date')?.textContent ?? '-'}`)
+  const highlighted = (el: HTMLElement) => el.querySelector<HTMLElement>('.sidebar__body .tree__row--selected')?.dataset.path
+  const press = (input: HTMLInputElement, key: string) => act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
+  const withWatcher = () => {
+    const listeners: ((ev: WatchEvent) => void)[] = []
+    const watch = {
+      subscribe: (l: (ev: WatchEvent) => void) => {
+        listeners.push(l)
+        return () => void listeners.splice(listeners.indexOf(l), 1)
+      },
+    }
+    return { watch, fire: (ev: WatchEvent) => [...listeners].forEach((l) => l(ev)) }
+  }
+  const wait = (ms: number) => act(() => new Promise<void>((r) => setTimeout(r, ms)))
+
+  it('S1, S3, S11, S12, S14: by default Name, A to Z — folders first, numbers in number order — and each file and folder row ends with its Last updated; an empty folder shows none', async () => {
+    const { el } = await search()
+    expect(rows(el)).toEqual(['docs 3h', 'plan 2 3h', 'plan 10 2d', 'plan empty -', 'plan old 5mo', 'plan a 1w', 'plan b 34m'])
+  })
+
+  it('S15: a hover on the date shows the full date and time', async () => {
+    const { el } = await search()
+    expect(el.querySelector<HTMLElement>('.tree__row[data-path="/v/plan a.md"] .tree__date')?.title).toBe(formatDateTime(NOW - 7 * D))
+  })
+
+  it('S4, S5: Last updated puts the newest first at each level, a folder as new as its newest row, folders above files; Oldest first flips it', async () => {
+    const { el, rerender } = await search({ searchSort: { by: 'updated', reverse: false } })
+    expect(rows(el)).toEqual(['docs 3h', 'plan 2 3h', 'plan 10 2d', 'plan old 5mo', 'plan empty -', 'plan b 34m', 'plan a 1w'])
+    await rerender({ settings: { ...DEFAULT_SETTINGS, searchSort: { by: 'updated', reverse: true } } })
+    expect(rows(el)).toEqual(['plan empty -', 'plan old 5mo', 'docs 3h', 'plan 10 2d', 'plan 2 3h', 'plan a 1w', 'plan b 34m'])
+  })
+
+  it('S7: ↑ and ↓ walk the matches in the order on screen', async () => {
+    const { el, input } = await search({ searchSort: { by: 'updated', reverse: false } })
+    for (let i = 0; i < 8; i++) press(input, 'ArrowUp')
+    const walked = [highlighted(el)]
+    for (let i = 0; i < 5; i++) {
+      press(input, 'ArrowDown')
+      walked.push(highlighted(el))
+    }
+    expect(walked).toEqual(['/v/docs/plan 2.md', '/v/docs/plan 10.md', '/v/plan old', '/v/plan empty', '/v/plan b.md', '/v/plan a.md'])
+  })
+
+  it('S9, D3, D4, D7: the button opens the Search menu — no Manual, then "Show last updated" — and a pick writes `searchSort` or `searchDates` alone', async () => {
+    const { el, props } = await search()
+    act(() => sortButton(el)?.click())
+    expect(items(el)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated✓'])
+    await act(async () => itemByLabel(el, 'Last updated')?.click())
+    expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, searchSort: { by: 'updated', reverse: false } })
+    act(() => sortButton(el)?.click())
+    await act(async () => itemByLabel(el, 'Show last updated')?.click())
+    expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, searchDates: false })
+  })
+
+  it('S11: with the dates off no row shows a date', async () => {
+    const { el } = await search({ searchDates: false })
+    expect(rows(el)).toEqual(['docs -', 'plan 2 -', 'plan 10 -', 'plan empty -', 'plan old -', 'plan a -', 'plan b -'])
+  })
+
+  it('S17, D2: with the dates on, a save gives its row "now" at once, with no walk', async () => {
+    const { watch, fire } = withWatcher()
+    const m = await mount({ lens: 'search', watch }, (b) => {
+      b.tree.mockResolvedValue({ root: '/v', tree: TREE_3511, generatedAt: 1 })
+      b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1, ids: true } as never)
+    })
+    await type(searchBar(m.el)!, 'plan')
+    const before = m.bridge.tree.mock.calls.length
+    act(() => fire({ type: 'change', path: '/v/plan a.md', mtime: Date.now() }))
+    await wait(150)
+    expect(m.el.querySelector('.tree__row[data-path="/v/plan a.md"] .tree__date')?.textContent).toBe('now')
+    expect(m.bridge.tree.mock.calls.length).toBe(before)
+  })
+
+  it('S9, S21: Files keeps its own sort and shows no dates', async () => {
+    const { el, rerender } = await search({ searchSort: { by: 'updated', reverse: false } })
+    await rerender({ lens: 'files' })
+    expect(el.querySelector('.tree__date')).toBeNull()
+    expect([...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((n) => n.textContent)).toEqual(['docs', 'plan empty', 'plan old', 'plan a', 'plan b'])
   })
 })

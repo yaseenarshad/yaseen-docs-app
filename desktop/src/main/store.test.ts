@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { APP_ZOOM_STEPS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, HOVER_PLACES, hoverOn, MAX_COLLAPSED_GROUP_KEYS, MAX_CLOSED, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, stepSidebarZoom, stepZoom, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { APP_ZOOM_STEPS, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, EDIT_GAP_MS, HOVER_PLACES, hoverOn, MAX_COLLAPSED_GROUP_KEYS, MAX_CLOSED, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSIONS, MAX_SESSION_TABS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, MAX_CANVAS_CARDS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, stepSidebarZoom, stepZoom, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { createStore, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
 
@@ -231,6 +231,28 @@ describe('createStore: loading', () => {
       expect(createStore(file).get().settings.sidebarSort).toEqual(DEFAULT_SIDEBAR_SORT)
       expect(isSettings({ ...DEFAULT_SETTINGS, sidebarSort: bad })).toBe(false) // the IPC boundary refuses it too
     }
+  })
+
+  it('searchSort and searchDates (YAZ-3511 D1): a file without them reads Name, A to Z, with the dates on; a pick survives; Manual or a bad value falls back and keeps every other field', async () => {
+    const { searchSort: _sort, searchDates: _dates, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ searchSort: DEFAULT_SEARCH_SORT, searchDates: true })
+
+    const picked = { searchSort: { by: 'updated', reverse: true }, searchDates: false }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, ...picked } }))
+    expect(createStore(file).get().settings).toMatchObject(picked)
+
+    const files = { by: 'updated', reverse: true }
+    for (const bad of [{ by: 'manual', reverse: false }, { by: 'created', reverse: false }, { by: 'name' }, 'name']) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, searchSort: bad, sidebarSort: { ...DEFAULT_SIDEBAR_SORT, files } } }))
+      const settings = createStore(file).get().settings
+      expect(settings.searchSort).toEqual(DEFAULT_SEARCH_SORT)
+      expect(settings.sidebarSort.files).toEqual(files)
+      expect(isSettings({ ...DEFAULT_SETTINGS, searchSort: bad })).toBe(false) // the IPC boundary refuses it too
+    }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, searchDates: 'yes' } }))
+    expect(createStore(file).get().settings.searchDates).toBe(true)
+    expect(isSettings({ ...DEFAULT_SETTINGS, searchDates: 'yes' })).toBe(false)
   })
 
   it('sidebarTabs (YAZ-3273 D8, S29): a file without the key reads the default; a set row survives a restart; the repair drops unknown names and duplicates, puts missing tabs at the end and never keeps Files hidden', async () => {

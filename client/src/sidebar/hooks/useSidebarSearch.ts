@@ -48,6 +48,10 @@ export const PREVIEW_FOLLOW_MS = 120
 /** No fold and no highlight: one object each, so a search that has neither hands the memoised tree nothing new (YAZ-2194). */
 const NO_FOLDS: ReadonlySet<string> = new Set()
 const NO_CURSOR: ReadonlySet<string> = new Set()
+/** No match (YAZ-3511 D2): no rows, one object, so the memoised trees get nothing new. */
+const NO_FOUND = { top: [] as TreeNode[], rest: [] as TreeNode[], open: new Set<string>(), order: [] as string[] }
+/** A level as it came: the search with no sort of its own. */
+const asIs = (nodes: readonly TreeNode[]): readonly TreeNode[] => nodes
 /** A search has no multi-select (S29, YAZ-2620): shift-click on its tree toggles nothing. */
 const noToggle = (): void => undefined
 
@@ -72,6 +76,8 @@ export function useSidebarSearch(
   onPreview: (path: string | null) => void,
   /** With the focus flag: a NEW search (YAZ-2663 D10). A new tab (⌘T) asks it, and the bar is emptied; ⌘K does not, and keeps its text. */
   pendingSearchClear = false,
+  /** One level of the tree in the order `Tree` draws it (YAZ-3511 D4): the Search tab's sort, so ↑/↓ walk the rows as they show. */
+  level: (nodes: readonly TreeNode[]) => readonly TreeNode[] = asIs,
 ) {
   // The search bar's query (YAZ-801). It lives HERE rather than in the bar because the bar is
   // drawn on the Search tab only (YAZ-2638 D2) and the query stays while a different tab shows;
@@ -99,6 +105,8 @@ export function useSidebarSearch(
   // draws, and no row shows two times. With no pinned match `top` is empty and `rest` is the whole
   // cut tree (S21). A row is in one group only, so the two share one set of open folders and one order.
   const found = useMemo(() => {
+    // No match, no cut (YAZ-3511 D2): a save that patches one time while Search is not on screen walks no tree here.
+    if (hits.size === 0) return NO_FOUND
     const top = searchTree(pinned, hits, full)
     const rest = searchTree(withoutPaths(tree, new Set(top.nodes.map((node) => node.path))), hits, full)
     return { top: top.nodes, rest: rest.nodes, open: new Set([...top.open, ...rest.open]), order: [...top.order, ...rest.order] }
@@ -121,16 +129,17 @@ export function useSidebarSearch(
   // all, each row on show is a stop, a match or not (YAZ-2662 S48).
   const rows = useMemo(() => {
     const shown: TreeNode[] = []
-    const walk = (nodes: readonly TreeNode[], all: boolean): void => {
-      for (const node of nodes) {
+    const walk = (nodes: readonly TreeNode[], all: boolean, keep: boolean): void => {
+      for (const node of keep ? nodes : level(nodes)) {
         if (all || hits.has(node.path)) shown.push(node)
-        if (node.type === 'dir' && searchOpen.has(node.path)) walk(node.children, all || full.has(node.path))
+        if (node.type === 'dir' && searchOpen.has(node.path)) walk(node.children, all || full.has(node.path), false)
       }
     }
-    walk(found.top, false)
-    walk(found.rest, false)
+    // The pinned items keep their order (YAZ-2662 D3), as `Tree` draws them with `keepTop`.
+    walk(found.top, false, true)
+    walk(found.rest, false, false)
     return shown
-  }, [found, searchOpen, hits, full])
+  }, [found, searchOpen, hits, full, level])
   // The highlight is held by its PATH (`null`: nobody moved it yet), so a fold that moves rows in or
   // out above it leaves it on its match. Unmoved, it is on the BEST match — the ranking's first, a
   // pinned match when there is one (YAZ-2662 S23) — wherever the tree draws it (S19); once its match
