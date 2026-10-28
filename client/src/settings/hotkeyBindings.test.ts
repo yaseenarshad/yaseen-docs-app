@@ -101,10 +101,16 @@ describe('the renderer and draw.io follow the key (D2)', () => {
   })
 
   it('drawioChordFor: the keyCode draw.io reads, ⌘ or ⌃ as its `control`; a key with neither is no chord', () => {
-    expect(drawioChordFor('CmdOrCtrl+K')).toEqual({ keyCode: 75, control: true, action: null })
-    expect(drawioChordFor('CmdOrCtrl+Shift+W')).toEqual({ keyCode: 87, control: true, shift: true, action: null })
-    expect(drawioChordFor('CmdOrCtrl+,')).toEqual({ keyCode: 188, control: true, action: null })
-    expect(drawioChordFor('Alt+K')).toBeNull()
-    expect(drawioChordFor(null)).toBeNull()
+    expect(drawioChordFor('CmdOrCtrl+K', true)).toEqual({ keyCode: 75, control: true, action: null })
+    expect(drawioChordFor('CmdOrCtrl+Shift+W', true)).toEqual({ keyCode: 87, control: true, shift: true, action: null })
+    expect(drawioChordFor('CmdOrCtrl+,', true)).toEqual({ keyCode: 188, control: true, action: null })
+    expect(drawioChordFor('Alt+K', true)).toBeNull()
+    expect(drawioChordFor(null, true)).toBeNull()
+  })
+
+  it('drawioChordFor (YAZ-3564 K15): on a Mac a ⌃ key clears nothing, since draw.io\'s `control` slot holds the ⌘ key too; off a Mac ⌃ is Ctrl', () => {
+    expect(drawioChordFor('Control+D', true)).toBeNull()
+    expect(drawioChordFor('CmdOrCtrl+Control+D', true)).toBeNull()
+    expect(drawioChordFor('Control+D', false)).toEqual({ keyCode: 68, control: true, action: null })
   })
 })

@@ -369,10 +369,15 @@ export interface DrawioChord {
 /**
  * The draw.io keymap entry that CLEARS draw.io's own binding on a key (D2): draw.io's `control` is ⌃ or ⌘,
  * so a key with neither is never one draw.io binds as a chord, and gets no entry.
+ *
+ * On a Mac a key with ⌃ gets none either (YAZ-3564 K15): draw.io's key handler reads ⌃ and ⌘ as one `control`
+ * (`isControlDown` is ctrlKey, or metaKey on a Mac), so clearing ⌃D would clear its ⌘D too, a key the menu does
+ * not take. The Mac's menu fires before the page, so draw.io never sees the ⌃ key anyway. Off a Mac ⌃ is the
+ * Ctrl that `CmdOrCtrl` is, the page sees a key first, and the entry stays.
  */
-export function drawioChordFor(accelerator: string | null): DrawioChord | null {
+export function drawioChordFor(accelerator: string | null, mac: boolean): DrawioChord | null {
   const chord = accelerator === null ? null : parseAccelerator(accelerator)
-  if (chord === null || !(chord.cmd || chord.ctrl)) return null
+  if (chord === null || !(chord.cmd || chord.ctrl) || (mac && chord.ctrl)) return null
   const keyCode = /^[A-Z0-9]$/.test(chord.key) ? chord.key.charCodeAt(0) : /^F\d+$/.test(chord.key) ? 111 + Number(chord.key.slice(1)) : KEY_CODES[chord.key]
   if (keyCode === undefined) return null
   return { keyCode, control: true, ...(chord.shift || chord.key === 'Plus' ? { shift: true as const } : {}), ...(chord.alt ? { alt: true as const } : {}), action: null }

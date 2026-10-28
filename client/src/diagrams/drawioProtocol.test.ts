@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { DRAWIO_ORIGIN } from '@shared/drawio'
+import { keysOfDisplay, sameKey } from '@shared/hotkeyBindings'
+import { DIAGRAM_KEYS } from '@shared/keys/diagram'
+import { DRAWIO_HOTKEYS } from '../settings/hotkeys'
 import { drawioAdaptiveColors, drawioConfig, drawioFrameUrl, readDrawioMessage } from './drawioProtocol'
 
 describe('drawioFrameUrl (🔒 YAZ-1802 D4)', () => {
@@ -82,6 +85,69 @@ describe('the menu chords follow the user\'s keys (YAZ-3397 D2)', () => {
     expect(moved).not.toContain('75')
     expect(moved).toEqual(expect.arrayContaining(['48', '⇧69', '⇧83']))
     expect(cleared({ closeTab: null })).not.toContain('87')
+  })
+})
+
+describe('the user\'s diagram keys reach draw.io at configure (YAZ-3564 K4, K9, K12, K15)', () => {
+  type Entry = Record<string, unknown>
+  const shortcuts = (hotkeys = {}, aside = {}, mac = true) => (drawioConfig('adapt', hotkeys, aside, mac) as { keyboardShortcuts: Entry[] }).keyboardShortcuts
+  const at = (list: Entry[], entry: Entry) => list.findIndex((e) => JSON.stringify(e) === JSON.stringify(entry))
+
+  it('every key of the old draw.io table on Settings › Hotkeys is a diagram row, and the rows have the keys it missed', () => {
+    const rowKeys = DIAGRAM_KEYS.flatMap((r) => r.keys)
+    const has = (key: string) => rowKeys.some((k) => sameKey(k, key))
+    const shown = DRAWIO_HOTKEYS.flatMap((e) => keysOfDisplay(e.keys))
+    expect(shown.length).toBeGreaterThan(10)
+    for (const key of shown) expect(has(key), key).toBe(true)
+    for (const key of ['C', 'CmdOrCtrl+D', 'CmdOrCtrl+G', 'CmdOrCtrl+L', 'CmdOrCtrl+R', 'CmdOrCtrl+E']) expect(has(key), key).toBe(true)
+  })
+
+  it('with no change binds nothing more, and takes the shown key off each action that has no key', () => {
+    expect(shortcuts().filter((e) => typeof e.action === 'string' && typeof e.keyCode === 'number')).toEqual([
+      { keyCode: 220, control: true, action: 'removeFormat' },
+      { keyCode: 88, control: true, shift: true, action: 'yaseenStrikethrough' },
+    ])
+    // draw.io's S and R labels stayed on these after the app gave the letters away.
+    expect(shortcuts().flatMap((e) => (typeof e.yaseenUnlabel === 'string' ? [e.yaseenUnlabel] : [])).sort()).toEqual(['editConnectionPoints', 'insertLink', 'insertNote', 'insertRhombus'])
+  })
+
+  it('a remapped key: the default is cleared, then the new key is bound to the action', () => {
+    const list = shortcuts({ 'diagram.duplicate': 'CmdOrCtrl+Alt+D' })
+    const clear = at(list, { keyCode: 68, control: true, action: null })
+    const bind = at(list, { keyCode: 68, control: true, alt: true, action: 'duplicate' })
+    expect(clear).toBeGreaterThanOrEqual(0)
+    expect(bind).toBeGreaterThan(clear)
+    // A tool letter: every default letter goes, the new key is the tool.
+    const tools = shortcuts({ 'diagram.insertEdge': 'Alt+L' })
+    for (const keyCode of [65, 68, 76, 67]) expect(tools).toContainEqual({ keyCode, action: null })
+    expect(tools).toContainEqual({ keyCode: 76, alt: true, action: 'insertEdge' })
+    // The other codes draw.io reads for the default key go with it.
+    const zoom = shortcuts({ 'diagram.increaseFontSize': 'CmdOrCtrl+Alt+]' })
+    expect(zoom).toContainEqual({ keyCode: 221, control: true, shift: true, action: null })
+    expect(zoom).toContainEqual({ keyCode: 107, control: true, shift: true, action: null })
+  })
+
+  it('a cleared key: the default is cleared, nothing is bound, and the action loses its shown key', () => {
+    const list = shortcuts({ 'diagram.duplicate': null })
+    expect(list).toContainEqual({ keyCode: 68, control: true, action: null })
+    expect(list).toContainEqual({ yaseenUnlabel: 'duplicate' })
+    expect(list.filter((e) => e.action === 'duplicate')).toEqual([])
+  })
+
+  it('⌃ and ⌘ apart on a Mac: an App key on ⌃D leaves draw.io\'s ⌘D, and a diagram key on ⌃D goes to our own table', () => {
+    const appOnCtrlD = { 'app.search': 'Control+D' }
+    expect(shortcuts(appOnCtrlD)).not.toContainEqual({ keyCode: 68, control: true, action: null })
+    expect(shortcuts(appOnCtrlD, {}, false)).toContainEqual({ keyCode: 68, control: true, action: null })
+    const rowOnCtrlD = { 'diagram.bold': 'Control+D' }
+    expect(shortcuts(rowOnCtrlD)).toContainEqual({ yaseenMacCtrl: true, keyCode: 68, action: 'bold' })
+    expect(shortcuts(rowOnCtrlD).filter((e) => e.keyCode === 68 && e.action === 'bold' && e.yaseenMacCtrl !== true)).toEqual([])
+    // Off a Mac ⌃ is Ctrl, draw.io's own `control`.
+    expect(shortcuts(rowOnCtrlD, {}, false)).toContainEqual({ keyCode: 68, control: true, action: 'bold' })
+  })
+
+  it('an App key that lets diagrams keep it (K9) is not cleared: the menu drops it on a diagram tab', () => {
+    expect(shortcuts()).toContainEqual({ keyCode: 75, control: true, action: null })
+    expect(shortcuts({}, { 'app.search': true })).not.toContainEqual({ keyCode: 75, control: true, action: null })
   })
 })
 
