@@ -28,8 +28,9 @@
  * ⌥⏎ / ⌥-click on a vault row are the menu's "Open by itself" instead (YAZ-2858 D3): main's
  * `window.openAlone(path)` raises the window that shows the vault ALONE, else opens one — a
  * workspace window that shows it does not count. ⌥ wins over ⇧; a workspace row and "Open folder…"
- * ignore ⌥, as they ignore ⇧. The same `settle` rule answers it. ⇧ on a vault of this workspace
- * window has nothing to open here, so it is "Open by itself" too (YAZ-3487 D4). Main's doors know
+ * ignore ⌥, as they ignore ⇧. The same `settle` rule answers it. A vault of this workspace window
+ * has nothing to open or raise here, so ⏎ on it — ⇧ or not — is "Open by itself" too, and its
+ * highlighted row always says so (YAZ-3487 D4, D11). Main's doors know
  * which window asked: an EMPTY one takes the vault itself, and no window opens (YAZ-3487 D1).
  *
  * Names (YAZ-1974 D4): the trigger and every row show the vault's display name, the folder name
@@ -44,7 +45,7 @@
  * Open folder…. ↑/↓ clamp at both ends (the `[[` picker's no-wrap rule), hover moves it too, ⏎
  * activates it — ⇧⏎ / ⇧-click open it IN this window instead, the menu's verb (YAZ-1974 D8), and
  * while ⇧ is held the highlighted row says so: "Open here" in its time slot (D9); while ⌥ is held,
- * or ⇧ on a vault of this workspace window, it says "Open by itself" (YAZ-3487 D5) — Esc
+ * or on a vault of this workspace window, it says "Open by itself" (YAZ-3487 D5, D11) — Esc
  * closes (the menu convention). Typing never leaves the input: rows swallow their own mousedown. "Open folder…" is not a candidate, so
  * it is visible whatever the query; a query with no vault match shows "No matching vaults" above it.
  *
@@ -506,8 +507,8 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
     if (onOpenSetHere !== undefined) {
       if (roots.length === 1 && roots[0] === row.path) closePanel()
       else settle(row.path, onOpenHere(row.path), 'openHere')
-    } else if (alone || (here && multi && roots.includes(row.path))) {
-      // ⇧ on a vault of this workspace window has nothing to open here: it opens the vault by itself (YAZ-3487 D4).
+    } else if (alone || (multi && roots.includes(row.path))) {
+      // A vault of this workspace window has nothing to open or raise here: ⏎ — ⇧ or not — opens it by itself (YAZ-3487 D4, D11).
       chooseAlone(row.path)
     } else if (here && !roots.includes(row.path)) settle(row.path, onOpenHere(row.path), 'openHere')
     else choose(row.path)
@@ -622,8 +623,8 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
                 const gone = missing.has(row.path)
                 const cued = i === active && !gone && !(roots.length === 1 && roots[0] === row.path)
                 const here = cued && held === 'shift' && !roots.includes(row.path)
-                // What ⏎ does by itself now (YAZ-3487 D5): ⌥ on any vault, ⇧ on a vault of this workspace window (D4).
-                const alone = cued && (held === 'alt' || (held === 'shift' && multi && roots.includes(row.path)))
+                // What ⏎ does by itself now (YAZ-3487 D5): ⌥ on any vault; ANY key, or none, on a vault of this workspace window (D4, D11).
+                const alone = cued && (held === 'alt' || (multi && roots.includes(row.path)))
                 const when = (
                   <span className={`vault-switcher__when${gone ? ' vault-switcher__when--missing' : here || alone ? ' vault-switcher__when--here' : ''}`}>
                     {gone ? MISSING_TEXT : here ? OPEN_HERE_TEXT : alone ? OPEN_ALONE_TEXT : row.lastUsed === null ? '' : relativeTime(row.lastUsed, panel.now)}
