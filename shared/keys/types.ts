@@ -7,7 +7,6 @@
 
 /** Where a key works. `app` keys are the menu's and the window's: on a Mac they fire before any page (K3). */
 export type KeyScope = 'app' | 'note' | 'drawing' | 'diagram' | 'code' | 'views'
-export const KEY_SCOPES: readonly KeyScope[] = ['app', 'note', 'drawing', 'diagram', 'code', 'views']
 
 /** The places an App key can let keep their own key on it (K9): the tabs that are a canvas or an editor of their own. */
 export type AsidePlace = Extract<KeyScope, 'drawing' | 'diagram' | 'code'>

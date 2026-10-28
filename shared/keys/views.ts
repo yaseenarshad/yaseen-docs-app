@@ -1,4 +1,4 @@
-/** The folder views' keys (table, cards, outline; YAZ-1557): built in. They came from `VIEW_HOTKEYS` (`client/src/settings/hotkeys.ts`). */
+/** The folder views' keys (table, cards, outline; YAZ-1557): built in. */
 import type { KeyRow } from './types'
 
 export const VIEW_KEYS: readonly KeyRow[] = [

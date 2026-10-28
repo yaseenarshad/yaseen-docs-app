@@ -1,8 +1,7 @@
 /**
  * The App keys (YAZ-3564 K1): the menu's and the window's. On a Mac a menu key fires before any page, so an App
  * key blocks the same key in every place (K3) unless it steps aside there (K9). The changeable ones are the
- * commands of `HOTKEY_COMMANDS` (`shared/hotkeyBindings.ts`, YAZ-3397); the rest are built in. The window
- * keys came from `WINDOW_HOTKEYS` (`client/src/settings/hotkeys.ts`).
+ * commands of `HOTKEY_COMMANDS` (`shared/hotkeyBindings.ts`, YAZ-3397); the rest are built in.
  */
 import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId } from '../hotkeyBindings'
 import type { KeyRow } from './types'

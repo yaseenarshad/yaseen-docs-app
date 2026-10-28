@@ -18,8 +18,6 @@
  * `{ action: 'invokeAction', actionName: 'darkMode' | 'lightMode' }` (the app's theme, live) and
  * `{ action: 'yaseenAdaptiveColors', value }` (the dark-mode colour setting, live — ours, answered
  * by our PostConfig.js, because draw.io has no embed action for it).
- * From the iframe at any time: `{ event: 'shortcut', command: 'toggleSidebar' }` — an APP shortcut
- * pressed inside draw.io, where the host page never sees the key (see `DrawioMessage`).
  */
 import { DRAWIO_ORIGIN } from '@shared/drawio'
 import { HOTKEY_COMMANDS, appKeyId, drawioChordFor, keyFor, parseAccelerator, toAccelerator, type DrawioChord, type HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -187,9 +185,9 @@ const FIXED_MENU_CHORDS: readonly DrawioChord[] = [
 ]
 
 /**
- * The menu items whose key the user can change (YAZ-3397 D2): ⌘K ⌘, ⌘T ⌘W ⌘O, ⌘⇧O ⌘⇧N ⌘⇧W ⌘⇧M and the tab
- * keys as they ship. Not Toggle sidebar or Copy path (`rendererOwned`), whose keys the renderer owns (ours,
- * not draw.io's to clear).
+ * The menu items whose key the user can change (YAZ-3397 D2): ⌘K ⌘, ⌘T ⌘N ⌘W ⌘O, ⌘⇧O ⌘⇧N ⌘⇧W ⌘⇧M, the tab keys
+ * and Toggle sidebar's ⌘⇧B (a menu key since YAZ-3564 D10) as they ship. Not Copy path (`rendererOwned`), whose
+ * key the renderer owns, so draw.io keeps its own binding on it.
  */
 const MENU_COMMANDS = HOTKEY_COMMANDS.filter((c) => c.rendererOwned !== true).map((c) => c.id)
 
@@ -242,10 +240,8 @@ export function drawioConfig(darkColors: DiagramDarkColors, hotkeys: HotkeyOverr
 }
 
 /**
- * Every message the iframe sends that the host acts on. `shortcut` is draw.io's own event for a
- * chord the host claims; our PostConfig.js sends it. Only a RENDERER-owned chord needs it — a menu
- * accelerator fires whatever frame has focus — and of those only ⌘B means something in a diagram:
- * the sidebar toggle with nothing selected (with a selection it stays draw.io's bold).
+ * Every message the iframe sends that the host acts on. No key comes up from the iframe: a menu key fires
+ * whatever frame has focus, and ⌘B is draw.io's own Bold, since Toggle sidebar is the menu's ⌘⇧B (YAZ-3564 D10).
  */
 export type DrawioMessage =
   | { event: 'yaseenReady' }
@@ -269,7 +265,7 @@ export function readDrawioMessage(ev: { source: unknown; origin: string; data: u
     return null
   }
   if (typeof msg !== 'object' || msg === null) return null
-  const { event, xml, command } = msg as Record<string, unknown>
+  const { event, xml } = msg as Record<string, unknown>
   switch (event) {
     case 'yaseenReady':
     case 'configure':

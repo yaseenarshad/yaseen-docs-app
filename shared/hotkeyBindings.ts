@@ -222,7 +222,7 @@ const KEY_DISPLAY: Record<string, string> = {
   '-': '−',
 }
 
-/** As the app writes a key everywhere (hotkeys.ts): ⌃⌥⌘⇧, then the key — 'CmdOrCtrl+Shift+W' → '⌘⇧W'. '' for no key. */
+/** As the app writes a key everywhere (Settings › Hotkeys, the menus): ⌃⌥⌘⇧, then the key — 'CmdOrCtrl+Shift+W' → '⌘⇧W'. '' for no key. */
 export function toDisplay(accelerator: string | null): string {
   if (accelerator === null) return ''
   const chord = parseAccelerator(accelerator)
@@ -240,39 +240,6 @@ export function keyHint(id: HotkeyId, overrides: HotkeyOverrides | undefined): s
 export function titleWithKey(text: string, id: HotkeyId, overrides: HotkeyOverrides | undefined): string {
   const key = keyHint(id, overrides)
   return key === undefined ? text : `${text} (${key})`
-}
-
-const DISPLAY_KEY = Object.fromEntries(Object.entries(KEY_DISPLAY).map(([key, shown]) => [shown, key]))
-
-/** `toDisplay` backwards, for ONE key as the reference tables write it ('⌘⇧]'); null for anything else ('Click glyph', '↑ ↓ ← →'). */
-export function fromDisplay(display: string): string | null {
-  const chord: Chord = { cmd: false, ctrl: false, alt: false, shift: false, key: '' }
-  let i = 0
-  const marks: Record<string, keyof Omit<Chord, 'key'>> = { '⌃': 'ctrl', '⌥': 'alt', '⌘': 'cmd', '⇧': 'shift' }
-  const chars = [...display]
-  while (i < chars.length - 1 && marks[chars[i]] !== undefined) chord[marks[chars[i++]]] = true
-  const rest = chars.slice(i).join('')
-  const key = DISPLAY_KEY[rest] ?? canonicalKey(rest)
-  if (key === null || rest.includes(' ') && DISPLAY_KEY[rest] === undefined) return null
-  chord.key = key
-  return toAccelerator(chord)
-}
-
-/** Every key a reference table's cell names: '⌘X / ⌘C' is two, '⌘1 … ⌘9' nine, 'Click glyph' none. */
-export function keysOfDisplay(display: string): string[] {
-  const range = /^(.*?)(\d) … \1(\d)$/.exec(display)
-  if (range !== null) {
-    const out: string[] = []
-    for (let n = Number(range[2]); n <= Number(range[3]); n++) {
-      const key = fromDisplay(`${range[1]}${n}`)
-      if (key !== null) out.push(key)
-    }
-    return out
-  }
-  return display.split(' / ').flatMap((part) => {
-    const key = fromDisplay(part.trim())
-    return key === null ? [] : [key]
-  })
 }
 
 // ---------- recording one ----------
@@ -392,25 +359,12 @@ export function drawioChordFor(accelerator: string | null, mac: boolean): Drawio
   return { keyCode, control: true, ...(chord.shift || chord.key === 'Plus' ? { shift: true as const } : {}), ...(chord.alt ? { alt: true as const } : {}), action: null }
 }
 
-// ---------- who owns a key ----------
+// ---------- the fixed keys ----------
 
 /** A key that is not the user's to change (D1, D8): a built-in one or one of the Mac's. */
 export interface FixedKey {
   label: string
   accelerator: string
-}
-
-export type HotkeyOwner = { kind: 'command'; id: HotkeyId; label: string } | { kind: 'builtIn'; label: string } | { kind: 'macos'; label: string }
-
-/**
- * Every owner of `accelerator` (D5, D6), changeable commands first, then the built-in keys, then the
- * Mac's: an empty list means the key is free. `builtIns` is the client's reference tables
- * (`client/src/settings/hotkeys.ts`), which `shared/` cannot import.
- */
-export function ownersOf(accelerator: string, overrides: HotkeyOverrides | undefined, systemKeys: readonly FixedKey[], builtIns: readonly FixedKey[]): HotkeyOwner[] {
-  const commands: HotkeyOwner[] = HOTKEY_COMMANDS.filter((c) => sameKey(keyFor(c.id, overrides), accelerator)).map((c) => ({ kind: 'command', id: c.id, label: c.label }))
-  const fixed = (keys: readonly FixedKey[], kind: 'builtIn' | 'macos'): HotkeyOwner[] => keys.filter((k) => sameKey(k.accelerator, accelerator)).map((k) => ({ kind, label: k.label }))
-  return [...commands, ...fixed(builtIns, 'builtIn'), ...fixed(systemKeys, 'macos')]
 }
 
 /**

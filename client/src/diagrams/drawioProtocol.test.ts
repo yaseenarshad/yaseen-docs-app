@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DRAWIO_ORIGIN } from '@shared/drawio'
-import { keysOfDisplay, sameKey } from '@shared/hotkeyBindings'
+import { sameKey } from '@shared/hotkeyBindings'
 import { DIAGRAM_KEYS } from '@shared/keys/diagram'
-import { DRAWIO_HOTKEYS } from '../settings/hotkeys'
 import { drawioAdaptiveColors, drawioConfig, drawioFrameUrl, readDrawioMessage } from './drawioProtocol'
 
 describe('drawioFrameUrl (🔒 YAZ-1802 D4)', () => {
@@ -93,12 +92,11 @@ describe('the user\'s diagram keys reach draw.io at configure (YAZ-3564 K4, K9, 
   const shortcuts = (hotkeys = {}, aside = {}, mac = true) => (drawioConfig('adapt', hotkeys, aside, mac) as { keyboardShortcuts: Entry[] }).keyboardShortcuts
   const at = (list: Entry[], entry: Entry) => list.findIndex((e) => JSON.stringify(e) === JSON.stringify(entry))
 
-  it('every key of the old draw.io table on Settings › Hotkeys is a diagram row, and the rows have the keys it missed', () => {
+  it("keeps Yasin's draw.io keys (Draw's 🔒 YAZ-1802 D12b) and draw.io's own as diagram rows", () => {
     const rowKeys = DIAGRAM_KEYS.flatMap((r) => r.keys)
     const has = (key: string) => rowKeys.some((k) => sameKey(k, key))
-    const shown = DRAWIO_HOTKEYS.flatMap((e) => keysOfDisplay(e.keys))
-    expect(shown.length).toBeGreaterThan(10)
-    for (const key of shown) expect(has(key), key).toBe(true)
+    // The tool letters, Clear formatting, Strikethrough, Bold, Underline and Save.
+    for (const key of ['R', 'O', 'T', 'A', 'D', 'L', 'W', 'P', 'X', 'CmdOrCtrl+\\', 'CmdOrCtrl+Shift+X', 'CmdOrCtrl+B', 'CmdOrCtrl+U', 'CmdOrCtrl+S']) expect(has(key), key).toBe(true)
     for (const key of ['C', 'CmdOrCtrl+D', 'CmdOrCtrl+G', 'CmdOrCtrl+L', 'CmdOrCtrl+R', 'CmdOrCtrl+E']) expect(has(key), key).toBe(true)
   })
 

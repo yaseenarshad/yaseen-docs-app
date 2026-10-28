@@ -4,10 +4,9 @@
  * does a row whose default keys the engine's own `keyTest` would not answer (the remap presents those keys).
  */
 import { describe, expect, it } from 'vitest'
-import { keysOfDisplay, sameKey } from '@shared/hotkeyBindings'
+import { sameKey } from '@shared/hotkeyBindings'
 import { ALL_KEYS, keysOf } from '@shared/keys'
 import { DRAWING_ACTIONS, DRAWING_KEYS } from '@shared/keys/drawing'
-import { CANVAS_HOTKEYS } from '../settings/hotkeys'
 import { drawingKeyBindings, pressed, toEngineChord } from './drawingKeys'
 
 type EngineAction = { name: string; keyTest?: (event: KeyboardEvent, appState: unknown, elements: unknown[], app: unknown) => boolean }
@@ -75,9 +74,9 @@ describe('the drawing rows (K1, K6)', () => {
     for (const id of changeable) expect(Array.isArray(DRAWING_ACTIONS[id]), id).toBe(false)
   })
 
-  it('keeps every key of the old Excalidraw canvas table (CANVAS_HOTKEYS) in the list', () => {
+  it("keeps the canvas keys from Draw (YAZ-3037): the menu's export and share keys, and the tab's ⌘S, ⌘F and ⌘C", () => {
     const drawingOrApp = ALL_KEYS.filter((row) => row.scope === 'drawing' || row.scope === 'app')
-    for (const { keys } of CANVAS_HOTKEYS) for (const key of keysOfDisplay(keys)) expect(drawingOrApp.some((row) => row.keys.some((k) => sameKey(k, key))), key).toBe(true)
+    for (const key of ['CmdOrCtrl+Shift+E', 'CmdOrCtrl+Shift+S', 'CmdOrCtrl+Shift+L', 'CmdOrCtrl+S', 'CmdOrCtrl+F', 'CmdOrCtrl+C']) expect(drawingOrApp.some((row) => row.keys.some((k) => sameKey(k, key))), key).toBe(true)
   })
 })
 

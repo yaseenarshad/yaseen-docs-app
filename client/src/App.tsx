@@ -469,7 +469,7 @@ export function App() {
   const rightOverlay = overlayAt(visibleSidebarWidth)
 
   const toggleSidebar = useCallback(() => {
-    // A Files window IS the sidebar (YAZ-3357 D8): ⌘B and View › Toggle Sidebar never hide it.
+    // A Files window IS the sidebar (YAZ-3357 D8): ⌘⇧B (View › Toggle Sidebar) never hides it.
     if (filesWindow) return
     const next = !sidebarCollapsedRef.current
     sidebarCollapsedRef.current = next

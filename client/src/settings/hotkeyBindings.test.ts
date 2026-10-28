@@ -1,16 +1,14 @@
 /**
- * THE KEY TABLE (`shared/hotkeyBindings.ts`, YAZ-3397 D2): one way to read, compare, show and record a key,
- * and one answer to "who owns it". Tested here because `shared/` has no test project of its own.
+ * THE KEY TABLE (`shared/hotkeyBindings.ts`, YAZ-3397 D2): one way to read, compare, show and record a key.
+ * Tested here because `shared/` has no test project of its own.
  */
 import { describe, expect, it } from 'vitest'
-import { HOTKEY_COMMANDS, drawioChordFor, fromDisplay, fromKeyEvent, keyFor, keysOfDisplay, ownersOf, sameKey, toDisplay, windowChordFor, withKey } from '@shared/hotkeyBindings'
-import { MACOS_HOTKEYS } from '@shared/macosHotkeys'
-import { BUILT_IN_KEYS } from './hotkeys'
+import { HOTKEY_COMMANDS, drawioChordFor, fromKeyEvent, keyFor, sameKey, toDisplay, windowChordFor, withKey } from '@shared/hotkeyBindings'
 
 const press = (key: string, code: string, mods: Partial<Record<'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey', boolean>> = {}) => ({ key, code, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...mods })
 
-describe('toDisplay / fromDisplay / fromKeyEvent', () => {
-  it('writes a key the way the app does — ⌃⌥⌘⇧, then the key — and reads it back', () => {
+describe('toDisplay / fromKeyEvent', () => {
+  it('writes a key the way the app does — ⌃⌥⌘⇧, then the key', () => {
     const cases: [string, string][] = [
       ['CmdOrCtrl+Shift+W', '⌘⇧W'],
       ['Control+Shift+Tab', '⌃⇧Tab'],
@@ -23,14 +21,8 @@ describe('toDisplay / fromDisplay / fromKeyEvent', () => {
       ['Control+Up', '⌃↑'],
       ['CmdOrCtrl+Backspace', '⌘⌫'],
     ]
-    for (const [accelerator, shown] of cases) {
-      expect(toDisplay(accelerator)).toBe(shown)
-      expect(sameKey(fromDisplay(shown), accelerator), shown).toBe(true)
-    }
+    for (const [accelerator, shown] of cases) expect(toDisplay(accelerator)).toBe(shown)
     expect(toDisplay(null)).toBe('')
-    expect(keysOfDisplay('⌘X / ⌘C')).toEqual(['CmdOrCtrl+X', 'CmdOrCtrl+C'])
-    expect(keysOfDisplay('⌘1 … ⌘9')).toHaveLength(9)
-    for (const tip of ['Click glyph', '↑ ↓ ← →', '⇧ + colour letter', '⌘-scroll / pinch']) expect(keysOfDisplay(tip), tip).toEqual([])
   })
 
   it('a keydown becomes the accelerator of its PHYSICAL key and exactly its modifiers; a lone modifier is nothing', () => {
@@ -77,19 +69,34 @@ describe('keyFor / withKey', () => {
   })
 })
 
-describe('ownersOf (D5, D6)', () => {
-  it('free, a changeable command, a built-in key and a macOS key', () => {
-    expect(ownersOf('CmdOrCtrl+Shift+K', {}, MACOS_HOTKEYS, BUILT_IN_KEYS)).toEqual([])
-    expect(ownersOf('CmdOrCtrl+K', {}, MACOS_HOTKEYS, BUILT_IN_KEYS)).toEqual([{ kind: 'command', id: 'search', label: 'Search the vault' }])
-    expect(ownersOf('CmdOrCtrl+J', {}, MACOS_HOTKEYS, BUILT_IN_KEYS)).toEqual([{ kind: 'builtIn', label: 'Table of contents' }])
-    expect(ownersOf('CmdOrCtrl+Shift+Q', {}, MACOS_HOTKEYS, BUILT_IN_KEYS)).toEqual([{ kind: 'macos', label: 'Log out' }])
-    // A moved key: the old one is free, the new one is the command's.
-    const moved = { search: 'CmdOrCtrl+Shift+K' }
-    expect(ownersOf('CmdOrCtrl+K', moved, MACOS_HOTKEYS, BUILT_IN_KEYS)).toEqual([])
-    expect(ownersOf('CmdOrCtrl+Shift+K', moved, MACOS_HOTKEYS, BUILT_IN_KEYS).map((o) => o.kind)).toEqual(['command'])
-    // The app standard keys and the vault numbers are built in.
-    expect(ownersOf('CmdOrCtrl+Q', {}, [], BUILT_IN_KEYS)).toEqual([{ kind: 'builtIn', label: 'Quit' }])
-    expect(ownersOf('CmdOrCtrl+5', {}, [], BUILT_IN_KEYS).map((o) => o.kind)).toEqual(['builtIn'])
+describe('HOTKEY_COMMANDS (YAZ-3397 D2)', () => {
+  it('ships these defaults, in this order, and says what the less plain ones do', () => {
+    expect(HOTKEY_COMMANDS.map((c) => [c.id, toDisplay(c.key)])).toEqual([
+      ['newTab', '⌘T'],
+      ['newWindow', '⌘⇧N'],
+      ['newFilesWindow', '⌘⇧W'],
+      ['newItem', '⌘N'],
+      ['goTo', '⌘D'],
+      ['closeTab', '⌘W'],
+      ['closeWindow', ''],
+      ['switchVault', '⌘O'],
+      ['openFolder', '⌘⇧O'],
+      ['search', '⌘K'],
+      ['settings', '⌘,'],
+      ['toggleSidebar', '⌘⇧B'],
+      ['copyPath', '⌘⇧C'],
+      ['tabOverview', '⌘⇧M'],
+      ['nextTab', '⌃Tab'],
+      ['prevTab', '⌃⇧Tab'],
+      ['keySheet', ''],
+    ])
+    expect(HOTKEY_COMMANDS.filter((c) => c.macStandard === true).map((c) => c.id)).toEqual(['newTab', 'newWindow', 'newItem', 'closeTab', 'switchVault', 'settings'])
+    // ⌘O (YAZ-1767 D8): the switcher's two verbs, filter then open — in a NEW window, never in place.
+    expect(HOTKEY_COMMANDS.find((c) => c.id === 'switchVault')?.hint).toMatch(/filter.*new window/i)
+    // ⌘⇧C (🔒 D4, YAZ-1338): the multi-selection FIRST, the open file as the fallback.
+    expect(HOTKEY_COMMANDS.find((c) => c.id === 'copyPath')?.hint).toMatch(/selection.*else the open file/i)
+    // A menu key since YAZ-3564 D10: it works inside every editor too.
+    expect(HOTKEY_COMMANDS.find((c) => c.id === 'toggleSidebar')?.hint).toMatch(/note, a drawing, a diagram and code/i)
   })
 })
 

@@ -1,11 +1,12 @@
 /**
- * SETTINGS › HOTKEYS (YAZ-3397; a reference page since YAZ-1679): every key of the app, ONE row each, and
- * the app-wide ones the user can change.
+ * SETTINGS › HOTKEYS (YAZ-3397; every place since YAZ-3564): every key of the app, ONE row each, from the one
+ * key list (`shared/keys`).
  *
- * - Window (D1): the changeable commands (`HOTKEY_COMMANDS`), each key a button, then the built-in window keys.
- *   Then the built-in groups (`HOTKEY_GROUPS`), "App standard" among them, and "Used by macOS" (D3, D8): this
- *   Mac's own keys, which main reads off its plist (`state:system-hotkeys`) when the page or a search shows.
- *   A built-in or macOS key is muted text, never a button.
+ * - One group per place (K1, K5): App, Note, Drawing, Diagram, Code, Folder views; then "Used by macOS" (D3, D8):
+ *   this Mac's own keys, which main reads off its plist (`state:system-hotkeys`) when the page or a search shows.
+ *   A changeable key is a button; a built-in or macOS key is muted text. A key an App key takes first says
+ *   "Blocked" (K3), and an App row can let drawings, diagrams and code keep its key (K9). Chips and two
+ *   switches filter the page (K7, K10).
  * - Each row is its own setting (`bare`), so the dialog's search filters the page down to single rows (D5): a
  *   row's search text is its label, its key and its hint. The changeable rows' text is built from the keys
  *   as they are now; the dialog rebuilds the candidates when a key changes, not on a keystroke.
@@ -21,12 +22,12 @@
  *   says who owns it.
  *
  * WHILE A RECORDER LISTENS the keys are its own: a window CAPTURE listener takes every keydown before the
- * dialog's Esc, App's ⌘B or an editor hears it, and main builds the menu with no key (`hotkeys:recording`),
+ * dialog's Esc, the window's keys or an editor hears it, and main builds the menu with no key (`hotkeys:recording`),
  * because on macOS a menu key fires before the page sees it — recording ⌘W must not close the tab.
  */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { hotkeyCommand, isHotkeyId, isUsableKey, sameKey, toDisplay, withKey, fromKeyEvent, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
-import { ALL_KEYS, ASIDE_PLACES, blockersOf, clashesOf, isUsableFor, keysOf, stepsAside, type KeyRow, type KeyScope } from '@shared/keys'
+import { ALL_KEYS, ASIDE_PLACES, blockersOf, clashesOf, isUsableFor, keysOf, stepsAside, type HotkeyAside, type KeyRow, type KeyScope } from '@shared/keys'
 import { MACOS_HOTKEYS, type SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
@@ -117,7 +118,21 @@ const owned = (row: KeyRow): string => `${SCOPE_TITLES[row.scope]} › ${row.lab
 const commandOf = (row: KeyRow) => (row.scope === 'app' && isHotkeyId(row.id.slice(4)) ? hotkeyCommand(row.id.slice(4) as HotkeyId) : undefined)
 /** A row's key now, one key (the first of its defaults), or null for "No key". */
 const keyNow = (row: KeyRow, overrides: HotkeyOverrides): string | null => keysOf(row, overrides)[0] ?? null
-const isChanged = (row: KeyRow, overrides: HotkeyOverrides): boolean => overrides[row.id] !== undefined || (row.scope === 'app' && overrides[row.id.slice(4)] !== undefined)
+/** A row's key differs from its default; with `aside`, its step-aside switch counts too (K9). */
+const isChanged = (row: KeyRow, overrides: HotkeyOverrides, aside?: HotkeyAside): boolean =>
+  overrides[row.id] !== undefined || (row.scope === 'app' && overrides[row.id.slice(4)] !== undefined) || aside?.[row.id] !== undefined
+/** `aside` with `rows`' switches back to their defaults. */
+const withoutAside = (aside: HotkeyAside, rows: readonly KeyRow[]): HotkeyAside => {
+  const next = { ...aside }
+  for (const r of rows) delete next[r.id]
+  return next
+}
+/**
+ * Whether an App row shows the step-aside switch (K9): a changeable menu key, so the menu can let it go. Not a key the
+ * page handles itself (Copy path), not a row with no key.
+ */
+const hasAsideSwitch = (row: KeyRow, overrides: HotkeyOverrides): boolean =>
+  commandOf(row) !== undefined && commandOf(row)?.rendererOwned !== true && keysOf(row, overrides).length > 0
 
 /**
  * `overrides` with `row` on `key` (K2): a key equal to the row's one default deletes the change, so `{}` stays the
@@ -184,13 +199,15 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
   const aside = ctx.settings.hotkeysAside
   const current = keyNow(row, overrides)
   const changed = isChanged(row, overrides)
+  /** The Reset link also undoes a changed step-aside switch (K9). */
+  const resettable = isChanged(row, overrides, aside)
   const blockers = blockersOf(row, overrides, aside)
   const [mode, setMode] = useState<RowMode>({ kind: 'idle' })
   const rowRef = useRef<HTMLDivElement>(null)
   const keyButton = useRef<HTMLButtonElement>(null)
 
-  const write = (next: HotkeyOverrides): void => {
-    ctx.onChange({ ...ctx.settings, hotkeys: next })
+  const write = (next: HotkeyOverrides, hotkeysAside = ctx.settings.hotkeysAside): void => {
+    ctx.onChange({ ...ctx.settings, hotkeys: next, hotkeysAside })
     setMode({ kind: 'idle' })
     keyButton.current?.focus()
   }
@@ -248,7 +265,7 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
         const reset = { ...cleared }
         delete reset[row.id]
         if (row.scope === 'app') delete reset[row.id.slice(4)]
-        return { title: `Reset ${row.label}?`, to: def, lines, yes: 'Reset', careful: false, apply: () => write(reset) }
+        return { title: `Reset ${row.label}?`, to: def, lines, yes: 'Reset', careful: false, apply: () => write(reset, withoutAside(aside, [row])) }
       }
     }
   }
@@ -307,7 +324,7 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
           >
             {recording ? 'Press new keys…' : shown(current)}
           </button>
-          {changed && mode.kind === 'idle' && (
+          {resettable && mode.kind === 'idle' && (
             <button type="button" className="hotkeys__link" aria-label={`Reset ${row.label}`} onClick={askReset}>
               Reset
             </button>
@@ -319,7 +336,7 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
           {blockers.length > 0 && <span className="hotkeys__blocked"> Blocked: {owned(blockers[0])} fires first</span>}
         </span>
       </div>
-      {row.scope === 'app' && mode.kind === 'idle' && <AsideSwitch row={row} ctx={ctx} />}
+      {hasAsideSwitch(row, overrides) && mode.kind === 'idle' && <AsideSwitch row={row} ctx={ctx} />}
       {below}
     </div>
   )
@@ -328,7 +345,7 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
 // ---------- reset all ----------
 
 /** The rows a reset can act on: the changed ones the page shows now (YAZ-3564 K7: a group chip or "Changed from default" narrows them). */
-const changedShown = (ctx: SettingsCtx): KeyRow[] => ALL_KEYS.filter((r) => r.changeable && isChanged(r, ctx.settings.hotkeys) && inFilter(r, ctx))
+const changedShown = (ctx: SettingsCtx): KeyRow[] => ALL_KEYS.filter((r) => r.changeable && isChanged(r, ctx.settings.hotkeys, ctx.settings.hotkeysAside) && inFilter(r, ctx))
 
 /** "Reset all hotkeys" (D7), "Reset all shown" while a filter stands (K7): there only with a change, and it asks in the app's confirm sheet first. */
 function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
@@ -355,14 +372,14 @@ function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
               delete next[r.id]
               if (r.scope === 'app') delete next[r.id.slice(4)]
             }
-            ctx.onChange({ ...ctx.settings, hotkeys: filtered ? next : {} })
+            ctx.onChange({ ...ctx.settings, hotkeys: filtered ? next : {}, hotkeysAside: filtered ? withoutAside(ctx.settings.hotkeysAside, changes) : {} })
           }}
           onCancel={() => setAsking(false)}
         >
           <ul className="hotkeys__changes">
             {changes.map((r) => (
               <li key={r.id}>
-                {owned(r)}: {shown(keyNow(r, ctx.settings.hotkeys))} → {shown(r.keys[0] ?? null)}
+                {owned(r)}: {isChanged(r, ctx.settings.hotkeys) ? `${shown(keyNow(r, ctx.settings.hotkeys))} → ${shown(r.keys[0] ?? null)}` : 'the switch for drawings, diagrams and code goes back to its default'}
               </li>
             ))}
           </ul>
@@ -391,7 +408,7 @@ const isFiltered = (ctx: SettingsCtx): boolean => {
 function inFilter(row: KeyRow, ctx: SettingsCtx): boolean {
   const f = ctx.hotkeyFilter ?? NO_FILTER
   if (f.scope !== 'all' && row.scope !== f.scope) return false
-  if (f.changed && !isChanged(row, ctx.settings.hotkeys)) return false
+  if (f.changed && !isChanged(row, ctx.settings.hotkeys, ctx.settings.hotkeysAside)) return false
   if (f.clashes) {
     const { hotkeys, hotkeysAside } = ctx.settings
     const blocked = blockersOf(row, hotkeys, hotkeysAside).length > 0
