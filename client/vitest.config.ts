@@ -14,7 +14,8 @@ export default defineConfig({
     environment: 'jsdom',
     // Without this vitest stubs every CSS import to '' — the crepeTheme swap (GRO-2218)
     // bundles the frame themes via `?inline` and its test asserts the real var blocks.
-    css: true,
+    // Monaco's own CSS stays out (jsdom cannot parse it, and the code keys' tests read no style).
+    css: { include: [/.+/], exclude: [/monaco-editor/] },
     setupFiles: ['src/test-setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
     // Timing budgets live in the `perf` project (vitest.perf.config.ts), which runs AFTER this
@@ -25,7 +26,8 @@ export default defineConfig({
     // The engine's dist imports `roughjs/bin/rough` without an extension, which Node's ESM loader
     // refuses; inlining lets Vite resolve it, so a test can run the REAL engine (Draw's config, ported
     // by YAZ-3028 for `boardAppState.test.ts` and `canvasPrefsEngine.test.ts`). Suites that mock the
-    // surface or the engine never load it.
-    server: { deps: { inline: [/@excalidraw\//] } },
+    // surface or the engine never load it. Monaco is inlined for the same reason: its ESM imports its CSS, and the code
+    // keys' tests (`codeKeys.test.ts`, YAZ-3564) run the real editor.
+    server: { deps: { inline: [/@excalidraw\//, /monaco-editor/] } },
   },
 })
