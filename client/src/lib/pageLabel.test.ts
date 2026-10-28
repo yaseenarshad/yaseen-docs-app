@@ -29,8 +29,20 @@ describe('pageLabel', () => {
     const none = pathTitles([], [])
     expect(pageLabel('/v/sub/Plan.markdown', false, none)).toBe('Plan')
     expect(pageLabel('/v/report.PDF', false, none)).toBe('report.PDF')
+    expect(pageLabel('/v/App.tsx', false, none)).toBe('App.tsx')
+    expect(pageLabel('/v/Flow.drawio.svg', false, none)).toBe('Flow.drawio.svg')
+    expect(pageLabel('/v/Plan.drawio', true, none)).toBe('Plan.drawio')
     expect(pageLabel('/v/Notes.md', true, none)).toBe('Notes.md')
     expect(pageLabel('/v/v1.2', true, none)).toBe('v1.2')
+  })
+
+  it('a drawing and a diagram hide their extension, as a note does — the last one only, in any case (YAZ-3536 D1, S1–S5)', () => {
+    const none = pathTitles([], [])
+    expect(pageLabel('/v/Flow.excalidraw', false, none)).toBe('Flow')
+    expect(pageLabel('/v/Map.DRAWIO', false, none)).toBe('Map')
+    expect(pageLabel('/v/How-Far-To-Go.drawio (bulk building).drawio', false, none)).toBe('How-Far-To-Go.drawio (bulk building)')
+    expect(pageLabel('/v/Flow.md.excalidraw', false, none)).toBe('Flow.md')
+    expect(pageLabel('/v/Flow.excalidraw.md', false, none)).toBe('Flow.excalidraw')
   })
 
   it('E: a note shows its title, and a folder the title in its settings file (YAZ-2420 D14)', () => {

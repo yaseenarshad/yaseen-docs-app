@@ -449,13 +449,13 @@ describe('drawing and diagram rows (YAZ-3028 D11)', () => {
   }
   const boardRow = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row--file[title="${path}"]`)
 
-  it('are normal rows: full file name, not external, each with its kind for its icon (YAZ-3440 D4, which took the place of the draw.io mark) and its Material icon, and a click opens a tab', async () => {
+  it('are normal rows: the name without its extension (YAZ-3536 D1), not external, each with its kind for its icon (YAZ-3440 D4, which took the place of the draw.io mark) and its Material icon, and a click opens a tab', async () => {
     const { el, bridge, props } = await mount({}, withBoards)
     const flow = boardRow(el, '/v/Flow.drawio')
     const sketch = boardRow(el, '/v/Sketch.excalidraw')
     expect(flow?.classList.contains('tree__row--external')).toBe(false)
     expect(sketch?.classList.contains('tree__row--external')).toBe(false)
-    expect(flow?.querySelector('.tree__label')?.textContent).toBe('Flow.drawio')
+    expect(flow?.querySelector('.tree__label')?.textContent).toBe('Flow')
     expect([flow?.dataset.kind, sketch?.dataset.kind]).toEqual(['diagram', 'drawing'])
     expect([flow?.dataset.icon, sketch?.dataset.icon]).toEqual(['drawio', 'excalidraw'])
     expect(flow?.style.getPropertyValue('--icon')).toBe('url(/material-icons/drawio.svg)')
