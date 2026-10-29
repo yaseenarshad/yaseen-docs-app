@@ -9,6 +9,7 @@
 import type { IconRule } from './vaultIcons'
 import type { ReviewEntry } from './reviews'
 import type { HotkeyOverrides } from './hotkeyBindings'
+import { DEFAULT_DAILY_NOTE_FORMAT } from './dailyNote'
 
 // ---------- Errors ----------
 
@@ -1646,14 +1647,26 @@ export interface SettingsState {
    */
   codeLanguageHelpers: boolean
   /**
-   * Where ⌘D goes (YAZ-3556 D2): a sidebar tab, or a folder or a file by its root-relative path (the `newNoteFolder`
-   * rule). Each window reads the path in the vault of its active tab, else its first vault. Travels whole (`WHOLE_FIELDS`).
+   * Where ⌘D goes (YAZ-3556 D2): a sidebar tab, a folder or a file by its root-relative path (the `newNoteFolder`
+   * rule), or today's daily note (YAZ-3607 D1). Each window reads the path in the vault of its active tab, else its
+   * first vault. Travels whole (`WHOLE_FIELDS`).
    */
   goTo: GoToPlace
+  /**
+   * Daily notes (YAZ-3607): the one switch. Off (the default): no "Today's daily note" in Go to, no footer button, and
+   * no File menu item or Hotkeys row for "Open today's daily note". On: all of them, and the rows below.
+   */
+  dailyNotes: boolean
+  /** The daily notes folder (YAZ-3607 D2), root-relative ('' = the vault root): the `newNoteFolder` rule. */
+  dailyNoteFolder: string
+  /** The name style of a daily note (D4): a style of `shared/dailyNote.ts`, like `YYYY-MM-DD`. */
+  dailyNoteFormat: string
+  /** Make a folder for each day (D9): today's note goes in a folder of the same name. */
+  dailyNoteDayFolder: boolean
 }
 
-/** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, or a folder or a file by its path inside the vault ('' = the vault root). */
-export type GoToPlace = { kind: 'tab'; tab: SidebarLens } | { kind: 'folder' | 'file'; path: string }
+/** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, a folder or a file by its path inside the vault ('' = the vault root), or today's daily note (YAZ-3607 D1). */
+export type GoToPlace = { kind: 'tab'; tab: SidebarLens } | { kind: 'folder' | 'file'; path: string } | { kind: 'daily' }
 export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
 
 /**
@@ -1877,6 +1890,10 @@ export const DEFAULT_SETTINGS: SettingsState = {
   codeOutlineLocals: false,
   codeLanguageHelpers: false,
   goTo: DEFAULT_GO_TO,
+  dailyNotes: false,
+  dailyNoteFolder: '',
+  dailyNoteFormat: DEFAULT_DAILY_NOTE_FORMAT,
+  dailyNoteDayFolder: false,
 }
 
 export interface WindowBounds {

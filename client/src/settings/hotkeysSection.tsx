@@ -26,7 +26,7 @@
  * because on macOS a menu key fires before the page sees it — recording ⌘W must not close the tab.
  */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { hotkeyCommand, isHotkeyId, isUsableKey, sameKey, toDisplay, withKey, fromKeyEvent, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { appKeyId, hotkeyCommand, isHotkeyId, isUsableKey, sameKey, toDisplay, withKey, fromKeyEvent, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { ALL_KEYS, ASIDE_PLACES, blockersOf, clashesOf, isUsableFor, keysOf, stepsAside, type HotkeyAside, type KeyRow, type KeyScope } from '@shared/keys'
 import { MACOS_HOTKEYS, type SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
@@ -548,13 +548,17 @@ const keysText = (keys: readonly string[]): string => {
 }
 
 /** One row of the page: a button for a changeable key, muted text for a built-in one. Its search text is its label, its keys now and its hint (D5). */
+/** The key row that Daily notes gates (YAZ-3607 D11). */
+const DAILY_NOTE_ROW = appKeyId('dailyNote')
+
 const rowItem = (row: KeyRow): SettingDef => ({
   id: `hotkey-${rowDomId(row)}`,
   label: row.label,
   hint: ({ settings }) => [keysText(keysOf(row, settings.hotkeys)) || 'No key', row.hint].filter(Boolean).join(' '),
   keywords: [SCOPE_TITLES[row.scope].toLowerCase(), ...(SCOPE_WORDS[row.scope] ?? []), ...ROW_KEYWORDS],
   bare: true,
-  available: (ctx) => inFilter(row, ctx),
+  // "Open today's daily note" is a row only while Daily notes is on (YAZ-3607 D11), as its File menu item is.
+  available: (ctx) => inFilter(row, ctx) && (row.id !== DAILY_NOTE_ROW || ctx.settings.dailyNotes),
   render: (ctx) => (row.changeable ? <HotkeyRow row={row} ctx={ctx} /> : fixedRow(keysText(keysOf(row, ctx.settings.hotkeys)), <>{row.label}{row.hint !== undefined && <span className="hotkeys__hint"> — {row.hint}</span>}</>)),
 })
 

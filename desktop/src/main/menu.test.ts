@@ -17,6 +17,7 @@ const noopHandlers = (): MenuHandlers => ({
   newTab: vi.fn(),
   newItem: vi.fn(),
   goTo: vi.fn(),
+  dailyNote: vi.fn(),
   keySheet: vi.fn(),
   newWindow: vi.fn(),
   newFilesWindow: vi.fn(),
