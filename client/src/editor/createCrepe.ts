@@ -231,7 +231,8 @@ import { foldAllHotkeys } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
-import { caretIntoZoom, createOutlineZoom, getZoomKey, zoomKeymap, type ZoomOptions } from './outline/zoom'
+import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
+import { openBulletRow } from './outline/openBulletRow'
 import { focusSidebar } from '../lib/focusHandoff'
 import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
@@ -460,7 +461,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(headingText)
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find))
   if (opts.toc !== undefined) crepe.editor.use(createTableOfContents(opts.toc))
-  crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled', title: () => 'Untitled' }))
+  crepe.editor.use(createOutlineZoom(opts.zoom ?? { title: () => 'Untitled' }))
   crepe.editor.use(guideLines)
   crepe.editor.use(bulletThreading)
   crepe.editor.use(sectionIndent)
@@ -505,9 +506,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // Numbers are manual-only (YAZ-793/YAZ-1329): only the explicit block-handle command creates
   // ordered children. Typing, slash-menu and keyboard conversion paths are all absent.
   void crepe.editor.remove([wrapInOrderedListInputRule, ...orderedListKeymap])
-  // A line's darkness, thickness and style pickers follow the first row (YAZ-3164 D3); every other
-  // block gets the rows of before.
-  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...numberChildrenRow(view, target, ctx), ...lineRows(view, target, ctx)]))
+  // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), what it copies (YAZ-3653),
+  // its children (Number children), then a line's pickers (YAZ-3164 D3). A new row joins its group.
+  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...numberChildrenRow(view, target, ctx), ...lineRows(view, target, ctx)]))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.
@@ -595,6 +596,19 @@ export function moveCaretIntoZoom(crepe: Crepe): boolean {
 /** The drilled-in bullet's zoom key, or null (YAZ-2951 D4): the page view reader asks once, on a copy action. */
 export function getZoomKeyOf(crepe: Crepe): string | null {
   return crepe.editor.action((ctx) => getZoomKey(ctx.get(editorViewCtx).state))
+}
+
+/** The drilled-in bullet's crumb text, or null (YAZ-3647 E3): what the tab's Back list menu and tooltip show for it. */
+export function getZoomLabelOf(crepe: Crepe): string | null {
+  return crepe.editor.action((ctx) => getZoomLabel(ctx.get(editorViewCtx).state))
+}
+
+/** Back and Forward (YAZ-3647 D2): the page goes to its tab's level, quietly; false when it is there already. */
+export function zoomPageTo(crepe: Crepe, key: string | null): boolean {
+  return crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx)
+    return zoomToKey(key)(view.state, view.dispatch)
+  })
 }
 
 /**

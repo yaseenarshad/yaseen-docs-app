@@ -9,17 +9,17 @@
  *    `outline-zoom-ancestor` on the ancestor list_items (their glyph/chevron are hidden and a
  *    folded ancestor is shown expanded — fold state itself is untouched);
  *  - a breadcrumb widget at the start of the document: `File › Ancestor › … › Zoomed`. Each crumb
- *    zooms to that ancestor; the first crumb, the page's title, zooms out fully.
+ *    zooms to that ancestor; the first crumb, the page's title, zooms out fully. ⌘- and ⇧-click on a crumb
+ *    open that level in a new tab, as on a dot; the title crumb opens the whole page (YAZ-3647 E2).
  * Zooming dispatches a metadata-only transaction (`tr.docChanged === false`), so the listener never
  * fires `markdownUpdated`, the file on disk is untouched and fold state is unaffected. Zoom is not
  * persisted: switching files remounts the editor and therefore clears it. A copy of the page only
  * STARTS at its source's level (see "Start level" below).
  *
- * Browser history (GRO-2091 A): every zoom change pushes one in-memory history entry
- * (`{ [ZOOM_HISTORY_KEY]: { file, key } }`, URL untouched — the 2-arg `pushState`, since an empty
- * URL argument would resolve away the `#/path.md` hash) and `popstate` restores that level, so
- * Back / Forward walk zoom levels. Keys are the fold-key scheme (first-block text + occurrence)
- * counted over ALL list items; entries of another file are ignored, an unresolvable key zooms out.
+ * The window's Back list (YAZ-3647 D2, replaces GRO-2091 A's browser history): every user-driven zoom
+ * change tells the page's tab (`onZoom`), and the tab keeps the level as a zoom key and adds a Back
+ * step. Back and Forward come back through `zoomToKey`, which tells no one. Keys are the fold-key
+ * scheme (first-block text + occurrence) counted over ALL list items; an unresolvable key zooms out.
  *
  * ⌘Z panic-undo (GRO-2091 B, same rule as folds in GRO-2075): the state remembers the level
  * before the latest zoom change while that change is the latest VIEW action — cleared by a user
@@ -28,11 +28,12 @@
  *
  * Start level (YAZ-2951 D1): a copy of a tab, or a page in a new window, starts drilled into its
  * source's bullet (`startKey`, a zoom key). `init` resolves it against the parsed page; a key that
- * is not found starts zoomed out (S7). It pushes no history entry (S21) and sets no ⌘Z level (S22).
+ * is not found starts zoomed out (S7). It adds no Back step (S21) and sets no ⌘Z level (S22).
  * The host then moves the caret into that bullet (`caretIntoZoom`), once the editor is made: never
  * from the plugin view, which ProseMirror builds inside the EditorView constructor.
  *
- * Triggers: click on the bullet glyph (`.label-wrapper`; task checkboxes keep toggling instead),
+ * Triggers: click on the bullet glyph (`.label-wrapper`; task checkboxes keep toggling instead; ⌘- and
+ * ⇧-click open the bullet in a new tab instead, YAZ-3646 D10),
  * `Mod-.` = zoom into the item at the caret, `Mod-Shift-.` = zoom out one level. While zoomed,
  * `Shift-Tab` / `Mod-[` on the zoomed item or one of its direct children is a no-op (lifting would
  * move the item out of the visible subtree).
@@ -48,19 +49,29 @@ import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 export interface ZoomOptions {
-  /** The `file` stamped on history entries (so another file's entries are ignored). */
-  fileName: string
   /** The page's title (YAZ-2420 🔒 D14), read as the breadcrumb is drawn: the first crumb; clicking it zooms out fully. */
   title: () => string
   /** The zoom key to start drilled into (YAZ-2951 D1): a copied page view's `zoomKey`. Absent, null or not found = zoomed out. */
   startKey?: string | null
+  /**
+   * Each user-driven zoom change, to the page's tab (YAZ-3647 D2): the zoom key, null the whole page. Absent: the right
+   * panel, a review. `label` is the bullet's crumb text, for the Back list's menu and the tab's tooltip (E3, E4).
+   */
+  onZoom?: (zoom: string | null, quiet: boolean, label: string | null) => void
+  /**
+   * ⌘-click (behind) and ⇧-click (in front) on a dot or a crumb, and "Open in new tab" (YAZ-3646 D8, D10, YAZ-3647 E2):
+   * that level in a new tab; null is the whole page (the title crumb). Absent: no tab to copy.
+   */
+  onOpen?: (zoom: string | null, background: boolean, label: string | null) => void
 }
 
 interface ZoomState {
   /** Position of the zoomed list_item, or null when not zoomed. */
   itemPos: number | null
-  /** The `file` stamped on history entries (so another file's entries are ignored). */
-  fileName: string
+  /** Where a user-driven zoom change goes (`ZoomOptions.onZoom`). */
+  onZoom?: ZoomOptions['onZoom']
+  /** Where a crumb's ⌘- or ⇧-click goes (`ZoomOptions.onOpen`, YAZ-3647 E2). */
+  onOpen?: ZoomOptions['onOpen']
   /**
    * ⌘Z target: the level before the latest zoom change, kept while that change is still the latest
    * view action. `undefined` = nothing to revert; `null` = revert to zoomed-out.
@@ -77,17 +88,10 @@ export const ZOOM_HIDDEN_CLASS = 'outline-zoom-hidden'
 export const ZOOM_ANCESTOR_CLASS = 'outline-zoom-ancestor'
 export const ZOOM_CRUMBS_CLASS = 'outline-zoom-crumbs'
 export const ZOOM_CRUMB_CLASS = 'outline-zoom-crumb'
-/** Property on `history.state` carrying `{ file, key }` (`key` null = zoomed out) for this file. */
-export const ZOOM_HISTORY_KEY = 'mdappZoom'
-/** The class App gives a tab's layer while it does not show (tabs.css): its editor ignores Back / Forward. */
-export const HIDDEN_TAB_LAYER_CLASS = 'tabstack__layer--hidden'
-
-interface ZoomHistoryEntry {
-  file: string
-  key: string | null
-}
 
 const LABEL_MAX_CHARS = 40
+/** How long the zoomed bullet's text rests before its new key goes to the tab (YAZ-3646 D14). */
+export const KEY_SETTLE_MS = 1000
 /** Priority above Crepe's keymaps (50), like `listCommands.ts` / `hotkeys.ts`. */
 const PRIORITY = 100
 
@@ -145,18 +149,22 @@ export const getZoomKey = (state: EditorState): string | null => {
   return itemPos === null ? null : zoomKeyAt(state.doc, itemPos)
 }
 
-const readZoomEntry = (state: unknown): ZoomHistoryEntry | null => {
-  if (typeof state !== 'object' || state === null) return null
-  const entry = (state as Record<string, unknown>)[ZOOM_HISTORY_KEY]
-  if (typeof entry !== 'object' || entry === null) return null
-  const { file, key } = entry as Record<string, unknown>
-  return typeof file === 'string' && (typeof key === 'string' || key === null) ? { file, key } : null
-}
-
 /** Breadcrumb label: the item's first-block text, truncated. */
 const itemLabel = (item: ProseNode): string => {
   const text = itemLabelText(item)
   return text.length > LABEL_MAX_CHARS ? `${text.slice(0, LABEL_MAX_CHARS - 1).trimEnd()}…` : text
+}
+
+/** The crumb text of the list_item at `itemPos` (YAZ-3647 E3, E4): what the Back list's menu and the tab's tooltip show. */
+export const zoomLabelAt = (doc: ProseNode, itemPos: number): string | null => {
+  const item = doc.nodeAt(itemPos)
+  return isListItem(item) ? itemLabel(item) : null
+}
+
+/** The zoomed bullet's crumb text, or null when not zoomed (YAZ-3647 E3). */
+export const getZoomLabel = (state: EditorState): string | null => {
+  const itemPos = getZoomedItemPos(state)
+  return itemPos === null ? null : zoomLabelAt(state.doc, itemPos)
 }
 
 /** Position of the innermost list_item containing the selection head, or null outside lists. */
@@ -171,8 +179,8 @@ const selectionInItem = (state: EditorState, itemPos: number): boolean => {
 
 /**
  * Zoom into the list_item at `itemPos` (null = zoom out fully); moves the caret into it if the
- * selection was outside. Every user-driven zoom change pushes a history entry; `fromHistory`
- * (popstate) restores a level without pushing another.
+ * selection was outside. Every user-driven zoom change goes to the tab's Back list (`onZoom`,
+ * YAZ-3647 D2); `fromHistory` (Back, Forward) restores a level and tells no one.
  */
 const zoomTo = (itemPos: ZoomLevel, { fromHistory = false, isUndo = false } = {}): Command => (state, dispatch) => {
   const zoom = pluginKey.getState(state)
@@ -182,12 +190,9 @@ const zoomTo = (itemPos: ZoomLevel, { fromHistory = false, isUndo = false } = {}
     const tr = state.tr.setMeta(pluginKey, itemPos).setMeta(VIEW_ACTION_META, 'zoom' satisfies ViewAction)
     if (isUndo) tr.setMeta(UNDO_META, true)
     if (itemPos !== null && !selectionInItem(state, itemPos)) tr.setSelection(Selection.near(tr.doc.resolve(itemPos + 1), 1))
-    if (!fromHistory) {
-      const entry: ZoomHistoryEntry = { file: zoom.fileName, key: itemPos === null ? null : zoomKeyAt(state.doc, itemPos) }
-      // No URL argument: an empty string would resolve against the document and drop `#/path.md`.
-      history.pushState({ [ZOOM_HISTORY_KEY]: entry }, '')
-    }
     dispatch(tr.scrollIntoView())
+    // A step in the window's Back list (YAZ-3647 D2). Back and Forward themselves tell no one.
+    if (!fromHistory) zoom.onZoom?.(itemPos === null ? null : zoomKeyAt(state.doc, itemPos), false, itemPos === null ? null : zoomLabelAt(state.doc, itemPos))
   }
   return true
 }
@@ -215,6 +220,10 @@ export const undoLastZoom: Command = (state, dispatch) => {
   if (undoLevel === undefined) return false
   return zoomTo(undoLevel, { isUndo: true })(state, dispatch)
 }
+
+/** Back and Forward (YAZ-3647 D2): the page goes to the step's level, quietly. A key that is no longer found zooms out. */
+export const zoomToKey = (key: string | null): Command => (state, dispatch) =>
+  zoomTo(key === null ? null : itemPosForZoomKey(state.doc, key), { fromHistory: true })(state, dispatch)
 
 /** `Mod-.`: zoom into the item at the caret. */
 const zoomIntoSelection: Command = (state, dispatch) => {
@@ -255,6 +264,12 @@ const crumbButton = (view: EditorView, label: string, target: ZoomLevel, current
   button.addEventListener('click', (event) => {
     event.preventDefault()
     event.stopPropagation()
+    // ⌘-click: that level in a new tab behind; ⇧-click: in front, as on a dot (YAZ-3647 E2). The title crumb opens the whole page.
+    const open = pluginKey.getState(view.state)?.onOpen
+    if (open !== undefined && (event.metaKey || event.shiftKey)) {
+      const key = target === null ? null : zoomKeyAt(view.state.doc, target)
+      if (target === null || key !== null) return open(key, event.metaKey, target === null ? null : zoomLabelAt(view.state.doc, target))
+    }
     zoomTo(target)(view.state, view.dispatch)
   })
   return button
@@ -322,7 +337,7 @@ const itemPosFromGlyphClick = (view: EditorView, event: MouseEvent): number | nu
   return isListItem($pos.parent) ? $pos.before() : null
 }
 
-export const createOutlineZoom = ({ fileName, title, startKey = null }: ZoomOptions) => {
+export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen }: ZoomOptions) => {
   // Used by the FIRST state only: a rebuilt state (`setMarkdown` → `replaceAll(md, true)`) starts zoomed out, as before.
   let pendingStartKey = startKey
   return $prose(
@@ -330,11 +345,11 @@ export const createOutlineZoom = ({ fileName, title, startKey = null }: ZoomOpti
       new Plugin<ZoomState>({
         key: pluginKey,
         state: {
-          // The start level (YAZ-2951 D1) is plain state: no transaction, so no history entry and no ⌘Z level.
+          // The start level (YAZ-2951 D1) is plain state: no transaction, so no Back step and no ⌘Z level.
           init: (_config, state) => {
             const key = pendingStartKey
             pendingStartKey = null
-            return { itemPos: key === null ? null : itemPosForZoomKey(state.doc, key), fileName, undoLevel: undefined }
+            return { itemPos: key === null ? null : itemPosForZoomKey(state.doc, key), onZoom, onOpen, undoLevel: undefined }
           },
           apply: (transaction, previous, _oldState, newState) => {
             const meta: ZoomLevel | undefined = transaction.getMeta(pluginKey)
@@ -362,20 +377,19 @@ export const createOutlineZoom = ({ fileName, title, startKey = null }: ZoomOpti
             return itemPos === previous.itemPos && undoLevel === previous.undoLevel ? previous : { ...previous, itemPos, undoLevel }
           },
         },
-        view: (view) => {
-          // Back / Forward: restore the entry's level. Entries of another file (left behind by a
-          // file switch) are ignored; the original page entry (no zoom state) means zoomed out.
-          // Only the SHOWN editor answers: a duplicated tab (YAZ-2940 S24) keeps a hidden copy of
-          // this file mounted, and its entries carry the same `file`.
-          const onPopState = (event: PopStateEvent) => {
-            if (view.dom.closest(`.${HIDDEN_TAB_LAYER_CLASS}`) !== null) return
-            const entry = readZoomEntry(event.state)
-            if (entry !== null && entry.file !== pluginKey.getState(view.state)?.fileName) return
-            const target = entry?.key == null ? null : itemPosForZoomKey(view.state.doc, entry.key)
-            zoomTo(target, { fromHistory: true })(view.state, view.dispatch)
+        // The zoomed bullet's key is its text (YAZ-3646 D14): edit its first line, or delete it, and the tab must
+        // store the new key. Told quietly once typing stops; per keystroke only a timer moves.
+        view: () => {
+          let timer: number | undefined
+          return {
+            update: (view, prev) => {
+              const zoomed = getZoomedItemPos(view.state) !== null || getZoomedItemPos(prev) !== null
+              if (onZoom === undefined || view.state.doc === prev.doc || !zoomed) return
+              window.clearTimeout(timer)
+              timer = window.setTimeout(() => onZoom(getZoomKey(view.state), true, getZoomLabel(view.state)), KEY_SETTLE_MS)
+            },
+            destroy: () => window.clearTimeout(timer),
           }
-          window.addEventListener('popstate', onPopState)
-          return { destroy: () => window.removeEventListener('popstate', onPopState) }
         },
         props: {
           decorations: (state) => {
@@ -388,7 +402,10 @@ export const createOutlineZoom = ({ fileName, title, startKey = null }: ZoomOpti
               const itemPos = itemPosFromGlyphClick(view, event)
               if (itemPos === null) return false
               event.preventDefault()
-              zoomTo(itemPos)(view.state, view.dispatch)
+              // ⌘-click: the bullet in a new tab behind; ⇧-click: in front (YAZ-3646 D10). A page with no tab zooms in place.
+              const key = onOpen !== undefined && (event.metaKey || event.shiftKey) ? zoomKeyAt(view.state.doc, itemPos) : null
+              if (key !== null) onOpen?.(key, event.metaKey, zoomLabelAt(view.state.doc, itemPos))
+              else zoomTo(itemPos)(view.state, view.dispatch)
               return true
             },
           },

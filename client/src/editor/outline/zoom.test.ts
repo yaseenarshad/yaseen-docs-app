@@ -7,9 +7,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
-import { createCrepe, getMarkdownForSave, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, type CreateCrepeOptions } from '../createCrepe'
+import { createCrepe, getMarkdownForSave, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, zoomPageTo, type CreateCrepeOptions } from '../createCrepe'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
-import { getZoomedItemPos, HIDDEN_TAB_LAYER_CLASS, itemPosForZoomKey, ZOOM_ANCESTOR_CLASS, ZOOM_CRUMB_CLASS, ZOOM_CRUMBS_CLASS, ZOOM_HIDDEN_CLASS, ZOOM_HISTORY_KEY, zoomKeyAt } from './zoom'
+import { getZoomedItemPos, itemPosForZoomKey, KEY_SETTLE_MS, ZOOM_ANCESTOR_CLASS, ZOOM_CRUMB_CLASS, ZOOM_CRUMBS_CLASS, ZOOM_HIDDEN_CLASS, zoomKeyAt } from './zoom'
 
 const OUTLINE = `Intro paragraph
 
@@ -26,7 +26,7 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 async function mount(markdown = OUTLINE, opts: Omit<CreateCrepeOptions, 'root' | 'defaultValue'> = {}) {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, zoom: { fileName: 'notes.md', title: () => 'Notes' }, ...opts })
+  const crepe = createCrepe({ root, defaultValue: markdown, zoom: { title: () => 'Notes' }, ...opts })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, root }
@@ -305,69 +305,95 @@ describe('zoom into a bullet', () => {
   })
 })
 
-describe('browser history: Back / Forward walk zoom levels (GRO-2091 A)', () => {
-  const popTo = (state: unknown) => window.dispatchEvent(new PopStateEvent('popstate', { state }))
-  const entry = () => (history.state as Record<string, unknown> | null)?.[ZOOM_HISTORY_KEY] as { file: string; key: string | null } | undefined
+describe('the window\'s Back list (YAZ-3647 D2, replaces GRO-2091 A): each zoom goes to the tab; Back comes back quietly', () => {
+  const keyAt = (crepe: Crepe, text: string): string =>
+    crepe.editor.action((ctx) => zoomKeyAt(ctx.get(editorViewCtx).state.doc, posOf(crepe, text) - 2) as string)
 
-  it('pushes one in-memory entry per zoom change (file + key) and leaves the URL hash alone', async () => {
+  it('tells the tab each zoom change (a dot, ⌘., a crumb) with its zoom key, null for the whole page; the browser history is untouched', async () => {
     history.replaceState(null, '', '#/vault/notes.md')
-    const { crepe, root } = await mount()
+    const onZoom = vi.fn()
     const length0 = history.length
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onZoom } })
     clickGlyph(root, 'L2 a')
-    expect(history.length).toBe(length0 + 1)
-    expect(entry()).toEqual({ file: 'notes.md', key: expect.any(String) })
-    expect(location.hash).toBe('#/vault/notes.md')
-    const l2Entry = history.state
-    clickGlyph(root, 'L3 a')
-    expect(history.length).toBe(length0 + 2)
-    expect(entry()?.key).not.toBe(l2Entry[ZOOM_HISTORY_KEY].key)
-    // Zooming out (file crumb) is a zoom change too, so Back can return to the zoomed view.
+    caretIn(crepe, 'L3 a')
+    press(crepe, 'Mod-.')
     clickCrumb(root, 'Notes')
-    expect(zoomedPos(crepe)).toBeNull()
-    expect(history.length).toBe(length0 + 3)
-    expect(entry()).toEqual({ file: 'notes.md', key: null })
-    expect(location.hash).toBe('#/vault/notes.md')
+    expect(onZoom.mock.calls).toEqual([[keyAt(crepe, 'L2 a'), false, 'L2 a'], [keyAt(crepe, 'L3 a'), false, 'L3 a'], [null, false, null]])
+    expect([history.length, location.hash]).toEqual([length0, '#/vault/notes.md'])
   })
 
-  it('popstate restores the entry\'s level without pushing; entries without zoom state zoom out', async () => {
-    const { crepe, root } = await mount()
-    clickGlyph(root, 'L2 a')
-    const l2Entry = history.state
+  it('zoomPageTo (Back, Forward) goes to a level and tells no one; the same level is no change; a key that is gone zooms out', async () => {
+    const onZoom = vi.fn()
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onZoom } })
     clickGlyph(root, 'L3 a')
-    const length = history.length
-    popTo(l2Entry) // Back
+    onZoom.mockClear()
+    expect(zoomPageTo(crepe, keyAt(crepe, 'L2 a'))).toBe(true)
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
-    expect(history.length).toBe(length)
-    popTo(null) // Back to the original page entry
+    expect(zoomPageTo(crepe, keyAt(crepe, 'L2 a'))).toBe(false)
+    expect(zoomPageTo(crepe, 'deadbeef:0')).toBe(true)
     expect(zoomedPos(crepe)).toBeNull()
-    popTo(l2Entry) // Forward
-    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
-    expect(history.length).toBe(length)
+    expect(zoomPageTo(crepe, null)).toBe(false)
+    expect(onZoom).not.toHaveBeenCalled()
   })
 
-  it('ignores entries of another file and zooms out on a key that no longer resolves', async () => {
-    const { crepe, root } = await mount()
+  it('⌘-click opens the bullet in a new tab behind, ⇧-click in front (YAZ-3646 D10); a page with no tab zooms in place', async () => {
+    const onOpen = vi.fn()
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onOpen } })
+    const glyph = itemEl(root, 'L2 a').querySelector<HTMLElement>(':scope > .label-wrapper')!
+    glyph.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
+    glyph.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }))
+    expect(onOpen.mock.calls).toEqual([[keyAt(crepe, 'L2 a'), true, 'L2 a'], [keyAt(crepe, 'L2 a'), false, 'L2 a']])
+    expect(zoomedPos(crepe)).toBeNull()
+    const solo = await mount()
+    itemEl(solo.root, 'L2 a').querySelector<HTMLElement>(':scope > .label-wrapper')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
+    expect(zoomedPos(solo.crepe)).toBe(posOf(solo.crepe, 'L2 a') - 2)
+  })
+
+  it('⌘- and ⇧-click on a crumb open that level in a new tab, as on a dot; the title crumb opens the whole page (YAZ-3647 E2)', async () => {
+    const onOpen = vi.fn()
+    const onZoom = vi.fn()
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onOpen, onZoom } })
+    clickGlyph(root, 'L3 a')
+    onZoom.mockClear()
+    const crumb = (label: string) => [...root.querySelectorAll<HTMLButtonElement>(`.${ZOOM_CRUMB_CLASS}`)].find((b) => b.textContent === label)!
+    crumb('L1 a').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
+    crumb('L2 a').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }))
+    crumb('Notes').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
+    expect(onOpen.mock.calls).toEqual([[keyAt(crepe, 'L1 a'), true, 'L1 a'], [keyAt(crepe, 'L2 a'), false, 'L2 a'], [null, true, null]])
+    // This page stays where it was; a plain click still zooms here.
+    expect([zoomedPos(crepe), onZoom.mock.calls.length]).toEqual([posOf(crepe, 'L3 a') - 2, 0])
+    clickCrumb(root, 'L1 a')
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L1 a') - 2)
+  })
+
+  it('⇧-click on a bullet\'s text extends the selection and opens no tab: only the dot opens one (YAZ-3647 E5)', async () => {
+    const onOpen = vi.fn()
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onOpen } })
+    const text = itemEl(root, 'L2 a').querySelector<HTMLElement>(':scope > .children > .content-dom > p')!
+    for (const init of [{ shiftKey: true }, { metaKey: true }]) text.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init }))
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(zoomedPos(crepe)).toBeNull()
+    // The dot's hit area is its own wrapper, a sibling of the text: never an ancestor of it.
+    expect(itemEl(root, 'L2 a').querySelector(':scope > .label-wrapper')!.contains(text)).toBe(false)
+  })
+
+  it('the zoomed bullet\'s new key goes to the tab quietly, once typing stops (YAZ-3646 D14)', async () => {
+    const onZoom = vi.fn()
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onZoom } })
     clickGlyph(root, 'L2 a')
-    popTo({ [ZOOM_HISTORY_KEY]: { file: 'other.md', key: 'deadbeef:0' } })
-    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
-    popTo({ [ZOOM_HISTORY_KEY]: { file: 'notes.md', key: 'deadbeef:0' } })
-    expect(zoomedPos(crepe)).toBeNull()
-  })
-
-  it('only the SHOWN copy of a file answers Back / Forward; a hidden tab layer ignores them (YAZ-2940 S24)', async () => {
-    const shown = await mount()
-    const hidden = await mount() // a duplicated tab: same file, same history `file`
-    hidden.root.classList.add(HIDDEN_TAB_LAYER_CLASS)
-    clickGlyph(shown.root, 'L2 a')
-    const l2Entry = history.state
-    clickCrumb(shown.root, 'Notes')
-    popTo(l2Entry) // Back
-    expect(zoomedPos(shown.crepe)).toBe(posOf(shown.crepe, 'L2 a') - 2)
-    expect(zoomedPos(hidden.crepe)).toBeNull()
-    // Shown again, the copy answers like any editor.
-    hidden.root.classList.remove(HIDDEN_TAB_LAYER_CLASS)
-    popTo(l2Entry)
-    expect(zoomedPos(hidden.crepe)).toBe(posOf(hidden.crepe, 'L2 a') - 2)
+    onZoom.mockClear()
+    vi.useFakeTimers()
+    try {
+      caretIn(crepe, 'L2 a')
+      typeText(crepe, 'X')
+      typeText(crepe, 'Y')
+      vi.advanceTimersByTime(KEY_SETTLE_MS - 1)
+      expect(onZoom).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1)
+      expect(onZoom.mock.calls).toEqual([[keyAt(crepe, 'L2 aXY'), true, 'L2 aXY']])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('zoom keys are label + occurrence over ALL items, so same-labelled items stay distinct', async () => {
@@ -389,14 +415,21 @@ describe('browser history: Back / Forward walk zoom levels (GRO-2091 A)', () => 
     })
   })
 
-  it('removes its popstate listener on destroy (one editor per file; the next file registers its own)', async () => {
-    const { crepe, root } = await mount()
-    const removed = vi.spyOn(window, 'removeEventListener')
-    await crepe.destroy()
-    mounted.splice(0)
-    root.remove()
-    expect(removed).toHaveBeenCalledWith('popstate', expect.any(Function))
-    removed.mockRestore()
+  it('a key is "the n-th bullet with this text": delete the first "Lunch" and the second one\'s key finds the third (YAZ-3647 E6, a known limit)', async () => {
+    const { crepe } = await mount('* Lunch\n* Lunch\n  * Tapas\n* Lunch\n  * Picnic\n')
+    const second = crepe.editor.action((ctx) => {
+      const doc = ctx.get(editorViewCtx).state.doc
+      const items: number[] = []
+      doc.descendants((node, pos) => {
+        if (node.type.name === 'list_item' && node.firstChild?.textContent === 'Lunch') items.push(pos)
+        return true
+      })
+      return zoomKeyAt(doc, items[1]) as string
+    })
+    setMarkdown(crepe, '* Lunch\n  * Tapas\n* Lunch\n  * Picnic\n')
+    expect(zoomPageTo(crepe, second)).toBe(true)
+    expect(isHidden(mounted[mounted.length - 1].root, 'Picnic')).toBe(false)
+    expect(isHidden(mounted[mounted.length - 1].root, 'Tapas')).toBe(true)
   })
 })
 
@@ -408,14 +441,14 @@ describe('Mod-z reverts the latest zoom; folds and zooms share one latest-view-a
   }
   const foldedCount = (root: HTMLElement) => root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`).length
 
-  it('reverts the latest zoom change once (single step) and pushes a history entry for it', async () => {
-    const { crepe, root } = await mount()
+  it('reverts the latest zoom change once (single step), and the revert is a Back step too', async () => {
+    const onZoom = vi.fn()
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onZoom } })
     clickGlyph(root, 'L2 a')
     clickGlyph(root, 'L3 a')
-    const length = history.length
     expect(press(crepe, 'Mod-z')).toBe(true)
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
-    expect(history.length).toBe(length + 1) // Back returns to the zoomed view
+    expect(onZoom).toHaveBeenLastCalledWith(getZoomKeyOf(crepe), false, 'L2 a') // Back returns to the zoomed view
     press(crepe, 'Mod-z') // eligibility consumed: history's undo (nothing to undo), zoom stays
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
   })
@@ -456,9 +489,9 @@ describe('Mod-z reverts the latest zoom; folds and zooms share one latest-view-a
   it('a Back-restored level counts as the latest view action too', async () => {
     const { crepe, root } = await mount()
     clickGlyph(root, 'L2 a')
-    const l2Entry = history.state
+    const l2Key = getZoomKeyOf(crepe)
     clickGlyph(root, 'L3 a')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: l2Entry }))
+    zoomPageTo(crepe, l2Key)
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
     expect(press(crepe, 'Mod-z')).toBe(true)
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L3 a') - 2)
@@ -474,7 +507,7 @@ describe('a page starts drilled in from a page view (YAZ-2951 D1, S1, S7, S21, S
     if (key === null) throw new Error(`no key for "${text}"`)
     return key
   }
-  const startAt = (startKey: string | null) => mount(OUTLINE, { zoom: { fileName: 'notes.md', title: () => 'Notes', startKey } })
+  const startAt = (startKey: string | null, onZoom = vi.fn()) => mount(OUTLINE, { zoom: { title: () => 'Notes', startKey, onZoom } })
 
   it('starts drilled into the start key: crumbs drawn, getZoomKeyOf says it back', async () => {
     const key = await keyOf('L2 a')
@@ -514,15 +547,14 @@ describe('a page starts drilled in from a page view (YAZ-2951 D1, S1, S7, S21, S
     }
   })
 
-  it('the start drill-in and its caret move push no history entry (S21), and Mod-z does not undo them (S22)', async () => {
+  it('the start drill-in and its caret move add no Back step (S21), and Mod-z does not undo them (S22)', async () => {
     const key = await keyOf('L2 a')
-    const length = history.length
-    const { crepe } = await startAt(key)
+    const onZoom = vi.fn()
+    const { crepe } = await startAt(key, onZoom)
     moveCaretIntoZoom(crepe)
-    expect(history.length).toBe(length)
     press(crepe, 'Mod-z') // nothing for the zoom to revert: history's undo, which has nothing either
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
-    expect(history.length).toBe(length)
+    expect(onZoom).not.toHaveBeenCalled()
   })
 
   it('the start key is used once: a rebuild of the editor state (a whole-page reload) starts zoomed out, as before', async () => {

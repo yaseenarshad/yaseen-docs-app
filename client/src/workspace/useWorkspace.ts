@@ -33,11 +33,10 @@ export interface TabsState {
    */
   mounted: string[]
   /**
-   * Per-tab back/forward stacks (YAZ-721, LOCKED ruling D1): a side table keyed by tab id
-   * (YAZ-2940 D1); the entries are paths. A tab with no record reads lazily as
-   * `{ entries: [tab.path], index: 0 }`. Renderer- and session-only: it never reaches `storage`.
+   * The window's ONE Back list (YAZ-3647 D1, replaces YAZ-721 D1): every page, tab and zoom level that
+   * came to the front, in order. Renderer- and session-only: it never reaches `storage`.
    */
-  history: Record<string, TabHistory>
+  history: BackList
   /**
    * The id of the ONE preview tab (YAZ-2648 D1), or null. Renderer- and session-only, like `history`:
    * a tab of `tabs` whenever non-null. Every other tab is a kept tab, and a kept tab is never
@@ -63,12 +62,60 @@ export interface Tab {
    * window (YAZ-3057), never in a file call. A tab that shows a different page has none (D2).
    */
   name?: string
+  /**
+   * The zoom key (`zoom.ts` `zoomKeyAt`) of the bullet the tab is zoomed into (YAZ-3647 D2), or none: the whole
+   * page. Its steps carry it, and the window stores it with the tab (YAZ-3646 D14).
+   */
+  zoom?: string
 }
 
-/** One tab's back/forward stack (YAZ-721 D1): `entries[index]` is the page the tab shows. */
+/** The right panel's back/forward stack for one page (`rightHistory`): `entries[index]` is the page it shows. */
 export interface TabHistory {
   entries: string[]
   index: number
+}
+
+/** One Back step (YAZ-3647 D1): a page in a tab, at a zoom level (null: the whole page). `id` keys a code tab's place (YAZ-3458). */
+export interface Step {
+  id: number
+  tab: string
+  path: string
+  zoom: string | null
+}
+
+/** The window's Back list: `steps[index]` is the page in front. */
+export interface BackList {
+  steps: Step[]
+  index: number
+}
+
+/** At most this many Back steps (YAZ-3647 D3): the oldest go first, as a code tab's places do (`MAX_BACK_VIEWS`). */
+export const MAX_STEPS = 100
+
+/** No step yet: an empty window, or a window before its first page shows. */
+export const NO_STEPS: BackList = { steps: [], index: 0 }
+
+let lastStepId = 0
+/** A step for the page tab `tab` shows now (YAZ-3647): its ids are unique in this window for the session, as tab ids are. */
+const stepOf = (tab: Tab): Step => ({ id: ++lastStepId, tab: tab.id, path: tab.path, zoom: tab.zoom ?? null })
+
+/** Two steps that show the same thing: one tab, one page, one level. */
+const sameStep = (a: Step, b: Pick<Step, 'tab' | 'path' | 'zoom'>): boolean => a.tab === b.tab && a.path === b.path && a.zoom === b.zoom
+
+/** At most this many rows in the menu of ‹ or › (YAZ-3647 E3), the nearest first: Chrome's length. */
+export const MAX_NEAR_STEPS = 15
+
+/** The steps behind (`dir` -1) or ahead (1) of the page in front, the nearest first, at most MAX_NEAR_STEPS, each with its index (YAZ-3647 E3). */
+export function nearSteps(h: BackList, dir: -1 | 1): { index: number; step: Step }[] {
+  const near: { index: number; step: Step }[] = []
+  for (let i = h.index + dir; i >= 0 && i < h.steps.length && near.length < MAX_NEAR_STEPS; i += dir) near.push({ index: i, step: h.steps[i] })
+  return near
+}
+
+/** The step id the code tab `tab` keeps its place under (YAZ-3458): the latest step of that tab up to where you are, else 0. */
+export function stepIdOf(h: BackList, tab: string): number {
+  for (let i = Math.min(h.index, h.steps.length - 1); i >= 0; i--) if (h.steps[i].tab === tab) return h.steps[i].id
+  return 0
 }
 
 let lastTabId = 0
@@ -76,6 +123,9 @@ let lastTabId = 0
 export const newTabId = (): string => `tab-${++lastTabId}`
 
 const newTab = (path: string): Tab => ({ id: newTabId(), path })
+
+/** A stored tab as a tab again (YAZ-3057): a new id, with its display name and its zoom level (YAZ-3646 D14). */
+const storedTab = ({ path, name, zoom }: StoredTab): Tab => ({ ...newTab(path), ...(name === undefined ? {} : { name }), ...(zoom === undefined ? {} : { zoom }) })
 
 /** The tab with this id, or null. */
 export const tabById = (s: Pick<TabsState, 'tabs'>, id: string | null): Tab | null => (id === null ? null : (s.tabs.find((t) => t.id === id) ?? null))
@@ -94,7 +144,7 @@ export const storedTabs = (tabs: readonly Tab[]): string[] => [...new Set(tabs.m
  * name, and the active tab marked — so the copy that was on show is the one on show after a restart.
  */
 export const tabStrip = (s: TabsState): StoredTab[] =>
-  s.tabs.map((t) => ({ path: t.path, ...(t.name === undefined ? {} : { name: t.name }), ...(t.id === s.active ? { active: true as const } : {}) }))
+  s.tabs.map((t) => ({ path: t.path, ...(t.name === undefined ? {} : { name: t.name }), ...(t.zoom === undefined ? {} : { zoom: t.zoom }), ...(t.id === s.active ? { active: true as const } : {}) }))
 
 /** The active tab's path: the window's `file`. */
 export const activePath = (s: Pick<TabsState, 'tabs' | 'active'>): string | null => tabById(s, s.active)?.path ?? null
@@ -128,9 +178,10 @@ export type WorkspaceAction =
 export type TabsAction =
   | { type: 'open-current'; path: string } // sidebar click & friends: open in the PREVIEW tab, replacing the page it showed (go to `tabOf` instead when already open)
   | { type: 'navigate'; path: string } // a link inside a page: replace the ACTIVE tab in its slot, with history (go to `tabOf` instead when already open)
-  | { type: 'open-new'; path: string; link?: true } // the ONE door to a kept tab: append it at the end + activate; a page that is open is gone to, and the preview tab that shows it is kept
-  | { type: 'open-background'; path: string; link?: true } // append a KEPT tab at the end, do NOT activate (no-op when already open)
+  | { type: 'open-new'; path: string } // the ONE door to a kept tab: append it at the end + activate; a page that is open is gone to, and the preview tab that shows it is kept
+  | { type: 'open-background'; path: string } // append a KEPT tab at the end, do NOT activate (no-op when already open)
   | { type: 'duplicate'; id: string } // "Duplicate tab" (YAZ-2940 D6): a copy of the tab, right after it, active
+  | { type: 'open-zoom'; id: string; zoom: string | null; background?: true } // a bullet in a new tab (YAZ-3646 D11): a copy of the tab right after it, at that bullet; null the whole page (a title crumb, YAZ-3647 E2)
   | { type: 'take'; path: string; background?: boolean } // a tab another window moved here (YAZ-3091 D5): ALWAYS a new kept tab at the end, active — a copy when the page is open; `background` (a quiet move from a tab board, YAZ-3343 D13): not active, not mounted, while a page is on show
   | { type: 'keep'; id: string } // double click, first edit: the preview tab becomes a kept tab (no-op for any other tab)
   | { type: 'set-name'; id: string; name: string | null } // "Set display name" / "Reset to page name" (YAZ-2949): null, empty or blank clears it
@@ -141,16 +192,18 @@ export type TabsAction =
   | { type: 'close-many'; ids: readonly string[] } // the tab board's "Close them", "Close the others" and an island's ✕: each tab by `close`, in ONE change
   | { type: 'move'; from: number; to: number } // drag-to-reorder (I3): the tab at `from` lands at final index `to`
   | { type: 'cycle'; dir: 1 | -1 } // ⌃Tab / ⌃⇧Tab: wraparound, plain left→right order
-  | { type: 'back' } // the active tab steps back through its OWN stack (YAZ-721)
-  | { type: 'forward' } // …and forward again, as far as the stack was walked back
+  | { type: 'back' } // the window steps back through its ONE list (YAZ-3647 D1)
+  | { type: 'forward' } // …and forward again, as far as the list was walked back
+  | { type: 'go'; index: number } // a row of the menu of ‹ or › (YAZ-3647 E3): straight to that step, as that many Backs or Forwards would
   | { type: 'open-stored'; tabs: readonly StoredTab[] } // "Restore session" (YAZ-3147 D3): the pages that are not open join the END, in ONE change; an open page opens no copy
   | { type: 'reset'; tabs: readonly StoredTab[]; active: string | null } // boot + root switch: the STORED tabs and file; replace wholesale with new ids
   | { type: 'rename'; oldPath: string; newPath: string } // in-app rename (Links E1, GRO-2194): every tab of the file follows it in place (S17)
   | { type: 'rename-dir'; oldPath: string; newPath: string } // in-app FOLDER rename (Links E1b, GRO-2241): the folder's own tab and every tab under it follow in place
   | { type: 'delete'; path: string } // in-app delete (GRO-2272): every tab of the file goes, each closing as `close` does (S18)
   | { type: 'delete-dir'; path: string } // in-app FOLDER delete (GRO-2272): the folder's own tab and every tab under it go
+  | { type: 'zoom'; id: string; zoom: string | null; quiet?: true } // a drill-in in a tab's page (YAZ-3647 D2): a step, unless the page is at that level already
 
-const EMPTY: TabsState = { tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false }
+const EMPTY: TabsState = { tabs: [], active: null, mounted: [], history: NO_STEPS, preview: null, blank: false }
 
 /** Go to the tab `active` (an id). A trip to a tab drops an unused blank tab (YAZ-2655 S73). */
 function withActive(s: TabsState, active: string): TabsState {
@@ -175,45 +228,26 @@ function fillBlank(s: TabsState, path: string): TabsState {
 
 /**
  * `path` takes over the tab `slot` (an id) in place (same-tab navigation): the tab keeps its id, and
- * App's layer mounts a new editor for the new page (→ the old one's autosave flush). The slot's stack
- * gains the page, any forward entries truncated — or, from Back and Forward, is the walked `stack`.
- * A slot that was the preview tab stays the preview tab.
+ * App's layer mounts a new editor for the new page (→ the old one's autosave flush), zoomed out. The
+ * Back list gains its step in `withStep` (YAZ-3647 D4). A slot that was the preview tab stays the preview tab.
  */
-function replaceSlot(s: TabsState, slot: string, path: string, stack?: TabHistory): TabsState {
-  const h = s.history[slot] ?? { entries: [tabById(s, slot)?.path ?? path], index: 0 }
+function replaceSlot(s: TabsState, slot: string, path: string): TabsState {
   return {
     tabs: s.tabs.map((t) => (t.id === slot ? { id: slot, path } : t)),
     active: slot,
     mounted: [...s.mounted.filter((t) => t !== slot), slot],
-    history: { ...s.history, [slot]: stack ?? { entries: [...h.entries.slice(0, h.index + 1), path], index: h.index + 1 } },
+    history: s.history,
     preview: s.preview,
     blank: false,
   }
 }
 
-/**
- * A link to a page that another tab shows (YAZ-3609 D10): go to that tab, and Back there returns to the
- * page the link was in. That page joins the tab's stack just before its own page, so `back` finds it open
- * in the first tab and goes there (S8). With the first tab closed, Back opens it in this tab's slot.
- */
-function jumpTo(s: TabsState, id: string): TabsState {
-  const from = activePath(s)
-  const to = tabById(s, id)
-  if (from === null || to == null) return withActive(s, id)
-  const h = s.history[id] ?? { entries: [to.path], index: 0 }
-  return { ...withActive(s, id), history: { ...s.history, [id]: { entries: [...h.entries.slice(0, h.index), from, to.path], index: h.index + 1 } } }
-}
-
-/**
- * A link that opened its page in a new tab, in front or behind (YAZ-3609 D10, YAZ-3644): the new tab `id`
- * of `opened` starts with the page the link was in, the active page of `before`, just before its own.
- * Back there goes to that page's tab, as after `jumpTo`.
- */
-function fromLink(before: TabsState, opened: TabsState, id: string): TabsState {
-  const from = activePath(before)
-  const to = tabById(opened, id)
-  if (from === null || to == null || from === to.path) return opened
-  return { ...opened, history: { ...opened.history, [id]: { entries: [from, to.path], index: 1 } } }
+/** Tab `id` at the level `zoom` (YAZ-3647 D2); null = the whole page. The same level: the same state. */
+function zoomed(s: TabsState, id: string, zoom: string | null): TabsState {
+  const tab = tabById(s, id)
+  if (tab === null || (tab.zoom ?? null) === zoom) return s
+  const { zoom: _, ...plain } = tab
+  return { ...s, tabs: s.tabs.map((t) => (t.id === id ? (zoom === null ? plain : { ...plain, zoom }) : t)) }
 }
 
 /** One stack's entries rewritten through `f` (renamed, or dropped with `null`); the index follows the entry it pointed at. */
@@ -243,17 +277,23 @@ function rekey(h: Record<string, TabHistory>, f: (p: string) => string | null): 
   return out
 }
 
-/** `rekey` for the main tabs' stacks, keyed by tab id (YAZ-2940 D1): the keys stay, and a record whose own page is dropped goes — its tab closes with it. */
-function remapStacks(h: Record<string, TabHistory>, f: (p: string) => string | null): Record<string, TabHistory> {
-  const out: Record<string, TabHistory> = {}
-  for (const [id, r] of Object.entries(h)) {
-    if (f(r.entries[r.index]) !== null) out[id] = mapEntries(r, f)
-  }
-  return out
+/**
+ * The Back list without the steps `gone` picks (YAZ-3647 D5: a closed tab's, a deleted page's): the index stays on
+ * its step, else on the step before it. Two steps side by side that are now the same become one.
+ */
+function dropSteps(h: BackList, gone: (step: Step) => boolean): BackList {
+  const steps: Step[] = []
+  let index = 0
+  h.steps.forEach((step, i) => {
+    const last = steps[steps.length - 1]
+    if (!gone(step) && !(last !== undefined && sameStep(last, step))) steps.push(step)
+    if (i === h.index) index = Math.max(0, steps.length - 1)
+  })
+  return steps.length === h.steps.length ? h : { steps, index }
 }
 
-/** Whether some stack still holds a page that `f` picks. */
-const inStacks = (h: Record<string, TabHistory>, f: (p: string) => boolean): boolean => Object.values(h).some((r) => r.entries.some(f))
+/** Whether some step still shows a page that `f` picks. */
+const inSteps = (h: BackList, f: (p: string) => boolean): boolean => h.steps.some((step) => f(step.path))
 
 /** Every tab of a page that `f` picks closes, left to right, each through the SAME ladder as `close`: the heir is whatever survives. */
 function closeWhere(s: TabsState, f: (path: string) => boolean): TabsState {
@@ -262,19 +302,21 @@ function closeWhere(s: TabsState, f: (path: string) => boolean): TabsState {
 
 /**
  * Every page that `remap` changes follows it: each of its tabs IN PLACE, with its own id, so activation,
- * the mounted set and the preview mark stay on it; and every stack, by entry — a page reached through
+ * the mounted set and the preview mark stay on it; and every step of the Back list — a page reached through
  * history is the same file as the one on screen. Nothing to remap → the same state.
  */
 function remapPages(s: TabsState, remap: (p: string) => string): TabsState {
   const moves = (p: string): boolean => remap(p) !== p
-  if (!s.tabs.some((t) => moves(t.path)) && !inStacks(s.history, moves)) return s
+  if (!s.tabs.some((t) => moves(t.path)) && !inSteps(s.history, moves)) return s
   // A tab keeps its display name when its file or a folder above it is renamed (YAZ-2949 S16): it is the same page.
-  return { ...s, tabs: s.tabs.map((t) => (moves(t.path) ? { ...t, path: remap(t.path) } : t)), history: remapStacks(s.history, remap) }
+  // It keeps its zoom too (YAZ-3647 D2): the editor of the new path starts at it.
+  const steps = s.history.steps.map((step) => (moves(step.path) ? { ...step, path: remap(step.path) } : step))
+  return { ...s, tabs: s.tabs.map((t) => (moves(t.path) ? { ...t, path: remap(t.path) } : t)), history: { steps, index: s.history.index } }
 }
 
-/** Every page that `gone` picks leaves every stack first — Back never steps onto a file that is gone — and then each of its tabs closes (`closeWhere`). */
+/** Every page that `gone` picks leaves the Back list first — Back never steps onto a file that is gone — and then each of its tabs closes (`closeWhere`). */
 function dropPages(s: TabsState, gone: (p: string) => boolean): TabsState {
-  return closeWhere(inStacks(s.history, gone) ? { ...s, history: remapStacks(s.history, (p) => (gone(p) ? null : p)) } : s, gone)
+  return closeWhere(inSteps(s.history, gone) ? { ...s, history: dropSteps(s.history, (step) => gone(step.path)) } : s, gone)
 }
 
 /** `path` is the folder `dir` itself — a folder is a tab too (YAZ-2290 D3) — or sits below it. */
@@ -299,7 +341,8 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // and so no link: a page that opens while it is active fills it, like any other.
       if (s.blank) return fillBlank(s, a.path)
       const open = tabOf(s, a.path)
-      if (open !== null) return open.id === s.active ? s : jumpTo(s, open.id)
+      // A page that another tab shows: go there. Back returns to the page with the link (YAZ-3647 D4).
+      if (open !== null) return open.id === s.active ? s : withActive(s, open.id)
       if (s.active === null) return appendActive(s, a.path, false)
       return replaceSlot(s, s.active, a.path)
     }
@@ -308,29 +351,38 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       const kept = tabById(s, s.preview)?.path === a.path ? { ...s, preview: null } : s
       if (kept.blank) return fillBlank(kept, a.path)
       const open = tabOf(kept, a.path)
-      if (open !== null) return open.id === kept.active ? kept : a.link ? jumpTo(kept, open.id) : withActive(kept, open.id)
-      const opened = appendActive(s, a.path, false)
-      return a.link ? fromLink(s, opened, opened.active!) : opened
+      if (open !== null) return open.id === kept.active ? kept : withActive(kept, open.id)
+      return appendActive(s, a.path, false)
     }
     case 'open-background': {
       if (shows(s, a.path)) return s // already open: stay where we are, steal nothing
       // The first tab of an empty window must activate: non-empty `tabs` requires a non-null `file`.
       // Under the blank tab too (YAZ-2655 S78): the page becomes the stored file, and the blank tab still shows.
       if (s.active === null) return { ...appendActive(s, a.path, false), blank: s.blank }
-      const tab = newTab(a.path)
-      const opened = { ...s, tabs: [...s.tabs, tab] } // not mounted: the editor lazy-mounts on first activation
-      return a.link ? fromLink(s, opened, tab.id) : opened
+      // Not mounted: the editor lazy-mounts on first activation, and the tab's step comes then (YAZ-3647 D4).
+      return { ...s, tabs: [...s.tabs, newTab(a.path)] }
     }
     case 'duplicate': {
       // A copy (YAZ-2940 D6, S1, S3, S4): a new id on the same page, right after the source, active and
-      // mounted, with the source's stack (none when it has none — the lazy default; a stack is never
-      // changed in place, so the two share it until one of them moves). A preview source is kept, and so
-      // is the copy. A copy of a copy is a copy like any other. A trip to a tab drops an unused blank tab.
+      // mounted, at the source's zoom level (YAZ-3647 D2); the window's Back list gains its step (D4). A
+      // preview source is kept, and so is the copy. A copy of a copy is a copy like any other. A trip to a
+      // tab drops an unused blank tab.
       const i = s.tabs.findIndex((t) => t.id === a.id)
       if (i === -1) return s
-      const copy = newTab(s.tabs[i].path)
-      const h = s.history[a.id]
-      return { tabs: insertAt(s.tabs, copy, i + 1), active: copy.id, mounted: [...s.mounted, copy.id], history: h === undefined ? s.history : { ...s.history, [copy.id]: h }, preview: s.preview === a.id ? null : s.preview, blank: false }
+      const source = s.tabs[i]
+      const copy: Tab = source.zoom === undefined ? newTab(source.path) : { ...newTab(source.path), zoom: source.zoom }
+      return { tabs: insertAt(s.tabs, copy, i + 1), active: copy.id, mounted: [...s.mounted, copy.id], history: s.history, preview: s.preview === a.id ? null : s.preview, blank: false }
+    }
+    case 'open-zoom': {
+      // A bullet in a new tab (YAZ-3646 D11): a copy of the tab, right after it, at that bullet. In front, or
+      // behind with `background` (not mounted: its editor mounts on first show, at that bullet). A preview
+      // source is kept, as for "Duplicate tab". In front, it is a step (YAZ-3646 D13 = YAZ-3647 D4).
+      const i = s.tabs.findIndex((t) => t.id === a.id)
+      if (i === -1) return s
+      const copy: Tab = a.zoom === null ? newTab(s.tabs[i].path) : { ...newTab(s.tabs[i].path), zoom: a.zoom }
+      const tabs = insertAt(s.tabs, copy, i + 1)
+      const preview = s.preview === a.id ? null : s.preview
+      return a.background === true ? { ...s, tabs, preview } : { ...withActive({ ...s, tabs }, copy.id), preview }
     }
     case 'take': {
       // A moved tab (YAZ-3091 D5, S11, S13): never a trip to the tab that is open, so its name and page view
@@ -349,7 +401,8 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       if (i === -1) return s
       const name = cleanVaultName(a.name)
       if (name === (s.tabs[i].name ?? null)) return s
-      const tab: Tab = name === null ? { id: a.id, path: s.tabs[i].path } : { ...s.tabs[i], name }
+      const { name: _, ...plain } = s.tabs[i]
+      const tab: Tab = name === null ? plain : { ...plain, name }
       return { ...s, tabs: s.tabs.map((t, j) => (j === i ? tab : t)), preview: s.preview === a.id && name !== null ? null : s.preview }
     }
     case 'new-tab':
@@ -361,29 +414,19 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // The tab that was active under the blank tab is a tab to go to, like any other (S73).
       return (a.id === s.active && !s.blank) || tabById(s, a.id) === null ? s : withActive(s, a.id)
     case 'back':
-    case 'forward': {
-      // The step lands in the ACTIVE tab's slot, like any same-tab navigation — but records
-      // nothing: the stack is walked, not extended. A target already open in ANOTHER tab
-      // goes to that tab instead (`tabOf`, S8), leaving both stacks alone.
-      // The blank tab has no stack (YAZ-2655): under it the arrows have nowhere to go.
-      if (s.active === null || s.blank) return s
-      const h = s.history[s.active]
-      if (h === undefined) return s
-      const i = h.index + (a.type === 'back' ? -1 : 1)
-      if (i < 0 || i >= h.entries.length) return s
-      const open = tabOf(s, h.entries[i])
-      return open !== null ? withActive(s, open.id) : replaceSlot(s, s.active, h.entries[i], { entries: h.entries, index: i })
-    }
+    case 'forward':
+      return walkTo(s, s.history.index + (a.type === 'back' ? -1 : 1))
+    case 'go':
+      return a.index === s.history.index ? s : walkTo(s, a.index)
     case 'close': {
       const i = s.tabs.findIndex((t) => t.id === a.id)
       if (i === -1) return s
-      const history = { ...s.history }
-      delete history[a.id] // the tab's stack closes with it
       const rest: TabsState = {
         tabs: s.tabs.filter((t) => t.id !== a.id),
         active: s.active,
         mounted: s.mounted.filter((t) => t !== a.id),
-        history,
+        // Its steps close with it (YAZ-3647 D5): Back never opens a closed tab again. "Recently closed" does.
+        history: dropSteps(s.history, (step) => step.tab === a.id),
         preview: s.preview === a.id ? null : s.preview,
         blank: s.blank,
       }
@@ -424,7 +467,7 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       let marked: string | null = null
       for (const t of a.tabs) {
         if (open.has(t.path)) continue
-        const tab = t.name === undefined ? newTab(t.path) : { ...newTab(t.path), name: t.name }
+        const tab = storedTab(t)
         if (t.active === true && marked === null) marked = tab.id
         added.push(tab)
       }
@@ -441,25 +484,25 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
     case 'reset': {
       if (a.active === null) return s.tabs.length === 0 && s.active === null && s.mounted.length === 0 && !s.blank ? s : EMPTY
       // An active file missing from the list is PREPENDED — main's own normalization order. Every tab gets a new id.
-      // Copies and display names come back (YAZ-3057): the list is the stored strip, not a set. The marked
-      // copy of the active file is active, else its first copy (D4).
+      // Copies, display names and zoom levels come back (YAZ-3057, YAZ-3646 D14): the list is the stored strip, not a
+      // set. The marked copy of the active file is active, else its first copy (D4). The Back list starts at it.
       const stored = a.tabs.some((t) => t.path === a.active) ? a.tabs : [{ path: a.active }, ...a.tabs]
-      const tabs = stored.map(({ path, name }): Tab => (name === undefined ? newTab(path) : { ...newTab(path), name }))
+      const tabs = stored.map(storedTab)
       const marked = stored.findIndex((t) => t.path === a.active && t.active === true)
-      const active = tabs[marked !== -1 ? marked : stored.findIndex((t) => t.path === a.active)].id
-      return { tabs, active, mounted: [active], history: {}, preview: null, blank: false }
+      const shown = tabs[marked !== -1 ? marked : stored.findIndex((t) => t.path === a.active)]
+      return { tabs, active: shown.id, mounted: [shown.id], history: { steps: [stepOf(shown)], index: 0 }, preview: null, blank: false }
     }
     case 'rename':
       // EVERY tab of the file follows it in place (Links E1, YAZ-2940 S17). Two tabs of one path are
       // valid, so a tab whose new path is open already stays too. A file that no tab shows may still
-      // move in a stack further back.
+      // move in the Back list further back.
       return remapPages(s, (p) => (p === a.oldPath ? a.newPath : p))
     case 'delete':
       // Deleting a tab IS closing it, from the user's point of view — so reuse the `close`
       // case rather than re-implementing the heir ladder. Divergence between the two would
       // show up as "deleting the active note picks a different tab than ⌘W does", which is
       // the kind of inconsistency nobody reports but everybody feels. Every tab of the file
-      // closes (S18), and the page leaves every other tab's stack.
+      // closes (S18), and the page leaves the Back list.
       return dropPages(s, (p) => p === a.path)
     case 'delete-dir':
       // The folder's own tab (YAZ-2290 D3) and every tab under it close, left to right, each
@@ -468,9 +511,34 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       return dropPages(s, (p) => atOrUnder(p, a.path))
     case 'rename-dir':
       // A FOLDER moved (E1b): its own tab (YAZ-2290 D3) and every tab under `oldPath/` follow by
-      // prefix, as `rename` (S19); a stack further back may still point inside it.
+      // prefix, as `rename` (S19); a step further back may still point inside it.
       return remapPages(s, (p) => (atOrUnder(p, a.oldPath) ? a.newPath + p.slice(a.oldPath.length) : p))
+    case 'zoom': {
+      // A drill-in in a tab's page (YAZ-3647 D2): the tab keeps the level, and `withStep` adds the step. A QUIET level
+      // (the page started there: a copy, a moved tab, a restart) adds none: it only fills the step the tab is on.
+      const shown = zoomed(s, a.id, a.zoom)
+      const { steps, index } = shown.history
+      if (a.quiet !== true || shown === s || steps[index]?.tab !== a.id) return shown
+      return { ...shown, history: { steps: steps.map((step, i) => (i === index ? { ...step, zoom: a.zoom } : step)), index } }
+    }
   }
+}
+
+/**
+ * The window's ONE list (YAZ-3647 D1), walked to step `index`, never extended: Back, Forward and a row of their menus (E3).
+ * The step shows in its own tab when that tab still shows its page, else in the first tab that does (`tabOf`, S8),
+ * else its page comes back in its own tab's slot; then at its zoom level (D2). A preview tab that a sidebar click
+ * moved on gets its page back the same way, still the preview tab (E7). The blank tab shows no page (YAZ-2655): the arrows are off.
+ */
+function walkTo(s: TabsState, index: number): TabsState {
+  if (s.blank) return s
+  const step = s.history.steps[index]
+  if (step === undefined) return s
+  const own = tabById(s, step.tab)
+  if (own === null) return s
+  const open = own.path === step.path ? own : tabOf(s, step.path)
+  const shown = open !== null ? withActive(s, open.id) : replaceSlot(s, own.id, step.path)
+  return { ...zoomed(shown, shown.active!, step.zoom), history: { ...s.history, index } }
 }
 
 const rightDefault = (): Pick<WorkspaceState, 'rightPanel' | 'rightMounted' | 'rightHistory'> => ({
@@ -573,8 +641,27 @@ function repairRightPaths(
   return { ...s, ...main, rightPanel: { ...s.rightPanel, items, expanded }, rightMounted, rightHistory }
 }
 
-/** One pure owner for main tabs, right headers, both histories, and all lifecycle repair. */
+/**
+ * The Back list follows the page in front (YAZ-3647 D4): whatever brought another tab, page or zoom level to the
+ * front adds a step (a link, the sidebar, a tab click, ⌃Tab, the tab board, a close), and the Forward steps go.
+ * Back and Forward walk the list and add none. A background tab adds its step when it shows.
+ */
+function withStep(before: WorkspaceState, a: WorkspaceAction, after: WorkspaceState): WorkspaceState {
+  if (after === before || after.blank || a.type === 'back' || a.type === 'forward' || a.type === 'go') return after
+  const tab = tabById(after, after.active)
+  const { steps, index } = after.history
+  const now = steps[index]
+  if (tab === null || (now !== undefined && sameStep(now, { tab: tab.id, path: tab.path, zoom: tab.zoom ?? null }))) return after
+  const kept = [...steps.slice(0, index + 1), stepOf(tab)].slice(-MAX_STEPS)
+  return { ...after, history: { steps: kept, index: kept.length - 1 } }
+}
+
+/** One pure owner for main tabs, right headers, the Back lists, and all lifecycle repair. */
 export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): WorkspaceState {
+  return withStep(s, a, reduceWorkspace(s, a))
+}
+
+function reduceWorkspace(s: WorkspaceState, a: WorkspaceAction): WorkspaceState {
   switch (a.type) {
     case 'open-right':
       return openRight(s, a.path, true, a.at)
@@ -741,10 +828,13 @@ export interface UseWorkspace extends WorkspaceState {
    * Rule 5, and a double click on a sidebar row (YAZ-2648 D2): the page is a KEPT tab — appended at
    * the end and activated when it is not open, and the preview tab the first click made keeps its page.
    */
-  /** `link`: a link opened it (YAZ-3644), so Back in the new tab returns to the page with the link. */
-  openKept: (path: string, link?: boolean) => void
+  openKept: (path: string) => void
   /** "Duplicate tab" (YAZ-2940 D6): a copy of that tab, right after it and active; the copy's id, or null for an unknown tab. */
   duplicate: (id: string) => string | null
+  /** A bullet in a new tab (YAZ-3646 D11): a copy of tab `id` right after it, zoomed into `zoom` (null: the whole page, YAZ-3647 E2), in front or behind; the copy's id, or null for an unknown tab. */
+  openZoom: (id: string, zoom: string | null, background: boolean) => string | null
+  /** A tab's page zoomed (YAZ-3647 D2): `zoom` is the bullet's zoom key, null the whole page; `quiet`: the page is at that level already, no step. */
+  zoomTab: (id: string, zoom: string | null, quiet: boolean) => void
   /** A tab another window moved here (YAZ-3091 D5): a new kept tab at the end, active, a copy when the page is open; a right-panel page leaves the panel. The new tab's id. */
   take: (path: string, background?: boolean) => string
   /** The preview tab (by id) becomes a kept tab (YAZ-2648 D2): a double click on it, the first edit of its page. A no-op for any other tab. */
@@ -755,9 +845,8 @@ export interface UseWorkspace extends WorkspaceState {
   newTab: () => void
   /** The blank tab's ✕: it goes, and the tab that was active before is active again (S75). Never mirrored. */
   closeBlank: () => void
-  /** Rule 5: append at the end without activating (and so without stealing focus). */
-  /** `link`: a link opened it (YAZ-3644), so Back in that tab returns to the page with the link. */
-  openBackground: (path: string, link?: boolean) => void
+  /** Rule 5: append at the end without activating (and so without stealing focus). Its Back step comes when it shows (YAZ-3647 D4). */
+  openBackground: (path: string) => void
   /** A tab, by id (YAZ-2940 D1). */
   activate: (id: string) => void
   /** That tab only: a copy closes alone (S11). Its note goes to "Recently closed" (YAZ-3487 D10) — not when `moved`: it lives on in another window. */
@@ -772,9 +861,11 @@ export interface UseWorkspace extends WorkspaceState {
   closeActive: () => boolean
   next: () => void
   prev: () => void
-  /** YAZ-721 D1: step the ACTIVE tab through its own stack; no-ops at either bound. */
+  /** YAZ-3647 D1: step the window through its ONE Back list; no-ops at either bound. */
   back: () => void
   forward: () => void
+  /** A row of the menu of ‹ or › (YAZ-3647 E3): straight to step `index` of the window's list. */
+  go: (index: number) => void
   /** Whether that step exists — the toolbar arrows' enabled state. */
   canBack: boolean
   canForward: boolean
@@ -850,9 +941,9 @@ export function useWorkspace(root: string | null): UseWorkspace {
   // A display name is stored with the window (YAZ-3057): one write, like any other tab change.
   const setName = useCallback((id: string, name: string | null) => dispatch({ type: 'set-name', id, name }), [dispatch])
   const openKept = useCallback(
-    (path: string, link?: boolean) => {
+    (path: string) => {
       const s = stateRef.current
-      dispatch({ type: 'open-new', path, ...(link === true ? { link: true as const } : {}) }, { mirror: !(s.preview === s.active && activePath(s) === path) })
+      dispatch({ type: 'open-new', path }, { mirror: !(s.preview === s.active && activePath(s) === path) })
     },
     [dispatch],
   )
@@ -862,13 +953,22 @@ export function useWorkspace(root: string | null): UseWorkspace {
     dispatch({ type: 'duplicate', id })
     return stateRef.current === s ? null : stateRef.current.active
   }, [dispatch])
+  // A bullet's new tab is stored with the window, at its level, like a copy (YAZ-3646 D14).
+  const openZoom = useCallback((id: string, zoom: string | null, background: boolean): string | null => {
+    const s = stateRef.current
+    dispatch({ type: 'open-zoom', id, zoom, ...(background ? { background: true as const } : {}) })
+    const before = new Set(s.tabs.map((t) => t.id))
+    return stateRef.current.tabs.find((t) => !before.has(t.id))?.id ?? null
+  }, [dispatch])
+  // A tab's zoom level is stored with the window (YAZ-3646 D14): one write for each change of level.
+  const zoomTab = useCallback((id: string, zoom: string | null, quiet: boolean) => dispatch({ type: 'zoom', id, zoom, ...(quiet ? { quiet: true as const } : {}) }), [dispatch])
   // A moved tab is stored with the window (YAZ-3091 D5), like any new tab: the caller then names it and gives it its page view.
   const take = useCallback((path: string, background = false): string => {
     dispatch({ type: 'take', path, background })
     // The new tab is always the last one, active or not.
     return stateRef.current.tabs[stateRef.current.tabs.length - 1].id
   }, [dispatch])
-  const openBackground = useCallback((path: string, link?: boolean) => dispatch({ type: 'open-background', path, ...(link === true ? { link: true as const } : {}) }), [dispatch])
+  const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path }), [dispatch])
   const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
   /** YAZ-3487 D10: the notes of the tabs that close go to "Recently closed". A tab that MOVES to another window is no close: its caller says so. */
   const noteClosed = useCallback((ids: readonly string[]): void => {
@@ -903,6 +1003,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   const prev = useCallback(() => dispatch({ type: 'cycle', dir: -1 }), [dispatch])
   const back = useCallback(() => dispatch({ type: 'back' }), [dispatch])
   const forward = useCallback(() => dispatch({ type: 'forward' }), [dispatch])
+  const go = useCallback((index: number) => dispatch({ type: 'go', index }), [dispatch])
   const reset = useCallback(
     (nextRoot: string | null, file: string | null) =>
       // An empty reset mirrors nothing: `storage.setRoot` already wrote {root, file: null,
@@ -936,12 +1037,11 @@ export function useWorkspace(root: string | null): UseWorkspace {
   const setRightOpen = useCallback((open: boolean) => dispatch({ type: 'set-right-open', open }), [dispatch])
   const setRightWidth = useCallback((width: number) => dispatch({ type: 'set-right-width', width }), [dispatch])
 
-  const h: TabHistory | undefined = state.history[state.active ?? '']
   const rightH: TabHistory | undefined = state.rightHistory[state.rightPanel.expanded ?? '']
   return {
     ...state,
     file: activePath(state),
-    openCurrent, navigate, openKept, duplicate, take, keep, setName, newTab, closeBlank, openBackground, activate, close, closeMany, openStored, move, closeActive, next, prev, back, forward, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
+    openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, activate, close, closeMany, openStored, move, closeActive, next, prev, back, forward, go, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,
     navigateRight: navigateRightCallback,
@@ -954,9 +1054,9 @@ export function useWorkspace(root: string | null): UseWorkspace {
     rightForward,
     setRightOpen,
     setRightWidth,
-    // The blank tab has no stack of its own (YAZ-2655): the arrows are off while it shows.
-    canBack: !state.blank && h !== undefined && h.index > 0,
-    canForward: !state.blank && h !== undefined && h.index < h.entries.length - 1,
+    // The window's ONE list (YAZ-3647 D1). The blank tab shows no page (YAZ-2655): the arrows are off while it shows.
+    canBack: !state.blank && state.history.index > 0,
+    canForward: !state.blank && state.history.index < state.history.steps.length - 1,
     canRightBack: rightH !== undefined && rightH.index > 0,
     canRightForward: rightH !== undefined && rightH.index < rightH.entries.length - 1,
   }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { titleWithKey, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { rootOfPath, type DiagramDarkColors } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -64,6 +64,13 @@ export interface TabBarProps {
   canForward: boolean
   onBack: () => void
   onForward: () => void
+  /** The steps behind and ahead of the page in front, the nearest first (YAZ-3647 E3): the rows of the menu of ‹ and ›. */
+  backSteps?: readonly NavStep[]
+  forwardSteps?: readonly NavStep[]
+  /** A row of that menu: straight to the step at `index` of the window's list. */
+  onGoToStep?: (index: number) => void
+  /** Each bullet's crumb text by zoom key (YAZ-3647 E3, E4): a row's " › bullet" and a zoomed tab's tooltip. A key not in it shows the page name alone. */
+  zoomLabels?: ReadonlyMap<string, string>
   /**
    * Collapsed sidebar (YAZ-1759): the reopen control sits HERE, left of ◀, instead of floating
    * over it. Absent while the sidebar is open.
@@ -154,7 +161,17 @@ const Chevron = ({ d }: { d: string }) => (
  * (YAZ-2655): it stands outside the scroller, so it is on show however far the strip scrolled.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: TabBarProps) {
+/** A step of the window's Back list, as the menu of ‹ or › lists it (YAZ-3647 E3). */
+export interface NavStep {
+  index: number
+  path: string
+  zoom: string | null
+}
+
+/** How long a press on ‹ or › is held before its menu opens instead of a step (YAZ-3647 E3), as in Chrome. */
+export const NAV_HOLD_MS = 500
+
+export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, zoomLabels, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -167,6 +184,11 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
   const [renaming, setRenaming] = useState<string | null>(null)
   /** The grid button's own menu (YAZ-2739), and where it stands. */
   const [gridMenu, setGridMenu] = useState<{ x: number; y: number } | null>(null)
+  /** The menu of ‹ or › (YAZ-3647 E3): its rows, and where it stands. */
+  const [navMenu, setNavMenu] = useState<{ x: number; y: number; steps: readonly NavStep[] } | null>(null)
+  /** A held press on ‹ or ›: its timer, and whether the menu opened, so the click that ends the press takes no step. */
+  const hold = useRef<{ timer: number | undefined; opened: boolean }>({ timer: undefined, opened: false })
+  useEffect(() => () => window.clearTimeout(hold.current.timer), [])
   const activeRef = useRef<HTMLDivElement | null>(null)
   // The page the tab board highlights (YAZ-2648): its tab is lit, and brought into view like the active one.
   const lit = useBoardHighlight()
@@ -176,6 +198,40 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
   }, [lit])
   const isFolder = useFolderPaths(roots)
   const labelOf = (path: string): string => pageLabel(path, isFolder(path), titles)
+  /** A page at a bullet (YAZ-3647 E3, E4): "Trip plan › Day 1: Lisbon"; the page name alone at the whole page, or when the bullet's text is not known. */
+  const atBullet = (path: string, zoom: string | null | undefined): string => {
+    const bullet = zoom === null || zoom === undefined ? undefined : zoomLabels?.get(zoom)
+    return bullet === undefined ? labelOf(path) : `${labelOf(path)} › ${bullet}`
+  }
+  /**
+   * ‹ and › (YAZ-3647 E3): a click takes one step; a right-click, or a press held NAV_HOLD_MS, opens the menu of the
+   * steps that way instead, under the button for a held press. A right press leaves the keyboard focus where it is.
+   */
+  const navProps = (steps: readonly NavStep[], step: () => void) => ({
+    onMouseDown: (e: ReactMouseEvent<HTMLButtonElement>) => {
+      if (e.button === 2) e.preventDefault()
+      if (e.button !== 0 || steps.length === 0 || onGoToStep === undefined) return
+      const { left, bottom } = e.currentTarget.getBoundingClientRect()
+      window.clearTimeout(hold.current.timer)
+      hold.current = {
+        opened: false,
+        timer: window.setTimeout(() => {
+          hold.current.opened = true
+          setNavMenu({ x: left, y: bottom, steps })
+        }, NAV_HOLD_MS),
+      }
+    },
+    onMouseUp: () => window.clearTimeout(hold.current.timer),
+    onMouseLeave: () => window.clearTimeout(hold.current.timer),
+    onClick: () => {
+      if (hold.current.opened) hold.current.opened = false
+      else step()
+    },
+    onContextMenu: (e: ReactMouseEvent<HTMLButtonElement>) => {
+      e.preventDefault()
+      if (steps.length > 0 && onGoToStep !== undefined) setNavMenu({ x: e.clientX, y: e.clientY, steps })
+    },
+  })
   // The hover panel (YAZ-3403): the sidebar's own panel below a tab that is not on show, after the sidebar's dwell. Its
   // dwell lives in a tiny store, so a pointer crossing tabs draws no strip. A click, a right-click, a drag, a key, the
   // wheel and a scroll close it in the hook (each drag and menu starts with a press). Here: a new tab on show, a rename
@@ -329,10 +385,10 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
             <SidebarPanelIcon />
           </button>
         )}
-        <button type="button" className="tabbar-nav__btn" aria-label="Back" title="Back" disabled={!canBack} onClick={onBack}>
+        <button type="button" className="tabbar-nav__btn" aria-label="Back" title={titleWithKey('Back', 'back', hotkeys)} disabled={!canBack} {...navProps(backSteps, onBack)}>
           <Chevron d="m10 4-4 4 4 4" />
         </button>
-        <button type="button" className="tabbar-nav__btn" aria-label="Forward" title="Forward" disabled={!canForward} onClick={onForward}>
+        <button type="button" className="tabbar-nav__btn" aria-label="Forward" title={titleWithKey('Forward', 'forward', hotkeys)} disabled={!canForward} {...navProps(forwardSteps, onForward)}>
           <Chevron d="m6 4 4 4-4 4" />
         </button>
         {onToggleOverview && (
@@ -365,7 +421,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
         {...endSlot}
       >
         {/* ONE keyed list, ghosts and tabs: a tab that closes or moves builds no other tab again. */}
-        {tabs.flatMap(({ id, path, name }, i) => {
+        {tabs.flatMap(({ id, path, name, zoom }, i) => {
           // Under the blank tab no tab of the strip is the active one (YAZ-2655).
           const isActive = !blank && id === active
           // A display name stands in for the page name (YAZ-2949 D5); every file call still takes the path.
@@ -438,8 +494,9 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
                 role="tab"
                 className="tabbar__btn"
                 aria-selected={isActive}
-                // A display name hides the page's own name, so the tooltip gives it back (YAZ-2949 D5, S11).
-                title={name === undefined ? path : `${labelOf(path)}\n${path}`}
+                // A display name hides the page's own name, so the tooltip gives it back (YAZ-2949 D5, S11). A zoomed tab's
+                // label stays the page name (YAZ-3646 D12); its tooltip names the bullet too (YAZ-3647 E4).
+                title={name === undefined && atBullet(path, zoom) === labelOf(path) ? path : `${atBullet(path, zoom)}\n${path}`}
                 onClick={() => onActivate(id)}
                 // A double click keeps the preview tab (YAZ-2648 S20) and opens the name's field, as "Set display name" does (YAZ-3059 D1).
                 onDoubleClick={() => {
@@ -495,6 +552,28 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
       <div className="tabbar-tail" {...endSlot} />
       <CardPreviewHost store={tabPreview.store} cardOf={previewTab} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} side="below" />
       {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} moveTargets={onMoveTargets?.(menu.path)} onMoveToWindow={onMoveToWindow} onHighlightWindow={onHighlightWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onToggleFocus={onToggleFocus} onToggleFavorite={onToggleFavorite} onNotice={onNotice} />}
+      {/* The menu of ‹ or › (YAZ-3647 E3): the steps that way, the nearest first, as the tab menu draws its rows. */}
+      {navMenu !== null && (
+        <ContextMenuSurface x={navMenu.x} y={navMenu.y} onClose={() => setNavMenu(null)}>
+          <div className="ctx-menu__group" role="group">
+            {navMenu.steps.map((step) => (
+              <button
+                key={step.index}
+                type="button"
+                className="ctx-menu__item"
+                role="menuitem"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setNavMenu(null)
+                  onGoToStep?.(step.index)
+                }}
+              >
+                {atBullet(step.path, step.zoom)}
+              </button>
+            ))}
+          </div>
+        </ContextMenuSurface>
+      )}
       {/* The grid button's menu: the two saves of a session (YAZ-3147 D5), a line, then "Kill all tabs". With no tab
           there is nothing to save or close, and each item is grey like any item that cannot be used (S4). */}
       {gridMenu !== null && (

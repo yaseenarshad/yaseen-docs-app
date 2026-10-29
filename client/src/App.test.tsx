@@ -210,6 +210,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuNextTab = new Set<() => void>()
   const menuPrevTab = new Set<() => void>()
   const menuTabOverview = new Set<() => void>()
+  const menuBack = new Set<() => void>()
+  const menuForward = new Set<() => void>()
   const menuNewTab = new Set<() => void>()
   const windowGlow = new Set<(on: boolean) => void>()
   const menuNewWindow = new Set<() => void>()
@@ -359,6 +361,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onNextTab: menuSub(menuNextTab),
       onPrevTab: menuSub(menuPrevTab),
       onTabOverview: menuSub(menuTabOverview),
+      onBack: menuSub(menuBack),
+      onForward: menuSub(menuForward),
       onNewTab: menuSub(menuNewTab),
       onNewWindow: menuSub(menuNewWindow),
       onNewItem: menuSub(menuNewItem),

@@ -79,7 +79,7 @@ import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import type { PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
-import { tabById, tabOf, useWorkspace } from './workspace/useWorkspace'
+import { nearSteps, stepIdOf, tabById, tabOf, useWorkspace } from './workspace/useWorkspace'
 import { restoreSession } from './workspace/restoreSession'
 import { Welcome } from './Welcome'
 
@@ -295,8 +295,8 @@ export function App() {
   // window's `file`: title, URL hash and the sidebar highlight all follow it. Each tab has its own
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
-    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
-    closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, history: tabHistory, reset: resetTabs,
+    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
+    closeActive, next: nextTab, prev: prevTab, back, forward, go: goToStep, canBack, canForward, history: tabHistory, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
     moveRight, transferMainToRight, transferRightToMain,
@@ -1085,14 +1085,11 @@ export function App() {
   const linkOpen = useRef(settings.linkOpen)
   linkOpen.current = settings.linkOpen
   const openFromPage = useCallback((path: string) => {
-    // A new tab, in front or behind, remembers the page with the link, so Back there returns (YAZ-3644). A review's open is no link click.
-    if (reviewing.current) openBackground(path)
-    else if (linkOpen.current === 'background-tab') openBackground(path, true)
-    else if (linkOpen.current === 'new-tab') openKept(path, true)
+    // Back returns to the page with the link wherever the page opens: the window's one Back list (YAZ-3647 D4).
+    if (reviewing.current || linkOpen.current === 'background-tab') openBackground(path)
+    else if (linkOpen.current === 'new-tab') openKept(path)
     else navigate(path)
   }, [openBackground, navigate, openKept])
-  /** ⌘-click on a link (YAZ-3644): a background tab whose Back returns to the page with the link. */
-  const openLinkBackground = useCallback((path: string) => openBackground(path, true), [openBackground])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
   // A trip to another copy of the same file (YAZ-2940) moves `activeTab` and not `file`, so both are watched.
   const closeReview = useCallback(() => live.current.vaults.forEach((vault) => vault.review.close()), [])
@@ -1181,6 +1178,24 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     prevTab()
   }, [prevTab])
+  // ⌘⌥← / ⌘⌥→ (YAZ-3647 D7), as ⌃Tab: a step to another page closes the tab board.
+  const toBack = useCallback(() => {
+    setOverview(OVERVIEW_CLOSED)
+    back()
+  }, [back])
+  const toForward = useCallback(() => {
+    setOverview(OVERVIEW_CLOSED)
+    forward()
+  }, [forward])
+  // The mouse's back and forward buttons (YAZ-3647 D7): the window's Back list, wherever the pointer is.
+  useEffect(() => {
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button === 3) toBack()
+      else if (e.button === 4) toForward()
+    }
+    window.addEventListener('mouseup', onMouseUp)
+    return () => window.removeEventListener('mouseup', onMouseUp)
+  }, [toBack, toForward])
 
   // Settings › Storage (YAZ-1801 D1, 🔒 D13; YAZ-3039): the active tab's vault, measured only while
   // Settings is open — on its page's open, a sync pass finishing, and a shrink. A closed dialog hands the hook no sync state.
@@ -1429,6 +1444,30 @@ export function App() {
     if (copy !== null && view !== undefined) startView.set(copy, view)
   }, [duplicate, startView])
   /**
+   * Each bullet's crumb text by zoom key (YAZ-3647 E3, E4): what the menus of ‹ and › and a zoomed tab's tooltip show. A key
+   * is the bullet's text and its count, so one text serves every page. Memory only, as the Back list: a tab whose page has
+   * not shown since a restart has no text yet, and shows its page name alone.
+   */
+  const [zoomLabels, setZoomLabels] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const learnZoomLabel = useCallback((zoom: string | null, label: string | null) => {
+    if (zoom === null || label === null) return
+    setZoomLabels((labels) => (labels.get(zoom) === label ? labels : new Map(labels).set(zoom, label)))
+  }, [])
+  const zoomTabLabelled = useCallback((id: string, zoom: string | null, quiet: boolean, label: string | null) => {
+    learnZoomLabel(zoom, label)
+    zoomTab(id, zoom, quiet)
+  }, [zoomTab, learnZoomLabel])
+  /**
+   * A bullet in a new tab (YAZ-3646 D11): the copy starts at that bullet, with the source's folds and text size, at the top.
+   * A title crumb's copy (null, YAZ-3647 E2) starts on the whole page.
+   */
+  const openBulletTab = useCallback((id: string, zoom: string | null, background: boolean, label: string | null) => {
+    learnZoomLabel(zoom, label)
+    const view = readPageView(id)
+    const copy = openZoom(id, zoom, background)
+    if (copy !== null && view !== undefined) startView.set(copy, { ...view, zoomKey: zoom, scrollTop: 0 })
+  }, [openZoom, startView, learnZoomLabel])
+  /**
    * A tab another window moved here (YAZ-3091 D5, S8–S14): the board closes, the page is a NEW tab at the end
    * and shows — a copy when it is open, out of the right panel when it was there — with the moved name and
    * page view. The view goes to `startView` before the tab's layer mounts, as a duplicate's does. A QUIET move
@@ -1608,6 +1647,8 @@ export function App() {
     onNextTab: toNextTab,
     onPrevTab: toPrevTab,
     onTabOverview: toggleOverview,
+    onBack: toBack,
+    onForward: toForward,
     // ⌘T in a Files window (YAZ-3357 D8) opens a new full window, as ⌘⇧N: there is no strip for a tab.
     onNewTab: filesWindow ? newWindow : newTab,
     onNewWindow: newWindow,
@@ -2558,6 +2599,7 @@ export function App() {
   const syncCopy = unsynced?.syncBanner ?? null
   // Each tab's page, by id: a layer is a tab's (YAZ-2940 D1), and its editor is that tab's page.
   const pathOf = new Map(tabs.map((t) => [t.id, t.path]))
+  const zoomOf = new Map(tabs.map((t) => [t.id, t.zoom ?? null]))
   // The tab whose layer a review's note shows through (S9): the tab a trip to the note goes to,
   // else another of its copies that is mounted; null when no mounted tab shows it.
   const reviewPath = session?.path ?? null
@@ -2913,6 +2955,10 @@ export function App() {
               canForward={canForward}
               onBack={back}
               onForward={forward}
+              backSteps={nearSteps(tabHistory, -1).map(({ index, step }) => ({ index, path: step.path, zoom: step.zoom }))}
+              forwardSteps={nearSteps(tabHistory, 1).map(({ index, step }) => ({ index, path: step.path, zoom: step.zoom }))}
+              onGoToStep={goToStep}
+              zoomLabels={zoomLabels}
               onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
               onShowInSidebar={showInSidebar}
               onToggleOverview={toggleOverview}
@@ -2964,7 +3010,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openLinkBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`${id}:${tabHistory[id]?.index ?? 0}`} />
+                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} />
                 </div>
               )
             })}

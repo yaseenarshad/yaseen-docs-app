@@ -84,6 +84,7 @@ vi.mock('./createCrepe', () => {
     getPlainText: vi.fn((crepe: FakeCrepe) => crepe.md),
     // The fake has no zoom plugin: a page view test says which bullet it is drilled into.
     getZoomKeyOf: vi.fn((): string | null => null),
+    getZoomLabelOf: vi.fn((): string | null => null),
     moveCaretIntoZoom: vi.fn(() => false),
   }
 })
@@ -1183,9 +1184,9 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect(el.querySelector('.page-title__text')?.textContent).toBe('note')
     feed(source, [{ ...record(PATH), title: 'UP-001 - Abdul' }])
     expect(el.querySelector('.page-title__text')?.textContent).toBe('UP-001 - Abdul')
-    // The outline-zoom breadcrumb's first crumb reads the same title; the file name is only its history key.
+    // The outline-zoom breadcrumb's first crumb reads the same title.
     const zoom = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.zoom
-    expect([zoom?.title(), zoom?.fileName]).toEqual(['UP-001 - Abdul', 'note.md'])
+    expect(zoom?.title()).toBe('UP-001 - Abdul')
   })
 
   it('with the review settings, "Reviews" is the last block, after "Linked mentions" (YAZ-2322)', async () => {

@@ -23,6 +23,10 @@ interface UseMenuEventsOptions {
   onPrevTab: () => void
   /** Window › Tab Overview (⌘⇧M): show every open tab at once, or go back to the page (YAZ-2648 D5). */
   onTabOverview: () => void
+  /** Window › Back (⌘⌥←): the window's Back list steps back (YAZ-3647 D7). */
+  onBack: () => void
+  /** Window › Forward (⌘⌥→): and forward again (YAZ-3647 D7). */
+  onForward: () => void
   /** File › New Tab (⌘T): show the blank tab and put the caret in the sidebar's search bar (YAZ-2655 D10, D11). */
   onNewTab: () => void
   /** File › New Window (⌘⇧N): save the page on show, then open the copy with its page view (YAZ-2951 D5). */
@@ -50,7 +54,7 @@ interface UseMenuEventsOptions {
 }
 
 /** Menu gestures from the main process (GRO-2161, tabs GRO-2232); main sends them to the focused window only. */
-export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onNewTab, onNewWindow, onNewItem, onGoTo, onDailyNote, onZoom, onWhatsNew, onKeySheet, onExportImage, onExportDrawing, onShareLink, onCanvasBackground }: UseMenuEventsOptions): void {
+export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onBack, onForward, onNewTab, onNewWindow, onNewItem, onGoTo, onDailyNote, onZoom, onWhatsNew, onKeySheet, onExportImage, onExportDrawing, onShareLink, onCanvasBackground }: UseMenuEventsOptions): void {
   useEffect(() => {
     const menu = api.menu
     const offs = [
@@ -64,6 +68,8 @@ export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVaul
       menu.onNextTab(onNextTab),
       menu.onPrevTab(onPrevTab),
       menu.onTabOverview(onTabOverview),
+      menu.onBack(onBack),
+      menu.onForward(onForward),
       menu.onNewTab(onNewTab),
       menu.onNewWindow(onNewWindow),
       menu.onNewItem(onNewItem),
@@ -78,5 +84,5 @@ export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVaul
       menu.onCanvasBackground(onCanvasBackground),
     ]
     return () => offs.forEach((off) => off())
-  }, [onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onNewTab, onNewWindow, onNewItem, onGoTo, onDailyNote, onZoom, onWhatsNew, onKeySheet, onExportImage, onExportDrawing, onShareLink, onCanvasBackground])
+  }, [onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onBack, onForward, onNewTab, onNewWindow, onNewItem, onGoTo, onDailyNote, onZoom, onWhatsNew, onKeySheet, onExportImage, onExportDrawing, onShareLink, onCanvasBackground])
 }

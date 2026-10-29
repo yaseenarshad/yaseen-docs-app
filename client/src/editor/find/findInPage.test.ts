@@ -343,7 +343,7 @@ describe('zoom', () => {
 * Beta
   * apple outside
 `
-    const { view, channel } = await mountFind(doc, { zoom: { fileName: 'notes.md', title: () => 'Notes' } })
+    const { view, channel } = await mountFind(doc, { zoom: { title: () => 'Notes' } })
     channel.open()
     channel.setQuery('apple')
     expect(channel.getState().total).toBe(2)

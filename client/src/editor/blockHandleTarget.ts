@@ -4,6 +4,7 @@
  */
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { cssZoom } from '../lib/cssZoom'
+import { isListItem } from './outline/listNodes'
 
 /** How far right of the handle to probe for the block it points at (the gutter is ~24px). */
 export const PROBE_OFFSET_PX = 24
@@ -19,6 +20,20 @@ export const isOwnHandleGrab = (view: EditorView, t: EventTarget | null): t is E
 export interface HandleTarget {
   pos: number
   inside: number
+}
+
+/**
+ * A right-click on a bullet's own dot (YAZ-3646 D8): its list item, as the handle would point at it. A task's
+ * checkbox is no dot (its click toggles the task), and another editor's dot is not this one's.
+ */
+export function bulletDotTarget(view: EditorView, t: EventTarget | null): HandleTarget | null {
+  const dot = t instanceof Element ? t.closest('.label-wrapper') : null
+  if (dot === null || !view.dom.contains(dot) || dot.querySelector('.label.checked, .label.unchecked') !== null) return null
+  // As the handle's probe gives it for a hovered item: the position BEFORE the list_item (`nearestListItem`).
+  const $pos = view.state.doc.resolve(view.posAtDOM(dot, 0))
+  if (!isListItem($pos.parent)) return null
+  const item = $pos.before()
+  return { pos: item, inside: item }
 }
 
 /**

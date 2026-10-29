@@ -98,12 +98,14 @@ media.preview/1: invoke media:preview ["a0"]; => "answer"; !> {"code":"NOT_FOUND
 media.recent/1: invoke media:recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.search/1: invoke media:search ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 menu.onAddLink/1: (no IPC)
+menu.onBack/1: on menu:back -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:back
 menu.onCanvasBackground/1: on menu:canvas-background -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:canvas-background
 menu.onCloseTab/1: on menu:close-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:close-tab
 menu.onCopyAs/1: (no IPC)
 menu.onDailyNote/1: on menu:daily-note -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:daily-note
 menu.onExportDrawing/1: on menu:export-drawing -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:export-drawing
 menu.onExportImage/1: on menu:export-image -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:export-image
+menu.onForward/1: on menu:forward -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:forward
 menu.onGoTo/1: on menu:go-to -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:go-to
 menu.onKeySheet/1: on menu:key-sheet -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:key-sheet
 menu.onNewItem/1: on menu:new-item -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:new-item

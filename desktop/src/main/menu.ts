@@ -53,6 +53,10 @@ export interface MenuHandlers {
   prevTab(): void
   /** Window › Tab Overview (⌘⇧M, YAZ-2648 D5): the focused window's renderer shows every open tab at once, or goes back to the page. */
   tabOverview(): void
+  /** Window › Back (⌘⌥←, YAZ-3647 D7): the focused window's renderer steps back through its Back list. */
+  back(): void
+  /** Window › Forward (⌘⌥→, YAZ-3647 D7): the focused window's renderer steps forward again. */
+  forward(): void
   /** View › Toggle Sidebar: ask only the focused renderer to toggle its window identity. */
   toggleSidebar(): void
   /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused note (YAZ-1710), else the sidebar zoom (YAZ-3389). */
@@ -267,6 +271,9 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
         { id: 'menu.window.prev-tab-alt', label: 'Previous Tab', accelerator: 'CmdOrCtrl+Shift+[', visible: false, acceleratorWorksWhenHidden: true, click: () => handlers.prevTab() },
         // The tab overview (YAZ-2648 D5): the same key opens it and closes it.
         { id: 'menu.window.tab-overview', label: 'Tab Overview', ...key('tabOverview'), click: () => handlers.tabOverview() },
+        // The window's one Back list (YAZ-3647 D7): the tab bar's ← → as keys. The MENU owns them, so they answer in a note too.
+        { id: 'menu.window.back', label: 'Back', ...key('back'), click: () => handlers.back() },
+        { id: 'menu.window.forward', label: 'Forward', ...key('forward'), click: () => handlers.forward() },
         { type: 'separator' },
         // The numbered vaults (YAZ-2555 D3): one row each, ⌘<its number>. The MENU owns the key, so
         // it answers from any window, with the caret anywhere, and with every window minimized.
@@ -496,6 +503,12 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     },
     tabOverview() {
       host.focusedWebContents()?.send(CONTRACT.menu.onTabOverview.channel)
+    },
+    back() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onBack.channel)
+    },
+    forward() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onForward.channel)
     },
     newTab() {
       host.focusedWebContents()?.send(CONTRACT.menu.onNewTab.channel)

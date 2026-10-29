@@ -23,6 +23,7 @@ import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { setMarkdown } from '../createCrepe'
 import { normalizeEmptyItems } from '../listItemRoundTrip'
+import { getZoomKey, zoomToKey } from '../outline/zoom'
 import { diffDocs } from './diffDocs'
 
 /** Share of the old document one range may cover before the edit counts as a rewrite. */
@@ -47,8 +48,10 @@ const withTrailingParagraphOf = (live: ProseNode, parsed: ProseNode): ProseNode 
 
 export const applyExternalMarkdown = (crepe: Crepe, body: string): 'applied' | 'rebuilt' => {
   let applied = false
+  let zoomKey = null as string | null
   crepe.editor.action((ctx) => {
     const view = ctx.get(editorViewCtx)
+    zoomKey = getZoomKey(view.state)
     // Exactly what `setMarkdown` feeds `replaceAll`, so the diff target is byte-for-byte the
     // document the rebuild would have produced.
     const fresh = ctx.get(parserCtx)(normalizeEmptyItems(body))
@@ -69,6 +72,16 @@ export const applyExternalMarkdown = (crepe: Crepe, body: string): 'applied' | '
     view.dispatch(tr.setMeta('addToHistory', false).setMeta(EXTERNAL_EDIT_META, true))
     applied = true
   })
-  if (!applied) setMarkdown(crepe, body)
-  return applied ? 'applied' : 'rebuilt'
+  if (applied) return 'applied'
+  setMarkdown(crepe, body)
+  // A rebuilt state starts zoomed out: the page goes back to its tab's bullet when the rewrite kept it, quietly,
+  // before the zoom's settle timer can tell the tab "no zoom" (YAZ-3647 E1). A bullet that is gone stays zoomed out.
+  const key = zoomKey
+  if (key !== null) {
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      zoomToKey(key)(view.state, view.dispatch)
+    })
+  }
+  return 'rebuilt'
 }

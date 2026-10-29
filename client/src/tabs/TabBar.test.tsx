@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { TabBar as IdTabBar, type TabBarProps as IdTabBarProps } from './TabBar'
+import { NAV_HOLD_MS, TabBar as IdTabBar, type TabBarProps as IdTabBarProps } from './TabBar'
 import tabsCss from './tabs.css?inline'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 import { setBoardHighlight } from './boardHighlight'
@@ -671,15 +671,15 @@ describe('TabBar right-click menu (YAZ-922)', () => {
   })
 })
 
-describe('TabBar history buttons (YAZ-721, LOCKED D2: buttons only — no shortcut, no menu item)', () => {
+describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
   const btn = (el: HTMLElement, label: string) => el.querySelector<HTMLButtonElement>(`.tabbar-nav__btn[aria-label="${label}"]`)
   const tabs = { tabs: ['/v/a.md'], active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn() }
 
-  it('renders ◀ ▶ left of the tablist, each labelled and tooltipped', () => {
+  it('renders ◀ ▶ left of the tablist, each labelled and tooltipped with its key (YAZ-3647 D7)', () => {
     const el = mount({ ...tabs, ...noNav })
     const labels = [...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')]
     expect(labels.map((b) => b.getAttribute('aria-label'))).toEqual(['Back', 'Forward'])
-    expect(labels.map((b) => b.title)).toEqual(['Back', 'Forward'])
+    expect(labels.map((b) => b.title)).toEqual(['Back (⌥⌘←)', 'Forward (⌥⌘→)'])
     // Outside .tabbar, so the strip's own drop guards (e.target !== e.currentTarget) are untouched.
     expect(el.querySelector('.tabbar .tabbar-nav__btn')).toBeNull()
   })
@@ -711,6 +711,67 @@ describe('TabBar history buttons (YAZ-721, LOCKED D2: buttons only — no shortc
     act(() => btn(el, 'Forward')?.click())
     expect(onBack).toHaveBeenCalledTimes(1)
     expect(onForward).toHaveBeenCalledTimes(1)
+  })
+
+  describe('the menus of ‹ and › (YAZ-3647 E3)', () => {
+    const titles = new Map([['/v/trip.md', 'Trip plan'], ['/v/groceries.md', 'Groceries']])
+    const backSteps = [{ index: 2, path: '/v/trip.md', zoom: 'k1:0' }, { index: 1, path: '/v/groceries.md', zoom: null }, { index: 0, path: '/v/trip.md', zoom: 'k9:0' }]
+    const zoomLabels = new Map([['k1:0', 'Day 1: Lisbon']])
+    const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')]
+    const press = (el: HTMLElement, type: string, init: MouseEventInit = {}) => act(() => void el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init })))
+
+    it('a right-click on ‹ lists the steps behind, the nearest first: the page, and " › bullet" when its text is known; a row goes straight there', () => {
+      const onBack = vi.fn()
+      const onGoToStep = vi.fn()
+      const el = mount({ ...tabs, titles, canBack: true, canForward: false, onBack, onForward: vi.fn(), backSteps, onGoToStep, zoomLabels })
+      press(btn(el, 'Back')!, 'contextmenu', { clientX: 10, clientY: 20 })
+      expect(rows().map((r) => r.textContent)).toEqual(['Trip plan › Day 1: Lisbon', 'Groceries', 'Trip plan'])
+      act(() => rows()[1].click())
+      expect(onGoToStep).toHaveBeenCalledExactlyOnceWith(1)
+      expect([rows().length, onBack.mock.calls.length]).toEqual([0, 0])
+    })
+
+    it('a press held NAV_HOLD_MS opens the menu, and the click that ends it takes no step; a short press is a plain Back', () => {
+      vi.useFakeTimers()
+      try {
+        const onBack = vi.fn()
+        const el = mount({ ...tabs, titles, canBack: true, canForward: false, onBack, onForward: vi.fn(), backSteps, onGoToStep: vi.fn(), zoomLabels })
+        const back = btn(el, 'Back')!
+        press(back, 'mousedown')
+        act(() => void vi.advanceTimersByTime(NAV_HOLD_MS - 1))
+        press(back, 'mouseup')
+        act(() => back.click())
+        expect([rows().length, onBack.mock.calls.length]).toEqual([0, 1])
+        press(back, 'mousedown')
+        act(() => void vi.advanceTimersByTime(NAV_HOLD_MS))
+        expect(rows()).toHaveLength(3)
+        press(back, 'mouseup')
+        act(() => back.click())
+        expect(onBack).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('› lists the steps ahead; with no steps that way, a right-click opens nothing', () => {
+      const el = mount({ ...tabs, titles, canBack: true, canForward: true, onBack: vi.fn(), onForward: vi.fn(), backSteps: [], forwardSteps: [{ index: 4, path: '/v/groceries.md', zoom: null }], onGoToStep: vi.fn(), zoomLabels })
+      press(btn(el, 'Back')!, 'contextmenu')
+      expect(rows()).toHaveLength(0)
+      press(btn(el, 'Forward')!, 'contextmenu')
+      expect(rows().map((r) => r.textContent)).toEqual(['Groceries'])
+    })
+  })
+})
+
+describe('a zoomed tab\'s tooltip (YAZ-3647 E4)', () => {
+  it('names the bullet after the page; the label stays the page name (YAZ-3646 D12); a bullet whose text is not known shows the path alone', () => {
+    container = document.body.appendChild(document.createElement('div'))
+    root = createRoot(container)
+    const tabs = [{ id: 'z', path: '/v/trip.md', zoom: 'k1:0' }, { id: 'u', path: '/v/trip.md', zoom: 'k2:0' }, { id: 'p', path: '/v/trip.md' }, { id: 'n', path: '/v/trip.md', name: 'Lisbon', zoom: 'k1:0' }]
+    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map([['/v/trip.md', 'Trip plan']])} tabs={tabs} active="z" zoomLabels={new Map([['k1:0', 'Day 1: Lisbon']])} onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} {...noNav} />))
+    const tab = (id: string) => container!.querySelector<HTMLButtonElement>(`[data-tab="${id}"] [role="tab"]`)!
+    expect(['z', 'u', 'p', 'n'].map((id) => tab(id).title)).toEqual(['Trip plan › Day 1: Lisbon\n/v/trip.md', '/v/trip.md', '/v/trip.md', 'Trip plan › Day 1: Lisbon\n/v/trip.md'])
+    expect(['z', 'n'].map((id) => tab(id).textContent)).toEqual(['Trip plan', 'Lisbon'])
   })
 })
 

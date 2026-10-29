@@ -1,182 +1,211 @@
 /**
- * Per-tab back/forward history (YAZ-721, ruling D1): a side table on `TabsState`, keyed by tab id (YAZ-2940 D1),
- * renderer-only and session-only. These tests are the contract; the reducer must satisfy
- * them without changing the existing main-tab reducer expectations beyond `history: {}`.
+ * The window's ONE Back list (YAZ-3647 D1, replaces YAZ-721 D1): every page, tab and zoom level that came
+ * to the front, in order, renderer- and session-only. The steps come from `workspaceReducer` (`withStep`,
+ * D4), so these tests run the real one, with tab ids. U1–U9 are the main issue's checks.
  */
+import { defaultRightPanelIdentity } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { pathTabsReducer, plain, type PathTabs } from './testTabs'
-
-// Read by path (`testTabs.ts`): with no copies, a path names one tab, and the stacks are keyed by tab id (YAZ-2940 D1).
-const tabsReducer = pathTabsReducer
-type TabsState = PathTabs
+import { MAX_NEAR_STEPS, MAX_STEPS, nearSteps, NO_STEPS, stepIdOf, tabById, workspaceReducer, type WorkspaceAction, type WorkspaceState } from './useWorkspace'
 
 const A = '/v/a.md'
 const B = '/v/b.md'
 const C = '/v/c.md'
 const D = '/v/d.md'
 
-// Same-tab navigation is a link inside a page (`navigate`, YAZ-2648 D3): the sidebar's click goes to the preview tab.
-const nav = (s: TabsState, path: string): TabsState => tabsReducer(s, { type: 'navigate', path })
-const fresh = (): TabsState => nav({ tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false }, A)
-/** A → B → C in one tab. */
-const abc = (): TabsState => nav(nav(fresh(), B), C)
+const EMPTY: WorkspaceState = { tabs: [], active: null, mounted: [], history: NO_STEPS, preview: null, blank: false, rightPanel: defaultRightPanelIdentity(), rightMounted: [], rightHistory: {} }
 
-describe('history recording', () => {
-  it('same-tab navigation pushes and re-keys the record under the new path', () => {
-    const s = abc()
-    expect(s.tabs).toEqual([C])
-    expect(s.history).toEqual({ [C]: { entries: [A, B, C], index: 2 } })
+const run = (s: WorkspaceState, ...actions: WorkspaceAction[]): WorkspaceState => actions.reduce(workspaceReducer, s)
+const name = (path: string): string => path.slice(path.lastIndexOf('/') + 1, -3)
+/** Where you are: the page in front, and its level after `@`. */
+const where = (s: WorkspaceState): string => {
+  const tab = tabById(s, s.active)
+  return tab === null ? '-' : `${name(tab.path)}${tab.zoom === undefined ? '' : `@${tab.zoom}`}`
+}
+/** The list as text, `[ ]` around the step you are on. */
+const trail = (s: WorkspaceState): string =>
+  s.history.steps.map((step, i) => (i === s.history.index ? `[${name(step.path)}${step.zoom === null ? '' : `@${step.zoom}`}]` : `${name(step.path)}${step.zoom === null ? '' : `@${step.zoom}`}`)).join(' ')
+/** The id of the tab that shows `path`. */
+const idOf = (s: WorkspaceState, path: string): string => s.tabs.find((t) => t.path === path)!.id
+
+/** A window that opened A from the start: one tab, one step (`reset`, as at boot). */
+const onA = (): WorkspaceState => run(EMPTY, { type: 'reset', tabs: [{ path: A }], active: A })
+
+describe('one Back list for the window (YAZ-3647 D1, D4)', () => {
+  it('U4, U8: links in one tab are steps; Back and Forward walk them; a new step after Back clears Forward', () => {
+    const s = run(onA(), { type: 'navigate', path: B }, { type: 'navigate', path: C })
+    expect(trail(s)).toBe('a b [c]')
+    const back = run(s, { type: 'back' }, { type: 'back' })
+    expect([where(back), trail(back), back.tabs.length]).toEqual(['a', '[a] b c', 1])
+    expect(where(run(back, { type: 'forward' }))).toBe('b')
+    const branched = run(back, { type: 'forward' }, { type: 'navigate', path: D })
+    expect(trail(branched)).toBe('a b [d]')
+    // At either end the arrows change nothing: the SAME state object, so nothing is written.
+    const start = run(s, { type: 'back' }, { type: 'back' })
+    expect(run(start, { type: 'back' })).toBe(start)
+    expect(run(s, { type: 'forward' })).toBe(s)
   })
 
-  it('navigating after going back discards the forward stack', () => {
-    const s = nav(tabsReducer(abc(), { type: 'back' }), D)
-    expect(s.active).toBe(D)
-    expect(s.history).toEqual({ [D]: { entries: [A, B, D], index: 2 } })
+  it('U1: every page that comes to the front is a step: a new tab, a tab click, ⌃Tab, the sidebar — Back goes to its tab, never into this one', () => {
+    let s = run(onA(), { type: 'open-new', path: B })
+    s = run(s, { type: 'activate', id: idOf(s, A) }, { type: 'cycle', dir: 1 }, { type: 'open-current', path: C })
+    expect(trail(s)).toBe('a b a b [c]')
+    const back = run(s, { type: 'back' })
+    expect([where(back), back.tabs.map((t) => name(t.path))]).toEqual(['b', ['a', 'b', 'c']])
+    expect(where(run(back, { type: 'back' }))).toBe('a')
+    // A link to a page that another tab shows goes to that tab (YAZ-3609 D10), and Back returns to the page with the link.
+    const jumped = run(onA(), { type: 'open-background', path: B }, { type: 'navigate', path: B })
+    expect([where(jumped), where(run(jumped, { type: 'back' }))]).toEqual(['b', 'a'])
   })
 
-  // YAZ-3609 D10 (B1) replaces YAZ-721's "records nothing": with nothing recorded, Back could not return.
-  it('a link to a page another tab shows goes to that tab, and Back there returns to the page with the link', () => {
-    const two = tabsReducer(abc(), { type: 'open-background', path: D })
-    const s = nav(two, D)
-    expect(s.active).toBe(D)
-    expect(s.history).toEqual({ ...two.history, [D]: { entries: [C, D], index: 1 } })
-    const back = tabsReducer(s, { type: 'back' })
-    expect(back.active).toBe(C)
-    expect(back.tabs).toEqual([C, D])
-    expect(back.history[C]).toEqual(two.history[C]) // the first tab's own stack is untouched
+  it('U6: a background tab adds its step when it shows, and Back then returns to the page you came from', () => {
+    const s = run(onA(), { type: 'open-background', path: B })
+    expect(trail(s)).toBe('[a]')
+    const shown = run(s, { type: 'navigate', path: C }, { type: 'activate', id: idOf(s, B) })
+    expect(trail(shown)).toBe('a c [b]')
+    expect(where(run(shown, { type: 'back' }))).toBe('c')
   })
 
-  // YAZ-3644: D10 for the other two places a link opens, "A new tab" and a background tab (the setting, and ⌘-click).
-  it.each([
-    ['a new tab', 'open-new' as const],
-    ['a background tab', 'open-background' as const],
-  ])('a link opened in %s has the page with the link before its own: Back goes to that tab', (_name, type) => {
-    const opened = tabsReducer(abc(), { type, path: D, link: true })
-    const s = type === 'open-new' ? opened : tabsReducer(opened, { type: 'activate', path: D })
-    expect(s.history[D]).toEqual({ entries: [C, D], index: 1 })
-    const back = tabsReducer(s, { type: 'back' })
-    expect(back.active).toBe(C)
-    expect(back.tabs).toEqual([C, D])
+  it('U2, U3: a zoom is a step; Back to a page you left brings it back at the level you left', () => {
+    const tab = (s: WorkspaceState) => s.active!
+    let s = onA()
+    s = run(s, { type: 'zoom', id: tab(s), zoom: 'k1:0' }, { type: 'zoom', id: tab(s), zoom: 'k2:0' }, { type: 'navigate', path: B })
+    expect(trail(s)).toBe('a a@k1:0 a@k2:0 [b]')
+    const back = run(s, { type: 'back' })
+    // The page comes back in its own tab's slot, at k2: its editor starts there (`Tab.zoom` → `startKey`).
+    expect([where(back), back.active]).toEqual(['a@k2:0', s.active])
+    expect(where(run(back, { type: 'back' }))).toBe('a@k1:0')
+    expect(where(run(back, { type: 'back' }, { type: 'back' }))).toBe('a')
+    expect(where(run(back, { type: 'back' }, { type: 'back' }, { type: 'forward' }))).toBe('a@k1:0')
+    // A QUIET level (the page started there, or the bullet's text changed) fills the step it is on: no new step.
+    const quiet = run(onA(), { type: 'zoom', id: onA().active!, zoom: 'k1:0', quiet: true })
+    expect(trail(quiet)).toBe('[a]')
   })
 
-  it('a new tab opened from a link to a page another tab shows goes to that tab, as a click does (D10)', () => {
-    const two = tabsReducer(abc(), { type: 'open-background', path: D })
-    const s = tabsReducer(two, { type: 'open-new', path: D, link: true })
-    expect(s.active).toBe(D)
-    expect(s.history[D]).toEqual({ entries: [C, D], index: 1 })
+  it('U2: the same level again is no step, and a tab switch remembers the level the tab is at', () => {
+    let s = onA()
+    const a = s.active!
+    s = run(s, { type: 'zoom', id: a, zoom: 'k1:0' }, { type: 'zoom', id: a, zoom: 'k1:0' }, { type: 'open-new', path: B }, { type: 'activate', id: a })
+    expect(trail(s)).toBe('a a@k1:0 b [a@k1:0]')
   })
 
-  it('a tab opened with no link (the sidebar, ⌘T) still starts with no record', () => {
-    expect(tabsReducer(abc(), { type: 'open-new', path: D }).history[D]).toBeUndefined()
-    expect(tabsReducer(abc(), { type: 'open-background', path: D }).history[D]).toBeUndefined()
+  it('U7 (D5): a closed tab\'s steps leave the list, and two steps that meet become one', () => {
+    let s = run(onA(), { type: 'open-new', path: B }, { type: 'navigate', path: C })
+    s = run(s, { type: 'activate', id: idOf(s, A) })
+    expect(trail(s)).toBe('a b c [a]')
+    const closed = run(s, { type: 'close', id: idOf(s, C) })
+    expect(trail(closed)).toBe('[a]')
+    // ⌘W on the tab in front: its heir is the next step, and Back skips the closed one.
+    const w = run(onA(), { type: 'open-new', path: B }, { type: 'navigate', path: C })
+    const after = run(w, { type: 'close', id: w.active! })
+    expect([where(after), trail(after)]).toEqual(['a', '[a]'])
   })
 
-  it('B2: with the tab of the link closed, Back opens the page with the link in this tab', () => {
-    const s = tabsReducer(nav(tabsReducer(abc(), { type: 'open-background', path: D }), D), { type: 'close', path: C })
-    const back = tabsReducer(s, { type: 'back' })
-    expect(back.tabs).toEqual([C])
-    expect(back.active).toBe(C)
+  it('U9: a renamed page keeps its steps under the new name; a deleted page leaves the list', () => {
+    const s = run(onA(), { type: 'navigate', path: B }, { type: 'navigate', path: C })
+    const renamed = run(s, { type: 'rename', oldPath: A, newPath: D })
+    expect(trail(renamed)).toBe('d b [c]')
+    expect(where(run(renamed, { type: 'back' }, { type: 'back' }))).toBe('d')
+    const deleted = run(s, { type: 'delete', path: B })
+    expect(trail(deleted)).toBe('a [c]')
+    expect(where(run(deleted, { type: 'back' }))).toBe('a')
   })
 
-  it('a tab opened without navigating has no record until it navigates', () => {
-    const s = tabsReducer(fresh(), { type: 'open-new', path: B })
-    expect(s.history).toEqual({})
-    const moved = nav(s, C)
-    expect(moved.history).toEqual({ [C]: { entries: [B, C], index: 1 } })
+  it('D3: at most MAX_STEPS steps; the oldest go first', () => {
+    let s = onA()
+    for (let i = 0; i < MAX_STEPS + 20; i++) s = run(s, { type: 'navigate', path: i % 2 === 0 ? B : C })
+    expect([s.history.steps.length, s.history.index]).toEqual([MAX_STEPS, MAX_STEPS - 1])
+  })
+
+  it('the blank tab shows no page: no step while it shows, and the arrows do nothing under it', () => {
+    const s = run(onA(), { type: 'new-tab' })
+    expect(trail(s)).toBe('[a]')
+    const withB = run(onA(), { type: 'navigate', path: B }, { type: 'new-tab' })
+    expect(run(withB, { type: 'back' })).toBe(withB)
+    // A page opened from the blank tab fills it: a step.
+    expect(trail(run(s, { type: 'open-current', path: C }))).toBe('a [c]')
+  })
+
+  it('a code tab keeps its place under its own latest step (YAZ-3458): `stepIdOf`', () => {
+    const s = run(onA(), { type: 'navigate', path: B })
+    const a = s.active!
+    expect(stepIdOf(s.history, a)).toBe(s.history.steps[1].id)
+    expect(stepIdOf(run(s, { type: 'back' }).history, a)).toBe(s.history.steps[0].id)
+    expect(stepIdOf(s.history, 'no-such-tab')).toBe(0)
   })
 })
 
-describe('back / forward', () => {
-  it('back swaps the previous page into the same slot and keeps the forward entries', () => {
-    const s = tabsReducer(abc(), { type: 'back' })
-    expect(s.tabs).toEqual([B])
-    expect(s.active).toBe(B)
-    expect(s.mounted).toEqual([B])
-    expect(s.history).toEqual({ [B]: { entries: [A, B, C], index: 1 } })
+describe('a bullet in a new tab (YAZ-3646 D11, D13)', () => {
+  it('a copy right after its tab, at the bullet; in front it is a step, and Back returns to the tab it came from, at its level', () => {
+    let s = run(onA(), { type: 'open-new', path: B })
+    const a = idOf(s, A)
+    s = run(s, { type: 'activate', id: a }, { type: 'zoom', id: a, zoom: 'k1:0' }, { type: 'open-zoom', id: a, zoom: 'k2:0' })
+    expect(s.tabs.map((t) => `${name(t.path)}${t.zoom === undefined ? '' : `@${t.zoom}`}`)).toEqual(['a@k1:0', 'a@k2:0', 'b'])
+    expect([where(s), s.mounted.includes(s.active!)]).toEqual(['a@k2:0', true])
+    const back = run(s, { type: 'back' })
+    expect([back.active, where(back)]).toEqual([a, 'a@k1:0'])
   })
 
-  it('forward after back returns to the later page', () => {
-    const s = tabsReducer(tabsReducer(abc(), { type: 'back' }), { type: 'forward' })
-    expect(s.active).toBe(C)
-    expect(s.history).toEqual({ [C]: { entries: [A, B, C], index: 2 } })
+  it('behind (⌘-click): no step and not mounted until it shows; then Back returns to the page you came from', () => {
+    const s = onA()
+    const a = s.active!
+    const behind = run(s, { type: 'open-zoom', id: a, zoom: 'k2:0', background: true })
+    const copy = behind.tabs[1]
+    expect([trail(behind), behind.active, behind.mounted.includes(copy.id), copy.zoom]).toEqual(['[a]', a, false, 'k2:0'])
+    const shown = run(behind, { type: 'activate', id: copy.id })
+    expect(trail(shown)).toBe('a [a@k2:0]')
+    expect(where(run(shown, { type: 'back' }))).toBe('a')
   })
 
-  it('back at the start and forward at the end return the SAME state object', () => {
-    const start = tabsReducer(tabsReducer(abc(), { type: 'back' }), { type: 'back' })
-    expect(tabsReducer(start, { type: 'back' })).toBe(start)
-    const end = abc()
-    expect(tabsReducer(end, { type: 'forward' })).toBe(end)
+  it('an unknown tab opens nothing', () => {
+    const s = onA()
+    expect(run(s, { type: 'open-zoom', id: 'nope', zoom: 'k1:0' })).toBe(s)
   })
 
-  it('with no active tab or no record, back and forward are no-ops', () => {
-    const empty: TabsState = { tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false }
-    expect(tabsReducer(empty, { type: 'back' })).toBe(empty)
-    const noRecord: TabsState = { tabs: [A], active: A, mounted: [A], history: {}, preview: null, blank: false }
-    expect(tabsReducer(noRecord, { type: 'forward' })).toBe(noRecord)
-  })
-
-  it('back to a page that is open in ANOTHER tab activates that tab; both histories untouched', () => {
-    const s = tabsReducer(abc(), { type: 'open-background', path: B })
-    const next = tabsReducer(s, { type: 'back' })
-    expect(next.tabs).toEqual([C, B])
-    expect(next.active).toBe(B)
-    expect(next.history).toEqual(s.history)
-  })
-
-  it('operates on the active tab only: the other tab keeps its own record', () => {
-    const s = nav(tabsReducer(abc(), { type: 'open-new', path: D }), B)
-    // tab 1: [A,B,C] at C · tab 2: [D,B] at B
-    const back = tabsReducer(s, { type: 'back' })
-    expect(back.tabs).toEqual([C, D])
-    expect(back.history).toEqual({ [C]: { entries: [A, B, C], index: 2 }, [D]: { entries: [D, B], index: 0 } })
+  it('the title crumb (YAZ-3647 E2): a copy right after its tab on the whole page, while the source stays at its bullet', () => {
+    let s = onA()
+    const a = s.active!
+    s = run(s, { type: 'zoom', id: a, zoom: 'k1:0' }, { type: 'open-zoom', id: a, zoom: null })
+    expect([s.tabs.map((t) => t.zoom ?? '-'), where(s), trail(s)]).toEqual([['k1:0', '-'], 'a', 'a a@k1:0 [a]'])
   })
 })
 
-describe('history consistency through rename, delete, close', () => {
-  it('rename remaps both the key and every entry', () => {
-    const s = tabsReducer(abc(), { type: 'rename', oldPath: C, newPath: D })
-    expect(s.history).toEqual({ [D]: { entries: [A, B, D], index: 2 } })
-    const mid = tabsReducer(abc(), { type: 'rename', oldPath: B, newPath: D })
-    expect(mid.history).toEqual({ [C]: { entries: [A, D, C], index: 2 } })
+describe('the menus of ‹ and › (YAZ-3647 E3)', () => {
+  it('`nearSteps`: the steps behind or ahead, the nearest first, each with its index; at most MAX_NEAR_STEPS', () => {
+    let s = run(onA(), { type: 'navigate', path: B }, { type: 'navigate', path: C }, { type: 'navigate', path: D })
+    s = run(s, { type: 'back' })
+    const rows = (dir: -1 | 1) => nearSteps(s.history, dir).map(({ index, step }) => `${index}:${name(step.path)}`)
+    expect([rows(-1), rows(1)]).toEqual([['1:b', '0:a'], ['3:d']])
+    let long = onA()
+    for (let i = 0; i < MAX_NEAR_STEPS + 5; i++) long = run(long, { type: 'navigate', path: i % 2 === 0 ? B : A })
+    const behind = nearSteps(long.history, -1)
+    expect([behind.length, behind[0].index]).toEqual([MAX_NEAR_STEPS, long.history.index - 1])
+    expect(nearSteps(long.history, 1)).toEqual([])
   })
 
-  it('rename-dir remaps by prefix inside entries', () => {
-    const s = tabsReducer(abc(), { type: 'rename-dir', oldPath: '/v', newPath: '/w' })
-    expect(s.history).toEqual({ '/w/c.md': { entries: ['/w/a.md', '/w/b.md', '/w/c.md'], index: 2 } })
+  it('`go` jumps straight to a step, as that many Backs or Forwards would: it adds none, and keeps the steps ahead', () => {
+    let s = onA()
+    const a = s.active!
+    s = run(s, { type: 'zoom', id: a, zoom: 'k1:0' }, { type: 'navigate', path: B }, { type: 'open-new', path: C })
+    expect(trail(s)).toBe('a a@k1:0 b [c]')
+    const back = run(s, { type: 'go', index: 1 })
+    expect([where(back), trail(back)]).toEqual(['a@k1:0', 'a [a@k1:0] b c'])
+    expect(back).toEqual(run(s, { type: 'back' }, { type: 'back' }))
+    const ahead = run(back, { type: 'go', index: 3 })
+    expect([where(ahead), trail(ahead)]).toEqual(['c', 'a a@k1:0 b [c]'])
+    // Where you are already, or a step that is not there: no change.
+    expect(run(s, { type: 'go', index: 3 })).toBe(s)
+    expect(run(s, { type: 'go', index: 9 })).toBe(s)
   })
+})
 
-  it('delete prunes the path from every surviving record and clamps the index', () => {
-    const two = tabsReducer(abc(), { type: 'open-background', path: D })
-    const s = tabsReducer(two, { type: 'delete', path: B })
-    expect(s.tabs).toEqual([C, D])
-    expect(s.history).toEqual({ [C]: { entries: [A, C], index: 1 } })
-    const backed = tabsReducer(tabsReducer(abc(), { type: 'back' }), { type: 'back' }) // at A, idx 0
-    const pruned = tabsReducer(backed, { type: 'delete', path: C })
-    expect(pruned.history).toEqual({ [A]: { entries: [A, B], index: 0 } })
-  })
-
-  it('deleting the active page drops its record; the heir keeps its own', () => {
-    const two = nav(tabsReducer(abc(), { type: 'open-new', path: D }), B) // tab2 [D,B] at B
-    const s = tabsReducer(two, { type: 'delete', path: B })
-    expect(s.active).toBe(C)
-    expect(s.history).toEqual({ [C]: { entries: [A, C], index: 1 } })
-  })
-
-  it('delete-dir prunes every path under the folder from a surviving tab that is NOT under it', () => {
-    const s = nav(abc(), '/x/z.md') // [A,B,C,/x/z.md] at z
-    const pruned = tabsReducer(s, { type: 'delete-dir', path: '/v' })
-    expect(pruned.tabs).toEqual(['/x/z.md'])
-    expect(pruned.history).toEqual({ '/x/z.md': { entries: ['/x/z.md'], index: 0 } })
-  })
-
-  it('close drops the record of the closed tab only', () => {
-    const two = nav(tabsReducer(abc(), { type: 'open-new', path: D }), B)
-    const s = tabsReducer(two, { type: 'close', path: B })
-    expect(s.history).toEqual({ [C]: { entries: [A, B, C], index: 2 } })
-  })
-
-  it('reset empties history', () => {
-    const s = tabsReducer(abc(), { type: 'reset', tabs: plain(A, B), active: A })
-    expect(s.history).toEqual({})
+describe('a step on the preview tab (YAZ-3647 E7)', () => {
+  it('a sidebar click moves the preview tab to another page; Back brings the first page back in that same tab, still the preview', () => {
+    let s = run(EMPTY, { type: 'open-current', path: A })
+    const preview = s.preview!
+    s = run(s, { type: 'open-current', path: B })
+    expect([s.tabs.length, s.active, s.preview, trail(s)]).toEqual([1, preview, preview, 'a [b]'])
+    const back = run(s, { type: 'back' })
+    expect([back.tabs.length, back.active, back.preview, where(back), trail(back)]).toEqual([1, preview, preview, 'a', '[a] b'])
+    expect(where(run(back, { type: 'forward' }))).toBe('b')
   })
 })

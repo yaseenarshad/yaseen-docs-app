@@ -10,16 +10,17 @@
  * rewrite falls back to the existing `setMarkdown` rebuild and may never behave worse than
  * v0.9.1. YAZ-1342's reworded-line boundary is deliberately RETIRED for live edits by these tests.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
-import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
+import { createCrepe, getMarkdownForSave, getZoomKeyOf, zoomPageTo, type CreateCrepeOptions } from '../createCrepe'
 import { normalizeEmptyItems } from '../listItemRoundTrip'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
+import { KEY_SETTLE_MS, zoomKeyAt } from '../outline/zoom'
 import { applyExternalMarkdown } from './applyExternalMarkdown'
 import { diffDocs } from './diffDocs'
 
@@ -288,6 +289,38 @@ Another paragraph.
 `
     expect(applyExternalMarkdown(crepe, rewrite)).toBe('rebuilt')
     expect(getMarkdownForSave(crepe)).toBe(rewrite)
+  })
+
+  it('a rewrite that keeps the zoomed bullet keeps the page there, and the tab is never told "no zoom" (YAZ-3647 E1)', async () => {
+    const onZoom = vi.fn()
+    const { crepe } = await mount({ defaultValue: OUTLINE, zoom: { title: () => 'Notes', onZoom } })
+    const keyOf = (text: string): string =>
+      crepe.editor.action((ctx) => {
+        const { doc } = ctx.get(editorViewCtx).state
+        let found: string | null = null
+        doc.descendants((node, pos) => {
+          if (found === null && node.type.name === 'list_item' && node.firstChild?.textContent === text) found = zoomKeyAt(doc, pos)
+          return found === null
+        })
+        if (found === null) throw new Error(`no item "${text}"`)
+        return found
+      })
+    const kid = keyOf('Kid')
+    zoomPageTo(crepe, kid)
+    vi.useFakeTimers()
+    try {
+      // Everything above the bullet is new and long: one range over most of the page, so the page is rebuilt.
+      const rewrite = `${'A new opening paragraph that pushes the old outline aside. '.repeat(12)}\n\n* 2) Second\n  * Kid\n`
+      expect(applyExternalMarkdown(crepe, rewrite)).toBe('rebuilt')
+      expect(getZoomKeyOf(crepe)).toBe(kid)
+      vi.advanceTimersByTime(KEY_SETTLE_MS)
+      expect(onZoom.mock.calls.every(([zoom]) => zoom === kid)).toBe(true)
+      // A rewrite without the bullet: the page shows whole.
+      expect(applyExternalMarkdown(crepe, `# Entirely different\n\n${'Nothing of the old page. '.repeat(20)}\n`)).toBe('rebuilt')
+      expect(getZoomKeyOf(crepe)).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('serialises back to exactly the external body (autosave stays clean)', async () => {
