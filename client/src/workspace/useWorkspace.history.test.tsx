@@ -66,6 +66,12 @@ describe('history recording', () => {
     expect(s.history[D]).toEqual({ entries: [C, D], index: 1 })
   })
 
+  it('links back and forth between two tabs add no repeats to Back (YAZ-3609 polish)', () => {
+    let s = nav(tabsReducer(abc(), { type: 'open-background', path: D }), D)
+    for (let i = 0; i < 3; i += 1) s = nav(nav(s, C), D)
+    expect(s.history[D]).toEqual({ entries: [C, D], index: 1 })
+  })
+
   it('a tab opened with no link (the sidebar, ⌘T) still starts with no record', () => {
     expect(tabsReducer(abc(), { type: 'open-new', path: D }).history[D]).toBeUndefined()
     expect(tabsReducer(abc(), { type: 'open-background', path: D }).history[D]).toBeUndefined()

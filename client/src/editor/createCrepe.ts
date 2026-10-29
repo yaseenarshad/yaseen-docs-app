@@ -71,8 +71,10 @@
  *    (YAZ-1357). Its keymap MUST be `use`d before `outlinerKeymap`: both bind Enter at
  *    priority 100 and equal priorities run in addition order — the picker wins while open and
  *    declines (falls through) while closed.
- *  - Standard Markdown links (YAZ-1309, `markdownLink.ts`): unmodified primary mousedown opens
- *    through the host before caret placement; right-click offers Edit/Copy/Remove. Edit/remove
+ *  - Standard Markdown links (YAZ-1309, `markdownLink.ts`): a primary mousedown opens before caret
+ *    placement — a link into a vault of the window in a tab (⌘: a background tab, YAZ-3609 D8, D14),
+ *    anything else through the host — and such a link draws as a pill (D19); right-click shows the
+ *    one link menu (D23, `linkMenu.ts`). Edit/remove
  *    reuse Crepe's link-tooltip API, including one logical range when formatting splits the DOM
  *    anchor. Registered only when `opts.markdownLinkNav` supplies the host boundary.
  *  - Block handle menu (YAZ-726, `blockHandleMenu.ts`): right-click on the 6-dot handle opens a
@@ -272,7 +274,7 @@ export interface CreateCrepeOptions {
   wikilinkNav?: WikilinkNav
   /** Wikilink hover (YAZ-3403): the host's hover panel hears which page a resolved link opens. Absent → the hover plugin is not registered. */
   wikilinkHover?: WikilinkHover
-  /** Standard Markdown link actions (YAZ-1309): primary click opens; right-click edits/copies/removes. Absent → Crepe's stock behavior. */
+  /** Standard Markdown link actions (YAZ-1309, YAZ-3609): a click opens (in a tab for a vault of the window), a pill look, the one link menu. Absent → Crepe's stock behavior. */
   markdownLinkNav?: MarkdownLinkNav
   /** Paste a path, get a link (YAZ-3609). Absent → a pasted path stays text. */
   pathPaste?: PathPasteOptions
@@ -477,7 +479,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.wikilinkNav !== undefined) {
     // A click and the link menu's Open rows follow a link the same way (YAZ-3609 D23).
     const follow = wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks)
-    crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav, viewOnlyLinks, follow)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow))
+    crepe.editor.use(createWikilinkClick(follow)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))

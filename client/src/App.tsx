@@ -430,7 +430,8 @@ export function App() {
     const home = rootOfPath(now.roots, path)
     return home === null ? null : (now.vaults[now.roots.indexOf(home)]?.name ?? storage.vaultName(home))
   }, [])
-  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, vaultOf }), [candidatesOf, askToAdd, roots, vaultOf])
+  const vaultNames = roots.map((vault, i) => vaults[i]?.name ?? storage.vaultName(vault)).join('\n')
+  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, names: vaultNames, vaultOf }), [candidatesOf, askToAdd, roots, vaultNames, vaultOf])
   /** The scope of the ACTIVE tab's vault (R3, R4, R10); with no tab open, the first vault's. */
   const active = file === null ? first : scopeOf(file)
   /**
@@ -1100,12 +1101,18 @@ export function App() {
   // A link click opens where Settings › Files & Links › Open a link in says (YAZ-3609 D11), read through a ref too.
   const linkOpen = useRef(settings.linkOpen)
   linkOpen.current = settings.linkOpen
-  const openFromPage = useCallback((path: string) => {
+  const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : navigate)(path), [openBackground, navigate])
+  /** The open tabs' pages, read at click time: a link to one of them goes to its tab, whatever the setting says. */
+  const openPaths = useRef(tabs)
+  openPaths.current = tabs
+  /** A click on a link in a note (YAZ-3609 D11): where the setting says. A folder view's row, a backlink and a code jump use `openFromPage`. */
+  const openLink = useCallback((path: string) => {
     // A new tab, in front or behind, remembers the page with the link, so Back there returns (YAZ-3644). A review's open is no link click.
     if (reviewing.current) openBackground(path)
+    // A page another tab shows: go to that tab (D10), as "This tab" does. A background open would do nothing.
+    else if (linkOpen.current === 'this-tab' || openPaths.current.some((tab) => tab.path === path)) navigate(path)
     else if (linkOpen.current === 'background-tab') openBackground(path, true)
-    else if (linkOpen.current === 'new-tab') openKept(path, true)
-    else navigate(path)
+    else openKept(path, true)
   }, [openBackground, navigate, openKept])
   /** ⌘-click on a link (YAZ-3644): a background tab whose Back returns to the page with the link. */
   const openLinkBackground = useCallback((path: string) => openBackground(path, true), [openBackground])
@@ -2980,7 +2987,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openLinkBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`${id}:${tabHistory[id]?.index ?? 0}`} />
+                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openLinkBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`${id}:${tabHistory[id]?.index ?? 0}`} />
                 </div>
               )
             })}
@@ -3095,7 +3102,7 @@ export function App() {
             const ask = addAsk
             setAddAsk(null)
             void addVault(ask.root).then((added) => {
-              if (added) (ask.background ? openLinkBackground : openFromPage)(ask.path)
+              if (added) (ask.background ? openLinkBackground : openLink)(ask.path)
             })
           }}
           onCancel={() => setAddAsk(null)}

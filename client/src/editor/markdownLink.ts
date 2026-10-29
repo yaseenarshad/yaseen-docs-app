@@ -4,8 +4,9 @@
  * A primary mousedown owns navigation before ProseMirror can move the caret. Right-click owns the
  * one link menu (YAZ-3609 D23, `linkMenu.ts`), whose edit/remove actions delegate to Crepe's existing link-tooltip
  * API; no parallel link model or serializer is introduced. Fragment-only hrefs deliberately fall
- * through because they are document-local, while all other href validation stays at the main
- * process boundary.
+ * through because they are document-local. A link into a vault of the window opens in a tab here
+ * (YAZ-3609 D8, D14) and draws as a pill (D19); every other href goes to the host, and its
+ * validation stays at the main process boundary.
  */
 import { linkTooltipAPI } from '@milkdown/kit/component/link-tooltip'
 import type { Ctx } from '@milkdown/kit/ctx'

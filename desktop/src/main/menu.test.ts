@@ -431,7 +431,7 @@ const noopActions = (): ContextMenuActions => ({ copyAs: vi.fn(), pasteAs: vi.fn
 
 /** What Electron hands `context-menu`, defaulting to a clean right-click in an editable body. */
 function context(params: Partial<ContextParams> = {}): ContextParams {
-  return { misspelledWord: '', dictionarySuggestions: [], editFlags: EDIT_FLAGS, mediaType: 'none', srcURL: '', selectionText: '', isEditable: true, ...params }
+  return { misspelledWord: '', dictionarySuggestions: [], editFlags: EDIT_FLAGS, mediaType: 'none', srcURL: '', selectionText: '', isEditable: true, formControlType: 'none', ...params }
 }
 
 const shapeOf = (items: MenuItemConstructorOptions[]) => items.map((i) => i.label ?? i.role ?? i.type)
@@ -450,8 +450,9 @@ describe('buildContextMenuTemplate', () => {
     expect(actions.addLink).toHaveBeenCalledOnce()
   })
 
-  it('M2 no "Add link…" with no selection, a selection of spaces, or text you cannot edit', () => {
-    for (const params of [{ selectionText: '' }, { selectionText: '  ' }, { selectionText: 'the plan', isEditable: false }]) {
+  it('M2 no "Add link…" with no selection, a selection of spaces, text you cannot edit, or a text box', () => {
+    const textBoxes = [{ selectionText: 'the plan', formControlType: 'input-text' as const }, { selectionText: 'the plan', formControlType: 'text-area' as const }]
+    for (const params of [{ selectionText: '' }, { selectionText: '  ' }, { selectionText: 'the plan', isEditable: false }, ...textBoxes]) {
       expect(shapeOf(buildContextMenuTemplate(context(params), noopActions()))).not.toContain('Add link…')
     }
   })

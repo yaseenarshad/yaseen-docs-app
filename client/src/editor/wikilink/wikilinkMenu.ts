@@ -10,8 +10,7 @@
  * `wikilinkClick.ts`'s reason: left to its default the browser puts the caret in the match, the
  * reveal rule drops the rendered span, and `contextmenu` would arrive on raw text.
  *
- * The popup is `linkMenu.ts`'s (`openMenuAt`); `openIdMenu` knows nothing of the editor, so
- * another surface showing an id can open the id rows on its own element. Only the doc-change close is the plugin's.
+ * The popup is `linkMenu.ts`'s (`openMenuAt`). Only the doc-change close is the plugin's.
  */
 import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -20,22 +19,11 @@ import { vaultNoteId } from '@shared/noteId'
 import { copyNoteId } from '../../lib/copyNoteId'
 import { pathTitles } from '../../lib/pageLabel'
 import { folderLabel, folderRecord } from '../../links/shortcuts'
-import type { MenuRow } from '../blockHandleMenu'
 import { copyLink, linkMenuRows, openMenuAt } from '../linkMenu'
 import { wikilinkMatchAt, type WikilinkNav } from './wikilinkClick'
 import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
 
 const wikilinkMenuKey = new PluginKey('mdapp-wikilink-menu')
-
-/**
- * Opens the menu in `parent` at the pointer: `name` (omitted when the id names no note) and `id` as
- * disabled rows — labels, not actions — then "Copy ID", which copies exactly the id and says so
- * through `onNotice`. For a surface that shows an id and is not a link.
- */
-export function openIdMenu(parent: HTMLElement, x: number, y: number, name: string | undefined, id: string, onNotice: (message: string) => void): () => void {
-  const label = (text: string): MenuRow => ({ label: text, disabled: true, run: () => {} })
-  return openMenuAt(parent, x, y, [...(name === undefined ? [] : [label(name)]), label(id), { label: 'Copy ID', run: () => copyNoteId(id, onNotice) }])
-}
 
 /** The collapsed `[[link]]` under `target` — `wikilinkClick`'s hit-test — with its range, or null. */
 function linkAt(view: EditorView, target: EventTarget | null): { from: number; to: number; inner: string } | null {

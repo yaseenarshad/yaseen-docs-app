@@ -359,7 +359,7 @@ export interface ContextMenuActions {
  * `<img src>` verbatim; `vaultProtocol.ts` decides whether it names a vault file.
  */
 export function buildContextMenuTemplate(
-  params: Pick<Electron.ContextMenuParams, 'misspelledWord' | 'dictionarySuggestions' | 'editFlags' | 'mediaType' | 'srcURL' | 'selectionText' | 'isEditable'>,
+  params: Pick<Electron.ContextMenuParams, 'misspelledWord' | 'dictionarySuggestions' | 'editFlags' | 'mediaType' | 'srcURL' | 'selectionText' | 'isEditable' | 'formControlType'>,
   actions: ContextMenuActions,
 ): MenuItemConstructorOptions[] {
   if (params.mediaType === 'image') {
@@ -385,8 +385,9 @@ export function buildContextMenuTemplate(
     { ...copyAsMenu(actions.copyAs), enabled: params.editFlags.canCopy },
     { role: 'paste', enabled: params.editFlags.canPaste },
     { ...pasteAsMenu(actions.pasteAs), enabled: params.editFlags.canPaste },
-    // Selected text you can edit can become a link (YAZ-3609 D17): a web address or a path.
-    ...(params.isEditable && params.selectionText.trim() !== '' ? [{ type: 'separator' } satisfies MenuItemConstructorOptions, { label: 'Add link…', click: () => actions.addLink() }] : []),
+    // Selected text you can edit can become a link (YAZ-3609 D17): a web address or a path. Only in a note's
+    // text: a text box (the find bar, a rename box, the code editor's) is a form field, and no link box answers there.
+    ...(params.isEditable && params.formControlType === 'none' && params.selectionText.trim() !== '' ? [{ type: 'separator' } satisfies MenuItemConstructorOptions, { label: 'Add link…', click: () => actions.addLink() }] : []),
   ]
 }
 

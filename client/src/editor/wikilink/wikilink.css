@@ -59,7 +59,7 @@
   display: none !important;
 }
 /* On a Markdown link pill the page preview says where it goes (YAZ-3609 D20): Crepe's address bar stays away.
-   Edit, Copy and Remove link stay on the pill's right-click menu. */
+   Its rows are on the pill's right-click menu, the one link menu (D23). */
 .milkdown[data-pill-hover] .milkdown-link-preview {
   display: none;
 }

@@ -199,9 +199,12 @@ function replaceSlot(s: TabsState, slot: string, path: string, stack?: TabHistor
 function jumpTo(s: TabsState, id: string): TabsState {
   const from = activePath(s)
   const to = tabById(s, id)
-  if (from === null || to == null) return withActive(s, id)
+  if (from === null || to == null || from === to.path) return withActive(s, id)
   const h = s.history[id] ?? { entries: [to.path], index: 0 }
-  return { ...withActive(s, id), history: { ...s.history, [id]: { entries: [...h.entries.slice(0, h.index), from, to.path], index: h.index + 1 } } }
+  // Back and forth between two pages adds no repeats: the page is put in only when it is not already the one before.
+  const before = h.entries.slice(0, h.index)
+  const entries = before[before.length - 1] === from ? [...before, to.path] : [...before, from, to.path]
+  return { ...withActive(s, id), history: { ...s.history, [id]: { entries, index: entries.length - 1 } } }
 }
 
 /**
