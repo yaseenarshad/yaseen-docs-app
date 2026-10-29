@@ -231,6 +231,29 @@ describe('createStore: loading', () => {
     expect(LOCAL_SETTINGS).toContain('codeLanguageHelpers')
   })
 
+  it('⌘D\'s place (YAZ-3556 D2): a file from before it reads the Files tab; each kind survives a restart; a wrong value reads the default; it travels whole', async () => {
+    const { goTo: _a, ...legacySettings } = DEFAULT_SETTINGS
+    expect(DEFAULT_SETTINGS.goTo).toEqual({ kind: 'tab', tab: 'files' })
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.goTo).toEqual({ kind: 'tab', tab: 'files' })
+    for (const goTo of [{ kind: 'tab', tab: 'recents' }, { kind: 'folder', path: 'Projects/Alpha' }, { kind: 'folder', path: '' }, { kind: 'file', path: 'Inbox/Today.md' }]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, goTo } }))
+      expect(createStore(file).get().settings.goTo).toEqual(goTo)
+    }
+    // A tab the sidebar does not have, an absolute or hidden path, a file with no path, a value with the parts of two kinds.
+    for (const goTo of [{ kind: 'tab', tab: 'search' }, { kind: 'folder', path: '/Users/x' }, { kind: 'folder', path: 'a/.git' }, { kind: 'file', path: '' }, { kind: 'folder', tab: 'files', path: 'a' }, 'files', null]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, goTo } }))
+      expect(createStore(file).get().settings.goTo, JSON.stringify(goTo)).toEqual({ kind: 'tab', tab: 'files' })
+      expect(isSettings({ ...DEFAULT_SETTINGS, goTo })).toBe(false)
+    }
+    // From a settings folder the other Mac's place replaces this one whole: never a mix of a tab and a folder.
+    expect(LOCAL_SETTINGS).not.toContain('goTo')
+    expect(mergeFolderSettings(DEFAULT_SETTINGS, { goTo: { kind: 'folder', path: 'Projects' } }).goTo).toStrictEqual({ kind: 'folder', path: 'Projects' })
+    const here = { ...DEFAULT_SETTINGS, goTo: { kind: 'file' as const, path: 'a.md' } }
+    expect(mergeFolderSettings(here, { goTo: { kind: 'tab', tab: 'focus' } }).goTo).toStrictEqual({ kind: 'tab', tab: 'focus' })
+    expect(mergeFolderSettings(here, { goTo: { kind: 'tab', tab: 'nowhere' } }).goTo).toStrictEqual(here.goTo)
+  })
+
   it('the code Outline (YAZ-3486 S4, S5): a file from before it reads Position and no hidden kind; each value survives a restart; a wrong value is repaired', async () => {
     const { codeOutlineSort: _a, codeOutlineHidden: _b, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))
@@ -445,13 +468,14 @@ describe('createStore: loading', () => {
   })
 
   it('hotkeys (YAZ-3397 D2): a file from before has none and loads `{}`; a bad id or key costs that entry only; the IPC guard is strict', async () => {
-    const { hotkeys: _hotkeys, ...legacySettings } = DEFAULT_SETTINGS
+    const { hotkeys: _hotkeys, hotkeysAside: _aside, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: { ...legacySettings, theme: 'dark' } }))
     expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, theme: 'dark' })
     expect(createStore(file).get().settings.hotkeys).toEqual({})
 
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K', closeTab: null, quit: 'CmdOrCtrl+Q', newTab: 7, openFolder: 'Not+A+Key' } } }))
-    expect(createStore(file).get().settings.hotkeys).toEqual({ search: 'CmdOrCtrl+Shift+K', closeTab: null })
+    // An old unscoped id loads as its scoped one (YAZ-3564 K2).
+    expect(createStore(file).get().settings.hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Shift+K', 'app.closeTab': null })
     for (const junk of [null, 'x', [], 3]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: junk }).hotkeys).toEqual({})
 
     expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K', closeTab: null } })).toBe(true)
@@ -462,19 +486,25 @@ describe('createStore: loading', () => {
     // A bare letter would take every typed "a" in every window; ⌘Q is the app's Quit (App standard).
     // ⌘⇧V and ⌘= are fixed keys of the menu (YAZ-3419): Paste as plain text and Zoom In's hidden twin.
     for (const key of ['A', 'Shift+A', 'CmdOrCtrl+Q', 'CmdOrCtrl+Shift+V', 'CmdOrCtrl+=']) {
-      expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: key, closeTab: null } }).hotkeys, key).toEqual({ closeTab: null })
+      expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: key, closeTab: null } }).hotkeys, key).toEqual({ 'app.closeTab': null })
       expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: key } }), key).toBe(false)
     }
-    // ⌘B is Toggle sidebar's default: the change that clashes with it goes, and Search the vault has ⌘K again.
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+B', closeTab: null } }).hotkeys).toEqual({ closeTab: null })
-    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+B' } })).toBe(false)
+    // ⌘⇧B is Toggle sidebar's default (YAZ-3564 D10): the change that clashes with it goes, and Search the vault has ⌘K again.
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+B', closeTab: null } }).hotkeys).toEqual({ 'app.closeTab': null })
+    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+B' } })).toBe(false)
     // Two changes on one key: the one LAST in `HOTKEY_COMMANDS` order goes (Copy path after Search the vault).
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Alt+J', copyPath: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ search: 'CmdOrCtrl+Alt+J' })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Alt+J', copyPath: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Alt+J' })
+    // An old change that is the default now goes (YAZ-3564 D10: Toggle sidebar's ⌘⇧B), so the page shows no Reset for it.
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { toggleSidebar: 'CmdOrCtrl+Shift+B', search: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Alt+J' })
+    // The tabs' picks (YAZ-3564): per tab; an old one-switch entry becomes its tabs; an unknown row, tab or value goes. The IPC boundary takes only the per-tab form.
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo': false, 'app.search@code': true, 'app.nope@code': true, 'app.search@note': true, 'app.goTo@drawing': 'no' } as never }).hotkeysAside).toEqual({ 'app.goTo@drawing': false, 'app.goTo@diagram': false, 'app.goTo@code': false, 'app.search@code': true })
+    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo@drawing': false } })).toBe(true)
+    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo': false } })).toBe(false)
     // Dropping one change can uncover the next clash: Tab overview's ⌘⇧M comes back, so Search the vault's ⌘⇧M goes too.
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+M', copyPath: 'CmdOrCtrl+Alt+J', tabOverview: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ copyPath: 'CmdOrCtrl+Alt+J' })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+M', copyPath: 'CmdOrCtrl+Alt+J', tabOverview: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ 'app.copyPath': 'CmdOrCtrl+Alt+J' })
     // A move (D6) is no clash: the key left New Files window, which has "No key" now.
     const moved = { search: 'CmdOrCtrl+Shift+W', newFilesWindow: null }
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: moved }).hotkeys).toEqual(moved)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: moved }).hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Shift+W', 'app.newFilesWindow': null })
     expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: moved })).toBe(true)
   })
 

@@ -1,11 +1,14 @@
 /**
- * SETTINGS › HOTKEYS (YAZ-3397; a reference page since YAZ-1679): every key of the app, ONE row each, and
- * the app-wide ones the user can change.
+ * SETTINGS › HOTKEYS (YAZ-3397; every place since YAZ-3564): every key of the app, ONE row each, from the one
+ * key list (`shared/keys`).
  *
- * - Window (D1): the changeable commands (`HOTKEY_COMMANDS`), each key a button, then the built-in window keys.
- *   Then the built-in groups (`HOTKEY_GROUPS`), "App standard" among them, and "Used by macOS" (D3, D8): this
- *   Mac's own keys, which main reads off its plist (`state:system-hotkeys`) when the page or a search shows.
- *   A built-in or macOS key is muted text, never a button.
+ * - ONE CARD PER KEY (YAZ-3564, after K1–K10): the rows whose key it is, each with its place's tag. Purple is an App
+ *   key (every tab), green a tab's own; a shared key (both) has a pick per tab where an App command and a tab's
+ *   action meet (drawings, diagrams, code; K9, `hotkeysAside` per tab), and a pick asks "Take it" first. A row an
+ *   App key takes in its tab says what the key does there now, with a link to that key's card. Then the actions
+ *   with no key, the mouse, and "Used by macOS" (D3, D8): this Mac's own keys, which main reads off its plist
+ *   (`state:system-hotkeys`) when the page or a search shows. A changeable key is a button; a built-in or macOS
+ *   key is muted text. Chips and two switches filter the page (K7, K10).
  * - Each row is its own setting (`bare`), so the dialog's search filters the page down to single rows (D5): a
  *   row's search text is its label, its key and its hint. The changeable rows' text is built from the keys
  *   as they are now; the dialog rebuilds the candidates when a key changes, not on a keystroke.
@@ -21,16 +24,18 @@
  *   says who owns it.
  *
  * WHILE A RECORDER LISTENS the keys are its own: a window CAPTURE listener takes every keydown before the
- * dialog's Esc, App's ⌘B or an editor hears it, and main builds the menu with no key (`hotkeys:recording`),
+ * dialog's Esc, the window's keys or an editor hears it, and main builds the menu with no key (`hotkeys:recording`),
  * because on macOS a menu key fires before the page sees it — recording ⌘W must not close the tab.
  */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { HOTKEY_COMMANDS, hotkeyCommand, isUsableKey, keyFor, ownersOf, sameKey, toDisplay, withKey, fromKeyEvent, type HotkeyId, type HotkeyOverrides, type HotkeyOwner } from '@shared/hotkeyBindings'
+import { hotkeyCommand, isHotkeyId, isUsableKey, normalizeKey, sameKey, toDisplay, withKey, fromKeyEvent, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { ALL_KEYS, ASIDE_PLACES, asideChanged, asideId, blockersOf, clashesOf, isUsableFor, keysOf, stepsAside, withAside, withoutAside, type AsidePlace, type HotkeyAside, type KeyRow, type KeyScope } from '@shared/keys'
 import { MACOS_HOTKEYS, type SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
 import { ConfirmSheet } from '../components/ConfirmSheet'
-import { BUILT_IN_KEYS, HOTKEY_GROUPS, shortLabel, type HotkeyEntry } from './hotkeys'
+import { Select } from './controls'
+import { MOUSE_TIPS, shortLabel } from './hotkeys'
 import type { SettingDef, SettingsCtx, SettingsGroup, SettingsSection } from './registry'
 
 /** What "keyboard shortcuts" finds: every row, as the tables did before (YAZ-1679). */
@@ -108,45 +113,94 @@ function useKeyRecorder(active: boolean, inside: RefObject<HTMLElement | null>, 
 
 // ---------- one changeable row ----------
 
+/** Where a row's key works, as the page names it (YAZ-3564 K7): the group titles and "Blocked: App › …". */
+export const SCOPE_TITLES: Record<KeyScope, string> = { app: 'App', note: 'Note', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views' }
+const owned = (row: KeyRow): string => `${SCOPE_TITLES[row.scope]} › ${row.label}`
+
+/** The App command of an App row, for its Mac-standard default and its hint (YAZ-3397). */
+const commandOf = (row: KeyRow) => (row.scope === 'app' && isHotkeyId(row.id.slice(4)) ? hotkeyCommand(row.id.slice(4) as HotkeyId) : undefined)
+/** A row's key now, one key (the first of its defaults), or null for "No key". */
+const keyNow = (row: KeyRow, overrides: HotkeyOverrides): string | null => keysOf(row, overrides)[0] ?? null
+/** A row's key differs from its default; with `aside`, a changed pick of a tab counts too (K9). */
+const isChanged = (row: KeyRow, overrides: HotkeyOverrides, aside?: HotkeyAside): boolean =>
+  overrides[row.id] !== undefined || (row.scope === 'app' && overrides[row.id.slice(4)] !== undefined) || asideChanged(row, aside)
+
+/**
+ * `overrides` with `row` on `key` (K2): a key equal to the row's one default deletes the change, so `{}` stays the
+ * default; an App row writes through `withKey`, which also drops an old unscoped entry.
+ */
+export function withRowKey(overrides: HotkeyOverrides, row: KeyRow, key: string | null): HotkeyOverrides {
+  const command = commandOf(row)
+  if (command !== undefined) return withKey(overrides, command.id, key)
+  const next = { ...overrides }
+  const def = row.keys
+  if (key === null ? def.length === 0 : def.length === 1 && sameKey(key, def[0])) delete next[row.id]
+  else next[row.id] = key
+  return next
+}
+
 /** What a pressed key would do, shown in the pop-up before anything is written (D6). */
-type Pending = { kind: 'save'; key: string } | { kind: 'move'; key: string; from: HotkeyId } | { kind: 'remove' } | { kind: 'reset'; from: HotkeyId | null }
+type Pending = { kind: 'save'; key: string } | { kind: 'move'; key: string; from: KeyRow[] } | { kind: 'remove' } | { kind: 'reset'; from: KeyRow[] }
 
 type RowMode = { kind: 'idle' } | { kind: 'recording'; refused: string | null } | { kind: 'confirm'; pending: Pending }
 
 /** "⌘W is the Mac standard for Close tab. Most Mac apps use it." — for a Mac-standard key leaving its command (D6). */
-const macStandardLine = (id: HotkeyId): string => `${toDisplay(hotkeyCommand(id).key)} is the Mac standard for ${hotkeyCommand(id).label}. Most Mac apps use it.`
+const macStandardLine = (row: KeyRow): string => `${toDisplay(row.keys[0] ?? null)} is the Mac standard for ${row.label}. Most Mac apps use it.`
 
-/** Whether `id` would lose its Mac-standard default key (D6). */
-const losesMacStandard = (id: HotkeyId, overrides: HotkeyOverrides): boolean => {
-  const command = hotkeyCommand(id)
-  return command.macStandard === true && sameKey(keyFor(id, overrides), command.key)
-}
+/** Whether `row` would lose its Mac-standard default key (D6). */
+const losesMacStandard = (row: KeyRow, overrides: HotkeyOverrides): boolean => commandOf(row)?.macStandard === true && sameKey(keyNow(row, overrides), row.keys[0] ?? null)
 
-/** Why a key cannot be this command's (D6), or null when it can. Defaults are always allowed: a key the command ships with is its own. */
-function refusal(id: HotkeyId, key: string, owners: readonly HotkeyOwner[]): string | null {
-  const macos = owners.find((o) => o.kind === 'macos')
+/**
+ * Why a key cannot be this row's (D6, YAZ-3564 K8), or null when it can. Its own default is always allowed. A key
+ * macOS keeps, a Mac standard key and a built-in key are refused; any other row that has it moves (`movers`).
+ */
+function refusal(row: KeyRow, key: string, owners: readonly KeyRow[], system: readonly SystemHotkey[]): string | null {
+  const macos = system.find((m) => sameKey(m.accelerator, key.split(' ')[0]))
   if (macos !== undefined) return `macOS uses ${toDisplay(key)} for ${macos.label}. Pick a different key.`
-  if (owners.some((o) => o.kind === 'command') || sameKey(key, hotkeyCommand(id).key)) return null
-  const builtIn = owners.find((o) => o.kind === 'builtIn')
-  if (builtIn !== undefined) return `${toDisplay(key)} is built in: ${builtIn.label}. Pick a different key.`
-  if (!isUsableKey(key)) return `${toDisplay(key)} needs ⌘ or ⌃. Pick a different key.`
+  if (row.keys.some((k) => sameKey(k, key))) return null
+  const standard = owners.find((o) => o.macStandard === true)
+  if (standard !== undefined) return `${toDisplay(key)} is the Mac standard for ${standard.label}. Pick a different key.`
+  const builtIn = owners.find((o) => !o.changeable)
+  if (builtIn !== undefined) return `${toDisplay(key)} is built in: ${owned(builtIn)}. Pick a different key.`
+  if (!isUsableFor(row, key)) return `${toDisplay(key)} needs ⌘, ⌃ or ⌥. Pick a different key.`
   return null
 }
 
-function HotkeyCommandRow({ id, ctx }: { id: HotkeyId; ctx: SettingsCtx }) {
-  const command = hotkeyCommand(id)
+/**
+ * The row whose key just changed: it moves to its new key's card (YAZ-3564), so it mounts again there, and takes
+ * the keyboard back, scrolls into view and flashes — the eye follows it, and Esc still reaches the dialog.
+ */
+let movedRow: { id: string; at: number } | null = null
+
+function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
   const overrides = ctx.settings.hotkeys
-  const current = keyFor(id, overrides)
-  const changed = overrides[id] !== undefined
+  const aside = ctx.settings.hotkeysAside
+  const current = keyNow(row, overrides)
+  const changed = isChanged(row, overrides)
+  /** The Reset link also undoes a changed step-aside switch (K9). */
+  const resettable = isChanged(row, overrides, aside)
+  const blockers = blockersOf(row, overrides, aside)
   const [mode, setMode] = useState<RowMode>({ kind: 'idle' })
   const rowRef = useRef<HTMLDivElement>(null)
   const keyButton = useRef<HTMLButtonElement>(null)
 
-  const write = (next: HotkeyOverrides): void => {
-    ctx.onChange({ ...ctx.settings, hotkeys: next })
+  const write = (next: HotkeyOverrides, hotkeysAside = ctx.settings.hotkeysAside): void => {
+    movedRow = { id: row.id, at: Date.now() }
+    ctx.onChange({ ...ctx.settings, hotkeys: next, hotkeysAside })
     setMode({ kind: 'idle' })
     keyButton.current?.focus()
   }
+  useEffect(() => {
+    // Only the mount right after the write: a row that stayed on its card never asks.
+    if (movedRow?.id !== row.id || Date.now() - movedRow.at > 1000) return
+    movedRow = null
+    keyButton.current?.focus()
+    keyButton.current?.scrollIntoView?.({ block: 'center' })
+    const here = rowRef.current
+    here?.classList.add('hotkeys__card--flash')
+    const done = setTimeout(() => here?.classList.remove('hotkeys__card--flash'), 1200)
+    return () => clearTimeout(done)
+  }, [row.id])
   const cancel = (): void => {
     setMode({ kind: 'idle' })
     keyButton.current?.focus()
@@ -159,46 +213,49 @@ function HotkeyCommandRow({ id, ctx }: { id: HotkeyId; ctx: SettingsCtx }) {
       if (heard.kind === 'escape') return cancel()
       if (heard.kind === 'backspace') return current === null ? undefined : setMode({ kind: 'confirm', pending: { kind: 'remove' } })
       if (sameKey(heard.key, current)) return cancel()
-      const owners = ownersOf(heard.key, overrides, systemKeysOf(ctx), BUILT_IN_KEYS)
-      const refused = refusal(id, heard.key, owners)
+      const owners = clashesOf(row, heard.key, overrides, aside)
+      const refused = refusal(row, heard.key, owners, systemKeysOf(ctx))
       if (refused !== null) return setMode({ kind: 'recording', refused })
-      const other = owners.find((o): o is Extract<HotkeyOwner, { kind: 'command' }> => o.kind === 'command' && o.id !== id)
-      setMode({ kind: 'confirm', pending: other === undefined ? { kind: 'save', key: heard.key } : { kind: 'move', key: heard.key, from: other.id } })
+      const movers = owners.filter((o) => o.changeable)
+      setMode({ kind: 'confirm', pending: movers.length === 0 ? { kind: 'save', key: heard.key } : { kind: 'move', key: heard.key, from: movers } })
     },
     () => setMode({ kind: 'idle' }),
   )
 
   const askReset = (): void => {
-    const def = command.key
-    const holder = def === null ? undefined : HOTKEY_COMMANDS.find((c) => c.id !== id && sameKey(keyFor(c.id, overrides), def))
-    setMode({ kind: 'confirm', pending: { kind: 'reset', from: holder?.id ?? null } })
+    const def = row.keys[0]
+    const holders = def === undefined ? [] : clashesOf(row, def, overrides, aside).filter((o) => o.changeable && isChanged(o, overrides))
+    setMode({ kind: 'confirm', pending: { kind: 'reset', from: holders } })
   }
 
-  /** The pop-up's words (D6): its question, the key the command will have, what else changes, and its button. */
+  /** The pop-up's words (D6): its question, the key the row will have, what else changes, and its button. */
   const confirmSheet = (pending: Pending): { title: string; to: string | null; lines: string[]; yes: string; apply: () => void; careful: boolean } => {
     switch (pending.kind) {
       case 'save': {
-        // The recorder stops on the key the command has now, so a new key always leaves a Mac-standard default.
-        const careful = losesMacStandard(id, overrides)
-        return { title: `Change the key for ${command.label}?`, to: pending.key, lines: careful ? [macStandardLine(id)] : [], yes: careful ? 'Change anyway' : 'Save', careful, apply: () => write(withKey(overrides, id, pending.key)) }
+        // The recorder stops on the key the row has now, so a new key always leaves a Mac-standard default.
+        const careful = losesMacStandard(row, overrides)
+        return { title: `Change the key for ${row.label}?`, to: pending.key, lines: careful ? [macStandardLine(row)] : [], yes: careful ? 'Change anyway' : 'Save', careful, apply: () => write(withRowKey(overrides, row, pending.key)) }
       }
       case 'move': {
-        const from = hotkeyCommand(pending.from)
-        // Two Mac-standard keys can leave: the other command's, which loses its key, and this command's own.
-        const fromStandard = losesMacStandard(pending.from, overrides)
-        const ownStandard = losesMacStandard(id, overrides)
-        const lines = [`${toDisplay(pending.key)} is ${from.label} now. It will lose its key.`, ...(fromStandard ? [macStandardLine(pending.from)] : []), ...(ownStandard ? [macStandardLine(id)] : [])]
-        const careful = fromStandard || ownStandard
-        return { title: `Change the key for ${command.label}?`, to: pending.key, lines, yes: careful ? 'Move anyway' : 'Move it here', careful, apply: () => write(withKey(withKey(overrides, pending.from, null), id, pending.key)) }
+        // K8: every row that has the key now loses it. A Mac-standard key can leave: another row's, or this row's own.
+        const standards = [...pending.from, row].filter((r) => losesMacStandard(r, overrides))
+        const lines = [...pending.from.map((o) => `${toDisplay(pending.key)} is ${owned(o)} now. It will lose its key.`), ...standards.map(macStandardLine)]
+        const careful = standards.length > 0
+        const next = pending.from.reduce((acc, o) => withRowKey(acc, o, null), overrides)
+        return { title: `Change the key for ${row.label}?`, to: pending.key, lines, yes: careful ? 'Move anyway' : 'Move it here', careful, apply: () => write(withRowKey(next, row, pending.key)) }
       }
       case 'remove': {
-        const careful = losesMacStandard(id, overrides)
-        return { title: `Remove the key from ${command.label}?`, to: null, lines: careful ? [macStandardLine(id)] : [], yes: 'Remove', careful, apply: () => write(withKey(overrides, id, null)) }
+        const careful = losesMacStandard(row, overrides)
+        return { title: `Remove the key from ${row.label}?`, to: null, lines: careful ? [macStandardLine(row)] : [], yes: 'Remove', careful, apply: () => write(withRowKey(overrides, row, null)) }
       }
       case 'reset': {
-        const lines = pending.from === null ? [] : [`${toDisplay(command.key)} is ${hotkeyCommand(pending.from).label} now. It will lose its key.`]
-        const apply = () => write(withKey(pending.from === null ? overrides : withKey(overrides, pending.from, null), id, command.key))
-        return { title: `Reset ${command.label}?`, to: command.key, lines, yes: 'Reset', careful: false, apply }
+        const def = row.keys[0] ?? null
+        const lines = pending.from.map((o) => `${toDisplay(def)} is ${owned(o)} now. It will lose its key.`)
+        const cleared = pending.from.reduce((acc, o) => withRowKey(acc, o, null), overrides)
+        const reset = { ...cleared }
+        delete reset[row.id]
+        if (row.scope === 'app') delete reset[row.id.slice(4)]
+        return { title: `Reset ${row.label}?`, to: def, lines, yes: 'Reset', careful: false, apply: () => write(reset, withoutAside(aside, [row])) }
       }
     }
   }
@@ -220,7 +277,7 @@ function HotkeyCommandRow({ id, ctx }: { id: HotkeyId; ctx: SettingsCtx }) {
     below = (
       // `contained`: Esc and a click away answer the pop-up, never the Settings dialog under it.
       // A Mac-standard key asks harder (D6): the keyboard starts on Cancel, and the button is red.
-      <ConfirmSheet labelId={`hotkey-confirm-${id}`} text={sheet.title} confirmLabel={sheet.yes} danger={sheet.careful} focusConfirm={!sheet.careful} keys="contained" onConfirm={sheet.apply} onCancel={cancel}>
+      <ConfirmSheet labelId={`hotkey-confirm-${rowDomId(row)}`} text={sheet.title} confirmLabel={sheet.yes} danger={sheet.careful} focusConfirm={!sheet.careful} keys="contained" onConfirm={sheet.apply} onCancel={cancel}>
         <div className="hotkeys__swap">
           <span className="hotkeys__swap-side">
             <span className="hotkeys__swap-label">Now</span>
@@ -244,29 +301,35 @@ function HotkeyCommandRow({ id, ctx }: { id: HotkeyId; ctx: SettingsCtx }) {
   }
 
   const recording = mode.kind === 'recording'
+  // A tab's box on a shared key holds its pick (K9): what the key does in this tab.
+  const app = pickOf(row, overrides)
+  const keeps = app !== null && stepsAside(app, row.scope as AsidePlace, aside)
   return (
-    <div ref={rowRef} className="hotkeys__command">
-      <div className="hotkeys__row">
-        <span className="hotkeys__keys">
-          <button
-            ref={keyButton}
-            type="button"
-            className={`hotkeys__key${changed ? ' hotkeys__key--changed' : ''}${recording ? ' hotkeys__key--recording' : ''}${current === null ? ' hotkeys__key--none' : ''}`}
-            aria-label={recording ? `Press new keys for ${command.label}` : `${command.label}: ${shown(current)}. Change`}
-            onClick={() => setMode(recording ? { kind: 'idle' } : { kind: 'recording', refused: null })}
-          >
-            {recording ? 'Press new keys…' : shown(current)}
+    <div ref={rowRef} className="hotkeys__box">
+      <div className="hotkeys__box-tab">{row.scope === 'app' ? appWhere(row, overrides, aside) : SCOPE_TITLES[row.scope]}</div>
+      {app !== null ? (
+        <TabPick app={app} place={row.scope as AsidePlace} own={[row]} ctx={ctx} />
+      ) : (
+        <div className="hotkeys__box-action" title={row.hint}>
+          {row.label}
+        </div>
+      )}
+      {mode.kind === 'idle' && (app !== null ? !keeps && <p className="hotkeys__line hotkeys__lost">{row.label} has no key here now.</p> : blockers.length > 0 && <LostLine row={row} blocker={blockers[0]} overrides={overrides} />)}
+      <div className="hotkeys__box-foot">
+        <button
+          ref={keyButton}
+          type="button"
+          className={`hotkeys__key${changed ? ' hotkeys__key--changed' : ''}${recording ? ' hotkeys__key--recording' : ''}${current === null ? ' hotkeys__key--none' : ''}`}
+          aria-label={recording ? `Press new keys for ${row.label}` : `${row.label}: ${shown(current)}. Change`}
+          onClick={() => setMode(recording ? { kind: 'idle' } : { kind: 'recording', refused: null })}
+        >
+          {recording ? 'Press new keys…' : shown(current)}
+        </button>
+        {resettable && mode.kind === 'idle' && (
+          <button type="button" className="hotkeys__link" aria-label={`Reset ${row.label}`} onClick={askReset}>
+            Reset
           </button>
-          {changed && mode.kind === 'idle' && (
-            <button type="button" className="hotkeys__link" aria-label={`Reset ${command.label}`} onClick={askReset}>
-              Reset
-            </button>
-          )}
-        </span>
-        <span className="hotkeys__label hotkeys__label--command">
-          {command.label}
-          {command.hint !== undefined && <span className="hotkeys__hint"> — {command.hint}</span>}
-        </span>
+        )}
       </div>
       {below}
     </div>
@@ -275,16 +338,20 @@ function HotkeyCommandRow({ id, ctx }: { id: HotkeyId; ctx: SettingsCtx }) {
 
 // ---------- reset all ----------
 
-/** "Reset all hotkeys" (D7): there only with a change, and it asks in the app's confirm sheet first. */
+/** The rows a reset can act on: the changed ones the page shows now (YAZ-3564 K7: a group chip or "Changed from default" narrows them). */
+const changedShown = (ctx: SettingsCtx): KeyRow[] => ALL_KEYS.filter((r) => r.changeable && isChanged(r, ctx.settings.hotkeys, ctx.settings.hotkeysAside) && inFilter(r, ctx))
+
+/** "Reset all hotkeys" (D7), "Reset all shown" while a filter stands (K7): there only with a change, and it asks in the app's confirm sheet first. */
 function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
   const [asking, setAsking] = useState(false)
-  const changes = HOTKEY_COMMANDS.filter((c) => ctx.settings.hotkeys[c.id] !== undefined)
+  const changes = changedShown(ctx)
+  const filtered = isFiltered(ctx)
   const n = changes.length
   const plural = n === 1 ? 'hotkey' : 'hotkeys'
   return (
     <div className="hotkeys__reset-all">
       <button type="button" className="settings__option" onClick={() => setAsking(true)}>
-        Reset all hotkeys
+        {filtered ? 'Reset all shown' : 'Reset all hotkeys'}
       </button>
       {asking && (
         <ConfirmSheet
@@ -294,14 +361,19 @@ function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
           keys="contained"
           onConfirm={() => {
             setAsking(false)
-            ctx.onChange({ ...ctx.settings, hotkeys: {} })
+            const next = { ...ctx.settings.hotkeys }
+            for (const r of changes) {
+              delete next[r.id]
+              if (r.scope === 'app') delete next[r.id.slice(4)]
+            }
+            ctx.onChange({ ...ctx.settings, hotkeys: filtered ? next : {}, hotkeysAside: filtered ? withoutAside(ctx.settings.hotkeysAside, changes) : {} })
           }}
           onCancel={() => setAsking(false)}
         >
           <ul className="hotkeys__changes">
-            {changes.map((c) => (
-              <li key={c.id}>
-                {c.label}: {shown(keyFor(c.id, ctx.settings.hotkeys))} → {shown(c.key)}
+            {changes.map((r) => (
+              <li key={r.id}>
+                {owned(r)}: {isChanged(r, ctx.settings.hotkeys) ? `${shown(keyNow(r, ctx.settings.hotkeys))} → ${shown(r.keys[0] ?? null)}` : 'each tab picks its default action again'}
               </li>
             ))}
           </ul>
@@ -311,29 +383,77 @@ function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
   )
 }
 
+// ---------- the page's filters (YAZ-3564 K7) ----------
+
+/** The page's filters: one place or all, only shared keys, only changed keys. The dialog holds it and hands it in `ctx`. */
+export interface HotkeyFilter {
+  scope: KeyScope | 'all'
+  shared: boolean
+  changed: boolean
+}
+export const NO_FILTER: HotkeyFilter = { scope: 'all', shared: false, changed: false }
+
+const isFiltered = (ctx: SettingsCtx): boolean => {
+  const f = ctx.hotkeyFilter ?? NO_FILTER
+  return f.scope !== 'all' || f.shared || f.changed
+}
+
+/** Whether a row shows under the filters: its place, "Shared keys only" (its key card is shared, or its key went to an App key), "Changed from default". */
+function inFilter(row: KeyRow, ctx: SettingsCtx): boolean {
+  const f = ctx.hotkeyFilter ?? NO_FILTER
+  if (f.scope !== 'all' && row.scope !== f.scope) return false
+  if (f.changed && !isChanged(row, ctx.settings.hotkeys, ctx.settings.hotkeysAside)) return false
+  if (f.shared && cardsOf(ctx.settings.hotkeys).cardOf.get(row.id)?.kind !== 'shared' && blockersOf(row, ctx.settings.hotkeys, ctx.settings.hotkeysAside).length === 0) return false
+  return true
+}
+
+const CHIPS: readonly (KeyScope | 'all')[] = ['all', 'app', 'note', 'drawing', 'diagram', 'code', 'views']
+
+/** The group chips and the two switches at the top of the page (K7). */
+function FilterBar({ filter, onFilter }: { filter: HotkeyFilter; onFilter: (next: HotkeyFilter) => void }) {
+  return (
+    <div className="hotkeys__filters" role="group" aria-label="Filter hotkeys">
+      <span className="hotkeys__chips">
+        {CHIPS.map((scope) => (
+          <button key={scope} type="button" className={`hotkeys__chip${filter.scope === scope ? ' hotkeys__chip--on' : ''}`} aria-pressed={filter.scope === scope} onClick={() => onFilter({ ...filter, scope })}>
+            {scope === 'all' ? 'All' : SCOPE_TITLES[scope]}
+          </button>
+        ))}
+      </span>
+      <span className="hotkeys__toggles">
+        <label>
+          <input type="checkbox" checked={filter.shared} onChange={() => onFilter({ ...filter, shared: !filter.shared })} />
+          Shared keys only
+        </label>
+        <label>
+          <input type="checkbox" checked={filter.changed} onChange={() => onFilter({ ...filter, changed: !filter.changed })} />
+          Changed from default
+        </label>
+      </span>
+    </div>
+  )
+}
+
 // ---------- "Press keys to search" ----------
 
-/** The one-line answer for a key (D5): who owns it, and whether the user can do anything about it. */
+/** The answer for a key (D5, YAZ-3564 K10): every action on it, in every place, and whether the user can do anything about it. */
 function keyAnswer(key: string, overrides: HotkeyOverrides, systemKeys: readonly SystemHotkey[]): string {
   const d = toDisplay(key)
-  const owners = ownersOf(key, overrides, systemKeys, BUILT_IN_KEYS)
-  const macos = owners.find((o) => o.kind === 'macos')
+  const macos = systemKeys.find((m) => sameKey(m.accelerator, key))
   if (macos !== undefined) return `${d}: macOS uses it for ${macos.label}. You can't use it.`
-  const command = owners.find((o) => o.kind === 'command')
-  if (command !== undefined) return `${d}: ${command.label}. You can change it.`
-  const builtIn = owners.find((o) => o.kind === 'builtIn')
-  if (builtIn !== undefined) return `${d}: ${builtIn.label}. It is built in.`
-  if (!isUsableKey(key)) return `${d} needs ⌘ or ⌃ to be a hotkey.`
+  const rows = ALL_KEYS.filter((r) => keysOf(r, overrides).some((k) => sameKey(k, key) || sameKey(k.split(' ')[0], key)))
+  if (rows.length > 0) return `${d}: ${rows.map(owned).join('; ')}.`
+  if (!isUsableKey(key)) return `${d} needs ⌘, ⌃ or ⌥ to be a hotkey (a drawing or diagram tool can be a letter).`
   return `${d} is free. You can use it.`
 }
 
 /**
  * The search bar at the top of Settings › Hotkeys (D5): a text box that filters the page (`query`, `onQuery`),
- * and a button that records ONE key, puts it in that box and shows the answer while that query stands
- * (`answering`). Esc in the box clears it (the dialog's layered Esc); Esc while recording stops the recording,
- * and nothing else hears the key.
+ * a button that records ONE key, puts it in that box and shows the answer while that query stands
+ * (`answering`), and the filters (YAZ-3564 K7). Esc in the box clears it (the dialog's layered Esc); Esc while
+ * recording stops the recording, and nothing else hears the key.
  */
-export function KeySearch({ ctx, query, answering, onQuery }: { ctx: SettingsCtx; query: string; answering: boolean; onQuery: (query: string, pressed: boolean) => void }) {
+export function KeySearch({ ctx, query, answering, onQuery, filter = NO_FILTER, onFilter }: { ctx: SettingsCtx; query: string; answering: boolean; onQuery: (query: string, pressed: boolean) => void; filter?: HotkeyFilter; onFilter?: (next: HotkeyFilter) => void }) {
   const [recording, setRecording] = useState(false)
   const [answer, setAnswer] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
@@ -381,13 +501,20 @@ export function KeySearch({ ctx, query, answering, onQuery }: { ctx: SettingsCtx
           </p>
         )
       )}
+      {onFilter !== undefined && <FilterBar filter={filter} onFilter={onFilter} />}
     </div>
   )
 }
 
 // ---------- the rows ----------
 
-/** A stable row id from a label (never the key, which can change): 'Close the review…' → 'close-the-review'. */
+/** The other words a place goes by in the search (D5): its engine's name. */
+const SCOPE_WORDS: Partial<Record<KeyScope, readonly string[]>> = { drawing: ['excalidraw', 'canvas'], diagram: ['draw.io'], code: ['monaco'] }
+
+/** A row's DOM-safe id part: 'note.bold' → 'note-bold'; an App command keeps its bare id ('search'), as before YAZ-3564. */
+const rowDomId = (row: KeyRow): string => (row.scope === 'app' && commandOf(row) !== undefined ? row.id.slice(4) : row.id.replace(/\./g, '-'))
+
+/** A stable id part from a label (never the key, which can change): 'Zoom into that bullet' → 'zoom-into-that-bullet'. */
 const slug = (label: string): string =>
   label
     .toLowerCase()
@@ -403,32 +530,44 @@ const fixedRow = (keys: string, label: ReactNode) => (
   </div>
 )
 
-function builtInItems(group: string, entries: readonly HotkeyEntry[]): SettingDef[] {
-  const seen = new Map<string, number>()
-  return entries.map(({ keys, label }) => {
-    const base = slug(shortLabel(label))
-    const n = seen.get(base) ?? 0
-    seen.set(base, n + 1)
-    return { id: `hotkey-${group}-${base}${n === 0 ? '' : `-${n + 1}`}`, label, keywords: [keys, ...ROW_KEYWORDS], bare: true, render: () => fixedRow(keys, label) }
-  })
+/** The keys of a built-in row as one line: '⌘X / ⌘C', or a range '⌘1 … ⌘9'. */
+const keysText = (keys: readonly string[]): string => {
+  const shownKeys = keys.map((k) => k.split(' ').map(toDisplay).join(' '))
+  return shownKeys.length > 3 && shownKeys.every((k, i) => i === 0 || k.slice(0, -1) === shownKeys[0].slice(0, -1)) ? `${shownKeys[0]} … ${shownKeys.at(-1)}` : shownKeys.join(' / ')
 }
 
-const commandItem = (id: HotkeyId): SettingDef => ({
-  id: `hotkey-${id}`,
-  label: hotkeyCommand(id).label,
-  // A bare row shows no hint: this is its search text — the key as it is NOW (the dialog rebuilds the
-  // candidates when a key changes) and the command's own hint.
-  hint: ({ settings }) => [shown(keyFor(id, settings.hotkeys)), hotkeyCommand(id).hint].filter(Boolean).join(' '),
-  keywords: ROW_KEYWORDS,
+/** One row of the page: a button for a changeable key, muted text for a built-in one. Its search text is its label, its keys now and its hint (D5). */
+const rowItem = (row: KeyRow): SettingDef => ({
+  id: `hotkey-${rowDomId(row)}`,
+  label: row.label,
+  hint: ({ settings }) => [keysText(keysOf(row, settings.hotkeys)) || 'No key', row.hint].filter(Boolean).join(' '),
+  keywords: [SCOPE_TITLES[row.scope].toLowerCase(), ...(SCOPE_WORDS[row.scope] ?? []), ...ROW_KEYWORDS],
   bare: true,
-  render: (ctx) => <HotkeyCommandRow id={id} ctx={ctx} />,
+  available: (ctx) => inFilter(row, ctx),
+  render: (ctx) => {
+    if (row.changeable) return <HotkeyRow row={row} ctx={ctx} />
+    const blocker = blockersOf(row, ctx.settings.hotkeys, ctx.settings.hotkeysAside)[0]
+    return (
+      <div className="hotkeys__box hotkeys__box--fixed">
+        <div className="hotkeys__box-tab">{SCOPE_TITLES[row.scope]}</div>
+        <div className="hotkeys__box-action" title={row.hint}>
+          {row.label}
+        </div>
+        {blocker !== undefined && <LostLine row={row} blocker={blocker} overrides={ctx.settings.hotkeys} />}
+        <div className="hotkeys__box-foot">
+          <span className="hotkeys__keys">{keysText(keysOf(row, ctx.settings.hotkeys))}</span>
+          <span className="hotkeys__hint">Built in</span>
+        </div>
+      </div>
+    )
+  },
 })
 
 /** A "Used by macOS" row (D3): there while this Mac has the key, with its key as this Mac has it. */
 const macosItem = (label: string): SettingDef => {
   const row = (ctx: SettingsCtx) => ctx.systemHotkeys?.find((r) => r.label === label)
   return {
-    id: `hotkey-macos-${slug(label)}`,
+    id: `hotkey-macos-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)}`,
     label,
     hint: (ctx) => {
       const r = row(ctx)
@@ -436,7 +575,7 @@ const macosItem = (label: string): SettingDef => {
     },
     keywords: ['macos', ...ROW_KEYWORDS],
     bare: true,
-    available: (ctx) => row(ctx) !== undefined,
+    available: (ctx) => row(ctx) !== undefined && !isFiltered(ctx),
     render: (ctx) => {
       const r = row(ctx)
       return (
@@ -453,20 +592,234 @@ const macosItem = (label: string): SettingDef => {
   }
 }
 
-const groupId = (g: (typeof HOTKEY_GROUPS)[number]): string => g.id ?? g.title.toLowerCase()
+// ---------- one card per key (YAZ-3564: the page by key) ----------
 
-const groups: SettingsGroup[] = HOTKEY_GROUPS.map((g) => ({
-  title: g.title,
-  // The Window group starts with the keys the user can change (D8).
-  items: [...(g.title === 'Window' ? HOTKEY_COMMANDS.map((c) => commandItem(c.id)) : []), ...builtInItems(groupId(g), g.entries)],
-}))
+/** A key as one string to group by: each step in its normal form, so 'CmdOrCtrl+D' and 'Command+D' are one card. */
+const normal = (key: string): string => key.split(' ').map((step) => normalizeKey(step) ?? step).join(' ')
 
-export const HOTKEYS_SECTION: SettingsSection = {
-  id: 'hotkeys',
-  title: 'Hotkeys',
-  standalone: true,
-  groups: [
-    ...groups,
+/**
+ * One card per key as the keys are now: the rows whose first key it is, App rows first. Shared: an App row and a
+ * row of a tab on one key (⌘D), or an App key that starts a tab's two-step keys (⌘K); App: an App key alone; Tab:
+ * one or more tabs' own key (⌘B is Bold in notes and in diagrams), no App key.
+ */
+interface KeyCard {
+  key: string
+  rows: KeyRow[]
+  kind: 'shared' | 'app' | 'tab'
+  /** The tabs a pick decides (K9): a shared key the user can settle comes first on the page. */
+  picks: number
+}
+
+const ORDER: readonly KeyScope[] = ['app', 'note', 'drawing', 'diagram', 'code', 'views']
+const KIND_ORDER = { shared: 0, app: 1, tab: 2 } as const
+
+/** The tabs where an App command's key can go either way (K9): the rows of each that have it, or begin with it. */
+function contested(app: KeyRow, overrides: HotkeyOverrides): Map<AsidePlace, KeyRow[]> {
+  const out = new Map<AsidePlace, KeyRow[]>()
+  const key = keyNow(app, overrides)
+  if (key === null || commandOf(app) === undefined || commandOf(app)?.rendererOwned === true || app.macStandard === true) return out
+  // With every tab handing the key to the App action, the rows that lose it are the ones a pick decides.
+  const takeAll = Object.fromEntries(ASIDE_PLACES.map((p) => [asideId(app.id, p), false]))
+  for (const other of clashesOf(app, key, overrides, takeAll)) {
+    if (!(ASIDE_PLACES as readonly string[]).includes(other.scope)) continue
+    const place = other.scope as AsidePlace
+    out.set(place, [...(out.get(place) ?? []), other])
+  }
+  return out
+}
+
+let cardCache: { overrides: HotkeyOverrides; cards: KeyCard[]; noKey: KeyRow[]; cardOf: Map<string, KeyCard> } | null = null
+/** The cards for `overrides`, built once per set of changes. */
+function cardsOf(overrides: HotkeyOverrides): { cards: KeyCard[]; noKey: KeyRow[]; cardOf: Map<string, KeyCard> } {
+  if (cardCache?.overrides === overrides) return cardCache
+  const byKey = new Map<string, KeyCard>()
+  const noKey: KeyRow[] = []
+  for (const row of ALL_KEYS) {
+    const key = keyNow(row, overrides)
+    if (key === null) {
+      noKey.push(row)
+      continue
+    }
+    const id = normal(key)
+    const card: KeyCard = byKey.get(id) ?? { key, rows: [], kind: 'tab', picks: 0 }
+    card.rows.push(row)
+    byKey.set(id, card)
+  }
+  const cards = [...byKey.values()]
+  for (const card of cards) {
+    card.rows.sort((a, b) => ORDER.indexOf(a.scope) - ORDER.indexOf(b.scope))
+    const apps = card.rows.filter((r) => r.scope === 'app')
+    card.picks = apps.reduce((n, r) => n + contested(r, overrides).size, 0)
+    const shared = apps.length > 0 && (card.rows.some((r) => r.scope !== 'app') || card.picks > 0)
+    card.kind = shared ? 'shared' : apps.length > 0 ? 'app' : 'tab'
+  }
+  const first = (c: KeyCard) => ORDER.indexOf(c.rows[0].scope)
+  cards.sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || b.picks - a.picks || first(a) - first(b) || toDisplay(a.key).localeCompare(toDisplay(b.key)))
+  const cardOf = new Map(cards.flatMap((card) => card.rows.map((r) => [r.id, card] as const)))
+  cardCache = { overrides, cards, noKey, cardOf }
+  return cardCache
+}
+
+/** A key as the page shows it: '⌘D', or a two-step '⌘K ⌘C'. */
+const keyText = (key: string): string => key.split(' ').map(toDisplay).join(' ')
+/** A card's DOM id, for a link to it. */
+const cardAnchor = (key: string): string => `hotkeys-key-${normal(key).replace(/[^A-Za-z0-9]/g, (c) => `_${c.charCodeAt(0).toString(16)}`)}`
+
+const PLACE_WORDS: Record<KeyScope, string> = { app: 'every tab', note: 'notes', drawing: 'drawings', diagram: 'diagrams', code: 'code', views: 'folder views' }
+
+/** Under a row whose key an App key always takes in its tab: what the key does there, and a link to the card that decides it. */
+function LostLine({ row, blocker, overrides }: { row: KeyRow; blocker: KeyRow; overrides: HotkeyOverrides }) {
+  const theirs = keyNow(blocker, overrides)
+  const mine = keyNow(row, overrides)
+  const elsewhere = theirs !== null && mine !== null && normal(theirs) !== normal(mine)
+  const go = (): void => {
+    const card = theirs === null ? null : document.getElementById(cardAnchor(theirs))
+    card?.scrollIntoView({ block: 'center' })
+    card?.classList.add('hotkeys__card--flash')
+    setTimeout(() => card?.classList.remove('hotkeys__card--flash'), 1200)
+  }
+  return (
+    <p className="hotkeys__line hotkeys__lost">
+      No key here now: {theirs === null ? '' : keyText(theirs)} is {owned(blocker)}.
+      {elsewhere && (
+        <>
+          {' '}
+          <button type="button" className="hotkeys__link" onClick={go}>
+            Change it on {keyText(theirs)}
+          </button>
+        </>
+      )}
+    </p>
+  )
+}
+
+/** The App command a pick in `row`'s tab settles on its card (K9), or null: the row then just says what it is. */
+function pickOf(row: KeyRow, overrides: HotkeyOverrides): KeyRow | null {
+  if (!(ASIDE_PLACES as readonly string[]).includes(row.scope)) return null
+  const card = cardsOf(overrides).cardOf.get(row.id)
+  return card?.rows.find((a) => a.scope === 'app' && (contested(a, overrides).get(row.scope as AsidePlace) ?? []).some((r) => r.id === row.id)) ?? null
+}
+
+/** A tab's own actions on a key, as a pick names them: 'Duplicate', or '28 two-step keys'. */
+const ownText = (rows: readonly KeyRow[]): string => (rows.length > 3 ? `${rows.length} two-step keys` : rows.map((r) => r.label).join(', '))
+const losersText = (rows: readonly KeyRow[]): string => (rows.length > 3 ? `${rows.length} ${SCOPE_TITLES[rows[0].scope].toLowerCase()} keys that start with it` : rows.map(owned).join(', '))
+
+/**
+ * What a shared key does in one tab (K9, YAZ-3564): the tab's own action, or the App command's. A dropdown, like the
+ * mockup; a change asks "Take it" first (the Premiere rule), and writes `hotkeysAside` for this tab alone.
+ */
+function TabPick({ app, place, own, ctx }: { app: KeyRow; place: AsidePlace; own: readonly KeyRow[]; ctx: SettingsCtx }) {
+  const [asking, setAsking] = useState<boolean | null>(null)
+  const aside = ctx.settings.hotkeysAside
+  const keeps = stepsAside(app, place, aside)
+  const key = keyNow(app, ctx.settings.hotkeys)
+  const cap = key === null ? '' : keyText(key)
+  const losers = contested(app, ctx.settings.hotkeys).get(place) ?? own
+  return (
+    <>
+      <Select<boolean> options={[{ value: true, label: ownText(losers) }, { value: false, label: app.label }]} value={keeps} onChange={(next) => next !== keeps && setAsking(next)} ariaLabel={`${cap} in ${PLACE_WORDS[place]}`} />
+      {asking !== null && (
+        <ConfirmSheet
+          labelId={`hotkeys-pick-${app.id.replace(/\W/g, '-')}-${place}`}
+          text={`${cap} in ${PLACE_WORDS[place]}: ${asking ? ownText(losers) : app.label}?`}
+          confirmLabel="Take it"
+          keys="contained"
+          focusConfirm
+          onConfirm={() => {
+            ctx.onChange({ ...ctx.settings, hotkeysAside: withAside(aside, app, place, asking) })
+            setAsking(null)
+          }}
+          onCancel={() => setAsking(null)}
+        >
+          <p className="hotkeys__line hotkeys__line--ask">{asking ? `${owned(app)} will not work in ${PLACE_WORDS[place]}.` : `${losersText(losers)} will have no key in ${PLACE_WORDS[place]}.`}</p>
+        </ConfirmSheet>
+      )}
+    </>
+  )
+}
+
+const TAB_TITLES: Record<AsidePlace, string> = { drawing: 'Drawings', diagram: 'Diagrams', code: 'Code' }
+/** Where an App action works now, as its box's title: 'Every tab', or 'Notes · Folder views · Code' while some tabs keep their own. */
+function appWhere(row: KeyRow, overrides: HotkeyOverrides, aside: HotkeyAside): string {
+  const fought = contested(row, overrides)
+  const kept = ASIDE_PLACES.filter((p) => fought.has(p) && stepsAside(row, p, aside))
+  return kept.length === 0 ? 'Every tab' : ['Notes', 'Folder views', ...ASIDE_PLACES.filter((p) => !kept.includes(p)).map((p) => TAB_TITLES[p])].join(' · ')
+}
+
+/** A tab's box on a shared key whose own actions are on other cards (code's two-step keys on ⌘K): just the pick. */
+const pickItem = (app: KeyRow, place: AsidePlace, rows: readonly KeyRow[]): SettingDef => ({
+  id: `hotkeys-pick-${rowDomId(app)}-${place}`,
+  label: `${app.label} in ${PLACE_WORDS[place]}`,
+  keywords: [SCOPE_TITLES[place].toLowerCase(), ...ROW_KEYWORDS],
+  bare: true,
+  available: (ctx) => {
+    const f = ctx.hotkeyFilter ?? NO_FILTER
+    return (f.scope === 'all' || f.scope === place) && (!f.changed || asideChanged(app, ctx.settings.hotkeysAside))
+  },
+  render: (ctx) => (
+    <div className="hotkeys__box">
+      <div className="hotkeys__box-tab">{SCOPE_TITLES[place]}</div>
+      <TabPick app={app} place={place} own={rows} ctx={ctx} />
+      <p className="hotkeys__line">Each starts with {keyText(keyNow(app, ctx.settings.hotkeys) ?? '')}. They are on their own cards.</p>
+    </div>
+  ),
+})
+
+/** A card's head: the key, and what kind of key it is. */
+function KeyCardHead({ card }: { card: KeyCard }) {
+  const what =
+    card.kind === 'shared' ? (card.picks > 0 ? 'Shared: each tab picks what it does.' : 'Used by the app and by tabs: built in.') : card.kind === 'app' ? 'Works in every tab.' : card.rows.length > 1 ? 'Each tab has its own action.' : `Works in ${PLACE_WORDS[card.rows[0].scope]}.`
+  return (
+    <div className="hotkeys__card-head">
+      <h3 className="settings-group__title hotkeys__cap-key">{keyText(card.key)}</h3>
+      <span className="hotkeys__hint">{what}</span>
+    </div>
+  )
+}
+
+/** How the page reads, said once at the top (shown while no filter stands). */
+const legendItem: SettingDef = {
+  id: 'hotkeys-legend',
+  label: 'How keys work',
+  keywords: ['shared', ...ROW_KEYWORDS],
+  bare: true,
+  available: (ctx) => !isFiltered(ctx),
+  render: () => (
+    <p className="hotkeys__line">
+      One card per key, one box per tab. Where tabs share a key, each tab's box picks what the key does there. A note or a diagram reads a change when it opens.
+    </p>
+  ),
+}
+
+/** The picks of a card's App commands whose tab rows are on other cards (⌘K's two-step code keys). */
+function elsewherePicks(card: KeyCard, overrides: HotkeyOverrides): SettingDef[] {
+  return card.rows
+    .filter((r) => r.scope === 'app')
+    .flatMap((app) => [...contested(app, overrides)].filter(([, rows]) => !rows.some((r) => card.rows.includes(r))).map(([place, rows]) => pickItem(app, place, rows)))
+}
+
+/** The page's groups as the keys are now: the colours, one card per key, then the actions with no key. */
+function cardGroups(ctx: SettingsCtx): SettingsGroup[] {
+  const { cards, noKey } = cardsOf(ctx.settings.hotkeys)
+  return [
+    { items: [legendItem] },
+    ...cards.map((card) => ({
+      title: keyText(card.key),
+      anchor: cardAnchor(card.key),
+      cardClass: 'hotkeys__boxes',
+      header: () => <KeyCardHead card={card} />,
+      items: [...card.rows.map(rowItem), ...elsewherePicks(card, ctx.settings.hotkeys)],
+    })),
+    { title: 'Actions with no key', hint: 'They still work from the menu or the toolbar.', anchor: 'hotkeys-no-key', cardClass: 'hotkeys__boxes', items: noKey.map(rowItem) },
+  ]
+}
+
+/** The mouse tips (YAZ-1679): no key, so no row of the key list; shown while no filter stands. */
+const mouseItems: SettingDef[] = MOUSE_TIPS.map(({ keys, label }) => ({ id: `hotkey-mouse-${slug(shortLabel(label))}`, label, keywords: [keys, ...ROW_KEYWORDS], bare: true, available: (ctx) => !isFiltered(ctx), render: () => fixedRow(keys, label) }))
+
+/** The groups after the key cards: the mouse, macOS and Reset all. */
+const tailGroups: SettingsGroup[] = [
+    { title: 'Mouse', items: mouseItems },
     {
       title: 'Used by macOS',
       hint: "macOS keeps these keys, so the app never hears them. Change them in the Mac's keyboard settings.",
@@ -479,10 +832,18 @@ export const HOTKEYS_SECTION: SettingsSection = {
           label: 'Reset all hotkeys',
           keywords: ['reset', 'default'],
           bare: true,
-          available: (ctx) => Object.keys(ctx.settings.hotkeys).length > 0,
+          available: (ctx) => changedShown(ctx).length > 0,
           render: (ctx) => <ResetAllHotkeys ctx={ctx} />,
         },
       ],
     },
-  ],
+]
+
+export const HOTKEYS_SECTION: SettingsSection = {
+  id: 'hotkeys',
+  title: 'Hotkeys',
+  standalone: true,
+  // The part that does not move with the keys; `groupsFor` puts the key cards first.
+  groups: tailGroups,
+  groupsFor: (ctx) => [...cardGroups(ctx), ...tailGroups],
 }

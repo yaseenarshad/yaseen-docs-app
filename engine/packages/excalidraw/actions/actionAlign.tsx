@@ -30,6 +30,7 @@ import { t } from "../i18n";
 
 import { isSomeElementSelected } from "../scene";
 
+import { boundShortcut } from "../keyRemap";
 import { getShortcutKey } from "../shortcut";
 
 import { register } from "./register";
@@ -101,9 +102,10 @@ export const actionAlignTop = register({
       type="button"
       icon={AlignTopIcon}
       onClick={() => updateData(null)}
-      title={`${t("labels.alignTop")} — ${getShortcutKey(
-        "CtrlOrCmd+Shift+Up",
-      )}`}
+      // Yaseen Docs (YAZ-3564 K12)
+      title={`${t("labels.alignTop")} — ${
+        boundShortcut("alignTop") ?? getShortcutKey("CtrlOrCmd+Shift+Up")
+      }`}
       aria-label={t("labels.alignTop")}
       visible={isSomeElementSelected(getNonDeletedElements(elements), appState)}
     />
@@ -135,9 +137,10 @@ export const actionAlignBottom = register({
       type="button"
       icon={AlignBottomIcon}
       onClick={() => updateData(null)}
-      title={`${t("labels.alignBottom")} — ${getShortcutKey(
-        "CtrlOrCmd+Shift+Down",
-      )}`}
+      // Yaseen Docs (YAZ-3564 K12)
+      title={`${t("labels.alignBottom")} — ${
+        boundShortcut("alignBottom") ?? getShortcutKey("CtrlOrCmd+Shift+Down")
+      }`}
       aria-label={t("labels.alignBottom")}
       visible={isSomeElementSelected(getNonDeletedElements(elements), appState)}
     />
@@ -169,9 +172,10 @@ export const actionAlignLeft = register({
       type="button"
       icon={AlignLeftIcon}
       onClick={() => updateData(null)}
-      title={`${t("labels.alignLeft")} — ${getShortcutKey(
-        "CtrlOrCmd+Shift+Left",
-      )}`}
+      // Yaseen Docs (YAZ-3564 K12)
+      title={`${t("labels.alignLeft")} — ${
+        boundShortcut("alignLeft") ?? getShortcutKey("CtrlOrCmd+Shift+Left")
+      }`}
       aria-label={t("labels.alignLeft")}
       visible={isSomeElementSelected(getNonDeletedElements(elements), appState)}
     />
@@ -203,9 +207,10 @@ export const actionAlignRight = register({
       type="button"
       icon={AlignRightIcon}
       onClick={() => updateData(null)}
-      title={`${t("labels.alignRight")} — ${getShortcutKey(
-        "CtrlOrCmd+Shift+Right",
-      )}`}
+      // Yaseen Docs (YAZ-3564 K12)
+      title={`${t("labels.alignRight")} — ${
+        boundShortcut("alignRight") ?? getShortcutKey("CtrlOrCmd+Shift+Right")
+      }`}
       aria-label={t("labels.alignRight")}
       visible={isSomeElementSelected(getNonDeletedElements(elements), appState)}
     />

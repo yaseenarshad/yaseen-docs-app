@@ -84,6 +84,9 @@ interface SidebarStubProps {
   /** The row menu a row of the new tab page asked for (YAZ-2663 D6): the Sidebar opens its own menu for the path, at the point. */
   menuRequest?: { id: number; path: string; x: number; y: number } | null
   onMenuConsumed?: (id: number) => void
+  /** The name field the New… box asked for (YAZ-3556 D4): the Sidebar opens the right-click "New …" field in the folder. */
+  createRequest?: { id: number; kind: 'file' | 'drawing' | 'diagram'; dir: string } | null
+  onCreateConsumed?: (id: number) => void
   /** The way out of the empty search bar (YAZ-2663 D7, S33): the keyboard focus goes to the new tab page, when one shows and has a row. */
   onLeaveToPage?: () => boolean
   /** A folder search row (🔒 D3, YAZ-1491): App flips to Files and issues a reveal request for the dir — with `focus` when the keyboard asked (YAZ-2662 D1, D8). */
@@ -210,6 +213,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuNewTab = new Set<() => void>()
   const windowGlow = new Set<(on: boolean) => void>()
   const menuNewWindow = new Set<() => void>()
+  // ⌘N and ⌘D (YAZ-3556 D1).
+  const menuNewItem = new Set<() => void>()
+  const menuGoTo = new Set<() => void>()
   const menuZoom = new Set<(step: ZoomStep) => void>()
   const menuWhatsNew = new Set<() => void>()
   // The board gestures (YAZ-3037): Export Excalidraw Drawing… is the one App routes itself during a review.
@@ -353,6 +359,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onTabOverview: menuSub(menuTabOverview),
       onNewTab: menuSub(menuNewTab),
       onNewWindow: menuSub(menuNewWindow),
+      onNewItem: menuSub(menuNewItem),
+      onGoTo: menuSub(menuGoTo),
+      onKeySheet: menuSub(new Set()),
       onZoom: vi.fn((l: (step: ZoomStep) => void) => {
         menuZoom.add(l)
         return () => menuZoom.delete(l)
@@ -513,6 +522,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitNewTab: () => menuNewTab.forEach((l) => l()),
     emitGlow: (on: boolean) => windowGlow.forEach((l) => l(on)),
     emitNewWindow: () => menuNewWindow.forEach((l) => l()),
+    emitNewItem: () => menuNewItem.forEach((l) => l()),
+    emitGoTo: () => menuGoTo.forEach((l) => l()),
     emitWhatsNew: () => menuWhatsNew.forEach((l) => l()),
     emitZoom: (step: ZoomStep) => menuZoom.forEach((l) => l(step)),
     emitExportDrawing: () => menuExportDrawing.forEach((l) => l()),
@@ -624,20 +635,13 @@ describe('App per-window sidebar visibility (YAZ-1280)', () => {
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
   })
 
-  it('plain Cmd+B on app chrome prevents default, toggles once, and the listener is removed on unmount', async () => {
+  it('⌘B on app chrome toggles nothing: Toggle sidebar is the menu\'s ⌘⇧B since YAZ-3564 D10, and the menu sends it (above)', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     const event = new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })
     act(() => void el.querySelector('.app')?.dispatchEvent(event))
-    expect(event.defaultPrevented).toBe(true)
-    expect(el.querySelector('[data-sidebar]')).toBeNull()
-    expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith({ sidebarCollapsed: true })
-
-    act(() => root?.unmount())
-    root = null
-    const afterUnmount = new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })
-    document.body.dispatchEvent(afterUnmount)
-    expect(afterUnmount.defaultPrevented).toBe(false)
-    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
+    expect(event.defaultPrevented).toBe(false)
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith({ sidebarCollapsed: true })
   })
 })
 
@@ -1355,7 +1359,6 @@ describe('App sidebar resize (YAZ-738)', () => {
   const sideW = () => captured.sidebar?.width
   /** One App render as the stub counts it: `mount` renders under StrictMode, which renders twice. */
   const STRICT_RENDER = 2
-  const toggle = (el: HTMLElement) => act(() => void el.querySelector('.app')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })))
 
   it('a drag widens the sidebar live and persists the new width once', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
@@ -1414,12 +1417,12 @@ describe('App sidebar resize (YAZ-738)', () => {
   })
 
   it('dragging well past the minimum collapses the sidebar instead of writing a sliver width', async () => {
-    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const { bridge, el, emitToggleSidebar } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => drag(el, 50 - 260))
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: true })
     expect(bridge.state.setSidebarWidth).not.toHaveBeenCalled()
-    toggle(el)
+    act(() => emitToggleSidebar())
     expect(el.querySelector('[data-sidebar]')).not.toBeNull()
     expect(sideW()).toBe(260)
   })
@@ -2029,6 +2032,95 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
     rightClick(el.querySelector('.tabbar__tab')!)
     act(() => showInSidebar(el)?.click())
     expect(captured.sidebar?.revealRequest?.id).toBe(2)
+  })
+})
+
+/**
+ * ⌘N and ⌘D (YAZ-3556 D1–D9): the New… box on "Default location for new notes", whose ⏎ shows Files and asks the Sidebar
+ * for the name field; the jump to `settings.goTo` for each kind of place, and a path the vault does not have. The
+ * Welcome window has no vault: both keys do nothing there. Each test has a vault of its own: the tree feed keeps a tree per root.
+ */
+describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
+  let n = 0
+  const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const folder = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
+  /** A fresh vault holding Projects/plan.md, the window on it with the sidebar hidden, and the settings given. */
+  const mountWith = async (settings: Partial<AppState['settings']>) => {
+    const v = `/goto-${++n}`
+    const m = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, ...settings } }, { id: 'w1', root: v, file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites' }, {}, (b) =>
+      b.bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [folder(`${v}/Projects`, [note(`${v}/Projects/plan.md`)])], generatedAt: 1 })),
+    )
+    return { ...m, v }
+  }
+  const settle = () => act(async () => {})
+
+  it('the Welcome window: neither key does anything', async () => {
+    const { el, emitNewItem, emitGoTo } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
+    act(() => emitNewItem())
+    act(() => emitGoTo())
+    await settle()
+    expect(el.querySelector('.new-item')).toBeNull()
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(el.querySelector('.link-notice')).toBeNull()
+  })
+
+  it('⌘N opens the box on the default folder; ⏎ shows the hidden sidebar on Files and asks for the name field there, one request per box', async () => {
+    const { el, bridge, v, emitNewItem } = await mountWith({ newNoteLocation: 'folder', newNoteFolder: 'Projects' })
+    act(() => emitNewItem())
+    await settle()
+    expect(el.querySelector('.new-item__place')?.textContent).toBe('Projects')
+    expect(el.querySelector('.new-item__tile[aria-checked="true"]')?.textContent).toBe('Note')
+    act(() => void el.querySelector('.new-item')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    act(() => void el.querySelector('.new-item')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(el.querySelector('.new-item')).toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.createRequest).toEqual({ id: 1, kind: 'drawing', dir: `${v}/Projects` })
+    act(() => captured.sidebar?.onCreateConsumed?.(1))
+    expect(captured.sidebar?.createRequest).toBeNull()
+    // The box opens again on Note (D7).
+    act(() => emitNewItem())
+    await settle()
+    expect(el.querySelector('.new-item__tile[aria-checked="true"]')?.textContent).toBe('Note')
+  })
+
+  it('⌘N with a default folder the vault does not have: the box shows the vault folder and says so (D3)', async () => {
+    const { el, emitNewItem } = await mountWith({ newNoteLocation: 'folder', newNoteFolder: 'Inbox' })
+    act(() => emitNewItem())
+    await settle()
+    expect(el.querySelector('.new-item .confirm__status')?.textContent).toMatch(/“Inbox” is not in this vault/)
+  })
+
+  it('⌘D on a tab shows the hidden sidebar on that tab', async () => {
+    const { bridge, emitGoTo } = await mountWith({ goTo: { kind: 'tab', tab: 'recents' } })
+    act(() => emitGoTo())
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
+    expect(captured.sidebar?.lens).toBe('recents')
+  })
+
+  it('⌘D on a folder shows it in Files, with the keyboard on its row', async () => {
+    const { v, emitGoTo } = await mountWith({ goTo: { kind: 'folder', path: 'Projects' } })
+    act(() => emitGoTo())
+    await settle()
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: `${v}/Projects`, focus: true })
+  })
+
+  it('⌘D on a file opens it as a sidebar click does and shows its row', async () => {
+    const { el, v, emitGoTo } = await mountWith({ goTo: { kind: 'file', path: 'Projects/plan.md' } })
+    act(() => emitGoTo())
+    await settle()
+    expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('plan')
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: `${v}/Projects/plan.md`, focus: false })
+  })
+
+  it('⌘D on a path the vault does not have says so, and shows nothing', async () => {
+    const { el, emitGoTo } = await mountWith({ goTo: { kind: 'folder', path: 'Gone' } })
+    act(() => emitGoTo())
+    await settle()
+    expect(el.querySelector('.link-notice__text')?.textContent).toMatch(/Can't go to "Gone": no such folder in/)
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
   })
 })
 

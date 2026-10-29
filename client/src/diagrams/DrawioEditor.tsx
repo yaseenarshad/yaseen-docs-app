@@ -43,8 +43,6 @@ export interface DrawioEditorProps extends DocumentHostProps {
   darkColors: DiagramDarkColors
   /** The window's ONE passive notice: where an exported image landed, or why it did not. */
   onNotice?: (text: string, icon?: NoticeKind) => void
-  /** App's sidebar toggle: ⌘B pressed inside draw.io with nothing selected, sent up by our PostConfig.js as a `shortcut` event. */
-  onToggleSidebar?: () => void
 }
 
 interface LoadedDiagram {
@@ -73,7 +71,7 @@ interface DiagramHostProps extends DrawioEditorProps {
 }
 
 /** Mounts exactly one draw.io iframe for `loaded`; its board document owns everything that writes. */
-function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, onNotice, onToggleSidebar }: DiagramHostProps) {
+function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, onNotice }: DiagramHostProps) {
   const theme = useAppliedTheme()
   const frameRef = useRef<HTMLIFrameElement>(null)
   /** The URL is fixed at mount: a theme flip is a message, never a reload of the editor. */
@@ -123,8 +121,9 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     if (h.configured || !h.configureAsked) return
     h.configured = true
     shownColors.current = wantedColors.current
-    // The menu's keys as they are now (YAZ-3397 D2): a change reaches a diagram the next time it opens.
-    post({ action: 'configure', config: drawioConfig(wantedColors.current, storage.getSettings()?.hotkeys) })
+    // The menu's and the diagram's keys as they are now (YAZ-3397 D2, YAZ-3564 K4): a change reaches a diagram the next time it opens.
+    const settings = storage.getSettings()
+    post({ action: 'configure', config: drawioConfig(wantedColors.current, settings?.hotkeys, settings?.hotkeysAside, /Mac/.test(navigator.platform)) })
   }, [post])
 
   /** Show the app's theme, once draw.io listens: its own `darkMode` / `lightMode` action. */
@@ -240,9 +239,6 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
           if (msg.event === 'save') void a.flush()
           return
         }
-        case 'shortcut':
-          onToggleSidebar?.()
-          return
       }
     }
     window.addEventListener('message', onMessage)
@@ -250,7 +246,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       window.removeEventListener('message', onMessage)
       if (fallback !== undefined) clearTimeout(fallback)
     }
-  }, [configure, syncTheme, syncColors, syncReadOnly, sendLoad, autosave, retired, start, loaded.mtime, onToggleSidebar])
+  }, [configure, syncTheme, syncColors, syncReadOnly, sendLoad, autosave, retired, start, loaded.mtime])
 
   // YAZ-3076 D2: the file's switch, live — the load, this tab's toggle, or a change on disk.
   // At "Allow edits" after a stray change, the board's own reload (the drawing's rule) puts the disk back.

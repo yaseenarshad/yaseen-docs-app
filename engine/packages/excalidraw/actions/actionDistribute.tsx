@@ -26,6 +26,7 @@ import { t } from "../i18n";
 
 import { isSomeElementSelected } from "../scene";
 
+import { boundShortcut } from "../keyRemap";
 import { getShortcutKey } from "../shortcut";
 
 import { register } from "./register";
@@ -92,9 +93,10 @@ export const distributeHorizontally = register({
       type="button"
       icon={DistributeHorizontallyIcon}
       onClick={() => updateData(null)}
-      title={`${t("labels.distributeHorizontally")} — ${getShortcutKey(
-        "Alt+H",
-      )}`}
+      // Yaseen Docs (YAZ-3564 K12)
+      title={`${t("labels.distributeHorizontally")} — ${
+        boundShortcut("distributeHorizontally") ?? getShortcutKey("Alt+H")
+      }`}
       aria-label={t("labels.distributeHorizontally")}
       visible={isSomeElementSelected(getNonDeletedElements(elements), appState)}
     />
@@ -123,7 +125,10 @@ export const distributeVertically = register({
       type="button"
       icon={DistributeVerticallyIcon}
       onClick={() => updateData(null)}
-      title={`${t("labels.distributeVertically")} — ${getShortcutKey("Alt+V")}`}
+      // Yaseen Docs (YAZ-3564 K12)
+      title={`${t("labels.distributeVertically")} — ${
+        boundShortcut("distributeVertically") ?? getShortcutKey("Alt+V")
+      }`}
       aria-label={t("labels.distributeVertically")}
       visible={isSomeElementSelected(getNonDeletedElements(elements), appState)}
     />

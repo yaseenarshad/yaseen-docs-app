@@ -3,7 +3,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createContext, runInContext } from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
-import { drawioConfig } from '../client/src/diagrams/drawioProtocol.ts'
+import { drawioConfig, drawioKeyOf } from '../client/src/diagrams/drawioProtocol.ts'
+import { DIAGRAM_ACTIONS, DIAGRAM_EXTRA_CODES, DIAGRAM_KEYS } from '../shared/keys/diagram.ts'
 import { DRAWIO_TAG } from './packDrawio.mjs'
 
 /**
@@ -16,7 +17,7 @@ const OVERLAY_JS = fileURLToPath(new URL('../desktop/drawio-overlay/js/', import
 const APP_MIN_JS = fileURLToPath(new URL(`../desktop/.cache/drawio/${DRAWIO_TAG}/js/app.min.js`, import.meta.url))
 
 /** The globals PostConfig.js patches, each prototype method standing in for draw.io's original. */
-function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () => '@font-face {}' }) } = {}) {
+function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () => '@font-face {}' }), shortcuts = drawioConfig('adapt').keyboardShortcuts } = {}) {
   const posted = []
   const fontCss = []
   const listeners = []
@@ -26,7 +27,20 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
   Graph.prototype.isZoomWheelEvent = (evt) => evt.ctrlKey === true
   function EditorUi() {}
   EditorUi.prototype.createUi = function () {}
-  EditorUi.prototype.installKeyboardShortcuts = function () {}
+  // draw.io's own: the configure reply's `keyboardShortcuts`, one by one (no ⌥ keys here: the tests need none).
+  EditorUi.prototype.installKeyboardShortcuts = function () {
+    for (const c of env.Editor.keyboardShortcuts ?? []) this.installKeyboardShortcut(c)
+  }
+  // draw.io's own: bind the action by name (null clears the key), and name the key beside the action — letters and digits only.
+  EditorUi.prototype.installKeyboardShortcut = function (c) {
+    const code = typeof c.keyCode === 'string' ? c.keyCode.toUpperCase().charCodeAt(0) : c.keyCode
+    const table = this.keyHandler[c.control ? (c.shift ? 'controlShiftKeys' : 'controlKeys') : c.shift ? 'shiftKeys' : 'normalKeys']
+    if (c.action === null) delete table[code]
+    else table[code] = () => this.actions.get(c.action).funct()
+    const name = /[0-9A-Z]/.test(String.fromCharCode(code)) ? String.fromCharCode(code) : undefined
+    const action = this.actions.get(c.action)
+    if (c.action !== null && action !== undefined && name !== undefined) action.shortcut = `${c.control ? '⌘+' : ''}${c.shift ? '⇧+' : ''}${name}`
+  }
   // draw.io's own: Undo and Redo follow the undo history, never whether the graph takes edits.
   EditorUi.prototype.updateActionStates = function () {
     this.actions.get('undo').setEnabled(true)
@@ -70,6 +84,7 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
   }
   function Menus() {}
   Menus.prototype.createPopupMenu = (menu) => menu.items.push('zoomIn', 'zoomOut')
+  EditorUi.keyNames = { 8: 'Backspace', 13: 'Enter', 46: 'Delete' }
   const env = {
     Graph,
     EditorUi,
@@ -90,7 +105,8 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
       DEFAULT_FONTSIZE: 11,
       NONE: 'none',
     },
-    Editor: { configureFontCss: (css) => fontCss.push(css) },
+    Editor: { configureFontCss: (css) => fontCss.push(css), keyboardShortcuts: shortcuts, ctrlKey: '⌘', altKey: '⌥', shiftKey: '⇧' },
+    mxClient: { IS_MAC: true },
     fetch: fetchFonts,
     console: { error: vi.fn() },
     parent: { postMessage: (data, origin) => posted.push({ ...JSON.parse(data), origin }) },
@@ -162,23 +178,24 @@ function openEditor(env) {
     clearSelection: vi.fn(() => (selection = [])),
   }
   const actionState = {}
-  const actions = { get: (name) => ({ setEnabled: (on) => (actionState[name] = on) }) }
+  /** draw.io's actions by name: each one made the first time it is asked for, as a stand-in for draw.io's own. */
+  const actionMap = {}
+  const actions = {
+    get: (name) => (typeof name === 'string' ? (actionMap[name] ??= { funct: vi.fn(), isEnabled: () => true, shortcut: `draw.io's ${name}`, setEnabled: (on) => (actionState[name] = on) }) : undefined),
+    addAction: (name, funct) => (actionMap[name] = { funct, isEnabled: () => true, shortcut: null }),
+  }
   const bold = vi.fn()
+  const duplicate = vi.fn()
   const keyHandler = {
     normalKeys: {},
-    controlKeys: { 66: bold },
+    shiftKeys: {},
+    controlKeys: { 66: bold, 68: duplicate },
     controlShiftKeys: {},
-    bindControlKey(code, f) {
-      this.controlKeys[code] = f
-    },
-    bindControlShiftKey(code, f) {
-      this.controlShiftKeys[code] = f
-    },
     isControlDown: (evt) => evt.ctrlKey === true || evt.metaKey === true,
     // draw.io's own rule: a bare A–Z with cells selected is nothing (typing edits the label).
     getFunction(evt) {
       if (evt.keyCode >= 65 && evt.keyCode <= 90 && selection.length > 0 && !evt.shiftKey && !evt.altKey && !this.isControlDown(evt)) return null
-      const table = this.isControlDown(evt) ? (evt.shiftKey ? this.controlShiftKeys : this.controlKeys) : this.normalKeys
+      const table = this.isControlDown(evt) ? (evt.shiftKey ? this.controlShiftKeys : this.controlKeys) : evt.shiftKey ? this.shiftKeys : this.normalKeys
       return table[evt.keyCode] ?? null
     },
   }
@@ -189,12 +206,14 @@ function openEditor(env) {
   return {
     ui,
     bold,
+    duplicate,
     graph,
     actionState,
+    action: (name) => actionMap[name],
     select: (...cs) => (selection = cs),
-    /** A keydown as draw.io's handler takes it; true when something was bound to it. */
+    /** A keydown as draw.io's handler takes it (a letter or a keyCode); true when something was bound to it. */
     press(key, mods = {}) {
-      const run = keyHandler.getFunction({ keyCode: key.toUpperCase().charCodeAt(0), ...mods })
+      const run = keyHandler.getFunction({ keyCode: typeof key === 'number' ? key : key.toUpperCase().charCodeAt(0), ...mods })
       run?.call(keyHandler)
       return run != null
     },
@@ -408,18 +427,51 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     expect(text.style.fontStyle).toBe(0)
   })
 
-  it('⌘B with nothing selected goes up to the host as the app’s sidebar key; with a selection it stays draw.io’s bold', async () => {
+  it('⌘B is draw.io’s bold and nothing else: the sidebar key is the menu’s ⌘⇧B since YAZ-3564 D10, so nothing goes up to the host', async () => {
     const { env, posted } = loadPostConfig()
     await settle()
     const shape = cell(RECT)
     const editor = openEditor(env)
-    editor.press('b', { metaKey: true })
-    expect(posted.at(-1)).toEqual({ event: 'shortcut', command: 'toggleSidebar', origin: '*' })
-    expect(editor.bold).not.toHaveBeenCalled()
     editor.select(shape)
     editor.press('b', { metaKey: true })
     expect(editor.bold).toHaveBeenCalledOnce()
-    expect(posted.filter((m) => m.event === 'shortcut')).toHaveLength(1)
+    expect(posted.filter((m) => m.event === 'shortcut')).toHaveLength(0)
+  })
+
+  describe('the user’s diagram keys, through the configure reply (YAZ-3564 K4, K12, K15)', () => {
+    const open = (hotkeys) => {
+      const { env } = loadPostConfig({ shortcuts: drawioConfig('adapt', hotkeys, {}, true).keyboardShortcuts })
+      const editor = openEditor(env)
+      const text = cell(TEXT, { label: 'Note' })
+      editor.select(text)
+      return { editor, text }
+    }
+
+    it('a remapped key works, the old one does nothing, and the action shows the new key — a ⌘, too, which draw.io cannot name', () => {
+      const { editor, text } = open({ 'diagram.strikethrough': 'CmdOrCtrl+Shift+,' })
+      expect(editor.press('x', { metaKey: true, shiftKey: true })).toBe(false)
+      expect(editor.press(188, { metaKey: true, shiftKey: true })).toBe(true)
+      expect(text.style.fontStyle).toBe(8)
+      expect(editor.action('yaseenStrikethrough').shortcut).toBe('⌘+⇧+,')
+      expect(open({}).editor.action('yaseenStrikethrough').shortcut).toBe('⌘+⇧+X')
+    })
+
+    it('a cleared key does nothing, and its action shows no key; so do the actions whose letters the tools took', () => {
+      const { editor } = open({ 'diagram.duplicate': null })
+      expect(editor.press('d', { metaKey: true })).toBe(false)
+      expect(editor.action('duplicate').shortcut).toBeNull()
+      for (const name of ['insertNote', 'insertRhombus']) expect(editor.action(name).shortcut).toBeNull()
+    })
+
+    it('⌃ and ⌘ apart on a Mac: a diagram key on ⌃D leaves ⌘D its own, and an App key on ⌃D does not clear ⌘D', () => {
+      const { editor } = open({ 'diagram.bold': 'Control+D' })
+      expect(editor.press('d', { ctrlKey: true })).toBe(true)
+      expect(editor.action('bold').funct).toHaveBeenCalledOnce()
+      expect(editor.action('bold').shortcut).toBe('⌃+D')
+      editor.press('d', { metaKey: true })
+      expect(editor.duplicate).toHaveBeenCalledOnce()
+      expect(open({ 'app.search': 'Control+D' }).editor.press('d', { metaKey: true })).toBe(true)
+    })
   })
 
   it('the host’s yaseenAdaptiveColors moves draw.io’s DEFAULT and re-draws — a file’s own value is kept, and draw.io never sees the message (🔒 YAZ-1802 D16)', () => {
@@ -513,11 +565,82 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
 })
 
 describe.skipIf(!existsSync(APP_MIN_JS))(`every draw.io action we name exists in the pinned ${DRAWIO_TAG}`, () => {
-  it('the configure reply’s keyboard shortcuts, the Grid menu item and the live theme', () => {
+  it('the configure reply’s keyboard shortcuts, every diagram row’s action, the Grid menu item and the live theme', () => {
     const app = readFileSync(APP_MIN_JS, 'utf8')
     const shortcuts = drawioConfig('adapt').keyboardShortcuts
-    const named = [...new Set(shortcuts.map((s) => s.action).filter((a) => a !== null)), 'grid', 'darkMode', 'lightMode']
-    for (const action of named) expect(app, action).toMatch(new RegExp(`(addAction|put)\\("${action}"`))
+    const named = [...new Set([...shortcuts.map((s) => s.action), ...Object.values(DIAGRAM_ACTIONS)]), 'grid', 'darkMode', 'lightMode']
+    // `yaseen…` actions are PostConfig.js's own (`addAction` in its installKeyboardShortcuts). `addAction` drops a
+    // name's trailing '...' ("editData..." is `editData`); bold, italic and underline come from one font-style helper.
+    for (const action of named.filter((a) => typeof a === 'string' && !a.startsWith('yaseen'))) {
+      expect(app, action).toMatch(new RegExp(`(addAction|put)\\("${action}(\\.\\.\\.)?"|\\w\\("${action}",mxConstants\\.FONT_`))
+    }
+    expect(readFileSync(`${OVERLAY_JS}PostConfig.js`, 'utf8')).toContain("addAction('yaseenStrikethrough'")
+  })
+
+  /**
+   * The diagram drift test (YAZ-3564 K1): draw.io's key table as the pinned bundle builds it — `createKeyHandler`,
+   * the App block, the alt maps and `initPages`, in the bundle's order, so a later binding wins — then the app's
+   * defaults on top (the configure reply with no change). Every binding left must be a row's key, and a changeable
+   * row's key must be bound to its own action; every changeable row's key must be a real binding.
+   */
+  it('every binding of draw.io’s key table is a diagram row, and every changeable row is a binding of its action', () => {
+    const app = readFileSync(APP_MIN_JS, 'utf8')
+    const id = (k) => `${k.control ? '⌘' : ''}${k.alt ? '⌥' : ''}${k.shift ? '⇧' : ''}${k.keyCode}`
+    /** [at, key, action] — action null clears, '(code)' is a binding to code. */
+    const found = []
+    for (const m of app.matchAll(/bindAction\((\d+),\s*(!0|!1),\s*"(\w+)"(?:,\s*(!0|!1))?\)/g)) {
+      // ⌘S saveAndExit and ⌘⇧S save are bound only with `saveAndExit=1`; the frame URL says 0.
+      if (app.slice(Math.max(0, m.index - 400), m.index).includes('urlParams.saveAndExit')) continue
+      found.push([m.index, { keyCode: +m[1], control: m[2] === '!0', shift: m[4] === '!0' }, m[3]])
+    }
+    for (const m of app.matchAll(/\.(bindKey|bindShiftKey|bindControlKey|bindControlShiftKey)\((\d+),\s*(function|null)/g)) {
+      found.push([m.index, { keyCode: +m[2], control: m[1].includes('Control'), shift: m[1].includes('Shift') }, m[3] === 'null' ? null : '(code)'])
+    }
+    const altMap = (name) => ({ control: name.startsWith('ctrl'), shift: name.includes('Shift'), alt: true })
+    for (const m of app.matchAll(/EditorUi\.prototype\.(altShiftActions|ctrlAltShiftActions|ctrlAltActions|altActions)=\{([^}]*)\}/g)) {
+      for (const e of m[2].matchAll(/(\d+):"(\w+)"/g)) found.push([m.index, { keyCode: +e[1], ...altMap(m[1]) }, e[2]])
+    }
+    for (const m of app.matchAll(/this\.(altShiftActions|ctrlAltShiftActions|ctrlAltActions|altActions)\[(\d+)\]="(\w+)"/g)) found.push([m.index, { keyCode: +m[2], ...altMap(m[1]) }, m[3]])
+    // The pinned v31.5.2 has 102 (99 bindings and the 3 clipboard clears); a much smaller count means a pattern above went blind.
+    expect(found.length).toBeGreaterThan(90)
+
+    const table = new Map()
+    const apply = (key, action) => (action === null ? table.delete(id(key)) : table.set(id(key), action))
+    for (const [, key, action] of found.sort((a, b) => a[0] - b[0])) apply(key, action)
+    for (const s of drawioConfig('adapt').keyboardShortcuts.filter((e) => 'action' in e && !('yaseenMacCtrl' in e))) {
+      // Only the app's own defaults here: the menu's chords clear keys a row keeps (an App key shows it as Blocked, K3).
+      if (s.action === null && typeof s.keyCode === 'number' && s.control === true) continue
+      apply({ ...s, keyCode: typeof s.keyCode === 'string' ? s.keyCode.charCodeAt(0) : s.keyCode }, s.action)
+    }
+
+    /** Each row's keys as draw.io's table holds them, with the other codes of its default key. */
+    const rowOf = new Map()
+    for (const row of DIAGRAM_KEYS) {
+      for (const key of row.keys) {
+        const k = drawioKeyOf(key)
+        expect(k, `${row.id} ${key}`).not.toBeNull()
+        for (const keyCode of [k.keyCode, ...(DIAGRAM_EXTRA_CODES[row.id] ?? [])]) rowOf.set(id({ ...k, keyCode }), row)
+      }
+    }
+    for (const [key, action] of table) {
+      const row = rowOf.get(key)
+      expect(row, `draw.io binds ${key} (${action}): no diagram row has it`).toBeDefined()
+      if (row.changeable) expect(DIAGRAM_ACTIONS[row.id], `${row.id} on ${key}`).toBe(action)
+    }
+    for (const row of DIAGRAM_KEYS.filter((r) => r.changeable)) {
+      for (const key of row.keys) expect(table.get(id(drawioKeyOf(key))), `${row.id} ${key}`).toBe(DIAGRAM_ACTIONS[row.id])
+    }
+  })
+
+  it('the diagram rows: unique ids, one row per action, and no default key twice outside the selection-only rows', () => {
+    const ids = DIAGRAM_KEYS.map((r) => r.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    const actions = Object.values(DIAGRAM_ACTIONS)
+    expect(new Set(actions).size).toBe(actions.length)
+    // The colour letters and sizes act on a selection; the tool letters need nothing selected.
+    const selectionOnly = new Set(['diagram.colour', 'diagram.colourOther', 'diagram.size'])
+    const keys = DIAGRAM_KEYS.filter((r) => !selectionOnly.has(r.id)).flatMap((r) => r.keys.map((k) => JSON.stringify(drawioKeyOf(k))))
+    expect(keys.filter((k, i) => keys.indexOf(k) !== i)).toEqual([])
   })
 
   it('every draw.io internal PostConfig.js wraps, replaces or leans on — a rename would drop a feature without an error', () => {
@@ -535,6 +658,13 @@ describe.skipIf(!existsSync(APP_MIN_JS))(`every draw.io action we name exists in
       'mxKeyHandler.isControlDown': /isControlDown\s*=\s*function/,
       'mxKeyHandler.bindControlKey': /bindControlKey\s*=\s*function/,
       'mxKeyHandler.bindControlShiftKey': /bindControlShiftKey\s*=\s*function/,
+      // YAZ-3564: the configure reply's keys, their shown keys, and draw.io's one `control` for ⌃ and ⌘ (K15).
+      'EditorUi.installKeyboardShortcut': /EditorUi\.prototype\.installKeyboardShortcut\s*=\s*function/,
+      'installKeyboardShortcuts reads Editor.keyboardShortcuts': /this\.installKeyboardShortcut\(Editor\.keyboardShortcuts\[c\]\)/,
+      'installKeyboardShortcut sets action.shortcut': /\.shortcut=\(c\.control\?Editor\.ctrlKey\+"\+":""\)/,
+      'EditorUi.keyNames': /EditorUi\.keyNames\s*=\s*\{/,
+      'Actions.addAction': /Actions\.prototype\.addAction\s*=\s*function/,
+      'draw.io reads ⌘ as ⌃ on a Mac': /isControlDown=function\(z\)\{return mxEvent\.isControlDown\(z\)\|\|mxClient\.IS_MAC&&z\.metaKey\}/,
       'controlKeys[66] is bold': /\.controlKeys\[/,
       '⌘B bound to bold': /bindAction\(66,\s*!0,\s*"bold"\)/,
       'CELLS_RESIZED carries "previous"': /CELLS_RESIZED,\s*"cells",\s*\w+,\s*"bounds",\s*\w+,\s*"previous"/,

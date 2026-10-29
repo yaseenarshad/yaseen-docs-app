@@ -28,8 +28,8 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import type { SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
-import { KeySearch } from './hotkeysSection'
-import { availableSections, isAvailable, resolveHint, resolveWide, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
+import { KeySearch, NO_FILTER, type HotkeyFilter } from './hotkeysSection'
+import { availableSections, groupsOf, isAvailable, resolveHint, resolveWide, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
 import { searchSettings, settingCandidates, type SettingHit } from './searchSettings'
 import { SettingRow } from './SettingRow'
 import './settings.css'
@@ -44,7 +44,9 @@ interface SettingsDialogProps {
 export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDialogProps) {
   /** The Mac's own keys (YAZ-3397 D3): asked of main once per open, when the Hotkeys page or a search first shows. */
   const [systemHotkeys, setSystemHotkeys] = useState<SystemHotkey[] | undefined>(undefined)
-  const ctx = useMemo<SettingsCtx>(() => (systemHotkeys === undefined ? given : { ...given, systemHotkeys }), [given, systemHotkeys])
+  /** Settings › Hotkeys' filters (YAZ-3564 K7): the rows read them through `ctx`; a page swap clears them. */
+  const [hotkeyFilter, setHotkeyFilter] = useState<HotkeyFilter>(NO_FILTER)
+  const ctx = useMemo<SettingsCtx>(() => ({ ...given, ...(systemHotkeys === undefined ? {} : { systemHotkeys }), hotkeyFilter }), [given, systemHotkeys, hotkeyFilter])
   const sections = availableSections(ctx)
   const settingsPages = sections.filter((s) => s.standalone !== true)
   const referencePages = sections.filter((s) => s.standalone === true)
@@ -111,6 +113,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   const showPage = (id: SettingsSectionId): void => {
     setQuery('')
     setHotkeyQuery('')
+    setHotkeyFilter(NO_FILTER)
     setPage(id)
     if (paneRef.current !== null) paneRef.current.scrollTop = 0
   }
@@ -123,12 +126,12 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   /** A per-vault page says which vault it acts on (YAZ-2602 R10), where App names one: a window with two or more. */
   const vaultLine = (className: string) => ctx.vaultName !== undefined && <p className={className}>Vault: {ctx.vaultName}</p>
   /** `titled` is false under a search breadcrumb, which already names the group. A group with no row to show is not there. */
-  const group = (g: SettingsGroup, items: readonly SettingDef[], key: number, titled = true) => items.length > 0 && (
-    <div key={key} className="settings-group">
-      {titled && g.title !== undefined && <h3 className="settings-group__title">{g.title}</h3>}
+  const group = (g: SettingsGroup, items: readonly SettingDef[], key: number | string, titled = true) => items.length > 0 && (
+    <div key={key} className="settings-group" {...(g.anchor === undefined ? {} : { id: g.anchor })}>
+      {g.header !== undefined ? g.header(ctx) : titled && g.title !== undefined && <h3 className="settings-group__title">{g.title}</h3>}
       {g.vault === true && vaultLine('settings-group__hint')}
       {g.hint !== undefined && <p className="settings-group__hint">{g.hint}</p>}
-      <div className="settings-group__card">{items.map(row)}</div>
+      <div className={`settings-group__card${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{items.map(row)}</div>
     </div>
   )
   const section = (s: SettingsSection) => (
@@ -136,7 +139,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
       <h2 className="settings-section__title">{s.title}</h2>
       {s.vault === true && vaultLine('settings-section__note')}
       {s.note !== undefined && <p className="settings-section__note">{s.note}</p>}
-      {s.groups.map((g, i) => group(g, g.items.filter((item) => isAvailable(item, ctx)), i))}
+      {groupsOf(s, ctx).map((g, i) => group(g, g.items.filter((item) => isAvailable(item, ctx)), g.anchor ?? i))}
     </section>
   )
 
@@ -207,6 +210,8 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
               ctx={ctx}
               query={hotkeyQuery}
               answering={hotkeyQuery === keyQuery}
+              filter={hotkeyFilter}
+              onFilter={setHotkeyFilter}
               onQuery={(next, pressed) => {
                 if (pressed) setKeyQuery(next)
                 setHotkeyQuery(next)

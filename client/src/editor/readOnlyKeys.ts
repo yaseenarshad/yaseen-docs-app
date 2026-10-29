@@ -17,7 +17,7 @@
  * bar, a dialog or another note. An editable view is
  * ProseMirror's own business, so nothing here runs for it.
  *
- * The chords (Settings › Hotkeys, the note's view actions): ⌘⇧U / ⌘⇧I fold / unfold all, ⌘↑ / ⌘↓ fold /
+ * The chords (the note's view actions, by default; YAZ-3564 K4): ⌘⇧U / ⌘⇧I fold / unfold all, ⌘↑ / ⌘↓ fold /
  * unfold at the caret, ⌘. / ⌘⇧. zoom in / out, ⌘Z the view-action undo, ⌘A select all (YAZ-3127).
  *
  * The NOTE EDITOR only (a tab or the right panel, `CreateCrepeOptions.readOnlyKeys`): the read-only
@@ -31,9 +31,10 @@
 import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import type { Ctx } from '@milkdown/kit/ctx'
 import { $prose } from '@milkdown/kit/utils'
 import { NOTE_PAGE, claimPage, isShown, pageSelectionHolder } from '../lib/readOnlyCaret'
-import { FOLD_KEYS } from './outline/foldKeys'
+import { noteKeys, noteOverrides } from './noteKeys'
 
 const yes = (): boolean => true
 
@@ -62,19 +63,17 @@ export function focusReadOnlyBody(view: EditorView, focus: () => void): void {
   focus()
 }
 
-/** Whether `event` is one of the view-action chords — matched the way the keymaps match them. */
-const isViewAction = keydownHandler({
-  [FOLD_KEYS.foldAll]: yes,
-  [FOLD_KEYS.unfoldAll]: yes,
-  [FOLD_KEYS.foldHere]: yes,
-  [FOLD_KEYS.unfoldHere]: yes,
-  'Mod-.': yes,
-  'Mod-Shift-.': yes,
-  'Mod->': yes,
-  'Mod-z': yes,
-  // ProseMirror's own select-all: the note's text, never the page around it (YAZ-3127).
-  'Mod-a': yes,
-})
+/**
+ * The view-action rows. Select all is ProseMirror's own: the note's text, never the page around it (YAZ-3127).
+ * Their keys are the rows' now (YAZ-3564 K4), as the note's keymaps bind them.
+ */
+const VIEW_ACTIONS = ['note.foldAll', 'note.unfoldAll', 'note.foldHere', 'note.unfoldHere', 'note.zoomIn', 'note.zoomOut', 'note.undo', 'note.selectAll']
+
+/** Whether a keydown is one of the view-action keys — matched the way the keymaps match them. */
+const viewActionMatcher = (ctx: Ctx): ((view: EditorView, event: KeyboardEvent) => boolean) => {
+  const overrides = noteOverrides(ctx)
+  return keydownHandler(Object.fromEntries(VIEW_ACTIONS.flatMap((id) => noteKeys(id, overrides)).map((key) => [key, yes])))
+}
 
 /** The DOM selection's caret, when it sits inside `view`; null otherwise. */
 function domCaret(view: EditorView): { anchor: number; head: number } | null {
@@ -111,10 +110,11 @@ function inOwnPage(view: EditorView): boolean {
 }
 
 export const readOnlyKeys = $prose(
-  () =>
+  (ctx) =>
     new Plugin({
       key: new PluginKey('mdapp-read-only-keys'),
       view: (view) => {
+        const isViewAction = viewActionMatcher(ctx)
         // A read-only body holds the keyboard itself (YAZ-3127): focusable while it is not editable, so
         // a click in it puts the focus there and the window's chrome keys leave it alone.
         const focusable = (): void => {

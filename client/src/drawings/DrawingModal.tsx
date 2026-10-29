@@ -44,7 +44,10 @@
  * open with its error line and the canvas untouched — a save that failed must not eat the drawing.
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import type { HotkeyAside } from '@shared/keys'
 import { api } from '../api'
+import { setPlaceOverTab } from '../keys/keySheetRequest'
 import { ConflictBar } from '../documents/ConflictBar'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
@@ -78,9 +81,13 @@ interface DrawingModalProps {
   feed?: MutableDrawingFeed
   /** Close: the host drops the modal (it is unmounted, never hidden). */
   onClose: () => void
+  /** `settings.hotkeys` (YAZ-3564 K5): the drawing keys as the user set them. Omitted = the defaults. */
+  hotkeys?: HotkeyOverrides
+  /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
+  hotkeysAside?: HotkeyAside
 }
 
-export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModalProps) {
+export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside }: DrawingModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState<LoadedDrawing | null>(null)
   const loadedRef = useRef<LoadedDrawing | null>(null)
@@ -146,6 +153,17 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
 
   // Focus lands here on mount so Esc works before the canvas exists (and stays inside afterwards).
   useEffect(() => overlayRef.current?.focus(), [])
+
+  // A drawing is in front of the note while this is open (YAZ-3564 K9, K11): main's menu lets it keep ⌘D, and the
+  // key sheet lists its keys. Best effort: a failed send only leaves the note's menu keys.
+  useEffect(() => {
+    setPlaceOverTab('drawing')
+    void api.hotkeys.drawingInFront(true).catch(() => undefined)
+    return () => {
+      setPlaceOverTab(null)
+      void api.hotkeys.drawingInFront(false).catch(() => undefined)
+    }
+  }, [])
 
   /** The drawing's own file says read only (YAZ-3076 D2, S28): the engine's view mode, and nothing to save. */
   const readOnly = loaded?.scene.readOnly === true
@@ -305,7 +323,7 @@ export function DrawingModal({ root, target, theme, feed, onClose }: DrawingModa
         <div className="drawing-modal__canvas">
           {loaded !== null && (
             <Suspense fallback={null}>
-              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} />
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
             </Suspense>
           )}
         </div>

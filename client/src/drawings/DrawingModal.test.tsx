@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { api, BridgeRequestError } from '../api'
+import { placeOverTab } from '../keys/keySheetRequest'
 import { createDrawingFeed } from './drawingFeed'
 import { BROKEN_DRAWING_MESSAGE, DISCARD_PROMPT, DrawingModal } from './DrawingModal'
 import type { DrawingSurfaceProps } from './ExcalidrawSurface'
@@ -26,7 +27,7 @@ import type { DrawingSurfaceProps } from './ExcalidrawSurface'
 
 vi.mock('../api', async (original) => ({
   ...(await original<typeof import('../api')>()),
-  api: { readAsset: vi.fn(), writeAsset: vi.fn(), window: { onFlush: vi.fn() } },
+  api: { readAsset: vi.fn(), writeAsset: vi.fn(), window: { onFlush: vi.fn() }, hotkeys: { drawingInFront: vi.fn(async () => undefined) } },
 }))
 
 /** The stand-in engine: it renders nothing and reports the props the modal handed it. */
@@ -168,6 +169,16 @@ describe('opening', () => {
     expect(seam.props?.scene).toEqual({ elements: [], appState: {}, files: {} })
     expect(seam.props?.theme).toBe('light')
     expect(container?.querySelector('.fake-surface')).not.toBeNull()
+  })
+
+  it('YAZ-3564 K9, K11: while open, the drawing is in front of the note — main is told, and the key sheet lists drawing keys', async () => {
+    await open()
+    expect(api.hotkeys.drawingInFront).toHaveBeenLastCalledWith(true)
+    expect(placeOverTab()).toBe('drawing')
+    await act(async () => root?.unmount())
+    root = null
+    expect(api.hotkeys.drawingInFront).toHaveBeenLastCalledWith(false)
+    expect(placeOverTab()).toBeNull()
   })
 
   it('S1: a drawing opened and not touched is CLEAN — the label says Saved (D2: no Save button), nothing is written, ✕ closes, the previews are not poked', async () => {

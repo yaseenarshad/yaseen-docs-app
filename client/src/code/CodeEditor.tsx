@@ -27,14 +27,16 @@
  * THE APP'S KEYS WIN (YAZ-3447). A keydown in the capture phase, on this tab's own element, before
  * Monaco: the menu's commands (`HOTKEY_COMMANDS`, as the user set them) stop there, so Monaco never
  * takes one and the menu's accelerator runs — ⌘K is the vault search, never Monaco's chord prefix.
- * Toggle sidebar, which the renderer owns, is handed up as a diagram does (`onToggleSidebar`). ⌘S
- * saves at once, as on a drawing.
+ * Toggle sidebar is a menu key too since YAZ-3564 D10. An App key that steps aside in code (YAZ-3564 K9)
+ * goes on to Monaco. Save now (⌘S, the row `code.save`) saves at once, as on a drawing.
  *
- * THE NOTE'S FOLD KEYS (YAZ-3478; YAZ-3439 "The app's own keys win in code tabs"). `FOLD_KEYS`, the note's
- * own table: ⌘⇧U folds every block, ⌘⇧I unfolds every block, ⌘↑ / ⌘↓ fold / unfold the block at the
- * cursor. Monaco never sees them, so on a Mac ⌘↑ / ⌘↓ no longer go to the top / bottom of the file: ⌘Home /
- * ⌘End do (with ⇧, they select). A right-click on a fold chevron opens the app's menu: "Collapse all",
- * "Expand all". Each one is Monaco's own fold action, so the folds are remembered as any fold is.
+ * THE CODE KEYS (YAZ-3564 K4) are Monaco's, as the key list and the user's changes say (`codeKeys.ts`): one rule
+ * set for the window, live. The note's fold keys are code rows there too (YAZ-3478): ⌘⇧U folds every block, ⌘⇧I
+ * unfolds every block, ⌘↑ / ⌘↓ fold / unfold the block at the cursor, each a rule on Monaco's own fold action, so
+ * the folds are remembered as any fold is. While the suggest list is open they step aside, and ⌘↑ / ⌘↓ move in the
+ * list (K14). On a Mac ⌘↑ / ⌘↓ therefore do not go to the top / bottom of the file: ⌘Home / ⌘End do (with ⇧,
+ * they select). A right-click on a fold chevron opens the app's menu: "Collapse all", "Expand all", with the keys
+ * as they are now.
  *
  * THE TABLE OF CONTENTS (YAZ-3486; called so since YAZ-3506): VS Code's Outline in the note table of
  * contents' place and frame (`outline/CodeOutline.tsx`), on the same setting and width. Its feed
@@ -43,12 +45,12 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CodeOutlineSort, type CodeSymbolKind, type PageView, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
-import { HOTKEY_COMMANDS, fromKeyEvent, keyFor, sameKey, type HotkeyId, type HotkeyOverrides, type KeyPress } from '@shared/hotkeyBindings'
+import { HOTKEY_COMMANDS, appKeyId, keyFor, sameKey, toDisplay, type HotkeyId, type HotkeyOverrides, type KeyPress } from '@shared/hotkeyBindings'
+import { keyRow, keysOf, stepsAside, type HotkeyAside } from '@shared/keys'
 import { api, BridgeRequestError } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
 import { stepZoomByKey } from '../editor/DocumentZoom'
-import { FOLD_KEYS } from '../editor/outline/foldKeys'
 import { usePageSwitch } from '../editor/usePageSwitch'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
 import type { NoticeKind } from '../lib/notice'
@@ -58,7 +60,7 @@ import { useAppliedTheme } from '../lib/theme'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { CodeChips } from './CodeChips'
 import { attachFolds } from './codeFolds'
-import { foldKeyHint, foldKeyOf, type FoldKeyId } from './foldKeyMatch'
+import { addWrapAction, isCodeKey, pressedKeys } from './codeKeys'
 import type { CodeSettingsPatch } from './codeSettings'
 import { keepBackView, takeBackView, trackCodeTab } from './codeOpener'
 import { attachLanguageClient } from './languageClient'
@@ -78,8 +80,6 @@ export const BROKEN_CODE_DOCUMENT = "This file can't be opened"
 export interface CodeEditorProps extends DocumentHostProps {
   /** The window's ONE passive notice. */
   onNotice?: (text: string, icon?: NoticeKind) => void
-  /** App's sidebar toggle: the renderer owns ⌘B, and Monaco's element would never pass it up. */
-  onToggleSidebar?: () => void
   /** Settings › Code (YAZ-3449): one value for every code tab; absent = the default. */
   codeReadOnly?: boolean
   codeWrap?: boolean
@@ -122,18 +122,27 @@ function brokenCode(err: unknown): string {
 /**
  * The app command a keydown is, by the keys as they are NOW (YAZ-3397 D2: a changed key works at
  * once); null for every key Monaco may have. Off a Mac, `CmdOrCtrl` is Ctrl — and there the page
- * sees a key before the menu, so a Ctrl+K that Monaco took would never reach it.
+ * sees a key before the menu, so a Ctrl+K that Monaco took would never reach it. A command that
+ * steps aside in code (YAZ-3564 K9) is not one: the menu drops its key on a code tab, and Monaco has it.
  */
-export function appCommandOf(event: KeyPress, overrides: HotkeyOverrides | undefined, mac = /Mac/.test(navigator.platform)): HotkeyId | null {
-  const pressed = [fromKeyEvent(event), !mac && event.ctrlKey && !event.metaKey ? fromKeyEvent({ ...event, ctrlKey: false, metaKey: true }) : null]
-  return HOTKEY_COMMANDS.find((c) => pressed.some((p) => p !== null && sameKey(keyFor(c.id, overrides), p)))?.id ?? null
+export function appCommandOf(event: KeyPress, overrides: HotkeyOverrides | undefined, mac = /Mac/.test(navigator.platform), aside?: HotkeyAside): HotkeyId | null {
+  const pressed = pressedKeys(event, mac)
+  const inCode = (id: HotkeyId): boolean => {
+    const row = keyRow(appKeyId(id))
+    return row !== undefined && stepsAside(row, 'code', aside)
+  }
+  return HOTKEY_COMMANDS.find((c) => !inCode(c.id) && pressed.some((p) => sameKey(keyFor(c.id, overrides), p)))?.id ?? null
+}
+
+/** A code row's first key as it is now, as a menu writes it ('⌘⇧U'); undefined with no key. */
+const hintOf = (rowId: string): string | undefined => {
+  const row = keyRow(rowId)
+  const key = row === undefined ? undefined : keysOf(row, storage.getSettings()?.hotkeys)[0]
+  return key === undefined ? undefined : key.split(' ').map(toDisplay).join(' ')
 }
 
 const BOM = '\uFEFF'
 const BOM_AT_START = /^\uFEFF/
-
-/** Monaco's action for each fold key (YAZ-3478). */
-const FOLD_ACTIONS: Record<FoldKeyId, string> = { foldAll: 'editor.foldAll', unfoldAll: 'editor.unfoldAll', foldHere: 'editor.fold', unfoldHere: 'editor.unfold' }
 
 /** A fold chevron in Monaco's gutter: expanded, collapsed, or a manual fold's. */
 const FOLD_CHEVRON = '.margin-view-overlays [class*="codicon-folding-"]'
@@ -185,7 +194,7 @@ interface CodeHostProps extends CodeEditorProps {
 }
 
 /** Mounts exactly one Monaco editor and model for `loaded`; the document host owns everything that writes. */
-function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onToggleSidebar, codeReadOnly = DEFAULT_SETTINGS.codeReadOnly, codeWrap = DEFAULT_SETTINGS.codeWrap, codeMinimap = DEFAULT_SETTINGS.codeMinimap, onChangeCodeSettings, startView, onOpenFile, viewKey, tableOfContents = 'off', tocOnByDefault = DEFAULT_SETTINGS.tocOnByDefault, onChangeTableOfContents = noChange, tableOfContentsWidth = TOC_DEFAULT_W, onChangeTableOfContentsWidth = noChange, codeOutlineSort = 'position', codeOutlineHidden = NO_KINDS, codeOutlineLocals = false }: CodeHostProps) {
+function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeReadOnly = DEFAULT_SETTINGS.codeReadOnly, codeWrap = DEFAULT_SETTINGS.codeWrap, codeMinimap = DEFAULT_SETTINGS.codeMinimap, onChangeCodeSettings, startView, onOpenFile, viewKey, tableOfContents = 'off', tocOnByDefault = DEFAULT_SETTINGS.tocOnByDefault, onChangeTableOfContents = noChange, tableOfContentsWidth = TOC_DEFAULT_W, onChangeTableOfContentsWidth = noChange, codeOutlineSort = 'position', codeOutlineHidden = NO_KINDS, codeOutlineLocals = false }: CodeHostProps) {
   const theme = useAppliedTheme()
   const mountRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<ReturnType<typeof monaco.editor.create> | null>(null)
@@ -194,8 +203,6 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
   const closedText = useRef<string | null>(null)
   /** True while a reload puts disk truth in: those changes are not edits. */
   const applyingDisk = useRef(false)
-  const sidebarRef = useRef(onToggleSidebar)
-  sidebarRef.current = onToggleSidebar
   /** "Allow edits" on this tab's chip (YAZ-3449 S2): this tab only, until it closes. */
   const [unlocked, setUnlocked] = useState(false)
   const [askingUnlock, setAskingUnlock] = useState(false)
@@ -222,9 +229,9 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
   /** The Outline's editor and feed (YAZ-3486): set once the editor exists, cleared with it. */
   const [outline, setOutline] = useState<{ editor: OutlineEditorLike; feed: OutlineFeed } | null>(null)
 
-  /** A fold key or a menu row: Monaco's own action, so the folds are saved as any fold is (`attachFolds`). */
-  const runFold = (id: FoldKeyId): void => {
-    editorRef.current?.trigger('keyboard', FOLD_ACTIONS[id], null)
+  /** A menu row: Monaco's own action, so the folds are saved as any fold is (`attachFolds`). */
+  const runFold = (action: 'editor.foldAll' | 'editor.unfoldAll'): void => {
+    editorRef.current?.trigger('keyboard', action, null)
   }
 
   /** The bytes to write: the model's value with its BOM, or the text it held when the tab closed. */
@@ -305,15 +312,11 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
     })
     modelRef.current = model
     editorRef.current = editor
-    // ⌥Z (D8): VS Code's "Toggle Word Wrap", which standalone Monaco lacks. This tab only, never saved.
-    const toggleWrap = editor.addAction({
-      id: 'editor.action.toggleWordWrap',
-      label: 'View: Toggle Word Wrap',
-      keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyZ],
-      run: () => {
-        wrap.current = !wrap.current
-        editor.updateOptions({ wordWrap: wrap.current ? 'on' : 'off' })
-      },
+    // ⌥Z (D8): VS Code's "Toggle Word Wrap", which standalone Monaco lacks. This tab only, never saved. Its key is
+    // the row `code.toggleWordWrap` as it is now (YAZ-3564).
+    const toggleWrap = addWrapAction(editor, monaco, () => {
+      wrap.current = !wrap.current
+      editor.updateOptions({ wordWrap: wrap.current ? 'on' : 'off' })
     })
     const changes = model.onDidChangeContent(() => {
       // A reload is disk truth, never an edit: the reload resets the baseline itself.
@@ -425,29 +428,19 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
 
   // The app's keys win (see the module doc): capture phase, so Monaco never sees them.
   const { flush } = doc
-  const runFoldRef = useRef(runFold)
-  runFoldRef.current = runFold
   useEffect(() => {
     const host = doc.hostRef.current
     if (host === null) return
     const onKeyDown = (event: KeyboardEvent): void => {
-      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's') {
+      const settings = storage.getSettings()
+      const mac = /Mac/.test(navigator.platform)
+      if (isCodeKey('code.save', event, settings?.hotkeys, mac)) {
         event.preventDefault()
         event.stopPropagation()
         flush()
         return
       }
       const editor = editorRef.current
-      const mac = /Mac/.test(navigator.platform)
-      // The note's fold keys, read at each press (YAZ-3478). Only with the cursor in the code: a key in
-      // the find box or on a chip is not a fold.
-      const fold = editor?.hasTextFocus() === true ? foldKeyOf(event) : null
-      if (fold !== null) {
-        event.preventDefault()
-        event.stopPropagation()
-        runFoldRef.current(fold)
-        return
-      }
       // ⌘↑ / ⌘↓ fold now, so ⌘Home / ⌘End go to the top / bottom on a Mac (standalone Monaco binds them only off a Mac).
       if (mac && editor?.hasTextFocus() === true && event.metaKey && !event.ctrlKey && !event.altKey && (event.key === 'Home' || event.key === 'End')) {
         event.preventDefault()
@@ -455,12 +448,9 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
         editor.trigger('keyboard', `${event.key === 'Home' ? 'cursorTop' : 'cursorBottom'}${event.shiftKey ? 'Select' : ''}`, null)
         return
       }
-      const command = appCommandOf(event, storage.getSettings()?.hotkeys)
+      const command = appCommandOf(event, settings?.hotkeys, mac, settings?.hotkeysAside)
       if (command === null || command === 'copyPath') return
-      event.stopPropagation()
-      if (command !== 'toggleSidebar') return // a menu accelerator: the menu runs it
-      event.preventDefault()
-      sidebarRef.current?.()
+      event.stopPropagation() // a menu accelerator: the menu runs it (Toggle sidebar too, since YAZ-3564 D10)
     }
     host.addEventListener('keydown', onKeyDown, true)
     return () => host.removeEventListener('keydown', onKeyDown, true)
@@ -515,8 +505,8 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, onTogg
           y={foldMenu.y}
           sections={[
             [
-              { id: 'collapse-all', label: 'Collapse all', hint: foldKeyHint(FOLD_KEYS.foldAll), onSelect: () => runFold('foldAll') },
-              { id: 'expand-all', label: 'Expand all', hint: foldKeyHint(FOLD_KEYS.unfoldAll), onSelect: () => runFold('unfoldAll') },
+              { id: 'collapse-all', label: 'Collapse all', hint: hintOf('code.foldEveryBlock'), onSelect: () => runFold('editor.foldAll') },
+              { id: 'expand-all', label: 'Expand all', hint: hintOf('code.unfoldEveryBlock'), onSelect: () => runFold('editor.unfoldAll') },
             ],
           ]}
           onClose={() => {

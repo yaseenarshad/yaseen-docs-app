@@ -4,7 +4,7 @@ import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { requireStringArray } from '../fs/validate'
 import type { SettingsFolder } from '../settingsFolder'
-import { hotkeyRecording } from '../hotkeyRecording'
+import { drawingInFront, hotkeyRecording } from '../hotkeyRecording'
 import { isSettings, readCanvasCard, readCanvasFrame, readCanvasKey, type Store } from '../store'
 import { createSystemHotkeys } from '../systemHotkeys'
 import { broadcastAll } from './broadcast'
@@ -94,6 +94,11 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
   handleWithEvent(CONTRACT.hotkeys.recording, async (event, on: unknown) => {
     if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
     hotkeyRecording.set(event.sender, on)
+  })
+  // A drawing opens over a note in the calling window, or closes (YAZ-3564 K9); `main/index.ts` rebuilds the menu as for a drawing tab.
+  handleWithEvent(CONTRACT.hotkeys.drawingInFront, async (event, on: unknown) => {
+    if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
+    drawingInFront.set(event.sender, on)
   })
   handle(CONTRACT.state.setSidebarWidth, async (width: unknown) => {
     if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")

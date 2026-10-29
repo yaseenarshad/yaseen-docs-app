@@ -13,7 +13,6 @@ vi.mock('./monaco', () => import('./monacoTestKit'))
 
 import { BridgeRequestError } from '../api'
 import { fakeWatch } from '../documents/boardTestKit'
-import { FOLD_KEYS } from '../editor/outline/foldKeys'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { readPageView } from '../lib/pageView'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
@@ -33,7 +32,6 @@ const writeFile = vi.fn<(req: FileWriteRequest) => Promise<FileWriteResponse>>()
 const setBoardReadOnly = vi.fn()
 const setFolds = vi.fn(async () => undefined)
 const setTocSwitch = vi.fn(async () => undefined)
-const toggleSidebar = vi.fn()
 
 const { watch, watcherSaw } = fakeWatch()
 
@@ -58,7 +56,7 @@ async function after(ms: number): Promise<void> {
 /** Mount a code tab on `content` (at mtime 100) and wait for its editor. */
 async function opened(content: string, path = PATH): Promise<void> {
   readFile.mockResolvedValueOnce(disk(content, 100, path))
-  act(() => root?.render(<CodeEditor root={ROOT} path={path} watch={watch} sync={{ root: ROOT, state: 'synced' }} onSyncNow={() => undefined} onToggleSidebar={toggleSidebar} />))
+  act(() => root?.render(<CodeEditor root={ROOT} path={path} watch={watch} sync={{ root: ROOT, state: 'synced' }} onSyncNow={() => undefined} />))
   await settle()
 }
 
@@ -82,7 +80,7 @@ beforeEach(() => {
       readFile,
       writeFile,
       setBoardReadOnly,
-      state: { setFolds, setTocSwitch },
+      state: { setFolds, setTocSwitch, setSettings: async () => undefined },
       window: {
         onFlush: (listener: () => Promise<void> | void) => {
           flushListener = listener
@@ -807,11 +805,9 @@ describe("the app's keys win over Monaco (YAZ-3447)", () => {
     expect(editor().keysSeen).toEqual([])
   })
 
-  it('S4: ⌘B toggles the sidebar, as in a diagram', async () => {
+  it('S4: Toggle sidebar (⌘⇧B, a menu key since YAZ-3564 D10) stops before Monaco, and the menu runs it', async () => {
     await opened('a\n')
-    const event = press({ key: 'b', code: 'KeyB', metaKey: true })
-    expect(toggleSidebar).toHaveBeenCalledTimes(1)
-    expect(event.defaultPrevented).toBe(true)
+    press({ key: 'B', code: 'KeyB', metaKey: true, shiftKey: true })
     expect(editor().keysSeen).toEqual([])
   })
 
@@ -857,9 +853,7 @@ describe('collapse all and expand all (YAZ-3478)', () => {
     act(() => void editor().input.dispatchEvent(event))
     return event
   }
-  // The fold keys are matched by ProseMirror's keymap, which read the platform when it loaded (jsdom's: not a
-  // Mac), so `Mod` is the modifier that load chose; the rest of the tab reads the platform at each press.
-  const MOD = /Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true }
+  const MOD = { metaKey: true }
   const cmdShiftU = { key: 'U', code: 'KeyU', keyCode: 85, shiftKey: true, ...MOD }
   const cmdShiftI = { key: 'I', code: 'KeyI', keyCode: 73, shiftKey: true, ...MOD }
   const cmdUp = { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38, ...MOD }
@@ -896,45 +890,11 @@ describe('collapse all and expand all (YAZ-3478)', () => {
   }
   const menuItems = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
 
-  it('S1: ⌘⇧U folds every block; Monaco does not see the key; close and reopen: still folded', async () => {
+  it("S1, S2, S5: ⌘⇧U, ⌘⇧I, ⌘↑ and ⌘↓ are Monaco's now (code rules, YAZ-3564 K4): the tab lets them through; `codeKeys.test.ts` runs them in the real Monaco", async () => {
     await focused()
-    const event = press(cmdShiftU)
-    expect(event.defaultPrevented).toBe(true)
-    expect(editor().keysSeen).toEqual([])
-    expect(editor().triggered).toEqual(['editor.foldAll'])
-    expect([...editor().folded].sort((a, b) => a - b)).toEqual([1, 2, 5])
-    await after(400)
-    expect(storage.getFolds(ROOT, PATH)).toEqual(ALL)
-    act(() => root?.render(<></>))
-    await opened(FILE)
-    await settle()
-    expect([...editor().folded].sort((a, b) => a - b)).toEqual([1, 2, 5])
-  })
-
-  it('S2: ⌘⇧I opens every block, and the remembered folds are empty again', async () => {
-    await focused()
-    press(cmdShiftU)
-    await after(400)
-    press(cmdShiftI)
-    expect(editor().triggered).toEqual(['editor.foldAll', 'editor.unfoldAll'])
-    expect([...editor().folded]).toEqual([])
-    await after(400)
-    expect(storage.getFolds(ROOT, PATH)).toEqual([])
-  })
-
-  it('S5: ⌘↑ folds the block at the cursor and ⌘↓ unfolds it, as in a note; Monaco never sees them (no top / bottom move)', async () => {
-    await focused()
-    act(() => editor().setPosition({ lineNumber: 6, column: 5 }))
-    const up = press(cmdUp)
-    expect(up.defaultPrevented).toBe(true)
-    expect([...editor().folded]).toEqual([5])
-    expect(editor().position).toEqual({ lineNumber: 6, column: 5 })
-    press(cmdDown)
-    expect([...editor().folded]).toEqual([])
-    expect(editor().triggered).toEqual(['editor.fold', 'editor.unfold'])
-    expect(editor().keysSeen).toEqual([])
-    await after(400)
-    expect(storage.getFolds(ROOT, PATH)).toEqual([])
+    for (const init of [cmdShiftU, cmdShiftI, cmdUp, cmdDown]) press(init)
+    expect(editor().keysSeen).toEqual(['U', 'I', 'ArrowUp', 'ArrowDown'])
+    expect(editor().triggered).toEqual([])
   })
 
   it('⌘Home / ⌘End go to the top / bottom on a Mac (⇧ selects); Monaco does not see them', async () => {
@@ -946,29 +906,6 @@ describe('collapse all and expand all (YAZ-3478)', () => {
     press({ key: 'End', code: 'End', metaKey: true, shiftKey: true })
     expect(editor().triggered).toEqual(['cursorBottom', 'cursorTop', 'cursorBottomSelect'])
     expect(editor().keysSeen).toEqual([])
-  })
-
-  it('a fold key outside the code (the find box, a chip) is not a fold, and goes on to Monaco', async () => {
-    await opened(FILE)
-    press(cmdShiftU)
-    press(cmdUp)
-    expect(editor().triggered).toEqual([])
-    expect(editor().keysSeen).toEqual(['U', 'ArrowUp'])
-  })
-
-  it("one table: the code tab matches the note's FOLD_KEYS at each press, with no copy (a changed entry works, the old key does not)", async () => {
-    const keys = FOLD_KEYS as unknown as Record<string, string>
-    const before = keys.foldAll
-    keys.foldAll = 'Mod-Shift-y'
-    try {
-      await focused()
-      press(cmdShiftU)
-      expect(editor().triggered).toEqual([])
-      press({ key: 'Y', code: 'KeyY', keyCode: 89, shiftKey: true, ...MOD })
-      expect(editor().triggered).toEqual(['editor.foldAll'])
-    } finally {
-      keys.foldAll = before
-    }
   })
 
   it('S3, S4: a right-click on a fold chevron opens the app menu, "Collapse all" and "Expand all" with their keys; each row runs Monaco\'s action', async () => {
@@ -988,6 +925,21 @@ describe('collapse all and expand all (YAZ-3478)', () => {
     act(() => menuItems()[1].click())
     expect(editor().triggered).toEqual(['editor.foldAll', 'editor.unfoldAll'])
     expect([...editor().folded]).toEqual([])
+  })
+
+  it('the menu shows the fold keys as they are now (YAZ-3564 K12): a changed key, and none for "No key"', async () => {
+    await focused()
+    const settings = storage.getSettings()
+    storage.setSettings({ ...settings, hotkeys: { 'code.foldEveryBlock': 'CmdOrCtrl+Alt+K', 'code.unfoldEveryBlock': null } })
+    try {
+      rightClick(chevron())
+      expect(menuItems().map((b) => [b.textContent, b.dataset.hint])).toEqual([
+        ['Collapse all', '⌥⌘K'],
+        ['Expand all', undefined],
+      ])
+    } finally {
+      storage.setSettings(settings)
+    }
   })
 
   it('a right-click on the code, not on a chevron, is left to Monaco', async () => {

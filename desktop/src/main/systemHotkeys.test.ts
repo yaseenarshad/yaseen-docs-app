@@ -106,4 +106,17 @@ describe('hotkeyRecording (YAZ-3397 D6)', () => {
     expect([recording.active(), changed.mock.calls.length]).toEqual([false, 4])
     expect(hotkeyRecording.active()).toBe(false)
   })
+
+  it("'each' tells every window's change, and has() answers per window (a drawing over a note, YAZ-3564 K9)", () => {
+    const front = createHotkeyRecording('each')
+    const changed = vi.fn()
+    front.onChange(changed)
+    const a = sender(1)
+    front.set(a, true)
+    front.set(sender(2), true)
+    front.set(a, true)
+    expect([front.has(1), front.has(2), front.has(3), changed.mock.calls.length]).toEqual([true, true, false, 2])
+    a.fire('did-navigate')
+    expect([front.has(1), changed.mock.calls.length]).toEqual([false, 3])
+  })
 })

@@ -56,6 +56,7 @@ github.setEnabled/2: invoke github:set-enabled ["a0","a1"]; => "answer"; !> {"co
 github.status/1: invoke github:status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.syncNow/1: invoke github:sync-now ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.version/3: invoke github:version ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+hotkeys.drawingInFront/1: invoke hotkeys:drawing-in-front ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 hotkeys.recording/1: invoke hotkeys:recording ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 icons.get/1: invoke icons:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 icons.onChanged/1: on icons:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off icons:changed
@@ -100,6 +101,9 @@ menu.onCloseTab/1: on menu:close-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","r
 menu.onCopyAs/1: (no IPC)
 menu.onExportDrawing/1: on menu:export-drawing -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:export-drawing
 menu.onExportImage/1: on menu:export-image -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:export-image
+menu.onGoTo/1: on menu:go-to -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:go-to
+menu.onKeySheet/1: on menu:key-sheet -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:key-sheet
+menu.onNewItem/1: on menu:new-item -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:new-item
 menu.onNewTab/1: on menu:new-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:new-tab
 menu.onNewWindow/1: on menu:new-window -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:new-window
 menu.onNextTab/1: on menu:next-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:next-tab

@@ -38,6 +38,7 @@ import {
   getViewportForZoomWithScrollConstraints,
   zoomToFitBounds,
 } from "../viewport";
+import { boundShortcut } from "../keyRemap";
 import { getShortcutKey } from "../shortcut";
 
 import { register } from "./register";
@@ -157,7 +158,10 @@ export const actionZoomIn = register({
         type="button"
         className="zoom-in-button zoom-button"
         icon={ZoomInIcon}
-        title={`${t("buttons.zoomIn")} — ${getShortcutKey("CtrlOrCmd++")}`}
+        // Yaseen Docs (YAZ-3564 K12)
+        title={`${t("buttons.zoomIn")} — ${
+          boundShortcut("zoomIn") ?? getShortcutKey("CtrlOrCmd++")
+        }`}
         aria-label={t("buttons.zoomIn")}
         disabled={zoomValue >= MAX_ZOOM}
         onClick={() => {
@@ -204,7 +208,10 @@ export const actionZoomOut = register({
         type="button"
         className="zoom-out-button zoom-button"
         icon={ZoomOutIcon}
-        title={`${t("buttons.zoomOut")} — ${getShortcutKey("CtrlOrCmd+-")}`}
+        // Yaseen Docs (YAZ-3564 K12)
+        title={`${t("buttons.zoomOut")} — ${
+          boundShortcut("zoomOut") ?? getShortcutKey("CtrlOrCmd+-")
+        }`}
         aria-label={t("buttons.zoomOut")}
         disabled={zoomValue <= MIN_ZOOM}
         onClick={() => {

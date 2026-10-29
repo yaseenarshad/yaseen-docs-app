@@ -25,6 +25,7 @@ import { DuplicateIcon } from "../components/icons";
 
 import { t } from "../i18n";
 import { isSomeElementSelected } from "../scene";
+import { boundShortcut } from "../keyRemap";
 import { getShortcutKey } from "../shortcut";
 
 import { useStylesPanelMode } from "../components/App";
@@ -116,9 +117,10 @@ export const actionDuplicateSelection = register({
       <IconButton
         type="button"
         icon={DuplicateIcon}
-        title={`${t("labels.duplicateSelection")} — ${getShortcutKey(
-          "CtrlOrCmd+D",
-        )}`}
+        // Yaseen Docs (YAZ-3564 K12)
+        title={`${t("labels.duplicateSelection")} — ${
+          boundShortcut("duplicateSelection") ?? getShortcutKey("CtrlOrCmd+D")
+        }`}
         aria-label={t("labels.duplicateSelection")}
         onClick={() => updateData(null)}
         disabled={

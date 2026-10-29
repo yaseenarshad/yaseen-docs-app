@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { isBoard, isViewOnly } from '@shared/fileKind'
+import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
+import type { KeyScope } from '@shared/keys'
 import type { TextFormatting } from '@shared/textFormatting'
 import { BETWEEN_VAULTS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import { api, BridgeRequestError } from './api'
@@ -8,6 +9,8 @@ import { Editor } from './editor/Editor'
 import { newNoteBase } from './editor/wikilink/createFromLink'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useLinkEvents } from './hooks/useLinkEvents'
+import { KeySheet } from './keys/KeySheet'
+import { onKeySheetRequest, placeOverTab } from './keys/keySheetRequest'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { useVaultStorage } from './hooks/useVaultStorage'
 import { requestZoom } from './editor/zoomRequest'
@@ -32,7 +35,6 @@ import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
 import { useVaultListsHere } from './lists/useVaultListsHere'
 import { readPageView } from './lib/pageView'
-import { ownsSidebarHotkey } from './lib/sidebarHotkey'
 import { buildSetupPrompt } from './lib/syncAttention'
 import { mergeNotice } from './history/mergeNotice'
 import { noteBoardRenamed, noteBoardSaved } from './share/liveShare'
@@ -44,7 +46,7 @@ import { askFromFiles, filesClickHow, watchFilesKeys } from './lib/filesWindow'
 import { FloatingPreview } from './sidebar/HoverPreviewHost'
 import { filesPreviewPopup } from './sidebar/previewPopup'
 import { isFolderPath, pageName, pathTitles, useAllPathTitles } from './lib/pageLabel'
-import { fetchTree, onTree } from './lib/treeFeed'
+import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
@@ -56,7 +58,10 @@ import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { textVars } from './settings/headingStyles'
 import { plainEntryName } from './sidebar/createEntry'
-import { type SidebarClipboard, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
+import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
+import { newItemFolder, resolveGoTo } from './sidebar/goToPlace'
+import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
+import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
 import { useVaultIcons } from './sidebar/useVaultIcons'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
@@ -254,6 +259,13 @@ function bootStartView(tab: string | null, file: string | null): Map<string, Pag
   return new Map(tab !== null && start !== undefined && start.path === file ? [[tab, start.view]] : [])
 }
 
+
+/** The place of a tab for its keys (YAZ-3564 K11): a note, a drawing, a diagram or code; null for any other tab. */
+function keyPlaceOf(file: string | null): KeyScope | null {
+  if (file === null) return null
+  const kind = fileKind(file)
+  return kind === 'markdown' ? 'note' : kind === 'drawing' ? 'drawing' : kind === 'diagram' ? 'diagram' : kind === 'text' ? 'code' : null
+}
 export function App() {
   /**
    * A Files window (YAZ-3357 D1): only the sidebar. Its clicks go to a full window (`askFromFiles`), it has no tab
@@ -318,6 +330,11 @@ export function App() {
   // The row menu a row of the new tab page asked for (YAZ-2663 D6): the reveal request's idiom.
   const sidebarMenuId = useRef(0)
   const [sidebarMenuRequest, setSidebarMenuRequest] = useState<SidebarMenuRequest | null>(null)
+  // The name field the New… box asked for (YAZ-3556 D4): the same idiom again.
+  const sidebarCreateId = useRef(0)
+  const [sidebarCreateRequest, setSidebarCreateRequest] = useState<SidebarCreateRequest | null>(null)
+  // The New… box (⌘N, YAZ-3556 D5): the folder it opens on, and whether the set one is missing (D3); null while it is closed.
+  const [newItem, setNewItem] = useState<{ dir: string; missing: string | null } | null>(null)
   // The preview panel of the search (YAZ-2662 D5): the file that it draws over the page area, or
   // null with no panel on show. It is no tab — the preview TAB is the workspace's `preview` — and
   // nothing of it is stored. The sidebar names the file and reads it back; the panel's ✕ clears it.
@@ -395,6 +412,13 @@ export function App() {
   }, [])
   /** The scope of the ACTIVE tab's vault (R3, R4, R10); with no tab open, the first vault's. */
   const active = file === null ? first : scopeOf(file)
+  /**
+   * The window's vaults for the place picker (YAZ-3556 D6): the active tab's first, then the others in the window's order.
+   * ⌘N and ⌘D read the vault, the page on show and the settings of the moment through `placeInputs`, at key time.
+   */
+  const placeVaults: PlaceVault[] = roots.map((vault, i) => ({ root: vault, name: vaults[i].name ?? storage.vaultName(vault) })).sort((a, b) => Number(b.root === active.root) - Number(a.root === active.root))
+  const placeInputs = useRef({ vault: active.root, page: pageOnShow, settings })
+  placeInputs.current = { vault: active.root ?? root, page: pageOnShow, settings }
   // The close/quit handshake for the writers below App — the outline's debounce and every in-flight
   // frontmatter write (YAZ-2174): the note editor's autosave registers with the bridge itself.
   useEffect(() => api.window.onFlush(flushWindow), [])
@@ -445,7 +469,7 @@ export function App() {
   const rightOverlay = overlayAt(visibleSidebarWidth)
 
   const toggleSidebar = useCallback(() => {
-    // A Files window IS the sidebar (YAZ-3357 D8): ⌘B and View › Toggle Sidebar never hide it.
+    // A Files window IS the sidebar (YAZ-3357 D8): ⌘⇧B (View › Toggle Sidebar) never hides it.
     if (filesWindow) return
     const next = !sidebarCollapsedRef.current
     sidebarCollapsedRef.current = next
@@ -453,16 +477,6 @@ export function App() {
     setSidebarCollapsed(next)
   }, [])
 
-  // Renderer bubble phase is deliberate: Milkdown and other focused tools get first ownership.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (!ownsSidebarHotkey(event, hotkeysRef.current)) return
-      event.preventDefault()
-      toggleSidebar()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [toggleSidebar])
 
   // Dragging past 60% of the minimum reads as "close it" rather than "make it tiny" — the
   // sidebar collapses and the remembered width stays whatever it was before the drag.
@@ -867,12 +881,61 @@ export function App() {
     setSidebarMenuRequest((request) => request?.id === id ? null : request)
   }, [])
 
+  /** The tree of `vault` as the sidebar's feed has it; a walk when it has none yet (YAZ-3556: ⌘N and ⌘D read it). */
+  const treeOf = useCallback(async (vault: string) => latestTree(vault)?.tree ?? (await fetchTree(vault)).tree, [])
+  /** What a sidebar click does with a file (D9): this window's tabs, or a Files window's doors. Set below, where they are. */
+  const openAsSidebar = useRef<(path: string) => void>(() => undefined)
+  // ⌘N (YAZ-3556 D3, D5): the New… box, on "Default location for new notes" read against the page on show. The Welcome
+  // window has no vault: the key does nothing there. A second ⌘N while it shows leaves it as it is.
+  const openNewItem = useCallback(() => {
+    const { vault, page, settings: now } = placeInputs.current
+    if (vault === null) return
+    void treeOf(vault).then(
+      (tree) => setNewItem((open) => open ?? newItemFolder(now, vault, page, tree)),
+      (err: unknown) => notify(`Can't open New…: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+    )
+  }, [treeOf, notify])
+  const closeNewItem = useCallback(() => setNewItem(null), [])
+  // ⏎ in the box (D4): Files shows — the sidebar first, if it is hidden — and opens the right-click name field in the folder.
+  const makeNewItem = useCallback((kind: NewItemKind, dir: string) => {
+    setNewItem(null)
+    if (sidebarCollapsedRef.current) toggleSidebar()
+    changeLens('files')
+    setSidebarCreateRequest({ id: ++sidebarCreateId.current, kind, dir })
+  }, [toggleSidebar, changeLens])
+  const consumeSidebarCreate = useCallback((id: number) => {
+    setSidebarCreateRequest((request) => request?.id === id ? null : request)
+  }, [])
+  // ⌘D (YAZ-3556 D9): the place of `settings.goTo`, in the active tab's vault. A tab shows. A folder shows in Files, open,
+  // with the keyboard on its row. A file opens as a sidebar click opens it, and its row shows. A hidden sidebar shows
+  // first; a path the vault does not have says so. The Welcome window has no vault: the key does nothing there.
+  const goToPlace = useCallback(() => {
+    const { vault, settings: now } = placeInputs.current
+    if (vault === null) return
+    const goTo = now.goTo
+    if (goTo.kind === 'tab') {
+      if (sidebarCollapsedRef.current) toggleSidebar()
+      return changeLens(goTo.tab)
+    }
+    void treeOf(vault).then(
+      (tree) => {
+        const target = resolveGoTo(goTo, vault, tree)
+        if (target.kind === 'tab') return
+        if (target.kind === 'missing') return notify(`Can't go to "${target.rel}": no such ${target.folder ? 'folder' : 'file'} in ${storage.vaultName(vault)}`, 'error')
+        if (sidebarCollapsedRef.current) toggleSidebar()
+        if (target.kind === 'file') openAsSidebar.current(target.path)
+        revealInFiles(target.path, target.kind === 'folder')
+      },
+      (err: unknown) => notify(`Can't show in sidebar: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+    )
+  }, [treeOf, toggleSidebar, changeLens, revealInFiles, notify])
+
   // The settings dialog (YAZ-1679) is App's so the sidebar cog, ⌘, and the app menu's Settings…
   // open the ONE dialog — and it can open with the sidebar collapsed. `open`/`close` are stable
   // because `useMenuEvents` resubscribes whenever a callback identity changes.
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Which page the dialog opens on: the first, or Sharing from the Share dialog's "Open Settings › Sharing" (YAZ-3040).
-  const [settingsPage, setSettingsPage] = useState<'sharing' | undefined>(undefined)
+  const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | undefined>(undefined)
   const openSettings = useCallback(() => {
     setSettingsPage(undefined)
     setSettingsOpen(true)
@@ -882,6 +945,17 @@ export function App() {
     setSettingsOpen(true)
   }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
+
+  // The keys of this tab (YAZ-3564 K11): Help › Keys of This Tab…, its App key, and ? on a drawing (`requestKeySheet`).
+  const [keySheetOpen, setKeySheetOpen] = useState(false)
+  const openKeySheet = useCallback(() => setKeySheetOpen(true), [])
+  const closeKeySheet = useCallback(() => setKeySheetOpen(false), [])
+  useEffect(() => onKeySheetRequest(openKeySheet), [openKeySheet])
+  const changeKeys = useCallback(() => {
+    setKeySheetOpen(false)
+    setSettingsPage('hotkeys')
+    setSettingsOpen(true)
+  }, [])
 
   // The updater (YAZ-2976): the sidebar's pill (D4) and Help › What's New… (D8) open the ONE
   // "What's new" sheet, App's for the same reason as the settings dialog. Closing it leaves the
@@ -1433,8 +1507,11 @@ export function App() {
     // ⌘T in a Files window (YAZ-3357 D8) opens a new full window, as ⌘⇧N: there is no strip for a tab.
     onNewTab: filesWindow ? newWindow : newTab,
     onNewWindow: newWindow,
+    onNewItem: openNewItem,
+    onGoTo: goToPlace,
     onZoom: zoom,
     onWhatsNew: openWhatsNew,
+    onKeySheet: openKeySheet,
     onExportImage: exportImage,
     onExportDrawing: reviewer === null ? exportDrawing : review.skip,
     onShareLink: shareActiveBoard,
@@ -2343,9 +2420,8 @@ export function App() {
       onChangeCanvasPrefs: changeCanvasPrefs,
       canvasPanel: settings.canvasPanel,
       onChangeCanvasPanel: changeCanvasPanel,
-      // A diagram tab's dark-mode colours, and ⌘B pressed inside its draw.io frame.
+      // A diagram tab's dark-mode colours.
       diagramDarkColors: settings.diagramDarkColors,
-      onToggleSidebar: toggleSidebar,
       // YAZ-3449: every code tab's read only, wrap and minimap, each a SETTING, and its cog's door that writes them.
       codeReadOnly: settings.codeReadOnly,
       codeWrap: settings.codeWrap,
@@ -2360,6 +2436,9 @@ export function App() {
       hoverBacklinks: hoverOn(settings, 'backlinks'),
       hoverFolderViews: hoverOn(settings, 'folderViews'),
       previewScope: editorPreviewScope,
+      // YAZ-3564: the keys the user changed; a drawing follows them at once (K4).
+      hotkeys: settings.hotkeys,
+      hotkeysAside: settings.hotkeysAside,
       // Upkeep off (🔒 D7): no settings, so no Reviews section.
       reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
     }
@@ -2401,6 +2480,7 @@ export function App() {
       session: (id: string) => ask({ kind: 'session', id }),
     }
   }, [filesWindow, notify])
+  openAsSidebar.current = filesDoors?.open ?? openPage
   /**
    * Tabs Mission Control in a Files window (YAZ-3357 D3, D8): it stands right of the sidebar, and main makes the window wide
    * for it. The board shows only once the window IS wide, and stays until it is narrow again (D10): it never lays out
@@ -2525,7 +2605,10 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
+      {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Note (D7). */}
+      {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
+      {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
       {whatsNewOpen && (
         <Suspense fallback={null}>
           <WhatsNewSheet update={update} onClose={closeWhatsNew} />
@@ -2604,6 +2687,8 @@ export function App() {
           onRevealConsumed={consumeSidebarReveal}
           menuRequest={sidebarMenuRequest}
           onMenuConsumed={consumeSidebarMenu}
+          createRequest={sidebarCreateRequest}
+          onCreateConsumed={consumeSidebarCreate}
           onLensChange={changeLens}
           settings={settings}
           onChangeSettings={changeSettings}
