@@ -1909,11 +1909,11 @@ describe('createWindowManager: the tab board reaches other windows (YAZ-3343 D3,
 
 describe('createWindowManager: a tab torn off its strip (YAZ-3637 D3, D5)', () => {
   /** w1 shows /a and /b at the top left; w2 shows /c, off to the right; w3 is a Welcome window under w1. */
-  function seedTear() {
+  function seedTear(areas: WindowBounds[] = [AREA]) {
     store.upsertWindow({ id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'focus', bounds: { x: 10, y: 10, width: 800, height: 600 } })
     store.upsertWindow({ id: 'w2', root: '/c', roots: ['/c'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 1000, y: 100, width: 300, height: 300 } })
     store.upsertWindow({ id: 'w3', root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 40, y: 40, width: 800, height: 600 } })
-    const made = makeHost()
+    const made = makeHost(areas)
     const manager = createWindowManager(store, made.host)
     manager.restore('all')
     const [w1, w2, w3] = made.created.map((c) => c.win)
@@ -1962,6 +1962,14 @@ describe('createWindowManager: a tab torn off its strip (YAZ-3637 D3, D5)', () =
     expect(w1.setBoundsCalls).toEqual([[bounds, undefined]])
     expect(store.get().windows.find((w) => w.id === 'w1')?.bounds).toEqual(bounds)
     expect(manager.takeStartView('w1')).toBeUndefined()
+  })
+
+  it('D3: a drop near the edge between two displays keeps the window on the display that holds the point, not the one it overlaps most', () => {
+    const second: WindowBounds = { x: 1440, y: 0, width: 1920, height: 1080 }
+    const { manager, created } = seedTear([AREA, second])
+    // 1400 less the grab puts most of an 800 px window on the second display; the point is on the first.
+    expect(manager.tearOff(store.get().windows.find((w) => w.id === 'w1')!, '/b/y.md', {}, { x: 1400, y: 300 }, false)).toBe('opened')
+    expect(created.at(-1)!.entry.bounds).toEqual({ x: 1440 - 800, y: 300 - TEAR_OFF_GRAB.y, width: 800, height: 600 })
   })
 
   it('a point of 0,0 is no point (the drag ended with none): the pointer is where it is now', () => {

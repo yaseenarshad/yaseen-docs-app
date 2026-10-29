@@ -923,7 +923,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // As big as the source stands NOW (the stored bounds lag a drag by BOUNDS_DEBOUNCE_MS), the tab under the pointer.
       const source = liveWindow(from.id)
       const size = source?.getBounds() ?? from.bounds
-      const bounds = clampBounds({ ...size, x: at.x - TEAR_OFF_GRAB.x, y: at.y - TEAR_OFF_GRAB.y }, host.workAreas())
+      // Kept on the display that holds the drop point: near the edge between two displays the window must not jump to
+      // the other one, where the tab would be far from the pointer. A point on no display is clamped as any window is.
+      const areas = host.workAreas()
+      const under = areas.filter((a) => at.x >= a.x && at.x < a.x + a.width && at.y >= a.y && at.y < a.y + a.height)
+      const bounds = clampBounds({ ...size, x: at.x - TEAR_OFF_GRAB.x, y: at.y - TEAR_OFF_GRAB.y }, under.length > 0 ? under : areas)
       if (alone && source !== undefined) {
         // The only tab takes its window along (D5): no new window, no reload. Stored now, as `commitBounds` would after
         // the debounce, so an identity read in between sees where the window is.
