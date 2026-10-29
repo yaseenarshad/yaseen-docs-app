@@ -653,7 +653,7 @@ function CrepeHost({
       readOnlyKeys: true,
       // The note keys as the user set them (YAZ-3564 K4): read as the note opens, so a change applies to the next one.
       hotkeys: storage.getSettings()?.hotkeys,
-      // Without folded lines says what it left out (YAZ-3653); Settings › Notifications › Clipboard can turn it off.
+      // Without folded lines says what it left out (YAZ-3653); Settings › Notifications › "Copy, cut or paste" can turn it off.
       onCopyNotice: onNotice === undefined ? undefined : (text) => onNotice(text, 'copy', 'clipboard'),
     })
     crepeRef.current = crepe
@@ -896,7 +896,7 @@ function CrepeHost({
           positioned ancestor, so the bar holds its corner while the note scrolls under it. */}
       <FindBar channel={findChannel} scope="note" hostRef={hostRef} />
       {/* The note's own right-click menu (YAZ-3653), in the look of the tab and sidebar menus. */}
-      <NoteMenu view={readyCrepe === null ? null : editorViewOf(readyCrepe)} />
+      <NoteMenu view={readyCrepe !== null && crepeRef.current === readyCrepe ? editorViewOf(readyCrepe) : null} />
       <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
       {/* The table of contents (YAZ-2700) floats beside that scroller the same way: at the
           section's right edge, from the scroller's top to its bottom. It draws nothing for a note

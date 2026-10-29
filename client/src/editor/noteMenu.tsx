@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { NoteMenuAction } from '@shared/types'
 import { api } from '../api'
-import { bulletToCopy, copyVisibleNext } from './clipboardCopyOut'
+import { bulletToCopy, copyVisibleNext, forgetCopyVisible } from './clipboardCopyOut'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuSection } from '../sidebar/menuSections'
 
@@ -153,7 +153,10 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
     // After the focus is back, so the bullet is checked against the selection the copy will see.
     const bullet = action === 'copy-visible' && menu.pointer !== null && menu.doc === view.state.doc ? bulletToCopy(view.state, menu.pointer) : null
     if (bullet !== null) copyVisibleNext(view, bullet)
-    api.menu.edit(action, word).catch((error: unknown) => console.error('Menu action failed', error))
+    api.menu.edit(action, word).catch((error: unknown) => {
+      if (bullet !== null) forgetCopyVisible(view)
+      console.error('Menu action failed', error)
+    })
   }
   return (
     <ContextMenu

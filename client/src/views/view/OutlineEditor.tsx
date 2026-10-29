@@ -163,11 +163,13 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
     })
     lockToBullets(crepe)
 
+    // The note menu's view (YAZ-3653): never set once the cleanup ran, so the menu never holds a destroyed view.
+    let live = true
     const ready = crepe.create().then(() => {
       crepeRef.current = crepe
       knownRef.current = getMarkdownForSave(crepe)
       guard(crepe, seeded.length)
-      setView(editorViewOf(crepe))
+      if (live) setView(editorViewOf(crepe))
     })
 
     // The close/quit handshake: pull the live document past Crepe's ~200ms listener debounce and
@@ -183,6 +185,7 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
     return () => {
       offFlush()
       crepeRef.current = null
+      live = false
       setView(null)
       if (timer !== null) clearTimeout(timer)
       flush()

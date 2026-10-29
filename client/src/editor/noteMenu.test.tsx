@@ -169,6 +169,27 @@ describe('the right-click (YAZ-3653)', () => {
     document.querySelectorAll('.ctx-menu--editor').forEach((el) => el.remove())
   })
 
+  it('M8: Escape closes the menu and gives the focus back to the note', async () => {
+    const { crepe, view } = await open('* one\n')
+    caretIn(crepe, 'one')
+    view.focus()
+    pointAt(view, posOf(crepe, 'one'))
+    rightClick(view.dom.querySelector('p')!)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    expect(view.hasFocus()).toBe(true)
+  })
+
+  it('D9: a word selected on the page that the note has not read yet turns Cut and Copy on', async () => {
+    const { crepe, view } = await mount('* one two\n')
+    caretIn(crepe, 'one')
+    const text = view.dom.querySelector('p')!.firstChild!
+    document.getSelection()!.setBaseAndExtent(text, 0, text, 3)
+    expect(view.state.selection.empty).toBe(true)
+    expect(shape(noteMenuSections(view, null, vi.fn()))[0]).toEqual(['Cut', 'Copy', 'Copy as [Plain text, Markdown | Without folded lines]'])
+  })
+
   it('on an image: the native image menu stays', async () => {
     const { view } = await open('* one\n')
     const image = document.createElement('img')

@@ -19,7 +19,10 @@ export interface ClipboardHost {
   rendererUrl: string
 }
 
-/** Private preload reply to Copy as; no arbitrary clipboard writer is exposed to the renderer. */
+/**
+ * Private preload reply to Copy as; no arbitrary clipboard writer is exposed to the renderer. A note menu row
+ * (`menu:edit`, YAZ-3653) asks the same way, from the target window and, in the preload, only during a user gesture.
+ */
 export function registerClipboardIpc(windows: Pick<WindowManagerIpc, 'idFor'>, host: ClipboardHost): void {
   handleWithEvent(SPECIAL.menuCopyText, async (event, text: unknown, html?: unknown) => {
     const { sender, senderFrame } = event
@@ -44,6 +47,7 @@ export function registerClipboardIpc(windows: Pick<WindowManagerIpc, 'idFor'>, h
     const { sender, senderFrame } = event
     if (sender.isDestroyed()
       || windows.idFor(sender) === undefined
+      || sender.id !== host.target()?.id
       || !senderFrame
       || senderFrame !== sender.mainFrame
       || !isRendererUrl(senderFrame.url, host.rendererUrl)) {

@@ -137,4 +137,11 @@ describe('the note menu runs its row on the window that sent it (YAZ-3653)', () 
     }
     expect(wc.paste).not.toHaveBeenCalled()
   })
+
+  it('refuses a window that is not the target, as Copy as does', async () => {
+    const { wc, ev } = window()
+    target = { id: 2 }
+    expect(await edit(ev, 'copy-visible')).toEqual(bad)
+    expect(wc.send).not.toHaveBeenCalled()
+  })
 })

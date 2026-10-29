@@ -566,10 +566,10 @@ export function setMarkdown(crepe: Crepe, markdown: string): void {
   })
 }
 
-/** Move keyboard focus into the document (e.g. right after opening a file from the sidebar). */
 /** The note's ProseMirror view, for what lives beside the editor and acts on it: the note's right-click menu (YAZ-3653). */
 export const editorViewOf = (crepe: Crepe): EditorView => crepe.editor.action((ctx) => ctx.get(editorViewCtx))
 
+/** Move keyboard focus into the document (e.g. right after opening a file from the sidebar). */
 export function focusEditor(crepe: Crepe): void {
   crepe.editor.action((ctx) => {
     const view = ctx.get(editorViewCtx)

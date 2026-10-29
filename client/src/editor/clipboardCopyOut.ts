@@ -14,7 +14,7 @@ import { EditorView as CodeMirrorView } from '@codemirror/view'
 export const CLIPBOARD_EMPTY_PARAGRAPH = 'data-mdapp-empty-paragraph'
 
 /** A document range: what Without folded lines copies. */
-export interface CopyRange {
+interface CopyRange {
   from: number
   to: number
 }
@@ -38,15 +38,20 @@ export function bulletToCopy(state: EditorState, pos: number): CopyRange | null 
 }
 
 /**
- * A right-clicked bullet (or the bullet at the caret, for the key) waiting for main's Copy as
- * request: used once, and only while the note and its selection are still as they were, so a
- * request that never came cannot redirect a later copy.
+ * A right-clicked bullet waiting for main's Copy as request: the next Copy as of the note takes it
+ * (any mode), and only a Without folded lines copy uses it, while the note and its selection are
+ * still as they were. A request that failed forgets it (`forgetCopyVisible`).
  */
 const nextRange = new WeakMap<EditorView, CopyRange & { doc: ProseNode; selection: Selection }>()
 
 /** The next Without folded lines of `view` copies `range` instead of the selection. */
 export function copyVisibleNext(view: EditorView, range: CopyRange): void {
   nextRange.set(view, { ...range, doc: view.state.doc, selection: view.state.selection })
+}
+
+/** The stored bullet is not wanted: the request for it failed. */
+export function forgetCopyVisible(view: EditorView): void {
+  nextRange.delete(view)
 }
 
 function takeRange(view: EditorView): CopyRange | null {
@@ -101,20 +106,17 @@ const visibleSlice = (state: EditorState, range: CopyRange | null): { slice: Sli
 export const copyNoticeCtx = createSlice<((text: string) => void) | null, 'copyNotice'>(null, 'copyNotice')
 
 /** What the toast says: the lines a copy left out, so a copy that dropped them reads as meant. */
-export const copiedText = (left: number): string =>
+const copiedText = (left: number): string =>
   left === 0 ? 'Copied. Nothing in it was folded' : `Copied, ${left} folded line${left === 1 ? '' : 's'} left out`
 
 /**
  * The key for Without folded lines (YAZ-3653): the note row `note.copyVisible`, no key until the
- * user picks one in Settings › Hotkeys. Like the row, it copies the bullet at the caret while the
- * selection is inside one line, else the selection; main runs it as the menu's Copy as.
+ * user picks one in Settings › Hotkeys. Main runs it as the Edit menu's row, so it copies what that
+ * row copies: with nothing selected the bullet at the caret, else the selection.
  */
-const copyVisible: Command = (state, dispatch, view) => {
-  const bullet = bulletToCopy(state, state.selection.head)
-  if (bullet === null && state.selection.empty) return false
-  if (dispatch === undefined || view === undefined) return true
-  if (bullet !== null) copyVisibleNext(view, bullet)
-  window.yaseenDocs?.menu?.edit?.('copy-visible').catch((error: unknown) => console.error('Copy failed', error))
+const copyVisible: Command = (state, dispatch) => {
+  if (state.selection.empty && bulletToCopy(state, state.selection.head) === null) return false
+  if (dispatch !== undefined) window.yaseenDocs?.menu?.edit?.('copy-visible').catch((error: unknown) => console.error('Copy failed', error))
   return true
 }
 
@@ -160,6 +162,7 @@ export const clipboardCopyOut = $prose((ctx) => {
     key: new PluginKey('mdapp-clipboard-copy-out'),
     view: view => {
       const unsubscribe = window.yaseenDocs?.menu?.onCopyAs?.(mode => {
+        const stored = takeRange(view)
         const active = document.activeElement
         if (active instanceof HTMLElement && view.dom.contains(active)) {
           const code = CodeMirrorView.findFromDOM(active)
@@ -168,11 +171,12 @@ export const clipboardCopyOut = $prose((ctx) => {
         }
         if (!view.hasFocus()) return undefined
         if (mode === 'visible') {
-          const range = takeRange(view)
+          // The right-clicked bullet; with nothing selected the bullet at the caret (the Edit menu's row, the key); else the selection.
+          const range = stored ?? (view.state.selection.empty ? bulletToCopy(view.state, view.state.selection.head) : null)
           if (range === null && view.state.selection.empty) return ''
           const { slice, left } = visibleSlice(view.state, range)
           const { dom, text } = view.serializeForClipboard(slice)
-          if (ctx.isInjected(copyNoticeCtx)) ctx.get(copyNoticeCtx)?.(copiedText(left))
+          if (text !== '' && ctx.isInjected(copyNoticeCtx)) ctx.get(copyNoticeCtx)?.(copiedText(left))
           return { text, html: dom.innerHTML }
         }
         if (view.state.selection.empty) return ''

@@ -102,15 +102,15 @@ describe('Copy as › Without folded lines (YAZ-3653)', () => {
     expect(text).not.toMatch(/before|after|hidden/)
   })
 
-  it('S9, S12, S14: no folds or one line give what Copy gives; an empty selection claims with nothing', async () => {
-    const { crepe, view } = await focused('* A\n  * a1\n* B\n')
+  it('S9, S12, S14: no folds or one line give what Copy gives; an empty selection outside a bullet claims with nothing', async () => {
+    const { crepe, view } = await focused('* A\n  * a1\n* B\n\nloose\n')
     select(crepe, posOf(crepe, 'A'), endOf(crepe, 'B'))
     const normal = view.serializeForClipboard(view.state.selection.content())
     expect(copyVisible()).toMatchObject({ text: normal.text, html: normal.dom.innerHTML })
     fold(crepe, 'A')
     select(crepe, posOf(crepe, 'A'), endOf(crepe, 'A'))
     expect(copyVisible().text).toBe('A')
-    caretIn(crepe, 'B')
+    caretIn(crepe, 'loose')
     expect(copyAs('visible')).toBe('')
   })
 
@@ -135,18 +135,35 @@ describe('Copy as › Without folded lines (YAZ-3653)', () => {
     expect(md(target.crepe)).toBe('* Tasks\n  * [ ] one\n  * [ ] two\n')
   })
 
-  it('S19, S20: a right-clicked bullet copies itself and the lines you see under it; a stale one copies nothing', async () => {
-    const { crepe, view } = await focused('* Tasks\n  * [ ] one\n    * hidden\n  * [ ] two\n* Rules\n')
+  it('S19, S20: a right-clicked bullet copies itself and the lines you see under it; a stale one is not used', async () => {
+    const { crepe, view } = await focused('* Tasks\n  * [ ] one\n    * hidden\n  * [ ] two\n\nloose\n')
     fold(crepe, 'one')
-    caretIn(crepe, 'Rules')
+    caretIn(crepe, 'loose')
     const bullet = bulletToCopy(view.state, posOf(crepe, 'Tasks'))!
     copyVisibleNext(view, bullet)
     expect(copyVisible().text).toBe('• Tasks\n  ☐ one\n  ☐ two')
     // Used once: the next copy is the selection's again (nothing here).
     expect(copyAs('visible')).toBe('')
+    // Any Copy as takes it: a Plain text copy in between leaves nothing for a later Without folded lines.
+    copyVisibleNext(view, bullet)
+    copyAs('plain')
+    expect(copyAs('visible')).toBe('')
+    // The selection moved: the stored bullet is not used.
     copyVisibleNext(view, bullet)
     caretIn(crepe, 'two')
+    expect(copyVisible().text).toBe('☐ two')
+    // The note changed: the stored bullet is not used.
+    caretIn(crepe, 'loose')
+    copyVisibleNext(view, bullet)
+    view.dispatch(view.state.tr.insertText('x', view.state.doc.content.size - 1))
     expect(copyAs('visible')).toBe('')
+  })
+
+  it('S24: the Edit menu\'s row with nothing selected and the caret in a bullet copies that bullet, as the key does', async () => {
+    const { crepe } = await focused('* A\n  * a1\n    * a2\n* B\n')
+    fold(crepe, 'a1')
+    caretIn(crepe, 'A')
+    expect(copyVisible().text).toBe('• A\n  • a1')
   })
 
   it('S21: the bullet is offered only while the selection is inside one line, and never in code', async () => {
@@ -188,6 +205,10 @@ describe('Copy as › Without folded lines (YAZ-3653)', () => {
     expect(pressKey(crepe, 'y', { mod: true, shift: true })).toBe(true)
     expect(edit).toHaveBeenCalledExactlyOnceWith('copy-visible')
     expect(copyVisible().text).toBe('• A')
+    // A selection inside one line copies the selection, as Copy does (S12).
+    select(crepe, posOf(crepe, 'B'), endOf(crepe, 'B'))
+    expect(pressKey(crepe, 'y', { mod: true, shift: true })).toBe(true)
+    expect(copyVisible().text).toBe('B')
     caretIn(crepe, 'loose')
     expect(pressKey(crepe, 'y', { mod: true, shift: true })).toBe(false)
   })
