@@ -58,6 +58,11 @@
   content: none !important;
   display: none !important;
 }
+/* On a Markdown link pill the page preview says where it goes (YAZ-3609 D20): Crepe's address bar stays away.
+   Edit, Copy and Remove link stay on the pill's right-click menu. */
+.milkdown[data-pill-hover] .milkdown-link-preview {
+  display: none;
+}
 /* A find match inside a pill shows the find colour over the pill's tint (YAZ-3657). */
 .wikilink.find-match {
   background: var(--find-match-bg);

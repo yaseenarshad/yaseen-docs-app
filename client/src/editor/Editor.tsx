@@ -639,7 +639,8 @@ function CrepeHost({
           ? undefined
           : { root, createFolder: () => newNoteFolderFor?.(file.path) ?? '', openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
       // The hover panel of a resolved [[link]] (YAZ-3403): this note editor's alone, never a read-only preview's.
-      wikilinkHover: linkHover,
+      // A Markdown link pill previews its page too (YAZ-3609 D20): its address resolves as a click resolves it.
+      wikilinkHover: { ...linkHover, markdownPath: (href) => (wikilinkCandidates === undefined ? null : hrefTarget(href, { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf })) },
       linkLook: { icon: (target, folder) => fileIconDecoration(icons.current, target, folder) },
       // Standard Markdown links (YAZ-1309) leave through one typed host boundary. The active
       // note path travels with the untouched href so main—not the renderer—owns relative-file

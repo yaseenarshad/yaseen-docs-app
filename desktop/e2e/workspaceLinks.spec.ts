@@ -118,6 +118,20 @@ test('step 1d — find inside a pill shows the find colour, and a cut pill keeps
   await win.keyboard.press('Escape')
 })
 
+test('step 1e — a rest on a pill into the other vault previews its note, as a [[link]] does; no address bar (D20)', async () => {
+  await editorOf(win).getByText('See').click() // the editor has focus: Crepe would show its address bar on a link
+  await editorOf(win).locator('.link-pill--first', { hasText: 'the gym plan' }).hover()
+  const preview = win.locator('.note-preview')
+  await expect(preview.locator('.note-preview__body')).toContainText(PLAN_BODY)
+  await expect(editorOf(win).locator('xpath=ancestor-or-self::*[contains(@class,"milkdown")][1]')).toHaveAttribute('data-pill-hover', '')
+  // Crepe's address bar, in this editor, takes no room while the pointer is on the pill.
+  expect(await win.locator('.milkdown[data-pill-hover] .milkdown-link-preview').evaluateAll((bars) => bars.every((bar) => getComputedStyle(bar).display === 'none'))).toBe(true)
+  await shoot(win, 'workspace-links-01e-preview')
+  await win.locator('.start__heading, .page-title').first().hover().catch(() => undefined)
+  await win.mouse.move(5, 5)
+  await expect(preview).toHaveCount(0)
+})
+
 test('step 2 — a Markdown link into the other vault opens in this tab, and Back returns (D14, D10)', async () => {
   await editorOf(win).locator('a', { hasText: 'the gym plan' }).click()
   await expect(activeTab(win)).toHaveText('Plan')
