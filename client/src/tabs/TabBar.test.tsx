@@ -27,10 +27,10 @@ const openVsCode = vi.mocked(api.shell.openVsCode)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** These tests name each tab by its path: with no copies, a tab's id here is its path (YAZ-2940 D1). */
-type TabBarProps = Omit<IdTabBarProps, 'tabs'> & { tabs: readonly string[] }
-function TabBar({ tabs, ...props }: TabBarProps) {
-  return <IdTabBar tabs={tabs.map((path) => ({ id: path, path }))} {...props} />
+/** These tests name each tab by its path: with no copies, a tab's id here is its path (YAZ-2940 D1). The window is w1 unless a test says otherwise (YAZ-3637). */
+type TabBarProps = Omit<IdTabBarProps, 'tabs' | 'windowId'> & { tabs: readonly string[]; windowId?: string }
+function TabBar({ tabs, windowId = 'w1', ...props }: TabBarProps) {
+  return <IdTabBar windowId={windowId} tabs={tabs.map((path) => ({ id: path, path }))} {...props} />
 }
 
 let root: Root | null = null
@@ -223,7 +223,7 @@ describe('TabBar', () => {
     root = createRoot(container)
     vi.mocked(api.tree).mockResolvedValueOnce({ root: '/v', tree: [{ type: 'dir', name: 'src', path: '/v/src', children: [] }], generatedAt: 1 })
     const tabs = [{ id: 'a', path: '/v/a.ts' }, { id: 'm', path: '/v/mine.md', name: 'My page' }, { id: 's', path: '/v/src' }, { id: 'o', path: '/out/b.md' }]
-    act(() => root?.render(<IconsContext.Provider value={{ rowIcons: icons, roots: ['/v'] }}><IdTabBar roots={['/v']} titles={new Map()} tabs={tabs} active="a" {...noop} {...noNav} /></IconsContext.Provider>))
+    act(() => root?.render(<IconsContext.Provider value={{ rowIcons: icons, roots: ['/v'] }}><IdTabBar roots={['/v']} titles={new Map()} windowId="w1" tabs={tabs} active="a" {...noop} {...noNav} /></IconsContext.Provider>))
     await act(async () => void (await fetchTree('/v')))
     const icon = (id: string) => container!.querySelector<HTMLElement>(`[data-tab="${id}"] .tabbar__label > .file-icon:first-child`)!
     // The same id the tree row of that path shows.
@@ -242,7 +242,7 @@ describe('TabBar', () => {
     root = createRoot(container)
     vi.mocked(api.tree).mockResolvedValueOnce({ root: '/v', tree: [{ type: 'dir', name: 'Plan.drawio', path: '/v/Plan.drawio', children: [] }], generatedAt: 1 })
     const tabs = [{ id: 'f', path: '/v/Flow.drawio' }, { id: 'n', path: '/v/Map.excalidraw', name: 'Roadmap' }, { id: 'd', path: '/v/Plan.drawio' }, { id: 'a', path: '/v/a.md' }]
-    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} tabs={tabs} active="f" {...noop} {...noNav} />))
+    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} windowId="w1" tabs={tabs} active="f" {...noop} {...noNav} />))
     await act(async () => void (await fetchTree('/v')))
     const ending = (id: string) => container!.querySelector(`[data-tab="${id}"] .tabbar__label .name-ending`)
     expect(ending('f')?.textContent).toBe('.drawio')
@@ -349,22 +349,33 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
     expect(el.querySelector('.tabbar__tab--dragging')).toBeNull()
   })
 
-  it('writes the private main-owner payload instead of exposing a text/plain path', () => {
+  it('writes the private main-owner payload instead of exposing a text/plain path — with this window, the copy and the vault\'s index, so another window can take it (YAZ-3637 D1)', () => {
     const data = {
       types: [] as string[],
       effectAllowed: 'none',
       setData: vi.fn(),
       getData: vi.fn(() => ''),
     } as unknown as DataTransfer
-    const el = mount({ tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav })
+    const el = mount({ roots: ['/u', '/v'], tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav })
     const event = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
     Object.defineProperty(event, 'dataTransfer', { value: data })
     act(() => void tabAt(el, 0).dispatchEvent(event))
-    expect(data.setData).toHaveBeenCalledExactlyOnceWith(
+    expect(data.setData).toHaveBeenCalledTimes(2)
+    expect(data.setData).toHaveBeenCalledWith(
       WORKSPACE_PAGE_MIME,
-      JSON.stringify({ path: '/v/a.md', owner: 'main' }),
+      JSON.stringify({ path: '/v/a.md', owner: 'main', from: 'w1', copy: 0 }),
     )
+    expect(data.setData).toHaveBeenCalledWith('application/x-yaseen-from-w1.1', '1')
     expect(data.effectAllowed).toBe('move')
+  })
+
+  it('a second tab of one page drags as copy 1 (YAZ-3637 D1: the ref another window sends back)', () => {
+    const data = { types: [] as string[], effectAllowed: 'none', setData: vi.fn(), getData: vi.fn(() => '') } as unknown as DataTransfer
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md', '/v/a.md'], active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav })
+    const event = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'dataTransfer', { value: data })
+    act(() => void tabAt(el, 2).dispatchEvent(event))
+    expect(data.setData).toHaveBeenCalledWith(WORKSPACE_PAGE_MIME, JSON.stringify({ path: '/v/a.md', owner: 'main', from: 'w1', copy: 1 }))
   })
 
   it('accepts one validated right-owner drop at a before/end insertion slot and ignores foreign data', () => {
@@ -380,13 +391,13 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
       types: [WORKSPACE_PAGE_MIME],
       effectAllowed: 'move',
       dropEffect: 'none',
-      getData: vi.fn(() => JSON.stringify({ path: '/v/right.md', owner: 'right' })),
+      getData: vi.fn(() => JSON.stringify({ path: '/v/right.md', owner: 'right', from: 'w1', copy: 0 })),
       setData: vi.fn(),
     } as unknown as DataTransfer
     expect(fireData(tabAt(el, 1), 'dragover', data, -5).defaultPrevented).toBe(true)
     expect(tabAt(el, 1).classList.contains('tabbar__tab--gap-before')).toBe(true)
     fireData(tabAt(el, 1), 'drop', data, -5)
-    expect(onDropPage).toHaveBeenCalledExactlyOnceWith({ path: '/v/right.md', owner: 'right' }, 1)
+    expect(onDropPage).toHaveBeenCalledExactlyOnceWith({ path: '/v/right.md', owner: 'right', from: 'w1', copy: 0 }, 1)
 
     fireData(tabAt(el, 2), 'dragover', data, 5)
     expect(tabAt(el, 2).classList.contains('tabbar__tab--gap-after')).toBe(true)
@@ -398,6 +409,78 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
     expect(fireData(el.querySelector('.tabbar')!, 'dragover', foreign).defaultPrevented).toBe(false)
     fireData(el.querySelector('.tabbar')!, 'drop', foreign)
     expect(onDropPage).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('TabBar: a tab of ANOTHER window (YAZ-3637 D1, D4, D6)', () => {
+  const TABS = ['/v/a.md', '/v/b.md', '/v/c.md']
+  const tabAt = (el: HTMLElement, i: number) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab')][i]
+  const fireData = (target: Element, type: string, data: DataTransfer, clientX = 0): MouseEvent => {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX })
+    Object.defineProperty(event, 'dataTransfer', { value: data })
+    act(() => void target.dispatchEvent(event))
+    return event
+  }
+  /** Another window's drag as Chromium shows it: the type names while it passes over (the data unreadable), the data on the drop. */
+  const foreign = (readable: boolean) => ({
+    types: [WORKSPACE_PAGE_MIME, 'application/x-yaseen-from-w2.0'],
+    effectAllowed: 'move',
+    dropEffect: 'none',
+    getData: vi.fn(() => (readable ? JSON.stringify({ path: '/w/x.md', owner: 'main', from: 'w2', copy: 1 }) : '')),
+    setData: vi.fn(),
+  } as unknown as DataTransfer)
+  const base = { tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), onDropPage: vi.fn(), ...noNav }
+
+  it('D4, D6: the gap opens only when canTake says this window shows the page\'s vault; the drop hands the window, the ref and the slot to onDropFromWindow, never to onDropPage', () => {
+    const onDropFromWindow = vi.fn()
+    const canTake = vi.fn((_from: string, root: number) => root === 0)
+    const el = mount({ ...base, canTake, onDropFromWindow })
+    expect(fireData(tabAt(el, 1), 'dragover', foreign(false), -5).defaultPrevented).toBe(true)
+    expect(canTake).toHaveBeenLastCalledWith('w2', 0)
+    expect(tabAt(el, 1).classList.contains('tabbar__tab--gap-before')).toBe(true)
+    fireData(tabAt(el, 1), 'drop', foreign(true), -5)
+    expect(onDropFromWindow).toHaveBeenCalledExactlyOnceWith('w2', { path: '/w/x.md', copy: 1 }, 1)
+    expect(base.onDropPage).not.toHaveBeenCalled()
+    expect(el.querySelector('.tabbar__tab--gap-before')).toBeNull()
+    // A vault this window does not show (D6): no gap, the drop is not taken, nothing happens.
+    const other = { ...foreign(false), types: [WORKSPACE_PAGE_MIME, 'application/x-yaseen-from-w2.1'] } as unknown as DataTransfer
+    expect(fireData(tabAt(el, 2), 'dragover', other, 5).defaultPrevented).toBe(false)
+    expect(el.querySelector('.tabbar__tab--gap-after')).toBeNull()
+    fireData(tabAt(el, 2), 'drop', { ...other, getData: foreign(true).getData } as unknown as DataTransfer, 5)
+    expect(onDropFromWindow).toHaveBeenCalledTimes(1)
+    // The end slot, by the tail after the "+".
+    const tail = el.querySelector<HTMLElement>('.tabbar-tail')!
+    expect(fireData(tail, 'dragover', foreign(false)).defaultPrevented).toBe(true)
+    fireData(tail, 'drop', foreign(true))
+    expect(onDropFromWindow).toHaveBeenLastCalledWith('w2', { path: '/w/x.md', copy: 1 }, 3)
+  })
+
+  it('with no door (no onDropFromWindow) another window\'s drag is ignored, as foreign data is', () => {
+    const el = mount({ ...base, canTake: () => true })
+    expect(fireData(tabAt(el, 1), 'dragover', foreign(false), -5).defaultPrevented).toBe(false)
+    fireData(tabAt(el, 1), 'drop', foreign(true), -5)
+    expect(base.onDropPage).not.toHaveBeenCalled()
+  })
+
+  it('D1, D3: a drag that ends with no surface taking it (dropEffect none) tears the tab off at the screen point; a reorder, and a drop something took, never do', () => {
+    const onTearOff = vi.fn()
+    const onMove = vi.fn()
+    const el = mount({ ...base, onMove, onTearOff })
+    const end = (dropEffect: string, screenX: number, screenY: number) => {
+      const event = new MouseEvent('dragend', { bubbles: true, cancelable: true, screenX, screenY })
+      Object.defineProperty(event, 'dataTransfer', { value: { dropEffect, types: [] } })
+      act(() => void tabAt(el, 0).dispatchEvent(event))
+    }
+    fireData(tabAt(el, 0), 'dragstart', foreign(true))
+    end('none', 640, 480)
+    expect(onTearOff).toHaveBeenCalledExactlyOnceWith('/v/a.md', '/v/a.md', { x: 640, y: 480 })
+    expect(el.querySelector('.tabbar__tab--dragging')).toBeNull()
+    // A reorder in the strip: the drop took it.
+    fireData(tabAt(el, 0), 'dragstart', foreign(true))
+    fireData(tabAt(el, 2), 'drop', foreign(true), 5)
+    expect(onMove).toHaveBeenCalledWith(0, 2)
+    end('move', 10, 10)
+    expect(onTearOff).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -857,7 +940,7 @@ describe('TabBar copies (YAZ-2940 D1): two tabs of one file', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/b.md' }, { id: 't3', path: '/v/a.md' }]
-    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} tabs={tabs} active="t3" onActivate={onActivate} onClose={onClose} onMove={vi.fn()} onMoveToNewWindow={onMoveToNewWindow} {...noNav} />))
+    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} windowId="w1" tabs={tabs} active="t3" onActivate={onActivate} onClose={onClose} onMove={vi.fn()} onMoveToNewWindow={onMoveToNewWindow} {...noNav} />))
     const el = container
     expect([...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((tab) => tab.dataset.tab)).toEqual(['t1', 't2', 't3'])
     expect([...el.querySelectorAll('[role="tab"]')].map((tab) => [tab.textContent, tab.getAttribute('aria-selected')])).toEqual([['a', 'false'], ['b', 'false'], ['a', 'true']])
@@ -876,7 +959,7 @@ describe('TabBar copies (YAZ-2940 D1): two tabs of one file', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/a.md' }]
-    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} tabs={tabs} active="t1" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} onMoveToNewWindow={vi.fn()} onMoveToRight={vi.fn()} onDuplicate={onDuplicate} {...noNav} />))
+    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} windowId="w1" tabs={tabs} active="t1" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} onMoveToNewWindow={vi.fn()} onMoveToRight={vi.fn()} onDuplicate={onDuplicate} {...noNav} />))
     const el = container
     act(() => void el.querySelector('[data-tab="t2"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
@@ -893,7 +976,7 @@ describe('TabBar copies (YAZ-2940 D1): two tabs of one file', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/b.md' }]
-    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} tabs={tabs} active="t1" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} onMoveToRight={vi.fn()} onMoveTargets={onMoveTargets} onMoveToWindow={onMoveToWindow} {...noNav} />))
+    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} windowId="w1" tabs={tabs} active="t1" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} onMoveToRight={vi.fn()} onMoveTargets={onMoveTargets} onMoveToWindow={onMoveToWindow} {...noNav} />))
     const el = container
     expect(onMoveTargets).not.toHaveBeenCalled() // read when a menu opens, never before
     act(() => void el.querySelector('[data-tab="t2"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
@@ -909,7 +992,7 @@ describe('TabBar copies (YAZ-2940 D1): two tabs of one file', () => {
 
 describe('TabBar display name (YAZ-2949 D4, D5)', () => {
   const A = '/v/a.md'
-  const base: IdTabBarProps = { roots: ['/v'], titles: new Map([[A, 'Plan']]), tabs: [{ id: 't1', path: A }, { id: 't2', path: A, name: 'Outline' }], active: 't1', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav }
+  const base: IdTabBarProps = { roots: ['/v'], titles: new Map([[A, 'Plan']]), windowId: 'w1', tabs: [{ id: 't1', path: A }, { id: 't2', path: A, name: 'Outline' }], active: 't1', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav }
   function mountIds(props: Partial<IdTabBarProps> = {}) {
     container = document.createElement('div')
     document.body.appendChild(container)

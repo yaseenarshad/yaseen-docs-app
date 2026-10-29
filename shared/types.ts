@@ -2912,7 +2912,22 @@ export interface PopOutCarry {
    * window" from the board, the new window is HIDDEN until the board shows it (D23, D37).
    */
   background?: true
+  /** The slot in the target's strip (YAZ-3637 D4): a tab dropped on another window's strip lands there. Absent = the end. */
+  at?: number
 }
+
+/** A point on the screen, in Electron's screen coordinates (YAZ-3637 D1): where a drag was let go. */
+export interface ScreenPoint {
+  x: number
+  y: number
+}
+
+/**
+ * What a tab let go off every surface came to (YAZ-3637 D3, D5): `none` — the point is on a window, so no new window
+ * (that window took the drop, or refused it); `moved` — the source window itself moved there, its only tab along;
+ * `opened` — a new window opened there with the tab.
+ */
+export type TearOffResult = 'none' | 'moved' | 'opened'
 
 /** A tab that another window hands to this one (YAZ-3091 D1): its page plus the same carry as "Move to new window". */
 export interface MovedTab extends PopOutCarry {

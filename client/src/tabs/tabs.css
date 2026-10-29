@@ -112,8 +112,7 @@
   min-width: 8px;
 }
 
-/* A tab: a pill as wide as its name, from 72px to 200px (YAZ-2689). Its fill is the pseudo-element, so the border —
-   the gap of a drag, below — widens the tab's own box and leaves the pill whole. */
+/* A tab: a pill as wide as its name, from 72px to 200px (YAZ-2689). Its fill is the pseudo-element. */
 .tabbar__tab {
   position: relative;
   isolation: isolate;
@@ -129,8 +128,6 @@
   max-width: 200px;
   height: 32px;
   overflow: hidden;
-  border: 0 solid transparent;
-  transition: border-width var(--tab-slide-ms, 150ms) ease;
 }
 
 .tabbar__tab::before {
@@ -173,20 +170,20 @@
   font-style: italic;
 }
 
-/* Drag-to-reorder (I3; YAZ-2656 S89): the grabbed tab dims, and the tabs move apart at the drop
-   slot — the tab the drop would land before gives way on its left, the LAST tab on its right for
-   the end slot. The gap is the tab's own border, so the pointer stays over the tab it parted and
-   the slot does not flicker. */
+/* Drag-to-reorder (I3; YAZ-2656 S89, revised in the YAZ-3637 demo): the grabbed tab dims, and a line marks the drop
+   slot — on the left of the tab the drop would land before, on the right of the LAST tab for the end slot. No tab moves
+   while the drag goes on: a tab that slid away under the pointer at each new slot was hard to follow (Yaseen). The line
+   is a shadow in the 4px between two tabs, so it changes no box and the slot under the pointer stays put. */
 .tabbar__tab--dragging {
   opacity: 0.5;
 }
 
 .tabbar__tab--gap-before {
-  border-left-width: 44px;
+  box-shadow: -3px 0 0 0 var(--accent);
 }
 
 .tabbar__tab--gap-after {
-  border-right-width: 44px;
+  box-shadow: 3px 0 0 0 var(--accent);
 }
 
 .tabbar--drop-empty {

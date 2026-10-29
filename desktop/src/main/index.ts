@@ -191,6 +191,8 @@ const manager = createWindowManager(store, {
     const primary = screen.getPrimaryDisplay()
     return [primary, ...screen.getAllDisplays().filter((d) => d.id !== primary.id)].map((d) => d.workArea)
   },
+  // Where a tab was let go when its drag ended with no point (YAZ-3637 D1).
+  cursorPoint: () => screen.getCursorScreenPoint(),
   exists(path) {
     try {
       return statSync(path).isFile()

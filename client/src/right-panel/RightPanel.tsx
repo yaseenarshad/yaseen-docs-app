@@ -3,7 +3,7 @@ import { RIGHT_PANEL_MAX_W, RIGHT_PANEL_MIN_W } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { NameEnding } from '../sidebar/FileIcon'
-import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
+import { foreignDrag, readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import './right-panel.css'
 
 export interface RightPanelProps {
@@ -11,6 +11,8 @@ export interface RightPanelProps {
   roots: readonly string[]
   /** The window's titles (YAZ-2420 🔒 D14): a page is headed with its title. */
   titles: PathTitles
+  /** This window's id (YAZ-3637 D1): a drag names the window it left; another window's drag the panel leaves alone (D8). */
+  windowId: string
   items: readonly string[]
   expanded: string | null
   width: number
@@ -38,7 +40,7 @@ const Chevron = ({ d }: { d: string }) => (
   </svg>
 )
 
-export function RightPanel({ roots, titles, items, expanded, width, overlay, canBack, canForward, onBack, onForward, onToggle, onClose, onHide, onResizeCommit, onDropPage, onMoveToMain, children }: RightPanelProps) {
+export function RightPanel({ roots, titles, windowId, items, expanded, width, overlay, canBack, canForward, onBack, onForward, onToggle, onClose, onHide, onResizeCommit, onDropPage, onMoveToMain, children }: RightPanelProps) {
   const [previewWidth, setPreviewWidth] = useState(width)
   const [dropAt, setDropAt] = useState<number | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
@@ -124,6 +126,8 @@ export function RightPanel({ roots, titles, items, expanded, width, overlay, can
 
   const pageFrom = (event: DragEvent): PageDrag | null => {
     if (onDropPage === undefined || event.dataTransfer === null) return null
+    // Another window's tab lands only on a strip or empty space (YAZ-3637 D8): not here.
+    if (foreignDrag(event.dataTransfer, windowId) !== null) return null
     const page = readPageDrag(event.dataTransfer)
     if (page === null) return null
     if (page.owner === 'main' && items.includes(page.path)) return null
@@ -221,7 +225,8 @@ export function RightPanel({ roots, titles, items, expanded, width, overlay, can
                 title={path}
                 draggable
                 onDragStart={(event) => {
-                  if (event.dataTransfer) writePageDrag(event.dataTransfer, { path, owner: 'right' })
+                  // A right-panel page is this window's alone (YAZ-3637 D8): root -1, so no other window's strip takes it.
+                  if (event.dataTransfer) writePageDrag(event.dataTransfer, { path, owner: 'right', from: windowId, copy: 0 }, -1)
                   setDropAt(null)
                 }}
                 onDragEnd={() => setDropAt(null)}
