@@ -1915,9 +1915,14 @@ export interface StoredTab {
   path: string
   /** The tab's display name (YAZ-2949), cleaned like a vault's (`cleanVaultName`). */
   name?: string
+  /** The zoom key of the bullet the tab is zoomed into (YAZ-3646 D14, `isZoomKey`): absent = the whole page. */
+  zoom?: string
   /** On the active copy of `file` only: which of two copies of one file was on show. */
   active?: true
 }
+
+/** A zoom key as `zoom.ts` makes it (`stem:occurrence`, YAZ-3646 D14): a short base-36 hash and a count. */
+export const isZoomKey = (raw: unknown): raw is string => typeof raw === 'string' && /^[0-9a-z]{1,8}:\d{1,6}$/.test(raw)
 
 /**
  * A window's kind (YAZ-3357 D1): `'files'` is a Files window, a window that is ONLY the sidebar — the vault

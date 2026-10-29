@@ -102,7 +102,7 @@ describe('settingCandidates', () => {
     expect(rows[0]).toBe('hotkeys-legend')
     // The shared keys a pick settles come first: ⌘D's card, then ⌘K's.
     expect(rows.slice(1, 6)).toEqual(['hotkey-goTo', 'hotkey-drawing-duplicate', 'hotkey-diagram-duplicate', 'hotkey-code-addSelectionToNextFindMatch', 'hotkey-search'])
-    for (const id of ['newTab', 'newWindow', 'newFilesWindow', 'newItem', 'goTo', 'closeTab', 'closeWindow', 'switchVault', 'openFolder', 'search', 'settings', 'toggleSidebar', 'copyPath', 'tabOverview', 'nextTab', 'prevTab']) expect(rows).toContain(`hotkey-${id}`)
+    for (const id of ['newTab', 'newWindow', 'newFilesWindow', 'newItem', 'goTo', 'closeTab', 'closeWindow', 'switchVault', 'openFolder', 'search', 'settings', 'toggleSidebar', 'copyPath', 'tabOverview', 'nextTab', 'prevTab', 'back', 'forward']) expect(rows).toContain(`hotkey-${id}`)
     expect(rows).toContain('hotkey-note-toc')
     expect(rows).toContain('hotkey-macos-spotlight')
     expect(rows[rows.length - 1]).toBe('hotkeys-reset-all')

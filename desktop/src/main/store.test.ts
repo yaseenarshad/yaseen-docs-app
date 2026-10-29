@@ -1913,6 +1913,13 @@ describe('the tab strip: copies, display names and the active copy (YAZ-3057 D1,
     expect(two.tabs).toEqual([A, B])
   })
 
+  it('keeps each tab\'s zoom key (YAZ-3646 D14): a strip with only a zoom is kept; a junk key drops, and the tab stays', async () => {
+    expect(normalizeTabStrip([{ path: A, zoom: 'k1:0' }, { path: B }], [A, B], A)).toEqual([{ path: A, zoom: 'k1:0' }, { path: B }])
+    const zoomed = [{ path: A, zoom: 'k1:0', active: true }, { path: A, zoom: 'not a key' }, { path: B, zoom: 7 }]
+    await seed(valid({ windows: [win('w1', { root: '/v', file: A, tabs: [A, B], tabStrip: zoomed as never })] }))
+    expect(createStore(file).get().windows[0].tabStrip).toEqual([{ path: A, zoom: 'k1:0', active: true }, { path: A }, { path: B }])
+  })
+
   it('a window without a strip (an older build\'s file) opens its tabs as before (S24)', async () => {
     await seed(valid({ windows: [win('w1', { root: '/v', file: A, tabs: [A, B] })] }))
     expect(createStore(file).get().windows[0]).toEqual(win('w1', { root: '/v', file: A, tabs: [A, B] }))

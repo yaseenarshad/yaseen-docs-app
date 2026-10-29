@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { defaultAppState, defaultRightPanelIdentity, type AppState, type WindowIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
 import { _resetRenameContinuity, registerRenameContinuity, takeRenameBuffer } from '../lib/renameContinuity'
-import { activePath, bootTabs, bootWorkspace, newTabId, storedTabs, tabById, tabOf, tabsReducer as reduceTabs, useWorkspace, workspaceReducer as reduceWorkspace, type TabsState as IdTabsState, type UseWorkspace, type WorkspaceState as IdWorkspaceState } from './useWorkspace'
+import { activePath, bootTabs, bootWorkspace, newTabId, NO_STEPS, storedTabs, tabStrip as tabStripOf, tabById, tabOf, tabsReducer as reduceTabs, useWorkspace, workspaceReducer as reduceWorkspace, type Step, type TabsState as IdTabsState, type UseWorkspace, type WorkspaceState as IdWorkspaceState } from './useWorkspace'
 import { byPath, pathTabsReducer, pathWorkspaceReducer, plain, type PathTabs, type PathWorkspace } from './testTabs'
 
 // These tests read the model by path (`testTabs.ts`): with no copies, a path names one tab (YAZ-2940 D1).
@@ -32,9 +32,16 @@ const state = (tabs: string[], active: string | null, mounted?: string[]): TabsS
   tabs,
   active,
   mounted: mounted ?? (active === null ? [] : [active]),
-  history: {},
+  history: NO_STEPS,
   preview: null, blank: false,
 })
+
+/** A state just reset (YAZ-3647 D1): its Back list starts at the active page. */
+const fresh = (s: TabsState): TabsState =>
+  s.active === null ? s : { ...s, history: { steps: [expect.objectContaining({ tab: s.active, path: s.active, zoom: null }) as Step], index: 0 } }
+
+/** One Back step (YAZ-3647 D1). */
+const step = (id: number, tab: string, path: string, zoom: string | null = null): Step => ({ id, tab, path, zoom })
 
 describe('tabsReducer', () => {
   describe('open-current (YAZ-2648 D1: the sidebar opens in the PREVIEW tab; a kept tab is never replaced)', () => {
@@ -44,20 +51,20 @@ describe('tabsReducer', () => {
         tabs: ['/v/a.md', '/v/b.md', '/v/c.md'],
         active: '/v/c.md',
         mounted: ['/v/b.md', '/v/a.md', '/v/c.md'],
-        history: {},
+        history: NO_STEPS,
         preview: '/v/c.md',
         blank: false,
       })
       expect(tabsReducer(state([], null), { type: 'open-current', path: '/v/a.md' })).toEqual({ ...state(['/v/a.md'], '/v/a.md'), preview: '/v/a.md' })
     })
 
-    it("the next open takes the preview tab's SLOT — in the middle of the strip, with a kept tab active — and its stack gains the page", () => {
+    it("the next open takes the preview tab's SLOT — in the middle of the strip, with a kept tab active; its Back step is the window's (YAZ-3647 D4)", () => {
       const s: TabsState = { ...state(['/v/a.md', '/v/p.md', '/v/b.md'], '/v/b.md', ['/v/b.md', '/v/p.md']), preview: '/v/p.md' }
       expect(tabsReducer(s, { type: 'open-current', path: '/v/c.md' })).toEqual({
         tabs: ['/v/a.md', '/v/c.md', '/v/b.md'],
         active: '/v/c.md',
         mounted: ['/v/b.md', '/v/c.md'],
-        history: { '/v/c.md': { entries: ['/v/p.md', '/v/c.md'], index: 1 } },
+        history: NO_STEPS,
         preview: '/v/c.md',
         blank: false,
       })
@@ -69,7 +76,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/a.md', '/v/p.md'],
         active: '/v/a.md',
         mounted: ['/v/p.md', '/v/a.md'],
-        history: {},
+        history: NO_STEPS,
         preview: '/v/p.md',
         blank: false,
       })
@@ -107,13 +114,15 @@ describe('tabsReducer', () => {
         tabs: ['/v/c.md', '/v/p.md'],
         active: '/v/c.md',
         mounted: ['/v/p.md', '/v/c.md'],
-        history: { '/v/c.md': { entries: ['/v/a.md', '/v/c.md'], index: 1 } },
+        history: NO_STEPS,
         preview: '/v/p.md',
         blank: false,
       })
       const onPreview = tabsReducer(previewing(), { type: 'navigate', path: '/v/c.md' })
       expect(onPreview).toMatchObject({ tabs: ['/v/a.md', '/v/c.md'], active: '/v/c.md', preview: '/v/c.md' })
-      const back = tabsReducer(onPreview, { type: 'back' })
+      // The window's Back list (YAZ-3647 D1) has both pages of that tab, named by the page it shows now.
+      const walked = { ...onPreview, history: { steps: [step(1, '/v/c.md', '/v/p.md'), step(2, '/v/c.md', '/v/c.md')], index: 1 } }
+      const back = tabsReducer(walked, { type: 'back' })
       expect(back).toMatchObject({ tabs: ['/v/a.md', '/v/p.md'], active: '/v/p.md', preview: '/v/p.md' })
       // Forward is the same walk the other way: the tab is still the preview tab, on the page it stepped to.
       expect(tabsReducer(back, { type: 'forward' })).toMatchObject({ tabs: ['/v/a.md', '/v/c.md'], active: '/v/c.md', preview: '/v/c.md' })
@@ -170,7 +179,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/a.md', '/v/p.md', '/v/b.md', '/v/c.md'],
         active: '/v/c.md',
         mounted: ['/v/a.md', '/v/c.md'],
-        history: {},
+        history: NO_STEPS,
         preview: '/v/p.md',
         blank: false,
       })
@@ -217,7 +226,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/a.md', '/v/b.md'],
         active: '/v/b.md',
         mounted: ['/v/a.md', '/v/b.md'],
-        history: {},
+        history: NO_STEPS,
         preview: null, blank: false,
       })
     })
@@ -233,7 +242,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/a.md', '/v/b.md'],
         active: '/v/a.md',
         mounted: ['/v/a.md'],
-        history: {},
+        history: NO_STEPS,
         preview: null, blank: false,
       })
     })
@@ -329,12 +338,12 @@ describe('tabsReducer', () => {
   describe('reset', () => {
     it('keeps each stored copy (YAZ-3057) and PREPENDS an active file missing from the list (main\'s order)', () => {
       expect(tabsReducer(state([], null), { type: 'reset', tabs: plain('/v/a.md', '/v/a.md', '/v/b.md'), active: '/v/c.md' })).toEqual(
-        state(['/v/c.md', '/v/a.md', '/v/a.md', '/v/b.md'], '/v/c.md'),
+        fresh(state(['/v/c.md', '/v/a.md', '/v/a.md', '/v/b.md'], '/v/c.md')),
       )
     })
 
     it('YAZ-3057 D4: the display names come back, and the marked copy of the active file is active, else its first copy', () => {
-      const empty: IdTabsState = { tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false }
+      const empty: IdTabsState = { tabs: [], active: null, mounted: [], history: NO_STEPS, preview: null, blank: false }
       const strip = [{ path: '/v/a.md', name: 'Draft' }, { path: '/v/b.md' }, { path: '/v/a.md', active: true as const }]
       const s = reduceTabs(empty, { type: 'reset', tabs: strip, active: '/v/a.md' })
       expect(s.tabs.map((t) => [t.path, t.name])).toEqual([['/v/a.md', 'Draft'], ['/v/b.md', undefined], ['/v/a.md', undefined]])
@@ -368,7 +377,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/new.md', '/v/x.md'],
         active: '/v/new.md',
         mounted: ['/v/x.md', '/v/new.md'],
-        history: {},
+        history: NO_STEPS,
         preview: null, blank: false,
       })
     })
@@ -399,7 +408,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/New/a.md', '/v/x.md', '/v/New/deep/b.md'],
         active: '/v/New/a.md',
         mounted: ['/v/x.md', '/v/New/a.md'],
-        history: {},
+        history: NO_STEPS,
         preview: null, blank: false,
       })
     })
@@ -410,7 +419,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/New', '/v/New/a.md'],
         active: '/v/New',
         mounted: ['/v/New'],
-        history: {},
+        history: NO_STEPS,
         preview: null, blank: false,
       })
     })
@@ -472,23 +481,25 @@ describe('bootTabs (rules 12/15)', () => {
   it('restores the stored tabs with the identity file active; only the active tab mounts', async () => {
     installBridge(seeded, { id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: false })
     await storage.init()
-    expect(byPath(bootTabs('/v'))).toEqual(state(['/v/a.md', '/v/b.md'], '/v/b.md'))
+    expect(byPath(bootTabs('/v'))).toEqual(fresh(state(['/v/a.md', '/v/b.md'], '/v/b.md')))
   })
 
   it('a pasted #hash wins as active and is PREPENDED when missing from the stored tabs', async () => {
     installBridge(seeded, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false })
     await storage.init()
     history.replaceState(null, '', '#/v/pasted.md')
-    expect(byPath(bootTabs('/v'))).toEqual(state(['/v/pasted.md', '/v/a.md'], '/v/pasted.md'))
+    expect(byPath(bootTabs('/v'))).toEqual(fresh(state(['/v/pasted.md', '/v/a.md'], '/v/pasted.md')))
   })
 
-  it('the stored strip comes back: copies, display names and the active copy (YAZ-3057 S1 to S4, S12)', async () => {
-    const tabStrip = [{ path: '/v/a.md', name: 'Outline' }, { path: '/v/b.md' }, { path: '/v/a.md', active: true as const }]
+  it('the stored strip comes back: copies, display names, zoom levels and the active copy (YAZ-3057 S1 to S4, S12; YAZ-3646 D14)', async () => {
+    const tabStrip = [{ path: '/v/a.md', name: 'Outline' }, { path: '/v/b.md', zoom: 'k1:0' }, { path: '/v/a.md', active: true as const }]
     installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], tabStrip, sidebarCollapsed: false })
     await storage.init()
     const s = bootTabs('/v')
-    expect(s.tabs.map((t) => [t.path, t.name])).toEqual([['/v/a.md', 'Outline'], ['/v/b.md', undefined], ['/v/a.md', undefined]])
+    expect(s.tabs.map((t) => [t.path, t.name, t.zoom])).toEqual([['/v/a.md', 'Outline', undefined], ['/v/b.md', undefined, 'k1:0'], ['/v/a.md', undefined, undefined]])
     expect(s.active).toBe(s.tabs[2].id)
+    // Each tab's zoom level goes back into the stored strip as it came (YAZ-3646 D14).
+    expect(tabStripOf(s)).toEqual(tabStrip)
   })
 
   it('a fresh window opens blank — the folder lastFile stays unread (YAZ-3487 D7, S28); a null root (Welcome) is empty', async () => {
@@ -502,7 +513,7 @@ describe('bootTabs (rules 12/15)', () => {
     const last: AppState = { ...seeded, settings: { ...seeded.settings, vaultOpensOn: 'last' } }
     installBridge(last, { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
-    expect(byPath(bootTabs('/v'))).toEqual(state(['/v/last.md'], '/v/last.md'))
+    expect(byPath(bootTabs('/v'))).toEqual(fresh(state(['/v/last.md'], '/v/last.md')))
     installBridge(last, { id: 'w2', root: '/v', file: null, tabs: [], sidebarCollapsed: false, startEmpty: true })
     await storage.init()
     expect(byPath(bootTabs('/v'))).toEqual(state([], null))
@@ -761,7 +772,7 @@ describe('workspaceReducer right-panel ownership', () => {
     tabs: ['/v/a.md', '/v/b.md'],
     active: '/v/a.md',
     mounted: ['/v/a.md'],
-    history: {},
+    history: NO_STEPS,
     preview: null, blank: false,
     rightPanel: defaultRightPanelIdentity(),
     rightMounted: [],
@@ -921,7 +932,7 @@ describe('workspaceReducer right-panel ownership', () => {
  * than ⌘W does", which nobody reports and everybody feels.
  */
 describe('delete / delete-dir (GRO-2272)', () => {
-  const S = (tabs: string[], active: string | null, mounted: string[] = tabs): TabsState => ({ tabs, active, mounted, history: {}, preview: null, blank: false })
+  const S = (tabs: string[], active: string | null, mounted: string[] = tabs): TabsState => ({ tabs, active, mounted, history: NO_STEPS, preview: null, blank: false })
 
   it('deleting a NON-active tab leaves the active one alone', () => {
     const next = tabsReducer(S(['/a.md', '/b.md', '/c.md'], '/a.md'), { type: 'delete', path: '/b.md' })
@@ -943,7 +954,7 @@ describe('delete / delete-dir (GRO-2272)', () => {
 
   it('deleting the ONLY tab empties the window; it stays alive', () => {
     const next = tabsReducer(S(['/a.md'], '/a.md'), { type: 'delete', path: '/a.md' })
-    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false })
+    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: NO_STEPS, preview: null, blank: false })
   })
 
   it('deleting a path that is not open returns the SAME state object (no identity mirror)', () => {
@@ -971,7 +982,7 @@ describe('delete / delete-dir (GRO-2272)', () => {
 
   it('delete-dir empties the window when every tab was under the folder', () => {
     const next = tabsReducer(S(['/Docs/a.md', '/Docs/b.md'], '/Docs/a.md'), { type: 'delete-dir', path: '/Docs' })
-    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false })
+    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: NO_STEPS, preview: null, blank: false })
   })
 
   it('delete-dir needs a real path segment: /Docsy.md is not under /Docs', () => {
@@ -1002,7 +1013,7 @@ describe('copies: two tabs of one file (YAZ-2940)', () => {
     tabs: [{ id: 't1', path: A }, { id: 't2', path: B }, { id: 't3', path: A }],
     active: 't3',
     mounted: ['t1', 't3'],
-    history: {},
+    history: NO_STEPS,
     preview: null,
     blank: false,
     ...over,
@@ -1044,33 +1055,33 @@ describe('copies: two tabs of one file (YAZ-2940)', () => {
     expect(reduceTabs({ ...s, blank: true }, { type: 'open-current', path: A })).toMatchObject({ active: 't3', blank: false })
   })
 
-  it('S8: Back onto a file that copies show goes to the first copy from the left; the stacks stay', () => {
-    const s = copies({ active: 't2', mounted: ['t2'], history: { t2: { entries: ['/v/c.md', A, B], index: 2 } } })
+  it('S8, YAZ-3675 F1: Back onto a file that copies show goes to the step\'s OWN tab (rule 3), never to a copy; the list is walked, not changed', () => {
+    const s = copies({ active: 't2', mounted: ['t2'], history: { steps: [step(1, 't2', '/v/c.md'), step(2, 't2', A), step(3, 't2', B)], index: 2 } })
     const back = reduceTabs(s, { type: 'back' })
-    expect(back.active).toBe('t1')
-    expect(paths(back)).toEqual([A, B, A])
-    expect(back.history).toEqual(s.history)
+    expect(back.active).toBe('t2')
+    expect(paths(back)).toEqual([A, A, A])
+    expect(back.history).toEqual({ steps: s.history.steps, index: 1 })
   })
 
   it('S17, S19: a rename moves every copy in place — ids, activation and the mounted set stay — and history entries follow', () => {
-    const s = copies({ history: { t2: { entries: [A, B], index: 1 } } })
+    const s = copies({ history: { steps: [step(1, 't1', A), step(2, 't2', B)], index: 1 } })
     const renamed = reduceTabs(s, { type: 'rename', oldPath: A, newPath: '/v/z.md' })
     expect(renamed.tabs).toEqual([{ id: 't1', path: '/v/z.md' }, { id: 't2', path: B }, { id: 't3', path: '/v/z.md' }])
     expect(renamed.active).toBe('t3')
     expect(renamed.mounted).toEqual(['t1', 't3'])
-    expect(renamed.history).toEqual({ t2: { entries: ['/v/z.md', B], index: 1 } })
+    expect(renamed.history).toEqual({ steps: [step(1, 't1', '/v/z.md'), step(2, 't2', B)], index: 1 })
     const inDir = copies({ tabs: [{ id: 't1', path: '/v/D/a.md' }, { id: 't2', path: B }, { id: 't3', path: '/v/D/a.md' }] })
     expect(paths(reduceTabs(inDir, { type: 'rename-dir', oldPath: '/v/D', newPath: '/v/E' }))).toEqual(['/v/E/a.md', B, '/v/E/a.md'])
     expect(ids(reduceTabs(inDir, { type: 'delete-dir', path: '/v/D' }))).toEqual(['t2'])
   })
 
-  it('S18: a delete closes every copy, each through the close ladder, and leaves the other stacks', () => {
-    const s = copies({ history: { t2: { entries: [A, B], index: 1 } } })
+  it('S18: a delete closes every copy, each through the close ladder, and its page leaves the Back list', () => {
+    const s = copies({ history: { steps: [step(1, 't1', A), step(2, 't2', B)], index: 1 } })
     const gone = reduceTabs(s, { type: 'delete', path: A })
     expect(gone.tabs).toEqual([{ id: 't2', path: B }])
     expect(gone.active).toBe('t2')
     expect(gone.mounted).toEqual(['t2'])
-    expect(gone.history).toEqual({ t2: { entries: [B], index: 0 } })
+    expect(gone.history).toEqual({ steps: [step(2, 't2', B)], index: 0 })
     // Copies of the active file at both ends: t1 goes first (not active), then t3, whose heir is t2.
     expect(reduceTabs(copies({ active: 't1' }), { type: 'delete', path: A })).toMatchObject({ active: 't2', tabs: [{ id: 't2', path: B }] })
   })
@@ -1103,29 +1114,25 @@ describe('duplicate (YAZ-2940 D6): "Duplicate tab" makes a copy', () => {
     tabs: [{ id: 't1', path: A }, { id: 't2', path: B }],
     active: 't1',
     mounted: ['t1'],
-    history: {},
+    history: NO_STEPS,
     preview: null,
     blank: false,
     ...over,
   })
 
-  it('S1: the copy is a new tab of the same page, right after its source — not at the end — active and mounted, with a copy of the source\'s stack', () => {
-    const stack = { entries: ['/v/c.md', A], index: 1 }
-    const s = two({ history: { t1: stack } })
+  it('S1: the copy is a new tab of the same page, right after its source — not at the end — active and mounted, at the source\'s zoom level (YAZ-3647 D2)', () => {
+    const s = two({ tabs: [{ id: 't1', path: A, zoom: 'k1:0' }, { id: 't2', path: B }] })
     const d = reduceTabs(s, { type: 'duplicate', id: 't1' })
     const copy = d.tabs[1]
     expect(d.tabs.map((t) => t.path)).toEqual([A, A, B])
     expect(copy.id).not.toBe('t1')
+    expect(copy.zoom).toBe('k1:0')
     expect(d.active).toBe(copy.id)
     expect(d.mounted).toEqual(['t1', copy.id])
-    expect(d.history).toEqual({ t1: stack, [copy.id]: stack })
+    // The window's Back list gains the copy's step in `withStep` (D4), not here.
+    expect(d.history).toBe(s.history)
     expect(d.blank).toBe(false)
-    // Back in the copy walks the copy's stack only: the source keeps its own.
-    const back = reduceTabs(d, { type: 'back' })
-    expect(back.history[copy.id]).toEqual({ entries: ['/v/c.md', A], index: 0 })
-    expect(back.history.t1).toBe(stack)
-    // A source with no stack gives a copy with none: the lazy default.
-    expect(reduceTabs(two(), { type: 'duplicate', id: 't1' }).history).toEqual({})
+    expect(reduceTabs(two(), { type: 'duplicate', id: 't1' }).tabs[1].zoom).toBeUndefined()
   })
 
   it('S3: a preview source becomes a kept tab, and the copy is kept; another tab\'s preview mark stays', () => {
@@ -1155,7 +1162,7 @@ describe('take (YAZ-3091 D5): a tab another window moved here', () => {
     tabs: [{ id: 't1', path: A }, { id: 't2', path: B }],
     active: 't1',
     mounted: ['t1'],
-    history: {},
+    history: NO_STEPS,
     preview: null,
     blank: false,
     ...over,
@@ -1166,13 +1173,13 @@ describe('take (YAZ-3091 D5): a tab another window moved here', () => {
     expect(c.tabs.map((t) => t.path)).toEqual([A, B, '/v/c.md'])
     expect(c.active).toBe(c.tabs[2].id)
     expect(c.mounted).toEqual(['t1', c.tabs[2].id])
-    const s = two({ preview: 't2', history: { t2: { entries: ['/v/x.md', B], index: 1 } } })
+    const s = two({ preview: 't2', history: { steps: [step(1, 't2', '/v/x.md'), step(2, 't2', B)], index: 1 } })
     const copy = reduceTabs(s, { type: 'take', path: B })
     expect(copy.tabs.map((t) => t.path)).toEqual([A, B, B])
     expect(copy.tabs[1]).toBe(s.tabs[1])
     expect(copy.active).toBe(copy.tabs[2].id)
     expect(copy.tabs[2].id).not.toBe('t2')
-    // The copy has no stack of its own, and the open tab keeps its preview mark and its stack.
+    // The Back list gains the copy's step in `withStep` (YAZ-3647 D4), not here; the open tab keeps its preview mark.
     expect(copy.history).toBe(s.history)
     expect(copy.preview).toBe('t2')
   })
@@ -1196,7 +1203,7 @@ describe('take (YAZ-3091 D5): a tab another window moved here', () => {
     expect(open.active).toBe(open.tabs[2].id)
     expect(open.blank).toBe(false)
     // An empty window takes it as its one tab.
-    const empty = reduceTabs({ tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false }, { type: 'take', path: A })
+    const empty = reduceTabs({ tabs: [], active: null, mounted: [], history: NO_STEPS, preview: null, blank: false }, { type: 'take', path: A })
     expect(empty.tabs.map((t) => t.path)).toEqual([A])
     expect(empty.active).toBe(empty.tabs[0].id)
   })
@@ -1277,9 +1284,9 @@ describe('open-stored (YAZ-3147 D3): "Restore session" adds the stored tabs to t
   const A = '/v/a.md'
   const B = '/v/b.md'
   const C = '/w/c.md'
-  const EMPTY_TABS: IdTabsState = { tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false }
+  const EMPTY_TABS: IdTabsState = { tabs: [], active: null, mounted: [], history: NO_STEPS, preview: null, blank: false }
   /** t1 (A, active, preview) · t2 (B). */
-  const two = (over: Partial<IdTabsState> = {}): IdTabsState => ({ tabs: [{ id: 't1', path: A }, { id: 't2', path: B }], active: 't1', mounted: ['t1'], history: {}, preview: 't1', blank: false, ...over })
+  const two = (over: Partial<IdTabsState> = {}): IdTabsState => ({ tabs: [{ id: 't1', path: A }, { id: 't2', path: B }], active: 't1', mounted: ['t1'], history: NO_STEPS, preview: 't1', blank: false, ...over })
   const view = (s: IdTabsState) => s.tabs.map((t) => (t.name === undefined ? t.path : `${t.path}=${t.name}`))
 
   it('S16, S5, S19: an empty window opens the tabs in the saved order, copies and names kept, as kept tabs; the marked tab is active and the only one mounted', () => {
@@ -1288,7 +1295,7 @@ describe('open-stored (YAZ-3147 D3): "Restore session" adds the stored tabs to t
     expect(next.active).toBe(next.tabs[2].id)
     expect(next.mounted).toEqual([next.tabs[2].id])
     expect(next.preview).toBeNull()
-    expect(next.history).toEqual({})
+    expect(next.history).toBe(EMPTY_TABS.history)
     // No mark (the active tab's file was gone): an empty window takes the first tab.
     const unmarked = reduceTabs(EMPTY_TABS, { type: 'open-stored', tabs: [{ path: C }, { path: A }] })
     expect(unmarked.active).toBe(unmarked.tabs[0].id)
@@ -1444,7 +1451,7 @@ describe('display name (YAZ-2949 D2): a name on one tab', () => {
     tabs: [{ id: 't1', path: A }, { id: 't2', path: B }],
     active: 't1',
     mounted: ['t1'],
-    history: {},
+    history: NO_STEPS,
     preview: null,
     blank: false,
     ...over,
@@ -1475,7 +1482,7 @@ describe('display name (YAZ-2949 D2): a name on one tab', () => {
     const s = named(two())
     const linked = reduceTabs(s, { type: 'navigate', path: '/v/c.md' })
     expect(linked.tabs[0]).toEqual({ id: 't1', path: '/v/c.md' })
-    const back = reduceTabs(named(linked, 't1', 'C notes'), { type: 'back' })
+    const back = reduceTabs({ ...named(linked, 't1', 'C notes'), history: { steps: [step(1, 't1', A), step(2, 't1', '/v/c.md')], index: 1 } }, { type: 'back' })
     expect(back.tabs[0]).toEqual({ id: 't1', path: A })
     // The preview tab that is named is kept, so a sidebar click opens a new preview tab and the name stays.
     const kept = reduceTabs(named(two({ preview: 't1' })), { type: 'open-current', path: '/v/c.md' })

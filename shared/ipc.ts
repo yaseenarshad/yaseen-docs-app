@@ -358,6 +358,10 @@ export const CONTRACT = {
     onPrevTab: push('menu:prev-tab'),
     /** Window › Tab Overview (⌘⇧M): show every open tab of the window at once, or go back to the page (YAZ-2648 D5). */
     onTabOverview: push('menu:tab-overview'),
+    /** Window › Back (⌘⌥←): the window's Back list steps back (YAZ-3647 D7). */
+    onBack: push('menu:back'),
+    /** Window › Forward (⌘⌥→): the window's Back list steps forward again (YAZ-3647 D7). */
+    onForward: push('menu:forward'),
     /** File › New Tab (⌘T): show the one blank tab, with the caret in the sidebar's search bar (YAZ-2655 D10, D11). */
     onNewTab: push('menu:new-tab'),
     /** File › New Window (⌘⇧N): the focused window calls `window.duplicate`, which opens a window on its vaults with no tab (YAZ-3343 D35). */

@@ -85,7 +85,9 @@ vi.mock('./createCrepe', () => {
     getPlainText: vi.fn((crepe: FakeCrepe) => crepe.md),
     // The fake has no zoom plugin: a page view test says which bullet it is drilled into.
     getZoomKeyOf: vi.fn((): string | null => null),
+    getZoomLabelOf: vi.fn((): string | null => null),
     moveCaretIntoZoom: vi.fn(() => false),
+    zoomPageTo: vi.fn(() => false),
   }
 })
 
@@ -119,7 +121,8 @@ vi.mock('./external/applyExternalMarkdown', () => ({
 import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
-import { createCrepe, focusEditor, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, type CreateCrepeOptions } from './createCrepe'
+import { createCrepe, focusEditor, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
+import { _resetRenameContinuity, carryEditorAcrossRename, registerRenameContinuity } from '../lib/renameContinuity'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import type { BlockLines } from './lineNumbers/blockLines'
 import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbers/lineNumbers'
@@ -1184,9 +1187,9 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect(el.querySelector('.page-title__text')?.textContent).toBe('note')
     feed(source, [{ ...record(PATH), title: 'UP-001 - Abdul' }])
     expect(el.querySelector('.page-title__text')?.textContent).toBe('UP-001 - Abdul')
-    // The outline-zoom breadcrumb's first crumb reads the same title; the file name is only its history key.
+    // The outline-zoom breadcrumb's first crumb reads the same title.
     const zoom = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.zoom
-    expect([zoom?.title(), zoom?.fileName]).toEqual(['UP-001 - Abdul', 'note.md'])
+    expect(zoom?.title()).toBe('UP-001 - Abdul')
   })
 
   it('with the review settings, "Reviews" is the last block, after "Linked mentions" (YAZ-2322)', async () => {
@@ -2204,5 +2207,98 @@ describe('the cog’s "Read only" row, the chip and the "Allow edits?" box on a 
     expect(onNotice).toHaveBeenCalledWith(expect.stringMatching(/^Read only could not change: frontmatter is not valid YAML/), 'error')
     expect(writeFile).not.toHaveBeenCalled()
     expect(chipButton(el)).toBeNull()
+  })
+})
+
+/**
+ * The tab's zoom key must match what the page shows (YAZ-3676 F3): the tab stores it (YAZ-3646 D14), and its tooltip and
+ * the menu of ‹ › name it. The fake page knows one bullet, `day1:0`; a rebuilt state starts zoomed out, as the real one does.
+ */
+describe('the tab learns the level the page really shows (YAZ-3676 F3)', () => {
+  const BULLETS = new Set(['day1:0'])
+  let shown: string | null = null
+  const onZoom = vi.fn()
+  const wikis = createWikilinkResolveSource()
+  const at = (zoomKey: string | null) => <Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={wikis} onRetitle={noop} tabId="t1" zoomKey={zoomKey} onZoom={onZoom} />
+  /** A quiet report, with the page and key it replaces (YAZ-3662 F6b). */
+  const quietly = (key: string | null, from: string | null) => ['t1', key, true, null, { path: PATH, key: from }]
+  async function open(zoomKey: string | null): Promise<void> {
+    readFile.mockResolvedValueOnce({ path: PATH, content: FM + BODY, mtime: 1, size: 1 })
+    shown = zoomKey // the page starts at the tab's level (`startKey`)
+    container = document.body.appendChild(document.createElement('div'))
+    root = createRoot(container)
+    act(() => root?.render(at(zoomKey)))
+    await settle()
+    await settle()
+  }
+  beforeEach(() => {
+    onZoom.mockReset()
+    vi.mocked(getZoomKeyOf).mockImplementation(() => shown)
+    vi.mocked(zoomPageTo).mockImplementation((_crepe, key) => {
+      const next = key !== null && BULLETS.has(key) ? key : null
+      const moved = next !== shown
+      shown = next
+      return moved
+    })
+    setMarkdownMock.mockImplementation((fake, md) => {
+      ;(fake as unknown as FakeCrepe).md = md
+      shown = null
+    })
+  })
+  afterEach(() => {
+    vi.mocked(getZoomKeyOf).mockImplementation(() => null)
+    vi.mocked(zoomPageTo).mockImplementation(() => false)
+    setMarkdownMock.mockImplementation((fake, md) => {
+      ;(fake as unknown as FakeCrepe).md = md
+    })
+    _resetRenameContinuity()
+  })
+
+  it('YAZ-3676 F3: Back to a bullet that is no longer found shows the whole page, and the tab learns null quietly; a found bullet tells nothing', async () => {
+    await open('day1:0')
+    onZoom.mockReset() // the mount report (the copy's start level)
+    await act(async () => root?.render(at('gone:0')))
+    expect(onZoom.mock.calls).toEqual([quietly(null, 'gone:0')])
+    onZoom.mockReset()
+    await act(async () => root?.render(at('day1:0')))
+    expect([shown, onZoom.mock.calls]).toEqual(['day1:0', []])
+  })
+
+  it('YAZ-3676 F3: a rebuild that removed the bullet tells the tab null quietly; a rebuild that kept it (E1) tells nothing', async () => {
+    await open('day1:0')
+    onZoom.mockReset()
+    applyExternalMock.mockImplementationOnce((fake, md) => {
+      ;(fake as unknown as FakeCrepe).md = md // E1 zooms back in; this bullet is gone, so the page stays whole
+      shown = null
+      return 'rebuilt'
+    })
+    diskHas(FM + '# Rewritten\n', 2)
+    diskHas(FM + '# Rewritten\n', 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(onZoom.mock.calls).toEqual([quietly(null, 'day1:0')])
+    onZoom.mockReset()
+    shown = 'day1:0'
+    applyExternalMock.mockImplementationOnce((fake, md) => {
+      ;(fake as unknown as FakeCrepe).md = md
+      return 'rebuilt'
+    })
+    diskHas(FM + '# Again\n', 3)
+    diskHas(FM + '# Again\n', 3)
+    await emit({ type: 'change', path: PATH, mtime: 3 })
+    expect(onZoom).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-3676 F3: a rename that carries unsaved text keeps a zoom that is still valid: the page zooms back, and the tab hears its real key', async () => {
+    registerRenameContinuity('/vault/old.md', { flush: async () => undefined, capture: () => ({ frontmatter: FM, body: '# Hello\n\nunsaved text\n' }), retire: noop })
+    carryEditorAcrossRename('/vault/old.md', PATH)
+    vi.mocked(moveCaretIntoZoom).mockImplementation(() => true)
+    try {
+      await open('day1:0')
+      expect(setMarkdownMock).toHaveBeenCalledWith(expect.anything(), '# Hello\n\nunsaved text\n')
+      expect(vi.mocked(zoomPageTo)).toHaveBeenCalledWith(expect.anything(), 'day1:0')
+      expect([shown, onZoom.mock.calls]).toEqual(['day1:0', [quietly('day1:0', 'day1:0')]])
+    } finally {
+      vi.mocked(moveCaretIntoZoom).mockReset()
+    }
   })
 })

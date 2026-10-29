@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { FileResponse } from '@shared/types'
 import { useFile, type FileState } from './useFile'
+import { _resetRenameContinuity, flushRenamedPath, registerRenameContinuity } from '../lib/renameContinuity'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -122,5 +123,29 @@ describe('useFile reloadable read state (YAZ-1299)', () => {
     resolveRetry(recovered)
     await flush()
     expect(state).toEqual({ status: 'ready', path, file: recovered })
+  })
+})
+
+describe('a read waits for a save that is under way (YAZ-3685 F5)', () => {
+  afterEach(() => _resetRenameContinuity())
+
+  it('YAZ-3685 F5: a copy that opens while its source flushes reads the file only after that save is on disk; with no flush it reads at once', async () => {
+    let saved = (): void => undefined
+    const off = registerRenameContinuity('/vault/note.md', { flush: () => new Promise<void>((done) => (saved = done)), capture: () => null, retire: () => undefined })
+    readFile.mockResolvedValue(response('/vault/note.md', '* Day 4: Faro\n'))
+    void flushRenamedPath('/vault/note.md') // the source saves its unsaved typing (the switch to the copy starts it)
+    render('/vault/note.md')
+    await flush()
+    expect([readFile.mock.calls.length, state.status]).toEqual([0, 'loading'])
+    saved()
+    await flush()
+    await flush()
+    expect(readFile).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
+    expect(state).toEqual({ status: 'ready', path: '/vault/note.md', file: response('/vault/note.md', '* Day 4: Faro\n') })
+    off()
+    // No save under way: the read starts in the same effect, as before.
+    readFile.mockClear()
+    render('/vault/other.md')
+    expect(readFile).toHaveBeenCalledExactlyOnceWith('/vault/other.md')
   })
 })

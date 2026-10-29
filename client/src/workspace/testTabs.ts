@@ -6,7 +6,7 @@
  * use the reducers directly, with ids.
  */
 import type { StoredTab } from '@shared/types'
-import { tabById, tabsReducer, workspaceReducer, type Tab, type TabHistory, type TabsAction, type TabsState, type WorkspaceAction, type WorkspaceState } from './useWorkspace'
+import { tabById, tabsReducer, workspaceReducer, type BackList, type Tab, type TabsAction, type TabsState, type WorkspaceAction, type WorkspaceState } from './useWorkspace'
 
 /** A stored strip of plain tabs (YAZ-3057): one entry per path, no name, no mark — what `reset` gets from a window that stores no strip. */
 export const plain = (...paths: string[]): StoredTab[] => paths.map((path) => ({ path }))
@@ -16,7 +16,8 @@ export interface PathTabs {
   tabs: string[]
   active: string | null
   mounted: string[]
-  history: Record<string, TabHistory>
+  /** The Back list (YAZ-3647 D1), each step's tab named by its path. */
+  history: BackList
   preview: string | null
   blank: boolean
 }
@@ -43,7 +44,7 @@ export function byPath<S extends TabsState>(s: S): Omit<S, keyof TabsState> & Pa
     tabs: s.tabs.map((t) => t.path),
     active: s.active === null ? null : p(s.active),
     mounted: s.mounted.map(p),
-    history: Object.fromEntries(Object.entries(s.history).map(([id, r]) => [p(id), r])),
+    history: { steps: s.history.steps.map((step) => ({ ...step, tab: p(step.tab) })), index: s.history.index },
     preview: s.preview === null ? null : p(s.preview),
   }
 }

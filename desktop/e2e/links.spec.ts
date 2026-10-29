@@ -192,7 +192,7 @@ test('step 8 — a pasted path of a vault note is its link; Keep as path gives t
   await expect(keep).toHaveCount(0)
 })
 
-test('step 8b — ⌘Z gives the path back; a pasted link opens its note, and Back returns (YAZ-3609 D2, D10)', async () => {
+test('step 8b — ⌘Z gives the path back; a pasted link opens its note, and Back returns (YAZ-3609 D2; YAZ-3647 D4)', async () => {
   const ideas = path.join(vault, 'Ideas.md')
   const hub = () => readFile(path.join(vault, HUB_FILE), 'utf8')
   await pasteText(win, ideas)
@@ -204,7 +204,12 @@ test('step 8b — ⌘Z gives the path back; a pasted link opens its note, and Ba
   await editorOf(win).getByText(HUB_BODY).click() // the caret leaves the link: it collapses
   await linkIn(win, 'Ideas').click()
   await expect(activeTab(win)).toHaveText('Ideas') // Ideas is open since step 2: its tab comes to the front
-  await win.getByRole('button', { name: 'Back' }).click()
+  // The tab that came to the front is a step of the window's one Back list (YAZ-3647 D4): Back returns to the hub's tab.
+  await win.locator('.tabbar-nav [aria-label="Back"]').click()
+  await expect(activeTab(win)).toHaveText('Links hub')
+  await win.locator('.tabbar-nav [aria-label="Forward"]').click()
+  await expect(activeTab(win)).toHaveText('Ideas')
+  await win.locator('.tabbar-nav [aria-label="Back"]').click()
   await expect(activeTab(win)).toHaveText('Links hub')
 })
 

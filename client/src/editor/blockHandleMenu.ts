@@ -1,5 +1,5 @@
 /**
- * Right-click on the 6-dot block handle opens a `.ctx-menu` popup (YAZ-726). Rows are data
+ * Right-click on the 6-dot block handle, or on a bullet's own dot (YAZ-3646 D8), opens a `.ctx-menu` popup (YAZ-726). Rows are data
  * from a provider called at open time with the handle's target; the plugin never knows what
  * a row does.
  *
@@ -30,7 +30,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { handleTargetPos, isOwnHandleGrab, type HandleTarget } from './blockHandleTarget'
+import { bulletDotTarget, handleTargetPos, isOwnHandleGrab, isTaskBox, type HandleTarget } from './blockHandleTarget'
 
 export interface MenuRow {
   kind?: 'row'
@@ -41,6 +41,12 @@ export interface MenuRow {
   /** A line above the row: the link menu's groups (YAZ-3609 D23). */
   divider?: boolean
   run: () => void
+  /** Rows of one kind stand together, and a line parts two kinds (YAZ-3646 D9), as the tab menu's groups do. */
+  group?: string
+  /** A glyph before the label (YAZ-3646 D8), made when the menu opens; it holds no text, so the label stays bare. */
+  icon?: () => SVGElement
+  /** The click or key that does it too, at the right edge (`data-hint`, drawn by CSS as the tab menu's are). */
+  hint?: string
 }
 
 /** A typed number with presets (YAZ-3164 D3): a picker row whose panel is the zoom menu's box and presets. */
@@ -278,13 +284,16 @@ function renderPicker(field: MenuNumberField | MenuChoiceField, menu: HTMLElemen
 /**
  * Draws the popup into `parent`, unplaced: a clicked row runs, then `close`; a picker works as the
  * header says, every one closed, and nothing takes the focus. Exported for the id link's menu
- * (`wikilink/wikilinkMenu.ts`, YAZ-2293) — the same rows, on another target.
+ * (`wikilink/wikilinkMenu.ts`, YAZ-2293) — the same rows, on another target. Rows look like the tab
+ * menu's (YAZ-3646 D8): a line between two groups, a glyph slot on every row once one row has a glyph,
+ * and the hint at the right edge.
  */
 export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close: () => void): HTMLElement {
   const el = document.createElement('div')
-  el.className = 'ctx-menu ctx-menu--editor'
+  el.className = items.some((row) => row.kind !== 'number' && row.kind !== 'choice' && row.icon !== undefined) ? 'ctx-menu ctx-menu--editor ctx-menu--glyphs' : 'ctx-menu ctx-menu--editor'
   el.setAttribute('role', 'menu')
   let pickers = false
+  let previous: MenuRow | null = null
   for (const row of items) {
     if (row.kind === 'number' || row.kind === 'choice') {
       // One divider between the rows and the pickers; the pickers sit together.
@@ -293,13 +302,22 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
       el.appendChild(renderPicker(row, el, close))
       continue
     }
-    if (row.divider === true && el.childElementCount > 0) el.appendChild(divider())
+    // A line parts two kinds of rows (YAZ-3646 D9) and stands above a row that asks for one (YAZ-3609 D23).
+    if (el.childElementCount > 0 && (row.divider === true || (previous !== null && previous.group !== row.group))) el.appendChild(divider())
+    previous = row
     const item = document.createElement('button')
     item.type = 'button'
     item.className = `ctx-menu__item${row.danger === true ? ' ctx-menu__item--danger' : ''}`
     item.setAttribute('role', 'menuitem')
     item.disabled = row.disabled === true
-    item.textContent = row.label
+    if (row.icon === undefined) item.textContent = row.label
+    else {
+      const label = document.createElement('span')
+      label.className = 'ctx-menu__label'
+      label.append(row.icon(), row.label)
+      item.appendChild(label)
+    }
+    if (row.hint !== undefined) item.dataset.hint = row.hint
     item.addEventListener('mousedown', (e) => e.preventDefault())
     item.addEventListener('click', () => {
       row.run()
@@ -337,11 +355,21 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           const onMouseUp = (e: MouseEvent) => {
             if (rightGrab(e)) e.stopImmediatePropagation()
           }
+          // A right press on a task's box ticks nothing (YAZ-3694 F7). Crepe's list item toggles the task on `pointerdown`
+          // for every button; stopped here, at document capture, before it gets there. No preventDefault: the mousedown and
+          // the contextmenu still come. On macOS a ⌃-click is a right-click too (YAZ-3694 F7b). Only a plain (left) press ticks the task.
+          const onPointerDown = (e: MouseEvent) => {
+            const right = e.button !== 0 || (e.ctrlKey && /Mac/.test(navigator.platform))
+            if (right && isTaskBox(view, e.target)) e.stopImmediatePropagation()
+          }
           const onContextMenu = (e: MouseEvent) => {
-            if (!isOwnHandleGrab(view, e.target)) return
+            // The 6-dot handle, or a bullet's own dot (YAZ-3646 D8): the same menu, for that bullet.
+            const onHandle = isOwnHandleGrab(view, e.target)
+            const dot = onHandle ? null : bulletDotTarget(view, e.target)
+            if (!onHandle && dot === null) return
             e.preventDefault()
             e.stopImmediatePropagation()
-            const target = handleTargetPos(view, e)
+            const target = dot ?? handleTargetPos(view, e)
             if (target === null) return
             const items = rows(view, target, ctx)
             if (items.length === 0) return
@@ -366,6 +394,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             next.focus({ preventScroll: true })
           }
 
+          document.addEventListener('pointerdown', onPointerDown, true)
           document.addEventListener('mousedown', onMouseDown, true)
           document.addEventListener('mouseup', onMouseUp, true)
           document.addEventListener('contextmenu', onContextMenu, true)
@@ -378,6 +407,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
               if (v.state.doc !== prevState.doc) close()
             },
             destroy: () => {
+              document.removeEventListener('pointerdown', onPointerDown, true)
               document.removeEventListener('mousedown', onMouseDown, true)
               document.removeEventListener('mouseup', onMouseUp, true)
               document.removeEventListener('contextmenu', onContextMenu, true)

@@ -59,6 +59,7 @@ import {
   addRecentRoot,
   cleanVaultKey,
   cleanVaultName,
+  isZoomKey,
   defaultAppState,
   defaultFolderState,
   defaultRightPanelIdentity,
@@ -619,17 +620,17 @@ export function normalizeTabs(tabs: readonly string[], file: string | null): str
   return out
 }
 
-/** One stored tab (YAZ-3057), or null: an absolute path, a display name cleaned like a vault's, and the active mark. */
+/** One stored tab (YAZ-3057), or null: an absolute path, a display name cleaned like a vault's, its zoom key (YAZ-3646 D14), and the active mark. */
 export function readStoredTab(raw: unknown): StoredTab | null {
   if (!isRecord(raw) || typeof raw.path !== 'string' || !isAbsolute(raw.path)) return null
   const name = cleanVaultName(raw.name)
-  return { path: raw.path, ...(name === null ? {} : { name }), ...(raw.active === true ? { active: true as const } : {}) }
+  return { path: raw.path, ...(name === null ? {} : { name }), ...(isZoomKey(raw.zoom) ? { zoom: raw.zoom } : {}), ...(raw.active === true ? { active: true as const } : {}) }
 }
 
 /**
  * The strip invariant (YAZ-3057), shared by the loader, every window write, rename and delete: the
  * strip's paths, each once and in order, are `tabs`. A tab that is no longer open drops; a strip that
- * still disagrees drops whole, and the window opens `tabs` as before. A strip with no copy and no name
+ * still disagrees drops whole, and the window opens `tabs` as before. A strip with no copy, no name and no zoom
  * is not kept, so a window without either stores what it always did. The active mark stays on ONE
  * copy of `file` at most.
  */
@@ -639,12 +640,12 @@ export function normalizeTabStrip(strip: readonly StoredTab[] | undefined, tabs:
   const kept = strip.filter((t) => open.has(t.path))
   const order = [...new Set(kept.map((t) => t.path))]
   if (order.length !== tabs.length || order.some((path, i) => path !== tabs[i])) return undefined
-  if (kept.length === tabs.length && kept.every((t) => t.name === undefined)) return undefined
+  if (kept.length === tabs.length && kept.every((t) => t.name === undefined && t.zoom === undefined)) return undefined
   let marked = false
-  return kept.map(({ path, name, active }) => {
+  return kept.map(({ path, name, zoom, active }) => {
     const on = active === true && path === file && !marked
     if (on) marked = true
-    return { path, ...(name === undefined ? {} : { name }), ...(on ? { active: true as const } : {}) }
+    return { path, ...(name === undefined ? {} : { name }), ...(zoom === undefined ? {} : { zoom }), ...(on ? { active: true as const } : {}) }
   })
 }
 

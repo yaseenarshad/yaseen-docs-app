@@ -144,12 +144,15 @@ const captured = vi.hoisted(() => ({
   /** The door of the new tab page stub (YAZ-2663 S33): whether its first row took the keyboard focus. */
   startPageFocus: vi.fn(() => true),
   /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder — and the table of contents setting with its door (YAZ-2700 D2). */
+  /** Each main tab's zoom door (YAZ-3647 D2), by tab id, as the newest Editor stub render was handed it. */
+  zoomDoors: new Map<string, (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void>(),
   editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }[],
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
     captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView })
+    if (tabId !== undefined && onZoom !== undefined) captured.zoomDoors.set(tabId, onZoom)
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
@@ -210,6 +213,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuNextTab = new Set<() => void>()
   const menuPrevTab = new Set<() => void>()
   const menuTabOverview = new Set<() => void>()
+  const menuBack = new Set<() => void>()
+  const menuForward = new Set<() => void>()
   const menuNewTab = new Set<() => void>()
   const windowGlow = new Set<(on: boolean) => void>()
   const menuNewWindow = new Set<() => void>()
@@ -361,6 +366,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onNextTab: menuSub(menuNextTab),
       onPrevTab: menuSub(menuPrevTab),
       onTabOverview: menuSub(menuTabOverview),
+      onBack: menuSub(menuBack),
+      onForward: menuSub(menuForward),
       onNewTab: menuSub(menuNewTab),
       onNewWindow: menuSub(menuNewWindow),
       onNewItem: menuSub(menuNewItem),
@@ -1517,6 +1524,31 @@ describe('App Move to new window (YAZ-2933)', () => {
     await act(async () => items(el)[0]!.click())
     expect(tabNames(el)).toEqual(['a', 'b'])
     expect(el.textContent).toContain("Can't move to a new window: path is in no vault of this window")
+  })
+})
+
+describe('App ‹ › close the tab board, as the keys do (YAZ-3647 D7, polish YAZ-3681)', () => {
+  const activeTab = (el: HTMLElement) => el.querySelector<HTMLElement>('.tabbar__tab:has([aria-selected="true"])')?.dataset.tab
+  const nav = (el: HTMLElement, label: 'Back' | 'Forward') => el.querySelector<HTMLButtonElement>(`.tabbar-nav__btn[aria-label="${label}"]`)!
+  const board = (el: HTMLElement) => el.querySelector('.taboverview') !== null
+
+  // A zoom step: the tab and the page in front stay the same, so only the button itself can close the board.
+  it('a click on ‹ or ›, and a row of their menu, take the step and close the board, also for a zoom step in one tab', async () => {
+    const { el, emitTabOverview } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const tab = activeTab(el)!
+    act(() => captured.zoomDoors.get(tab)!(tab, 'k1:0', false, 'Day 1'))
+    act(() => emitTabOverview())
+    expect(board(el)).toBe(true)
+    act(() => nav(el, 'Back').click())
+    expect([activeTab(el), board(el)]).toEqual([tab, false])
+    act(() => emitTabOverview())
+    act(() => nav(el, 'Forward').click())
+    expect(board(el)).toBe(false)
+    act(() => emitTabOverview())
+    act(() => void nav(el, 'Back').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+    act(() => el.querySelector<HTMLButtonElement>('.ctx-menu .ctx-menu__item')!.click())
+    expect(board(el)).toBe(false)
+    expect(nav(el, 'Back').disabled).toBe(true)
   })
 })
 

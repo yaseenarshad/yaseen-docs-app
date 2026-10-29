@@ -525,7 +525,7 @@ describe('hidden while a bullet is zoomed', () => {
   }
 
   it('says hidden when the zoom starts and shown again when it ends', async () => {
-    const { view, channel } = await mountToc(`# Top\n\n## Under\n\n* Bullet\n  * Child\n`, { zoom: { fileName: 'notes.md', title: () => 'Notes' } })
+    const { view, channel } = await mountToc(`# Top\n\n## Under\n\n* Bullet\n  * Child\n`, { zoom: { title: () => 'Notes' } })
     expect(channel.getState().hidden).toBe(false)
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOfText(view.state.doc, 'Bullet') + 1)))
     pressZoom(view)

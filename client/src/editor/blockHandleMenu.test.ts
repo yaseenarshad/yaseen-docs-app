@@ -9,6 +9,8 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createBlockHandleMenu, parseNumberField, renderMenu, type MenuChoiceField, type MenuNumberField, type MenuRow, type RowProvider } from './blockHandleMenu'
 import { features } from './featureConfig'
+import { openBulletRow } from './outline/openBulletRow'
+import { zoomKeyAt } from './outline/zoom'
 import appCss from '../app.css?inline'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
@@ -441,3 +443,80 @@ describe('pickers (YAZ-3164 D3, condensed)', () => {
   })
 })
 
+
+describe("a bullet's own dot (YAZ-3646 D8, D9)", () => {
+  async function mountList(open: ((key: string | null, background: boolean, label: string | null) => void) | undefined) {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = new Crepe({ root, defaultValue: '* One\n  * Two\n* [ ] Task\n', features })
+    crepe.editor.use(createBlockHandleMenu((view, target) => [...openBulletRow(view, target, open), { label: 'Number children', run: vi.fn() }]))
+    await crepe.create()
+    mounted.push({ crepe, root })
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const dot = (text: string) =>
+      [...view.dom.querySelectorAll<HTMLElement>('li.list-item')].find((li) => li.querySelector(':scope > .children > .content-dom > p')?.textContent === text)!.querySelector<HTMLElement>(':scope > .label-wrapper')!
+    return { view, dot }
+  }
+
+  it('a right-click on the dot opens the bullet\'s menu: "Open in new tab" first, with its glyph and its ⇧-click hint, a line, then the next group', async () => {
+    const open = vi.fn()
+    const { view, dot } = await mountList(open)
+    const e = contextmenu(dot('One'))
+    expect(e.defaultPrevented).toBe(true)
+    const popup = popupOf(view)!
+    expect([...popup.children].map((el) => el.className)).toEqual(['ctx-menu__item', 'document-zoom__divider', 'ctx-menu__item'])
+    expect(popup.classList.contains('ctx-menu--glyphs')).toBe(true)
+    const [first] = itemsOf(view)
+    expect([first.textContent, first.dataset.hint, first.querySelector('svg') !== null]).toEqual(['Open in new tab', '⇧-click', true])
+    first.click()
+    const key = zoomKeyAt(view.state.doc, view.state.doc.resolve(view.posAtDOM(dot('One'), 0)).before())
+    expect(open).toHaveBeenCalledExactlyOnceWith(key, false, 'One')
+    expect(popupOf(view)).toBeNull()
+  })
+
+  it('a task\'s checkbox is no dot, and a page with no tab has no "Open in new tab"', async () => {
+    const { view, dot } = await mountList(vi.fn())
+    expect(contextmenu(dot('Task')).defaultPrevented).toBe(false)
+    expect(popupOf(view)).toBeNull()
+    const noTab = await mountList(undefined)
+    contextmenu(noTab.dot('Two'))
+    expect(itemsOf(noTab.view).map((b) => b.textContent)).toEqual(['Number children'])
+  })
+
+  it('YAZ-3694 F7: a right press on a task\'s box does not tick it; a plain (left) press still does', async () => {
+    const { view, dot } = await mountList(vi.fn())
+    const press = (button: number) => {
+      const box = dot('Task')
+      box.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button, buttons: button === 2 ? 2 : 1 }))
+      box.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button }))
+      if (button === 2) box.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button }))
+    }
+    const checked = () => {
+      let state: unknown = null
+      view.state.doc.descendants((node) => {
+        if (node.type.name === 'list_item' && node.textContent === 'Task') state = node.attrs.checked
+      })
+      return state
+    }
+    press(2)
+    expect([checked(), popupOf(view)]).toEqual([false, null])
+    press(0)
+    expect(checked()).toBe(true)
+  })
+
+  it('YAZ-3694 F7b: on macOS a ⌃-click on a task\'s box is a right-click: it does not tick the task', async () => {
+    const { view, dot } = await mountList(vi.fn())
+    const box = dot('Task')
+    const ticked = () => {
+      let state: unknown = null
+      view.state.doc.descendants((node) => {
+        if (node.type.name === 'list_item' && node.textContent === 'Task') state = node.attrs.checked
+      })
+      return state
+    }
+    expect(navigator.platform).toMatch(/Mac/) // test-setup.ts
+    box.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, buttons: 1, ctrlKey: true }))
+    box.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 0, ctrlKey: true }))
+    expect(ticked()).toBe(false)
+  })
+})

@@ -1,6 +1,6 @@
 /**
  * YAZ-3609 in a window with two vaults: a `[[link]]` is a pill with its file icon (D13), a Markdown link
- * into the other vault opens in a tab and Back returns (D14, D10), a pasted path of the other vault is a
+ * into the other vault opens in a tab and Back returns (D14; the window's one Back list, YAZ-3647 D4), a pasted path of the other vault is a
  * relative link (D15), and Settings › "Open a link in" › A new background tab keeps the note in front (D11).
  * The paste is a synthetic event, so the real clipboard stays the person's own. Serial: each step
  * continues the previous state.
@@ -174,7 +174,7 @@ test('step 1f — a pill into the other vault names it (D22); a pill and a [[lin
   await win.keyboard.press('Escape')
 })
 
-test('step 2 — a Markdown link into the other vault opens in this tab, and Back returns (D14, D10)', async () => {
+test('step 2 — a Markdown link into the other vault opens in this tab, and Back returns (D14; YAZ-3647 D4)', async () => {
   await editorOf(win).locator('a', { hasText: 'the gym plan' }).click()
   await expect(activeTab(win)).toHaveText('Plan')
   await expect(editorOf(win)).toContainText(PLAN_BODY)
@@ -199,22 +199,27 @@ test('step 5 — "Open a link in: A new tab": a click opens a new tab in front, 
   await editorOf(win).locator('a', { hasText: 'the gym plan' }).click()
   await expect(activeTab(win)).toHaveText('Plan')
   await expect(tabsOf(win)).toHaveCount(2) // Today stays in its own tab
+  // The new tab in front is a step of the window's one list (YAZ-3647 D4): Back goes to Today's tab, and no tab closes.
   await win.getByRole('button', { name: 'Back' }).click()
   await expect(activeTab(win)).toHaveText('Today')
+  await expect(tabsOf(win)).toHaveCount(2)
   await quitApp(app)
 })
 
-test('step 4 — "Open a link in: A new background tab": a click keeps this note in front (D11); Back in the new tab returns (YAZ-3644)', async () => {
+test('step 4 — "Open a link in: A new background tab": a click keeps this note in front (D11); Back in the new tab returns (YAZ-3647 D4)', async () => {
   app = await launchApp({ userData, seedState: workspaceState('background-tab') })
   win = await appWindow(app, 'w1')
   await editorOf(win).locator('a', { hasText: 'the gym plan' }).click()
   await expect(tabsOf(win).filter({ hasText: 'Plan' })).toHaveCount(1)
   await expect(activeTab(win)).toHaveText('Today')
   await shoot(win, 'workspace-links-04-background')
-  // YAZ-3644: the new tab remembers the note with the link, so Back there returns to it.
+  // A tab behind adds no step (YAZ-3647 D4): Today is still the only step, so Back is grey.
+  await expect(win.locator('.tabbar-nav [aria-label="Back"]')).toBeDisabled()
+  // The tab click brings Plan to the front, and that is the step: Back returns to Today, in its own tab.
   await tabsOf(win).filter({ hasText: 'Plan' }).click()
   await win.getByRole('button', { name: 'Back' }).click()
   await expect(activeTab(win)).toHaveText('Today')
+  await expect(tabsOf(win)).toHaveCount(2)
   await quitApp(app)
 })
 

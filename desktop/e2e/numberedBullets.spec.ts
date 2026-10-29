@@ -3,13 +3,15 @@
  * bullet's direct child list to an ordered list (and back), without touching text — the
  * hand-typed `1) Setup` prefix stays (D2). Proven through the REAL app: menu → GUI labels →
  * autosaved markdown on disk → the system clipboard (`1.` markers, `<ol>`) → one-step undo.
+ * Since YAZ-3646 D9 the bullet's menu has "Open in new tab" FIRST, then a line, then "Number
+ * children"; step 7 opens the same menu from the bullet's own dot (D8) and uses that first row (D11).
  * Serial: the steps share one app and the real clipboard.
  */
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -36,7 +38,15 @@ const rowOf = (w: Page, text: string): Locator =>
 const paraOf = (row: Locator) => row.locator(PARA)
 const labelOf = (row: Locator) => row.locator('xpath=./div[contains(@class,"label-wrapper")]//*[contains(@class,"label")]').first()
 const menu = (w: Page) => w.locator('.ctx-menu--editor')
-const menuRow = (w: Page) => menu(w).locator('.ctx-menu__item')
+/** Every row of the bullet's menu: "Open in new tab", then "Number children" (YAZ-3646 D9). */
+const menuRows = (w: Page) => menu(w).locator('.ctx-menu__item')
+/** The "Number children" ↔ "Bullet children" row: the LAST row, after "Open in new tab" and its line. */
+const menuRow = (w: Page) => menuRows(w).last()
+/** The two groups of the menu, a line between them (D9), as the tab menu draws its groups. */
+const groupLine = (w: Page) => menu(w).locator('.ctx-menu__item + .document-zoom__divider + .ctx-menu__item')
+/** The bullet's own dot (its `.label-wrapper`): a right-click there opens the same menu (YAZ-3646 D8). */
+const dotOf = (row: Locator) => row.locator('xpath=./div[contains(@class,"label-wrapper")]')
+const crumbs = (w: Page) => editorOf(w).locator('nav[aria-label="Zoom breadcrumbs"] .outline-zoom-crumb')
 
 /**
  * Hover a row's paragraph so Crepe's block handle attaches to it (its mousemove is throttled
@@ -96,11 +106,13 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — right-click on the handle of "Fundamentals" offers exactly "Number children"', async () => {
+test('step 1 — right-click on the handle of "Fundamentals" offers "Open in new tab", a line, then "Number children" (YAZ-3646 D9)', async () => {
   test.setTimeout(60_000) // room for openHandleMenu's documented retry budget (YAZ-904)
   for (const text of CHILDREN) await expect(labelOf(rowOf(win, text))).toHaveClass(/\bbullet\b/)
   await openHandleMenu(win, 'Fundamentals')
-  await expect(menuRow(win)).toHaveCount(1)
+  await expect(menuRows(win)).toHaveText(['Open in new tab', 'Number children'])
+  await expect(menuRows(win).first()).toHaveAttribute('data-hint', '⇧-click')
+  await expect(groupLine(win)).toHaveCount(1)
   await expect(menuRow(win)).toHaveText('Number children')
   await expect(menuRow(win)).toBeEnabled()
   await shoot(win, 'numbered-menu')
@@ -170,10 +182,31 @@ test('step 5 — re-number, then the row reads "Bullet children" and flips back'
 test('step 6 — a leaf ("deep") still shows the row, disabled', async () => {
   test.setTimeout(60_000) // room for openHandleMenu's documented retry budget (YAZ-904)
   await openHandleMenu(win, 'deep')
-  await expect(menuRow(win)).toHaveCount(1)
-  await expect(menuRow(win)).toHaveText('Number children')
+  // A leaf is a bullet too: "Open in new tab" stays first and works; only "Number children" is grey.
+  await expect(menuRows(win)).toHaveText(['Open in new tab', 'Number children'])
+  await expect(menuRows(win).first()).toBeEnabled()
   await expect(menuRow(win)).toBeDisabled()
   await shoot(win, 'numbered-leaf-disabled')
   await win.keyboard.press('Escape')
   await expect(menu(win)).toBeHidden()
+})
+
+test('step 7 — right-click on the DOT of "Fundamentals" opens the same menu; "Open in new tab" opens a copy right after, zoomed in, and Back returns (YAZ-3646 D8, D11, D13)', async () => {
+  await expect(tabsOf(win)).toHaveText(['Numbered'])
+  await dotOf(rowOf(win, 'Fundamentals')).click({ button: 'right' })
+  await expect(menu(win)).toBeVisible()
+  await expect(menuRows(win)).toHaveText(['Open in new tab', 'Number children'])
+  await shoot(win, 'numbered-dot-menu')
+  await menuRows(win).first().click()
+  await expect(menu(win)).toBeHidden()
+  // The copy stands right after its source, in front, zoomed into the bullet; its label stays the page name (D12).
+  await expect(tabsOf(win)).toHaveText(['Numbered', 'Numbered'])
+  await expect(tabsOf(win).nth(1)).toHaveAttribute('aria-selected', 'true')
+  await expect(crumbs(win)).toHaveText(['Numbered', 'Fundamentals'])
+  await expect(editorOf(win)).toContainText('WisprFlow')
+  // The first Back from the copy goes to the source tab, at the level it had: the whole page (D13).
+  await win.locator('.tabbar-nav [aria-label="Back"]').click()
+  await expect(tabsOf(win).nth(0)).toHaveAttribute('aria-selected', 'true')
+  await expect(crumbs(win)).toHaveCount(0)
+  await expect(tabsOf(win)).toHaveCount(2)
 })

@@ -15,7 +15,7 @@ import { FolderView } from '../views/FolderView'
 import { hrefPath, hrefTarget, vaultHref } from './pathPaste'
 import { redrawLinkPills } from './markdownLink'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { createCrepe, editorViewOf, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown } from './createCrepe'
+import { createCrepe, editorViewOf, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, setMarkdown, zoomPageTo } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
@@ -49,6 +49,7 @@ import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
 import { usePageSwitch } from './usePageSwitch'
 import type { ZoomStep } from '@shared/types'
+import type { ZoomFrom } from '../workspace/useWorkspace'
 import type { CodeSettingsPatch } from '../code/codeSettings'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
@@ -56,7 +57,6 @@ import type { WatchSource } from '../hooks/useWatch'
 import { BacklinksSection } from '../links/BacklinksSection'
 import { ReviewsSection } from '../review/ReviewsSection'
 import { pageLabel, usePathTitles, useTreeKind, type PathTitles } from '../lib/pageLabel'
-import { basename } from '../lib/paths'
 import { namingTab } from '../lib/focusHandoff'
 import { flushRenamedPath, takeRenameBuffer } from '../lib/renameContinuity'
 import { onTwinSave } from '../lib/twinEditors'
@@ -180,8 +180,22 @@ interface EditorProps {
    * Read at mount only; the scroll is applied once, when the first content lands (YAZ-2940 D7).
    */
   startView?: PageView
-  /** A main tab's history entry (`<tab id>:<index>`): a code tab keeps its cursor and scroll under it for Back (YAZ-3458). */
+  /** A main tab's Back step (`step-<id>`, YAZ-3647 D1): a code tab keeps its cursor and scroll under it for Back (YAZ-3458). */
   viewKey?: string
+  /** The main tab that shows this page (YAZ-3647 D2): the zoom callbacks name it. Absent: the right panel, a review. */
+  tabId?: string
+  /** The tab's zoom key (YAZ-3647 D2), null the whole page: the page starts there, and Back and Forward move it there. */
+  zoomKey?: string | null
+  /**
+   * The page zoomed (YAZ-3647 D2): a Back step for tab `tabId`, unless `quiet` (the page started at that level). `label` is
+   * the bullet's crumb text, for the Back list's menu and the tab's tooltip (E3, E4). Stable: App's one callback.
+   */
+  onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null, from?: ZoomFrom) => void
+  /**
+   * "Open in new tab", ⌘- and ⇧-click on a bullet's dot or a crumb (YAZ-3646 D10, D11, YAZ-3647 E2): that level in a copy of
+   * tab `tabId`; null is the whole page (the title crumb). Stable, as `onZoom`.
+   */
+  onOpenBullet?: (tabId: string, zoom: string | null, background: boolean, label: string | null) => void
   /** The canvas preferences every drawing shares (YAZ-3028, Draw's 🔒 YAZ-1775 D9): `SettingsState.canvas`. Absent → the defaults. */
   canvasPrefs?: CanvasPrefs
   /** A drawing's engine moved a pref: App writes the SETTING through this. */
@@ -215,7 +229,7 @@ interface EditorProps {
   hotkeysAside?: HotkeyAside
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope, hotkeys, hotkeysAside }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope, hotkeys, hotkeysAside }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -281,11 +295,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
 }
 
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, diagramDarkColors = 'adapt', hoverLinks = false, hoverBacklinks = false, previewScope, hotkeys, hotkeysAside }: EditorProps) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, diagramDarkColors = 'adapt', hoverLinks = false, hoverBacklinks = false, previewScope, hotkeys, hotkeysAside }: EditorProps) {
   const state = useFile(path)
   const titles = usePathTitles(wikilinks)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
@@ -294,7 +308,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
+        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
       )}
     </section>
   )
@@ -334,6 +348,10 @@ function CrepeHost({
   reviewSettings,
   onUserEdit,
   startView,
+  tabId,
+  zoomKey,
+  onZoom,
+  onOpenBullet,
   diagramDarkColors,
   hoverLinks,
   hoverBacklinks,
@@ -370,6 +388,10 @@ function CrepeHost({
   reviewSettings?: ReviewSettings
   onUserEdit?: (path: string) => void
   startView?: PageView
+  tabId?: string
+  zoomKey?: string | null
+  onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null, from?: ZoomFrom) => void
+  onOpenBullet?: (tabId: string, zoom: string | null, background: boolean, label: string | null) => void
   diagramDarkColors: DiagramDarkColors
   hoverLinks: boolean
   hoverBacklinks: boolean
@@ -508,6 +530,24 @@ function CrepeHost({
   // The zoom breadcrumb's first crumb (YAZ-2420 🔒 D14), read as it draws: the Crepe below is made once.
   const titleRef = useRef('')
   titleRef.current = pageLabel(file.path, false, titles)
+  // The tab's zoom level and its doors (YAZ-3647 D2, YAZ-3646 D10), read through refs too: the Crepe below is made once.
+  const zoomKeyRef = useRef(zoomKey)
+  zoomKeyRef.current = zoomKey
+  const tabRef = useRef({ tabId, onZoom, onOpenBullet })
+  tabRef.current = { tabId, onZoom, onOpenBullet }
+  // A zoom of this page, to its tab (YAZ-3647 D2). A page with no tab (the right panel, a review) tells no one.
+  // A quiet report names the key it replaces on this page (YAZ-3662 F6b): it may come after a Back, or as the page goes.
+  const reportZoom = useCallback((zoom: string | null, quiet: boolean, label: string | null, from?: string | null) => {
+    const { tabId: id, onZoom: tell } = tabRef.current
+    if (id !== undefined) tell?.(id, zoom, quiet, label, from === undefined ? undefined : { path: file.path, key: from })
+  }, [file.path])
+  // The tab's key must match what the page shows (YAZ-3676 F3): after the page moved by itself (a start level, a
+  // reload, a key Back could not find), the tab learns the real level quietly, as a change from `from`, the key it has.
+  // The same level tells nothing, unless `always` (the mount report, which also teaches the bullet's label, E3).
+  const tellRealZoom = useCallback((crepe: ReturnType<typeof createCrepe>, from: string | null, always = false) => {
+    const now = getZoomKeyOf(crepe)
+    if (always || now !== from) reportZoom(now, true, getZoomLabelOf(crepe), from)
+  }, [reportZoom])
   const autosave = useAutosave(file.path)
   const { attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts } = autosave
   // The user's own edit keeps a preview tab (YAZ-2648 D2), and the signal is the note turning
@@ -640,7 +680,16 @@ function CrepeHost({
           writeFolds()
         },
       },
-      zoom: { fileName: basename(file.path), title: () => titleRef.current, startKey: start?.zoomKey },
+      // The tab's level (YAZ-3647 D2): Back, a copy and a bullet's new tab start there, and each change goes to the tab.
+      zoom: {
+        title: () => titleRef.current,
+        startKey: zoomKeyRef.current ?? start?.zoomKey,
+        onZoom: reportZoom,
+        onOpen: tabRef.current.onOpenBullet === undefined ? undefined : (zoom, behind, label) => {
+          const { tabId: id, onOpenBullet: open } = tabRef.current
+          if (id !== undefined) open?.(id, zoom, behind, label)
+        },
+      },
       // Stable per window (App-owned): index updates flow INSIDE the sources, never remounting us.
       wikilinks,
       viewOnlyLinks,
@@ -715,11 +764,19 @@ function CrepeHost({
       const buf = takeRenameBuffer(file.path)
       if (buf !== null && buf.body !== body) {
         setMarkdown(crepe, buf.body)
+        // A rebuilt state starts zoomed out: back to the tab's bullet, as a rebuild from disk does (E1). A rename keeps
+        // its zoom (YAZ-3676 F3); a bullet the buffer does not have stays zoomed out, and the report below says so.
+        const key = zoomKeyRef.current ?? start?.zoomKey ?? null
+        if (key !== null) zoomPageTo(crepe, key)
         controller.update(getMarkdownForSave(crepe))
       }
       // A copy that starts drilled in (YAZ-2951 D1) has its caret in a hidden block: into the bullet
       // first, here, where every plugin view and `editorViewCtx` are ready, then the caret grab.
-      if (start?.zoomKey) moveCaretIntoZoom(crepe)
+      // Its tab learns the level it really started at: the bullet may be gone, and then the page shows whole (YAZ-3647 D2).
+      if (zoomKeyRef.current ?? start?.zoomKey) {
+        moveCaretIntoZoom(crepe)
+        tellRealZoom(crepe, zoomKeyRef.current ?? null, true)
+      }
       // The mount's caret grab (⚡ YAZ-888) YIELDS to the sidebar walk (YAZ-921): a page opened
       // while focus stands on a tree row is a PREVIEW — stealing the caret would strand the
       // arrows mid-walk. It yields to a tab's name field too (YAZ-3059). Every other door (tabs,
@@ -751,6 +808,8 @@ function CrepeHost({
       if (cancelled) return
       const split = splitFrontmatter(fresh.content)
       applyExternalMarkdown(crepe, split.body)
+      // A rebuild makes new plugin views, so the zoom's settle timer is gone: a bullet the rewrite removed is told here (YAZ-3676 F3).
+      tellRealZoom(crepe, zoomKeyRef.current ?? null)
       markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter, split.body)
       setDisk(fresh.content)
       diskLanded()
@@ -797,7 +856,7 @@ function CrepeHost({
       offTwin()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel, linkHover])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel, linkHover, reportZoom, tellRealZoom])
 
   /**
    * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1): pending typing saves first
@@ -858,6 +917,13 @@ function CrepeHost({
       cancelled = true
     }
   }, [lineNumbersOn, readyCrepe, autosave.status, diskLandings, diskParts, onNotice])
+  // Back and Forward move a tab to a step's level (YAZ-3647 D2): the page follows its tab. The same level is no change.
+  // A key that is no longer found shows the whole page, and the tab learns that, quietly (YAZ-3676 F3).
+  useEffect(() => {
+    if (readyCrepe === null || crepeRef.current !== readyCrepe || zoomKey === undefined) return
+    zoomPageTo(readyCrepe, zoomKey)
+    tellRealZoom(readyCrepe, zoomKey)
+  }, [readyCrepe, zoomKey, tellRealZoom])
   useEffect(() => {
     const crepe = readyCrepe
     if (!lineNumbersOn || crepe === null) return
