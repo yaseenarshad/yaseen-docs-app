@@ -715,19 +715,20 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
 
   describe('the menus of ‹ and › (YAZ-3647 E3)', () => {
     const titles = new Map([['/v/trip.md', 'Trip plan'], ['/v/groceries.md', 'Groceries']])
-    const backSteps = [{ index: 2, path: '/v/trip.md', zoom: 'k1:0' }, { index: 1, path: '/v/groceries.md', zoom: null }, { index: 0, path: '/v/trip.md', zoom: 'k9:0' }]
+    // Each row carries its step's id, not its place in the list (YAZ-3678 F4): a close can move the places while the menu is open.
+    const backSteps = [{ id: 41, path: '/v/trip.md', zoom: 'k1:0' }, { id: 17, path: '/v/groceries.md', zoom: null }, { id: 9, path: '/v/trip.md', zoom: 'k9:0' }]
     const zoomLabels = new Map([['k1:0', 'Day 1: Lisbon']])
     const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')]
     const press = (el: HTMLElement, type: string, init: MouseEventInit = {}) => act(() => void el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init })))
 
-    it('a right-click on ‹ lists the steps behind, the nearest first: the page, and " › bullet" when its text is known; a row goes straight there', () => {
+    it('a right-click on ‹ lists the steps behind, the nearest first: the page, and " › bullet" when its text is known; a row goes straight to its step, by id (F4)', () => {
       const onBack = vi.fn()
       const onGoToStep = vi.fn()
       const el = mount({ ...tabs, titles, canBack: true, canForward: false, onBack, onForward: vi.fn(), backSteps, onGoToStep, zoomLabels })
       press(btn(el, 'Back')!, 'contextmenu', { clientX: 10, clientY: 20 })
       expect(rows().map((r) => r.textContent)).toEqual(['Trip plan › Day 1: Lisbon', 'Groceries', 'Trip plan'])
       act(() => rows()[1].click())
-      expect(onGoToStep).toHaveBeenCalledExactlyOnceWith(1)
+      expect(onGoToStep).toHaveBeenCalledExactlyOnceWith(17)
       expect([rows().length, onBack.mock.calls.length]).toEqual([0, 0])
     })
 
@@ -754,7 +755,7 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
     })
 
     it('› lists the steps ahead; with no steps that way, a right-click opens nothing', () => {
-      const el = mount({ ...tabs, titles, canBack: true, canForward: true, onBack: vi.fn(), onForward: vi.fn(), backSteps: [], forwardSteps: [{ index: 4, path: '/v/groceries.md', zoom: null }], onGoToStep: vi.fn(), zoomLabels })
+      const el = mount({ ...tabs, titles, canBack: true, canForward: true, onBack: vi.fn(), onForward: vi.fn(), backSteps: [], forwardSteps: [{ id: 4, path: '/v/groceries.md', zoom: null }], onGoToStep: vi.fn(), zoomLabels })
       press(btn(el, 'Back')!, 'contextmenu')
       expect(rows()).toHaveLength(0)
       press(btn(el, 'Forward')!, 'contextmenu')

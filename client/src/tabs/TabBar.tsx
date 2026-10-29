@@ -67,8 +67,8 @@ export interface TabBarProps {
   /** The steps behind and ahead of the page in front, the nearest first (YAZ-3647 E3): the rows of the menu of ‹ and ›. */
   backSteps?: readonly NavStep[]
   forwardSteps?: readonly NavStep[]
-  /** A row of that menu: straight to the step at `index` of the window's list. */
-  onGoToStep?: (index: number) => void
+  /** A row of that menu: straight to the step with this id (YAZ-3678 F4); a step that is gone by then: nothing. */
+  onGoToStep?: (id: number) => void
   /** Each bullet's crumb text by zoom key (YAZ-3647 E3, E4): a row's " › bullet" and a zoomed tab's tooltip. A key not in it shows the page name alone. */
   zoomLabels?: ReadonlyMap<string, string>
   /**
@@ -161,9 +161,9 @@ const Chevron = ({ d }: { d: string }) => (
  * (YAZ-2655): it stands outside the scroller, so it is on show however far the strip scrolled.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-/** A step of the window's Back list, as the menu of ‹ or › lists it (YAZ-3647 E3). */
+/** A step of the window's Back list, as the menu of ‹ or › lists it (YAZ-3647 E3), by its id (F4): never its place, which a close can move. */
 export interface NavStep {
-  index: number
+  id: number
   path: string
   zoom: string | null
 }
@@ -558,14 +558,14 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
           <div className="ctx-menu__group" role="group">
             {navMenu.steps.map((step) => (
               <button
-                key={step.index}
+                key={step.id}
                 type="button"
                 className="ctx-menu__item"
                 role="menuitem"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   setNavMenu(null)
-                  onGoToStep?.(step.index)
+                  onGoToStep?.(step.id)
                 }}
               >
                 {atBullet(step.path, step.zoom)}

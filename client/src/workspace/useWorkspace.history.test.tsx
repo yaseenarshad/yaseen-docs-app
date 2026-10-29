@@ -187,14 +187,15 @@ describe('the menus of ‹ and › (YAZ-3647 E3)', () => {
     const a = s.active!
     s = run(s, { type: 'zoom', id: a, zoom: 'k1:0' }, { type: 'navigate', path: B }, { type: 'open-new', path: C })
     expect(trail(s)).toBe('a a@k1:0 b [c]')
-    const back = run(s, { type: 'go', index: 1 })
+    const id = (i: number): number => s.history.steps[i].id
+    const back = run(s, { type: 'go', id: id(1) })
     expect([where(back), trail(back)]).toEqual(['a@k1:0', 'a [a@k1:0] b c'])
     expect(back).toEqual(run(s, { type: 'back' }, { type: 'back' }))
-    const ahead = run(back, { type: 'go', index: 3 })
+    const ahead = run(back, { type: 'go', id: id(3) })
     expect([where(ahead), trail(ahead)]).toEqual(['c', 'a a@k1:0 b [c]'])
     // Where you are already, or a step that is not there: no change.
-    expect(run(s, { type: 'go', index: 3 })).toBe(s)
-    expect(run(s, { type: 'go', index: 9 })).toBe(s)
+    expect(run(s, { type: 'go', id: id(3) })).toBe(s)
+    expect(run(s, { type: 'go', id: -1 })).toBe(s)
   })
 })
 
@@ -207,5 +208,87 @@ describe('a step on the preview tab (YAZ-3647 E7)', () => {
     const back = run(s, { type: 'back' })
     expect([back.tabs.length, back.active, back.preview, where(back), trail(back)]).toEqual([1, preview, preview, 'a', '[a] b'])
     expect(where(run(back, { type: 'forward' }))).toBe('b')
+  })
+})
+
+describe('checker findings (YAZ-3675, YAZ-3662, YAZ-3678)', () => {
+  it('F1: Back goes to the step\'s own tab, not to a bullet copy of the page; the copy keeps its zoom, and a drag keeps Forward', () => {
+    let s = onA()
+    const a = s.active!
+    s = run(s, { type: 'open-zoom', id: a, zoom: 'day1:0', background: true }, { type: 'navigate', path: B })
+    const copy = s.tabs.find((t) => t.id !== a)!.id
+    const back = run(s, { type: 'back' })
+    expect([back.active, where(back), tabById(back, copy)!.zoom, trail(back)]).toEqual([a, 'a', 'day1:0', '[a] b'])
+    // The current step names the tab in front: an unrelated change adds no step and keeps Forward.
+    const moved = run(back, { type: 'move', from: 0, to: 1 })
+    expect([trail(moved), moved.history]).toEqual(['[a] b', back.history])
+    expect(where(run(moved, { type: 'forward' }))).toBe('b')
+  })
+
+  it('F1: a step whose tab is gone shows in a tab of its page at that tab\'s own level, and the step then names that tab', () => {
+    let w = onA()
+    const a = w.active!
+    w = run(w, { type: 'open-zoom', id: a, zoom: 'day1:0', background: true }, { type: 'navigate', path: B })
+    const copy = w.tabs.find((t) => t.id !== a)!.id
+    // A list with a step of a tab that is no more (no reducer path leaves one; the walk must still be safe).
+    const odd: WorkspaceState = { ...w, history: { steps: [{ ...w.history.steps[0], tab: 'gone' }, w.history.steps[1]], index: 1 } }
+    const back = run(odd, { type: 'back' })
+    expect([back.active, where(back), back.history.steps[0].tab, back.history.steps[0].zoom]).toEqual([copy, 'a@day1:0', copy, 'day1:0'])
+    expect(run(back, { type: 'move', from: 0, to: 1 }).history).toEqual(back.history)
+  })
+
+  it('F2: two steps that meet after a close keep the NEWER id, under which a code tab kept its place', () => {
+    let s = onA()
+    const a = s.active!
+    s = run(s, { type: 'open-new', path: B })
+    const b = s.active!
+    s = run(s, { type: 'activate', id: a })
+    const keptUnder = stepIdOf(s.history, a)
+    s = run(s, { type: 'navigate', path: C }, { type: 'close', id: b }, { type: 'back' })
+    expect([trail(s), stepIdOf(s.history, a)]).toEqual(['[a] c', keptUnder])
+  })
+
+  it('F6: a quiet new key for a bullet (its text changed) rewrites the old key in every step of that tab on that page', () => {
+    let s = onA()
+    const src = s.active!
+    s = run(s, { type: 'zoom', id: src, zoom: 'lunch:1' }, { type: 'open-zoom', id: src, zoom: 'child:0' })
+    // The 1 s report of the source page comes after the copy is in front.
+    s = run(s, { type: 'zoom', id: src, zoom: 'dinner:0', quiet: true })
+    expect(trail(s)).toBe('a a@dinner:0 [a@child:0]')
+    const back = run(s, { type: 'back' })
+    expect([back.active, tabById(back, src)!.zoom]).toEqual([src, 'dinner:0'])
+    // Two steps of one tab at the same bullet: both take the new key. A step of another tab at that key keeps it.
+    let t = onA()
+    const id = t.active!
+    t = run(t, { type: 'zoom', id, zoom: 'k:0' }, { type: 'open-new', path: B }, { type: 'activate', id }, { type: 'zoom', id, zoom: 'k2:0', quiet: true })
+    expect(trail(t)).toBe('a a@k2:0 b [a@k2:0]')
+  })
+
+  it('F6b: a quiet report names the key it replaces (`from`): that key changes in the tab\'s steps of that page, and the tab follows only when it is still at that key', () => {
+    let s = onA()
+    const id = s.active!
+    s = run(s, { type: 'zoom', id, zoom: 'l1:0' }, { type: 'zoom', id, zoom: 'l2:0' }, { type: 'back' })
+    expect([where(s), trail(s)]).toEqual(['a@l1:0', 'a [a@l1:0] a@l2:0'])
+    // The bullet of l2:0 was renamed just before Back: its report comes now, with the key it replaces.
+    const late = run(s, { type: 'zoom', id, zoom: 'l2x:0', quiet: true, from: { path: A, key: 'l2:0' } })
+    expect([where(late), trail(late)]).toEqual(['a@l1:0', 'a [a@l1:0] a@l2x:0'])
+    expect(where(run(late, { type: 'forward' }))).toBe('a@l2x:0')
+    // The tab still at that key takes the new key too.
+    const at = run(s, { type: 'forward' }, { type: 'zoom', id, zoom: 'l2x:0', quiet: true, from: { path: A, key: 'l2:0' } })
+    expect([where(at), trail(at)]).toEqual(['a@l2x:0', 'a a@l1:0 [a@l2x:0]'])
+    // The tab shows another page now (the report came as A's page went): A's steps change, and the tab keeps its page.
+    const away = run(at, { type: 'navigate', path: B }, { type: 'zoom', id, zoom: 'l1x:0', quiet: true, from: { path: A, key: 'l1:0' } })
+    expect([where(away), trail(away)]).toEqual(['b', 'a a@l1x:0 a@l2x:0 [b]'])
+  })
+
+  it('F4: `go` takes a step id; a row whose step a close removed goes nowhere, and the others still find their step', () => {
+    let s = run(onA(), { type: 'navigate', path: B }, { type: 'open-new', path: C }, { type: 'open-new', path: D })
+    const [, toB, toC] = s.history.steps
+    const closed = run(s, { type: 'close', id: idOf(s, C) })
+    expect(run(closed, { type: 'go', id: toC.id })).toBe(closed)
+    const there = run(closed, { type: 'go', id: toB.id })
+    expect([where(there), trail(there)]).toEqual(['b', 'a [b] d'])
+    s = run(s, { type: 'go', id: s.history.steps[s.history.index].id })
+    expect(trail(s)).toBe('a b c [d]')
   })
 })

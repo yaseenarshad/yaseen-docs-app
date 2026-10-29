@@ -10,6 +10,8 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import { createCrepe, getMarkdownForSave, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, zoomPageTo, type CreateCrepeOptions } from '../createCrepe'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
 import { getZoomedItemPos, itemPosForZoomKey, KEY_SETTLE_MS, ZOOM_ANCESTOR_CLASS, ZOOM_CRUMB_CLASS, ZOOM_CRUMBS_CLASS, ZOOM_HIDDEN_CLASS, zoomKeyAt } from './zoom'
+import { defaultRightPanelIdentity } from '@shared/types'
+import { NO_STEPS, tabById, workspaceReducer, type WorkspaceAction, type WorkspaceState } from '../../workspace/useWorkspace'
 
 const OUTLINE = `Intro paragraph
 
@@ -306,9 +308,6 @@ describe('zoom into a bullet', () => {
 })
 
 describe('the window\'s Back list (YAZ-3647 D2, replaces GRO-2091 A): each zoom goes to the tab; Back comes back quietly', () => {
-  const keyAt = (crepe: Crepe, text: string): string =>
-    crepe.editor.action((ctx) => zoomKeyAt(ctx.get(editorViewCtx).state.doc, posOf(crepe, text) - 2) as string)
-
   it('tells the tab each zoom change (a dot, ⌘., a crumb) with its zoom key, null for the whole page; the browser history is untouched', async () => {
     history.replaceState(null, '', '#/vault/notes.md')
     const onZoom = vi.fn()
@@ -384,13 +383,15 @@ describe('the window\'s Back list (YAZ-3647 D2, replaces GRO-2091 A): each zoom 
     onZoom.mockClear()
     vi.useFakeTimers()
     try {
+      const before = keyAt(crepe, 'L2 a')
       caretIn(crepe, 'L2 a')
       typeText(crepe, 'X')
       typeText(crepe, 'Y')
       vi.advanceTimersByTime(KEY_SETTLE_MS - 1)
       expect(onZoom).not.toHaveBeenCalled()
       vi.advanceTimersByTime(1)
-      expect(onZoom.mock.calls).toEqual([[keyAt(crepe, 'L2 aXY'), true, 'L2 aXY']])
+      // The quiet report names the key it replaces (YAZ-3662 F6b): the old steps of this bullet take the new key.
+      expect(onZoom.mock.calls).toEqual([[keyAt(crepe, 'L2 aXY'), true, 'L2 aXY', before]])
     } finally {
       vi.useRealTimers()
     }
@@ -563,5 +564,68 @@ describe('a page starts drilled in from a page view (YAZ-2951 D1, S1, S7, S21, S
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
     setMarkdown(crepe, OUTLINE)
     expect(zoomedPos(crepe)).toBeNull()
+  })
+})
+
+/**
+ * A quiet key report inside the 1 s window (YAZ-3662 F6b): the real page and the real reducer, wired as App and Editor
+ * wire them. Back moves the tab first, then the page follows its tab (`zoomPageTo`), as the Editor's effect does.
+ */
+const keyAt = (crepe: Crepe, text: string): string =>
+  crepe.editor.action((ctx) => zoomKeyAt(ctx.get(editorViewCtx).state.doc, posOf(crepe, text) - 2) as string)
+
+describe('a renamed bullet\'s key reaches its steps when the level changes or the page goes within 1 s (YAZ-3662 F6b)', () => {
+  const A = '/v/a.md'
+  const B = '/v/b.md'
+  const EMPTY: WorkspaceState = { tabs: [], active: null, mounted: [], history: NO_STEPS, preview: null, blank: false, rightPanel: defaultRightPanelIdentity(), rightMounted: [], rightHistory: {} }
+  /** A window on A and its page, each zoom report going to the reducer for the tab of A. */
+  async function windowOnA() {
+    const w = { s: workspaceReducer(EMPTY, { type: 'reset', tabs: [{ path: A }], active: A }) }
+    const id = w.s.active!
+    const dispatch = (a: WorkspaceAction) => (w.s = workspaceReducer(w.s, a))
+    const onZoom = (zoom: string | null, quiet: boolean, _label: string | null, from?: string | null) =>
+      dispatch({ type: 'zoom', id, zoom, ...(quiet ? { quiet: true as const } : {}), ...(from === undefined ? {} : { from: { path: A, key: from } }) })
+    const page = await mount(OUTLINE, { zoom: { title: () => 'Notes', onZoom } })
+    return { w, id, dispatch, onZoom, ...page }
+  }
+  const follow = (crepe: Crepe, w: { s: WorkspaceState }, id: string) => zoomPageTo(crepe, tabById(w.s, id)!.zoom ?? null)
+
+  it('rename the zoomed bullet, press Back within 1 s, press Forward: the renamed bullet shows', async () => {
+    const { w, id, dispatch, crepe, root } = await windowOnA()
+    clickGlyph(root, 'L1 a')
+    clickGlyph(root, 'L2 a')
+    vi.useFakeTimers()
+    try {
+      caretIn(crepe, 'L2 a')
+      typeText(crepe, 'X')
+      vi.advanceTimersByTime(KEY_SETTLE_MS / 2)
+      dispatch({ type: 'back' })
+      follow(crepe, w, id)
+      vi.advanceTimersByTime(KEY_SETTLE_MS)
+      dispatch({ type: 'forward' })
+      follow(crepe, w, id)
+      expect(tabById(w.s, id)!.zoom).toBe(keyAt(crepe, 'L2 aX'))
+      expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 aX') - 2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rename it, open another page in the same tab within 1 s, then press Back: the renamed bullet shows', async () => {
+    const { w, id, dispatch, crepe, root } = await windowOnA()
+    clickGlyph(root, 'L2 a')
+    caretIn(crepe, 'L2 a')
+    typeText(crepe, 'X')
+    const text = getMarkdownForSave(crepe)
+    dispatch({ type: 'navigate', path: B })
+    // The page of A unmounts with the tab's new page: its editor goes.
+    const gone = mounted.findIndex((m) => m.crepe === crepe)
+    const [old] = mounted.splice(gone, 1)
+    await old.crepe.destroy()
+    old.root.remove()
+    dispatch({ type: 'back' })
+    const again = await mount(text, { zoom: { title: () => 'Notes', startKey: tabById(w.s, id)!.zoom ?? null } })
+    expect(tabById(w.s, id)!.zoom).toBe(keyAt(again.crepe, 'L2 aX'))
+    expect(zoomedPos(again.crepe)).toBe(posOf(again.crepe, 'L2 aX') - 2)
   })
 })

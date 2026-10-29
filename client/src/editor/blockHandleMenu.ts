@@ -30,7 +30,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { bulletDotTarget, handleTargetPos, isOwnHandleGrab, type HandleTarget } from './blockHandleTarget'
+import { bulletDotTarget, handleTargetPos, isOwnHandleGrab, isTaskBox, type HandleTarget } from './blockHandleTarget'
 
 export interface MenuRow {
   kind?: 'row'
@@ -355,6 +355,13 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           const onMouseUp = (e: MouseEvent) => {
             if (rightGrab(e)) e.stopImmediatePropagation()
           }
+          // A right press on a task's box ticks nothing (YAZ-3684 F7). Crepe's list item toggles the task on `pointerdown`
+          // for every button; stopped here, at document capture, before it gets there. No preventDefault: the mousedown and
+          // the contextmenu still come. On macOS a ⌃-click is a right-click too (F7b). Only a plain (left) press ticks the task.
+          const onPointerDown = (e: MouseEvent) => {
+            const right = e.button !== 0 || (e.ctrlKey && /Mac/.test(navigator.platform))
+            if (right && isTaskBox(view, e.target)) e.stopImmediatePropagation()
+          }
           const onContextMenu = (e: MouseEvent) => {
             // The 6-dot handle, or a bullet's own dot (YAZ-3646 D8): the same menu, for that bullet.
             const onHandle = isOwnHandleGrab(view, e.target)
@@ -387,6 +394,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             next.focus({ preventScroll: true })
           }
 
+          document.addEventListener('pointerdown', onPointerDown, true)
           document.addEventListener('mousedown', onMouseDown, true)
           document.addEventListener('mouseup', onMouseUp, true)
           document.addEventListener('contextmenu', onContextMenu, true)
@@ -399,6 +407,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
               if (v.state.doc !== prevState.doc) close()
             },
             destroy: () => {
+              document.removeEventListener('pointerdown', onPointerDown, true)
               document.removeEventListener('mousedown', onMouseDown, true)
               document.removeEventListener('mouseup', onMouseUp, true)
               document.removeEventListener('contextmenu', onContextMenu, true)

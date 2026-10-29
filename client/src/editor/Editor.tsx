@@ -48,6 +48,7 @@ import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
 import { usePageSwitch } from './usePageSwitch'
 import type { ZoomStep } from '@shared/types'
+import type { ZoomFrom } from '../workspace/useWorkspace'
 import type { CodeSettingsPatch } from '../code/codeSettings'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
@@ -180,7 +181,7 @@ interface EditorProps {
    * The page zoomed (YAZ-3647 D2): a Back step for tab `tabId`, unless `quiet` (the page started at that level). `label` is
    * the bullet's crumb text, for the Back list's menu and the tab's tooltip (E3, E4). Stable: App's one callback.
    */
-  onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void
+  onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null, from?: ZoomFrom) => void
   /**
    * "Open in new tab", ⌘- and ⇧-click on a bullet's dot or a crumb (YAZ-3646 D10, D11, YAZ-3647 E2): that level in a copy of
    * tab `tabId`; null is the whole page (the title crumb). Stable, as `onZoom`.
@@ -376,7 +377,7 @@ function CrepeHost({
   startView?: PageView
   tabId?: string
   zoomKey?: string | null
-  onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void
+  onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null, from?: ZoomFrom) => void
   onOpenBullet?: (tabId: string, zoom: string | null, background: boolean, label: string | null) => void
   diagramDarkColors: DiagramDarkColors
   hoverLinks: boolean
@@ -616,9 +617,16 @@ function CrepeHost({
     // A copied page starts with its source's LIVE folds (YAZ-2951 S2), never the ones another copy stored last.
     const start = startViewRef.current
     // A zoom of this page, to its tab (YAZ-3647 D2). A page with no tab (the right panel, a review) tells no one.
-    const reportZoom = (zoom: string | null, quiet: boolean, label: string | null) => {
+    // A quiet report names the key it replaces on this page (YAZ-3662 F6b): it may come after a Back, or as the page goes.
+    const reportZoom = (zoom: string | null, quiet: boolean, label: string | null, from?: string | null) => {
       const { tabId: id, onZoom: tell } = tabRef.current
-      if (id !== undefined) tell?.(id, zoom, quiet, label)
+      if (id !== undefined) tell?.(id, zoom, quiet, label, from === undefined ? undefined : { path: file.path, key: from })
+    }
+    // The tab's key must match what the page shows (YAZ-3676 F3): after a path that moves the page by itself, the
+    // tab learns the real level, quietly. The same level tells nothing.
+    const reportRealZoom = () => {
+      const now = getZoomKeyOf(crepe)
+      if (now !== (zoomKeyRef.current ?? null)) reportZoom(now, true, getZoomLabelOf(crepe), zoomKeyRef.current ?? null)
     }
     const startFolds = start?.folds ?? storage.getFolds(root, file.path)
     let bulletFoldKeys: readonly string[] = startFolds.filter((k) => !k.startsWith('h:'))
@@ -738,6 +746,10 @@ function CrepeHost({
       const buf = takeRenameBuffer(file.path)
       if (buf !== null && buf.body !== body) {
         setMarkdown(crepe, buf.body)
+        // A rebuilt state starts zoomed out: back to the tab's bullet, as a rebuild from disk does (E1). A rename keeps
+        // its zoom (YAZ-3676 F3); a bullet the buffer does not have stays zoomed out, and the report below says so.
+        const key = zoomKeyRef.current ?? start?.zoomKey ?? null
+        if (key !== null) zoomPageTo(crepe, key)
         controller.update(getMarkdownForSave(crepe))
       }
       // A copy that starts drilled in (YAZ-2951 D1) has its caret in a hidden block: into the bullet
@@ -745,7 +757,7 @@ function CrepeHost({
       // Its tab learns the level it really started at: the bullet may be gone, and then the page shows whole (YAZ-3647 D2).
       if (zoomKeyRef.current ?? start?.zoomKey) {
         moveCaretIntoZoom(crepe)
-        reportZoom(getZoomKeyOf(crepe), true, getZoomLabelOf(crepe))
+        reportZoom(getZoomKeyOf(crepe), true, getZoomLabelOf(crepe), zoomKeyRef.current ?? null)
       }
       // The mount's caret grab (⚡ YAZ-888) YIELDS to the sidebar walk (YAZ-921): a page opened
       // while focus stands on a tree row is a PREVIEW — stealing the caret would strand the
@@ -778,6 +790,8 @@ function CrepeHost({
       if (cancelled) return
       const split = splitFrontmatter(fresh.content)
       applyExternalMarkdown(crepe, split.body)
+      // A rebuild makes new plugin views, so the zoom's settle timer is gone: a bullet the rewrite removed is told here (YAZ-3676 F3).
+      reportRealZoom()
       markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter, split.body)
       setDisk(fresh.content)
       diskLanded()
@@ -877,9 +891,14 @@ function CrepeHost({
     }
   }, [lineNumbersOn, readyCrepe, autosave.status, diskLandings, diskParts, onNotice])
   // Back and Forward move a tab to a step's level (YAZ-3647 D2): the page follows its tab. The same level is no change.
+  // A key that is no longer found shows the whole page, and the tab learns that, quietly (YAZ-3676 F3).
   useEffect(() => {
-    if (readyCrepe !== null && crepeRef.current === readyCrepe && zoomKey !== undefined) zoomPageTo(readyCrepe, zoomKey)
-  }, [readyCrepe, zoomKey])
+    if (readyCrepe === null || crepeRef.current !== readyCrepe || zoomKey === undefined) return
+    zoomPageTo(readyCrepe, zoomKey)
+    const now = getZoomKeyOf(readyCrepe)
+    const { tabId: id, onZoom: tell } = tabRef.current
+    if (now !== zoomKey && id !== undefined) tell?.(id, now, true, getZoomLabelOf(readyCrepe), { path: file.path, key: zoomKey })
+  }, [readyCrepe, zoomKey, file.path])
   useEffect(() => {
     const crepe = readyCrepe
     if (!lineNumbersOn || crepe === null) return

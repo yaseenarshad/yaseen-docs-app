@@ -22,6 +22,12 @@ export interface HandleTarget {
   inside: number
 }
 
+/** A task's checkbox in this editor (YAZ-3684 F7): the `.label-wrapper` of a task item. Another editor's box is not this one's. */
+export function isTaskBox(view: EditorView, t: EventTarget | null): boolean {
+  const box = t instanceof Element ? t.closest('.label-wrapper') : null
+  return box !== null && view.dom.contains(box) && box.querySelector('.label.checked, .label.unchecked') !== null
+}
+
 /**
  * A right-click on a bullet's own dot (YAZ-3646 D8): its list item, as the handle would point at it. A task's
  * checkbox is no dot (its click toggles the task), and another editor's dot is not this one's.

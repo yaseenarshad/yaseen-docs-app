@@ -88,9 +88,29 @@ export function dirtyPaths(): string[] {
   return [...handles].filter(([, set]) => [...set].some((h) => (h.dirty?.() ?? h.capture() !== null))).map(([path]) => path)
 }
 
-/** Flush every editor open at `path` — the pre-rename step (a) and the pre-rewrite step. */
+/** The flushes under way, by path (YAZ-3685 F5): a read of that path waits for them (`savedFirst`). */
+const flushing = new Map<string, Promise<void>>()
+
+/** Flush every editor open at `path` — the pre-rename step (a), the pre-rewrite step, and a switch between two copies. */
 export function flushRenamedPath(path: string): Promise<void> {
-  return Promise.all(handlesAt(path).map((handle) => handle.flush())).then(() => undefined)
+  const done = Promise.all(handlesAt(path).map((handle) => handle.flush())).then(() => undefined)
+  // Recorded until it settles, so a copy that opens now reads the text it is saving, not the older file (F5).
+  const all = Promise.all([flushing.get(path), done]).then(noop, noop)
+  flushing.set(path, all)
+  void all.then(() => {
+    if (flushing.get(path) === all) flushing.delete(path)
+  })
+  return done
+}
+
+const noop = (): void => undefined
+
+/**
+ * The flush of `path` under way, or null when there is none (YAZ-3685 F5): `useFile` reads after it, so a bullet's new
+ * tab or a "Duplicate tab" opened within the autosave delay finds the source's unsaved typing on disk. Disk stays the truth.
+ */
+export function savedFirst(path: string): Promise<void> | null {
+  return flushing.get(path) ?? null
 }
 
 /**
@@ -175,4 +195,5 @@ export function retireDeletedDir(dir: string): void {
 export function _resetRenameContinuity(): void {
   handles.clear()
   buffers.clear()
+  flushing.clear()
 }

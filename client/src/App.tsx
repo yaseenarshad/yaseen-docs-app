@@ -79,7 +79,7 @@ import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import type { PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
-import { nearSteps, stepIdOf, tabById, tabOf, useWorkspace } from './workspace/useWorkspace'
+import { nearSteps, stepIdOf, tabById, tabOf, useWorkspace, type ZoomFrom } from './workspace/useWorkspace'
 import { restoreSession } from './workspace/restoreSession'
 import { Welcome } from './Welcome'
 
@@ -1469,9 +1469,9 @@ export function App() {
     if (zoom === null || label === null) return
     setZoomLabels((labels) => (labels.get(zoom) === label ? labels : new Map(labels).set(zoom, label)))
   }, [])
-  const zoomTabLabelled = useCallback((id: string, zoom: string | null, quiet: boolean, label: string | null) => {
+  const zoomTabLabelled = useCallback((id: string, zoom: string | null, quiet: boolean, label: string | null, from?: ZoomFrom) => {
     learnZoomLabel(zoom, label)
-    zoomTab(id, zoom, quiet)
+    zoomTab(id, zoom, quiet, from)
   }, [zoomTab, learnZoomLabel])
   /**
    * A bullet in a new tab (YAZ-3646 D11): the copy starts at that bullet, with the source's folds and text size, at the top.
@@ -1480,6 +1480,10 @@ export function App() {
   const openBulletTab = useCallback((id: string, zoom: string | null, background: boolean, label: string | null) => {
     learnZoomLabel(zoom, label)
     const view = readPageView(id)
+    // The source saves its unsaved typing first, and the copy reads the file after that save (YAZ-3685 F5, `useFile`):
+    // the bullet just typed is on disk, so the copy finds it. In front the switch to the copy starts this save too.
+    const source = tabById(now.current, id)
+    if (source !== null) void flushRenamedPath(source.path)
     const copy = openZoom(id, zoom, background)
     if (copy !== null && view !== undefined) startView.set(copy, { ...view, zoomKey: zoom, scrollTop: 0 })
   }, [openZoom, startView, learnZoomLabel])
@@ -2971,8 +2975,8 @@ export function App() {
               canForward={canForward}
               onBack={back}
               onForward={forward}
-              backSteps={nearSteps(tabHistory, -1).map(({ index, step }) => ({ index, path: step.path, zoom: step.zoom }))}
-              forwardSteps={nearSteps(tabHistory, 1).map(({ index, step }) => ({ index, path: step.path, zoom: step.zoom }))}
+              backSteps={nearSteps(tabHistory, -1).map(({ step }) => ({ id: step.id, path: step.path, zoom: step.zoom }))}
+              forwardSteps={nearSteps(tabHistory, 1).map(({ step }) => ({ id: step.id, path: step.path, zoom: step.zoom }))}
               onGoToStep={goToStep}
               zoomLabels={zoomLabels}
               onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}

@@ -482,4 +482,41 @@ describe("a bullet's own dot (YAZ-3646 D8, D9)", () => {
     contextmenu(noTab.dot('Two'))
     expect(itemsOf(noTab.view).map((b) => b.textContent)).toEqual(['Number children'])
   })
+
+  it('F7 (YAZ-3684): a right press on a task\'s box does not tick it; a plain (left) press still does', async () => {
+    const { view, dot } = await mountList(vi.fn())
+    const press = (button: number) => {
+      const box = dot('Task')
+      box.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button, buttons: button === 2 ? 2 : 1 }))
+      box.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button }))
+      if (button === 2) box.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button }))
+    }
+    const checked = () => {
+      let state: unknown = null
+      view.state.doc.descendants((node) => {
+        if (node.type.name === 'list_item' && node.textContent === 'Task') state = node.attrs.checked
+      })
+      return state
+    }
+    press(2)
+    expect([checked(), popupOf(view)]).toEqual([false, null])
+    press(0)
+    expect(checked()).toBe(true)
+  })
+
+  it('F7b (YAZ-3694): on macOS a ⌃-click on a task\'s box is a right-click: it does not tick the task', async () => {
+    const { view, dot } = await mountList(vi.fn())
+    const box = dot('Task')
+    const ticked = () => {
+      let state: unknown = null
+      view.state.doc.descendants((node) => {
+        if (node.type.name === 'list_item' && node.textContent === 'Task') state = node.attrs.checked
+      })
+      return state
+    }
+    expect(navigator.platform).toMatch(/Mac/) // test-setup.ts
+    box.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, buttons: 1, ctrlKey: true }))
+    box.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 0, ctrlKey: true }))
+    expect(ticked()).toBe(false)
+  })
 })

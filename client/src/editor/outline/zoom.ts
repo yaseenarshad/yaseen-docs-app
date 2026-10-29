@@ -56,8 +56,10 @@ export interface ZoomOptions {
   /**
    * Each user-driven zoom change, to the page's tab (YAZ-3647 D2): the zoom key, null the whole page. Absent: the right
    * panel, a review. `label` is the bullet's crumb text, for the Back list's menu and the tab's tooltip (E3, E4).
+   * `from` (a quiet key report only, YAZ-3662 F6b): the key this report replaces, the one the page last reported or
+   * was set to, so the tab's steps at that key take the new one even after a Back or as the page goes.
    */
-  onZoom?: (zoom: string | null, quiet: boolean, label: string | null) => void
+  onZoom?: (zoom: string | null, quiet: boolean, label: string | null, from?: string | null) => void
   /**
    * ⌘-click (behind) and ⇧-click (in front) on a dot or a crumb, and "Open in new tab" (YAZ-3646 D8, D10, YAZ-3647 E2):
    * that level in a new tab; null is the whole page (the title crumb). Absent: no tab to copy.
@@ -77,6 +79,8 @@ interface ZoomState {
    * view action. `undefined` = nothing to revert; `null` = revert to zoomed-out.
    */
   undoLevel: ZoomLevel | undefined
+  /** How many level changes (zoom transactions) this state has seen: a mapped position is no level change (YAZ-3662 F6b). */
+  changes: number
 }
 
 /** A zoom level: position of the zoomed list_item, or `null` = zoomed out. Also the plugin's transaction meta. */
@@ -349,13 +353,13 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen }: Zo
           init: (_config, state) => {
             const key = pendingStartKey
             pendingStartKey = null
-            return { itemPos: key === null ? null : itemPosForZoomKey(state.doc, key), onZoom, onOpen, undoLevel: undefined }
+            return { itemPos: key === null ? null : itemPosForZoomKey(state.doc, key), onZoom, onOpen, undoLevel: undefined, changes: 0 }
           },
           apply: (transaction, previous, _oldState, newState) => {
             const meta: ZoomLevel | undefined = transaction.getMeta(pluginKey)
             if (meta !== undefined) {
               // ⌘Z-revertible while it is the latest view action; the revert itself consumes it.
-              return { ...previous, itemPos: meta, undoLevel: transaction.getMeta(UNDO_META) ? undefined : previous.itemPos }
+              return { ...previous, itemPos: meta, undoLevel: transaction.getMeta(UNDO_META) ? undefined : previous.itemPos, changes: previous.changes + 1 }
             }
             let { itemPos, undoLevel } = previous
             // A newer view action of another kind — a bullet or heading fold (YAZ-1140) — owns ⌘Z now (viewActions.ts).
@@ -378,17 +382,45 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen }: Zo
           },
         },
         // The zoomed bullet's key is its text (YAZ-3646 D14): edit its first line, or delete it, and the tab must
-        // store the new key. Told quietly once typing stops; per keystroke only a timer moves.
-        view: () => {
+        // store the new key. Told quietly once typing stops; per keystroke only a timer moves. Each report names the
+        // key it replaces (`from`, YAZ-3662 F6b). A report still waiting goes AT ONCE, with the key before the change,
+        // when the level changes (a zoom, ⌘Z, Back and Forward through `zoomToKey`) and when the view goes (the tab
+        // shows another page, closes, or the page is rebuilt): else it would read the new level, or be lost.
+        view: (editorView) => {
           let timer: number | undefined
+          /** The last state this view saw: on destroy, `view.state` may be the rebuilt state already. */
+          let seen = editorView.state
+          /** The key the page last reported or was set to (F6b). */
+          let lastKey = getZoomKey(seen)
+          const report = (state: EditorState) => {
+            window.clearTimeout(timer)
+            timer = undefined
+            const key = getZoomKey(state)
+            const from = lastKey
+            lastKey = key
+            // The same key: nothing to tell (typing in a child, or the text came back).
+            if (key !== from) onZoom?.(key, true, getZoomLabel(state), from)
+          }
+          const flush = (state: EditorState) => {
+            if (timer !== undefined) report(state)
+          }
           return {
             update: (view, prev) => {
+              // A level change: the waiting report first, at the old level. A doc change that comes with it is the
+              // editor's own (a trailing paragraph), not typing, so it starts no timer.
+              if (pluginKey.getState(view.state)?.changes !== pluginKey.getState(prev)?.changes) {
+                flush(prev)
+                lastKey = getZoomKey(view.state)
+                seen = view.state
+                return
+              }
+              seen = view.state
               const zoomed = getZoomedItemPos(view.state) !== null || getZoomedItemPos(prev) !== null
               if (onZoom === undefined || view.state.doc === prev.doc || !zoomed) return
               window.clearTimeout(timer)
-              timer = window.setTimeout(() => onZoom(getZoomKey(view.state), true, getZoomLabel(view.state)), KEY_SETTLE_MS)
+              timer = window.setTimeout(() => report(seen), KEY_SETTLE_MS)
             },
-            destroy: () => window.clearTimeout(timer),
+            destroy: () => flush(seen),
           }
         },
         props: {
