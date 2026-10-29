@@ -69,6 +69,7 @@ import { referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
 import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import type { HotkeyAside } from '@shared/keys'
 import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
 import { contentVersion } from './contentVersion'
@@ -167,6 +168,8 @@ export interface DrawingSurfaceProps {
    * and the canvas panel's ⌘F / ⌘C follow them. Omitted = the defaults.
    */
   hotkeys?: HotkeyOverrides
+  /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
+  hotkeysAside?: HotkeyAside
 }
 
 /**
@@ -229,6 +232,7 @@ export function ExcalidrawSurface({
   autoFocus = false,
   readOnly = false,
   hotkeys,
+  hotkeysAside,
 }: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
   /** The canvas panel is the tab's (see the module doc); read once, so a surface never changes mode. */
@@ -283,8 +287,8 @@ export function ExcalidrawSurface({
   hotkeysRef.current = hotkeys
   // The engine's `keyBindings` (YAZ-3564 K5), rebuilt only when a DRAWING key moved: a fresh identity on every
   // settings write would re-render the memoized `<Excalidraw>` for nothing (the #185 rule).
-  const drawingKeys = drawingKeysKey(hotkeys)
-  const keyBindings = useMemo(() => drawingKeyBindings(hotkeysRef.current), [drawingKeys]) // eslint-disable-line react-hooks/exhaustive-deps -- keyed on the drawing changes alone
+  const drawingKeys = drawingKeysKey(hotkeys, hotkeysAside)
+  const keyBindings = useMemo(() => JSON.parse(drawingKeys) as ReturnType<typeof drawingKeyBindings>, [drawingKeys])
 
   /** What the engine is believed to hold (see the anti-ping-pong note in the module doc). */
   const appliedRef = useRef<CanvasPrefs>(canvasPrefs)

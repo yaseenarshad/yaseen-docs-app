@@ -3,6 +3,7 @@ import type { ReviewSettings } from '@shared/reviews'
 import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import type { HotkeyAside } from '@shared/keys'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { createDrawing } from '../drawings/createDrawing'
@@ -196,9 +197,11 @@ interface EditorProps {
   previewScope?: (path: string) => PreviewScope
   /** `settings.hotkeys` (YAZ-3564): the keys the user changed, for the editors that follow them. Absent → the defaults. */
   hotkeys?: HotkeyOverrides
+  /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
+  hotkeysAside?: HotkeyAside
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope, hotkeys }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope, hotkeys, hotkeysAside }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -244,7 +247,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     // commands are dispatched on), so nothing wraps it here.
     return (
       <Suspense fallback={<section className="editor" />}>
-        <DrawingEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onChangeCanvasPrefs} canvasPanel={canvasPanel} onCanvasPanelChange={onChangeCanvasPanel} onNotice={onNotice} hotkeys={hotkeys} />
+        <DrawingEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onChangeCanvasPrefs} canvasPanel={canvasPanel} onCanvasPanelChange={onChangeCanvasPanel} onNotice={onNotice} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
       </Suspense>
     )
   }
@@ -264,11 +267,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
 }
 
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, diagramDarkColors = 'adapt', hoverLinks = false, hoverBacklinks = false, previewScope, hotkeys }: EditorProps) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, diagramDarkColors = 'adapt', hoverLinks = false, hoverBacklinks = false, previewScope, hotkeys, hotkeysAside }: EditorProps) {
   const state = useFile(path)
   const titles = usePathTitles(wikilinks)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
@@ -277,7 +280,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} />
+        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
       )}
     </section>
   )
@@ -320,6 +323,7 @@ function CrepeHost({
   hoverBacklinks,
   previewScope,
   hotkeys,
+  hotkeysAside,
 }: {
   root: string
   file: FileResponse
@@ -354,6 +358,8 @@ function CrepeHost({
   previewScope?: (path: string) => PreviewScope
   /** `settings.hotkeys` (YAZ-3564): an embedded drawing's keys as the user set them. */
   hotkeys?: HotkeyOverrides
+  /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
+  hotkeysAside?: HotkeyAside
 }) {
   // A copied page starts at its source's text size (YAZ-2951 S5); after that it changes on its own.
   const [documentZoom, setDocumentZoom] = useState(startView?.magnification ?? 100)
@@ -896,7 +902,7 @@ function CrepeHost({
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the
           appearance is App's already-resolved one, read once (`appliedTheme`). */}
       {openDrawing !== null && (
-        <DrawingModal key={openDrawing} root={root} target={openDrawing} theme={appliedTheme()} feed={drawingFeed} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} />
+        <DrawingModal key={openDrawing} root={root} target={openDrawing} theme={appliedTheme()} feed={drawingFeed} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
       )}
       {/* The image lightbox (YAZ-1656) — the same modal-beside-the-editor shape as the drawing
           modal, opened by the node view's double-click with the whole gallery (every image on

@@ -81,10 +81,18 @@ describe('the drawing rows (K1, K6)', () => {
 })
 
 describe('the user’s drawing keys as the engine’s keyBindings (K5)', () => {
+  it('lets go of a key an App command holds, so the menu runs it (K3, K9): ⌘K is Search the vault; ⌘D only with Go to your place\'s switch off', () => {
+    const names = (aside?: Record<string, boolean>) => drawingKeyBindings(undefined, aside).map((b) => [b.name, b.keys.length])
+    expect(names()).toEqual([['hyperlink', 0]])
+    expect(names({ 'app.goTo': false })).toEqual([['duplicateSelection', 0], ['hyperlink', 0]])
+    expect(names({ 'app.search': true })).toEqual([])
+  })
+
   it('lists only the changed action and tool rows, each with its defaults and the user’s keys', () => {
-    expect(drawingKeyBindings(undefined)).toEqual([])
+    // Moved off ⌘K, Search the vault takes no drawing key: nothing changed.
+    expect(drawingKeyBindings({ 'app.search': 'CmdOrCtrl+J' })).toEqual([])
     expect(drawingKeyBindings({ 'drawing.saveNow': 'CmdOrCtrl+Alt+S', 'app.search': 'CmdOrCtrl+J' })).toEqual([]) // the app's own, and not a drawing's
-    const [rectangle, duplicate, zoom] = drawingKeyBindings({ 'drawing.duplicate': 'CmdOrCtrl+Alt+D', 'drawing.rectangle': 'M', 'drawing.zoomIn': null })
+    const [rectangle, duplicate, zoom] = drawingKeyBindings({ 'app.search': 'CmdOrCtrl+J', 'drawing.duplicate': 'CmdOrCtrl+Alt+D', 'drawing.rectangle': 'M', 'drawing.zoomIn': null })
     expect(duplicate).toEqual({
       name: 'duplicateSelection',
       defaults: [{ code: 'KeyD', key: 'd', name: 'D', metaKey: true, ctrlKey: false, altKey: false, shiftKey: false }],

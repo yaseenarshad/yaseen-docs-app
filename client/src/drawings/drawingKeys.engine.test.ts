@@ -71,7 +71,7 @@ afterEach(async () => {
 })
 
 /** Mounts the engine on one rectangle, with the bindings `hotkeys` make; `rerender` hands it new ones, live. */
-async function mount(hotkeys: HotkeyOverrides = {}) {
+async function mount(hotkeys: HotkeyOverrides = {}, aside?: Record<string, boolean>) {
   host = document.createElement('div')
   document.body.appendChild(host)
   const root = createRoot(host)
@@ -81,7 +81,7 @@ async function mount(hotkeys: HotkeyOverrides = {}) {
     React.act(() =>
       root.render(
         React.createElement(engine.Excalidraw, {
-          keyBindings: drawingKeyBindings(keys),
+          keyBindings: drawingKeyBindings(keys, aside),
           onExcalidrawAPI: (a: Api | null) => {
             api ??= a
           },
@@ -102,6 +102,16 @@ async function mount(hotkeys: HotkeyOverrides = {}) {
   const select = (on: boolean) => React.act(() => live.updateScene({ appState: { selectedElementIds: on ? { box: true } : {} } }))
   return { api: live, container, down, up, select, rerender: render }
 }
+
+describe('a key an App command takes, in the real engine (K3, K9)', () => {
+  it("with Go to your place's switch off, ⌘D duplicates nothing and stays unhandled, so the menu runs it", async () => {
+    const { api, container, select } = await mount({}, { 'app.goTo': false })
+    await select(true)
+    let handled = false
+    await React.act(() => void (handled = !container.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD', key: 'd', metaKey: true, bubbles: true, cancelable: true }))))
+    expect([api.getSceneElements().length, handled]).toEqual([1, false])
+  })
+})
 
 describe('a moved drawing key in the real engine (K5)', () => {
   it('runs its action on the new key, live, and the old key does nothing', async () => {

@@ -6,7 +6,7 @@
  * (Save now, the canvas panel's tabs) test a keydown against the list here (`pressed`).
  */
 import { fromKeyEvent, parseAccelerator, sameKey, type HotkeyOverrides, type KeyPress } from '@shared/hotkeyBindings'
-import { keyRow, keysOf } from '@shared/keys'
+import { clashesOf, keyRow, keysOf, type HotkeyAside, type KeyRow } from '@shared/keys'
 import { DRAWING_ACTIONS, DRAWING_KEYS } from '@shared/keys/drawing'
 
 /** The engine's `KeyChord` (`keyRemap.ts`); `shared/` and this file name no engine type. */
@@ -76,17 +76,32 @@ export function toEngineChord(accelerator: string): EngineKeyChord | null {
 
 const chords = (keys: readonly string[]): EngineKeyChord[] => keys.flatMap((k) => toEngineChord(k) ?? [])
 
-/** The engine's `keyBindings`: one per CHANGED drawing row that is an action or a tool; [] while nothing changed. */
-export function drawingKeyBindings(overrides: HotkeyOverrides | undefined): EngineKeyBinding[] {
+/**
+ * Whether an App command the user can change holds `key` on a drawing (YAZ-3564 K3, K9): the menu runs it, so the
+ * engine must let the key go. The page sees a key before the menu and the engine takes every key it knows, so a key
+ * it kept would never reach the menu (⌘D with Go to your place's switch off). Code (`appCommandOf`) and draw.io
+ * (`menuChords`) let these keys go the same way. The fixed menu keys (the zoom, the board items) stay the engine's.
+ */
+const menuTakes = (row: KeyRow, key: string, overrides: HotkeyOverrides | undefined, aside: HotkeyAside | undefined): boolean =>
+  clashesOf(row, key, overrides, aside).some((other) => other.scope === 'app' && other.changeable && other.passesToPages !== true)
+
+/**
+ * The engine's `keyBindings`: one per drawing action or tool row the user changed, or whose key an App command
+ * takes (`menuTakes`), with that key left out; [] while nothing changed.
+ */
+export function drawingKeyBindings(overrides: HotkeyOverrides | undefined, aside?: HotkeyAside): EngineKeyBinding[] {
   return DRAWING_KEYS.flatMap((row) => {
     const name = DRAWING_ACTIONS[row.id]
-    if (!row.changeable || typeof name !== 'string' || overrides?.[row.id] === undefined) return []
-    return [{ name, defaults: chords(row.keys), keys: chords(keysOf(row, overrides)) }]
+    if (!row.changeable || typeof name !== 'string') return []
+    const now = keysOf(row, overrides)
+    const free = now.filter((k) => !menuTakes(row, k, overrides, aside))
+    if (overrides?.[row.id] === undefined && free.length === now.length) return []
+    return [{ name, defaults: chords(row.keys), keys: chords(free) }]
   })
 }
 
-/** The drawing changes alone, as one string: a settings write that moved no drawing key keeps the engine's prop. */
-export const drawingKeysKey = (overrides: HotkeyOverrides | undefined): string => JSON.stringify(DRAWING_KEYS.map((row) => overrides?.[row.id]))
+/** The drawing keys as the engine gets them, as one string: a settings write that moves none keeps the engine's prop. */
+export const drawingKeysKey = (overrides: HotkeyOverrides | undefined, aside?: HotkeyAside): string => JSON.stringify(drawingKeyBindings(overrides, aside))
 
 /** Whether a keydown is one of a drawing row's keys now (the app's own keys: Save now, the panel tabs). */
 export function pressed(event: KeyPress, id: string, overrides: HotkeyOverrides | undefined): boolean {

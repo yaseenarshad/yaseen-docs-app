@@ -2438,6 +2438,7 @@ export function App() {
       previewScope: editorPreviewScope,
       // YAZ-3564: the keys the user changed; a drawing follows them at once (K4).
       hotkeys: settings.hotkeys,
+      hotkeysAside: settings.hotkeysAside,
       // Upkeep off (🔒 D7): no settings, so no Reviews section.
       reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
     }

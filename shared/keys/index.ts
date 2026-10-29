@@ -36,6 +36,13 @@ export function stepsAside(row: KeyRow, place: KeyScope, aside: HotkeyAside | un
   return own === undefined ? (row.stepsAsideIn ?? []).includes(place as AsidePlace) : own
 }
 
+/**
+ * Whether an App key wins in `place` at all. The page hears a key before the menu, so an App key wins only where the
+ * editor lets it go: code and draw.io let every menu key go, a drawing only the App commands the user can change
+ * (`drawingKeys.ts`), so a fixed menu key (the zoom, the board items) stays the drawing's. A Mac standard key wins everywhere.
+ */
+const menuWinsIn = (app: KeyRow, place: KeyScope): boolean => place !== 'drawing' || app.changeable || app.macStandard === true
+
 /** The first step of a key: the key itself, or the first of a two-step code key. */
 const firstStep = (key: string): string => key.split(' ')[0]
 
@@ -67,7 +74,7 @@ const POSITION = new Map(ALL_KEYS.map((row, i) => [row, i]))
 
 /**
  * The rows that keep `row` from firing with `key` (K3): a row of the same place with the same key; an App row with
- * it, or with its first step, since on a Mac the menu fires first (unless that App key steps aside in this place, K9);
+ * it, or with its first step, since the editor lets it go to the menu (unless that App key steps aside in this place, K9);
  * and, for an App `key`, every row of a place that holds it, or begins with it. A Mac standard key blocks every place.
  */
 export function clashesOf(row: KeyRow, key: string, overrides: HotkeyOverrides | undefined, aside: HotkeyAside | undefined, rows?: readonly KeyRow[]): KeyRow[] {
@@ -76,8 +83,8 @@ export function clashesOf(row: KeyRow, key: string, overrides: HotkeyOverrides |
     if (other.id === row.id) return false
     const theirs = keysOf(other, overrides)
     if (other.scope === row.scope) return theirs.some((k) => sameKey(k, key))
-    if (other.scope === 'app') return (other.onlyIn === undefined || other.onlyIn.includes(row.scope)) && !stepsAside(other, row.scope, aside) && theirs.some((k) => sameKey(k, firstStep(key)))
-    if (row.scope === 'app') return row.passesToPages !== true && (row.onlyIn === undefined || row.onlyIn.includes(other.scope)) && !stepsAside(row, other.scope, aside) && theirs.some((k) => sameKey(firstStep(k), key))
+    if (other.scope === 'app') return (other.onlyIn === undefined || other.onlyIn.includes(row.scope)) && menuWinsIn(other, row.scope) && !stepsAside(other, row.scope, aside) && theirs.some((k) => sameKey(k, firstStep(key)))
+    if (row.scope === 'app') return row.passesToPages !== true && (row.onlyIn === undefined || row.onlyIn.includes(other.scope)) && menuWinsIn(row, other.scope) && !stepsAside(row, other.scope, aside) && theirs.some((k) => sameKey(firstStep(k), key))
     return false
   })
 }

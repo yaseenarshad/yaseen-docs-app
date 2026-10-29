@@ -39,6 +39,7 @@ import { useCallback, useEffect, useRef, type KeyboardEvent as ReactKeyboardEven
 import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse } from '@shared/types'
 import { unpersistedFiles } from '@shared/drawingAssets'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import type { HotkeyAside } from '@shared/keys'
 import { api } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, exportWithNotice, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
@@ -73,6 +74,8 @@ export interface DrawingEditorProps extends DocumentHostProps {
   onNotice?: (text: string, icon?: NoticeKind) => void
   /** `settings.hotkeys` (YAZ-3564): the drawing keys as the user set them, live. Omitted = the defaults. */
   hotkeys?: HotkeyOverrides
+  /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
+  hotkeysAside?: HotkeyAside
 }
 
 /** A loaded document: the scene the canvas opens on, and the mtime the first save guards with. */
@@ -116,7 +119,7 @@ interface DrawingHostProps extends DrawingEditorProps {
 const FORGET_PANEL = (): void => undefined
 
 /** Mounts exactly one canvas for `loaded`; its board document owns everything that writes. */
-function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, onFailed }: DrawingHostProps) {
+function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, hotkeysAside, onFailed }: DrawingHostProps) {
   const theme = useAppliedTheme()
   /** The latest snapshot; read only when a save fires (see the module doc). */
   const snapshot = useRef<DrawingSnapshot | null>(null)
@@ -267,6 +270,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
           renderTopRight={renderTopRight}
           readOnly={readOnly}
           hotkeys={hotkeys}
+          hotkeysAside={hotkeysAside}
           autoFocus
         />
       </div>

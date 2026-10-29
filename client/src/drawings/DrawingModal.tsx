@@ -45,6 +45,7 @@
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import type { HotkeyAside } from '@shared/keys'
 import { api } from '../api'
 import { setPlaceOverTab } from '../keys/keySheetRequest'
 import { ConflictBar } from '../documents/ConflictBar'
@@ -82,9 +83,11 @@ interface DrawingModalProps {
   onClose: () => void
   /** `settings.hotkeys` (YAZ-3564 K5): the drawing keys as the user set them. Omitted = the defaults. */
   hotkeys?: HotkeyOverrides
+  /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
+  hotkeysAside?: HotkeyAside
 }
 
-export function DrawingModal({ root, target, theme, feed, onClose, hotkeys }: DrawingModalProps) {
+export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside }: DrawingModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState<LoadedDrawing | null>(null)
   const loadedRef = useRef<LoadedDrawing | null>(null)
@@ -320,7 +323,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys }: Dr
         <div className="drawing-modal__canvas">
           {loaded !== null && (
             <Suspense fallback={null}>
-              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} hotkeys={hotkeys} />
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
             </Suspense>
           )}
         </div>
