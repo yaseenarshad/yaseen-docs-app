@@ -1,5 +1,5 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { ClipboardPasteRequest, PropertiesResponse, WatchEvent } from '@shared/types'
+import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
+import type { ClipboardPasteRequest, CopyAsMode, CopyAsRich, PropertiesResponse, WatchEvent } from '@shared/types'
 import { type Bridge, CONTRACT, type Envelope, isLeaf, SPECIAL, type YaseenDocsApi } from '@shared/ipc'
 
 /** invoke + unwrap: resolves the value or rejects with the plain `BridgeError` object. */
@@ -63,19 +63,20 @@ function selectedNativeText(): string {
 }
 
 // No clipboard API crosses contextBridge: only a main-process menu gesture can initiate this path.
-const copyListeners = new Set<(mode: 'plain' | 'markdown') => string | undefined>()
+const copyListeners = new Set<(mode: CopyAsMode) => string | CopyAsRich | undefined>()
 ipcRenderer.on(SPECIAL.menuCopyAs, (_event, mode: unknown) => {
-  if (mode !== 'plain' && mode !== 'markdown') return
-  let text: string | undefined
+  if (mode !== 'plain' && mode !== 'markdown' && mode !== 'visible') return
+  let copied: string | CopyAsRich | undefined
   for (const listener of copyListeners) {
     const selected = listener(mode)
-    if (typeof selected === 'string') {
-      text = selected
+    if (selected !== undefined) {
+      copied = selected
       break
     }
   }
-  text ??= selectedNativeText()
-  if (text !== '') void call<void>(SPECIAL.menuCopyText.channel, text).catch((error: unknown) => console.error('Copy failed', error))
+  copied ??= selectedNativeText()
+  const args = typeof copied === 'string' ? [copied] : [copied.text, copied.html]
+  if (args[0] !== '') void call<void>(SPECIAL.menuCopyText.channel, ...args).catch((error: unknown) => console.error('Copy failed', error))
 })
 
 /** Adds `listener` to `set`; returns its removal. */
@@ -117,7 +118,10 @@ const api: YaseenDocsApi = {
     ...generated.menu,
     onCopyAs: (listener) => listen(copyListeners, listener),
     onPasteAs: (listener) => listen(pasteListeners, listener),
+    edit: (action, word) => call<void>(SPECIAL.menuEdit.channel, ...(word === undefined ? [action] : [action, word])),
   },
+  // The note menu's spelling rows (YAZ-3653): the same spellchecker the native menu asks, in this renderer.
+  spell: { suggestions: (word) => (webFrame.isWordMisspelled(word) ? webFrame.getWordSuggestions(word) : null) },
   properties: {
     ...generated.properties,
     // Main sends `{ root, properties }`; a listener gets the declarations.

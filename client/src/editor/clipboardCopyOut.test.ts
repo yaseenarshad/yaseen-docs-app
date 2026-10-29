@@ -13,9 +13,10 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 import { EditorSelection, EditorState, StateEffect } from '@codemirror/state'
+import type { CopyAsMode, CopyAsRich } from '@shared/types'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
-const copyListeners = new Set<(mode: 'plain' | 'markdown') => string | undefined>()
+const copyListeners = new Set<(mode: CopyAsMode) => string | CopyAsRich | undefined>()
 let originalApi: typeof window.yaseenDocs
 beforeEach(() => {
   originalApi = window.yaseenDocs

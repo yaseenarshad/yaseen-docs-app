@@ -44,6 +44,8 @@ export const NOTE_KEYS: readonly KeyRow[] = [
   note('unfoldAll', 'Unfold all bullets and headings', ['CmdOrCtrl+Shift+I']),
   note('zoomIn', 'Zoom into the bullet at the caret', ['CmdOrCtrl+.']),
   note('zoomOut', 'Zoom out one level', ['CmdOrCtrl+Shift+.']),
+  // YAZ-3653: Edit › Copy as › Without folded lines; no key by default, every free one is some editor's.
+  note('copyVisible', 'Copy without folded lines', [], { hint: 'With the selection inside one line: the bullet there' }),
   // The note's panels.
   note('find', 'Find in the note', ['CmdOrCtrl+F'], { hint: '⏎ / ⇧⏎ next / previous match, Esc closes' }),
   note('toc', 'Table of contents', ['CmdOrCtrl+J'], { hint: '↑ ↓ pick a name, ⏎ goes to it, Esc closes' }),

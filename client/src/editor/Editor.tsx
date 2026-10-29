@@ -12,7 +12,7 @@ import { createDrawingFeed } from '../drawings/drawingFeed'
 import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
 import { FolderView } from '../views/FolderView'
-import { createCrepe, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown } from './createCrepe'
+import { createCrepe, editorViewOf, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
@@ -39,6 +39,7 @@ import { SyncIndicator } from './SyncIndicator'
 import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
 import { PageSettings } from './PageSettings'
 import { ReadOnlyChip } from './ReadOnlyChip'
+import { NoteMenu } from './noteMenu'
 import { ZOOM_EVENT } from './zoomRequest'
 import { fileLines } from './lineNumbers/fileLines'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
@@ -62,7 +63,7 @@ import { storage } from '../lib/storage'
 import { transformFile } from '../views/writeProperty'
 import { PdfViewer } from '../viewers/PdfViewer'
 import { ImageViewer } from '../viewers/ImageViewer'
-import type { NoticeKind } from '../lib/notice'
+import type { NoticeKind, NoticeType } from '../lib/notice'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 
@@ -103,7 +104,7 @@ interface EditorProps {
    */
   onOpenFileBackground?: (path: string) => void
   /** Wiki-link create failures surface here (passive link-notice style); App passes `notify`. A drawing's export says where its file landed. */
-  onNotice?: (message: string, icon?: NoticeKind) => void
+  onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType) => void
   /**
    * Root-relative folder where a bare unresolved `[[link]]` creates its page (C2-, GRO-2240;
    * YAZ-1643): App passes a STABLE getter over the Files & Links setting (`newNoteBase`) that
@@ -332,7 +333,7 @@ function CrepeHost({
   onOpenFile: (path: string) => void
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
-  onNotice?: (message: string, icon?: NoticeKind) => void
+  onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType) => void
   newNoteFolderFor?: (sourcePath: string) => string
   wikilinks?: WikilinkResolveSource
   viewOnlyLinks?: ViewOnlyLinkSource
@@ -652,6 +653,8 @@ function CrepeHost({
       readOnlyKeys: true,
       // The note keys as the user set them (YAZ-3564 K4): read as the note opens, so a change applies to the next one.
       hotkeys: storage.getSettings()?.hotkeys,
+      // Without folded lines says what it left out (YAZ-3653); Settings › Notifications › Clipboard can turn it off.
+      onCopyNotice: onNotice === undefined ? undefined : (text) => onNotice(text, 'copy', 'clipboard'),
     })
     crepeRef.current = crepe
     let controller: ReturnType<typeof attach> | null = null
@@ -892,6 +895,8 @@ function CrepeHost({
       {/* CMD+F (YAZ-969) floats OVER that scroller rather than in it: `section.editor` is the
           positioned ancestor, so the bar holds its corner while the note scrolls under it. */}
       <FindBar channel={findChannel} scope="note" hostRef={hostRef} />
+      {/* The note's own right-click menu (YAZ-3653), in the look of the tab and sidebar menus. */}
+      <NoteMenu view={readyCrepe === null ? null : editorViewOf(readyCrepe)} />
       <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />
       {/* The table of contents (YAZ-2700) floats beside that scroller the same way: at the
           section's right edge, from the scroller's top to its bottom. It draws nothing for a note

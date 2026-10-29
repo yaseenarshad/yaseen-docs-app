@@ -32,11 +32,13 @@
  * window closing or the app quitting runs no unmount, so the close/quit handshake flushes too, from
  * the LIVE document (YAZ-2174).
  */
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import type { Crepe } from '@milkdown/crepe'
 import { applyExternalMarkdown } from '../../editor/external/applyExternalMarkdown'
 import { lockToBullets, outlineFeatures } from '../../editor/outline/bulletsOnly'
-import { createCrepe, getMarkdownForSave } from '../../editor/createCrepe'
+import { createCrepe, editorViewOf, getMarkdownForSave } from '../../editor/createCrepe'
+import { NoteMenu } from '../../editor/noteMenu'
 import { FindBar } from '../../editor/find/FindBar'
 import { storage } from '../../lib/storage'
 import { onWindowFlush } from '../../lib/windowFlush'
@@ -85,6 +87,8 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
   // Mount reads the FIRST markdown; every later one lands as a diff over the live editor (effect below).
   const seedRef = useRef(markdown)
   const crepeRef = useRef<Crepe | null>(null)
+  // The outline's view once it can act, for its right-click menu (YAZ-3653): the note's own.
+  const [view, setView] = useState<EditorView | null>(null)
   /**
    * The last markdown the editor and its caller AGREED on — the seed as Milkdown holds it, the
    * last reported edit, the last applied snapshot. A live document that differs from it is typing
@@ -163,6 +167,7 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
       crepeRef.current = crepe
       knownRef.current = getMarkdownForSave(crepe)
       guard(crepe, seeded.length)
+      setView(editorViewOf(crepe))
     })
 
     // The close/quit handshake: pull the live document past Crepe's ~200ms listener debounce and
@@ -178,6 +183,7 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
     return () => {
       offFlush()
       crepeRef.current = null
+      setView(null)
       if (timer !== null) clearTimeout(timer)
       flush()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
@@ -202,6 +208,7 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
   return (
     <div className="view-outline-editor" ref={hostRef}>
       <FindBar channel={findChannel} scope="outline" hostRef={hostRef} />
+      <NoteMenu view={view} />
     </div>
   )
 }

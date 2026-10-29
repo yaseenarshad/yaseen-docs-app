@@ -11,6 +11,7 @@
  * docs/CONTRACTS.md › Bridge API.
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { CopyAsMode, CopyAsRich, NoteMenuAction } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { SystemHotkey } from './macosHotkeys'
@@ -648,8 +649,10 @@ export const SPECIAL = {
   /** Edit › Copy as / Paste as: the focused editor claims the gesture, else the preload's native fallback answers through the two invokes. */
   menuCopyAs: 'menu:copy-as',
   menuPasteAs: 'menu:paste-as',
-  menuCopyText: invoke<[text: string], void>('menu:copy-text', 1),
+  menuCopyText: invoke<[text: string, html?: string], void>('menu:copy-text', 2),
   menuPasteTextFallback: invoke<[text: string], void>('menu:paste-text-fallback', 1),
+  /** A note's own right-click menu (YAZ-3653): main runs the row on the sending window, as the native menu's roles do. */
+  menuEdit: invoke<[action: NoteMenuAction, word?: string], void>('menu:edit', 2),
 } as const
 
 /** A table's leaves become functions: an invoke resolves its answer, a push subscribes and returns the unsubscribe. */
@@ -673,10 +676,16 @@ export type YaseenDocsApi = Bridge<typeof CONTRACT> & {
     pathFor(file: File): string
   }
   menu: {
-    /** First focused editor returning a string claims copy; empty means no selection. */
-    onCopyAs(listener: (mode: 'plain' | 'markdown') => string | undefined): () => void
+    /** First focused editor returning an answer claims copy; empty text means no selection. `visible` may answer text and HTML. */
+    onCopyAs(listener: (mode: CopyAsMode) => string | CopyAsRich | undefined): () => void
     /** Explicit paste targets the focused editor; return true when handled. */
     onPasteAs(listener: (request: ClipboardPasteRequest) => boolean): () => void
+    /** A row of a note's own right-click menu (YAZ-3653); `word` only for `add-word`. */
+    edit(action: NoteMenuAction, word?: string): Promise<void>
+  }
+  spell: {
+    /** The spellchecker's suggestions for a misspelled `word`, or null when it is spelled right (YAZ-3653). */
+    suggestions(word: string): string[] | null
   }
 }
 

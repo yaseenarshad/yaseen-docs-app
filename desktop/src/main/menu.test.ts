@@ -180,10 +180,11 @@ describe('buildMenuTemplate', () => {
     const items = menuOf(build(RECENTS, false, handlers), 'Edit')
     expect(items.map((i) => i.role ?? i.type ?? i.label)).toEqual(['undo', 'redo', 'separator', 'cut', 'copy', 'Copy as', 'paste', 'Paste as', 'selectAll'])
     const copyModes = items.find((i) => i.label === 'Copy as')?.submenu as MenuItemConstructorOptions[]
-    expect(copyModes.map((i) => [i.label, i.accelerator])).toEqual([['Plain text', undefined], ['Markdown', undefined]])
+    expect(copyModes.map((i) => i.type === 'separator' ? 'separator' : [i.label, i.accelerator])).toEqual([['Plain text', undefined], ['Markdown', undefined], 'separator', ['Without folded lines', undefined]])
     click(copyModes[0])
     click(copyModes[1])
-    expect(vi.mocked(handlers.copyAs).mock.calls).toEqual([['plain'], ['markdown']])
+    click(copyModes[3])
+    expect(vi.mocked(handlers.copyAs).mock.calls).toEqual([['plain'], ['markdown'], ['visible']])
     const modes = items.find((i) => i.label === 'Paste as')?.submenu as MenuItemConstructorOptions[]
     expect(modes.map((i) => [i.label, i.accelerator])).toEqual([['Plain text', 'CmdOrCtrl+Shift+V'], ['Markdown', undefined]])
     click(modes[0])
@@ -447,9 +448,11 @@ describe('buildContextMenuTemplate', () => {
     const items = buildContextMenuTemplate(context(), actions)
     const modes = items.find((i) => i.label === 'Copy as')?.submenu as MenuItemConstructorOptions[]
     expect(modes.every((i) => i.accelerator === undefined)).toBe(true)
+    expect(modes.map((i) => i.label ?? i.type)).toEqual(['Plain text', 'Markdown', 'separator', 'Without folded lines'])
     click(modes[0])
     click(modes[1])
-    expect(vi.mocked(actions.copyAs).mock.calls).toEqual([['plain'], ['markdown']])
+    click(modes[3])
+    expect(vi.mocked(actions.copyAs).mock.calls).toEqual([['plain'], ['markdown'], ['visible']])
     const disabled = buildContextMenuTemplate(context({ editFlags: { ...EDIT_FLAGS, canCopy: false } }), actions)
     expect(disabled.find((i) => i.label === 'Copy as')?.enabled).toBe(false)
   })
