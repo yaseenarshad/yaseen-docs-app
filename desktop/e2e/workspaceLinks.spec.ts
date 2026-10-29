@@ -98,6 +98,26 @@ test('step 1c — words typed right after a pill stay and save (YAZ-3655)', asyn
   await expect(editorOf(win)).toContainText('the plan and more')
 })
 
+test('step 1d — find inside a pill shows the find colour, and a cut pill keeps one icon (YAZ-3657, YAZ-3663)', async () => {
+  await win.keyboard.press('Meta+f')
+  await win.locator('.find-bar__input').fill('gym')
+  const active = editorOf(win).locator('.find-match--active')
+  await expect(active).toHaveText('gym')
+  expect(await active.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await win.evaluate(() => {
+    const probe = document.createElement('span')
+    probe.style.background = 'var(--find-match-active-bg)'
+    document.querySelector('.find-match--active')!.parentElement!.appendChild(probe)
+    const colour = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return colour
+  }))
+  // "the gym plan" is cut into three pieces by the match: one icon, on the first.
+  const icons = await editorOf(win).locator('a', { hasText: 'the gym plan' }).locator('.link-pill').evaluateAll((pieces) => pieces.filter((el) => getComputedStyle(el, '::before').content !== 'none').length)
+  expect(icons).toBe(1)
+  await shoot(win, 'workspace-links-01d-find')
+  await win.keyboard.press('Escape')
+})
+
 test('step 2 — a Markdown link into the other vault opens in this tab, and Back returns (D14, D10)', async () => {
   await editorOf(win).locator('a', { hasText: 'the gym plan' }).click()
   await expect(activeTab(win)).toHaveText('Plan')

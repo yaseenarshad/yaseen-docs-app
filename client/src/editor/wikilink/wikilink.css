@@ -40,6 +40,31 @@
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
 }
+/* A pill that find cuts into pieces stays one box with one icon (YAZ-3663): each piece carries the pill's
+   attributes, so a piece right after another piece of the same link draws no icon and no left edge, and a
+   piece with one after it no right edge. Two links are never side by side: hidden `]]`/`[[`, or two anchors. */
+.wikilink + .wikilink {
+  padding-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.wikilink:has(+ .wikilink) {
+  padding-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+/* The sidebar's icon rules (app.css) are far more specific; only `!important` hides their `::before` here. */
+.wikilink + .wikilink::before {
+  content: none !important;
+  display: none !important;
+}
+/* A find match inside a pill shows the find colour over the pill's tint (YAZ-3657). */
+.wikilink.find-match {
+  background: var(--find-match-bg);
+}
+.wikilink.find-match--active {
+  background: var(--find-match-active-bg);
+}
 
 /* Target not in the vault index — dimmed, Obsidian-style. */
 .wikilink--unresolved {
