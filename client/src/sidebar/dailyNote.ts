@@ -33,9 +33,10 @@ export function findDailyNote(records: readonly IndexRecord[], folder: string, t
  * when it stands. The template is the daily notes folder's `.template.md`, in a day folder too (D6). Never over a file:
  * `createFile` refuses one (`ALREADY_EXISTS`).
  */
-export async function makeDailyNote(vault: string, settings: DailyNoteSettings, title: string, ids: boolean, tree: readonly TreeNode[]): Promise<string> {
+export async function makeDailyNote(vault: string, vaultName: string, settings: DailyNoteSettings, title: string, ids: boolean, tree: readonly TreeNode[]): Promise<string> {
   const root = placePath(vault, settings.dailyNoteFolder)
-  if (root !== vault && findDirNode(tree, root) === null) throw new Error(`no folder "${settings.dailyNoteFolder}" (Settings › Files & Links › Daily notes)`)
+  // The folder is a path in the vault of the tab in front (D2): another vault of the window may hold it, this one does not.
+  if (root !== vault && findDirNode(tree, root) === null) throw new Error(`${vaultName} has no folder "${settings.dailyNoteFolder}". Make it there, or change the daily notes folder in Settings › Files & Links`)
   let dir = root
   if (settings.dailyNoteDayFolder) {
     dir = folderPath(root, title, ids)

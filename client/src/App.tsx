@@ -924,7 +924,7 @@ export function App() {
     const title = todaysDailyNote(now)
     const found = findDailyNote(index.records, now.dailyNoteFolder, title, now.dailyNoteDayFolder)
     const key = [vault, now.dailyNoteFolder, String(now.dailyNoteDayFolder), title].join('\n')
-    if (found === null && dailyMaking.current?.key !== key) dailyMaking.current = { key, note: treeOf(vault).then((tree) => makeDailyNote(vault, now, title, index.ids, tree)) }
+    if (found === null && dailyMaking.current?.key !== key) dailyMaking.current = { key, note: treeOf(vault).then((tree) => makeDailyNote(vault, storage.vaultName(vault), now, title, index.ids, tree)) }
     const making = dailyMaking.current
     void (found !== null ? Promise.resolve(found) : making!.note).then(
       (path) => {
