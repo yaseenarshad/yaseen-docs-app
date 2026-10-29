@@ -5,6 +5,7 @@
  * the id (`2026-10-28-yaz-41.md`). In a vault that does not use IDs the title is the file name, so one rule serves both.
  */
 import { dailyNoteName } from '@shared/dailyNote'
+import { kebabTitle } from '@shared/noteName'
 import type { IndexRecord, SettingsState, TreeNode } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 import { findDirNode } from '../lib/treeState'
@@ -18,13 +19,22 @@ export type DailyNoteSettings = Pick<SettingsState, 'dailyNoteFolder' | 'dailyNo
 export const todaysDailyNote = (settings: DailyNoteSettings, now: Date = new Date()): string => dailyNoteName(settings.dailyNoteFormat, now)
 
 /**
- * The path of the note titled `title` in the daily notes folder `folder` (root-relative), or one level down in a day
- * folder when `dayFolder` is on (D9); null when the vault has none yet. One pass over the records, nothing read from disk.
- * A day folder is matched by where it stands, not by its name, so a renamed day folder still holds its day's note.
+ * The path of the note titled `title` in the daily notes folder `folder` (root-relative), or one level down in its day
+ * folder (D9); null when the vault has none yet. One pass over the records for each layout, nothing read from disk.
+ * Both layouts are asked, the one `dayFolder` names first: "Make a folder for each day" switched in the middle of a day
+ * finds the note made before the switch, never a second one. A day folder carries today's name, as it is made: the
+ * title in a vault without IDs, its kebab-case in one with them (`folderPath`). So a note of that title in another
+ * folder is never today's.
  */
 export function findDailyNote(records: readonly IndexRecord[], folder: string, title: string, dayFolder: boolean): string | null {
-  const inPlace = (at: string) => (dayFolder ? at.slice(0, Math.max(0, at.lastIndexOf('/'))) === folder && at !== folder : at === folder)
-  return records.find((r) => r.title === title && inPlace(r.folder))?.path ?? null
+  const dayNames = new Set([title.trim(), kebabTitle(title)])
+  const flat = (at: string) => at === folder
+  const inDay = (at: string) => {
+    const cut = at.lastIndexOf('/')
+    return (cut === -1 ? '' : at.slice(0, cut)) === folder && at !== folder && dayNames.has(at.slice(cut + 1))
+  }
+  const [first, then] = dayFolder ? [inDay, flat] : [flat, inDay]
+  return (records.find((r) => r.title === title && first(r.folder)) ?? records.find((r) => r.title === title && then(r.folder)))?.path ?? null
 }
 
 /**

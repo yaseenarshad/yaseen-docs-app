@@ -1002,13 +1002,20 @@ export function App() {
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
   // Settings › Daily notes › Open template (YAZ-3607 D6): the daily notes folder's hidden `.template.md`, in a tab. A
   // missing one is made empty first. The sidebar hides a "." file, so this is the way to it. Settings closes first.
+  // The folder is the one the daily note uses: in the first vault of the window that holds it (`dailyNoteVault`).
   const openDailyTemplate = useCallback(() => {
-    const { vault, settings: now } = placeInputs.current
-    if (vault === null) return
-    const path = `${placePath(vault, now.dailyNoteFolder)}/.template.md`
-    void api
-      .readFile(path)
+    const { vaults, settings: now } = placeInputs.current
+    if (vaults.length === 0) return
+    let path = ''
+    void Promise.all(vaults.map(async (root) => ({ root, tree: await treeOf(root) })))
+      .then((trees) => {
+        const vault = dailyNoteVault(trees, now.dailyNoteFolder)
+        if (vault === null) throw new Error(`no vault of this window has the folder "${now.dailyNoteFolder}"`)
+        path = `${placePath(vault, now.dailyNoteFolder)}/.template.md`
+        return api.readFile(path)
+      })
       .catch((err: unknown) => {
+        if (path === '') throw err
         if (!(err instanceof BridgeRequestError && err.code === 'NOT_FOUND')) throw err
         return api.writeFile({ path, content: '' })
       })
@@ -1019,7 +1026,7 @@ export function App() {
         },
         (err: unknown) => notify(`Can't open the daily note template: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
-  }, [notify])
+  }, [treeOf, notify])
 
   // The keys of this tab (YAZ-3564 K11): Help › Keys of This Tab…, its App key, and ? on a drawing (`requestKeySheet`).
   const [keySheetOpen, setKeySheetOpen] = useState(false)
