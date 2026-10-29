@@ -42,6 +42,8 @@ import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { GoToControl } from './GoToControl'
+import { DailyNoteFolderControl, DailyNoteFormatControl } from './DailyNoteControl'
+import { dailyNoteName } from '@shared/dailyNote'
 import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
@@ -105,6 +107,8 @@ export interface SettingsCtx {
   hotkeyFilter?: HotkeyFilter
   /** The window's vaults for the place picker (YAZ-3556 D6), the active tab's first; absent in a window with no vault. */
   places?: readonly PlaceVault[]
+  /** Daily notes › Open template (YAZ-3607): App opens the daily notes folder's `.template.md`, made empty first when missing. Absent with no vault. */
+  openDailyTemplate?: () => void
 }
 
 export interface SettingDef {
@@ -629,10 +633,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               const row = keyRow('app.goTo')
               const keep = key === null || row === undefined ? [] : ASIDE_PLACES.filter((place) => stepsAside(row, place, settings.hotkeysAside))
               const tabs = keep.map((place) => ({ drawing: 'drawings', diagram: 'diagrams', code: 'code' })[place])
-              return `Show in sidebar (${key ?? 'no key'}, File menu) shows this tab, folder or file in the sidebar.${tabs.length > 0 ? ` In ${tabs.join(' and ').replace(/ and (?=.* and )/, ', ')}, ${key} does their own action (Settings › Hotkeys).` : ''}`
+              const daily = settings.goTo.kind === 'daily' ? " Today's daily note opens, and its row shows." : ''
+              return `Show in sidebar (${key ?? 'no key'}, File menu) shows this tab, folder or file in the sidebar.${daily}${tabs.length > 0 ? ` In ${tabs.join(' and ').replace(/ and (?=.* and )/, ', ')}, ${key} does their own action (Settings › Hotkeys).` : ''}`
             },
-            keywords: ['sidebar', 'go to', 'place', 'cmd d', 'shortcut', 'folder', 'file', 'tab', 'focus', 'favorites', 'sessions', 'recents'],
-            wide: ({ settings }) => settings.goTo.kind !== 'tab',
+            keywords: ['sidebar', 'go to', 'place', 'cmd d', 'shortcut', 'folder', 'file', 'tab', 'focus', 'favorites', 'sessions', 'recents', 'daily'],
+            wide: ({ settings }) => settings.goTo.kind === 'folder' || settings.goTo.kind === 'file',
             render: ({ settings, onChange, places }) => <GoToControl settings={settings} onChange={onChange} vaults={places} />,
           },
         ],
@@ -798,6 +803,50 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // A plain label-left / dropdown-right row, until the folder input needs the width.
             wide: ({ settings }) => settings.newNoteLocation === 'folder',
             render: ({ settings, onChange, places }) => <NewNoteLocationControl settings={settings} onChange={onChange} vaults={places} />,
+          },
+        ],
+      },
+      {
+        // YAZ-3607 D8: today's note, for the footer button, File › Open Today's Daily Note and ⌘D on "Today's daily note".
+        // One switch (`dailyNotes`); the other rows show while it is on.
+        title: 'Daily notes',
+        items: [
+          {
+            id: 'dailyNotes',
+            label: 'Daily notes',
+            hint: ({ settings }) => {
+              const key = menuKey('dailyNote', settings)
+              return `One note for each day. The calendar button after the % at the bottom of the sidebar opens today's note, and makes it first when today has none. So does Open Today's Daily Note${key === null ? '' : ` (${key})`} in the File menu.`
+            },
+            keywords: ['daily', 'journal', 'today', 'calendar', 'date', 'cmd d'],
+            render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.dailyNotes} onChange={(dailyNotes) => onChange({ ...settings, dailyNotes })} ariaLabel="Daily notes" />,
+          },
+          {
+            id: 'dailyNoteFolder',
+            label: 'Daily notes folder',
+            hint: 'Each daily note starts from this folder\'s template, a hidden .template.md. "Open template" shows it, and makes an empty one first when there is none.',
+            keywords: ['daily', 'folder', 'template', 'journal'],
+            available: ({ settings }) => settings.dailyNotes,
+            wide: () => true,
+            render: ({ settings, onChange, places, openDailyTemplate }) => <DailyNoteFolderControl settings={settings} onChange={onChange} vaults={places} onOpenTemplate={openDailyTemplate} />,
+          },
+          {
+            id: 'dailyNoteFormat',
+            label: 'Name style',
+            hint: ({ settings }) => `Today: ${dailyNoteName(settings.dailyNoteFormat, new Date())}`,
+            keywords: ['daily', 'date', 'format', 'name'],
+            available: ({ settings }) => settings.dailyNotes,
+            // Wide always: the label keeps its width while "Custom…" adds its field beside the dropdown.
+            wide: () => true,
+            render: ({ settings, onChange }) => <DailyNoteFormatControl settings={settings} onChange={onChange} />,
+          },
+          {
+            id: 'dailyNoteDayFolder',
+            label: 'Make a folder for each day',
+            hint: "Today's note goes inside a folder with the same name.",
+            keywords: ['daily', 'folder', 'day'],
+            available: ({ settings }) => settings.dailyNotes,
+            render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.dailyNoteDayFolder} onChange={(dailyNoteDayFolder) => onChange({ ...settings, dailyNoteDayFolder })} ariaLabel="Make a folder for each day" />,
           },
         ],
       },

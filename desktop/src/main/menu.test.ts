@@ -17,6 +17,7 @@ const noopHandlers = (): MenuHandlers => ({
   newTab: vi.fn(),
   newItem: vi.fn(),
   goTo: vi.fn(),
+  dailyNote: vi.fn(),
   keySheet: vi.fn(),
   newWindow: vi.fn(),
   newFilesWindow: vi.fn(),
@@ -337,7 +338,8 @@ describe('buildMenuTemplate', () => {
     const handlers = noopHandlers()
     const file = menuOf(onTab('drawing', handlers), 'File')
     const at = (id: string) => file.findIndex((i) => i.id === id)
-    expect(at('menu.file.export-image')).toBe(at('menu.file.go-to') + 2)
+    // Open Today's Daily Note (YAZ-3607 D11) stands right after Go to Your Place, hidden or not.
+    expect([at('menu.file.daily-note'), at('menu.file.export-image')]).toEqual([at('menu.file.go-to') + 1, at('menu.file.go-to') + 3])
     expect([at('menu.file.export-drawing'), at('menu.file.share-link'), at('menu.file.close-tab')]).toEqual([at('menu.file.export-image') + 1, at('menu.file.export-image') + 2, at('menu.file.export-image') + 4])
     expect(file[at('menu.file.share-link') + 1].type).toBe('separator')
     expect(['menu.file.export-image', 'menu.file.export-drawing', 'menu.file.share-link'].map((id) => [file[at(id)].label, file[at(id)].accelerator, file[at(id)].enabled])).toEqual([
@@ -349,6 +351,15 @@ describe('buildMenuTemplate', () => {
     click(file[at('menu.file.export-drawing')])
     click(file[at('menu.file.share-link')])
     expect([handlers.exportImage, handlers.exportDrawing, handlers.shareLink].map((fn) => vi.mocked(fn).mock.calls.length)).toEqual([1, 1, 1])
+  })
+
+  it("File › Open Today's Daily Note (YAZ-3607 D11): hidden and keyless while Daily notes is off; on, it shows, takes the key set for it, and calls its handler", () => {
+    const handlers = noopHandlers()
+    const daily = (dailyNotes: boolean) => item(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: { dailyNote: 'CmdOrCtrl+Alt+D' }, dailyNotes }, handlers), 'File', 'menu.file.daily-note')
+    expect([daily(false)?.visible, daily(false)?.accelerator]).toEqual([false, undefined])
+    expect([daily(true)?.visible, daily(true)?.accelerator]).toEqual([true, 'CmdOrCtrl+Alt+D'])
+    click(daily(true)!)
+    expect(handlers.dailyNote).toHaveBeenCalledTimes(1)
   })
 
   it('the board items are enabled only on a board they work for (Draw\'s index.ts:201-212): a diagram gets Export Image… and Share Link only; a note, a PDF or no tab gets none', () => {

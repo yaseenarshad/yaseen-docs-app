@@ -3,7 +3,7 @@ import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { GridIcon, SidebarPanelIcon } from '../views/view/icons'
+import { CalendarIcon, GridIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
@@ -187,6 +187,8 @@ interface SidebarProps {
   onChangeSettings: (next: SettingsState) => void
   /** The footer cog: App mounts the settings dialog, so the cog only asks for it (YAZ-1679). */
   onOpenSettings: () => void
+  /** The footer's "Open today's daily note" (YAZ-3607 D7); absent while Settings › Files & Links › Daily notes is off. */
+  onOpenDailyNote?: () => void
   /** The updater's state (YAZ-2976 D4): App reads it once for the window, and the footer shows its pill beside the cog. */
   update: UpdateState
   /** The pill's click: App mounts the "What's new" sheet (D5), as it does the settings dialog. */
@@ -590,6 +592,7 @@ export function Sidebar({
   settings,
   onChangeSettings,
   onOpenSettings,
+  onOpenDailyNote,
   update,
   onOpenWhatsNew,
   onRestoreSession,
@@ -1782,6 +1785,12 @@ export function Sidebar({
         {/* The zoom chip (YAZ-3432): its menu zooms the lists above (YAZ-3389: one value for every full window, a Files
             window's own, D13) and sets the App size of every window. */}
         <ZoomMenu sidebar={zoomValue} onSidebar={onZoom} app={settings.appZoom} onApp={changeAppZoom} onOpenChange={onZoomMenu} />
+        {onOpenDailyNote !== undefined && (
+          // YAZ-3607 D7: today's daily note in one click, the same as ⌘D on "Today's daily note".
+          <button type="button" className="sidebar__daily" title="Open today's daily note" aria-label="Open today's daily note" onClick={onOpenDailyNote}>
+            <CalendarIcon />
+          </button>
+        )}
         {onToNormalWindow !== undefined && (
           // Which kind of window this is (YAZ-3357 D13), quiet beside the cog. Two clicks make it a full window.
           <button

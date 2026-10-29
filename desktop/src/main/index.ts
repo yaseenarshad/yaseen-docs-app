@@ -338,7 +338,7 @@ app.whenReady().then(() => {
       Menu.buildFromTemplate(
         buildMenuTemplate(
           // The user's keys (YAZ-3397 D2), and none at all while a key recorder listens (D6).
-          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), frontKind: frontKind(), hotkeys: store.get().settings.hotkeys, hotkeysAside: store.get().settings.hotkeysAside, suspendKeys: hotkeyRecording.active() },
+          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), frontKind: frontKind(), hotkeys: store.get().settings.hotkeys, hotkeysAside: store.get().settings.hotkeysAside, suspendKeys: hotkeyRecording.active(), dailyNotes: store.get().settings.dailyNotes },
           handlers,
         ),
       ),

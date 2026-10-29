@@ -2032,6 +2032,20 @@ button {
   background: var(--bg-hover);
 }
 
+/* The footer's daily note button (YAZ-3607 D7): the cog's quiet look, after the zoom chip. */
+.sidebar__daily {
+  display: flex;
+  flex: none;
+  padding: 5px;
+  border-radius: 6px;
+  color: var(--fg-muted);
+}
+
+.sidebar__daily:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
 /* The footer's zoom chip (YAZ-3432): the sidebar zoom's percent, the same quiet button as the menu's percent below;
    open, it stays lit. */
 /* The footer's − chip + (YAZ-3487, demo round 3): the sidebar zoom in one click; the chip opens the menu. */

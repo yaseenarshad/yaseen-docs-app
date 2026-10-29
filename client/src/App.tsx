@@ -59,7 +59,9 @@ import { SettingsDialog } from './settings/SettingsDialog'
 import { textVars } from './settings/headingStyles'
 import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
-import { newItemFolder, resolveGoTo } from './sidebar/goToPlace'
+import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
+import { dailyNoteName } from '@shared/dailyNote'
+import { dailyNoteVault, makeDailyNote, todaysNote } from './sidebar/dailyNote'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
@@ -417,8 +419,8 @@ export function App() {
    * ⌘N and ⌘D read the vault, the page on show and the settings of the moment through `placeInputs`, at key time.
    */
   const placeVaults: PlaceVault[] = roots.map((vault, i) => ({ root: vault, name: vaults[i].name ?? storage.vaultName(vault) })).sort((a, b) => Number(b.root === active.root) - Number(a.root === active.root))
-  const placeInputs = useRef({ vault: active.root, page: pageOnShow, settings })
-  placeInputs.current = { vault: active.root ?? root, page: pageOnShow, settings }
+  const placeInputs = useRef({ vault: active.root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings })
+  placeInputs.current = { vault: active.root ?? root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings }
   // The close/quit handshake for the writers below App — the outline's debounce and every in-flight
   // frontmatter write (YAZ-2174): the note editor's autosave registers with the bridge itself.
   useEffect(() => api.window.onFlush(flushWindow), [])
@@ -906,6 +908,63 @@ export function App() {
   const consumeSidebarCreate = useCallback((id: number) => {
     setSidebarCreateRequest((request) => request?.id === id ? null : request)
   }, [])
+  // Today's daily note (YAZ-3607 D5): the footer button, File › Open Today's Daily Note, and ⌘D on "Today's daily note".
+  // It opens as a sidebar click opens a file, and its row shows. When the vault has none yet it is made first. A second
+  // press while one is made waits for that one, so a fast double press makes one note: `dailyMaking` holds the one
+  // made (one entry; the next day, folder or style replaces it, a failure clears it, and its file deleted makes it again).
+  const dailyMaking = useRef<{ key: string; note: Promise<string>; path?: string } | null>(null)
+  /**
+   * The vault of the daily notes folder and its tree (D15): the first of the window's vaults, the one in front first, that
+   * holds it. A FRESH tree, not the cached one (YAZ-3652): the watcher can miss a delete that comes a moment after a
+   * create, and a cached tree then still holds today's note, so nothing is made. One walk per vault per click, never on
+   * a keystroke; the sidebar hears the same answer (`onTree`), so its stale row goes too.
+   */
+  const dailyVault = useCallback(async (vaults: readonly string[], folder: string) => {
+    const trees = await Promise.all(vaults.map(async (root) => ({ root, tree: (await fetchTree(root)).tree })))
+    const vault = dailyNoteVault(trees, folder)
+    if (vault === null) throw new Error(`no vault of this window has the folder "${folder}". Make it, or change the daily notes folder in Settings › Files & Links`)
+    return { vault, tree: trees.find((t) => t.root === vault)!.tree }
+  }, [])
+  const openDailyNote = useCallback(() => {
+    const { vaults, settings: now } = placeInputs.current
+    if (vaults.length === 0) return
+    const title = dailyNoteName(now.dailyNoteFormat, new Date()).trim()
+    void dailyVault(vaults, now.dailyNoteFolder)
+      .then(({ vault, tree }) => {
+        const index = scopeOf(vault).wikilinks
+        // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
+        if (index.resolve === null) throw new Error('the vault index is still loading — try again in a moment')
+        // Either layout: the key leaves the layout out, so a switch in the middle of a day finds the note made before it (D18).
+        const key = [vault, now.dailyNoteFolder, title].join('\n')
+        const held = dailyMaking.current?.key === key ? dailyMaking.current : null
+        const found = todaysNote({ records: index.records, tree, folder: now.dailyNoteFolder, title, dayFolder: now.dailyNoteDayFolder, made: held?.path })
+        if (found !== null) return found
+        // One note at a time for a key: a press while it is made waits for it. Made but gone from the tree: made again (D16).
+        if (held === null || held.path !== undefined) {
+          // A fresh tree before the row is shown: the sidebar hears it (`onTree`), so the new note's row is there to show.
+          const note = makeDailyNote(vault, now, title, index.ids).then(async (path) => {
+            await fetchTree(vault)
+            if (dailyMaking.current?.note === note) dailyMaking.current.path = path
+            return path
+          })
+          dailyMaking.current = { key, note }
+        }
+        const making = dailyMaking.current!
+        return making.note.catch((err: unknown) => {
+          if (dailyMaking.current === making) dailyMaking.current = null
+          throw err
+        })
+      })
+      .then(
+        (path) => {
+          if (sidebarCollapsedRef.current) toggleSidebar()
+          openAsSidebar.current(path)
+          revealInFiles(path, false)
+        },
+        (err: unknown) => notify(`Can't open today's daily note: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      )
+  }, [scopeOf, dailyVault, toggleSidebar, revealInFiles, notify])
+
   // ⌘D (YAZ-3556 D9): the place of `settings.goTo`, in the active tab's vault. A tab shows. A folder shows in Files, open,
   // with the keyboard on its row. A file opens as a sidebar click opens it, and its row shows. A hidden sidebar shows
   // first; a path the vault does not have says so. The Welcome window has no vault: the key does nothing there.
@@ -913,6 +972,12 @@ export function App() {
     const { vault, settings: now } = placeInputs.current
     if (vault === null) return
     const goTo = now.goTo
+    // YAZ-3607 D1: a place of its own. With Daily notes off it is not offered, and a stored one goes to Files.
+    if (goTo.kind === 'daily') {
+      if (now.dailyNotes) return openDailyNote()
+      if (sidebarCollapsedRef.current) toggleSidebar()
+      return changeLens('files')
+    }
     if (goTo.kind === 'tab') {
       if (sidebarCollapsedRef.current) toggleSidebar()
       return changeLens(goTo.tab)
@@ -928,7 +993,7 @@ export function App() {
       },
       (err: unknown) => notify(`Can't show in sidebar: ${err instanceof Error ? err.message : String(err)}`, 'error'),
     )
-  }, [treeOf, toggleSidebar, changeLens, revealInFiles, notify])
+  }, [treeOf, toggleSidebar, changeLens, revealInFiles, notify, openDailyNote])
 
   // The settings dialog (YAZ-1679) is App's so the sidebar cog, ⌘, and the app menu's Settings…
   // open the ONE dialog — and it can open with the sidebar collapsed. `open`/`close` are stable
@@ -945,6 +1010,31 @@ export function App() {
     setSettingsOpen(true)
   }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
+  // Settings › Daily notes › Open template (YAZ-3607 D6): the daily notes folder's hidden `.template.md`, in a tab. A
+  // missing one is made empty first. The sidebar hides a "." file, so this is the way to it. Settings closes first.
+  // The folder is the one the daily note uses: in the first vault of the window that holds it (`dailyNoteVault`).
+  const openDailyTemplate = useCallback(() => {
+    const { vaults, settings: now } = placeInputs.current
+    if (vaults.length === 0) return
+    let path = ''
+    void dailyVault(vaults, now.dailyNoteFolder)
+      .then(({ vault }) => {
+        path = `${placePath(vault, now.dailyNoteFolder)}/.template.md`
+        return api.readFile(path)
+      })
+      .catch((err: unknown) => {
+        if (path === '') throw err
+        if (!(err instanceof BridgeRequestError && err.code === 'NOT_FOUND')) throw err
+        return api.writeFile({ path, content: '' })
+      })
+      .then(
+        () => {
+          setSettingsOpen(false)
+          openAsSidebar.current(path)
+        },
+        (err: unknown) => notify(`Can't open the daily note template: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      )
+  }, [dailyVault, notify])
 
   // The keys of this tab (YAZ-3564 K11): Help › Keys of This Tab…, its App key, and ? on a drawing (`requestKeySheet`).
   const [keySheetOpen, setKeySheetOpen] = useState(false)
@@ -1509,6 +1599,8 @@ export function App() {
     onNewWindow: newWindow,
     onNewItem: openNewItem,
     onGoTo: goToPlace,
+    // YAZ-3607 D11: the File menu item exists only while Daily notes is on.
+    onDailyNote: openDailyNote,
     onZoom: zoom,
     onWhatsNew: openWhatsNew,
     onKeySheet: openKeySheet,
@@ -2605,7 +2697,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Note (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
@@ -2693,6 +2785,7 @@ export function App() {
           settings={settings}
           onChangeSettings={changeSettings}
           onOpenSettings={openSettings}
+          onOpenDailyNote={settings.dailyNotes ? openDailyNote : undefined}
           update={update}
           onOpenWhatsNew={openWhatsNew}
           onRestoreSession={filesDoors?.session ?? restoreSavedSession}

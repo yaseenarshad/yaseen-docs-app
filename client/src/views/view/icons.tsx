@@ -37,6 +37,18 @@ export function SidebarPanelIcon() {
   )
 }
 
+/** A calendar page, for the sidebar footer's "Open today's daily note" (YAZ-3607 D7). The cog's size and line. */
+export function CalendarIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
+      <rect x="1.75" y="2.75" width="12.5" height="11.5" rx="1.5" />
+      <line x1="1.75" y1="6.25" x2="14.25" y2="6.25" />
+      <line x1="5" y1="1.25" x2="5" y2="4" />
+      <line x1="11" y1="1.25" x2="11" y2="4" />
+    </svg>
+  )
+}
+
 /** Four tiles, for the tab strip's "Show all open tabs" button (YAZ-2648 D8). */
 export const GridIcon = () => (
   <svg {...svg}>

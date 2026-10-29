@@ -357,6 +357,8 @@ export const CONTRACT = {
     onNewItem: push('menu:new-item'),
     /** File › Show in Sidebar (⌘D, YAZ-3556 D1, D9): show the place of `settings.goTo`. A window with no vault does nothing. */
     onGoTo: push('menu:go-to'),
+    /** File › Open Today's Daily Note (YAZ-3607 D11): open today's daily note, made first when today has none. A window with no vault does nothing. */
+    onDailyNote: push('menu:daily-note'),
     /** Help › What's New… (YAZ-2976 D8): the window opens its "What's new" window. */
     onWhatsNew: push('menu:whats-new'),
     /** Help › Keys of This Tab… (YAZ-3564 K11): show the keys of the tab in front. */
