@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, normalizeFilesZoom, rootOfPath, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, normalizeFilesZoom, rootOfPath, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type ScreenPoint, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -92,6 +92,11 @@ function optionalPageView(v: unknown): PageView | undefined {
   return { scrollTop, zoomKey, folds: (folds as string[]).slice(0, MAX_FOLD_KEYS_PER_FILE), magnification }
 }
 
+/** A slot in a strip (YAZ-3637 D4): a whole number from 0; anything else is no slot, never an error. */
+function optionalSlot(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : undefined
+}
+
 /** "Move to new window"'s carry (YAZ-2951 D2, YAZ-2949 D7): absent, or an object whose `view` passes `optionalPageView`, with an optional display `name`. */
 function optionalPopOutCarry(v: unknown): PopOutCarry {
   if (v === undefined) return {}
@@ -101,7 +106,14 @@ function optionalPopOutCarry(v: unknown): PopOutCarry {
   // non-string name is no name — never an error.
   const name = cleanVaultName(v.name)
   // A quiet move (YAZ-3343 D13): only `true` is one; anything else is the ordinary move.
-  return { ...(view === undefined ? {} : { view }), ...(name === null ? {} : { name }), ...(v.background === true ? { background: true as const } : {}) }
+  const at = optionalSlot(v.at)
+  return { ...(view === undefined ? {} : { view }), ...(name === null ? {} : { name }), ...(v.background === true ? { background: true as const } : {}), ...(at === undefined ? {} : { at }) }
+}
+
+/** Where a drag was let go (YAZ-3637 D1): `{ x, y }`, two finite numbers. */
+function requirePoint(v: unknown): ScreenPoint {
+  if (!isRecord(v) || typeof v.x !== 'number' || !Number.isFinite(v.x) || typeof v.y !== 'number' || !Number.isFinite(v.y)) throw new BridgeFailure('BAD_REQUEST', "'point' must be { x, y } with finite numbers")
+  return { x: v.x, y: v.y }
 }
 
 /** A saved set's or a session's `id` or `name` (YAZ-2602 D8, YAZ-3147 D2), or a window id `to` / `from` (YAZ-3343): a string; the store decides what it names. */
@@ -265,6 +277,18 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     windows.popOut(from, target, optionalPopOutCarry(carry))
   })
 
+  // `window:tear-off` (YAZ-3637 D1): a tab of the strip let go where no surface took it. The caller's window, as
+  // `pop-out`: a path in no vault of it is no tab of it. Main answers what came of it; the renderer closes its tab only
+  // for `opened`.
+  handleWithEvent(CONTRACT.window.tearOff, async (e, path: unknown, carry: unknown, point: unknown, alone: unknown) => {
+    const from = entryFor(e)
+    const target = requireAbsPath(path, 'path')
+    if (rootOfPath(from.roots, target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
+    // What "Move to ▸" carries (D9), and no more: a torn-off tab opens in front, at no slot.
+    const { view, name } = optionalPopOutCarry(carry)
+    return windows.tearOff(from, target, { view, name }, requirePoint(point), alone === true)
+  })
+
   // `window:move-to` (YAZ-3091 D1, D2): a tab's "Move to ▸ <window>". Main checks the target again: a window
   // that closed, or that shows no vault of the page, refuses, and the source keeps its tab.
   handleWithEvent(CONTRACT.window.moveTo, async (e, to: unknown, path: unknown, carry: unknown) => {
@@ -297,13 +321,14 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // `window:move-tab` (YAZ-3343 D13): a card dropped in another window's frame. Window `from` — the caller or any
   // other — sends its tab on to `to` through `link:send-tab`; main checks both windows and `to`'s vaults first, as
   // `window:move-to` does, and `move-to` checks again when the tab goes.
-  handleWithEvent(CONTRACT.window.moveTab, async (e, from: unknown, to: unknown, ref: unknown) => {
+  // A tab dropped on the caller's strip (YAZ-3637 D4) names the slot `at`; the board's drop names none.
+  handleWithEvent(CONTRACT.window.moveTab, async (e, from: unknown, to: unknown, ref: unknown, at: unknown) => {
     entryFor(e)
     const source = requireString(from, 'from')
     const target = requireString(to, 'to')
     const tab = requireTabRef(ref, 'ref')
     if (source === target) throw new BridgeFailure('BAD_REQUEST', 'a tab cannot move to its own window')
-    if (!windows.moveTab(source, target, tab)) throw new BridgeFailure('NOT_FOUND', 'a window is closed, or that window shows no vault of this page')
+    if (!windows.moveTab(source, target, tab, optionalSlot(at))) throw new BridgeFailure('NOT_FOUND', 'a window is closed, or that window shows no vault of this page')
   })
 
   // `window:close-other` (YAZ-3343 D21): a frame's "Close window" on the tab board. The window's REAL close, so

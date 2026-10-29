@@ -8,6 +8,7 @@ import { createStore, type Store } from './store'
 import {
   BOUNDS_DEBOUNCE_MS,
   FLUSH_TIMEOUT_MS,
+  TEAR_OFF_GRAB,
   WINDOW_CASCADE_PX,
   besideFilesBounds,
   clampBounds,
@@ -136,9 +137,11 @@ function makeHost(
   areas: WindowBounds[] = [AREA],
   exists: (path: string) => boolean = () => true,
   dirExists: (path: string) => boolean = () => true,
-): { host: WindowHost; created: Array<{ entry: WindowEntry; win: FakeWindow; hidden?: true }>; previews: Array<[FakeWindow, WindowBounds | null]> } {
+): { host: WindowHost; created: Array<{ entry: WindowEntry; win: FakeWindow; hidden?: true }>; previews: Array<[FakeWindow, WindowBounds | null]>; cursor: { x: number; y: number } } {
   const created: Array<{ entry: WindowEntry; win: FakeWindow; hidden?: true }> = []
   const previews: Array<[FakeWindow, WindowBounds | null]> = []
+  /** Where the pointer is (YAZ-3637): a test moves it. */
+  const cursor = { x: 0, y: 0 }
   const host: WindowHost = {
     create(entry, opts) {
       const win = new FakeWindow({ ...entry.bounds })
@@ -146,11 +149,12 @@ function makeHost(
       return win as ManagedWindow
     },
     workAreas: () => areas,
+    cursorPoint: () => ({ ...cursor }),
     exists,
     dirExists,
     showPreview: (win, bounds) => void previews.push([win as unknown as FakeWindow, bounds]),
   }
-  return { host, created, previews }
+  return { host, created, previews, cursor }
 }
 
 let dir: string
@@ -1866,6 +1870,9 @@ describe('createWindowManager: the tab board reaches other windows (YAZ-3343 D3,
     store.upsertWindow({ ...store.get().windows[1], roots: ['/c', '/a'] }) // w2 now shows /a too
     expect(manager.moveTab('w1', 'w2', REF)).toBe(true)
     expect(w1.webContents.send.mock.calls).toEqual([[CONTRACT.link.onSendTab.channel, { to: 'w2', ref: REF }]])
+    // A drop on w2's strip names its slot (YAZ-3637 D4); without one the key is absent, not undefined.
+    expect(manager.moveTab('w1', 'w2', REF, 2)).toBe(true)
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSendTab.channel, { to: 'w2', ref: REF, at: 2 })
     expect(manager.moveTab('w1', 'w2', { path: '/b/y.md', copy: 0 })).toBe(false) // w2 shows no /b: no vault is added
     expect(manager.moveTab('w1', 'w3', REF)).toBe(false) // a Welcome window shows no vault
     expect(manager.moveTab('w1', 'w1', REF)).toBe(false)
@@ -1873,7 +1880,7 @@ describe('createWindowManager: the tab board reaches other windows (YAZ-3343 D3,
     expect(manager.moveTab('w1', 'nope', REF)).toBe(false)
     w2.destroy()
     expect(manager.moveTab('w1', 'w2', REF)).toBe(false)
-    expect(w1.webContents.send).toHaveBeenCalledTimes(1)
+    expect(w1.webContents.send).toHaveBeenCalledTimes(2)
     for (const c of [w1, w2, w3]) expect(c.focusCount).toBe(0)
   })
 
@@ -1897,6 +1904,83 @@ describe('createWindowManager: the tab board reaches other windows (YAZ-3343 D3,
     expect(relaunch.created.find((c) => c.entry.id === 'w1')?.entry.name).toBe('Writing')
     expect(manager.setName('w1', null)).toBe(true)
     expect(store.get().windows[0]).not.toHaveProperty('name')
+  })
+})
+
+describe('createWindowManager: a tab torn off its strip (YAZ-3637 D3, D5)', () => {
+  /** w1 shows /a and /b at the top left; w2 shows /c, off to the right; w3 is a Welcome window under w1. */
+  function seedTear(areas: WindowBounds[] = [AREA]) {
+    store.upsertWindow({ id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'focus', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w2', root: '/c', roots: ['/c'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 1000, y: 100, width: 300, height: 300 } })
+    store.upsertWindow({ id: 'w3', root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 40, y: 40, width: 800, height: 600 } })
+    const made = makeHost(areas)
+    const manager = createWindowManager(store, made.host)
+    manager.restore('all')
+    const [w1, w2, w3] = made.created.map((c) => c.win)
+    const from = store.get().windows.find((w) => w.id === 'w1')!
+    return { manager, w1, w2, w3, from, ...made }
+  }
+  const CARRY = { name: 'Outline', view: { scrollTop: 10, zoomKey: null, folds: [], magnification: 100 } }
+
+  it('a point on a window that shows is none — that window took the drop, or refused it (D4, D8); a hidden window and one in the Dock do not count', () => {
+    const { manager, w2, from, created } = seedTear()
+    expect(manager.tearOff(from, '/a/x.md', CARRY, { x: 20, y: 20 }, false)).toBe('none') // on w1 itself
+    expect(manager.tearOff(from, '/a/x.md', CARRY, { x: 1100, y: 200 }, false)).toBe('none') // on w2
+    expect(created).toHaveLength(3)
+    // w2 in the Dock: the point is on nothing.
+    w2.minimized = true
+    expect(manager.tearOff(from, '/a/x.md', CARRY, { x: 1100, y: 200 }, false)).toBe('opened')
+    expect(created).toHaveLength(4)
+    // The window that opened stands under the next point; closed, it counts no more.
+    created[3].win.destroy()
+    // A window the board made, still hidden, at +24/+24 of w2: a point on it alone is on nothing.
+    w2.minimized = false
+    manager.openBehind(store.get().windows.find((w) => w.id === 'w2')!)
+    expect(created.at(-1)!.hidden).toBe(true)
+    expect(manager.tearOff(from, '/a/x.md', CARRY, { x: 1310, y: 410 }, false)).toBe('opened')
+    expect(created).toHaveLength(6)
+    expect(created.at(-1)!.hidden).toBeUndefined()
+  })
+
+  it('D3: off every window, a new window opens there — as big as the source, the tab under the pointer, clamped to the display, sidebar hidden, the carry along; the source keeps its tab until the renderer closes it', () => {
+    const { manager, from, created } = seedTear()
+    expect(manager.tearOff(from, '/b/y.md', CARRY, { x: 900, y: 300 }, false)).toBe('opened')
+    const made = created.at(-1)!
+    // x: 900 - the grab, 710, clamped to 1440 - 800; y: 300 - the grab.
+    expect(made.entry).toMatchObject({ root: '/a', roots: ['/a', '/b'], file: '/b/y.md', tabs: ['/b/y.md'], tabStrip: [{ path: '/b/y.md', name: 'Outline' }], sidebarCollapsed: true, sidebarLens: 'focus', bounds: { x: 640, y: 300 - TEAR_OFF_GRAB.y, width: 800, height: 600 } })
+    expect(made.hidden).toBeUndefined()
+    expect(manager.takeStartView(made.entry.id)).toEqual({ path: '/b/y.md', view: CARRY.view })
+    expect(store.get().windows.find((w) => w.id === 'w1')?.tabs).toEqual(['/a/x.md', '/b/y.md'])
+  })
+
+  it('D5: the only tab of a window takes the window with it — it moves to the point, no new window, the bounds stored at once', () => {
+    const { manager, w1, from, created } = seedTear()
+    expect(manager.tearOff(from, '/a/x.md', CARRY, { x: 500, y: 700 }, true)).toBe('moved')
+    expect(created).toHaveLength(3)
+    // 700 less the grab would put the bottom below the 900 px display: the window is pushed up to end at its bottom.
+    const bounds = { x: 500 - TEAR_OFF_GRAB.x, y: 900 - 600, width: 800, height: 600 }
+    expect(w1.setBoundsCalls).toEqual([[bounds, undefined]])
+    expect(store.get().windows.find((w) => w.id === 'w1')?.bounds).toEqual(bounds)
+    expect(manager.takeStartView('w1')).toBeUndefined()
+  })
+
+  it('D3: a drop near the edge between two displays keeps the window on the display that holds the point, not the one it overlaps most', () => {
+    const second: WindowBounds = { x: 1440, y: 0, width: 1920, height: 1080 }
+    const { manager, created } = seedTear([AREA, second])
+    // 1400 less the grab puts most of an 800 px window on the second display; the point is on the first.
+    expect(manager.tearOff(store.get().windows.find((w) => w.id === 'w1')!, '/b/y.md', {}, { x: 1400, y: 300 }, false)).toBe('opened')
+    expect(created.at(-1)!.entry.bounds).toEqual({ x: 1440 - 800, y: 300 - TEAR_OFF_GRAB.y, width: 800, height: 600 })
+  })
+
+  it('a point of 0,0 is no point (the drag ended with none): the pointer is where it is now', () => {
+    const { manager, from, created, cursor } = seedTear()
+    cursor.x = 900
+    cursor.y = 300
+    expect(manager.tearOff(from, '/b/y.md', {}, { x: 0, y: 0 }, false)).toBe('opened')
+    expect(created.at(-1)!.entry.bounds).toEqual({ x: 640, y: 300 - TEAR_OFF_GRAB.y, width: 800, height: 600 })
+    cursor.x = 20
+    cursor.y = 20
+    expect(manager.tearOff(from, '/b/y.md', {}, { x: 0, y: 0 }, false)).toBe('none')
   })
 })
 
