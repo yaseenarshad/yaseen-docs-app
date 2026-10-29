@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { titleWithKey, type HotkeyOverrides } from '@shared/hotkeyBindings'
-import { rootOfPath, type DiagramDarkColors, type TabRef } from '@shared/types'
+import { rootOfPath, type DiagramDarkColors, type ScreenPoint, type TabRef } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, insertionSlot } from '../lib/dragSlot'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
 import { GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
-import { foreignDrag, readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
+import { foreignDrag, readPageDrag, windowTabOf, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import type { Tab } from '../workspace/useWorkspace'
 import type { ListState } from '../lists/useVaultListsHere'
 import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
@@ -48,14 +48,15 @@ export interface TabBarProps {
   /** A validated page dropped from the right panel at a tab insertion slot. */
   onDropPage?: (page: PageDrag, at: number) => void
   /**
-   * Whether this window takes a tab of ANOTHER window's drag (YAZ-3637 D6): the window it comes from and the index of
-   * the page's vault there — all a drag shows while it passes over. False: no gap, the drop is not taken.
+   * Whether this window takes the drag passing over it (YAZ-3637 D4, D6): a tab of ANOTHER window's strip, read off the
+   * type names alone. True also for a page of a vault this window does not show: the drop then asks to add that vault.
+   * False: no line, the drop is not taken.
    */
-  canTake?: (from: string, root: number) => boolean
+  takesDrag?: (data: DataTransfer) => boolean
   /** Another window's tab dropped here (YAZ-3637 D4): the window `from`, its tab by ref, and the slot it lands in. */
   onDropFromWindow?: (from: string, ref: TabRef, at: number) => void
   /** A tab let go where no surface took it (YAZ-3637 D1, D3): off every window, or on one that refused it; `point` is on the screen. */
-  onTearOff?: (path: string, id: string, point: { x: number; y: number }) => void
+  onTearOff?: (path: string, id: string, point: ScreenPoint) => void
   /** Context-menu equivalent of dragging this tab into the right panel. */
   onMoveToRight?: (path: string) => void
   /** The menu's "Move to new window" (YAZ-2933): this tab, alone in a window of its own — its page, and its id to close it here. */
@@ -165,7 +166,7 @@ const Chevron = ({ d }: { d: string }) => (
  * (YAZ-2655): it stands outside the scroller, so it is on show however far the strip scrolled.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, canTake, onDropFromWindow, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: TabBarProps) {
+export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -270,12 +271,14 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') clear()
     }
+    // The drop on the way down: App stops another window's tab dropped off the strip before it bubbles (YAZ-3637 D4),
+    // and that drag's `dragend` fires in ITS window, not here.
     window.addEventListener('dragend', clear)
-    window.addEventListener('drop', clear)
+    window.addEventListener('drop', clear, true)
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('dragend', clear)
-      window.removeEventListener('drop', clear)
+      window.removeEventListener('drop', clear, true)
       window.removeEventListener('keydown', onKey)
     }
   }, [externalOver])
@@ -289,28 +292,24 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
 
   const externalPage = (event: DragEvent): PageDrag | null => {
     if (drag !== null || onDropPage === undefined || event.dataTransfer === null) return null
-    // Another window's drag (YAZ-3637 D1) is `foreignTab`'s, never a right-panel page of this one.
+    // Another window's drag (YAZ-3637 D1) is `foreignTab`'s, never a right-panel page of this one. Another window's
+    // right-panel page names no vault, so only its data on the drop tells it apart (D8: it lands nowhere here).
     if (foreignDrag(event.dataTransfer, windowId) !== null) return null
     const page = readPageDrag(event.dataTransfer)
-    return page?.owner === 'right' && !tabs.some((t) => t.path === page.path) ? page : null
+    return page?.owner === 'right' && page.from === windowId && !tabs.some((t) => t.path === page.path) ? page : null
   }
 
-  // A tab of ANOTHER window passing over (YAZ-3637 D1, D6): known by its type names alone — Chromium hides the data until
-  // the drop — and taken only when this window shows the page's vault (`canTake`). No door, no take.
-  const foreignTab = (event: DragEvent): boolean => {
-    if (drag !== null || onDropFromWindow === undefined || event.dataTransfer === null) return false
-    const foreign = foreignDrag(event.dataTransfer, windowId)
-    return foreign !== null && canTake?.(foreign.from, foreign.root) === true
-  }
+  // A tab of ANOTHER window passing over (YAZ-3637 D1, D6), as App reads it (`takesDrag`). No door, no take.
+  const foreignTab = (event: DragEvent): boolean =>
+    drag === null && onDropFromWindow !== undefined && event.dataTransfer !== null && takesDrag?.(event.dataTransfer) === true
 
   const dropExternal = (event: DragEvent, insertion: number): void => {
     setExternalOver(null)
     if (foreignTab(event)) {
-      // On the drop the data is readable (YAZ-3637 D4): the page, and which copy of it the other window's strip holds.
-      const page = event.dataTransfer === null ? null : readPageDrag(event.dataTransfer)
-      if (page === null || page.owner !== 'main') return
+      const tab = event.dataTransfer === null ? null : windowTabOf(event.dataTransfer)
+      if (tab === null) return
       event.preventDefault()
-      onDropFromWindow?.(page.from, { path: page.path, copy: page.copy }, insertion)
+      onDropFromWindow?.(tab.from, tab.ref, insertion)
       return
     }
     const page = externalPage(event)
@@ -351,7 +350,15 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   const gap = over === null || (drag !== null && (over === drag.from || over === drag.from + 1)) ? null : over
 
   return (
-    <div className={`tabbar-row${reserveEnd ? ' tabbar-row--end' : ''}`} style={SLIDE}>
+    <div
+      className={`tabbar-row${reserveEnd ? ' tabbar-row--end' : ''}`}
+      style={SLIDE}
+      // A drag that leaves the row puts the line out (YAZ-3637 D4): another window's tab may go on to the page below, or
+      // out of the window, and nothing else here hears of it.
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setExternalOver(null)
+      }}
+    >
       <div className="tabbar-nav">
         {onShowSidebar && (
           <button type="button" className="tabbar-nav__btn" aria-label="Show sidebar" title="Show sidebar" onClick={onShowSidebar}>

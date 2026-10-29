@@ -1957,7 +1957,8 @@ describe('createWindowManager: a tab torn off its strip (YAZ-3637 D3, D5)', () =
     const { manager, w1, from, created } = seedTear()
     expect(manager.tearOff(from, '/a/x.md', CARRY, { x: 500, y: 700 }, true)).toBe('moved')
     expect(created).toHaveLength(3)
-    const bounds = { x: 500 - TEAR_OFF_GRAB.x, y: 700 - TEAR_OFF_GRAB.y - ((700 - TEAR_OFF_GRAB.y + 600) - 900), width: 800, height: 600 }
+    // 700 less the grab would put the bottom below the 900 px display: the window is pushed up to end at its bottom.
+    const bounds = { x: 500 - TEAR_OFF_GRAB.x, y: 900 - 600, width: 800, height: 600 }
     expect(w1.setBoundsCalls).toEqual([[bounds, undefined]])
     expect(store.get().windows.find((w) => w.id === 'w1')?.bounds).toEqual(bounds)
     expect(manager.takeStartView('w1')).toBeUndefined()

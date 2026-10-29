@@ -50,8 +50,9 @@ export const WINDOW_CASCADE_PX = 24
 /**
  * Where the first tab's middle sits in a window whose sidebar is hidden (YAZ-3637 D3), from the window's top left: the
  * title bar (28 px) and half the 44 px tab row down; the nav buttons (show sidebar, ◀ ▶, the grid: 8 + 4 × 28 + gaps),
- * the strip's 8 px and half a tab across. A torn-off window stands so its tab lands under the pointer. Rough on
- * purpose — the demo checks it.
+ * the strip's 8 px and half a tab across. A torn-off window stands so its tab lands under the pointer: the demo showed
+ * it there (S1, S16). A window that MOVES with its only tab (D5) keeps its sidebar, so there the tab lands about one
+ * sidebar width right of the pointer.
  */
 export const TEAR_OFF_GRAB: ScreenPoint = { x: 190, y: 50 }
 

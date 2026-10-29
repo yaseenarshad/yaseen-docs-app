@@ -157,10 +157,10 @@ function withActive(s: TabsState, active: string): TabsState {
   return { tabs: s.tabs, active, mounted: s.mounted.includes(active) ? s.mounted : [...s.mounted, active], history: s.history, preview: s.preview, blank: false }
 }
 
-/** A new KEPT tab for `path` at the end of the strip, active. */
-function appendActive(s: TabsState, path: string, preview: boolean): TabsState {
+/** A new KEPT tab for `path` at the end of the strip — or at the slot `at` (YAZ-3637 D4) — active. */
+function appendActive(s: TabsState, path: string, preview: boolean, at?: number): TabsState {
   const tab = newTab(path)
-  return { tabs: [...s.tabs, tab], active: tab.id, mounted: [...s.mounted, tab.id], history: s.history, preview: preview ? tab.id : s.preview, blank: false }
+  return { tabs: at === undefined ? [...s.tabs, tab] : insertAt(s.tabs, tab, at), active: tab.id, mounted: [...s.mounted, tab.id], history: s.history, preview: preview ? tab.id : s.preview, blank: false }
 }
 
 /**
@@ -309,10 +309,8 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // are not lost. Under the blank tab this is `fillBlank` for a page that is not open: the page fills it.
       // A quiet move (YAZ-3343 D13) only joins the strip: the page on show stays, and the tab mounts when first shown.
       if (a.background === true && s.active !== null && !s.blank) return { ...s, tabs: [...s.tabs, newTab(a.path)] }
-      if (a.at === undefined) return appendActive(s, a.path, false)
-      // Dropped on this strip (YAZ-3637 D4): the new tab stands at the drop slot, active and mounted, as a take at the end is.
-      const tab = newTab(a.path)
-      return { tabs: insertAt(s.tabs, tab, a.at), active: tab.id, mounted: [...s.mounted, tab.id], history: s.history, preview: s.preview, blank: false }
+      // Dropped on this strip (YAZ-3637 D4): the new tab stands at the drop slot.
+      return appendActive(s, a.path, false, a.at)
     }
     case 'keep':
       // Nothing stored changes, so the caller mirrors nothing (YAZ-2648 D4).

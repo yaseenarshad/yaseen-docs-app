@@ -762,8 +762,9 @@ describe('registerWindowIpc', () => {
     it('window:tear-off (YAZ-3637 D1, D3, D5) hands the caller entry, the path, the clean carry, the point and `alone` to the manager and answers what it says; a stranger, a relative path, a path in no vault of the caller and a bad point are rejected', async () => {
       const tearOff = registered(CONTRACT.window.tearOff.channel)
       const point = { x: 640, y: 480 }
-      expect(await tearOff({ sender }, '/v/a.md', { name: ' Outline ', at: 2 }, point, true)).toEqual(ok('opened'))
-      expect(manager.tearOff).toHaveBeenLastCalledWith(entry, '/v/a.md', { name: 'Outline', at: 2 }, point, true)
+      // Only what "Move to ▸" carries (D9): a slot or `background` from the caller does not reach the manager.
+      expect(await tearOff({ sender }, '/v/a.md', { name: ' Outline ', at: 2, background: true }, point, true)).toEqual(ok('opened'))
+      expect(manager.tearOff.mock.lastCall?.[2]).toStrictEqual({ view: undefined, name: 'Outline' })
       manager.tearOff.mockReturnValueOnce('moved')
       expect(await tearOff({ sender }, '/v/a.md', {}, point, 'yes')).toEqual(ok('moved'))
       expect(manager.tearOff).toHaveBeenLastCalledWith(entry, '/v/a.md', {}, point, false)

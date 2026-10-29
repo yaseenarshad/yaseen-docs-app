@@ -284,7 +284,9 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const from = entryFor(e)
     const target = requireAbsPath(path, 'path')
     if (rootOfPath(from.roots, target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
-    return windows.tearOff(from, target, optionalPopOutCarry(carry), requirePoint(point), alone === true)
+    // What "Move to ▸" carries (D9), and no more: a torn-off tab opens in front, at no slot.
+    const { view, name } = optionalPopOutCarry(carry)
+    return windows.tearOff(from, target, { view, name }, requirePoint(point), alone === true)
   })
 
   // `window:move-to` (YAZ-3091 D1, D2): a tab's "Move to ▸ <window>". Main checks the target again: a window

@@ -431,18 +431,18 @@ describe('TabBar: a tab of ANOTHER window (YAZ-3637 D1, D4, D6)', () => {
   } as unknown as DataTransfer)
   const base = { tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), onDropPage: vi.fn(), ...noNav }
 
-  it('D4, D6: the gap opens only when canTake says this window shows the page\'s vault; the drop hands the window, the ref and the slot to onDropFromWindow, never to onDropPage', () => {
+  it('D4, D6: the line shows only when takesDrag says this window takes the drag; the drop hands the window, the ref and the slot to onDropFromWindow, never to onDropPage', () => {
     const onDropFromWindow = vi.fn()
-    const canTake = vi.fn((_from: string, root: number) => root === 0)
-    const el = mount({ ...base, canTake, onDropFromWindow })
+    const takesDrag = vi.fn((data: DataTransfer) => data.types.includes('application/x-yaseen-from-w2.0'))
+    const el = mount({ ...base, takesDrag, onDropFromWindow })
     expect(fireData(tabAt(el, 1), 'dragover', foreign(false), -5).defaultPrevented).toBe(true)
-    expect(canTake).toHaveBeenLastCalledWith('w2', 0)
+    expect(takesDrag).toHaveBeenCalled()
     expect(tabAt(el, 1).classList.contains('tabbar__tab--gap-before')).toBe(true)
     fireData(tabAt(el, 1), 'drop', foreign(true), -5)
     expect(onDropFromWindow).toHaveBeenCalledExactlyOnceWith('w2', { path: '/w/x.md', copy: 1 }, 1)
     expect(base.onDropPage).not.toHaveBeenCalled()
     expect(el.querySelector('.tabbar__tab--gap-before')).toBeNull()
-    // A vault this window does not show (D6): no gap, the drop is not taken, nothing happens.
+    // A drag this window does not take: no line, the drop is not taken, nothing happens.
     const other = { ...foreign(false), types: [WORKSPACE_PAGE_MIME, 'application/x-yaseen-from-w2.1'] } as unknown as DataTransfer
     expect(fireData(tabAt(el, 2), 'dragover', other, 5).defaultPrevented).toBe(false)
     expect(el.querySelector('.tabbar__tab--gap-after')).toBeNull()
@@ -455,8 +455,26 @@ describe('TabBar: a tab of ANOTHER window (YAZ-3637 D1, D4, D6)', () => {
     expect(onDropFromWindow).toHaveBeenLastCalledWith('w2', { path: '/w/x.md', copy: 1 }, 3)
   })
 
+  it('D4: the line goes out when another window\'s drag leaves the row, and on a drop elsewhere that never bubbles', () => {
+    const el = mount({ ...base, takesDrag: () => true, onDropFromWindow: vi.fn() })
+    const row = el.querySelector<HTMLElement>('.tabbar-row')!
+    fireData(tabAt(el, 1), 'dragover', foreign(false), -5)
+    expect(el.querySelector('.tabbar__tab--gap-before')).not.toBeNull()
+    act(() => void row.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    expect(el.querySelector('.tabbar__tab--gap-before')).toBeNull()
+    // A drop on the page below, stopped on its way down (App's catch): the window hears it in the capture phase.
+    fireData(tabAt(el, 1), 'dragover', foreign(false), -5)
+    expect(el.querySelector('.tabbar__tab--gap-before')).not.toBeNull()
+    const below = document.createElement('div')
+    document.body.appendChild(below)
+    below.addEventListener('drop', (e) => e.stopPropagation(), { capture: true })
+    act(() => void below.dispatchEvent(new Event('drop', { bubbles: true })))
+    expect(el.querySelector('.tabbar__tab--gap-before')).toBeNull()
+    below.remove()
+  })
+
   it('with no door (no onDropFromWindow) another window\'s drag is ignored, as foreign data is', () => {
-    const el = mount({ ...base, canTake: () => true })
+    const el = mount({ ...base, takesDrag: () => true })
     expect(fireData(tabAt(el, 1), 'dragover', foreign(false), -5).defaultPrevented).toBe(false)
     fireData(tabAt(el, 1), 'drop', foreign(true), -5)
     expect(base.onDropPage).not.toHaveBeenCalled()

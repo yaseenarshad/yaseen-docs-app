@@ -126,10 +126,11 @@ export function RightPanel({ roots, titles, windowId, items, expanded, width, ov
 
   const pageFrom = (event: DragEvent): PageDrag | null => {
     if (onDropPage === undefined || event.dataTransfer === null) return null
-    // Another window's tab lands only on a strip or empty space (YAZ-3637 D8): not here.
+    // Another window's page never lands here (YAZ-3637 D8): its strip tab goes to App, which takes it for the strip, and
+    // its right-panel page names no vault, so only its data on the drop tells it apart.
     if (foreignDrag(event.dataTransfer, windowId) !== null) return null
     const page = readPageDrag(event.dataTransfer)
-    if (page === null) return null
+    if (page === null || page.from !== windowId) return null
     if (page.owner === 'main' && items.includes(page.path)) return null
     if (page.owner === 'right' && !items.includes(page.path)) return null
     return page

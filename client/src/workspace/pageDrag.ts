@@ -1,4 +1,5 @@
 import { isRecord } from '@shared/guards'
+import type { TabRef } from '@shared/types'
 
 export const WORKSPACE_PAGE_MIME = 'application/x-yaseen-workspace-page'
 /**
@@ -62,4 +63,13 @@ export function foreignDrag(data: DataTransfer, self: string): { from: string; r
   const root = Number(type.slice(dot + 1))
   if (from === '' || from === self || !Number.isInteger(root) || root < 0) return null
   return { from, root }
+}
+
+/**
+ * On the drop, when the data is readable (YAZ-3637 D4): the strip tab another window sends — the window, and the tab by
+ * ref (the page, and which copy of it that strip holds). Null for a right-panel page and for anything else.
+ */
+export function windowTabOf(data: DataTransfer): { from: string; ref: TabRef } | null {
+  const page = readPageDrag(data)
+  return page === null || page.owner !== 'main' ? null : { from: page.from, ref: { path: page.path, copy: page.copy } }
 }

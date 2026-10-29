@@ -2,7 +2,7 @@ import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo,
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { KeyScope } from '@shared/keys'
 import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -76,7 +76,7 @@ import { useUpdate } from './update/useUpdate'
 import { RightPanel } from './right-panel/RightPanel'
 import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
-import { foreignDrag, readPageDrag, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
+import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
 import { tabById, tabOf, useWorkspace } from './workspace/useWorkspace'
 import { restoreSession } from './workspace/restoreSession'
@@ -1348,6 +1348,14 @@ export function App() {
     transferMainToRight(path, now.current.right)
   }, [transferMainToRight])
   /**
+   * The only tab of a window with nothing else open (YAZ-3091 D6): no other tab, an empty right panel, and no blank tab
+   * — an open blank tab is a tab too (YAZ-3105). Such a tab leaving takes the window with it, or moves it (YAZ-3637 D5).
+   */
+  const aloneHere = useCallback((id: string): boolean => {
+    const { tabs: all, right, blank: newTab } = now.current
+    return all.length === 1 && all[0].id === id && right === 0 && !newTab
+  }, [])
+  /**
    * A tab leaves for another window (YAZ-2933 D2, YAZ-3091 D1), from a page of the board or a tab of the strip.
    * The page saves first, so the other window reads what was typed; `send` gives main the page with its page
    * view and display name; only then does the tab leave, as ⌘W closes it — an open board stays until its last
@@ -1364,16 +1372,14 @@ export function App() {
       .then(() => send({ view, name }))
       .then((sent) => {
         if (sent === false) return
-        const { tabs: all, right, phase, blank: newTab } = now.current
         // YAZ-3091 D6: the only tab of a window whose right panel is empty takes the window with it, through its real close.
-        // An open blank tab is a tab too (YAZ-3105): then the window is not empty, and it stays.
-        if (closeEmptyWindow && all.length === 1 && all[0].id === id && right === 0 && !newTab) void api.window.closeSelf()
+        if (closeEmptyWindow && aloneHere(id)) void api.window.closeSelf()
         // A moved tab lives on in the other window: no "Recently closed" (YAZ-3487 D10).
-        else if (phase === 'open') closeUnderOverview([id], true)
+        else if (now.current.phase === 'open') closeUnderOverview([id], true)
         else closeTab(id, true)
       })
       .catch((err: unknown) => notify(`${failed}: ${err instanceof Error ? err.message : String(err)}`))
-  }, [closeUnderOverview, closeTab, notify])
+  }, [aloneHere, closeUnderOverview, closeTab, notify])
   /** "Move to new window" (YAZ-2933): main opens the window and stores the name with its one tab (YAZ-3057). A last tab leaves this window empty. */
   const movePageToNewWindow = useCallback((path: string, id: string) =>
     sendTabAway(path, id, (carry) => api.window.popOut(path, carry), "Can't move to a new window", false), [sendTabAway])
@@ -1399,28 +1405,32 @@ export function App() {
    * or, for the only tab of a window with nothing else open (the D6 test), moves this window there, and the tab stays.
    * On a window the drop was that window's, or nothing: main answers `none`, and the tab stays too.
    */
-  const tearOff = useCallback((path: string, id: string, point: { x: number; y: number }) => {
-    const { tabs: all, right, blank: newTab } = now.current
-    const alone = all.length === 1 && all[0].id === id && right === 0 && !newTab
+  const tearOff = useCallback((path: string, id: string, point: ScreenPoint) => {
+    const alone = aloneHere(id)
     sendTabAway(path, id, (carry) => api.window.tearOff(path, carry, point, alone).then((r) => r === 'opened'), "Can't move to a new window", false)
-  }, [sendTabAway])
+  }, [aloneHere, sendTabAway])
   /**
-   * Whether this window takes a tab of another window's drag (YAZ-3637 D6, revised in the demo): every window does, by
-   * the page's vault there (an index). One this window shows takes it at once; any other asks to add that vault first
-   * (`takeFromWindow`). A Files window has no strip, and takes none.
+   * Whether this window takes the drag passing over it (YAZ-3637 D4, D6 revised in the demo): a tab of ANOTHER window's
+   * strip, read off the type names alone — Chromium hides the data until the drop. Every window takes one whose vault
+   * that window still shows (an index into its roots): at once when this window shows the vault too, else after it asks
+   * to add it (`takeFromWindow`). A Files window has no strip, and takes none.
    */
-  const canTake = useCallback((from: string, root: number): boolean =>
-    !filesWindow && storage.getOtherWindows().find((w) => w.id === from)?.roots[root] !== undefined, [filesWindow])
-  const moveTabHere = useCallback((from: string, ref: TabRef, at: number) => {
-    api.window.moveTab(from, storage.getWindowId(), ref, at).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
+  const takesDrag = useCallback((data: DataTransfer): boolean => {
+    if (filesWindow) return false
+    const foreign = foreignDrag(data, storage.getWindowId())
+    return foreign !== null && storage.getOtherWindows().find((w) => w.id === foreign.from)?.roots[foreign.root] !== undefined
+  }, [filesWindow])
+  /** `at` absent: the end of the strip, as it is when the move goes (a sheet may have stood in between). */
+  const moveTabHere = useCallback((from: string, ref: TabRef, at?: number) => {
+    api.window.moveTab(from, storage.getWindowId(), ref, at ?? now.current.tabs.length).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
   }, [notify])
   /**
-   * Another window's tab dropped here (YAZ-3637 D4): that window sends it here, to the slot (`sendTabHere` there). A page
-   * of a vault this window does not show asks to add that vault first, as a link into one does (YAZ-3609 D21): the tab
-   * stays where it is until the vault is in.
+   * Another window's tab dropped here (YAZ-3637 D4): that window sends it here, to the slot (`sendTabHere` there), or to
+   * the strip's end for a drop off the strip. A page of a vault this window does not show asks to add that vault first,
+   * as a link into one does (YAZ-3609 D21): the tab stays where it is until the vault is in.
    */
-  const [takeAsk, setTakeAsk] = useState<{ from: string; ref: TabRef; at: number; vault: string } | null>(null)
-  const takeFromWindow = useCallback((from: string, ref: TabRef, at: number) => {
+  const [takeAsk, setTakeAsk] = useState<{ from: string; ref: TabRef; at?: number; vault: string } | null>(null)
+  const takeFromWindow = useCallback((from: string, ref: TabRef, at?: number) => {
     if (rootOfPath(storage.getRoots(), ref.path) !== null) return moveTabHere(from, ref, at)
     const there = storage.getOtherWindows().find((w) => w.id === from)
     const vault = there === undefined ? null : rootOfPath(there.roots, ref.path)
@@ -1590,16 +1600,12 @@ export function App() {
     return () => window.clearTimeout(timer)
   }, [glow])
   // Another window's tab over this window (YAZ-3637 D4, widened in the demo): the WHOLE window takes it, not just the
-  // strip. The same ring lights while the drag is over, the cue that a drop here lands; a window that does not take it
-  // (D6) never lights. Chromium repeats dragover while the pointer is over the window, so the ring goes out on its own.
+  // strip. The same ring lights while the drag is over, the cue that a drop here lands; a window that takes no drag
+  // (`takesDrag`) never lights. Chromium repeats dragover while the pointer is over the window, so the ring goes out on its own.
   const [takeGlow, setTakeGlow] = useState(false)
   const takeGlowTimer = useRef<number | undefined>(undefined)
-  const foreignHere = (e: ReactDragEvent<HTMLElement>): boolean => {
-    // A drag event made by a script may come with no data.
-    if (filesWindow || !e.dataTransfer) return false
-    const foreign = foreignDrag(e.dataTransfer, storage.getWindowId())
-    return foreign !== null && canTake(foreign.from, foreign.root)
-  }
+  // A drag event made by a script may come with no data.
+  const foreignHere = (e: ReactDragEvent<HTMLElement>): boolean => !!e.dataTransfer && takesDrag(e.dataTransfer)
   const windowDragOver = (e: ReactDragEvent<HTMLElement>): void => {
     if (!foreignHere(e)) return
     setTakeGlow(true)
@@ -1615,18 +1621,20 @@ export function App() {
     window.clearTimeout(takeGlowTimer.current)
     setTakeGlow(false)
     if (e.defaultPrevented) return
-    const page = readPageDrag(e.dataTransfer)
-    if (page === null || page.owner !== 'main') return
+    const tab = windowTabOf(e.dataTransfer)
+    if (tab === null) return
     e.preventDefault()
-    takeFromWindow(page.from, { path: page.path, copy: page.copy }, now.current.tabs.length)
+    takeFromWindow(tab.from, tab.ref)
   }
   // Off the strip the window catches the drag on the way down, so no editor, sidebar or right panel below ever sees it
-  // (an editor would take it as text). On the strip it bubbles back up after the strip had its say.
+  // (an editor would take it as text). On the strip — or the review bar, which stands in its row — it bubbles back up
+  // after the row had its say.
   const windowDragCapture = (e: ReactDragEvent<HTMLElement>): void => {
     if (e.target instanceof Element && e.target.closest('.tabbar-row') !== null) return
     if (!foreignHere(e)) {
-      // This window's own tab (YAZ-3637 D8, from the demo) lands only on its strip or its right panel: the editor and
-      // the sidebar never see it, so the editor draws no drop line for a drop that does nothing.
+      // Any other page drag (YAZ-3637 D8, from the demo) — this window's own tab, or one of another window this window
+      // does not take — lands only on the strip or the right panel: the editor and the sidebar never see it, so the
+      // editor draws no drop line for a drop that does nothing.
       if (e.dataTransfer && [...e.dataTransfer.types].includes(WORKSPACE_PAGE_MIME) && !(e.target instanceof Element && e.target.closest('.right-panel') !== null)) e.stopPropagation()
       return
     }
@@ -2980,7 +2988,7 @@ export function App() {
               onMove={moveTab}
               onDropPage={dropOnMain}
               // A tab of another window's strip dropped here, and a tab of this one let go off every window (YAZ-3637).
-              canTake={canTake}
+              takesDrag={takesDrag}
               onDropFromWindow={takeFromWindow}
               onTearOff={tearOff}
               onMoveToRight={movePageToRight}
@@ -3143,6 +3151,7 @@ export function App() {
             const ask = takeAsk
             setTakeAsk(null)
             // The vault's identity write goes to main before the move asks it, so main sees this window show the page.
+            // A vault the window cannot take (the most vaults, one inside another) says why in a notice, and nothing moves.
             void addVault(ask.vault).then((added) => {
               if (added) moveTabHere(ask.from, ask.ref, ask.at)
             })
