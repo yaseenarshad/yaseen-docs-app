@@ -33,7 +33,6 @@ describe('UpdatePill', () => {
   it.each([
     ['ready', 'New update ready'],
     ['manual', 'New update ready'],
-    ['updated', "See what's new"],
   ] as const)('%s says "%s" after a 🎉; no version number (D14)', (kind, label) => {
     const button = render({ kind, version: '1.0.13' }).querySelector('button')!
     expect(button.textContent).toBe(`🎉${label}`)
@@ -43,7 +42,7 @@ describe('UpdatePill', () => {
     expect(button.querySelector('.update-pill__emoji')?.getAttribute('aria-hidden')).toBe('true')
     // YAZ-3401: a narrow footer shows the short words from `data-short`, or the 🎉 alone; the name stays the full words.
     expect(button.getAttribute('aria-label')).toBe(label)
-    expect(button.dataset.short).toBe(kind === 'updated' ? "What's new" : 'Update')
+    expect(button.dataset.short).toBe('Update')
     expect(button.querySelector('.update-pill__label')?.textContent).toBe(label)
   })
 

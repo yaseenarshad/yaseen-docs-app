@@ -9,7 +9,7 @@
  * Same harness as its siblings: temp `--user-data-dir`, COPY of the fixture, `update-` step screenshots.
  * `shell.openExternal` is stubbed in main, so "Download" and a link in the notes never open the browser.
  */
-// Written for YAZ-2976 and corrected for YAZ-2986 and YAZ-2988 (the list of releases, the tags, the lightbox) without being run: the testing rules of that work forbid a test
+// Written for YAZ-2976 and corrected for YAZ-2986, YAZ-2988 (the list of releases, the tags, the lightbox) and YAZ-3698 (no pill after a swap) without being run: the testing rules of that work forbid a test
 // that opens windows on Yasin's screen. Every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, stat, writeFile } from 'node:fs/promises'
@@ -161,21 +161,23 @@ test('step 5 — Help › What\'s New… opens the same sheet; Esc closes it (D8
   await expect(whatsNew(win)).toHaveCount(0)
 })
 
-test('step 6 — the first launch after a swap: the pill says "What\'s new" once, the sheet shows this release, and Check for Updates… says it is the newest (S24, S15, S4)', async () => {
+test('step 6 — the first launch after a swap shows no pill, and deletes the updated-to of an older swap; Help › What\'s New… shows this release, and Check for Updates… says it is the newest (YAZ-3698, S15, S4)', async () => {
   const version = await app.evaluate(({ app: electronApp }) => electronApp.getVersion())
   await quitApp(app)
-  latest = `v${version}` // nothing newer: only the marker makes the pill, and the feed lists this release alone
-  await writeFile(path.join(userData, 'updated-to'), version)
+  latest = `v${version}` // nothing newer, and the feed lists this release alone
+  await writeFile(path.join(userData, 'updated-to'), version) // what the swap of 2.8 and older writes
   await launch()
-  await expect(pill(win)).toHaveText("🎉See what's new")
-  await expect(stat(path.join(userData, 'updated-to'))).rejects.toThrow()
-  await pill(win).click()
+  await expect(win.locator('.sidebar__footer')).toBeVisible()
+  await expect.poll(() => stat(path.join(userData, 'updated-to')).then(() => 'there', () => 'gone')).toBe('gone')
+  await expect(pill(win)).toHaveCount(0)
+  await clickMenuItem(app, 'menu.help.whats-new', 'w1')
   await expect(whatsNew(win).locator('.whats-new__release-title')).toHaveText(['This Release'])
   await expect(rows(win).locator('.whats-new__tag')).toHaveText(['Latest', 'Your current version']) // up to date: one row, both tags
   await expect(actions(win)).toHaveText(['Close'])
   await shoot(win, 'update-06-whats-new-after-update')
   await actions(win).click() // the one action, Close; the corner × is the sheet's other Close
   await expect(whatsNew(win)).toHaveCount(0)
+  await expect(pill(win)).toHaveCount(0)
   await clickMenuItem(app, 'menu.app.check-updates', 'w1')
   await expect(win.locator('.link-notice')).toHaveText(`Yaseen Docs ${version} is the newest version`)
 })

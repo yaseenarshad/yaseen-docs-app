@@ -57,7 +57,7 @@ export interface UpdaterHost {
 }
 
 export interface Updater {
-  /** Once, on `ready`: reads the `updated-to` marker (S24) and `update-refused`, then the first check 10 s from now and every 12 h after (D7); no check in a dev run with no feed (S7). */
+  /** Once, on `ready`: deletes an old `updated-to` (YAZ-3698), reads `update-refused`, then the first check 10 s from now and every 12 h after (D7); no check in a dev run with no feed (S7). */
   start(): void
   /** One check now: the state it finds, `downloading` as soon as a download starts. Never two at once; while `downloading` or `ready` it answers the state and fetches nothing (S6). */
   check(): Promise<UpdateState>
@@ -132,17 +132,17 @@ export async function ownRequirement(run: Run, bundle: string): Promise<string |
 }
 
 /**
- * The swap (S21–S23), run by `/bin/sh -c SWAP_SCRIPT sh <pid> <app> <marker> <refused> <version> <reopen>`. It
- * waits for the app's process to end and deletes a stale `<app>.old`; two renames on one disk put `<app>.update` in place, and only a
- * swap that landed writes the `updated-to` marker (S24). If the new app is not in place, `<app>.old`
+ * The swap (S21–S23), run by `/bin/sh -c SWAP_SCRIPT sh <pid> <app> <refused> <version> <reopen>`. It
+ * waits for the app's process to end and deletes a stale `<app>.old`; two renames on one disk put `<app>.update` in place. A swap
+ * that landed leaves no record (YAZ-3698: no "See what's new" pill). If the new app is not in place, `<app>.old`
  * goes back and the version goes to `update-refused` (S23): the next launch offers it as `manual`. `reopen` = 1 opens whichever app stands at `<app>` (S21; S22 passes 0).
  */
 export const SWAP_SCRIPT = [
-  'pid=$1 app=$2 marker=$3 refused=$4 version=$5 reopen=$6',
+  'pid=$1 app=$2 refused=$3 version=$4 reopen=$5',
   'while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done',
   // A stale `.old` goes first: `mv` into an existing folder would put the app INSIDE it.
   'rm -rf "$app.old"',
-  'if [ ! -e "$app.old" ] && mv "$app" "$app.old" && mv "$app.update" "$app"; then rm -rf "$app.old"; printf %s "$version" > "$marker"; else [ -d "$app" ] || mv "$app.old" "$app"; printf %s "$version" > "$refused"; fi',
+  'if [ ! -e "$app.old" ] && mv "$app" "$app.old" && mv "$app.update" "$app"; then rm -rf "$app.old"; else [ -d "$app" ] || mv "$app.old" "$app"; printf %s "$version" > "$refused"; fi',
   '[ "$reopen" = 1 ] && open "$app"',
   'exit 0',
 ].join('\n')
@@ -160,7 +160,8 @@ export function spawnDetached(file: string, args: readonly string[]): void {
 export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) => void): Updater {
   const feed = host.feed ?? UPDATE_FEED
   const updates = join(host.userData, 'updates')
-  const marker = join(host.userData, 'updated-to')
+  /** What the swap of 2.8 and older wrote after it landed (S24, removed by YAZ-3698). A launch deletes it. */
+  const oldMarker = join(host.userData, 'updated-to')
   const refusedFile = join(host.userData, 'update-refused')
   const staged = `${host.bundle}.update`
 
@@ -312,15 +313,14 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
 
   return {
     start() {
-      // S24: the swap wrote the version it installed, so this launch is that version's first one. Read
-      // here, on `ready` of the one primary instance, never at load: a second launch must not eat it.
-      // Deleted either way. No broadcast: no window exists yet, and each reads `state()` on mount.
+      // YAZ-3698: no pill after an update: the user read the notes in "What's new" before the install.
+      // The swap of 2.8 and older still writes `updated-to`, and nothing reads it now: it goes.
       try {
-        if (shortVersion(readFileSync(marker, 'utf8').trim()) === host.version) state = { kind: 'updated', version: host.version }
-        rmSync(marker, { force: true })
+        rmSync(oldMarker, { force: true })
       } catch {
-        // no marker: a plain launch
+        // a launch never fails on it
       }
+      // No broadcast: no window exists yet, and each reads `state()` on mount.
       try {
         const version = shortVersion(readFileSync(refusedFile, 'utf8').trim())
         if (newer(version, host.version)) {
@@ -353,7 +353,7 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
     installOnExit(reopen) {
       if (state.kind !== 'ready') return
       try {
-        host.spawnDetached('/bin/sh', ['-c', SWAP_SCRIPT, 'sh', String(host.pid), host.bundle, marker, refusedFile, state.version, reopen ? '1' : '0'])
+        host.spawnDetached('/bin/sh', ['-c', SWAP_SCRIPT, 'sh', String(host.pid), host.bundle, refusedFile, state.version, reopen ? '1' : '0'])
       } catch (err) {
         console.error(`[update] the swap did not start: ${String(err)}`) // the app still exits; the next check stages again
       }

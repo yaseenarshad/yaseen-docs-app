@@ -50,8 +50,8 @@
 /*
  * YAZ-3401: the pill shortens by the room left for it. Its slot takes the footer's free width after the cog, the
  * sidebar zoom and the Files window chip, and is the size container. Measured: "New update ready" needs 156 px
- * (its 4 px margin and 151 px), "What's new" (the wider short words) needs 119 px. Narrower, the words go and the
- * pill is a 22 px round 🎉 with the dot on its corner. The DOM text, the accessible name and the title keep the
+ * (its 4 px margin and 151 px); the 119 px step was measured for the removed "What's new" (YAZ-3698), kept so
+ * the look does not change. Narrower, the words go and the pill is a 22 px round 🎉 with the dot on its corner. The DOM text, the accessible name and the title keep the
  * full words.
  */
 .update-pill-slot {
