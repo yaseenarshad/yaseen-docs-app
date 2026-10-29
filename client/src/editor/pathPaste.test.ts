@@ -10,6 +10,7 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { LinkCandidate } from '../links/completion'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
+import { EXTERNAL_EDIT_META } from './external/applyExternalMarkdown'
 import { hrefTarget, type PathPasteOptions } from './pathPaste'
 import { createWikilinkCandidateSource } from './wikilink/wikilinkPicker'
 
@@ -326,6 +327,13 @@ describe('the cases the checker named (YAZ-3632) and the fixed bugs', () => {
     expect(saved(crepe)).toBe('Next: see')
   })
 
+  it('YAZ-3633 a path of a file no tab can show, pasted over words, keeps the words as its text', async () => {
+    const { crepe, view } = await mount('Read the budget first.\n')
+    select(view, 'the budget')
+    paste(view, '/v/finance/budget.zip')
+    expect(saved(crepe)).toBe('Read [the budget](../finance/budget.zip) first.')
+  })
+
   it('a parenthesis in a file name is escaped, so the link does not end early', async () => {
     const { crepe, view } = await mount()
     atEnd(view)
@@ -398,5 +406,28 @@ describe('links across the vaults of a window (D14, D15, D16)', () => {
     link('site', 'https://milkdown.dev')
     link('else', '/x/else.md')
     expect(saved(crepe)).toBe('[Plan](../../w/plan.md) here and [site](https://milkdown.dev) and [else](/x/else.md)')
+  })
+
+  it('R1 a file no tab can show is saved relative too', async () => {
+    const { crepe, view } = await mount('Budget here\n', workspace())
+    select(view, 'Budget')
+    const { from, to } = view.state.selection
+    view.dispatch(view.state.tr.addMark(from, to, view.state.schema.marks.link!.create({ href: '/v/finance/budget.zip' })))
+    expect(saved(crepe)).toBe('[Budget](../finance/budget.zip) here')
+  })
+
+  it('YAZ-3649 a full-path link that an outside edit writes, or that the caret types inside, stays as it is; a pasted one is saved relative', async () => {
+    const { crepe, view } = await mount('[Plan](/w/plan.md) here\n\nSecond line\n', workspace())
+    expect(saved(crepe)).toBe('[Plan](/w/plan.md) here\n\nSecond line') // as loaded
+    select(view, 'Plan', true)
+    view.dispatch(view.state.tr.insertText('s'))
+    expect(saved(crepe)).toContain('[Plans](/w/plan.md) here') // typing inside an older link
+    select(view, 'here', true)
+    const end = view.state.selection.from
+    view.dispatch(view.state.tr.insertText(' and ', end).addMark(end + 1, end + 4, view.state.schema.marks.link!.create({ href: '/w/plan.md' })).setMeta(EXTERNAL_EDIT_META, true))
+    expect(saved(crepe)).toContain('[and](/w/plan.md)') // an outside edit
+    select(view, 'Second line', true)
+    paste(view, ' x', '<a href="/w/plan.md">the plan</a>')
+    expect(saved(crepe)).toContain('[the plan](../../w/plan.md)') // a paste
   })
 })

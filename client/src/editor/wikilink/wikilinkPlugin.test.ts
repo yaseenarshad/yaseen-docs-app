@@ -533,18 +533,22 @@ describe('a resolved link is a pill with its file icon (YAZ-3609 D13)', () => {
   it('I1 a note and a folder lead with their icons; I3 an unresolved link has none', async () => {
     const { root } = await mountLook('See [[Roadmap]], [[Research]] and [[Nope]] now\n')
     expect(icons(root)).toEqual(['/v/roadmap.md|false', '/v/research|true'])
-    const leads = Array.from(root.querySelectorAll('.wikilink__lead'))
-    expect(leads.map((lead) => lead.nextElementSibling?.textContent)).toEqual(['Roadmap', 'Research'])
+    // Icon and text in one span: the pill is one box.
+    expect(Array.from(root.querySelectorAll('.wikilink__icon')).map((icon) => icon.parentElement?.textContent)).toEqual(['Roadmap', 'Research'])
     expect(root.querySelector(`.${WIKILINK_UNRESOLVED_CLASS} .wikilink__icon`)).toBeNull()
   })
 
   it('I2 an ID link draws the icon inside its title; an alias and a heading link draw one icon each', async () => {
     const { root } = await mountLook('A [[YAZ-12]] B [[Roadmap|the plan]] C [[Roadmap#Q1]] end\n')
     expect(icons(root)).toEqual(['/v/roadmap.md|false', '/v/roadmap.md|false', '/v/roadmap.md|false'])
-    const title = Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).find((el) => el.textContent === 'Roadmap' && el.querySelector('.wikilink__icon') !== null)
-    expect(title).toBeDefined()
-    const leads = Array.from(root.querySelectorAll('.wikilink__lead'))
-    expect(leads.map((lead) => lead.nextElementSibling?.textContent)).toEqual(['the plan', 'Roadmap'])
+    expect(Array.from(root.querySelectorAll('.wikilink__icon')).map((icon) => icon.parentElement?.textContent)).toEqual(['Roadmap', 'the plan', 'Roadmap'])
+    expect(root.querySelector(`.${WIKILINK_SUB_CLASS}`)?.textContent).toBe('Q1')
+  })
+
+  it('a click on a plain-name pill opens its page; the hidden text keeps the document byte for byte', async () => {
+    const { crepe, root } = await mountLook('See [[Roadmap]] now\n')
+    expect(root.querySelector('.wikilink__icon')?.parentElement?.classList.contains(WIKILINK_CLASS)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('See [[Roadmap]] now\n')
   })
 
   it('I5 with the caret beside the link, the raw text shows and no icon', async () => {

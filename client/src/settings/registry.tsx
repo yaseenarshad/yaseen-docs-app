@@ -33,7 +33,6 @@ import type { SharingState } from '../share/useSharing'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
-
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented } from './controls'
 import { HOTKEYS_SECTION } from './hotkeysSection'

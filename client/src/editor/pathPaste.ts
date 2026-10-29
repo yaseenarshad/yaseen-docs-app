@@ -12,6 +12,8 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import { Slice } from '@milkdown/kit/prose/model'
+import { AddMarkStep, ReplaceStep } from '@milkdown/kit/prose/transform'
+import { EXTERNAL_EDIT_META } from './external/applyExternalMarkdown'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
 import { fileKind } from '@shared/fileKind'
@@ -83,6 +85,18 @@ const markdownLink = (label: string, from: string, to: string): string => `[${la
 
 /** A Markdown link's target as a page, folder or file of this vault (D8), or null: the web, another folder, a missing file. */
 export function hrefTarget(href: string, options: PathPasteOptions): string | null {
+  const target = hrefPath(href, options.notePath)
+  return target === null ? null : rowOf(target, (options.candidatesOf?.(target) ?? options.candidates).candidates)?.path ?? null
+}
+
+/** A Markdown link's target as an absolute path in a vault of this window, found or not (D19); null for the web or anywhere else. */
+export function vaultHref(href: string, options: PathPasteOptions): string | null {
+  const target = hrefPath(href, options.notePath)
+  return target !== null && (inVault(target, options) || options.candidatesOf?.(target) != null) ? target : null
+}
+
+/** A local `href` as an absolute path: decoded, `#` and `?` dropped, resolved from `notePath`'s folder; null for the web. */
+function hrefPath(href: string, notePath: string): string | null {
   if (/^[a-z][a-z\d+.-]+:/i.test(href) && !/^file:/i.test(href)) return null
   let path: string
   try {
@@ -90,10 +104,9 @@ export function hrefTarget(href: string, options: PathPasteOptions): string | nu
   } catch {
     return null
   }
-  const absolute = path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) ? path : `${options.notePath.replace(/[\\/][^\\/]*$/, '')}/${path}`
+  const absolute = path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) ? path : `${notePath.replace(/[\\/][^\\/]*$/, '')}/${path}`
   // A folder's page names its folder, as a pasted path does.
-  const target = collapse(absolute).replace(/\/\.folder\.md$/, '')
-  return rowOf(target, (options.candidatesOf?.(target) ?? options.candidates).candidates)?.path ?? null
+  return collapse(absolute).replace(/\/\.folder\.md$/, '')
 }
 
 /** `.` and `..` folded away: `/v/a/../b.md` is `/v/b.md`. */
@@ -107,24 +120,47 @@ function collapse(path: string): string {
 }
 
 /**
- * A link typed or pasted in the link box with the absolute path of a page or file of a vault in this
- * window (D16) is stored relative to this note, as a paste writes it: it keeps working on another Mac
- * where the vaults keep their layout. Only the range that the transactions changed is read.
+ * A link set in the link box (or "Add link…") or pasted with the absolute path of a file or folder of a
+ * vault in this window (D16) is stored relative to this note, as a paste of a path writes it: it keeps
+ * working on another Mac where the vaults keep their layout. Only the links that this change SETS are
+ * read (YAZ-3649): never a link that an outside edit (an agent, another app) wrote, and never an older
+ * link that the caret types inside. Milkdown's paste carries no meta, so a link that text brings counts
+ * as set only when its line held no link to that address before: typing inside a link repeats one.
  */
 export const relativeLinks = $prose((ctx) => new Plugin({
   key: new PluginKey('mdapp-relative-links'),
-  appendTransaction: (_trs, before, state) => {
+  appendTransaction: (trs, before, state) => {
     const options = ctx.get(pathPasteCtx)
-    if (options === null || before.doc === state.doc) return null
+    if (options === null || before.doc === state.doc || trs.some((tr) => tr.getMeta(EXTERNAL_EDIT_META) !== undefined)) return null
+    const type = linkSchema.type(ctx)
+    // The hrefs this change sets: an added link mark (the link box), or the links a paste brings.
+    const set = new Set<string>()
+    for (const tr of trs) {
+      tr.steps.forEach((step, i) => {
+        if (step instanceof AddMarkStep && step.mark.type === type) set.add(step.mark.attrs.href as string)
+        if (!(step instanceof ReplaceStep)) return
+        const doc = tr.docs[i]!
+        const line = new Set<string>()
+        doc.resolve(Math.min(step.from, doc.content.size)).parent.descendants((node) => {
+          const mark = type.isInSet(node.marks)
+          if (mark !== undefined) line.add(mark.attrs.href as string)
+        })
+        step.slice.content.descendants((node) => {
+          const href = type.isInSet(node.marks)?.attrs.href as string | undefined
+          if (href !== undefined && !line.has(href)) set.add(href)
+        })
+      })
+    }
+    const absolute = [...set].filter((href) => typeof href === 'string' && /^(file:|\/|[A-Za-z]:[\\/])/i.test(href))
+    if (absolute.length === 0) return null
     const start = before.doc.content.findDiffStart(state.doc.content)
     const end = before.doc.content.findDiffEnd(state.doc.content)
     if (start === null || end === null) return null
-    const type = linkSchema.type(ctx)
     const tr = state.tr
     state.doc.nodesBetween(start, Math.max(start, end.b), (node, pos) => {
       const mark = node.isText ? type.isInSet(node.marks) : undefined
       const href = mark?.attrs.href
-      const path = typeof href === 'string' && /^(file:|\/|[A-Za-z]:[\\/])/i.test(href) ? hrefTarget(href, options) : null
+      const path = typeof href === 'string' && absolute.includes(href) ? vaultHref(href, options) : null
       if (mark === undefined || path === null) return
       tr.addMark(pos, pos + node.nodeSize, type.create({ ...mark.attrs, href: relativeHref(options.notePath, path) }))
     })

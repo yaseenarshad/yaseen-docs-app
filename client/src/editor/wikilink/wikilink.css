@@ -13,24 +13,22 @@
   cursor: pointer;
 }
 
-/* A resolved link is a pill with its file's icon (YAZ-3609 D13). An id link draws both in one span (its
-   title widget); any other link draws the icon in a lead widget just before its text, and the two join. */
+/* A resolved link is a pill with its file's icon (YAZ-3609 D13): icon and text in one span, so one box. */
 .wikilink:not(.wikilink--unresolved) {
   padding: 0 4px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-.wikilink__lead {
-  padding-right: 0;
-  border-radius: 4px 0 0 4px;
+/* A heading part (` > Q1`) follows its pill as plain link text. */
+.wikilink.wikilink__sub {
+  padding: 0;
+  background: none;
 }
-.wikilink__lead + .wikilink {
-  padding-left: 3px;
-  border-radius: 0 4px 4px 0;
-}
-.wikilink__icon {
-  margin-right: 3px;
-  vertical-align: -2px;
+/* A Markdown link into a vault of the window (YAZ-3609 D19): the same pill; its anchor drops the underline.
+   As specific as Crepe's reset (`.milkdown .ProseMirror a`), which comes first, so this one wins. */
+.milkdown .ProseMirror .link-pill > a {
+  color: inherit;
+  text-decoration: none;
 }
 
 /* Target not in the vault index — dimmed, Obsidian-style. */

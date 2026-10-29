@@ -72,8 +72,20 @@ test('step 1 — a resolved [[link]] is a pill that leads with its file icon (D1
   win = await appWindow(app, 'w1')
   const pill = editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).first()
   await expect(pill).toBeVisible()
-  await expect(editorOf(win).locator('.wikilink__lead .file-icon')).toHaveCount(1)
+  await expect(pill.locator('.file-icon')).toHaveCount(1) // icon and name in one span: one box
   await shoot(win, 'workspace-links-01-pill')
+})
+
+test('step 1b — a Markdown link into the other vault is the same pill, with its icon and no underline (D19)', async () => {
+  const pill = editorOf(win).locator('.link-pill', { hasText: 'the gym plan' })
+  await expect(pill.locator('.file-icon')).toHaveCount(1)
+  expect(await pill.locator('a').evaluate((a) => getComputedStyle(a).textDecorationLine)).toBe('none')
+  // I4, YAZ-3648: with File icons Off the icon takes no room, so no empty box sits before the text.
+  const iconWidth = () => editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).first().locator('.file-icon').evaluate((el) => el.getBoundingClientRect().width)
+  expect(await iconWidth()).toBeGreaterThan(0)
+  await win.evaluate(() => document.querySelector('.app')!.setAttribute('data-sidebar-file-icons', 'off'))
+  expect(await iconWidth()).toBe(0)
+  await win.evaluate(() => document.querySelector('.app')!.removeAttribute('data-sidebar-file-icons'))
 })
 
 test('step 2 — a Markdown link into the other vault opens in this tab, and Back returns (D14, D10)', async () => {
@@ -92,6 +104,17 @@ test('step 3 — a pasted path of the other vault is a relative link named after
   await expect
     .poll(async () => (await readFile(path.join(work, TODAY), 'utf8')).includes(`Paste:[Plan](../${PERSONAL}/${PLAN})`), { timeout: 10_000 })
     .toBe(true)
+  await quitApp(app)
+})
+
+test('step 5 — "Open a link in: A new tab": a click opens a new tab in front, and Back returns (D11, YAZ-3651)', async () => {
+  app = await launchApp({ userData, seedState: workspaceState('new-tab') })
+  win = await appWindow(app, 'w1')
+  await editorOf(win).locator('a', { hasText: 'the gym plan' }).click()
+  await expect(activeTab(win)).toHaveText('Plan')
+  await expect(tabsOf(win)).toHaveCount(2) // Today stays in its own tab
+  await win.getByRole('button', { name: 'Back' }).click()
+  await expect(activeTab(win)).toHaveText('Today')
   await quitApp(app)
 })
 

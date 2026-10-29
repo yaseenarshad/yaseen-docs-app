@@ -122,6 +122,42 @@ describe('a link to this vault opens in a tab (YAZ-3609 D8, D9)', () => {
   })
 })
 
+describe('a Markdown link into a vault of the window is a pill (YAZ-3609 D19)', () => {
+  const icon = (path: string, folder: boolean) => {
+    const span = document.createElement('span')
+    span.className = 'wikilink__icon'
+    span.dataset.path = path
+    span.dataset.folder = String(folder)
+    return span
+  }
+  const vaultPath = (href: string) => (href.startsWith('../') ? `/v/${href.slice(3)}` : null)
+
+  it('I6 a vault link leads with its icon and keeps its text and href; I7 a web link stays a plain link', async () => {
+    const { crepe, root } = await mount('[Plan](../plan.md) and [Research](../research) and [Web](https://example.com)\n', { vaultPath, icon })
+    const pills = Array.from(root.querySelectorAll('.link-pill'))
+    expect(pills.map((pill) => [pill.querySelector('a')?.getAttribute('href'), pill.textContent, (pill.querySelector('.wikilink__icon') as HTMLElement).dataset.folder])).toEqual([
+      ['../plan.md', 'Plan', 'false'],
+      ['../research', 'Research', 'true'],
+    ])
+    expect(Array.from(root.querySelectorAll('a')).find((a) => a.textContent === 'Web')?.closest('.link-pill')).toBeNull()
+    expect(getMarkdownForSave(crepe)).toBe('[Plan](../plan.md) and [Research](../research) and [Web](https://example.com)\n')
+  })
+
+  it('a click on the pill icon opens the link, as a click on its text does', async () => {
+    const openPath = vi.fn()
+    const { root } = await mount('[Plan](../plan.md)\n', { vaultPath, icon, inApp: (href) => vaultPath(href), openPath })
+    mouse(root.querySelector('.link-pill .wikilink__icon')!, 'mousedown', { button: 0 })
+    expect(openPath).toHaveBeenCalledWith('/v/plan.md', false)
+  })
+
+  it('editing the text inside a pill keeps the link and the pill', async () => {
+    const { crepe, view, root } = await mount('[Plan](../plan.md)\n', { vaultPath, icon })
+    view.dispatch(view.state.tr.insertText('s', 1 + 'Plan'.length))
+    expect(getMarkdownForSave(crepe)).toBe('[Plans](../plan.md)\n')
+    expect(root.querySelector('.link-pill')?.textContent).toBe('Plans')
+  })
+})
+
 describe('the address in the link popup (YAZ-3645)', () => {
   it('follows the link as a click on it does: a vault page opens in a tab, never a new browser window', async () => {
     const openPath = vi.fn()
@@ -142,6 +178,18 @@ describe('the address in the link popup (YAZ-3645)', () => {
     popup('https://example.com').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
     expect(nav.open).toHaveBeenCalledWith('https://example.com')
     expect(root).toBeDefined()
+  })
+
+  it('YAZ-3650 a right-click on the address opens nothing', async () => {
+    const openPath = vi.fn()
+    const { nav, view } = await mount('[Note](../note.md)\n', { inApp: () => '/v/note.md', openPath })
+    const a = document.createElement('a')
+    a.className = 'link-display'
+    a.setAttribute('href', '../note.md')
+    view.dom.closest('.milkdown')!.appendChild(a)
+    a.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 2 }))
+    expect(openPath).not.toHaveBeenCalled()
+    expect(nav.open).not.toHaveBeenCalled()
   })
 
   it('leaves an anchor outside the editor alone', async () => {

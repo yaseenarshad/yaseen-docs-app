@@ -14,6 +14,7 @@ import { linkSchema } from '@milkdown/kit/preset/commonmark'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { fileKind } from '@shared/fileKind'
 
 export interface MarkdownLinkNav {
   open: (href: string) => Promise<void> | void
@@ -21,6 +22,10 @@ export interface MarkdownLinkNav {
   inApp?: (href: string) => string | null
   /** Opens that path: in this tab, or in a background tab for a ⌘-click. */
   openPath?: (path: string, background: boolean) => void
+  /** A link into a vault of this window, found or not (YAZ-3609 D19): its absolute path, or null. Such a link is a pill. */
+  vaultPath?: (href: string) => string | null
+  /** The pill's icon: the one the sidebar gives `path` (D13, D19). */
+  icon?: (path: string, folder: boolean) => HTMLElement
   /** Injectable for tests; the app uses the platform clipboard by default. */
   copy?: (href: string) => Promise<void> | void
   onNotice: (message: string) => void
@@ -55,7 +60,8 @@ const attempt = (run: () => Promise<void> | void, prefix: string, onNotice: Mark
  */
 function linkHit(view: EditorView, ctx: Ctx, target: EventTarget | null): LinkHit | null {
   if (!(target instanceof Element)) return null
-  const anchor = target.closest('a')
+  // A pill's icon sits beside its anchor (D19): a click on it is a click on the link.
+  const anchor = target.closest('a') ?? target.closest('.link-pill')?.querySelector('a') ?? null
   if (anchor === null || !view.dom.contains(anchor)) return null
   const probe = view.posAtDOM(anchor, 0)
   const $probe = view.state.doc.resolve(probe)
@@ -138,6 +144,26 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
     return new Plugin({
       key: markdownLinkKey,
       props: {
+        // A link into a vault of this window looks like a [[link]] (YAZ-3609 D19): a pill that leads with its
+        // file's icon. The icon sits outside the anchor, so the anchor stays the mark's content. Drawn once
+        // for each run of the mark; the look follows the path, not the index, so it is right at first paint.
+        markViews: {
+          link: (mark) => {
+            const href = typeof mark.attrs.href === 'string' ? mark.attrs.href : ''
+            const anchor = document.createElement('a')
+            anchor.setAttribute('href', href)
+            if (typeof mark.attrs.title === 'string' && mark.attrs.title !== '') anchor.title = mark.attrs.title
+            const path = nav.vaultPath?.(href) ?? null
+            if (path === null || nav.icon === undefined) return { dom: anchor }
+            const name = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
+            const icon = nav.icon(path, fileKind(name) === null && !name.includes('.'))
+            icon.contentEditable = 'false'
+            const pill = document.createElement('span')
+            pill.className = 'wikilink link-pill'
+            pill.append(icon, anchor)
+            return { dom: pill, contentDOM: anchor }
+          },
+        },
         handleDOMEvents: {
           mousedown: (view, event) => {
             if (event.button !== 0 || event.altKey || event.shiftKey || event.ctrlKey) return false
@@ -180,7 +206,8 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
         const onPreviewClick = (event: MouseEvent) => {
           const anchor = event.target instanceof Element ? event.target.closest('a.link-display') : null
           const root = editorView.dom.closest('.milkdown')
-          if (anchor === null || root === null || !root.contains(anchor)) return
+          // A right-click also sends `auxclick` (button 2): only a left or a middle click follows (YAZ-3650).
+          if (anchor === null || root === null || !root.contains(anchor) || event.button > 1) return
           event.preventDefault()
           event.stopPropagation()
           const href = anchor.getAttribute('href') ?? ''

@@ -10,7 +10,7 @@ import { createDrawingFeed } from '../drawings/drawingFeed'
 import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
 import { FolderView } from '../views/FolderView'
-import { hrefTarget } from './pathPaste'
+import { hrefTarget, vaultHref } from './pathPaste'
 import { createCrepe, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
@@ -639,6 +639,9 @@ function CrepeHost({
         // A link to a page or file of this vault opens in a tab, like a [[link]] (YAZ-3609 D8).
         inApp: (href) => (wikilinkCandidates === undefined ? null : hrefTarget(href, { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf })),
         openPath: (target, background) => (background ? onOpenFileBackground ?? onOpenFile : onOpenFile)(target),
+        // A link into a vault of the window is a pill with its file's icon, like a [[link]] (YAZ-3609 D19).
+        vaultPath: (href) => (wikilinkCandidates === undefined ? null : vaultHref(href, { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf })),
+        icon: (target, folder) => fileIconElement(icons.current, target, folder),
         onNotice: onNotice ?? (() => undefined),
       },
       // Paste a path, get a link (YAZ-3609): this vault's `[[` picker rows spell it.
