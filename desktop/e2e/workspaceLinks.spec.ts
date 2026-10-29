@@ -202,5 +202,20 @@ test('step 6 — a link into a vault the app knows but this window does not show
   await expect(win.locator('.tree__row', { hasText: ARCHIVE }).first()).toBeVisible()
   await win.getByRole('button', { name: 'Back' }).click()
   await expect(activeTab(win)).toHaveText('Today')
+  // YAZ-3664: the link into the vault that just joined the window is a pill now, with no edit.
+  await expect(editorOf(win).locator('.link-pill--first', { hasText: 'the old note' })).toHaveCount(1)
+  await quitApp(app)
+})
+
+test('step 7 — a link into a vault that joins the window turns into a pill at once, in the note that stays open (YAZ-3664)', async () => {
+  app = await launchApp({ userData, seedState: workspaceState() })
+  win = await appWindow(app, 'w1')
+  const link = editorOf(win).locator('a', { hasText: 'the old note' })
+  await expect(link.locator('.link-pill')).toHaveCount(0) // Archive is not in the window: a plain link
+  await link.click({ modifiers: ['Meta'] }) // a background tab: Today stays on screen, as Yaseen's note did
+  await win.locator('.confirm[role="dialog"]').getByRole('button', { name: 'Add vault to this window' }).click()
+  await expect(tabsOf(win).filter({ hasText: 'Old' })).toHaveCount(1)
+  await expect(activeTab(win)).toHaveText('Today')
+  await expect(editorOf(win).locator('.link-pill--first', { hasText: 'the old note' })).toHaveCount(1)
   await quitApp(app)
 })

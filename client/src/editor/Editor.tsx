@@ -13,6 +13,8 @@ import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
 import { FolderView } from '../views/FolderView'
 import { hrefPath, hrefTarget, vaultHref } from './pathPaste'
+import { redrawLinkPills } from './markdownLink'
+import { editorViewCtx } from '@milkdown/kit/core'
 import { createCrepe, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
@@ -804,6 +806,12 @@ function CrepeHost({
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
   // A worker that fails shows one passive notice and is not asked again until the next of those three.
+  // A vault that joins or leaves the window changes which links are pills (YAZ-3664): draw them again, with no edit.
+  const windowRoots = vaultLinksHere?.roots
+  useEffect(() => {
+    if (readyCrepe === null || crepeRef.current !== readyCrepe || windowRoots === undefined) return
+    redrawLinkPills(readyCrepe.editor.ctx.get(editorViewCtx))
+  }, [readyCrepe, windowRoots])
   useEffect(() => {
     const crepe = readyCrepe
     if (!lineNumbersOn || crepe === null || autosave.status !== 'saved') return

@@ -41,6 +41,12 @@ interface LinkHit {
 }
 
 const markdownLinkKey = new PluginKey<DecorationSet>('mdapp-markdown-link')
+const REDRAW = 'redraw-pills'
+
+/** Draws every link pill of the note again (YAZ-3664): the host calls it when the window's vaults change. No document change. */
+export function redrawLinkPills(view: EditorView): void {
+  view.dispatch(view.state.tr.setMeta(markdownLinkKey, REDRAW).setMeta('addToHistory', false))
+}
 
 const failureMessage = (prefix: string, error: unknown): string =>
   `${prefix}: ${error instanceof Error ? error.message : String(error)}`
@@ -193,7 +199,10 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
       state: {
         init: (_, state) => (nav.vaultPath === undefined ? DecorationSet.empty : pillsIn(state.doc, 0, state.doc.content.size, type, nav, DecorationSet.empty)),
         apply: (tr, set, before, state) => {
-          if (!tr.docChanged || nav.vaultPath === undefined) return set
+          if (nav.vaultPath === undefined) return set
+          // The window's vaults changed (YAZ-3664): every link of the note is a pill, or not, again.
+          if (tr.getMeta(markdownLinkKey) === REDRAW) return pillsIn(state.doc, 0, state.doc.content.size, type, nav, set)
+          if (!tr.docChanged) return set
           const mapped = set.map(tr.mapping, tr.doc)
           // Only the lines the change touched are drawn again: the step ranges, and the doc diff (a mark step maps no positions).
           let from = state.doc.content.size

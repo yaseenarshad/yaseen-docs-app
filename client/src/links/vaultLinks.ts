@@ -14,6 +14,8 @@ export interface VaultLinks {
    * then open the page (`background`: behind). False when no such vault holds the path; the caller goes on.
    */
   askToAdd: (path: string, background: boolean) => boolean
+  /** The window's vaults. A change redraws the open notes' link pills (YAZ-3664): a vault that joins makes its links pills. */
+  roots: readonly string[]
 }
 
 export const VaultLinksContext = createContext<VaultLinks | null>(null)

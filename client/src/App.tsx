@@ -424,7 +424,7 @@ export function App() {
     setAddAsk({ root, path, background })
     return true
   }, [])
-  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd }), [candidatesOf, askToAdd])
+  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots }), [candidatesOf, askToAdd, roots])
   /** The scope of the ACTIVE tab's vault (R3, R4, R10); with no tab open, the first vault's. */
   const active = file === null ? first : scopeOf(file)
   /**
