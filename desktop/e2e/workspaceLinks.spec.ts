@@ -189,14 +189,14 @@ test('step 6 — a link into a vault the app knows but this window does not show
   const link = editorOf(win).locator('a', { hasText: 'the old note' })
   // V3: Cancel changes nothing.
   await link.click()
-  await expect(sheet).toContainText(`Old is in the vault ${ARCHIVE}, which is not open in this window.`)
+  await expect(sheet).toContainText(`Old is in another vault (${ARCHIVE}), which is not open in this window.`)
   await shoot(win, 'workspace-links-06-ask')
   await sheet.getByRole('button', { name: 'Cancel' }).click()
   await expect(sheet).toHaveCount(0)
   await expect(activeTab(win)).toHaveText('Today')
   // V1: Add — the vault joins the window, the page opens in a tab, and Back returns.
   await link.click()
-  await sheet.getByRole('button', { name: `Add ${ARCHIVE} to this window` }).click()
+  await sheet.getByRole('button', { name: 'Add vault to this window' }).click()
   await expect(activeTab(win)).toHaveText('Old')
   await expect(editorOf(win)).toContainText(OLD_BODY)
   await expect(win.locator('.tree__row', { hasText: ARCHIVE }).first()).toBeVisible()
