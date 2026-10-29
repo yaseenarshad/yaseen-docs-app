@@ -140,6 +140,8 @@ export interface SettingsGroup {
   header?: (ctx: SettingsCtx) => ReactNode
   /** The group's DOM id, for a link to it. */
   anchor?: string
+  /** An extra class on the group's card (Settings › Hotkeys lays its rows out as boxes). */
+  cardClass?: string
 }
 
 export interface SettingsSection {

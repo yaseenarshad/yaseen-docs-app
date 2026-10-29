@@ -269,25 +269,33 @@ describe('one card per key (YAZ-3564)', () => {
   const toggle = (text: string) => act(() => [...el.querySelectorAll<HTMLLabelElement>('.hotkeys__toggles label')].find((l) => l.textContent?.includes(text))?.querySelector('input')?.click())
   /** The card of a key, found by its heading ('⌘D'). */
   const card = (key: string) => [...el.querySelectorAll<HTMLElement>('.settings-group')].find((g) => g.querySelector('.hotkeys__cap-key')?.textContent === key) as HTMLElement
-  /** The pick of one tab on a card: its two buttons, and which is on. */
-  const pick = (key: string, place: string) => card(key).querySelector<HTMLElement>(`[aria-label="${key} in ${place}"]`) as HTMLElement
-  const picked = (key: string, place: string) => [...pick(key, place).querySelectorAll('button')].find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent
+  /** The pick of one tab on a card: its dropdown, and what it shows. */
+  const pick = (key: string, place: string) => card(key).querySelector<HTMLSelectElement>(`select[aria-label="${key} in ${place}"]`) as HTMLSelectElement
+  const picked = (key: string, place: string) => pick(key, place).selectedOptions[0]?.textContent
+  const choose = (key: string, place: string, label: string) =>
+    act(() => {
+      const select = pick(key, place)
+      select.value = String([...select.options].findIndex((o) => o.textContent === label))
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
   const asked = () => [popup()?.querySelector('.confirm__text')?.textContent, ...[...(popup()?.querySelectorAll('.hotkeys__line') ?? [])].map((l) => l.textContent)]
   const lostLine = (id: string) => row(`hotkey-${id}`).querySelector('.hotkeys__lost')?.textContent
 
   it("a card holds every row on its key, App's first, each with its place; the shared keys a pick settles lead", async () => {
     await mount()
     expect([...el.querySelectorAll('.hotkeys__cap-key')].slice(0, 2).map((h) => h.textContent)).toEqual(['⌘D', '⌘K'])
-    expect(card('⌘D').querySelector('.hotkeys__cap-key')?.classList.contains('hotkeys__cap-key--shared')).toBe(true)
+    expect(card('⌘D').querySelector('.hotkeys__card-head .hotkeys__hint')?.textContent).toBe('Shared: each tab picks what it does.')
     expect([...card('⌘D').querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting)).toEqual(['hotkey-goTo', 'hotkey-drawing-duplicate', 'hotkey-diagram-duplicate', 'hotkey-code-addSelectionToNextFindMatch'])
-    expect(row('hotkey-drawing-duplicate').querySelector('.hotkeys__place')?.textContent).toBe('Drawing')
-    // ⌘B is two tabs' own key, no App key: green, no pick.
-    expect(card('⌘B').querySelector('.hotkeys__cap-key')?.classList.contains('hotkeys__cap-key--tab')).toBe(true)
-    expect(card('⌘B').querySelector('.hotkeys__picks')).toBeNull()
+    expect(row('hotkey-drawing-duplicate').querySelector('.hotkeys__box-tab')?.textContent).toBe('Drawing')
+    // ⌘B is two tabs' own key, no App key: no pick.
+    expect(card('⌘B').querySelector('.hotkeys__card-head .hotkeys__hint')?.textContent).toBe('Each tab has its own action.')
+    expect(card('⌘B').querySelector('select')).toBeNull()
     // ⌘K takes a drawing's Add a link by default: the row says what ⌘K does there now.
     expect(picked('⌘K', 'drawings')).toBe('Search the vault')
-    expect(lostLine('drawing-link')).toBe('No key in drawings now: ⌘K does App › Search the vault there.')
-    // A code key that begins with ⌘K is on its own card, and links to ⌘K's.
+    expect(lostLine('drawing-link')).toBe('Add a link has no key here now.')
+    // A code key that begins with ⌘K is on its own card, and links to ⌘K's; ⌘K's card has a box for code's pick.
+    expect(lostLine('code-addCommentLine')).toBe('No key here now: ⌘K is App › Search the vault. Change it on ⌘K')
+    expect(picked('⌘K', 'code')).toBe('Search the vault')
     expect(button(row('hotkey-code-addCommentLine'), 'Change it on ⌘K')).toBeDefined()
   })
 
@@ -295,18 +303,20 @@ describe('one card per key (YAZ-3564)', () => {
     await mount()
     expect(picked('⌘D', 'drawings')).toBe('Duplicate')
     expect(lostLine('drawing-duplicate')).toBeUndefined()
-    click(button(pick('⌘D', 'drawings'), 'Show in sidebar'))
+    choose('⌘D', 'drawings', 'Show in sidebar')
     expect(asked()).toEqual(['⌘D in drawings: Show in sidebar?', 'Drawing › Duplicate will have no key in drawings.'])
     expect(onChange).not.toHaveBeenCalled()
     click(button(popup() as HTMLElement, 'Cancel'))
     expect(picked('⌘D', 'drawings')).toBe('Duplicate')
-    click(button(pick('⌘D', 'drawings'), 'Show in sidebar'))
+    choose('⌘D', 'drawings', 'Show in sidebar')
     click(button(popup() as HTMLElement, 'Take it'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo@drawing': false } })
     expect(picked('⌘D', 'drawings')).toBe('Show in sidebar')
     expect(picked('⌘D', 'diagrams')).toBe('Duplicate') // one tab at a time
-    expect(lostLine('drawing-duplicate')).toBe('No key in drawings now: ⌘D does App › Show in sidebar there.')
-    click(button(pick('⌘D', 'drawings'), 'Duplicate'))
+    expect(lostLine('drawing-duplicate')).toBe('Duplicate has no key here now.')
+    // The App box says where Show in sidebar works now.
+    expect(row('hotkey-goTo').querySelector('.hotkeys__box-tab')?.textContent).toBe('Notes · Folder views · Drawings')
+    choose('⌘D', 'drawings', 'Duplicate')
     expect(asked()).toEqual(['⌘D in drawings: Duplicate?', 'App › Show in sidebar will not work in drawings.'])
     click(button(popup() as HTMLElement, 'Take it'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: {} })

@@ -34,6 +34,7 @@ import { MACOS_HOTKEYS, type SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
 import { ConfirmSheet } from '../components/ConfirmSheet'
+import { Select } from './controls'
 import { MOUSE_TIPS, shortLabel } from './hotkeys'
 import type { SettingDef, SettingsCtx, SettingsGroup, SettingsSection } from './registry'
 
@@ -300,32 +301,36 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
   }
 
   const recording = mode.kind === 'recording'
+  // A tab's box on a shared key holds its pick (K9): what the key does in this tab.
+  const app = pickOf(row, overrides)
+  const keeps = app !== null && stepsAside(app, row.scope as AsidePlace, aside)
   return (
-    <div ref={rowRef} className="hotkeys__command">
-      <div className="hotkeys__row">
-        <span className="hotkeys__keys">
-          <button
-            ref={keyButton}
-            type="button"
-            className={`hotkeys__key${changed ? ' hotkeys__key--changed' : ''}${recording ? ' hotkeys__key--recording' : ''}${current === null ? ' hotkeys__key--none' : ''}`}
-            aria-label={recording ? `Press new keys for ${row.label}` : `${row.label}: ${shown(current)}. Change`}
-            onClick={() => setMode(recording ? { kind: 'idle' } : { kind: 'recording', refused: null })}
-          >
-            {recording ? 'Press new keys…' : shown(current)}
-          </button>
-          {resettable && mode.kind === 'idle' && (
-            <button type="button" className="hotkeys__link" aria-label={`Reset ${row.label}`} onClick={askReset}>
-              Reset
-            </button>
-          )}
-        </span>
-        <span className="hotkeys__label hotkeys__label--command">
-          <PlaceTag scope={row.scope} />
+    <div ref={rowRef} className="hotkeys__box">
+      <div className="hotkeys__box-tab">{row.scope === 'app' ? appWhere(row, overrides, aside) : SCOPE_TITLES[row.scope]}</div>
+      {app !== null ? (
+        <TabPick app={app} place={row.scope as AsidePlace} own={[row]} ctx={ctx} />
+      ) : (
+        <div className="hotkeys__box-action" title={row.hint}>
           {row.label}
-          {row.hint !== undefined && <span className="hotkeys__hint"> — {row.hint}</span>}
-        </span>
+        </div>
+      )}
+      {mode.kind === 'idle' && (app !== null ? !keeps && <p className="hotkeys__line hotkeys__lost">{row.label} has no key here now.</p> : blockers.length > 0 && <LostLine row={row} blocker={blockers[0]} overrides={overrides} />)}
+      <div className="hotkeys__box-foot">
+        <button
+          ref={keyButton}
+          type="button"
+          className={`hotkeys__key${changed ? ' hotkeys__key--changed' : ''}${recording ? ' hotkeys__key--recording' : ''}${current === null ? ' hotkeys__key--none' : ''}`}
+          aria-label={recording ? `Press new keys for ${row.label}` : `${row.label}: ${shown(current)}. Change`}
+          onClick={() => setMode(recording ? { kind: 'idle' } : { kind: 'recording', refused: null })}
+        >
+          {recording ? 'Press new keys…' : shown(current)}
+        </button>
+        {resettable && mode.kind === 'idle' && (
+          <button type="button" className="hotkeys__link" aria-label={`Reset ${row.label}`} onClick={askReset}>
+            Reset
+          </button>
+        )}
       </div>
-      {blockers.length > 0 && mode.kind === 'idle' && <LostLine row={row} blocker={blockers[0]} overrides={overrides} />}
       {below}
     </div>
   )
@@ -543,10 +548,17 @@ const rowItem = (row: KeyRow): SettingDef => ({
     if (row.changeable) return <HotkeyRow row={row} ctx={ctx} />
     const blocker = blockersOf(row, ctx.settings.hotkeys, ctx.settings.hotkeysAside)[0]
     return (
-      <>
-        {fixedRow(keysText(keysOf(row, ctx.settings.hotkeys)), <><PlaceTag scope={row.scope} />{row.label}{row.hint !== undefined && <span className="hotkeys__hint"> — {row.hint}</span>}</>)}
+      <div className="hotkeys__box hotkeys__box--fixed">
+        <div className="hotkeys__box-tab">{SCOPE_TITLES[row.scope]}</div>
+        <div className="hotkeys__box-action" title={row.hint}>
+          {row.label}
+        </div>
         {blocker !== undefined && <LostLine row={row} blocker={blocker} overrides={ctx.settings.hotkeys} />}
-      </>
+        <div className="hotkeys__box-foot">
+          <span className="hotkeys__keys">{keysText(keysOf(row, ctx.settings.hotkeys))}</span>
+          <span className="hotkeys__hint">Built in</span>
+        </div>
+      </div>
     )
   },
 })
@@ -655,12 +667,7 @@ const cardAnchor = (key: string): string => `hotkeys-key-${normal(key).replace(/
 
 const PLACE_WORDS: Record<KeyScope, string> = { app: 'every tab', note: 'notes', drawing: 'drawings', diagram: 'diagrams', code: 'code', views: 'folder views' }
 
-/** A row's place, as a small tag before its name (green: one kind of tab; purple: App). */
-function PlaceTag({ scope }: { scope: KeyScope }) {
-  return <span className={`hotkeys__place hotkeys__place--${scope === 'app' ? 'app' : 'tab'}`}>{SCOPE_TITLES[scope]}</span>
-}
-
-/** Under a row whose key an App key took in its tab: what the key does there now, and a link to the card that decides it. */
+/** Under a row whose key an App key always takes in its tab: what the key does there, and a link to the card that decides it. */
 function LostLine({ row, blocker, overrides }: { row: KeyRow; blocker: KeyRow; overrides: HotkeyOverrides }) {
   const theirs = keyNow(blocker, overrides)
   const mine = keyNow(row, overrides)
@@ -673,7 +680,7 @@ function LostLine({ row, blocker, overrides }: { row: KeyRow; blocker: KeyRow; o
   }
   return (
     <p className="hotkeys__line hotkeys__lost">
-      No key in {PLACE_WORDS[row.scope]} now: {theirs === null ? '' : keyText(theirs)} does {owned(blocker)} there.
+      No key here now: {theirs === null ? '' : keyText(theirs)} is {owned(blocker)}.
       {elsewhere && (
         <>
           {' '}
@@ -686,96 +693,109 @@ function LostLine({ row, blocker, overrides }: { row: KeyRow; blocker: KeyRow; o
   )
 }
 
-/** "⌘D in drawings: Show in sidebar?" — what a new pick takes from, before it is written (the Premiere rule: take it or keep it). */
-type Pick = { app: KeyRow; place: AsidePlace; keeps: boolean; losers: KeyRow[] }
+/** The App command a pick in `row`'s tab settles on its card (K9), or null: the row then just says what it is. */
+function pickOf(row: KeyRow, overrides: HotkeyOverrides): KeyRow | null {
+  if (!(ASIDE_PLACES as readonly string[]).includes(row.scope)) return null
+  const card = cardsOf(overrides).cardOf.get(row.id)
+  return card?.rows.find((a) => a.scope === 'app' && (contested(a, overrides).get(row.scope as AsidePlace) ?? []).some((r) => r.id === row.id)) ?? null
+}
 
 /** A tab's own actions on a key, as a pick names them: 'Duplicate', or '28 two-step keys'. */
 const ownText = (rows: readonly KeyRow[]): string => (rows.length > 3 ? `${rows.length} two-step keys` : rows.map((r) => r.label).join(', '))
 const losersText = (rows: readonly KeyRow[]): string => (rows.length > 3 ? `${rows.length} ${SCOPE_TITLES[rows[0].scope].toLowerCase()} keys that start with it` : rows.map(owned).join(', '))
 
 /**
- * A card's head (YAZ-3564): the key in its colour, what it is, and for a shared key the action each tab gets. A tab of a
- * changeable App key picks App or its own (K9, written to `hotkeysAside` per tab); a pick asks first. A row an App key
- * always wins against says so under itself (`LostLine`).
+ * What a shared key does in one tab (K9, YAZ-3564): the tab's own action, or the App command's. A dropdown, like the
+ * mockup; a change asks "Take it" first (the Premiere rule), and writes `hotkeysAside` for this tab alone.
  */
-function KeyCardHead({ card, ctx }: { card: KeyCard; ctx: SettingsCtx }) {
-  const [asking, setAsking] = useState<Pick | null>(null)
-  const { hotkeys: overrides, hotkeysAside: aside } = ctx.settings
-  const apps = card.rows.filter((r) => r.scope === 'app')
-  const cap = keyText(card.key)
-  const what =
-    card.kind === 'shared' ? 'Shared: each tab below gets one action.' : card.kind === 'app' ? `Works in every tab.` : card.rows.length > 1 ? 'Each tab has its own action.' : `Works in ${PLACE_WORDS[card.rows[0].scope]}.`
-  const picks = apps.flatMap((app) => [...contested(app, overrides)].map(([place, rows]) => ({ app, place, rows })))
+function TabPick({ app, place, own, ctx }: { app: KeyRow; place: AsidePlace; own: readonly KeyRow[]; ctx: SettingsCtx }) {
+  const [asking, setAsking] = useState<boolean | null>(null)
+  const aside = ctx.settings.hotkeysAside
+  const keeps = stepsAside(app, place, aside)
+  const key = keyNow(app, ctx.settings.hotkeys)
+  const cap = key === null ? '' : keyText(key)
+  const losers = contested(app, ctx.settings.hotkeys).get(place) ?? own
   return (
-    <div className="hotkeys__card-head">
-      <div className="hotkeys__card-title">
-        <h3 className={`settings-group__title hotkeys__cap-key hotkeys__cap-key--${card.kind}`}>{cap}</h3>
-        <span className="hotkeys__hint">{what}</span>
-      </div>
-      {picks.length > 0 && (
-        <div className="hotkeys__picks">
-          {picks.map(({ app, place, rows }) => {
-            const keeps = stepsAside(app, place, aside)
-            const choose = (next: boolean): void => {
-              if (next !== keeps) setAsking({ app, place, keeps: next, losers: next ? [app] : rows })
-            }
-            return (
-              <div key={`${app.id}@${place}`} className="hotkeys__pick">
-                <span className="hotkeys__pick-place">{SCOPE_TITLES[place]}</span>
-                <span className="hotkeys__seg" role="group" aria-label={`${cap} in ${PLACE_WORDS[place]}`}>
-                  <button type="button" className="hotkeys__seg-btn hotkeys__seg-btn--app" aria-pressed={!keeps} onClick={() => choose(false)}>
-                    {app.label}
-                  </button>
-                  <button type="button" className="hotkeys__seg-btn hotkeys__seg-btn--tab" aria-pressed={keeps} onClick={() => choose(true)}>
-                    {ownText(rows)}
-                  </button>
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      )}
+    <>
+      <Select<boolean> options={[{ value: true, label: ownText(losers) }, { value: false, label: app.label }]} value={keeps} onChange={(next) => next !== keeps && setAsking(next)} ariaLabel={`${cap} in ${PLACE_WORDS[place]}`} />
       {asking !== null && (
         <ConfirmSheet
-          labelId={`hotkeys-pick-${cardAnchor(card.key)}`}
-          text={`${cap} in ${PLACE_WORDS[asking.place]}: ${asking.keeps ? ownText(contested(asking.app, overrides).get(asking.place) ?? []) : asking.app.label}?`}
+          labelId={`hotkeys-pick-${app.id.replace(/\W/g, '-')}-${place}`}
+          text={`${cap} in ${PLACE_WORDS[place]}: ${asking ? ownText(losers) : app.label}?`}
           confirmLabel="Take it"
           keys="contained"
           focusConfirm
           onConfirm={() => {
-            ctx.onChange({ ...ctx.settings, hotkeysAside: withAside(aside, asking.app, asking.place, asking.keeps) })
+            ctx.onChange({ ...ctx.settings, hotkeysAside: withAside(aside, app, place, asking) })
             setAsking(null)
           }}
           onCancel={() => setAsking(null)}
         >
-          <p className="hotkeys__line hotkeys__line--ask">{asking.keeps ? `${owned(asking.app)} will not work in ${PLACE_WORDS[asking.place]}.` : `${losersText(asking.losers)} will have no key in ${PLACE_WORDS[asking.place]}.`}</p>
+          <p className="hotkeys__line hotkeys__line--ask">{asking ? `${owned(app)} will not work in ${PLACE_WORDS[place]}.` : `${losersText(losers)} will have no key in ${PLACE_WORDS[place]}.`}</p>
         </ConfirmSheet>
       )}
+    </>
+  )
+}
+
+const TAB_TITLES: Record<AsidePlace, string> = { drawing: 'Drawings', diagram: 'Diagrams', code: 'Code' }
+/** Where an App action works now, as its box's title: 'Every tab', or 'Notes · Folder views · Code' while some tabs keep their own. */
+function appWhere(row: KeyRow, overrides: HotkeyOverrides, aside: HotkeyAside): string {
+  const fought = contested(row, overrides)
+  const kept = ASIDE_PLACES.filter((p) => fought.has(p) && stepsAside(row, p, aside))
+  return kept.length === 0 ? 'Every tab' : ['Notes', 'Folder views', ...ASIDE_PLACES.filter((p) => !kept.includes(p)).map((p) => TAB_TITLES[p])].join(' · ')
+}
+
+/** A tab's box on a shared key whose own actions are on other cards (code's two-step keys on ⌘K): just the pick. */
+const pickItem = (app: KeyRow, place: AsidePlace, rows: readonly KeyRow[]): SettingDef => ({
+  id: `hotkeys-pick-${rowDomId(app)}-${place}`,
+  label: `${app.label} in ${PLACE_WORDS[place]}`,
+  keywords: [SCOPE_TITLES[place].toLowerCase(), ...ROW_KEYWORDS],
+  bare: true,
+  available: (ctx) => {
+    const f = ctx.hotkeyFilter ?? NO_FILTER
+    return (f.scope === 'all' || f.scope === place) && (!f.changed || asideChanged(app, ctx.settings.hotkeysAside))
+  },
+  render: (ctx) => (
+    <div className="hotkeys__box">
+      <div className="hotkeys__box-tab">{SCOPE_TITLES[place]}</div>
+      <TabPick app={app} place={place} own={rows} ctx={ctx} />
+      <p className="hotkeys__line">Each starts with {keyText(keyNow(app, ctx.settings.hotkeys) ?? '')}. They are on their own cards.</p>
+    </div>
+  ),
+})
+
+/** A card's head: the key, and what kind of key it is. */
+function KeyCardHead({ card }: { card: KeyCard }) {
+  const what =
+    card.kind === 'shared' ? (card.picks > 0 ? 'Shared: each tab picks what it does.' : 'Used by the app and by tabs: built in.') : card.kind === 'app' ? 'Works in every tab.' : card.rows.length > 1 ? 'Each tab has its own action.' : `Works in ${PLACE_WORDS[card.rows[0].scope]}.`
+  return (
+    <div className="hotkeys__card-head">
+      <h3 className="settings-group__title hotkeys__cap-key">{keyText(card.key)}</h3>
+      <span className="hotkeys__hint">{what}</span>
     </div>
   )
 }
 
-/** The colours, said once at the top (shown while no filter stands). */
+/** How the page reads, said once at the top (shown while no filter stands). */
 const legendItem: SettingDef = {
   id: 'hotkeys-legend',
   label: 'How keys work',
-  keywords: ['colour', 'color', 'shared', ...ROW_KEYWORDS],
+  keywords: ['shared', ...ROW_KEYWORDS],
   bare: true,
   available: (ctx) => !isFiltered(ctx),
   render: () => (
-    <div className="hotkeys__legend">
-      <span>
-        <i className="hotkeys__swatch hotkeys__swatch--app" /> App key: works in every tab
-      </span>
-      <span>
-        <i className="hotkeys__swatch hotkeys__swatch--tab" /> Tab key: works in one kind of tab
-      </span>
-      <span>
-        <i className="hotkeys__swatch hotkeys__swatch--shared" /> Shared: each tab gets one action
-      </span>
-      <span className="hotkeys__hint">A note or a diagram reads a change when it opens.</span>
-    </div>
+    <p className="hotkeys__line">
+      One card per key, one box per tab. Where tabs share a key, each tab's box picks what the key does there. A note or a diagram reads a change when it opens.
+    </p>
   ),
+}
+
+/** The picks of a card's App commands whose tab rows are on other cards (⌘K's two-step code keys). */
+function elsewherePicks(card: KeyCard, overrides: HotkeyOverrides): SettingDef[] {
+  return card.rows
+    .filter((r) => r.scope === 'app')
+    .flatMap((app) => [...contested(app, overrides)].filter(([, rows]) => !rows.some((r) => card.rows.includes(r))).map(([place, rows]) => pickItem(app, place, rows)))
 }
 
 /** The page's groups as the keys are now: the colours, one card per key, then the actions with no key. */
@@ -783,8 +803,14 @@ function cardGroups(ctx: SettingsCtx): SettingsGroup[] {
   const { cards, noKey } = cardsOf(ctx.settings.hotkeys)
   return [
     { items: [legendItem] },
-    ...cards.map((card) => ({ title: keyText(card.key), anchor: cardAnchor(card.key), header: (c: SettingsCtx) => <KeyCardHead card={card} ctx={c} />, items: card.rows.map(rowItem) })),
-    { title: 'Actions with no key', hint: 'They still work from the menu or the toolbar.', anchor: 'hotkeys-no-key', items: noKey.map(rowItem) },
+    ...cards.map((card) => ({
+      title: keyText(card.key),
+      anchor: cardAnchor(card.key),
+      cardClass: 'hotkeys__boxes',
+      header: () => <KeyCardHead card={card} />,
+      items: [...card.rows.map(rowItem), ...elsewherePicks(card, ctx.settings.hotkeys)],
+    })),
+    { title: 'Actions with no key', hint: 'They still work from the menu or the toolbar.', anchor: 'hotkeys-no-key', cardClass: 'hotkeys__boxes', items: noKey.map(rowItem) },
   ]
 }
 
