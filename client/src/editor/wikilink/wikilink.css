@@ -13,6 +13,26 @@
   cursor: pointer;
 }
 
+/* A resolved link is a pill with its file's icon (YAZ-3609 D13). An id link draws both in one span (its
+   title widget); any other link draws the icon in a lead widget just before its text, and the two join. */
+.wikilink:not(.wikilink--unresolved) {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.wikilink__lead {
+  padding-right: 0;
+  border-radius: 4px 0 0 4px;
+}
+.wikilink__lead + .wikilink {
+  padding-left: 3px;
+  border-radius: 0 4px 4px 0;
+}
+.wikilink__icon {
+  margin-right: 3px;
+  vertical-align: -2px;
+}
+
 /* Target not in the vault index — dimmed, Obsidian-style. */
 .wikilink--unresolved {
   color: var(--fg-muted);

@@ -377,11 +377,11 @@ type ContextParams = Parameters<typeof buildContextMenuTemplate>[0]
 
 const EDIT_FLAGS: ContextParams['editFlags'] = { canUndo: true, canRedo: true, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true, canEditRichly: true }
 
-const noopActions = (): ContextMenuActions => ({ copyAs: vi.fn(), pasteAs: vi.fn(), replace: vi.fn(), addToDictionary: vi.fn(), copyImage: vi.fn(), revealImage: vi.fn() })
+const noopActions = (): ContextMenuActions => ({ copyAs: vi.fn(), pasteAs: vi.fn(), addLink: vi.fn(), replace: vi.fn(), addToDictionary: vi.fn(), copyImage: vi.fn(), revealImage: vi.fn() })
 
 /** What Electron hands `context-menu`, defaulting to a clean right-click in an editable body. */
 function context(params: Partial<ContextParams> = {}): ContextParams {
-  return { misspelledWord: '', dictionarySuggestions: [], editFlags: EDIT_FLAGS, mediaType: 'none', srcURL: '', ...params }
+  return { misspelledWord: '', dictionarySuggestions: [], editFlags: EDIT_FLAGS, mediaType: 'none', srcURL: '', selectionText: '', isEditable: true, ...params }
 }
 
 const shapeOf = (items: MenuItemConstructorOptions[]) => items.map((i) => i.label ?? i.role ?? i.type)
@@ -390,6 +390,20 @@ describe('buildContextMenuTemplate', () => {
   it('a misspelling with suggestions: the suggestions, Add to Dictionary, then cut/copy/paste', () => {
     const items = buildContextMenuTemplate(context({ misspelledWord: 'teh', dictionarySuggestions: ['the', 'ten', 'tea'] }), noopActions())
     expect(shapeOf(items)).toEqual(['the', 'ten', 'tea', 'separator', 'Add to Dictionary', 'separator', 'cut', 'copy', 'Copy as', 'paste', 'Paste as'])
+  })
+
+  it('M1 selected text you can edit adds "Add link…" under Paste as, and it asks the editor for its link box (YAZ-3609 D17)', () => {
+    const actions = noopActions()
+    const items = buildContextMenuTemplate(context({ selectionText: 'the plan' }), actions)
+    expect(shapeOf(items)).toEqual(['cut', 'copy', 'Copy as', 'paste', 'Paste as', 'separator', 'Add link…'])
+    items.at(-1)!.click!({} as never, undefined, {} as never)
+    expect(actions.addLink).toHaveBeenCalledOnce()
+  })
+
+  it('M2 no "Add link…" with no selection, a selection of spaces, or text you cannot edit', () => {
+    for (const params of [{ selectionText: '' }, { selectionText: '  ' }, { selectionText: 'the plan', isEditable: false }]) {
+      expect(shapeOf(buildContextMenuTemplate(context(params), noopActions()))).not.toContain('Add link…')
+    }
   })
 
   it('a misspelling Electron has no suggestions for leads with Add to Dictionary — no dangling separator', () => {

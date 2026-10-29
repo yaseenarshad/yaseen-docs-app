@@ -168,6 +168,7 @@ const manager = createWindowManager(store, {
       Menu.buildFromTemplate(buildContextMenuTemplate(params, {
         copyAs: (mode) => win.webContents.send(SPECIAL.menuCopyAs, mode),
         pasteAs: (mode) => win.webContents.send(SPECIAL.menuPasteAs, { mode, text: clipboard.readText() } satisfies ClipboardPasteRequest),
+        addLink: () => win.webContents.send(SPECIAL.menuAddLink),
         replace: (s) => win.webContents.replaceMisspelling(s),
         addToDictionary: (w) => win.webContents.session.addWordToSpellCheckerDictionary(w),
         // Image rows (YAZ-1666): Chromium copies the decoded pixels at the click point; reveal

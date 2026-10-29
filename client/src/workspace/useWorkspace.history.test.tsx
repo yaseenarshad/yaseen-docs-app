@@ -34,11 +34,23 @@ describe('history recording', () => {
     expect(s.history).toEqual({ [D]: { entries: [A, B, D], index: 2 } })
   })
 
-  it('activating an already-open tab records nothing on either tab', () => {
+  // YAZ-3609 D10 (B1) replaces YAZ-721's "records nothing": with nothing recorded, Back could not return.
+  it('a link to a page another tab shows goes to that tab, and Back there returns to the page with the link', () => {
     const two = tabsReducer(abc(), { type: 'open-background', path: D })
     const s = nav(two, D)
     expect(s.active).toBe(D)
-    expect(s.history).toEqual(two.history)
+    expect(s.history).toEqual({ ...two.history, [D]: { entries: [C, D], index: 1 } })
+    const back = tabsReducer(s, { type: 'back' })
+    expect(back.active).toBe(C)
+    expect(back.tabs).toEqual([C, D])
+    expect(back.history[C]).toEqual(two.history[C]) // the first tab's own stack is untouched
+  })
+
+  it('B2: with the tab of the link closed, Back opens the page with the link in this tab', () => {
+    const s = tabsReducer(nav(tabsReducer(abc(), { type: 'open-background', path: D }), D), { type: 'close', path: C })
+    const back = tabsReducer(s, { type: 'back' })
+    expect(back.tabs).toEqual([C])
+    expect(back.active).toBe(C)
   })
 
   it('a tab opened without navigating has no record until it navigates', () => {

@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
+import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
 import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
@@ -63,6 +63,8 @@ import { PdfViewer } from '../viewers/PdfViewer'
 import { ImageViewer } from '../viewers/ImageViewer'
 import type { NoticeKind } from '../lib/notice'
 import type { AnchorRect } from '../sidebar/previewPlacement'
+import { fileIconElement, IconsContext } from '../sidebar/FileIcon'
+import { VaultLinksContext } from '../links/vaultLinks'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 
 /**
@@ -462,6 +464,15 @@ function CrepeHost({
   // `focusEditor` the mount runs when the sidebar walk is not standing in the tree (YAZ-921),
   // so the caret lands where a click would put it.
   const crepeRef = useRef<ReturnType<typeof createCrepe> | null>(null)
+  // The window's icons (YAZ-3609 D13), read when a link pill draws: a change of icon set needs no new editor.
+  const iconsHere = useContext(IconsContext)
+  const icons = useRef(iconsHere)
+  icons.current = iconsHere
+  // The window's vaults' picker rows (YAZ-3609 D14), read at a click or a paste: a vault added to the window needs no new editor.
+  const vaultLinksHere = useContext(VaultLinksContext)
+  const vaultLinks = useRef(vaultLinksHere)
+  vaultLinks.current = vaultLinksHere
+  const candidatesOf = (target: string) => vaultLinks.current?.(target) ?? null
   /**
    * The same instance, from the moment it can take an action (YAZ-2643): `crepeRef` is set BEFORE
    * `create()` settles, and an action on an editor that is not created yet throws. State, not a
@@ -619,18 +630,19 @@ function CrepeHost({
           : { root, createFolder: () => newNoteFolderFor?.(file.path) ?? '', openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
       // The hover panel of a resolved [[link]] (YAZ-3403): this note editor's alone, never a read-only preview's.
       wikilinkHover: linkHover,
+      linkLook: { icon: (target, folder) => fileIconElement(icons.current, target, folder) },
       // Standard Markdown links (YAZ-1309) leave through one typed host boundary. The active
       // note path travels with the untouched href so main—not the renderer—owns relative-file
       // resolution, protocol validation, and the choice of OS API.
       markdownLinkNav: {
         open: (href) => api.shell.openLink({ href, sourcePath: file.path }),
         // A link to a page or file of this vault opens in a tab, like a [[link]] (YAZ-3609 D8).
-        inApp: (href) => (wikilinkCandidates === undefined ? null : hrefTarget(href, { root, notePath: file.path, candidates: wikilinkCandidates })),
+        inApp: (href) => (wikilinkCandidates === undefined ? null : hrefTarget(href, { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf })),
         openPath: (target, background) => (background ? onOpenFileBackground ?? onOpenFile : onOpenFile)(target),
         onNotice: onNotice ?? (() => undefined),
       },
       // Paste a path, get a link (YAZ-3609): this vault's `[[` picker rows spell it.
-      pathPaste: wikilinkCandidates === undefined ? undefined : { root, notePath: file.path, candidates: wikilinkCandidates, onNotice },
+      pathPaste: wikilinkCandidates === undefined ? undefined : { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf, onNotice },
       // The slash menu's Drawing row (YAZ-877): this window's root is the only thing the creator
       // needs; failures ride the same passive notice as a failed link create.
       drawing: { create: () => createDrawing(root), onNotice },

@@ -36,19 +36,20 @@ afterEach(async () => {
   document.querySelectorAll('.path-paste-chip').forEach((chip) => chip.remove())
 })
 
-async function mount(markdown = 'Next:\n', options = optionsFor('/v', '/v/a/today.md')) {
+async function mount(markdown = 'Next:\n', options: PathPasteOptions | null = optionsFor('/v', '/v/a/today.md')) {
   const root = document.createElement('div')
   document.body.append(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, pathPaste: options })
+  const crepe = createCrepe({ root, defaultValue: markdown, pathPaste: options ?? undefined })
   await crepe.create()
   mounted.push({ crepe, root })
   const view = crepe.editor.ctx.get(editorViewCtx)
   view.focus()
-  return { crepe, view, options }
+  return { crepe, view, options: options! }
 }
 
-function paste(view: EditorView, text: string) {
-  return view.pasteText(text, { clipboardData: { getData: (type: string) => (type === 'text/plain' ? text : '') }, preventDefault() {} } as unknown as ClipboardEvent)
+function paste(view: EditorView, text: string, html = '') {
+  const event = { clipboardData: { getData: (type: string) => (type === 'text/plain' ? text : type === 'text/html' ? html : '') }, preventDefault() {} } as unknown as ClipboardEvent
+  return html === '' ? view.pasteText(text, event) : view.pasteHTML(html, event)
 }
 
 /** The selection over the first `words` in the document, or a caret just after them. */
@@ -97,8 +98,8 @@ describe('a pasted path becomes the picker\'s link (D1, D5)', () => {
 
 describe('a path that stays text (D6, P11 to P15)', () => {
   it.each([
-    ['P11 a note the index does not have yet', '/v/new.md', "Can't find new.md in this vault yet, so it stays a path"],
-    ['P12 a known kind in another vault', '/w/plan.md', 'plan.md is not in this vault, so it stays a path. Links stay inside one vault'],
+    ['P11 a note the index does not have yet', '/v/new.md', "Can't find new.md yet, so it stays a path"],
+    ['P12, W5 a known kind in a vault not open in this window', '/w/plan.md', 'plan.md is not in a vault open in this window, so it stays a path'],
     ['P13 an unknown kind outside the vault', '/usr/bin/env', null],
     ['P13 a folder outside the vault', '/w/projects', null],
     ['P14 text that is no path', 'see the plan', null],
@@ -249,5 +250,153 @@ describe('a Markdown link\'s target in this vault (D8)', () => {
     const win = optionsFor('C:\\v', 'C:\\v\\a\\today.md', [row('C:\\v\\projects\\roadmap-yaz-12.md', 'YAZ-12')])
     expect(hrefTarget('../projects/roadmap-yaz-12.md', win)).toBe('C:\\v\\projects\\roadmap-yaz-12.md')
     expect(hrefTarget('file:///C:/v/projects/roadmap-yaz-12.md', win)).toBe('C:\\v\\projects\\roadmap-yaz-12.md')
+  })
+})
+
+describe('the cases the checker named (YAZ-3632) and the fixed bugs', () => {
+  it('P2 a vault without IDs: the picker spells the note by its name', async () => {
+    const { crepe, view } = await mount('Next:\n', optionsFor('/v', '/v/a/today.md', [row('/v/Roadmap.md', 'Roadmap')]))
+    atEnd(view)
+    paste(view, '/v/Roadmap.md')
+    expect(saved(crepe)).toBe('Next:[[Roadmap]]')
+  })
+
+  it('P20 the plain text decides when the clipboard holds HTML too', async () => {
+    const { crepe, view } = await mount()
+    atEnd(view)
+    paste(view, '/v/research', '<a href="file:///v/research">/v/research</a>')
+    expect(saved(crepe)).toBe('Next:[[YAZ-7]]')
+  })
+
+  it('P21 a read-only note takes no paste', async () => {
+    const { crepe, view } = await mount()
+    atEnd(view)
+    crepe.setReadonly(true)
+    paste(view, '/v/research')
+    expect(saved(crepe)).toBe('Next:')
+  })
+
+  it('P22 an editor with no path options (the folder outline, a comment) keeps the path as text', async () => {
+    const { crepe, view } = await mount('Next:\n', null)
+    atEnd(view)
+    paste(view, '/v/research')
+    expect(textOf(view)).toBe('Next:/v/research')
+    expect(saved(crepe)).not.toContain('[[')
+  })
+
+  it('K5 no chip after several paths, or after a paste over words that the link replaces', async () => {
+    const { view } = await mount('Next:\n\nRead a|b first.\n')
+    atEnd(view)
+    paste(view, '/v/research\n/v/projects/roadmap-yaz-12.md')
+    expect(document.querySelector('.path-paste-chip')).toBeNull()
+    select(view, 'a|b')
+    paste(view, '/v/research')
+    expect(document.querySelector('.path-paste-chip')).toBeNull()
+  })
+
+  it('YAZ-3631 several paths in a table cell go on the line, one space apart', async () => {
+    const { crepe, view } = await mount('| A | B |\n| - | - |\n| cell | x |\n')
+    select(view, 'cell', true)
+    paste(view, '/v/research\n/v/projects/roadmap-yaz-12.md')
+    expect(saved(crepe)).toContain('| cell[[YAZ-7]] [[YAZ-12]] |')
+  })
+
+  it('YAZ-3634 a path with other capital letters keeps the shared folders: no detour through the vault folder', async () => {
+    const { crepe, view } = await mount()
+    atEnd(view)
+    paste(view, '/V/Finance/budget.zip')
+    expect(saved(crepe)).toBe('Next:[budget.zip](../Finance/budget.zip)')
+  })
+
+  it('YAZ-3635 an accent in the other Unicode form finds its page', async () => {
+    const nfc = '/v/caf\u00e9.md'
+    const { crepe, view } = await mount('Next:\n', optionsFor('/v', '/v/a/today.md', [row(nfc, 'YAZ-30')]))
+    atEnd(view)
+    paste(view, nfc.normalize('NFD'))
+    expect(saved(crepe)).toBe('Next:[[YAZ-30]]')
+  })
+
+  it('YAZ-3636 the second undo takes the paste away and keeps the typing before it', async () => {
+    const { crepe, view } = await mount()
+    atEnd(view)
+    view.dispatch(view.state.tr.insertText(' see '))
+    paste(view, '/v/research')
+    undoOnce(view)
+    undoOnce(view)
+    expect(saved(crepe)).toBe('Next: see')
+  })
+
+  it('a parenthesis in a file name is escaped, so the link does not end early', async () => {
+    const { crepe, view } = await mount()
+    atEnd(view)
+    paste(view, '/v/finance/q4 (draft.zip')
+    expect(saved(crepe)).toBe('Next:[q4 (draft.zip](../finance/q4%20%28draft.zip)')
+  })
+
+  it('a paste of more than 500 lines is read as text, not as paths', async () => {
+    const { crepe, view } = await mount()
+    atEnd(view)
+    paste(view, Array.from({ length: 501 }, () => '/v/research').join('\n'))
+    expect(saved(crepe)).not.toContain('[[')
+  })
+
+  it('the chip closes when its editor goes away', async () => {
+    const { crepe, view } = await mount()
+    atEnd(view)
+    paste(view, '/v/research')
+    expect(document.querySelector('.path-paste-chip')).not.toBeNull()
+    await crepe.destroy()
+    mounted.splice(mounted.findIndex((m) => m.crepe === crepe), 1)
+    expect(document.querySelector('.path-paste-chip')).toBeNull()
+  })
+
+  it('U4 a URL with no selection, and U6 a URL over words in code, are a normal paste', async () => {
+    const { crepe, view } = await mount('Read the guide.\n\n```\ncode words\n```\n')
+    select(view, 'guide', true)
+    paste(view, ' https://milkdown.dev')
+    select(view, 'code words')
+    paste(view, 'https://milkdown.dev')
+    expect(saved(crepe)).not.toContain('](https://milkdown.dev)')
+    expect(saved(crepe)).toContain('https://milkdown.dev')
+  })
+})
+
+describe('links across the vaults of a window (D14, D15, D16)', () => {
+  const PLAN = '/w/plan.md'
+  const workspace = () => {
+    const other = createWikilinkCandidateSource()
+    other.update([{ name: 'Plan', insert: 'Plan', label: 'Plan', path: PLAN }])
+    const options = optionsFor('/v', '/v/a/today.md')
+    return { ...options, candidatesOf: (path: string) => (path.startsWith('/w/') ? other : path.startsWith('/v/') ? options.candidates : null) }
+  }
+
+  it('W3 a path of a note in another vault of the window is a relative link named after it; W4 over words, the words', async () => {
+    const { crepe, view } = await mount('Next:\n\nRead the plan first.\n', workspace())
+    atEnd(view)
+    paste(view, PLAN)
+    select(view, 'the plan')
+    paste(view, PLAN)
+    expect(saved(crepe)).toBe('Next:[Plan](../../w/plan.md)\n\nRead [the plan](../../w/plan.md) first.')
+  })
+
+  it('W1 a Markdown link into another vault of the window resolves; W2 one into a vault not in the window does not', () => {
+    const options = workspace()
+    expect(hrefTarget('../../w/plan.md', options)).toBe(PLAN)
+    expect(hrefTarget('../../x/plan.md', options)).toBeNull()
+    expect(hrefTarget('../research/.folder.md', options)).toBe('/v/research')
+    expect(hrefTarget('file://localhost/w/plan.md', options)).toBe(PLAN)
+  })
+
+  it('R1 a full path set in the link box is saved relative; R2 a web address and a path outside the window are saved as typed', async () => {
+    const { crepe, view } = await mount('Plan here and site and else\n', workspace())
+    const link = (words: string, href: string) => {
+      select(view, words)
+      const { from, to } = view.state.selection
+      view.dispatch(view.state.tr.addMark(from, to, view.state.schema.marks.link!.create({ href })))
+    }
+    link('Plan', '/w/plan.md')
+    link('site', 'https://milkdown.dev')
+    link('else', '/x/else.md')
+    expect(saved(crepe)).toBe('[Plan](../../w/plan.md) here and [site](https://milkdown.dev) and [else](/x/else.md)')
   })
 })

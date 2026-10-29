@@ -218,7 +218,7 @@ import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut } from './clipboardCopyOut'
 import { clipboardPaste } from './clipboardPaste'
-import { pathPasteCtx, type PathPasteOptions } from './pathPaste'
+import { pathPasteCtx, relativeLinks, type PathPasteOptions } from './pathPaste'
 import { guideLines } from './outline/guideLines'
 import { numberChildrenRow } from './outline/numberChildrenRow'
 import { createHeadingFolding, type HeadingFoldingOptions } from './outline/headingFolding'
@@ -235,7 +235,7 @@ import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
 import { createWikilinkMenu } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
-import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createWikilink, createWikilinkResolveSource, type LinkLook, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import { claimPage } from '../lib/readOnlyCaret'
@@ -257,6 +257,8 @@ export interface CreateCrepeOptions {
   toc?: TocChannel
   /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
   wikilinks?: WikilinkResolveSource
+  /** A resolved `[[link]]`'s pill icon (YAZ-3609 D13). Absent → the pill has no icon. */
+  linkLook?: LinkLook
   /** Navigation-only view-file resolver; never carries semantic records. */
   viewOnlyLinks?: ViewOnlyLinkSource
   /** `[[` picker candidates (GRO-2191): App keeps it fed from the vault index. Defaults to a never-updated source (empty picker — only Create rows). */
@@ -461,7 +463,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // A missing catalog must stay passive: recognized non-Markdown targets can never fall through
   // to Markdown creation, including in isolated createCrepe consumers outside App.
   const viewOnlyLinks = opts.viewOnlyLinks ?? createViewOnlyLinkSource()
-  crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks))
+  crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook))
   if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav, viewOnlyLinks)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav))
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
@@ -482,6 +484,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     ctx.inject(pathPasteCtx, opts.pathPaste ?? null)
   })
   crepe.editor.use(clipboardPaste)
+  crepe.editor.use(relativeLinks)
   crepe.editor.use(clipboardCopyOut)
   crepe.editor.use(blockHandleGate)
   // Numbers are manual-only (YAZ-793/YAZ-1329): only the explicit block-handle command creates

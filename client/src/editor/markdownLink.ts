@@ -160,13 +160,20 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
           },
         },
       },
-      view: () => {
+      view: (editorView) => {
         const onMouseDown = (event: MouseEvent) => {
           if (popup === null || !(event.target instanceof Node && popup.contains(event.target))) close()
         }
         const onKeyDown = (event: KeyboardEvent) => {
           if (event.key === 'Escape') close()
         }
+        // The text menu's "Add link…" (YAZ-3609 D17): Crepe's own link box, on this editor's selection.
+        const offAddLink = window.yaseenDocs?.menu?.onAddLink?.(() => {
+          const { from, to, empty } = editorView.state.selection
+          if (!editorView.hasFocus() || !editorView.editable || empty) return false
+          ctx.get(linkTooltipAPI.key).addLink(from, to)
+          return true
+        })
         document.addEventListener('mousedown', onMouseDown, true)
         document.addEventListener('scroll', close, true)
         window.addEventListener('keydown', onKeyDown)
@@ -176,6 +183,7 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
             if (view.state.doc !== previousState.doc) close()
           },
           destroy: () => {
+            offAddLink?.()
             document.removeEventListener('mousedown', onMouseDown, true)
             document.removeEventListener('scroll', close, true)
             window.removeEventListener('keydown', onKeyDown)

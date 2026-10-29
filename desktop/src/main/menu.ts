@@ -304,6 +304,8 @@ export interface ContextMenuActions {
   pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** Swap the misspelled word under the cursor for the suggestion the user picked. */
   replace(word: string): void
+  /** Open the focused editor's link box on its selection (YAZ-3609 D17). */
+  addLink(): void
   /** Teach the spellchecker a word it flagged, for good. */
   addToDictionary(word: string): void
   /** Copy the right-clicked image's pixels to the clipboard (YAZ-1666). */
@@ -328,7 +330,7 @@ export interface ContextMenuActions {
  * `<img src>` verbatim; `vaultProtocol.ts` decides whether it names a vault file.
  */
 export function buildContextMenuTemplate(
-  params: Pick<Electron.ContextMenuParams, 'misspelledWord' | 'dictionarySuggestions' | 'editFlags' | 'mediaType' | 'srcURL'>,
+  params: Pick<Electron.ContextMenuParams, 'misspelledWord' | 'dictionarySuggestions' | 'editFlags' | 'mediaType' | 'srcURL' | 'selectionText' | 'isEditable'>,
   actions: ContextMenuActions,
 ): MenuItemConstructorOptions[] {
   if (params.mediaType === 'image') {
@@ -354,6 +356,8 @@ export function buildContextMenuTemplate(
     { ...copyAsMenu(actions.copyAs), enabled: params.editFlags.canCopy },
     { role: 'paste', enabled: params.editFlags.canPaste },
     { ...pasteAsMenu(actions.pasteAs), enabled: params.editFlags.canPaste },
+    // Selected text you can edit can become a link (YAZ-3609 D17): a web address or a path.
+    ...(params.isEditable && params.selectionText.trim() !== '' ? [{ type: 'separator' } satisfies MenuItemConstructorOptions, { label: 'Add link…', click: () => actions.addLink() }] : []),
   ]
 }
 

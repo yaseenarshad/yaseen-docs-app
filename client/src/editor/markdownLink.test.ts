@@ -6,6 +6,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import { TextSelection } from '@milkdown/kit/prose/state'
+import { linkTooltipAPI } from '@milkdown/kit/component/link-tooltip'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
 import type { MarkdownLinkNav } from './markdownLink'
 
@@ -117,6 +119,35 @@ describe('a link to this vault opens in a tab (YAZ-3609 D8, D9)', () => {
     expect(event.defaultPrevented).toBe(true)
     expect(nav.open).toHaveBeenCalledWith('https://example.com')
     expect(openPath).not.toHaveBeenCalled()
+  })
+})
+
+describe('"Add link…" from the text menu (YAZ-3609 D17)', () => {
+  it('opens the link box on the selection of the focused editor, and only there; the listener leaves with the editor', async () => {
+    const listeners = new Set<() => boolean>()
+    const original = window.yaseenDocs
+    window.yaseenDocs = { ...original, menu: { ...original?.menu, onAddLink: (listener: () => boolean) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    } } } as typeof window.yaseenDocs
+    try {
+      const { crepe, view } = await mount('Read the plan first.\n')
+      const addLink = vi.fn()
+      crepe.editor.ctx.update(linkTooltipAPI.key, (api) => ({ ...api, addLink }))
+      const ask = () => [...listeners].some((listener) => listener())
+      expect(ask()).toBe(false) // no focus, no selection
+      view.focus()
+      let at = -1
+      view.state.doc.descendants((node, pos) => { if (at === -1 && node.isText) at = pos + node.text!.indexOf('the plan') })
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at, at + 'the plan'.length)))
+      expect(ask()).toBe(true)
+      expect(addLink).toHaveBeenCalledExactlyOnceWith(at, at + 'the plan'.length)
+      await crepe.destroy()
+      mounted.splice(0)
+      expect(listeners.size).toBe(0)
+    } finally {
+      window.yaseenDocs = original
+    }
   })
 })
 

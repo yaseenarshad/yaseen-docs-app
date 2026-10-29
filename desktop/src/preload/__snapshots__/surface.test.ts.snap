@@ -4,6 +4,7 @@ exports[`window.yaseenDocs is exactly this surface (YAZ-2200) 1`] = `
 "expose yaseenDocs
 on app:flush
 on menu:paste-as
+on menu:add-link
 on menu:copy-as
 app.sound/1: invoke app:sound ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 boardHead/1: invoke fs:board-head ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -95,6 +96,7 @@ media.onChanged/1: on media:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","ro
 media.preview/1: invoke media:preview ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.recent/1: invoke media:recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.search/1: invoke media:search ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+menu.onAddLink/1: (no IPC)
 menu.onCanvasBackground/1: on menu:canvas-background -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:canvas-background
 menu.onCloseTab/1: on menu:close-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:close-tab
 menu.onCopyAs/1: (no IPC)

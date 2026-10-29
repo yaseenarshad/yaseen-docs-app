@@ -7,7 +7,7 @@ import { CLIPBOARD_EMPTY_PARAGRAPH } from './clipboardCopyOut'
 import { externalNumberedHTML, literalNumberedHTML, parseLiteralNumberedPaste } from './clipboardNumbers'
 import { imageOptionsOf } from './image/imageOptions'
 import { imageFile, insertPastedImage } from './image/insertImage'
-import { pastePathLinks, pasteUrlOverWords, pathPasteCtx } from './pathPaste'
+import { closePathChip, pastePathLinks, pasteUrlOverWords, pathPasteCtx } from './pathPaste'
 
 /** A root-level BR between paragraphs is one blank paragraph, not a paragraph with two visual lines. */
 function normalizeParagraphSeparators(html: string): string {
@@ -136,7 +136,12 @@ export const clipboardPaste = $prose((ctx) => {
         view.dispatch(tr.setMeta('paste', true).setMeta('uiEvent', 'paste').scrollIntoView())
         return true
       })
-      return { destroy: () => unsubscribe?.() }
+      return {
+        destroy: () => {
+          unsubscribe?.()
+          closePathChip()
+        },
+      }
     },
   })
 })

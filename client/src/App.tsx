@@ -58,6 +58,7 @@ import { textVars } from './settings/headingStyles'
 import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { IconsContext } from './sidebar/FileIcon'
+import { VaultLinksContext } from './links/vaultLinks'
 import { useVaultIcons } from './sidebar/useVaultIcons'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
@@ -393,6 +394,8 @@ export function App() {
     const home = rootOfPath(now.roots, path)
     return home === null ? now.first : now.vaults[now.roots.indexOf(home)]
   }, [])
+  /** The `[[` picker rows of the window's vault that holds `path`, or null (YAZ-3609 D14): links across the workspace. */
+  const candidatesOf = useCallback((path: string) => (rootOfPath(live.current.roots, path) === null ? null : scopeOf(path).wikilinkCandidates), [scopeOf])
   /** The scope of the ACTIVE tab's vault (R3, R4, R10); with no tab open, the first vault's. */
   const active = file === null ? first : scopeOf(file)
   // The close/quit handshake for the writers below App — the outline's debounce and every in-flight
@@ -914,7 +917,13 @@ export function App() {
   // Ref-backed, because a new `onOpenFile` identity would rebuild every mounted editor.
   const reviewing = useRef(false)
   reviewing.current = reviewer !== null
-  const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : navigate)(path), [openBackground, navigate])
+  // A link click opens where Settings › Files & Links › Open a link in says (YAZ-3609 D11), read through a ref too.
+  const linkOpen = useRef(settings.linkOpen)
+  linkOpen.current = settings.linkOpen
+  const openFromPage = useCallback((path: string) => {
+    const open = reviewing.current || linkOpen.current === 'background-tab' ? openBackground : linkOpen.current === 'new-tab' ? openKept : navigate
+    open(path)
+  }, [openBackground, navigate, openKept])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
   // A trip to another copy of the same file (YAZ-2940) moves `activeTab` and not `file`, so both are watched.
   const closeReview = useCallback(() => live.current.vaults.forEach((vault) => vault.review.close()), [])
@@ -2491,6 +2500,7 @@ export function App() {
   return (
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
+    <VaultLinksContext.Provider value={candidatesOf}>
     <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion}>
       {glow && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
@@ -2875,6 +2885,7 @@ export function App() {
         />
       )}
     </div>
+    </VaultLinksContext.Provider>
     </IconsContext.Provider>
   )
 }

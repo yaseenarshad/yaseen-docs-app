@@ -191,6 +191,19 @@ function replaceSlot(s: TabsState, slot: string, path: string, stack?: TabHistor
   }
 }
 
+/**
+ * A link to a page that another tab shows (YAZ-3609 D10): go to that tab, and Back there returns to the
+ * page the link was in. That page joins the tab's stack just before its own page, so `back` finds it open
+ * in the first tab and goes there (S8). With the first tab closed, Back opens it in this tab's slot.
+ */
+function jumpTo(s: TabsState, id: string): TabsState {
+  const from = activePath(s)
+  const to = tabById(s, id)
+  if (from === null || to == null) return withActive(s, id)
+  const h = s.history[id] ?? { entries: [to.path], index: 0 }
+  return { ...withActive(s, id), history: { ...s.history, [id]: { entries: [...h.entries.slice(0, h.index), from, to.path], index: h.index + 1 } } }
+}
+
 /** One stack's entries rewritten through `f` (renamed, or dropped with `null`); the index follows the entry it pointed at. */
 function mapEntries(r: TabHistory, f: (p: string) => string | null): TabHistory {
   const entries: string[] = []
@@ -274,7 +287,7 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // and so no link: a page that opens while it is active fills it, like any other.
       if (s.blank) return fillBlank(s, a.path)
       const open = tabOf(s, a.path)
-      if (open !== null) return open.id === s.active ? s : withActive(s, open.id)
+      if (open !== null) return open.id === s.active ? s : jumpTo(s, open.id)
       if (s.active === null) return appendActive(s, a.path, false)
       return replaceSlot(s, s.active, a.path)
     }

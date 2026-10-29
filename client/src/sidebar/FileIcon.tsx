@@ -33,6 +33,17 @@ export function fileIconAttrs(here: IconsHere | null, path: string, folder: bool
   return { 'data-kind': folder ? 'folder' : (fileKind(name) ?? 'other'), 'data-icon': id, ...(custom ? { 'data-icon-custom': '' as const } : {}), style: iconVars(id) as CSSProperties }
 }
 
+/** The same icon as a DOM node, for a place React does not draw: a `[[link]]` pill in the editor (YAZ-3609 D13). */
+export function fileIconElement(here: IconsHere | null, path: string, folder: boolean): HTMLElement {
+  const { style, ...attrs } = fileIconAttrs(here, path, folder)
+  const span = document.createElement('span')
+  span.className = `file-icon file-icon--${folder ? 'dir' : 'file'} wikilink__icon`
+  span.setAttribute('aria-hidden', 'true')
+  for (const [name, value] of Object.entries(attrs)) span.setAttribute(name, value)
+  for (const [name, value] of Object.entries(style as Record<string, string>)) span.style.setProperty(name, value)
+  return span
+}
+
 /** The icon before a name: a closed folder for a folder, else the file's. The caller puts it first in the name's label. */
 export const FileIcon = memo(function FileIcon({ path, folder = false }: { path: string; folder?: boolean }) {
   const here = useContext(IconsContext)

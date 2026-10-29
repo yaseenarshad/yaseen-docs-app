@@ -75,6 +75,8 @@ describe('settingCandidates', () => {
       'libraryFolder',
       'confirmDelete',
       'confirmRename',
+      // Settings › Files & Links › Open a link in (YAZ-3609 D11).
+      'linkOpen',
       'newNoteLocation',
       // Settings › Files & Links › Preview on hover (YAZ-3403): the master switch, then one row per place.
       'hoverPreview',
@@ -156,7 +158,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'ids', 'duplicates', 'idLetters', 'oldIds'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'linkOpen', 'newNoteLocation', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'ids', 'duplicates', 'idLetters', 'oldIds'])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {

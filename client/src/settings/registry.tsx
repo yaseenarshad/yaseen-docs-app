@@ -33,6 +33,7 @@ import type { SharingState } from '../share/useSharing'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
+
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented } from './controls'
 import { HOTKEYS_SECTION } from './hotkeysSection'
@@ -46,6 +47,13 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+
+/** Files & Links › Open a link in (YAZ-3609 D11). */
+const LINK_OPEN_OPTIONS: readonly { label: string; value: SettingsState['linkOpen'] }[] = [
+  { label: 'This tab', value: 'this-tab' },
+  { label: 'A new tab', value: 'new-tab' },
+  { label: 'A new background tab', value: 'background-tab' },
+]
 
 export interface SettingsCtx {
   settings: SettingsState
@@ -739,6 +747,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             hint: 'Shows the confirmation, with the number of links that will be updated, before a note or folder is renamed.',
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.confirmRename} onChange={(confirmRename) => onChange({ ...settings, confirmRename })} ariaLabel="Ask before renaming" />
+            ),
+          },
+          {
+            // YAZ-3609 D11: every link in a note, `[[link]]` and Markdown link alike.
+            id: 'linkOpen',
+            label: 'Open a link in',
+            hint: '⌘-click always opens the link in a background tab.',
+            keywords: ['link', 'wikilink', 'tab', 'click'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={LINK_OPEN_OPTIONS} value={settings.linkOpen} onChange={(linkOpen) => onChange({ ...settings, linkOpen })} ariaLabel="Open a link in" />
             ),
           },
           {

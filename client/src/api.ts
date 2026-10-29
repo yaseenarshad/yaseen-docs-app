@@ -63,5 +63,6 @@ export const api: YaseenDocsApi = {
     ...bridge.menu,
     onCopyAs: (listener) => window.yaseenDocs.menu.onCopyAs(listener),
     onPasteAs: (listener) => window.yaseenDocs.menu.onPasteAs(listener),
+    onAddLink: (listener) => window.yaseenDocs.menu.onAddLink(listener),
   },
 }

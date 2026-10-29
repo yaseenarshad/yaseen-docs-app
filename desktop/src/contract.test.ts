@@ -33,7 +33,7 @@ const doors = leaves(CONTRACT).map(([, door]) => door)
 /** Renderer → main invokes: the table's, plus the two the preload's Copy as / Paste as fallback makes. */
 const INVOKES = [...doors.filter((d) => d.kind === 'invoke').map((d) => d.channel), SPECIAL.menuCopyText.channel, SPECIAL.menuPasteTextFallback.channel].sort()
 /** Main → renderer pushes: the table's, plus the watch events, the flush request and Copy as / Paste as. */
-const PUSHES = [...doors.filter((d) => d.kind === 'push').map((d) => d.channel), SPECIAL.watchEvent, SPECIAL.appFlush, SPECIAL.menuCopyAs, SPECIAL.menuPasteAs].sort()
+const PUSHES = [...doors.filter((d) => d.kind === 'push').map((d) => d.channel), SPECIAL.watchEvent, SPECIAL.appFlush, SPECIAL.menuCopyAs, SPECIAL.menuPasteAs, SPECIAL.menuAddLink].sort()
 /** Renderer → main sends: watch (un)subscribe and the flush ack. */
 const SENDS = [SPECIAL.watchSubscribe, SPECIAL.watchUnsubscribe, SPECIAL.appFlushed].sort()
 

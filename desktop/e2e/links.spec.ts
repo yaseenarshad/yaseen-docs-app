@@ -192,6 +192,22 @@ test('step 8 — a pasted path of a vault note is its link; Keep as path gives t
   await expect(keep).toHaveCount(0)
 })
 
+test('step 8b — ⌘Z gives the path back; a pasted link opens its note, and Back returns (YAZ-3609 D2, D10)', async () => {
+  const ideas = path.join(vault, 'Ideas.md')
+  const hub = () => readFile(path.join(vault, HUB_FILE), 'utf8')
+  await pasteText(win, ideas)
+  await expect.poll(async () => (await hub()).includes('[[Ideas]]'), { timeout: 10_000 }).toBe(true)
+  await win.keyboard.press('Meta+z')
+  await expect(editorOf(win)).toContainText(`${ideas}${ideas}`) // the path is back, after the one Keep as path left
+  await pasteText(win, ideas)
+  await win.keyboard.press('Escape') // the chip closes; the caret stays
+  await editorOf(win).getByText(HUB_BODY).click() // the caret leaves the link: it collapses
+  await linkIn(win, 'Ideas').click()
+  await expect(activeTab(win)).toHaveText('Ideas') // Ideas is open since step 2: its tab comes to the front
+  await win.getByRole('button', { name: 'Back' }).click()
+  await expect(activeTab(win)).toHaveText('Links hub')
+})
+
 test('step 9 — a Markdown link to a vault note opens in a tab, ⌘ in a background tab (YAZ-3609 D8)', async () => {
   const mdLink = editorOf(win).locator('a', { hasText: MD_LINK })
   await mdLink.click({ modifiers: ['Meta'] })

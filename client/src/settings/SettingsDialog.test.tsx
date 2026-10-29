@@ -144,7 +144,7 @@ const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoin
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
-const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links'].map((place) => `hoverPreviewIn.${place}`)]
+const FILES_ROWS = ['confirmDelete', 'confirmRename', 'linkOpen', 'newNoteLocation', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links'].map((place) => `hoverPreviewIn.${place}`)]
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
@@ -566,6 +566,15 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   it('Confirm before deleting carries its hint in the row', () => {
     const { el } = mountOn('Files & Links')
     expect(row(el, 'confirmDelete')?.querySelector('.setting__hint')?.textContent).toBe('Deleted notes and folders move to the Trash either way.')
+  })
+
+  it('Open a link in (YAZ-3609 D11): This tab by default, three choices, and each writes the whole object with only it changed', () => {
+    const { el, onChange } = mountOn('Files & Links')
+    expect(row(el, 'linkOpen')?.querySelector('.setting__label')?.textContent).toBe('Open a link in')
+    expect(row(el, 'linkOpen')?.querySelector('.setting__hint')?.textContent).toBe('⌘-click always opens the link in a background tab.')
+    expect(rowButtons(el, 'linkOpen').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['This tab', 'true'], ['A new tab', 'false'], ['A new background tab', 'false']])
+    act(() => rowButtons(el, 'linkOpen')[2].click())
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, linkOpen: 'background-tab' })
   })
 
   it('Ask before renaming is on by default, says what it shows, and Off writes the whole object with only it flipped (YAZ-2420 3C1)', () => {

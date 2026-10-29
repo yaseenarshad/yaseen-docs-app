@@ -1510,6 +1510,8 @@ export interface SettingsState {
   confirmDelete: boolean
   /** Show the rename sheet, with its count of links to update, before a note or folder is renamed (YAZ-2420 3C1). Off renames at once; the links still follow. */
   confirmRename: boolean
+  /** Files & Links (YAZ-3609 D11): where a click on a link in a note opens its page. ⌘-click always opens a background tab. */
+  linkOpen: LinkOpen
   /** Rest the pointer on a note, drawing or diagram row to see it (Draw's YAZ-1800 D2; YAZ-3044 A20; notes since YAZ-3075 D5). Text, PDF and image rows never preview. */
   hoverPreview: boolean
   /** Each place's own say on the hover preview (YAZ-3403), under the `hoverPreview` master switch: a place shows it only while both are on (`hoverOn`). A place missing from a stored state reads on. */
@@ -1743,6 +1745,10 @@ export const THEMES: readonly Theme[] = ['system', 'light', 'dark']
 export type NewNoteLocation = 'root' | 'current' | 'folder'
 export const NEW_NOTE_LOCATIONS: readonly NewNoteLocation[] = ['root', 'current', 'folder']
 
+/** Where a click on a link opens its page (YAZ-3609 D11): in the tab of the note, in a new tab in front, or in a new tab behind (as ⌘-click). */
+export type LinkOpen = 'this-tab' | 'new-tab' | 'background-tab'
+export const LINK_OPENS: readonly LinkOpen[] = ['this-tab', 'new-tab', 'background-tab']
+
 /** Comment stream order (YAZ-1515): oldest-first (the model's order) or newest-first by the ROOT's `at`. */
 export type CommentsOrder = 'oldest' | 'newest'
 export const COMMENTS_ORDERS: readonly CommentsOrder[] = ['oldest', 'newest']
@@ -1815,6 +1821,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   newNoteLocation: 'current',
   newNoteFolder: '',
   confirmDelete: true,
+  linkOpen: 'this-tab',
   confirmRename: true,
   hoverPreview: true,
   hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, links: true },

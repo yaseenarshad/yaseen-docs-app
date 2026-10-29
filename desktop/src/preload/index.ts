@@ -47,6 +47,11 @@ ipcRenderer.on(SPECIAL.menuPasteAs, (_event, request: ClipboardPasteRequest) => 
   void call<void>(SPECIAL.menuPasteTextFallback.channel, request.text).catch((error: unknown) => console.error('Paste failed', error))
 })
 
+const addLinkListeners = new Set<() => boolean>()
+ipcRenderer.on(SPECIAL.menuAddLink, () => {
+  for (const listener of addLinkListeners) if (listener()) return
+})
+
 /** DOM-only fallback for ordinary controls; editor subscribers own ProseMirror and CodeMirror selections. */
 function selectedNativeText(): string {
   const active = document.activeElement
@@ -117,6 +122,7 @@ const api: YaseenDocsApi = {
     ...generated.menu,
     onCopyAs: (listener) => listen(copyListeners, listener),
     onPasteAs: (listener) => listen(pasteListeners, listener),
+    onAddLink: (listener) => listen(addLinkListeners, listener),
   },
   properties: {
     ...generated.properties,

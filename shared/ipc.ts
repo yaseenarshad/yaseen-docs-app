@@ -637,6 +637,8 @@ export const SPECIAL = {
   /** Edit › Copy as / Paste as: the focused editor claims the gesture, else the preload's native fallback answers through the two invokes. */
   menuCopyAs: 'menu:copy-as',
   menuPasteAs: 'menu:paste-as',
+  /** The text menu's "Add link…" (YAZ-3609 D17): the focused editor opens its link box on the selection. */
+  menuAddLink: 'menu:add-link',
   menuCopyText: invoke<[text: string], void>('menu:copy-text', 1),
   menuPasteTextFallback: invoke<[text: string], void>('menu:paste-text-fallback', 1),
 } as const
@@ -666,6 +668,8 @@ export type YaseenDocsApi = Bridge<typeof CONTRACT> & {
     onCopyAs(listener: (mode: 'plain' | 'markdown') => string | undefined): () => void
     /** Explicit paste targets the focused editor; return true when handled. */
     onPasteAs(listener: (request: ClipboardPasteRequest) => boolean): () => void
+    /** The text menu's "Add link…" (YAZ-3609 D17): the focused editor with a selection returns true. */
+    onAddLink(listener: () => boolean): () => void
   }
 }
 
