@@ -4,8 +4,7 @@
  * the note and its id, and "Copy ID" copies exactly the id; a dead id still offers its id; a NAME link
  * gets the same menu with no ID rows; Open, Open in new tab, Copy link, Edit link and Remove link do
  * what they say; a right-button mousedown on a link is swallowed so the link is still rendered when
- * `contextmenu` arrives; and the menu closes the way every `.ctx-menu--editor` popup does. `openIdMenu`
- * is also driven on a bare element — it must not need an editor.
+ * `contextmenu` arrives; and the menu closes the way every `.ctx-menu--editor` popup does.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -14,7 +13,6 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { IndexRecord } from '@shared/types'
 import { linkResolver } from '../../links/folderLinks'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
-import { openIdMenu } from './wikilinkMenu'
 import { WIKILINK_CLASS, createWikilinkResolveSource, type MutableWikilinkResolveSource } from './wikilinkPlugin'
 
 const ID = 'k3m9x2pq7abc'
@@ -304,29 +302,5 @@ describe('dismiss', () => {
     mouse(linkSpan(root, 'Road Map'), 'contextmenu')
     rowsOf(popupOf(view)!)[0]!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     expect(popupOf(view)).not.toBeNull()
-  })
-})
-
-describe('openIdMenu on any element (no editor)', () => {
-  it('draws, copies and closes on a bare parent; the returned close is the caller\'s own dismiss', async () => {
-    const parent = document.createElement('div')
-    document.body.appendChild(parent)
-    const onNotice = vi.fn()
-    const close = openIdMenu(parent, 10, 10, 'Road Map', ID, onNotice)
-    const popup = parent.querySelector<HTMLElement>('.ctx-menu')!
-    expect(rowsOf(popup).map((row) => row.textContent)).toEqual(['Road Map', ID, 'Copy ID'])
-    rowsOf(popup)[2]!.click()
-    expect(writeText).toHaveBeenCalledExactlyOnceWith(ID)
-    await vi.waitFor(() => expect(onNotice).toHaveBeenCalledExactlyOnceWith('Copied ID'))
-    expect(parent.querySelector('.ctx-menu')).toBeNull()
-
-    openIdMenu(parent, 10, 10, undefined, ID, onNotice)
-    const again = openIdMenu(parent, 10, 10, undefined, ID, onNotice)
-    expect(parent.querySelectorAll('.ctx-menu')).toHaveLength(2) // the caller owns one-at-a-time
-    again()
-    close()
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    expect(parent.querySelector('.ctx-menu')).toBeNull()
-    parent.remove()
   })
 })

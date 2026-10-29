@@ -16,6 +16,8 @@ export interface VaultLinks {
   askToAdd: (path: string, background: boolean) => boolean
   /** The window's vaults. A change redraws the open notes' link pills (YAZ-3664): a vault that joins makes its links pills. */
   roots: readonly string[]
+  /** The window's vault names, one per line, as the sidebar shows them: a rename redraws the "(Vault)" on pills (D22). */
+  names: string
   /** The name of the window's vault that holds `path`, or null outside them (D22): a link into another vault says which one. */
   vaultOf: (path: string) => string | null
 }

@@ -2,7 +2,8 @@
  * Paste a path, get a link (YAZ-3609). A pasted absolute path or `yaseendocs://` link to a file or
  * folder of THIS vault becomes the link the `[[` picker writes for it: a note's or folder's id, else
  * its vault spelling (`[[report.pdf]]`). Both are vault-relative, so they work on every Mac. A file
- * no tab can show gets a relative Markdown link, which opens in its default app (YAZ-1311).
+ * no tab can show gets a relative Markdown link, which opens in its default app (YAZ-1311). A path
+ * in ANOTHER vault of the window gets a relative Markdown link too (D15), which opens in a tab (D14).
  * The same `path → row` map tells a Markdown link's click which targets open in a tab (D8).
  * Read through a ctx slice, like `imageOptionsCtx`: `clipboardPaste` has no options of its own.
  */
@@ -22,7 +23,7 @@ import type { LinkCandidate } from '../links/completion'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 
 export interface PathPasteOptions {
-  /** Vault root (absolute). A path outside it stays text: links never cross vaults (YAZ-314). */
+  /** Vault root (absolute). A path in another vault of the window is a relative Markdown link (D15); one outside every vault of the window stays text. */
   root: string
   /** ABSOLUTE path of this note: the `from` of a relative Markdown link. */
   notePath: string
@@ -83,7 +84,7 @@ export function linkFor(path: string, options: PathPasteOptions): string | null 
 /** `[label](relative href)`: the label's brackets escaped. */
 const markdownLink = (label: string, from: string, to: string): string => `[${label.replace(/[[\]]/g, '\\$&')}](${relativeHref(from, to)})`
 
-/** A Markdown link's target as a page, folder or file of this vault (D8), or null: the web, another folder, a missing file. */
+/** A Markdown link's target as a page, folder or file of a vault of the window (D8, D14), or null: the web, another folder, a missing file. */
 export function hrefTarget(href: string, options: PathPasteOptions): string | null {
   const target = hrefPath(href, options.notePath)
   return target === null ? null : rowOf(target, (options.candidatesOf?.(target) ?? options.candidates).candidates)?.path ?? null
@@ -290,7 +291,7 @@ function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string
     close()
   })
   view.dom.parentElement?.appendChild(chip)
-  // Kept inside the window, as the link menu is (`markdownLink.ts`).
+  // Kept inside the window, as the link menu is (`linkMenu.ts` `openMenuAt`).
   const at = view.coordsAtPos(to)
   chip.style.left = `${Math.max(0, Math.min(at.left, window.innerWidth - chip.offsetWidth))}px`
   chip.style.top = `${Math.max(0, Math.min(at.bottom + 4, window.innerHeight - chip.offsetHeight))}px`

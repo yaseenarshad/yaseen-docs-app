@@ -71,8 +71,10 @@
  *    (YAZ-1357). Its keymap MUST be `use`d before `outlinerKeymap`: both bind Enter at
  *    priority 100 and equal priorities run in addition order — the picker wins while open and
  *    declines (falls through) while closed.
- *  - Standard Markdown links (YAZ-1309, `markdownLink.ts`): unmodified primary mousedown opens
- *    through the host before caret placement; right-click offers Edit/Copy/Remove. Edit/remove
+ *  - Standard Markdown links (YAZ-1309, `markdownLink.ts`): a primary mousedown opens before caret
+ *    placement — a link into a vault of the window in a tab (⌘: a background tab, YAZ-3609 D8, D14),
+ *    anything else through the host — and such a link draws as a pill (D19); right-click shows the
+ *    one link menu (D23, `linkMenu.ts`). Edit/remove
  *    reuse Crepe's link-tooltip API, including one logical range when formatting splits the DOM
  *    anchor. Registered only when `opts.markdownLinkNav` supplies the host boundary.
  *  - Block handle menu (YAZ-726, `blockHandleMenu.ts`): right-click on the 6-dot handle opens a
@@ -170,6 +172,7 @@
  */
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { codeTheme } from './codeTheme'
 import { keymapRef, type ToolbarItem } from '@milkdown/crepe/feature/toolbar'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
@@ -219,7 +222,7 @@ import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
-import { clipboardCopyOut } from './clipboardCopyOut'
+import { clipboardCopyOut, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
 import { clipboardPaste } from './clipboardPaste'
 import { pathPasteCtx, relativeLinks, type PathPasteOptions } from './pathPaste'
 import { guideLines } from './outline/guideLines'
@@ -273,7 +276,7 @@ export interface CreateCrepeOptions {
   wikilinkNav?: WikilinkNav
   /** Wikilink hover (YAZ-3403): the host's hover panel hears which page a resolved link opens. Absent → the hover plugin is not registered. */
   wikilinkHover?: WikilinkHover
-  /** Standard Markdown link actions (YAZ-1309): primary click opens; right-click edits/copies/removes. Absent → Crepe's stock behavior. */
+  /** Standard Markdown link actions (YAZ-1309, YAZ-3609): a click opens (in a tab for a vault of the window), a pill look, the one link menu. Absent → Crepe's stock behavior. */
   markdownLinkNav?: MarkdownLinkNav
   /** Paste a path, get a link (YAZ-3609). Absent → a pasted path stays text. */
   pathPaste?: PathPasteOptions
@@ -299,6 +302,8 @@ export interface CreateCrepeOptions {
    * that open next (`noteKeys.ts`). Absent = the defaults.
    */
   hotkeys?: HotkeyOverrides
+  /** Copy as › Without folded lines' toast (YAZ-3653): how many folded lines the copy left out. Absent → no toast. */
+  onCopyNotice?: (text: string) => void
 }
 
 /** An `Hn` / `T` glyph for the toolbar, drawn as text — the label IS the icon. */
@@ -478,7 +483,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.wikilinkNav !== undefined) {
     // A click and the link menu's Open rows follow a link the same way (YAZ-3609 D23).
     const follow = wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks)
-    crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav, viewOnlyLinks, follow)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow))
+    crepe.editor.use(createWikilinkClick(follow)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
@@ -489,6 +494,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // when the host gave none) so the paste handler can always read it and simply decline.
   crepe.editor.config((ctx) => {
     ctx.inject(imageOptionsCtx, opts.image ?? null)
+    ctx.inject(copyNoticeCtx, opts.onCopyNotice ?? null)
   })
   // The note keys (YAZ-3564 K4): the user's changes for the app's keymaps, and Milkdown's keymap slices set from them,
   // before any keymap is read.
@@ -507,6 +513,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(clipboardPaste)
   crepe.editor.use(relativeLinks)
   crepe.editor.use(clipboardCopyOut)
+  crepe.editor.use(copyVisibleHotkey)
   crepe.editor.use(blockHandleGate)
   // Numbers are manual-only (YAZ-793/YAZ-1329): only the explicit block-handle command creates
   // ordered children. Typing, slash-menu and keyboard conversion paths are all absent.
@@ -576,6 +583,9 @@ export function setMarkdown(crepe: Crepe, markdown: string): void {
     if (hadFocus) view.focus()
   })
 }
+
+/** The note's ProseMirror view, for what lives beside the editor and acts on it: the note's right-click menu (YAZ-3653). */
+export const editorViewOf = (crepe: Crepe): EditorView => crepe.editor.action((ctx) => ctx.get(editorViewCtx))
 
 /** Move keyboard focus into the document (e.g. right after opening a file from the sidebar). */
 export function focusEditor(crepe: Crepe): void {

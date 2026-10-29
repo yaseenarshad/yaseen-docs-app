@@ -2944,6 +2944,15 @@ export interface ClipboardPasteRequest {
   text: string
 }
 
+/** Edit › Copy as and the right-click Copy as: `visible` is Without folded lines (YAZ-3653). */
+export type CopyAsMode = 'plain' | 'markdown' | 'visible'
+
+/** What `visible` answers: the two formats normal Copy writes. */
+export interface CopyAsRich { text: string; html: string }
+
+/** A row of a note's right-click menu (YAZ-3653): main runs it on the window that sent it. */
+export type NoteMenuAction = 'cut' | 'copy' | 'paste' | `copy-${CopyAsMode}` | `paste-${ClipboardPasteRequest['mode']}` | 'add-word'
+
 /** One ⌘+ / ⌘− / ⌘0 press: up, down, or back to the default (YAZ-1710). */
 export type ZoomStep = -1 | 0 | 1
 

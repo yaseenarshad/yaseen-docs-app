@@ -183,10 +183,11 @@ describe('buildMenuTemplate', () => {
     const items = menuOf(build(RECENTS, false, handlers), 'Edit')
     expect(items.map((i) => i.role ?? i.type ?? i.label)).toEqual(['undo', 'redo', 'separator', 'cut', 'copy', 'Copy as', 'paste', 'Paste as', 'selectAll'])
     const copyModes = items.find((i) => i.label === 'Copy as')?.submenu as MenuItemConstructorOptions[]
-    expect(copyModes.map((i) => [i.label, i.accelerator])).toEqual([['Plain text', undefined], ['Markdown', undefined]])
+    expect(copyModes.map((i) => i.type === 'separator' ? 'separator' : [i.label, i.accelerator])).toEqual([['Plain text', undefined], ['Markdown', undefined], 'separator', ['Without folded lines', undefined]])
     click(copyModes[0])
     click(copyModes[1])
-    expect(vi.mocked(handlers.copyAs).mock.calls).toEqual([['plain'], ['markdown']])
+    click(copyModes[3])
+    expect(vi.mocked(handlers.copyAs).mock.calls).toEqual([['plain'], ['markdown'], ['visible']])
     const modes = items.find((i) => i.label === 'Paste as')?.submenu as MenuItemConstructorOptions[]
     expect(modes.map((i) => [i.label, i.accelerator])).toEqual([['Plain text', 'CmdOrCtrl+Shift+V'], ['Markdown', undefined]])
     click(modes[0])
@@ -440,11 +441,11 @@ type ContextParams = Parameters<typeof buildContextMenuTemplate>[0]
 
 const EDIT_FLAGS: ContextParams['editFlags'] = { canUndo: true, canRedo: true, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true, canEditRichly: true }
 
-const noopActions = (): ContextMenuActions => ({ copyAs: vi.fn(), pasteAs: vi.fn(), addLink: vi.fn(), replace: vi.fn(), addToDictionary: vi.fn(), copyImage: vi.fn(), revealImage: vi.fn() })
+const noopActions = (): ContextMenuActions => ({ copyAs: vi.fn(), pasteAs: vi.fn(), replace: vi.fn(), addToDictionary: vi.fn(), copyImage: vi.fn(), revealImage: vi.fn() })
 
 /** What Electron hands `context-menu`, defaulting to a clean right-click in an editable body. */
 function context(params: Partial<ContextParams> = {}): ContextParams {
-  return { misspelledWord: '', dictionarySuggestions: [], editFlags: EDIT_FLAGS, mediaType: 'none', srcURL: '', selectionText: '', isEditable: true, ...params }
+  return { misspelledWord: '', dictionarySuggestions: [], editFlags: EDIT_FLAGS, mediaType: 'none', srcURL: '', ...params }
 }
 
 const shapeOf = (items: MenuItemConstructorOptions[]) => items.map((i) => i.label ?? i.role ?? i.type)
@@ -453,20 +454,6 @@ describe('buildContextMenuTemplate', () => {
   it('a misspelling with suggestions: the suggestions, Add to Dictionary, then cut/copy/paste', () => {
     const items = buildContextMenuTemplate(context({ misspelledWord: 'teh', dictionarySuggestions: ['the', 'ten', 'tea'] }), noopActions())
     expect(shapeOf(items)).toEqual(['the', 'ten', 'tea', 'separator', 'Add to Dictionary', 'separator', 'cut', 'copy', 'Copy as', 'paste', 'Paste as'])
-  })
-
-  it('M1 selected text you can edit adds "Add link…" under Paste as, and it asks the editor for its link box (YAZ-3609 D17)', () => {
-    const actions = noopActions()
-    const items = buildContextMenuTemplate(context({ selectionText: 'the plan' }), actions)
-    expect(shapeOf(items)).toEqual(['cut', 'copy', 'Copy as', 'paste', 'Paste as', 'separator', 'Add link…'])
-    items.at(-1)!.click!({} as never, undefined, {} as never)
-    expect(actions.addLink).toHaveBeenCalledOnce()
-  })
-
-  it('M2 no "Add link…" with no selection, a selection of spaces, or text you cannot edit', () => {
-    for (const params of [{ selectionText: '' }, { selectionText: '  ' }, { selectionText: 'the plan', isEditable: false }]) {
-      expect(shapeOf(buildContextMenuTemplate(context(params), noopActions()))).not.toContain('Add link…')
-    }
   })
 
   it('a misspelling Electron has no suggestions for leads with Add to Dictionary — no dangling separator', () => {
@@ -485,9 +472,11 @@ describe('buildContextMenuTemplate', () => {
     const items = buildContextMenuTemplate(context(), actions)
     const modes = items.find((i) => i.label === 'Copy as')?.submenu as MenuItemConstructorOptions[]
     expect(modes.every((i) => i.accelerator === undefined)).toBe(true)
+    expect(modes.map((i) => i.label ?? i.type)).toEqual(['Plain text', 'Markdown', 'separator', 'Without folded lines'])
     click(modes[0])
     click(modes[1])
-    expect(vi.mocked(actions.copyAs).mock.calls).toEqual([['plain'], ['markdown']])
+    click(modes[3])
+    expect(vi.mocked(actions.copyAs).mock.calls).toEqual([['plain'], ['markdown'], ['visible']])
     const disabled = buildContextMenuTemplate(context({ editFlags: { ...EDIT_FLAGS, canCopy: false } }), actions)
     expect(disabled.find((i) => i.label === 'Copy as')?.enabled).toBe(false)
   })

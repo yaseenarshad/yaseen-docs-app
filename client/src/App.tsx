@@ -430,7 +430,8 @@ export function App() {
     const home = rootOfPath(now.roots, path)
     return home === null ? null : (now.vaults[now.roots.indexOf(home)]?.name ?? storage.vaultName(home))
   }, [])
-  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, vaultOf }), [candidatesOf, askToAdd, roots, vaultOf])
+  const vaultNames = roots.map((vault, i) => vaults[i]?.name ?? storage.vaultName(vault)).join('\n')
+  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, names: vaultNames, vaultOf }), [candidatesOf, askToAdd, roots, vaultNames, vaultOf])
   /** The scope of the ACTIVE tab's vault (R3, R4, R10); with no tab open, the first vault's. */
   const active = file === null ? first : scopeOf(file)
   /**
@@ -1100,11 +1101,18 @@ export function App() {
   // A link click opens where Settings › Files & Links › Open a link in says (YAZ-3609 D11), read through a ref too.
   const linkOpen = useRef(settings.linkOpen)
   linkOpen.current = settings.linkOpen
-  const openFromPage = useCallback((path: string) => {
-    // Back returns to the page with the link wherever the page opens: the window's one Back list (YAZ-3647 D4).
-    if (reviewing.current || linkOpen.current === 'background-tab') openBackground(path)
-    else if (linkOpen.current === 'new-tab') openKept(path)
-    else navigate(path)
+  const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : navigate)(path), [openBackground, navigate])
+  /** The open tabs' pages, read at click time: a link to one of them goes to its tab, whatever the setting says. */
+  const openPaths = useRef(tabs)
+  openPaths.current = tabs
+  /** A click on a link in a note (YAZ-3609 D11): where the setting says. A folder view's row, a backlink and a code jump use `openFromPage`. */
+  const openLink = useCallback((path: string) => {
+    // Back returns to the page with the link wherever the page opens: the window's one Back list (YAZ-3647 D4). A review's open is no link click.
+    if (reviewing.current) openBackground(path)
+    // A page another tab shows: go to that tab (D10), as "This tab" does. A background open would do nothing.
+    else if (linkOpen.current === 'this-tab' || openPaths.current.some((tab) => tab.path === path)) navigate(path)
+    else if (linkOpen.current === 'background-tab') openBackground(path)
+    else openKept(path)
   }, [openBackground, navigate, openKept])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
   // A trip to another copy of the same file (YAZ-2940) moves `activeTab` and not `file`, so both are watched.
@@ -3035,7 +3043,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} />
+                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} />
                 </div>
               )
             })}
@@ -3150,7 +3158,7 @@ export function App() {
             const ask = addAsk
             setAddAsk(null)
             void addVault(ask.root).then((added) => {
-              if (added) (ask.background ? openBackground : openFromPage)(ask.path)
+              if (added) (ask.background ? openBackground : openLink)(ask.path)
             })
           }}
           onCancel={() => setAddAsk(null)}

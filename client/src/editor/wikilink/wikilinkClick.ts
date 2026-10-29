@@ -12,7 +12,8 @@
  * raw syntax — which is why a click on REVEALED raw text never navigates: a revealed match
  * has no `.wikilink` decoration span, so this handler ignores it (normal caret placement).
  *
- * Gestures: plain click → open in the CURRENT tab (`nav.openCurrent` — an already-open path
+ * Gestures: plain click → `nav.openCurrent`, where Settings › "Open a link in" says (YAZ-3609 D11; the
+ * default, This tab, opens in the CURRENT tab — an already-open path
  * goes to its tab, never a new one — of a file with copies, the active copy, else the first); ⌘(meta)-click → NEW BACKGROUND tab (`nav.openBackground`
  * — appended, never activated, never focused; an already-open path is a no-op). An
  * UNRESOLVED link is created first (`createFromLink` — bare targets under `nav.createFolder()`,
@@ -53,7 +54,7 @@ export interface WikilinkNav {
    * targets (`[[Sub/Page]]`) ignore it — see `planLinkCreation`.
    */
   createFolder: () => string
-  /** Plain click: open in the CURRENT tab (already-open → goes to its tab). */
+  /** Plain click: where Settings › "Open a link in" says (YAZ-3609 D11); an already-open path goes to its tab. */
   openCurrent: (path: string) => void
   /** ⌘-click: append a background tab (already-open → no-op; focus never moves). */
   openBackground: (path: string) => void
@@ -151,7 +152,8 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
   }
 }
 
-export function createWikilinkClick(source: WikilinkResolveSource, nav: WikilinkNav, viewOnly?: ViewOnlyLinkSource, follow = wikilinkFollower(source, nav, viewOnly)) {
+/** The click: `follow` is the editor's one `wikilinkFollower`, shared with the link menu's Open rows. */
+export function createWikilinkClick(follow: (inner: string, background: boolean) => void) {
   return $prose(
     () =>
       new Plugin({

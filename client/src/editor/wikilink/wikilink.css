@@ -59,14 +59,14 @@
   display: none !important;
 }
 /* On a Markdown link pill the page preview says where it goes (YAZ-3609 D20): Crepe's address bar stays away.
-   Edit, Copy and Remove link stay on the pill's right-click menu. */
+   Its rows are on the pill's right-click menu, the one link menu (D23). */
 .milkdown[data-pill-hover] .milkdown-link-preview {
   display: none;
 }
-/* A pill into another vault of the window names that vault after its text, quietly (YAZ-3609 D22). */
+/* A pill into another vault of the window names that vault in brackets after its text, quietly (YAZ-3609 D22). */
 /* A piece that find cuts is several spans, each with the attribute: only the very last span says it. */
 .link-pill--last[data-vault]:not(:has(+ .wikilink))::after {
-  content: ' · ' attr(data-vault);
+  content: ' (' attr(data-vault) ')';
   color: var(--fg-muted);
   font-size: 0.85em;
 }

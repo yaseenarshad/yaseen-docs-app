@@ -146,6 +146,8 @@ export const eachVisibleTextblock = (
   from: number,
   to: number,
   visit: (block: ProseNode, pos: number, parent: ProseNode, index: number) => void,
+  /** Each whole hidden block the walk skips, by its start (Copy as › Without folded lines, YAZ-3653). */
+  skip?: (pos: number) => void,
 ): boolean => {
   const zoomed = getZoomedItemPos(state)
   const zoomEnd = zoomed === null ? 0 : zoomed + (state.doc.nodeAt(zoomed)?.nodeSize ?? 0)
@@ -160,6 +162,7 @@ export const eachVisibleTextblock = (
   state.doc.nodesBetween(from, to, (node, pos, parent, index) => {
     if (sections.has(pos) || foldedLists.has(pos) || (zoomed !== null && (pos + node.nodeSize <= zoomed || pos >= zoomEnd))) {
       hidden = true
+      skip?.(pos)
       return false
     }
     if (node.isTextblock) {

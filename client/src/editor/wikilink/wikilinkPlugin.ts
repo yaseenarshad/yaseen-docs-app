@@ -41,7 +41,7 @@
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Selection, type Transaction } from '@milkdown/kit/prose/state'
-import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import { isNoteId } from '@shared/noteId'
@@ -376,6 +376,11 @@ function updateDecorations(
     if (block.type.name !== 'code_block') decorateBlock(fresh, block, pos, state.selection, source, viewOnly, look)
   }
   return set.remove(stale).add(doc, fresh)
+}
+
+/** Draws every `[[link]]` of the note again, with no edit: the host calls it when the file icons change (YAZ-3609 D13). */
+export function redrawWikilinks(view: EditorView): void {
+  view.dispatch(view.state.tr.setMeta(wikilinkKey, 'look-updated').setMeta('addToHistory', false))
 }
 
 export function createWikilink(source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook) {

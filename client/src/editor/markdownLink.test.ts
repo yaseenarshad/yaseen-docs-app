@@ -9,7 +9,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { linkTooltipAPI } from '@milkdown/kit/component/link-tooltip'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
-import type { MarkdownLinkNav } from './markdownLink'
+import { addLinkOn, type MarkdownLinkNav } from './markdownLink'
 
 const mounted: Array<{ crepe: ReturnType<typeof createCrepe>; root: HTMLElement }> = []
 
@@ -241,32 +241,23 @@ describe('the address in the link popup (YAZ-3645)', () => {
   })
 })
 
-describe('"Add link…" from the text menu (YAZ-3609 D17)', () => {
-  it('opens the link box on the selection of the focused editor, and only there; the listener leaves with the editor', async () => {
-    const listeners = new Set<() => boolean>()
-    const original = window.yaseenDocs
-    window.yaseenDocs = { ...original, menu: { ...original?.menu, onAddLink: (listener: () => boolean) => {
-      listeners.add(listener)
-      return () => { listeners.delete(listener) }
-    } } } as typeof window.yaseenDocs
-    try {
-      const { crepe, view } = await mount('Read the plan first.\n')
-      const addLink = vi.fn()
-      crepe.editor.ctx.update(linkTooltipAPI.key, (api) => ({ ...api, addLink }))
-      const ask = () => [...listeners].some((listener) => listener())
-      expect(ask()).toBe(false) // no focus, no selection
-      view.focus()
-      let at = -1
-      view.state.doc.descendants((node, pos) => { if (at === -1 && node.isText) at = pos + node.text!.indexOf('the plan') })
-      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at, at + 'the plan'.length)))
-      expect(ask()).toBe(true)
-      expect(addLink).toHaveBeenCalledExactlyOnceWith(at, at + 'the plan'.length)
-      await crepe.destroy()
-      mounted.splice(0)
-      expect(listeners.size).toBe(0)
-    } finally {
-      window.yaseenDocs = original
-    }
+describe('"Add link…" from the note menu (YAZ-3609 D17)', () => {
+  it('opens the link box on the selection, and only with one, in a note that can change; nothing after the editor is gone', async () => {
+    const { crepe, view } = await mount('Read the plan first.\n')
+    const addLink = vi.fn()
+    crepe.editor.ctx.update(linkTooltipAPI.key, (api) => ({ ...api, addLink }))
+    expect(addLinkOn(view)).toBe(false) // no selection
+    let at = -1
+    view.state.doc.descendants((node, pos) => { if (at === -1 && node.isText) at = pos + node.text!.indexOf('the plan') })
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at, at + 'the plan'.length)))
+    crepe.setReadonly(true)
+    expect(addLinkOn(view)).toBe(false)
+    crepe.setReadonly(false)
+    expect(addLinkOn(view)).toBe(true)
+    expect(addLink).toHaveBeenCalledExactlyOnceWith(at, at + 'the plan'.length)
+    await crepe.destroy()
+    mounted.splice(0)
+    expect(addLinkOn(view)).toBe(false)
   })
 })
 
@@ -292,7 +283,7 @@ describe('right-click menu', () => {
       openPath,
     })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Plan · Other Vault', 'Open', 'Open in new tab', 'Copy link', 'Edit link', 'Remove link'])
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Plan (Other Vault)', 'Open', 'Open in new tab', 'Copy link', 'Edit link', 'Remove link'])
     expect(rowsOf(view)[0]!.disabled).toBe(true)
     rowNamed(view, 'Open in new tab').click()
     mouse(anchorOf(root), 'contextmenu', { button: 2 })

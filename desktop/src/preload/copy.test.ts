@@ -100,6 +100,17 @@ describe('Copy as preload selection routing', () => {
     expect(ipcRenderer.invoke).not.toHaveBeenCalled()
   })
 
+  it('Without folded lines forwards the rich answer: text and HTML in one write (YAZ-3653 D1)', () => {
+    subscriptions.push(bridge.menu.onCopyAs((mode) => mode === 'visible' ? { text: '• Tasks', html: '<ul><li>Tasks</li></ul>' } : undefined))
+    emit('visible')
+    expect(ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(SPECIAL.menuCopyText.channel, '• Tasks', '<ul><li>Tasks</li></ul>')
+    vi.mocked(ipcRenderer.invoke).mockClear()
+    subscriptions.splice(0).forEach((off) => off())
+    subscriptions.push(bridge.menu.onCopyAs(() => ({ text: '', html: '' })))
+    emit('visible')
+    expect(ipcRenderer.invoke).not.toHaveBeenCalled()
+  })
+
   it('invalid modes and collapsed DOM selections do not call subscribers or write', () => {
     const listener = vi.fn(() => undefined)
     subscriptions.push(bridge.menu.onCopyAs(listener))
@@ -108,5 +119,19 @@ describe('Copy as preload selection routing', () => {
     expect(listener).not.toHaveBeenCalled()
     emit('plain')
     expect(ipcRenderer.invoke).not.toHaveBeenCalled()
+  })
+})
+
+describe('menu.edit runs only from a click or a key (YAZ-3653)', () => {
+  afterEach(() => { Reflect.deleteProperty(navigator, 'userActivation') })
+  const activation = (isActive: boolean) => Object.defineProperty(navigator, 'userActivation', { value: { isActive }, configurable: true })
+
+  it('outside a user gesture it is refused and main is never asked; during one it goes', async () => {
+    activation(false)
+    await expect(bridge.menu.edit('paste-plain')).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    expect(ipcRenderer.invoke).not.toHaveBeenCalled()
+    activation(true)
+    await bridge.menu.edit('copy-visible')
+    expect(ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(SPECIAL.menuEdit.channel, 'copy-visible')
   })
 })

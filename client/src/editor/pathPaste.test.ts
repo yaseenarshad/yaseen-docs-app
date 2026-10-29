@@ -105,7 +105,7 @@ describe('a path that stays text (D6, P11 to P15)', () => {
     ['P13 a folder outside the vault', '/w/projects', null],
     ['P14 text that is no path', 'see the plan', null],
   ])('%s', async (_name, text, notice) => {
-    const { crepe, view, options } = await mount()
+    const { view, options } = await mount()
     atEnd(view)
     paste(view, text)
     expect(textOf(view)).toBe(`Next:${text}`)

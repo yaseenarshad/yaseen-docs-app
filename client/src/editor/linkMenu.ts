@@ -3,7 +3,7 @@
  * show the same rows in the same order. Before, an ID link had Name / ID / Copy ID, a name link the
  * Mac text menu, and a Markdown link Edit / Copy / Remove.
  *
- *   Plan · Other Vault         labels: the page's name (and its vault, D22), then its ID
+ *   Plan (Other Vault)         labels: the page's name (and its vault, D22), then its ID
  *   INL-4
  *   ───────────
  *   Open                       as a click does

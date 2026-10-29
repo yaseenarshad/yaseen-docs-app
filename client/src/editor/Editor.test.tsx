@@ -80,6 +80,7 @@ vi.mock('./createCrepe', () => {
       crepe.md = md
     }),
     focusEditor: vi.fn(),
+    editorViewOf: vi.fn(() => null),
     // The fake's "plain text" is its markdown: enough to see WHICH editor the page settings menu counts.
     getPlainText: vi.fn((crepe: FakeCrepe) => crepe.md),
     // The fake has no zoom plugin: a page view test says which bullet it is drilled into.
