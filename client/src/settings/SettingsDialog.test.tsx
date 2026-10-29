@@ -953,6 +953,42 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(row(folder.el, 'newNoteLocation')?.querySelector<HTMLInputElement>('.settings__input')?.value).toBe('Inbox')
   })
 
+  it('Daily notes (YAZ-3607 D8, D12): the switch alone while off; on, the folder with Change… and Open template, the style with today\'s names and Custom…, and the day folder switch', () => {
+    const { el, onChange } = mountOn('Files & Links')
+    expect(['dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder'].map((id) => row(el, id) !== null)).toEqual([true, false, false, false])
+    act(() => rowButtons(el, 'dailyNotes')[0].click())
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, dailyNotes: true })
+    unmount()
+    const on = mountOn('Files & Links', { ...DEFAULT_SETTINGS, dailyNotes: true, dailyNoteFolder: 'Journal' })
+    expect(row(on.el, 'dailyNoteFolder')?.querySelector('.settings__place-path')?.textContent).toBe('Journal')
+    // No vault in this dialog: no picker and no template to open.
+    expect(rowButtons(on.el, 'dailyNoteFolder').map((b) => [b.textContent, b.disabled])).toEqual([['Change…', true], ['Open template', true]])
+    const select = row(on.el, 'dailyNoteFormat')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
+    // Each ready style shows as today's name; the stored YYYY-MM-DD is the first.
+    expect([select.options.length, select.selectedIndex, select.options[4].textContent]).toEqual([5, 0, 'Custom…'])
+    expect(row(on.el, 'dailyNoteFormat')?.querySelector('input')).toBeNull()
+    act(() => rowButtons(on.el, 'dailyNoteDayFolder')[0].click())
+    expect(on.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, dailyNotes: true, dailyNoteFolder: 'Journal', dailyNoteDayFolder: true })
+  })
+
+  it('Daily notes › Name style › Custom… (D4): the field sits beside the dropdown; a style with no day keeps the stored one and says why; a good one is written', () => {
+    const { el, onChange } = mountOn('Files & Links', { ...DEFAULT_SETTINGS, dailyNotes: true })
+    const select = row(el, 'dailyNoteFormat')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
+    act(() => {
+      select.value = '4' // Custom…
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const input = row(el, 'dailyNoteFormat')?.querySelector<HTMLInputElement>('.settings__style-pick input') as HTMLInputElement
+    expect(row(el, 'dailyNoteFormat')?.querySelector('.settings__tokens')?.textContent).toMatch(/^YYYY 2026 · MMMM October .*Put other words in \[ \]/)
+    type(input, 'YYYY-MM')
+    act(() => input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))) // React's onBlur
+    expect(row(el, 'dailyNoteFormat')?.querySelector('.settings__error')?.textContent).toBe('Add D or DD, so each day gets its own note')
+    expect(onChange).not.toHaveBeenCalled()
+    type(input, 'MM_DD- ddd')
+    act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, dailyNotes: true, dailyNoteFormat: 'MM_DD- ddd' })
+  })
+
   it('Default location: an invalid folder keeps the stored value, marks the input aria-invalid, and keeps the typed text for fixing up', () => {
     const { el, onChange } = mountOn('Files & Links', { ...DEFAULT_SETTINGS, newNoteLocation: 'folder', newNoteFolder: 'Old' })
     const input = row(el, 'newNoteLocation')?.querySelector<HTMLInputElement>('.settings__input') as HTMLInputElement
