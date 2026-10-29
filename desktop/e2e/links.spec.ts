@@ -7,6 +7,8 @@
  * frontmatter `aliases` is reachable by them — `[[CAC]]` renders RESOLVED and opens the aliased
  * page, and typing `[[cac` in the picker links the page by its NAME, the alias its label: the
  * vault is plain (YAZ-2523 🔒 V3), the default, so no note has an id to link by.
+ * Steps 8-9 add YAZ-3609: a pasted path of a vault note becomes its link (Keep as path gives the
+ * path back), and a Markdown link to a vault note opens in a tab, ⌘ in a background tab.
  * Same harness as tabs.spec.ts (temp `--user-data-dir`, COPY of a generated fixture vault,
  * `links-` step screenshots); serial by design — each step continues the previous state.
  */
@@ -42,6 +44,8 @@ const FRESH = 'Fresh note'
 const METRICS_FILE = 'Metrics.md'
 const METRICS_BODY = 'synthetic-metrics-body'
 const ALIAS = 'CAC'
+/** A standard Markdown link to a vault note (YAZ-3609 D8): it opens in a tab, never in the OS. */
+const MD_LINK = 'the roadmap'
 
 let userData: string
 let vaultSrc: string
@@ -52,6 +56,15 @@ let win: Page
 /** The collapsed link span showing `text`, inside the VISIBLE editor only. */
 const linkIn = (w: Page, text: string) => editorOf(w).locator('.wikilink', { hasText: text }).first()
 
+/** A paste of `text` into the visible editor through a synthetic event: the real clipboard stays the person's own. */
+async function pasteText(w: Page, text: string): Promise<void> {
+  await editorOf(w).first().evaluate((el, value) => {
+    const data = new DataTransfer()
+    data.setData('text/plain', value)
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+  }, text)
+}
+
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'links-userdata-'))
   vaultSrc = await buildFixtureVault()
@@ -60,7 +73,7 @@ test.beforeAll(async () => {
   // an ALIAS of Metrics.md — E2) and one unresolved.
   await writeFile(
     path.join(vault, HUB_FILE),
-    `# Hub\n\n${HUB_BODY}\n\nGo [[Ideas]] or [[Roadmap]] or [[${ALIAS}]] or [[${FRESH}]] now.\n`,
+    `# Hub\n\n${HUB_BODY}\n\nGo [[Ideas]] or [[Roadmap]] or [[${ALIAS}]] or [[${FRESH}]] now.\n\nSee [${MD_LINK}](Projects/Roadmap.md) too.\n`,
   )
   await writeFile(path.join(vault, METRICS_FILE), `---\naliases: [${ALIAS}]\n---\n\n${METRICS_BODY}\n`)
 })
@@ -161,5 +174,32 @@ test('step 7 — the picker suggests the page by alias and links it by its name,
     .poll(async () => (await readFile(path.join(vault, HUB_FILE), 'utf8')).includes(`${HUB_BODY} [[Metrics|${ALIAS}]]`), { timeout: 10_000 })
     .toBe(true)
   expect(await readFile(path.join(vault, METRICS_FILE), 'utf8')).toBe(`---\naliases: [${ALIAS}]\n---\n\n${METRICS_BODY}\n`)
+})
+
+test('step 8 — a pasted path of a vault note is its link; Keep as path gives the path back (YAZ-3609 D1, D2)', async () => {
+  const ideas = path.join(vault, 'Ideas.md')
+  const hub = () => readFile(path.join(vault, HUB_FILE), 'utf8')
+  await pasteText(win, ideas) // the caret is still after step 7's link
+  // A plain vault (YAZ-2523 🔒 V3): the link the picker writes for Ideas.md is its name.
+  await expect.poll(async () => (await hub()).includes(`[[Metrics|${ALIAS}]][[Ideas]]`), { timeout: 10_000 }).toBe(true)
+  const keep = win.locator('.path-paste-chip button')
+  await expect(keep).toHaveText('Keep as path')
+  await shoot(win, 'links-08-path-pasted')
+  await keep.click()
+  // The editor shows the path again; on disk the link is gone (remark escapes a `_` of the temp path, so the text is read in the editor).
+  await expect(editorOf(win)).toContainText(ideas)
+  await expect.poll(async () => (await hub()).includes(`[[Metrics|${ALIAS}]][[Ideas]]`), { timeout: 10_000 }).toBe(false)
+  await expect(keep).toHaveCount(0)
+})
+
+test('step 9 — a Markdown link to a vault note opens in a tab, ⌘ in a background tab (YAZ-3609 D8)', async () => {
+  const mdLink = editorOf(win).locator('a', { hasText: MD_LINK })
+  await mdLink.click({ modifiers: ['Meta'] })
+  await expect(tabsOf(win).filter({ hasText: 'Roadmap' })).toHaveCount(1)
+  await expect(activeTab(win)).toHaveText('Links hub') // a background tab: the hub stays in front
+  await mdLink.click()
+  await expect(activeTab(win)).toHaveText('Roadmap')
+  await expect(editorOf(win)).toContainText(ROADMAP_BODY)
+  await shoot(win, 'links-09-markdown-link')
   await quitApp(app)
 })
