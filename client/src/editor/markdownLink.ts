@@ -128,6 +128,13 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
       popup = null
     }
 
+    /** Opens `href` as a click on a link does: a page or file of a vault in the window in a tab (⌘: behind, D8, D14), anything else through the OS. */
+    const follow = (href: string, background: boolean) => {
+      const path = nav.inApp?.(href) ?? null
+      if (path !== null && nav.openPath !== undefined) nav.openPath(path, background)
+      else attempt(() => nav.open(href), 'Could not open link', nav.onNotice)
+    }
+
     return new Plugin({
       key: markdownLinkKey,
       props: {
@@ -136,15 +143,8 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
             if (event.button !== 0 || event.altKey || event.shiftKey || event.ctrlKey) return false
             const hit = linkHit(view, ctx, event.target)
             if (hit === null || hit.href.startsWith('#')) return false
-            // A page or file of this vault opens in a tab, like a [[link]] (YAZ-3609 D8). ⌘ puts it in a background tab.
-            const path = nav.inApp?.(hit.href) ?? null
-            if (path !== null && nav.openPath !== undefined) {
-              event.preventDefault()
-              nav.openPath(path, event.metaKey)
-              return true
-            }
             event.preventDefault()
-            attempt(() => nav.open(hit.href), 'Could not open link', nav.onNotice)
+            follow(hit.href, event.metaKey)
             return true
           },
           contextmenu: (view, event) => {
@@ -174,6 +174,20 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
           ctx.get(linkTooltipAPI.key).addLink(from, to)
           return true
         })
+        // The address in Crepe's link popup is an `<a target="_blank">`: a click there left as a new browser
+        // window, and a relative path became the dev server's address and opened in the browser (YAZ-3645).
+        // It follows the link as a click on the link does.
+        const onPreviewClick = (event: MouseEvent) => {
+          const anchor = event.target instanceof Element ? event.target.closest('a.link-display') : null
+          const root = editorView.dom.closest('.milkdown')
+          if (anchor === null || root === null || !root.contains(anchor)) return
+          event.preventDefault()
+          event.stopPropagation()
+          const href = anchor.getAttribute('href') ?? ''
+          if (href !== '' && !href.startsWith('#')) follow(href, event.metaKey || event.button === 1)
+        }
+        document.addEventListener('click', onPreviewClick, true)
+        document.addEventListener('auxclick', onPreviewClick, true)
         document.addEventListener('mousedown', onMouseDown, true)
         document.addEventListener('scroll', close, true)
         window.addEventListener('keydown', onKeyDown)
@@ -184,6 +198,8 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
           },
           destroy: () => {
             offAddLink?.()
+            document.removeEventListener('click', onPreviewClick, true)
+            document.removeEventListener('auxclick', onPreviewClick, true)
             document.removeEventListener('mousedown', onMouseDown, true)
             document.removeEventListener('scroll', close, true)
             window.removeEventListener('keydown', onKeyDown)

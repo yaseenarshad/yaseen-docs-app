@@ -122,6 +122,43 @@ describe('a link to this vault opens in a tab (YAZ-3609 D8, D9)', () => {
   })
 })
 
+describe('the address in the link popup (YAZ-3645)', () => {
+  it('follows the link as a click on it does: a vault page opens in a tab, never a new browser window', async () => {
+    const openPath = vi.fn()
+    const { nav, root, view } = await mount('[Note](../note.md) and [Web](https://example.com)\n', { inApp: (href) => (href === '../note.md' ? '/v/note.md' : null), openPath })
+    const popup = (href: string) => {
+      const a = document.createElement('a')
+      a.className = 'link-display'
+      a.setAttribute('href', href)
+      a.target = '_blank'
+      view.dom.closest('.milkdown')!.appendChild(a)
+      return a
+    }
+    const vault = popup('../note.md')
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+    vault.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(openPath).toHaveBeenCalledWith('/v/note.md', false)
+    popup('https://example.com').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
+    expect(nav.open).toHaveBeenCalledWith('https://example.com')
+    expect(root).toBeDefined()
+  })
+
+  it('leaves an anchor outside the editor alone', async () => {
+    const openPath = vi.fn()
+    await mount('[Note](../note.md)\n', { inApp: () => '/v/note.md', openPath })
+    const outside = document.createElement('a')
+    outside.className = 'link-display'
+    outside.setAttribute('href', '../note.md')
+    document.body.appendChild(outside)
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+    outside.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(openPath).not.toHaveBeenCalled()
+    outside.remove()
+  })
+})
+
 describe('"Add link…" from the text menu (YAZ-3609 D17)', () => {
   it('opens the link box on the selection of the focused editor, and only there; the listener leaves with the editor', async () => {
     const listeners = new Set<() => boolean>()
