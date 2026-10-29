@@ -1,4 +1,5 @@
 import { cleanIconRules, isIconRules } from '@shared/vaultIcons'
+import { isValidDailyNoteFormat } from '@shared/dailyNote'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
@@ -434,13 +435,15 @@ export function sanitizeOutlineHidden(raw: unknown): CodeSymbolKind[] {
 }
 
 /**
- * ⌘D's place (YAZ-3556 D2), strict: a known tab, or a folder or a file by a root-relative path ('' only for the vault root,
- * a folder). Only the keys of its kind: a value with extra keys does not read, so a merge by part can never mix two places.
+ * ⌘D's place (YAZ-3556 D2), strict: a known tab, a folder or a file by a root-relative path ('' only for the vault root,
+ * a folder), or today's daily note (YAZ-3607 D1). Only the keys of its kind: a value with extra keys does not read, so a
+ * merge by part can never mix two places.
  */
 export const isGoToPlace = (v: unknown): v is GoToPlace => {
   if (!isRecord(v)) return false
   const keys = Object.keys(v).sort().join()
   if (v.kind === 'tab') return keys === 'kind,tab' && isSidebarLens(v.tab)
+  if (v.kind === 'daily') return keys === 'kind'
   if (v.kind !== 'folder' && v.kind !== 'file') return false
   return keys === 'kind,path' && typeof v.path === 'string' && isValidNewNoteFolder(v.path) && (v.kind === 'folder' || v.path !== '')
 }
@@ -509,6 +512,10 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   codeOutlineLocals: (v): v is boolean => typeof v === 'boolean',
   codeLanguageHelpers: (v): v is boolean => typeof v === 'boolean',
   goTo: isGoToPlace,
+  dailyNotes: (v): v is boolean => typeof v === 'boolean',
+  dailyNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
+  dailyNoteFormat: (v): v is string => typeof v === 'string' && isValidDailyNoteFormat(v),
+  dailyNoteDayFolder: (v): v is boolean => typeof v === 'boolean',
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 

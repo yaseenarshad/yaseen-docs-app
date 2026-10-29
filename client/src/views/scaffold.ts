@@ -26,16 +26,17 @@ async function readTemplate(path: string): Promise<string> {
  * template or the seed says, and its file name is built from it and the note's id (`noteFileName`).
  * The id is the vault's next number, taken from the door BEFORE the note is made (`takeNoteId`,
  * YAZ-2677 D4, R18): the name needs it. `id` is for a caller that has already taken it, and
- * written a link to the note (YAZ-2293). Resolves the note's path.
+ * written a link to the note (YAZ-2293). `templateAt` is for a caller whose template is not beside the note: a daily
+ * note in its day folder takes the daily notes folder's (YAZ-3607 D6). Resolves the note's path.
  *
  * All of that where the vault uses IDs (`ids`). In a vault that does not use IDs (YAZ-2523 🔒 V3)
  * `title` is the file's name (`plainEntryName`) and nothing is written about the note inside it:
  * with no seed it is the template as it is, and with one, what the seed returns and the template's body.
  */
-export async function createNote(dir: string, title: string, ids: boolean, seed?: (template: Record<string, unknown>) => Record<string, unknown>, id?: string): Promise<string> {
+export async function createNote(dir: string, title: string, ids: boolean, seed?: (template: Record<string, unknown>) => Record<string, unknown>, id?: string, templateAt = `${dir}/.template.md`): Promise<string> {
   // A name a file cannot hold is refused before anything is read or made.
   const plain = ids ? undefined : `${dir}/${plainEntryName(title, 'file')}`
-  const template = await readTemplate(`${dir}/.template.md`)
+  const template = await readTemplate(templateAt)
   const { frontmatter, body } = splitFrontmatter(template)
   const { properties } = parseFrontmatter(frontmatter)
   const seeded = seed === undefined ? properties : seed(properties)

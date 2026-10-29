@@ -38,6 +38,9 @@ function walkOf(landed: TreeResponse | undefined): { dirs: string[]; files: stri
   return walk
 }
 
+/** Is `path` hidden inside `vault`: a "." name on its way below the vault? The tree never lists one (YAZ-3607 D6). */
+const hiddenIn = (vault: string, path: string): boolean => path.slice(vault.replace(/\/+$/, '').length + 1).split('/').some((name) => name.startsWith('.'))
+
 /** The trees with one file's time patched (YAZ-3227 D2): a new time adds no folder and no file, so the vault's walk carries over. */
 function withTime(trees: ReadonlyMap<string, TreeResponse>, vault: string, file: string, mtime: number): ReadonlyMap<string, TreeResponse> {
   const next = withMtime(trees, vault, file, mtime)
@@ -265,14 +268,15 @@ export function useVaultTree(
   // root (opened via a pasted `#/abs/path.md` URL, GRO-2069) are never in the tree — skip them.
   // A tab may be a FOLDER (YAZ-2290 D3), so both checks ask `treeHasPath`: a folder still in the
   // tree survives, one that left it closes like a file. The tree that can say is the one of the
-  // vault that holds the file (YAZ-2602).
+  // vault that holds the file (YAZ-2602). A HIDDEN file — a "." name on its way, like a folder's `.template.md` that
+  // Settings › Daily notes › Open template opens (YAZ-3607 D6) — is never in the tree either, so neither check asks.
   const validated = useRef(false)
   const home = activeFile === null ? null : rootOfPath(roots, activeFile)
   const homeTree = trees.get(home ?? root) ?? null
   useEffect(() => {
     if (homeTree === null || validated.current) return
     validated.current = true
-    if (activeFile !== null && home !== null && activeFile.startsWith(`${home.replace(/\/+$/, '')}/`) && !treeHasPath(homeTree.tree, activeFile))
+    if (activeFile !== null && home !== null && activeFile.startsWith(`${home.replace(/\/+$/, '')}/`) && !hiddenIn(home, activeFile) && !treeHasPath(homeTree.tree, activeFile))
       onFileMissing()
   }, [homeTree, activeFile, home, onFileMissing])
 
@@ -291,7 +295,7 @@ export function useVaultTree(
     if (activeFile === lastActive.current) return
     lastActive.current = activeFile
     const vault = activeFile === null ? null : rootOfPath(live.current.roots, activeFile)
-    if (activeFile === null || vault === null || !activeFile.startsWith(`${vault.replace(/\/+$/, '')}/`)) return
+    if (activeFile === null || vault === null || !activeFile.startsWith(`${vault.replace(/\/+$/, '')}/`) || hiddenIn(vault, activeFile)) return
     const held = treesRef.current.get(vault)
     if (held !== undefined && treeHasPath(held.tree, activeFile)) return
     let cancelled = false // the activation moved on (or the sidebar unmounted): the probe's verdict is stale

@@ -23,6 +23,8 @@ export interface MenuHandlers {
   newItem(): void
   /** File › Show in Sidebar (⌘D, YAZ-3556 D1): the focused window's renderer shows the place of `settings.goTo`. */
   goTo(): void
+  /** File › Open Today's Daily Note (YAZ-3607 D11): the focused window's renderer opens today's daily note, made first when today has none. */
+  dailyNote(): void
   /** File › New Tab (⌘T, YAZ-2655 D10): the focused window's renderer shows its blank tab and puts the caret in its search bar. */
   newTab(): void
   /** File › New Window (⌘⇧N, D6): the focused window calls `window:duplicate` — a window on its vaults with no tab (YAZ-3343 D35). */
@@ -105,6 +107,8 @@ export interface MenuInputs {
    * hears it; recording ⌘W must not close the tab, nor ⌘Q quit. Absent = false.
    */
   suspendKeys?: boolean
+  /** Settings › Files & Links › Daily notes (YAZ-3607): File › Open Today's Daily Note shows, with its key, only while it is on. Absent = off. */
+  dailyNotes?: boolean
 }
 
 /**
@@ -130,7 +134,7 @@ const menuLabel = (text: string): string => text.replace(/&/g, '&&')
  * The whole menu bar as a template. Item `id`s are stable so a live check (Playwright) can
  * drive items through `Menu.getApplicationMenu().getMenuItemById(...)`.
  */
-export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, frontKind = activeKind, hotkeys, hotkeysAside, suspendKeys = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
+export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, frontKind = activeKind, hotkeys, hotkeysAside, suspendKeys = false, dailyNotes = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
   const recentItems: MenuItemConstructorOptions[] =
     recents.length === 0
       ? [{ label: 'No Recent Folders', enabled: false }]
@@ -194,6 +198,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
         { id: 'menu.file.search', label: 'Search Vault', ...key('search'), click: () => handlers.search() },
         // ⌘D (YAZ-3556 D1, D9): the place of Settings › Sidebar › Show in sidebar. Drawings, diagrams and code keep their own ⌘D by default (YAZ-3564 K9: a pick per tab).
         { id: 'menu.file.go-to', label: 'Show in Sidebar', ...key('goTo'), click: () => handlers.goTo() },
+        // YAZ-3607 D11: a hidden item keeps no key, so with Daily notes off its key is free for the page.
+        { id: 'menu.file.daily-note', label: "Open Today's Daily Note", visible: dailyNotes, ...(dailyNotes ? key('dailyNote') : {}), click: () => handlers.dailyNote() },
         { type: 'separator' },
         // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D3 / D10, YAZ-1799): greyed out unless
         // the active tab is a board they work for. Export Image… and Share Link work on any board, Export
@@ -434,6 +440,9 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     goTo() {
       host.focusedWebContents()?.send(CONTRACT.menu.onGoTo.channel)
     },
+    dailyNote() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onDailyNote.channel)
+    },
     newWindow() {
       // Through the focused window, which calls `window:duplicate` (YAZ-3343 D35): main names the caller from the
       // sender. A window whose page does not answer opens nothing (YAZ-2951 S14).
@@ -532,7 +541,7 @@ export function menuKeyedVaults(state: AppState): KeyedVault[] {
  * sub-objects, so reference identity of `state.recents` and `state.folders` skips every
  * settings/window write for free. `state.folders` is a new object on every folder write (a fold, a
  * last file), so the rows (YAZ-2555 D3) compare by value: one pass over the folders per FOLDER write.
- * The user's keys (YAZ-3397 D2) too: `settings.hotkeys` by reference, then by value.
+ * The user's keys (YAZ-3397 D2) too: `settings.hotkeys` by reference, then by value. And the Daily notes switch (YAZ-3607).
  */
 export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => void {
   let last = store.get().recents
@@ -541,6 +550,7 @@ export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => v
   let lastHotkeys = store.get().settings.hotkeys
   let lastAside = store.get().settings.hotkeysAside
   let lastKeys = JSON.stringify([lastHotkeys, lastAside])
+  let lastDaily = store.get().settings.dailyNotes
   return store.onChange((state) => {
     const vaults = state.folders === lastFolders ? lastVaults : JSON.stringify(menuKeyedVaults(state))
     lastFolders = state.folders
@@ -550,10 +560,12 @@ export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => v
     const keys = state.settings.hotkeys === lastHotkeys && state.settings.hotkeysAside === lastAside ? lastKeys : JSON.stringify([state.settings.hotkeys, state.settings.hotkeysAside])
     lastHotkeys = state.settings.hotkeys
     lastAside = state.settings.hotkeysAside
-    if (state.recents === last && vaults === lastVaults && keys === lastKeys) return
+    // The Daily notes switch (YAZ-3607) shows or hides File › Open Today's Daily Note.
+    if (state.recents === last && vaults === lastVaults && keys === lastKeys && state.settings.dailyNotes === lastDaily) return
     last = state.recents
     lastVaults = vaults
     lastKeys = keys
+    lastDaily = state.settings.dailyNotes
     rebuild()
   })
 }

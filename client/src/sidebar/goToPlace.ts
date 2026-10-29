@@ -19,7 +19,8 @@ export const placeRel = (vault: string, path: string): string => (path === vault
 /** What ⌘D does now: show a tab, show a folder or a file, or say that the path is not in the vault. */
 export type GoToTarget = { kind: 'tab'; tab: SidebarLens } | { kind: 'folder' | 'file'; path: string } | { kind: 'missing'; rel: string; folder: boolean }
 
-export function resolveGoTo(goTo: GoToPlace, vault: string, tree: readonly TreeNode[]): GoToTarget {
+/** A tab, a folder or a file (YAZ-3556 D9); today's daily note is App's own path (YAZ-3607 D5). */
+export function resolveGoTo(goTo: Exclude<GoToPlace, { kind: 'daily' }>, vault: string, tree: readonly TreeNode[]): GoToTarget {
   if (goTo.kind === 'tab') return goTo
   const path = placePath(vault, goTo.path)
   if (goTo.kind === 'folder') return path === vault || findDirNode(tree, path) !== null ? { kind: 'folder', path } : { kind: 'missing', rel: goTo.path, folder: true }

@@ -1685,6 +1685,15 @@ describe('Sidebar stale tab activation (I3, GRO-2235)', () => {
     expect(props.onFileMissing).not.toHaveBeenCalled()
   })
 
+  it('a HIDDEN file (a folder\'s .template.md, YAZ-3607 D14) stays open: the tree never lists one, so neither check asks it', async () => {
+    const { bridge, props, rerender } = await mount({ activeFile: '/v/sub/.template.md' }) // the first tree's check
+    bridge.tree.mockClear()
+    await rerender({ activeFile: '/v/a.md' })
+    await rerender({ activeFile: '/v/.yaseendocs/notes.md' }) // the activation probe
+    expect(bridge.tree).not.toHaveBeenCalled()
+    expect(props.onFileMissing).not.toHaveBeenCalled()
+  })
+
   it('a FOLDER tab survives both checks while the tree holds the folder, and closes once it has left it (YAZ-2290 D3)', async () => {
     const { bridge, props, rerender } = await mount({ activeFile: '/v/sub' }) // the first tree validates the restored tab
     bridge.tree.mockClear()
@@ -8274,6 +8283,16 @@ describe('update pill (YAZ-2976 D4)', () => {
     const { el } = await mount()
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
     expect(footer).toEqual(['settings-button', 'zoom-footer'])
+  })
+
+  it('the daily note button (YAZ-3607 D7): after the zoom chip while App hands its door over, and its click opens today\'s note', async () => {
+    const onOpenDailyNote = vi.fn()
+    const { el } = await mount({ onOpenDailyNote })
+    const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
+    expect(footer).toEqual(['settings-button', 'zoom-footer', 'sidebar__daily'])
+    act(() => el.querySelector<HTMLButtonElement>('.sidebar__daily')?.click())
+    expect(onOpenDailyNote).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.sidebar__daily')?.getAttribute('aria-label')).toBe("Open today's daily note")
   })
 
   it('the sidebar zoom (YAZ-3389): the lists take `--sidebar-zoom` from the setting, the chip shows it, the menu\'s + writes the next step over the other settings, and the same value writes nothing (D6)', async () => {

@@ -236,12 +236,12 @@ describe('createStore: loading', () => {
     expect(DEFAULT_SETTINGS.goTo).toEqual({ kind: 'tab', tab: 'files' })
     await seed(valid({ settings: legacySettings }))
     expect(createStore(file).get().settings.goTo).toEqual({ kind: 'tab', tab: 'files' })
-    for (const goTo of [{ kind: 'tab', tab: 'recents' }, { kind: 'folder', path: 'Projects/Alpha' }, { kind: 'folder', path: '' }, { kind: 'file', path: 'Inbox/Today.md' }]) {
+    for (const goTo of [{ kind: 'tab', tab: 'recents' }, { kind: 'folder', path: 'Projects/Alpha' }, { kind: 'folder', path: '' }, { kind: 'file', path: 'Inbox/Today.md' }, { kind: 'daily' }]) {
       await seed(valid({ settings: { ...DEFAULT_SETTINGS, goTo } }))
       expect(createStore(file).get().settings.goTo).toEqual(goTo)
     }
     // A tab the sidebar does not have, an absolute or hidden path, a file with no path, a value with the parts of two kinds.
-    for (const goTo of [{ kind: 'tab', tab: 'search' }, { kind: 'folder', path: '/Users/x' }, { kind: 'folder', path: 'a/.git' }, { kind: 'file', path: '' }, { kind: 'folder', tab: 'files', path: 'a' }, 'files', null]) {
+    for (const goTo of [{ kind: 'tab', tab: 'search' }, { kind: 'folder', path: '/Users/x' }, { kind: 'folder', path: 'a/.git' }, { kind: 'file', path: '' }, { kind: 'folder', tab: 'files', path: 'a' }, { kind: 'daily', path: 'a' }, 'files', null]) {
       await seed(valid({ settings: { ...DEFAULT_SETTINGS, goTo } }))
       expect(createStore(file).get().settings.goTo, JSON.stringify(goTo)).toEqual({ kind: 'tab', tab: 'files' })
       expect(isSettings({ ...DEFAULT_SETTINGS, goTo })).toBe(false)
@@ -252,6 +252,24 @@ describe('createStore: loading', () => {
     const here = { ...DEFAULT_SETTINGS, goTo: { kind: 'file' as const, path: 'a.md' } }
     expect(mergeFolderSettings(here, { goTo: { kind: 'tab', tab: 'focus' } }).goTo).toStrictEqual({ kind: 'tab', tab: 'focus' })
     expect(mergeFolderSettings(here, { goTo: { kind: 'tab', tab: 'nowhere' } }).goTo).toStrictEqual(here.goTo)
+  })
+
+  it('Daily notes (YAZ-3607 D2, D4, D12): a file from before them reads off, the vault folder, YYYY-MM-DD and no day folders; each survives a restart; a wrong value reads its default; they travel', async () => {
+    const { dailyNotes: _a, dailyNoteFolder: _b, dailyNoteFormat: _c, dailyNoteDayFolder: _d, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    const before = createStore(file).get().settings
+    expect([before.dailyNotes, before.dailyNoteFolder, before.dailyNoteFormat, before.dailyNoteDayFolder]).toEqual([false, '', 'YYYY-MM-DD', false])
+    const set = { dailyNotes: true, dailyNoteFolder: 'Journal/Daily', dailyNoteFormat: 'MM_DD- ddd', dailyNoteDayFolder: true }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, ...set } }))
+    expect(createStore(file).get().settings).toMatchObject(set)
+    // A hidden or absolute folder; a style with no day, with a "/", or hidden; a switch that is not a boolean.
+    for (const wrong of [{ dailyNoteFolder: '.trash' }, { dailyNoteFolder: '/Users/x' }, { dailyNoteFormat: 'YYYY-MM' }, { dailyNoteFormat: 'YYYY/MM/DD' }, { dailyNoteFormat: '[.]DD' }, { dailyNotes: 'yes' }, { dailyNoteDayFolder: 1 }]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, ...wrong } }))
+      const [key] = Object.keys(wrong) as (keyof typeof DEFAULT_SETTINGS)[]
+      expect(createStore(file).get().settings[key], JSON.stringify(wrong)).toEqual(DEFAULT_SETTINGS[key])
+      expect(isSettings({ ...DEFAULT_SETTINGS, ...wrong })).toBe(false)
+    }
+    for (const key of ['dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder'] as const) expect(LOCAL_SETTINGS).not.toContain(key)
   })
 
   it('the code Outline (YAZ-3486 S4, S5): a file from before it reads Position and no hidden kind; each value survives a restart; a wrong value is repaired', async () => {

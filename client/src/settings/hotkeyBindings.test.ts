@@ -77,6 +77,7 @@ describe('HOTKEY_COMMANDS (YAZ-3397 D2)', () => {
       ['newFilesWindow', '⌘⇧W'],
       ['newItem', '⌘N'],
       ['goTo', '⌘D'],
+      ['dailyNote', ''],
       ['closeTab', '⌘W'],
       ['closeWindow', ''],
       ['switchVault', '⌘O'],
