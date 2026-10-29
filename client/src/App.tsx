@@ -3082,7 +3082,7 @@ export function App() {
         <ConfirmSheet
           labelId="confirm-add-vault-for-link-text"
           // The vault's name is in the text, in brackets; the button says the same thing for every vault, however long its name (Yaseen, D21).
-          text={`${stripExt(basename(addAsk.path))} is in another vault (${storage.vaultName(addAsk.root)}), which is not open in this window. Add it to open the page in a tab?`}
+          text={`This file (${stripExt(basename(addAsk.path))}) is not in this vault. It is in another vault (${storage.vaultName(addAsk.root)}), which is not open in this window. Add that vault to open the file in a tab?`}
           confirmLabel="Add vault to this window"
           focusConfirm
           onConfirm={() => {

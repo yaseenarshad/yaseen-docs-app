@@ -189,7 +189,7 @@ test('step 6 — a link into a vault the app knows but this window does not show
   const link = editorOf(win).locator('a', { hasText: 'the old note' })
   // V3: Cancel changes nothing.
   await link.click()
-  await expect(sheet).toContainText(`Old is in another vault (${ARCHIVE}), which is not open in this window.`)
+  await expect(sheet).toContainText(`This file (Old) is not in this vault. It is in another vault (${ARCHIVE}), which is not open in this window.`)
   await shoot(win, 'workspace-links-06-ask')
   await sheet.getByRole('button', { name: 'Cancel' }).click()
   await expect(sheet).toHaveCount(0)
