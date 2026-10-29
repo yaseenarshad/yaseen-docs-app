@@ -38,6 +38,7 @@ afterEach(async () => {
 const anchorOf = (root: HTMLElement) => root.querySelector<HTMLAnchorElement>('a')!
 const popupOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTMLElement>('.ctx-menu--editor')
 const rowsOf = (view: EditorView) => Array.from(popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
+const rowNamed = (view: EditorView, label: string) => rowsOf(view).find((row) => row.textContent === label)!
 
 function mouse(target: Element, type: 'mousedown' | 'contextmenu', init: MouseEventInit = {}): MouseEvent {
   const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 10, clientY: 10, ...init })
@@ -93,6 +94,23 @@ describe('primary click', () => {
   })
 })
 
+describe('a link into a vault this window does not show (YAZ-3609 D21)', () => {
+  it('asks the host to add the vault, and never sends the link to the OS; ⌘ asks for a background tab', async () => {
+    const elsewhere = vi.fn(() => true)
+    const { nav, root } = await mount('[Old](../Archive/old.md)\n', { inApp: () => null, elsewhere })
+    mouse(anchorOf(root), 'mousedown', { button: 0 })
+    mouse(anchorOf(root), 'mousedown', { button: 0, metaKey: true })
+    expect(elsewhere.mock.calls).toEqual([['../Archive/old.md', false], ['../Archive/old.md', true]])
+    expect(nav.open).not.toHaveBeenCalled()
+  })
+
+  it('V4 a file in no vault the app knows still goes to the OS', async () => {
+    const { nav, root } = await mount('[Elsewhere](/tmp/x.md)\n', { inApp: () => null, elsewhere: () => false })
+    mouse(anchorOf(root), 'mousedown', { button: 0 })
+    expect(nav.open).toHaveBeenCalledWith('/tmp/x.md')
+  })
+})
+
 describe('a link to this vault opens in a tab (YAZ-3609 D8, D9)', () => {
   const inApp = (href: string) => (href === '../note.md' ? '/v/note.md' : null)
 
@@ -144,6 +162,15 @@ describe('a Markdown link into a vault of the window is a pill (YAZ-3609 D19)', 
     const pieces = Array.from(root.querySelectorAll<HTMLElement>('.link-pill'))
     expect(pieces.map((el) => el.textContent)).toEqual(['Plan ', 'bold', ' end'])
     expect(pieces[0]!.classList.contains('link-pill--first') && pieces[2]!.classList.contains('link-pill--last')).toBe(true)
+  })
+
+  it('D22 a pill into another vault names that vault on its last piece only; a pill of this vault names none', async () => {
+    const vaultTag = (path: string) => (path.startsWith('/v/other/') ? 'Other Vault' : null)
+    const { crepe, root } = await mount('[Plan **bold** end](../other/plan.md) and [Here](../here.md)\n', { vaultPath, icon, vaultTag })
+    const tagged = Array.from(root.querySelectorAll<HTMLElement>('.link-pill[data-vault]'))
+    expect(tagged.map((el) => [el.textContent, el.dataset.vault, el.classList.contains('link-pill--last')])).toEqual([[' end', 'Other Vault', true]])
+    // The name is drawn by CSS: the saved note does not change.
+    expect(getMarkdownForSave(crepe)).toBe('[Plan **bold** end](../other/plan.md) and [Here](../here.md)\n')
   })
 
   it('a click on the pill opens the link', async () => {
@@ -244,34 +271,56 @@ describe('"Add link…" from the text menu (YAZ-3609 D17)', () => {
 })
 
 describe('right-click menu', () => {
-  it('replaces the native menu with exactly Edit, Copy, and Remove', async () => {
-    const { root, view } = await mount()
+  it('a web link: the one link menu (YAZ-3609 D23) with no name and no new tab: Open, Copy, Edit, Remove', async () => {
+    const { nav, root, view } = await mount()
     const event = mouse(anchorOf(root), 'contextmenu', { button: 2 })
 
     expect(event.defaultPrevented).toBe(true)
-    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Edit link', 'Copy link', 'Remove link'])
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Copy link', 'Edit link', 'Remove link'])
+    expect(rowNamed(view, 'Remove link').classList.contains('ctx-menu__item--danger')).toBe(true)
+    rowNamed(view, 'Open').click()
+    expect(nav.open).toHaveBeenCalledExactlyOnceWith('https://example.com')
   })
 
-  it('a read-only note (YAZ-3076 D2) offers only Copy: Edit and Remove would change the note', async () => {
+  it('D23 a link into a vault of the window: its name and vault, Open and Open in new tab, as a click and a ⌘-click', async () => {
+    const openPath = vi.fn()
+    const { root, view } = await mount('[the plan](../Other/Plan.md)\n', {
+      inApp: () => '/Other/Plan.md',
+      vaultPath: () => '/Other/Plan.md',
+      vaultTag: () => 'Other Vault',
+      icon: () => ({ class: 'file-icon' }),
+      openPath,
+    })
+    mouse(anchorOf(root), 'contextmenu', { button: 2 })
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Plan · Other Vault', 'Open', 'Open in new tab', 'Copy link', 'Edit link', 'Remove link'])
+    expect(rowsOf(view)[0]!.disabled).toBe(true)
+    rowNamed(view, 'Open in new tab').click()
+    mouse(anchorOf(root), 'contextmenu', { button: 2 })
+    rowNamed(view, 'Open').click()
+    expect(openPath.mock.calls).toEqual([['/Other/Plan.md', true], ['/Other/Plan.md', false]])
+  })
+
+  it('a read-only note (YAZ-3076 D2) offers no Edit and no Remove: they would change the note', async () => {
     const { crepe, root, view } = await mount()
     crepe.setReadonly(true)
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Copy link'])
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Copy link'])
   })
 
   it('Edit link opens Crepe\'s existing editor with the current href', async () => {
     const { root, view } = await mount()
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    rowsOf(view)[0]!.click()
+    rowNamed(view, 'Edit link').click()
     await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('.milkdown-link-edit input')?.value).toBe('https://example.com'))
   })
 
   it('Copy link copies only the href and keeps Markdown byte-identical', async () => {
     const copy = vi.fn().mockResolvedValue(undefined)
-    const { crepe, root, view } = await mount(undefined, { copy })
+    const { crepe, nav, root, view } = await mount(undefined, { copy })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    rowsOf(view)[1]!.click()
+    rowNamed(view, 'Copy link').click()
     expect(copy).toHaveBeenCalledWith('https://example.com')
+    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledWith('Copied link'))
     expect(getMarkdownForSave(crepe)).toBe('[Example](https://example.com)\n')
   })
 
@@ -280,8 +329,8 @@ describe('right-click menu', () => {
     const onNotice = vi.fn()
     const { root, view } = await mount(undefined, { copy, onNotice })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    rowsOf(view)[1]!.click()
-    await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith('Could not copy link: clipboard denied'))
+    rowNamed(view, 'Copy link').click()
+    await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith("Can't copy link: clipboard denied"))
   })
 
   it('reports a synchronous clipboard failure passively too', async () => {
@@ -291,14 +340,14 @@ describe('right-click menu', () => {
     const onNotice = vi.fn()
     const { root, view } = await mount(undefined, { copy, onNotice })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    expect(() => rowsOf(view)[1]!.click()).not.toThrow()
-    await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith('Could not copy link: clipboard unavailable'))
+    expect(() => rowNamed(view, 'Copy link').click()).not.toThrow()
+    await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith("Can't copy link: clipboard unavailable"))
   })
 
   it('Remove link removes only the mark and preserves formatted label content', async () => {
     const { crepe, root, view } = await mount('[**Bold** label](https://example.com)\n')
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    rowsOf(view)[2]!.click()
+    rowNamed(view, 'Remove link').click()
     expect(getMarkdownForSave(crepe)).toBe('**Bold** label\n')
   })
 

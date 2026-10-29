@@ -29,7 +29,7 @@ import { focusOpenDocument } from './lib/focusHandoff'
 import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, shows, unlessFailed, type DragOutAsk, type NamedItem, type Notice, type NoticeKind, type NoticeType } from './lib/notice'
 import { treeHasPath } from './lib/treeState'
 import { NoticeToast } from './components/NoticeToast'
-import { absFrom, dirname, relTo } from './lib/paths'
+import { absFrom, basename, dirname, relTo, stripExt } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
@@ -415,6 +415,22 @@ export function App() {
   }, [])
   /** The `[[` picker rows of the window's vault that holds `path`, or null (YAZ-3609 D14): links across the workspace. */
   const candidatesOf = useCallback((path: string) => (rootOfPath(live.current.roots, path) === null ? null : scopeOf(path).wikilinkCandidates), [scopeOf])
+  /** A link to a page of a vault the app knows but this window does not show (YAZ-3609 D21): the sheet that asks to add it. */
+  const [addAsk, setAddAsk] = useState<{ root: string; path: string; background: boolean } | null>(null)
+  const askToAdd = useCallback((path: string, background: boolean): boolean => {
+    if (rootOfPath(live.current.roots, path) !== null) return false
+    const root = rootOfPath(storage.listVaults().map((vault) => vault.path), path)
+    if (root === null) return false
+    setAddAsk({ root, path, background })
+    return true
+  }, [])
+  /** The name of the window's vault that holds `path`, as the sidebar shows it, or null (YAZ-3609 D22): a pill into another vault says which. */
+  const vaultOf = useCallback((path: string) => {
+    const now = live.current
+    const home = rootOfPath(now.roots, path)
+    return home === null ? null : (now.vaults[now.roots.indexOf(home)]?.name ?? storage.vaultName(home))
+  }, [])
+  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, vaultOf }), [candidatesOf, askToAdd, roots, vaultOf])
   /** The scope of the ACTIVE tab's vault (R3, R4, R10); with no tab open, the first vault's. */
   const active = file === null ? first : scopeOf(file)
   /**
@@ -2719,7 +2735,7 @@ export function App() {
   return (
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
-    <VaultLinksContext.Provider value={candidatesOf}>
+    <VaultLinksContext.Provider value={vaultLinks}>
     <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion}>
       {glow && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
@@ -3111,6 +3127,24 @@ export function App() {
           danger
           onConfirm={killAllTabs}
           onCancel={() => setKillAsk(null)}
+        />
+      )}
+      {/* A link into a vault this window does not show (YAZ-3609 D21): add it, then open the page as the click asked. */}
+      {addAsk !== null && (
+        <ConfirmSheet
+          labelId="confirm-add-vault-for-link-text"
+          // The vault's name is in the text, in brackets; the button says the same thing for every vault, however long its name (Yaseen, D21).
+          text={`This file (${stripExt(basename(addAsk.path))}) is not in this vault. It is in another vault (${storage.vaultName(addAsk.root)}), which is not open in this window. Add that vault to open the file in a tab?`}
+          confirmLabel="Add vault to this window"
+          focusConfirm
+          onConfirm={() => {
+            const ask = addAsk
+            setAddAsk(null)
+            void addVault(ask.root).then((added) => {
+              if (added) (ask.background ? openLinkBackground : openFromPage)(ask.path)
+            })
+          }}
+          onCancel={() => setAddAsk(null)}
         />
       )}
     </div>

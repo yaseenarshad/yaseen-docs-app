@@ -1,11 +1,11 @@
 /**
- * Right-click on an id link (YAZ-2293): real editor (`createCrepe({ wikilinkNav })`), real
- * mousedown / contextmenu events on the rendered `.wikilink` spans. Pinned here: the menu names
- * the note and its id and "Copy ID" copies exactly the id; a dead id still offers its id; a
- * NAME link keeps the native menu (nothing prevented, nothing drawn); a right-button mousedown on
- * an id link is swallowed so the link is still rendered when `contextmenu` arrives; and the menu
- * closes the way every `.ctx-menu--editor` popup does. `openIdMenu` is also driven on a bare
- * element — it must not need an editor.
+ * Right-click on a `[[link]]` (YAZ-2293, YAZ-3609 D23): real editor (`createCrepe({ wikilinkNav })`), real
+ * mousedown / contextmenu events on the rendered `.wikilink` spans. Pinned here: the one link menu names
+ * the note and its id, and "Copy ID" copies exactly the id; a dead id still offers its id; a NAME link
+ * gets the same menu with no ID rows; Open, Open in new tab, Copy link, Edit link and Remove link do
+ * what they say; a right-button mousedown on a link is swallowed so the link is still rendered when
+ * `contextmenu` arrives; and the menu closes the way every `.ctx-menu--editor` popup does. `openIdMenu`
+ * is also driven on a bare element — it must not need an editor.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -51,6 +51,11 @@ function mouse(target: Element, type: 'mousedown' | 'contextmenu'): MouseEvent {
 
 const popupOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTMLElement>('.ctx-menu--editor')
 const rowsOf = (popup: HTMLElement) => Array.from(popup.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
+const rowNamed = (view: EditorView, label: string) => rowsOf(popupOf(view)!).find((row) => row.textContent === label)!
+/** The one link menu's rows (D23) after its labels: an id link's, with Copy ID. */
+const idMenu = (...labels: string[]) => [...labels, 'Open', 'Open in new tab', 'Copy link', 'Copy ID', 'Edit link', 'Remove link']
+/** A name link's: no Copy ID. */
+const nameMenu = (...labels: string[]) => [...labels, 'Open', 'Open in new tab', 'Copy link', 'Edit link', 'Remove link']
 
 /** jsdom has no clipboard; the menu's only job is to hand the id to it, so spy on writeText. */
 let writeText: Mock
@@ -70,19 +75,19 @@ afterEach(async () => {
 })
 
 describe('right-click on a rendered id link', () => {
-  it('replaces the native menu with the note\'s name, its id and Copy ID — the two labels are not actions', async () => {
+  it('replaces the native menu with the one link menu: the note\'s name and its id, which are not actions, then the rows', async () => {
     const { root, view } = await mount(`pad [[${ID}]] tail\n`)
     expect(mouse(linkSpan(root, 'Road Map'), 'contextmenu').defaultPrevented).toBe(true)
     const rows = rowsOf(popupOf(view)!)
-    expect(rows.map((row) => row.textContent)).toEqual(['Road Map', ID, 'Copy ID'])
-    expect(rows.map((row) => row.disabled)).toEqual([true, true, false])
+    expect(rows.map((row) => row.textContent)).toEqual(idMenu('Road Map', ID))
+    expect(rows.map((row) => row.disabled)).toEqual([true, true, false, false, false, false, false, false])
   })
 
   it('Copy ID copies exactly the id, says so, closes — and the document keeps every byte', async () => {
     const md = `pad [[${ID}]] tail\n`
     const { crepe, root, nav, view } = await mount(md)
     mouse(linkSpan(root, 'Road Map'), 'contextmenu')
-    rowsOf(popupOf(view)!)[2]!.click()
+    rowNamed(view, 'Copy ID').click()
     expect(writeText).toHaveBeenCalledExactlyOnceWith(ID)
     await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('Copied ID'))
     expect(popupOf(view)).toBeNull()
@@ -93,25 +98,24 @@ describe('right-click on a rendered id link', () => {
     writeText.mockRejectedValue(new Error('denied'))
     const { root, nav, view } = await mount(`pad [[${ID}]] tail\n`)
     mouse(linkSpan(root, 'Road Map'), 'contextmenu')
-    rowsOf(popupOf(view)!)[2]!.click()
+    rowNamed(view, 'Copy ID').click()
     await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith("Can't copy ID: denied"))
   })
 
   it('a hand-typed label and a heading segment are the same link: the name row is the TITLE', async () => {
     const { root, view } = await mount(`pad [[${ID}|my label]] and [[${ID}#Scope]] tail\n`)
     mouse(linkSpan(root, 'my label'), 'contextmenu')
-    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['Road Map', ID, 'Copy ID'])
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu('Road Map', ID))
     mouse(linkSpan(root, 'Scope'), 'contextmenu')
     expect(view.dom.parentElement!.querySelectorAll('.ctx-menu--editor')).toHaveLength(1) // retargeted, never stacked
-    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['Road Map', ID, 'Copy ID'])
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu('Road Map', ID))
   })
 
   it('an id no note has still offers its id and Copy ID — with no name row', async () => {
     const { root, view } = await mount(`pad [[${DEAD}]] tail\n`)
     expect(mouse(linkSpan(root, DEAD), 'contextmenu').defaultPrevented).toBe(true)
-    const rows = rowsOf(popupOf(view)!)
-    expect(rows.map((row) => row.textContent)).toEqual([DEAD, 'Copy ID'])
-    rows[1]!.click()
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu(DEAD))
+    rowNamed(view, 'Copy ID').click()
     expect(writeText).toHaveBeenCalledExactlyOnceWith(DEAD)
   })
 
@@ -124,9 +128,9 @@ describe('right-click on a rendered id link', () => {
       source.update(linkResolver(records, '/vault', ['/vault/upwork-2026'], folders), records, folders, true),
     )
     mouse(linkSpan(root, 'UP-001 - Abdul'), 'contextmenu')
-    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['UP-001 - Abdul', ID, 'Copy ID'])
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu('UP-001 - Abdul', ID))
     mouse(linkSpan(root, 'Upwork 2026'), 'contextmenu')
-    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['Upwork 2026 (folder)', FOLDER_ID, 'Copy ID'])
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu('Upwork 2026 (folder)', FOLDER_ID))
   })
 
   it('K5 — right-click a rendered link to a FOLDER: the folder\'s name with "(folder)", its id and Copy ID', async () => {
@@ -142,13 +146,11 @@ describe('right-click on a rendered id link', () => {
       source.update(linkResolver(records, '/vault', ['/vault/Projects'], folders), records, folders, true),
     )
     mouse(linkSpan(root, 'Projects'), 'contextmenu') // the link itself shows the bare name
-    const rows = rowsOf(popupOf(view)!)
-    expect(rows.map((row) => row.textContent)).toEqual(['Projects (folder)', FOLDER_ID, 'Copy ID'])
-    expect(rows.map((row) => row.disabled)).toEqual([true, true, false])
-    rows[2]!.click()
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu('Projects (folder)', FOLDER_ID))
+    rowNamed(view, 'Copy ID').click()
     expect(writeText).toHaveBeenCalledExactlyOnceWith(FOLDER_ID)
     mouse(linkSpan(root, 'Road Map'), 'contextmenu')
-    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['Road Map', ID, 'Copy ID'])
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu('Road Map', ID))
   })
 
   it('the reveal trap: a right-button mousedown is swallowed, so the link is still rendered when contextmenu arrives', async () => {
@@ -161,7 +163,7 @@ describe('right-click on a rendered id link', () => {
     expect(popupOf(view)).not.toBeNull()
   })
 
-  it('a Ctrl-click is macOS\'s other right-click: its left-button mousedown is swallowed on an id link, never on a name link', async () => {
+  it('a Ctrl-click is macOS\'s other right-click: its left-button mousedown is swallowed on a link, never on raw text', async () => {
     const { root } = await mount(`pad [[${ID}]] and [[Other]] tail\n`)
     const ctrlDown = (target: Element) => {
       const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, ctrlKey: true })
@@ -169,7 +171,8 @@ describe('right-click on a rendered id link', () => {
       return event.defaultPrevented
     }
     expect(ctrlDown(linkSpan(root, 'Road Map'))).toBe(true)
-    expect(ctrlDown(linkSpan(root, 'Other'))).toBe(false)
+    expect(ctrlDown(linkSpan(root, 'Other'))).toBe(true)
+    expect(ctrlDown(root.querySelector('.ProseMirror p')!)).toBe(false)
   })
 })
 
@@ -181,47 +184,90 @@ describe('right-click on a number ID link (YAZ-2677 D3)', () => {
     for (const typed of ['YAZ-12', 'yaz-12', 'OLD-12']) {
       const { root, view } = await mount(`pad [[${typed}]] tail\n`, true, feed)
       expect(mouse(linkSpan(root, 'Road Map'), 'contextmenu').defaultPrevented).toBe(true)
-      const rows = rowsOf(popupOf(view)!)
-      expect(rows.map((row) => row.textContent)).toEqual(['Road Map', 'YAZ-12', 'Copy ID'])
-      rows[2]!.click()
+      expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu('Road Map', 'YAZ-12'))
+      rowNamed(view, 'Copy ID').click()
       expect(writeText).toHaveBeenLastCalledWith('YAZ-12')
     }
   })
 
-  it('S21, S22: `[[GPT-4]]` and `[[BUS-12]]` are name links there: they keep the native menu', async () => {
+  it('S21, S22: `[[GPT-4]]` and `[[BUS-12]]` are name links there: the menu has no ID rows', async () => {
     const { root, view } = await mount('pad [[GPT-4]] and [[BUS-12]] tail\n', true, feed)
     for (const shown of ['GPT-4', 'BUS-12']) {
-      expect(mouse(linkSpan(root, shown), 'mousedown').defaultPrevented).toBe(false)
-      expect(mouse(linkSpan(root, shown), 'contextmenu').defaultPrevented).toBe(false)
+      mouse(linkSpan(root, shown), 'contextmenu')
+      expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(nameMenu(shown))
     }
-    expect(popupOf(view)).toBeNull()
   })
 
   it('S25: a number ID no note has still offers its id and Copy ID, with no name row', async () => {
     const { root, view } = await mount('pad [[yaz-99]] tail\n', true, feed)
     expect(mouse(linkSpan(root, 'yaz-99'), 'contextmenu').defaultPrevented).toBe(true)
-    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['YAZ-99', 'Copy ID'])
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu('YAZ-99'))
   })
 })
 
-describe('what keeps the native menu', () => {
-  it('a NAME link: neither the right mousedown nor the contextmenu is prevented, and nothing is drawn', async () => {
+describe('a name link gets the same menu (YAZ-3609 D23)', () => {
+  it('a found and a missing NAME link: the right mousedown is swallowed, and the menu has no ID rows', async () => {
     const { root, view } = await mount('pad [[Known]] and [[Missing]] tail\n')
     for (const shown of ['Known', 'Missing']) {
-      expect(mouse(linkSpan(root, shown), 'mousedown').defaultPrevented).toBe(false)
-      expect(mouse(linkSpan(root, shown), 'contextmenu').defaultPrevented).toBe(false)
+      expect(mouse(linkSpan(root, shown), 'mousedown').defaultPrevented).toBe(true)
+      expect(mouse(linkSpan(root, shown), 'contextmenu').defaultPrevented).toBe(true)
+      expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(nameMenu(shown))
     }
-    expect(popupOf(view)).toBeNull()
   })
 
   // The ID vault's half is `replaces the native menu` and `the reveal trap`, above.
-  it('in a vault that does not use IDs a link whose text looks like an id is an ordinary link: no menu, no Copy ID (YAZ-2523 V5)', async () => {
+  it('in a vault that does not use IDs a link whose text looks like an id is a name link: no Copy ID (YAZ-2523 V5)', async () => {
     const { root, view } = await mount(`pad [[${ID}]] tail\n`, true, (source) => source.update(() => null))
-    expect(mouse(linkSpan(root, ID), 'mousedown').defaultPrevented).toBe(false)
-    expect(mouse(linkSpan(root, ID), 'contextmenu').defaultPrevented).toBe(false)
-    expect(popupOf(view)).toBeNull()
+    mouse(linkSpan(root, ID), 'contextmenu')
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(nameMenu(ID))
   })
 
+  it('Open and Open in new tab follow the link as a click and a ⌘-click do', async () => {
+    const { root, nav, view } = await mount('pad [[Known]] tail\n')
+    mouse(linkSpan(root, 'Known'), 'contextmenu')
+    rowNamed(view, 'Open').click()
+    mouse(linkSpan(root, 'Known'), 'contextmenu')
+    rowNamed(view, 'Open in new tab').click()
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
+    expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
+  })
+
+  it('Copy link copies the raw `[[…]]`, so a paste makes the same link', async () => {
+    const { root, nav, view } = await mount('pad [[Known#Q1|the plan]] tail\n')
+    mouse(linkSpan(root, 'the plan'), 'contextmenu')
+    rowNamed(view, 'Copy link').click()
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('[[Known#Q1|the plan]]')
+    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('Copied link'))
+  })
+
+  it('Edit link puts the caret in the raw `[[…]]` with its target selected: the link shows as text', async () => {
+    const { root, view } = await mount('pad [[Known|the plan]] tail\n')
+    mouse(linkSpan(root, 'the plan'), 'contextmenu')
+    rowNamed(view, 'Edit link').click()
+    const { from, to } = view.state.selection
+    expect(view.state.doc.textBetween(from, to)).toBe('Known')
+    expect(root.querySelector(`.${WIKILINK_CLASS}`)).toBeNull()
+  })
+
+  it('Remove link keeps the text the link shows: an alias, an id link\'s title, a heading part', async () => {
+    const { crepe, root, view } = await mount(`a [[Known|the plan]] b [[${ID}]] c [[Known#Q1]] d\n`)
+    for (const shown of ['the plan', 'Road Map', 'Q1']) {
+      mouse(linkSpan(root, shown), 'contextmenu')
+      rowNamed(view, 'Remove link').click()
+    }
+    expect(getMarkdownForSave(crepe)).toBe('a the plan b Road Map c Known > Q1 d\n')
+  })
+
+  it('a read-only note offers no Edit and no Remove (YAZ-3076 D2)', async () => {
+    const { crepe, root, view } = await mount('pad [[Known]] tail\n')
+    crepe.setReadonly(true)
+    mouse(linkSpan(root, 'Known'), 'contextmenu')
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['Known', 'Open', 'Open in new tab', 'Copy link'])
+  })
+
+})
+
+describe('what keeps the native menu', () => {
   it('plain text', async () => {
     const { root, view } = await mount(`pad [[${ID}]] tail\n`)
     expect(mouse(root.querySelector('.ProseMirror p')!, 'contextmenu').defaultPrevented).toBe(false)

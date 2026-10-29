@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
-import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
+import { DEFAULT_SETTINGS, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
@@ -12,7 +12,9 @@ import { createDrawingFeed } from '../drawings/drawingFeed'
 import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
 import { FolderView } from '../views/FolderView'
-import { hrefTarget, vaultHref } from './pathPaste'
+import { hrefPath, hrefTarget, vaultHref } from './pathPaste'
+import { redrawLinkPills } from './markdownLink'
+import { editorViewCtx } from '@milkdown/kit/core'
 import { createCrepe, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, setMarkdown, zoomPageTo } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
@@ -503,7 +505,7 @@ function CrepeHost({
   const vaultLinksHere = useContext(VaultLinksContext)
   const vaultLinks = useRef(vaultLinksHere)
   vaultLinks.current = vaultLinksHere
-  const candidatesOf = (target: string) => vaultLinks.current?.(target) ?? null
+  const candidatesOf = (target: string) => vaultLinks.current?.candidatesOf(target) ?? null
   /**
    * The same instance, from the moment it can take an action (YAZ-2643): `crepeRef` is set BEFORE
    * `create()` settles, and an action on an editor that is not created yet throws. State, not a
@@ -679,7 +681,8 @@ function CrepeHost({
           ? undefined
           : { root, createFolder: () => newNoteFolderFor?.(file.path) ?? '', openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
       // The hover panel of a resolved [[link]] (YAZ-3403): this note editor's alone, never a read-only preview's.
-      wikilinkHover: linkHover,
+      // A Markdown link pill previews its page too (YAZ-3609 D20): its address resolves as a click resolves it.
+      wikilinkHover: { ...linkHover, markdownPath: (href) => (wikilinkCandidates === undefined ? null : hrefTarget(href, { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf })) },
       linkLook: { icon: (target, folder) => fileIconDecoration(icons.current, target, folder) },
       // Standard Markdown links (YAZ-1309) leave through one typed host boundary. The active
       // note path travels with the untouched href so main—not the renderer—owns relative-file
@@ -689,9 +692,16 @@ function CrepeHost({
         // A link to a page or file of this vault opens in a tab, like a [[link]] (YAZ-3609 D8).
         inApp: (href) => (wikilinkCandidates === undefined ? null : hrefTarget(href, { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf })),
         openPath: (target, background) => (background ? onOpenFileBackground ?? onOpenFile : onOpenFile)(target),
+        // A link into a vault the app knows but this window does not show asks to add that vault (YAZ-3609 D21).
+        elsewhere: (href, background) => {
+          const target = hrefPath(href, file.path)
+          return target !== null && (vaultLinks.current?.askToAdd(target, background) ?? false)
+        },
         // A link into a vault of the window is a pill with its file's icon, like a [[link]] (YAZ-3609 D19).
         vaultPath: (href) => (wikilinkCandidates === undefined ? null : vaultHref(href, { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf })),
         icon: (target, folder) => fileIconDecoration(icons.current, target, folder),
+        // A pill into another vault of the window names that vault after its text (YAZ-3609 D22).
+        vaultTag: (target) => (rootOfPath([root], target) !== null ? null : (vaultLinks.current?.vaultOf(target) ?? null)),
         onNotice: onNotice ?? (() => undefined),
       },
       // Paste a path, get a link (YAZ-3609): this vault's `[[` picker rows spell it.
@@ -842,6 +852,12 @@ function CrepeHost({
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
   // A worker that fails shows one passive notice and is not asked again until the next of those three.
+  // A vault that joins or leaves the window changes which links are pills (YAZ-3664): draw them again, with no edit.
+  const windowRoots = vaultLinksHere?.roots
+  useEffect(() => {
+    if (readyCrepe === null || crepeRef.current !== readyCrepe || windowRoots === undefined) return
+    redrawLinkPills(readyCrepe.editor.ctx.get(editorViewCtx))
+  }, [readyCrepe, windowRoots])
   useEffect(() => {
     const crepe = readyCrepe
     if (!lineNumbersOn || crepe === null || autosave.status !== 'saved') return

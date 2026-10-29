@@ -61,9 +61,10 @@
  *  - Wikilink hover (YAZ-3403, `wikilink/wikilinkHover.ts`): the pointer on a resolved `.wikilink` span tells the
  *    host which page it opens, for the hover panel. Registered only when `opts.wikilinkHover` is passed: the
  *    note editor's, never a read-only preview's.
- *  - Id link menu (YAZ-2293, `wikilink/wikilinkMenu.ts`): right-click on a rendered id link shows
- *    the note's name and its id and offers Copy ID; every other link keeps the native menu.
- *    Registered with the click plugin, on the same source and nav.
+ *  - Link menu (YAZ-2293, YAZ-3609 D23, `wikilink/wikilinkMenu.ts`): right-click on a rendered
+ *    `[[link]]` shows the one link menu (`linkMenu.ts`): its name and id, Open, Open in new tab,
+ *    Copy link, Copy ID, Edit link, Remove link. Registered with the click plugin, on the same
+ *    source, nav and follow.
  *  - Wikilink picker (GRO-2191, `wikilink/wikilinkPicker.ts`): typing `[[` opens the vault-wide
  *    suggestion popup (candidates via `opts.wikilinkCandidates`); Enter/click inserts plain
  *    `[[name]]` text — and the Create row also makes the page through `opts.wikilinkNav`
@@ -234,7 +235,7 @@ import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outl
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
 import { openBulletRow } from './outline/openBulletRow'
 import { focusSidebar } from '../lib/focusHandoff'
-import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
+import { createWikilinkClick, wikilinkFollower, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
 import { createWikilinkMenu } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
@@ -474,7 +475,11 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // to Markdown creation, including in isolated createCrepe consumers outside App.
   const viewOnlyLinks = opts.viewOnlyLinks ?? createViewOnlyLinkSource()
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook))
-  if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav, viewOnlyLinks)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav))
+  if (opts.wikilinkNav !== undefined) {
+    // A click and the link menu's Open rows follow a link the same way (YAZ-3609 D23).
+    const follow = wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks)
+    crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav, viewOnlyLinks, follow)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow))
+  }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav))
