@@ -7,6 +7,7 @@ import { CLIPBOARD_EMPTY_PARAGRAPH } from './clipboardCopyOut'
 import { externalNumberedHTML, literalNumberedHTML, parseLiteralNumberedPaste } from './clipboardNumbers'
 import { imageOptionsOf } from './image/imageOptions'
 import { imageFile, insertPastedImage } from './image/insertImage'
+import { pastePathLinks, pasteUrlOverWords, pathPasteCtx } from './pathPaste'
 
 /** A root-level BR between paragraphs is one blank paragraph, not a paragraph with two visual lines. */
 function normalizeParagraphSeparators(html: string): string {
@@ -63,6 +64,12 @@ export const clipboardPaste = $prose((ctx) => {
       }
       if (prev.handlePaste?.(view, event, slice)) return true
       const data = event.clipboardData
+      // A path of this vault is a link, and a web link over words links them (YAZ-3609). Both before
+      // Milkdown's own text paste, which would keep the path text and put the URL in place of the words.
+      const text = data?.getData('text/plain') ?? ''
+      const paths = ctx.get(pathPasteCtx)
+      if (paths !== null && pastePathLinks(view, ctx, paths, text)) return true
+      if (pasteUrlOverWords(view, ctx, text)) return true
       if (data?.getData('vscode-editor-data')) return false
       const html = data?.getData('text/html') ?? ''
       if (externalNumberedHTML(html)) {

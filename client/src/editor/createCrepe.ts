@@ -218,6 +218,7 @@ import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut } from './clipboardCopyOut'
 import { clipboardPaste } from './clipboardPaste'
+import { pathPasteCtx, type PathPasteOptions } from './pathPaste'
 import { guideLines } from './outline/guideLines'
 import { numberChildrenRow } from './outline/numberChildrenRow'
 import { createHeadingFolding, type HeadingFoldingOptions } from './outline/headingFolding'
@@ -266,6 +267,8 @@ export interface CreateCrepeOptions {
   wikilinkHover?: WikilinkHover
   /** Standard Markdown link actions (YAZ-1309): primary click opens; right-click edits/copies/removes. Absent → Crepe's stock behavior. */
   markdownLinkNav?: MarkdownLinkNav
+  /** Paste a path, get a link (YAZ-3609). Absent → a pasted path stays text. */
+  pathPaste?: PathPasteOptions
   /** Drawing creator (YAZ-877): the host writes the sidecar, the item inserts the embed. Absent → NO Drawing row is added to the slash menu. */
   drawing?: DrawingCreator
   /** Drawing previews (YAZ-878): the vault root to read scenes against, plus the optional refresh feed and click handler. Absent → `.excalidraw` embeds stay plain text. */
@@ -474,6 +477,10 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // The line (YAZ-3164): its look and its length handle, on every editor — the line's style is in the schema.
   crepe.editor.use(lineView)
   crepe.editor.use(outlinePaste)
+  // Read by `clipboardPaste`, like `imageOptionsCtx` (YAZ-3609); null when the host gave none.
+  crepe.editor.config((ctx) => {
+    ctx.inject(pathPasteCtx, opts.pathPaste ?? null)
+  })
   crepe.editor.use(clipboardPaste)
   crepe.editor.use(clipboardCopyOut)
   crepe.editor.use(blockHandleGate)

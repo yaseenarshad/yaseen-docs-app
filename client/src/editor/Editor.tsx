@@ -10,6 +10,7 @@ import { createDrawingFeed } from '../drawings/drawingFeed'
 import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
 import { FolderView } from '../views/FolderView'
+import { hrefTarget } from './pathPaste'
 import { createCrepe, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
@@ -623,8 +624,13 @@ function CrepeHost({
       // resolution, protocol validation, and the choice of OS API.
       markdownLinkNav: {
         open: (href) => api.shell.openLink({ href, sourcePath: file.path }),
+        // A link to a page or file of this vault opens in a tab, like a [[link]] (YAZ-3609 D8).
+        inApp: (href) => (wikilinkCandidates === undefined ? null : hrefTarget(href, { root, notePath: file.path, candidates: wikilinkCandidates })),
+        openPath: (target, background) => (background ? onOpenFileBackground ?? onOpenFile : onOpenFile)(target),
         onNotice: onNotice ?? (() => undefined),
       },
+      // Paste a path, get a link (YAZ-3609): this vault's `[[` picker rows spell it.
+      pathPaste: wikilinkCandidates === undefined ? undefined : { root, notePath: file.path, candidates: wikilinkCandidates, onNotice },
       // The slash menu's Drawing row (YAZ-877): this window's root is the only thing the creator
       // needs; failures ride the same passive notice as a failed link create.
       drawing: { create: () => createDrawing(root), onNotice },

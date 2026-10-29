@@ -17,6 +17,10 @@ import { $prose } from '@milkdown/kit/utils'
 
 export interface MarkdownLinkNav {
   open: (href: string) => Promise<void> | void
+  /** A link to a page, folder or file of this vault (YAZ-3609 D8): its path, or null to leave it to `open`. */
+  inApp?: (href: string) => string | null
+  /** Opens that path: in this tab, or in a background tab for a ⌘-click. */
+  openPath?: (path: string, background: boolean) => void
   /** Injectable for tests; the app uses the platform clipboard by default. */
   copy?: (href: string) => Promise<void> | void
   onNotice: (message: string) => void
@@ -129,9 +133,16 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
       props: {
         handleDOMEvents: {
           mousedown: (view, event) => {
-            if (event.button !== 0 || event.altKey || event.shiftKey || event.ctrlKey || event.metaKey) return false
+            if (event.button !== 0 || event.altKey || event.shiftKey || event.ctrlKey) return false
             const hit = linkHit(view, ctx, event.target)
             if (hit === null || hit.href.startsWith('#')) return false
+            // A page or file of this vault opens in a tab, like a [[link]] (YAZ-3609 D8). ⌘ puts it in a background tab.
+            const path = nav.inApp?.(hit.href) ?? null
+            if (path !== null && nav.openPath !== undefined) {
+              event.preventDefault()
+              nav.openPath(path, event.metaKey)
+              return true
+            }
             event.preventDefault()
             attempt(() => nav.open(hit.href), 'Could not open link', nav.onNotice)
             return true

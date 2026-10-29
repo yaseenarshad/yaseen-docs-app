@@ -95,7 +95,7 @@ export function folderLinkCandidates(root: string, dirs: readonly string[], reso
     // Of two folders still sharing an id, only the one it names is linked by it.
     const id = held?.id !== undefined && resolve(held.id) === dir ? held.id : undefined
     const name = [folderTitle(folders, dir), relTo(root, dir)].find((spelling) => (id === undefined ? resolve : folder)(spelling) === dir)
-    return name === undefined ? [] : [{ ...nameCandidate(name), insert: id ?? name, label: folderLabel(name) }]
+    return name === undefined ? [] : [{ ...nameCandidate(name), insert: id ?? name, label: folderLabel(name), path: dir }]
   })
 }
 

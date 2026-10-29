@@ -91,6 +91,35 @@ describe('primary click', () => {
   })
 })
 
+describe('a link to this vault opens in a tab (YAZ-3609 D8, D9)', () => {
+  const inApp = (href: string) => (href === '../note.md' ? '/v/note.md' : null)
+
+  it.each([
+    ['L1 a click opens the current tab', {}, false],
+    ['L1 a ⌘-click opens a background tab', { metaKey: true }, true],
+  ])('%s, and never asks the OS', async (_name, init, background) => {
+    const openPath = vi.fn()
+    const { crepe, nav, root } = await mount('[Note](../note.md)\n', { inApp, openPath })
+    const event = mouse(anchorOf(root), 'mousedown', { button: 0, ...init })
+    expect(event.defaultPrevented).toBe(true)
+    expect(openPath).toHaveBeenCalledWith('/v/note.md', background)
+    expect(nav.open).not.toHaveBeenCalled()
+    expect(getMarkdownForSave(crepe)).toBe('[Note](../note.md)\n')
+  })
+
+  it.each([
+    ['L9 a click on a web link', {}],
+    ['D9 a ⌘-click on a web link', { metaKey: true }],
+  ])('%s goes to the OS, as before', async (_name, init) => {
+    const openPath = vi.fn()
+    const { nav, root } = await mount('[Example](https://example.com)\n', { inApp, openPath })
+    const event = mouse(anchorOf(root), 'mousedown', { button: 0, ...init })
+    expect(event.defaultPrevented).toBe(true)
+    expect(nav.open).toHaveBeenCalledWith('https://example.com')
+    expect(openPath).not.toHaveBeenCalled()
+  })
+})
+
 describe('right-click menu', () => {
   it('replaces the native menu with exactly Edit, Copy, and Remove', async () => {
     const { root, view } = await mount()
