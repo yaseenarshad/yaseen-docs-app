@@ -69,23 +69,89 @@ const wikilinkClickKey = new PluginKey('mdapp-wikilink-click')
  * the plugin decorated — code and `![[…]]` embeds can never navigate.
  */
 export function wikilinkInnerAt(doc: ProseNode, pos: number): string | null {
+  return wikilinkMatchAt(doc, pos)?.inner ?? null
+}
+
+/** The match at `pos` of `wikilinkInnerAt`, with its range: what the link menu edits and removes (YAZ-3609 D23). */
+export function wikilinkMatchAt(doc: ProseNode, pos: number): { from: number; to: number; inner: string } | null {
   const $pos = doc.resolve(pos)
   const block = $pos.parent
   if (!block.isTextblock) return null
-  let found: string | null = null
+  let found: { from: number; to: number; inner: string } | null = null
   eachPlainRun(block, $pos.start(), (text, runPos) => {
     for (const m of text.matchAll(WIKILINK_RE)) {
       if (m[1] === '!') continue
       const from = runPos + m.index
-      if (pos >= from && pos < from + m[0].length) found = m[2]
+      if (pos >= from && pos < from + m[0].length) found = { from, to: from + m[0].length, inner: m[2] }
     }
   })
   return found
 }
 
-export function createWikilinkClick(source: WikilinkResolveSource, nav: WikilinkNav, viewOnly?: ViewOnlyLinkSource) {
+/**
+ * Follows the raw `[[inner]]` as a click does: opens it, in a background tab for `background`; an
+ * unresolved link is created first. One for an editor, so the click and the link menu's Open rows
+ * (YAZ-3609 D23) share the notes being made.
+ */
+export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav, viewOnly?: ViewOnlyLinkSource): (inner: string, background: boolean) => void {
   /** The dead links whose note is being made (null), or was made at that path and is not in the index yet (YAZ-2478): a click on one makes nothing more. */
   const making = new Map<string, string | null>()
+  return (inner, background) => {
+    const page = linkPageName(inner)
+    if (page === '') return // same-file [[#h]] — the heading jump is GRO-2239, not this unit
+    const open = background ? nav.openBackground : nav.openCurrent
+    const viewSource = viewOnly
+    const viewTarget = viewSource === undefined ? null : viewOnlyLinkTarget(inner)
+    if (viewTarget !== null && viewSource !== undefined) {
+      if (viewTarget.hasSubtarget) {
+        nav.onNotice(`Can't open "${viewTarget.raw}": headings and blocks aren't supported for read-only files`)
+        return
+      }
+      if (viewSource.resolve === null) {
+        nav.onNotice('File catalog is still loading — try that link again in a moment')
+        return
+      }
+      const viewPath = viewSource.resolve(viewTarget.page)
+      if (viewPath === null) nav.onNotice(`Can't open "${viewTarget.page}": file not found`)
+      else open(viewPath)
+      return
+    }
+    const resolve = source.resolve
+    // Pre-index window: every link renders resolved but nothing can be resolved yet;
+    // creating here could shadow an existing note, so the gesture is swallowed — but
+    // SAID (GRO-2197): a silently dead click reads as breakage.
+    if (resolve === null) {
+      nav.onNotice('Vault index is still loading — try that link again in a moment')
+      return
+    }
+    const path = resolve(page)
+    const made = making.get(page)
+    if (path !== null) {
+      making.delete(page)
+      open(path)
+    }
+    // An ID of THIS vault that no note has is a deleted note's (YAZ-2677 S25): nothing is
+    // created under an ID. Other `LETTERS-NUMBER` text is a name, created like any name
+    // (R6, S21, S22); a vault that does not use IDs has no letters, so only an old ID is one there.
+    else if (vaultNoteId(page, source.letters) !== undefined) nav.onNotice(source.ids ? 'That note no longer exists' : 'This vault does not use IDs, so this link cannot be opened')
+    else if (made === undefined) {
+      making.set(page, null)
+      void createFromLink(nav.root, inner, source.ids, nav.createFolder(), undefined, source.folders).then((result) => {
+        if (result.status === 'created') making.set(page, result.path)
+        else making.delete(page)
+        if (result.status === 'error') nav.onNotice(result.message)
+        else if (result.status === 'created') {
+          open(result.path)
+          // A ⌘-click's freshly CREATED page landed in a background tab (locked I3
+          // ruling — never activated), so name what just appeared (GRO-2197).
+          if (background) nav.onNotice(`Created "${page}" in a background tab`)
+        }
+      })
+    } else if (made !== null) open(made)
+  }
+}
+
+export function createWikilinkClick(source: WikilinkResolveSource, nav: WikilinkNav, viewOnly?: ViewOnlyLinkSource, follow = wikilinkFollower(source, nav, viewOnly)) {
   return $prose(
     () =>
       new Plugin({
@@ -103,58 +169,7 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
               if (inner === null) return false
               // From here the gesture is ours: no caret placement, no focus change, no reveal.
               event.preventDefault()
-              const page = linkPageName(inner)
-              if (page === '') return true // same-file [[#h]] — the heading jump is GRO-2239, not this unit
-              const background = event.metaKey
-              const open = background ? nav.openBackground : nav.openCurrent
-              const viewSource = viewOnly
-              const viewTarget = viewSource === undefined ? null : viewOnlyLinkTarget(inner)
-              if (viewTarget !== null && viewSource !== undefined) {
-                if (viewTarget.hasSubtarget) {
-                  nav.onNotice(`Can't open "${viewTarget.raw}": headings and blocks aren't supported for read-only files`)
-                  return true
-                }
-                if (viewSource.resolve === null) {
-                  nav.onNotice('File catalog is still loading — try that link again in a moment')
-                  return true
-                }
-                const viewPath = viewSource.resolve(viewTarget.page)
-                if (viewPath === null) nav.onNotice(`Can't open "${viewTarget.page}": file not found`)
-                else open(viewPath)
-                return true
-              }
-              const resolve = source.resolve
-              // Pre-index window: every link renders resolved but nothing can be resolved yet;
-              // creating here could shadow an existing note, so the gesture is swallowed — but
-              // SAID (GRO-2197): a silently dead click reads as breakage.
-              if (resolve === null) {
-                nav.onNotice('Vault index is still loading — try that link again in a moment')
-                return true
-              }
-              const path = resolve(page)
-              const made = making.get(page)
-              if (path !== null) {
-                making.delete(page)
-                open(path)
-              }
-              // An ID of THIS vault that no note has is a deleted note's (YAZ-2677 S25): nothing is
-              // created under an ID. Other `LETTERS-NUMBER` text is a name, created like any name
-              // (R6, S21, S22); a vault that does not use IDs has no letters, so only an old ID is one there.
-              else if (vaultNoteId(page, source.letters) !== undefined) nav.onNotice(source.ids ? 'That note no longer exists' : 'This vault does not use IDs, so this link cannot be opened')
-              else if (made === undefined) {
-                making.set(page, null)
-                void createFromLink(nav.root, inner, source.ids, nav.createFolder(), undefined, source.folders).then((result) => {
-                  if (result.status === 'created') making.set(page, result.path)
-                  else making.delete(page)
-                  if (result.status === 'error') nav.onNotice(result.message)
-                  else if (result.status === 'created') {
-                    open(result.path)
-                    // A ⌘-click's freshly CREATED page landed in a background tab (locked I3
-                    // ruling — never activated), so name what just appeared (GRO-2197).
-                    if (background) nav.onNotice(`Created "${page}" in a background tab`)
-                  }
-                })
-              } else if (made !== null) open(made)
+              follow(inner, event.metaKey)
               return true
             },
           },

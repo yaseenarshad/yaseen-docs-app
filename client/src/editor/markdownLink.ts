@@ -1,8 +1,8 @@
 /**
  * Standard Markdown link interaction (YAZ-1309).
  *
- * A primary mousedown owns navigation before ProseMirror can move the caret. Right-click owns a
- * small editor-local menu whose edit/remove actions delegate to Crepe's existing link-tooltip
+ * A primary mousedown owns navigation before ProseMirror can move the caret. Right-click owns the
+ * one link menu (YAZ-3609 D23, `linkMenu.ts`), whose edit/remove actions delegate to Crepe's existing link-tooltip
  * API; no parallel link model or serializer is introduced. Fragment-only hrefs deliberately fall
  * through because they are document-local, while all other href validation stays at the main
  * process boundary.
@@ -15,6 +15,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { fileKind } from '@shared/fileKind'
+import { copyLink, linkMenuRows, openMenuAt, type LinkMenu } from './linkMenu'
 
 export interface MarkdownLinkNav {
   open: (href: string) => Promise<void> | void
@@ -26,6 +27,8 @@ export interface MarkdownLinkNav {
   elsewhere?: (href: string, background: boolean) => boolean
   /** A link into a vault of this window, found or not (YAZ-3609 D19): its absolute path, or null. Such a link is a pill. */
   vaultPath?: (href: string) => string | null
+  /** The name of the vault that holds `path` when it is not the note's own (D22), else null: the pill's last piece shows it. */
+  vaultTag?: (path: string) => string | null
   /** The pill's icon: the decoration attributes that draw the one the sidebar gives `path` (D13, D19, `fileIconDecoration`). */
   icon?: (path: string, folder: boolean) => Record<string, string>
   /** Injectable for tests; the app uses the platform clipboard by default. */
@@ -109,9 +112,12 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
         const name = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
         const icon = nav.icon(path, fileKind(name) === null && !name.includes('.'))
         const last = run.pieces.length - 1
+        const vault = nav.vaultTag?.(path) ?? null
         run.pieces.forEach(([start, end], i) => {
           const edges = `${i === 0 ? ' link-pill--first' : ''}${i === last ? ' link-pill--last' : ''}`
-          fresh.push(Decoration.inline(start, end, i === 0 ? { ...icon, class: `wikilink link-pill${edges} ${icon.class}` } : { class: `wikilink link-pill${edges}` }))
+          const attrs: Record<string, string> = i === 0 ? { ...icon, class: `wikilink link-pill${edges} ${icon.class}` } : { class: `wikilink link-pill${edges}` }
+          if (i === last && vault !== null) attrs['data-vault'] = vault
+          fresh.push(Decoration.inline(start, end, attrs))
         })
       }
       run = null
@@ -132,56 +138,28 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
   return set.remove(stale).add(doc, fresh)
 }
 
-function renderMenu(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, close: () => void): HTMLElement {
-  const popup = document.createElement('div')
-  popup.className = 'ctx-menu ctx-menu--editor'
-  popup.setAttribute('role', 'menu')
-
-  // `edits: false` marks the one row that changes nothing: the only row a read-only note keeps (YAZ-3076 D2).
-  const rows: Array<{ label: string; danger?: boolean; edits?: false; run: () => void }> = [
-    {
-      label: 'Edit link',
-      run: () => ctx.get(linkTooltipAPI.key).editLink(hit.mark, hit.from, hit.to),
-    },
-    {
-      label: 'Copy link',
-      edits: false,
-      run: () => {
-        const copy = nav.copy ?? ((href: string) => navigator.clipboard.writeText(href))
-        attempt(() => copy(hit.href), 'Could not copy link', nav.onNotice)
-      },
-    },
-    {
-      label: 'Remove link',
-      danger: true,
-      run: () => ctx.get(linkTooltipAPI.key).removeLink(hit.from, hit.to),
-    },
-  ]
-
-  for (const row of rows.filter((r) => view.editable || r.edits === false)) {
-    const item = document.createElement('button')
-    item.type = 'button'
-    item.className = `ctx-menu__item${row.danger === true ? ' ctx-menu__item--danger' : ''}`
-    item.setAttribute('role', 'menuitem')
-    item.textContent = row.label
-    item.addEventListener('mousedown', (event) => event.preventDefault())
-    item.addEventListener('click', () => {
-      row.run()
-      close()
-    })
-    popup.appendChild(item)
+/**
+ * The one link menu's rows for a Markdown link (YAZ-3609 D23, `linkMenu.ts`). A link into a vault of the window
+ * names its page (and its vault, D22) and opens in a new tab too; a web link opens only through the OS.
+ */
+function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, background: boolean) => void): LinkMenu {
+  const path = nav.vaultPath?.(hit.href) ?? null
+  const name = path === null ? null : path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1).replace(/\.md$/i, '')
+  const vault = path === null ? null : (nav.vaultTag?.(path) ?? null)
+  const local = hit.href.startsWith('#')
+  return {
+    labels: name === null || name === '' ? [] : [vault === null ? name : `${name} · ${vault}`],
+    open: local ? undefined : () => follow(hit.href, false),
+    openNew: path === null ? undefined : () => follow(hit.href, true),
+    copyLink: () => copyLink(hit.href, nav.onNotice, nav.copy),
+    edit: view.editable ? () => ctx.get(linkTooltipAPI.key).editLink(hit.mark, hit.from, hit.to) : undefined,
+    remove: view.editable ? () => ctx.get(linkTooltipAPI.key).removeLink(hit.from, hit.to) : undefined,
   }
-  view.dom.parentElement?.appendChild(popup)
-  return popup
 }
 
 export const createMarkdownLink = (nav: MarkdownLinkNav) =>
   $prose((ctx) => {
-    let popup: HTMLElement | null = null
-    const close = () => {
-      popup?.remove()
-      popup = null
-    }
+    let close = () => {}
 
     /** Opens `href` as a click on a link does: a page or file of a vault in the window in a tab (⌘: behind, D8, D14), anything else through the OS. */
     const type = linkSchema.type(ctx)
@@ -236,23 +214,16 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
           contextmenu: (view, event) => {
             const hit = linkHit(view, ctx, event.target)
             if (hit === null) return false
+            const parent = view.dom.parentElement
+            if (parent === null) return false
             event.preventDefault()
             close()
-            popup = renderMenu(view, hit, ctx, nav, close)
-            const rect = popup.getBoundingClientRect()
-            popup.style.left = `${Math.max(0, Math.min(event.clientX, window.innerWidth - rect.width))}px`
-            popup.style.top = `${Math.max(0, Math.min(event.clientY, window.innerHeight - rect.height))}px`
+            close = openMenuAt(parent, event.clientX, event.clientY, linkMenuRows(menuOf(view, hit, ctx, nav, follow)))
             return true
           },
         },
       },
       view: (editorView) => {
-        const onMouseDown = (event: MouseEvent) => {
-          if (popup === null || !(event.target instanceof Node && popup.contains(event.target))) close()
-        }
-        const onKeyDown = (event: KeyboardEvent) => {
-          if (event.key === 'Escape') close()
-        }
         // The text menu's "Add link…" (YAZ-3609 D17): Crepe's own link box, on this editor's selection.
         const offAddLink = window.yaseenDocs?.menu?.onAddLink?.(() => {
           const { from, to, empty } = editorView.state.selection
@@ -275,10 +246,6 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
         }
         document.addEventListener('click', onPreviewClick, true)
         document.addEventListener('auxclick', onPreviewClick, true)
-        document.addEventListener('mousedown', onMouseDown, true)
-        document.addEventListener('scroll', close, true)
-        window.addEventListener('keydown', onKeyDown)
-        window.addEventListener('blur', close)
         return {
           update: (view, previousState) => {
             if (view.state.doc !== previousState.doc) close()
@@ -287,10 +254,6 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
             offAddLink?.()
             document.removeEventListener('click', onPreviewClick, true)
             document.removeEventListener('auxclick', onPreviewClick, true)
-            document.removeEventListener('mousedown', onMouseDown, true)
-            document.removeEventListener('scroll', close, true)
-            window.removeEventListener('keydown', onKeyDown)
-            window.removeEventListener('blur', close)
             close()
           },
         }

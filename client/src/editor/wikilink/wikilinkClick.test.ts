@@ -567,12 +567,13 @@ describe('wikilink click: what does NOT navigate (GRO-2192)', () => {
     expectNoNav(nav)
   })
 
-  it('alt-, shift- and ctrl-modified clicks are left to their defaults (future gestures, context menus)', async () => {
+  it('alt-, shift- and ctrl-modified clicks never navigate; a ctrl-click and a right mousedown are kept for the link menu (YAZ-3609 D23)', async () => {
     const { root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
     expect(mousedown(linkSpan(root, 'Known'), { altKey: true })).toBe(true)
     expect(mousedown(linkSpan(root, 'Known'), { shiftKey: true })).toBe(true)
-    expect(mousedown(linkSpan(root, 'Known'), { ctrlKey: true })).toBe(true)
-    expect(mousedown(linkSpan(root, 'Known'), { button: 2 })).toBe(true)
+    // macOS's other right-click, and the right button: swallowed so the link is still drawn when the menu opens.
+    expect(mousedown(linkSpan(root, 'Known'), { ctrlKey: true })).toBe(false)
+    expect(mousedown(linkSpan(root, 'Known'), { button: 2 })).toBe(false)
     expectNoNav(nav)
   })
 

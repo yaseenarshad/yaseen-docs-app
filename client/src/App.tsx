@@ -424,7 +424,13 @@ export function App() {
     setAddAsk({ root, path, background })
     return true
   }, [])
-  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots }), [candidatesOf, askToAdd, roots])
+  /** The name of the window's vault that holds `path`, as the sidebar shows it, or null (YAZ-3609 D22): a pill into another vault says which. */
+  const vaultOf = useCallback((path: string) => {
+    const now = live.current
+    const home = rootOfPath(now.roots, path)
+    return home === null ? null : (now.vaults[now.roots.indexOf(home)]?.name ?? storage.vaultName(home))
+  }, [])
+  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, vaultOf }), [candidatesOf, askToAdd, roots, vaultOf])
   /** The scope of the ACTIVE tab's vault (R3, R4, R10); with no tab open, the first vault's. */
   const active = file === null ? first : scopeOf(file)
   /**

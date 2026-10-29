@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
-import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
+import { DEFAULT_SETTINGS, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
@@ -660,6 +660,8 @@ function CrepeHost({
         // A link into a vault of the window is a pill with its file's icon, like a [[link]] (YAZ-3609 D19).
         vaultPath: (href) => (wikilinkCandidates === undefined ? null : vaultHref(href, { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf })),
         icon: (target, folder) => fileIconDecoration(icons.current, target, folder),
+        // A pill into another vault of the window names that vault after its text (YAZ-3609 D22).
+        vaultTag: (target) => (rootOfPath([root], target) !== null ? null : (vaultLinks.current?.vaultOf(target) ?? null)),
         onNotice: onNotice ?? (() => undefined),
       },
       // Paste a path, get a link (YAZ-3609): this vault's `[[` picker rows spell it.

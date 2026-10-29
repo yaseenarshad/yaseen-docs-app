@@ -138,6 +138,23 @@ test('step 1e — a rest on a pill into the other vault previews its note, as a 
   await expect(preview).toHaveCount(0)
 })
 
+test('step 1f — a pill into the other vault names it (D22); a pill and a [[link]] give the same right-click menu (D23)', async () => {
+  const last = editorOf(win).locator('.link-pill--last', { hasText: 'the gym plan' })
+  await expect(last).toHaveAttribute('data-vault', PERSONAL)
+  expect(await last.evaluate((el) => getComputedStyle(el, '::after').content)).not.toBe('none')
+  expect(await editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).evaluate((el) => getComputedStyle(el, '::after').content)).toBe('none')
+  const rows = () => win.locator('.ctx-menu--editor .ctx-menu__item').allTextContents()
+  const LINK_ROWS = ['Open', 'Open in new tab', 'Copy link', 'Edit link', 'Remove link']
+  await editorOf(win).locator('.link-pill--first', { hasText: 'the gym plan' }).click({ button: 'right' })
+  await expect.poll(rows).toEqual([`Plan · ${PERSONAL}`, ...LINK_ROWS])
+  await shoot(win, 'workspace-links-01f-menu')
+  await win.keyboard.press('Escape')
+  await editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).click({ button: 'right' })
+  await expect.poll(rows).toEqual(['Ideas', ...LINK_ROWS])
+  await win.keyboard.press('Escape')
+  await expect(win.locator('.ctx-menu--editor')).toHaveCount(0)
+})
+
 test('step 2 — a Markdown link into the other vault opens in this tab, and Back returns (D14, D10)', async () => {
   await editorOf(win).locator('a', { hasText: 'the gym plan' }).click()
   await expect(activeTab(win)).toHaveText('Plan')
