@@ -3141,7 +3141,7 @@ export function App() {
             const ask = addAsk
             setAddAsk(null)
             void addVault(ask.root).then((added) => {
-              if (added) (ask.background ? openLinkBackground : openFromPage)(ask.path)
+              if (added) (ask.background ? openBackground : openFromPage)(ask.path)
             })
           }}
           onCancel={() => setAddAsk(null)}
