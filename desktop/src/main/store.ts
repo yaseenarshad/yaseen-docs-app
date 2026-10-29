@@ -128,7 +128,7 @@ import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
 import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId, keyFor, sameKey, scopedId, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
-import { isUsableFor, keyRow, type HotkeyAside } from '@shared/keys'
+import { ASIDE_PLACES, asideId, isUsableFor, keyRow, withAside, type HotkeyAside } from '@shared/keys'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { travellingChanged, travels } from '@shared/settingsSync'
 import { atomicWrite } from './fs/fsUtils'
@@ -399,9 +399,28 @@ export function sanitizeHotkeys(raw: unknown): HotkeyOverrides {
 }
 
 /** The step-aside switches (YAZ-3564 K9): App rows only, booleans only; a stored one this build does not know is dropped. */
-const isHotkeyAside = (v: unknown): v is HotkeyAside => isRecord(v) && Object.entries(v).every(([id, on]) => keyRow(id)?.scope === 'app' && typeof on === 'boolean')
-export const sanitizeHotkeyAside = (raw: unknown): HotkeyAside =>
-  isHotkeyAside(raw) ? raw : isRecord(raw) ? (Object.fromEntries(Object.entries(raw).filter(([id, on]) => keyRow(id)?.scope === 'app' && typeof on === 'boolean')) as HotkeyAside) : {}
+/**
+ * The tabs' picks on shared App keys (YAZ-3564 K9): `<App row id>@<drawing|diagram|code>` → boolean, App rows only. The
+ * IPC boundary takes only that form.
+ */
+const isAsideEntry = ([id, on]: [string, unknown]): boolean => {
+  const [rowId, place, ...rest] = id.split('@')
+  const row = keyRow(rowId)
+  return typeof on === 'boolean' && rest.length === 0 && row?.scope === 'app' && row.id === rowId && (ASIDE_PLACES as readonly string[]).includes(place ?? '')
+}
+const isHotkeyAside = (v: unknown): v is HotkeyAside => isRecord(v) && Object.entries(v).every(isAsideEntry)
+/** A stored set of picks, each bad entry dropped; an entry by the App row id alone (one switch for three tabs, before the per-tab picks) becomes its three tabs. */
+export function sanitizeHotkeyAside(raw: unknown): HotkeyAside {
+  if (isHotkeyAside(raw)) return raw
+  if (!isRecord(raw)) return {}
+  let out: HotkeyAside = Object.fromEntries(Object.entries(raw).filter(isAsideEntry)) as HotkeyAside
+  for (const [id, on] of Object.entries(raw)) {
+    const row = keyRow(id)
+    if (row?.scope !== 'app' || typeof on !== 'boolean' || id.includes('@')) continue
+    for (const place of ASIDE_PLACES) if (out[asideId(row.id, place)] === undefined) out = withAside(out, row, place, on)
+  }
+  return out
+}
 
 /** The code Outline's hidden kinds (YAZ-3486), strict: known kinds, each once. The IPC boundary rejects anything else. */
 const isOutlineHidden = (v: unknown): v is CodeSymbolKind[] =>

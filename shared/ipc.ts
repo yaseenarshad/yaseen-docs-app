@@ -355,7 +355,7 @@ export const CONTRACT = {
     onNewWindow: push('menu:new-window'),
     /** File › New… (⌘N, YAZ-3556 D1): open the New… box (a note, a drawing or a diagram). A window with no vault does nothing. */
     onNewItem: push('menu:new-item'),
-    /** File › Go to Your Place (⌘D, YAZ-3556 D1, D9): show the place of `settings.goTo`. A window with no vault does nothing. */
+    /** File › Show in Sidebar (⌘D, YAZ-3556 D1, D9): show the place of `settings.goTo`. A window with no vault does nothing. */
     onGoTo: push('menu:go-to'),
     /** Help › What's New… (YAZ-2976 D8): the window opens its "What's new" window. */
     onWhatsNew: push('menu:whats-new'),

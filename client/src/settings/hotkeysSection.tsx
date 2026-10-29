@@ -2,11 +2,13 @@
  * SETTINGS › HOTKEYS (YAZ-3397; every place since YAZ-3564): every key of the app, ONE row each, from the one
  * key list (`shared/keys`).
  *
- * - One group per place (K1, K5): App, Note, Drawing, Diagram, Code, Folder views; then "Used by macOS" (D3, D8):
- *   this Mac's own keys, which main reads off its plist (`state:system-hotkeys`) when the page or a search shows.
- *   A changeable key is a button; a built-in or macOS key is muted text. A key an App key takes first says
- *   "Blocked" (K3), and an App row can let drawings, diagrams and code keep its key (K9). Chips and two
- *   switches filter the page (K7, K10).
+ * - ONE CARD PER KEY (YAZ-3564, after K1–K10): the rows whose key it is, each with its place's tag. Purple is an App
+ *   key (every tab), green a tab's own; a shared key (both) has a pick per tab where an App command and a tab's
+ *   action meet (drawings, diagrams, code; K9, `hotkeysAside` per tab), and a pick asks "Take it" first. A row an
+ *   App key takes in its tab says what the key does there now, with a link to that key's card. Then the actions
+ *   with no key, the mouse, and "Used by macOS" (D3, D8): this Mac's own keys, which main reads off its plist
+ *   (`state:system-hotkeys`) when the page or a search shows. A changeable key is a button; a built-in or macOS
+ *   key is muted text. Chips and two switches filter the page (K7, K10).
  * - Each row is its own setting (`bare`), so the dialog's search filters the page down to single rows (D5): a
  *   row's search text is its label, its key and its hint. The changeable rows' text is built from the keys
  *   as they are now; the dialog rebuilds the candidates when a key changes, not on a keystroke.
@@ -26,8 +28,8 @@
  * because on macOS a menu key fires before the page sees it — recording ⌘W must not close the tab.
  */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { hotkeyCommand, isHotkeyId, isUsableKey, sameKey, toDisplay, withKey, fromKeyEvent, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
-import { ALL_KEYS, ASIDE_PLACES, blockersOf, clashesOf, isUsableFor, keysOf, stepsAside, type HotkeyAside, type KeyRow, type KeyScope } from '@shared/keys'
+import { hotkeyCommand, isHotkeyId, isUsableKey, normalizeKey, sameKey, toDisplay, withKey, fromKeyEvent, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { ALL_KEYS, ASIDE_PLACES, asideChanged, asideId, blockersOf, clashesOf, isUsableFor, keysOf, stepsAside, withAside, withoutAside, type AsidePlace, type HotkeyAside, type KeyRow, type KeyScope } from '@shared/keys'
 import { MACOS_HOTKEYS, type SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
@@ -118,21 +120,9 @@ const owned = (row: KeyRow): string => `${SCOPE_TITLES[row.scope]} › ${row.lab
 const commandOf = (row: KeyRow) => (row.scope === 'app' && isHotkeyId(row.id.slice(4)) ? hotkeyCommand(row.id.slice(4) as HotkeyId) : undefined)
 /** A row's key now, one key (the first of its defaults), or null for "No key". */
 const keyNow = (row: KeyRow, overrides: HotkeyOverrides): string | null => keysOf(row, overrides)[0] ?? null
-/** A row's key differs from its default; with `aside`, its step-aside switch counts too (K9). */
+/** A row's key differs from its default; with `aside`, a changed pick of a tab counts too (K9). */
 const isChanged = (row: KeyRow, overrides: HotkeyOverrides, aside?: HotkeyAside): boolean =>
-  overrides[row.id] !== undefined || (row.scope === 'app' && overrides[row.id.slice(4)] !== undefined) || aside?.[row.id] !== undefined
-/** `aside` with `rows`' switches back to their defaults. */
-const withoutAside = (aside: HotkeyAside, rows: readonly KeyRow[]): HotkeyAside => {
-  const next = { ...aside }
-  for (const r of rows) delete next[r.id]
-  return next
-}
-/**
- * Whether an App row shows the step-aside switch (K9): a changeable menu key, so the menu can let it go. Not a key the
- * page handles itself (Copy path), not a row with no key.
- */
-const hasAsideSwitch = (row: KeyRow, overrides: HotkeyOverrides): boolean =>
-  commandOf(row) !== undefined && commandOf(row)?.rendererOwned !== true && keysOf(row, overrides).length > 0
+  overrides[row.id] !== undefined || (row.scope === 'app' && overrides[row.id.slice(4)] !== undefined) || asideChanged(row, aside)
 
 /**
  * `overrides` with `row` on `key` (K2): a key equal to the row's one default deletes the change, so `{}` stays the
@@ -175,24 +165,11 @@ function refusal(row: KeyRow, key: string, owners: readonly KeyRow[], system: re
   return null
 }
 
-/** "Let drawings, diagrams and code keep this key" (K9): an App row's switch, written to `settings.hotkeysAside` as a change only. */
-function AsideSwitch({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
-  const aside = ctx.settings.hotkeysAside
-  const on = ASIDE_PLACES.every((place) => stepsAside(row, place, aside))
-  const flip = (): void => {
-    const next = { ...aside }
-    const def = (row.stepsAsideIn ?? []).length > 0
-    if (!on === def) delete next[row.id]
-    else next[row.id] = !on
-    ctx.onChange({ ...ctx.settings, hotkeysAside: next })
-  }
-  return (
-    <label className="hotkeys__aside">
-      <input type="checkbox" checked={on} onChange={flip} />
-      Let drawings, diagrams and code keep this key
-    </label>
-  )
-}
+/**
+ * The row whose key just changed: it moves to its new key's card (YAZ-3564), so it mounts again there, and takes
+ * the keyboard back, scrolls into view and flashes — the eye follows it, and Esc still reaches the dialog.
+ */
+let movedRow: { id: string; at: number } | null = null
 
 function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
   const overrides = ctx.settings.hotkeys
@@ -207,10 +184,22 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
   const keyButton = useRef<HTMLButtonElement>(null)
 
   const write = (next: HotkeyOverrides, hotkeysAside = ctx.settings.hotkeysAside): void => {
+    movedRow = { id: row.id, at: Date.now() }
     ctx.onChange({ ...ctx.settings, hotkeys: next, hotkeysAside })
     setMode({ kind: 'idle' })
     keyButton.current?.focus()
   }
+  useEffect(() => {
+    // Only the mount right after the write: a row that stayed on its card never asks.
+    if (movedRow?.id !== row.id || Date.now() - movedRow.at > 1000) return
+    movedRow = null
+    keyButton.current?.focus()
+    keyButton.current?.scrollIntoView?.({ block: 'center' })
+    const here = rowRef.current
+    here?.classList.add('hotkeys__card--flash')
+    const done = setTimeout(() => here?.classList.remove('hotkeys__card--flash'), 1200)
+    return () => clearTimeout(done)
+  }, [row.id])
   const cancel = (): void => {
     setMode({ kind: 'idle' })
     keyButton.current?.focus()
@@ -331,12 +320,12 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
           )}
         </span>
         <span className="hotkeys__label hotkeys__label--command">
+          <PlaceTag scope={row.scope} />
           {row.label}
           {row.hint !== undefined && <span className="hotkeys__hint"> — {row.hint}</span>}
-          {blockers.length > 0 && <span className="hotkeys__blocked"> Blocked: {owned(blockers[0])} fires first</span>}
         </span>
       </div>
-      {hasAsideSwitch(row, overrides) && mode.kind === 'idle' && <AsideSwitch row={row} ctx={ctx} />}
+      {blockers.length > 0 && mode.kind === 'idle' && <LostLine row={row} blocker={blockers[0]} overrides={overrides} />}
       {below}
     </div>
   )
@@ -379,7 +368,7 @@ function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
           <ul className="hotkeys__changes">
             {changes.map((r) => (
               <li key={r.id}>
-                {owned(r)}: {isChanged(r, ctx.settings.hotkeys) ? `${shown(keyNow(r, ctx.settings.hotkeys))} → ${shown(r.keys[0] ?? null)}` : 'the switch for drawings, diagrams and code goes back to its default'}
+                {owned(r)}: {isChanged(r, ctx.settings.hotkeys) ? `${shown(keyNow(r, ctx.settings.hotkeys))} → ${shown(r.keys[0] ?? null)}` : 'each tab picks its default action again'}
               </li>
             ))}
           </ul>
@@ -391,30 +380,25 @@ function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
 
 // ---------- the page's filters (YAZ-3564 K7) ----------
 
-/** The page's filters: one place or all, only blocked keys, only changed keys. The dialog holds it and hands it in `ctx`. */
+/** The page's filters: one place or all, only shared keys, only changed keys. The dialog holds it and hands it in `ctx`. */
 export interface HotkeyFilter {
   scope: KeyScope | 'all'
-  clashes: boolean
+  shared: boolean
   changed: boolean
 }
-export const NO_FILTER: HotkeyFilter = { scope: 'all', clashes: false, changed: false }
+export const NO_FILTER: HotkeyFilter = { scope: 'all', shared: false, changed: false }
 
 const isFiltered = (ctx: SettingsCtx): boolean => {
   const f = ctx.hotkeyFilter ?? NO_FILTER
-  return f.scope !== 'all' || f.clashes || f.changed
+  return f.scope !== 'all' || f.shared || f.changed
 }
 
-/** Whether a row shows under the filters: its place, "Show clashes only" (a blocked row, or an App row that blocks one), "Changed from default". */
+/** Whether a row shows under the filters: its place, "Shared keys only" (its key card is shared, or its key went to an App key), "Changed from default". */
 function inFilter(row: KeyRow, ctx: SettingsCtx): boolean {
   const f = ctx.hotkeyFilter ?? NO_FILTER
   if (f.scope !== 'all' && row.scope !== f.scope) return false
   if (f.changed && !isChanged(row, ctx.settings.hotkeys, ctx.settings.hotkeysAside)) return false
-  if (f.clashes) {
-    const { hotkeys, hotkeysAside } = ctx.settings
-    const blocked = blockersOf(row, hotkeys, hotkeysAside).length > 0
-    const blocks = row.scope === 'app' && keysOf(row, hotkeys).some((k) => clashesOf(row, k, hotkeys, hotkeysAside).some((o) => o.scope !== 'app'))
-    if (!blocked && !blocks) return false
-  }
+  if (f.shared && cardsOf(ctx.settings.hotkeys).cardOf.get(row.id)?.kind !== 'shared' && blockersOf(row, ctx.settings.hotkeys, ctx.settings.hotkeysAside).length === 0) return false
   return true
 }
 
@@ -433,8 +417,8 @@ function FilterBar({ filter, onFilter }: { filter: HotkeyFilter; onFilter: (next
       </span>
       <span className="hotkeys__toggles">
         <label>
-          <input type="checkbox" checked={filter.clashes} onChange={() => onFilter({ ...filter, clashes: !filter.clashes })} />
-          Show clashes only
+          <input type="checkbox" checked={filter.shared} onChange={() => onFilter({ ...filter, shared: !filter.shared })} />
+          Shared keys only
         </label>
         <label>
           <input type="checkbox" checked={filter.changed} onChange={() => onFilter({ ...filter, changed: !filter.changed })} />
@@ -555,7 +539,16 @@ const rowItem = (row: KeyRow): SettingDef => ({
   keywords: [SCOPE_TITLES[row.scope].toLowerCase(), ...(SCOPE_WORDS[row.scope] ?? []), ...ROW_KEYWORDS],
   bare: true,
   available: (ctx) => inFilter(row, ctx),
-  render: (ctx) => (row.changeable ? <HotkeyRow row={row} ctx={ctx} /> : fixedRow(keysText(keysOf(row, ctx.settings.hotkeys)), <>{row.label}{row.hint !== undefined && <span className="hotkeys__hint"> — {row.hint}</span>}</>)),
+  render: (ctx) => {
+    if (row.changeable) return <HotkeyRow row={row} ctx={ctx} />
+    const blocker = blockersOf(row, ctx.settings.hotkeys, ctx.settings.hotkeysAside)[0]
+    return (
+      <>
+        {fixedRow(keysText(keysOf(row, ctx.settings.hotkeys)), <><PlaceTag scope={row.scope} />{row.label}{row.hint !== undefined && <span className="hotkeys__hint"> — {row.hint}</span>}</>)}
+        {blocker !== undefined && <LostLine row={row} blocker={blocker} overrides={ctx.settings.hotkeys} />}
+      </>
+    )
+  },
 })
 
 /** A "Used by macOS" row (D3): there while this Mac has the key, with its key as this Mac has it. */
@@ -587,28 +580,219 @@ const macosItem = (label: string): SettingDef => {
   }
 }
 
-/** The groups' hints (K4): where a change waits for the next open. */
-const SCOPE_HINTS: Partial<Record<KeyScope, string>> = {
-  app: 'App keys work in every tab: on a Mac the menu takes the key before any page.',
-  note: 'A change works in the notes you open after it.',
-  diagram: 'A change works in the diagrams you open after it.',
+// ---------- one card per key (YAZ-3564: the page by key) ----------
+
+/** A key as one string to group by: each step in its normal form, so 'CmdOrCtrl+D' and 'Command+D' are one card. */
+const normal = (key: string): string => key.split(' ').map((step) => normalizeKey(step) ?? step).join(' ')
+
+/**
+ * One card per key as the keys are now: the rows whose first key it is, App rows first. Shared: an App row and a
+ * row of a tab on one key (⌘D), or an App key that starts a tab's two-step keys (⌘K); App: an App key alone; Tab:
+ * one or more tabs' own key (⌘B is Bold in notes and in diagrams), no App key.
+ */
+interface KeyCard {
+  key: string
+  rows: KeyRow[]
+  kind: 'shared' | 'app' | 'tab'
+  /** The tabs a pick decides (K9): a shared key the user can settle comes first on the page. */
+  picks: number
 }
 
-/** The groups (YAZ-3564 K7): one per place, the changeable rows first, then the built-in ones. */
-const groups: SettingsGroup[] = (['app', 'note', 'drawing', 'diagram', 'code', 'views'] as const).map((scope) => {
-  const rows = ALL_KEYS.filter((r) => r.scope === scope)
-  return { title: SCOPE_TITLES[scope], ...(SCOPE_HINTS[scope] === undefined ? {} : { hint: SCOPE_HINTS[scope] }), items: [...rows.filter((r) => r.changeable), ...rows.filter((r) => !r.changeable)].map(rowItem) }
-})
+const ORDER: readonly KeyScope[] = ['app', 'note', 'drawing', 'diagram', 'code', 'views']
+const KIND_ORDER = { shared: 0, app: 1, tab: 2 } as const
+
+/** The tabs where an App command's key can go either way (K9): the rows of each that have it, or begin with it. */
+function contested(app: KeyRow, overrides: HotkeyOverrides): Map<AsidePlace, KeyRow[]> {
+  const out = new Map<AsidePlace, KeyRow[]>()
+  const key = keyNow(app, overrides)
+  if (key === null || commandOf(app) === undefined || commandOf(app)?.rendererOwned === true || app.macStandard === true) return out
+  // With every tab handing the key to the App action, the rows that lose it are the ones a pick decides.
+  const takeAll = Object.fromEntries(ASIDE_PLACES.map((p) => [asideId(app.id, p), false]))
+  for (const other of clashesOf(app, key, overrides, takeAll)) {
+    if (!(ASIDE_PLACES as readonly string[]).includes(other.scope)) continue
+    const place = other.scope as AsidePlace
+    out.set(place, [...(out.get(place) ?? []), other])
+  }
+  return out
+}
+
+let cardCache: { overrides: HotkeyOverrides; cards: KeyCard[]; noKey: KeyRow[]; cardOf: Map<string, KeyCard> } | null = null
+/** The cards for `overrides`, built once per set of changes. */
+function cardsOf(overrides: HotkeyOverrides): { cards: KeyCard[]; noKey: KeyRow[]; cardOf: Map<string, KeyCard> } {
+  if (cardCache?.overrides === overrides) return cardCache
+  const byKey = new Map<string, KeyCard>()
+  const noKey: KeyRow[] = []
+  for (const row of ALL_KEYS) {
+    const key = keyNow(row, overrides)
+    if (key === null) {
+      noKey.push(row)
+      continue
+    }
+    const id = normal(key)
+    const card: KeyCard = byKey.get(id) ?? { key, rows: [], kind: 'tab', picks: 0 }
+    card.rows.push(row)
+    byKey.set(id, card)
+  }
+  const cards = [...byKey.values()]
+  for (const card of cards) {
+    card.rows.sort((a, b) => ORDER.indexOf(a.scope) - ORDER.indexOf(b.scope))
+    const apps = card.rows.filter((r) => r.scope === 'app')
+    card.picks = apps.reduce((n, r) => n + contested(r, overrides).size, 0)
+    const shared = apps.length > 0 && (card.rows.some((r) => r.scope !== 'app') || card.picks > 0)
+    card.kind = shared ? 'shared' : apps.length > 0 ? 'app' : 'tab'
+  }
+  const first = (c: KeyCard) => ORDER.indexOf(c.rows[0].scope)
+  cards.sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || b.picks - a.picks || first(a) - first(b) || toDisplay(a.key).localeCompare(toDisplay(b.key)))
+  const cardOf = new Map(cards.flatMap((card) => card.rows.map((r) => [r.id, card] as const)))
+  cardCache = { overrides, cards, noKey, cardOf }
+  return cardCache
+}
+
+/** A key as the page shows it: '⌘D', or a two-step '⌘K ⌘C'. */
+const keyText = (key: string): string => key.split(' ').map(toDisplay).join(' ')
+/** A card's DOM id, for a link to it. */
+const cardAnchor = (key: string): string => `hotkeys-key-${normal(key).replace(/[^A-Za-z0-9]/g, (c) => `_${c.charCodeAt(0).toString(16)}`)}`
+
+const PLACE_WORDS: Record<KeyScope, string> = { app: 'every tab', note: 'notes', drawing: 'drawings', diagram: 'diagrams', code: 'code', views: 'folder views' }
+
+/** A row's place, as a small tag before its name (green: one kind of tab; purple: App). */
+function PlaceTag({ scope }: { scope: KeyScope }) {
+  return <span className={`hotkeys__place hotkeys__place--${scope === 'app' ? 'app' : 'tab'}`}>{SCOPE_TITLES[scope]}</span>
+}
+
+/** Under a row whose key an App key took in its tab: what the key does there now, and a link to the card that decides it. */
+function LostLine({ row, blocker, overrides }: { row: KeyRow; blocker: KeyRow; overrides: HotkeyOverrides }) {
+  const theirs = keyNow(blocker, overrides)
+  const mine = keyNow(row, overrides)
+  const elsewhere = theirs !== null && mine !== null && normal(theirs) !== normal(mine)
+  const go = (): void => {
+    const card = theirs === null ? null : document.getElementById(cardAnchor(theirs))
+    card?.scrollIntoView({ block: 'center' })
+    card?.classList.add('hotkeys__card--flash')
+    setTimeout(() => card?.classList.remove('hotkeys__card--flash'), 1200)
+  }
+  return (
+    <p className="hotkeys__line hotkeys__lost">
+      No key in {PLACE_WORDS[row.scope]} now: {theirs === null ? '' : keyText(theirs)} does {owned(blocker)} there.
+      {elsewhere && (
+        <>
+          {' '}
+          <button type="button" className="hotkeys__link" onClick={go}>
+            Change it on {keyText(theirs)}
+          </button>
+        </>
+      )}
+    </p>
+  )
+}
+
+/** "⌘D in drawings: Show in sidebar?" — what a new pick takes from, before it is written (the Premiere rule: take it or keep it). */
+type Pick = { app: KeyRow; place: AsidePlace; keeps: boolean; losers: KeyRow[] }
+
+/** A tab's own actions on a key, as a pick names them: 'Duplicate', or '28 two-step keys'. */
+const ownText = (rows: readonly KeyRow[]): string => (rows.length > 3 ? `${rows.length} two-step keys` : rows.map((r) => r.label).join(', '))
+const losersText = (rows: readonly KeyRow[]): string => (rows.length > 3 ? `${rows.length} ${SCOPE_TITLES[rows[0].scope].toLowerCase()} keys that start with it` : rows.map(owned).join(', '))
+
+/**
+ * A card's head (YAZ-3564): the key in its colour, what it is, and for a shared key the action each tab gets. A tab of a
+ * changeable App key picks App or its own (K9, written to `hotkeysAside` per tab); a pick asks first. A row an App key
+ * always wins against says so under itself (`LostLine`).
+ */
+function KeyCardHead({ card, ctx }: { card: KeyCard; ctx: SettingsCtx }) {
+  const [asking, setAsking] = useState<Pick | null>(null)
+  const { hotkeys: overrides, hotkeysAside: aside } = ctx.settings
+  const apps = card.rows.filter((r) => r.scope === 'app')
+  const cap = keyText(card.key)
+  const what =
+    card.kind === 'shared' ? 'Shared: each tab below gets one action.' : card.kind === 'app' ? `Works in every tab.` : card.rows.length > 1 ? 'Each tab has its own action.' : `Works in ${PLACE_WORDS[card.rows[0].scope]}.`
+  const picks = apps.flatMap((app) => [...contested(app, overrides)].map(([place, rows]) => ({ app, place, rows })))
+  return (
+    <div className="hotkeys__card-head">
+      <div className="hotkeys__card-title">
+        <h3 className={`settings-group__title hotkeys__cap-key hotkeys__cap-key--${card.kind}`}>{cap}</h3>
+        <span className="hotkeys__hint">{what}</span>
+      </div>
+      {picks.length > 0 && (
+        <div className="hotkeys__picks">
+          {picks.map(({ app, place, rows }) => {
+            const keeps = stepsAside(app, place, aside)
+            const choose = (next: boolean): void => {
+              if (next !== keeps) setAsking({ app, place, keeps: next, losers: next ? [app] : rows })
+            }
+            return (
+              <div key={`${app.id}@${place}`} className="hotkeys__pick">
+                <span className="hotkeys__pick-place">{SCOPE_TITLES[place]}</span>
+                <span className="hotkeys__seg" role="group" aria-label={`${cap} in ${PLACE_WORDS[place]}`}>
+                  <button type="button" className="hotkeys__seg-btn hotkeys__seg-btn--app" aria-pressed={!keeps} onClick={() => choose(false)}>
+                    {app.label}
+                  </button>
+                  <button type="button" className="hotkeys__seg-btn hotkeys__seg-btn--tab" aria-pressed={keeps} onClick={() => choose(true)}>
+                    {ownText(rows)}
+                  </button>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {asking !== null && (
+        <ConfirmSheet
+          labelId={`hotkeys-pick-${cardAnchor(card.key)}`}
+          text={`${cap} in ${PLACE_WORDS[asking.place]}: ${asking.keeps ? ownText(contested(asking.app, overrides).get(asking.place) ?? []) : asking.app.label}?`}
+          confirmLabel="Take it"
+          keys="contained"
+          focusConfirm
+          onConfirm={() => {
+            ctx.onChange({ ...ctx.settings, hotkeysAside: withAside(aside, asking.app, asking.place, asking.keeps) })
+            setAsking(null)
+          }}
+          onCancel={() => setAsking(null)}
+        >
+          <p className="hotkeys__line hotkeys__line--ask">{asking.keeps ? `${owned(asking.app)} will not work in ${PLACE_WORDS[asking.place]}.` : `${losersText(asking.losers)} will have no key in ${PLACE_WORDS[asking.place]}.`}</p>
+        </ConfirmSheet>
+      )}
+    </div>
+  )
+}
+
+/** The colours, said once at the top (shown while no filter stands). */
+const legendItem: SettingDef = {
+  id: 'hotkeys-legend',
+  label: 'How keys work',
+  keywords: ['colour', 'color', 'shared', ...ROW_KEYWORDS],
+  bare: true,
+  available: (ctx) => !isFiltered(ctx),
+  render: () => (
+    <div className="hotkeys__legend">
+      <span>
+        <i className="hotkeys__swatch hotkeys__swatch--app" /> App key: works in every tab
+      </span>
+      <span>
+        <i className="hotkeys__swatch hotkeys__swatch--tab" /> Tab key: works in one kind of tab
+      </span>
+      <span>
+        <i className="hotkeys__swatch hotkeys__swatch--shared" /> Shared: each tab gets one action
+      </span>
+      <span className="hotkeys__hint">A note or a diagram reads a change when it opens.</span>
+    </div>
+  ),
+}
+
+/** The page's groups as the keys are now: the colours, one card per key, then the actions with no key. */
+function cardGroups(ctx: SettingsCtx): SettingsGroup[] {
+  const { cards, noKey } = cardsOf(ctx.settings.hotkeys)
+  return [
+    { items: [legendItem] },
+    ...cards.map((card) => ({ title: keyText(card.key), anchor: cardAnchor(card.key), header: (c: SettingsCtx) => <KeyCardHead card={card} ctx={c} />, items: card.rows.map(rowItem) })),
+    { title: 'Actions with no key', hint: 'They still work from the menu or the toolbar.', anchor: 'hotkeys-no-key', items: noKey.map(rowItem) },
+  ]
+}
 
 /** The mouse tips (YAZ-1679): no key, so no row of the key list; shown while no filter stands. */
 const mouseItems: SettingDef[] = MOUSE_TIPS.map(({ keys, label }) => ({ id: `hotkey-mouse-${slug(shortLabel(label))}`, label, keywords: [keys, ...ROW_KEYWORDS], bare: true, available: (ctx) => !isFiltered(ctx), render: () => fixedRow(keys, label) }))
 
-export const HOTKEYS_SECTION: SettingsSection = {
-  id: 'hotkeys',
-  title: 'Hotkeys',
-  standalone: true,
-  groups: [
-    ...groups,
+/** The groups after the key cards: the mouse, macOS and Reset all. */
+const tailGroups: SettingsGroup[] = [
     { title: 'Mouse', items: mouseItems },
     {
       title: 'Used by macOS',
@@ -627,5 +811,13 @@ export const HOTKEYS_SECTION: SettingsSection = {
         },
       ],
     },
-  ],
+]
+
+export const HOTKEYS_SECTION: SettingsSection = {
+  id: 'hotkeys',
+  title: 'Hotkeys',
+  standalone: true,
+  // The part that does not move with the keys; `groupsFor` puts the key cards first.
+  groups: tailGroups,
+  groupsFor: (ctx) => [...cardGroups(ctx), ...tailGroups],
 }

@@ -25,7 +25,7 @@ import { useState, type ReactNode } from 'react'
 import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
-import { keyRow, stepsAside } from '@shared/keys'
+import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
 import { SIDEBAR_ICON_KINDS, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
@@ -136,6 +136,10 @@ export interface SettingsGroup {
   /** Its rows are ONE vault's (YAZ-2602 R10): the group names that vault where the window has two or more. */
   vault?: true
   items: readonly SettingDef[]
+  /** Drawn above the rows in place of the plain title (Settings › Hotkeys' key cards, YAZ-3564); the title still names the group in search. */
+  header?: (ctx: SettingsCtx) => ReactNode
+  /** The group's DOM id, for a link to it. */
+  anchor?: string
 }
 
 export interface SettingsSection {
@@ -153,7 +157,12 @@ export interface SettingsSection {
    */
   standalone?: true
   groups: readonly SettingsGroup[]
+  /** Groups built from the settings, in place of `groups` (Settings › Hotkeys: one card per key as the keys are now, YAZ-3564). */
+  groupsFor?: (ctx: SettingsCtx) => readonly SettingsGroup[]
 }
+
+/** A section's groups as `ctx` has them. */
+export const groupsOf = (section: SettingsSection, ctx: SettingsCtx): readonly SettingsGroup[] => section.groupsFor?.(ctx) ?? section.groups
 
 /** A kind's built-in icon colour in this theme (app.css `--kind-<kind>` on the root; `.app` carries the set ones), else the light theme's. */
 function builtInIconColour(kind: SidebarIconKind): string {
@@ -607,17 +616,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-3556 D8: where "Go to your place" (⌘D) goes.
-        title: 'Go to',
+        // YAZ-3556 D8: where "Show in sidebar" (⌘D) goes.
+        title: 'Show in sidebar',
         items: [
           {
             id: 'goTo',
-            label: 'Go to your place goes to',
+            label: 'What Show in sidebar shows',
             hint: ({ settings }) => {
               const key = menuKey('goTo', settings)
               const row = keyRow('app.goTo')
-              const keeps = key !== null && row !== undefined && stepsAside(row, 'drawing', settings.hotkeysAside)
-              return `Go to your place (${key ?? 'no key'}, File menu) shows this tab, folder or file in the sidebar.${keeps ? ` A drawing, a diagram and code keep their own ${key}.` : ''}`
+              const keep = key === null || row === undefined ? [] : ASIDE_PLACES.filter((place) => stepsAside(row, place, settings.hotkeysAside))
+              const tabs = keep.map((place) => ({ drawing: 'drawings', diagram: 'diagrams', code: 'code' })[place])
+              return `Show in sidebar (${key ?? 'no key'}, File menu) shows this tab, folder or file in the sidebar.${tabs.length > 0 ? ` In ${tabs.join(' and ').replace(/ and (?=.* and )/, ', ')}, ${key} does their own action (Settings › Hotkeys).` : ''}`
             },
             keywords: ['sidebar', 'go to', 'place', 'cmd d', 'shortcut', 'folder', 'file', 'tab', 'focus', 'favorites', 'sessions', 'recents'],
             wide: ({ settings }) => settings.goTo.kind !== 'tab',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HOTKEY_COMMANDS } from '@shared/hotkeyBindings'
-import { ALL_KEYS, blockersOf, clashesOf, isUsableFor, keyRow, keysOf, stepsAside, type KeyRow } from '@shared/keys'
+import { ALL_KEYS, ASIDE_PLACES, blockersOf, clashesOf, isUsableFor, keyRow, keysOf, stepsAside, withAside, type KeyRow } from '@shared/keys'
 
 /** YAZ-3564: every key in one list (K1), the changes by scoped id (K2), the clash rule (K3) and the step aside (K9). */
 const row = (id: string, keys: string[], extra: Partial<KeyRow> = {}): KeyRow => ({ id, scope: id.split('.')[0] as KeyRow['scope'], label: id, keys, changeable: true, ...extra })
@@ -36,7 +36,7 @@ describe('the clash rule (K3) and the step aside (K9)', () => {
     const noteSame = row('note.same', ['CmdOrCtrl+Alt+D'])
     const drawingSame = row('drawing.same', ['CmdOrCtrl+Alt+D'])
     expect(clashesOf(noteSame, 'CmdOrCtrl+Alt+D', {}, {}, [...ROWS, noteSame, drawingSame])).toEqual([])
-    // A note is no place an App key steps aside in: Go to your place blocks a note's ⌘D.
+    // A note is no place an App key steps aside in: Show in sidebar blocks a note's ⌘D.
     expect(clashesOf(noteBold, 'CmdOrCtrl+D', {}, {}, ROWS).map((r) => r.id)).toEqual(['app.goTo'])
     expect(clashesOf(link, 'CmdOrCtrl+D', {}, {}, ROWS).map((r) => r.id)).toEqual(['drawing.duplicate'])
   })
@@ -44,7 +44,7 @@ describe('the clash rule (K3) and the step aside (K9)', () => {
   it('an App key blocks the same key in a place, unless it lets that place keep it', () => {
     // ⌘K: Search the vault fires first, so a drawing's Add link never works.
     expect(blockersOf(link, {}, {}, ROWS).map((r) => r.id)).toEqual(['app.search'])
-    // ⌘D: Go to your place steps aside in drawings by default, so Duplicate keeps ⌘D there.
+    // ⌘D: Show in sidebar steps aside in drawings by default, so Duplicate keeps ⌘D there.
     expect(stepsAside(goTo, 'drawing', {})).toBe(true)
     expect(stepsAside(goTo, 'note', {})).toBe(false)
     expect(blockersOf(duplicate, {}, {}, ROWS)).toEqual([])
@@ -52,6 +52,19 @@ describe('the clash rule (K3) and the step aside (K9)', () => {
     expect(blockersOf(duplicate, {}, { 'app.goTo': false }, ROWS).map((r) => r.id)).toEqual(['app.goTo'])
     // The switch on for ⌘K: a drawing's Add link works again.
     expect(blockersOf(link, {}, { 'app.search': true }, ROWS)).toEqual([])
+  })
+
+  it('a pick is per tab (YAZ-3564): ⌘D can go to Show in sidebar in drawings and stay Duplicate in diagrams; an old one-switch entry means all three', () => {
+    const diagramDup = row('diagram.duplicate', ['CmdOrCtrl+D'])
+    const rows = [...ROWS, diagramDup]
+    const aside = withAside({}, goTo, 'drawing', false)
+    expect(aside).toEqual({ 'app.goTo@drawing': false })
+    expect(blockersOf(duplicate, {}, aside, rows).map((r) => r.id)).toEqual(['app.goTo'])
+    expect(blockersOf(diagramDup, {}, aside, rows)).toEqual([])
+    expect(withAside(aside, goTo, 'drawing', true)).toEqual({}) // back to the default: no entry
+    // The old switch off: every tab gives ⌘D to the App action, until a pick changes one tab.
+    expect(ASIDE_PLACES.map((p) => stepsAside(goTo, p, { 'app.goTo': false }))).toEqual([false, false, false])
+    expect(withAside({ 'app.goTo': false }, goTo, 'code', true)).toEqual({ 'app.goTo@drawing': false, 'app.goTo@diagram': false })
   })
 
   it('a two-step code key is blocked by an App key on its first step; an App key sees the two-step keys it blocks', () => {

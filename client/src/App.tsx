@@ -926,7 +926,7 @@ export function App() {
         if (target.kind === 'file') openAsSidebar.current(target.path)
         revealInFiles(target.path, target.kind === 'folder')
       },
-      (err: unknown) => notify(`Can't go to your place: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      (err: unknown) => notify(`Can't show in sidebar: ${err instanceof Error ? err.message : String(err)}`, 'error'),
     )
   }, [treeOf, toggleSidebar, changeLens, revealInFiles, notify])
 

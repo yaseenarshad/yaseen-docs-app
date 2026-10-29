@@ -29,7 +29,7 @@ interface UseMenuEventsOptions {
   onNewWindow: () => void
   /** File › New… (⌘N, YAZ-3556 D5): open the New… box. */
   onNewItem: () => void
-  /** File › Go to Your Place (⌘D, YAZ-3556 D9): show the place of `settings.goTo`. */
+  /** File › Show in Sidebar (⌘D, YAZ-3556 D9): show the place of `settings.goTo`. */
   onGoTo: () => void
   /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the focused note (YAZ-1710), else the sidebar zoom (YAZ-3389). */
   onZoom: (step: ZoomStep) => void

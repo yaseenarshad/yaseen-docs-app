@@ -104,7 +104,7 @@ async function mount(hotkeys: HotkeyOverrides = {}, aside?: Record<string, boole
 }
 
 describe('a key an App command takes, in the real engine (K3, K9)', () => {
-  it("with Go to your place's switch off, ⌘D duplicates nothing and stays unhandled, so the menu runs it", async () => {
+  it("with Show in sidebar's switch off, ⌘D duplicates nothing and stays unhandled, so the menu runs it", async () => {
     const { api, container, select } = await mount({}, { 'app.goTo': false })
     await select(true)
     let handled = false

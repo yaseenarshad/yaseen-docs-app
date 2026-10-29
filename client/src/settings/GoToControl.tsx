@@ -1,5 +1,5 @@
 /**
- * Settings › Sidebar › Go to (YAZ-3556 D8): where "Go to your place" (⌘D) goes. One dropdown: the five tabs of the
+ * Settings › Sidebar › Show in sidebar (YAZ-3556 D8): where "Show in sidebar" (⌘D) goes. One dropdown: the five tabs of the
  * sidebar, "A folder…" and "A file…". The last two open the place picker (D6) on the window's vaults, files too for
  * "A file…", and the pick is stored by its path in the vault (D2). A folder or a file shows its path and "Change…".
  * A window with no vault has no picker: the two rows do nothing there.
@@ -44,7 +44,7 @@ export function GoToControl({ settings, onChange, vaults }: GoToControlProps) {
 
   return (
     <>
-      <Select options={GO_TO_OPTIONS} value={goTo.kind === 'tab' ? goTo.tab : goTo.kind} onChange={choose} ariaLabel="Go to your place goes to" />
+      <Select options={GO_TO_OPTIONS} value={goTo.kind === 'tab' ? goTo.tab : goTo.kind} onChange={choose} ariaLabel="What Show in sidebar shows" />
       {goTo.kind !== 'tab' && (
         <span className="settings__place">
           <span className="settings__place-path" title={goTo.path}>

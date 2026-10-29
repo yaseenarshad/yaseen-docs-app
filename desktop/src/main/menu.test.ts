@@ -135,9 +135,9 @@ describe('buildMenuTemplate', () => {
     expect(file.indexOf(search as MenuItemConstructorOptions)).toBe(file.findIndex((i) => i.label === 'Open Recent') + 2)
     click(search)
     expect(handlers.search).toHaveBeenCalledTimes(1)
-    // ⌘D right under it (YAZ-3556 D1): the place of Settings › Sidebar › Go to.
+    // ⌘D right under it (YAZ-3556 D1): the place of Settings › Sidebar › Show in sidebar.
     const goTo = file[file.indexOf(search as MenuItemConstructorOptions) + 1]
-    expect([goTo.id, goTo.label, goTo.accelerator]).toEqual(['menu.file.go-to', 'Go to Your Place', 'CmdOrCtrl+D'])
+    expect([goTo.id, goTo.label, goTo.accelerator]).toEqual(['menu.file.go-to', 'Show in Sidebar', 'CmdOrCtrl+D'])
     click(goTo)
     expect(handlers.goTo).toHaveBeenCalledTimes(1)
 
@@ -333,7 +333,7 @@ describe('buildMenuTemplate', () => {
 
   // ---------- The board items (YAZ-3037, YAZ-3028 D10; ported from Draw's menu.test.ts) ----------
 
-  it('File: Export Image… ⌘⇧E, Export Excalidraw Drawing… ⌘⇧S and Share Link ⌘⇧L, in their own group after Search Vault and Go to Your Place, each calling its handler', () => {
+  it('File: Export Image… ⌘⇧E, Export Excalidraw Drawing… ⌘⇧S and Share Link ⌘⇧L, in their own group after Search Vault and Show in Sidebar, each calling its handler', () => {
     const handlers = noopHandlers()
     const file = menuOf(onTab('drawing', handlers), 'File')
     const at = (id: string) => file.findIndex((i) => i.id === id)

@@ -9,7 +9,7 @@ import { CODE_KEYS } from './code'
 import { DIAGRAM_KEYS } from './diagram'
 import { DRAWING_KEYS } from './drawing'
 import { NOTE_KEYS } from './note'
-import type { AsidePlace, KeyRow, KeyScope } from './types'
+import { ASIDE_PLACES, type AsidePlace, type KeyRow, type KeyScope } from './types'
 import { VIEW_KEYS } from './views'
 
 export * from './types'
@@ -20,8 +20,38 @@ const BY_ID = new Map(ALL_KEYS.map((row) => [row.id, row]))
 /** The row of an id, scoped or an old unscoped App id; undefined for an id this build does not have. */
 export const keyRow = (id: string): KeyRow | undefined => BY_ID.get(scopedId(id))
 
-/** The step-aside switches the user changed (K9): only the changes, by App row id; true = steps aside in drawings, diagrams and code. */
+/**
+ * Which tabs keep their own key on a shared App key (K9): only the changes, by `<App row id>@<place>`
+ * ('app.goTo@drawing'); true = that tab keeps its own action, false = the App action takes the key there. An
+ * entry by the App row id alone (before the per-tab picks) means all three tabs, until the store rewrites it.
+ */
 export type HotkeyAside = Partial<Record<string, boolean>>
+
+/** The `hotkeysAside` entry of an App row in one tab. */
+export const asideId = (rowId: string, place: AsidePlace): string => `${rowId}@${place}`
+
+/** Whether `aside` holds a change of `row`'s picks, in any tab. */
+export const asideChanged = (row: KeyRow, aside: HotkeyAside | undefined): boolean =>
+  aside !== undefined && Object.keys(aside).some((id) => id === row.id || id.startsWith(`${row.id}@`))
+
+/** `aside` with `row`'s picks back to their defaults, in every tab. */
+export function withoutAside(aside: HotkeyAside, rows: readonly KeyRow[]): HotkeyAside {
+  return Object.fromEntries(Object.entries(aside).filter(([id]) => !rows.some((r) => id === r.id || id.startsWith(`${r.id}@`))))
+}
+
+/** `aside` with `place` keeping its own key on `row` (`keeps`), or the App action taking it; a pick equal to the default is no entry. */
+export function withAside(aside: HotkeyAside, row: KeyRow, place: AsidePlace, keeps: boolean): HotkeyAside {
+  const next: HotkeyAside = {}
+  for (const [id, on] of Object.entries(aside)) {
+    if (id === row.id) for (const p of ASIDE_PLACES) next[asideId(row.id, p)] ??= on
+    else next[id] = on
+  }
+  const def = (row.stepsAsideIn ?? []).includes(place)
+  if (keeps === def) delete next[asideId(row.id, place)]
+  else next[asideId(row.id, place)] = keeps
+  for (const p of ASIDE_PLACES) if (next[asideId(row.id, p)] === (row.stepsAsideIn ?? []).includes(p)) delete next[asideId(row.id, p)]
+  return next
+}
 
 /** The keys a row has now: the user's change (null = none), else its defaults. */
 export function keysOf(row: KeyRow, overrides: HotkeyOverrides | undefined): readonly string[] {
@@ -31,8 +61,8 @@ export function keysOf(row: KeyRow, overrides: HotkeyOverrides | undefined): rea
 
 /** Whether an App row lets `place` keep its own key on it (K9): the user's switch, else the row's default. A Mac standard key never does. */
 export function stepsAside(row: KeyRow, place: KeyScope, aside: HotkeyAside | undefined): boolean {
-  if (row.scope !== 'app' || row.macStandard === true || !(['drawing', 'diagram', 'code'] as string[]).includes(place)) return false
-  const own = aside?.[row.id]
+  if (row.scope !== 'app' || row.macStandard === true || !(ASIDE_PLACES as readonly string[]).includes(place)) return false
+  const own = aside?.[asideId(row.id, place as AsidePlace)] ?? aside?.[row.id]
   return own === undefined ? (row.stepsAsideIn ?? []).includes(place as AsidePlace) : own
 }
 

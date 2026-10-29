@@ -2040,7 +2040,7 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
  * for the name field; the jump to `settings.goTo` for each kind of place, and a path the vault does not have. The
  * Welcome window has no vault: both keys do nothing there. Each test has a vault of its own: the tree feed keeps a tree per root.
  */
-describe('App ⌘N New… box and ⌘D Go to your place (YAZ-3556)', () => {
+describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
   let n = 0
   const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
   const folder = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
