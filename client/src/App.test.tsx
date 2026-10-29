@@ -311,7 +311,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       // The tab board's doors to other windows (YAZ-3343 D3, D13, D14).
       focusTab: vi.fn(async (_to: string, _ref: TabRef) => undefined),
       closeTabs: vi.fn(async (_to: string, _refs: readonly TabRef[]) => undefined),
-      moveTab: vi.fn(async (_from: string, _to: string, _ref: TabRef) => undefined),
+      moveTab: vi.fn(async (_from: string, _to: string, _ref: TabRef, _at?: number) => undefined),
+      // A tab let go off every window (YAZ-3637 D3): main opens one there, or moves this one, or saw the point on a window.
+      tearOff: vi.fn(async (_path: string, _carry: unknown, _point: { x: number; y: number }, _alone: boolean): Promise<'none' | 'moved' | 'opened'> => 'opened'),
       setName: vi.fn(async (_id: string, _name: string | null) => undefined),
       // The board's frames and empty canvas (YAZ-3343 D21, D22).
       closeOther: vi.fn(async (_id: string) => undefined),
@@ -396,7 +398,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         linkCloseTabs.add(l)
         return () => linkCloseTabs.delete(l)
       }),
-      onSendTab: vi.fn((l: (req: { to: string; ref: TabRef }) => void) => {
+      onSendTab: vi.fn((l: (req: { to: string; ref: TabRef; at?: number }) => void) => {
         linkSendTab.add(l)
         return () => linkSendTab.delete(l)
       }),
@@ -537,7 +539,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitTakeTab: (tab: MovedTab) => linkTakeTab.forEach((l) => l(tab)),
     emitFocusTab: (ref: TabRef) => linkFocusTab.forEach((l) => l(ref)),
     emitCloseTabsHere: (refs: TabRef[]) => linkCloseTabs.forEach((l) => l(refs)),
-    emitSendTab: (req: { to: string; ref: TabRef }) => linkSendTab.forEach((l) => l(req)),
+    emitSendTab: (req: { to: string; ref: TabRef; at?: number }) => linkSendTab.forEach((l) => l(req)),
     emitSetRoots: (roots: string[]) => linkSetRoots.forEach((l) => l(roots)),
     emitPopOutTab: (ref: TabRef) => linkPopOutTab.forEach((l) => l(ref)),
     emitHighlightTab: (ref: TabRef | null) => linkHighlightTab.forEach((l) => l(ref)),
@@ -1541,6 +1543,108 @@ describe('App tab board across windows (YAZ-3343)', () => {
     // A board's drop is a QUIET move (D20): main raises nothing, w2 adds it in the background.
     expect(bridge.window.moveTo).toHaveBeenCalledExactlyOnceWith('w2', '/v/a.md', expect.objectContaining({ name: undefined, background: true }))
     expect(tabNames(el)).toEqual(['b'])
+  })
+
+  it('YAZ-3637 D4: a drop on another window\'s strip sends the tab LOUD, to the slot; one dropped here lands at the slot, active; D1, D3, D5: a tab let go off every window tears off — the tab leaves for `opened`, stays for `none`', async () => {
+    const { bridge, el, emitSendTab, emitTakeTab } = await mount(withWindows(), ME)
+    await act(async () => emitSendTab({ to: 'w2', ref: { path: '/v/c.md', copy: 0 }, at: 1 }))
+    await act(async () => {})
+    expect(bridge.window.moveTo).toHaveBeenCalledExactlyOnceWith('w2', '/v/c.md', expect.objectContaining({ at: 1 }))
+    expect(bridge.window.moveTo.mock.lastCall?.[2]).not.toHaveProperty('background')
+    expect(tabNames(el)).toEqual(['a', 'b'])
+    act(() => emitTakeTab({ path: '/v/z.md', at: 0 }))
+    expect(tabNames(el)).toEqual(['z', 'a', 'b'])
+    expect(activeName(el)).toBe('z')
+    // Another window's tab dropped on this strip: this window asks main to have it sent here, to the slot the strip
+    // shows (1, before "a") — not the end, where a drop off the strip lands.
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    const foreign = (readable: boolean) => ({ types: ['application/x-yaseen-workspace-page', 'application/x-yaseen-from-w2.0'], effectAllowed: 'move', dropEffect: 'none', getData: vi.fn(() => (readable ? JSON.stringify({ path: '/v/x.md', owner: 'main', from: 'w2', copy: 0 }) : '')), setData: vi.fn() })
+    const fire = (target: Element, type: string, data: unknown, init: MouseEventInit = {}) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...init })
+      Object.defineProperty(event, 'dataTransfer', { value: data })
+      act(() => void target.dispatchEvent(event))
+      return event
+    }
+    const a = el.querySelectorAll<HTMLElement>('.tabbar__tab')[1]
+    expect(fire(a, 'dragover', foreign(false), { clientX: -5 }).defaultPrevented).toBe(true)
+    await act(async () => void fire(a, 'drop', foreign(true), { clientX: -5 }))
+    expect(bridge.window.moveTab).toHaveBeenCalledExactlyOnceWith('w2', 'w1', { path: '/v/x.md', copy: 0 }, 1)
+    expect(fire(strip, 'dragover', foreign(false)).defaultPrevented).toBe(true)
+    // Off the strip the whole window takes it, at the strip's end, and lights up while the drag is over; no pane below
+    // sees it. A tab whose vault no window shows any more (a stale index) is not taken anywhere, and nothing lights.
+    const app = el.querySelector<HTMLElement>('.app')!
+    const below = vi.fn()
+    app.addEventListener('drop', below)
+    expect(fire(app, 'dragover', foreign(false)).defaultPrevented).toBe(true)
+    expect(el.querySelector('.window-glow')).not.toBeNull()
+    await act(async () => void fire(app, 'drop', foreign(true)))
+    expect(bridge.window.moveTab).toHaveBeenLastCalledWith('w2', 'w1', { path: '/v/x.md', copy: 0 }, 3)
+    expect(below).not.toHaveBeenCalled()
+    expect(el.querySelector('.window-glow')).toBeNull()
+    const elsewhere = { ...foreign(false), types: ['application/x-yaseen-workspace-page', 'application/x-yaseen-from-w2.7'] }
+    expect(fire(app, 'dragover', elsewhere).defaultPrevented).toBe(false)
+    expect(el.querySelector('.window-glow')).toBeNull()
+    bridge.window.moveTab.mockClear()
+    // This window's own tab over the page (D8): nothing below the strip sees it, so the editor draws no drop line.
+    const own = { types: ['application/x-yaseen-workspace-page', 'application/x-yaseen-from-w1.0'], effectAllowed: 'move', dropEffect: 'none', getData: vi.fn(() => ''), setData: vi.fn() }
+    const page = vi.fn()
+    app.addEventListener('dragover', page)
+    expect(fire(app, 'dragover', own).defaultPrevented).toBe(false)
+    expect(page).not.toHaveBeenCalled()
+    // Let go off every window: main opens a window there, and the tab leaves; `moved` and `none` keep it.
+    const tabs = () => [...el.querySelectorAll<HTMLElement>('.tabbar__tab')]
+    fire(tabs()[2], 'dragstart', foreign(true))
+    await act(async () => void fire(tabs()[2], 'dragend', { dropEffect: 'none', types: [] }, { screenX: 900, screenY: 300 }))
+    await act(async () => {})
+    expect(bridge.window.tearOff).toHaveBeenCalledExactlyOnceWith('/v/b.md', expect.objectContaining({ name: undefined }), { x: 900, y: 300 }, false)
+    expect(tabNames(el)).toEqual(['z', 'a'])
+    bridge.window.tearOff.mockResolvedValueOnce('none')
+    fire(tabs()[1], 'dragstart', foreign(true))
+    await act(async () => void fire(tabs()[1], 'dragend', { dropEffect: 'none', types: [] }, { screenX: 20, screenY: 20 }))
+    await act(async () => {})
+    expect(tabNames(el)).toEqual(['z', 'a'])
+    expect(el.textContent).not.toContain("Can't move")
+    expect(bridge.window.closeSelf).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-3637 D5: the only tab of a window with nothing else open, let go off every window, moves the window: `moved` keeps the tab and the window', async () => {
+    const ALONE = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }
+    const { bridge, el } = await mount(withWindows({ windows: [entry(ALONE), W2] }), ALONE)
+    bridge.window.tearOff.mockResolvedValueOnce('moved')
+    const tab = el.querySelector<HTMLElement>('.tabbar__tab')!
+    const event = new MouseEvent('dragend', { bubbles: true, cancelable: true, screenX: 900, screenY: 300 })
+    Object.defineProperty(event, 'dataTransfer', { value: { dropEffect: 'none', types: [] } })
+    await act(async () => void tab.dispatchEvent(event))
+    await act(async () => {})
+    expect(bridge.window.tearOff).toHaveBeenCalledExactlyOnceWith('/v/a.md', expect.anything(), { x: 900, y: 300 }, true)
+    expect(tabNames(el)).toEqual(['a'])
+    expect(bridge.window.closeSelf).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-3637 D6: a tab of a vault this window does not show asks to add that vault, as a link does (YAZ-3609 D21); added, the tab moves here, to the slot; cancelled, nothing moves', async () => {
+    const W3 = entry({ id: 'w3', root: '/o', file: '/o/s.md', tabs: ['/o/s.md'] })
+    const { bridge, el } = await mount(withWindows({ windows: [entry(ME), W2, W3] }), ME)
+    const app = el.querySelector<HTMLElement>('.app')!
+    const other = (readable: boolean) => ({ types: ['application/x-yaseen-workspace-page', 'application/x-yaseen-from-w3.0'], effectAllowed: 'move', dropEffect: 'none', getData: vi.fn(() => (readable ? JSON.stringify({ path: '/o/s.md', owner: 'main', from: 'w3', copy: 0 }) : '')), setData: vi.fn() })
+    const fire = (type: string, data: unknown) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'dataTransfer', { value: data })
+      act(() => void app.dispatchEvent(event))
+      return event
+    }
+    expect(fire('dragover', other(false)).defaultPrevented).toBe(true)
+    await act(async () => void fire('drop', other(true)))
+    const sheet = () => el.querySelector('#confirm-add-vault-for-tab-text')
+    const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+    expect(sheet()?.textContent).toContain('This tab (s) is not in this vault. It is in another vault (o)')
+    expect(bridge.window.moveTab).not.toHaveBeenCalled()
+    act(() => button('Cancel')?.click())
+    expect(sheet()).toBeNull()
+    await act(async () => void fire('drop', other(true)))
+    await act(async () => button('Add vault to this window')?.click())
+    await act(async () => {})
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ roots: ['/v', '/o'] })
+    expect(bridge.window.moveTab).toHaveBeenCalledExactlyOnceWith('w3', 'w1', { path: '/o/s.md', copy: 0 }, 3)
   })
 
   it('D13, D20: a tab moved here QUIETLY joins the strip in the background — the page on show and an open board stay; "Move to ▸" still shows it', async () => {
