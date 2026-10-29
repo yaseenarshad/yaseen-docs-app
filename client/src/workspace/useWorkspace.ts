@@ -105,10 +105,10 @@ const sameStep = (a: Step, b: Pick<Step, 'tab' | 'path' | 'zoom'>): boolean => a
 /** At most this many rows in the menu of ‹ or › (YAZ-3647 E3), the nearest first: Chrome's length. */
 export const MAX_NEAR_STEPS = 15
 
-/** The steps behind (`dir` -1) or ahead (1) of the page in front, the nearest first, at most MAX_NEAR_STEPS, each with its index (YAZ-3647 E3). */
-export function nearSteps(h: BackList, dir: -1 | 1): { index: number; step: Step }[] {
-  const near: { index: number; step: Step }[] = []
-  for (let i = h.index + dir; i >= 0 && i < h.steps.length && near.length < MAX_NEAR_STEPS; i += dir) near.push({ index: i, step: h.steps[i] })
+/** The steps behind (`dir` -1) or ahead (1) of the page in front, the nearest first, at most MAX_NEAR_STEPS (YAZ-3647 E3). A row finds its step by id. */
+export function nearSteps(h: BackList, dir: -1 | 1): Step[] {
+  const near: Step[] = []
+  for (let i = h.index + dir; i >= 0 && i < h.steps.length && near.length < MAX_NEAR_STEPS; i += dir) near.push(h.steps[i])
   return near
 }
 
@@ -194,7 +194,7 @@ export type TabsAction =
   | { type: 'cycle'; dir: 1 | -1 } // ⌃Tab / ⌃⇧Tab: wraparound, plain left→right order
   | { type: 'back' } // the window steps back through its ONE list (YAZ-3647 D1)
   | { type: 'forward' } // …and forward again, as far as the list was walked back
-  | { type: 'go'; id: number } // a row of the menu of ‹ or › (YAZ-3647 E3): straight to the step with that id, as that many Backs or Forwards would; a step that is gone: nothing (F4)
+  | { type: 'go'; id: number } // a row of the menu of ‹ or › (YAZ-3647 E3): straight to the step with that id, as that many Backs or Forwards would; a step that is gone: nothing (YAZ-3678 F4)
   | { type: 'open-stored'; tabs: readonly StoredTab[] } // "Restore session" (YAZ-3147 D3): the pages that are not open join the END, in ONE change; an open page opens no copy
   | { type: 'reset'; tabs: readonly StoredTab[]; active: string | null } // boot + root switch: the STORED tabs and file; replace wholesale with new ids
   | { type: 'rename'; oldPath: string; newPath: string } // in-app rename (Links E1, GRO-2194): every tab of the file follows it in place (S17)
@@ -286,17 +286,17 @@ function rekey(h: Record<string, TabHistory>, f: (p: string) => string | null): 
 /**
  * The Back list without the steps `gone` picks (YAZ-3647 D5: a closed tab's, a deleted page's): the index stays on
  * its step, else on the step before it. Two steps side by side that are now the same become one, with the NEWER id
- * (YAZ-3647 F2): a code tab keeps its place under its latest step's id (`stepIdOf`), so `step-<id>` still finds it.
+ * (YAZ-3675 F2): a code tab keeps its place under its latest step's id (`stepIdOf`), so `step-<id>` still finds it.
  */
 function dropSteps(h: BackList, gone: (step: Step) => boolean): BackList {
   const steps: Step[] = []
   let index = 0
   h.steps.forEach((step, i) => {
     const last = steps[steps.length - 1]
-    if (gone(step)) {
-      // Not kept.
-    } else if (last !== undefined && sameStep(last, step)) steps[steps.length - 1] = step
-    else steps.push(step)
+    if (!gone(step)) {
+      if (last !== undefined && sameStep(last, step)) steps[steps.length - 1] = step
+      else steps.push(step)
+    }
     if (i === h.index) index = Math.max(0, steps.length - 1)
   })
   return steps.length === h.steps.length ? h : { steps, index }
@@ -376,12 +376,9 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // A copy (YAZ-2940 D6, S1, S3, S4): a new id on the same page, right after the source, active and
       // mounted, at the source's zoom level (YAZ-3647 D2); the window's Back list gains its step (D4). A
       // preview source is kept, and so is the copy. A copy of a copy is a copy like any other. A trip to a
-      // tab drops an unused blank tab.
-      const i = s.tabs.findIndex((t) => t.id === a.id)
-      if (i === -1) return s
-      const source = s.tabs[i]
-      const copy: Tab = source.zoom === undefined ? newTab(source.path) : { ...newTab(source.path), zoom: source.zoom }
-      return { tabs: insertAt(s.tabs, copy, i + 1), active: copy.id, mounted: [...s.mounted, copy.id], history: s.history, preview: s.preview === a.id ? null : s.preview, blank: false }
+      // tab drops an unused blank tab. It is the bullet's new tab in front, at the source's own level: one place makes a copy.
+      const source = tabById(s, a.id)
+      return source === null ? s : tabsReducer(s, { type: 'open-zoom', id: a.id, zoom: source.zoom ?? null })
     }
     case 'open-zoom': {
       // A bullet in a new tab (YAZ-3646 D11): a copy of the tab, right after it, at that bullet. In front, or
@@ -427,7 +424,7 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
     case 'forward':
       return walkTo(s, s.history.index + (a.type === 'back' ? -1 : 1))
     case 'go': {
-      // By id, not index (YAZ-3647 F4): a close can move the steps while the menu is open, and a row must never go to another step.
+      // By id, not index (YAZ-3678 F4): a close can move the steps while the menu is open, and a row must never go to another step.
       const index = s.history.steps.findIndex((step) => step.id === a.id)
       return index === -1 || index === s.history.index ? s : walkTo(s, index)
     }
@@ -531,7 +528,7 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // (the page started there: a copy, a moved tab, a restart; or the page shows another level than the key said) adds
       // none: it fills the step the tab is on. A quiet change FROM a key (the bullet's text changed, E9; or the bullet is
       // gone) also rewrites that old key in every step of this tab on that page (YAZ-3662 F6), so Back finds the bullet.
-      // The old key is the one the report names (`from`, F6b), else the tab's: a report that comes after a Back, or as
+      // The old key is the one the report names (`from`, YAZ-3662 F6b), else the tab's: a report that comes after a Back, or as
       // the page goes, still reaches the old steps. The tab takes the new key only while it is still at the old one.
       const tab = tabById(s, a.id)
       if (tab === null) return s
@@ -550,7 +547,7 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
 
 /**
  * The window's ONE list (YAZ-3647 D1), walked to step `index`, never extended: Back, Forward and a row of their menus (E3).
- * The step shows in its OWN tab while that tab exists (rule 3, YAZ-3647 F1), at its zoom level (D2): a tab that shows
+ * The step shows in its OWN tab while that tab exists (rule 3, YAZ-3675 F1), at its zoom level (D2): a tab that shows
  * another page now gets the step's page back in its slot. Another tab of the page (a copy, a bullet's tab) is never
  * touched, so it keeps its own level. A preview tab that a sidebar click moved on gets its page back the same way, still
  * the preview tab (E7). Only a step whose tab is gone goes to a tab that shows its page (`tabOf`), at that tab's own
@@ -893,7 +890,7 @@ export interface UseWorkspace extends WorkspaceState {
   /** YAZ-3647 D1: step the window through its ONE Back list; no-ops at either bound. */
   back: () => void
   forward: () => void
-  /** A row of the menu of ‹ or › (YAZ-3647 E3): straight to the step with this id (F4); an id that is gone does nothing. */
+  /** A row of the menu of ‹ or › (YAZ-3647 E3): straight to the step with this id (YAZ-3678 F4); an id that is gone does nothing. */
   go: (id: number) => void
   /** Whether that step exists — the toolbar arrows' enabled state. */
   canBack: boolean

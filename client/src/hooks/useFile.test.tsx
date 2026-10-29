@@ -129,7 +129,7 @@ describe('useFile reloadable read state (YAZ-1299)', () => {
 describe('a read waits for a save that is under way (YAZ-3685 F5)', () => {
   afterEach(() => _resetRenameContinuity())
 
-  it('F5: a copy that opens while its source flushes reads the file only after that save is on disk; with no flush it reads at once', async () => {
+  it('YAZ-3685 F5: a copy that opens while its source flushes reads the file only after that save is on disk; with no flush it reads at once', async () => {
     let saved = (): void => undefined
     const off = registerRenameContinuity('/vault/note.md', { flush: () => new Promise<void>((done) => (saved = done)), capture: () => null, retire: () => undefined })
     readFile.mockResolvedValue(response('/vault/note.md', '* Day 4: Faro\n'))

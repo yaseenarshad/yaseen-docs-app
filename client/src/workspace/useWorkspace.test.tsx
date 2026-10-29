@@ -1055,7 +1055,7 @@ describe('copies: two tabs of one file (YAZ-2940)', () => {
     expect(reduceTabs({ ...s, blank: true }, { type: 'open-current', path: A })).toMatchObject({ active: 't3', blank: false })
   })
 
-  it('S8, YAZ-3647 F1: Back onto a file that copies show goes to the step\'s OWN tab (rule 3), never to a copy; the list is walked, not changed', () => {
+  it('S8, YAZ-3675 F1: Back onto a file that copies show goes to the step\'s OWN tab (rule 3), never to a copy; the list is walked, not changed', () => {
     const s = copies({ active: 't2', mounted: ['t2'], history: { steps: [step(1, 't2', '/v/c.md'), step(2, 't2', A), step(3, 't2', B)], index: 2 } })
     const back = reduceTabs(s, { type: 'back' })
     expect(back.active).toBe('t2')

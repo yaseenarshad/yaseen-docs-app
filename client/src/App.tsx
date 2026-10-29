@@ -1194,7 +1194,8 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     prevTab()
   }, [prevTab])
-  // ⌘⌥← / ⌘⌥→ (YAZ-3647 D7), as ⌃Tab: a step to another page closes the tab board.
+  // ⌘⌥← / ⌘⌥→ (YAZ-3647 D7), as ⌃Tab: a step to another page closes the tab board. The ‹ › buttons and a row of their
+  // menu (E3) close it the same way: a zoom step in one tab moves neither the tab nor the file, so the effect above cannot.
   const toBack = useCallback(() => {
     setOverview(OVERVIEW_CLOSED)
     back()
@@ -1203,6 +1204,10 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     forward()
   }, [forward])
+  const toStep = useCallback((id: number) => {
+    setOverview(OVERVIEW_CLOSED)
+    goToStep(id)
+  }, [goToStep])
   // The mouse's back and forward buttons (YAZ-3647 D7): the window's Back list, wherever the pointer is.
   useEffect(() => {
     const onMouseUp = (e: MouseEvent) => {
@@ -2973,11 +2978,11 @@ export function App() {
               onSetName={setTabName}
               canBack={canBack}
               canForward={canForward}
-              onBack={back}
-              onForward={forward}
-              backSteps={nearSteps(tabHistory, -1).map(({ step }) => ({ id: step.id, path: step.path, zoom: step.zoom }))}
-              forwardSteps={nearSteps(tabHistory, 1).map(({ step }) => ({ id: step.id, path: step.path, zoom: step.zoom }))}
-              onGoToStep={goToStep}
+              onBack={toBack}
+              onForward={toForward}
+              backSteps={nearSteps(tabHistory, -1)}
+              forwardSteps={nearSteps(tabHistory, 1)}
+              onGoToStep={toStep}
               zoomLabels={zoomLabels}
               onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
               onShowInSidebar={showInSidebar}

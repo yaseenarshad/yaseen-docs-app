@@ -483,7 +483,7 @@ describe("a bullet's own dot (YAZ-3646 D8, D9)", () => {
     expect(itemsOf(noTab.view).map((b) => b.textContent)).toEqual(['Number children'])
   })
 
-  it('F7 (YAZ-3684): a right press on a task\'s box does not tick it; a plain (left) press still does', async () => {
+  it('YAZ-3694 F7: a right press on a task\'s box does not tick it; a plain (left) press still does', async () => {
     const { view, dot } = await mountList(vi.fn())
     const press = (button: number) => {
       const box = dot('Task')
@@ -504,7 +504,7 @@ describe("a bullet's own dot (YAZ-3646 D8, D9)", () => {
     expect(checked()).toBe(true)
   })
 
-  it('F7b (YAZ-3694): on macOS a ⌃-click on a task\'s box is a right-click: it does not tick the task', async () => {
+  it('YAZ-3694 F7b: on macOS a ⌃-click on a task\'s box is a right-click: it does not tick the task', async () => {
     const { view, dot } = await mountList(vi.fn())
     const box = dot('Task')
     const ticked = () => {

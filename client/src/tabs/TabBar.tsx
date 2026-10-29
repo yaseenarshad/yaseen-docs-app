@@ -161,7 +161,7 @@ const Chevron = ({ d }: { d: string }) => (
  * (YAZ-2655): it stands outside the scroller, so it is on show however far the strip scrolled.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-/** A step of the window's Back list, as the menu of ‹ or › lists it (YAZ-3647 E3), by its id (F4): never its place, which a close can move. */
+/** A step of the window's Back list, as the menu of ‹ or › lists it (YAZ-3647 E3), by its id (YAZ-3678 F4): never its place, which a close can move. */
 export interface NavStep {
   id: number
   path: string
@@ -426,6 +426,8 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
           const isActive = !blank && id === active
           // A display name stands in for the page name (YAZ-2949 D5); every file call still takes the path.
           const label = name ?? labelOf(path)
+          // The tooltip's first line: the page, and " › bullet" when the tab is zoomed (YAZ-3647 E4).
+          const shownAt = atBullet(path, zoom)
           const cls = ['tabbar__tab']
           if (isActive) cls.push('tabbar__tab--active')
           if (id === preview) cls.push('tabbar__tab--preview')
@@ -496,7 +498,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
                 aria-selected={isActive}
                 // A display name hides the page's own name, so the tooltip gives it back (YAZ-2949 D5, S11). A zoomed tab's
                 // label stays the page name (YAZ-3646 D12); its tooltip names the bullet too (YAZ-3647 E4).
-                title={name === undefined && atBullet(path, zoom) === labelOf(path) ? path : `${atBullet(path, zoom)}\n${path}`}
+                title={name === undefined && shownAt === labelOf(path) ? path : `${shownAt}\n${path}`}
                 onClick={() => onActivate(id)}
                 // A double click keeps the preview tab (YAZ-2648 S20) and opens the name's field, as "Set display name" does (YAZ-3059 D1).
                 onDoubleClick={() => {

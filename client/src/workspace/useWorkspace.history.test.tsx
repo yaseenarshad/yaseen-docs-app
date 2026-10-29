@@ -170,15 +170,15 @@ describe('a bullet in a new tab (YAZ-3646 D11, D13)', () => {
 })
 
 describe('the menus of ‹ and › (YAZ-3647 E3)', () => {
-  it('`nearSteps`: the steps behind or ahead, the nearest first, each with its index; at most MAX_NEAR_STEPS', () => {
+  it('`nearSteps`: the steps behind or ahead, the nearest first; at most MAX_NEAR_STEPS', () => {
     let s = run(onA(), { type: 'navigate', path: B }, { type: 'navigate', path: C }, { type: 'navigate', path: D })
     s = run(s, { type: 'back' })
-    const rows = (dir: -1 | 1) => nearSteps(s.history, dir).map(({ index, step }) => `${index}:${name(step.path)}`)
+    const rows = (dir: -1 | 1) => nearSteps(s.history, dir).map((step) => `${s.history.steps.indexOf(step)}:${name(step.path)}`)
     expect([rows(-1), rows(1)]).toEqual([['1:b', '0:a'], ['3:d']])
     let long = onA()
     for (let i = 0; i < MAX_NEAR_STEPS + 5; i++) long = run(long, { type: 'navigate', path: i % 2 === 0 ? B : A })
     const behind = nearSteps(long.history, -1)
-    expect([behind.length, behind[0].index]).toEqual([MAX_NEAR_STEPS, long.history.index - 1])
+    expect([behind.length, behind[0]]).toEqual([MAX_NEAR_STEPS, long.history.steps[long.history.index - 1]])
     expect(nearSteps(long.history, 1)).toEqual([])
   })
 
@@ -211,8 +211,8 @@ describe('a step on the preview tab (YAZ-3647 E7)', () => {
   })
 })
 
-describe('checker findings (YAZ-3675, YAZ-3662, YAZ-3678)', () => {
-  it('F1: Back goes to the step\'s own tab, not to a bullet copy of the page; the copy keeps its zoom, and a drag keeps Forward', () => {
+describe('checker findings: YAZ-3675 F1 F2, YAZ-3678 F4, YAZ-3662 F6 F6b', () => {
+  it('YAZ-3675 F1: Back goes to the step\'s own tab, not to a bullet copy of the page; the copy keeps its zoom, and a drag keeps Forward', () => {
     let s = onA()
     const a = s.active!
     s = run(s, { type: 'open-zoom', id: a, zoom: 'day1:0', background: true }, { type: 'navigate', path: B })
@@ -225,7 +225,7 @@ describe('checker findings (YAZ-3675, YAZ-3662, YAZ-3678)', () => {
     expect(where(run(moved, { type: 'forward' }))).toBe('b')
   })
 
-  it('F1: a step whose tab is gone shows in a tab of its page at that tab\'s own level, and the step then names that tab', () => {
+  it('YAZ-3675 F1: a step whose tab is gone shows in a tab of its page at that tab\'s own level, and the step then names that tab', () => {
     let w = onA()
     const a = w.active!
     w = run(w, { type: 'open-zoom', id: a, zoom: 'day1:0', background: true }, { type: 'navigate', path: B })
@@ -237,7 +237,7 @@ describe('checker findings (YAZ-3675, YAZ-3662, YAZ-3678)', () => {
     expect(run(back, { type: 'move', from: 0, to: 1 }).history).toEqual(back.history)
   })
 
-  it('F2: two steps that meet after a close keep the NEWER id, under which a code tab kept its place', () => {
+  it('YAZ-3675 F2: two steps that meet after a close keep the NEWER id, under which a code tab kept its place', () => {
     let s = onA()
     const a = s.active!
     s = run(s, { type: 'open-new', path: B })
@@ -248,7 +248,7 @@ describe('checker findings (YAZ-3675, YAZ-3662, YAZ-3678)', () => {
     expect([trail(s), stepIdOf(s.history, a)]).toEqual(['[a] c', keptUnder])
   })
 
-  it('F6: a quiet new key for a bullet (its text changed) rewrites the old key in every step of that tab on that page', () => {
+  it('YAZ-3662 F6: a quiet new key for a bullet (its text changed) rewrites the old key in every step of that tab on that page', () => {
     let s = onA()
     const src = s.active!
     s = run(s, { type: 'zoom', id: src, zoom: 'lunch:1' }, { type: 'open-zoom', id: src, zoom: 'child:0' })
@@ -264,7 +264,7 @@ describe('checker findings (YAZ-3675, YAZ-3662, YAZ-3678)', () => {
     expect(trail(t)).toBe('a a@k2:0 b [a@k2:0]')
   })
 
-  it('F6b: a quiet report names the key it replaces (`from`): that key changes in the tab\'s steps of that page, and the tab follows only when it is still at that key', () => {
+  it('YAZ-3662 F6b: a quiet report names the key it replaces (`from`): that key changes in the tab\'s steps of that page, and the tab follows only when it is still at that key', () => {
     let s = onA()
     const id = s.active!
     s = run(s, { type: 'zoom', id, zoom: 'l1:0' }, { type: 'zoom', id, zoom: 'l2:0' }, { type: 'back' })
@@ -281,7 +281,7 @@ describe('checker findings (YAZ-3675, YAZ-3662, YAZ-3678)', () => {
     expect([where(away), trail(away)]).toEqual(['b', 'a a@l1x:0 a@l2x:0 [b]'])
   })
 
-  it('F4: `go` takes a step id; a row whose step a close removed goes nowhere, and the others still find their step', () => {
+  it('YAZ-3678 F4: `go` takes a step id; a row whose step a close removed goes nowhere, and the others still find their step', () => {
     let s = run(onA(), { type: 'navigate', path: B }, { type: 'open-new', path: C }, { type: 'open-new', path: D })
     const [, toB, toC] = s.history.steps
     const closed = run(s, { type: 'close', id: idOf(s, C) })

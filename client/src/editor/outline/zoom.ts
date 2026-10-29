@@ -12,9 +12,10 @@
  *    zooms to that ancestor; the first crumb, the page's title, zooms out fully. ⌘- and ⇧-click on a crumb
  *    open that level in a new tab, as on a dot; the title crumb opens the whole page (YAZ-3647 E2).
  * Zooming dispatches a metadata-only transaction (`tr.docChanged === false`), so the listener never
- * fires `markdownUpdated`, the file on disk is untouched and fold state is unaffected. Zoom is not
- * persisted: switching files remounts the editor and therefore clears it. A copy of the page only
- * STARTS at its source's level (see "Start level" below).
+ * fires `markdownUpdated`, the file on disk is untouched and fold state is unaffected. The FILE never
+ * holds the zoom: the page's TAB does (`Tab.zoom`, a zoom key), and the window stores it with the tab
+ * (YAZ-3646 D14). A page starts at its tab's level (see "Start level" below), and a rebuild from
+ * outside zooms back to the bullet while it is still there (`applyExternalMarkdown`, YAZ-3647 E1).
  *
  * The window's Back list (YAZ-3647 D2, replaces GRO-2091 A's browser history): every user-driven zoom
  * change tells the page's tab (`onZoom`), and the tab keeps the level as a zoom key and adds a Back
@@ -70,9 +71,9 @@ export interface ZoomOptions {
 interface ZoomState {
   /** Position of the zoomed list_item, or null when not zoomed. */
   itemPos: number | null
-  /** Where a user-driven zoom change goes (`ZoomOptions.onZoom`). */
+  /** Where a zoom change goes (`ZoomOptions.onZoom`): the ONE source of it, for the commands, the crumbs and the plugin view. */
   onZoom?: ZoomOptions['onZoom']
-  /** Where a crumb's ⌘- or ⇧-click goes (`ZoomOptions.onOpen`, YAZ-3647 E2). */
+  /** Where a dot's or a crumb's ⌘- or ⇧-click goes (`ZoomOptions.onOpen`, YAZ-3646 D10, YAZ-3647 E2): the one source of it too. */
   onOpen?: ZoomOptions['onOpen']
   /**
    * ⌘Z target: the level before the latest zoom change, kept while that change is still the latest
@@ -184,9 +185,9 @@ const selectionInItem = (state: EditorState, itemPos: number): boolean => {
 /**
  * Zoom into the list_item at `itemPos` (null = zoom out fully); moves the caret into it if the
  * selection was outside. Every user-driven zoom change goes to the tab's Back list (`onZoom`,
- * YAZ-3647 D2); `fromHistory` (Back, Forward) restores a level and tells no one.
+ * YAZ-3647 D2); `quiet` (Back, Forward: `zoomToKey`) restores a level and tells no one.
  */
-const zoomTo = (itemPos: ZoomLevel, { fromHistory = false, isUndo = false } = {}): Command => (state, dispatch) => {
+const zoomTo = (itemPos: ZoomLevel, { quiet = false, isUndo = false } = {}): Command => (state, dispatch) => {
   const zoom = pluginKey.getState(state)
   if (!zoom || zoom.itemPos === itemPos) return false
   if (itemPos !== null && !isListItem(state.doc.nodeAt(itemPos))) return false
@@ -196,7 +197,7 @@ const zoomTo = (itemPos: ZoomLevel, { fromHistory = false, isUndo = false } = {}
     if (itemPos !== null && !selectionInItem(state, itemPos)) tr.setSelection(Selection.near(tr.doc.resolve(itemPos + 1), 1))
     dispatch(tr.scrollIntoView())
     // A step in the window's Back list (YAZ-3647 D2). Back and Forward themselves tell no one.
-    if (!fromHistory) zoom.onZoom?.(itemPos === null ? null : zoomKeyAt(state.doc, itemPos), false, itemPos === null ? null : zoomLabelAt(state.doc, itemPos))
+    if (!quiet) zoom.onZoom?.(itemPos === null ? null : zoomKeyAt(state.doc, itemPos), false, itemPos === null ? null : zoomLabelAt(state.doc, itemPos))
   }
   return true
 }
@@ -227,7 +228,7 @@ export const undoLastZoom: Command = (state, dispatch) => {
 
 /** Back and Forward (YAZ-3647 D2): the page goes to the step's level, quietly. A key that is no longer found zooms out. */
 export const zoomToKey = (key: string | null): Command => (state, dispatch) =>
-  zoomTo(key === null ? null : itemPosForZoomKey(state.doc, key), { fromHistory: true })(state, dispatch)
+  zoomTo(key === null ? null : itemPosForZoomKey(state.doc, key), { quiet: true })(state, dispatch)
 
 /** `Mod-.`: zoom into the item at the caret. */
 const zoomIntoSelection: Command = (state, dispatch) => {
@@ -390,7 +391,7 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen }: Zo
           let timer: number | undefined
           /** The last state this view saw: on destroy, `view.state` may be the rebuilt state already. */
           let seen = editorView.state
-          /** The key the page last reported or was set to (F6b). */
+          /** The key the page last reported or was set to (YAZ-3662 F6b). */
           let lastKey = getZoomKey(seen)
           const report = (state: EditorState) => {
             window.clearTimeout(timer)
@@ -399,7 +400,7 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen }: Zo
             const from = lastKey
             lastKey = key
             // The same key: nothing to tell (typing in a child, or the text came back).
-            if (key !== from) onZoom?.(key, true, getZoomLabel(state), from)
+            if (key !== from) pluginKey.getState(state)?.onZoom?.(key, true, getZoomLabel(state), from)
           }
           const flush = (state: EditorState) => {
             if (timer !== undefined) report(state)
@@ -416,7 +417,7 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen }: Zo
               }
               seen = view.state
               const zoomed = getZoomedItemPos(view.state) !== null || getZoomedItemPos(prev) !== null
-              if (onZoom === undefined || view.state.doc === prev.doc || !zoomed) return
+              if (pluginKey.getState(view.state)?.onZoom === undefined || view.state.doc === prev.doc || !zoomed) return
               window.clearTimeout(timer)
               timer = window.setTimeout(() => report(seen), KEY_SETTLE_MS)
             },
@@ -435,8 +436,9 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen }: Zo
               if (itemPos === null) return false
               event.preventDefault()
               // ⌘-click: the bullet in a new tab behind; ⇧-click: in front (YAZ-3646 D10). A page with no tab zooms in place.
-              const key = onOpen !== undefined && (event.metaKey || event.shiftKey) ? zoomKeyAt(view.state.doc, itemPos) : null
-              if (key !== null) onOpen?.(key, event.metaKey, zoomLabelAt(view.state.doc, itemPos))
+              const open = pluginKey.getState(view.state)?.onOpen
+              const key = open !== undefined && (event.metaKey || event.shiftKey) ? zoomKeyAt(view.state.doc, itemPos) : null
+              if (key !== null) open?.(key, event.metaKey, zoomLabelAt(view.state.doc, itemPos))
               else zoomTo(itemPos)(view.state, view.dispatch)
               return true
             },

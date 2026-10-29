@@ -355,9 +355,9 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           const onMouseUp = (e: MouseEvent) => {
             if (rightGrab(e)) e.stopImmediatePropagation()
           }
-          // A right press on a task's box ticks nothing (YAZ-3684 F7). Crepe's list item toggles the task on `pointerdown`
+          // A right press on a task's box ticks nothing (YAZ-3694 F7). Crepe's list item toggles the task on `pointerdown`
           // for every button; stopped here, at document capture, before it gets there. No preventDefault: the mousedown and
-          // the contextmenu still come. On macOS a ⌃-click is a right-click too (F7b). Only a plain (left) press ticks the task.
+          // the contextmenu still come. On macOS a ⌃-click is a right-click too (YAZ-3694 F7b). Only a plain (left) press ticks the task.
           const onPointerDown = (e: MouseEvent) => {
             const right = e.button !== 0 || (e.ctrlKey && /Mac/.test(navigator.platform))
             if (right && isTaskBox(view, e.target)) e.stopImmediatePropagation()

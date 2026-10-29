@@ -721,7 +721,7 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
     const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu .ctx-menu__item')]
     const press = (el: HTMLElement, type: string, init: MouseEventInit = {}) => act(() => void el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init })))
 
-    it('a right-click on ‹ lists the steps behind, the nearest first: the page, and " › bullet" when its text is known; a row goes straight to its step, by id (F4)', () => {
+    it('a right-click on ‹ lists the steps behind, the nearest first: the page, and " › bullet" when its text is known; a row goes straight to its step, by id (YAZ-3678 F4)', () => {
       const onBack = vi.fn()
       const onGoToStep = vi.fn()
       const el = mount({ ...tabs, titles, canBack: true, canForward: false, onBack, onForward: vi.fn(), backSteps, onGoToStep, zoomLabels })

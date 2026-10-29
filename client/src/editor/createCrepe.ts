@@ -511,8 +511,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // Numbers are manual-only (YAZ-793/YAZ-1329): only the explicit block-handle command creates
   // ordered children. Typing, slash-menu and keyboard conversion paths are all absent.
   void crepe.editor.remove([wrapInOrderedListInputRule, ...orderedListKeymap])
-  // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), what it copies (YAZ-3653),
-  // its children (Number children), then a line's pickers (YAZ-3164 D3). A new row joins its group.
+  // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its children (Number children),
+  // then a line's pickers (YAZ-3164 D3). A new row joins its group.
   crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...numberChildrenRow(view, target, ctx), ...lineRows(view, target, ctx)]))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs

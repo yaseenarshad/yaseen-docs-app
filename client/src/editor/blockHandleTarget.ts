@@ -22,7 +22,7 @@ export interface HandleTarget {
   inside: number
 }
 
-/** A task's checkbox in this editor (YAZ-3684 F7): the `.label-wrapper` of a task item. Another editor's box is not this one's. */
+/** A task's checkbox in this editor (YAZ-3694 F7): the `.label-wrapper` of a task item. Another editor's box is not this one's. */
 export function isTaskBox(view: EditorView, t: EventTarget | null): boolean {
   const box = t instanceof Element ? t.closest('.label-wrapper') : null
   return box !== null && view.dom.contains(box) && box.querySelector('.label.checked, .label.unchecked') !== null
@@ -34,7 +34,7 @@ export function isTaskBox(view: EditorView, t: EventTarget | null): boolean {
  */
 export function bulletDotTarget(view: EditorView, t: EventTarget | null): HandleTarget | null {
   const dot = t instanceof Element ? t.closest('.label-wrapper') : null
-  if (dot === null || !view.dom.contains(dot) || dot.querySelector('.label.checked, .label.unchecked') !== null) return null
+  if (dot === null || !view.dom.contains(dot) || isTaskBox(view, dot)) return null
   // As the handle's probe gives it for a hovered item: the position BEFORE the list_item (`nearestListItem`).
   const $pos = view.state.doc.resolve(view.posAtDOM(dot, 0))
   if (!isListItem($pos.parent)) return null

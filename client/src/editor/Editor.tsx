@@ -522,6 +522,19 @@ function CrepeHost({
   zoomKeyRef.current = zoomKey
   const tabRef = useRef({ tabId, onZoom, onOpenBullet })
   tabRef.current = { tabId, onZoom, onOpenBullet }
+  // A zoom of this page, to its tab (YAZ-3647 D2). A page with no tab (the right panel, a review) tells no one.
+  // A quiet report names the key it replaces on this page (YAZ-3662 F6b): it may come after a Back, or as the page goes.
+  const reportZoom = useCallback((zoom: string | null, quiet: boolean, label: string | null, from?: string | null) => {
+    const { tabId: id, onZoom: tell } = tabRef.current
+    if (id !== undefined) tell?.(id, zoom, quiet, label, from === undefined ? undefined : { path: file.path, key: from })
+  }, [file.path])
+  // The tab's key must match what the page shows (YAZ-3676 F3): after the page moved by itself (a start level, a
+  // reload, a key Back could not find), the tab learns the real level quietly, as a change from `from`, the key it has.
+  // The same level tells nothing, unless `always` (the mount report, which also teaches the bullet's label, E3).
+  const tellRealZoom = useCallback((crepe: ReturnType<typeof createCrepe>, from: string | null, always = false) => {
+    const now = getZoomKeyOf(crepe)
+    if (always || now !== from) reportZoom(now, true, getZoomLabelOf(crepe), from)
+  }, [reportZoom])
   const autosave = useAutosave(file.path)
   const { attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts } = autosave
   // The user's own edit keeps a preview tab (YAZ-2648 D2), and the signal is the note turning
@@ -616,18 +629,6 @@ function CrepeHost({
     const { frontmatter, body } = splitFrontmatter(file.content)
     // A copied page starts with its source's LIVE folds (YAZ-2951 S2), never the ones another copy stored last.
     const start = startViewRef.current
-    // A zoom of this page, to its tab (YAZ-3647 D2). A page with no tab (the right panel, a review) tells no one.
-    // A quiet report names the key it replaces on this page (YAZ-3662 F6b): it may come after a Back, or as the page goes.
-    const reportZoom = (zoom: string | null, quiet: boolean, label: string | null, from?: string | null) => {
-      const { tabId: id, onZoom: tell } = tabRef.current
-      if (id !== undefined) tell?.(id, zoom, quiet, label, from === undefined ? undefined : { path: file.path, key: from })
-    }
-    // The tab's key must match what the page shows (YAZ-3676 F3): after a path that moves the page by itself, the
-    // tab learns the real level, quietly. The same level tells nothing.
-    const reportRealZoom = () => {
-      const now = getZoomKeyOf(crepe)
-      if (now !== (zoomKeyRef.current ?? null)) reportZoom(now, true, getZoomLabelOf(crepe), zoomKeyRef.current ?? null)
-    }
     const startFolds = start?.folds ?? storage.getFolds(root, file.path)
     let bulletFoldKeys: readonly string[] = startFolds.filter((k) => !k.startsWith('h:'))
     let headingFoldKeys: readonly string[] = startFolds.filter((k) => k.startsWith('h:'))
@@ -757,7 +758,7 @@ function CrepeHost({
       // Its tab learns the level it really started at: the bullet may be gone, and then the page shows whole (YAZ-3647 D2).
       if (zoomKeyRef.current ?? start?.zoomKey) {
         moveCaretIntoZoom(crepe)
-        reportZoom(getZoomKeyOf(crepe), true, getZoomLabelOf(crepe), zoomKeyRef.current ?? null)
+        tellRealZoom(crepe, zoomKeyRef.current ?? null, true)
       }
       // The mount's caret grab (⚡ YAZ-888) YIELDS to the sidebar walk (YAZ-921): a page opened
       // while focus stands on a tree row is a PREVIEW — stealing the caret would strand the
@@ -791,7 +792,7 @@ function CrepeHost({
       const split = splitFrontmatter(fresh.content)
       applyExternalMarkdown(crepe, split.body)
       // A rebuild makes new plugin views, so the zoom's settle timer is gone: a bullet the rewrite removed is told here (YAZ-3676 F3).
-      reportRealZoom()
+      tellRealZoom(crepe, zoomKeyRef.current ?? null)
       markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter, split.body)
       setDisk(fresh.content)
       diskLanded()
@@ -838,7 +839,7 @@ function CrepeHost({
       offTwin()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel, linkHover])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel, linkHover, reportZoom, tellRealZoom])
 
   /**
    * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1): pending typing saves first
@@ -895,10 +896,8 @@ function CrepeHost({
   useEffect(() => {
     if (readyCrepe === null || crepeRef.current !== readyCrepe || zoomKey === undefined) return
     zoomPageTo(readyCrepe, zoomKey)
-    const now = getZoomKeyOf(readyCrepe)
-    const { tabId: id, onZoom: tell } = tabRef.current
-    if (now !== zoomKey && id !== undefined) tell?.(id, now, true, getZoomLabelOf(readyCrepe), { path: file.path, key: zoomKey })
-  }, [readyCrepe, zoomKey, file.path])
+    tellRealZoom(readyCrepe, zoomKey)
+  }, [readyCrepe, zoomKey, tellRealZoom])
   useEffect(() => {
     const crepe = readyCrepe
     if (!lineNumbersOn || crepe === null) return

@@ -2253,7 +2253,7 @@ describe('the tab learns the level the page really shows (YAZ-3676 F3)', () => {
     _resetRenameContinuity()
   })
 
-  it('F3: Back to a bullet that is no longer found shows the whole page, and the tab learns null quietly; a found bullet tells nothing', async () => {
+  it('YAZ-3676 F3: Back to a bullet that is no longer found shows the whole page, and the tab learns null quietly; a found bullet tells nothing', async () => {
     await open('day1:0')
     onZoom.mockReset() // the mount report (the copy's start level)
     await act(async () => root?.render(at('gone:0')))
@@ -2263,7 +2263,7 @@ describe('the tab learns the level the page really shows (YAZ-3676 F3)', () => {
     expect([shown, onZoom.mock.calls]).toEqual(['day1:0', []])
   })
 
-  it('F3: a rebuild that removed the bullet tells the tab null quietly; a rebuild that kept it (E1) tells nothing', async () => {
+  it('YAZ-3676 F3: a rebuild that removed the bullet tells the tab null quietly; a rebuild that kept it (E1) tells nothing', async () => {
     await open('day1:0')
     onZoom.mockReset()
     applyExternalMock.mockImplementationOnce((fake, md) => {
@@ -2287,7 +2287,7 @@ describe('the tab learns the level the page really shows (YAZ-3676 F3)', () => {
     expect(onZoom).not.toHaveBeenCalled()
   })
 
-  it('F3: a rename that carries unsaved text keeps a zoom that is still valid: the page zooms back, and the tab hears its real key', async () => {
+  it('YAZ-3676 F3: a rename that carries unsaved text keeps a zoom that is still valid: the page zooms back, and the tab hears its real key', async () => {
     registerRenameContinuity('/vault/old.md', { flush: async () => undefined, capture: () => ({ frontmatter: FM, body: '# Hello\n\nunsaved text\n' }), retire: noop })
     carryEditorAcrossRename('/vault/old.md', PATH)
     vi.mocked(moveCaretIntoZoom).mockImplementation(() => true)

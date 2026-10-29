@@ -94,7 +94,7 @@ const flushing = new Map<string, Promise<void>>()
 /** Flush every editor open at `path` — the pre-rename step (a), the pre-rewrite step, and a switch between two copies. */
 export function flushRenamedPath(path: string): Promise<void> {
   const done = Promise.all(handlesAt(path).map((handle) => handle.flush())).then(() => undefined)
-  // Recorded until it settles, so a copy that opens now reads the text it is saving, not the older file (F5).
+  // Recorded until it settles, so a copy that opens now reads the text it is saving, not the older file (YAZ-3685 F5).
   const all = Promise.all([flushing.get(path), done]).then(noop, noop)
   flushing.set(path, all)
   void all.then(() => {
