@@ -4,6 +4,8 @@
  *   1 The calendar button in the sidebar footer makes today's note in the second vault's Daily, from its template, and
  *     opens it (D5, D6, D15)
  *   2 Two more presses, one of them File › Open Today's Daily Note, open the same note: still one file (D5, D11)
+ *   3 "Make a folder for each day" on, in the middle of the day: the note made before it opens (D18); with that note
+ *     deleted on disk, the next press makes the day folder and the note in it, from the template (D9, D16)
  * The menu item is clicked by id with no focus step (`clickMenuItemQuietly`): a hidden run never takes the focus.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
@@ -62,4 +64,21 @@ test("two more presses, one from File › Open Today's Daily Note, open the same
   await clickMenuItemQuietly(app, 'menu.file.daily-note')
   await expect(activeTab(win)).toHaveText(new RegExp(today))
   expect((await readdir(path.join(second, 'Daily'))).sort()).toEqual(['.template.md', `${today}.md`])
+})
+
+test('day folders on: the note made before the switch still opens; with that note gone, the day folder and the note are made', async () => {
+  // The settings write a window makes (`state.setSettings`); every window hears it.
+  await win.evaluate(async () => {
+    const { settings } = await window.yaseenDocs.state.get()
+    await window.yaseenDocs.state.setSettings({ ...settings, dailyNoteDayFolder: true })
+  })
+  await win.locator('.sidebar__daily').click()
+  await expect(activeTab(win)).toHaveText(new RegExp(today))
+  expect((await readdir(path.join(second, 'Daily'))).sort()).toEqual(['.template.md', `${today}.md`])
+  await rm(path.join(second, 'Daily', `${today}.md`))
+  await expect(fileRow(win, today)).toHaveCount(0)
+  await win.locator('.sidebar__daily').click()
+  await expect(fileRow(win, today)).toBeVisible()
+  expect((await readdir(path.join(second, 'Daily'))).sort()).toEqual(['.template.md', today])
+  expect(await readFile(path.join(second, 'Daily', today, `${today}.md`), 'utf8')).toContain('## Top 3 today')
 })

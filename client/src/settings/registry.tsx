@@ -814,7 +814,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             label: 'Daily notes',
             hint: ({ settings }) => {
               const key = menuKey('dailyNote', settings)
-              return `One note for each day. The calendar button beside the cog opens today's note, and makes it first when today has none. So does Open Today's Daily Note${key === null ? '' : ` (${key})`} in the File menu.`
+              return `One note for each day. The calendar button after the % at the bottom of the sidebar opens today's note, and makes it first when today has none. So does Open Today's Daily Note${key === null ? '' : ` (${key})`} in the File menu.`
             },
             keywords: ['daily', 'journal', 'today', 'calendar', 'date', 'cmd d'],
             render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.dailyNotes} onChange={(dailyNotes) => onChange({ ...settings, dailyNotes })} ariaLabel="Daily notes" />,

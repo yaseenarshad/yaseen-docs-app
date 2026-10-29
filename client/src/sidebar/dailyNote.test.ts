@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { dailyNoteFormatProblem, dailyNoteName } from '@shared/dailyNote'
 import type { IndexRecord, TreeNode } from '@shared/types'
-import { dailyNoteVault, findDailyNote } from './dailyNote'
+import { dailyNoteVault, findDailyNote, todaysNote } from './dailyNote'
 
 const FRI = new Date(2026, 9, 16)
 const record = (path: string, title: string): IndexRecord => {
@@ -67,5 +67,27 @@ describe('dailyNoteVault (D2, amended)', () => {
     expect(dailyNoteVault([B, A], 'daily')).toBe('/a')
     expect(dailyNoteVault([A, B], 'Gone')).toBeNull()
     expect(dailyNoteVault([B, A], '')).toBe('/b')
+  })
+})
+
+describe('todaysNote (YAZ-3642: the index is behind the tree for about 2 s)', () => {
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const STALE = [record('/v/daily/2026-10-16.md', '2026-10-16')]
+
+  it('a note the index still holds but the tree does not (deleted a moment ago) is not today\'s: it is made again (D16)', () => {
+    expect(todaysNote({ records: STALE, tree: [dir('/v/daily')], folder: 'daily', title: '2026-10-16', dayFolder: false })).toBeNull()
+    expect(todaysNote({ records: STALE, tree: [dir('/v/daily', [file('/v/daily/2026-10-16.md')])], folder: 'daily', title: '2026-10-16', dayFolder: false })).toBe('/v/daily/2026-10-16.md')
+  })
+
+  it('the note made a moment ago, before the index has it, is today\'s in either layout (D18)', () => {
+    const tree = [dir('/v/daily', [file('/v/daily/2026-10-16.md')])]
+    expect(todaysNote({ records: [], tree, folder: 'daily', title: '2026-10-16', dayFolder: true, made: '/v/daily/2026-10-16.md' })).toBe('/v/daily/2026-10-16.md')
+    // Deleted since: made again.
+    expect(todaysNote({ records: [], tree: [dir('/v/daily')], folder: 'daily', title: '2026-10-16', dayFolder: true, made: '/v/daily/2026-10-16.md' })).toBeNull()
+  })
+
+  it('a style with a space at either end finds the note the index titled without it (YAZ-3643)', () => {
+    const tree = [dir('/v/daily', [file('/v/daily/16-dn-2.md')])]
+    expect(todaysNote({ records: [record('/v/daily/16-dn-2.md', '16')], tree, folder: 'daily', title: ' 16 ', dayFolder: false })).toBe('/v/daily/16-dn-2.md')
   })
 })

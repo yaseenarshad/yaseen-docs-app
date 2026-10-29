@@ -61,7 +61,7 @@ import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
 import { dailyNoteName } from '@shared/dailyNote'
-import { dailyNoteVault, findDailyNote, makeDailyNote } from './sidebar/dailyNote'
+import { dailyNoteVault, makeDailyNote, todaysNote } from './sidebar/dailyNote'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
@@ -923,18 +923,19 @@ export function App() {
   const openDailyNote = useCallback(() => {
     const { vaults, settings: now } = placeInputs.current
     if (vaults.length === 0) return
-    const title = dailyNoteName(now.dailyNoteFormat, new Date())
+    const title = dailyNoteName(now.dailyNoteFormat, new Date()).trim()
     void dailyVault(vaults, now.dailyNoteFolder)
       .then(({ vault, tree }) => {
         const index = scopeOf(vault).wikilinks
         // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
         if (index.resolve === null) throw new Error('the vault index is still loading — try again in a moment')
-        const found = findDailyNote(index.records, now.dailyNoteFolder, title, now.dailyNoteDayFolder)
+        // Either layout: the key leaves the layout out, so a switch in the middle of a day finds the note made before it (D18).
+        const key = [vault, now.dailyNoteFolder, title].join('\n')
+        const held = dailyMaking.current?.key === key ? dailyMaking.current : null
+        const found = todaysNote({ records: index.records, tree, folder: now.dailyNoteFolder, title, dayFolder: now.dailyNoteDayFolder, made: held?.path })
         if (found !== null) return found
-        const key = [vault, now.dailyNoteFolder, String(now.dailyNoteDayFolder), title].join('\n')
-        // The one made stands only while its file does: one deleted since (its day folder too) is made again.
-        const held = dailyMaking.current
-        if (held?.key !== key || (held.path !== undefined && !treeHasPath(tree, held.path))) {
+        // One note at a time for a key: a press while it is made waits for it. Made but gone from the tree: made again (D16).
+        if (held === null || held.path !== undefined) {
           // A fresh tree before the row is shown: the sidebar hears it (`onTree`), so the new note's row is there to show.
           const note = makeDailyNote(vault, now, title, index.ids).then(async (path) => {
             await fetchTree(vault)

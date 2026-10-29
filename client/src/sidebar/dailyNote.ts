@@ -7,7 +7,7 @@
 import { kebabTitle } from '@shared/noteName'
 import type { IndexRecord, SettingsState, TreeNode } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
-import { findDirNode } from '../lib/treeState'
+import { findDirNode, findNode } from '../lib/treeState'
 import { createNote, folderPath } from '../views/scaffold'
 import { plainEntryName } from './createEntry'
 import { placePath } from './goToPlace'
@@ -31,6 +31,21 @@ export function findDailyNote(records: readonly IndexRecord[], folder: string, t
   }
   const [first, then] = dayFolder ? [inDay, flat] : [flat, inDay]
   return (records.find((r) => r.title === title && first(r.folder)) ?? records.find((r) => r.title === title && then(r.folder)))?.path ?? null
+}
+
+/**
+ * Today's note, or null when it must be made (D5). The vault index is the only place that knows a note's title, but
+ * it hears of a change about 2 s after the sidebar's tree does (YAZ-3642). So the tree has the last word: a record of a
+ * file the tree no longer holds is a note deleted a moment ago (D16), and `made`, the note this window made for this
+ * vault, folder and name, stands in either layout while the tree holds it, before the index has it (D18). The name is
+ * trimmed as the index trims a title (YAZ-3643).
+ */
+export function todaysNote({ records, tree, folder, title, dayFolder, made }: { records: readonly IndexRecord[]; tree: readonly TreeNode[]; folder: string; title: string; dayFolder: boolean; made?: string }): string | null {
+  const held = (path: string) => findNode(tree, path) !== null
+  if (made !== undefined && held(made)) return made
+  const name = title.trim()
+  // Only the records of this name are asked of the tree: a few, not the vault.
+  return findDailyNote(records.filter((r) => r.title === name && held(r.path)), folder, name, dayFolder)
 }
 
 /**

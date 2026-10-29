@@ -216,6 +216,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   // ⌘N and ⌘D (YAZ-3556 D1).
   const menuNewItem = new Set<() => void>()
   const menuGoTo = new Set<() => void>()
+  // File › Open Today's Daily Note (YAZ-3607 D11).
+  const menuDailyNote = new Set<() => void>()
   const menuZoom = new Set<(step: ZoomStep) => void>()
   const menuWhatsNew = new Set<() => void>()
   // The board gestures (YAZ-3037): Export Excalidraw Drawing… is the one App routes itself during a review.
@@ -361,6 +363,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onNewWindow: menuSub(menuNewWindow),
       onNewItem: menuSub(menuNewItem),
       onGoTo: menuSub(menuGoTo),
+      onDailyNote: menuSub(menuDailyNote),
       onKeySheet: menuSub(new Set()),
       onZoom: vi.fn((l: (step: ZoomStep) => void) => {
         menuZoom.add(l)
@@ -524,6 +527,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitNewWindow: () => menuNewWindow.forEach((l) => l()),
     emitNewItem: () => menuNewItem.forEach((l) => l()),
     emitGoTo: () => menuGoTo.forEach((l) => l()),
+    emitDailyNote: () => menuDailyNote.forEach((l) => l()),
     emitWhatsNew: () => menuWhatsNew.forEach((l) => l()),
     emitZoom: (step: ZoomStep) => menuZoom.forEach((l) => l(step)),
     emitExportDrawing: () => menuExportDrawing.forEach((l) => l()),
