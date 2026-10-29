@@ -302,6 +302,8 @@ app.whenReady().then(() => {
   registerClipboardIpc(manager, {
     target: menuTarget,
     writeText: (text) => clipboard.writeText(text),
+    write: (data) => clipboard.write(data),
+    readText: () => clipboard.readText(),
     rendererUrl: process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html',
   })
   const handlers = createMenuHandlers(manager, {

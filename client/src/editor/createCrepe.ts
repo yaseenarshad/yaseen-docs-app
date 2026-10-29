@@ -169,6 +169,7 @@
  */
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { codeTheme } from './codeTheme'
 import { keymapRef, type ToolbarItem } from '@milkdown/crepe/feature/toolbar'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
@@ -218,7 +219,7 @@ import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
-import { clipboardCopyOut } from './clipboardCopyOut'
+import { clipboardCopyOut, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
 import { clipboardPaste } from './clipboardPaste'
 import { guideLines } from './outline/guideLines'
 import { numberChildrenRow } from './outline/numberChildrenRow'
@@ -292,6 +293,8 @@ export interface CreateCrepeOptions {
    * that open next (`noteKeys.ts`). Absent = the defaults.
    */
   hotkeys?: HotkeyOverrides
+  /** Copy as › Without folded lines' toast (YAZ-3653): how many folded lines the copy left out. Absent → no toast. */
+  onCopyNotice?: (text: string) => void
 }
 
 /** An `Hn` / `T` glyph for the toolbar, drawn as text — the label IS the icon. */
@@ -478,6 +481,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // when the host gave none) so the paste handler can always read it and simply decline.
   crepe.editor.config((ctx) => {
     ctx.inject(imageOptionsCtx, opts.image ?? null)
+    ctx.inject(copyNoticeCtx, opts.onCopyNotice ?? null)
   })
   // The note keys (YAZ-3564 K4): the user's changes for the app's keymaps, and Milkdown's keymap slices set from them,
   // before any keymap is read.
@@ -491,6 +495,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(outlinePaste)
   crepe.editor.use(clipboardPaste)
   crepe.editor.use(clipboardCopyOut)
+  crepe.editor.use(copyVisibleHotkey)
   crepe.editor.use(blockHandleGate)
   // Numbers are manual-only (YAZ-793/YAZ-1329): only the explicit block-handle command creates
   // ordered children. Typing, slash-menu and keyboard conversion paths are all absent.
@@ -560,6 +565,9 @@ export function setMarkdown(crepe: Crepe, markdown: string): void {
     if (hadFocus) view.focus()
   })
 }
+
+/** The note's ProseMirror view, for what lives beside the editor and acts on it: the note's right-click menu (YAZ-3653). */
+export const editorViewOf = (crepe: Crepe): EditorView => crepe.editor.action((ctx) => ctx.get(editorViewCtx))
 
 /** Move keyboard focus into the document (e.g. right after opening a file from the sidebar). */
 export function focusEditor(crepe: Crepe): void {

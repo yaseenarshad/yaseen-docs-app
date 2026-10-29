@@ -6,7 +6,7 @@
  * lives in `main/index.ts`.
  */
 import type { MenuItemConstructorOptions } from 'electron'
-import { keyedVaults, type AppState, type ClipboardPasteRequest, type FileKind, type KeyedVault, type RecentRoots, type ZoomStep } from '@shared/types'
+import { keyedVaults, type AppState, type ClipboardPasteRequest, type CopyAsMode, type FileKind, type KeyedVault, type RecentRoots, type ZoomStep } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { appKeyId, keyFor, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { keyRow, stepsAside, type HotkeyAside, type KeyScope } from '@shared/keys'
@@ -17,7 +17,7 @@ import type { WindowManager } from './windows'
 export const HELP_URL = 'https://github.com/yaseenarshad/yaseen-docs-app#readme'
 
 export interface MenuHandlers {
-  copyAs(mode: 'plain' | 'markdown'): void
+  copyAs(mode: CopyAsMode): void
   pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** File › New… (⌘N, YAZ-3556 D1): the focused window's renderer opens its New… box. */
   newItem(): void
@@ -314,6 +314,8 @@ function copyAsMenu(copyAs: MenuHandlers['copyAs']): MenuItemConstructorOptions 
     submenu: [
       { id: 'menu.edit.copy-plain', label: 'Plain text', click: () => copyAs('plain') },
       { id: 'menu.edit.copy-markdown', label: 'Markdown', click: () => copyAs('markdown') },
+      { type: 'separator' },
+      { id: 'menu.edit.copy-visible', label: 'Without folded lines', click: () => copyAs('visible') },
     ],
   }
 }
@@ -329,7 +331,7 @@ function pasteAsMenu(pasteAs: MenuHandlers['pasteAs'], accelerator = false): Men
 }
 
 export interface ContextMenuActions {
-  copyAs(mode: 'plain' | 'markdown'): void
+  copyAs(mode: CopyAsMode): void
   pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** Swap the misspelled word under the cursor for the suggestion the user picked. */
   replace(word: string): void
