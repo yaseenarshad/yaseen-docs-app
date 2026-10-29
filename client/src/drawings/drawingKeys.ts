@@ -79,7 +79,7 @@ const chords = (keys: readonly string[]): EngineKeyChord[] => keys.flatMap((k) =
 /**
  * Whether an App command the user can change holds `key` on a drawing (YAZ-3564 K3, K9): the menu runs it, so the
  * engine must let the key go. The page sees a key before the menu and the engine takes every key it knows, so a key
- * it kept would never reach the menu (⌘D with Go to your place's switch off). Code (`appCommandOf`) and draw.io
+ * it kept would never reach the menu (⌘D with Show in sidebar's switch off). Code (`appCommandOf`) and draw.io
  * (`menuChords`) let these keys go the same way. The fixed menu keys (the zoom, the board items) stay the engine's.
  */
 const menuTakes = (row: KeyRow, key: string, overrides: HotkeyOverrides | undefined, aside: HotkeyAside | undefined): boolean =>

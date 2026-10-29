@@ -496,6 +496,10 @@ describe('createStore: loading', () => {
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Alt+J', copyPath: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Alt+J' })
     // An old change that is the default now goes (YAZ-3564 D10: Toggle sidebar's ⌘⇧B), so the page shows no Reset for it.
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { toggleSidebar: 'CmdOrCtrl+Shift+B', search: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Alt+J' })
+    // The tabs' picks (YAZ-3564): per tab; an old one-switch entry becomes its tabs; an unknown row, tab or value goes. The IPC boundary takes only the per-tab form.
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo': false, 'app.search@code': true, 'app.nope@code': true, 'app.search@note': true, 'app.goTo@drawing': 'no' } as never }).hotkeysAside).toEqual({ 'app.goTo@drawing': false, 'app.goTo@diagram': false, 'app.goTo@code': false, 'app.search@code': true })
+    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo@drawing': false } })).toBe(true)
+    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo': false } })).toBe(false)
     // Dropping one change can uncover the next clash: Tab overview's ⌘⇧M comes back, so Search the vault's ⌘⇧M goes too.
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+M', copyPath: 'CmdOrCtrl+Alt+J', tabOverview: 'CmdOrCtrl+Alt+J' } }).hotkeys).toEqual({ 'app.copyPath': 'CmdOrCtrl+Alt+J' })
     // A move (D6) is no clash: the key left New Files window, which has "No key" now.

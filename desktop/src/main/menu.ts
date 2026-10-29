@@ -21,7 +21,7 @@ export interface MenuHandlers {
   pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** File › New… (⌘N, YAZ-3556 D1): the focused window's renderer opens its New… box. */
   newItem(): void
-  /** File › Go to Your Place (⌘D, YAZ-3556 D1): the focused window's renderer shows the place of `settings.goTo`. */
+  /** File › Show in Sidebar (⌘D, YAZ-3556 D1): the focused window's renderer shows the place of `settings.goTo`. */
   goTo(): void
   /** File › Open Today's Daily Note (YAZ-3607 D11): the focused window's renderer opens today's daily note, made first when today has none. */
   dailyNote(): void
@@ -196,8 +196,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
         // ⌘K focuses the sidebar's search bar (D4, YAZ-739 amended): the renderer owns the bar,
         // so the gesture goes to the focused window's renderer — un-collapsing the sidebar first.
         { id: 'menu.file.search', label: 'Search Vault', ...key('search'), click: () => handlers.search() },
-        // ⌘D (YAZ-3556 D1, D9): the place of Settings › Sidebar › Go to. It steps aside on a drawing, a diagram and code (YAZ-3564 K9).
-        { id: 'menu.file.go-to', label: 'Go to Your Place', ...key('goTo'), click: () => handlers.goTo() },
+        // ⌘D (YAZ-3556 D1, D9): the place of Settings › Sidebar › Show in sidebar. Drawings, diagrams and code keep their own ⌘D by default (YAZ-3564 K9: a pick per tab).
+        { id: 'menu.file.go-to', label: 'Show in Sidebar', ...key('goTo'), click: () => handlers.goTo() },
         // YAZ-3607 D11: a hidden item keeps no key, so with Daily notes off its key is free for the page.
         { id: 'menu.file.daily-note', label: "Open Today's Daily Note", visible: dailyNotes, ...(dailyNotes ? key('dailyNote') : {}), click: () => handlers.dailyNote() },
         { type: 'separator' },

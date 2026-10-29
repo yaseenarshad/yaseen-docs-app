@@ -90,9 +90,12 @@ describe('settingCandidates', () => {
     ])
   })
 
-  it('Hotkeys: the changeable commands head Window, then one row per built-in key, the Mac\'s keys, and Reset all — every id unique (YAZ-3397 D5, D8)', () => {
+  it('Hotkeys: the colours, then one card per key with its rows (YAZ-3564), every App command among them, the Mac\'s keys, and Reset all — every id unique (YAZ-3397 D5, D8)', () => {
     const rows = hotkeyRows()
-    expect(rows.slice(0, 16)).toEqual(['newTab', 'newWindow', 'newFilesWindow', 'newItem', 'goTo', 'closeTab', 'closeWindow', 'switchVault', 'openFolder', 'search', 'settings', 'toggleSidebar', 'copyPath', 'tabOverview', 'nextTab', 'prevTab'].map((id) => `hotkey-${id}`))
+    expect(rows[0]).toBe('hotkeys-legend')
+    // The shared keys a pick settles come first: ⌘D's card, then ⌘K's.
+    expect(rows.slice(1, 6)).toEqual(['hotkey-goTo', 'hotkey-drawing-duplicate', 'hotkey-diagram-duplicate', 'hotkey-code-addSelectionToNextFindMatch', 'hotkey-search'])
+    for (const id of ['newTab', 'newWindow', 'newFilesWindow', 'newItem', 'goTo', 'closeTab', 'closeWindow', 'switchVault', 'openFolder', 'search', 'settings', 'toggleSidebar', 'copyPath', 'tabOverview', 'nextTab', 'prevTab']) expect(rows).toContain(`hotkey-${id}`)
     expect(rows).toContain('hotkey-note-toc')
     expect(rows).toContain('hotkey-macos-spotlight')
     expect(rows[rows.length - 1]).toBe('hotkeys-reset-all')
@@ -150,7 +153,7 @@ describe('searchSettings', () => {
   it('matches on a keyword the label does not contain', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'system'))).toEqual(['theme'])
     // "dark" is also the draw.io row's word (YAZ-3037), and draw.io's own key for its dark colours (YAZ-3564).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-drawing-toggleTheme', 'hotkey-diagram-adaptiveColors', 'theme', 'diagramDarkColors'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme', 'theme', 'diagramDarkColors'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'readable line'))).toEqual(['contentWidth'])
     // The sounds of Settings › Notifications (YAZ-3303) say "the Trash" in their hints.
     // "trash" is also the word of ⌘⌫ in the Window hotkeys (YAZ-3272 D20).
@@ -182,7 +185,7 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'level lines'))).toEqual(['sidebarLines', 'tocLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'hierarchy'))).toEqual(['sidebarLines', 'tocLines'])
     // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['hotkey-diagram-outline', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-drawing-colors', 'hotkey-diagram-colourOther'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['hotkey-diagram-outline', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-diagram-colourOther', 'hotkey-drawing-colors'])
     // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['sidebarLines', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403).

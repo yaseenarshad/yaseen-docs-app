@@ -30,8 +30,8 @@ it("lists a drawing's keys with the user's changes, leaves out a blocked one, an
   // ⌘K is Search the vault's on a drawing: Add link never fires, so the sheet does not offer it.
   expect(rows().some((r) => r.endsWith('Add link'))).toBe(false)
   expect(rows()).toContain('⌘K Search the vault')
-  // Go to your place lets drawings keep ⌘D (K9): it is no App key on a drawing.
-  expect(rows().some((r) => r.endsWith('Go to your place'))).toBe(false)
+  // Show in sidebar lets drawings keep ⌘D (K9): it is no App key on a drawing.
+  expect(rows().some((r) => r.endsWith('Show in sidebar'))).toBe(false)
 })
 
 it('Esc closes it; ? on a drawing asks for it through one request', () => {

@@ -19,7 +19,7 @@ import type { TextFormatting } from '@shared/textFormatting'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
 import { idsAskMessage, idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
 import { HOTKEYS_SECTION } from './hotkeysSection'
-import { SETTINGS_SECTIONS } from './registry'
+import { groupsOf, SETTINGS_SECTIONS, type SettingsCtx } from './registry'
 import { SettingsDialog } from './SettingsDialog'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -150,7 +150,10 @@ const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefaul
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
  */
-const HOTKEY_ROWS = HOTKEYS_SECTION.groups.flatMap((g) => g.items.map((i) => i.id)).filter((id) => !id.startsWith('hotkey-macos-') && id !== 'hotkeys-reset-all')
+/** The Hotkeys page's rows as the default keys card them (YAZ-3564), without the Mac's (they wait for main) and Reset all (no change). */
+const HOTKEY_ROWS = groupsOf(HOTKEYS_SECTION, { settings: DEFAULT_SETTINGS, onChange: () => undefined } as SettingsCtx)
+  .flatMap((g) => g.items.map((i) => i.id))
+  .filter((id) => !id.startsWith('hotkey-macos-') && id !== 'hotkeys-reset-all')
 const THREADING_HINT = 'Guide lines that connect nested bullets.'
 const TEXT_FORMATTING_HINT = 'How text looks in every note of this vault.'
 const TOC_HINT = 'The headings or the bullets of a note, at its right edge.'
@@ -342,7 +345,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
 
     // Sidebar (YAZ-3440 D7): its four groups; the Icon rules are a setting, so they need no vault (D9). Go to is ⌘D's place (YAZ-3556 D8).
     clickNav(el, 'Sidebar')
-    expect(groupTitles(el)).toEqual(['Level lines', 'Folders', 'File icons', 'Icon rules', 'Go to'])
+    expect(groupTitles(el)).toEqual(['Level lines', 'Folders', 'File icons', 'Icon rules', 'Show in sidebar'])
     expect(hints()).toEqual([])
 
     clickNav(el, 'Editor')
@@ -418,8 +421,9 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
     expect(headings(el)).toEqual(['Hotkeys'])
     expect(sections(el).map((s) => s.id)).toEqual(['settings-hotkeys'])
-    // One group per place since YAZ-3564 (K7); "Used by macOS" shows once main answers.
-    expect(groupTitles(el)).toEqual(['App', 'Note', 'Drawing', 'Diagram', 'Code', 'Folder views', 'Mouse'])
+    // One card per key since YAZ-3564, the shared keys a pick settles first; "Used by macOS" shows once main answers.
+    expect(groupTitles(el).slice(0, 2)).toEqual(['⌘D', '⌘K'])
+    expect(groupTitles(el).slice(-2)).toEqual(['Actions with no key', 'Mouse'])
     expect(rowIds(el)).toEqual(HOTKEY_ROWS)
     // A changeable key is a button (D6); a built-in one is text (D8).
     expect(row(el, 'hotkey-settings')?.querySelector('.hotkeys__key')?.textContent).toBe('⌘,')
@@ -1103,8 +1107,9 @@ describe('SettingsDialog search (D6)', () => {
   it('"dark" shows the Theme row and the draw.io dark-mode row (YAZ-3037) under Appearance headings, then the drawing\'s and the diagram\'s dark keys (YAZ-3564) — and the row still works', () => {
     const { el, onChange } = mount({ ...DEFAULT_SETTINGS }, status())
     type(searchInput(el), 'dark')
-    expect(headings(el)).toEqual(['Appearance', 'Appearance › draw.io diagrams', 'Hotkeys › Drawing', 'Hotkeys › Diagram'])
-    expect(rowIds(el)).toEqual(['theme', 'diagramDarkColors', 'hotkey-drawing-toggleTheme', 'hotkey-diagram-adaptiveColors'])
+    // On Hotkeys each hit is under its key's card (YAZ-3564): draw.io's ⌘⇧6, and the canvas's no-key row.
+    expect(headings(el)).toEqual(['Appearance', 'Appearance › draw.io diagrams', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
+    expect(rowIds(el)).toEqual(['theme', 'diagramDarkColors', 'hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme'])
     expect(sections(el)).toEqual([]) // the page is gone while the query stands
     act(() => rowButtons(el, 'theme')[2].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, theme: 'dark' })
@@ -1135,13 +1140,18 @@ describe('SettingsDialog search (D6)', () => {
     // breadcrumbs, registry order, never rank.
     // The sidebar's line style (YAZ-3309 D7) names bullet threading: it leads, on Appearance.
     type(searchInput(el), 'bullet')
-    expect(headings(el)).toEqual(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents', 'Hotkeys › Note', 'Hotkeys › Mouse'])
-    // A Hotkeys hit is the ONE row that names a bullet, not its whole table (YAZ-3397 D5).
-    expect(rowIds(el)).toEqual([
-      ...['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tocOnByDefault', 'tableOfContents', 'tocLines'],
-      ...['bulletList', 'cycleTask', 'indent', 'outdent', 'foldHere', 'unfoldHere', 'foldAll', 'unfoldAll', 'zoomIn', 'enter', 'tab'].map((r) => `hotkey-note-${r}`),
-      ...['zoom-into-that-bullet', 'fold-unfold-that-bullet-or-heading-secti'].map((r) => `hotkey-mouse-${r}`),
-    ])
+    const settingsHits = ['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents']
+    expect(headings(el).slice(0, 4)).toEqual(settingsHits)
+    // On Hotkeys a hit is the ONE row that names a bullet, not its whole table (YAZ-3397 D5), under its key's card (YAZ-3564).
+    expect(headings(el).at(-1)).toBe('Hotkeys › Mouse')
+    expect(headings(el).slice(4, -1).every((h) => h?.startsWith('Hotkeys › '))).toBe(true)
+    expect(rowIds(el).slice(0, 9)).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tocOnByDefault', 'tableOfContents', 'tocLines'])
+    expect(new Set(rowIds(el).slice(9))).toEqual(
+      new Set([
+        ...['bulletList', 'cycleTask', 'indent', 'outdent', 'foldHere', 'unfoldHere', 'foldAll', 'unfoldAll', 'zoomIn', 'enter', 'tab'].map((r) => `hotkey-note-${r}`),
+        ...['zoom-into-that-bullet', 'fold-unfold-that-bullet-or-heading-secti'].map((r) => `hotkey-mouse-${r}`),
+      ]),
+    )
     type(searchInput(el), 'spacing')
     expect(headings(el)).toEqual(['Appearance › Spacing'])
     expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap'])
@@ -1154,7 +1164,7 @@ describe('SettingsDialog search (D6)', () => {
     expect(headings(el)).toEqual(['Editor › Section indent'])
     expect(rowIds(el)).toEqual(['sectionStep', 'sectionLines'])
     type(searchInput(el), 'close tab')
-    expect(headings(el)).toEqual(['Hotkeys › App'])
+    expect(headings(el)).toEqual(['Hotkeys › ⌘W'])
     expect(rowIds(el)).toEqual(['hotkey-closeTab'])
   })
 

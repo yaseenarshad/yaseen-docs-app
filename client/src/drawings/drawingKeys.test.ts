@@ -81,7 +81,7 @@ describe('the drawing rows (K1, K6)', () => {
 })
 
 describe('the user’s drawing keys as the engine’s keyBindings (K5)', () => {
-  it('lets go of a key an App command holds, so the menu runs it (K3, K9): ⌘K is Search the vault; ⌘D only with Go to your place\'s switch off', () => {
+  it('lets go of a key an App command holds, so the menu runs it (K3, K9): ⌘K is Search the vault; ⌘D only with Show in sidebar\'s switch off', () => {
     const names = (aside?: Record<string, boolean>) => drawingKeyBindings(undefined, aside).map((b) => [b.name, b.keys.length])
     expect(names()).toEqual([['hyperlink', 0]])
     expect(names({ 'app.goTo': false })).toEqual([['duplicateSelection', 0], ['hyperlink', 0]])

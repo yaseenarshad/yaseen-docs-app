@@ -1037,27 +1037,8 @@
   font-size: 12px;
 }
 .hotkeys__toggles label,
-.hotkeys__aside {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-  cursor: pointer;
-}
-.hotkeys__aside {
-  margin: 2px 0 4px 0;
-  font-size: 12px;
-  color: var(--settings-muted, inherit);
-}
-.hotkeys__blocked {
-  margin-left: 6px;
-  padding: 0 6px;
-  border-radius: 4px;
-  background: rgba(220, 60, 60, 0.12);
-  color: #c33;
-  font-size: 11px;
-}
 
-/* Settings › Sidebar › Go to (YAZ-3556 D8): the folder or file ⌘D goes to, beside its "Change…". */
+/* Settings › Sidebar › Show in sidebar (YAZ-3556 D8): the folder or file ⌘D goes to, beside its "Change…". */
 .settings__place {
   display: inline-flex;
   align-items: center;
@@ -1073,4 +1054,156 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg-muted);
+}
+
+/* Settings › Hotkeys by key (YAZ-3564): purple = an App key (every tab), green = one kind of tab's key; both = shared. */
+.settings-dialog {
+  --hotkeys-app: #6741d9;
+  --hotkeys-app-bg: rgba(103, 65, 217, 0.1);
+  --hotkeys-tab: #2b8a3e;
+  --hotkeys-tab-bg: rgba(43, 138, 62, 0.1);
+}
+[data-theme='dark'] .settings-dialog {
+  --hotkeys-app: #b197fc;
+  --hotkeys-app-bg: rgba(177, 151, 252, 0.14);
+  --hotkeys-tab: #69db7c;
+  --hotkeys-tab-bg: rgba(105, 219, 124, 0.12);
+}
+.hotkeys__card-head {
+  margin: 0 0 6px;
+}
+.hotkeys__card-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.hotkeys__cap-key {
+  margin: 0;
+  padding: 1px 10px;
+  min-width: 44px;
+  border: 1.5px solid var(--settings-border, rgba(127, 127, 127, 0.3));
+  border-radius: 7px;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+.hotkeys__cap-key--app {
+  border-color: var(--hotkeys-app);
+  background: var(--hotkeys-app-bg);
+  color: var(--hotkeys-app);
+}
+.hotkeys__cap-key--tab {
+  border-color: var(--hotkeys-tab);
+  background: var(--hotkeys-tab-bg);
+  color: var(--hotkeys-tab);
+}
+.hotkeys__cap-key--shared {
+  border-color: var(--hotkeys-app);
+  border-bottom: 4px solid var(--hotkeys-tab);
+  background: var(--hotkeys-app-bg);
+  color: var(--hotkeys-app);
+}
+.hotkeys__picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+.hotkeys__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.hotkeys__pick-place {
+  color: var(--settings-muted, inherit);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+}
+.hotkeys__seg {
+  display: inline-flex;
+  border: 1px solid var(--settings-border, rgba(127, 127, 127, 0.3));
+  border-radius: 7px;
+  overflow: hidden;
+}
+.hotkeys__seg-btn {
+  padding: 2px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.hotkeys__seg-btn + .hotkeys__seg-btn {
+  border-left: 1px solid var(--settings-border, rgba(127, 127, 127, 0.3));
+}
+.hotkeys__seg-btn--app[aria-pressed='true'] {
+  background: var(--hotkeys-app-bg);
+  color: var(--hotkeys-app);
+  font-weight: 600;
+}
+.hotkeys__seg-btn--tab[aria-pressed='true'] {
+  background: var(--hotkeys-tab-bg);
+  color: var(--hotkeys-tab);
+  font-weight: 600;
+}
+.hotkeys__place {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  vertical-align: 1px;
+}
+.hotkeys__place--app {
+  background: var(--hotkeys-app-bg);
+  color: var(--hotkeys-app);
+}
+.hotkeys__place--tab {
+  background: var(--hotkeys-tab-bg);
+  color: var(--hotkeys-tab);
+}
+.hotkeys__lost {
+  color: var(--settings-muted, inherit);
+}
+.hotkeys__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: center;
+  font-size: 12px;
+}
+.hotkeys__legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hotkeys__swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+.hotkeys__swatch--app {
+  background: var(--hotkeys-app);
+}
+.hotkeys__swatch--tab {
+  background: var(--hotkeys-tab);
+}
+.hotkeys__swatch--shared {
+  background: linear-gradient(var(--hotkeys-app) 55%, var(--hotkeys-tab) 55%);
+}
+.hotkeys__card--flash {
+  animation: hotkeys-flash 1.2s ease-out;
+}
+@keyframes hotkeys-flash {
+  from {
+    box-shadow: 0 0 0 3px var(--accent, #4a7bd0);
+    border-radius: 10px;
+  }
+  to {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }

@@ -29,7 +29,7 @@ interface UseMenuEventsOptions {
   onNewWindow: () => void
   /** File › New… (⌘N, YAZ-3556 D5): open the New… box. */
   onNewItem: () => void
-  /** File › Go to Your Place (⌘D, YAZ-3556 D9): show the place of `settings.goTo`. */
+  /** File › Show in Sidebar (⌘D, YAZ-3556 D9): show the place of `settings.goTo`. */
   onGoTo: () => void
   /** File › Open Today's Daily Note (YAZ-3607 D11): open today's daily note. */
   onDailyNote: () => void

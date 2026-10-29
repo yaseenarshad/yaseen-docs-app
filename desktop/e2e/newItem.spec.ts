@@ -1,7 +1,7 @@
 /**
  * ⌘N and ⌘D (YAZ-3556) against the REAL app, on a temp vault with "Default location for new notes" set to the folder
- * Inbox and "Go to your place" set to that folder (Settings › Files & Links, Settings › Sidebar › Go to):
- *   1 File › Go to Your Place shows Inbox in Files: the folder opens and its row has the keyboard (D9)
+ * Inbox and "Show in sidebar" set to that folder (Settings › Files & Links, Settings › Sidebar › Show in sidebar):
+ *   1 File › Show in Sidebar shows Inbox in Files: the folder opens and its row has the keyboard (D9)
  *   2 File › New…, ⏎, a name, ⏎: the note is made in Inbox and opens in the active tab (D3, D4, D5)
  * The menu items are clicked by id with no focus step (`clickMenuItemQuietly`): a hidden run never takes the focus.
  */

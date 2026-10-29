@@ -264,42 +264,69 @@ describe('the page (D5, D8)', () => {
   })
 })
 
-describe('every place on one page (YAZ-3564)', () => {
+describe('one card per key (YAZ-3564)', () => {
   const chip = (text: string) => button(el.querySelector('.hotkeys__filters') as HTMLElement, text)
   const toggle = (text: string) => act(() => [...el.querySelectorAll<HTMLLabelElement>('.hotkeys__toggles label')].find((l) => l.textContent?.includes(text))?.querySelector('input')?.click())
+  /** The card of a key, found by its heading ('⌘D'). */
+  const card = (key: string) => [...el.querySelectorAll<HTMLElement>('.settings-group')].find((g) => g.querySelector('.hotkeys__cap-key')?.textContent === key) as HTMLElement
+  /** The pick of one tab on a card: its two buttons, and which is on. */
+  const pick = (key: string, place: string) => card(key).querySelector<HTMLElement>(`[aria-label="${key} in ${place}"]`) as HTMLElement
+  const picked = (key: string, place: string) => [...pick(key, place).querySelectorAll('button')].find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent
+  const asked = () => [popup()?.querySelector('.confirm__text')?.textContent, ...[...(popup()?.querySelectorAll('.hotkeys__line') ?? [])].map((l) => l.textContent)]
+  const lostLine = (id: string) => row(`hotkey-${id}`).querySelector('.hotkeys__lost')?.textContent
 
-  it('a group chip shows one place (K7); a blocked row says who fires first (K3); "Show clashes only" keeps the blocked rows and the App keys that block them', async () => {
+  it("a card holds every row on its key, App's first, each with its place; the shared keys a pick settles lead", async () => {
+    await mount()
+    expect([...el.querySelectorAll('.hotkeys__cap-key')].slice(0, 2).map((h) => h.textContent)).toEqual(['⌘D', '⌘K'])
+    expect(card('⌘D').querySelector('.hotkeys__cap-key')?.classList.contains('hotkeys__cap-key--shared')).toBe(true)
+    expect([...card('⌘D').querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting)).toEqual(['hotkey-goTo', 'hotkey-drawing-duplicate', 'hotkey-diagram-duplicate', 'hotkey-code-addSelectionToNextFindMatch'])
+    expect(row('hotkey-drawing-duplicate').querySelector('.hotkeys__place')?.textContent).toBe('Drawing')
+    // ⌘B is two tabs' own key, no App key: green, no pick.
+    expect(card('⌘B').querySelector('.hotkeys__cap-key')?.classList.contains('hotkeys__cap-key--tab')).toBe(true)
+    expect(card('⌘B').querySelector('.hotkeys__picks')).toBeNull()
+    // ⌘K takes a drawing's Add a link by default: the row says what ⌘K does there now.
+    expect(picked('⌘K', 'drawings')).toBe('Search the vault')
+    expect(lostLine('drawing-link')).toBe('No key in drawings now: ⌘K does App › Search the vault there.')
+    // A code key that begins with ⌘K is on its own card, and links to ⌘K's.
+    expect(button(row('hotkey-code-addCommentLine'), 'Change it on ⌘K')).toBeDefined()
+  })
+
+  it('a pick asks first (Take it); taking ⌘D for Show in sidebar in drawings leaves Duplicate no key there, and giving it back writes nothing', async () => {
+    await mount()
+    expect(picked('⌘D', 'drawings')).toBe('Duplicate')
+    expect(lostLine('drawing-duplicate')).toBeUndefined()
+    click(button(pick('⌘D', 'drawings'), 'Show in sidebar'))
+    expect(asked()).toEqual(['⌘D in drawings: Show in sidebar?', 'Drawing › Duplicate will have no key in drawings.'])
+    expect(onChange).not.toHaveBeenCalled()
+    click(button(popup() as HTMLElement, 'Cancel'))
+    expect(picked('⌘D', 'drawings')).toBe('Duplicate')
+    click(button(pick('⌘D', 'drawings'), 'Show in sidebar'))
+    click(button(popup() as HTMLElement, 'Take it'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo@drawing': false } })
+    expect(picked('⌘D', 'drawings')).toBe('Show in sidebar')
+    expect(picked('⌘D', 'diagrams')).toBe('Duplicate') // one tab at a time
+    expect(lostLine('drawing-duplicate')).toBe('No key in drawings now: ⌘D does App › Show in sidebar there.')
+    click(button(pick('⌘D', 'drawings'), 'Duplicate'))
+    expect(asked()).toEqual(['⌘D in drawings: Duplicate?', 'App › Show in sidebar will not work in drawings.'])
+    click(button(popup() as HTMLElement, 'Take it'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: {} })
+  })
+
+  it('a group chip shows one place; "Shared keys only" keeps the shared cards and the rows an App key took', async () => {
     await mount()
     click(chip('Drawing'))
-    expect(shownRows().every((id) => id?.startsWith('hotkey-drawing-'))).toBe(true)
-    // ⌘K is Search the vault's: on a Mac the menu fires first, so a drawing's Add link never works.
-    expect(row('hotkey-drawing-link').querySelector('.hotkeys__blocked')?.textContent).toBe(' Blocked: App › Search the vault fires first')
-    expect(row('hotkey-drawing-duplicate').querySelector('.hotkeys__blocked')).toBeNull() // Go to your place lets drawings keep ⌘D (K9)
+    expect(shownRows().filter((id) => id?.startsWith('hotkey-')).every((id) => id?.startsWith('hotkey-drawing-'))).toBe(true)
     click(chip('All'))
-    toggle('Show clashes only')
-    expect(shownRows()).toContain('hotkey-search')
-    expect(shownRows()).toContain('hotkey-drawing-link')
-    expect(shownRows()).not.toContain('hotkey-drawing-duplicate')
+    toggle('Shared keys only')
+    expect(shownRows()).toEqual(expect.arrayContaining(['hotkey-goTo', 'hotkey-drawing-duplicate', 'hotkey-search', 'hotkey-drawing-link', 'hotkey-code-addCommentLine']))
     expect(shownRows()).not.toContain('hotkey-newTab')
+    expect(shownRows()).not.toContain('hotkey-note-bold')
   })
 
-  it('"Let drawings, diagrams and code keep this key" (K9): off for Go to your place, and a drawing\'s Duplicate is blocked; on again, it writes nothing', async () => {
-    await mount()
-    const aside = () => row('hotkey-goTo').querySelector<HTMLInputElement>('.hotkeys__aside input') as HTMLInputElement
-    expect(aside().checked).toBe(true)
-    act(() => aside().click())
-    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: { 'app.goTo': false } })
-    expect(row('hotkey-drawing-duplicate').querySelector('.hotkeys__blocked')?.textContent).toBe(' Blocked: App › Go to your place fires first')
-    act(() => aside().click())
-    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeysAside: {} })
-    // Every other App key starts with it off.
-    expect(row('hotkey-search').querySelector<HTMLInputElement>('.hotkeys__aside input')?.checked).toBe(false)
-  })
-
-  it('the switch shows only where the menu can let a key go (Copy path, which the page handles, and a row with no key have none); a changed switch is a change Reset undoes', async () => {
+  it('a changed pick is a change: "Changed from default" shows it, and Reset puts every tab back (an old one-switch entry too)', async () => {
     await mount({ 'app.search': null }, { 'app.goTo': false })
-    const hasSwitch = (id: string) => row(id).querySelector('.hotkeys__aside') !== null
-    expect([hasSwitch('hotkey-goTo'), hasSwitch('hotkey-newTab'), hasSwitch('hotkey-copyPath'), hasSwitch('hotkey-search')]).toEqual([true, true, false, false])
+    // The old switch off: every tab gives ⌘D to Show in sidebar.
+    expect(['drawings', 'diagrams', 'code'].map((p) => picked('⌘D', p))).toEqual(['Show in sidebar', 'Show in sidebar', 'Show in sidebar'])
     toggle('Changed from default')
     expect(shownRows().filter((id) => id?.startsWith('hotkey-'))).toEqual(['hotkey-goTo', 'hotkey-search'])
     click(button(row('hotkey-goTo'), 'Reset'))
@@ -316,7 +343,7 @@ describe('every place on one page (YAZ-3564)', () => {
     click(button(popup() as HTMLElement, 'Move it here'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'note.bold': null, 'note.quote': 'CmdOrCtrl+B' } })
     toggle('Changed from default')
-    expect(shownRows().filter((id) => id?.startsWith('hotkey-'))).toEqual(['hotkey-note-bold', 'hotkey-note-quote'])
+    expect(new Set(shownRows().filter((id) => id?.startsWith('hotkey-')))).toEqual(new Set(['hotkey-note-bold', 'hotkey-note-quote']))
     click(button(row('hotkeys-reset-all'), 'Reset all shown'))
     click(button(el.querySelector('.confirm') as HTMLElement, 'Reset 2 hotkeys'))
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: {} })

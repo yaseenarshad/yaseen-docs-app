@@ -60,7 +60,7 @@ export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
   // YAZ-3556 D1: the New… box (⌘N, the Mac's own New) and the jump to the place set in Settings › Sidebar (⌘D). Drawings,
   // diagrams and code keep their own ⌘D (Duplicate, Add next match) by default (YAZ-3564 K9).
   { id: 'newItem', label: 'New note, drawing or diagram…', hint: 'Pick the kind and the folder, then name it in the sidebar', key: 'CmdOrCtrl+N', macStandard: true },
-  { id: 'goTo', label: 'Go to your place', hint: 'The tab, folder or file set in Settings › Sidebar › Go to', key: 'CmdOrCtrl+D', stepsAsideIn: ['drawing', 'diagram', 'code'] },
+  { id: 'goTo', label: 'Show in sidebar', hint: 'The tab, folder or file set in Settings › Sidebar › Show in sidebar, or today\'s daily note', key: 'CmdOrCtrl+D', stepsAsideIn: ['drawing', 'diagram', 'code'] },
   // YAZ-3607 D11: today's daily note on its own key, for a ⌘D set to another place. No key by default: ⌘D on "Today's
   // daily note" and the footer button reach it. It shows only while Daily notes is on (Settings › Files & Links).
   { id: 'dailyNote', label: "Open today's daily note", hint: 'Makes it first when today has none', key: null },
