@@ -2996,10 +2996,10 @@ export function stepSidebarZoom(percent: number, direction: 1 | -1): number {
 /**
  * The updater's state (YAZ-2976), owned by main and pushed to every window. `downloading` and `ready`
  * name the new version; `manual` = a newer version exists but this copy cannot replace itself (Windows,
- * an unpackaged run, a read-only or translocated folder, an ad-hoc build — S13); `updated` = this launch is
- * the first one of `version`, after the swap (S24).
+ * an unpackaged run, a read-only or translocated folder, an ad-hoc build — S13). The first launch after
+ * the swap is `idle` (YAZ-3698): the user read the notes before the install.
  */
-export type UpdateState = { kind: 'idle' } | { kind: 'downloading' | 'ready' | 'manual' | 'updated'; version: string }
+export type UpdateState = { kind: 'idle' } | { kind: 'downloading' | 'ready' | 'manual'; version: string }
 
 /** One GitHub release for the "What's new" window (YAZ-2976 D5): `body` is the release's Markdown as GitHub holds it. */
 export interface ReleaseNote {

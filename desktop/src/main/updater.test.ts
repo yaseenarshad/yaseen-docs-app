@@ -330,27 +330,35 @@ describe('check', () => {
   })
 })
 
-describe('the updated-to marker (S24)', () => {
+describe('an old updated-to marker (YAZ-3698: no "See what\'s new" pill)', () => {
   beforeEach(() => void vi.useFakeTimers())
 
-  it('holding this version → updated at start, and the file is deleted; creating the updater touches nothing', async () => {
+  it('the swap of 2.8 and older wrote it: start deletes it and stays idle; creating the updater touches nothing', async () => {
     await writeFile(join(userData, 'updated-to'), '1.0.12')
     const { updater, states } = fake({ latest: release('v1.0.12') })
-    expect(updater.state()).toEqual({ kind: 'idle' })
     expect(existsSync(join(userData, 'updated-to'))).toBe(true)
     updater.start()
-    expect(updater.state()).toEqual({ kind: 'updated', version: '1.0.12' })
+    expect(updater.state()).toEqual({ kind: 'idle' })
     expect(existsSync(join(userData, 'updated-to'))).toBe(false)
-    await expect(updater.check()).resolves.toEqual({ kind: 'updated', version: '1.0.12' }) // nothing newer keeps the pill
+    await expect(updater.check()).resolves.toEqual({ kind: 'idle' })
     expect(states).toEqual([])
   })
 
-  it('holding another version (the swap did not land) → idle, and the file is deleted all the same', async () => {
+  it('deleted also in a run that never checks', async () => {
     await writeFile(join(userData, 'updated-to'), '1.0.13')
-    const { updater } = fake({ overrides: { isPackaged: false, feed: undefined } }) // read even in a run that never checks
+    const { updater } = fake({ overrides: { isPackaged: false, feed: undefined } })
     updater.start()
     expect(updater.state()).toEqual({ kind: 'idle' })
     expect(existsSync(join(userData, 'updated-to'))).toBe(false)
+  })
+
+  it('a delete that fails never stops the launch, and update-refused is still read', async () => {
+    await mkdir(join(userData, 'updated-to'), { recursive: true }) // a folder: rmSync without `recursive` throws
+    await writeFile(join(userData, 'updated-to', 'x'), '')
+    await writeFile(join(userData, 'update-refused'), '1.0.13')
+    const { updater } = fake({ overrides: { isPackaged: false, feed: undefined } })
+    expect(() => updater.start()).not.toThrow()
+    expect(updater.state()).toEqual({ kind: 'manual', version: '1.0.13' })
   })
 })
 
@@ -487,15 +495,15 @@ describe('installOnExit (S21, S22)', () => {
     vi.mocked(console.error).mockRestore()
   })
 
-  it('with an update staged starts the detached swap with this PID, the bundle, the marker, the refused file, the version and the reopen flag', async () => {
+  it('with an update staged starts the detached swap with this PID, the bundle, the refused file, the version and the reopen flag', async () => {
     const { updater, host } = fake()
     await updater.check()
     await until(updater, 'ready')
     updater.installOnExit(true)
     updater.installOnExit(false)
     expect(vi.mocked(host.spawnDetached).mock.calls).toEqual([
-      ['/bin/sh', ['-c', SWAP_SCRIPT, 'sh', '4242', bundle, join(userData, 'updated-to'), join(userData, 'update-refused'), '1.0.13', '1']],
-      ['/bin/sh', ['-c', SWAP_SCRIPT, 'sh', '4242', bundle, join(userData, 'updated-to'), join(userData, 'update-refused'), '1.0.13', '0']],
+      ['/bin/sh', ['-c', SWAP_SCRIPT, 'sh', '4242', bundle, join(userData, 'update-refused'), '1.0.13', '1']],
+      ['/bin/sh', ['-c', SWAP_SCRIPT, 'sh', '4242', bundle, join(userData, 'update-refused'), '1.0.13', '0']],
     ])
   })
 

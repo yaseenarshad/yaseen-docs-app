@@ -133,7 +133,6 @@ describe('WhatsNewSheet: the release it opens on (D11)', () => {
   it.each([
     [{ kind: 'ready', version: '1.0.14' }, '1.0.14'],
     [{ kind: 'manual', version: '1.0.14' }, '1.0.14'],
-    [{ kind: 'updated', version: '1.0.13' }, '1.0.13'],
     [{ kind: 'idle' }, '1.0.13'],
     [{ kind: 'downloading', version: '1.0.14' }, '1.0.13'],
   ] as const)('%o opens on %s', async (update, version) => {
@@ -263,8 +262,8 @@ describe('WhatsNewSheet: the buttons', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it.each([{ kind: 'updated', version: '1.0.14' }, { kind: 'idle' }] as const)('S15 $kind: one "Close", which closes', async (update) => {
-    const { bridge, onClose, buttons, labels } = await render(update)
+  it('S15 idle: one "Close", which closes', async () => {
+    const { bridge, onClose, buttons, labels } = await render({ kind: 'idle' })
     expect(labels()).toEqual(['Close'])
     act(() => buttons()[0].click())
     expect(onClose).toHaveBeenCalledTimes(1)

@@ -6,9 +6,9 @@
  *
  * D14 (Yasin: "make it more like exciting", "no one cares about version numbers", "i like the solid
  * blue with something that keeps breathing", then "just put \"new update Ready\"" with "the 🎉 emoji"):
- * a solid accent pill with 🎉, the words "New update ready" (or "See what's new" on the first launch
- * after the swap), a pop when it appears, and a white dot that breathes until the user opens the sheet
- * for this version — then it rests, so it never nags.
+ * a solid accent pill with 🎉, the words "New update ready", a pop when it appears, and a white dot that
+ * breathes until the user opens the sheet for this version — then it rests, so it never nags. No pill after
+ * the swap (YAZ-3698): the sheet showed the notes before "Restart to update".
  *
  * YAZ-3401: the footer also holds the sidebar zoom, so the pill shortens by the room left for it: a slot takes the
  * footer's free width, and `update.css` queries the slot. The full words, then `SHORT` (CSS draws it from
@@ -19,9 +19,9 @@ import { useState } from 'react'
 import type { UpdateState } from '@shared/types'
 import './update.css'
 
-const LABEL = { ready: 'New update ready', manual: 'New update ready', updated: "See what's new" } as const
-/** The words in a narrower slot (YAZ-3401). `update.css` picks its breakpoint for the wider one, "What's new". */
-const SHORT = { ready: 'Update', manual: 'Update', updated: "What's new" } as const
+const LABEL = 'New update ready'
+/** The words in a narrower slot (YAZ-3401). `update.css` sets where they give way to the round 🎉. */
+const SHORT = 'Update'
 
 interface UpdatePillProps {
   update: UpdateState
@@ -39,11 +39,11 @@ export function UpdatePill({ update, onOpen }: UpdatePillProps) {
   }
   return (
     <div className="update-pill-slot">
-      <button type="button" className="update-pill" title="Click to see what's new" aria-label={LABEL[update.kind]} data-short={SHORT[update.kind]} onClick={open}>
+      <button type="button" className="update-pill" title="Click to see what's new" aria-label={LABEL} data-short={SHORT} onClick={open}>
         <span className="update-pill__emoji" aria-hidden="true">
           🎉
         </span>
-        <span className="update-pill__label">{LABEL[update.kind]}</span>
+        <span className="update-pill__label">{LABEL}</span>
         <span className={resting ? 'update-pill__dot' : 'update-pill__dot update-pill__dot--breathing'} aria-hidden="true" />
       </button>
     </div>

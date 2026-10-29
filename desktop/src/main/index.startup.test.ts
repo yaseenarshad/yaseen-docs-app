@@ -374,7 +374,7 @@ describe('the updater in index.ts (YAZ-2976)', () => {
     h.s.ready()
     await settle()
     const host = vi.mocked(menu.createMenuHandlers).mock.calls[0][1]
-    const answers = [{ kind: 'idle' }, { kind: 'updated', version: '1.0.12' }, { kind: 'downloading', version: '1.0.13' }, { kind: 'ready', version: '1.0.13' }, { kind: 'manual', version: '1.0.13' }]
+    const answers = [{ kind: 'idle' }, { kind: 'downloading', version: '1.0.13' }, { kind: 'ready', version: '1.0.13' }, { kind: 'manual', version: '1.0.13' }]
     for (const answer of answers) {
       h.updater.check.mockResolvedValueOnce(answer)
       host.checkForUpdates()
@@ -383,7 +383,7 @@ describe('the updater in index.ts (YAZ-2976)', () => {
     h.updater.check.mockRejectedValueOnce(new Error('offline'))
     host.checkForUpdates()
     await settle()
-    expect(h.manager.linkNotice.mock.calls).toEqual([['Yaseen Docs 1.0.12 is the newest version'], ['Yaseen Docs 1.0.12 is the newest version'], ['Downloading Yaseen Docs 1.0.13…'], ["Can't check for updates. Try again later"]])
+    expect(h.manager.linkNotice.mock.calls).toEqual([['Yaseen Docs 1.0.12 is the newest version'], ['Downloading Yaseen Docs 1.0.13…'], ["Can't check for updates. Try again later"]])
     expect(whatsNew).toHaveBeenCalledTimes(2)
   })
 
