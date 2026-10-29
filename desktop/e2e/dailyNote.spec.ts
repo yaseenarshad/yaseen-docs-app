@@ -69,8 +69,9 @@ test("two more presses, one from File › Open Today's Daily Note, open the same
 test('day folders on: the note made before the switch still opens; with that note gone, the day folder and the note are made', async () => {
   // The settings write a window makes (`state.setSettings`); every window hears it.
   await win.evaluate(async () => {
-    const { settings } = await window.yaseenDocs.state.get()
-    await window.yaseenDocs.state.setSettings({ ...settings, dailyNoteDayFolder: true })
+    const { state } = (window as unknown as { yaseenDocs: { state: { get(): Promise<{ settings: object }>; setSettings(s: object): Promise<void> } } }).yaseenDocs
+    const { settings } = await state.get()
+    await state.setSettings({ ...settings, dailyNoteDayFolder: true })
   })
   await win.locator('.sidebar__daily').click()
   await expect(activeTab(win)).toHaveText(new RegExp(today))
