@@ -913,13 +913,18 @@ export function App() {
   // press while one is made waits for that one, so a fast double press makes one note: `dailyMaking` holds the one
   // made (one entry; the next day, folder or style replaces it, a failure clears it, and its file deleted makes it again).
   const dailyMaking = useRef<{ key: string; note: Promise<string>; path?: string } | null>(null)
-  /** The vault of the daily notes folder and its tree (D15): the first of the window's vaults, the one in front first, that holds it. */
+  /**
+   * The vault of the daily notes folder and its tree (D15): the first of the window's vaults, the one in front first, that
+   * holds it. A FRESH tree, not the cached one (YAZ-3652): the watcher can miss a delete that comes a moment after a
+   * create, and a cached tree then still holds today's note, so nothing is made. One walk per vault per click, never on
+   * a keystroke; the sidebar hears the same answer (`onTree`), so its stale row goes too.
+   */
   const dailyVault = useCallback(async (vaults: readonly string[], folder: string) => {
-    const trees = await Promise.all(vaults.map(async (root) => ({ root, tree: await treeOf(root) })))
+    const trees = await Promise.all(vaults.map(async (root) => ({ root, tree: (await fetchTree(root)).tree })))
     const vault = dailyNoteVault(trees, folder)
     if (vault === null) throw new Error(`no vault of this window has the folder "${folder}". Make it, or change the daily notes folder in Settings › Files & Links`)
     return { vault, tree: trees.find((t) => t.root === vault)!.tree }
-  }, [treeOf])
+  }, [])
   const openDailyNote = useCallback(() => {
     const { vaults, settings: now } = placeInputs.current
     if (vaults.length === 0) return
