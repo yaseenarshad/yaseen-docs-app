@@ -60,7 +60,8 @@ import { textVars } from './settings/headingStyles'
 import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
-import { dailyNoteVault, findDailyNote, makeDailyNote, todaysDailyNote } from './sidebar/dailyNote'
+import { dailyNoteName } from '@shared/dailyNote'
+import { dailyNoteVault, findDailyNote, makeDailyNote } from './sidebar/dailyNote'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
@@ -912,15 +913,19 @@ export function App() {
   // press while one is made waits for that one, so a fast double press makes one note: `dailyMaking` holds the one
   // made (one entry; the next day, folder or style replaces it, a failure clears it, and its file deleted makes it again).
   const dailyMaking = useRef<{ key: string; note: Promise<string>; path?: string } | null>(null)
+  /** The vault of the daily notes folder and its tree (D15): the first of the window's vaults, the one in front first, that holds it. */
+  const dailyVault = useCallback(async (vaults: readonly string[], folder: string) => {
+    const trees = await Promise.all(vaults.map(async (root) => ({ root, tree: await treeOf(root) })))
+    const vault = dailyNoteVault(trees, folder)
+    if (vault === null) throw new Error(`no vault of this window has the folder "${folder}". Make it, or change the daily notes folder in Settings › Files & Links`)
+    return { vault, tree: trees.find((t) => t.root === vault)!.tree }
+  }, [treeOf])
   const openDailyNote = useCallback(() => {
     const { vaults, settings: now } = placeInputs.current
     if (vaults.length === 0) return
-    const title = todaysDailyNote(now)
-    // The vault (D2, amended): the first of the window's vaults, the one in front first, that holds the folder.
-    void Promise.all(vaults.map(async (root) => ({ root, tree: await treeOf(root) })))
-      .then((trees) => {
-        const vault = dailyNoteVault(trees, now.dailyNoteFolder)
-        if (vault === null) throw new Error(`no vault of this window has the folder "${now.dailyNoteFolder}". Make it, or change the daily notes folder in Settings › Files & Links`)
+    const title = dailyNoteName(now.dailyNoteFormat, new Date())
+    void dailyVault(vaults, now.dailyNoteFolder)
+      .then(({ vault, tree }) => {
         const index = scopeOf(vault).wikilinks
         // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
         if (index.resolve === null) throw new Error('the vault index is still loading — try again in a moment')
@@ -929,7 +934,6 @@ export function App() {
         const key = [vault, now.dailyNoteFolder, String(now.dailyNoteDayFolder), title].join('\n')
         // The one made stands only while its file does: one deleted since (its day folder too) is made again.
         const held = dailyMaking.current
-        const tree = trees.find((t) => t.root === vault)!.tree
         if (held?.key !== key || (held.path !== undefined && !treeHasPath(tree, held.path))) {
           // A fresh tree before the row is shown: the sidebar hears it (`onTree`), so the new note's row is there to show.
           const note = makeDailyNote(vault, now, title, index.ids).then(async (path) => {
@@ -953,7 +957,7 @@ export function App() {
         },
         (err: unknown) => notify(`Can't open today's daily note: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
-  }, [scopeOf, treeOf, toggleSidebar, revealInFiles, notify])
+  }, [scopeOf, dailyVault, toggleSidebar, revealInFiles, notify])
 
   // ⌘D (YAZ-3556 D9): the place of `settings.goTo`, in the active tab's vault. A tab shows. A folder shows in Files, open,
   // with the keyboard on its row. A file opens as a sidebar click opens it, and its row shows. A hidden sidebar shows
@@ -1007,10 +1011,8 @@ export function App() {
     const { vaults, settings: now } = placeInputs.current
     if (vaults.length === 0) return
     let path = ''
-    void Promise.all(vaults.map(async (root) => ({ root, tree: await treeOf(root) })))
-      .then((trees) => {
-        const vault = dailyNoteVault(trees, now.dailyNoteFolder)
-        if (vault === null) throw new Error(`no vault of this window has the folder "${now.dailyNoteFolder}"`)
+    void dailyVault(vaults, now.dailyNoteFolder)
+      .then(({ vault }) => {
         path = `${placePath(vault, now.dailyNoteFolder)}/.template.md`
         return api.readFile(path)
       })
@@ -1026,7 +1028,7 @@ export function App() {
         },
         (err: unknown) => notify(`Can't open the daily note template: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
-  }, [treeOf, notify])
+  }, [dailyVault, notify])
 
   // The keys of this tab (YAZ-3564 K11): Help › Keys of This Tab…, its App key, and ? on a drawing (`requestKeySheet`).
   const [keySheetOpen, setKeySheetOpen] = useState(false)

@@ -4,7 +4,6 @@
  * The note is found by its TITLE, not by its file name: a vault that uses IDs builds the file name from the title and
  * the id (`2026-10-28-yaz-41.md`). In a vault that does not use IDs the title is the file name, so one rule serves both.
  */
-import { dailyNoteName } from '@shared/dailyNote'
 import { kebabTitle } from '@shared/noteName'
 import type { IndexRecord, SettingsState, TreeNode } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
@@ -13,10 +12,7 @@ import { createNote, folderPath } from '../views/scaffold'
 import { plainEntryName } from './createEntry'
 import { placePath } from './goToPlace'
 
-export type DailyNoteSettings = Pick<SettingsState, 'dailyNoteFolder' | 'dailyNoteFormat' | 'dailyNoteDayFolder'>
-
-/** Today's name (D4), on the Mac's own day. */
-export const todaysDailyNote = (settings: DailyNoteSettings, now: Date = new Date()): string => dailyNoteName(settings.dailyNoteFormat, now)
+export type DailyNoteSettings = Pick<SettingsState, 'dailyNoteFolder' | 'dailyNoteDayFolder'>
 
 /**
  * The path of the note titled `title` in the daily notes folder `folder` (root-relative), or one level down in its day
