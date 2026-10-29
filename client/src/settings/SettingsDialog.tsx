@@ -131,7 +131,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
       {g.header !== undefined ? g.header(ctx) : titled && g.title !== undefined && <h3 className="settings-group__title">{g.title}</h3>}
       {g.vault === true && vaultLine('settings-group__hint')}
       {g.hint !== undefined && <p className="settings-group__hint">{g.hint}</p>}
-      <div className="settings-group__card">{items.map(row)}</div>
+      <div className={`settings-group__card${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{items.map(row)}</div>
     </div>
   )
   const section = (s: SettingsSection) => (
