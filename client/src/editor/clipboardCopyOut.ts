@@ -1,13 +1,126 @@
 import { editorViewOptionsCtx, prosePluginsCtx, schemaCtx } from '@milkdown/kit/core'
-import { DOMSerializer, type Slice } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { createSlice } from '@milkdown/kit/ctx'
+import { DOMSerializer, Fragment, type Node as ProseNode, Slice } from '@milkdown/kit/prose/model'
+import { type Command, type EditorState, Plugin, PluginKey, type Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { $prose } from '@milkdown/kit/utils'
+import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { APP_CLIPBOARD } from './clipboardNumbers'
 import { clipboardPlainText } from './clipboardPlainText'
+import { eachVisibleTextblock } from './lineSelection'
+import { rowShortcuts } from './noteKeys'
+import { getZoomedItemPos } from './outline/zoom'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 
 export const CLIPBOARD_EMPTY_PARAGRAPH = 'data-mdapp-empty-paragraph'
+
+/** A document range: what Without folded lines copies. */
+interface CopyRange {
+  from: number
+  to: number
+}
+
+/**
+ * The bullet Without folded lines copies when the selection is inside one line (YAZ-3653): the
+ * innermost bullet holding `pos`, whole (its line and the lines under it). Null when the selection
+ * spans lines (it is the copy then), `pos` is in no bullet, or it is in code.
+ */
+export function bulletToCopy(state: EditorState, pos: number): CopyRange | null {
+  const { $from, $to } = state.selection
+  if (!$from.sameParent($to) || !$from.parent.isTextblock) return null
+  const $pos = state.doc.resolve(pos)
+  if ($pos.parent.type.spec.code === true) return null
+  for (let depth = $pos.depth; depth > 0; depth--) {
+    if ($pos.node(depth).type.name !== 'list_item') continue
+    const from = $pos.before(depth)
+    return { from, to: from + $pos.node(depth).nodeSize }
+  }
+  return null
+}
+
+/**
+ * A right-clicked bullet waiting for main's Copy as request: the next Copy as of the note takes it
+ * (any mode), and only a Without folded lines copy uses it, while the note and its selection are
+ * still as they were. A request that failed forgets it (`forgetCopyVisible`).
+ */
+const nextRange = new WeakMap<EditorView, CopyRange & { doc: ProseNode; selection: Selection }>()
+
+/** The next Without folded lines of `view` copies `range` instead of the selection. */
+export function copyVisibleNext(view: EditorView, range: CopyRange): void {
+  nextRange.set(view, { ...range, doc: view.state.doc, selection: view.state.selection })
+}
+
+/** The stored bullet is not wanted: the request for it failed. */
+export function forgetCopyVisible(view: EditorView): void {
+  nextRange.delete(view)
+}
+
+function takeRange(view: EditorView): CopyRange | null {
+  const next = nextRange.get(view)
+  nextRange.delete(view)
+  return next !== undefined && next.doc === view.state.doc && next.selection.eq(view.state.selection) ? next : null
+}
+
+/** The lines (textblocks) in `node`, itself included. */
+const linesIn = (node: ProseNode): number => {
+  let lines = node.isTextblock ? 1 : 0
+  node.descendants((child) => {
+    if (child.isTextblock) lines++
+    return !child.isTextblock
+  })
+  return lines
+}
+
+/**
+ * Copy as › Without folded lines (YAZ-3653): the selection (or `range`) minus what folds hide — a
+ * folded bullet's children and a folded heading's section, found by the walk formatting uses
+ * (`eachVisibleTextblock`, YAZ-3209) — and how many lines that left out. In a zoom, only the zoomed
+ * bullet. Slice position p is document position p + from - openStart, so each kept node's start is
+ * known on the way down.
+ */
+const visibleSlice = (state: EditorState, range: CopyRange | null): { slice: Slice; left: number } => {
+  const { selection, doc } = state
+  if (range === null && selection.ranges.length > 1) return { slice: selection.content(), left: 0 }
+  const { from: start, to: end } = range ?? selection
+  const zoomed = getZoomedItemPos(state)
+  const from = zoomed === null ? start : Math.max(start, zoomed)
+  const to = zoomed === null ? end : Math.min(end, zoomed + doc.nodeAt(zoomed)!.nodeSize)
+  const hidden = new Set<number>()
+  let left = 0
+  eachVisibleTextblock(state, from, to, () => {}, (pos) => {
+    hidden.add(pos)
+    left += linesIn(doc.nodeAt(pos)!)
+  })
+  const slice = doc.slice(from, to, true)
+  if (hidden.size === 0) return { slice, left }
+  const keep = (content: Fragment, start: number): Fragment => {
+    const kept: ProseNode[] = []
+    content.forEach((node, offset) => {
+      if (!hidden.has(start + offset)) kept.push(node.isTextblock || node.isLeaf ? node : node.copy(keep(node.content, start + offset + 1)))
+    })
+    return Fragment.from(kept)
+  }
+  return { slice: new Slice(keep(slice.content, from - slice.openStart), slice.openStart, slice.openEnd), left }
+}
+
+/** Without folded lines' toast (YAZ-3653): the host's notice, or none (a preview, a test). */
+export const copyNoticeCtx = createSlice<((text: string) => void) | null, 'copyNotice'>(null, 'copyNotice')
+
+/** What the toast says: the lines a copy left out, so a copy that dropped them reads as meant. */
+const copiedText = (left: number): string =>
+  left === 0 ? 'Copied. Nothing in it was folded' : `Copied, ${left} folded line${left === 1 ? '' : 's'} left out`
+
+/**
+ * The key for Without folded lines (YAZ-3653): the note row `note.copyVisible`, no key until the
+ * user picks one in Settings › Hotkeys. Main runs it as the Edit menu's row, so it copies what that
+ * row copies: with nothing selected the bullet at the caret, else the selection.
+ */
+const copyVisible: Command = (state, dispatch) => {
+  if (state.selection.empty && bulletToCopy(state, state.selection.head) === null) return false
+  if (dispatch !== undefined) window.yaseenDocs?.menu?.edit?.('copy-visible').catch((error: unknown) => console.error('Copy failed', error))
+  return true
+}
+
+export const copyVisibleHotkey = $shortcut((ctx) => rowShortcuts(ctx, 'note.copyVisible', 'CopyWithoutFoldedLines', { onRun: () => copyVisible }))
 
 /** Copy-only formats: readable text, rich HTML and explicitly requested Markdown; saves stay unchanged. */
 export const clipboardCopyOut = $prose((ctx) => {
@@ -49,6 +162,7 @@ export const clipboardCopyOut = $prose((ctx) => {
     key: new PluginKey('mdapp-clipboard-copy-out'),
     view: view => {
       const unsubscribe = window.yaseenDocs?.menu?.onCopyAs?.(mode => {
+        const stored = takeRange(view)
         const active = document.activeElement
         if (active instanceof HTMLElement && view.dom.contains(active)) {
           const code = CodeMirrorView.findFromDOM(active)
@@ -56,6 +170,15 @@ export const clipboardCopyOut = $prose((ctx) => {
             .map(range => code.state.sliceDoc(range.from, range.to)).join(code.state.lineBreak)
         }
         if (!view.hasFocus()) return undefined
+        if (mode === 'visible') {
+          // The right-clicked bullet; with nothing selected the bullet at the caret (the Edit menu's row, the key); else the selection.
+          const range = stored ?? (view.state.selection.empty ? bulletToCopy(view.state, view.state.selection.head) : null)
+          if (range === null && view.state.selection.empty) return ''
+          const { slice, left } = visibleSlice(view.state, range)
+          const { dom, text } = view.serializeForClipboard(slice)
+          if (text !== '' && ctx.isInjected(copyNoticeCtx)) ctx.get(copyNoticeCtx)?.(copiedText(left))
+          return { text, html: dom.innerHTML }
+        }
         if (view.state.selection.empty) return ''
         const slice = view.state.selection.content()
         return mode === 'plain' ? clipboardPlainText(slice) : copyMarkdown?.(slice, view) ?? ''

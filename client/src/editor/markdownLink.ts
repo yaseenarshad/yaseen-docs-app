@@ -12,7 +12,7 @@ import { linkTooltipAPI } from '@milkdown/kit/component/link-tooltip'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Mark, MarkType, Node as ProseNode } from '@milkdown/kit/prose/model'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { fileKind } from '@shared/fileKind'
@@ -46,6 +46,17 @@ interface LinkHit {
 
 const markdownLinkKey = new PluginKey<DecorationSet>('mdapp-markdown-link')
 const REDRAW = 'redraw-pills'
+
+const addLinkOf = new WeakMap<EditorView, (range?: { from: number; to: number }) => boolean>()
+
+/**
+ * Opens the link box on `range` (default: `view`'s selection), as the note menu's "Add link…" (YAZ-3609 D17).
+ * The menu passes the selection it opened on: closing it gives the note its focus back, which can move the
+ * selection. False with no words, in a read-only note, or with no link plugin.
+ */
+export function addLinkOn(view: EditorView, range?: { from: number; to: number }): boolean {
+  return addLinkOf.get(view)?.(range) ?? false
+}
 
 /** Draws every link pill of the note again (YAZ-3664): the host calls it when the window's vaults change. No document change. */
 export function redrawLinkPills(view: EditorView): void {
@@ -225,10 +236,13 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
         },
       },
       view: (editorView) => {
-        // The text menu's "Add link…" (YAZ-3609 D17): Crepe's own link box, on this editor's selection.
-        const offAddLink = window.yaseenDocs?.menu?.onAddLink?.(() => {
-          const { from, to, empty } = editorView.state.selection
-          if (!editorView.hasFocus() || !editorView.editable || empty) return false
+        // The note menu's "Add link…" (YAZ-3609 D17, `noteMenu.tsx`): Crepe's own link box, on this editor's selection.
+        addLinkOf.set(editorView, (range) => {
+          const { from, to } = range ?? editorView.state.selection
+          if (!editorView.editable || from >= to || to > editorView.state.doc.content.size) return false
+          // The words get their selection back first: the box stands by them, and they are what it links.
+          editorView.dispatch(editorView.state.tr.setSelection(TextSelection.create(editorView.state.doc, from, to)))
+          editorView.focus()
           ctx.get(linkTooltipAPI.key).addLink(from, to)
           return true
         })
@@ -252,7 +266,7 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
             if (view.state.doc !== previousState.doc) close()
           },
           destroy: () => {
-            offAddLink?.()
+            addLinkOf.delete(editorView)
             document.removeEventListener('click', onPreviewClick, true)
             document.removeEventListener('auxclick', onPreviewClick, true)
             close()

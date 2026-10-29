@@ -4,7 +4,6 @@ exports[`window.yaseenDocs is exactly this surface (YAZ-2200) 1`] = `
 "expose yaseenDocs
 on app:flush
 on menu:paste-as
-on menu:add-link
 on menu:copy-as
 app.sound/1: invoke app:sound ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 boardHead/1: invoke fs:board-head ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -97,7 +96,7 @@ media.onChanged/1: on media:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","ro
 media.preview/1: invoke media:preview ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.recent/1: invoke media:recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.search/1: invoke media:search ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-menu.onAddLink/1: (no IPC)
+menu.edit/2: invoke menu:edit ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 menu.onCanvasBackground/1: on menu:canvas-background -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:canvas-background
 menu.onCloseTab/1: on menu:close-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:close-tab
 menu.onCopyAs/1: (no IPC)
@@ -154,6 +153,7 @@ shell.openDefault/1: invoke shell:openDefault ["a0"]; => "answer"; !> {"code":"N
 shell.openLink/1: invoke shell:open-link ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openVsCode/1: invoke shell:openVsCode ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.reveal/1: invoke shell:reveal ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+spell.suggestions/1: (no IPC)
 state.get/0: invoke state:get []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.onChange/1: on state:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off state:changed
 state.pushRecent/1: invoke state:push-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

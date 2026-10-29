@@ -6,7 +6,7 @@
  * lives in `main/index.ts`.
  */
 import type { MenuItemConstructorOptions } from 'electron'
-import { keyedVaults, type AppState, type ClipboardPasteRequest, type FileKind, type KeyedVault, type RecentRoots, type ZoomStep } from '@shared/types'
+import { keyedVaults, type AppState, type ClipboardPasteRequest, type CopyAsMode, type FileKind, type KeyedVault, type RecentRoots, type ZoomStep } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { appKeyId, keyFor, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { keyRow, stepsAside, type HotkeyAside, type KeyScope } from '@shared/keys'
@@ -17,7 +17,7 @@ import type { WindowManager } from './windows'
 export const HELP_URL = 'https://github.com/yaseenarshad/yaseen-docs-app#readme'
 
 export interface MenuHandlers {
-  copyAs(mode: 'plain' | 'markdown'): void
+  copyAs(mode: CopyAsMode): void
   pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** File › New… (⌘N, YAZ-3556 D1): the focused window's renderer opens its New… box. */
   newItem(): void
@@ -314,6 +314,8 @@ function copyAsMenu(copyAs: MenuHandlers['copyAs']): MenuItemConstructorOptions 
     submenu: [
       { id: 'menu.edit.copy-plain', label: 'Plain text', click: () => copyAs('plain') },
       { id: 'menu.edit.copy-markdown', label: 'Markdown', click: () => copyAs('markdown') },
+      { type: 'separator' },
+      { id: 'menu.edit.copy-visible', label: 'Without folded lines', click: () => copyAs('visible') },
     ],
   }
 }
@@ -329,12 +331,10 @@ function pasteAsMenu(pasteAs: MenuHandlers['pasteAs'], accelerator = false): Men
 }
 
 export interface ContextMenuActions {
-  copyAs(mode: 'plain' | 'markdown'): void
+  copyAs(mode: CopyAsMode): void
   pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** Swap the misspelled word under the cursor for the suggestion the user picked. */
   replace(word: string): void
-  /** Open the focused editor's link box on its selection (YAZ-3609 D17). */
-  addLink(): void
   /** Teach the spellchecker a word it flagged, for good. */
   addToDictionary(word: string): void
   /** Copy the right-clicked image's pixels to the clipboard (YAZ-1666). */
@@ -359,7 +359,7 @@ export interface ContextMenuActions {
  * `<img src>` verbatim; `vaultProtocol.ts` decides whether it names a vault file.
  */
 export function buildContextMenuTemplate(
-  params: Pick<Electron.ContextMenuParams, 'misspelledWord' | 'dictionarySuggestions' | 'editFlags' | 'mediaType' | 'srcURL' | 'selectionText' | 'isEditable' | 'formControlType'>,
+  params: Pick<Electron.ContextMenuParams, 'misspelledWord' | 'dictionarySuggestions' | 'editFlags' | 'mediaType' | 'srcURL'>,
   actions: ContextMenuActions,
 ): MenuItemConstructorOptions[] {
   if (params.mediaType === 'image') {
@@ -385,9 +385,6 @@ export function buildContextMenuTemplate(
     { ...copyAsMenu(actions.copyAs), enabled: params.editFlags.canCopy },
     { role: 'paste', enabled: params.editFlags.canPaste },
     { ...pasteAsMenu(actions.pasteAs), enabled: params.editFlags.canPaste },
-    // Selected text you can edit can become a link (YAZ-3609 D17): a web address or a path. Only in a note's
-    // text: a text box (the find bar, a rename box, the code editor's) is a form field, and no link box answers there.
-    ...(params.isEditable && params.formControlType === 'none' && params.selectionText.trim() !== '' ? [{ type: 'separator' } satisfies MenuItemConstructorOptions, { label: 'Add link…', click: () => actions.addLink() }] : []),
   ]
 }
 

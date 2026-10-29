@@ -153,6 +153,25 @@ test('step 1f — a pill into the other vault names it (D22); a pill and a [[lin
   await expect.poll(rows).toEqual(['Ideas', ...LINK_ROWS])
   await win.keyboard.press('Escape')
   await expect(win.locator('.ctx-menu--editor')).toHaveCount(0)
+  // D17: words selected in the note, right-click › Add link… (the note menu, YAZ-3653) opens the link box on them.
+  await editorOf(win).getByText('Paste:').click()
+  const box = await win.evaluate(() => {
+    const line = Array.from(document.querySelectorAll('.ProseMirror p')).find((p) => p.textContent === 'Paste:')!
+    const range = document.createRange()
+    range.selectNodeContents(line)
+    document.getSelection()!.removeAllRanges()
+    document.getSelection()!.addRange(range)
+    const r = range.getBoundingClientRect()
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+  })
+  await win.mouse.click(box.x, box.y, { button: 'right' })
+  await win.locator('.ctx-overlay [role="menuitem"]', { hasText: 'Add link…' }).click()
+  await expect(win.locator('.milkdown-link-edit input')).toBeVisible()
+  await shoot(win, 'workspace-links-01f-add-link')
+  // The box stands by the words it links (Crepe puts it just above or below them), never at the top of the note.
+  const edit = (await win.locator('.milkdown-link-edit').boundingBox())!
+  expect(Math.abs(edit.y - box.y)).toBeLessThan(80)
+  await win.keyboard.press('Escape')
 })
 
 test('step 2 — a Markdown link into the other vault opens in this tab, and Back returns (D14, D10)', async () => {
