@@ -4,7 +4,8 @@
  * Since YAZ-3343 D35, ⌘⇧N (File › New Window) opens a blank tab and takes no page view (step 3).
  * The source here is drilled into "Alpha parent", has "Alpha sibling" folded and stands at 125% (⌘+ through View › Zoom In, the app's own zoom path).
  * Each copy must show the same three things. The note on disk never changes: a page view is view
- * state only, never stored (S18).
+ * state only, never stored (S18). Since YAZ-3647 D2 the tab itself holds its zoom level: its label stays the
+ * page name (YAZ-3646 D12), and its tooltip names the bullet (YAZ-3647 E4).
  *
  * Written for YAZ-2965 without being run: an Electron e2e opens real windows on the screen.
  *
@@ -69,6 +70,9 @@ test('step 1 — the source: drilled into a bullet, one bullet folded, text size
 
   await glyph(win, 'Alpha parent').click()
   await expect(crumbs(win)).toHaveText([TITLE, 'Alpha parent'])
+  // The tab's label stays the page name (YAZ-3646 D12, option 2); its tooltip names the bullet (YAZ-3647 E4).
+  await expect(tabsOf(win)).toHaveText([TITLE])
+  await expect(tabsOf(win).first()).toHaveAttribute('title', `${TITLE} › Alpha parent\n${notePath}`)
 
   await line(win, 'Alpha sibling').hover() // reveal the chevron (opacity)
   await toggle(win, 'Collapse', 'Alpha sibling').click()
@@ -89,6 +93,8 @@ test('step 2 — Duplicate tab: the copy shows the same breadcrumbs, fold and te
   await expect(tabsOf(win)).toHaveText([TITLE, TITLE])
   await expect(tabsOf(win).nth(1)).toHaveAttribute('aria-selected', 'true')
   await expectSourceView(win, 'pageview-2-duplicate')
+  // The copy holds the same zoom level (YAZ-3647 E10), so its tooltip names the same bullet.
+  await expect(tabsOf(win).nth(1)).toHaveAttribute('title', `${TITLE} › Alpha parent\n${notePath}`)
 
   // Back to the source, for the two new-window actions below.
   await tabsOf(win).nth(0).click()

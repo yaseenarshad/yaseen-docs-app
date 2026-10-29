@@ -19,8 +19,9 @@
  *   4  the spell-check context-menu listener is actually wired on the window (672)
  *   5  history (a): A → B → C, Back Back Forward — one tab throughout (721)
  *   6  history (b): navigating away from a walked-back position TRUNCATES forward (721)
- *   7  history (c): a link to an ALREADY-OPEN file activates that tab; the source tab's stack
- *      is left exactly as it was (721)
+ *   7  history (c): a link to an ALREADY-OPEN file activates that tab, and that is a step of the
+ *      window's ONE Back list (YAZ-3647 D1, D4): Back and Forward walk across the two tabs, and a
+ *      tab click is a step too
  *   8  history (d): renaming a page that sits BEHIND the current one — Back lands on the new name (721)
  *   9  history (e): deleting a page that sits behind — Back skips straight past it (721)
  *  10  dragging the sidebar edge to the far left CLOSES the sidebar (738)
@@ -93,7 +94,7 @@ async function dragSidebar(w: Page, dx: number, shot?: string): Promise<void> {
   await w.mouse.up()
 }
 
-/** Closes every open tab, leaving the empty state — which also RESETS the per-tab history. */
+/** Closes every open tab, leaving the empty state — which also EMPTIES the window's Back list: a closed tab's steps go (YAZ-3647 D5). */
 async function closeAllTabs(w: Page): Promise<void> {
   for (;;) {
     const n = await tabsOf(w).count()
@@ -207,7 +208,7 @@ test('step 5 — (a) A → B → C, then Back Back Forward, all in ONE tab', asy
   // The first step that navigates by the file tree; a launch (step 2's relaunch included) is
   // collapsed since YAZ-1642, so the disk folders the pages below live in are opened first.
   await expandDirs(win, FOLDERS.map((f) => path.join(vault, f)))
-  // Closing every tab resets the per-tab stacks, so this starts from a genuinely empty history.
+  // Closing every tab takes every step out of the window's list (YAZ-3647 D5), so this starts from a genuinely empty history.
   await closeAllTabs(win)
   await startAt(win, 'Lead Nurture', 'Known contacts that are not yet in a deal')
 
@@ -242,32 +243,47 @@ test('step 6 — (b) navigating from a walked-back position truncates the forwar
   await expect(backBtn(win)).toBeDisabled()
 })
 
-test('step 7 — (c) a link to an already-open file activates ITS tab, and leaves the source stack alone', async () => {
+test('step 7 — (c) a link to an already-open file activates ITS tab, and Back walks the ONE window list across both tabs (YAZ-3647 D1, D4)', async () => {
   await closeAllTabs(win)
-  // Give the source page a back entry of its own, so "unchanged" is something to see.
+  // Give the source page a back entry of its own, so the walk across the tabs has two steps in the first tab.
   await startAt(win, 'MQL Volume', 'Marketing-qualified leads per period')
   await followLink(win, 'Lead Gen', 'Lead Gen', 'Everything that turns strangers into known contacts')
   await expect(backBtn(win)).toBeEnabled()
 
-  // ⌘-click opens a BACKGROUND tab (the locked I3 ruling): activation never moves.
+  // ⌘-click opens a BACKGROUND tab (the locked I3 ruling): activation never moves, and a tab behind adds no step.
   await fileRow(win, 'CAC').click({ modifiers: ['Meta'] })
   await expect(tabsOf(win)).toHaveText(['Lead Gen', 'CAC'])
   await expect(activeTab(win)).toHaveText('Lead Gen')
+  await expect(forwardBtn(win)).toBeDisabled()
 
   // The body link now points at a file that is ALREADY open: de-dup by path wins — the CAC tab
-  // activates, no third tab appears, and nothing is pushed onto anybody's stack.
+  // activates and no third tab appears. The page that came to the front is a step (D4).
   await linkIn(win, 'CAC').click()
   await expect(activeTab(win)).toHaveText('CAC')
   await expect(tabsOf(win)).toHaveCount(2)
-  await expect(backBtn(win)).toBeDisabled() // CAC was never navigated TO — it has no stack
+  await expect(backBtn(win)).toBeEnabled() // one list for the window: CAC's tab can go back to Lead Gen
   await expect(forwardBtn(win)).toBeDisabled()
   await shoot(win, 'easy-history-already-open')
 
-  // Back on the source tab the stack is exactly what it was: one step back, to MQL Volume.
-  await tabsOf(win).filter({ hasText: 'Lead Gen' }).click()
-  await expect(backBtn(win)).toBeEnabled()
+  // Back walks the list in time order, across the tabs: Lead Gen's tab, then that tab's page before it.
+  await step(win, 'back', 'Lead Gen', 'Everything that turns strangers into known contacts')
+  await expect(forwardBtn(win)).toBeEnabled()
   await step(win, 'back', 'MQL Volume', 'Marketing-qualified leads per period')
   await expect(tabsOf(win)).toHaveText(['MQL Volume', 'CAC'])
+  await expect(backBtn(win)).toBeDisabled() // the bottom of the list
+
+  // Forward walks it again: Lead Gen comes back in its tab, then the CAC tab comes to the front.
+  await step(win, 'forward', 'Lead Gen', 'Everything that turns strangers into known contacts')
+  await step(win, 'forward', 'CAC', 'Fully loaded cost to acquire one customer')
+  await expect(tabsOf(win)).toHaveText(['Lead Gen', 'CAC'])
+  await expect(forwardBtn(win)).toBeDisabled()
+
+  // A tab click is a step too (D4): Back returns to the tab you came from.
+  await tabsOf(win).filter({ hasText: 'Lead Gen' }).click()
+  await expect(activeTab(win)).toHaveText('Lead Gen')
+  await expect(forwardBtn(win)).toBeDisabled()
+  await step(win, 'back', 'CAC', 'Fully loaded cost to acquire one customer')
+  await expect(tabsOf(win)).toHaveCount(2)
 })
 
 test('step 8 — (d) renaming a page BEHIND the current one: Back lands on the new name', async () => {

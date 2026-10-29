@@ -2,7 +2,10 @@
  * The two zooms of a note, in the REAL app:
  *  - BULLET ZOOM (GRO-2029/2091, `editor/outline/zoom.ts`): a click on a bullet's glyph shows only
  *    that bullet's subtree under a `file › ancestor › item` breadcrumb, ⌘Z takes back exactly that
- *    view action, and the file crumb zooms out. View state only: the file never changes.
+ *    view action, and the file crumb zooms out. View state only: the file never changes. Each
+ *    zoom level is a step of the window's one Back list (YAZ-3647 D2): ‹ ›, and Window › Back /
+ *    Forward (⌘⌥← / ⌘⌥→, D7), walk the levels. No browser history: the tab holds its zoom key,
+ *    and the state file stores it while the tab is zoomed in (YAZ-3646 D14).
  *  - DOCUMENT MAGNIFICATION (YAZ-1410/1710): the `− | 100% | +` pill steps the preset ladder and
  *    takes a custom value, scaling the content through `--document-zoom`. It is temporary: it
  *    never reaches the state file, and a remount of the note starts at 100% again.
@@ -13,7 +16,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, clickMenuItem, editorOf, fileRow, launchApp, layer, readState, seededState, shoot } from './helpers'
+import { appWindow, clickMenuItem, editorOf, fileRow, launchApp, layer, readState, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -32,6 +35,12 @@ const line = (w: Page, text: string) => editorOf(w).locator(`p:text-is("${text}"
 const glyph = (w: Page, text: string) => editorOf(w).locator(`li.list-item:has(> .children > .content-dom > p:text-is("${text}")) > .label-wrapper`)
 const crumbs = (w: Page) => editorOf(w).locator('nav[aria-label="Zoom breadcrumbs"] .outline-zoom-crumb')
 const pill = (w: Page) => layer(w).locator('[role="group"][aria-label="Document zoom"]')
+const backBtn = (w: Page) => w.locator('.tabbar-nav [aria-label="Back"]')
+const forwardBtn = (w: Page) => w.locator('.tabbar-nav [aria-label="Forward"]')
+/** The zoom key the first tab stores (YAZ-3646 D14), '' when it stores none (the whole page). */
+const storedZoom = async (): Promise<string> => (await readState(userData)).windows[0]?.tabStrip?.[0]?.zoom ?? ''
+/** A zoom key as `zoom.ts` makes it (`isZoomKey`): a short hash and a count, never the bullet's text. */
+const ZOOM_KEY = /^[0-9a-z]{1,8}:\d{1,6}$/
 /**
  * Every place in the state file where a zoom could hide (YAZ-3400): each key and each string value that matches
  * `/zoom/i`, as a dotted path (`windows.0.file`). The vault's temp path is removed first, because its name has "zoom".
@@ -98,6 +107,45 @@ test('step 2 — ⌘Z reverts the zoom (the latest view action); the file crumb 
   expect(await readFile(notePath, 'utf8')).toBe(BODY)
 })
 
+test('step 2b — each zoom level is a Back step (YAZ-3647 D2): ‹ › and Window › Back / Forward walk them, in one tab; the tab stores its level (YAZ-3646 D14)', async () => {
+  // Steps 1–2 made five steps in this tab: the whole page (the launch), Alpha child, the whole page (⌘Z),
+  // Alpha grandchild, the whole page (the file crumb). The last one is in front.
+  await expect(forwardBtn(win)).toBeDisabled()
+  await expect.poll(storedZoom, { timeout: 10_000 }).toBe('')
+
+  await backBtn(win).click()
+  await expect(crumbs(win)).toHaveText([TITLE, 'Alpha parent', 'Alpha child', 'Alpha grandchild'])
+  await expect(line(win, 'Beta parent')).toBeHidden()
+  // The level is stored with the tab as a key, so a restart opens the tab there (D14).
+  await expect.poll(storedZoom, { timeout: 10_000 }).toMatch(ZOOM_KEY)
+  await shoot(win, 'zoom-01b-back-to-level')
+  await backBtn(win).click()
+  await expect(crumbs(win)).toHaveCount(0)
+  await expect(line(win, 'Beta parent')).toBeVisible()
+
+  // ⌘⌥← is Window › Back (D7): the same list, from the menu.
+  await clickMenuItem(app, 'menu.window.back', 'w1')
+  await expect(crumbs(win)).toHaveText([TITLE, 'Alpha parent', 'Alpha child'])
+  await clickMenuItem(app, 'menu.window.back', 'w1')
+  await expect(crumbs(win)).toHaveCount(0)
+  await expect(backBtn(win)).toBeDisabled() // the launch's step: the bottom of the list
+  await expect(forwardBtn(win)).toBeEnabled()
+
+  // ⌘⌥→ and › walk it again, to the end: the whole page.
+  await clickMenuItem(app, 'menu.window.forward', 'w1')
+  await expect(crumbs(win)).toHaveText([TITLE, 'Alpha parent', 'Alpha child'])
+  await forwardBtn(win).click()
+  await expect(crumbs(win)).toHaveCount(0)
+  await forwardBtn(win).click()
+  await expect(crumbs(win)).toHaveText([TITLE, 'Alpha parent', 'Alpha child', 'Alpha grandchild'])
+  await forwardBtn(win).click()
+  await expect(crumbs(win)).toHaveCount(0)
+  await expect(forwardBtn(win)).toBeDisabled()
+  await expect(tabsOf(win)).toHaveText([TITLE]) // one tab throughout: a level is no tab
+  await expect.poll(storedZoom, { timeout: 10_000 }).toBe('')
+  expect(await readFile(notePath, 'utf8')).toBe(BODY)
+})
+
 test('step 3 — the magnification pill steps presets and takes a custom value, scaling the content', async () => {
   const trigger = pill(win).locator('.document-zoom__trigger')
   await expect(trigger).toHaveAttribute('aria-label', 'Document zoom: 100%')
@@ -123,7 +171,8 @@ test('step 3 — the magnification pill steps presets and takes a custom value, 
 test('step 4 — magnification is temporary: nothing persists, and reopening the note starts at 100%', async () => {
   // Nothing zoom-shaped in the state file except the sidebar zoom (YAZ-3389) and the App size (YAZ-3432), neither of
   // them the note's. Every key and string value is checked (the vault's own temp name, `zoom-vault-…`, aside; the note
-  // is `Outline.md`). Both stay at their default: the note's 150% did not leak into them (YAZ-3400).
+  // is `Outline.md`). Both stay at their default: the note's 150% did not leak into them (YAZ-3400). A tab zoomed into
+  // a bullet stores its `zoom` key (YAZ-3646 D14, step 2b); this tab ended step 2b at the whole page, so it stores none.
   const state = await readState(userData)
   expect(zoomPaths(state, vault)).toEqual([])
   expect(state.settings.sidebarZoom).toBe(100)
