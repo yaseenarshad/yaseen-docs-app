@@ -131,7 +131,8 @@ export const relativeLinks = $prose((ctx) => new Plugin({
   key: new PluginKey('mdapp-relative-links'),
   appendTransaction: (trs, before, state) => {
     const options = ctx.get(pathPasteCtx)
-    if (options === null || before.doc === state.doc || trs.some((tr) => tr.getMeta(EXTERNAL_EDIT_META) !== undefined)) return null
+    // Not an outside edit, and not an undo or a redo (`history$`): ⌘Z after "Remove link" puts the link back as it was (YAZ-3658).
+    if (options === null || before.doc === state.doc || trs.some((tr) => tr.getMeta(EXTERNAL_EDIT_META) !== undefined || tr.getMeta('history$') !== undefined)) return null
     const type = linkSchema.type(ctx)
     // The hrefs this change sets: an added link mark (the link box), or the links a paste brings.
     const set = new Set<string>()

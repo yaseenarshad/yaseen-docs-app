@@ -24,11 +24,21 @@
   padding: 0;
   background: none;
 }
-/* A Markdown link into a vault of the window (YAZ-3609 D19): the same pill; its anchor drops the underline.
-   As specific as Crepe's reset (`.milkdown .ProseMirror a`), which comes first, so this one wins. */
-.milkdown .ProseMirror .link-pill > a {
-  color: inherit;
+/* A Markdown link into a vault of the window (YAZ-3609 D19): the same pill on the link's own text; its anchor
+   drops the underline. As specific as Crepe's reset (`.milkdown .ProseMirror a`), which comes first, so this
+   one wins. A link with a bold part is two anchors, one pill: only its first and last pieces are rounded. */
+.milkdown .ProseMirror a:has(> .link-pill) {
   text-decoration: none;
+}
+.wikilink.link-pill:not(.link-pill--first) {
+  padding-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.wikilink.link-pill:not(.link-pill--last) {
+  padding-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 /* Target not in the vault index — dimmed, Obsidian-style. */

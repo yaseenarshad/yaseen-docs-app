@@ -56,9 +56,12 @@ export const WIKILINK_UNRESOLVED_CLASS = 'wikilink--unresolved'
 export const WIKILINK_SYNTAX_CLASS = 'wikilink__syntax'
 export const WIKILINK_SUB_CLASS = 'wikilink__sub'
 
-/** How a resolved link looks (YAZ-3609 D13): the icon its file has in the sidebar. Absent → no icon. */
+/**
+ * How a resolved link looks (YAZ-3609 D13): the attributes that draw the icon its file has in the sidebar on
+ * the `::before` of the span that shows the link's text (`fileIconDecoration`). Absent → no icon.
+ */
 export interface LinkLook {
-  icon: (path: string, folder: boolean) => HTMLElement
+  icon: (path: string, folder: boolean) => Record<string, string>
 }
 
 /** Link target → resolved absolute path — a note's file, else a folder's directory (YAZ-2290 D10) — or null when nothing matches. */
@@ -213,24 +216,24 @@ function hide(out: Decoration[], from: number, to: number): void {
   if (from < to) out.push(Decoration.inline(from, to, { class: WIKILINK_SYNTAX_CLASS }))
 }
 
-/** The DOM an id link's title widget draws: the classes its id text would have worn, after the file's icon. */
-function titleSpan(cls: string, title: string, icon?: () => HTMLElement): HTMLElement {
+/** The DOM an id link's title widget draws: the classes its id text would have worn, and the file's icon (D13). */
+function titleSpan(cls: string, title: string, icon?: Record<string, string>): HTMLElement {
   const span = document.createElement('span')
-  span.className = cls
-  if (icon !== undefined) span.append(icon())
-  span.append(title)
+  for (const [name, value] of Object.entries(icon ?? {})) span.setAttribute(name, value)
+  span.className = icon === undefined ? cls : `${cls} ${icon.class}`
+  span.textContent = title
   return span
 }
 
 /** The icon of the page a resolved link opens (D13), or undefined: no look, unresolved, or no index yet. */
-function linkIcon(inner: string, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, look: LinkLook | undefined): { key: string; draw: () => HTMLElement } | undefined {
+function linkIcon(inner: string, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, look: LinkLook | undefined): { key: string; attrs: Record<string, string> } | undefined {
   if (look === undefined) return undefined
   const view = viewOnly === undefined ? null : viewOnlyLinkTarget(inner)
   const path = view !== null ? (view.hasSubtarget ? null : viewOnly?.resolve?.(view.page) ?? null) : source.resolve?.(linkPageName(inner)) ?? null
   if (path == null) return undefined
   // A folder resolves to its directory: no file kind.
   const folder = fileKind(basename(path)) === null
-  return { key: path, draw: () => look.icon(path, folder) }
+  return { key: path, attrs: look.icon(path, folder) }
 }
 
 /** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
@@ -256,16 +259,11 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   const cls = resolved ? WIKILINK_CLASS : `${WIKILINK_CLASS} ${WIKILINK_UNRESOLVED_CLASS}`
   const icon = resolved ? linkIcon(inner, source, viewOnly, look) : undefined
   /**
-   * With an icon, the first shown text is drawn as one widget, icon and text in one span, as an id link's
-   * title is: two spans side by side left a seam in the pill. Its own text is hidden, as an id is.
+   * The first shown text: its own span carries the file's icon on its `::before`, so icon and text are one box
+   * (YAZ-3648) and the text stays real text, which find highlights and the caret walks (YAZ-3657).
    */
-  const shown = (from: number, to: number, text: string, extra = '') => {
-    if (icon === undefined) {
-      out.push(Decoration.inline(from, to, { class: `${cls}${extra}` }))
-      return
-    }
-    hide(out, from, to)
-    out.push(Decoration.widget(from, () => titleSpan(cls, text, icon.draw), { key: `${text}|${icon.key}` }))
+  const shown = (from: number, to: number) => {
+    out.push(Decoration.inline(from, to, icon === undefined ? { class: cls } : { ...icon.attrs, class: `${cls} ${icon.attrs.class}` }))
   }
   const innerStart = start + 2
   const end = innerStart + inner.length + 2
@@ -273,7 +271,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   const pipe = inner.indexOf('|')
   if (pipe >= 0) {
     hide(out, innerStart, innerStart + pipe + 1) // target(#heading)?| — the alias is the display
-    shown(innerStart + pipe + 1, end - 2, inner.slice(pipe + 1)) // never empty: guarded above
+    shown(innerStart + pipe + 1, end - 2) // never empty: guarded above
   } else {
     // target, then ` > `-separated sub segments for each `#heading` / `#^block` part
     let at = innerStart
@@ -290,10 +288,10 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
         // An id link: the id is syntax too, and the title stands where it was. Keyed by the
         // title, so a rebuild that changes nothing redraws nothing.
         hide(out, at, at + part.length)
-        out.push(Decoration.widget(at, () => titleSpan(cls, title, icon?.draw), { key: `${title}|${icon?.key ?? ''}` }))
+        out.push(Decoration.widget(at, () => titleSpan(cls, title, icon?.attrs), { key: `${title}|${icon?.key ?? ''}` }))
         segments++
       } else if (part.length > 0) {
-        if (segments === 0) shown(at, at + part.length, part)
+        if (segments === 0) shown(at, at + part.length)
         else out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}` }))
         segments++
       }

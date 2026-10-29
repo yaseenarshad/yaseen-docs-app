@@ -63,7 +63,7 @@ import { PdfViewer } from '../viewers/PdfViewer'
 import { ImageViewer } from '../viewers/ImageViewer'
 import type { NoticeKind } from '../lib/notice'
 import type { AnchorRect } from '../sidebar/previewPlacement'
-import { fileIconElement, IconsContext } from '../sidebar/FileIcon'
+import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { VaultLinksContext } from '../links/vaultLinks'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 
@@ -630,7 +630,7 @@ function CrepeHost({
           : { root, createFolder: () => newNoteFolderFor?.(file.path) ?? '', openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
       // The hover panel of a resolved [[link]] (YAZ-3403): this note editor's alone, never a read-only preview's.
       wikilinkHover: linkHover,
-      linkLook: { icon: (target, folder) => fileIconElement(icons.current, target, folder) },
+      linkLook: { icon: (target, folder) => fileIconDecoration(icons.current, target, folder) },
       // Standard Markdown links (YAZ-1309) leave through one typed host boundary. The active
       // note path travels with the untouched href so main—not the renderer—owns relative-file
       // resolution, protocol validation, and the choice of OS API.
@@ -641,7 +641,7 @@ function CrepeHost({
         openPath: (target, background) => (background ? onOpenFileBackground ?? onOpenFile : onOpenFile)(target),
         // A link into a vault of the window is a pill with its file's icon, like a [[link]] (YAZ-3609 D19).
         vaultPath: (href) => (wikilinkCandidates === undefined ? null : vaultHref(href, { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf })),
-        icon: (target, folder) => fileIconElement(icons.current, target, folder),
+        icon: (target, folder) => fileIconDecoration(icons.current, target, folder),
         onNotice: onNotice ?? (() => undefined),
       },
       // Paste a path, get a link (YAZ-3609): this vault's `[[` picker rows spell it.

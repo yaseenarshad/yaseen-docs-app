@@ -123,38 +123,45 @@ describe('a link to this vault opens in a tab (YAZ-3609 D8, D9)', () => {
 })
 
 describe('a Markdown link into a vault of the window is a pill (YAZ-3609 D19)', () => {
-  const icon = (path: string, folder: boolean) => {
-    const span = document.createElement('span')
-    span.className = 'wikilink__icon'
-    span.dataset.path = path
-    span.dataset.folder = String(folder)
-    return span
-  }
+  // The icon is attributes on the span of the link's own text (`fileIconDecoration`): its `::before` draws it.
+  const icon = (path: string, folder: boolean) => ({ class: 'probe-icon', 'data-path': path, 'data-folder': String(folder) })
   const vaultPath = (href: string) => (href.startsWith('../') ? `/v/${href.slice(3)}` : null)
+  const firsts = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>('.link-pill--first'))
 
-  it('I6 a vault link leads with its icon and keeps its text and href; I7 a web link stays a plain link', async () => {
+  it('I6 a vault link is a pill whose first piece carries the icon, on its own text; I7 a web link stays a plain link', async () => {
     const { crepe, root } = await mount('[Plan](../plan.md) and [Research](../research) and [Web](https://example.com)\n', { vaultPath, icon })
-    const pills = Array.from(root.querySelectorAll('.link-pill'))
-    expect(pills.map((pill) => [pill.querySelector('a')?.getAttribute('href'), pill.textContent, (pill.querySelector('.wikilink__icon') as HTMLElement).dataset.folder])).toEqual([
-      ['../plan.md', 'Plan', 'false'],
-      ['../research', 'Research', 'true'],
+    expect(firsts(root).map((el) => [el.closest('a')?.getAttribute('href'), el.textContent, el.classList.contains('probe-icon'), el.dataset.folder])).toEqual([
+      ['../plan.md', 'Plan', true, 'false'],
+      ['../research', 'Research', true, 'true'],
     ])
-    expect(Array.from(root.querySelectorAll('a')).find((a) => a.textContent === 'Web')?.closest('.link-pill')).toBeNull()
+    expect(Array.from(root.querySelectorAll('a')).find((a) => a.textContent === 'Web')?.querySelector('.link-pill')).toBeNull()
     expect(getMarkdownForSave(crepe)).toBe('[Plan](../plan.md) and [Research](../research) and [Web](https://example.com)\n')
   })
 
-  it('a click on the pill icon opens the link, as a click on its text does', async () => {
+  it('YAZ-3656 a link with a bold part is one pill: one icon, the first piece and the last piece rounded', async () => {
+    const { root } = await mount('[Plan **bold** end](../plan.md)\n', { vaultPath, icon })
+    expect(root.querySelectorAll('.probe-icon')).toHaveLength(1)
+    const pieces = Array.from(root.querySelectorAll<HTMLElement>('.link-pill'))
+    expect(pieces.map((el) => el.textContent)).toEqual(['Plan ', 'bold', ' end'])
+    expect(pieces[0]!.classList.contains('link-pill--first') && pieces[2]!.classList.contains('link-pill--last')).toBe(true)
+  })
+
+  it('a click on the pill opens the link', async () => {
     const openPath = vi.fn()
     const { root } = await mount('[Plan](../plan.md)\n', { vaultPath, icon, inApp: (href) => vaultPath(href), openPath })
-    mouse(root.querySelector('.link-pill .wikilink__icon')!, 'mousedown', { button: 0 })
+    mouse(root.querySelector('.link-pill')!, 'mousedown', { button: 0 })
     expect(openPath).toHaveBeenCalledWith('/v/plan.md', false)
   })
 
-  it('editing the text inside a pill keeps the link and the pill', async () => {
+  it('YAZ-3655 text typed inside and right after a pill is real text: it saves, and the pill follows its link', async () => {
     const { crepe, view, root } = await mount('[Plan](../plan.md)\n', { vaultPath, icon })
     view.dispatch(view.state.tr.insertText('s', 1 + 'Plan'.length))
     expect(getMarkdownForSave(crepe)).toBe('[Plans](../plan.md)\n')
-    expect(root.querySelector('.link-pill')?.textContent).toBe('Plans')
+    expect(firsts(root)[0]?.textContent).toBe('Plans')
+    // Plain text after the link, as a keystroke there gives (the end-to-end test types it for real).
+    view.dispatch(view.state.tr.insert(view.state.doc.content.size - 1, view.state.schema.text(' and more')))
+    expect(getMarkdownForSave(crepe)).toBe('[Plans](../plan.md) and more\n')
+    expect(Array.from(root.querySelectorAll('.link-pill')).map((el) => el.textContent).join('')).toBe('Plans')
   })
 })
 

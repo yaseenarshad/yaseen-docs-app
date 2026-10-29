@@ -9,10 +9,10 @@
  */
 import { linkTooltipAPI } from '@milkdown/kit/component/link-tooltip'
 import type { Ctx } from '@milkdown/kit/ctx'
-import type { Mark } from '@milkdown/kit/prose/model'
+import type { Mark, MarkType, Node as ProseNode } from '@milkdown/kit/prose/model'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
-import type { EditorView } from '@milkdown/kit/prose/view'
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { fileKind } from '@shared/fileKind'
 
@@ -24,8 +24,8 @@ export interface MarkdownLinkNav {
   openPath?: (path: string, background: boolean) => void
   /** A link into a vault of this window, found or not (YAZ-3609 D19): its absolute path, or null. Such a link is a pill. */
   vaultPath?: (href: string) => string | null
-  /** The pill's icon: the one the sidebar gives `path` (D13, D19). */
-  icon?: (path: string, folder: boolean) => HTMLElement
+  /** The pill's icon: the decoration attributes that draw the one the sidebar gives `path` (D13, D19, `fileIconDecoration`). */
+  icon?: (path: string, folder: boolean) => Record<string, string>
   /** Injectable for tests; the app uses the platform clipboard by default. */
   copy?: (href: string) => Promise<void> | void
   onNotice: (message: string) => void
@@ -38,7 +38,7 @@ interface LinkHit {
   to: number
 }
 
-const markdownLinkKey = new PluginKey('mdapp-markdown-link')
+const markdownLinkKey = new PluginKey<DecorationSet>('mdapp-markdown-link')
 
 const failureMessage = (prefix: string, error: unknown): string =>
   `${prefix}: ${error instanceof Error ? error.message : String(error)}`
@@ -60,8 +60,7 @@ const attempt = (run: () => Promise<void> | void, prefix: string, onNotice: Mark
  */
 function linkHit(view: EditorView, ctx: Ctx, target: EventTarget | null): LinkHit | null {
   if (!(target instanceof Element)) return null
-  // A pill's icon sits beside its anchor (D19): a click on it is a click on the link.
-  const anchor = target.closest('a') ?? target.closest('.link-pill')?.querySelector('a') ?? null
+  const anchor = target.closest('a')
   if (anchor === null || !view.dom.contains(anchor)) return null
   const probe = view.posAtDOM(anchor, 0)
   const $probe = view.state.doc.resolve(probe)
@@ -81,6 +80,48 @@ function linkHit(view: EditorView, ctx: Ctx, target: EventTarget | null): LinkHi
   while (last + 1 < spans.length && spans[last + 1]!.mark?.eq(mark) === true) last += 1
   if (typeof mark.attrs.href !== 'string') return null
   return { href: mark.attrs.href, mark, from: spans[first]!.from, to: spans[last]!.to }
+}
+
+/**
+ * The link pills of the textblocks between `from` and `to` (D19), in `set` with those blocks' old pills
+ * replaced: each run of one link mark whose path is in a vault of the window. The first piece of a run
+ * carries the icon; a bold or code piece inside the link is part of the same pill, with no second icon (YAZ-3656).
+ */
+function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: MarkdownLinkNav, set: DecorationSet): DecorationSet {
+  const stale: Decoration[] = []
+  const fresh: Decoration[] = []
+  doc.nodesBetween(Math.max(0, from), Math.min(doc.content.size, Math.max(from, to)), (block, pos) => {
+    if (!block.isTextblock) return true
+    stale.push(...set.find(pos, pos + block.nodeSize))
+    let run: { mark: Mark; pieces: Array<[number, number]> } | null = null
+    const close = () => {
+      const href = run?.mark.attrs.href
+      const path = typeof href === 'string' ? nav.vaultPath?.(href) ?? null : null
+      if (run !== null && path !== null && nav.icon !== undefined) {
+        const name = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
+        const icon = nav.icon(path, fileKind(name) === null && !name.includes('.'))
+        const last = run.pieces.length - 1
+        run.pieces.forEach(([start, end], i) => {
+          const edges = `${i === 0 ? ' link-pill--first' : ''}${i === last ? ' link-pill--last' : ''}`
+          fresh.push(Decoration.inline(start, end, i === 0 ? { ...icon, class: `wikilink link-pill${edges} ${icon.class}` } : { class: `wikilink link-pill${edges}` }))
+        })
+      }
+      run = null
+    }
+    block.forEach((node, offset) => {
+      const mark = node.isText ? type.isInSet(node.marks) : undefined
+      const start = pos + 1 + offset
+      if (mark === undefined) close()
+      else if (run !== null && run.mark.eq(mark)) run.pieces.push([start, start + node.nodeSize])
+      else {
+        close()
+        run = { mark, pieces: [[start, start + node.nodeSize]] }
+      }
+    })
+    close()
+    return false
+  })
+  return set.remove(stale).add(doc, fresh)
 }
 
 function renderMenu(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, close: () => void): HTMLElement {
@@ -135,35 +176,43 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
     }
 
     /** Opens `href` as a click on a link does: a page or file of a vault in the window in a tab (⌘: behind, D8, D14), anything else through the OS. */
+    const type = linkSchema.type(ctx)
     const follow = (href: string, background: boolean) => {
       const path = nav.inApp?.(href) ?? null
       if (path !== null && nav.openPath !== undefined) nav.openPath(path, background)
       else attempt(() => nav.open(href), 'Could not open link', nav.onNotice)
     }
 
-    return new Plugin({
+    return new Plugin<DecorationSet>({
       key: markdownLinkKey,
-      props: {
-        // A link into a vault of this window looks like a [[link]] (YAZ-3609 D19): a pill that leads with its
-        // file's icon. The icon sits outside the anchor, so the anchor stays the mark's content. Drawn once
-        // for each run of the mark; the look follows the path, not the index, so it is right at first paint.
-        markViews: {
-          link: (mark) => {
-            const href = typeof mark.attrs.href === 'string' ? mark.attrs.href : ''
-            const anchor = document.createElement('a')
-            anchor.setAttribute('href', href)
-            if (typeof mark.attrs.title === 'string' && mark.attrs.title !== '') anchor.title = mark.attrs.title
-            const path = nav.vaultPath?.(href) ?? null
-            if (path === null || nav.icon === undefined) return { dom: anchor }
-            const name = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
-            const icon = nav.icon(path, fileKind(name) === null && !name.includes('.'))
-            icon.contentEditable = 'false'
-            const pill = document.createElement('span')
-            pill.className = 'wikilink link-pill'
-            pill.append(icon, anchor)
-            return { dom: pill, contentDOM: anchor }
-          },
+      // A link into a vault of this window looks like a [[link]] (YAZ-3609 D19): its own text is tinted, and the
+      // first piece draws the file's icon on its `::before`. Decorations only, so the text stays real text: the
+      // caret, typing next to it (YAZ-3655) and find work as on any text. The look follows the path, not the index.
+      state: {
+        init: (_, state) => (nav.vaultPath === undefined ? DecorationSet.empty : pillsIn(state.doc, 0, state.doc.content.size, type, nav, DecorationSet.empty)),
+        apply: (tr, set, before, state) => {
+          if (!tr.docChanged || nav.vaultPath === undefined) return set
+          const mapped = set.map(tr.mapping, tr.doc)
+          // Only the lines the change touched are drawn again: the step ranges, and the doc diff (a mark step maps no positions).
+          let from = state.doc.content.size
+          let to = 0
+          tr.mapping.maps.forEach((map, i) => {
+            const later = tr.mapping.slice(i + 1)
+            map.forEach((_a, _b, start, end) => {
+              from = Math.min(from, later.map(start, -1))
+              to = Math.max(to, later.map(end, 1))
+            })
+          })
+          const diff = before.doc.content.findDiffStart(state.doc.content)
+          if (diff !== null) {
+            from = Math.min(from, diff)
+            to = Math.max(to, before.doc.content.findDiffEnd(state.doc.content)?.b ?? diff)
+          }
+          return from > to ? mapped : pillsIn(state.doc, from, to, type, nav, mapped)
         },
+      },
+      props: {
+        decorations: (state) => markdownLinkKey.getState(state),
         handleDOMEvents: {
           mousedown: (view, event) => {
             if (event.button !== 0 || event.altKey || event.shiftKey || event.ctrlKey) return false

@@ -59,7 +59,7 @@ test.beforeAll(async () => {
     await writeFile(path.join(vault, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: false }))
   }
   await writeFile(path.join(personal, PLAN), `# Plan\n\n${PLAN_BODY}\n`)
-  await writeFile(path.join(work, TODAY), `# Today\n\nSee [[Ideas]] here.\n\nThen [the gym plan](../${PERSONAL}/${PLAN}) after.\n\nPaste:\n`)
+  await writeFile(path.join(work, TODAY), `# Today\n\nSee [[Ideas]] here.\n\nThen [the gym plan](../${PERSONAL}/${PLAN}) after.\n\nEnds with [the plan](../${PERSONAL}/${PLAN})\n\nPaste:\n`)
 })
 
 test.afterAll(async () => {
@@ -67,25 +67,35 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vaultsDir].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — a resolved [[link]] is a pill that leads with its file icon (D13)', async () => {
+test('step 1 — a resolved [[link]] is a pill: its own text, with the file icon drawn in front (D13)', async () => {
   app = await launchApp({ userData, seedState: workspaceState() })
   win = await appWindow(app, 'w1')
-  const pill = editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).first()
-  await expect(pill).toBeVisible()
-  await expect(pill.locator('.file-icon')).toHaveCount(1) // icon and name in one span: one box
+  const pill = editorOf(win).locator('.wikilink.file-icon', { hasText: 'Ideas' })
+  await expect(pill).toHaveCount(1) // icon and name in one span: one box
   await shoot(win, 'workspace-links-01-pill')
 })
 
-test('step 1b — a Markdown link into the other vault is the same pill, with its icon and no underline (D19)', async () => {
-  const pill = editorOf(win).locator('.link-pill', { hasText: 'the gym plan' })
-  await expect(pill.locator('.file-icon')).toHaveCount(1)
-  expect(await pill.locator('a').evaluate((a) => getComputedStyle(a).textDecorationLine)).toBe('none')
-  // I4, YAZ-3648: with File icons Off the icon takes no room, so no empty box sits before the text.
-  const iconWidth = () => editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).first().locator('.file-icon').evaluate((el) => el.getBoundingClientRect().width)
-  expect(await iconWidth()).toBeGreaterThan(0)
+test('step 1b — a Markdown link into the other vault is the same pill, with no underline (D19); icons Off draw no box (YAZ-3648)', async () => {
+  const pill = editorOf(win).locator('.link-pill--first', { hasText: 'the gym plan' })
+  await expect(pill).toHaveCount(1)
+  expect(await pill.evaluate((el) => getComputedStyle(el.closest('a')!).textDecorationLine)).toBe('none')
+  const icon = () => editorOf(win).locator('.wikilink.file-icon', { hasText: 'Ideas' }).evaluate((el) => getComputedStyle(el, '::before').content)
+  expect(await icon()).not.toBe('none')
   await win.evaluate(() => document.querySelector('.app')!.setAttribute('data-sidebar-file-icons', 'off'))
-  expect(await iconWidth()).toBe(0)
+  expect(await icon()).toBe('none')
   await win.evaluate(() => document.querySelector('.app')!.removeAttribute('data-sidebar-file-icons'))
+})
+
+test('step 1c — words typed right after a pill stay and save (YAZ-3655)', async () => {
+  await editorOf(win).getByText('Ends with').click()
+  await win.keyboard.press('End')
+  await win.keyboard.type(' and more', { delay: 15 })
+  // The words stay and save. A link mark grows at its end as it always has (the commonmark link is inclusive),
+  // so they join the link: what YAZ-3655 lost was the words themselves.
+  await expect
+    .poll(async () => (await readFile(path.join(work, TODAY), 'utf8')).includes(`Ends with [the plan and more](../${PERSONAL}/${PLAN})`), { timeout: 10_000 })
+    .toBe(true)
+  await expect(editorOf(win)).toContainText('the plan and more')
 })
 
 test('step 2 — a Markdown link into the other vault opens in this tab, and Back returns (D14, D10)', async () => {

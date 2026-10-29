@@ -408,6 +408,14 @@ describe('links across the vaults of a window (D14, D15, D16)', () => {
     expect(saved(crepe)).toBe('[Plan](../../w/plan.md) here and [site](https://milkdown.dev) and [else](/x/else.md)')
   })
 
+  it('YAZ-3658 ⌘Z after Remove link puts an older full-path link back as it was', async () => {
+    const { crepe, view } = await mount('[Plan](/w/plan.md) here\n', workspace())
+    view.dispatch(view.state.tr.removeMark(0, view.state.doc.content.size, view.state.schema.marks.link!))
+    expect(saved(crepe)).toBe('Plan here')
+    undoOnce(view)
+    expect(saved(crepe)).toBe('[Plan](/w/plan.md) here')
+  })
+
   it('R1 a file no tab can show is saved relative too', async () => {
     const { crepe, view } = await mount('Budget here\n', workspace())
     select(view, 'Budget')
