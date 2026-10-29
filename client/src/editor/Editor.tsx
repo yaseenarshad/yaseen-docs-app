@@ -1,6 +1,6 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
+import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
-import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
+import { DEFAULT_SETTINGS, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
@@ -12,6 +12,9 @@ import { createDrawingFeed } from '../drawings/drawingFeed'
 import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
 import { FolderView } from '../views/FolderView'
+import { hrefPath, hrefTarget, vaultHref } from './pathPaste'
+import { redrawLinkPills } from './markdownLink'
+import { editorViewCtx } from '@milkdown/kit/core'
 import { createCrepe, editorViewOf, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
@@ -21,7 +24,7 @@ import { createTocChannel } from './toc/tocChannel'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { PageTitle } from './PageTitle'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
-import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { redrawWikilinks, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import type { WikilinkHover } from './wikilink/wikilinkHover'
 import './outline/outlineFolding.css'
@@ -65,6 +68,8 @@ import { PdfViewer } from '../viewers/PdfViewer'
 import { ImageViewer } from '../viewers/ImageViewer'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import type { AnchorRect } from '../sidebar/previewPlacement'
+import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
+import { VaultLinksContext } from '../links/vaultLinks'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 
 /**
@@ -103,6 +108,14 @@ interface EditorProps {
    * the tabs API's `openBackground`. Absent → wiki-link clicks stay plain editing.
    */
   onOpenFileBackground?: (path: string) => void
+  /**
+   * A click on a link in the note (YAZ-3609 D11): where Settings › "Open a link in" says. Only the
+   * note's `[[links]]` and Markdown links use it; a row of a folder view, a backlink and a code jump
+   * open through `onOpenFile`. Absent → `onOpenFile`.
+   */
+  onOpenLink?: (path: string) => void
+  /** ⌘-click on a link in the note: a background tab whose Back returns to the note (YAZ-3644). Absent → `onOpenFileBackground`. */
+  onOpenLinkBackground?: (path: string) => void
   /** Wiki-link create failures surface here (passive link-notice style); App passes `notify`. A drawing's export says where its file landed. */
   onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType) => void
   /**
@@ -202,7 +215,7 @@ interface EditorProps {
   hotkeysAside?: HotkeyAside
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope, hotkeys, hotkeysAside }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope, hotkeys, hotkeysAside }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -268,11 +281,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
 }
 
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, diagramDarkColors = 'adapt', hoverLinks = false, hoverBacklinks = false, previewScope, hotkeys, hotkeysAside }: EditorProps) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, diagramDarkColors = 'adapt', hoverLinks = false, hoverBacklinks = false, previewScope, hotkeys, hotkeysAside }: EditorProps) {
   const state = useFile(path)
   const titles = usePathTitles(wikilinks)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
@@ -281,7 +294,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
+        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
       )}
     </section>
   )
@@ -299,6 +312,8 @@ function CrepeHost({
   onOpenFile,
   onOpenFileRight,
   onOpenFileBackground,
+  onOpenLink = onOpenFile,
+  onOpenLinkBackground = onOpenFileBackground,
   onNotice,
   newNoteFolderFor,
   wikilinks,
@@ -333,6 +348,8 @@ function CrepeHost({
   onOpenFile: (path: string) => void
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
+  onOpenLink?: (path: string) => void
+  onOpenLinkBackground?: (path: string) => void
   onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType) => void
   newNoteFolderFor?: (sourcePath: string) => string
   wikilinks?: WikilinkResolveSource
@@ -472,6 +489,15 @@ function CrepeHost({
   // `focusEditor` the mount runs when the sidebar walk is not standing in the tree (YAZ-921),
   // so the caret lands where a click would put it.
   const crepeRef = useRef<ReturnType<typeof createCrepe> | null>(null)
+  // The window's icons (YAZ-3609 D13), read when a link pill draws: a change of icon set needs no new editor.
+  const iconsHere = useContext(IconsContext)
+  const icons = useRef(iconsHere)
+  icons.current = iconsHere
+  // The window's vaults' picker rows (YAZ-3609 D14), read at a click or a paste: a vault added to the window needs no new editor.
+  const vaultLinksHere = useContext(VaultLinksContext)
+  const vaultLinks = useRef(vaultLinksHere)
+  vaultLinks.current = vaultLinksHere
+  const candidatesOf = (target: string) => vaultLinks.current?.candidatesOf(target) ?? null
   /**
    * The same instance, from the moment it can take an action (YAZ-2643): `crepeRef` is set BEFORE
    * `create()` settles, and an action on an editor that is not created yet throws. State, not a
@@ -586,6 +612,8 @@ function CrepeHost({
     // seed, not a change: it is not written until a fold changes in this copy (YAZ-2951 S10).
     let bulletSeedPending = start !== undefined
     let headingSeedPending = start !== undefined
+    // Where this note's links and pasted paths are read from (YAZ-3609): its vault's `[[` picker rows, and the window's other vaults.
+    const linkPlace = wikilinkCandidates === undefined ? undefined : { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf }
     const crepe = createCrepe({
       root: el,
       defaultValue: body,
@@ -624,18 +652,35 @@ function CrepeHost({
       // vault root) then open. Wired only when App threads the background opener — mounts
       // without it keep clicks as plain editing.
       wikilinkNav:
-        onOpenFileBackground === undefined
+        onOpenLinkBackground === undefined
           ? undefined
-          : { root, createFolder: () => newNoteFolderFor?.(file.path) ?? '', openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
+          : { root, createFolder: () => newNoteFolderFor?.(file.path) ?? '', openCurrent: onOpenLink, openBackground: onOpenLinkBackground, onNotice: onNotice ?? (() => undefined) },
       // The hover panel of a resolved [[link]] (YAZ-3403): this note editor's alone, never a read-only preview's.
-      wikilinkHover: linkHover,
+      // A Markdown link pill previews its page too (YAZ-3609 D20): its address resolves as a click resolves it.
+      wikilinkHover: { ...linkHover, markdownPath: (href) => (linkPlace === undefined ? null : hrefTarget(href, linkPlace)) },
+      linkLook: { icon: (target, folder) => fileIconDecoration(icons.current, target, folder) },
       // Standard Markdown links (YAZ-1309) leave through one typed host boundary. The active
       // note path travels with the untouched href so main—not the renderer—owns relative-file
       // resolution, protocol validation, and the choice of OS API.
       markdownLinkNav: {
         open: (href) => api.shell.openLink({ href, sourcePath: file.path }),
+        // A link to a page or file of this vault opens in a tab, like a [[link]] (YAZ-3609 D8).
+        inApp: (href) => (linkPlace === undefined ? null : hrefTarget(href, linkPlace)),
+        openPath: (target, background) => (background ? onOpenLinkBackground ?? onOpenLink : onOpenLink)(target),
+        // A link into a vault the app knows but this window does not show asks to add that vault (YAZ-3609 D21).
+        elsewhere: (href, background) => {
+          const target = hrefPath(href, file.path)
+          return target !== null && (vaultLinks.current?.askToAdd(target, background) ?? false)
+        },
+        // A link into a vault of the window is a pill with its file's icon, like a [[link]] (YAZ-3609 D19).
+        vaultPath: (href) => (linkPlace === undefined ? null : vaultHref(href, linkPlace)),
+        icon: (target, folder) => fileIconDecoration(icons.current, target, folder),
+        // A pill into another vault of the window names that vault after its text (YAZ-3609 D22).
+        vaultTag: (target) => (rootOfPath([root], target) !== null ? null : (vaultLinks.current?.vaultOf(target) ?? null)),
         onNotice: onNotice ?? (() => undefined),
       },
+      // Paste a path, get a link (YAZ-3609): this vault's `[[` picker rows spell it.
+      pathPaste: linkPlace === undefined ? undefined : { ...linkPlace, onNotice },
       // The slash menu's Drawing row (YAZ-877): this window's root is the only thing the creator
       // needs; failures ride the same passive notice as a failed link create.
       drawing: { create: () => createDrawing(root), onNotice },
@@ -752,7 +797,7 @@ function CrepeHost({
       offTwin()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel, linkHover])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel, linkHover])
 
   /**
    * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1): pending typing saves first
@@ -780,6 +825,21 @@ function CrepeHost({
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
   // A worker that fails shows one passive notice and is not asked again until the next of those three.
+  // A vault that joins or leaves the window changes which links are pills (YAZ-3664), a renamed vault the "(Vault)"
+  // on them (D22), and new file icons their icons (D13): draw them again, with no edit. Not on the first draw.
+  const windowRoots = vaultLinksHere?.roots
+  const windowNames = vaultLinksHere?.names
+  const drawn = useRef<unknown[] | null>(null)
+  useEffect(() => {
+    if (readyCrepe === null || crepeRef.current !== readyCrepe) return
+    const now = [readyCrepe, windowRoots, windowNames, iconsHere]
+    const before = drawn.current
+    drawn.current = now
+    if (before === null || before[0] !== readyCrepe) return
+    const view = readyCrepe.editor.ctx.get(editorViewCtx)
+    if (before[1] !== windowRoots || before[2] !== windowNames || before[3] !== iconsHere) redrawLinkPills(view)
+    if (before[3] !== iconsHere) redrawWikilinks(view)
+  }, [readyCrepe, windowRoots, windowNames, iconsHere])
   useEffect(() => {
     const crepe = readyCrepe
     if (!lineNumbersOn || crepe === null || autosave.status !== 'saved') return

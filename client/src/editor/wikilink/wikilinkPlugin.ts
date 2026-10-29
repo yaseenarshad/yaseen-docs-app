@@ -41,11 +41,12 @@
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Selection, type Transaction } from '@milkdown/kit/prose/state'
-import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import { isNoteId } from '@shared/noteId'
-import type { IndexRecord } from '@shared/types'
+import { fileKind } from '@shared/fileKind'
+import { basename, type IndexRecord } from '@shared/types'
 import { pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import './wikilink.css'
@@ -54,6 +55,14 @@ export const WIKILINK_CLASS = 'wikilink'
 export const WIKILINK_UNRESOLVED_CLASS = 'wikilink--unresolved'
 export const WIKILINK_SYNTAX_CLASS = 'wikilink__syntax'
 export const WIKILINK_SUB_CLASS = 'wikilink__sub'
+
+/**
+ * How a resolved link looks (YAZ-3609 D13): the attributes that draw the icon its file has in the sidebar on
+ * the `::before` of the span that shows the link's text (`fileIconDecoration`). Absent → no icon.
+ */
+export interface LinkLook {
+  icon: (path: string, folder: boolean) => Record<string, string>
+}
 
 /** Link target → resolved absolute path — a note's file, else a folder's directory (YAZ-2290 D10) — or null when nothing matches. */
 export type ResolveLink = (target: string) => string | null
@@ -207,12 +216,24 @@ function hide(out: Decoration[], from: number, to: number): void {
   if (from < to) out.push(Decoration.inline(from, to, { class: WIKILINK_SYNTAX_CLASS }))
 }
 
-/** The DOM an id link's title widget draws: the classes its id text would have worn. */
-function titleSpan(cls: string, title: string): HTMLElement {
+/** The DOM an id link's title widget draws: the classes its id text would have worn, and the file's icon (D13). */
+function titleSpan(cls: string, title: string, icon?: Record<string, string>): HTMLElement {
   const span = document.createElement('span')
-  span.className = cls
+  for (const [name, value] of Object.entries(icon ?? {})) span.setAttribute(name, value)
+  span.className = icon === undefined ? cls : `${cls} ${icon.class}`
   span.textContent = title
   return span
+}
+
+/** The icon of the page a resolved link opens (D13), or undefined: no look, unresolved, or no index yet. */
+function linkIcon(inner: string, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, look: LinkLook | undefined): { key: string; attrs: Record<string, string> } | undefined {
+  if (look === undefined) return undefined
+  const view = viewOnly === undefined ? null : viewOnlyLinkTarget(inner)
+  const path = view !== null ? (view.hasSubtarget ? null : viewOnly?.resolve?.(view.page) ?? null) : source.resolve?.(linkPageName(inner)) ?? null
+  if (path == null) return undefined
+  // A folder resolves to its directory: no file kind.
+  const folder = fileKind(basename(path)) === null
+  return { key: path, attrs: look.icon(path, folder) }
 }
 
 /** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
@@ -227,7 +248,7 @@ function linkIsResolved(inner: string, source: WikilinkResolveSource, viewOnly?:
   return source.resolve === null || target === '' || source.resolve(target) !== null
 }
 
-function decorate(out: Decoration[], start: number, inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): void {
+function decorate(out: Decoration[], start: number, inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook): void {
   // A match whose display would be EMPTY ([[Note|]], [[|]], [[#]]) gets NO decorations at all:
   // hiding every character would leave a zero-width invisible run the click handler cannot see
   // and only exact caret placement can recover — raw-and-editable, the revealed state, is the
@@ -236,17 +257,25 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   if (linkDisplayText(inner, titleOf) === '') return
   const resolved = linkIsResolved(inner, source, viewOnly)
   const cls = resolved ? WIKILINK_CLASS : `${WIKILINK_CLASS} ${WIKILINK_UNRESOLVED_CLASS}`
+  const icon = resolved ? linkIcon(inner, source, viewOnly, look) : undefined
+  /**
+   * The first shown text: its own span carries the file's icon on its `::before`, so icon and text are one box
+   * (YAZ-3648) and the text stays real text, which find highlights and the caret walks (YAZ-3657).
+   */
+  const shown = (from: number, to: number) => {
+    out.push(Decoration.inline(from, to, icon === undefined ? { class: cls } : { ...icon.attrs, class: `${cls} ${icon.attrs.class}` }))
+  }
   const innerStart = start + 2
   const end = innerStart + inner.length + 2
   hide(out, start, innerStart) // [[
   const pipe = inner.indexOf('|')
   if (pipe >= 0) {
     hide(out, innerStart, innerStart + pipe + 1) // target(#heading)?| — the alias is the display
-    out.push(Decoration.inline(innerStart + pipe + 1, end - 2, { class: cls })) // never empty: guarded above
+    shown(innerStart + pipe + 1, end - 2) // never empty: guarded above
   } else {
     // target, then ` > `-separated sub segments for each `#heading` / `#^block` part
     let at = innerStart
-    let shown = 0
+    let segments = 0
     const parts = inner.split('#')
     const title = titleOf(parts[0].trim())
     for (let i = 0; i < parts.length; i++) {
@@ -259,11 +288,12 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
         // An id link: the id is syntax too, and the title stands where it was. Keyed by the
         // title, so a rebuild that changes nothing redraws nothing.
         hide(out, at, at + part.length)
-        out.push(Decoration.widget(at, () => titleSpan(cls, title), { key: title }))
-        shown++
+        out.push(Decoration.widget(at, () => titleSpan(cls, title, icon?.attrs), { key: `${title}|${icon?.key ?? ''}` }))
+        segments++
       } else if (part.length > 0) {
-        out.push(Decoration.inline(at, at + part.length, { class: shown > 0 ? `${cls} ${WIKILINK_SUB_CLASS}` : cls }))
-        shown++
+        if (segments === 0) shown(at, at + part.length)
+        else out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}` }))
+        segments++
       }
       at += part.length
     }
@@ -277,24 +307,24 @@ function touches(sel: Selection, from: number, to: number): boolean {
 }
 
 /** One textblock's link decorations: the unit of both the full build and the incremental update. */
-function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Selection, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): void {
+function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Selection, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook): void {
   eachPlainRun(block, pos + 1, (text, runPos) => {
     for (const m of text.matchAll(WIKILINK_RE)) {
       if (m[1] === '!') continue // embeds are someone else's (or nobody's) business
       const from = runPos + m.index
       const to = from + m[0].length
       if (touches(sel, from, to)) continue // caret inside/adjacent → raw, editable syntax
-      decorate(out, from, m[2], source, viewOnly)
+      decorate(out, from, m[2], source, viewOnly, look)
     }
   })
 }
 
-function build(state: EditorState, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): DecorationSet {
+function build(state: EditorState, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook): DecorationSet {
   const decorations: Decoration[] = []
   state.doc.descendants((node, pos) => {
     if (node.type.name === 'code_block') return false
     if (!node.isTextblock) return true
-    decorateBlock(decorations, node, pos, state.selection, source, viewOnly)
+    decorateBlock(decorations, node, pos, state.selection, source, viewOnly, look)
     return false
   })
   return decorations.length === 0 ? DecorationSet.empty : DecorationSet.create(state.doc, decorations)
@@ -313,6 +343,7 @@ function updateDecorations(
   state: EditorState,
   source: WikilinkResolveSource,
   viewOnly?: ViewOnlyLinkSource,
+  look?: LinkLook,
 ): DecorationSet {
   const { doc } = state
   const ranges: [number, number][] = [
@@ -342,21 +373,26 @@ function updateDecorations(
   const fresh: Decoration[] = []
   for (const [pos, block] of blocks) {
     stale.push(...set.find(pos, pos + block.nodeSize))
-    if (block.type.name !== 'code_block') decorateBlock(fresh, block, pos, state.selection, source, viewOnly)
+    if (block.type.name !== 'code_block') decorateBlock(fresh, block, pos, state.selection, source, viewOnly, look)
   }
   return set.remove(stale).add(doc, fresh)
 }
 
-export function createWikilink(source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource) {
+/** Draws every `[[link]]` of the note again, with no edit: the host calls it when the file icons change (YAZ-3609 D13). */
+export function redrawWikilinks(view: EditorView): void {
+  view.dispatch(view.state.tr.setMeta(wikilinkKey, 'look-updated').setMeta('addToHistory', false))
+}
+
+export function createWikilink(source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook) {
   return $prose(
     () =>
       new Plugin({
         key: wikilinkKey,
         state: {
-          init: (_, state) => build(state, source, viewOnly),
+          init: (_, state) => build(state, source, viewOnly, look),
           apply: (tr, set, oldState, state) => {
-            if (tr.getMeta(wikilinkKey) !== undefined) return build(state, source, viewOnly) // the resolver changed
-            return tr.docChanged || tr.selectionSet ? updateDecorations(set, tr, oldState, state, source, viewOnly) : set
+            if (tr.getMeta(wikilinkKey) !== undefined) return build(state, source, viewOnly, look) // the resolver changed
+            return tr.docChanged || tr.selectionSet ? updateDecorations(set, tr, oldState, state, source, viewOnly, look) : set
           },
         },
         props: {

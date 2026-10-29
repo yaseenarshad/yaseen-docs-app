@@ -505,3 +505,50 @@ Tail [[Last]] [[|]] [[Note|]] [[k3m9x2pq7abc]] [[k3m9x2pq7abc#part]]
     expect(titledSteps).toBeGreaterThan(50) // the id link's title widget really was in play
   })
 })
+
+describe('a resolved link is a pill with its file icon (YAZ-3609 D13)', () => {
+  const PATHS: Record<string, string> = { Roadmap: '/v/roadmap.md', Research: '/v/research', 'YAZ-12': '/v/roadmap.md' }
+  // The icon is attributes on the span of the link's text (`fileIconDecoration`): its `::before` draws it.
+  const look = { icon: (path: string, folder: boolean) => ({ class: 'wikilink__icon', 'data-path': path, 'data-folder': String(folder) }) }
+  async function mountLook(markdown: string) {
+    const source = createWikilinkResolveSource()
+    const record = { path: '/v/roadmap.md', id: 'YAZ-12', name: 'roadmap.md', basename: 'roadmap', title: 'Roadmap', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] } as IndexRecord
+    source.update((target) => PATHS[target] ?? null, [record], [], true, ['YAZ'])
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: markdown, wikilinks: source, linkLook: look })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    return { crepe, root }
+  }
+  const icons = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>('.wikilink__icon')).map((el) => `${el.dataset.path}|${el.dataset.folder}`)
+
+  it('I1 a note and a folder lead with their icons; I3 an unresolved link has none', async () => {
+    const { root } = await mountLook('See [[Roadmap]], [[Research]] and [[Nope]] now\n')
+    expect(icons(root)).toEqual(['/v/roadmap.md|false', '/v/research|true'])
+    // Icon and text in one span: the pill is one box, and the text is the document's own (YAZ-3657: find sees it).
+    expect(Array.from(root.querySelectorAll('.wikilink__icon')).map((el) => el.textContent)).toEqual(['Roadmap', 'Research'])
+    expect(syntax(root)).not.toContain('Roadmap')
+    expect(root.querySelector(`.${WIKILINK_UNRESOLVED_CLASS} .wikilink__icon`)).toBeNull()
+  })
+
+  it('I2 an ID link draws the icon inside its title; an alias and a heading link draw one icon each', async () => {
+    const { root } = await mountLook('A [[YAZ-12]] B [[Roadmap|the plan]] C [[Roadmap#Q1]] end\n')
+    expect(icons(root)).toEqual(['/v/roadmap.md|false', '/v/roadmap.md|false', '/v/roadmap.md|false'])
+    expect(Array.from(root.querySelectorAll('.wikilink__icon')).map((el) => el.textContent)).toEqual(['Roadmap', 'the plan', 'Roadmap'])
+    expect(root.querySelector(`.${WIKILINK_SUB_CLASS}`)?.textContent).toBe('Q1')
+  })
+
+  it('a click on a plain-name pill opens its page; the hidden text keeps the document byte for byte', async () => {
+    const { crepe, root } = await mountLook('See [[Roadmap]] now\n')
+    expect(root.querySelector('.wikilink__icon')?.classList.contains(WIKILINK_CLASS)).toBe(true)
+    expect(root.querySelector('.wikilink__icon')?.textContent).toBe('Roadmap')
+    expect(getMarkdownForSave(crepe)).toBe('See [[Roadmap]] now\n')
+  })
+
+  it('I5 with the caret beside the link, the raw text shows and no icon', async () => {
+    const { crepe, root } = await mountLook('See [[Roadmap]]\n')
+    caret(crepe, 'See [[Roadmap]]'.length + 1)
+    expect(root.querySelector('.wikilink__icon')).toBeNull()
+  })
+})

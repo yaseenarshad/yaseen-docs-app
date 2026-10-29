@@ -36,6 +36,10 @@ export interface MenuRow {
   kind?: 'row'
   label: string
   disabled?: boolean
+  /** Drawn in the warning colour: a row that takes something away ("Remove link"). */
+  danger?: boolean
+  /** A line above the row: the link menu's groups (YAZ-3609 D23). */
+  divider?: boolean
   run: () => void
 }
 
@@ -289,9 +293,10 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
       el.appendChild(renderPicker(row, el, close))
       continue
     }
+    if (row.divider === true && el.childElementCount > 0) el.appendChild(divider())
     const item = document.createElement('button')
     item.type = 'button'
-    item.className = 'ctx-menu__item'
+    item.className = `ctx-menu__item${row.danger === true ? ' ctx-menu__item--danger' : ''}`
     item.setAttribute('role', 'menuitem')
     item.disabled = row.disabled === true
     item.textContent = row.label

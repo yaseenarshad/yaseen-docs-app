@@ -61,17 +61,20 @@
  *  - Wikilink hover (YAZ-3403, `wikilink/wikilinkHover.ts`): the pointer on a resolved `.wikilink` span tells the
  *    host which page it opens, for the hover panel. Registered only when `opts.wikilinkHover` is passed: the
  *    note editor's, never a read-only preview's.
- *  - Id link menu (YAZ-2293, `wikilink/wikilinkMenu.ts`): right-click on a rendered id link shows
- *    the note's name and its id and offers Copy ID; every other link keeps the native menu.
- *    Registered with the click plugin, on the same source and nav.
+ *  - Link menu (YAZ-2293, YAZ-3609 D23, `wikilink/wikilinkMenu.ts`): right-click on a rendered
+ *    `[[link]]` shows the one link menu (`linkMenu.ts`): its name and id, Open, Open in new tab,
+ *    Copy link, Copy ID, Edit link, Remove link. Registered with the click plugin, on the same
+ *    source, nav and follow.
  *  - Wikilink picker (GRO-2191, `wikilink/wikilinkPicker.ts`): typing `[[` opens the vault-wide
  *    suggestion popup (candidates via `opts.wikilinkCandidates`); Enter/click inserts plain
  *    `[[name]]` text — and the Create row also makes the page through `opts.wikilinkNav`
  *    (YAZ-1357). Its keymap MUST be `use`d before `outlinerKeymap`: both bind Enter at
  *    priority 100 and equal priorities run in addition order — the picker wins while open and
  *    declines (falls through) while closed.
- *  - Standard Markdown links (YAZ-1309, `markdownLink.ts`): unmodified primary mousedown opens
- *    through the host before caret placement; right-click offers Edit/Copy/Remove. Edit/remove
+ *  - Standard Markdown links (YAZ-1309, `markdownLink.ts`): a primary mousedown opens before caret
+ *    placement — a link into a vault of the window in a tab (⌘: a background tab, YAZ-3609 D8, D14),
+ *    anything else through the host — and such a link draws as a pill (D19); right-click shows the
+ *    one link menu (D23, `linkMenu.ts`). Edit/remove
  *    reuse Crepe's link-tooltip API, including one logical range when formatting splits the DOM
  *    anchor. Registered only when `opts.markdownLinkNav` supplies the host boundary.
  *  - Block handle menu (YAZ-726, `blockHandleMenu.ts`): right-click on the 6-dot handle opens a
@@ -221,6 +224,7 @@ import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
 import { clipboardPaste } from './clipboardPaste'
+import { pathPasteCtx, relativeLinks, type PathPasteOptions } from './pathPaste'
 import { guideLines } from './outline/guideLines'
 import { numberChildrenRow } from './outline/numberChildrenRow'
 import { createHeadingFolding, type HeadingFoldingOptions } from './outline/headingFolding'
@@ -233,11 +237,11 @@ import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, zoomKeymap, type ZoomOptions } from './outline/zoom'
 import { focusSidebar } from '../lib/focusHandoff'
-import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
+import { createWikilinkClick, wikilinkFollower, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
 import { createWikilinkMenu } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
-import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createWikilink, createWikilinkResolveSource, type LinkLook, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import { claimPage } from '../lib/readOnlyCaret'
@@ -261,6 +265,8 @@ export interface CreateCrepeOptions {
   toc?: TocChannel
   /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
   wikilinks?: WikilinkResolveSource
+  /** A resolved `[[link]]`'s pill icon (YAZ-3609 D13). Absent → the pill has no icon. */
+  linkLook?: LinkLook
   /** Navigation-only view-file resolver; never carries semantic records. */
   viewOnlyLinks?: ViewOnlyLinkSource
   /** `[[` picker candidates (GRO-2191): App keeps it fed from the vault index. Defaults to a never-updated source (empty picker — only Create rows). */
@@ -269,8 +275,10 @@ export interface CreateCrepeOptions {
   wikilinkNav?: WikilinkNav
   /** Wikilink hover (YAZ-3403): the host's hover panel hears which page a resolved link opens. Absent → the hover plugin is not registered. */
   wikilinkHover?: WikilinkHover
-  /** Standard Markdown link actions (YAZ-1309): primary click opens; right-click edits/copies/removes. Absent → Crepe's stock behavior. */
+  /** Standard Markdown link actions (YAZ-1309, YAZ-3609): a click opens (in a tab for a vault of the window), a pill look, the one link menu. Absent → Crepe's stock behavior. */
   markdownLinkNav?: MarkdownLinkNav
+  /** Paste a path, get a link (YAZ-3609). Absent → a pasted path stays text. */
+  pathPaste?: PathPasteOptions
   /** Drawing creator (YAZ-877): the host writes the sidecar, the item inserts the embed. Absent → NO Drawing row is added to the slash menu. */
   drawing?: DrawingCreator
   /** Drawing previews (YAZ-878): the vault root to read scenes against, plus the optional refresh feed and click handler. Absent → `.excalidraw` embeds stay plain text. */
@@ -470,8 +478,12 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // A missing catalog must stay passive: recognized non-Markdown targets can never fall through
   // to Markdown creation, including in isolated createCrepe consumers outside App.
   const viewOnlyLinks = opts.viewOnlyLinks ?? createViewOnlyLinkSource()
-  crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks))
-  if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav, viewOnlyLinks)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav))
+  crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook))
+  if (opts.wikilinkNav !== undefined) {
+    // A click and the link menu's Open rows follow a link the same way (YAZ-3609 D23).
+    const follow = wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks)
+    crepe.editor.use(createWikilinkClick(follow)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow))
+  }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav))
@@ -493,7 +505,12 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // The line (YAZ-3164): its look and its length handle, on every editor — the line's style is in the schema.
   crepe.editor.use(lineView)
   crepe.editor.use(outlinePaste)
+  // Read by `clipboardPaste`, like `imageOptionsCtx` (YAZ-3609); null when the host gave none.
+  crepe.editor.config((ctx) => {
+    ctx.inject(pathPasteCtx, opts.pathPaste ?? null)
+  })
   crepe.editor.use(clipboardPaste)
+  crepe.editor.use(relativeLinks)
   crepe.editor.use(clipboardCopyOut)
   crepe.editor.use(copyVisibleHotkey)
   crepe.editor.use(blockHandleGate)

@@ -39,8 +39,9 @@ describe('the note menu rows (YAZ-3653)', () => {
     expect(shape(sections)).toEqual([
       ['Cut', 'Copy', 'Copy as [Plain text, Markdown | Without folded lines]'],
       ['Paste', 'Paste as [Plain text, Markdown]'],
+      ['Add link…'],
     ])
-    expect(sections.flat().map((item) => item.hint)).toEqual(['⌘X', '⌘C', undefined, '⌘V', undefined])
+    expect(sections.flat().map((item) => item.hint)).toEqual(['⌘X', '⌘C', undefined, '⌘V', undefined, undefined])
     for (const id of ['cut', 'copy', 'copy-plain', 'copy-markdown', 'copy-visible', 'paste', 'paste-plain', 'paste-markdown']) leaf(sections, id).onSelect()
     expect(run.mock.calls.map(([action]) => action)).toEqual(['cut', 'copy', 'copy-plain', 'copy-markdown', 'copy-visible', 'paste', 'paste-plain', 'paste-markdown'])
   })

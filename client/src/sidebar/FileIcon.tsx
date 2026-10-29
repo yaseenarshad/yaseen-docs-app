@@ -33,6 +33,17 @@ export function fileIconAttrs(here: IconsHere | null, path: string, folder: bool
   return { 'data-kind': folder ? 'folder' : (fileKind(name) ?? 'other'), 'data-icon': id, ...(custom ? { 'data-icon-custom': '' as const } : {}), style: iconVars(id) as CSSProperties }
 }
 
+/**
+ * The same icon as the attributes of an editor decoration (YAZ-3609 D13, D19): the span that shows a link's own
+ * text carries them and draws the icon on its `::before`, as a tree row's label does. The text stays real text,
+ * so typing, find and the caret work on it as on any text.
+ */
+export function fileIconDecoration(here: IconsHere | null, path: string, folder: boolean): Record<string, string> {
+  const { style, ...attrs } = fileIconAttrs(here, path, folder)
+  const css = Object.entries(style as Record<string, string>).map(([name, value]) => `${name}: ${value}`).join('; ')
+  return { ...attrs, class: `file-icon file-icon--${folder ? 'dir' : 'file'}`, style: css }
+}
+
 /** The icon before a name: a closed folder for a folder, else the file's. The caller puts it first in the name's label. */
 export const FileIcon = memo(function FileIcon({ path, folder = false }: { path: string; folder?: boolean }) {
   const here = useContext(IconsContext)

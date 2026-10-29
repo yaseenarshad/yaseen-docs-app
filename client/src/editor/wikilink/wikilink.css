@@ -13,6 +13,71 @@
   cursor: pointer;
 }
 
+/* A resolved link is a pill with its file's icon (YAZ-3609 D13): icon and text in one span, so one box. */
+.wikilink:not(.wikilink--unresolved) {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+/* A heading part (` > Q1`) follows its pill as plain link text. */
+.wikilink.wikilink__sub {
+  padding: 0;
+  background: none;
+}
+/* A Markdown link into a vault of the window (YAZ-3609 D19): the same pill on the link's own text; its anchor
+   drops the underline. As specific as Crepe's reset (`.milkdown .ProseMirror a`), which comes first, so this
+   one wins. A link with a bold part is two anchors, one pill: only its first and last pieces are rounded. */
+.milkdown .ProseMirror a:has(> .link-pill) {
+  text-decoration: none;
+}
+.wikilink.link-pill:not(.link-pill--first) {
+  padding-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.wikilink.link-pill:not(.link-pill--last) {
+  padding-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+/* A pill that find cuts into pieces stays one box with one icon (YAZ-3663): each piece carries the pill's
+   attributes, so a piece right after another piece of the same link draws no icon and no left edge, and a
+   piece with one after it no right edge. Two links are never side by side: hidden `]]`/`[[`, or two anchors. */
+.wikilink + .wikilink {
+  padding-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.wikilink:has(+ .wikilink) {
+  padding-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+/* The sidebar's icon rules (app.css) are far more specific; only `!important` hides their `::before` here. */
+.wikilink + .wikilink::before {
+  content: none !important;
+  display: none !important;
+}
+/* On a Markdown link pill the page preview says where it goes (YAZ-3609 D20): Crepe's address bar stays away.
+   Its rows are on the pill's right-click menu, the one link menu (D23). */
+.milkdown[data-pill-hover] .milkdown-link-preview {
+  display: none;
+}
+/* A pill into another vault of the window names that vault in brackets after its text, quietly (YAZ-3609 D22). */
+/* A piece that find cuts is several spans, each with the attribute: only the very last span says it. */
+.link-pill--last[data-vault]:not(:has(+ .wikilink))::after {
+  content: ' (' attr(data-vault) ')';
+  color: var(--fg-muted);
+  font-size: 0.85em;
+}
+/* A find match inside a pill shows the find colour over the pill's tint (YAZ-3657). */
+.wikilink.find-match {
+  background: var(--find-match-bg);
+}
+.wikilink.find-match--active {
+  background: var(--find-match-active-bg);
+}
+
 /* Target not in the vault index — dimmed, Obsidian-style. */
 .wikilink--unresolved {
   color: var(--fg-muted);

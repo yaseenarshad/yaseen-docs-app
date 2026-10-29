@@ -34,11 +34,54 @@ describe('history recording', () => {
     expect(s.history).toEqual({ [D]: { entries: [A, B, D], index: 2 } })
   })
 
-  it('activating an already-open tab records nothing on either tab', () => {
+  // YAZ-3609 D10 (B1) replaces YAZ-721's "records nothing": with nothing recorded, Back could not return.
+  it('a link to a page another tab shows goes to that tab, and Back there returns to the page with the link', () => {
     const two = tabsReducer(abc(), { type: 'open-background', path: D })
     const s = nav(two, D)
     expect(s.active).toBe(D)
-    expect(s.history).toEqual(two.history)
+    expect(s.history).toEqual({ ...two.history, [D]: { entries: [C, D], index: 1 } })
+    const back = tabsReducer(s, { type: 'back' })
+    expect(back.active).toBe(C)
+    expect(back.tabs).toEqual([C, D])
+    expect(back.history[C]).toEqual(two.history[C]) // the first tab's own stack is untouched
+  })
+
+  // YAZ-3644: D10 for the other two places a link opens, "A new tab" and a background tab (the setting, and ⌘-click).
+  it.each([
+    ['a new tab', 'open-new' as const],
+    ['a background tab', 'open-background' as const],
+  ])('a link opened in %s has the page with the link before its own: Back goes to that tab', (_name, type) => {
+    const opened = tabsReducer(abc(), { type, path: D, link: true })
+    const s = type === 'open-new' ? opened : tabsReducer(opened, { type: 'activate', path: D })
+    expect(s.history[D]).toEqual({ entries: [C, D], index: 1 })
+    const back = tabsReducer(s, { type: 'back' })
+    expect(back.active).toBe(C)
+    expect(back.tabs).toEqual([C, D])
+  })
+
+  it('a new tab opened from a link to a page another tab shows goes to that tab, as a click does (D10)', () => {
+    const two = tabsReducer(abc(), { type: 'open-background', path: D })
+    const s = tabsReducer(two, { type: 'open-new', path: D, link: true })
+    expect(s.active).toBe(D)
+    expect(s.history[D]).toEqual({ entries: [C, D], index: 1 })
+  })
+
+  it('links back and forth between two tabs add no repeats to Back (YAZ-3609 polish)', () => {
+    let s = nav(tabsReducer(abc(), { type: 'open-background', path: D }), D)
+    for (let i = 0; i < 3; i += 1) s = nav(nav(s, C), D)
+    expect(s.history[D]).toEqual({ entries: [C, D], index: 1 })
+  })
+
+  it('a tab opened with no link (the sidebar, ⌘T) still starts with no record', () => {
+    expect(tabsReducer(abc(), { type: 'open-new', path: D }).history[D]).toBeUndefined()
+    expect(tabsReducer(abc(), { type: 'open-background', path: D }).history[D]).toBeUndefined()
+  })
+
+  it('B2: with the tab of the link closed, Back opens the page with the link in this tab', () => {
+    const s = tabsReducer(nav(tabsReducer(abc(), { type: 'open-background', path: D }), D), { type: 'close', path: C })
+    const back = tabsReducer(s, { type: 'back' })
+    expect(back.tabs).toEqual([C])
+    expect(back.active).toBe(C)
   })
 
   it('a tab opened without navigating has no record until it navigates', () => {

@@ -23,15 +23,23 @@ export interface WikilinkHover {
   onHover: (path: string, rect: AnchorRect) => void
   /** The pointer left the link. */
   onLeave: () => void
+  /** A Markdown link pill's address as the page it opens (YAZ-3609 D20), as a click resolves it; null when it opens none. */
+  markdownPath?: (href: string) => string | null
 }
 
 const wikilinkHoverKey = new PluginKey('mdapp-wikilink-hover')
 
 /** The page a collapsed, resolved link span opens, or null. */
-function linkPathOf(view: EditorView, target: EventTarget | null, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource): { span: Element; path: string } | null {
+function linkPathOf(view: EditorView, target: EventTarget | null, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, hover: WikilinkHover): { span: Element; path: string } | null {
   if (!(target instanceof Element)) return null
   const span = target.closest(`.${WIKILINK_CLASS}`)
   if (span === null || span.classList.contains(WIKILINK_UNRESOLVED_CLASS) || !view.dom.contains(span)) return null
+  // A Markdown link pill (D19) previews the page its address opens, as a `[[link]]` does (D20).
+  if (span.classList.contains('link-pill')) {
+    const href = span.closest('a')?.getAttribute('href') ?? null
+    const path = href === null ? null : (hover.markdownPath?.(href) ?? null)
+    return path === null ? null : { span, path }
+  }
   const inner = wikilinkInnerAt(view.state.doc, view.posAtDOM(span, 0))
   if (inner === null) return null
   const page = linkPageName(inner)
@@ -45,6 +53,11 @@ function linkPathOf(view: EditorView, target: EventTarget | null, source: Wikili
   return path === null ? null : { span, path }
 }
 
+/** Marks the editor while the pointer is on a Markdown link pill, so its CSS hides Crepe's address bar there (D20). */
+function pillHover(view: EditorView, on: boolean): void {
+  view.dom.closest('.milkdown')?.toggleAttribute('data-pill-hover', on)
+}
+
 export function createWikilinkHover(source: WikilinkResolveSource, hover: WikilinkHover, viewOnly: ViewOnlyLinkSource) {
   /** The page of the link the pointer is on, or null: a move between a link's own segments is no new hover. */
   let current: string | null = null
@@ -55,10 +68,12 @@ export function createWikilinkHover(source: WikilinkResolveSource, hover: Wikili
         props: {
           handleDOMEvents: {
             mouseover: (view, event) => {
-              const link = linkPathOf(view, event.target, source, viewOnly)
+              const link = linkPathOf(view, event.target, source, viewOnly, hover)
               if (link === null || link.path === current) return false
               if (current !== null) hover.onLeave()
               current = link.path
+              // On a pill the page preview stands in for the editor's own address bar (D20): it says where the link goes.
+              pillHover(view, link.span.classList.contains('link-pill'))
               const box = link.span.getBoundingClientRect()
               hover.onHover(link.path, { left: box.left, top: box.top, right: box.right, bottom: box.bottom })
               return false
@@ -66,8 +81,9 @@ export function createWikilinkHover(source: WikilinkResolveSource, hover: Wikili
             mouseout: (view, event) => {
               if (current === null) return false
               // Onto another segment of the same link (or a link to the same page): the hover stays.
-              if (linkPathOf(view, event.relatedTarget, source, viewOnly)?.path === current) return false
+              if (linkPathOf(view, event.relatedTarget, source, viewOnly, hover)?.path === current) return false
               current = null
+              pillHover(view, false)
               hover.onLeave()
               return false
             },

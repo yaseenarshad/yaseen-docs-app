@@ -5,8 +5,8 @@
  * image menu (Copy Image, Reveal in Finder). Each clipboard row first gives the focus back to what
  * held it (the note, or a code block in it), then asks main to run the row on this window
  * (`menu.edit`), as the native menu's roles do. A suggestion replaces the word in the note itself,
- * so ⌘Z undoes it like typing. A right-click a link's own menu took (Edit, Copy, Remove link) opens
- * only that menu. Copy as › Without folded lines with the selection inside one line
+ * so ⌘Z undoes it like typing. A right-click a link's own menu took (the one link menu, YAZ-3609 D23) opens
+ * only that menu. With words selected, "Add link…" opens the link box on them (YAZ-3609 D17). Copy as › Without folded lines with the selection inside one line
  * copies the bullet under the pointer: its line and the lines you see under it.
  */
 import { useEffect, useState } from 'react'
@@ -14,6 +14,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { NoteMenuAction } from '@shared/types'
 import { api } from '../api'
 import { bulletToCopy, copyVisibleNext, forgetCopyVisible } from './clipboardCopyOut'
+import { addLinkOn } from './markdownLink'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuSection } from '../sidebar/menuSections'
 
@@ -56,6 +57,20 @@ const nothingSelected = (view: EditorView): boolean => {
   return view.state.selection.empty && (page === null || page.isCollapsed || !view.dom.contains(page.anchorNode))
 }
 
+/** The selected words' range: the note's selection, or the page's when the note has not read it yet (see `nothingSelected`). */
+function selectedWords(view: EditorView): { from: number; to: number } {
+  const { from, to } = view.state.selection
+  const page = view.dom.ownerDocument.getSelection()
+  if (from < to || page === null || page.isCollapsed || page.anchorNode === null || page.focusNode === null || !view.dom.contains(page.anchorNode) || !view.dom.contains(page.focusNode)) return { from, to }
+  try {
+    const a = view.posAtDOM(page.anchorNode, page.anchorOffset)
+    const b = view.posAtDOM(page.focusNode, page.focusOffset)
+    return { from: Math.min(a, b), to: Math.max(a, b) }
+  } catch {
+    return { from, to }
+  }
+}
+
 /**
  * The rows, as data: the spelling group (only on a misspelled word), then the copy group, then the
  * paste group. A row that cannot act is shown but inert, as the native menu greys it: Cut and the
@@ -66,6 +81,8 @@ export function noteMenuSections(view: EditorView, misspelling: Misspelling | nu
   const editable = view.editable
   const empty = nothingSelected(view)
   const inBullet = pointer !== null && bulletToCopy(view.state, pointer) !== null
+  // The words the menu opened on: Add link… links them, wherever the selection is after the menu closes.
+  const words = selectedWords(view)
   const replace = (from: number, to: number, word: string) => () => {
     // The note may have changed since the right-click (a reload, another window): then the word is not there to replace.
     if (view.state.doc.textBetween(from, to) === misspelling?.word) view.dispatch(view.state.tr.insertText(word, from, to))
@@ -110,6 +127,9 @@ export function noteMenuSections(view: EditorView, misspelling: Misspelling | nu
         ],
       },
     ],
+    // Selected words can become a link (YAZ-3609 D17): a web address or a path. Only where the note can change.
+    // After the menu closes and gives the note its focus back, so the link box keeps the focus it takes.
+    empty || !editable ? [] : [{ id: 'add-link', label: 'Add link…', onSelect: () => void window.setTimeout(() => addLinkOn(view, words)) }],
   ]
 }
 

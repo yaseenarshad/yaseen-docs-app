@@ -128,8 +128,8 @@ export type WorkspaceAction =
 export type TabsAction =
   | { type: 'open-current'; path: string } // sidebar click & friends: open in the PREVIEW tab, replacing the page it showed (go to `tabOf` instead when already open)
   | { type: 'navigate'; path: string } // a link inside a page: replace the ACTIVE tab in its slot, with history (go to `tabOf` instead when already open)
-  | { type: 'open-new'; path: string } // the ONE door to a kept tab: append it at the end + activate; a page that is open is gone to, and the preview tab that shows it is kept
-  | { type: 'open-background'; path: string } // append a KEPT tab at the end, do NOT activate (no-op when already open)
+  | { type: 'open-new'; path: string; link?: true } // the ONE door to a kept tab: append it at the end + activate; a page that is open is gone to, and the preview tab that shows it is kept
+  | { type: 'open-background'; path: string; link?: true } // append a KEPT tab at the end, do NOT activate (no-op when already open)
   | { type: 'duplicate'; id: string } // "Duplicate tab" (YAZ-2940 D6): a copy of the tab, right after it, active
   | { type: 'take'; path: string; background?: boolean; at?: number } // a tab another window moved here (YAZ-3091 D5): ALWAYS a new kept tab at the end, active — a copy when the page is open; `background` (a quiet move from a tab board, YAZ-3343 D13): not active, not mounted, while a page is on show; `at` (a tab dropped on this strip, YAZ-3637 D4): at that slot instead of the end
   | { type: 'keep'; id: string } // double click, first edit: the preview tab becomes a kept tab (no-op for any other tab)
@@ -189,6 +189,34 @@ function replaceSlot(s: TabsState, slot: string, path: string, stack?: TabHistor
     preview: s.preview,
     blank: false,
   }
+}
+
+/**
+ * A link to a page that another tab shows (YAZ-3609 D10): go to that tab, and Back there returns to the
+ * page the link was in. That page joins the tab's stack just before its own page, so `back` finds it open
+ * in the first tab and goes there (S8). With the first tab closed, Back opens it in this tab's slot.
+ */
+function jumpTo(s: TabsState, id: string): TabsState {
+  const from = activePath(s)
+  const to = tabById(s, id)
+  if (from === null || to == null || from === to.path) return withActive(s, id)
+  const h = s.history[id] ?? { entries: [to.path], index: 0 }
+  // Back and forth between two pages adds no repeats: the page is put in only when it is not already the one before.
+  const before = h.entries.slice(0, h.index)
+  const entries = before[before.length - 1] === from ? [...before, to.path] : [...before, from, to.path]
+  return { ...withActive(s, id), history: { ...s.history, [id]: { entries, index: entries.length - 1 } } }
+}
+
+/**
+ * A link that opened its page in a new tab, in front or behind (YAZ-3609 D10, YAZ-3644): the new tab `id`
+ * of `opened` starts with the page the link was in, the active page of `before`, just before its own.
+ * Back there goes to that page's tab, as after `jumpTo`.
+ */
+function fromLink(before: TabsState, opened: TabsState, id: string): TabsState {
+  const from = activePath(before)
+  const to = tabById(opened, id)
+  if (from === null || to == null || from === to.path) return opened
+  return { ...opened, history: { ...opened.history, [id]: { entries: [from, to.path], index: 1 } } }
 }
 
 /** One stack's entries rewritten through `f` (renamed, or dropped with `null`); the index follows the entry it pointed at. */
@@ -274,7 +302,7 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // and so no link: a page that opens while it is active fills it, like any other.
       if (s.blank) return fillBlank(s, a.path)
       const open = tabOf(s, a.path)
-      if (open !== null) return open.id === s.active ? s : withActive(s, open.id)
+      if (open !== null) return open.id === s.active ? s : jumpTo(s, open.id)
       if (s.active === null) return appendActive(s, a.path, false)
       return replaceSlot(s, s.active, a.path)
     }
@@ -283,15 +311,18 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       const kept = tabById(s, s.preview)?.path === a.path ? { ...s, preview: null } : s
       if (kept.blank) return fillBlank(kept, a.path)
       const open = tabOf(kept, a.path)
-      if (open !== null) return open.id === kept.active ? kept : withActive(kept, open.id)
-      return appendActive(s, a.path, false)
+      if (open !== null) return open.id === kept.active ? kept : a.link ? jumpTo(kept, open.id) : withActive(kept, open.id)
+      const opened = appendActive(s, a.path, false)
+      return a.link ? fromLink(s, opened, opened.active!) : opened
     }
     case 'open-background': {
       if (shows(s, a.path)) return s // already open: stay where we are, steal nothing
       // The first tab of an empty window must activate: non-empty `tabs` requires a non-null `file`.
       // Under the blank tab too (YAZ-2655 S78): the page becomes the stored file, and the blank tab still shows.
       if (s.active === null) return { ...appendActive(s, a.path, false), blank: s.blank }
-      return { ...s, tabs: [...s.tabs, newTab(a.path)] } // not mounted: the editor lazy-mounts on first activation
+      const tab = newTab(a.path)
+      const opened = { ...s, tabs: [...s.tabs, tab] } // not mounted: the editor lazy-mounts on first activation
+      return a.link ? fromLink(s, opened, tab.id) : opened
     }
     case 'duplicate': {
       // A copy (YAZ-2940 D6, S1, S3, S4): a new id on the same page, right after the source, active and
@@ -714,7 +745,8 @@ export interface UseWorkspace extends WorkspaceState {
    * Rule 5, and a double click on a sidebar row (YAZ-2648 D2): the page is a KEPT tab — appended at
    * the end and activated when it is not open, and the preview tab the first click made keeps its page.
    */
-  openKept: (path: string) => void
+  /** `link`: a link opened it (YAZ-3644), so Back in the new tab returns to the page with the link. */
+  openKept: (path: string, link?: boolean) => void
   /** "Duplicate tab" (YAZ-2940 D6): a copy of that tab, right after it and active; the copy's id, or null for an unknown tab. */
   duplicate: (id: string) => string | null
   /** A tab another window moved here (YAZ-3091 D5): a new kept tab at the end, active, a copy when the page is open; a right-panel page leaves the panel. The new tab's id. */
@@ -728,7 +760,8 @@ export interface UseWorkspace extends WorkspaceState {
   /** The blank tab's ✕: it goes, and the tab that was active before is active again (S75). Never mirrored. */
   closeBlank: () => void
   /** Rule 5: append at the end without activating (and so without stealing focus). */
-  openBackground: (path: string) => void
+  /** `link`: a link opened it (YAZ-3644), so Back in that tab returns to the page with the link. */
+  openBackground: (path: string, link?: boolean) => void
   /** A tab, by id (YAZ-2940 D1). */
   activate: (id: string) => void
   /** That tab only: a copy closes alone (S11). Its note goes to "Recently closed" (YAZ-3487 D10) — not when `moved`: it lives on in another window. */
@@ -821,9 +854,9 @@ export function useWorkspace(root: string | null): UseWorkspace {
   // A display name is stored with the window (YAZ-3057): one write, like any other tab change.
   const setName = useCallback((id: string, name: string | null) => dispatch({ type: 'set-name', id, name }), [dispatch])
   const openKept = useCallback(
-    (path: string) => {
+    (path: string, link?: boolean) => {
       const s = stateRef.current
-      dispatch({ type: 'open-new', path }, { mirror: !(s.preview === s.active && activePath(s) === path) })
+      dispatch({ type: 'open-new', path, ...(link === true ? { link: true as const } : {}) }, { mirror: !(s.preview === s.active && activePath(s) === path) })
     },
     [dispatch],
   )
@@ -840,7 +873,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
     // The one new tab, wherever it landed (YAZ-3637 D4: at the drop slot, else the end), active or not.
     return stateRef.current.tabs.find((t) => !before.has(t.id))?.id ?? stateRef.current.tabs[stateRef.current.tabs.length - 1].id
   }, [dispatch])
-  const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path }), [dispatch])
+  const openBackground = useCallback((path: string, link?: boolean) => dispatch({ type: 'open-background', path, ...(link === true ? { link: true as const } : {}) }), [dispatch])
   const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
   /** YAZ-3487 D10: the notes of the tabs that close go to "Recently closed". A tab that MOVES to another window is no close: its caller says so. */
   const noteClosed = useCallback((ids: readonly string[]): void => {

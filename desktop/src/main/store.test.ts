@@ -827,6 +827,18 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ hoverPreview: true })
   })
 
+  it('linkOpen (YAZ-3609 D11, S4): a file without it reads This tab; each choice survives; junk falls back', async () => {
+    const { linkOpen: _open, ...before } = DEFAULT_SETTINGS
+    await seed(valid({ settings: before }))
+    expect(createStore(file).get().settings.linkOpen).toBe('this-tab')
+    for (const linkOpen of ['new-tab', 'background-tab'] as const) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, linkOpen } }))
+      expect(createStore(file).get().settings.linkOpen).toBe(linkOpen)
+    }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, linkOpen: 'window' } }))
+    expect(createStore(file).get().settings.linkOpen).toBe('this-tab')
+  })
+
   it('newNoteLocation/newNoteFolder: a pre-C2 file without the keys sanitizes to the defaults (current + "", YAZ-1643); junk falls back (GRO-2240)', async () => {
     // A pre-C2 yaseendocs.json: every field but the Files & Links pair — missing fields just gain their defaults.
     const { newNoteLocation: _loc, newNoteFolder: _folder, ...preC2Settings } = DEFAULT_SETTINGS
