@@ -96,7 +96,7 @@ export function vaultHref(href: string, options: PathPasteOptions): string | nul
 }
 
 /** A local `href` as an absolute path: decoded, `#` and `?` dropped, resolved from `notePath`'s folder; null for the web. */
-function hrefPath(href: string, notePath: string): string | null {
+export function hrefPath(href: string, notePath: string): string | null {
   if (/^[a-z][a-z\d+.-]+:/i.test(href) && !/^file:/i.test(href)) return null
   let path: string
   try {

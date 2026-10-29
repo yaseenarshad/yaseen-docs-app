@@ -22,6 +22,8 @@ export interface MarkdownLinkNav {
   inApp?: (href: string) => string | null
   /** Opens that path: in this tab, or in a background tab for a ⌘-click. */
   openPath?: (path: string, background: boolean) => void
+  /** A link into a vault the app knows but this window does not show (YAZ-3609 D21): true when the host asked to add it. */
+  elsewhere?: (href: string, background: boolean) => boolean
   /** A link into a vault of this window, found or not (YAZ-3609 D19): its absolute path, or null. Such a link is a pill. */
   vaultPath?: (href: string) => string | null
   /** The pill's icon: the decoration attributes that draw the one the sidebar gives `path` (D13, D19, `fileIconDecoration`). */
@@ -180,7 +182,7 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
     const follow = (href: string, background: boolean) => {
       const path = nav.inApp?.(href) ?? null
       if (path !== null && nav.openPath !== undefined) nav.openPath(path, background)
-      else attempt(() => nav.open(href), 'Could not open link', nav.onNotice)
+      else if (nav.elsewhere?.(href, background) !== true) attempt(() => nav.open(href), 'Could not open link', nav.onNotice)
     }
 
     return new Plugin<DecorationSet>({

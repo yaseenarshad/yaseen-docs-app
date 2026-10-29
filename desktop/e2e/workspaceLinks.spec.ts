@@ -19,12 +19,16 @@ const PERSONAL = 'Personal'
 const TODAY = 'Today.md'
 const PLAN = 'Plan.md'
 const PLAN_BODY = 'personal-plan-body'
+/** A third vault the app knows (in the recents) that the window does not show (D21). */
+const ARCHIVE = 'Archive'
+const OLD_BODY = 'archive-old-body'
 
 let userData: string
 let vaultSrc: string
 let vaultsDir: string
 let work: string
 let personal: string
+let archive: string
 let app: ElectronApplication
 let win: Page
 
@@ -32,7 +36,7 @@ let win: Page
 function workspaceState(linkOpen: AppState['settings']['linkOpen'] = 'this-tab'): AppState {
   const state = seededState(work, path.join(work, TODAY))
   state.windows[0]!.roots = [work, personal]
-  state.recents = [...state.recents, { path: personal, lastOpened: Date.now() - 1 }]
+  state.recents = [...state.recents, { path: personal, lastOpened: Date.now() - 1 }, { path: archive, lastOpened: Date.now() - 2 }]
   state.folders = { ...state.folders, [personal]: { ...state.folders[work]!, lastFile: null } }
   state.settings = { ...state.settings, linkOpen }
   return state
@@ -53,13 +57,15 @@ test.beforeAll(async () => {
   vaultsDir = await mkdtemp(path.join(tmpdir(), 'workspace-links-vaults-'))
   work = path.join(vaultsDir, WORK)
   personal = path.join(vaultsDir, PERSONAL)
-  await Promise.all([cp(vaultSrc, work, { recursive: true }), mkdir(personal, { recursive: true })])
-  for (const vault of [work, personal]) {
+  archive = path.join(vaultsDir, ARCHIVE)
+  await Promise.all([cp(vaultSrc, work, { recursive: true }), mkdir(personal, { recursive: true }), mkdir(archive, { recursive: true })])
+  for (const vault of [work, personal, archive]) {
     await mkdir(path.join(vault, '.yaseendocs'), { recursive: true })
     await writeFile(path.join(vault, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: false }))
   }
   await writeFile(path.join(personal, PLAN), `# Plan\n\n${PLAN_BODY}\n`)
-  await writeFile(path.join(work, TODAY), `# Today\n\nSee [[Ideas]] here.\n\nThen [the gym plan](../${PERSONAL}/${PLAN}) after.\n\nEnds with [the plan](../${PERSONAL}/${PLAN})\n\nPaste:\n`)
+  await writeFile(path.join(archive, 'Old.md'), `# Old\n\n${OLD_BODY}\n`)
+  await writeFile(path.join(work, TODAY), `# Today\n\nSee [[Ideas]] here.\n\nThen [the gym plan](../${PERSONAL}/${PLAN}) after.\n\nEnds with [the plan](../${PERSONAL}/${PLAN})\n\nOld: [the old note](../${ARCHIVE}/Old.md)\n\nPaste:\n`)
 })
 
 test.afterAll(async () => {
@@ -171,6 +177,29 @@ test('step 4 — "Open a link in: A new background tab": a click keeps this note
   await shoot(win, 'workspace-links-04-background')
   // YAZ-3644: the new tab remembers the note with the link, so Back there returns to it.
   await tabsOf(win).filter({ hasText: 'Plan' }).click()
+  await win.getByRole('button', { name: 'Back' }).click()
+  await expect(activeTab(win)).toHaveText('Today')
+  await quitApp(app)
+})
+
+test('step 6 — a link into a vault the app knows but this window does not show asks to add it; Add opens the page in a tab (D21)', async () => {
+  app = await launchApp({ userData, seedState: workspaceState() })
+  win = await appWindow(app, 'w1')
+  const sheet = win.locator('.confirm[role="dialog"]')
+  const link = editorOf(win).locator('a', { hasText: 'the old note' })
+  // V3: Cancel changes nothing.
+  await link.click()
+  await expect(sheet).toContainText(`Old is in the vault ${ARCHIVE}, which is not open in this window.`)
+  await shoot(win, 'workspace-links-06-ask')
+  await sheet.getByRole('button', { name: 'Cancel' }).click()
+  await expect(sheet).toHaveCount(0)
+  await expect(activeTab(win)).toHaveText('Today')
+  // V1: Add — the vault joins the window, the page opens in a tab, and Back returns.
+  await link.click()
+  await sheet.getByRole('button', { name: `Add ${ARCHIVE} to this window` }).click()
+  await expect(activeTab(win)).toHaveText('Old')
+  await expect(editorOf(win)).toContainText(OLD_BODY)
+  await expect(win.locator('.tree__row', { hasText: ARCHIVE }).first()).toBeVisible()
   await win.getByRole('button', { name: 'Back' }).click()
   await expect(activeTab(win)).toHaveText('Today')
   await quitApp(app)

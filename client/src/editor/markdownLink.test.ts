@@ -93,6 +93,23 @@ describe('primary click', () => {
   })
 })
 
+describe('a link into a vault this window does not show (YAZ-3609 D21)', () => {
+  it('asks the host to add the vault, and never sends the link to the OS; ⌘ asks for a background tab', async () => {
+    const elsewhere = vi.fn(() => true)
+    const { nav, root } = await mount('[Old](../Archive/old.md)\n', { inApp: () => null, elsewhere })
+    mouse(anchorOf(root), 'mousedown', { button: 0 })
+    mouse(anchorOf(root), 'mousedown', { button: 0, metaKey: true })
+    expect(elsewhere.mock.calls).toEqual([['../Archive/old.md', false], ['../Archive/old.md', true]])
+    expect(nav.open).not.toHaveBeenCalled()
+  })
+
+  it('V4 a file in no vault the app knows still goes to the OS', async () => {
+    const { nav, root } = await mount('[Elsewhere](/tmp/x.md)\n', { inApp: () => null, elsewhere: () => false })
+    mouse(anchorOf(root), 'mousedown', { button: 0 })
+    expect(nav.open).toHaveBeenCalledWith('/tmp/x.md')
+  })
+})
+
 describe('a link to this vault opens in a tab (YAZ-3609 D8, D9)', () => {
   const inApp = (href: string) => (href === '../note.md' ? '/v/note.md' : null)
 

@@ -12,7 +12,7 @@ import { createDrawingFeed } from '../drawings/drawingFeed'
 import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
 import { FolderView } from '../views/FolderView'
-import { hrefTarget, vaultHref } from './pathPaste'
+import { hrefPath, hrefTarget, vaultHref } from './pathPaste'
 import { createCrepe, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
@@ -482,7 +482,7 @@ function CrepeHost({
   const vaultLinksHere = useContext(VaultLinksContext)
   const vaultLinks = useRef(vaultLinksHere)
   vaultLinks.current = vaultLinksHere
-  const candidatesOf = (target: string) => vaultLinks.current?.(target) ?? null
+  const candidatesOf = (target: string) => vaultLinks.current?.candidatesOf(target) ?? null
   /**
    * The same instance, from the moment it can take an action (YAZ-2643): `crepeRef` is set BEFORE
    * `create()` settles, and an action on an editor that is not created yet throws. State, not a
@@ -650,6 +650,11 @@ function CrepeHost({
         // A link to a page or file of this vault opens in a tab, like a [[link]] (YAZ-3609 D8).
         inApp: (href) => (wikilinkCandidates === undefined ? null : hrefTarget(href, { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf })),
         openPath: (target, background) => (background ? onOpenFileBackground ?? onOpenFile : onOpenFile)(target),
+        // A link into a vault the app knows but this window does not show asks to add that vault (YAZ-3609 D21).
+        elsewhere: (href, background) => {
+          const target = hrefPath(href, file.path)
+          return target !== null && (vaultLinks.current?.askToAdd(target, background) ?? false)
+        },
         // A link into a vault of the window is a pill with its file's icon, like a [[link]] (YAZ-3609 D19).
         vaultPath: (href) => (wikilinkCandidates === undefined ? null : vaultHref(href, { root, notePath: file.path, candidates: wikilinkCandidates, candidatesOf })),
         icon: (target, folder) => fileIconDecoration(icons.current, target, folder),
