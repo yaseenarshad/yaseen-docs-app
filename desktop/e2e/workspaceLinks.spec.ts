@@ -95,12 +95,16 @@ test('step 3 — a pasted path of the other vault is a relative link named after
   await quitApp(app)
 })
 
-test('step 4 — "Open a link in: A new background tab": a click keeps this note in front (D11)', async () => {
+test('step 4 — "Open a link in: A new background tab": a click keeps this note in front (D11); Back in the new tab returns (YAZ-3644)', async () => {
   app = await launchApp({ userData, seedState: workspaceState('background-tab') })
   win = await appWindow(app, 'w1')
   await editorOf(win).locator('a', { hasText: 'the gym plan' }).click()
   await expect(tabsOf(win).filter({ hasText: 'Plan' })).toHaveCount(1)
   await expect(activeTab(win)).toHaveText('Today')
   await shoot(win, 'workspace-links-04-background')
+  // YAZ-3644: the new tab remembers the note with the link, so Back there returns to it.
+  await tabsOf(win).filter({ hasText: 'Plan' }).click()
+  await win.getByRole('button', { name: 'Back' }).click()
+  await expect(activeTab(win)).toHaveText('Today')
   await quitApp(app)
 })

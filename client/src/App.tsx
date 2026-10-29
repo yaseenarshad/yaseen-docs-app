@@ -921,9 +921,14 @@ export function App() {
   const linkOpen = useRef(settings.linkOpen)
   linkOpen.current = settings.linkOpen
   const openFromPage = useCallback((path: string) => {
-    const open = reviewing.current || linkOpen.current === 'background-tab' ? openBackground : linkOpen.current === 'new-tab' ? openKept : navigate
-    open(path)
+    // A new tab, in front or behind, remembers the page with the link, so Back there returns (YAZ-3644). A review's open is no link click.
+    if (reviewing.current) openBackground(path)
+    else if (linkOpen.current === 'background-tab') openBackground(path, true)
+    else if (linkOpen.current === 'new-tab') openKept(path, true)
+    else navigate(path)
   }, [openBackground, navigate, openKept])
+  /** ⌘-click on a link (YAZ-3644): a background tab whose Back returns to the page with the link. */
+  const openLinkBackground = useCallback((path: string) => openBackground(path, true), [openBackground])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
   // A trip to another copy of the same file (YAZ-2940) moves `activeTab` and not `file`, so both are watched.
   const closeReview = useCallback(() => live.current.vaults.forEach((vault) => vault.review.close()), [])
@@ -2781,7 +2786,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`${id}:${tabHistory[id]?.index ?? 0}`} />
+                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openLinkBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`${id}:${tabHistory[id]?.index ?? 0}`} />
                 </div>
               )
             })}

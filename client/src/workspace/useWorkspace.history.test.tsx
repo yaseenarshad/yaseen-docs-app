@@ -46,6 +46,31 @@ describe('history recording', () => {
     expect(back.history[C]).toEqual(two.history[C]) // the first tab's own stack is untouched
   })
 
+  // YAZ-3644: D10 for the other two places a link opens, "A new tab" and a background tab (the setting, and ⌘-click).
+  it.each([
+    ['a new tab', 'open-new' as const],
+    ['a background tab', 'open-background' as const],
+  ])('a link opened in %s has the page with the link before its own: Back goes to that tab', (_name, type) => {
+    const opened = tabsReducer(abc(), { type, path: D, link: true })
+    const s = type === 'open-new' ? opened : tabsReducer(opened, { type: 'activate', path: D })
+    expect(s.history[D]).toEqual({ entries: [C, D], index: 1 })
+    const back = tabsReducer(s, { type: 'back' })
+    expect(back.active).toBe(C)
+    expect(back.tabs).toEqual([C, D])
+  })
+
+  it('a new tab opened from a link to a page another tab shows goes to that tab, as a click does (D10)', () => {
+    const two = tabsReducer(abc(), { type: 'open-background', path: D })
+    const s = tabsReducer(two, { type: 'open-new', path: D, link: true })
+    expect(s.active).toBe(D)
+    expect(s.history[D]).toEqual({ entries: [C, D], index: 1 })
+  })
+
+  it('a tab opened with no link (the sidebar, ⌘T) still starts with no record', () => {
+    expect(tabsReducer(abc(), { type: 'open-new', path: D }).history[D]).toBeUndefined()
+    expect(tabsReducer(abc(), { type: 'open-background', path: D }).history[D]).toBeUndefined()
+  })
+
   it('B2: with the tab of the link closed, Back opens the page with the link in this tab', () => {
     const s = tabsReducer(nav(tabsReducer(abc(), { type: 'open-background', path: D }), D), { type: 'close', path: C })
     const back = tabsReducer(s, { type: 'back' })
