@@ -417,6 +417,13 @@
   color: var(--danger);
 }
 
+/* The name style's dropdown and, for "Custom…", its field beside it (YAZ-3607 D4): one line in the wide row. */
+.settings__style-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* The custom name style's tokens (YAZ-3607 D4), muted under its input like an error is red there. */
 .settings__tokens {
   margin: 0 0 8px;

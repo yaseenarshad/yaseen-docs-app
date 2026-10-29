@@ -72,7 +72,13 @@ export function DailyNoteFormatControl({ settings, onChange }: DailyNoteControlP
   }, [format])
 
   const today = new Date()
-  const options = [...DAILY_NOTE_STYLES.map((style) => ({ label: dailyNoteName(style, today), value: style as string })), { label: 'Custom…', value: CUSTOM }]
+  const options = [
+    ...DAILY_NOTE_STYLES.map((style) => ({
+      label: dailyNoteName(style, today),
+      value: style as string,
+    })),
+    { label: 'Custom…', value: CUSTOM },
+  ]
   const commit = (raw: string) => {
     const why = dailyNoteFormatProblem(raw)
     setProblem(why)
@@ -81,18 +87,18 @@ export function DailyNoteFormatControl({ settings, onChange }: DailyNoteControlP
 
   return (
     <>
-      <Select
-        options={options}
-        value={custom ? CUSTOM : format}
-        onChange={(value) => {
-          if (value === CUSTOM) return setCustom(true)
-          setCustom(false)
-          onChange({ ...settings, dailyNoteFormat: value })
-        }}
-        ariaLabel="Name style"
-      />
-      {custom && (
-        <>
+      <span className="settings__style-pick">
+        <Select
+          options={options}
+          value={custom ? CUSTOM : format}
+          onChange={(value) => {
+            if (value === CUSTOM) return setCustom(true)
+            setCustom(false)
+            onChange({ ...settings, dailyNoteFormat: value })
+          }}
+          ariaLabel="Name style"
+        />
+        {custom && (
           <input
             type="text"
             className={`settings__input settings__input--fill${problem !== null ? ' settings__input--error' : ''}`}
@@ -110,12 +116,14 @@ export function DailyNoteFormatControl({ settings, onChange }: DailyNoteControlP
             }}
             onBlur={(e) => commit(e.target.value)}
           />
+        )}
+      </span>
+      {custom && (
+        <>
           {problem !== null ? (
             <span className="settings__error">{problem}</span>
           ) : (
-            <span className="settings__tokens">
-              {DAILY_NOTE_TOKENS.map((t) => `${t.token} ${t.example}`).join(' · ')}. Put other words in [ ], like [Daily].
-            </span>
+            <span className="settings__tokens">{DAILY_NOTE_TOKENS.map((t) => `${t.token} ${t.example}`).join(' · ')}. Put other words in [ ], like [Daily].</span>
           )}
         </>
       )}
