@@ -199,7 +199,7 @@ window.highlight/1: invoke window:highlight ["a0"]; => "answer"; !> {"code":"NOT
 window.highlightTab/2: invoke window:highlight-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.identity/0: invoke window:identity []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.minimizedWindows/0: invoke window:minimized-windows-now []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-window.moveTab/3: invoke window:move-tab ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.moveTab/4: invoke window:move-tab ["a0","a1","a2",null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.moveTo/3: invoke window:move-to ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.noteClosed/1: invoke window:note-closed ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.onFlush/1: (no IPC)
@@ -228,6 +228,7 @@ window.setRoots/2: invoke window:set-roots ["a0","a1"]; => "answer"; !> {"code":
 window.setSessionTabs/2: invoke window:set-session-tabs ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.showWindow/1: invoke window:show ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.tabAction/3: invoke window:tab-action ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.tearOff/4: invoke window:tear-off ["a0","a1","a2",null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 writeAsset/1: invoke fs:write-asset ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 writeFile/1: invoke fs:write ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}"
 `;

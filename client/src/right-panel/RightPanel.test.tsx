@@ -20,6 +20,7 @@ let container: HTMLElement | null = null
 const base = (): RightPanelProps => ({
   roots: ['/v'],
   titles: new Map(),
+  windowId: 'w1',
   items: ['/v/Alpha.md', '/v/Beta.md'],
   expanded: '/v/Alpha.md',
   width: 440,
@@ -169,17 +170,17 @@ describe('RightPanel', () => {
     const start = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
     Object.defineProperty(start, 'dataTransfer', { value: writeData })
     act(() => void items[0].querySelector<HTMLElement>('.right-panel__header')?.dispatchEvent(start))
-    expect(writeData.setData).toHaveBeenCalledExactlyOnceWith(
-      WORKSPACE_PAGE_MIME,
-      JSON.stringify({ path: '/v/Alpha.md', owner: 'right' }),
-    )
+    // The window and the copy ride along (YAZ-3637 D1); the FROM type's root -1 says no other window takes it (D8).
+    expect(writeData.setData).toHaveBeenCalledTimes(2)
+    expect(writeData.setData).toHaveBeenCalledWith(WORKSPACE_PAGE_MIME, JSON.stringify({ path: '/v/Alpha.md', owner: 'right', from: 'w1', copy: 0 }))
+    expect(writeData.setData).toHaveBeenCalledWith('application/x-yaseen-from-w1.-1', '1')
 
     const fireData = (target: Element, type: string, owner: 'main' | 'right', clientY = 0): MouseEvent => {
       const data = {
         types: [WORKSPACE_PAGE_MIME],
         effectAllowed: 'move',
         dropEffect: 'none',
-        getData: vi.fn(() => JSON.stringify({ path: owner === 'main' ? '/v/Main.md' : '/v/Alpha.md', owner })),
+        getData: vi.fn(() => JSON.stringify({ path: owner === 'main' ? '/v/Main.md' : '/v/Alpha.md', owner, from: 'w1', copy: 0 })),
         setData: vi.fn(),
       } as unknown as DataTransfer
       const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientY })
@@ -190,7 +191,7 @@ describe('RightPanel', () => {
     expect(fireData(items[1], 'dragover', 'main', -5).defaultPrevented).toBe(true)
     expect(items[1].classList.contains('right-panel__item--insert-before')).toBe(true)
     fireData(items[1], 'drop', 'main', -5)
-    expect(onDropPage).toHaveBeenLastCalledWith({ path: '/v/Main.md', owner: 'main' }, 1)
+    expect(onDropPage).toHaveBeenLastCalledWith({ path: '/v/Main.md', owner: 'main', from: 'w1', copy: 0 }, 1)
 
     fireData(items[0], 'dragover', 'main', -5)
     act(() => void window.dispatchEvent(new Event('dragend')))
@@ -200,7 +201,7 @@ describe('RightPanel', () => {
     fireData(el.querySelector('.right-panel__headers')!, 'dragover', 'right')
     expect(items[1].classList.contains('right-panel__item--insert-after')).toBe(true)
     fireData(el.querySelector('.right-panel__headers')!, 'drop', 'right')
-    expect(onDropPage).toHaveBeenLastCalledWith({ path: '/v/Alpha.md', owner: 'right' }, 2)
+    expect(onDropPage).toHaveBeenLastCalledWith({ path: '/v/Alpha.md', owner: 'right', from: 'w1', copy: 0 }, 2)
     expect(onDropPage).toHaveBeenCalledTimes(2)
   })
 
@@ -212,7 +213,7 @@ describe('RightPanel', () => {
       types: [WORKSPACE_PAGE_MIME],
       effectAllowed: 'move',
       dropEffect: 'none',
-      getData: vi.fn(() => JSON.stringify({ path: '/v/Main.md', owner: 'main' })),
+      getData: vi.fn(() => JSON.stringify({ path: '/v/Main.md', owner: 'main', from: 'w1', copy: 0 })),
       setData: vi.fn(),
     } as unknown as DataTransfer
     const fire = (type: string): MouseEvent => {
@@ -225,7 +226,7 @@ describe('RightPanel', () => {
     expect(fire('dragover').defaultPrevented).toBe(true)
     expect(viewer.classList.contains('right-panel__viewer--drop-empty')).toBe(true)
     fire('drop')
-    expect(onDropPage).toHaveBeenCalledExactlyOnceWith({ path: '/v/Main.md', owner: 'main' }, 0)
+    expect(onDropPage).toHaveBeenCalledExactlyOnceWith({ path: '/v/Main.md', owner: 'main', from: 'w1', copy: 0 }, 0)
   })
 
   it('keeps close outside the header drag and move-menu surfaces', () => {

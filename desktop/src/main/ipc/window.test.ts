@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type TabRef, type TearOffResult, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { CONTRACT, SPECIAL, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import * as windows from '../windows'
@@ -37,7 +37,8 @@ let manager: {
   moveTo: ReturnType<typeof vi.fn<(to: string, path: string) => boolean>>
   focusTab: ReturnType<typeof vi.fn<(to: string, ref: TabRef) => boolean>>
   closeTabs: ReturnType<typeof vi.fn<(to: string, refs: readonly TabRef[]) => boolean>>
-  moveTab: ReturnType<typeof vi.fn<(from: string, to: string, ref: TabRef) => boolean>>
+  moveTab: ReturnType<typeof vi.fn<(from: string, to: string, ref: TabRef, at?: number) => boolean>>
+  tearOff: ReturnType<typeof vi.fn<(from: WindowEntry, path: string, carry: unknown, point: unknown, alone: boolean) => TearOffResult>>
   setName: ReturnType<typeof vi.fn<(id: string, name: string | null) => boolean>>
   closeOther: ReturnType<typeof vi.fn<(id: string) => boolean>>
   setRoots: ReturnType<typeof vi.fn<(id: string, roots: readonly string[]) => boolean>>
@@ -77,7 +78,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), tearOff: vi.fn((): TearOffResult => 'opened'), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -99,7 +100,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes, `link:ready` and the paste fallback (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.noteClosed.channel, CONTRACT.window.forgetClosed.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.window.filesZoom.channel, CONTRACT.window.filesZoomMenu.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.tearOff.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.noteClosed.channel, CONTRACT.window.forgetClosed.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.window.filesZoom.channel, CONTRACT.window.filesZoomMenu.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -617,7 +618,10 @@ describe('registerWindowIpc', () => {
     expect(manager.popOut).toHaveBeenLastCalledWith(entry, '/v/a.md', { name: 'Outline' })
     await popOut({ sender }, '/v/a.md', { name: 'x'.repeat(100) })
     expect(manager.popOut.mock.lastCall?.[2].name).toHaveLength(80)
-    for (const carry of [undefined, { name: '   ' }, { name: 7 }, {}]) {
+    // The slot (YAZ-3637 D4): a whole number from 0 passes; anything else is dropped, never an error.
+    await popOut({ sender }, '/v/a.md', { at: 0 })
+    expect(manager.popOut).toHaveBeenLastCalledWith(entry, '/v/a.md', { at: 0 })
+    for (const carry of [undefined, { name: '   ' }, { name: 7 }, {}, { at: -1 }, { at: 1.5 }, { at: '1' }]) {
       await popOut({ sender }, '/v/a.md', carry)
       expect(manager.popOut).toHaveBeenLastCalledWith(entry, '/v/a.md', {})
     }
@@ -736,9 +740,9 @@ describe('registerWindowIpc', () => {
     it('window:move-tab passes from, to and the ref; from may be the caller; the same window both ends is BAD_REQUEST and a refusal NOT_FOUND', async () => {
       const moveTab = registered(CONTRACT.window.moveTab.channel)
       expect(await moveTab({ sender }, 'w1', 'w2', REF)).toEqual(ok(undefined))
-      expect(manager.moveTab).toHaveBeenLastCalledWith('w1', 'w2', REF)
+      expect(manager.moveTab).toHaveBeenLastCalledWith('w1', 'w2', REF, undefined)
       expect(await moveTab({ sender }, 'w2', 'w3', REF)).toEqual(ok(undefined))
-      expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w3', REF)
+      expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w3', REF, undefined)
       expect(await moveTab({ sender: stranger }, 'w1', 'w2', REF)).toEqual(bad('BAD_REQUEST'))
       expect(await moveTab({ sender }, 'w2', 'w2', REF)).toEqual(bad('BAD_REQUEST'))
       expect(await moveTab({ sender }, 'w1', null, REF)).toEqual(bad('BAD_REQUEST'))
@@ -746,6 +750,30 @@ describe('registerWindowIpc', () => {
       expect(manager.moveTab).toHaveBeenCalledTimes(2)
       manager.moveTab.mockReturnValueOnce(false)
       expect(await moveTab({ sender }, 'w1', 'w2', REF)).toEqual(bad('NOT_FOUND'))
+      // The slot of a drop on the caller's strip (YAZ-3637 D4): a whole number from 0 passes; anything else is no slot.
+      expect(await moveTab({ sender }, 'w2', 'w1', REF, 3)).toEqual(ok(undefined))
+      expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w1', REF, 3)
+      for (const at of [-1, 1.5, '2', null]) {
+        expect(await moveTab({ sender }, 'w2', 'w1', REF, at)).toEqual(ok(undefined))
+        expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w1', REF, undefined)
+      }
+    })
+
+    it('window:tear-off (YAZ-3637 D1, D3, D5) hands the caller entry, the path, the clean carry, the point and `alone` to the manager and answers what it says; a stranger, a relative path, a path in no vault of the caller and a bad point are rejected', async () => {
+      const tearOff = registered(CONTRACT.window.tearOff.channel)
+      const point = { x: 640, y: 480 }
+      // Only what "Move to ▸" carries (D9): a slot or `background` from the caller does not reach the manager.
+      expect(await tearOff({ sender }, '/v/a.md', { name: ' Outline ', at: 2, background: true }, point, true)).toEqual(ok('opened'))
+      expect(manager.tearOff.mock.lastCall?.[2]).toStrictEqual({ view: undefined, name: 'Outline' })
+      manager.tearOff.mockReturnValueOnce('moved')
+      expect(await tearOff({ sender }, '/v/a.md', {}, point, 'yes')).toEqual(ok('moved'))
+      expect(manager.tearOff).toHaveBeenLastCalledWith(entry, '/v/a.md', {}, point, false)
+      expect(await tearOff({ sender: stranger }, '/v/a.md', {}, point, false)).toEqual(bad('BAD_REQUEST'))
+      expect(await tearOff({ sender }, 'a.md', {}, point, false)).toEqual(bad('NOT_ABSOLUTE'))
+      expect(await tearOff({ sender }, '/other/a.md', {}, point, false)).toEqual(bad('BAD_REQUEST'))
+      expect(await tearOff({ sender }, '/v/a.md', 'Outline', point, false)).toEqual(bad('BAD_REQUEST'))
+      for (const bad_ of [undefined, null, { x: 1 }, { x: '1', y: 2 }, { x: Infinity, y: 0 }, { x: NaN, y: 0 }]) expect(await tearOff({ sender }, '/v/a.md', {}, bad_, false)).toEqual(bad('BAD_REQUEST'))
+      expect(manager.tearOff).toHaveBeenCalledTimes(2)
     })
 
     it('window:set-name passes any window id and a string or null; a stranger and a bad name are rejected; a window that is not live is NOT_FOUND; identity answers the stored name', async () => {

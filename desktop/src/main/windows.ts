@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type ScreenPoint, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type TearOffResult, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import { appZoomFactor } from './appZoom'
@@ -47,6 +47,14 @@ export const FLUSH_TIMEOUT_MS = 5000
 export const BOUNDS_DEBOUNCE_MS = 250
 /** `duplicateWindow` offsets the copy so it does not sit exactly on its source. */
 export const WINDOW_CASCADE_PX = 24
+/**
+ * Where the first tab's middle sits in a window whose sidebar is hidden (YAZ-3637 D3), from the window's top left: the
+ * title bar (28 px) and half the 44 px tab row down; the nav buttons (show sidebar, ◀ ▶, the grid: 8 + 4 × 28 + gaps),
+ * the strip's 8 px and half a tab across. A torn-off window stands so its tab lands under the pointer: the demo showed
+ * it there (S1, S16). A window that MOVES with its only tab (D5) keeps its sidebar, so there the tab lands about one
+ * sidebar width right of the pointer.
+ */
+export const TEAR_OFF_GRAB: ScreenPoint = { x: 190, y: 50 }
 
 const DEFAULT_BOUNDS: WindowBounds = { x: 100, y: 100, width: 1200, height: 800 }
 
@@ -83,6 +91,8 @@ export interface WindowHost {
   create(entry: WindowEntry, opts?: { hidden: true }): ManagedWindow
   /** Every display's workArea, primary first (`clampBounds` keeps the earliest area on ties). */
   workAreas(): WindowBounds[]
+  /** Where the pointer is on the screen (YAZ-3637 D1): a drag that ended with no point is let go there. */
+  cursorPoint(): ScreenPoint
   /** Whether `path` exists as a regular file — `routeToFile` (E1) probes before opening anything, and `rootFor` before it counts the path as asked for (YAZ-2589 A6). */
   exists(path: string): boolean
   /** Whether `path` exists as a directory — `openRecentBeside` probes before touching the MRU (GRO-2211, moved here by YAZ-1767), and `routeToFile` asks it first: a folder goes to that door (YAZ-2556 D1). */
@@ -117,8 +127,17 @@ export interface WindowManager extends WindowLookup {
    * sidebar hidden, the right panel closed and empty, cascaded bounds, fresh id. No MRU bump, as `duplicateWindow`.
    * `carry.view` is the page's view (YAZ-2951 D2), handed to the new window once (`takeStartView`). `carry.name` is the tab's
    * display name: stored with the new window's one tab (YAZ-3057 D3), so a reload and a restart keep it.
+   * `bounds` = where a torn-off tab's window goes (YAZ-3637 D3); absent = cascaded.
    */
-  popOut(from: WindowEntry, path: string, carry?: PopOutCarry): void
+  popOut(from: WindowEntry, path: string, carry?: PopOutCarry, bounds?: WindowBounds): void
+  /**
+   * A tab of `from`'s strip let go where no surface took it (YAZ-3637 D1, D3, D5), at `point` on the screen (0,0 = no
+   * point: the pointer's place now). On a window that shows — live, not hidden, not in the Dock — it is `none`: that
+   * window took the drop or refused it, and nothing opens. Off every window, a window opens there as `popOut` does, as
+   * big as the source, the tab under the pointer (`TEAR_OFF_GRAB`), clamped to the display: `opened`. With `alone` —
+   * the caller's only tab, nothing else open — the caller itself moves there instead, no reload: `moved`.
+   */
+  tearOff(from: WindowEntry, path: string, carry: PopOutCarry, point: ScreenPoint, alone: boolean): TearOffResult
   /**
    * A tab's "Move to ▸ <window>" (YAZ-3091 D1, D2): raise the live window `to` and push `link:take-tab` with
    * `path` and `carry`, held like any link push until its page listens. `false` = `to` is not live, or none of
@@ -136,9 +155,10 @@ export interface WindowManager extends WindowLookup {
    * A card dropped in another window's frame (YAZ-3343 D13): push `link:send-tab` `{ to, ref }` to the live window
    * `from`, which saves the tab and sends it with `window:move-to`, as "Move to ▸" does. `false` = either window
    * is not live, they are the same window, or `to` shows no vault of `ref.path` (the `moveTo` rule). No raise, here or
-   * after: `from` sends it as a QUIET move (`background`), which `moveTo` does not raise.
+   * after: `from` sends it as a QUIET move (`background`), which `moveTo` does not raise. With `at` (YAZ-3637 D4, a tab
+   * dropped on `to`'s strip) `from` sends it loud, to that slot.
    */
-  moveTab(from: string, to: string, ref: TabRef): boolean
+  moveTab(from: string, to: string, ref: TabRef, at?: number): boolean
   /** Name the live window `id` (YAZ-3343 D14), or `null` for its automatic label: `store.setWindowName`. `false` = `id` is not live. */
   setName(id: string, name: string | null): boolean
   /** The board's highlight on window `to`'s card (YAZ-3343): it lights that tab in its strip; `null` puts it out. Dropped when `to` is not live. */
@@ -282,7 +302,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -706,6 +726,19 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     return true
   }
 
+  /** "Move to new window" (YAZ-2933): `from`'s vaults, ONE tab, sidebar hidden; `bounds` = where a torn-off tab's window goes (YAZ-3637 D3), else cascaded. */
+  const popOut = (from: WindowEntry, path: string, carry?: PopOutCarry, bounds?: WindowBounds): void => {
+    // The id first, and the page view under it before the window exists: its first identity read cannot miss it (YAZ-2951 D2).
+    const id = randomUUID()
+    if (carry?.view !== undefined) startViews.set(id, { path, view: carry.view })
+    // The tab's display name is stored with the new window's one tab (YAZ-3057 D3). `from`'s own strip must not come along,
+    // and neither does its name (YAZ-3343 D14): the new window is another window, with its automatic label.
+    // Nor its kind (YAZ-3357 D1): a tab moves to a full window.
+    const { tabStrip: _from, name: _name, kind: _kind, ...source } = from
+    // From the tab board it is QUIET (YAZ-3343 D37): the new window is HIDDEN until the board shows it (D23).
+    open({ ...source, id, roots: [...from.roots], file: path, tabs: [path], ...(carry?.name === undefined ? {} : { tabStrip: [{ path, name: carry.name }] }), rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: bounds ?? cascadeFrom(from) }, carry?.background === true)
+    if (carry?.background === true) tellHidden()
+  }
   /** A new full window; `bounds` = where a Files window puts it (YAZ-3357), else the default spot. Answers its id. */
   const openWindow = (opts: OpenWindowOptions, bounds?: WindowBounds): string => {
     // A window opened on a vault is a use of that vault (YAZ-2555 D5); its first focus does not count.
@@ -875,17 +908,35 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       openBlank(from, false)
     },
 
-    popOut(from, path, carry) {
-      // The id first, and the page view under it before the window exists: its first identity read cannot miss it (YAZ-2951 D2).
-      const id = randomUUID()
-      if (carry?.view !== undefined) startViews.set(id, { path, view: carry.view })
-      // The tab's display name is stored with the new window's one tab (YAZ-3057 D3). `from`'s own strip must not come along,
-      // and neither does its name (YAZ-3343 D14): the new window is another window, with its automatic label.
-      // Nor its kind (YAZ-3357 D1): a tab moves to a full window.
-      const { tabStrip: _from, name: _name, kind: _kind, ...source } = from
-      // From the tab board it is QUIET (YAZ-3343 D37): the new window is HIDDEN until the board shows it (D23).
-      open({ ...source, id, roots: [...from.roots], file: path, tabs: [path], ...(carry?.name === undefined ? {} : { tabStrip: [{ path, name: carry.name }] }), rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: cascadeFrom(from) }, carry?.background === true)
-      if (carry?.background === true) tellHidden()
+    popOut,
+
+    tearOff(from, path, carry, point, alone) {
+      // A drag that ended with no point (0,0) was let go where the pointer is now.
+      const at = point.x === 0 && point.y === 0 ? host.cursorPoint() : point
+      // On a window that shows, the drop was that window's to take or refuse (D4, D8): nothing opens. A hidden window
+      // (YAZ-3343) and one in the Dock are not under the pointer.
+      for (const [id, win] of live) {
+        if (win.isDestroyed() || hiddenWins.has(id) || win.isMinimized()) continue
+        const b = win.getBounds()
+        if (at.x >= b.x && at.x < b.x + b.width && at.y >= b.y && at.y < b.y + b.height) return 'none'
+      }
+      // As big as the source stands NOW (the stored bounds lag a drag by BOUNDS_DEBOUNCE_MS), the tab under the pointer.
+      const source = liveWindow(from.id)
+      const size = source?.getBounds() ?? from.bounds
+      // Kept on the display that holds the drop point: near the edge between two displays the window must not jump to
+      // the other one, where the tab would be far from the pointer. A point on no display is clamped as any window is.
+      const areas = host.workAreas()
+      const under = areas.filter((a) => at.x >= a.x && at.x < a.x + a.width && at.y >= a.y && at.y < a.y + a.height)
+      const bounds = clampBounds({ ...size, x: at.x - TEAR_OFF_GRAB.x, y: at.y - TEAR_OFF_GRAB.y }, under.length > 0 ? under : areas)
+      if (alone && source !== undefined) {
+        // The only tab takes its window along (D5): no new window, no reload. Stored now, as `commitBounds` would after
+        // the debounce, so an identity read in between sees where the window is.
+        store.upsertWindow({ ...(entryOf(from.id) ?? from), bounds })
+        source.setBounds(bounds)
+        return 'moved'
+      }
+      popOut(from, path, carry, bounds)
+      return 'opened'
     },
 
     showWindow,
@@ -937,11 +988,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       return true
     },
 
-    moveTab(from, to, ref) {
+    moveTab(from, to, ref, at) {
       const source = liveWindow(from)
       const entry = entryOf(to)
       if (source === undefined || from === to || liveWindow(to) === undefined || entry === undefined || isFilesWindow(entry) || rootOfPath(entry.roots, ref.path) === null) return false
-      sendLink(source, CONTRACT.link.onSendTab.channel, { to, ref: { path: ref.path, copy: ref.copy } })
+      sendLink(source, CONTRACT.link.onSendTab.channel, { to, ref: { path: ref.path, copy: ref.copy }, ...(at === undefined ? {} : { at }) })
       return true
     },
 

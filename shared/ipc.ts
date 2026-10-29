@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult } from './types'
 import type { CopyAsMode, CopyAsRich, NoteMenuAction } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
@@ -219,8 +219,16 @@ export const CONTRACT = {
     /**
      * A card dropped in another window's frame (YAZ-3343 D13): window `from` sends its tab `ref` to the window `to`, as "Move to ▸" does.
      * Main checks that both are live and that `to` shows a vault of the page; `from` may be the caller.
+     * A tab dropped on the caller's strip (YAZ-3637 D4) names the slot `at` it lands in; absent = the end, quietly.
      */
-    moveTab: invoke<[from: string, to: string, ref: TabRef], void>('window:move-tab', 3),
+    moveTab: invoke<[from: string, to: string, ref: TabRef, at?: number], void>('window:move-tab', 4),
+    /**
+     * A tab of the strip let go where no surface took it (YAZ-3637 D1, D3, D5): `point` is where, on the screen. Main
+     * answers `none` when the point is on an app window (that window's drop, or nothing); else a new window opens
+     * there with `path` and its `carry`, sized as the caller, sidebar hidden — or, with `alone` (the caller's only
+     * tab, nothing else open), the caller itself moves there.
+     */
+    tearOff: invoke<[path: string, carry: PopOutCarry, point: ScreenPoint, alone: boolean], TearOffResult>('window:tear-off', 4),
     /** A window frame's name on the tab board (YAZ-3343 D14): name the open window `id`, or `null` to go back to its automatic label. Any window can name any open window. */
     setName: invoke<[id: string, name: string | null], void>('window:set-name', 2),
     /**
@@ -386,8 +394,8 @@ export const CONTRACT = {
     onFocusTab: push<TabRef>('link:focus-tab'),
     /** Another window's tab board closed tabs of this window (YAZ-3343 D3, D10). */
     onCloseTabs: push<TabRef[]>('link:close-tabs'),
-    /** Another window's tab board moved this window's tab `ref` to the window `to` (YAZ-3343 D13): save it, send it with `window:move-to`, close it here. */
-    onSendTab: push<{ to: string; ref: TabRef }>('link:send-tab'),
+    /** Another window's tab board moved this window's tab `ref` to the window `to` (YAZ-3343 D13): save it, send it with `window:move-to`, close it here. With `at` (YAZ-3637 D4) it lands at that slot of `to`'s strip, loud. */
+    onSendTab: push<{ to: string; ref: TabRef; at?: number }>('link:send-tab'),
     /** A tab board's vault chip picked this EMPTY window's vaults (YAZ-3343): show them, if it still has no tab. */
     onSetRoots: push<string[]>('link:set-roots'),
     /** A tab board of another window asked this one to move its tab `ref` to a new window, quietly (YAZ-3343): save it, pop it out behind. */

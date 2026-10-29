@@ -1201,6 +1201,24 @@ describe('take (YAZ-3091 D5): a tab another window moved here', () => {
     expect(empty.active).toBe(empty.tabs[0].id)
   })
 
+  it('YAZ-3637 D4: `at` puts the new tab at that slot — active, mounted, a copy too, clamped — and takes the blank tab down; without `at` it is the end as before', () => {
+    const s = two()
+    const first = reduceTabs(s, { type: 'take', path: '/v/c.md', at: 0 })
+    expect(first.tabs.map((t) => t.path)).toEqual(['/v/c.md', A, B])
+    expect(first.active).toBe(first.tabs[0].id)
+    expect(first.mounted).toEqual(['t1', first.tabs[0].id])
+    expect(first.blank).toBe(false)
+    const middle = reduceTabs(s, { type: 'take', path: A, at: 1 })
+    expect(middle.tabs.map((t) => t.path)).toEqual([A, A, B])
+    expect(middle.tabs[0]).toBe(s.tabs[0])
+    expect(middle.active).toBe(middle.tabs[1].id)
+    expect(reduceTabs(s, { type: 'take', path: '/v/c.md', at: 9 }).tabs.map((t) => t.path)).toEqual([A, B, '/v/c.md'])
+    const underBlank = reduceTabs(two({ blank: true }), { type: 'take', path: '/v/c.md', at: 0 })
+    expect(underBlank.tabs[0].path).toBe('/v/c.md')
+    expect(underBlank.blank).toBe(false)
+    expect(reduceTabs(s, { type: 'take', path: '/v/c.md' }).tabs.map((t) => t.path)).toEqual([A, B, '/v/c.md'])
+  })
+
   it('S12: a page in the right panel leaves the panel first, and becomes the new tab (one owner)', () => {
     const s: IdWorkspaceState = { ...two(), rightPanel: { open: true, width: 440, items: ['/v/r.md', '/v/q.md'], expanded: '/v/r.md' }, rightMounted: ['/v/r.md'], rightHistory: {} }
     const next = reduceWorkspace(s, { type: 'take', path: '/v/r.md' })
@@ -1244,6 +1262,14 @@ describe('take in the hook (YAZ-3091 D5)', () => {
     expect(id).toBe(latest.tabs[1].id)
     expect(latest.active).toBe(id)
     expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith({ tabs: ['/v/a.md'], tabStrip: [{ path: '/v/a.md' }, { path: '/v/a.md', active: true }], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
+  })
+
+  it('YAZ-3637 D4: with `at` the id is the tab at that slot, not the last one', () => {
+    let id = ''
+    act(() => void (id = latest.take('/v/b.md', false, 0)))
+    expect(latest.tabs.map((t) => t.path)).toEqual(['/v/b.md', '/v/a.md'])
+    expect(id).toBe(latest.tabs[0].id)
+    expect(latest.active).toBe(id)
   })
 })
 

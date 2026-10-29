@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { WORKSPACE_PAGE_MIME, readPageDrag, writePageDrag } from './pageDrag'
+import { WORKSPACE_PAGE_MIME, foreignDrag, readPageDrag, writePageDrag } from './pageDrag'
 
 const dataWith = (type: string, value: string): DataTransfer => ({
   types: [type],
@@ -7,25 +7,48 @@ const dataWith = (type: string, value: string): DataTransfer => ({
   setData: vi.fn(),
 } as unknown as DataTransfer)
 
+const W1 = '11111111-1111-4111-8111-111111111111'
+const W2 = '22222222-2222-4222-8222-222222222222'
+
 describe('private workspace page drag payload', () => {
   it('rejects foreign, malformed, relative, and invalid-owner payloads', () => {
     expect(readPageDrag(dataWith('text/plain', '/v/a.md'))).toBeNull()
     expect(readPageDrag(dataWith(WORKSPACE_PAGE_MIME, '{bad json'))).toBeNull()
-    expect(readPageDrag(dataWith(WORKSPACE_PAGE_MIME, JSON.stringify({ path: 'relative.md', owner: 'main' })))).toBeNull()
-    expect(readPageDrag(dataWith(WORKSPACE_PAGE_MIME, JSON.stringify({ path: '/v/a.md', owner: 'somewhere' })))).toBeNull()
+    expect(readPageDrag(dataWith(WORKSPACE_PAGE_MIME, JSON.stringify({ path: 'relative.md', owner: 'main', from: W1, copy: 0 })))).toBeNull()
+    expect(readPageDrag(dataWith(WORKSPACE_PAGE_MIME, JSON.stringify({ path: '/v/a.md', owner: 'somewhere', from: W1, copy: 0 })))).toBeNull()
+    // YAZ-3637 D1: no window, or a copy that is not a whole number from 0, is no page drag.
+    expect(readPageDrag(dataWith(WORKSPACE_PAGE_MIME, JSON.stringify({ path: '/v/a.md', owner: 'main', copy: 0 })))).toBeNull()
+    expect(readPageDrag(dataWith(WORKSPACE_PAGE_MIME, JSON.stringify({ path: '/v/a.md', owner: 'main', from: W1, copy: -1 })))).toBeNull()
+    expect(readPageDrag(dataWith(WORKSPACE_PAGE_MIME, JSON.stringify({ path: '/v/a.md', owner: 'main', from: W1, copy: 1.5 })))).toBeNull()
   })
 
-  it('round-trips only an absolute page and its workspace owner', () => {
+  it('round-trips an absolute page, its workspace owner, its window and its copy; the window and the vault go in a type of their own (YAZ-3637 D1)', () => {
     const data = dataWith(WORKSPACE_PAGE_MIME, '')
-    writePageDrag(data, { path: '/v/a.md', owner: 'main' })
-    expect(data.setData).toHaveBeenCalledExactlyOnceWith(
-      WORKSPACE_PAGE_MIME,
-      JSON.stringify({ path: '/v/a.md', owner: 'main' }),
-    )
+    writePageDrag(data, { path: '/v/a.md', owner: 'main', from: W1, copy: 1 }, 0)
+    expect(data.setData).toHaveBeenCalledTimes(2)
+    expect(data.setData).toHaveBeenCalledWith(WORKSPACE_PAGE_MIME, JSON.stringify({ path: '/v/a.md', owner: 'main', from: W1, copy: 1 }))
+    expect(data.setData).toHaveBeenCalledWith(`application/x-yaseen-from-${W1}.0`, '1')
     expect(data.effectAllowed).toBe('move')
-    expect(readPageDrag(dataWith(WORKSPACE_PAGE_MIME, JSON.stringify({ path: '/v/a.md', owner: 'main' })))).toEqual({
+    expect(readPageDrag(dataWith(WORKSPACE_PAGE_MIME, JSON.stringify({ path: '/v/a.md', owner: 'main', from: W1, copy: 1 })))).toEqual({
       path: '/v/a.md',
       owner: 'main',
+      from: W1,
+      copy: 1,
     })
+  })
+
+  it('foreignDrag reads the window and the vault off the type names alone — null for this window\'s own drag, for no such type and for a malformed one', () => {
+    const types = (...t: string[]) => ({ types: t, getData: vi.fn(() => '') } as unknown as DataTransfer)
+    expect(foreignDrag(types(WORKSPACE_PAGE_MIME, `application/x-yaseen-from-${W1}.2`), W2)).toEqual({ from: W1, root: 2 })
+    expect(foreignDrag(types(WORKSPACE_PAGE_MIME, `application/x-yaseen-from-${W1}.2`), W1)).toBeNull()
+    // The right panel's pages (root -1) no other window takes.
+    expect(foreignDrag(types(WORKSPACE_PAGE_MIME, `application/x-yaseen-from-${W1}.-1`), W2)).toBeNull()
+    expect(foreignDrag(types(WORKSPACE_PAGE_MIME), W2)).toBeNull()
+    expect(foreignDrag(types('text/plain'), W2)).toBeNull()
+    expect(foreignDrag(types(`application/x-yaseen-from-${W1}.x`), W2)).toBeNull()
+    // The type never carries the data: nothing is read.
+    const data = types(`application/x-yaseen-from-${W1}.0`)
+    foreignDrag(data, W2)
+    expect(data.getData).not.toHaveBeenCalled()
   })
 })

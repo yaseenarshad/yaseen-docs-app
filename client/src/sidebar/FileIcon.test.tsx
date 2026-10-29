@@ -80,7 +80,7 @@ describe('a file\'s icon outside the tree (YAZ-3440 D11)', () => {
 
   it('the tab bar: a re-render (a keystroke, a new title, another active tab) and a hover draw no icon again', () => {
     const h = here()
-    const props: TabBarProps = { roots: ['/v'], titles: new Map(), tabs: [{ id: 'a', path: '/v/a.ts' }, { id: 'b', path: '/v/b.md' }], active: 'a', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), canBack: false, canForward: false, onBack: vi.fn(), onForward: vi.fn() }
+    const props: TabBarProps = { roots: ['/v'], titles: new Map(), windowId: 'w1', tabs: [{ id: 'a', path: '/v/a.ts' }, { id: 'b', path: '/v/b.md' }], active: 'a', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), canBack: false, canForward: false, onBack: vi.fn(), onForward: vi.fn() }
     const el = draw(<IconsContext.Provider value={h}><TabBar {...props} /></IconsContext.Provider>)
     expect([...el.querySelectorAll<HTMLElement>('.tabbar__label .file-icon')].map((s) => s.dataset.icon)).toEqual(['typescript', 'markdown'])
     const drawn = vi.mocked(rowIcon).mock.calls.length
