@@ -15,6 +15,10 @@ const noopHandlers = (): MenuHandlers => ({
   copyAs: vi.fn(),
   pasteAs: vi.fn(),
   newTab: vi.fn(),
+  newItem: vi.fn(),
+  goTo: vi.fn(),
+  dailyNote: vi.fn(),
+  keySheet: vi.fn(),
   newWindow: vi.fn(),
   newFilesWindow: vi.fn(),
   closeWindow: vi.fn(),
@@ -96,6 +100,10 @@ describe('buildMenuTemplate', () => {
     expect([file[0].id, file[0].label, file[0].accelerator]).toEqual(['menu.file.new-tab', 'New Tab', 'CmdOrCtrl+T'])
     click(file[0])
     expect(handlers.newTab).toHaveBeenCalledTimes(1)
+    // ⌘N right under it: the New… box (YAZ-3556 D1).
+    expect([file[1].id, file[1].label, file[1].accelerator]).toEqual(['menu.file.new-item', 'New…', 'CmdOrCtrl+N'])
+    click(file[1])
+    expect(handlers.newItem).toHaveBeenCalledTimes(1)
 
     const newWindow = file.find((i) => i.label === 'New Window')
     expect(newWindow?.accelerator).toBe('CmdOrCtrl+Shift+N')
@@ -128,6 +136,11 @@ describe('buildMenuTemplate', () => {
     expect(file.indexOf(search as MenuItemConstructorOptions)).toBe(file.findIndex((i) => i.label === 'Open Recent') + 2)
     click(search)
     expect(handlers.search).toHaveBeenCalledTimes(1)
+    // ⌘D right under it (YAZ-3556 D1): the place of Settings › Sidebar › Show in sidebar.
+    const goTo = file[file.indexOf(search as MenuItemConstructorOptions) + 1]
+    expect([goTo.id, goTo.label, goTo.accelerator]).toEqual(['menu.file.go-to', 'Show in Sidebar', 'CmdOrCtrl+D'])
+    click(goTo)
+    expect(handlers.goTo).toHaveBeenCalledTimes(1)
 
     // ⌘W is Close Tab (GRO-2232, locked): a click item into the focused renderer, NOT the role.
     const closeTab = file.find((i) => i.label === 'Close Tab')
@@ -289,17 +302,20 @@ describe('buildMenuTemplate', () => {
     expect([...(menuOf(amp, 'File').find((i) => i.id === 'menu.file.open-recent')?.submenu as MenuItemConstructorOptions[]), ...menuOf(amp, 'Window').filter((i) => i.id === 'menu.window.vault.1')].map((i) => i.label)).toEqual(['/vaults/R&&D', 'R&&D'])
   })
 
-  it("Help menu: role help, What's New… (YAZ-2976 D8) before the GitHub link item", () => {
+  it("Help menu: role help, Keys of This Tab… (YAZ-3564 K11), What's New… (YAZ-2976 D8) before the GitHub link item", () => {
     const handlers = noopHandlers()
     const template = build(RECENTS, false, handlers)
     const top = template.find((m) => m.label === 'Help')
     expect(top?.role).toBe('help')
     const items = top?.submenu as MenuItemConstructorOptions[]
-    expect(items.map((i) => [i.id, i.label])).toEqual([['menu.help.whats-new', "What's New…"], ['menu.help.github', 'Yaseen Docs on GitHub']])
-    click(items[1])
+    expect(items.map((i) => [i.id, i.label])).toEqual([['menu.help.key-sheet', 'Keys of This Tab…'], ['menu.help.whats-new', "What's New…"], ['menu.help.github', 'Yaseen Docs on GitHub']])
+    click(items[2])
     expect(handlers.openHelp).toHaveBeenCalledTimes(1)
-    click(items[0])
+    click(items[1])
     expect(handlers.whatsNew).toHaveBeenCalledTimes(1)
+    // YAZ-3564 K11: the cheat sheet of the tab on show.
+    click(items[0])
+    expect(handlers.keySheet).toHaveBeenCalledTimes(1)
   })
 
   it('actionable items carry stable ids so a live check can drive them', () => {
@@ -313,16 +329,17 @@ describe('buildMenuTemplate', () => {
     const recent = file.find((i) => i.label === 'Open Recent')?.submenu as MenuItemConstructorOptions[]
     expect(recent.map((i) => i.id)).toEqual(['menu.file.open-recent.0', 'menu.file.open-recent.1', 'menu.file.open-recent.2'])
     expect(menuOf(build(), 'View').find((i) => i.label === 'Toggle Sidebar')?.id).toBe('menu.view.toggle-sidebar')
-    expect((build().find((m) => m.label === 'Help')?.submenu as MenuItemConstructorOptions[]).map((i) => i.id)).toEqual(['menu.help.whats-new', 'menu.help.github'])
+    expect((build().find((m) => m.label === 'Help')?.submenu as MenuItemConstructorOptions[]).map((i) => i.id)).toEqual(['menu.help.key-sheet', 'menu.help.whats-new', 'menu.help.github'])
   })
 
   // ---------- The board items (YAZ-3037, YAZ-3028 D10; ported from Draw's menu.test.ts) ----------
 
-  it('File: Export Image… ⌘⇧E, Export Excalidraw Drawing… ⌘⇧S and Share Link ⌘⇧L, in their own group after Search Vault, each calling its handler', () => {
+  it('File: Export Image… ⌘⇧E, Export Excalidraw Drawing… ⌘⇧S and Share Link ⌘⇧L, in their own group after Search Vault and Show in Sidebar, each calling its handler', () => {
     const handlers = noopHandlers()
     const file = menuOf(onTab('drawing', handlers), 'File')
     const at = (id: string) => file.findIndex((i) => i.id === id)
-    expect(at('menu.file.export-image')).toBe(at('menu.file.search') + 2)
+    // Open Today's Daily Note (YAZ-3607 D11) stands right after Go to Your Place, hidden or not.
+    expect([at('menu.file.daily-note'), at('menu.file.export-image')]).toEqual([at('menu.file.go-to') + 1, at('menu.file.go-to') + 3])
     expect([at('menu.file.export-drawing'), at('menu.file.share-link'), at('menu.file.close-tab')]).toEqual([at('menu.file.export-image') + 1, at('menu.file.export-image') + 2, at('menu.file.export-image') + 4])
     expect(file[at('menu.file.share-link') + 1].type).toBe('separator')
     expect(['menu.file.export-image', 'menu.file.export-drawing', 'menu.file.share-link'].map((id) => [file[at(id)].label, file[at(id)].accelerator, file[at(id)].enabled])).toEqual([
@@ -336,12 +353,42 @@ describe('buildMenuTemplate', () => {
     expect([handlers.exportImage, handlers.exportDrawing, handlers.shareLink].map((fn) => vi.mocked(fn).mock.calls.length)).toEqual([1, 1, 1])
   })
 
+  it("File › Open Today's Daily Note (YAZ-3607 D11): hidden and keyless while Daily notes is off; on, it shows, takes the key set for it, and calls its handler", () => {
+    const handlers = noopHandlers()
+    const daily = (dailyNotes: boolean) => item(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: { dailyNote: 'CmdOrCtrl+Alt+D' }, dailyNotes }, handlers), 'File', 'menu.file.daily-note')
+    expect([daily(false)?.visible, daily(false)?.accelerator]).toEqual([false, undefined])
+    expect([daily(true)?.visible, daily(true)?.accelerator]).toEqual([true, 'CmdOrCtrl+Alt+D'])
+    click(daily(true)!)
+    expect(handlers.dailyNote).toHaveBeenCalledTimes(1)
+  })
+
   it('the board items are enabled only on a board they work for (Draw\'s index.ts:201-212): a diagram gets Export Image… and Share Link only; a note, a PDF or no tab gets none', () => {
     const enabled = (kind: FileKind | null) =>
       [item(onTab(kind), 'File', 'menu.file.export-image'), item(onTab(kind), 'File', 'menu.file.export-drawing'), item(onTab(kind), 'File', 'menu.file.share-link'), item(onTab(kind), 'View', 'menu.view.canvas-background')].map((i) => i?.enabled)
     expect(enabled('drawing')).toEqual([true, true, true, true])
     expect(enabled('diagram')).toEqual([true, false, true, false])
     for (const kind of ['markdown', 'pdf', 'image', 'text', null] as const) expect(enabled(kind), String(kind)).toEqual([false, false, false, false])
+  })
+
+  it('an App key that lets drawings, diagrams and code keep it has no accelerator while one of them is in front (YAZ-3564 K9); Toggle sidebar is ⌘⇧B (D10)', () => {
+    const search = (kind: FileKind | null, hotkeysAside?: Record<string, boolean>) =>
+      item(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: kind, hotkeys: {}, hotkeysAside }, noopHandlers()), 'File', 'menu.file.search')?.accelerator
+    expect(search('drawing')).toBe('CmdOrCtrl+K')
+    for (const kind of ['drawing', 'diagram', 'text'] as const) expect(search(kind, { 'app.search': true }), kind).toBeUndefined()
+    for (const kind of ['markdown', null] as const) expect(search(kind, { 'app.search': true }), String(kind)).toBe('CmdOrCtrl+K')
+    expect(item(onTab('markdown'), 'View', 'menu.view.toggle-sidebar')?.accelerator).toBe('CmdOrCtrl+Shift+B')
+    // ⌘D steps aside by default (YAZ-3556 D1): Duplicate on a board, Add next match in code. A note and no tab keep it; the switch off takes it everywhere.
+    const goTo = (kind: FileKind | null, hotkeysAside?: Record<string, boolean>) =>
+      item(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: kind, hotkeys: {}, hotkeysAside }, noopHandlers()), 'File', 'menu.file.go-to')?.accelerator
+    for (const kind of ['drawing', 'diagram', 'text'] as const) expect(goTo(kind), kind).toBeUndefined()
+    for (const kind of ['markdown', null] as const) expect(goTo(kind), String(kind)).toBe('CmdOrCtrl+D')
+    expect(goTo('drawing', { 'app.goTo': false })).toBe('CmdOrCtrl+D')
+    // A drawing open over a note is in front (the checker's YAZ-3605 find): ⌘D duplicates there, and the board items stay the note's.
+    const overNote = buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: 'markdown', frontKind: 'drawing', hotkeys: {} }, noopHandlers())
+    expect(item(overNote, 'File', 'menu.file.go-to')?.accelerator).toBeUndefined()
+    expect(item(overNote, 'File', 'menu.file.export-image')?.enabled).toBe(false)
+    // ⌘N never steps aside: the New… box answers on every tab.
+    for (const kind of ['drawing', 'diagram', 'text', 'markdown'] as const) expect(item(onTab(kind), 'File', 'menu.file.new-item')?.accelerator, kind).toBe('CmdOrCtrl+N')
   })
 
   it('⌘⇧S belongs to the menu ONLY while Export Excalidraw Drawing… is enabled: off a drawing the review\'s Skip (YAZ-2322) keeps it (D10)', () => {
@@ -353,8 +400,11 @@ describe('buildMenuTemplate', () => {
         .filter((a): a is string => a !== undefined)
     expect(accelerators('drawing').filter((a) => a === 'CmdOrCtrl+Shift+S')).toHaveLength(1)
     for (const kind of ['markdown', 'diagram', null] as const) expect(accelerators(kind), String(kind)).not.toContain('CmdOrCtrl+Shift+S')
-    // ⌘⇧E and ⌘⇧L clash with no in-page key of Docs, so they stay on the greyed rows; each is claimed once.
-    for (const key of ['CmdOrCtrl+Shift+E', 'CmdOrCtrl+Shift+L']) expect(accelerators('markdown').filter((a) => a === key)).toEqual([key])
+    // A greyed-out row holds no key (YAZ-3564 K13): on macOS it would still take ⌘⇧L from code (Select all occurrences).
+    for (const key of ['CmdOrCtrl+Shift+E', 'CmdOrCtrl+Shift+L']) {
+      expect(accelerators('markdown').filter((a) => a === key)).toEqual([])
+      expect(accelerators('drawing').filter((a) => a === key)).toEqual([key])
+    }
   })
 
   it('View › Canvas Background carries the engine\'s five picks after the zoom items, greyed off a drawing; a pick hands its colour over', () => {
@@ -678,7 +728,11 @@ describe('createMenuHandlers', () => {
     expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onTabOverview.channel)
     handlers.newTab()
     expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onNewTab.channel)
-    expect(wc.send).toHaveBeenCalledTimes(5)
+    handlers.newItem()
+    expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onNewItem.channel)
+    handlers.goTo()
+    expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onGoTo.channel)
+    expect(wc.send).toHaveBeenCalledTimes(7)
 
     const { handlers: unfocused } = makeHandlers(undefined)
     expect(() => {
@@ -687,6 +741,8 @@ describe('createMenuHandlers', () => {
       unfocused.prevTab()
       unfocused.tabOverview()
       unfocused.newTab()
+      unfocused.newItem()
+      unfocused.goTo()
     }).not.toThrow()
   })
 
@@ -857,13 +913,13 @@ describe('subscribeMenuRebuild', () => {
 // ---------- gateOnBoardKind (YAZ-3044 A32) ----------
 
 describe('gateOnBoardKind', () => {
-  it('apply always builds; applyIfMoved builds only when the front file moves between drawing, diagram and other', () => {
+  it('apply always builds; applyIfMoved builds only when the front file moves between drawing, diagram, code and other', () => {
     let kind: FileKind | null = 'markdown'
     const build = vi.fn()
     const menu = gateOnBoardKind(() => kind, build)
     menu.apply()
     expect(build).toHaveBeenCalledTimes(1)
-    for (const next of ['markdown', 'text', 'pdf', null] as const) {
+    for (const next of ['markdown', 'pdf', 'image', null] as const) {
       kind = next
       menu.applyIfMoved()
     }
@@ -877,8 +933,26 @@ describe('gateOnBoardKind', () => {
     kind = 'markdown'
     menu.applyIfMoved()
     expect(build).toHaveBeenCalledTimes(4)
-    menu.apply() // a recents change still rebuilds
+    // A code tab rebuilds (YAZ-3556): ⌘D steps aside there (YAZ-3564 K9), and a note keeps it.
+    kind = 'text'
+    menu.applyIfMoved()
+    menu.applyIfMoved()
     expect(build).toHaveBeenCalledTimes(5)
+    kind = 'markdown'
+    menu.applyIfMoved()
+    expect(build).toHaveBeenCalledTimes(6)
+    menu.apply() // a recents change still rebuilds
+    expect(build).toHaveBeenCalledTimes(7)
+    // A drawing opened over the note moves what is in front, not the tab (YAZ-3564 K9): one rebuild each way.
+    let front: FileKind | null = 'markdown'
+    const over = gateOnBoardKind(() => 'markdown', build, () => front)
+    over.apply()
+    front = 'drawing'
+    over.applyIfMoved()
+    over.applyIfMoved()
+    front = 'markdown'
+    over.applyIfMoved()
+    expect(build).toHaveBeenCalledTimes(10)
   })
 })
 

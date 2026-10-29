@@ -14,20 +14,24 @@ export interface RecordingSender {
 export interface HotkeyRecording {
   set(sender: RecordingSender, on: boolean): void
   active(): boolean
+  /** This window's flag (YAZ-3564: a drawing over a note is in front of it). */
+  has(id: number): boolean
   /** Called when `active()` changes; returns the unsubscribe. */
   onChange(listener: () => void): () => void
 }
 
-export function createHotkeyRecording(): HotkeyRecording {
+/** `tell`: 'any' tells when `active()` changes; 'each' tells when any one window's flag does. */
+export function createHotkeyRecording(tell: 'any' | 'each' = 'any'): HotkeyRecording {
   const recording = new Set<number>()
   /** The windows whose end is already watched: once per window, however many times it records. */
   const watched = new Set<number>()
   const listeners = new Set<() => void>()
   const update = (id: number, on: boolean): void => {
     const was = recording.size > 0
+    const had = recording.has(id)
     if (on) recording.add(id)
     else recording.delete(id)
-    if (was !== recording.size > 0) for (const listener of listeners) listener()
+    if (tell === 'each' ? had !== on : was !== recording.size > 0) for (const listener of listeners) listener()
   }
   return {
     set(sender, on) {
@@ -46,6 +50,7 @@ export function createHotkeyRecording(): HotkeyRecording {
       update(sender.id, on)
     },
     active: () => recording.size > 0,
+    has: (id) => recording.has(id),
     onChange(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -55,3 +60,10 @@ export function createHotkeyRecording(): HotkeyRecording {
 
 /** The one instance: `ipc/state.ts` writes it, `main/index.ts` reads it when it builds the menu. */
 export const hotkeyRecording = createHotkeyRecording()
+
+/**
+ * Which windows have a drawing open OVER a note (YAZ-3564 K9): the active file is the note, but the drawing is in
+ * front, so the App keys that step aside in drawings (⌘D) must step aside there too. The modal says when it opens and
+ * closes (`hotkeys.drawingInFront`); a reload, crash or close ends it, as for a recorder.
+ */
+export const drawingInFront = createHotkeyRecording('each')

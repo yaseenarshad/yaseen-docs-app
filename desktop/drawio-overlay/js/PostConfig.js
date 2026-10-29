@@ -320,9 +320,10 @@ window.ICON_SERVICE_PATH = null;
 	// ================================================================================
 	// KEYMAP — Yasin's Excalidraw keys on draw.io (🔒 YAZ-1802 D12b).
 	// With NOTHING selected a bare letter is a tool: those bindings are draw.io's own, set by the
-	// host's configure reply (`keyboardShortcuts` in drawioProtocol.ts). Everything that acts on a
-	// selection is here — colour letters, Shift+colour, 1–0 — plus ⌘⇧X and ⌘B's split. A colour
-	// letter no longer starts typing into a selected shape's label; Enter / F2 still do.
+	// host's configure reply (`keyboardShortcuts` in drawioProtocol.ts), as are the user's changed
+	// keys (YAZ-3564 K4). Everything that acts on a selection is here — colour letters, Shift+colour,
+	// 1–0 — plus the ⌘⇧X action. A colour letter no longer starts typing into a selected shape's
+	// label; Enter / F2 still do.
 	// ================================================================================
 
 	/**
@@ -498,6 +499,21 @@ window.ICON_SERVICE_PATH = null;
 
 		keys.getFunction = function(evt)
 		{
+			// YAZ-3564 K15: on a Mac a ⌃ key the user gave an action is its own key, not draw.io's ⌘ one.
+			var ctrlName = (mxClient.IS_MAC && evt.ctrlKey) ? ui.yaseenMacCtrlKeys[macCtrlId(evt.metaKey, mxEvent.isAltDown(evt), mxEvent.isShiftDown(evt), evt.keyCode)] : null;
+			var ctrlAction = (ctrlName != null) ? ui.actions.get(ctrlName) : null;
+
+			if (ctrlAction != null)
+			{
+				return function()
+				{
+					if (ctrlAction.isEnabled())
+					{
+						ctrlAction.funct.apply(this, arguments);
+					}
+				};
+			}
+
 			if (!graph.isSelectionEmpty() && !this.isControlDown(evt) && !mxEvent.isAltDown(evt))
 			{
 				var letter = String.fromCharCode(evt.keyCode).toLowerCase();
@@ -522,38 +538,86 @@ window.ICON_SERVICE_PATH = null;
 
 			return getFunction.apply(this, arguments);
 		};
+	}
 
-		// ⌘⇧X toggles strikethrough (fontStyle bit 8); given no cells, draw.io takes the editable selection.
-		keys.bindControlShiftKey(88, function()
-		{
-			graph.toggleCellStyleFlags(mxConstants.STYLE_FONTSTYLE, mxConstants.FONT_STRIKETHROUGH);
-		});
+	/** The id of a ⌃ key in `yaseenMacCtrlKeys`: ⌘, ⌥ and ⇧ held with it, then the keyCode. */
+	function macCtrlId(cmd, alt, shift, keyCode)
+	{
+		return (cmd ? 'M' : '') + (alt ? 'A' : '') + (shift ? 'S' : '') + keyCode;
+	}
 
-		// ⌘B is draw.io's bold on a selection. With nothing selected it is the app's sidebar toggle
-		// (the default decided on YAZ-1948), which the host page owns — and a key pressed in this
-		// frame never reaches that page, so it is passed up as draw.io's own `shortcut` event (what
-		// its `passThroughKeys` config sends, which cannot ask about the selection).
-		var bold = keys.controlKeys[66];
+	/** The keys draw.io cannot name in a shown key (`EditorUi.keyNames` has no punctuation). */
+	var PUNCTUATION = {186: ';', 188: ',', 190: '.', 191: '/', 192: '`', 219: '[', 220: '\\', 221: ']', 222: '\''};
 
-		keys.bindControlKey(66, function()
-		{
-			if (graph.isSelectionEmpty())
-			{
-				postToHost({event: 'shortcut', command: 'toggleSidebar'});
-			}
-			else
-			{
-				bold.apply(this, arguments);
-			}
-		});
+	/** A key as draw.io shows it beside an action: '⌘+⇧+D', its own order and marks. */
+	function shownKey(c, keyCode)
+	{
+		var name = ((48 <= keyCode && keyCode <= 57) || (65 <= keyCode && keyCode <= 90)) ? String.fromCharCode(keyCode) :
+			(EditorUi.keyNames[keyCode] || PUNCTUATION[keyCode]);
+
+		return (name == null) ? null : (c.yaseenMacCtrl ? '⌃+' : '') + ((c.control || c.cmd) ? Editor.ctrlKey + '+' : '') +
+			(c.alt ? Editor.altKey + '+' : '') + (c.shift ? Editor.shiftKey + '+' : '') + name;
 	}
 
 	var installKeyboardShortcuts = EditorUi.prototype.installKeyboardShortcuts;
 
 	EditorUi.prototype.installKeyboardShortcuts = function()
 	{
+		var graph = this.editor.graph;
+		this.yaseenMacCtrlKeys = {};
+
+		// ⌘⇧X toggles strikethrough (fontStyle bit 8), as an action so that its key can change (YAZ-3564 K6):
+		// the host's configure reply binds it. Given no cells, draw.io takes the editable selection.
+		this.actions.addAction('yaseenStrikethrough', function()
+		{
+			if (graph.isEnabled())
+			{
+				graph.toggleCellStyleFlags(mxConstants.STYLE_FONTSTYLE, mxConstants.FONT_STRIKETHROUGH);
+			}
+		});
+
 		installKeyboardShortcuts.apply(this, arguments);
 		installKeymap(this);
+	};
+
+	// YAZ-3564: the configure reply's own kinds of entry, and the shown key of an action (K12).
+	var installKeyboardShortcut = EditorUi.prototype.installKeyboardShortcut;
+
+	EditorUi.prototype.installKeyboardShortcut = function(c)
+	{
+		var action = this.actions.get(c.action || c.yaseenUnlabel);
+
+		// An action with no key now: draw.io leaves the shown key of a key it clears.
+		if (c.yaseenUnlabel != null)
+		{
+			if (action != null)
+			{
+				action.shortcut = null;
+			}
+
+			return;
+		}
+
+		// K15: a ⌃ key on a Mac. draw.io's table holds ⌃D and ⌘D as one `control` key, so it goes to ours.
+		if (c.yaseenMacCtrl)
+		{
+			this.yaseenMacCtrlKeys[macCtrlId(c.cmd, c.alt, c.shift, c.keyCode)] = c.action;
+		}
+		else
+		{
+			installKeyboardShortcut.apply(this, arguments);
+		}
+
+		// The shown key, in draw.io's own form: draw.io names only letters, digits and `EditorUi.keyNames`,
+		// so a key like ⌘, or ⌘\ kept the action's old one, and it never sees a ⌃ key of ours.
+		// The keyCode as draw.io reads it: one character is that key, anything else a number.
+		var keyCode = (typeof c.keyCode === 'string' && c.keyCode.length == 1) ? c.keyCode.toUpperCase().charCodeAt(0) : parseInt(c.keyCode);
+		var shown = (action != null) ? shownKey(c, keyCode) : null;
+
+		if (shown != null)
+		{
+			action.shortcut = shown;
+		}
 	};
 
 	/**

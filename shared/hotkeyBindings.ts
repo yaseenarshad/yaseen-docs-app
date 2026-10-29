@@ -18,6 +18,9 @@ export type HotkeyId =
   | 'newTab'
   | 'newWindow'
   | 'newFilesWindow'
+  | 'newItem'
+  | 'goTo'
+  | 'dailyNote'
   | 'closeTab'
   | 'closeWindow'
   | 'switchVault'
@@ -29,6 +32,7 @@ export type HotkeyId =
   | 'tabOverview'
   | 'nextTab'
   | 'prevTab'
+  | 'keySheet'
 
 export interface HotkeyCommand {
   id: HotkeyId
@@ -45,36 +49,56 @@ export interface HotkeyCommand {
    * diagram keeps its own binding on it (`drawioProtocol.ts` clears only the menu's keys).
    */
   rendererOwned?: true
+  /** The places that keep their own key on this one by default (YAZ-3564 K9): the menu drops it while one is in front. */
+  stepsAsideIn?: readonly ('drawing' | 'diagram' | 'code')[]
 }
 
 export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
   { id: 'newTab', label: 'New tab', key: 'CmdOrCtrl+T', macStandard: true },
   { id: 'newWindow', label: 'New window', hint: 'On the same vaults', key: 'CmdOrCtrl+Shift+N', macStandard: true },
   { id: 'newFilesWindow', label: 'New Files window', hint: 'The sidebar on its own, beside your windows', key: 'CmdOrCtrl+Shift+W' },
+  // YAZ-3556 D1: the New… box (⌘N, the Mac's own New) and the jump to the place set in Settings › Sidebar (⌘D). Drawings,
+  // diagrams and code keep their own ⌘D (Duplicate, Add next match) by default (YAZ-3564 K9).
+  { id: 'newItem', label: 'New note, drawing or diagram…', hint: 'Pick the kind and the folder, then name it in the sidebar', key: 'CmdOrCtrl+N', macStandard: true },
+  { id: 'goTo', label: 'Show in sidebar', hint: 'The tab, folder or file set in Settings › Sidebar › Show in sidebar, or today\'s daily note', key: 'CmdOrCtrl+D', stepsAsideIn: ['drawing', 'diagram', 'code'] },
+  // YAZ-3607 D11: today's daily note on its own key, for a ⌘D set to another place. No key by default: ⌘D on "Today's
+  // daily note" and the footer button reach it. It shows only while Daily notes is on (Settings › Files & Links).
+  { id: 'dailyNote', label: "Open today's daily note", hint: 'Makes it first when today has none', key: null },
   { id: 'closeTab', label: 'Close tab', hint: 'On the last tab it empties the window, then closes it', key: 'CmdOrCtrl+W', macStandard: true },
   { id: 'closeWindow', label: 'Close window', key: null },
   { id: 'switchVault', label: 'Switch vault', hint: 'Type to filter, ⏎ brings it to the front or opens a new window, ⇧⏎ opens it in this window', key: 'CmdOrCtrl+O', macStandard: true },
   { id: 'openFolder', label: 'Open folder…', key: 'CmdOrCtrl+Shift+O' },
   { id: 'search', label: 'Search the vault', key: 'CmdOrCtrl+K' },
   { id: 'settings', label: 'Settings', key: 'CmdOrCtrl+,', macStandard: true },
-  { id: 'toggleSidebar', label: 'Toggle sidebar', hint: 'Outside editing surfaces', key: 'CmdOrCtrl+B', rendererOwned: true },
+  // A menu key since YAZ-3564 D10 (it was the renderer's ⌘B, which a note kept for Bold): it fires in a note too.
+  { id: 'toggleSidebar', label: 'Toggle sidebar', hint: 'In a note, a drawing, a diagram and code too', key: 'CmdOrCtrl+Shift+B' },
   { id: 'copyPath', label: 'Copy path', hint: 'The row of the new tab page that the keyboard is on, else the sidebar selection when one is standing, else the open file', key: 'CmdOrCtrl+Shift+C', rendererOwned: true },
   { id: 'tabOverview', label: 'Tab overview', hint: 'The same key opens it and closes it', key: 'CmdOrCtrl+Shift+M' },
   { id: 'nextTab', label: 'Next tab', key: 'Control+Tab' },
   { id: 'prevTab', label: 'Previous tab', key: 'Control+Shift+Tab' },
+  // YAZ-3564 K11: no key by default, since every free key is some editor's; Help › Keys of This Tab… and ? on a drawing open it too.
+  { id: 'keySheet', label: 'Keys of this tab', hint: 'The keys of the note, drawing, diagram or code in front, with your changes', key: null },
 ]
 
-/** Only the user's changes (D2); null = "No key". */
-export type HotkeyOverrides = Partial<Record<HotkeyId, string | null>>
+/**
+ * Only the user's changes (D2), for every key of the app (YAZ-3564 K2): by `<scope>.<name>` ('app.newTab', 'note.bold');
+ * null = "No key". An id with no scope is an App command from before YAZ-3564 ('newTab'): it reads as 'app.newTab'.
+ */
+export type HotkeyOverrides = Partial<Record<string, string | null>>
+
+/** The stored id of an App command (YAZ-3564 K2). */
+export const appKeyId = (id: HotkeyId): string => `app.${id}`
+/** Any stored id in its scoped form: an old App id gets `app.` in front. */
+export const scopedId = (id: string): string => (id.includes('.') ? id : `app.${id}`)
 
 export const HOTKEY_IDS: readonly HotkeyId[] = HOTKEY_COMMANDS.map((c) => c.id)
 export const isHotkeyId = (v: unknown): v is HotkeyId => typeof v === 'string' && (HOTKEY_IDS as readonly string[]).includes(v)
 
 export const hotkeyCommand = (id: HotkeyId): HotkeyCommand => HOTKEY_COMMANDS.find((c) => c.id === id) as HotkeyCommand
 
-/** The key `id` has now: the user's change, else the default. */
+/** The key `id` has now: the user's change (scoped, or an old unscoped one), else the default. */
 export function keyFor(id: HotkeyId, overrides: HotkeyOverrides | undefined): string | null {
-  const own = overrides?.[id]
+  const own = overrides?.[appKeyId(id)] !== undefined ? overrides[appKeyId(id)] : overrides?.[id]
   return own === undefined ? hotkeyCommand(id).key : own
 }
 
@@ -84,9 +108,10 @@ export function keyFor(id: HotkeyId, overrides: HotkeyOverrides | undefined): st
  */
 export function withKey(overrides: HotkeyOverrides, id: HotkeyId, key: string | null): HotkeyOverrides {
   const next = { ...overrides }
+  delete next[id] // an old unscoped entry goes: the scoped one is the change now (YAZ-3564 K2)
   const def = hotkeyCommand(id).key
-  if (key === null ? def === null : def !== null && sameKey(key, def)) delete next[id]
-  else next[id] = key
+  if (key === null ? def === null : def !== null && sameKey(key, def)) delete next[appKeyId(id)]
+  else next[appKeyId(id)] = key
   return next
 }
 
@@ -201,7 +226,7 @@ const KEY_DISPLAY: Record<string, string> = {
   '-': '−',
 }
 
-/** As the app writes a key everywhere (hotkeys.ts): ⌃⌥⌘⇧, then the key — 'CmdOrCtrl+Shift+W' → '⌘⇧W'. '' for no key. */
+/** As the app writes a key everywhere (Settings › Hotkeys, the menus): ⌃⌥⌘⇧, then the key — 'CmdOrCtrl+Shift+W' → '⌘⇧W'. '' for no key. */
 export function toDisplay(accelerator: string | null): string {
   if (accelerator === null) return ''
   const chord = parseAccelerator(accelerator)
@@ -219,39 +244,6 @@ export function keyHint(id: HotkeyId, overrides: HotkeyOverrides | undefined): s
 export function titleWithKey(text: string, id: HotkeyId, overrides: HotkeyOverrides | undefined): string {
   const key = keyHint(id, overrides)
   return key === undefined ? text : `${text} (${key})`
-}
-
-const DISPLAY_KEY = Object.fromEntries(Object.entries(KEY_DISPLAY).map(([key, shown]) => [shown, key]))
-
-/** `toDisplay` backwards, for ONE key as the reference tables write it ('⌘⇧]'); null for anything else ('Click glyph', '↑ ↓ ← →'). */
-export function fromDisplay(display: string): string | null {
-  const chord: Chord = { cmd: false, ctrl: false, alt: false, shift: false, key: '' }
-  let i = 0
-  const marks: Record<string, keyof Omit<Chord, 'key'>> = { '⌃': 'ctrl', '⌥': 'alt', '⌘': 'cmd', '⇧': 'shift' }
-  const chars = [...display]
-  while (i < chars.length - 1 && marks[chars[i]] !== undefined) chord[marks[chars[i++]]] = true
-  const rest = chars.slice(i).join('')
-  const key = DISPLAY_KEY[rest] ?? canonicalKey(rest)
-  if (key === null || rest.includes(' ') && DISPLAY_KEY[rest] === undefined) return null
-  chord.key = key
-  return toAccelerator(chord)
-}
-
-/** Every key a reference table's cell names: '⌘X / ⌘C' is two, '⌘1 … ⌘9' nine, 'Click glyph' none. */
-export function keysOfDisplay(display: string): string[] {
-  const range = /^(.*?)(\d) … \1(\d)$/.exec(display)
-  if (range !== null) {
-    const out: string[] = []
-    for (let n = Number(range[2]); n <= Number(range[3]); n++) {
-      const key = fromDisplay(`${range[1]}${n}`)
-      if (key !== null) out.push(key)
-    }
-    return out
-  }
-  return display.split(' / ').flatMap((part) => {
-    const key = fromDisplay(part.trim())
-    return key === null ? [] : [key]
-  })
 }
 
 // ---------- recording one ----------
@@ -357,34 +349,26 @@ export interface DrawioChord {
 /**
  * The draw.io keymap entry that CLEARS draw.io's own binding on a key (D2): draw.io's `control` is ⌃ or ⌘,
  * so a key with neither is never one draw.io binds as a chord, and gets no entry.
+ *
+ * On a Mac a key with ⌃ gets none either (YAZ-3564 K15): draw.io's key handler reads ⌃ and ⌘ as one `control`
+ * (`isControlDown` is ctrlKey, or metaKey on a Mac), so clearing ⌃D would clear its ⌘D too, a key the menu does
+ * not take. The Mac's menu fires before the page, so draw.io never sees the ⌃ key anyway. Off a Mac ⌃ is the
+ * Ctrl that `CmdOrCtrl` is, the page sees a key first, and the entry stays.
  */
-export function drawioChordFor(accelerator: string | null): DrawioChord | null {
+export function drawioChordFor(accelerator: string | null, mac: boolean): DrawioChord | null {
   const chord = accelerator === null ? null : parseAccelerator(accelerator)
-  if (chord === null || !(chord.cmd || chord.ctrl)) return null
+  if (chord === null || !(chord.cmd || chord.ctrl) || (mac && chord.ctrl)) return null
   const keyCode = /^[A-Z0-9]$/.test(chord.key) ? chord.key.charCodeAt(0) : /^F\d+$/.test(chord.key) ? 111 + Number(chord.key.slice(1)) : KEY_CODES[chord.key]
   if (keyCode === undefined) return null
   return { keyCode, control: true, ...(chord.shift || chord.key === 'Plus' ? { shift: true as const } : {}), ...(chord.alt ? { alt: true as const } : {}), action: null }
 }
 
-// ---------- who owns a key ----------
+// ---------- the fixed keys ----------
 
 /** A key that is not the user's to change (D1, D8): a built-in one or one of the Mac's. */
 export interface FixedKey {
   label: string
   accelerator: string
-}
-
-export type HotkeyOwner = { kind: 'command'; id: HotkeyId; label: string } | { kind: 'builtIn'; label: string } | { kind: 'macos'; label: string }
-
-/**
- * Every owner of `accelerator` (D5, D6), changeable commands first, then the built-in keys, then the
- * Mac's: an empty list means the key is free. `builtIns` is the client's reference tables
- * (`client/src/settings/hotkeys.ts`), which `shared/` cannot import.
- */
-export function ownersOf(accelerator: string, overrides: HotkeyOverrides | undefined, systemKeys: readonly FixedKey[], builtIns: readonly FixedKey[]): HotkeyOwner[] {
-  const commands: HotkeyOwner[] = HOTKEY_COMMANDS.filter((c) => sameKey(keyFor(c.id, overrides), accelerator)).map((c) => ({ kind: 'command', id: c.id, label: c.label }))
-  const fixed = (keys: readonly FixedKey[], kind: 'builtIn' | 'macos'): HotkeyOwner[] => keys.filter((k) => sameKey(k.accelerator, accelerator)).map((k) => ({ kind, label: k.label }))
-  return [...commands, ...fixed(builtIns, 'builtIn'), ...fixed(systemKeys, 'macos')]
 }
 
 /**

@@ -9,6 +9,7 @@
 import type { IconRule } from './vaultIcons'
 import type { ReviewEntry } from './reviews'
 import type { HotkeyOverrides } from './hotkeyBindings'
+import { DEFAULT_DAILY_NOTE_FORMAT } from './dailyNote'
 
 // ---------- Errors ----------
 
@@ -1606,6 +1607,11 @@ export interface SettingsState {
    */
   hotkeys: HotkeyOverrides
   /**
+   * The "Let drawings, diagrams and code keep this key" switches of App keys (YAZ-3564 K9): only the changes, by App
+   * row id ('app.goTo'); `{}` is every default. It travels with the other settings.
+   */
+  hotkeysAside: Partial<Record<string, boolean>>
+  /**
    * The zoom of the sidebar's lists in percent (YAZ-3389): the tree, the search results and every other
    * tab's list, never the sidebar's header, tab row or footer. One value for every window. The steps are
    * `SIDEBAR_ZOOM_STEPS`; a stored value is kept within 50–200 (`SIDEBAR_ZOOM_MIN` / `_MAX`).
@@ -1642,7 +1648,28 @@ export interface SettingsState {
    * the helpers are a download on this Mac.
    */
   codeLanguageHelpers: boolean
+  /**
+   * Where ⌘D goes (YAZ-3556 D2): a sidebar tab, a folder or a file by its root-relative path (the `newNoteFolder`
+   * rule), or today's daily note (YAZ-3607 D1). Each window reads the path in the vault of its active tab, else its
+   * first vault. Travels whole (`WHOLE_FIELDS`).
+   */
+  goTo: GoToPlace
+  /**
+   * Daily notes (YAZ-3607): the one switch. Off (the default): no "Today's daily note" in Go to, no footer button, and
+   * no File menu item or Hotkeys row for "Open today's daily note". On: all of them, and the rows below.
+   */
+  dailyNotes: boolean
+  /** The daily notes folder (YAZ-3607 D2), root-relative ('' = the vault root): the `newNoteFolder` rule. */
+  dailyNoteFolder: string
+  /** The name style of a daily note (D4): a style of `shared/dailyNote.ts`, like `YYYY-MM-DD`. */
+  dailyNoteFormat: string
+  /** Make a folder for each day (D9): today's note goes in a folder of the same name. */
+  dailyNoteDayFolder: boolean
 }
+
+/** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, a folder or a file by its path inside the vault ('' = the vault root), or today's daily note (YAZ-3607 D1). */
+export type GoToPlace = { kind: 'tab'; tab: SidebarLens } | { kind: 'folder' | 'file'; path: string } | { kind: 'daily' }
+export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
 
 /**
  * The settings that stay on this Mac when a settings folder is set (YAZ-3276 D1): a path, a panel memory
@@ -1859,6 +1886,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   noticeLists: true,
   gestureSounds: true,
   hotkeys: {},
+  hotkeysAside: {},
   sidebarZoom: 100,
   appZoom: 100,
   codeReadOnly: false,
@@ -1868,6 +1896,11 @@ export const DEFAULT_SETTINGS: SettingsState = {
   codeOutlineHidden: [],
   codeOutlineLocals: false,
   codeLanguageHelpers: false,
+  goTo: DEFAULT_GO_TO,
+  dailyNotes: false,
+  dailyNoteFolder: '',
+  dailyNoteFormat: DEFAULT_DAILY_NOTE_FORMAT,
+  dailyNoteDayFolder: false,
 }
 
 export interface WindowBounds {

@@ -6,7 +6,7 @@
  */
 import type { Command } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
-import { FOLD_KEYS } from './foldKeys'
+import { rowShortcuts } from '../noteKeys'
 import { addHeadingFoldAllMeta, addHeadingFoldUndoMeta } from './headingFolding'
 import { addOutlineFoldAllMeta, addOutlineFoldUndoMeta } from './outlineFolding'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
@@ -36,20 +36,9 @@ const undoCombinedDocumentFold: Command = (state, dispatch) => {
   return true
 }
 
-export const foldAllHotkeys = $shortcut(() => ({
-  FoldAllDocument: {
-    key: FOLD_KEYS.foldAll,
-    priority: PRIORITY,
-    onRun: () => setAllDocumentFolds(true),
-  },
-  UnfoldAllDocument: {
-    key: FOLD_KEYS.unfoldAll,
-    priority: PRIORITY,
-    onRun: () => setAllDocumentFolds(false),
-  },
-  UndoCombinedDocumentFold: {
-    key: 'Mod-z',
-    priority: PRIORITY,
-    onRun: () => undoCombinedDocumentFold,
-  },
+/** The keys are the rows' (`shared/keys/note.ts`, YAZ-3564 K4). */
+export const foldAllHotkeys = $shortcut((ctx) => ({
+  ...rowShortcuts(ctx, 'note.foldAll', 'FoldAllDocument', { priority: PRIORITY, onRun: () => setAllDocumentFolds(true) }),
+  ...rowShortcuts(ctx, 'note.unfoldAll', 'UnfoldAllDocument', { priority: PRIORITY, onRun: () => setAllDocumentFolds(false) }),
+  ...rowShortcuts(ctx, 'note.undo', 'UndoCombinedDocumentFold', { priority: PRIORITY, onRun: () => undoCombinedDocumentFold }),
 }))

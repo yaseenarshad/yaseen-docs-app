@@ -26,6 +26,8 @@ import CssWorker from 'monaco-editor/languages/features/css/css.worker?worker'
 import HtmlWorker from 'monaco-editor/languages/features/html/html.worker?worker'
 import JsonWorker from 'monaco-editor/languages/features/json/json.worker?worker'
 import TsWorker from './tsWorker?worker'
+import { storage } from '../lib/storage'
+import { followCodeKeys } from './codeKeys'
 import { registerExtraLanguages } from './monacoLanguages'
 import { buildMonacoTheme, monacoThemeName, readAppTokens, type AppTheme } from './monacoTheme'
 
@@ -53,11 +55,10 @@ self.MonacoEnvironment = { getWorker: (_workerId, label) => workerFor(label) }
 
 registerExtraLanguages(monaco.languages)
 
-// ⇧⌘O is the app's "Open folder…" (YAZ-3439 "The app's own keys win in code tabs"; the capture-phase keydown already
-// keeps the key from Monaco). Monaco's own binding of it to "Go to Symbol…" goes too, so its right-click menu shows
-// no hint for a key that does something else. The action stays, in F1 and in the menu (YAZ-3478 checker nit).
-// A command id with a leading `-` removes that binding.
-monaco.editor.addKeybindingRules([{ keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyO, command: '-editor.action.quickOutline' }])
+// The code keys (YAZ-3564 K4): Monaco's keys as the key list and the user's changes say, for every code tab of this
+// window, and again after each change of the settings. ⇧⌘O ("Go to Symbol…") has no key there: it is the app's
+// "Open folder…" (YAZ-3439).
+followCodeKeys(monaco, storage)
 
 /**
  * TS 2307 / 2792 (cannot find module), 7016 (no types for a module), 7026 and 2875 (JSX with no React

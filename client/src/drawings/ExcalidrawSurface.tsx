@@ -63,10 +63,13 @@
  * none of it: it keeps the engine's own menu at top-left, and a note's drawing has no library
  * (rule 28). Which mode a surface is in is read ONCE, at mount.
  */
+import { requestKeySheet } from '../keys/keySheetRequest'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
 import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs } from '@shared/types'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import type { HotkeyAside } from '@shared/keys'
 import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
 import { contentVersion } from './contentVersion'
@@ -76,6 +79,7 @@ import { applyToolbarMode, loadExcalidraw, type ExcalidrawModule } from './engin
 import { assembleStandaloneScene } from './exportDrawing'
 import { yaseenFormFactor } from './formFactor'
 import { applyFramesVisibility } from './framesVisibility'
+import { drawingKeyBindings, drawingKeysKey, pressed } from './drawingKeys'
 import { createLauncherStore, LauncherRail } from './LauncherRail'
 import { PresentationPlayer } from './presentation/PresentationPlayer'
 
@@ -159,6 +163,13 @@ export interface DrawingSurfaceProps {
    * rename). Live: a change of the prop switches the engine in place.
    */
   readOnly?: boolean
+  /**
+   * `settings.hotkeys` (YAZ-3564 K5): the drawing keys the user changed reach the engine as its `keyBindings`, live,
+   * and the canvas panel's ⌘F / ⌘C follow them. Omitted = the defaults.
+   */
+  hotkeys?: HotkeyOverrides
+  /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
+  hotkeysAside?: HotkeyAside
 }
 
 /**
@@ -220,6 +231,8 @@ export function ExcalidrawSurface({
   renderTopRight,
   autoFocus = false,
   readOnly = false,
+  hotkeys,
+  hotkeysAside,
 }: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
   /** The canvas panel is the tab's (see the module doc); read once, so a surface never changes mode. */
@@ -269,6 +282,13 @@ export function ExcalidrawSurface({
   /** Read by the handle's background command, which is made once (see `onExcalidrawAPI`). */
   const readOnlyRef = useRef(readOnly)
   readOnlyRef.current = readOnly
+  /** Read by the panel keys below, which are bound once. */
+  const hotkeysRef = useRef(hotkeys)
+  hotkeysRef.current = hotkeys
+  // The engine's `keyBindings` (YAZ-3564 K5), rebuilt only when a DRAWING key moved: a fresh identity on every
+  // settings write would re-render the memoized `<Excalidraw>` for nothing (the #185 rule).
+  const drawingKeys = drawingKeysKey(hotkeys, hotkeysAside)
+  const keyBindings = useMemo(() => JSON.parse(drawingKeys) as ReturnType<typeof drawingKeyBindings>, [drawingKeys])
 
   /** What the engine is believed to hold (see the anti-ping-pong note in the module doc). */
   const appliedRef = useRef<CanvasPrefs>(canvasPrefs)
@@ -348,7 +368,24 @@ export function ExcalidrawSurface({
   const onDock = useCallback((docked: boolean) => rememberPanel({ docked }), [rememberPanel])
 
   /**
-   * ⌘C → Components and ⌘F → Images (Draw's port of the web app's `c` / `f`, `AppSidebar.tsx:983-1078`),
+   * ? opens the app's "Keys of this tab" (YAZ-3564 K11) in place of the engine's own help dialog, which shows only the
+   * engine's defaults. A bare ?, outside a text field and with no text being edited; true when it took the key.
+   */
+  const onHelpKey = useCallback((event: ReactKeyboardEvent): boolean => {
+    if (event.key !== '?' || event.metaKey || event.ctrlKey || event.altKey || event.repeat || event.nativeEvent.isComposing) return false
+    const target = event.target
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return false
+    if (target instanceof HTMLElement && (target.isContentEditable || target.closest("[contenteditable='true']") !== null)) return false
+    if ((rawApiRef.current?.getAppState() as unknown as Record<string, unknown> | undefined)?.editingTextElement) return false
+    event.preventDefault()
+    event.stopPropagation()
+    requestKeySheet()
+    return true
+  }, [])
+
+  /**
+   * ⌘C → Components and ⌘F → Images (Draw's port of the web app's `c` / `f`, `AppSidebar.tsx:983-1078`; the keys
+   * as the user set them, YAZ-3564),
    * with its guards: the primary modifier alone, no repeat, no IME composition, no editable target, no
    * live text selection, and — asked of the engine itself — no element being drawn, dragged, resized,
    * rotated or cropped, no text being edited, no dialog open and nothing selected. Those gates are why
@@ -356,11 +393,12 @@ export function ExcalidrawSurface({
    */
   const onKeyDownCapture = useCallback(
     (event: ReactKeyboardEvent) => {
+      if (onHelpKey(event)) return
       const api = rawApiRef.current
       if (api === null) return
-      const key = event.key.toLowerCase()
-      const tab: CanvasPanelTab | null = key === 'c' ? 'components' : key === 'f' ? 'image-studio' : null
-      if (tab === null || !event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.repeat || event.nativeEvent.isComposing) return
+      const keys = hotkeysRef.current
+      const tab: CanvasPanelTab | null = pressed(event, 'drawing.componentsPanel', keys) ? 'components' : pressed(event, 'drawing.imagesPanel', keys) ? 'image-studio' : null
+      if (tab === null || event.repeat || event.nativeEvent.isComposing) return
       const target = event.target
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
       if (target instanceof HTMLElement && (target.isContentEditable || target.closest("[contenteditable='true']") !== null)) return
@@ -376,7 +414,7 @@ export function ExcalidrawSurface({
       if (tab === 'image-studio' && rail.getState().activeTab !== tab) setSearchFocusPending(true)
       rail.openTab(tab)
     },
-    [rail],
+    [rail, onHelpKey],
   )
 
   // Shell → engine (🔒 D9): a prop that differs from what was last applied is pushed, changed keys
@@ -537,7 +575,8 @@ export function ExcalidrawSurface({
           onStartPresentation={startPresentation}
         />
       ),
-    [engine, withPanel, activeTab, closePanel, onDock, imperativeApi, readOnly, searchFocusPending, onSearchFocused, hasSelection, startPresentation],
+    // `keyBindings` too: a new child is what re-renders the engine's toolbar, so its tooltips name a changed key at once (K12).
+    [engine, withPanel, activeTab, closePanel, onDock, imperativeApi, readOnly, searchFocusPending, onSearchFocused, hasSelection, startPresentation, keyBindings],
   )
 
   // The frame held while the engine chunk is arriving; the host's canvas frame sizes it.
@@ -545,7 +584,7 @@ export function ExcalidrawSurface({
   const { Excalidraw } = engine
   return (
     // The surface's own element, so ⌘F / ⌘C are heard here and nowhere else in the shell (the tab only).
-    <div ref={rootRef} className="drawing-surface" onKeyDownCapture={withPanel ? onKeyDownCapture : undefined}>
+    <div ref={rootRef} className="drawing-surface" onKeyDownCapture={withPanel ? onKeyDownCapture : onHelpKey}>
       <Excalidraw
         initialData={initialData}
         initialState={initialState}
@@ -564,6 +603,7 @@ export function ExcalidrawSurface({
         // prop — `false` too — turns off the engine's own ⌥R toggle (YAZ-3120). `true` → `undefined`
         // still leaves view mode: the engine sets it to `!!viewModeEnabled` when the prop changes.
         viewModeEnabled={readOnly ? true : undefined}
+        keyBindings={keyBindings}
       >
         {canvasSidebar}
       </Excalidraw>

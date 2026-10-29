@@ -447,7 +447,7 @@ const register = (into: Map<string, unknown>) => (language: string, provider: un
 
 export const monaco = {
   Uri: { from: (parts: { scheme: string; authority: string; path: string }) => fakeUri(parts), file: (path: string) => fakeUri({ scheme: 'file', authority: '', path }) },
-  KeyMod: { CtrlCmd: 2048, Shift: 1024, Alt: 512, WinCtrl: 256 },
+  KeyMod: { CtrlCmd: 2048, Shift: 1024, Alt: 512, WinCtrl: 256, chord: (first: number, second: number) => (first | ((second << 16) >>> 0)) >>> 0 },
   KeyCode: { KeyZ: 56 },
   Range: class {
     constructor(

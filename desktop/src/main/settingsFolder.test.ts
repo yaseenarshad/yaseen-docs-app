@@ -89,11 +89,12 @@ describe('the rules (D3)', () => {
 
   it("YAZ-3397: the key changes travel as a whole list — a key another Mac reset does not come back from this one", () => {
     const here: SettingsState = { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K', closeTab: null } }
-    expect(mergeFolderSettings(here, { hotkeys: { closeTab: null } }).hotkeys).toEqual({ closeTab: null })
+    // An old Mac's unscoped ids come in as scoped ones (YAZ-3564 K2).
+    expect(mergeFolderSettings(here, { hotkeys: { closeTab: null } }).hotkeys).toEqual({ 'app.closeTab': null })
     expect(mergeFolderSettings(here, { hotkeys: {} }).hotkeys).toEqual({})
     // A file without them keeps this Mac's; an id this build does not know is dropped, the rest come in.
-    expect(mergeFolderSettings(here, { theme: 'dark' }).hotkeys).toEqual(here.hotkeys)
-    expect(mergeFolderSettings(here, { hotkeys: { newTab: 'CmdOrCtrl+Alt+T', aNewCommand: 'CmdOrCtrl+J' } }).hotkeys).toEqual({ newTab: 'CmdOrCtrl+Alt+T' })
+    expect(mergeFolderSettings(here, { theme: 'dark' }).hotkeys).toEqual({ 'app.search': 'CmdOrCtrl+Shift+K', 'app.closeTab': null })
+    expect(mergeFolderSettings(here, { hotkeys: { newTab: 'CmdOrCtrl+Alt+T', aNewCommand: 'CmdOrCtrl+J' } }).hotkeys).toEqual({ 'app.newTab': 'CmdOrCtrl+Alt+T' })
   })
 
   it("YAZ-3298: a canvas pref this build can't read, or that the file lacks, keeps this Mac's value (D3)", () => {

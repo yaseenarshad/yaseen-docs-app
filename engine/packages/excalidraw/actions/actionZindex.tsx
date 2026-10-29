@@ -16,6 +16,7 @@ import {
   SendToBackIcon,
 } from "../components/icons";
 import { t } from "../i18n";
+import { boundShortcut } from "../keyRemap";
 import { getShortcutKey } from "../shortcut";
 
 import { register } from "./register";
@@ -43,7 +44,10 @@ export const actionSendBackward = register({
       type="button"
       className="zIndexButton"
       onClick={() => updateData(null)}
-      title={`${t("labels.sendBackward")} — ${getShortcutKey("CtrlOrCmd+[")}`}
+      // Yaseen Docs (YAZ-3564 K12)
+      title={`${t("labels.sendBackward")} — ${
+        boundShortcut("sendBackward") ?? getShortcutKey("CtrlOrCmd+[")
+      }`}
     >
       {SendBackwardIcon}
     </button>
@@ -73,7 +77,10 @@ export const actionBringForward = register({
       type="button"
       className="zIndexButton"
       onClick={() => updateData(null)}
-      title={`${t("labels.bringForward")} — ${getShortcutKey("CtrlOrCmd+]")}`}
+      // Yaseen Docs (YAZ-3564 K12)
+      title={`${t("labels.bringForward")} — ${
+        boundShortcut("bringForward") ?? getShortcutKey("CtrlOrCmd+]")
+      }`}
     >
       {BringForwardIcon}
     </button>
@@ -106,10 +113,12 @@ export const actionSendToBack = register({
       type="button"
       className="zIndexButton"
       onClick={() => updateData(null)}
+      // Yaseen Docs (YAZ-3564 K12)
       title={`${t("labels.sendToBack")} — ${
-        isDarwin
+        boundShortcut("sendToBack") ??
+        (isDarwin
           ? getShortcutKey("CtrlOrCmd+Alt+[")
-          : getShortcutKey("CtrlOrCmd+Shift+[")
+          : getShortcutKey("CtrlOrCmd+Shift+["))
       }`}
     >
       {SendToBackIcon}
@@ -144,10 +153,12 @@ export const actionBringToFront = register({
       type="button"
       className="zIndexButton"
       onClick={(event) => updateData(null)}
+      // Yaseen Docs (YAZ-3564 K12)
       title={`${t("labels.bringToFront")} — ${
-        isDarwin
+        boundShortcut("bringToFront") ??
+        (isDarwin
           ? getShortcutKey("CtrlOrCmd+Alt+]")
-          : getShortcutKey("CtrlOrCmd+Shift+]")
+          : getShortcutKey("CtrlOrCmd+Shift+]"))
       }`}
     >
       {BringToFrontIcon}

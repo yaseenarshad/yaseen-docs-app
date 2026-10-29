@@ -3,7 +3,7 @@ import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { GridIcon, SidebarPanelIcon } from '../views/view/icons'
+import { CalendarIcon, GridIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
@@ -30,7 +30,7 @@ import { PICKER_W, suggestIcons } from './iconSuggestions'
 import { keepsOrder, shownLabel, sortLevel, sortSections } from './treeSort'
 import { ACTIVE_TAB_SELECTOR, SidebarTabs } from './SidebarTabs'
 import { folderShortcuts } from './folderShortcuts'
-import { datedSeed, targetDirFor, type MenuRow } from './createEntry'
+import { datedSeed, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
 import { ZoomMenu } from './ZoomMenu'
@@ -172,6 +172,13 @@ interface SidebarProps {
   /** The request was acted on, or its path is not in the tree: it must not replay after a remount. */
   onMenuConsumed: (id: number) => void
   /**
+   * One name field asked from outside the panel (YAZ-3556 D4): ⏎ in the New… box (⌘N). App shows Files first; the
+   * panel opens the right-click "New …" field in `dir` one time, when the tree of its vault lands. Absent = none.
+   */
+  createRequest?: SidebarCreateRequest | null
+  /** The request was acted on: it must not replay after a remount. */
+  onCreateConsumed?: (id: number) => void
+  /**
    * The settings (GRO-2024); App owns and applies them. The sidebar no longer edits them (the
    * dialog does, YAZ-1679) but still READS `confirmDelete` and writes it back through the
    * delete sheet's "Don't ask me again" (GRO-2272).
@@ -180,6 +187,8 @@ interface SidebarProps {
   onChangeSettings: (next: SettingsState) => void
   /** The footer cog: App mounts the settings dialog, so the cog only asks for it (YAZ-1679). */
   onOpenSettings: () => void
+  /** The footer's "Open today's daily note" (YAZ-3607 D7); absent while Settings › Files & Links › Daily notes is off. */
+  onOpenDailyNote?: () => void
   /** The updater's state (YAZ-2976 D4): App reads it once for the window, and the footer shows its pill beside the cog. */
   update: UpdateState
   /** The pill's click: App mounts the "What's new" sheet (D5), as it does the settings dialog. */
@@ -310,6 +319,14 @@ export interface SidebarMenuRequest {
   y: number
   /** From a row of "Recently closed" (YAZ-3487 D14): the menu leads with "Remove from" and "Clear Recently closed". */
   closed?: boolean
+}
+
+/** One "open the name field for a new item in this folder" gesture (YAZ-3556 D4): the menu request's idiom. */
+export interface SidebarCreateRequest {
+  id: number
+  kind: Exclude<EntryKind, 'dir'>
+  /** The folder, absolute: a vault's root or a folder of it. */
+  dir: string
 }
 
 /** What App's ⌘C / ⌘X / ⌘V / ⌘⌫ listener may ask of the mounted sidebar (D6 amended, YAZ-1674; YAZ-3272 D20); each answers whether it acted. */
@@ -570,9 +587,12 @@ export function Sidebar({
   onRevealConsumed,
   menuRequest,
   onMenuConsumed,
+  createRequest = null,
+  onCreateConsumed,
   settings,
   onChangeSettings,
   onOpenSettings,
+  onOpenDailyNote,
   update,
   onOpenWhatsNew,
   onRestoreSession,
@@ -1297,7 +1317,17 @@ export function Sidebar({
     )
   }, [onOpenSetHere, onOpenVaultHere, onNotice])
 
-  const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo)
+  const { setRenamingEntry, startCreate, startCreateAt, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo)
+  // A create request (YAZ-3556 D4) is acted on one time, on Files, when the tree of its vault has landed: the field
+  // mounts inside the folder's rows. App asks only for a folder it saw in that tree.
+  const seenCreateId = useRef<number | null>(null)
+  useEffect(() => {
+    if (createRequest === null || seenCreateId.current === createRequest.id || lens !== 'files') return
+    if (forest === null || !trees.has(rootOf(createRequest.dir))) return
+    seenCreateId.current = createRequest.id
+    onCreateConsumed?.(createRequest.id)
+    startCreateAt(createRequest.kind, '', { targetDir: createRequest.dir, lens: 'files', top: null })
+  }, [createRequest, lens, forest, trees, rootOf, onCreateConsumed, startCreateAt])
 
   /**
    * Reveal in Finder (GRO-2274). Read-only, so there is no confirm and nothing to repair —
@@ -1755,6 +1785,12 @@ export function Sidebar({
         {/* The zoom chip (YAZ-3432): its menu zooms the lists above (YAZ-3389: one value for every full window, a Files
             window's own, D13) and sets the App size of every window. */}
         <ZoomMenu sidebar={zoomValue} onSidebar={onZoom} app={settings.appZoom} onApp={changeAppZoom} onOpenChange={onZoomMenu} />
+        {onOpenDailyNote !== undefined && (
+          // YAZ-3607 D7: today's daily note in one click, the same as ⌘D on "Today's daily note".
+          <button type="button" className="sidebar__daily" title="Open today's daily note" aria-label="Open today's daily note" onClick={onOpenDailyNote}>
+            <CalendarIcon />
+          </button>
+        )}
         {onToNormalWindow !== undefined && (
           // Which kind of window this is (YAZ-3357 D13), quiet beside the cog. Two clicks make it a full window.
           <button

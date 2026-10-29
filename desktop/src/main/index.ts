@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileKind } from '@shared/fileKind'
 import { fileLink, isAppLink, parseFileLink } from '@shared/links'
-import { FILES_PREVIEW_FRAME, type ClipboardPasteRequest, type WindowEntry } from '@shared/types'
+import { FILES_PREVIEW_FRAME, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
 import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { APP_SCHEME } from './appScheme'
@@ -27,7 +27,7 @@ import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOn
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
 import { followSettingsFolder } from './settingsFolder'
-import { hotkeyRecording } from './hotkeyRecording'
+import { drawingInFront, hotkeyRecording } from './hotkeyRecording'
 import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
 import { runQuitSequence } from './quitSequence'
@@ -329,20 +329,27 @@ app.whenReady().then(() => {
     const file = id === undefined ? null : (store.get().windows.find((w) => w.id === id)?.file ?? null)
     return file === null ? null : fileKind(file)
   }
+  // What the keys follow (YAZ-3564 K9): a drawing open over the note is in front of it; the board items stay the tab's.
+  const frontKind = (): FileKind | null => {
+    const wc = menuTarget()
+    return wc !== undefined && drawingInFront.has(wc.id) ? 'drawing' : activeFileKind()
+  }
   const { apply: applyMenu, applyIfMoved } = gateOnBoardKind(activeFileKind, () =>
     Menu.setApplicationMenu(
       Menu.buildFromTemplate(
         buildMenuTemplate(
           // The user's keys (YAZ-3397 D2), and none at all while a key recorder listens (D6).
-          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), hotkeys: store.get().settings.hotkeys, suspendKeys: hotkeyRecording.active() },
+          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), frontKind: frontKind(), hotkeys: store.get().settings.hotkeys, hotkeysAside: store.get().settings.hotkeysAside, suspendKeys: hotkeyRecording.active(), dailyNotes: store.get().settings.dailyNotes },
           handlers,
         ),
       ),
     ),
+    frontKind,
   )
   applyMenu()
   subscribeMenuRebuild(store, applyMenu)
   hotkeyRecording.onChange(applyMenu)
+  drawingInFront.onChange(() => applyIfMoved())
   // A tab switch changes which file is in front; a focus change changes which window is asked. Either
   // rebuilds only when the board items' answer moves (YAZ-3044 A32).
   subscribeMenuRebuildOnActiveFile(store, applyIfMoved)

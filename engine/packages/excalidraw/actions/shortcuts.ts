@@ -3,6 +3,7 @@ import { isDarwin } from "@excalidraw/common";
 import type { SubtypeOf } from "@excalidraw/common/utility-types";
 
 import { t } from "../i18n";
+import { boundShortcut } from "../keyRemap";
 import { getShortcutKey } from "../shortcut";
 
 import type { ActionName } from "./types";
@@ -116,6 +117,11 @@ const shortcutMap: Record<ShortcutName, string[]> = {
 };
 
 export const getShortcutFromShortcutName = (name: ShortcutName, idx = 0) => {
+  // Yaseen Docs (YAZ-3564 K12): the user's key, when they changed it
+  const bound = boundShortcut(name);
+  if (bound !== undefined) {
+    return bound;
+  }
   const shortcuts = shortcutMap[name];
   // if multiple shortcuts available, take the first one
   return shortcuts && shortcuts.length > 0

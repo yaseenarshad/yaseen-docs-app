@@ -682,6 +682,29 @@ describe('New drawing ▸: New Excalidraw drawing / New draw.io diagram (YAZ-302
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Plan.excalidraw')
   })
 
+  it('YAZ-3556 D4: a create request (⏎ in the New… box) opens the same name field in its folder, with no menu, one time; the board is made there and opens', async () => {
+    const onCreateConsumed = vi.fn()
+    const { el, bridge, props, rerender } = await mount({ onCreateConsumed }, withCreateBoard())
+    await rerender({ createRequest: { id: 1, kind: 'drawing', dir: '/v/sub' } })
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(input?.placeholder).toBe('New drawing')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(onCreateConsumed).toHaveBeenCalledExactlyOnceWith(1)
+    act(() => {
+      input!.value = 'Sketch'
+      input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    await act(async () => undefined)
+    expect(createBoardOf(bridge)).toHaveBeenCalledExactlyOnceWith({ root: '/v', path: '/v/sub/Sketch.excalidraw' })
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Sketch.excalidraw')
+    // The same request again is no new request; a new one for a diagram at the root is.
+    await rerender({ createRequest: { id: 1, kind: 'drawing', dir: '/v/sub' } })
+    expect(el.querySelector('.create-inline__input')).toBeNull()
+    await rerender({ createRequest: { id: 2, kind: 'diagram', dir: '/v' } })
+    expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.placeholder).toBe('New diagram')
+    expect(onCreateConsumed).toHaveBeenLastCalledWith(2)
+  })
+
   it('open "New drawing ▸" → New draw.io diagram in its flyout says "New diagram" and makes a .drawio; an empty box is Untitled, then Untitled 2 past a taken one', async () => {
     const { el, bridge, props } = await mount({}, withCreateBoard(['/v/sub/Untitled.drawio']))
     expect(await newIn(el, 'New draw.io diagram', null, 'New drawing')).toBe('New diagram')
@@ -1659,6 +1682,15 @@ describe('Sidebar stale tab activation (I3, GRO-2235)', () => {
     const created: TreeNode = { type: 'file', name: 'new.md', path: '/v/new.md', size: 1, mtime: 2, kind: 'markdown' }
     bridge.tree.mockImplementation(async (r: string) => ({ root: r, tree: [...TREE, created], generatedAt: 2 }))
     await rerender({ activeFile: '/v/new.md' })
+    expect(props.onFileMissing).not.toHaveBeenCalled()
+  })
+
+  it('a HIDDEN file (a folder\'s .template.md, YAZ-3607 D14) stays open: the tree never lists one, so neither check asks it', async () => {
+    const { bridge, props, rerender } = await mount({ activeFile: '/v/sub/.template.md' }) // the first tree's check
+    bridge.tree.mockClear()
+    await rerender({ activeFile: '/v/a.md' })
+    await rerender({ activeFile: '/v/.yaseendocs/notes.md' }) // the activation probe
+    expect(bridge.tree).not.toHaveBeenCalled()
     expect(props.onFileMissing).not.toHaveBeenCalled()
   })
 
@@ -8251,6 +8283,16 @@ describe('update pill (YAZ-2976 D4)', () => {
     const { el } = await mount()
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
     expect(footer).toEqual(['settings-button', 'zoom-footer'])
+  })
+
+  it('the daily note button (YAZ-3607 D7): after the zoom chip while App hands its door over, and its click opens today\'s note', async () => {
+    const onOpenDailyNote = vi.fn()
+    const { el } = await mount({ onOpenDailyNote })
+    const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
+    expect(footer).toEqual(['settings-button', 'zoom-footer', 'sidebar__daily'])
+    act(() => el.querySelector<HTMLButtonElement>('.sidebar__daily')?.click())
+    expect(onOpenDailyNote).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.sidebar__daily')?.getAttribute('aria-label')).toBe("Open today's daily note")
   })
 
   it('the sidebar zoom (YAZ-3389): the lists take `--sidebar-zoom` from the setting, the chip shows it, the menu\'s + writes the next step over the other settings, and the same value writes nothing (D6)', async () => {

@@ -23,8 +23,14 @@ function installBridge() {
   const tabOverviewListeners = new Set<() => void>()
   const newTabListeners = new Set<() => void>()
   const newWindowListeners = new Set<() => void>()
+  // ⌘N and ⌘D (YAZ-3556 D1).
+  const newItemListeners = new Set<() => void>()
+  const goToListeners = new Set<() => void>()
+  // File › Open Today's Daily Note (YAZ-3607 D11).
+  const dailyNoteListeners = new Set<() => void>()
   const zoomListeners = new Set<(step: -1 | 0 | 1) => void>()
   const whatsNewListeners = new Set<() => void>()
+  const keySheetListeners = new Set<() => void>()
   // The board gestures (YAZ-3037).
   const exportImageListeners = new Set<() => void>()
   const exportDrawingListeners = new Set<() => void>()
@@ -49,8 +55,12 @@ function installBridge() {
       onTabOverview: sub(tabOverviewListeners),
       onNewTab: sub(newTabListeners),
       onNewWindow: sub(newWindowListeners),
+      onNewItem: sub(newItemListeners),
+      onGoTo: sub(goToListeners),
+      onDailyNote: sub(dailyNoteListeners),
       onZoom: sub(zoomListeners),
       onWhatsNew: sub(whatsNewListeners),
+      onKeySheet: sub(keySheetListeners),
       onExportImage: sub(exportImageListeners),
       onExportDrawing: sub(exportDrawingListeners),
       onShareLink: sub(shareLinkListeners),
@@ -71,8 +81,12 @@ function installBridge() {
     emitTabOverview: () => tabOverviewListeners.forEach((l) => l()),
     emitNewTab: () => newTabListeners.forEach((l) => l()),
     emitNewWindow: () => newWindowListeners.forEach((l) => l()),
+    emitNewItem: () => newItemListeners.forEach((l) => l()),
+    emitGoTo: () => goToListeners.forEach((l) => l()),
+    emitDailyNote: () => dailyNoteListeners.forEach((l) => l()),
     emitZoom: (step: -1 | 0 | 1) => zoomListeners.forEach((l) => l(step)),
     emitWhatsNew: () => whatsNewListeners.forEach((l) => l()),
+    emitKeySheet: () => keySheetListeners.forEach((l) => l()),
     emitExportImage: () => exportImageListeners.forEach((l) => l()),
     emitExportDrawing: () => exportDrawingListeners.forEach((l) => l()),
     emitShareLink: () => shareLinkListeners.forEach((l) => l()),
@@ -90,8 +104,12 @@ function installBridge() {
       tabOverviewListeners.size +
       newTabListeners.size +
       newWindowListeners.size +
+      newItemListeners.size +
+      goToListeners.size +
+      dailyNoteListeners.size +
       zoomListeners.size +
       whatsNewListeners.size +
+      keySheetListeners.size +
       exportImageListeners.size +
       exportDrawingListeners.size +
       shareLinkListeners.size +
@@ -112,8 +130,12 @@ interface ProbeProps {
   onTabOverview: () => void
   onNewTab: () => void
   onNewWindow: () => void
+  onNewItem: () => void
+  onGoTo: () => void
+  onDailyNote: () => void
   onZoom: (step: -1 | 0 | 1) => void
   onWhatsNew: () => void
+  onKeySheet: () => void
   onExportImage: () => void
   onExportDrawing: () => void
   onShareLink: () => void
@@ -135,7 +157,7 @@ afterEach(() => {
 describe('useMenuEvents', () => {
   it('routes menu gestures to the callbacks and unsubscribes on unmount', () => {
     const b = installBridge()
-    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onTabOverview: vi.fn(), onNewTab: vi.fn(), onNewWindow: vi.fn(), onZoom: vi.fn(), onWhatsNew: vi.fn(), onExportImage: vi.fn(), onExportDrawing: vi.fn(), onShareLink: vi.fn(), onCanvasBackground: vi.fn() }
+    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onTabOverview: vi.fn(), onNewTab: vi.fn(), onNewWindow: vi.fn(), onNewItem: vi.fn(), onGoTo: vi.fn(), onDailyNote: vi.fn(), onZoom: vi.fn(), onWhatsNew: vi.fn(), onKeySheet: vi.fn(), onExportImage: vi.fn(), onExportDrawing: vi.fn(), onShareLink: vi.fn(), onCanvasBackground: vi.fn() }
     root = createRoot(document.createElement('div'))
     act(() => root?.render(<Probe {...handlers} />))
 
@@ -163,10 +185,18 @@ describe('useMenuEvents', () => {
     expect(handlers.onNewTab).toHaveBeenCalledTimes(1)
     act(() => b.emitNewWindow())
     expect(handlers.onNewWindow).toHaveBeenCalledTimes(1)
+    act(() => b.emitNewItem())
+    expect(handlers.onNewItem).toHaveBeenCalledTimes(1)
+    act(() => b.emitGoTo())
+    expect(handlers.onGoTo).toHaveBeenCalledTimes(1)
+    act(() => b.emitDailyNote())
+    expect(handlers.onDailyNote).toHaveBeenCalledTimes(1)
     act(() => b.emitZoom(-1))
     expect(handlers.onZoom).toHaveBeenCalledExactlyOnceWith(-1)
     act(() => b.emitWhatsNew())
     expect(handlers.onWhatsNew).toHaveBeenCalledTimes(1)
+    act(() => b.emitKeySheet())
+    expect(handlers.onKeySheet).toHaveBeenCalledTimes(1)
     act(() => b.emitExportImage())
     expect(handlers.onExportImage).toHaveBeenCalledTimes(1)
     act(() => b.emitExportDrawing())

@@ -15,6 +15,8 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type RefObject } from 'react'
 import { TOC_MIN_W } from '@shared/types'
+import { storage } from '../../lib/storage'
+import { isNoteKey } from '../noteKeys'
 
 /** The card stays this long after the mouse or the keyboard leaves it. */
 export const GRACE_MS = 200
@@ -138,7 +140,8 @@ export function useTocShortcut(shows: boolean, hostRef: RefObject<HTMLElement | 
   useEffect(() => {
     if (!shows) return
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!event.metaKey || event.shiftKey || event.altKey || event.ctrlKey || event.key !== 'j') return
+      // The key as it is now (YAZ-3564 K4): the setting is read at each keydown.
+      if (!isNoteKey(event, 'note.toc', storage.getSettings()?.hotkeys)) return
       const section = hostRef.current?.closest('section.editor')
       if (!shown(section)) return
       const active = document.activeElement

@@ -24,6 +24,8 @@
  *    Empty task items are `* [ ]` on disk and `* [ ] <br />` inside Milkdown (GRO-2018).
  *  - Obsidian hotkeys (GRO-2027, `outline/hotkeys.ts` + `outline/foldAllHotkeys.ts`): Mod-Enter
  *    task cycle, Mod-Shift-u/i fold/unfold all bullets + headings, Mod-Shift-x strikethrough.
+ *  - The keys are the defaults of `shared/keys/note.ts` with the user's changes (YAZ-3564 K4,
+ *    `noteKeys.ts`): read once in a config, before create, so an open note keeps its keys.
  *  - Underline mark (GRO-2028, `marks/underline.ts`): Mod-u ↔ `<u>text</u>` inline HTML.
  *  - Highlight mark (YAZ-1480, `marks/highlight.ts`): ONE mark with an optional `color`. Yellow
  *    (Mod-Shift-h / typing `==x==` / the first toolbar swatch) is Obsidian's `==text==` on disk —
@@ -239,6 +241,8 @@ import { createWikilink, createWikilinkResolveSource, type LinkLook, type Wikili
 import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import { claimPage } from '../lib/readOnlyCaret'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import { applyNoteKeys, noteHotkeysCtx } from './noteKeys'
 
 export interface CreateCrepeOptions {
   root: HTMLElement
@@ -288,6 +292,11 @@ export interface CreateCrepeOptions {
    * keys itself (`readOnlyKeys.ts`, YAZ-3125, YAZ-3127). Absent on the read-only previews.
    */
   readOnlyKeys?: boolean
+  /**
+   * `settings.hotkeys` (YAZ-3564 K4): the note keys the user changed. Read once, here: a change applies to the notes
+   * that open next (`noteKeys.ts`). Absent = the defaults.
+   */
+  hotkeys?: HotkeyOverrides
 }
 
 /** An `Hn` / `T` glyph for the toolbar, drawn as text — the label IS the icon. */
@@ -474,6 +483,12 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // when the host gave none) so the paste handler can always read it and simply decline.
   crepe.editor.config((ctx) => {
     ctx.inject(imageOptionsCtx, opts.image ?? null)
+  })
+  // The note keys (YAZ-3564 K4): the user's changes for the app's keymaps, and Milkdown's keymap slices set from them,
+  // before any keymap is read.
+  crepe.editor.config((ctx) => {
+    ctx.inject(noteHotkeysCtx, opts.hotkeys ?? {})
+    applyNoteKeys(ctx)
   })
   if (opts.image !== undefined) crepe.editor.use(createImageView(opts.image))
   // The line (YAZ-3164): its look and its length handle, on every editor — the line's style is in the schema.

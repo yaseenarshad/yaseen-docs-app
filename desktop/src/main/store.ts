@@ -1,4 +1,5 @@
 import { cleanIconRules, isIconRules } from '@shared/vaultIcons'
+import { isValidDailyNoteFormat } from '@shared/dailyNote'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
@@ -76,6 +77,7 @@ import {
   type ContentWidth,
   type FolderPatch,
   type FolderState,
+  type GoToPlace,
   type HeadingStyles,
   type HoverPlace,
   type NewNoteLocation,
@@ -128,7 +130,8 @@ import {
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
-import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, isHotkeyId, isUsableKey, keyFor, sameKey, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId, keyFor, sameKey, scopedId, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { ASIDE_PLACES, asideId, isUsableFor, keyRow, withAside, type HotkeyAside } from '@shared/keys'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { travellingChanged, travels } from '@shared/settingsSync'
 import { atomicWrite } from './fs/fsUtils'
@@ -351,32 +354,74 @@ export function sanitizeHoverPreviewIn(raw: unknown): Record<HoverPlace, boolean
  * UI never writes anything else, so this is the only stop for a hand-edited file: a menu item with the key
  * `A` would take every typed "a" in every window.
  */
-const isHotkeyEntry = ([id, key]: [string, unknown]): boolean =>
-  isHotkeyId(id) && (key === null || (typeof key === 'string' && isUsableKey(key) && ![...APP_STANDARD_KEYS, ...MENU_FIXED_KEYS].some((k) => sameKey(k.accelerator, key))))
+const isHotkeyEntry = ([id, key]: [string, unknown]): boolean => {
+  // Any place's key since YAZ-3564 (K2): a scoped id of a changeable row ('note.bold'), or an old unscoped App id.
+  const row = keyRow(id)
+  if (row === undefined || !row.changeable) return false
+  if (key === null) return true
+  if (typeof key !== 'string' || !isUsableFor(row, key)) return false
+  // No row takes a Mac standard key (⌘Q is Quit); an App key also never takes a fixed key of the menu (YAZ-3419).
+  return ![...APP_STANDARD_KEYS, ...(row.scope === 'app' ? MENU_FIXED_KEYS : [])].some((k) => sameKey(k.accelerator, key.split(' ')[0]))
+}
 
 /**
  * The command whose change goes when two commands have one key now (YAZ-3410), or null when no two do: of the
  * commands in a clash, the LAST in `HOTKEY_COMMANDS` order that has a change (it gets its default back). The
  * defaults never clash with each other, so a clash always has a change in it.
  */
-function clashLoser(overrides: HotkeyOverrides): HotkeyId | null {
+function clashLoser(overrides: HotkeyOverrides): string | null {
+  // Two App commands on one key (YAZ-3397): a menu holds one item per key. A place's key that an App key blocks is
+  // allowed: the Hotkeys page shows it as blocked (YAZ-3564 K3), so the user decides.
   const keyOf = (id: HotkeyId) => keyFor(id, overrides)
   const inClash = HOTKEY_COMMANDS.filter((c) => HOTKEY_COMMANDS.some((o) => o.id !== c.id && sameKey(keyOf(c.id), keyOf(o.id))))
-  return inClash.filter((c) => overrides[c.id] !== undefined).at(-1)?.id ?? null
+  return inClash.filter((c) => overrides[appKeyId(c.id)] !== undefined || overrides[c.id] !== undefined).at(-1)?.id ?? null
 }
 
 /** The user's key changes, strict: every entry reads (`isHotkeyEntry`) and no two commands share a key. The IPC boundary rejects anything else; `sanitizeHotkeys` repairs a stored one. */
-const isHotkeyOverrides = (v: unknown): v is HotkeyOverrides => isRecord(v) && Object.entries(v).every(isHotkeyEntry) && clashLoser(v) === null
+const isHotkeyOverrides = (v: unknown): v is HotkeyOverrides => isRecord(v) && Object.entries(v).every(isHotkeyEntry) && clashLoser(v as HotkeyOverrides) === null
 
 /**
  * A stored `hotkeys` with each entry that does not read dropped (an id a later build removed, a key that is no
  * key), then the clashes undone one change at a time (`clashLoser`); the same object when all read.
  */
 export function sanitizeHotkeys(raw: unknown): HotkeyOverrides {
-  if (isHotkeyOverrides(raw)) return raw
   if (!isRecord(raw)) return {}
-  const out: HotkeyOverrides = Object.fromEntries(Object.entries(raw).filter(isHotkeyEntry))
-  for (let loser = clashLoser(out); loser !== null; loser = clashLoser(out)) delete out[loser]
+  if (Object.keys(raw).every((id) => id.includes('.')) && isHotkeyOverrides(raw)) return raw
+  // An old unscoped App id reads as `app.<id>` (YAZ-3564 K2); a scoped one wins over it. An old change that is the
+  // default now goes (⌘⇧B for Toggle sidebar, D10), so the page does not show it as changed.
+  const scoped: HotkeyOverrides = {}
+  const isDefault = (id: string, key: string | null): boolean => {
+    const defaults = keyRow(id)?.keys ?? []
+    return key === null ? defaults.length === 0 : defaults.length === 1 && sameKey(key, defaults[0])
+  }
+  for (const [id, key] of Object.entries(raw)) {
+    if (isHotkeyEntry([id, key]) && (id.includes('.') || !(scopedId(id) in raw)) && !isDefault(id, key as string | null)) scoped[scopedId(id)] = key as string | null
+  }
+  for (let loser = clashLoser(scoped); loser !== null; loser = clashLoser(scoped)) delete scoped[appKeyId(loser as HotkeyId)]
+  return scoped
+}
+
+/** The step-aside switches (YAZ-3564 K9): App rows only, booleans only; a stored one this build does not know is dropped. */
+/**
+ * The tabs' picks on shared App keys (YAZ-3564 K9): `<App row id>@<drawing|diagram|code>` → boolean, App rows only. The
+ * IPC boundary takes only that form.
+ */
+const isAsideEntry = ([id, on]: [string, unknown]): boolean => {
+  const [rowId, place, ...rest] = id.split('@')
+  const row = keyRow(rowId)
+  return typeof on === 'boolean' && rest.length === 0 && row?.scope === 'app' && row.id === rowId && (ASIDE_PLACES as readonly string[]).includes(place ?? '')
+}
+const isHotkeyAside = (v: unknown): v is HotkeyAside => isRecord(v) && Object.entries(v).every(isAsideEntry)
+/** A stored set of picks, each bad entry dropped; an entry by the App row id alone (one switch for three tabs, before the per-tab picks) becomes its three tabs. */
+export function sanitizeHotkeyAside(raw: unknown): HotkeyAside {
+  if (isHotkeyAside(raw)) return raw
+  if (!isRecord(raw)) return {}
+  let out: HotkeyAside = Object.fromEntries(Object.entries(raw).filter(isAsideEntry)) as HotkeyAside
+  for (const [id, on] of Object.entries(raw)) {
+    const row = keyRow(id)
+    if (row?.scope !== 'app' || typeof on !== 'boolean' || id.includes('@')) continue
+    for (const place of ASIDE_PLACES) if (out[asideId(row.id, place)] === undefined) out = withAside(out, row, place, on)
+  }
   return out
 }
 
@@ -389,6 +434,20 @@ export function sanitizeOutlineHidden(raw: unknown): CodeSymbolKind[] {
   if (isOutlineHidden(raw)) return raw
   if (!Array.isArray(raw)) return []
   return [...new Set(raw.filter((k): k is CodeSymbolKind => typeof k === 'string' && (CODE_SYMBOL_KINDS as readonly string[]).includes(k)))]
+}
+
+/**
+ * ⌘D's place (YAZ-3556 D2), strict: a known tab, a folder or a file by a root-relative path ('' only for the vault root,
+ * a folder), or today's daily note (YAZ-3607 D1). Only the keys of its kind: a value with extra keys does not read, so a
+ * merge by part can never mix two places.
+ */
+export const isGoToPlace = (v: unknown): v is GoToPlace => {
+  if (!isRecord(v)) return false
+  const keys = Object.keys(v).sort().join()
+  if (v.kind === 'tab') return keys === 'kind,tab' && isSidebarLens(v.tab)
+  if (v.kind === 'daily') return keys === 'kind'
+  if (v.kind !== 'folder' && v.kind !== 'file') return false
+  return keys === 'kind,path' && typeof v.path === 'string' && isValidNewNoteFolder(v.path) && (v.kind === 'folder' || v.path !== '')
 }
 
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
@@ -444,6 +503,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   noticeLists: (v): v is boolean => typeof v === 'boolean',
   gestureSounds: (v): v is boolean => typeof v === 'boolean',
   hotkeys: isHotkeyOverrides,
+  hotkeysAside: isHotkeyAside,
   sidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
   // YAZ-3432: one of the App sizes only; a stored value off them loads as 100 (the default, `sanitizeSettings`).
   appZoom: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
@@ -454,6 +514,11 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   codeOutlineHidden: isOutlineHidden,
   codeOutlineLocals: (v): v is boolean => typeof v === 'boolean',
   codeLanguageHelpers: (v): v is boolean => typeof v === 'boolean',
+  goTo: isGoToPlace,
+  dailyNotes: (v): v is boolean => typeof v === 'boolean',
+  dailyNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
+  dailyNoteFormat: (v): v is string => typeof v === 'string' && isValidDailyNoteFormat(v),
+  dailyNoteDayFolder: (v): v is boolean => typeof v === 'boolean',
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -471,6 +536,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
+  out.hotkeysAside = sanitizeHotkeyAside(src.hotkeysAside)
   out.sidebarIconColors = sanitizeSidebarIconColors(src.sidebarIconColors)
   // YAZ-3440 D9: a rule that does not read costs itself alone.
   out.sidebarIconRules = cleanIconRules(src.sidebarIconRules)
@@ -484,7 +550,8 @@ export function sanitizeSettings(raw: unknown): SettingsState {
 
 /** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
 // The icon colours too (YAZ-3440 D4): a colour another Mac reset to its default is a key gone, which a merge by part would bring back.
-const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'sidebarIconColors']
+// ⌘D's place too (YAZ-3556 D2): a tab and a folder have other parts, and a merge by part would mix them.
+const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors', 'goTo']
 
 /**
  * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,

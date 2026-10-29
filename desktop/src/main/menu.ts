@@ -8,7 +8,8 @@
 import type { MenuItemConstructorOptions } from 'electron'
 import { keyedVaults, type AppState, type ClipboardPasteRequest, type FileKind, type KeyedVault, type RecentRoots, type ZoomStep } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
-import { keyFor, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { appKeyId, keyFor, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { keyRow, stepsAside, type HotkeyAside, type KeyScope } from '@shared/keys'
 import type { Store } from './store'
 import type { WindowManager } from './windows'
 
@@ -18,6 +19,12 @@ export const HELP_URL = 'https://github.com/yaseenarshad/yaseen-docs-app#readme'
 export interface MenuHandlers {
   copyAs(mode: 'plain' | 'markdown'): void
   pasteAs(mode: ClipboardPasteRequest['mode']): void
+  /** File › New… (⌘N, YAZ-3556 D1): the focused window's renderer opens its New… box. */
+  newItem(): void
+  /** File › Show in Sidebar (⌘D, YAZ-3556 D1): the focused window's renderer shows the place of `settings.goTo`. */
+  goTo(): void
+  /** File › Open Today's Daily Note (YAZ-3607 D11): the focused window's renderer opens today's daily note, made first when today has none. */
+  dailyNote(): void
   /** File › New Tab (⌘T, YAZ-2655 D10): the focused window's renderer shows its blank tab and puts the caret in its search bar. */
   newTab(): void
   /** File › New Window (⌘⇧N, D6): the focused window calls `window:duplicate` — a window on its vaults with no tab (YAZ-3343 D35). */
@@ -55,6 +62,8 @@ export interface MenuHandlers {
   checkForUpdates(): void
   /** Help › What's New… (YAZ-2976 D8): the focused window's renderer opens its "What's new" sheet. */
   whatsNew(): void
+  /** Help › Keys of This Tab… (YAZ-3564 K11): the focused window's renderer shows the keys of its tab in front. */
+  keySheet(): void
   /**
    * File › Export Image… (⌘⇧E, YAZ-3037; Draw's 🔒 YAZ-1775 D10): the focused renderer's visible board exports a
    * picture — a drawing through the engine's export dialog, a diagram through its own renderer.
@@ -83,17 +92,23 @@ export interface MenuInputs {
    * `subscribeMenuRebuildOnActiveFile` and the focus hook are what make a rebuild happen.
    */
   activeKind: FileKind | null
+  /** What is in front when it is not the tab's file: a drawing open over a note (YAZ-3564 K9). The keys follow it. */
+  frontKind?: FileKind | null
   /**
    * The user's key changes (YAZ-3397 D2), straight from `settings.hotkeys`: every changeable item takes its
    * key from `keyFor`, and one with no key now has none. `subscribeMenuRebuild` rebuilds when they change.
    */
   hotkeys: HotkeyOverrides
+  /** The App keys' "Let drawings, diagrams and code keep this key" switches (YAZ-3564 K9). Absent = every default. */
+  hotkeysAside?: HotkeyAside
   /**
    * A key recorder is listening in some window (YAZ-3397 D6): the menu is built with NO key at all, the
    * roles' own included, so the keys pressed reach the page. On macOS a menu key fires before the page
    * hears it; recording ⌘W must not close the tab, nor ⌘Q quit. Absent = false.
    */
   suspendKeys?: boolean
+  /** Settings › Files & Links › Daily notes (YAZ-3607): File › Open Today's Daily Note shows, with its key, only while it is on. Absent = off. */
+  dailyNotes?: boolean
 }
 
 /**
@@ -119,7 +134,7 @@ const menuLabel = (text: string): string => text.replace(/&/g, '&&')
  * The whole menu bar as a template. Item `id`s are stable so a live check (Playwright) can
  * drive items through `Menu.getApplicationMenu().getMenuItemById(...)`.
  */
-export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hotkeys, suspendKeys = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
+export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, frontKind = activeKind, hotkeys, hotkeysAside, suspendKeys = false, dailyNotes = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
   const recentItems: MenuItemConstructorOptions[] =
     recents.length === 0
       ? [{ label: 'No Recent Folders', enabled: false }]
@@ -130,10 +145,17 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
         }))
   const onBoard = activeKind === 'drawing' || activeKind === 'diagram'
   const onDrawing = activeKind === 'drawing'
-  /** A changeable item's key (YAZ-3397 D2): the user's, else the default; none at all for "No key". */
+  /** The place of the tab in front, for the App keys that let it keep its own key (YAZ-3564 K9). */
+  const place: KeyScope | null = frontKind === 'drawing' || frontKind === 'diagram' ? frontKind : frontKind === 'text' ? 'code' : null
+  /**
+   * A changeable item's key (YAZ-3397 D2): the user's, else the default; none at all for "No key", and none while a tab
+   * of a place it steps aside in is in front (YAZ-3564 K9), so that place keeps its own key.
+   */
   const key = (id: HotkeyId): { accelerator?: string } => {
     const accelerator = keyFor(id, hotkeys)
-    return accelerator === null ? {} : { accelerator }
+    const row = keyRow(appKeyId(id))
+    if (accelerator === null || (place !== null && row !== undefined && stepsAside(row, place, hotkeysAside))) return {}
+    return { accelerator }
   }
   const template: MenuItemConstructorOptions[] = [
     // macOS titles the first menu with the running app's name; the label only matters off-mac.
@@ -159,6 +181,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
       submenu: [
         // ⌘T is New Tab (YAZ-2655 D10): the renderer owns the tabs, so the gesture goes to the focused window's renderer.
         { id: 'menu.file.new-tab', label: 'New Tab', ...key('newTab'), click: () => handlers.newTab() },
+        // ⌘N, right under New Tab, opens the New… box (YAZ-3556 D1): a menu key, so it works with the caret in a note too.
+        { id: 'menu.file.new-item', label: 'New…', ...key('newItem'), click: () => handlers.newItem() },
         { id: 'menu.file.new-window', label: 'New Window', ...key('newWindow'), click: () => handlers.newWindow() },
         // ⌘⇧W (YAZ-3357 D15, Yaseen: "can we change the hotkey for this to CMD SHIFT W? and remove whatever the hotkey for that is right now?"): Close Window gave it up.
         { id: 'menu.file.new-files-window', label: 'New Files Window', ...key('newFilesWindow'), click: () => handlers.newFilesWindow() },
@@ -172,16 +196,21 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
         // ⌘K focuses the sidebar's search bar (D4, YAZ-739 amended): the renderer owns the bar,
         // so the gesture goes to the focused window's renderer — un-collapsing the sidebar first.
         { id: 'menu.file.search', label: 'Search Vault', ...key('search'), click: () => handlers.search() },
+        // ⌘D (YAZ-3556 D1, D9): the place of Settings › Sidebar › Show in sidebar. Drawings, diagrams and code keep their own ⌘D by default (YAZ-3564 K9: a pick per tab).
+        { id: 'menu.file.go-to', label: 'Show in Sidebar', ...key('goTo'), click: () => handlers.goTo() },
+        // YAZ-3607 D11: a hidden item keeps no key, so with Daily notes off its key is free for the page.
+        { id: 'menu.file.daily-note', label: "Open Today's Daily Note", visible: dailyNotes, ...(dailyNotes ? key('dailyNote') : {}), click: () => handlers.dailyNote() },
         { type: 'separator' },
         // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D3 / D10, YAZ-1799): greyed out unless
         // the active tab is a board they work for. Export Image… and Share Link work on any board, Export
         // Excalidraw Drawing… only on a drawing. ⌘⇧E and ⌘⇧L clash with no in-page key of Docs.
-        { id: 'menu.file.export-image', label: 'Export Image…', accelerator: 'CmdOrCtrl+Shift+E', enabled: onBoard, click: () => handlers.exportImage() },
+        // A greyed-out item holds no key (YAZ-3564 K13): on macOS a disabled item still takes its key from the page.
+        { id: 'menu.file.export-image', label: 'Export Image…', ...(onBoard ? { accelerator: 'CmdOrCtrl+Shift+E' } : {}), enabled: onBoard, click: () => handlers.exportImage() },
         // ⌘⇧S is also the review's Skip (YAZ-2322), and the note keeps its key (D10): a registered
         // accelerator never reaches the page on macOS, so the item carries the key ONLY while it is
         // enabled. On a note tab nothing in the menu owns ⌘⇧S; a review over a drawing tab is App's to route.
         { id: 'menu.file.export-drawing', label: 'Export Excalidraw Drawing…', ...(onDrawing ? { accelerator: EXPORT_DRAWING_ACCELERATOR } : {}), enabled: onDrawing, click: () => handlers.exportDrawing() },
-        { id: 'menu.file.share-link', label: 'Share Link', accelerator: 'CmdOrCtrl+Shift+L', enabled: onBoard, click: () => handlers.shareLink() },
+        { id: 'menu.file.share-link', label: 'Share Link', ...(onBoard ? { accelerator: 'CmdOrCtrl+Shift+L' } : {}), enabled: onBoard, click: () => handlers.shareLink() },
         { type: 'separator' },
         // ⌘W is Close Tab (GRO-2232, locked): the renderer owns tab state, so the gesture goes to
         // the focused window's renderer. Close Window has NO key since YAZ-3357 D15 (⌘⇧W opens a Files window), so it
@@ -197,9 +226,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
     {
       label: 'View',
       submenu: [
-        // No key here: ⌘B is the RENDERER's (YAZ-1280), so an editor that binds it keeps it. Its key, changed
-        // or not, lives in `ownsSidebarHotkey` (YAZ-3397 D2).
-        { id: 'menu.view.toggle-sidebar', label: 'Toggle Sidebar', click: () => handlers.toggleSidebar() },
+        // ⌘⇧B, a menu key since YAZ-3564 D10: it fires in a note too, where ⌘B is Bold. A note's Quote gave the key up.
+        { id: 'menu.view.toggle-sidebar', label: 'Toggle Sidebar', ...key('toggleSidebar'), click: () => handlers.toggleSidebar() },
         { type: 'separator' },
         { role: 'reload' },
         ...(isDev ? [{ role: 'toggleDevTools' } satisfies MenuItemConstructorOptions] : []),
@@ -256,6 +284,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, hot
       label: 'Help',
       role: 'help',
       submenu: [
+        { id: 'menu.help.key-sheet', label: 'Keys of This Tab…', ...key('keySheet'), click: () => handlers.keySheet() },
         { id: 'menu.help.whats-new', label: "What's New…", click: () => handlers.whatsNew() },
         { id: 'menu.help.github', label: 'Yaseen Docs on GitHub', click: () => handlers.openHelp() },
       ],
@@ -407,6 +436,15 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
       const target = host.focusedWebContents()
       if (target !== undefined) target.send(SPECIAL.menuPasteAs, { mode, text: host.readClipboardText() } satisfies ClipboardPasteRequest)
     },
+    newItem() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onNewItem.channel)
+    },
+    goTo() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onGoTo.channel)
+    },
+    dailyNote() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onDailyNote.channel)
+    },
     newWindow() {
       // Through the focused window, which calls `window:duplicate` (YAZ-3343 D35): main names the caller from the
       // sender. A window whose page does not answer opens nothing (YAZ-2951 S14).
@@ -477,6 +515,9 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     whatsNew() {
       host.focusedWebContents()?.send(CONTRACT.menu.onWhatsNew.channel)
     },
+    keySheet() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onKeySheet.channel)
+    },
     exportImage() {
       host.focusedWebContents()?.send(CONTRACT.menu.onExportImage.channel)
     },
@@ -502,25 +543,31 @@ export function menuKeyedVaults(state: AppState): KeyedVault[] {
  * sub-objects, so reference identity of `state.recents` and `state.folders` skips every
  * settings/window write for free. `state.folders` is a new object on every folder write (a fold, a
  * last file), so the rows (YAZ-2555 D3) compare by value: one pass over the folders per FOLDER write.
- * The user's keys (YAZ-3397 D2) too: `settings.hotkeys` by reference, then by value.
+ * The user's keys (YAZ-3397 D2) too: `settings.hotkeys` by reference, then by value. And the Daily notes switch (YAZ-3607).
  */
 export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => void {
   let last = store.get().recents
   let lastFolders = store.get().folders
   let lastVaults = JSON.stringify(menuKeyedVaults(store.get()))
   let lastHotkeys = store.get().settings.hotkeys
-  let lastKeys = JSON.stringify(lastHotkeys)
+  let lastAside = store.get().settings.hotkeysAside
+  let lastKeys = JSON.stringify([lastHotkeys, lastAside])
+  let lastDaily = store.get().settings.dailyNotes
   return store.onChange((state) => {
     const vaults = state.folders === lastFolders ? lastVaults : JSON.stringify(menuKeyedVaults(state))
     lastFolders = state.folders
     // The key changes (YAZ-3397 D2): by reference first, then by value — a settings write from a renderer
     // arrives as a new object even when no key moved, and a theme change must not rebuild the menu.
-    const keys = state.settings.hotkeys === lastHotkeys ? lastKeys : JSON.stringify(state.settings.hotkeys)
+    // The step-aside switches (YAZ-3564 K9) change an item's key too.
+    const keys = state.settings.hotkeys === lastHotkeys && state.settings.hotkeysAside === lastAside ? lastKeys : JSON.stringify([state.settings.hotkeys, state.settings.hotkeysAside])
     lastHotkeys = state.settings.hotkeys
-    if (state.recents === last && vaults === lastVaults && keys === lastKeys) return
+    lastAside = state.settings.hotkeysAside
+    // The Daily notes switch (YAZ-3607) shows or hides File › Open Today's Daily Note.
+    if (state.recents === last && vaults === lastVaults && keys === lastKeys && state.settings.dailyNotes === lastDaily) return
     last = state.recents
     lastVaults = vaults
     lastKeys = keys
+    lastDaily = state.settings.dailyNotes
     rebuild()
   })
 }
@@ -528,14 +575,14 @@ export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => v
 /**
  * The menu's apply step, twice (YAZ-3044 A32): `apply` always rebuilds (a recents change, the first
  * build); `applyIfMoved` rebuilds only when the board items' answer moves — the file in front of the
- * asked window going between a drawing, a diagram and anything else. A focus change or a tab switch
+ * asked window going between a drawing, a diagram, code and anything else. A focus change or a tab switch
  * from note to note then costs one `fileKind`, not a whole new menu.
  */
-export function gateOnBoardKind(kindNow: () => FileKind | null, apply: () => void): { apply: () => void; applyIfMoved: () => void } {
-  const bucket = (): 'drawing' | 'diagram' | 'other' => {
-    const kind = kindNow()
-    return kind === 'drawing' || kind === 'diagram' ? kind : 'other'
-  }
+export function gateOnBoardKind(kindNow: () => FileKind | null, apply: () => void, frontNow: () => FileKind | null = kindNow): { apply: () => void; applyIfMoved: () => void } {
+  // A code tab is a bucket of its own (YAZ-3556): the App keys that step aside in code (YAZ-3564 K9) change with it.
+  const of = (kind: FileKind | null): 'drawing' | 'diagram' | 'code' | 'other' => (kind === 'drawing' || kind === 'diagram' ? kind : kind === 'text' ? 'code' : 'other')
+  // The tab's kind gates the board items; what is in front (a drawing over a note, YAZ-3564 K9) gates the keys.
+  const bucket = (): string => `${of(kindNow())}|${of(frontNow())}`
   let last: ReturnType<typeof bucket> | null = null
   const always = (): void => {
     last = bucket()

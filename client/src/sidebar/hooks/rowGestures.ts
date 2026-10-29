@@ -827,9 +827,13 @@ export function useInlineEdits(
   const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; top: string | null } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir'; top: string | null } | null>(null)
 
-  const startCreate = useCallback(
-    (kind: EntryKind, seed = '') => {
-      if (menu === null || menu.targetDir === null) return
+  /**
+   * The name field for a new `kind` in `targetDir`, as the right-click "New …" opens it: the menu's row, or the New… box
+   * (⌘N, YAZ-3556 D4), which asks for it in Files with no menu open.
+   */
+  const startCreateAt = useCallback(
+    (kind: EntryKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null }) => {
+      const menu = at
       // Favorites and Focus each show a SUBSET of the vault (YAZ-1766 3B1, YAZ-2619 S36): a target dir
       // the tab does not hold — or the root on a tab with no rows — would give the input nowhere to
       // mount, so the create moves to Files, where the `openTo` below opens that dir.
@@ -846,9 +850,17 @@ export function useInlineEdits(
       if (toFiles) onLensChange('files')
       // The copy this tab's row stands under means nothing in Files, which draws each row once (YAZ-2845 D1).
       setCreating({ kind, seed, parentDir: menu.targetDir, top: toFiles ? null : menu.top })
+    },
+    [root, favoriteNodes, focusNodes, onLensChange, openTo],
+  )
+
+  const startCreate = useCallback(
+    (kind: EntryKind, seed = '') => {
+      if (menu === null || menu.targetDir === null) return
+      startCreateAt(kind, seed, { targetDir: menu.targetDir, lens: menu.lens, top: menu.top })
       setMenu(null)
     },
-    [menu, root, favoriteNodes, focusNodes, onLensChange, openTo],
+    [menu, startCreateAt],
   )
 
   const submitCreate = useCallback(
@@ -915,5 +927,5 @@ export function useInlineEdits(
     [creating, submitCreate, cancelCreate],
   )
 
-  return { setRenamingEntry, startCreate, renaming, pending }
+  return { setRenamingEntry, startCreate, startCreateAt, renaming, pending }
 }

@@ -186,6 +186,11 @@ export const CONTRACT = {
      * hears it, and recording ⌘W must not close the tab. A window that closes or reloads stops by itself.
      */
     recording: invoke<[on: boolean], void>('hotkeys:recording', 1),
+    /**
+     * A drawing opened over a note in the calling window, or closed (YAZ-3564 K9): while it is open, main builds the
+     * menu as for a drawing tab, so ⌘D duplicates instead of going to your place. A reload or close ends it by itself.
+     */
+    drawingInFront: invoke<[on: boolean], void>('hotkeys:drawing-in-front', 1),
   },
   window: {
     /** Who am I: main answers from `AppState.windows` by the `?win=<id>` in the window's URL. */
@@ -348,8 +353,16 @@ export const CONTRACT = {
     onNewTab: push('menu:new-tab'),
     /** File › New Window (⌘⇧N): the focused window calls `window.duplicate`, which opens a window on its vaults with no tab (YAZ-3343 D35). */
     onNewWindow: push('menu:new-window'),
+    /** File › New… (⌘N, YAZ-3556 D1): open the New… box (a note, a drawing or a diagram). A window with no vault does nothing. */
+    onNewItem: push('menu:new-item'),
+    /** File › Show in Sidebar (⌘D, YAZ-3556 D1, D9): show the place of `settings.goTo`. A window with no vault does nothing. */
+    onGoTo: push('menu:go-to'),
+    /** File › Open Today's Daily Note (YAZ-3607 D11): open today's daily note, made first when today has none. A window with no vault does nothing. */
+    onDailyNote: push('menu:daily-note'),
     /** Help › What's New… (YAZ-2976 D8): the window opens its "What's new" window. */
     onWhatsNew: push('menu:whats-new'),
+    /** Help › Keys of This Tab… (YAZ-3564 K11): show the keys of the tab in front. */
+    onKeySheet: push('menu:key-sheet'),
     // The board gestures from Draw's application menu (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D10). The
     // renderer routes each to the VISIBLE board (`documents/boardCommand.ts`); main enables them only while
     // the focused window's active tab is a board of a kind they work for.

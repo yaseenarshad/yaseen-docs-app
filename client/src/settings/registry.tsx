@@ -24,6 +24,8 @@
 import { useState, type ReactNode } from 'react'
 import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
+import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
+import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
 import { SIDEBAR_ICON_KINDS, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
@@ -35,10 +37,14 @@ import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented } from './controls'
-import { HOTKEYS_SECTION } from './hotkeysSection'
+import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
+import { GoToControl } from './GoToControl'
+import { DailyNoteFolderControl, DailyNoteFormatControl } from './DailyNoteControl'
+import { dailyNoteName } from '@shared/dailyNote'
+import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
@@ -104,6 +110,12 @@ export interface SettingsCtx {
    * until main answers.
    */
   systemHotkeys?: readonly SystemHotkey[]
+  /** Settings › Hotkeys' filters (YAZ-3564 K7): the dialog holds them while the page is open; absent = no filter. */
+  hotkeyFilter?: HotkeyFilter
+  /** The window's vaults for the place picker (YAZ-3556 D6), the active tab's first; absent in a window with no vault. */
+  places?: readonly PlaceVault[]
+  /** Daily notes › Open template (YAZ-3607): App opens the daily notes folder's `.template.md`, made empty first when missing. Absent with no vault. */
+  openDailyTemplate?: () => void
 }
 
 export interface SettingDef {
@@ -135,6 +147,12 @@ export interface SettingsGroup {
   /** Its rows are ONE vault's (YAZ-2602 R10): the group names that vault where the window has two or more. */
   vault?: true
   items: readonly SettingDef[]
+  /** Drawn above the rows in place of the plain title (Settings › Hotkeys' key cards, YAZ-3564); the title still names the group in search. */
+  header?: (ctx: SettingsCtx) => ReactNode
+  /** The group's DOM id, for a link to it. */
+  anchor?: string
+  /** An extra class on the group's card (Settings › Hotkeys lays its rows out as boxes). */
+  cardClass?: string
 }
 
 export interface SettingsSection {
@@ -152,7 +170,12 @@ export interface SettingsSection {
    */
   standalone?: true
   groups: readonly SettingsGroup[]
+  /** Groups built from the settings, in place of `groups` (Settings › Hotkeys: one card per key as the keys are now, YAZ-3564). */
+  groupsFor?: (ctx: SettingsCtx) => readonly SettingsGroup[]
 }
+
+/** A section's groups as `ctx` has them. */
+export const groupsOf = (section: SettingsSection, ctx: SettingsCtx): readonly SettingsGroup[] => section.groupsFor?.(ctx) ?? section.groups
 
 /** A kind's built-in icon colour in this theme (app.css `--kind-<kind>` on the root; `.app` carries the set ones), else the light theme's. */
 function builtInIconColour(kind: SidebarIconKind): string {
@@ -295,6 +318,12 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
 const HOVER_WORDS = ['hover', 'preview', 'note', 'markdown', 'drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse']
 
 /** Settings › Files & Links › Preview on hover (YAZ-3403): one row per place, under the master switch. */
+/** An App command's key as the user set it, for a hint (YAZ-3564: no hint hard-codes a key); null for "No key". */
+const menuKey = (id: HotkeyId, settings: SettingsState): string | null => {
+  const key = keyFor(id, settings.hotkeys)
+  return key === null ? null : toDisplay(key)
+}
+
 const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string; hint?: string; keywords: string[] }[] = [
   { place: 'sidebar', label: 'Sidebar', hint: 'Files, Focus, Favorites and Recents.', keywords: ['sidebar', 'files', 'tree', 'focus', 'favorites', 'recents'] },
   { place: 'search', label: 'Search results', keywords: ['search', 'results', 'find'] },
@@ -599,6 +628,27 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
         ],
       },
+      {
+        // YAZ-3556 D8: where "Show in sidebar" (⌘D) goes.
+        title: 'Show in sidebar',
+        items: [
+          {
+            id: 'goTo',
+            label: 'What Show in sidebar shows',
+            hint: ({ settings }) => {
+              const key = menuKey('goTo', settings)
+              const row = keyRow('app.goTo')
+              const keep = key === null || row === undefined ? [] : ASIDE_PLACES.filter((place) => stepsAside(row, place, settings.hotkeysAside))
+              const tabs = keep.map((place) => ({ drawing: 'drawings', diagram: 'diagrams', code: 'code' })[place])
+              const daily = settings.goTo.kind === 'daily' ? " Today's daily note opens, and its row shows." : ''
+              return `Show in sidebar (${key ?? 'no key'}, File menu) shows this tab, folder or file in the sidebar.${daily}${tabs.length > 0 ? ` In ${tabs.join(' and ').replace(/ and (?=.* and )/, ', ')}, ${key} does their own action (Settings › Hotkeys).` : ''}`
+            },
+            keywords: ['sidebar', 'go to', 'place', 'cmd d', 'shortcut', 'folder', 'file', 'tab', 'focus', 'favorites', 'sessions', 'recents', 'daily'],
+            wide: ({ settings }) => settings.goTo.kind === 'folder' || settings.goTo.kind === 'file',
+            render: ({ settings, onChange, places }) => <GoToControl settings={settings} onChange={onChange} vaults={places} />,
+          },
+        ],
+      },
     ],
   },
   NOTIFICATIONS_SECTION,
@@ -761,10 +811,59 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'newNoteLocation',
             label: 'Default location for new notes',
-            keywords: ['folder', 'wikilink'],
+            // YAZ-3556 D3: the New… box uses it too, for notes, drawings and diagrams.
+            hint: ({ settings }) => {
+              const key = menuKey('newItem', settings)
+              return `Where the New… box${key === null ? '' : ` (${key})`} and a new [[link]] make a page.`
+            },
+            keywords: ['folder', 'wikilink', 'new', 'cmd n', 'drawing', 'diagram'],
             // A plain label-left / dropdown-right row, until the folder input needs the width.
             wide: ({ settings }) => settings.newNoteLocation === 'folder',
-            render: ({ settings, onChange }) => <NewNoteLocationControl settings={settings} onChange={onChange} />,
+            render: ({ settings, onChange, places }) => <NewNoteLocationControl settings={settings} onChange={onChange} vaults={places} />,
+          },
+        ],
+      },
+      {
+        // YAZ-3607 D8: today's note, for the footer button, File › Open Today's Daily Note and ⌘D on "Today's daily note".
+        // One switch (`dailyNotes`); the other rows show while it is on.
+        title: 'Daily notes',
+        items: [
+          {
+            id: 'dailyNotes',
+            label: 'Daily notes',
+            hint: ({ settings }) => {
+              const key = menuKey('dailyNote', settings)
+              return `One note for each day. The calendar button after the % at the bottom of the sidebar opens today's note, and makes it first when today has none. So does Open Today's Daily Note${key === null ? '' : ` (${key})`} in the File menu.`
+            },
+            keywords: ['daily', 'journal', 'today', 'calendar', 'date', 'cmd d'],
+            render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.dailyNotes} onChange={(dailyNotes) => onChange({ ...settings, dailyNotes })} ariaLabel="Daily notes" />,
+          },
+          {
+            id: 'dailyNoteFolder',
+            label: 'Daily notes folder',
+            hint: 'Each daily note starts from this folder\'s template, a hidden .template.md. "Open template" shows it, and makes an empty one first when there is none.',
+            keywords: ['daily', 'folder', 'template', 'journal'],
+            available: ({ settings }) => settings.dailyNotes,
+            wide: () => true,
+            render: ({ settings, onChange, places, openDailyTemplate }) => <DailyNoteFolderControl settings={settings} onChange={onChange} vaults={places} onOpenTemplate={openDailyTemplate} />,
+          },
+          {
+            id: 'dailyNoteFormat',
+            label: 'Name style',
+            hint: ({ settings }) => `Today: ${dailyNoteName(settings.dailyNoteFormat, new Date())}`,
+            keywords: ['daily', 'date', 'format', 'name'],
+            available: ({ settings }) => settings.dailyNotes,
+            // Wide always: the label keeps its width while "Custom…" adds its field beside the dropdown.
+            wide: () => true,
+            render: ({ settings, onChange }) => <DailyNoteFormatControl settings={settings} onChange={onChange} />,
+          },
+          {
+            id: 'dailyNoteDayFolder',
+            label: 'Make a folder for each day',
+            hint: "Today's note goes inside a folder with the same name.",
+            keywords: ['daily', 'folder', 'day'],
+            available: ({ settings }) => settings.dailyNotes,
+            render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.dailyNoteDayFolder} onChange={(dailyNoteDayFolder) => onChange({ ...settings, dailyNoteDayFolder })} ariaLabel="Make a folder for each day" />,
           },
         ],
       },

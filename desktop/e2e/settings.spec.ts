@@ -127,10 +127,13 @@ test('step 3 — search narrows the page to hits under breadcrumbs, and a hit st
 
   // "dark" is a Theme keyword and the draw.io diagrams' "In dark mode" row (YAZ-3028 D10): two rows,
   // both on the Appearance page, Theme first under the untitled group's breadcrumb (just the section).
+  // Every key is searchable since YAZ-3564: a drawing's and a diagram's dark-mode keys follow on Hotkeys.
   await search(win).fill('dark')
-  await expect(rows(win)).toHaveCount(2)
+  await expect(rows(win)).toHaveCount(4)
   await expect(row(win, 'theme')).toBeVisible()
   await expect(row(win, 'diagramDarkColors')).toBeVisible()
+  await expect(row(win, 'hotkey-drawing-toggleTheme')).toBeVisible()
+  await expect(row(win, 'hotkey-diagram-adaptiveColors')).toBeVisible()
   await expect(headings(win).first()).toHaveText('Appearance')
   await shoot(win, 'settings-04-search-dark')
 
@@ -235,10 +238,11 @@ test('step 5 — a nav click swaps the page: Sync, then Hotkeys under the divide
   await expect(popup).toHaveCount(0)
   await expect(row(win, 'hotkey-search').locator('.hotkeys__key')).toHaveText('⌘K')
   // A built-in key is refused in RED (D6, S9): its line's colour is not the colour of the hint line under it.
+  // ⌘⌫ is the window's own Trash key (⌘J can change since YAZ-3564, so it would move instead).
   await row(win, 'hotkey-search').locator('.hotkeys__key').click()
-  await win.keyboard.press('Meta+J')
+  await win.keyboard.press('Meta+Backspace')
   const refused = row(win, 'hotkey-search').locator('.hotkeys__line--refused')
-  await expect(refused).toHaveText('⌘J is built in: Table of contents. Pick a different key.')
+  await expect(refused).toHaveText('⌘⌫ is built in: App › Move the selected files and folders to the Trash. Pick a different key.')
   const colour = (line: typeof refused) => line.evaluate((p) => getComputedStyle(p).color)
   const hint = row(win, 'hotkey-search').locator('.hotkeys__line:not(.hotkeys__line--refused)')
   expect(await colour(refused)).not.toBe(await colour(hint))

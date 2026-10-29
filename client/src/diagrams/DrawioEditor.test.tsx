@@ -28,7 +28,6 @@ import { renderDiagramImage } from './renderDiagram'
 const load = vi.mocked(api.diagram.load)
 const save = vi.mocked(api.diagram.save)
 const saveImage = vi.mocked(api.dialog.saveImage)
-const toggleSidebar = vi.fn()
 /** `board:set-read-only` (YAZ-3076), on the bridge itself: `api` reaches it through `window.yaseenDocs`. */
 const setBoardReadOnly = vi.fn()
 const notice = vi.fn()
@@ -46,7 +45,7 @@ let container: HTMLElement
 let posted: Array<Record<string, unknown>> = []
 
 function render(darkColors: DiagramDarkColors = 'adapt'): void {
-  act(() => root?.render(<DrawioEditor root={ROOT} path={PATH} watch={watch} darkColors={darkColors} onNotice={notice} onToggleSidebar={toggleSidebar} />))
+  act(() => root?.render(<DrawioEditor root={ROOT} path={PATH} watch={watch} darkColors={darkColors} onNotice={notice} />))
 }
 
 async function settle(): Promise<void> {
@@ -179,14 +178,6 @@ describe('the handshake (drawioProtocol.ts)', () => {
     expect(posted).toEqual([])
   })
 
-  it('⌘B pressed inside draw.io with nothing selected arrives as its `shortcut` event and toggles the app sidebar — from THAT frame only', async () => {
-    await opened()
-    drawio({ event: 'shortcut', command: 'toggleSidebar' }, { source: window })
-    drawio({ event: 'shortcut', command: 'closeTab' })
-    expect(toggleSidebar).not.toHaveBeenCalled()
-    drawio({ event: 'shortcut', command: 'toggleSidebar' })
-    expect(toggleSidebar).toHaveBeenCalledOnce()
-  })
 })
 
 describe('the theme (🔒 YAZ-1802 D12)', () => {
