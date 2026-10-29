@@ -20,15 +20,15 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { createCrepe, type CreateCrepeOptions, getMarkdownForSave } from '../createCrepe'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
 /** A real Crepe on a real detached root, pushed onto the teardown list. */
-export async function mount(markdown: string): Promise<{ crepe: Crepe; root: HTMLElement; view: EditorView }> {
+export async function mount(markdown: string, options: Omit<CreateCrepeOptions, 'root' | 'defaultValue'> = {}): Promise<{ crepe: Crepe; root: HTMLElement; view: EditorView }> {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown })
+  const crepe = createCrepe({ ...options, root, defaultValue: markdown })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, root, view: crepe.editor.ctx.get(editorViewCtx) }

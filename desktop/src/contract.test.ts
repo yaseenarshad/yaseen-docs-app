@@ -22,6 +22,8 @@ vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: vi.fn() },
   // `file.pathFor` (YAZ-3253 D3) reads a path with no IPC: it reaches no channel.
   webUtils: { getPathForFile: () => '' },
+  // `spell.suggestions` (YAZ-3653) asks the renderer's own spellchecker: it reaches no channel.
+  webFrame: { isWordMisspelled: () => false, getWordSuggestions: () => [] },
   BrowserWindow: { getAllWindows: () => [], fromWebContents: () => null },
   dialog: {},
   shell: {},
@@ -31,7 +33,7 @@ vi.mock('./main/storageWorker?modulePath', () => ({ default: '' }))
 
 const doors = leaves(CONTRACT).map(([, door]) => door)
 /** Renderer → main invokes: the table's, plus the two the preload's Copy as / Paste as fallback makes. */
-const INVOKES = [...doors.filter((d) => d.kind === 'invoke').map((d) => d.channel), SPECIAL.menuCopyText.channel, SPECIAL.menuPasteTextFallback.channel].sort()
+const INVOKES = [...doors.filter((d) => d.kind === 'invoke').map((d) => d.channel), SPECIAL.menuCopyText.channel, SPECIAL.menuPasteTextFallback.channel, SPECIAL.menuEdit.channel].sort()
 /** Main → renderer pushes: the table's, plus the watch events, the flush request and Copy as / Paste as. */
 const PUSHES = [...doors.filter((d) => d.kind === 'push').map((d) => d.channel), SPECIAL.watchEvent, SPECIAL.appFlush, SPECIAL.menuCopyAs, SPECIAL.menuPasteAs].sort()
 /** Renderer → main sends: watch (un)subscribe and the flush ack. */
@@ -43,7 +45,7 @@ afterAll(() => rm(dir, { recursive: true, force: true }))
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
   // The three registrations `main/index.ts` makes on `ready`.
   registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', releases: [] }) }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
-  registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
+  registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), write: vi.fn(), readText: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
   registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc, { userData: dir, viewerAssetsDir: dir, drawioDir: dir, fontsDir: dir, isPackaged: true }, { missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined })
   expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()).toEqual(INVOKES)
   expect(vi.mocked(ipcMain.on).mock.calls.map(([ch]) => ch).sort()).toEqual(SENDS)
