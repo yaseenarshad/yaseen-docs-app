@@ -28,15 +28,22 @@ export function findDailyNote(records: readonly IndexRecord[], folder: string, t
 }
 
 /**
- * Makes today's note titled `title` (D5). The daily notes folder must stand: a missing one is said, never made, since
- * a folder the person moved or renamed is not one to make again. A day folder (D9) is made when it is missing, or used
- * when it stands. The template is the daily notes folder's `.template.md`, in a day folder too (D6). Never over a file:
- * `createFile` refuses one (`ALREADY_EXISTS`).
+ * The vault of today's note (D2, amended in the demo): the folder is a path inside a vault, and the window's vaults
+ * are asked in order, the one of the tab in front first. The first that holds the folder is the one. So a window on
+ * two vaults finds the folder in either, and a vault that has its own keeps its own. Null when none holds it: a folder
+ * the person moved or renamed is not one to make again. The vault folder itself ('') is in every vault.
  */
-export async function makeDailyNote(vault: string, vaultName: string, settings: DailyNoteSettings, title: string, ids: boolean, tree: readonly TreeNode[]): Promise<string> {
+export function dailyNoteVault(vaults: ReadonlyArray<{ root: string; tree: readonly TreeNode[] }>, folder: string): string | null {
+  return vaults.find(({ root, tree }) => folder === '' || findDirNode(tree, placePath(root, folder)) !== null)?.root ?? null
+}
+
+/**
+ * Makes today's note titled `title` (D5) in the daily notes folder of `vault`, which `dailyNoteVault` found. A day
+ * folder (D9) is made when it is missing, or used when it stands. The template is the daily notes folder's
+ * `.template.md`, in a day folder too (D6). Never over a file: `createFile` refuses one (`ALREADY_EXISTS`).
+ */
+export async function makeDailyNote(vault: string, settings: DailyNoteSettings, title: string, ids: boolean): Promise<string> {
   const root = placePath(vault, settings.dailyNoteFolder)
-  // The folder is a path in the vault of the tab in front (D2): another vault of the window may hold it, this one does not.
-  if (root !== vault && findDirNode(tree, root) === null) throw new Error(`${vaultName} has no folder "${settings.dailyNoteFolder}". Make it there, or change the daily notes folder in Settings › Files & Links`)
   let dir = root
   if (settings.dailyNoteDayFolder) {
     dir = folderPath(root, title, ids)

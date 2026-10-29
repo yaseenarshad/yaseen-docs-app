@@ -60,7 +60,7 @@ import { textVars } from './settings/headingStyles'
 import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
-import { findDailyNote, makeDailyNote, todaysDailyNote } from './sidebar/dailyNote'
+import { dailyNoteVault, findDailyNote, makeDailyNote, todaysDailyNote } from './sidebar/dailyNote'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
@@ -418,8 +418,8 @@ export function App() {
    * ⌘N and ⌘D read the vault, the page on show and the settings of the moment through `placeInputs`, at key time.
    */
   const placeVaults: PlaceVault[] = roots.map((vault, i) => ({ root: vault, name: vaults[i].name ?? storage.vaultName(vault) })).sort((a, b) => Number(b.root === active.root) - Number(a.root === active.root))
-  const placeInputs = useRef({ vault: active.root, page: pageOnShow, settings })
-  placeInputs.current = { vault: active.root ?? root, page: pageOnShow, settings }
+  const placeInputs = useRef({ vault: active.root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings })
+  placeInputs.current = { vault: active.root ?? root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings }
   // The close/quit handshake for the writers below App — the outline's debounce and every in-flight
   // frontmatter write (YAZ-2174): the note editor's autosave registers with the bridge itself.
   useEffect(() => api.window.onFlush(flushWindow), [])
@@ -907,38 +907,57 @@ export function App() {
   const consumeSidebarCreate = useCallback((id: number) => {
     setSidebarCreateRequest((request) => request?.id === id ? null : request)
   }, [])
-  // ⌘D (YAZ-3556 D9): the place of `settings.goTo`, in the active tab's vault. A tab shows. A folder shows in Files, open,
-  // with the keyboard on its row. A file opens as a sidebar click opens it, and its row shows. A hidden sidebar shows
-  // first; a path the vault does not have says so. The Welcome window has no vault: the key does nothing there.
   // Today's daily note (YAZ-3607 D5): the footer button, File › Open Today's Daily Note, and ⌘D on "Today's daily note".
   // It opens as a sidebar click opens a file, and its row shows. When the vault has none yet it is made first. A second
   // press while one is made waits for that one, so a fast double press makes one note: `dailyMaking` holds the one
-  // being made (one entry; the next day, folder or style replaces it, and a failure clears it).
-  const dailyMaking = useRef<{ key: string; note: Promise<string> } | null>(null)
+  // made (one entry; the next day, folder or style replaces it, a failure clears it, and its file deleted makes it again).
+  const dailyMaking = useRef<{ key: string; note: Promise<string>; path?: string } | null>(null)
   const openDailyNote = useCallback(() => {
-    const { vault, settings: now } = placeInputs.current
-    if (vault === null) return
-    const index = scopeOf(vault).wikilinks
-    // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
-    if (index.resolve === null) return notify('Vault index is still loading — try again in a moment', 'error')
+    const { vaults, settings: now } = placeInputs.current
+    if (vaults.length === 0) return
     const title = todaysDailyNote(now)
-    const found = findDailyNote(index.records, now.dailyNoteFolder, title, now.dailyNoteDayFolder)
-    const key = [vault, now.dailyNoteFolder, String(now.dailyNoteDayFolder), title].join('\n')
-    if (found === null && dailyMaking.current?.key !== key) dailyMaking.current = { key, note: treeOf(vault).then((tree) => makeDailyNote(vault, storage.vaultName(vault), now, title, index.ids, tree)) }
-    const making = dailyMaking.current
-    void (found !== null ? Promise.resolve(found) : making!.note).then(
-      (path) => {
-        if (sidebarCollapsedRef.current) toggleSidebar()
-        openAsSidebar.current(path)
-        revealInFiles(path, false)
-      },
-      (err: unknown) => {
-        if (dailyMaking.current === making) dailyMaking.current = null
-        notify(`Can't open today's daily note: ${err instanceof Error ? err.message : String(err)}`, 'error')
-      },
-    )
+    // The vault (D2, amended): the first of the window's vaults, the one in front first, that holds the folder.
+    void Promise.all(vaults.map(async (root) => ({ root, tree: await treeOf(root) })))
+      .then((trees) => {
+        const vault = dailyNoteVault(trees, now.dailyNoteFolder)
+        if (vault === null) throw new Error(`no vault of this window has the folder "${now.dailyNoteFolder}". Make it, or change the daily notes folder in Settings › Files & Links`)
+        const index = scopeOf(vault).wikilinks
+        // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
+        if (index.resolve === null) throw new Error('the vault index is still loading — try again in a moment')
+        const found = findDailyNote(index.records, now.dailyNoteFolder, title, now.dailyNoteDayFolder)
+        if (found !== null) return found
+        const key = [vault, now.dailyNoteFolder, String(now.dailyNoteDayFolder), title].join('\n')
+        // The one made stands only while its file does: one deleted since (its day folder too) is made again.
+        const held = dailyMaking.current
+        const tree = trees.find((t) => t.root === vault)!.tree
+        if (held?.key !== key || (held.path !== undefined && !treeHasPath(tree, held.path))) {
+          // A fresh tree before the row is shown: the sidebar hears it (`onTree`), so the new note's row is there to show.
+          const note = makeDailyNote(vault, now, title, index.ids).then(async (path) => {
+            await fetchTree(vault)
+            if (dailyMaking.current?.note === note) dailyMaking.current.path = path
+            return path
+          })
+          dailyMaking.current = { key, note }
+        }
+        const making = dailyMaking.current!
+        return making.note.catch((err: unknown) => {
+          if (dailyMaking.current === making) dailyMaking.current = null
+          throw err
+        })
+      })
+      .then(
+        (path) => {
+          if (sidebarCollapsedRef.current) toggleSidebar()
+          openAsSidebar.current(path)
+          revealInFiles(path, false)
+        },
+        (err: unknown) => notify(`Can't open today's daily note: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      )
   }, [scopeOf, treeOf, toggleSidebar, revealInFiles, notify])
 
+  // ⌘D (YAZ-3556 D9): the place of `settings.goTo`, in the active tab's vault. A tab shows. A folder shows in Files, open,
+  // with the keyboard on its row. A file opens as a sidebar click opens it, and its row shows. A hidden sidebar shows
+  // first; a path the vault does not have says so. The Welcome window has no vault: the key does nothing there.
   const goToPlace = useCallback(() => {
     const { vault, settings: now } = placeInputs.current
     if (vault === null) return
