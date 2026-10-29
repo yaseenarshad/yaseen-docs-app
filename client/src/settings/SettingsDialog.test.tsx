@@ -144,15 +144,18 @@ const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoin
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
-const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links'].map((place) => `hoverPreviewIn.${place}`)]
+// Daily notes (YAZ-3607 D12): off by default, so its group shows the switch alone.
+const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'dailyNotes', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links'].map((place) => `hoverPreviewIn.${place}`)]
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
  */
 /** The Hotkeys page's rows as the default keys card them (YAZ-3564), without the Mac's (they wait for main) and Reset all (no change). */
-const HOTKEY_ROWS = groupsOf(HOTKEYS_SECTION, { settings: DEFAULT_SETTINGS, onChange: () => undefined } as SettingsCtx)
-  .flatMap((g) => g.items.map((i) => i.id))
+const DEFAULT_CTX = { settings: DEFAULT_SETTINGS, onChange: () => undefined } as SettingsCtx
+// A row shows while it is available: "Open today's daily note" waits for Daily notes to be on (YAZ-3607 D11).
+const HOTKEY_ROWS = groupsOf(HOTKEYS_SECTION, DEFAULT_CTX)
+  .flatMap((g) => g.items.filter((i) => i.available?.(DEFAULT_CTX) ?? true).map((i) => i.id))
   .filter((id) => !id.startsWith('hotkey-macos-') && id !== 'hotkeys-reset-all')
 const THREADING_HINT = 'Guide lines that connect nested bullets.'
 const TEXT_FORMATTING_HINT = 'How text looks in every note of this vault.'
@@ -357,7 +360,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
 
     clickNav(el, 'Files & Links')
     // "When the app starts" moved to General (YAZ-3276 D7): with no vault, Files & Links' one titled group is Preview on hover (YAZ-3403).
-    expect(groupTitles(el)).toEqual(['Preview on hover'])
+    expect(groupTitles(el)).toEqual(['Daily notes', 'Preview on hover'])
     expect(hints()).toEqual([])
     // Files & Links starts with an untitled group too.
     expect(el.querySelector('#settings-files .settings-group')).not.toBeNull()
