@@ -146,7 +146,7 @@ test('step 1f — a pill into the other vault names it (D22); a pill and a [[lin
   const rows = () => win.locator('.ctx-menu--editor .ctx-menu__item').allTextContents()
   const LINK_ROWS = ['Open', 'Open in new tab', 'Copy link', 'Edit link', 'Remove link']
   await editorOf(win).locator('.link-pill--first', { hasText: 'the gym plan' }).click({ button: 'right' })
-  await expect.poll(rows).toEqual([`Plan · ${PERSONAL}`, ...LINK_ROWS])
+  await expect.poll(rows).toEqual([`Plan (${PERSONAL})`, ...LINK_ROWS])
   await shoot(win, 'workspace-links-01f-menu')
   await win.keyboard.press('Escape')
   await editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).click({ button: 'right' })

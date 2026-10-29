@@ -148,7 +148,7 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
   const vault = path === null ? null : (nav.vaultTag?.(path) ?? null)
   const local = hit.href.startsWith('#')
   return {
-    labels: name === null || name === '' ? [] : [vault === null ? name : `${name} · ${vault}`],
+    labels: name === null || name === '' ? [] : [vault === null ? name : `${name} (${vault})`],
     open: local ? undefined : () => follow(hit.href, false),
     openNew: path === null ? undefined : () => follow(hit.href, true),
     copyLink: () => copyLink(hit.href, nav.onNotice, nav.copy),

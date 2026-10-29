@@ -292,7 +292,7 @@ describe('right-click menu', () => {
       openPath,
     })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Plan · Other Vault', 'Open', 'Open in new tab', 'Copy link', 'Edit link', 'Remove link'])
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Plan (Other Vault)', 'Open', 'Open in new tab', 'Copy link', 'Edit link', 'Remove link'])
     expect(rowsOf(view)[0]!.disabled).toBe(true)
     rowNamed(view, 'Open in new tab').click()
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
