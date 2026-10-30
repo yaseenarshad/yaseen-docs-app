@@ -258,52 +258,89 @@ const sectionGrows = (state: EditorState, $lower: ResolvedPos, level: number): b
   return next !== null && (nextLevel === null || nextLevel > level)
 }
 
+/** An empty line that just goes, next to anything — a code block, a table, a rule (YAZ-3785): empty, not code, a line. */
+const isEmptyLine = ($pos: ResolvedPos): boolean => $pos.parent.content.size === 0 && !$pos.parent.type.spec.code && isLine($pos)
+
+/** Inside a quote: two quote lines join with no space, as on `main` (YAZ-3787). */
+const inQuote = ($pos: ResolvedPos): boolean => {
+  for (let depth = $pos.depth - 1; depth > 0; depth--) if ($pos.node(depth).type.name === 'blockquote') return true
+  return false
+}
+
 /**
- * THE JOIN RULE (YAZ-3695 D4-D7), for Backspace and Delete alike; `$upper` and `$lower` sit in the two lines. The lower
- * line's text moves to the end of the upper line, whose format wins, and the lower line goes. An empty line just goes,
- * and the other line keeps its format and fold. With `space`, one space goes between two words (D7); the caret goes after
- * it. A join never hides a line: a fold that the moved lines would go into opens (the caret guard covers the caret's line).
- * ⌘Z gives the text and the folds back (`recordOpenedFolds`, YAZ-3781). Into or out of a code block or a table, and at the
- * top of a zoom, nothing happens (true, no dispatch).
+ * Start an edit that removes the line at `$line`: its fold step first (YAZ-3781), then the line. `alsoOpen` adds folds to
+ * open (positions before the edit). Call `finish` after the edit's last step: it opens the folds in the final document.
+ */
+const startRemoval = (state: EditorState, $line: ResolvedPos, alsoOpen: Folds = { items: [], headings: [] }) => {
+  const { open, gone } = lineFolds(state, $line)
+  open.items.push(...alsoOpen.items)
+  open.headings.push(...alsoOpen.headings)
+  const tr = state.tr
+  recordOpenedFolds(tr, { items: [...new Set([...open.items, ...gone.items])], headings: [...new Set([...open.headings, ...gone.headings])] })
+  removeLine(tr, $line)
+  const finish = () => openFolds(tr, { items: open.items.map((pos) => tr.mapping.map(pos, 1)), headings: open.headings.map((pos) => tr.mapping.map(pos, 1)) })
+  return { tr, finish }
+}
+
+/**
+ * THE JOIN RULE (YAZ-3695 D4-D7), for Backspace and Delete alike; `$upper` and `$lower` sit in the two lines. An empty
+ * line just goes, FIRST and next to anything (YAZ-3785), and the other line keeps its format and fold. Else the lower
+ * line's text moves to the end of the upper line, whose format wins, and the lower line goes. With `space`, one space
+ * goes between two words (D7), but not between two quote lines (YAZ-3787); the caret goes after it. A join never hides
+ * a line: a fold that the moved lines would go into opens (the caret guard covers the caret's line). ⌘Z gives the text
+ * and the folds back (`recordOpenedFolds`, YAZ-3781). Text into or out of a code block or a table, and anything at the
+ * top of a zoom: nothing happens (true, no dispatch).
  */
 const joinLines = (state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, $upper: ResolvedPos, $lower: ResolvedPos, space: boolean): boolean => {
   const upper = $upper.parent
   const lower = $lower.parent
-  if (upper.type.spec.code || lower.type.spec.code || inTable($upper) || inTable($lower) || isZoomLine(state, $upper)) return true
-  if (!isLine($upper) || !isLine($lower)) return false
+  if (isZoomLine(state, $upper)) return true
+  const $empty = isEmptyLine($upper) ? $upper : isEmptyLine($lower) ? $lower : null
+  if ($empty === null) {
+    if (upper.type.spec.code || lower.type.spec.code || inTable($upper) || inTable($lower)) return true
+    if (!isLine($upper) || !isLine($lower)) return false
+  }
   if (!dispatch) return true
 
-  const dropUpper = upper.content.size === 0
-  const { open, gone } = lineFolds(state, dropUpper ? $upper : $lower)
+  // The upper heading's section grows when the lower line goes: open its fold (D6).
   const level = headingLevel(upper)
-  if (!dropUpper && level !== null && $upper.depth === 1 && isHeadingCollapsed(state, $upper.before()) && sectionGrows(state, $lower, level)) open.headings.push($upper.before())
-  const tr = state.tr
-  recordOpenedFolds(tr, { items: [...new Set([...open.items, ...gone.items])], headings: [...new Set([...open.headings, ...gone.headings])] })
-  removeLine(tr, dropUpper ? $upper : $lower)
+  const grows = $empty !== $upper && level !== null && $upper.depth === 1 && isHeadingCollapsed(state, $upper.before()) && sectionGrows(state, $lower, level)
+  const { tr, finish } = startRemoval(state, $empty ?? $lower, { items: [], headings: grows ? [$upper.before()] : [] })
   let caret: number
-  if (dropUpper) caret = tr.mapping.map($lower.start())
+  if ($empty === $upper) caret = tr.mapping.map($lower.start())
   else {
     const end = tr.mapping.map($upper.end(), -1)
-    const gap = space && lower.content.size > 0 && !/\s$/.test(upper.textContent) && !/^\s/.test(lower.textContent) ? ' ' : ''
-    tr.insert(end, gap === '' ? lower.content : Fragment.from(state.schema.text(gap)).append(lower.content))
+    const words = $empty === null && space && !(inQuote($upper) && inQuote($lower)) && !/\s$/.test(upper.textContent) && !/^\s/.test(lower.textContent)
+    const gap = words ? ' ' : ''
+    if ($empty === null) tr.insert(end, gap === '' ? lower.content : Fragment.from(state.schema.text(gap)).append(lower.content))
     caret = end + gap.length
   }
-  openFolds(tr, { items: open.items.map((pos) => tr.mapping.map(pos, 1)), headings: open.headings.map((pos) => tr.mapping.map(pos, 1)) })
+  finish()
   tr.setSelection(TextSelection.create(tr.doc, caret))
   dispatch(tr.scrollIntoView())
   return true
 }
 
-/** Select the leaf block (`hr`) next to the caret: the next press removes it (YAZ-3784). */
-const selectLeaf = (state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, leaf: NodeSelection): boolean => {
-  dispatch?.(state.tr.setSelection(leaf).scrollIntoView())
+/**
+ * The leaf block (`hr`) next to the caret: an empty caret line just goes first (YAZ-3785); either way the leaf is
+ * selected, so the next press removes it (YAZ-3784).
+ */
+const besideLeaf = (state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, $line: ResolvedPos, leaf: NodeSelection): boolean => {
+  if (!dispatch) return true
+  if (!isEmptyLine($line)) {
+    dispatch(state.tr.setSelection(leaf).scrollIntoView())
+    return true
+  }
+  const { tr, finish } = startRemoval(state, $line)
+  finish()
+  dispatch(tr.setSelection(NodeSelection.create(tr.doc, tr.mapping.map(leaf.from))).scrollIntoView())
   return true
 }
 
 /**
  * Backspace (and ⇧⌫, ⌃H, ⌥⌫, ⌘⌫) at the START of an item's first block, of a top-level heading or of a top-level
  * paragraph (D5, D6, YAZ-3780): join into the previous VISIBLE line, never a hidden one. No space right after an Enter,
- * so undoing a slip gives the word back (D7). A rule above is selected. At the top of the note an item lifts to a
+ * so undoing a slip gives the word back (D7). A rule above is selected (an empty caret line goes first). At the top of the note an item lifts to a
  * paragraph (GRO-2012), a heading becomes a paragraph and a paragraph declines; at the top of a zoom nothing happens.
  * Mid-line it declines: native deletion.
  */
@@ -313,7 +350,7 @@ const backspaceCommand = (itemType: NodeType, paragraphType: NodeType): Command 
   const topLevel = $from.depth === 1 && ($from.parent.type.name === 'heading' || $from.parent.type === paragraphType)
   if (!empty || $from.parentOffset !== 0 || !(inItem || topLevel)) return false
   const $prev = nextVisibleTextblock(state, $from, -1)
-  if ($prev instanceof NodeSelection) return selectLeaf(state, dispatch, $prev)
+  if ($prev instanceof NodeSelection) return besideLeaf(state, dispatch, $from, $prev)
   if ($prev === null) {
     if (getZoomedItemPos(state) !== null) return true
     if (inItem) return liftListItem(itemType)(state, dispatch)
@@ -324,14 +361,14 @@ const backspaceCommand = (itemType: NodeType, paragraphType: NodeType): Command 
 
 /**
  * Delete (and ⌃D, ⌥⌦, ⌘⌦, ⌃⌥⌫, ⌥D) at the END of a line (D4): the next VISIBLE line joins here; a rule there is
- * selected. Anywhere else it declines (D3: the next character, natively). At the end of the note it declines; at the
+ * selected (an empty caret line goes first). Anywhere else it declines (D3: the next character, natively). At the end of the note it declines; at the
  * end of a zoom nothing happens.
  */
 const deleteCommand: Command = (state, dispatch) => {
   const { $from, empty } = state.selection
   if (!empty || !$from.parent.isTextblock || $from.parent.type.spec.code || $from.parentOffset !== $from.parent.content.size || !isLine($from)) return false
   const $next = nextVisibleTextblock(state, $from, 1)
-  if ($next instanceof NodeSelection) return selectLeaf(state, dispatch, $next)
+  if ($next instanceof NodeSelection) return besideLeaf(state, dispatch, $from, $next)
   if ($next === null) return getZoomedItemPos(state) !== null
   return joinLines(state, dispatch, $from, $next, true)
 }

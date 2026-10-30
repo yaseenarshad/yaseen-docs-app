@@ -13,7 +13,7 @@
  * depth bounds it, merged events and the redo stack come free, and an edit with no fold to open adds nothing.
  * The stored fold keys keep their format. The step never leaves the editor (no collab), so it has no JSON id.
  */
-import { Mapping, StepMap, Step, StepResult } from '@milkdown/kit/prose/transform'
+import { type Mappable, Mapping, StepMap, Step, StepResult } from '@milkdown/kit/prose/transform'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
@@ -48,9 +48,15 @@ class FoldStep extends Step {
     return new FoldStep(this.folds, !this.collapsed)
   }
 
-  map(mapping: Mapping): FoldStep {
-    const map = (positions: number[]) => positions.map((pos) => mapping.map(pos, 1))
-    return new FoldStep({ items: map(this.folds.items), headings: map(this.folds.headings) }, this.collapsed)
+  /**
+   * A position whose node a change deleted goes, as a ProseMirror step's range does; none left: null (YAZ-3786). "Deleted"
+   * is read just INSIDE the node: a change that only rewrites the node's own token (Milkdown's heading-id `setNodeMarkup`)
+   * keeps it, a change that removes the node removes the tokens on both sides of that point.
+   */
+  map(mapping: Mappable): FoldStep | null {
+    const map = (positions: number[]) => positions.flatMap((pos) => (mapping.mapResult(pos + 1, 1).deletedAcross ? [] : [mapping.map(pos, 1)]))
+    const folds = { items: map(this.folds.items), headings: map(this.folds.headings) }
+    return folds.items.length === 0 && folds.headings.length === 0 ? null : new FoldStep(folds, this.collapsed)
   }
 
   toJSON(): { stepType: string; collapsed: boolean } & Folds {
@@ -92,8 +98,10 @@ export const foldHistory = $prose(
             // Each position, mapped through the rest of this transaction and the ones after it.
             const mapping = new Mapping(tr.mapping.maps.slice(at + 1))
             for (const later of trs.slice(index + 1)) mapping.appendMapping(later.mapping)
-            items.push(...step.folds.items.map((pos) => mapping.map(pos, 1)))
-            headings.push(...step.folds.headings.map((pos) => mapping.map(pos, 1)))
+            // Only a node of the right kind takes the fold: never a bullet or a heading the user did not fold (YAZ-3786).
+            const ofKind = (pos: number, kind: string) => (state.doc.nodeAt(pos)?.type.name === kind ? [pos] : [])
+            items.push(...step.folds.items.flatMap((pos) => ofKind(mapping.map(pos, 1), 'list_item')))
+            headings.push(...step.folds.headings.flatMap((pos) => ofKind(mapping.map(pos, 1), 'heading')))
             collapsed = step.collapsed
           })
         })

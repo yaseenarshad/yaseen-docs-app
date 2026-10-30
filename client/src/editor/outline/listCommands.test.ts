@@ -19,6 +19,7 @@ import { closeHistory } from '@milkdown/kit/prose/history'
 import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { applyExternalMarkdown } from '../external/applyExternalMarkdown'
 import { OUTLINE_TOGGLE_CLASS } from './outlineFolding'
 import { getZoomLabel } from './zoom'
 
@@ -802,6 +803,12 @@ const UNDO_ROWS: UndoRow[] = [
   ['46', '## Sec\n\nhidden\n\n## Next\n', 'Sec', null, (c) => (caretIn(c, 'Sec'), press(c, 'Enter'))],
   ['3A', '* a\n  * kid\n\ntext\n', 'a', null, (c) => (caretIn(c, 'text', 0), press(c, 'Backspace'))],
   ['3D', '> quote\n\n* a\n', null, null, (c) => (caretIn(c, 'a', 0), press(c, 'Backspace'))],
+  ['3F Delete above a code block', 'text\n\n```\ncode\n```\n', null, (c) => insertEmptyParagraph(c, posOf(c, 'text') + 5), (c) => press(c, 'Delete')],
+  ['3F Backspace below a code block', '```\ncode\n```\n\ntext\n', null, (c) => insertEmptyParagraph(c, posOf(c, 'text') - 1), (c) => press(c, 'Backspace')],
+  ['3F Delete in an empty bullet above a code block', '* a\n*\n\n```\ncode\n```\n', null, null, (c) => (select(c, posOf(c, 'a') + 5), press(c, 'Delete'))],
+  ['3F Delete above a rule', 'text\n\n---\n\nafter\n', null, (c) => insertEmptyParagraph(c, posOf(c, 'text') + 5), (c) => press(c, 'Delete')],
+  ['3F Backspace below a rule', 'text\n\n---\n\nafter\n', null, (c) => insertEmptyParagraph(c, posOf(c, 'after') - 1), (c) => press(c, 'Backspace')],
+  ['3H Delete in a quote', '> one\n>\n> two\n', null, null, (c) => (caretIn(c, 'one'), press(c, 'Delete'))],
 ]
 
 describe('YAZ-3695 49. one ⌘Z gives the text AND the fold back, one row per scenario', () => {
@@ -945,6 +952,79 @@ describe('YAZ-3695 round 1 bugs', () => {
       const sel = viewOf(crepe).state.selection
       expect(sel instanceof NodeSelection && sel.node.type.name).toBe('hr')
     })
+  })
+
+  describe('3F. an empty line next to a code block or a rule just goes (YAZ-3785, D4, the join rule)', () => {
+    it('Delete on an empty line above a code block: the empty line goes', async () => {
+      const { crepe } = await mount('text\n\n```\ncode\n```\n')
+      insertEmptyParagraph(crepe, posOf(crepe, 'text') + 5)
+      expect(press(crepe, 'Delete')).toBe(true)
+      expect(md(crepe)).toBe('text\n\n```\ncode\n```\n')
+    })
+
+    it('Backspace on an empty line below a code block: the empty line goes', async () => {
+      const { crepe } = await mount('```\ncode\n```\n\ntext\n')
+      insertEmptyParagraph(crepe, posOf(crepe, 'text') - 1)
+      expect(press(crepe, 'Backspace')).toBe(true)
+      expect(md(crepe)).toBe('```\ncode\n```\n\ntext\n')
+    })
+
+    it('Delete on an empty bullet above a code block: the empty bullet goes', async () => {
+      const { crepe } = await mount('* a\n*\n\n```\ncode\n```\n')
+      select(crepe, posOf(crepe, 'a') + 5)
+      expect(press(crepe, 'Delete')).toBe(true)
+      expect(md(crepe)).toBe('* a\n\n```\ncode\n```\n')
+    })
+
+    it('Delete on an empty line above a rule: the empty line goes, the rule stays and is selected', async () => {
+      const { crepe } = await mount('text\n\n---\n\nafter\n')
+      insertEmptyParagraph(crepe, posOf(crepe, 'text') + 5)
+      expect(press(crepe, 'Delete')).toBe(true)
+      expect(md(crepe)).toBe('text\n\n***\n\nafter\n')
+      const sel = viewOf(crepe).state.selection
+      expect(sel instanceof NodeSelection && sel.node.type.name).toBe('hr')
+    })
+
+    it('Backspace on an empty line below a rule: the empty line goes, the rule stays and is selected', async () => {
+      const { crepe } = await mount('text\n\n---\n\nafter\n')
+      insertEmptyParagraph(crepe, posOf(crepe, 'after') - 1)
+      expect(press(crepe, 'Backspace')).toBe(true)
+      expect(md(crepe)).toBe('text\n\n***\n\nafter\n')
+      const sel = viewOf(crepe).state.selection
+      expect(sel instanceof NodeSelection && sel.node.type.name).toBe('hr')
+    })
+
+    it('Delete on an empty line above a table: the empty line goes, the table stays', async () => {
+      const table = '| a | b |\n| - | - |\n| 1 | 2 |\n'
+      const { crepe } = await mount(`text\n\n${table}`)
+      const before = md(crepe)
+      insertEmptyParagraph(crepe, posOf(crepe, 'text') + 5)
+      expect(press(crepe, 'Delete')).toBe(true)
+      expect(md(crepe)).toBe(before)
+    })
+  })
+
+  it('3G. ⌘Z after an outside edit never folds a bullet that the user did not fold (YAZ-3786)', async () => {
+    const { crepe, root } = await mount('* a\n  * kid\n* b\n  * bk\n* c\n  * ck\n')
+    fold(root, 'a')
+    caretIn(crepe, 'b', 0)
+    press(crepe, 'Backspace')
+    expect(md(crepe)).toBe('* a b\n  * kid\n  * bk\n* c\n  * ck\n')
+    applyExternalMarkdown(crepe, '* c\n  * ck\n')
+    expect(isOpen(root, 'c')).toBe(true)
+    press(crepe, 'Mod-z')
+    expect(isFolded(root, 'c')).toBe(false)
+  })
+
+  it('3H. inside a quote both keys join with no space, as on main (YAZ-3787)', async () => {
+    const { crepe } = await mount('> one\n>\n> two\n')
+    caretIn(crepe, 'two', 0)
+    press(crepe, 'Backspace')
+    expect(md(crepe)).toBe('> onetwo\n')
+    const mirror = await mount('> one\n>\n> two\n')
+    caretIn(mirror.crepe, 'one')
+    press(mirror.crepe, 'Delete')
+    expect(md(mirror.crepe)).toBe('> onetwo\n')
   })
 
   it('42d (audit 1). the fold of a bullet that joins its previous sibling never passes to its first child', async () => {
