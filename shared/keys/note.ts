@@ -57,7 +57,7 @@ export const NOTE_KEYS: readonly KeyRow[] = [
   note('enter', 'New line, or a new bullet', ['Enter'], { hint: 'In a pop-up: pick the row', builtIn: true }),
   note('lineBreak', 'Line break inside the block', ['Shift+Enter'], { builtIn: true }),
   note('tab', 'Indent / outdent bullet', ['Tab', 'Shift+Tab'], { hint: 'In a table: the next / previous cell', builtIn: true }),
-  note('delete', 'Delete backward / forward', ['Backspace', 'Delete', 'Shift+Backspace', 'Control+H', 'Control+D'], { hint: 'At the start of a heading: a level down', builtIn: true }),
+  note('delete', 'Delete backward / forward', ['Backspace', 'Delete', 'Shift+Backspace', 'Control+H', 'Control+D'], { hint: "At a line's start: joins the line above (its format wins)", builtIn: true }),
   note('deleteMore', 'Delete backward / forward, then join the blocks', ['CmdOrCtrl+Backspace', 'Alt+Backspace', 'CmdOrCtrl+Delete', 'Alt+Delete', 'Control+Alt+Backspace', 'Alt+D'], { builtIn: true }),
   note('lineStartEnd', 'Select to the start / end of the block', ['Control+A', 'Control+E'], { builtIn: true }),
   note('selectLines', 'Select to the start / end of this line, then one whole line per press', ['Shift+Up', 'Shift+Down'], { builtIn: true }),

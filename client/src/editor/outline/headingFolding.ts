@@ -122,6 +122,20 @@ export const collapsedHeadingsHiding = (state: EditorState, pos: number): number
 }
 
 /**
+ * The section of the OUTERMOST collapsed heading that hides `pos`, as one range, or null. Entries are in document
+ * order, so the first match is the outermost. A walk over lines steps over it in one jump (YAZ-3695: the joins look
+ * for the next visible line next to a fold that may hide thousands).
+ */
+export const collapsedSectionAround = (state: EditorState, pos: number): { from: number; to: number } | null => {
+  const foldingState = pluginKey.getState(state)
+  const entry = foldingState?.entries.find(
+    ({ headingPos, sectionBlockRanges }) =>
+      foldingState.collapsedHeadingPositions.has(headingPos) && sectionBlockRanges.some((range) => pos >= range.from && pos < range.to),
+  )
+  return entry === undefined ? null : { from: entry.sectionBlockRanges[0].from, to: entry.sectionBlockRanges[entry.sectionBlockRanges.length - 1].to }
+}
+
+/**
  * The start of every block a collapsed heading hides (a section is a run of whole sibling blocks),
  * gathered once — for a walk that tests many blocks (YAZ-3209 `eachVisibleTextblock`), where
  * `collapsedHeadingsHiding` per position would rescan the entries each time.
@@ -184,6 +198,15 @@ export const setHeadingFoldSet =
     dispatch?.(meta.silent === true ? state.tr.setMeta(pluginKey, meta) : foldTransaction(state, meta))
     return true
   }
+
+/**
+ * Add a SILENT unfold of `set` (positions in the transaction's new document) to an edit without dispatching it:
+ * the outliner's joins and the caret guard open the heading folds that would hide a line (YAZ-3695). Silent like
+ * CMD+F's reveal, so ⌘Z panic-undo is untouched. Does nothing for an empty set.
+ */
+export const addHeadingUnfoldMeta = (transaction: Transaction, set: readonly number[]): void => {
+  if (set.length > 0) transaction.setMeta(pluginKey, { set, collapsed: false, silent: true } satisfies FoldSetMeta)
+}
 
 /** Add this plugin's half of a combined fold undo without dispatching it. Declines when stale. */
 export const addHeadingFoldUndoMeta = (state: EditorState, transaction: Transaction): boolean => {

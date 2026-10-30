@@ -28,7 +28,7 @@ import type { Mark, MarkType, Node as ProseNode, ResolvedPos } from '@milkdown/k
 import { type Command, type EditorState, NodeSelection, Plugin, PluginKey, Selection, SelectionRange, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { liftTarget } from '@milkdown/kit/prose/transform'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
-import { collapsedHeadingsHiding, collapsedSectionBlocks } from './outline/headingFolding'
+import { collapsedSectionAround, collapsedSectionBlocks } from './outline/headingFolding'
 import { isListItem, LIST_NODE_NAMES } from './outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed } from './outline/outlineFolding'
 import { getZoomedItemPos } from './outline/zoom'
@@ -49,41 +49,53 @@ const edgeAt = ($head: ResolvedPos, dir: 1 | -1): Edge | null => {
 }
 
 /**
- * Is the textblock around `$pos` hidden from view (D6)? Asks the three plugins that hide
- * things, through their own state: outside the zoomed item's subtree (`getZoomedItemPos` — the
- * zoom decorations hide every block off the root → item path, the ancestors' own text included),
- * inside a collapsed bullet's nested list (`collapsedItemsHiding`), or inside a collapsed heading's
- * section (`collapsedHeadingsHiding`). All three answer from plugin state, which is what their
- * `display: none` decorations are computed from — no DOM, no re-derived fold logic. A folded
- * ANCESTOR of the zoomed item hides nothing: the zoom shows it expanded (zoom.css), so only a fold
- * at or below the zoomed item counts (YAZ-3209 bug 1B1).
+ * The whole hidden run around the textblock at `$pos`, or null when it is in view (D6). Asks the three plugins that
+ * hide things, through their own state: outside the zoomed item's subtree (`getZoomedItemPos` — the zoom decorations
+ * hide every block off the root → item path, the ancestors' own text included), inside a collapsed heading's section
+ * (`collapsedSectionAround`), or inside a collapsed bullet's nested list (`collapsedItemsHiding`). All three answer from
+ * plugin state, which is what their `display: none` decorations are computed from — no DOM, no re-derived fold logic.
+ * A folded ANCESTOR of the zoomed item hides nothing: the zoom shows it expanded (zoom.css), so only a fold at or below
+ * the zoomed item counts (YAZ-3209 bug 1B1). The run is the OUTERMOST one — all of the zoom's outside, the whole
+ * section, the folded item's whole nested list — so a walk steps over it in one jump (YAZ-3695: 2,000 hidden lines
+ * cost ~14 ms one by one).
  */
-const isHiddenTextblock = (state: EditorState, $pos: ResolvedPos): boolean => {
+const hiddenRun = (state: EditorState, $pos: ResolvedPos): { from: number; to: number } | null => {
   const pos = $pos.pos
   const zoomed = getZoomedItemPos(state)
   if (zoomed !== null) {
     const item = state.doc.nodeAt(zoomed)
-    if (item !== null && !(pos > zoomed && pos < zoomed + item.nodeSize)) return true
+    if (item !== null && pos <= zoomed) return { from: 0, to: zoomed + 1 }
+    if (item !== null && pos >= zoomed + item.nodeSize) return { from: zoomed + item.nodeSize, to: state.doc.content.size }
   }
-  const folds = collapsedItemsHiding(state, pos)
-  return (zoomed === null ? folds.length > 0 : folds.some((itemPos) => itemPos >= zoomed)) || collapsedHeadingsHiding(state, pos).length > 0
+  const section = collapsedSectionAround(state, pos)
+  if (section !== null) return section
+  const fold = collapsedItemsHiding(state, pos).find((itemPos) => zoomed === null || itemPos >= zoomed)
+  if (fold === undefined) return null
+  // The folded item's nested list that holds `pos`: the child one level below the item.
+  for (let depth = 1; depth < $pos.depth; depth++) if ($pos.before(depth) === fold) return { from: $pos.before(depth + 1), to: $pos.after(depth + 1) }
+  return null
 }
+
+/** Is the textblock around `$pos` hidden from view (D6)? See `hiddenRun`. */
+const isHiddenTextblock = (state: EditorState, $pos: ResolvedPos): boolean => hiddenRun(state, $pos) !== null
 
 /**
  * A position inside the nearest VISIBLE textblock in `dir` from `$head`'s block; `'leaf'` when a
  * leaf block (`hr`) comes first — a line of its own that this keymap cannot select (D2); null at
  * a document / zoom edge. `findFrom` without textOnly lands INSIDE the next textblock (D1) or,
- * for a block atom, on a `NodeSelection` of it; hidden textblocks are stepped over.
+ * for a block atom, on a `NodeSelection` of it; a hidden run is stepped over in one jump. Backward, the
+ * position is the END of the previous line. The outliner's joins read it too (YAZ-3695 D4, D5).
  */
-const nextVisibleTextblock = (state: EditorState, $head: ResolvedPos, dir: 1 | -1): ResolvedPos | 'leaf' | null => {
+export const nextVisibleTextblock = (state: EditorState, $head: ResolvedPos, dir: 1 | -1): ResolvedPos | 'leaf' | null => {
   let from = dir > 0 ? $head.after() : $head.before()
   for (;;) {
     const found = Selection.findFrom(state.doc.resolve(from), dir, false)
     if (found === null) return null
     if (found instanceof NodeSelection) return 'leaf'
     const $n = found.$from
-    if (!isHiddenTextblock(state, $n)) return $n
-    from = dir > 0 ? $n.after() : $n.before()
+    const run = hiddenRun(state, $n)
+    if (run === null) return $n
+    from = dir > 0 ? run.to : run.from
   }
 }
 
@@ -317,8 +329,8 @@ const planVisibleDelete = (state: EditorState): number[] | null => {
   return hidden ? between : null
 }
 
-/** Delete the textblock at `$tb` as a NODE, together with every wrapper it was the only child of (never the doc). */
-const deleteBlockAndEmptyWrappers = (tr: Transaction, $tb: ResolvedPos): void => {
+/** Delete the textblock at `$tb` as a NODE, together with every wrapper it was the only child of (never the doc). The outliner's joins remove a line with it (YAZ-3695). */
+export const deleteBlockAndEmptyWrappers = (tr: Transaction, $tb: ResolvedPos): void => {
   let depth = $tb.depth
   while (depth > 1 && $tb.node(depth - 1).childCount === 1) depth--
   tr.delete($tb.before(depth), $tb.after(depth))
@@ -417,9 +429,9 @@ const headlessList = (node: ProseNode): ProseNode | null => {
  * item held AFTER the list is split off as a following item, so nothing is lost. The item is
  * re-read from `tr.doc` because an earlier lift (a headless item nested inside this one) may have
  * reshaped it. `liftTarget` cannot fail for `list_item > list > list_item`: the outer list takes
- * list_items.
+ * list_items. The outliner's joins call it too, so the children of a joined bullet take its place in the same step (YAZ-3695 D5).
  */
-const liftHeadlessItem = (tr: Transaction, pos: number): void => {
+export const liftHeadlessItem = (tr: Transaction, pos: number): void => {
   const item = tr.doc.nodeAt(pos)
   const list = item === null ? null : headlessList(item)
   if (list === null) return

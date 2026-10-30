@@ -227,6 +227,15 @@ export const foldAllOutline: Command = foldAllCommand('fold-all')
 /** Expand every foldable item (GRO-2027 `Mod-Shift-i`). */
 export const unfoldAllOutline: Command = foldAllCommand('unfold-all')
 
+/**
+ * Add a SILENT unfold of `set` (positions in the transaction's new document) to an edit without dispatching it:
+ * the outliner's joins and the caret guard open the bullet folds that would hide a line (YAZ-3695). Silent like
+ * CMD+F's reveal, so ⌘Z panic-undo is untouched. Does nothing for an empty set.
+ */
+export const addOutlineUnfoldMeta = (transaction: Transaction, set: readonly number[]): void => {
+  if (set.length > 0) transaction.setMeta(pluginKey, { set, collapsed: false, silent: true } satisfies FoldSetMeta)
+}
+
 /** Add this plugin's half of a combined fold undo without dispatching it. Declines when stale. */
 export const addOutlineFoldUndoMeta = (state: EditorState, transaction: Transaction): boolean => {
   if (!pluginKey.getState(state)?.lastToggle) return false
