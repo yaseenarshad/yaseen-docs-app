@@ -87,9 +87,29 @@ describe('the frozen cells', () => {
     expect(rowsOf(view).map((row) => row.classList.contains('table-frozen-row'))).toEqual([true, true, false, false])
     const cells = rowsOf(view)[2].cells
     expect([...cells].map((cell) => cell.classList.contains('table-frozen-col'))).toEqual([true, true, false])
-    expect(cells[1].getAttribute('style')).toContain('left: var(--table-frozen-x-1, 0px)')
+    expect(cells[1].getAttribute('style')).toContain('--table-frozen-left: var(--table-frozen-x-1, 0px)')
     setFreeze(view, 0, 0)
     expect(view.dom.querySelector('.table-frozen-row, .table-frozen-col')).toBeNull()
+  })
+
+  it('a frozen table block carries `data-table-frozen` (its cells draw their own borders, YAZ-3788); unfreeze drops it', async () => {
+    const { view, block } = await mount('<!-- table: freeze 1 row -->')
+    expect(block.hasAttribute('data-table-frozen')).toBe(true)
+    setFreeze(view, 0, 0)
+    expect(block.hasAttribute('data-table-frozen')).toBe(false)
+  })
+
+  it('a block that scrolls sideways gets `data-table-scrolls` (its frozen columns stick, YAZ-3790); one that fits does not', async () => {
+    const { view, block, flush } = await mount('<!-- table: freeze 1 col -->')
+    flush()
+    expect(block.hasAttribute('data-table-scrolls')).toBe(false)
+    Object.defineProperty(block, 'scrollWidth', { value: 900, configurable: true })
+    Object.defineProperty(block, 'clientWidth', { value: 600, configurable: true })
+    setFreeze(view, 0, 2)
+    flush()
+    expect(block.hasAttribute('data-table-scrolls')).toBe(true)
+    setFreeze(view, 0, 0)
+    expect(block.hasAttribute('data-table-scrolls')).toBe(false)
   })
 
   it('a column offset is the width of the columns before it, on the table block', async () => {
@@ -158,6 +178,25 @@ describe('two frozen tables and edits', () => {
     expect(rowsOf(view)[4].cells[0].classList.contains('table-frozen-col')).toBe(true)
   })
 
+  it('typing in a cell measures nothing (YAZ-3790); a new column width measures the columns again', async () => {
+    const { view, block, flush } = await mount('<!-- table: freeze 1 row 1 col -->')
+    flush()
+    const set = vi.spyOn(block.style, 'setProperty')
+    view.dispatch(view.state.tr.insertText('typed', tableStarts(view)[0] + view.state.doc.nodeAt(tableStarts(view)[0])!.nodeSize - 4))
+    view.dispatch(view.state.tr.insertText('head', tableStarts(view)[0] + 4))
+    flush()
+    expect(set).not.toHaveBeenCalled()
+    // A column drag sets `colwidth` on each cell of the column, the header cell too.
+    const tr = view.state.tr
+    view.state.doc.nodeAt(tableStarts(view)[0])!.forEach((row, offset) => {
+      const pos = tableStarts(view)[0] + 1 + offset + 1
+      tr.setNodeMarkup(pos, undefined, { ...view.state.doc.nodeAt(pos)!.attrs, colwidth: [140] })
+    })
+    view.dispatch(tr)
+    flush()
+    expect(set.mock.calls.map(([name]) => name)).toContain('--table-frozen-x-0')
+  })
+
   it('typing keeps the frozen cells; a column inserted before a frozen column moves them', async () => {
     const { view } = await mount('<!-- table: freeze 1 row 1 col -->')
     const table = view.dom.querySelector('.milkdown-table-block')!
@@ -209,6 +248,17 @@ describe('the frozen rows follow the scroll (the folder-page method)', () => {
     flush()
     // The table is 150 px, the two frozen rows 60 px: they stop 90 px down.
     expect(block.style.getPropertyValue('--table-frozen-y')).toBe('90px')
+  })
+
+  it.each([
+    [1, '80px'],
+    [2, '80.5px'],
+  ])('moves the rows by whole device pixels at %i× pixel ratio, rounded up the page (YAZ-3788)', async (ratio, offset) => {
+    vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(ratio)
+    const { block, scroll, flush } = await mount('<!-- table: freeze 1 row -->', { tableTop: -80.75 })
+    scroll()
+    flush()
+    expect(block.style.getPropertyValue('--table-frozen-y')).toBe(offset)
   })
 
   it.each([0.5, 2])('keeps the same layout offset at %× document zoom', async (zoom) => {

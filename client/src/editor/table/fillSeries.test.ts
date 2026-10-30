@@ -51,12 +51,18 @@ describe('fillSeries: text that ends in a number continues, from one cell', () =
   ])('%j → %j', (source, out) => expect(fillSeries(source, out.length)).toEqual(out))
 })
 
+describe('fillSeries: one date continues by a day (S4: dates continue; YAZ-3789)', () => {
+  it.each([
+    [['2026-10-30'], ['2026-10-31', '2026-11-01']],
+    [['2028-02-28'], ['2028-02-29', '2028-03-01']],
+  ])('%j → %j', (source, out) => expect(fillSeries(source, out.length)).toEqual(out))
+})
+
 describe('fillSeries: anything else is copied, the pattern in order', () => {
   it.each([
     [['apple'], ['apple', 'apple']],
     [['5'], ['5', '5']],
     [['4:00'], ['4:00']],
-    [['2026-10-30'], ['2026-10-30']],
     [['a', 'b'], ['a', 'b', 'a']],
     [['1', 'x'], ['1', 'x', '1']],
     [['Week 1', 'Day 2'], ['Week 1', 'Day 2']],

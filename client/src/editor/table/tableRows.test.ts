@@ -71,15 +71,36 @@ describe('the menu on a table', () => {
       return []
     })
     expect(parts).toEqual([
-      'Border thickness:1px ▾',
-      'Border darkness:20% ▾',
-      'Header row:Shaded ▾',
+      'Border thickness:Default (1px) ▾',
+      'Border darkness:Default (20%) ▾',
+      'Header row:Default (Shaded) ▾',
       'Align all columns:Default (Left) ▾',
       'row:Fit columns to the page:disabled',
-      'Stripes:Off ▾',
-      'Row height:Normal ▾',
-      'Wrap text:On ▾',
+      'Stripes:Default (Off) ▾',
+      'Row height:Default (Normal) ▾',
+      'Wrap text:Default (On) ▾',
     ])
+  })
+
+  it('a picker that follows the default lists "Default (…)" once, with ✓, as the line pickers (YAZ-3791)', async () => {
+    const { view } = await openOnTable()
+    const list = (label: string) => {
+      const picker = pickerNamed(view, label)
+      picker.querySelector<HTMLButtonElement>('.block-menu-picker__value')!.click()
+      return [...picker.querySelectorAll<HTMLButtonElement>('.document-zoom__presets button')].map((b) => `${b.firstElementChild!.textContent}${b.lastElementChild!.textContent}`)
+    }
+    expect(list('Header row')).toEqual(['Default (Shaded)✓', 'Plain'])
+    expect(list('Stripes')).toEqual(['Default (Off)✓', 'On'])
+    expect(list('Row height')).toEqual(['Default (Normal)✓', 'Compact', 'Tall'])
+    expect(list('Wrap text')).toEqual(['Default (On)✓', 'Off'])
+    expect(list('Border thickness')).toEqual(['Default (1px)✓', '2px', '3px', '6px'])
+    expect(list('Border darkness')).toEqual(['Default (20%)✓', '10%', '50%', '100%'])
+  })
+
+  it('a value set away from the default reads as that value', async () => {
+    const { view } = await openOnTable(`${SMALL}\n<!-- table: border 3px 20%, header plain, height tall -->\n`)
+    const value = (label: string) => pickerNamed(view, label).querySelector('.block-menu-picker__value')!.textContent
+    expect([value('Border thickness'), value('Border darkness'), value('Header row'), value('Row height')]).toEqual(['3px ▾', 'Default (20%) ▾', 'Plain ▾', 'Tall ▾'])
   })
 
   it('a table in a bullet keeps "Number children"', async () => {

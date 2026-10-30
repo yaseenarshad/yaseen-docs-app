@@ -4,7 +4,9 @@
  * (number fields, as `line/lineRows.ts`), "Header row", "Align all columns", "Fit columns to the
  * page" (a row), "Stripes", "Row height" and "Wrap text" (choices).
  *
- * Each picker shows the table's current value; "Default (…)" sets the attribute's default. Each pick
+ * Each picker shows the table's current value; "Default (…)" sets the attribute's default. A value
+ * that IS the default saves no part, so the picker reads "Default (…)" with ✓, and its list does not
+ * hold the default a second time (YAZ-3791, as the line pickers, YAZ-3208 D11). Each pick
  * is ONE transaction with the history closed first, so one ⌘Z (R4); the save writes it in the table
  * comment (`tableStyle.ts`). "Align all columns" is no comment part: it sets every cell's GFM
  * `alignment`, which the save writes in the `:-` row, so GitHub and Obsidian show it too. Its value
@@ -62,12 +64,16 @@ function border(current: TableAttrs['border'], half: 'px' | 'darkness', value: n
   return next.px === BORDER_DEFAULT.px && next.darkness === BORDER_DEFAULT.darkness ? null : next
 }
 
+/** `null` (the picker follows the default) when `value` is the default. */
+const orNull = <T>(value: T, fallback: T): T | null => (value === fallback ? null : value)
+
 const choice = (label: string, value: string, fallback: string, choices: MenuChoice[], run: (value: string) => void): MenuChoiceField => ({
   kind: 'choice',
   label,
-  value,
+  value: orNull(value, fallback),
   choices,
   fallback,
+  defaultOnce: true,
   run: (picked) => run(picked ?? fallback),
 })
 
@@ -86,9 +92,10 @@ export const tableRows: RowProvider = (view, target) => {
     kind: 'number',
     label: 'Border thickness',
     unit: 'px',
-    value: current.px,
+    value: orNull(current.px, BORDER_DEFAULT.px),
     presets: [1, 2, 3, 6],
     fallback: BORDER_DEFAULT.px,
+    defaultOnce: true,
     min: 1,
     max: 6,
     error: 'Use a whole number from 1–6px.',
@@ -98,9 +105,10 @@ export const tableRows: RowProvider = (view, target) => {
     kind: 'number',
     label: 'Border darkness',
     unit: '%',
-    value: current.darkness,
+    value: orNull(current.darkness, BORDER_DEFAULT.darkness),
     presets: [10, 20, 50, 100],
     fallback: BORDER_DEFAULT.darkness,
+    defaultOnce: true,
     min: 5,
     max: 100,
     error: 'Use a whole number from 5–100%.',

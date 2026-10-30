@@ -77,6 +77,14 @@ describe('fill command', () => {
     view.dispatch(fillCells(view.state, fillSource(view.state)!, 'down', 1)!)
     expect(cellAt(view, 2, 0).firstChild!.firstChild!.marks.map((mark) => mark.type.name)).toEqual(['strong'])
   })
+  it('down from one date cell: the next days (YAZ-3789)', async () => {
+    const { view } = await mountNote('| d |\n| --- |\n| 2026-10-30 |\n|  |\n|  |\n')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 1, 0) + 2)))
+    view.dispatch(fillCells(view.state, fillSource(view.state)!, 'down', 2)!)
+    const texts: string[] = []
+    view.state.doc.descendants((n) => { if (n.type.name === 'table_cell') texts.push(n.textContent); return true })
+    expect(texts).toEqual(['2026-10-30', '2026-10-31', '2026-11-01'])
+  })
 })
 
 describe('fill handle', () => {

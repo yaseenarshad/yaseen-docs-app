@@ -20,6 +20,8 @@ const head = Array.from({ length: COLS }, (_, c) => `H${c + 1}`)
 const body = Array.from({ length: ROWS }, (_, r) => head.map((_, c) => `r${r + 1}c${c + 1}`))
 const BIG = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...body.map((cells) => `| ${cells.join(' | ')} |`)].join('\n') + '\n'
 const STYLED = `${BIG}\n<!-- table: fill A2:B2 blue C5 green, stripes, freeze 1 row 2 cols -->\n`
+/** The freeze alone (YAZ-3790): it must add no work per key either. */
+const FROZEN = `${BIG}\n<!-- table: freeze 1 row 2 cols -->\n`
 /** The same words as paragraphs: what typing costs in a note with no table. */
 const PLAIN = body.map((cells) => cells.join(' ')).join('\n\n') + '\n'
 const TSV = Array.from({ length: 50 }, (_, r) => Array.from({ length: 4 }, (_, c) => `p${r}-${c}`).join('\t')).join('\n')
@@ -77,15 +79,15 @@ function typeAt(view: EditorView, pos: number): { median: number; worst: number 
 describe('S6: a 500 × 10 table stays fast', () => {
   it('perf smoke: opens, types, and pastes 50 × 4 in under 50 ms; frozen and styled, it types as fast', async () => {
     const opens: number[] = []
-    const keys = { note: [] as number[], table: [] as number[], styled: [] as number[] }
+    const keys = { note: [] as number[], table: [] as number[], frozen: [] as number[], styled: [] as number[] }
     const pastes: number[] = []
-    // Three runs, each kind once per run, so a busy moment slows all three kinds alike.
+    // Three runs, each kind once per run, so a busy moment slows all kinds alike.
     for (let run = 0; run < 3; run++) {
       const note = await mount(PLAIN)
       keys.note.push(typeAt(note.view, 300).median)
       await note.close()
-      for (const kind of ['table', 'styled'] as const) {
-        const { view, ms, close } = await mount(kind === 'table' ? BIG : STYLED)
+      for (const kind of ['table', 'frozen', 'styled'] as const) {
+        const { view, ms, close } = await mount({ table: BIG, frozen: FROZEN, styled: STYLED }[kind])
         if (kind === 'table') opens.push(ms)
         keys[kind].push(typeAt(view, cellText(view.state.doc, 250, 3)).median)
         view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellText(view.state.doc, 100, 2))))
@@ -95,17 +97,18 @@ describe('S6: a 500 × 10 table stays fast', () => {
         await close()
       }
     }
-    const [note, table, styled, paste] = [median(keys.note), median(keys.table), median(keys.styled), median(pastes)]
+    const [note, table, frozen, styled, paste] = [median(keys.note), median(keys.table), median(keys.frozen), median(keys.styled), median(pastes)]
     console.log(
-      `S6: open ${median(opens).toFixed(0)} ms · type ms/key: note ${note.toFixed(2)}, table ${table.toFixed(2)}, frozen styled table ${styled.toFixed(2)} · paste 50×4 ${paste.toFixed(1)} ms (medians of 3, jsdom)`,
+      `S6: open ${median(opens).toFixed(0)} ms · type ms/key: note ${note.toFixed(2)}, table ${table.toFixed(2)}, frozen table ${frozen.toFixed(2)}, frozen styled table ${styled.toFixed(2)} · paste 50×4 ${paste.toFixed(1)} ms (medians of 3, jsdom)`,
     )
     // The note is for the log: Milkdown's own `keepTableAlignPlugin` walks every cell of the table on each key
     // (main has it too), so the table types ~9× slower than a note of the same text at idle (~7 ms against ~0.8).
     // 60 ms catches a rescan of our own on top of it.
     expect(table).toBeLessThan(60)
-    // "No change in typing speed": freeze and styles add no work per key (their decorations are mapped, not built
-    // again), so the frozen, styled table types as fast as the plain one (~1.1× measured).
-    expect(styled / table).toBeLessThan(1.5)
+    // "No change in typing speed" (YAZ-3790): the freeze and the styles add no work per key, so the frozen table
+    // and the frozen, styled table type as fast as the plain one.
+    expect(frozen / table).toBeLessThan(1.15)
+    expect(styled / table).toBeLessThan(1.15)
     // The approved number (YAZ-3697): ~15 ms measured.
     expect(paste).toBeLessThan(50)
   }, 120_000)

@@ -8,26 +8,34 @@
  * clamped on load (`tableStyle.ts`).
  *
  * DECORATIONS, from the attributes only (so no table redraw, B4): each frozen row gets
- * `table-frozen-row`; each cell of a frozen column gets `table-frozen-col` and `left:
- * var(--table-frozen-x-<column>)`. A transaction that changes the document builds them again only
- * for the tables it changed (`changedTables`), and only when the table's shape (its counts, rows and
- * columns) changed or a mapped decoration was lost: typing in a cell keeps the mapped set. A
- * table-level decoration with no attributes marks each frozen table for the view below, and holds
- * that shape.
+ * `table-frozen-row`; each cell of a frozen column gets `table-frozen-col` and `--table-frozen-left:
+ * var(--table-frozen-x-<column>)` (the sticky rule's `left`; a plain `left` would move a cell that
+ * is not sticky). A table-level decoration puts `data-table-frozen` on the table
+ * block (its cells draw their own borders, `table.css`, YAZ-3788), marks each frozen table for the
+ * view below, and holds the table's shape. Typing (each step changes the text of one textblock) only
+ * maps the set: no table changes its shape, and each node decoration maps (YAZ-3790). Any other
+ * transaction builds them again only for the tables it changed (`changedTables`), and only when the
+ * table's shape (its counts, rows and columns) changed or a mapped decoration was lost.
  *
  * THE VIEW, one listener set per frozen table, on the table block's own DOM
  * (`div.milkdown-table-block`, the sideways scroll box; never ProseMirror's content DOM):
- * - Columns stick with CSS (`position: sticky` inside the sideways scroll). Their `left` offsets are
- *   the widths of the columns before them, measured when the table changes or resizes (a
- *   `ResizeObserver`), never on scroll, and set as `--table-frozen-x-<n>` on the block.
+ * - Columns stick with CSS (`position: sticky` inside the sideways scroll), only while the block
+ *   scrolls sideways: `data-table-scrolls`, checked when the columns are measured (YAZ-3790; each
+ *   sticky cell costs layout work on every key). Their `left` offsets are
+ *   the widths of the columns before them, measured when the table's shape or its first row (the
+ *   row that holds the widths) changes, or the table resizes (a `ResizeObserver`), never on scroll or
+ *   on a key, and set as `--table-frozen-x-<n>` on the block. The view runs only after a transaction
+ *   that is not typing (YAZ-3790).
  * - Rows use the folder page's method (`lib/pinnedHeader.ts`): on a scroll of the note's vertical
  *   scroller (passive, one update per animation frame) and on a resize, the offset that keeps the
  *   frozen rows at the scroller's top, stopped at the table's end, goes in `--table-frozen-y`;
- *   CSS translates the rows by it. Layout px: divided by the document zoom, as the folder page does.
+ *   CSS translates the rows by it. Whole device pixels, rounded up the page (YAZ-3788). Layout px:
+ *   divided by the document zoom, as the folder page does.
  * An unfrozen or removed table drops its listeners and its custom properties.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
+import { ReplaceStep } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
@@ -67,23 +75,36 @@ function decorationCount(table: ProseNode): number {
 function frozenDecorations(table: ProseNode, pos: number): Decoration[] {
   const { rows, cols } = counts(table)
   if (rows === 0 && cols === 0) return []
-  const out = [Decoration.node(pos, pos + table.nodeSize, {}, { frozenTable: true, shape: shapeOf(table) })]
+  const out = [Decoration.node(pos, pos + table.nodeSize, { 'data-table-frozen': '' }, { frozenTable: true, shape: shapeOf(table) })]
   table.forEach((row, rowOffset, r) => {
     const rowPos = pos + 1 + rowOffset
     if (r < rows) out.push(Decoration.node(rowPos, rowPos + row.nodeSize, { class: 'table-frozen-row' }))
     row.forEach((cell, cellOffset, c) => {
       if (c >= cols) return
       const cellPos = rowPos + 1 + cellOffset
-      out.push(Decoration.node(cellPos, cellPos + cell.nodeSize, { class: 'table-frozen-col', style: `left: var(--table-frozen-x-${c}, 0px)` }))
+      out.push(Decoration.node(cellPos, cellPos + cell.nodeSize, { class: 'table-frozen-col', style: `--table-frozen-left: var(--table-frozen-x-${c}, 0px)` }))
     })
   })
   return out
 }
 
+/**
+ * Typing: each step changes only the inline content of one textblock. Every node decoration maps,
+ * and no table changes its shape (YAZ-3790).
+ */
+const typingOnly = (tr: Transaction): boolean =>
+  tr.steps.every((step, i) => {
+    if (!(step instanceof ReplaceStep) || step.slice.openStart > 0 || step.slice.openEnd > 0) return false
+    const $from = tr.docs[i]!.resolve(step.from)
+    return $from.parent.isTextblock && step.to <= $from.end()
+  })
+
 interface FreezeState {
   set: DecorationSet
   /** Tables whose counts are bigger than the table, by position: the appended transaction clamps them. */
   over: number[]
+  /** Counts each transaction that is not typing: the view runs only when it moves. */
+  generation: number
 }
 
 const freezeKey = new PluginKey<FreezeState>('mdapp-table-freeze')
@@ -110,6 +131,7 @@ class Freezer {
 
   set(node: ProseNode): void {
     if (node === this.node) return
+    const old = this.node
     this.node = node
     const { rows, cols } = counts(node)
     for (let c = cols; c < this.#cols; c++) this.block.style.removeProperty(`--table-frozen-x-${c}`)
@@ -126,7 +148,8 @@ class Freezer {
     }
     this.#rows = rows
     this.#cols = cols
-    this.#relayout()
+    // The column widths are the first row's (`colwidth`); a row's new height resizes the table (the observer).
+    if (old === null || shapeOf(old) !== shapeOf(node) || old.firstChild !== node.firstChild) this.#relayout()
   }
 
   #unlistenRows(): void {
@@ -161,6 +184,7 @@ class Freezer {
         this.block.style.setProperty(`--table-frozen-x-${c}`, `${left}px`)
         left += (first?.cells[c] as HTMLElement | undefined)?.offsetWidth ?? 0
       }
+      this.block.toggleAttribute('data-table-scrolls', this.#cols > 0 && this.block.scrollWidth > this.block.clientWidth)
     }
     const scroller = this.#scroller
     const rows = parts.body.rows
@@ -169,8 +193,11 @@ class Freezer {
     const frozenHeight = rows[this.#rows - 1].getBoundingClientRect().bottom - rows[0].getBoundingClientRect().top
     const tableRect = parts.table.getBoundingClientRect()
     const scrollerTop = scroller.getBoundingClientRect().top + scroller.clientTop * zoom
-    const offset = pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, frozenHeight) / zoom
-    this.block.style.setProperty('--table-frozen-y', `${offset}px`)
+    // Whole device pixels (YAZ-3788): a part of a pixel moves the rows' paint off the sticky cells' pixel grid,
+    // and a 1px seam shows the rows under them. `floor` puts the part under the note's top edge, never a gap.
+    const ratio = window.devicePixelRatio || 1
+    const screen = Math.floor(pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, frozenHeight) * ratio) / ratio
+    this.block.style.setProperty('--table-frozen-y', `${screen / zoom}px`)
   }
 
   destroy(): void {
@@ -180,6 +207,7 @@ class Freezer {
     if (this.#frame !== 0) cancelAnimationFrame(this.#frame)
     this.#frame = 0
     for (let c = 0; c < this.#cols; c++) this.block.style.removeProperty(`--table-frozen-x-${c}`)
+    this.block.removeAttribute('data-table-scrolls')
   }
 }
 
@@ -192,7 +220,7 @@ class FreezeView {
 
   update(view: EditorView, prev?: EditorState): void {
     const state = freezeKey.getState(view.state)!
-    if (prev !== undefined && freezeKey.getState(prev) === state) return
+    if (prev !== undefined && freezeKey.getState(prev)!.generation === state.generation) return
     const live = new Map<HTMLElement, ProseNode>()
     for (const deco of state.set.find(undefined, undefined, (spec) => spec.frozenTable === true)) {
       const dom = view.nodeDOM(deco.from)
@@ -229,11 +257,12 @@ export const tableFreeze = $prose(
             decorations.push(...frozenDecorations(node, pos))
             return false
           })
-          return { set: DecorationSet.create(doc, decorations), over: [] }
+          return { set: DecorationSet.create(doc, decorations), over: [], generation: 0 }
         },
         apply: (tr: Transaction, value) => {
           if (!tr.docChanged) return value
           let set = value.set.map(tr.mapping, tr.doc)
+          if (value.over.length === 0 && typingOnly(tr)) return { ...value, set }
           const tables = changedTables(tr)
           for (const [pos, node] of tables) {
             // The table's own decorations: `find` also gives those of a table that only touches it.
@@ -249,7 +278,7 @@ export const tableFreeze = $prose(
             const node = tr.doc.nodeAt(pos)
             return node?.type.name === 'table' && overCounts(node)
           })
-          return { set, over }
+          return { set, over, generation: value.generation + 1 }
         },
       },
       appendTransaction: (_trs, _old, state) => {

@@ -6,9 +6,9 @@
  * - Two or more cells of one kind continue their step, (last − first) / (count − 1): numbers
  *   (decimals keep their places), times `h:mm` (`04:00` keeps its 0; past 23:59 wraps),
  *   ISO dates `YYYY-MM-DD` (the app's date format, `views/expr/dates.ts`; the step is in days).
- * - Weekday and month names (full or 3-letter, in the last cell's case style) and text that ends
- *   in a number (`Week 1`; the digit count stays) continue from one cell, by 1.
- * - Anything else, a mix of kinds, or one number / time / date: the source cells repeat in order.
+ * - Dates (by a day; YAZ-3789), weekday and month names (full or 3-letter, in the last cell's case
+ *   style) and text that ends in a number (`Week 1`; the digit count stays) continue from one cell, by 1.
+ * - Anything else, a mix of kinds, or one number / time: the source cells repeat in order.
  */
 
 const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -85,7 +85,7 @@ export function fillSeries(source: string[], count: number): string[] {
   const first = values[0]!
   const last = values.at(-1)!
   const sameKind = values.every((v) => v.kind === first.kind && (v.kind !== 'trailing' || first.kind !== 'trailing' || v.prefix === first.prefix))
-  const series = sameKind && (values.length > 1 ? first.kind !== 'text' : first.kind === 'weekday' || first.kind === 'month' || first.kind === 'trailing')
+  const series = sameKind && (values.length > 1 ? first.kind !== 'text' : first.kind === 'date' || first.kind === 'weekday' || first.kind === 'month' || first.kind === 'trailing')
   if (!series) return Array.from({ length: count }, (_, i) => source[i % source.length]!)
   const size = last.kind === 'weekday' ? 7 : last.kind === 'month' ? 12 : 0
   // A name's step goes forward around the week or the year: `Sun, Mon` is +1, not −6.

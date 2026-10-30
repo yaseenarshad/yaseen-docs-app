@@ -117,6 +117,32 @@
    sideways scroll, at the widths of the columns before them. Rows move down by the offset that keeps
    them at the top of the note (the folder page's method). Both paint their tint over the page colour,
    so the cells under them do not show through; a frozen row stands above the sticky columns. */
+
+/* A frozen table separates its borders (YAZ-3788). With `collapse` the table paints each border at the
+   rows' first place, and no moved cell paints the 1px band at its edge: the rows under it showed
+   through. Separated, each cell draws its bottom and right border over its own background (the first
+   row and the first column also the top and left), so the lines are still one border wide. `clip`, not
+   prosemirror-tables' `hidden`: `hidden` makes the table the sticky cells' scroll box, so the frozen
+   columns never stuck in the block's sideways scroll. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] table {
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: clip;
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] :is(th, td) {
+  border-top-width: 0;
+  border-left-width: 0;
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] tr:first-child > * {
+  border-top-width: var(--table-border-width, 1px);
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] tr > :first-child {
+  border-left-width: var(--table-border-width, 1px);
+}
+
 .milkdown .ProseMirror .milkdown-table-block .table-frozen-row {
   position: relative;
   z-index: 2;
@@ -124,8 +150,14 @@
 }
 
 .milkdown .ProseMirror .milkdown-table-block :is(th, td).table-frozen-col {
-  position: sticky;
   z-index: 1;
+}
+
+/* Sticky only while the block scrolls sideways (`data-table-scrolls`, YAZ-3790): each sticky cell costs
+   the browser work on every layout, about 2 ms a key for 1,000 cells. A table that fits needs none. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-scrolls] :is(th, td).table-frozen-col {
+  position: sticky;
+  left: var(--table-frozen-left, 0px);
 }
 
 .milkdown .ProseMirror .milkdown-table-block :is(.table-frozen-row > *, .table-frozen-col) {
