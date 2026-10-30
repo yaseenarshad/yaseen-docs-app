@@ -13,6 +13,13 @@
  * Every other row does there what Crepe's command does (a heading, a quote, code or a table inside
  * the item; Task List makes the item a task).
  *
+ * "Table" (YAZ-3696 D12) is the app's own row in Crepe's place (`advancedGroup: { table: null }` in
+ * `createCrepe()`), with Crepe's label, icon and position (after Code). In a list item's label line it
+ * removes only the `/query`, keeps the line (empty when the query was all of it) and puts a 3×3
+ * table BELOW it, inside the item, the caret in the first header cell — one transaction, one undo
+ * step. Crepe's row replaced the line, so the table sat on the marker line. Anywhere else the row
+ * runs Crepe's own three commands, as before.
+ *
  * "Current time" (YAZ-3511 D22) inserts `h:mmam - ` as plain text at the caret, read at the pick.
  * It opens the way every stock row does (`clearTextInCurrentBlockCommand` removes the `/query`),
  * then `tr.insertText` — no schema, no mark. Its `keywords` (the patch's second change: the filter
@@ -27,10 +34,16 @@
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
-import { clearTextInCurrentBlockCommand } from '@milkdown/kit/preset/commonmark'
-import { Plugin, type Selection } from '@milkdown/kit/prose/state'
+import {
+  addBlockTypeCommand,
+  clearTextInCurrentBlockCommand,
+  selectTextNearPosCommand,
+} from '@milkdown/kit/preset/commonmark'
+import { createTable } from '@milkdown/kit/preset/gfm'
+import { Plugin, type Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { shallowRef } from 'vue'
+import { isListItem } from './outline/listNodes'
 
 /** One slash row as Crepe's builder takes it (`keywords` is the YAZ-3550 patch's field). */
 export interface SlashRow {
@@ -97,10 +110,57 @@ export const currentTimeRow: SlashRow = {
   },
 }
 
+/** Crepe's own table icon (`src/icons/table.ts`; the package does not export it). */
+const tableIcon = `
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+  >
+    <g clip-path="url(#clip0_977_8078)">
+      <path
+        d="M20 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H20C21.1 21 22 20.1 22 19V5C22 3.9 21.1 3 20 3ZM20 5V8H5V5H20ZM15 19H10V10H15V19ZM5 10H8V19H5V10ZM17 19V10H20V19H17Z"
+      />
+    </g>
+    <defs>
+      <clipPath id="clip0_977_8078">
+        <rect width="24" height="24" />
+      </clipPath>
+    </defs>
+  </svg>
+`
+
+/** The "Table" row (D12): in a list item's label line, the table goes below the line; see the header. */
+export const tableRow: SlashRow = {
+  label: 'Table',
+  icon: tableIcon,
+  onRun: (ctx) => {
+    const view = ctx.get(editorViewCtx)
+    const { $from } = view.state.selection
+    if (!isListItem($from.node($from.depth - 1)) || $from.index($from.depth - 1) !== 0) {
+      // Crepe's own row (`menu/config.ts`), unchanged.
+      const commands = ctx.get(commandsCtx)
+      commands.call(clearTextInCurrentBlockCommand.key)
+      const { from } = view.state.selection
+      commands.call(addBlockTypeCommand.key, { nodeType: createTable(ctx, 3, 3) })
+      commands.call(selectTextNearPosCommand.key, { pos: from })
+      return
+    }
+    // The query runs from its `/` to the caret; a leaf counts as one character, as in a position.
+    const slash = $from.parent.textBetween(0, $from.parentOffset, undefined, '\uFFFC').lastIndexOf('/')
+    const tr = view.state.tr
+    if (slash >= 0) tr.delete($from.start() + slash, $from.pos)
+    const at = tr.mapping.map($from.after())
+    tr.insert(at, createTable(ctx, 3, 3))
+    view.dispatch(tr.setSelection(TextSelection.near(tr.doc.resolve(at + 1))).scrollIntoView())
+  },
+}
+
 /**
  * One editor's slash extension: the `buildMenu` for `featureConfigs[CrepeFeature.BlockEdit]`
- * (Current time at the end of the Text group, the list rule, then `extend` — the Drawing row
- * when the host gives a creator) and the plugin that keeps the "in a list" flag current.
+ * (Current time at the end of the Text group, Table after Code, then `extend` — the Drawing row
+ * when the host gives a creator — then the list rule) and the plugin that keeps the "in a list" flag current.
  */
 export function createSlashMenu(extend?: (builder: SlashMenuGroups) => void): {
   buildMenu: (builder: SlashMenuGroups) => void
@@ -109,6 +169,7 @@ export function createSlashMenu(extend?: (builder: SlashMenuGroups) => void): {
   const inList = shallowRef(false)
   const buildMenu = (builder: SlashMenuGroups) => {
     builder.getGroup('text').addItem('current-time', currentTimeRow)
+    builder.getGroup('advanced').addItem('table', tableRow)
     extend?.(builder)
     if (!inList.value) return
     for (const group of builder.build()) {

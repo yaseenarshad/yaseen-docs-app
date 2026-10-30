@@ -419,9 +419,11 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // Crepe feature customisation #1 (YAZ-1329/YAZ-877): Number children is the only editor
       // command that creates ordered children, so the stock Ordered List row is absent. Drawing
       // still composes into this same BlockEdit config when the host supplies a creator, after
-      // Current time and before the list rule (YAZ-3550, `slashMenu.ts`).
+      // Current time and before the list rule (YAZ-3550, `slashMenu.ts`). The stock Table row is
+      // replaced by the app's own, which keeps a bullet's line above the table (YAZ-3696 D12).
       [CrepeFeature.BlockEdit]: {
         listGroup: { orderedList: null },
+        advancedGroup: { table: null },
         buildMenu: slashMenu.buildMenu,
       },
       // #2 (YAZ-923): the selection toolbar SAYS the block's level — a Heading group whose

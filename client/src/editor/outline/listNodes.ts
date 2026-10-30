@@ -45,6 +45,18 @@ export const findNestedLists = (item: ProseNode): NestedList[] => {
   return found
 }
 
+/**
+ * Every block a bullet fold hides, in order: the nested lists and the tables the item owns (YAZ-3696
+ * D11). The item's other own blocks stay, so a fold never hides its label.
+ */
+export const findFoldedChildren = (item: ProseNode): NestedList[] => {
+  const found: NestedList[] = []
+  item.forEach((child, offset) => {
+    if (LIST_NODE_NAMES.has(child.type.name) || child.type.name === 'table') found.push({ list: child, offset })
+  })
+  return found
+}
+
 export interface OwnImage {
   node: ProseNode
   /** Offset of the image inside the item (`itemPos + 1 + offset` is its document position). */
