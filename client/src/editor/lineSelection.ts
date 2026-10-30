@@ -80,21 +80,21 @@ const hiddenRun = (state: EditorState, $pos: ResolvedPos): { from: number; to: n
 const isHiddenTextblock = (state: EditorState, $pos: ResolvedPos): boolean => hiddenRun(state, $pos) !== null
 
 /**
- * A position inside the nearest VISIBLE textblock in `dir` from `$head`'s block; `'leaf'` when a
- * leaf block (`hr`) comes first — a line of its own that this keymap cannot select (D2); null at
- * a document / zoom edge. `findFrom` without textOnly lands INSIDE the next textblock (D1) or,
- * for a block atom, on a `NodeSelection` of it; a hidden run is stepped over in one jump. Backward, the
- * position is the END of the previous line. The outliner's joins read it too (YAZ-3695 D4, D5).
+ * A position inside the nearest VISIBLE textblock in `dir` from `$head`'s block; a `NodeSelection` of
+ * the leaf block (`hr`) when one comes first — a line of its own that this keymap cannot select (D2);
+ * null at a document / zoom edge. `findFrom` without textOnly lands INSIDE the next textblock (D1) or,
+ * for a block atom, on a `NodeSelection` of it; a hidden run, a hidden leaf too, is stepped over in one
+ * jump. Backward, the position is the END of the previous line. The outliner's joins read it too
+ * (YAZ-3695 D4, D5), and select the leaf (YAZ-3784).
  */
-export const nextVisibleTextblock = (state: EditorState, $head: ResolvedPos, dir: 1 | -1): ResolvedPos | 'leaf' | null => {
+export const nextVisibleTextblock = (state: EditorState, $head: ResolvedPos, dir: 1 | -1): ResolvedPos | NodeSelection | null => {
   let from = dir > 0 ? $head.after() : $head.before()
   for (;;) {
     const found = Selection.findFrom(state.doc.resolve(from), dir, false)
     if (found === null) return null
-    if (found instanceof NodeSelection) return 'leaf'
-    const $n = found.$from
-    const run = hiddenRun(state, $n)
-    if (run === null) return $n
+    const leaf = found instanceof NodeSelection
+    const run = hiddenRun(state, found.$from)
+    if (run === null) return leaf ? found : found.$from
     from = dir > 0 ? run.to : run.from
   }
 }
@@ -113,11 +113,11 @@ export const coveredLines = (state: EditorState): Selection => {
   let { $from, $to } = sel
   if ($to.parentOffset === 0 && !$to.sameParent($from)) {
     const $prev = nextVisibleTextblock(state, $to, -1)
-    if ($prev !== null && $prev !== 'leaf' && $prev.end() >= $from.pos) $to = state.doc.resolve($prev.end())
+    if ($prev !== null && !($prev instanceof NodeSelection) && $prev.end() >= $from.pos) $to = state.doc.resolve($prev.end())
   }
   if ($from.parentOffset === $from.parent.content.size && !$from.sameParent($to)) {
     const $next = nextVisibleTextblock(state, $from, 1)
-    if ($next !== null && $next !== 'leaf' && $next.start() <= $to.pos) $from = state.doc.resolve($next.start())
+    if ($next !== null && !($next instanceof NodeSelection) && $next.start() <= $to.pos) $from = state.doc.resolve($next.start())
   }
   return $from.pos === sel.from && $to.pos === sel.to ? sel : new TextSelection($from, $to)
 }
@@ -290,7 +290,7 @@ const extendByLine = (dir: 1 | -1): Command => (state, dispatch) => {
     newHead = dir > 0 ? $head.end() : $head.start()
   } else {
     const $n = nextVisibleTextblock(state, $head, dir)
-    if ($n === null || $n === 'leaf') {
+    if ($n === null || $n instanceof NodeSelection) {
       if (!toward) {
         // Document or zoom edge: consumed, unchanged — never hand native a step into hidden DOM
         // (D6); a leaf block in the gap: native move (D2).
@@ -331,9 +331,15 @@ const planVisibleDelete = (state: EditorState): number[] | null => {
 
 /** Delete the textblock at `$tb` as a NODE, together with every wrapper it was the only child of (never the doc). The outliner's joins remove a line with it (YAZ-3695). */
 export const deleteBlockAndEmptyWrappers = (tr: Transaction, $tb: ResolvedPos): void => {
+  const depth = emptyWrapperDepth($tb)
+  tr.delete($tb.before(depth), $tb.after(depth))
+}
+
+/** The depth of the outermost node `deleteBlockAndEmptyWrappers` removes with the textblock at `$tb`. */
+export const emptyWrapperDepth = ($tb: ResolvedPos): number => {
   let depth = $tb.depth
   while (depth > 1 && $tb.node(depth - 1).childCount === 1) depth--
-  tr.delete($tb.before(depth), $tb.after(depth))
+  return depth
 }
 
 /**

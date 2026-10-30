@@ -200,12 +200,13 @@ export const setHeadingFoldSet =
   }
 
 /**
- * Add a SILENT unfold of `set` (positions in the transaction's new document) to an edit without dispatching it:
- * the outliner's joins and the caret guard open the heading folds that would hide a line (YAZ-3695). Silent like
- * CMD+F's reveal, so ⌘Z panic-undo is untouched. Does nothing for an empty set.
+ * Add a SILENT fold (`collapsed: true`) or unfold of `set` (positions in the transaction's new document) to a transaction
+ * without dispatching it: the outliner's joins and the caret guard open the heading folds that would hide a line, and
+ * ⌘Z / ⌘⇧Z close and open them again (`foldReveal.ts`, YAZ-3695). Silent like CMD+F's reveal, so ⌘Z panic-undo is
+ * untouched. Does nothing for an empty set.
  */
-export const addHeadingUnfoldMeta = (transaction: Transaction, set: readonly number[]): void => {
-  if (set.length > 0) transaction.setMeta(pluginKey, { set, collapsed: false, silent: true } satisfies FoldSetMeta)
+export const addHeadingFoldSetMeta = (transaction: Transaction, set: readonly number[], collapsed: boolean): void => {
+  if (set.length > 0) transaction.setMeta(pluginKey, { set, collapsed, silent: true } satisfies FoldSetMeta)
 }
 
 /** Add this plugin's half of a combined fold undo without dispatching it. Declines when stale. */

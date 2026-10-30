@@ -235,7 +235,7 @@ import { headingLevelTag } from './outline/headingLevelTag'
 import { headingText } from './outline/headingText'
 import { foldAllHotkeys } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
-import { caretReveal } from './outline/caretReveal'
+import { caretReveal, foldHistory } from './outline/foldReveal'
 import { enterTracker, outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
@@ -540,8 +540,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(outlinerKeymap)
   // YAZ-3695 D7: the outliner's Backspace puts no space in a join right after an Enter; this DOM keydown handler tells it.
   crepe.editor.use(enterTracker)
-  // YAZ-3695 (11): after an edit, a caret in a folded line opens the folds that hide it.
-  crepe.editor.use(caretReveal)
+  // YAZ-3695 (11): after an edit, a caret in a folded line opens the folds that hide it. Before it: ⌘Z / ⌘⇧Z close and
+  // open again the folds an edit opened (YAZ-3781), so the guard sees the folds as ⌘Z left them.
+  crepe.editor.use(foldHistory).use(caretReveal)
   // The document-wide coordinator runs first: it owns Mod-Shift-U/I and consumes Mod-z only when
   // BOTH fold plugins are pending from that one atomic gesture. Individual heading/bullet folds
   // fall through to their existing undo handlers; foreign view actions still clear stale pending

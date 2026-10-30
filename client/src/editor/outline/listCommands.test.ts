@@ -15,8 +15,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { undo } from '@milkdown/kit/prose/history'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { closeHistory } from '@milkdown/kit/prose/history'
+import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import { OUTLINE_TOGGLE_CLASS } from './outlineFolding'
@@ -113,17 +113,20 @@ const fold = (root: HTMLElement, label: string) => root.querySelector<HTMLButton
 const isFolded = (root: HTMLElement, label: string) => root.querySelector(`[aria-label="Expand ${label}"]`) !== null
 const isOpen = (root: HTMLElement, label: string) => root.querySelector(`[aria-label="Collapse ${label}"]`) !== null
 
-/** Insert an empty paragraph at `pos` and put the caret in it. */
+/** Insert an empty paragraph at `pos` and put the caret in it: a setup step, then `closeHistory`, so the next edit is its own ⌘Z event. */
 function insertEmptyParagraph(crepe: Crepe, pos: number): void {
   const view = viewOf(crepe)
   const tr = view.state.tr.insert(pos, view.state.schema.nodes.paragraph.create())
   view.dispatch(tr.setSelection(TextSelection.create(tr.doc, pos + 1)))
+  view.dispatch(closeHistory(view.state.tr))
 }
 
-/** One ⌘Z through history (prosemirror-history's own `undo`). */
-const undoOnce = (crepe: Crepe) => {
+/** A mouse click on a line: the DOM mousedown handlers run, then the caret moves there (jsdom has no layout to place it). */
+function click(crepe: Crepe, pos: number): void {
   const view = viewOf(crepe)
-  return undo(view.state, view.dispatch)
+  const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+  view.someProp('handleDOMEvents', (handlers) => handlers.mousedown?.(view, event))
+  select(crepe, pos)
 }
 
 describe('Tab (indent)', () => {
@@ -309,20 +312,6 @@ describe('Backspace at the start of an item', () => {
     expect(caretPos(crepe)).toBe(posOf(crepe, 'L3 b') + 4)
   })
 
-  it('joins a non-empty item that owns children too; with no previous sibling its children take its place (D5, was a no-op)', async () => {
-    const { crepe } = await mount()
-    caretIn(crepe, 'L2 a', 0)
-    expect(press(crepe, 'Backspace')).toBe(true)
-    expect(md(crepe)).toBe('* L1 a L2 a\n  * L3 a\n    * L4 a\n  * L3 b\n  * L2 b\n* L1 b\n* L1 c\n')
-  })
-
-  it('lifts the first item of the document to a paragraph', async () => {
-    const { crepe } = await mount('* Solo\n* Next\n')
-    caretIn(crepe, 'Solo', 0)
-    press(crepe, 'Backspace')
-    expect(md(crepe)).toBe('Solo\n\n* Next\n')
-  })
-
   it('is not intercepted inside item text (native deletion) nor for a range selection', async () => {
     const { crepe } = await mount()
     caretIn(crepe, 'L1 c', 4)
@@ -397,8 +386,8 @@ describe('YAZ-3695 1- Enter keeps the fold, the zoom and the line format (D1, D2
     const { crepe } = await mount('* ### Missing Features\n  * kid\n')
     caretIn(crepe, 'Missing Features', 8)
     press(crepe, 'Enter')
-    const out = md(crepe)
-    expect(out).toMatch(/^\* ### Missing( |&#x20;)?\n {2}\* ### Features\n {2}\* kid\n$/)
+    // The space before "Features" stays on the first half.
+    expect(md(crepe)).toBe('* ### Missing \n  * ### Features\n  * kid\n')
   })
 
   it('8. at the start of a done task: the new task above is unchecked', async () => {
@@ -658,7 +647,7 @@ describe('YAZ-3695 3- Backspace joins into the previous VISIBLE line (D5, D6, D7
     expect(md(crepe)).toBe('* a b\n')
   })
 
-  it('38. Alt-Backspace mid-line is not taken (native)', async () => {
+  it('38b. Alt-Backspace mid-line is not taken (native)', async () => {
     const { crepe } = await mount('* a\n* bc\n')
     caretIn(crepe, 'bc', 1)
     expect(press(crepe, 'Alt-Backspace')).toBe(false)
@@ -765,27 +754,206 @@ describe('YAZ-3695 4- the caret never stays in a hidden line, and no placeholder
   })
 })
 
-describe('YAZ-3695 49. one ⌘Z gives the text back', () => {
-  it.each<[string, string, (crepe: Crepe, root: HTMLElement) => void, string]>([
-    ['1', DAY, (c, r) => (fold(r, '653am'), caretIn(c, '653am', 0), press(c, 'Enter')), '653am'],
-    ['4', DAY, (c, r) => (fold(r, '653am'), caretIn(c, '653am', 3), press(c, 'Enter')), '653am'],
-    ['10', '## Sec\n\nhidden one\n\nhidden two\n\n## Next\n\nafter\n', (c, r) => (fold(r, 'Sec'), caretIn(c, 'Sec', 1), press(c, 'Enter')), 'Sec'],
-    ['14', '* a\n* b\n', (c) => (caretIn(c, 'a'), press(c, 'Delete')), ''],
-    ['17', '* a\n  * kid\n* b\n  * bk\n', (c, r) => (fold(r, 'a'), caretIn(c, 'a'), press(c, 'Delete')), 'a'],
-    ['26', AKB, (c, r) => (fold(r, 'a'), caretIn(c, 'b', 0), press(c, 'Backspace')), 'a'],
-    ['30', '* a\n  * kid\n* b\n  * bk\n', (c, r) => (fold(r, 'a'), caretIn(c, 'b', 0), press(c, 'Backspace')), 'a'],
-    ['41', '## A\n\nbody a\n\n## B\n\nbody b\n', (c, r) => (fold(r, 'A'), caretIn(c, 'B', 0), press(c, 'Backspace')), 'A'],
-  ])('case %s', async (_case, markdown, act, foldLabel) => {
+/** One ⌘Z row: the case, the note, the label folded first (it must be folded again after ⌘Z), a setup step (its own ⌘Z event), the edit. */
+type UndoRow = [string, string, string | null, ((c: Crepe) => void) | null, (c: Crepe) => unknown]
+const toTop = (c: Crepe) => insertEmptyParagraph(c, 0)
+const zoomInto = (c: Crepe, text: string) => (caretIn(c, text), press(c, 'Mod-.'))
+
+const UNDO_ROWS: UndoRow[] = [
+  ['1', DAY, '653am', null, (c) => (caretIn(c, '653am', 0), press(c, 'Enter'))],
+  ['2', AKB, null, (c) => zoomInto(c, 'a'), (c) => (caretIn(c, 'a', 0), press(c, 'Enter'))],
+  ['4', DAY, '653am', null, (c) => (caretIn(c, '653am', 3), press(c, 'Enter'))],
+  ['5', '* 653am\n  * kid\n', null, null, (c) => (caretIn(c, '653am', 3), press(c, 'Enter'))],
+  ['6', '* NEW\n* ### Missing Features\n  * For future\n', null, null, (c) => (caretIn(c, 'Missing', 0), press(c, 'Enter'))],
+  ['7', '* ### Missing Features\n  * kid\n', null, null, (c) => (caretIn(c, 'Missing Features', 8), press(c, 'Enter'))],
+  ['8', '* [x] done\n  * kid\n', null, null, (c) => (caretIn(c, 'done', 0), press(c, 'Enter'))],
+  ['9', '## Sec\n\nhidden one\n\n## Next\n', 'Sec', null, (c) => (caretIn(c, 'Sec', 0), press(c, 'Enter'))],
+  ['10', '## Sec\n\nhidden one\n\nhidden two\n\n## Next\n\nafter\n', 'Sec', null, (c) => (caretIn(c, 'Sec', 1), press(c, 'Enter'))],
+  ['13', AKB, null, toTop, (c) => press(c, 'Delete')],
+  ['14', '* a\n* b\n', null, null, (c) => (caretIn(c, 'a'), press(c, 'Delete'))],
+  ['15', AKB, null, null, (c) => (caretIn(c, 'a'), press(c, 'Delete'))],
+  ['16', AKB, 'a', null, (c) => (caretIn(c, 'a'), press(c, 'Delete'))],
+  ['17', '* a\n  * kid\n* b\n  * bk\n', 'a', null, (c) => (caretIn(c, 'a'), press(c, 'Delete'))],
+  ['18', AKB, null, null, (c) => (caretIn(c, 'kid'), press(c, 'Delete'))],
+  ['19', '* a\n*\n* b\n', null, null, (c) => (select(c, posOf(c, 'a') + 5), press(c, 'Delete'))],
+  ['20', '* a\n*\n  * k1\n* b\n', null, null, (c) => (select(c, posOf(c, 'a') + 5), press(c, 'Delete'))],
+  ['21', 'para\n\n* a\n  * kid\n', null, null, (c) => (caretIn(c, 'para'), press(c, 'Delete'))],
+  ['22', '* a\n\n## Head\n', null, null, (c) => (caretIn(c, 'a'), press(c, 'Delete'))],
+  ['23', 'text\n\n## Head\n', null, null, (c) => (caretIn(c, 'text'), press(c, 'Delete'))],
+  ['26', AKB, 'a', null, (c) => (caretIn(c, 'b', 0), press(c, 'Backspace'))],
+  ['27', AKB, null, toTop, (c) => (caretIn(c, 'a', 0), press(c, 'Backspace'))],
+  ['28', '* b\n', null, toTop, (c) => (caretIn(c, 'b', 0), press(c, 'Backspace'))],
+  ['29', '* a\n* b\n  * bk\n', null, null, (c) => (caretIn(c, 'b', 0), press(c, 'Backspace'))],
+  ['30', '* a\n  * kid\n* b\n  * bk\n', 'a', null, (c) => (caretIn(c, 'b', 0), press(c, 'Backspace'))],
+  ['31', '* p\n  * c\n    * ck\n', null, null, (c) => (caretIn(c, 'c', 0), press(c, 'Backspace'))],
+  ['32', 'text\n\n* a\n  * kid\n* b\n', null, null, (c) => (caretIn(c, 'a', 0), press(c, 'Backspace'))],
+  ['33', '* a\n*\n  * k1\n* b\n', null, null, (c) => (select(c, posOf(c, 'a') + 5), press(c, 'Backspace'))],
+  ['34', '* a\n* b\n', null, null, (c) => (caretIn(c, 'a', 0), press(c, 'Backspace'))],
+  ['39', '* a\n\n## Head\n', null, null, (c) => (caretIn(c, 'Head', 0), press(c, 'Backspace'))],
+  ['40', 'text\n\n### Head\n', null, null, (c) => (caretIn(c, 'Head', 0), press(c, 'Backspace'))],
+  ['41', '## A\n\nbody a\n\n## B\n\nbody b\n', 'A', null, (c) => (caretIn(c, 'B', 0), press(c, 'Backspace'))],
+  ['42', 'text\n\n## Sec\n\nbody\n', 'Sec', null, (c) => (caretIn(c, 'Sec', 0), press(c, 'Backspace'))],
+  ['42b', 'text\n\n# Sec\n\n## Sub\n\nbody\n', 'Sec', null, (c) => (caretIn(c, 'Sec', 0), press(c, 'Backspace'))],
+  ['42c', '* p\n  * c\n    * ck\n      * x\n', 'c', null, (c) => (caretIn(c, 'c', 0), press(c, 'Backspace'))],
+  ['42d', '* a\n  * ak\n* b\n  * c\n    * ck\n', 'b', null, (c) => (caretIn(c, 'b', 0), press(c, 'Backspace'))],
+  ['43', '## Head\n\nbody\n', null, null, (c) => (caretIn(c, 'Head', 0), press(c, 'Backspace'))],
+  ['44', 'text\n\n## Head\n', null, (c) => insertEmptyParagraph(c, posOf(c, 'text') + 5), (c) => (caretIn(c, 'Head', 0), press(c, 'Backspace'))],
+  ['45', AKB, 'a', null, (c) => (caretIn(c, 'b'), press(c, 'Tab'))],
+  ['46', '## Sec\n\nhidden\n\n## Next\n', 'Sec', null, (c) => (caretIn(c, 'Sec'), press(c, 'Enter'))],
+  ['3A', '* a\n  * kid\n\ntext\n', 'a', null, (c) => (caretIn(c, 'text', 0), press(c, 'Backspace'))],
+  ['3D', '> quote\n\n* a\n', null, null, (c) => (caretIn(c, 'a', 0), press(c, 'Backspace'))],
+]
+
+describe('YAZ-3695 49. one ⌘Z gives the text AND the fold back, one row per scenario', () => {
+  it.each(UNDO_ROWS)('case %s', async (_case, markdown, folded, setup, act) => {
     const { crepe, root } = await mount(markdown)
-    act(crepe, root)
-    expect(md(crepe)).not.toBe(markdown)
-    expect(undoOnce(crepe)).toBe(true)
+    if (folded !== null) fold(root, folded)
+    setup?.(crepe)
+    const before = md(crepe)
+    act(crepe)
+    expect(md(crepe)).not.toBe(before)
+    press(crepe, 'Mod-z')
+    expect(md(crepe)).toBe(before)
+    if (folded !== null) expect(isFolded(root, folded)).toBe(true)
+  })
+})
+
+describe('YAZ-3695 3B. one ⌘Z gives the text AND the fold back (YAZ-3781); ⌘⇧Z opens it again', () => {
+  it.each<[string, string, string, string, (c: Crepe) => void]>([
+    ['17 Delete at the end of a folded parent before a parent', '* a\n  * kid\n* b\n  * bk\n', 'a', 'a b', (c) => (caretIn(c, 'a'), press(c, 'Delete'))],
+    ['30 Backspace on a parent after a folded parent', '* a\n  * kid\n* b\n  * bk\n', 'a', 'a b', (c) => (caretIn(c, 'b', 0), press(c, 'Backspace'))],
+    ['41 Backspace on a heading after a folded heading', '## A\n\nbody a\n\n## B\n\nbody b\n', 'A', 'A B', (c) => (caretIn(c, 'B', 0), press(c, 'Backspace'))],
+    ['45 Tab under a folded bullet', '* a\n  * kid\n* b\n', 'a', 'a', (c) => (caretIn(c, 'b'), press(c, 'Tab'))],
+    ['46 Enter at the end of a folded heading', '## Sec\n\nhidden\n\n## Next\n', 'Sec', 'Sec', (c) => (caretIn(c, 'Sec'), press(c, 'Enter'))],
+    ['probe Delete at the end of a folded heading before a heading', '## A\n\nbody a\n\n## B\n\nbody b\n', 'A', 'A B', (c) => (caretIn(c, 'A'), press(c, 'Delete'))],
+  ])('%s', async (_name, markdown, label, joinedLabel, act) => {
+    const { crepe, root } = await mount(markdown)
+    fold(root, label)
+    act(crepe)
+    const edited = md(crepe)
+    expect(isOpen(root, joinedLabel)).toBe(true)
+    press(crepe, 'Mod-z')
     expect(md(crepe)).toBe(markdown)
-    // A fold the edit kept comes back folded. A fold a join OPENED stays open after ⌘Z: history restores the text, and
-    // fold state is view state outside history (Finding on YAZ-3751).
-    if (foldLabel === '') return
-    if (['17', '30', '41'].includes(_case)) expect(isOpen(root, foldLabel)).toBe(true)
-    else expect(isFolded(root, foldLabel)).toBe(true)
+    expect(isFolded(root, label)).toBe(true)
+    press(crepe, 'Mod-Shift-z')
+    expect(md(crepe)).toBe(edited)
+    expect(isOpen(root, joinedLabel)).toBe(true)
+  })
+})
+
+describe('YAZ-3695 round 1 bugs', () => {
+  describe('3A. Backspace at the start of a plain text line uses the join rule (YAZ-3780, D5, D7)', () => {
+    it("after a folded bullet: joins the folded bullet's own line, never the hidden child; the fold stays", async () => {
+      const { crepe, root } = await mount('* a\n  * kid\n\ntext\n')
+      fold(root, 'a')
+      caretIn(crepe, 'text', 0)
+      expect(press(crepe, 'Backspace')).toBe(true)
+      expect(md(crepe)).toBe('* a text\n  * kid\n')
+      expect(isFolded(root, 'a text')).toBe(true)
+    })
+
+    it('after a code block: nothing happens', async () => {
+      const { crepe } = await mount('```\ncode\n```\n\ntext\n')
+      caretIn(crepe, 'text', 0)
+      expect(press(crepe, 'Backspace')).toBe(true)
+      expect(md(crepe)).toBe('```\ncode\n```\n\ntext\n')
+    })
+
+    it('after an empty bullet: the empty bullet goes; the text line keeps its format', async () => {
+      const { crepe } = await mount('* a\n*\n\ntext\n')
+      caretIn(crepe, 'text', 0)
+      press(crepe, 'Backspace')
+      expect(md(crepe)).toBe('* a\n\ntext\n')
+    })
+
+    it.each([
+      ['text', 'one\n\ntwo\n', 'two', 'one', 'one two\n'],
+      ['a heading', '## H\n\ntext\n', 'text', 'H', '## H text\n'],
+      ['a bullet', '* a\n\ntext\n', 'text', 'a', '* a text\n'],
+    ])('after %s: one space between the words, the mirror of Delete', async (_kind, markdown, line, above, joined) => {
+      const { crepe } = await mount(markdown)
+      caretIn(crepe, line, 0)
+      press(crepe, 'Backspace')
+      expect(md(crepe)).toBe(joined)
+      const mirror = await mount(markdown)
+      caretIn(mirror.crepe, above)
+      press(mirror.crepe, 'Delete')
+      expect(md(mirror.crepe)).toBe(joined)
+    })
+
+    it('at the top of the note: declines (native: nothing)', async () => {
+      const { crepe } = await mount('text\n\n* a\n')
+      caretIn(crepe, 'text', 0)
+      expect(press(crepe, 'Backspace')).toBe(false)
+      expect(md(crepe)).toBe('text\n\n* a\n')
+    })
+  })
+
+  it('3C. an Enter, then a click to another line, then Backspace: one space (YAZ-3782, D7)', async () => {
+    const { crepe } = await mount('* call bluecross\n* downgrade\n* x\n')
+    caretIn(crepe, 'x')
+    press(crepe, 'Enter')
+    click(crepe, posOf(crepe, 'downgrade'))
+    press(crepe, 'Backspace')
+    expect(md(crepe)).toBe('* call bluecross downgrade\n* x\n*\n')
+  })
+
+  describe('3D. a quote above joins; a table above takes nothing (YAZ-3783)', () => {
+    it("Backspace at the start of a bullet below a quote: its text joins the quote's last line", async () => {
+      const { crepe } = await mount('> quote\n\n* a\n')
+      caretIn(crepe, 'a', 0)
+      expect(press(crepe, 'Backspace')).toBe(true)
+      expect(md(crepe)).toBe('> quote a\n')
+    })
+
+    it("Delete at the end of a quote's last line before a bullet: the mirror", async () => {
+      const { crepe } = await mount('> quote\n\n* a\n')
+      caretIn(crepe, 'quote')
+      expect(press(crepe, 'Delete')).toBe(true)
+      expect(md(crepe)).toBe('> quote a\n')
+    })
+
+    it('Backspace at the start of a bullet below a table: nothing happens', async () => {
+      const table = '| a | b |\n| - | - |\n| 1 | 2 |\n\n* x\n'
+      const { crepe } = await mount(table)
+      const before = md(crepe)
+      caretIn(crepe, 'x', 0)
+      expect(press(crepe, 'Backspace')).toBe(true)
+      expect(md(crepe)).toBe(before)
+    })
+  })
+
+  describe('3E. a horizontal rule is selected, never joined (YAZ-3784)', () => {
+    it('Delete at the end of a bullet before a rule selects the rule; the next Delete removes it', async () => {
+      const { crepe } = await mount('* a\n\n---\n\nx\n')
+      const before = md(crepe)
+      caretIn(crepe, 'a')
+      expect(press(crepe, 'Delete')).toBe(true)
+      expect(md(crepe)).toBe(before)
+      const sel = viewOf(crepe).state.selection
+      expect(sel instanceof NodeSelection && sel.node.type.name).toBe('hr')
+      press(crepe, 'Delete')
+      expect(md(crepe)).toBe('* a\n\nx\n')
+    })
+
+    it('Backspace at the start of a line after a rule selects the rule', async () => {
+      const { crepe } = await mount('* a\n\n---\n\nx\n')
+      const before = md(crepe)
+      caretIn(crepe, 'x', 0)
+      expect(press(crepe, 'Backspace')).toBe(true)
+      expect(md(crepe)).toBe(before)
+      const sel = viewOf(crepe).state.selection
+      expect(sel instanceof NodeSelection && sel.node.type.name).toBe('hr')
+    })
+  })
+
+  it('42d (audit 1). the fold of a bullet that joins its previous sibling never passes to its first child', async () => {
+    const { crepe, root } = await mount('* a\n  * ak\n* b\n  * c\n    * ck\n')
+    fold(root, 'b')
+    caretIn(crepe, 'b', 0)
+    press(crepe, 'Backspace')
+    expect(md(crepe)).toBe('* a\n  * ak b\n  * c\n    * ck\n')
+    expect(isOpen(root, 'c')).toBe(true)
   })
 })
 

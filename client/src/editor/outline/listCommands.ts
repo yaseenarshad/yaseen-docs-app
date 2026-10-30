@@ -4,7 +4,7 @@
  *
  * What Crepe (commonmark `listItemKeymap` + ProseMirror schema-list) already does right and is
  * reused: Tab = sinkListItem, Shift-Tab = liftListItem (level 1 → paragraph, following siblings
- * nest under the lifted item), Enter = splitListItem in the middle of a leaf item. Tab and Shift-Tab run
+ * nest under the lifted item), Enter = splitListItem in the middle or at the end of a leaf item. Tab and Shift-Tab run
  * those same commands from our bindings below (YAZ-3003). Markers/indent after any of these
  * serialise correctly (GRO-1844).
  *
@@ -26,28 +26,31 @@
  *    in its own format; when the item is folded (GRO-2011) it goes AFTER the whole subtree instead, so
  *    hidden children never move. On a top-level heading: at its start an empty plain line goes above;
  *    in the middle of a FOLDED one the tail becomes a heading of the same level after the hidden section.
- *  - Backspace at the START of an item's first block or of a top-level heading, and Delete at the END
- *    of a line, join two VISIBLE lines by ONE rule (`joinLines`, YAZ-3695 D4-D7): the lower line's text
- *    goes to the end of the upper line, whose format wins, with one space between two words; an empty
- *    line just goes; a removed bullet's children keep their place on screen; a fold the lines would move
- *    into opens. Into a code block or at the top of a zoom nothing happens; at the top of the note a
- *    bullet lifts and a heading becomes text. Crepe's `joinBackward` produced stray `* * child` lists,
- *    second paragraphs and bigger headings, and joined text into hidden lines.
+ *  - Backspace at the START of an item's first block, a top-level heading or a top-level paragraph, and
+ *    Delete at the END of a line, join two VISIBLE lines by ONE rule (`joinLines`, YAZ-3695 D4-D7,
+ *    YAZ-3780): the lower line's text goes to the end of the upper line (in the note, a bullet or a
+ *    quote), whose format wins, with one space between two words; an empty line just goes; a removed
+ *    bullet's children keep their place on screen; a fold the lines would move into opens, and ⌘Z
+ *    closes it again (`foldReveal.ts`). Into a code block or a table, or at the top of a zoom, nothing
+ *    happens; a rule next to the caret is selected; at the top of the note a bullet lifts and a heading
+ *    becomes text. Crepe's `joinBackward` produced stray `* * child` lists, second paragraphs and bigger
+ *    headings, and joined text into hidden lines.
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { listItemSchema, paragraphSchema } from '@milkdown/kit/preset/commonmark'
 import { setBlockType } from '@milkdown/kit/prose/commands'
 import { Fragment, type Node as ProseNode, type NodeType, type ResolvedPos } from '@milkdown/kit/prose/model'
 import { liftListItem, sinkListItem } from '@milkdown/kit/prose/schema-list'
-import { type Command, type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
+import { type Command, type EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { canJoin } from '@milkdown/kit/prose/transform'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
-import { deleteBlockAndEmptyWrappers, liftHeadlessItem, nextVisibleTextblock, onCoveredLines } from '../lineSelection'
+import { deleteBlockAndEmptyWrappers, emptyWrapperDepth, liftHeadlessItem, nextVisibleTextblock, onCoveredLines } from '../lineSelection'
 import { rowShortcuts } from '../noteKeys'
-import { addHeadingUnfoldMeta, headingLevel, isHeadingCollapsed } from './headingFolding'
+import { type Folds, openFolds, recordOpenedFolds } from './foldReveal'
+import { headingLevel, isHeadingCollapsed } from './headingFolding'
 import { findNestedList, isListItem, LIST_NODE_NAMES } from './listNodes'
-import { addOutlineUnfoldMeta, isOutlineItemCollapsed } from './outlineFolding'
+import { isOutlineItemCollapsed } from './outlineFolding'
 import { blockEscapingLift, getZoomedItemPos } from './zoom'
 
 /** Priority above Crepe's list/indent/base keymaps (default 50). */
@@ -161,7 +164,8 @@ const headingEnterCommand = (paragraphType: NodeType): Command => (state, dispat
 
 /**
  * Per view: was the key before this one Enter (D7)? A `keydown` DOM handler runs before every keymap, so it moves `current`
- * to `previous` before the command for this key reads it. Modifier keys alone do not count.
+ * to `previous` before the command for this key reads it. Modifier keys alone do not count. A mouse press forgets it: a
+ * Backspace after a click is not "right after an Enter" (YAZ-3782).
  */
 const enterBefore = new WeakMap<EditorView, { previous: boolean; current: boolean }>()
 const MODIFIER_KEYS: ReadonlySet<string> = new Set(['Shift', 'Control', 'Alt', 'Meta'])
@@ -177,66 +181,74 @@ export const enterTracker = $prose(
             if (!MODIFIER_KEYS.has(event.key)) enterBefore.set(view, { previous: enterBefore.get(view)?.current ?? false, current: event.key === 'Enter' })
             return false
           },
+          mousedown: (view) => {
+            enterBefore.delete(view)
+            return false
+          },
         },
       },
     }),
 )
 
-/** A line the joins act on: a textblock straight in the note or in a list item — not in a quote or a table cell. */
-const isLine = ($pos: ResolvedPos): boolean => $pos.depth === 1 || isListItem($pos.node(-1))
+/** A line the joins act on: a textblock straight in the note, in a list item or in a quote (YAZ-3783). */
+const isLine = ($pos: ResolvedPos): boolean => $pos.depth === 1 || isListItem($pos.node(-1)) || $pos.node(-1).type.name === 'blockquote'
 
-/** The zoomed item's own line: the top of a zoom, which nothing joins into or out of. */
+/** A line in a table cell: nothing joins into or out of a table (YAZ-3783). */
+const inTable = ($pos: ResolvedPos): boolean => $pos.node(-1).type.spec.tableRole !== undefined
+
+/** The zoomed item's own line: the top of a zoom, which nothing joins into. */
 const isZoomLine = (state: EditorState, $pos: ResolvedPos): boolean =>
   $pos.depth >= 2 && $pos.index(-1) === 0 && isListItem($pos.node(-1)) && $pos.before(-1) === getZoomedItemPos(state)
 
-/** Folds to open after a join, in positions of the document BEFORE it. */
-interface Opens {
-  items: number[]
-  headings: number[]
-}
-
 /**
- * Remove the line at `$line` as the FIRST step of `tr` (D5). A bullet's other blocks — its children — keep their place
- * on screen: they become the last children of its previous sibling, or, with none, they take its place one level left.
- * Both moves map the children's positions exactly, so their folds stay. Returns the folds to open: the previous sibling's
- * when the children move into it, and the removed line's own when the node that slides into its place would take it
- * over (the fold plugins map positions with assoc 1).
+ * The folds that removing the line at `$line` touches, in positions BEFORE the join (D5). `open`: the previous sibling's
+ * fold when the children move into it, and the line's own fold when the node that slides into its place would take it
+ * over (the fold plugins map positions with assoc 1). `gone`: the line's own fold, which goes with it; ⌘Z brings it back.
  */
-const removeLine = (tr: Transaction, state: EditorState, $line: ResolvedPos): Opens => {
-  const opens: Opens = { items: [], headings: [] }
+const lineFolds = (state: EditorState, $line: ResolvedPos): { open: Folds; gone: Folds } => {
+  const open: Folds = { items: [], headings: [] }
+  const gone: Folds = { items: [], headings: [] }
   const item = $line.node(-1)
   // The node whose fold is the line's: its item, or the line itself (a heading).
   const owner = isListItem(item) && $line.index(-1) === 0 ? $line.before(-1) : $line.before()
   const ownerIsHeading = $line.parent.type.name === 'heading' && owner === $line.before()
   const isCollapsed = ownerIsHeading ? isHeadingCollapsed : isOutlineItemCollapsed
-  /** `slider`: where the node that takes the owner's place started before the join. */
-  const passesOn = (slider: number) => {
-    if (isCollapsed(state, owner) && !isCollapsed(state, slider)) (ownerIsHeading ? opens.headings : opens.items).push(owner)
+  const list = ownerIsHeading ? 'headings' : 'items'
+  const moves = owner !== $line.before() && item.childCount > 1
+  // The node that takes the owner's place: the first child when the children move, else the node after what goes.
+  const slider = moves ? owner + 1 + $line.parent.nodeSize + 1 : $line.after(emptyWrapperDepth($line))
+  if (isCollapsed(state, owner)) {
+    gone[list].push(owner)
+    if (!isCollapsed(state, slider)) open[list].push(owner)
   }
+  if (moves && $line.index(-2) > 0) {
+    const prevPos = owner - $line.node(-2).child($line.index(-2) - 1).nodeSize
+    if (isOutlineItemCollapsed(state, prevPos)) open.items.push(prevPos)
+  }
+  return { open, gone }
+}
 
-  if (owner === $line.before() || item.childCount === 1) {
-    const size = tr.doc.content.size
-    deleteBlockAndEmptyWrappers(tr, $line)
-    // One deletion that starts where the owner now maps: the node after it started one deleted size further on.
-    passesOn(tr.mapping.map(owner, 1) + size - tr.doc.content.size)
-    return opens
-  }
+/**
+ * Remove the line at `$line` from `tr` (D5). A bullet's other blocks — its children — keep their place on screen: they
+ * become the last children of its previous sibling, or, with none, they take its place one level left. Both moves map
+ * the children's positions exactly, so their folds stay. `$line` is in `tr.doc`: the fold step (no change) may come first.
+ */
+const removeLine = (tr: Transaction, $line: ResolvedPos): void => {
+  const item = $line.node(-1)
+  if (!isListItem(item) || $line.index(-1) !== 0 || item.childCount === 1) return deleteBlockAndEmptyWrappers(tr, $line)
+  const owner = $line.before(-1)
   if ($line.index(-2) === 0) {
     // No previous sibling: the children take its place.
     tr.delete($line.before(), $line.after())
     liftHeadlessItem(tr, owner)
-    passesOn(owner + 1 + $line.parent.nodeSize + 1)
-    return opens
+    return
   }
   // The previous sibling takes the rest of the item, then its own last list and the children's list become one.
-  const prevPos = owner - $line.node(-2).child($line.index(-2) - 1).nodeSize
-  if (isOutlineItemCollapsed(state, prevPos)) opens.items.push(prevPos)
   tr.join(owner)
   const at = owner - 1
   tr.delete(at, at + $line.parent.nodeSize)
   const before = tr.doc.resolve(at).nodeBefore
   if (before !== null && LIST_NODE_NAMES.has(before.type.name) && canJoin(tr.doc, at)) tr.join(at)
-  return opens
 }
 
 /** Whether removing the top-level line at `$lower` puts the block after it into the section of a heading of `level`. */
@@ -251,18 +263,23 @@ const sectionGrows = (state: EditorState, $lower: ResolvedPos, level: number): b
  * line's text moves to the end of the upper line, whose format wins, and the lower line goes. An empty line just goes,
  * and the other line keeps its format and fold. With `space`, one space goes between two words (D7); the caret goes after
  * it. A join never hides a line: a fold that the moved lines would go into opens (the caret guard covers the caret's line).
- * Into or out of a code block, and at the top of a zoom, nothing happens (true, no dispatch).
+ * ⌘Z gives the text and the folds back (`recordOpenedFolds`, YAZ-3781). Into or out of a code block or a table, and at the
+ * top of a zoom, nothing happens (true, no dispatch).
  */
 const joinLines = (state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, $upper: ResolvedPos, $lower: ResolvedPos, space: boolean): boolean => {
   const upper = $upper.parent
   const lower = $lower.parent
-  if (upper.type.spec.code || lower.type.spec.code || isZoomLine(state, $upper) || isZoomLine(state, $lower)) return true
+  if (upper.type.spec.code || lower.type.spec.code || inTable($upper) || inTable($lower) || isZoomLine(state, $upper)) return true
   if (!isLine($upper) || !isLine($lower)) return false
   if (!dispatch) return true
 
-  const tr = state.tr
   const dropUpper = upper.content.size === 0
-  const opens = removeLine(tr, state, dropUpper ? $upper : $lower)
+  const { open, gone } = lineFolds(state, dropUpper ? $upper : $lower)
+  const level = headingLevel(upper)
+  if (!dropUpper && level !== null && $upper.depth === 1 && isHeadingCollapsed(state, $upper.before()) && sectionGrows(state, $lower, level)) open.headings.push($upper.before())
+  const tr = state.tr
+  recordOpenedFolds(tr, { items: [...new Set([...open.items, ...gone.items])], headings: [...new Set([...open.headings, ...gone.headings])] })
+  removeLine(tr, dropUpper ? $upper : $lower)
   let caret: number
   if (dropUpper) caret = tr.mapping.map($lower.start())
   else {
@@ -270,44 +287,51 @@ const joinLines = (state: EditorState, dispatch: ((tr: Transaction) => void) | u
     const gap = space && lower.content.size > 0 && !/\s$/.test(upper.textContent) && !/^\s/.test(lower.textContent) ? ' ' : ''
     tr.insert(end, gap === '' ? lower.content : Fragment.from(state.schema.text(gap)).append(lower.content))
     caret = end + gap.length
-    const level = headingLevel(upper)
-    if (level !== null && $upper.depth === 1 && isHeadingCollapsed(state, $upper.before()) && sectionGrows(state, $lower, level)) opens.headings.push($upper.before())
   }
-  addOutlineUnfoldMeta(tr, opens.items.map((pos) => tr.mapping.map(pos, 1)))
-  addHeadingUnfoldMeta(tr, opens.headings.map((pos) => tr.mapping.map(pos, 1)))
+  openFolds(tr, { items: open.items.map((pos) => tr.mapping.map(pos, 1)), headings: open.headings.map((pos) => tr.mapping.map(pos, 1)) })
   tr.setSelection(TextSelection.create(tr.doc, caret))
   dispatch(tr.scrollIntoView())
   return true
 }
 
+/** Select the leaf block (`hr`) next to the caret: the next press removes it (YAZ-3784). */
+const selectLeaf = (state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, leaf: NodeSelection): boolean => {
+  dispatch?.(state.tr.setSelection(leaf).scrollIntoView())
+  return true
+}
+
 /**
- * Backspace (and ⇧⌫, ⌃H, ⌥⌫, ⌘⌫) at the START of an item's first block or of a top-level heading (D5, D6): join into the
- * previous VISIBLE line, never a hidden one. No space right after an Enter, so undoing a slip gives the word back (D7). At
- * the top of the note an item lifts to a paragraph (GRO-2012) and a heading becomes a paragraph; at the top of a zoom
- * nothing happens. Mid-line it declines: native deletion.
+ * Backspace (and ⇧⌫, ⌃H, ⌥⌫, ⌘⌫) at the START of an item's first block, of a top-level heading or of a top-level
+ * paragraph (D5, D6, YAZ-3780): join into the previous VISIBLE line, never a hidden one. No space right after an Enter,
+ * so undoing a slip gives the word back (D7). A rule above is selected. At the top of the note an item lifts to a
+ * paragraph (GRO-2012), a heading becomes a paragraph and a paragraph declines; at the top of a zoom nothing happens.
+ * Mid-line it declines: native deletion.
  */
 const backspaceCommand = (itemType: NodeType, paragraphType: NodeType): Command => (state, dispatch, view) => {
   const { $from, empty } = state.selection
   const inItem = caretInFirstBlock(state, itemType) !== null
-  if (!empty || $from.parentOffset !== 0 || !(inItem || ($from.depth === 1 && $from.parent.type.name === 'heading'))) return false
+  const topLevel = $from.depth === 1 && ($from.parent.type.name === 'heading' || $from.parent.type === paragraphType)
+  if (!empty || $from.parentOffset !== 0 || !(inItem || topLevel)) return false
   const $prev = nextVisibleTextblock(state, $from, -1)
-  if ($prev === 'leaf') return false
+  if ($prev instanceof NodeSelection) return selectLeaf(state, dispatch, $prev)
   if ($prev === null) {
     if (getZoomedItemPos(state) !== null) return true
-    return inItem ? liftListItem(itemType)(state, dispatch) : setBlockType(paragraphType)(state, dispatch)
+    if (inItem) return liftListItem(itemType)(state, dispatch)
+    return $from.parent.type !== paragraphType && setBlockType(paragraphType)(state, dispatch)
   }
   return joinLines(state, dispatch, $prev, $from, !(view !== undefined && enterBefore.get(view)?.previous === true))
 }
 
 /**
- * Delete (and ⌃D, ⌥⌦, ⌘⌦, ⌃⌥⌫, ⌥D) at the END of a line (D4): the next VISIBLE line joins here. Anywhere else it declines
- * (D3: the next character, natively). At the end of the note it declines; at the end of a zoom nothing happens.
+ * Delete (and ⌃D, ⌥⌦, ⌘⌦, ⌃⌥⌫, ⌥D) at the END of a line (D4): the next VISIBLE line joins here; a rule there is
+ * selected. Anywhere else it declines (D3: the next character, natively). At the end of the note it declines; at the
+ * end of a zoom nothing happens.
  */
 const deleteCommand: Command = (state, dispatch) => {
   const { $from, empty } = state.selection
   if (!empty || !$from.parent.isTextblock || $from.parent.type.spec.code || $from.parentOffset !== $from.parent.content.size || !isLine($from)) return false
   const $next = nextVisibleTextblock(state, $from, 1)
-  if ($next === 'leaf') return false
+  if ($next instanceof NodeSelection) return selectLeaf(state, dispatch, $next)
   if ($next === null) return getZoomedItemPos(state) !== null
   return joinLines(state, dispatch, $from, $next, true)
 }
