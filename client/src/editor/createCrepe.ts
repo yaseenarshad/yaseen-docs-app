@@ -169,6 +169,9 @@
  *    (measured: 23.6 ms per key at 2,500 blocks against 0.19 ms), and its `forChild` answers
  *    "nothing inside a block" without ProseMirror's scan of every root decoration (16.5 ms per
  *    key). A click on a line folds the sections beside it (meta-only, through heading folding).
+ *  - Column resize (YAZ-3696 D2, `tableColumnResize.ts`): `prosemirror-tables`' `columnResizing` as
+ *    installed, put just before `tableEditing` so a grip drag selects no cells, with the drag measured
+ *    in layout px under document zoom. The vendored table block draws the `<colgroup>` from `colwidth`.
  */
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
@@ -220,6 +223,7 @@ import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
 import { visibleFormatting } from './visibleFormatting'
 import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
+import { tableColumnResize } from './tableColumnResize'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
@@ -472,6 +476,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(bulletThreading)
   crepe.editor.use(sectionIndent)
   crepe.editor.use(lineNumbers)
+  // Column resize (YAZ-3696 D2): `columnResizing`, before `tableEditing`, zoom-aware; the table block draws the `<colgroup>`.
+  crepe.editor.use(tableColumnResize)
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   // ONE resolve source instance feeds both the decorations and the click plugin's routing.
