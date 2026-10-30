@@ -1,6 +1,7 @@
 /**
  * Number children menu row (YAZ-729) through the real createCrepe wiring: label flips with the
- * child list state, the click round-trips the markdown, and the row is disabled off a list item.
+ * child list state, the click round-trips the markdown, the row is disabled on a leaf item, and
+ * absent off a list item (YAZ-3696 B3).
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -88,10 +89,10 @@ describe('numberChildrenRow', () => {
     expect(getMarkdownForSave(crepe)).toBe(TREE)
   })
 
-  it('is disabled on a heading', async () => {
+  it('is absent on a heading: not in a list item (YAZ-3696 B3)', async () => {
     const { view, item } = await mount('# H\n\ntext\n')
     aimAt(view, 'H')
     rightClick(item)
-    expect(rowOf(view).hasAttribute('disabled')).toBe(true)
+    expect(popupOf(view)).toBeNull()
   })
 })

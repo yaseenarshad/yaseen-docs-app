@@ -58,7 +58,7 @@ const tablePos = (view: EditorView): number => {
 
 const TABLE = '| x | y | z |\n| - | - | - |\n| a | b | c |\n| d | e | f |\n| g | h | i |\n| j | k | l |\n'
 const SMALL = '| a | b |\n| - | - |\n| 1 | 2 |\n'
-const ALL = '<!-- table: widths 140 240 auto, fill A1:C1 blue B3 green, color B2:B5 red, border 2px 40%, header plain, align center, stripes, height compact, nowrap, freeze 2 rows 1 col -->'
+const ALL = '<!-- table: widths 140 240 auto, fill A1:C1 blue B3 green, color B2:B5 red, border 2px 40%, header plain, stripes, height compact, nowrap, freeze 2 rows 1 col -->'
 
 describe('the table in the file', () => {
   it('a table with every part loads into the attributes and saves the same comment after a blank line', async () => {
@@ -66,7 +66,7 @@ describe('the table in the file', () => {
     const { view } = await mount(note)
     const [table] = tables(view.state.doc)
     expect(table.attrs).toMatchObject({
-      border: { px: 2, darkness: 40 }, header: 'plain', align: 'center', stripes: true,
+      border: { px: 2, darkness: 40 }, header: 'plain', stripes: true,
       height: 'compact', wrap: false, freezeRows: 2, freezeCols: 1,
     })
     expect(cellAttr(table, 'fill')).toEqual([
@@ -155,7 +155,7 @@ describe('settings set by a transaction', () => {
   it('values the comment does not know are not written', async () => {
     const { crepe, view } = await mount(SMALL)
     const pos = tablePos(view)
-    const tr = view.state.tr.setNodeMarkup(pos, undefined, { ...view.state.doc.nodeAt(pos)!.attrs, height: 'huge', align: 'diagonal' })
+    const tr = view.state.tr.setNodeMarkup(pos, undefined, { ...view.state.doc.nodeAt(pos)!.attrs, height: 'huge' })
     tr.setNodeMarkup(pos + 2, undefined, { ...view.state.doc.nodeAt(pos + 2)!.attrs, fill: 'purple' })
     view.dispatch(tr)
     expect(getMarkdownForSave(crepe)).toBe(SMALL)

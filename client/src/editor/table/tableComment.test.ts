@@ -28,7 +28,6 @@ describe('each part', () => {
     ['color B2 red', { color: new Map([['B2', 'red']]) }],
     ['border 2px 40%', { border: { px: 2, darkness: 40 } }],
     ['header plain', { header: 'plain' }],
-    ['align center', { align: 'center' }],
     ['stripes', { stripes: true }],
     ['height compact', { height: 'compact' }],
     ['height tall', { height: 'tall' }],
@@ -86,9 +85,9 @@ describe('ranges', () => {
 })
 
 describe('the fixed order', () => {
-  const all = '<!-- table: widths 140 240 auto, fill A1:C1 blue B3 green, color B2:B5 red, border 2px 40%, header plain, align center, stripes, height compact, nowrap, freeze 2 rows 1 col -->'
+  const all = '<!-- table: widths 140 240 auto, fill A1:C1 blue B3 green, color B2:B5 red, border 2px 40%, header plain, stripes, height compact, nowrap, freeze 2 rows 1 col -->'
 
-  it('writes every part in the order widths, fill, color, border, header, align, stripes, height, nowrap, freeze', () => {
+  it('writes every part in the order widths, fill, color, border, header, stripes, height, nowrap, freeze', () => {
     const parsed = parseTableComment(all)
     expect(parsed).not.toBeNull()
     expect(formatTableComment(parsed!)).toBe(all)
@@ -102,6 +101,10 @@ describe('the fixed order', () => {
 describe('tolerant reading', () => {
   it('an unknown part is ignored, the known parts are kept', () => {
     expect(parseTableComment('<!-- table: stripes, sparkle 3, nowrap -->')).toEqual(style({ stripes: true, nowrap: true }))
+  })
+
+  it('`align` is no part: the column alignment is the GFM `:-` row (YAZ-3767)', () => {
+    expect(parseTableComment('<!-- table: align center, stripes -->')).toEqual(style({ stripes: true }))
   })
 
   it('a known part with a value it does not know is ignored', () => {

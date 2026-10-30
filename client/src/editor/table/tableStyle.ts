@@ -1,8 +1,9 @@
 /**
  * The table's settings in the file (YAZ-3758, YAZ-3696 🔒 D1 / D3 / D7 / S3; CONTRACTS rule 41a).
- * The `table` node gets eight attributes, each at its default on a plain table: `border` (`null` or
- * `{ px, darkness }`), `header` (`shaded` | `plain`), `align` (`null` or "Align all columns"),
- * `stripes`, `height` (`compact` | `normal` | `tall`), `wrap`, `freezeRows` and `freezeCols`. Each
+ * The `table` node gets seven attributes, each at its default on a plain table: `border` (`null` or
+ * `{ px, darkness }`), `header` (`shaded` | `plain`), `stripes`, `height` (`compact` | `normal` |
+ * `tall`), `wrap`, `freezeRows` and `freezeCols`. A column's alignment is the cells' own GFM
+ * `alignment` (the `:-` row), not ours (YAZ-3767). Each
  * cell gets `fill` and `color` (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
  * column's width is the cells' own `colwidth` (prosemirror-tables). Markdown has no syntax for any.
  *
@@ -34,7 +35,6 @@ import type { NodeSchema } from '@milkdown/kit/transformer'
 import { $prose, $remark } from '@milkdown/kit/utils'
 import type { Nodes, Parent, RootContent, Table } from 'mdast'
 import {
-  ALIGNS,
   BORDER_PX_MAX,
   FILL_COLORS,
   TEXT_COLORS,
@@ -44,7 +44,6 @@ import {
   parseTableComment,
   plainTable,
   type FillColor,
-  type TableAlign,
   type TableStyle,
   type TextColor,
 } from './tableComment'
@@ -56,7 +55,6 @@ export * from './tableComment'
 export const TABLE_DEFAULTS = {
   border: null as { px: number; darkness: number } | null,
   header: 'shaded' as 'shaded' | 'plain',
-  align: null as TableAlign | null,
   stripes: false,
   height: 'normal' as 'compact' | 'normal' | 'tall',
   wrap: true,
@@ -73,7 +71,6 @@ function tableLevel(attrs: Record<string, unknown>): Omit<TableStyle, 'widths' |
   const border = attrs.border as { px?: unknown; darkness?: unknown } | null
   if (border && isWhole(border.px, 0, BORDER_PX_MAX) && isWhole(border.darkness, 0, 100)) out.border = { px: border.px, darkness: border.darkness }
   if (attrs.header === 'plain') out.header = 'plain'
-  if (ALIGNS.includes(attrs.align as TableAlign)) out.align = attrs.align as TableAlign
   if (attrs.stripes === true) out.stripes = true
   if (attrs.height === 'compact' || attrs.height === 'tall') out.height = attrs.height
   if (attrs.wrap === false) out.nowrap = true
@@ -109,7 +106,6 @@ export function tableDomAttrs(attrs: Record<string, unknown>): Record<string, st
   const out: Record<string, string> = {}
   if (level.border) out.style = `--table-border-width: ${level.border.px}px; --table-border-darkness: ${level.border.darkness}%`
   if (level.header) out['data-table-header'] = level.header
-  if (level.align) out['data-table-align'] = level.align
   if (level.stripes) out['data-table-stripes'] = ''
   if (level.height) out['data-table-height'] = level.height
   if (level.nowrap) out['data-table-nowrap'] = ''
@@ -126,7 +122,6 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
   const raw = {
     border: px !== undefined && darkness !== undefined ? { px: Number(px), darkness: Number(darkness) } : null,
     header: dom.getAttribute('data-table-header'),
-    align: dom.getAttribute('data-table-align'),
     stripes: dom.hasAttribute('data-table-stripes'),
     height: dom.getAttribute('data-table-height'),
     wrap: !dom.hasAttribute('data-table-nowrap'),
@@ -140,7 +135,6 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
 const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color'>): TableAttrs => ({
   border: style.border ?? null,
   header: style.header ?? 'shaded',
-  align: style.align ?? null,
   stripes: style.stripes === true,
   height: style.height ?? 'normal',
   wrap: style.nowrap !== true,
@@ -214,9 +208,15 @@ interface TableData {
   tableAttrs?: TableAttrs
 }
 
-/** Put the settings on the mdast table: its own on `data.tableAttrs`, each cell's on `data.tableCell`. Cells out of the table are dropped. */
+/**
+ * Put the settings on the mdast table: its own on `data.tableAttrs`, each cell's on `data.tableCell`.
+ * Cells out of the table are dropped, and the freeze counts are kept inside it (YAZ-3769).
+ */
 function applyStyle(table: Table, style: TableStyle): void {
-  table.data = { ...table.data, tableAttrs: levelAttrs(style) } as Table['data']
+  const attrs = levelAttrs(style)
+  attrs.freezeRows = Math.min(attrs.freezeRows, table.children.length)
+  attrs.freezeCols = Math.min(attrs.freezeCols, table.children[0]?.children.length ?? 0)
+  table.data = { ...table.data, tableAttrs: attrs } as Table['data']
   table.children.forEach((row, r) => {
     row.children.forEach((cell, c) => {
       const width = style.widths[c] ?? null

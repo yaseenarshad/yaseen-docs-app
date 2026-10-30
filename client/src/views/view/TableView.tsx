@@ -16,6 +16,7 @@ import { Popover } from './Popover'
 import { usePreview } from './PreviewCard'
 import type { ResolveLink, WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { cssZoom } from '../../lib/cssZoom'
+import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader'
 import { openByGesture } from '../../lib/openGesture'
 import { frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
@@ -122,20 +123,6 @@ function activateEditorFromCell(event: ReactMouseEvent<HTMLTableCellElement>): v
 function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
   if (event.target !== event.currentTarget) return
   event.currentTarget.focus()
-}
-
-/** The first ancestor above the horizontal Table wrapper that owns vertical scrolling. */
-function verticalScrollParent(node: HTMLElement): HTMLElement | null {
-  for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
-    const overflow = getComputedStyle(parent).overflowY
-    if (overflow === 'auto' || overflow === 'scroll') return parent
-  }
-  return null
-}
-
-/** Native-sticky boundaries expressed as a counter-scroll offset for the existing `<thead>`. */
-function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: number, headerHeight: number): number {
-  return Math.max(0, Math.min(scrollerTop - tableTop, Math.max(0, tableHeight - headerHeight)))
 }
 
 /**

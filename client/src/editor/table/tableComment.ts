@@ -6,7 +6,8 @@
  *
  * The parts, in their fixed order, each only when set:
  * `widths 140 240 auto, fill A1:C1 blue B3 green, color B2:B5 red, border 2px 40%, header plain,
- * align center, stripes, height compact, nowrap, freeze 2 rows 1 col`. Cells are A1 addresses:
+ * stripes, height compact, nowrap, freeze 2 rows 1 col`. A column's alignment is no part: it is the
+ * GFM `:-` row, so GitHub and Obsidian show it too ("Align all columns" sets it, YAZ-3767). Cells are A1 addresses:
  * columns are letters (A…Z, AA…), rows are numbers, row 1 is the header row.
  *
  * The reader is tolerant: an unknown part, or a known part with a value it does not know, is
@@ -33,8 +34,6 @@ export interface TableStyle {
   border?: { px: number; darkness: number }
   /** The header row's look; shaded is the default. */
   header?: 'plain'
-  /** "Align all columns" (D7). Per-column alignment stays in the GFM `:-` row. */
-  align?: TableAlign
   stripes?: true
   /** The row height; normal is the default. */
   height?: 'compact' | 'tall'
@@ -141,10 +140,6 @@ function readPart(style: TableStyle, word: string, rest: string[]): boolean {
       if (first === 'plain') style.header = 'plain'
       else delete style.header
       return true
-    case 'align':
-      if (rest.length !== 1 || !(ALIGNS as readonly string[]).includes(first)) return false
-      style.align = first as TableAlign
-      return true
     case 'height':
       if (rest.length !== 1 || !['compact', 'normal', 'tall'].includes(first)) return false
       if (first === 'normal') delete style.height
@@ -226,7 +221,6 @@ export function formatTableComment(style: TableStyle): string | null {
   if (style.color.size > 0) parts.push(`color ${formatCells(style.color)}`)
   if (style.border) parts.push(`border ${style.border.px}px ${style.border.darkness}%`)
   if (style.header) parts.push(`header ${style.header}`)
-  if (style.align) parts.push(`align ${style.align}`)
   if (style.stripes) parts.push('stripes')
   if (style.height) parts.push(`height ${style.height}`)
   if (style.nowrap) parts.push('nowrap')
