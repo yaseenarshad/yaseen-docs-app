@@ -2,7 +2,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import ts from 'typescript'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cellPos, dragColumnEdge, mountTable, unmountAll } from './tableTestKit'
 
 const runtime = readFileSync(resolve(__dirname, '../../../node_modules/@milkdown/components/lib/table-block/index.js'), 'utf8')
 const parsed = ts.createSourceFile('table-block.js', runtime, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
@@ -111,5 +112,17 @@ describe.each([0.5, 1, 1.25, 2])('shipped Milkdown table geometry at zoom %s', z
     await Promise.resolve()
     expect(xHandle.style.width).toBe('300px')
     expect(offset).toHaveBeenLastCalledWith(-4)
+  })
+})
+
+// Column resize (YAZ-3696 D2, R2): `prosemirror-tables` measures the drag in screen px and the width in layout px,
+// so under document zoom the edge ran ahead of (zoom > 1) or behind (zoom < 1) the cursor. It must follow it.
+describe.each([0.5, 1, 1.25, 2])('column resize grip at document zoom %s', zoom => {
+  afterEach(unmountAll)
+  it('a drag of 50 layout px (50 × zoom on screen) widens the column by 50 px', async () => {
+    const view = await mountTable(undefined, zoom)
+    dragColumnEdge(view, 0, 50 * zoom, zoom)
+    expect(view.state.doc.nodeAt(cellPos(view, 0, 0))!.attrs.colwidth).toEqual([150])
+    expect((view.dom.querySelector('col') as HTMLElement).style.width).toBe('150px')
   })
 })

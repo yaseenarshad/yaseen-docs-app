@@ -207,9 +207,432 @@
                top: `${y}px`,
              })
            })
+--- a/src/table-block/view/view.ts
++++ b/src/table-block/view/view.ts
+@@ -8,9 +8,7 @@
+ } from '@milkdown/prose/view'
+ 
+ import { tableSchema } from '@milkdown/preset-gfm'
+-import { findParent } from '@milkdown/prose'
+-import { NodeSelection, TextSelection } from '@milkdown/prose/state'
+-import { CellSelection } from '@milkdown/prose/tables'
++import { updateColumnsOnResize } from '@milkdown/prose/tables'
+ import { $view } from '@milkdown/utils'
+ import { createApp, shallowRef, type App, type ShallowRef } from 'vue'
+ 
+@@ -22,6 +20,7 @@
+   dom: HTMLElement
+   contentDOM: HTMLElement
+   app: App
++  #colgroup: HTMLElement
+ 
+   nodeRef: ShallowRef<Node>
+ 
+@@ -38,6 +37,10 @@
+     this.contentDOM = contentDOM
+     contentDOM.setAttribute('data-content-dom', 'true')
+     contentDOM.classList.add('content-dom')
++    // YAZ-3696 D2: the column widths (`colwidth`). It must be the table's first child:
++    // `columnResizing` writes the widths there while a column edge drags.
++    const colgroup = document.createElement('colgroup')
++    this.#colgroup = colgroup
+     this.nodeRef = shallowRef(node)
+ 
+     const app = createApp(TableBlock, {
+@@ -46,7 +49,9 @@
+       getPos,
+       config: ctx.get(tableBlockConfig.key),
+       onMount: (div: Element) => {
++        div.appendChild(colgroup)
+         div.appendChild(contentDOM)
++        this.#updateColumns()
+       },
+       node: this.nodeRef,
+     })
+@@ -59,56 +64,30 @@
+   update(node: Node) {
+     if (node.type !== this.node.type) return false
+ 
++    // YAZ-3696 B4: an unchanged node (a decoration change: fold, line numbers) keeps the view.
++    // `false` here made ProseMirror rebuild the whole Vue table on each decoration change.
+     if (node.sameMarkup(this.node) && node.content.eq(this.node.content))
+-      return false
++      return true
+ 
+     this.node = node
+     this.nodeRef.value = node
++    this.#updateColumns()
+ 
+     return true
+   }
+ 
+-  #handleClick(event: PointerEvent) {
+-    const view = this.view
+-    if (!view.editable) return false
+-
+-    const { state, dispatch } = view
+-    const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })
+-
+-    if (!pos) return false
+-
+-    const $pos = state.doc.resolve(pos.inside)
+-    const node = findParent(
+-      (node) =>
+-        node.type.name === 'table_cell' || node.type.name === 'table_header'
+-    )($pos)
+-
+-    if (!node) return false
+-
+-    // if the selection is a text selection, and the current node is the same as the node, return false
+-    if (state.selection instanceof TextSelection) {
+-      const currentNode = findParent(
+-        (node) =>
+-          node.type.name === 'table_cell' || node.type.name === 'table_header'
+-      )(state.selection.$from)
+-      if (currentNode?.node === node.node) return false
+-    }
+-
+-    const { from } = node
+-
+-    const selection = NodeSelection.create(state.doc, from + 1)
+-    if (state.selection.eq(selection)) return false
+-
+-    if (state.selection instanceof CellSelection) {
+-      setTimeout(() => {
+-        dispatch(state.tr.setSelection(selection).scrollIntoView())
+-      }, 20)
+-    } else {
+-      requestAnimationFrame(() => {
+-        dispatch(state.tr.setSelection(selection).scrollIntoView())
+-      })
+-    }
+-    return true
++  // The `prosemirror-tables` rule (as in its own `TableView`), so the table looks the same during
++  // and after a drag. 100 is `columnResizing`'s `defaultCellMinWidth`. A table with no width keeps
++  // its old look: the full width and no minimum width.
++  #updateColumns() {
++    const table = this.contentDOM.parentElement
++    if (!table) return
++    updateColumnsOnResize(this.node, this.#colgroup, table, 100)
++    const widths = Array.from(
++      this.#colgroup.children,
++      (col) => (col as HTMLElement).style.width
++    )
++    if (!widths.some(Boolean)) table.style.minWidth = ''
+   }
+ 
+   stopEvent(e: Event) {
+@@ -116,15 +95,9 @@
+ 
+     if (e.type === 'mousedown' || e.type === 'pointerdown') {
+       if (e.target instanceof Element && e.target.closest('button')) return true
+-
+-      const target = e.target
+-      if (
+-        target instanceof HTMLElement &&
+-        (target.closest('th') || target.closest('td'))
+-      ) {
+-        const event = e as PointerEvent
+-        return this.#handleClick(event)
+-      }
++      // YAZ-3696 B2: a mousedown in a cell goes to ProseMirror, so `tableEditing` can start a
++      // cell selection drag. A plain click puts the caret in the cell (the old `#handleClick`
++      // selected the cell paragraph as a node instead).
+     }
+ 
+     return false
+--- a/src/table-block/view/component.tsx
++++ b/src/table-block/view/component.tsx
+@@ -17,12 +17,29 @@
+ import { Icon } from '../../__internal__/components/icon'
+ import { keepAlive } from '../../__internal__/keep-alive'
+ import { useDragHandlers } from './drag'
+-import { useOperation } from './operation'
++import { useOperation, type MenuItem } from './operation'
+ import { usePointerHandlers } from './pointer'
+ import { recoveryStateBetweenUpdate } from './utils'
+ 
+ keepAlive(h)
+ 
++// YAZ-3696 D9: a labeled menu, its groups split by a separator. An item acts on pointerdown;
++// its click stays off the handle, whose click selects the column or row and toggles the menu.
++function renderMenu(groups: MenuItem[][]) {
++  return groups.flatMap((group, index) => [
++    ...(index > 0 ? [<div class="separator" role="separator" />] : []),
++    ...group.map(([label, onPointerdown]) => (
++      <button
++        type="button"
++        onPointerdown={onPointerdown}
++        onClick={(e: MouseEvent) => e.stopPropagation()}
++      >
++        {label}
++      </button>
++    )),
++  ])
++}
++
+ type TableBlockProps = {
+   view: EditorView
+   ctx: Ctx
+@@ -95,14 +112,8 @@
+ 
+     const { pointerLeave, pointerMove } = usePointerHandlers(refs, view)
+     const { dragRow, dragCol } = useDragHandlers(refs, ctx, getPos)
+-    const {
+-      onAddRow,
+-      onAddCol,
+-      selectCol,
+-      selectRow,
+-      deleteSelected,
+-      onAlign,
+-    } = useOperation(refs, ctx, getPos)
++    const { onAddRow, onAddCol, selectCol, selectRow, colMenu, rowMenu } =
++      useOperation(refs, ctx, getPos)
+ 
+     onMounted(() => {
+       requestAnimationFrame(() => {
+@@ -138,18 +149,7 @@
+               class="button-group"
+               onPointermove={(e: PointerEvent) => e.stopPropagation()}
+             >
+-              <button type="button" onPointerdown={onAlign('left')}>
+-                <Icon icon={config.renderButton('align_col_left')} />
+-              </button>
+-              <button type="button" onPointerdown={onAlign('center')}>
+-                <Icon icon={config.renderButton('align_col_center')} />
+-              </button>
+-              <button type="button" onPointerdown={onAlign('right')}>
+-                <Icon icon={config.renderButton('align_col_right')} />
+-              </button>
+-              <button type="button" onPointerdown={deleteSelected}>
+-                <Icon icon={config.renderButton('delete_col')} />
+-              </button>
++              {renderMenu(colMenu)}
+             </div>
+           </div>
+           <div
+@@ -170,9 +170,7 @@
+               class="button-group"
+               onPointermove={(e: PointerEvent) => e.stopPropagation()}
+             >
+-              <button type="button" onPointerdown={deleteSelected}>
+-                <Icon icon={config.renderButton('delete_row')} />
+-              </button>
++              {renderMenu(rowMenu)}
+             </div>
+           </div>
+           <div class="table-wrapper" ref={tableWrapperRef}>
+--- a/src/table-block/view/operation.ts
++++ b/src/table-block/view/operation.ts
+@@ -1,19 +1,82 @@
+ import type { Ctx } from '@milkdown/ctx'
++import type { Node } from '@milkdown/prose/model'
++import type { Command } from '@milkdown/prose/state'
+ 
+-import { commandsCtx, editorViewCtx } from '@milkdown/core'
++import { commandsCtx, editorViewCtx, type CmdKey } from '@milkdown/core'
+ import {
+   addColAfterCommand,
+   addColBeforeCommand,
+   addRowAfterCommand,
+   addRowBeforeCommand,
+   deleteSelectedCellsCommand,
++  selectCol as selectColumn,
+   selectColCommand,
+   selectRowCommand,
+   setAlignCommand,
+ } from '@milkdown/preset-gfm'
++import {
++  deleteCellSelection,
++  isInTable,
++  selectedRect,
++} from '@milkdown/prose/tables'
+ 
+ import type { Refs } from './types'
+ 
++/** One labeled menu item (YAZ-3696 D9): its text and what a pointerdown on it does. */
++export type MenuItem = [label: string, onPointerdown: (e: PointerEvent) => void]
++
++// "9" before "10"; case and accents do not count.
++const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
++
++/**
++ * YAZ-3696 D9: sort the body rows by the text of the selected column. The header row stays
++ * first, empty cells go last, equal cells keep their order. The whole rows move, so each cell
++ * keeps its attributes. One transaction, which selects the column again. GFM cells have no
++ * colspan, so the column is the cell index in each row.
++ */
++export function sortRows(direction: 1 | -1): Command {
++  return (state, dispatch) => {
++    if (!isInTable(state)) return false
++    const { table, tableStart, left } = selectedRect(state)
++    const rows: Node[] = []
++    table.forEach((row, _, index) => {
++      if (index > 0) rows.push(row)
++    })
++    const sorted = rows
++      .map((row, index) => ({ row, index, text: row.child(left).textContent.trim() }))
++      .sort((a, b) => {
++        if (!a.text !== !b.text) return a.text ? -1 : 1
++        return direction * collator.compare(a.text, b.text) || a.index - b.index
++      })
++      .map(({ row }) => row)
++    if (sorted.every((row, index) => row === rows[index])) return true
++    if (dispatch) {
++      const from = tableStart + table.firstChild!.nodeSize
++      const tr = state.tr.replaceWith(from, tableStart + table.content.size, sorted)
++      dispatch(selectColumn(left, tableStart)(tr))
++    }
++    return true
++  }
++}
++
++/** YAZ-3696 D9: copy the selected body rows below the last of them. */
++export const duplicateRows: Command = (state, dispatch) => {
++  if (!isInTable(state)) return false
++  const { table, tableStart, top, bottom } = selectedRect(state)
++  if (top === 0) return false
++  if (dispatch) {
++    const rows: Node[] = []
++    let pos = tableStart
++    for (let index = 0; index < bottom; index++) {
++      const row = table.child(index)
++      if (index >= top) rows.push(row)
++      pos += row.nodeSize
++    }
++    dispatch(state.tr.insert(pos, rows))
++  }
++  return true
++}
++
+ export function useOperation(
+   refs: Refs,
+   ctx?: Ctx,
+@@ -84,6 +147,8 @@
+ 
+   const selectCol = () => {
+     if (!ctx) return
++    // YAZ-3696 R3: a read-only note opens no menu.
++    if (!ctx.get(editorViewCtx).editable) return
+     const [_, colIndex] = hoverIndex.value!
+     const commands = ctx.get(commandsCtx)
+     const pos = (getPos?.() ?? 0) + 1
+@@ -97,6 +162,8 @@
+ 
+   const selectRow = () => {
+     if (!ctx) return
++    // YAZ-3696 R3: a read-only note opens no menu.
++    if (!ctx.get(editorViewCtx).editable) return
+     const [rowIndex, _] = hoverIndex.value!
+     const commands = ctx.get(commandsCtx)
+     const pos = (getPos?.() ?? 0) + 1
+@@ -108,41 +175,69 @@
+         buttonGroup.dataset.show === 'true' ? 'false' : 'true'
+   }
+ 
+-  const deleteSelected = (e: PointerEvent) => {
+-    if (!ctx) return
+-
+-    if (!ctx.get(editorViewCtx).editable) return
+-
+-    e.preventDefault()
+-    e.stopPropagation()
+-    const commands = ctx.get(commandsCtx)
+-    commands.call(deleteSelectedCellsCommand.key)
+-    requestAnimationFrame(() => {
+-      ctx.get(editorViewCtx).focus()
+-    })
+-  }
+-
+-  const onAlign =
+-    (direction: 'left' | 'center' | 'right') => (e: PointerEvent) => {
++  // A menu item acts on the selection the handle click made, closes the menus and gives the
++  // focus back to the editor. Each command is one transaction (one undo step).
++  const item = (label: string, run: (editor: Ctx) => void): MenuItem => [
++    label,
++    (e: PointerEvent) => {
+       if (!ctx) return
+ 
+-      if (!ctx.get(editorViewCtx).editable) return
++      const view = ctx.get(editorViewCtx)
++      if (!view.editable) return
+ 
+       e.preventDefault()
+       e.stopPropagation()
+-      const commands = ctx.get(commandsCtx)
+-      commands.call(setAlignCommand.key, direction)
++      run(ctx)
++      for (const handle of [colHandleRef.value, rowHandleRef.value])
++        handle?.querySelector('.button-group')?.setAttribute('data-show', 'false')
+       requestAnimationFrame(() => {
+-        ctx.get(editorViewCtx).focus()
++        view.focus()
+       })
+-    }
++    },
++  ]
++  const call = <T>(label: string, key: CmdKey<T>, payload?: T) =>
++    item(label, (editor) => editor.get(commandsCtx).call(key, payload))
++  const prose = (label: string, command: Command) =>
++    item(label, (editor) => {
++      const view = editor.get(editorViewCtx)
++      command(view.state, view.dispatch)
++    })
++
++  // YAZ-3696 D9: the labeled menus, in groups (a separator between two groups).
++  const colMenu: MenuItem[][] = [
++    [
++      call('Insert column left', addColBeforeCommand.key),
++      call('Insert column right', addColAfterCommand.key),
++    ],
++    [
++      call('Align left', setAlignCommand.key, 'left'),
++      call('Align center', setAlignCommand.key, 'center'),
++      call('Align right', setAlignCommand.key, 'right'),
++    ],
++    [prose('Sort A to Z', sortRows(1)), prose('Sort Z to A', sortRows(-1))],
++    [
++      prose('Clear column', deleteCellSelection),
++      call('Delete column', deleteSelectedCellsCommand.key),
++    ],
++  ]
++  const rowMenu: MenuItem[][] = [
++    [
++      call('Insert row above', addRowBeforeCommand.key),
++      call('Insert row below', addRowAfterCommand.key),
++      prose('Duplicate row', duplicateRows),
++    ],
++    [
++      prose('Clear row', deleteCellSelection),
++      call('Delete row', deleteSelectedCellsCommand.key),
++    ],
++  ]
+ 
+   return {
+     onAddRow,
+     onAddCol,
+     selectCol,
+     selectRow,
+-    deleteSelected,
+-    onAlign,
++    colMenu,
++    rowMenu,
+   }
+ }
 --- a/lib/table-block/index.js
 +++ b/lib/table-block/index.js
-@@ -155,10 +155,16 @@
+@@ -1,8 +1,7 @@
+ import { $ctx, $view } from '@milkdown/utils';
+-import { selectColCommand, moveColCommand, selectRowCommand, moveRowCommand, setAlignCommand, deleteSelectedCellsCommand, addColAfterCommand, addColBeforeCommand, addRowAfterCommand, addRowBeforeCommand, tableSchema } from '@milkdown/preset-gfm';
++import { selectColCommand, moveColCommand, selectRowCommand, moveRowCommand, selectCol as selectColumn, setAlignCommand, deleteSelectedCellsCommand, addColAfterCommand, addColBeforeCommand, addRowAfterCommand, addRowBeforeCommand, tableSchema } from '@milkdown/preset-gfm';
+ import { findParent } from '@milkdown/prose';
+-import { TextSelection, NodeSelection } from '@milkdown/prose/state';
+-import { CellSelection, findTable } from '@milkdown/prose/tables';
++import { CellSelection, findTable, deleteCellSelection, isInTable, selectedRect, updateColumnsOnResize } from '@milkdown/prose/tables';
+ import { h, onMounted, onUnmounted, defineComponent, ref, shallowRef, createApp } from 'vue';
+ import clsx from 'clsx';
+ import DOMPurify from 'dompurify';
+@@ -155,10 +154,16 @@
    return context;
  }
  
@@ -226,7 +649,7 @@
    const { width: tableWidth, height: tableHeight } = tableContent.querySelector("tbody").getBoundingClientRect();
    if (axis === "y") {
      const rows = tableContent.querySelectorAll("tr");
-@@ -167,8 +173,8 @@
+@@ -167,8 +172,8 @@
      previewRoot.appendChild(row.cloneNode(true));
      const height = row.getBoundingClientRect().height;
      Object.assign(preview.style, {
@@ -237,7 +660,7 @@
      });
      preview.dataset.show = "true";
      return;
-@@ -186,8 +192,8 @@
+@@ -186,8 +191,8 @@
        previewRoot.appendChild(tr);
      });
      Object.assign(preview.style, {
@@ -248,7 +671,7 @@
      });
      preview.dataset.show = "true";
      return;
-@@ -435,17 +441,19 @@
+@@ -435,17 +440,19 @@
      const info = dragInfo.value;
      if (!info) return;
      if (!contentRoot.offsetParent) return;
@@ -273,7 +696,7 @@
        preview.style.left = `${previewLeftOffset}px`;
        const dragOverColumn = getDragOverColumn(contentRoot, e.clientX);
        if (dragOverColumn) {
-@@ -455,24 +463,25 @@
+@@ -455,24 +462,25 @@
          info.endIndex = index;
          computePosition(col, yHandle, {
            placement: direction === "left" ? "left" : "right",
@@ -306,7 +729,7 @@
        preview.style.top = `${previewTopOffset}px`;
        preview.style.left = `${wrapperOffsetLeft}px`;
        const dragOverRow = getDragOverRow(contentRoot, e.clientY);
-@@ -483,11 +492,11 @@
+@@ -483,11 +491,11 @@
          info.endIndex = index;
          computePosition(row, xHandle, {
            placement: direction === "up" ? "top" : "bottom",
@@ -320,7 +743,155 @@
              top: `${y}px`
            });
          }).catch(console.error);
-@@ -712,12 +721,14 @@
+@@ -578,6 +586,44 @@
+   };
+ }
+ 
++const collator = new Intl.Collator(void 0, { numeric: true, sensitivity: "base" });
++function sortRows(direction) {
++  return (state, dispatch) => {
++    if (!isInTable(state)) return false;
++    const { table, tableStart, left } = selectedRect(state);
++    const rows = [];
++    table.forEach((row, _, index) => {
++      if (index > 0) rows.push(row);
++    });
++    const sorted = rows.map((row, index) => ({ row, index, text: row.child(left).textContent.trim() })).sort((a, b) => {
++      if (!a.text !== !b.text) return a.text ? -1 : 1;
++      return direction * collator.compare(a.text, b.text) || a.index - b.index;
++    }).map(({ row }) => row);
++    if (sorted.every((row, index) => row === rows[index])) return true;
++    if (dispatch) {
++      const from = tableStart + table.firstChild.nodeSize;
++      const tr = state.tr.replaceWith(from, tableStart + table.content.size, sorted);
++      dispatch(selectColumn(left, tableStart)(tr));
++    }
++    return true;
++  };
++}
++const duplicateRows = (state, dispatch) => {
++  if (!isInTable(state)) return false;
++  const { table, tableStart, top, bottom } = selectedRect(state);
++  if (top === 0) return false;
++  if (dispatch) {
++    const rows = [];
++    let pos = tableStart;
++    for (let index = 0; index < bottom; index++) {
++      const row = table.child(index);
++      if (index >= top) rows.push(row);
++      pos += row.nodeSize;
++    }
++    dispatch(state.tr.insert(pos, rows));
++  }
++  return true;
++};
+ function useOperation(refs, ctx, getPos) {
+   const {
+     xLineHandleRef,
+@@ -635,6 +681,7 @@
+   const selectCol = () => {
+     var _a, _b;
+     if (!ctx) return;
++    if (!ctx.get(editorViewCtx).editable) return;
+     const [_, colIndex] = hoverIndex.value;
+     const commands = ctx.get(commandsCtx);
+     const pos = ((_a = getPos == null ? void 0 : getPos()) != null ? _a : 0) + 1;
+@@ -646,6 +693,7 @@
+   const selectRow = () => {
+     var _a, _b;
+     if (!ctx) return;
++    if (!ctx.get(editorViewCtx).editable) return;
+     const [rowIndex, _] = hoverIndex.value;
+     const commands = ctx.get(commandsCtx);
+     const pos = ((_a = getPos == null ? void 0 : getPos()) != null ? _a : 0) + 1;
+@@ -654,35 +702,62 @@
+     if (buttonGroup && rowIndex > 0)
+       buttonGroup.dataset.show = buttonGroup.dataset.show === "true" ? "false" : "true";
+   };
+-  const deleteSelected = (e) => {
+-    if (!ctx) return;
+-    if (!ctx.get(editorViewCtx).editable) return;
+-    e.preventDefault();
+-    e.stopPropagation();
+-    const commands = ctx.get(commandsCtx);
+-    commands.call(deleteSelectedCellsCommand.key);
+-    requestAnimationFrame(() => {
+-      ctx.get(editorViewCtx).focus();
+-    });
+-  };
+-  const onAlign = (direction) => (e) => {
+-    if (!ctx) return;
+-    if (!ctx.get(editorViewCtx).editable) return;
+-    e.preventDefault();
+-    e.stopPropagation();
+-    const commands = ctx.get(commandsCtx);
+-    commands.call(setAlignCommand.key, direction);
+-    requestAnimationFrame(() => {
+-      ctx.get(editorViewCtx).focus();
+-    });
+-  };
++  const item = (label, run) => [
++    label,
++    (e) => {
++      var _a;
++      if (!ctx) return;
++      const view = ctx.get(editorViewCtx);
++      if (!view.editable) return;
++      e.preventDefault();
++      e.stopPropagation();
++      run(ctx);
++      for (const handle of [colHandleRef.value, rowHandleRef.value])
++        (_a = handle == null ? void 0 : handle.querySelector(".button-group")) == null ? void 0 : _a.setAttribute("data-show", "false");
++      requestAnimationFrame(() => {
++        view.focus();
++      });
++    }
++  ];
++  const call = (label, key, payload) => item(label, (editor) => editor.get(commandsCtx).call(key, payload));
++  const prose = (label, command) => item(label, (editor) => {
++    const view = editor.get(editorViewCtx);
++    command(view.state, view.dispatch);
++  });
++  const colMenu = [
++    [
++      call("Insert column left", addColBeforeCommand.key),
++      call("Insert column right", addColAfterCommand.key)
++    ],
++    [
++      call("Align left", setAlignCommand.key, "left"),
++      call("Align center", setAlignCommand.key, "center"),
++      call("Align right", setAlignCommand.key, "right")
++    ],
++    [prose("Sort A to Z", sortRows(1)), prose("Sort Z to A", sortRows(-1))],
++    [
++      prose("Clear column", deleteCellSelection),
++      call("Delete column", deleteSelectedCellsCommand.key)
++    ]
++  ];
++  const rowMenu = [
++    [
++      call("Insert row above", addRowBeforeCommand.key),
++      call("Insert row below", addRowAfterCommand.key),
++      prose("Duplicate row", duplicateRows)
++    ],
++    [
++      prose("Clear row", deleteCellSelection),
++      call("Delete row", deleteSelectedCellsCommand.key)
++    ]
++  ];
+   return {
+     onAddRow,
+     onAddCol,
+     selectCol,
+     selectRow,
+-    deleteSelected,
+-    onAlign
++    colMenu,
++    rowMenu
+   };
+ }
+ 
+@@ -712,12 +787,14 @@
      if (!index) return;
      const dom = getRelatedDOM(contentWrapperRef, index);
      if (!dom) return;
@@ -339,7 +910,7 @@
      const closeToBoundary = closeToBoundaryLeft || closeToBoundaryRight || closeToBoundaryTop || closeToBoundaryBottom;
      const rowButtonGroup = rowHandle.querySelector(".button-group");
      const colButtonGroup = colHandle.querySelector(".button-group");
-@@ -735,11 +746,11 @@
+@@ -735,11 +812,11 @@
          lineHoverIndex.value[1] = closeToBoundaryLeft ? colIndex : colIndex + 1;
          computePosition(dom.col, yHandle, {
            placement: closeToBoundaryLeft ? "left" : "right",
@@ -353,7 +924,7 @@
              left: `${x}px`
            });
          }).catch(console.error);
-@@ -750,11 +761,11 @@
+@@ -750,11 +827,11 @@
          lineHoverIndex.value[0] = closeToBoundaryTop ? rowIndex : rowIndex + 1;
          computePosition(dom.row, xHandle, {
            placement: closeToBoundaryTop ? "top" : "bottom",
@@ -367,11 +938,199 @@
              top: `${y}px`
            });
          }).catch(console.error);
-@@ -1101,4 +1112,3 @@
+@@ -808,6 +885,20 @@
+ }
+ 
+ keepAlive(h);
++function renderMenu(groups) {
++  return groups.flatMap((group, index) => [
++    ...index > 0 ? [/* @__PURE__ */ h("div", { class: "separator", role: "separator" })] : [],
++    ...group.map(([label, onPointerdown]) => /* @__PURE__ */ h(
++      "button",
++      {
++        type: "button",
++        onPointerdown,
++        onClick: (e) => e.stopPropagation()
++      },
++      label
++    ))
++  ]);
++}
+ const TableBlock = defineComponent({
+   props: {
+     view: {
+@@ -869,14 +960,7 @@
+     };
+     const { pointerLeave, pointerMove } = usePointerHandlers(refs, view);
+     const { dragRow, dragCol } = useDragHandlers(refs, ctx, getPos);
+-    const {
+-      onAddRow,
+-      onAddCol,
+-      selectCol,
+-      selectRow,
+-      deleteSelected,
+-      onAlign
+-    } = useOperation(refs, ctx, getPos);
++    const { onAddRow, onAddCol, selectCol, selectRow, colMenu, rowMenu } = useOperation(refs, ctx, getPos);
+     onMounted(() => {
+       requestAnimationFrame(() => {
+         if (view.editable) recoveryStateBetweenUpdate(refs, view, node.value);
+@@ -914,10 +998,7 @@
+               class: "button-group",
+               onPointermove: (e) => e.stopPropagation()
+             },
+-            /* @__PURE__ */ h("button", { type: "button", onPointerdown: onAlign("left") }, /* @__PURE__ */ h(Icon, { icon: config.renderButton("align_col_left") })),
+-            /* @__PURE__ */ h("button", { type: "button", onPointerdown: onAlign("center") }, /* @__PURE__ */ h(Icon, { icon: config.renderButton("align_col_center") })),
+-            /* @__PURE__ */ h("button", { type: "button", onPointerdown: onAlign("right") }, /* @__PURE__ */ h(Icon, { icon: config.renderButton("align_col_right") })),
+-            /* @__PURE__ */ h("button", { type: "button", onPointerdown: deleteSelected }, /* @__PURE__ */ h(Icon, { icon: config.renderButton("delete_col") }))
++            renderMenu(colMenu)
+           )
+         ),
+         /* @__PURE__ */ h(
+@@ -942,7 +1023,7 @@
+               class: "button-group",
+               onPointermove: (e) => e.stopPropagation()
+             },
+-            /* @__PURE__ */ h("button", { type: "button", onPointerdown: deleteSelected }, /* @__PURE__ */ h(Icon, { icon: config.renderButton("delete_row") }))
++            renderMenu(rowMenu)
+           )
+         ),
+         /* @__PURE__ */ h("div", { class: "table-wrapper", ref: tableWrapperRef }, /* @__PURE__ */ h(
+@@ -984,26 +1065,21 @@
+   }
+ });
+ 
+-var __typeError = (msg) => {
+-  throw TypeError(msg);
+-};
+-var __accessCheck = (obj, member, msg) => member.has(obj) || __typeError("Cannot " + msg);
+-var __privateAdd = (obj, member, value) => member.has(obj) ? __typeError("Cannot add the same private member more than once") : member instanceof WeakSet ? member.add(obj) : member.set(obj, value);
+-var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
+-var _TableNodeView_instances, handleClick_fn;
+ class TableNodeView {
++  #colgroup;
+   constructor(ctx, node, view, getPos) {
+     this.ctx = ctx;
+     this.node = node;
+     this.view = view;
+     this.getPos = getPos;
+-    __privateAdd(this, _TableNodeView_instances);
+     const dom = document.createElement("div");
+     dom.className = "milkdown-table-block";
+     const contentDOM = document.createElement("tbody");
+     this.contentDOM = contentDOM;
+     contentDOM.setAttribute("data-content-dom", "true");
+     contentDOM.classList.add("content-dom");
++    const colgroup = document.createElement("colgroup");
++    this.#colgroup = colgroup;
+     this.nodeRef = shallowRef(node);
+     const app = createApp(TableBlock, {
+       view,
+@@ -1011,7 +1087,9 @@
+       getPos,
+       config: ctx.get(tableBlockConfig.key),
+       onMount: (div) => {
++        div.appendChild(colgroup);
+         div.appendChild(contentDOM);
++        this.#updateColumns();
+       },
+       node: this.nodeRef
+     });
+@@ -1022,20 +1100,23 @@
+   update(node) {
+     if (node.type !== this.node.type) return false;
+     if (node.sameMarkup(this.node) && node.content.eq(this.node.content))
+-      return false;
++      return true;
+     this.node = node;
+     this.nodeRef.value = node;
++    this.#updateColumns();
+     return true;
+   }
++  #updateColumns() {
++    const table = this.contentDOM.parentElement;
++    if (!table) return;
++    updateColumnsOnResize(this.node, this.#colgroup, table, 100);
++    const widths = Array.from(this.#colgroup.children, (col) => col.style.width);
++    if (!widths.some(Boolean)) table.style.minWidth = "";
++  }
+   stopEvent(e) {
+     if (e.type === "drop" || e.type.startsWith("drag")) return true;
+     if (e.type === "mousedown" || e.type === "pointerdown") {
+       if (e.target instanceof Element && e.target.closest("button")) return true;
+-      const target = e.target;
+-      if (target instanceof HTMLElement && (target.closest("th") || target.closest("td"))) {
+-        const event = e;
+-        return __privateMethod(this, _TableNodeView_instances, handleClick_fn).call(this, event);
+-      }
+     }
+     return false;
+   }
+@@ -1053,38 +1134,6 @@
+     this.contentDOM.remove();
+   }
+ }
+-_TableNodeView_instances = new WeakSet();
+-handleClick_fn = function(event) {
+-  const view = this.view;
+-  if (!view.editable) return false;
+-  const { state, dispatch } = view;
+-  const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
+-  if (!pos) return false;
+-  const $pos = state.doc.resolve(pos.inside);
+-  const node = findParent(
+-    (node2) => node2.type.name === "table_cell" || node2.type.name === "table_header"
+-  )($pos);
+-  if (!node) return false;
+-  if (state.selection instanceof TextSelection) {
+-    const currentNode = findParent(
+-      (node2) => node2.type.name === "table_cell" || node2.type.name === "table_header"
+-    )(state.selection.$from);
+-    if ((currentNode == null ? void 0 : currentNode.node) === node.node) return false;
+-  }
+-  const { from } = node;
+-  const selection = NodeSelection.create(state.doc, from + 1);
+-  if (state.selection.eq(selection)) return false;
+-  if (state.selection instanceof CellSelection) {
+-    setTimeout(() => {
+-      dispatch(state.tr.setSelection(selection).scrollIntoView());
+-    }, 20);
+-  } else {
+-    requestAnimationFrame(() => {
+-      dispatch(state.tr.setSelection(selection).scrollIntoView());
+-    });
+-  }
+-  return true;
+-};
+ const tableBlockView = $view(
+   tableSchema.node,
+   (ctx) => {
+@@ -1101,4 +1150,3 @@
  const tableBlock = [tableBlockConfig, tableBlockView];
  
  export { TableNodeView, tableBlock, tableBlockConfig, tableBlockView };
 -//# sourceMappingURL=index.js.map
+--- a/lib/table-block/view/operation.d.ts
++++ b/lib/table-block/view/operation.d.ts
+@@ -1,11 +1,15 @@
+ import type { Ctx } from '@milkdown/ctx';
++import type { Command } from '@milkdown/prose/state';
+ import type { Refs } from './types';
++export type MenuItem = [label: string, onPointerdown: (e: PointerEvent) => void];
++export declare function sortRows(direction: 1 | -1): Command;
++export declare const duplicateRows: Command;
+ export declare function useOperation(refs: Refs, ctx?: Ctx, getPos?: () => number | undefined): {
+     onAddRow: () => void;
+     onAddCol: () => void;
+     selectCol: () => void;
+     selectRow: () => void;
+-    deleteSelected: (e: PointerEvent) => void;
+-    onAlign: (direction: 'left' | 'center' | 'right') => (e: PointerEvent) => void;
++    colMenu: MenuItem[][];
++    rowMenu: MenuItem[][];
+ };
+ //# sourceMappingURL=operation.d.ts.map
+\ No newline at end of file
 --- a/lib/list-item-block/index.js
 +++ b/lib/list-item-block/index.js
 @@ -182,6 +182,32 @@
