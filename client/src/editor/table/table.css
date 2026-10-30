@@ -71,3 +71,37 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Fill down (YAZ-3765, S4): the handle sits inside the corner of the bottom-right selected cell
+   (the table clips its edge), above the selected-cell wash. Hidden in a read-only view (R3). */
+.milkdown .ProseMirror .milkdown-table-block .table-fill-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border: 1px solid var(--crepe-color-background);
+  background-color: var(--crepe-color-primary);
+  cursor: crosshair;
+}
+
+.milkdown .ProseMirror[contenteditable='false'] .table-fill-handle {
+  display: none;
+}
+
+/* The fill range while the handle drags: a dashed line on its outer edges. */
+.milkdown .ProseMirror .milkdown-table-block [data-fill-target]::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: 3;
+  border: 0 dashed var(--crepe-color-primary);
+  pointer-events: none;
+}
+
+.milkdown .ProseMirror .milkdown-table-block [data-fill-target~='top']::before { border-top-width: 2px; }
+.milkdown .ProseMirror .milkdown-table-block [data-fill-target~='bottom']::before { border-bottom-width: 2px; }
+.milkdown .ProseMirror .milkdown-table-block [data-fill-target~='left']::before { border-left-width: 2px; }
+.milkdown .ProseMirror .milkdown-table-block [data-fill-target~='right']::before { border-right-width: 2px; }

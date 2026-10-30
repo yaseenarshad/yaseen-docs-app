@@ -176,6 +176,11 @@
  *  - Column resize (YAZ-3696 D2, `tableColumnResize.ts`): `prosemirror-tables`' `columnResizing` as
  *    installed, put just before `tableEditing` so a grip drag selects no cells, with the drag measured
  *    in layout px under document zoom. The vendored table block draws the `<colgroup>` from `colwidth`.
+ *  - Paste into cells (YAZ-3696 D4 / S2, `table/tablePaste.ts`, called from `clipboardPaste.ts`): cells
+ *    and tab-separated text fill from the caret cell and grow the table; one value fills selected
+ *    cells; tab-separated text outside a table makes one. One `replaceWith`, one undo step.
+ *  - Fill down (YAZ-3696 S4, `table/tableFill.ts` + `fillSeries.ts`): a widget handle in the corner of
+ *    the selected cells; a drag down or right fills series up to the table's edge, on mouseup.
  */
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
@@ -222,6 +227,7 @@ import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHigh
 import { inlineBreaks } from './inlineBreaks'
 import { lineStyle } from './line/lineStyle'
 import { tableStyle } from './table/tableStyle'
+import { tableFill } from './table/tableFill'
 import { lineView } from './line/lineView'
 import { lineRows } from './line/lineRows'
 import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
@@ -487,6 +493,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(lineNumbers)
   // Column resize (YAZ-3696 D2): `columnResizing`, before `tableEditing`, zoom-aware; the table block draws the `<colgroup>`.
   crepe.editor.use(tableColumnResize)
+  // Fill down (YAZ-3696 S4): the corner handle of the selected cells.
+  crepe.editor.use(tableFill)
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   // ONE resolve source instance feeds both the decorations and the click plugin's routing.

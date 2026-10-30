@@ -8,6 +8,7 @@ import { externalNumberedHTML, literalNumberedHTML, parseLiteralNumberedPaste } 
 import { imageOptionsOf } from './image/imageOptions'
 import { imageFile, insertPastedImage } from './image/insertImage'
 import { closePathChip, pastePathLinks, pasteUrlOverWords, pathPasteCtx } from './pathPaste'
+import { pasteIntoCells } from './table/tablePaste'
 
 /** A root-level BR between paragraphs is one blank paragraph, not a paragraph with two visual lines. */
 function normalizeParagraphSeparators(html: string): string {
@@ -63,6 +64,9 @@ export const clipboardPaste = $prose((ctx) => {
         return true
       }
       if (prev.handlePaste?.(view, event, slice)) return true
+      // Cells fill from the caret cell, and tab-separated text becomes cells or a table (YAZ-3696 D4 / S2).
+      // Before Milkdown's own paste, which would put the rows in at the caret and split the table.
+      if (pasteIntoCells(view, event, slice)) return true
       const data = event.clipboardData
       // A path of this vault is a link, and a web link over words links them (YAZ-3609). Both before
       // Milkdown's own text paste, which would keep the path text and put the URL in place of the words.
