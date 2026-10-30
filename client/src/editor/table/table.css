@@ -1,0 +1,73 @@
+/*
+ * The table's settings on the page (YAZ-3758, YAZ-3696 D3 / D7 / D8; CONTRACTS rule 41a). A cell
+ * carries `data-fill` and `data-color` (its own `toDOM`); the table block carries `data-table-*`
+ * and the border custom properties (`tableStyle.ts`, a node decoration). Scoped under
+ * `.milkdown .ProseMirror` so it wins over Crepe's table.css, which loads after it.
+ *
+ * Order matters at equal weight: header, then stripes, then fills, so a filled cell keeps its fill.
+ */
+
+/* Text colours: darker shades in light, lighter in dark, so the words stay readable. */
+:root {
+  --table-text-red: #c0392b;
+  --table-text-orange: #b45309;
+  --table-text-green: #2e7d32;
+  --table-text-blue: #1d5fbf;
+  --table-text-grey: #6b6b6b;
+}
+
+[data-theme='dark'] {
+  --table-text-red: #ff7b72;
+  --table-text-orange: #f0a35e;
+  --table-text-green: #6fd47f;
+  --table-text-blue: #79b8ff;
+  --table-text-grey: #a0a0a0;
+}
+
+/* Border: Crepe's look (1px, 20% of the outline colour) unless the table sets its own. */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td) {
+  border-width: var(--table-border-width, 1px);
+  border-color: color-mix(in srgb, var(--crepe-color-outline) var(--table-border-darkness, 20%), transparent);
+}
+
+/* Header row: shaded by default, plain on request. */
+.milkdown .ProseMirror .milkdown-table-block th {
+  background-color: color-mix(in srgb, var(--crepe-color-on-background) 6%, transparent);
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-header='plain'] th {
+  background-color: transparent;
+}
+
+/* Stripes: every second body row. Row 1 of the tbody is the header row. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-stripes] :where(tr:nth-child(2n + 3)) > td {
+  background-color: color-mix(in srgb, var(--crepe-color-on-background) 4%, transparent);
+}
+
+/* Fills: the highlight colours (YAZ-1480, app.css `--mark-bg*`). */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='yellow'] { background-color: var(--mark-bg); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='green'] { background-color: var(--mark-bg-green); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='blue'] { background-color: var(--mark-bg-blue); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='pink'] { background-color: var(--mark-bg-pink); }
+
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='red'] { color: var(--table-text-red); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='green'] { color: var(--table-text-green); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='blue'] { color: var(--table-text-blue); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='grey'] { color: var(--table-text-grey); }
+
+/* Row height: Crepe's cells are 4px top and bottom (normal). */
+.milkdown .ProseMirror .milkdown-table-block[data-table-height='compact'] :is(th, td) {
+  padding-block: 1px;
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-height='tall'] :is(th, td) {
+  padding-block: 10px;
+}
+
+/* No wrap: one line per cell paragraph, cut with an ellipsis. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td) > p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

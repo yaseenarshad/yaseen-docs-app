@@ -1,6 +1,7 @@
 import { parse, postprocess, preprocess } from 'micromark'
 import { gfm } from 'micromark-extension-gfm'
 import { parseLineComment } from '../line/lineComment'
+import { parseTableComment } from '../table/tableComment'
 
 /**
  * One entry per leaf block, in document order: the line it starts on (1-based), the line it ends
@@ -11,7 +12,9 @@ import { parseLineComment } from '../line/lineComment'
  * `<!-- line: … -->` right after it, in the same container, into ONE `hr` (`lineStyleRemark`), so
  * the comment is skipped here by the same rule, and the line's entry ends on the comment's last
  * line — a block of two or more lines of the file shows its range (D7), as a setext heading's
- * underline does. Any other HTML block is a block, as before.
+ * underline does. A table's comment is skipped the same way (YAZ-3758, rule 41a): the editor joins
+ * a `table` and the `<!-- table: … -->` right after it (`tableStyleRemark`), and the table's entry
+ * ends on the comment. Any other HTML block is a block, as before.
  */
 export interface BlockLines {
   lines: number[]
@@ -56,8 +59,9 @@ export function blockLines(text: string): BlockLines {
     ends.push(end)
     kinds += kind
   }
-  // Right after a thematic break, until anything else happens in the flow: the next HTML block may be its comment.
-  let afterBreak = false
+  // Right after a thematic break or a table, until anything else happens in the flow: the next HTML
+  // block may be its comment. The block's kind, or null.
+  let after: string | null = null
   const flush = () => {
     if (emptyItem === null) return
     add(emptyItem, emptyItem, 'p')
@@ -66,7 +70,7 @@ export function blockLines(text: string): BlockLines {
   for (const [index, [phase, token]] of events.entries()) {
     const { type } = token
     // A new list item, a list or a quote that opens or closes: the next block is no sibling of the line.
-    if (LISTS.has(type) || type === 'blockQuote' || type === 'listItemPrefix') afterBreak = false
+    if (LISTS.has(type) || type === 'blockQuote' || type === 'listItemPrefix') after = null
     if (LISTS.has(type)) {
       // A nested list on the item's OWN line (`* - nested`) is the item's first block: the editor adds
       // a paragraph only when the list starts on a later line (listItemRoundTrip rule 2).
@@ -92,12 +96,12 @@ export function blockLines(text: string): BlockLines {
     // A fence that is never closed runs to the end of the text, and ends at the START of the line under its last one.
     const { start, end } = token
     const last = end.column === 1 && end.line > start.line ? end.line - 1 : end.line
-    if (afterBreak && type === 'htmlFlow' && parseLineComment(htmlText(events, index, text)) !== null) {
+    if (after !== null && type === 'htmlFlow' && (after === 'r' ? parseLineComment : parseTableComment)(htmlText(events, index, text)) !== null) {
       ends[ends.length - 1] = last
-      afterBreak = false
+      after = null
       continue
     }
-    afterBreak = type === 'thematicBreak'
+    after = kind === 'r' || kind === 't' ? kind : null
     add(start.line, last, kind)
   }
   return { lines, ends, kinds }

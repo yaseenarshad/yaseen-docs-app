@@ -151,6 +151,10 @@
  *    `setNodeMarkup` on mouseup. The block handle menu of a line (`line/lineRows.ts`) adds "Line
  *    darkness", "Line thickness" and "Line style", one row each, whose value opens the presets (the
  *    zoom menu's shape) on a click.
+ *  - The table's settings (YAZ-3758, `table/tableStyle.ts`): the `table` node gains border,
+ *    header, align, stripes, height, wrap and freeze attributes, and each cell `fill` and `color`
+ *    — the SECOND exception to the images rule. A plain table stays the GFM table; one with
+ *    settings is the table then the next block `<!-- table: … -->`, joined on load as the line's.
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
  *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
@@ -214,6 +218,7 @@ import { underline } from './marks/underline'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
 import { inlineBreaks } from './inlineBreaks'
 import { lineStyle } from './line/lineStyle'
+import { tableStyle } from './table/tableStyle'
 import { lineView } from './line/lineView'
 import { lineRows } from './line/lineRows'
 import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
@@ -450,6 +455,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(highlight)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
+  // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment.
+  crepe.editor.use(tableStyle)
   // YAZ-3209: over hidden lines, Bold, Italic, Strikethrough, code and H1-H3 / T change the visible
   // ones only, and the toolbar lights for visible lines only. After the presets, by `EditorViewReady`.
   crepe.editor.use(visibleFormatting)
