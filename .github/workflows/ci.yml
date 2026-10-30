@@ -1,7 +1,7 @@
 # CI (YAZ-2131 🔒 D8): every pull request and every push to main gets a typecheck, the unit-test
 # suite, a build and the size and integrity gate on it (`perf:budget:ci`, YAZ-2131 1B). The
-# Playwright suite (`npm run e2e`) is local, not run here: it drives the app's real windows, so its
-# result is pasted into each PR instead. Release packaging is release.yml.
+# Playwright suite (`npm run e2e`) is local, not run here: it drives the app's real windows, so it
+# runs only when Yasin asks (docs/DEVELOPMENT.md). Release packaging is release.yml.
 name: ci
 
 on:
