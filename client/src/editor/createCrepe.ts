@@ -152,7 +152,7 @@
  *    darkness", "Line thickness" and "Line style", one row each, whose value opens the presets (the
  *    zoom menu's shape) on a click.
  *  - The table's settings (YAZ-3758, `table/tableStyle.ts`): the `table` node gains border,
- *    header, align, stripes, height, wrap and freeze attributes, and each cell `fill` and `color`
+ *    header, stripes, height, wrap and freeze attributes, and each cell `fill` and `color`
  *    — the SECOND exception to the images rule. A plain table stays the GFM table; one with
  *    settings is the table then the next block `<!-- table: … -->`, joined on load as the line's.
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
@@ -176,6 +176,9 @@
  *  - Column resize (YAZ-3696 D2, `tableColumnResize.ts`): `prosemirror-tables`' `columnResizing` as
  *    installed, put just before `tableEditing` so a grip drag selects no cells, with the drag measured
  *    in layout px under document zoom. The vendored table block draws the `<colgroup>` from `colwidth`.
+ *  - Table menus (YAZ-3766): the table's settings on its six-dot handle (`table/tableRows.ts`), the
+ *    cell toolbar over two or more selected cells (`table/cellToolbar.ts`), and frozen rows and
+ *    columns (`table/tableFreeze.ts`; the right-click Table part is `noteMenu.tsx`'s).
  */
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
@@ -222,6 +225,9 @@ import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHigh
 import { inlineBreaks } from './inlineBreaks'
 import { lineStyle } from './line/lineStyle'
 import { tableStyle } from './table/tableStyle'
+import { tableRows } from './table/tableRows'
+import { cellToolbar } from './table/cellToolbar'
+import { tableFreeze } from './table/tableFreeze'
 import { lineView } from './line/lineView'
 import { lineRows } from './line/lineRows'
 import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
@@ -487,6 +493,10 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(lineNumbers)
   // Column resize (YAZ-3696 D2): `columnResizing`, before `tableEditing`, zoom-aware; the table block draws the `<colgroup>`.
   crepe.editor.use(tableColumnResize)
+  // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.
+  crepe.editor.use(cellToolbar)
+  // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.
+  crepe.editor.use(tableFreeze)
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   // ONE resolve source instance feeds both the decorations and the click plugin's routing.
@@ -534,8 +544,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // ordered children. Typing, slash-menu and keyboard conversion paths are all absent.
   void crepe.editor.remove([wrapInOrderedListInputRule, ...orderedListKeymap])
   // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its children (Number children),
-  // then a line's pickers (YAZ-3164 D3). A new row joins its group.
-  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...numberChildrenRow(view, target, ctx), ...lineRows(view, target, ctx)]))
+  // then a line's pickers (YAZ-3164 D3), or a table's settings (YAZ-3767 D7). A new row joins its group.
+  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...numberChildrenRow(view, target, ctx), ...lineRows(view, target, ctx), ...tableRows(view, target, ctx)]))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.

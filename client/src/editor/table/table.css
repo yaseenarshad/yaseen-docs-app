@@ -5,6 +5,7 @@
  * `.milkdown .ProseMirror` so it wins over Crepe's table.css, which loads after it.
  *
  * Order matters at equal weight: header, then stripes, then fills, so a filled cell keeps its fill.
+ * Each sets the cell's `--table-cell-tint`; one rule paints it (a frozen cell, over the page colour).
  */
 
 /* Text colours: darker shades in light, lighter in dark, so the words stay readable. */
@@ -30,25 +31,31 @@
   border-color: color-mix(in srgb, var(--crepe-color-outline) var(--table-border-darkness, 20%), transparent);
 }
 
+/* Each cell's tint: the header shade, the stripes and the fills set `--table-cell-tint`, and this one
+   rule paints it. A frozen cell paints it over a solid page colour instead (below). */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td) {
+  background-color: var(--table-cell-tint, transparent);
+}
+
 /* Header row: shaded by default, plain on request. */
 .milkdown .ProseMirror .milkdown-table-block th {
-  background-color: color-mix(in srgb, var(--crepe-color-on-background) 6%, transparent);
+  --table-cell-tint: color-mix(in srgb, var(--crepe-color-on-background) 6%, transparent);
 }
 
 .milkdown .ProseMirror .milkdown-table-block[data-table-header='plain'] th {
-  background-color: transparent;
+  --table-cell-tint: transparent;
 }
 
 /* Stripes: every second body row. Row 1 of the tbody is the header row. */
 .milkdown .ProseMirror .milkdown-table-block[data-table-stripes] :where(tr:nth-child(2n + 3)) > td {
-  background-color: color-mix(in srgb, var(--crepe-color-on-background) 4%, transparent);
+  --table-cell-tint: color-mix(in srgb, var(--crepe-color-on-background) 4%, transparent);
 }
 
 /* Fills: the highlight colours (YAZ-1480, app.css `--mark-bg*`). */
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='yellow'] { background-color: var(--mark-bg); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='green'] { background-color: var(--mark-bg-green); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='blue'] { background-color: var(--mark-bg-blue); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='pink'] { background-color: var(--mark-bg-pink); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='yellow'] { --table-cell-tint: var(--mark-bg); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='green'] { --table-cell-tint: var(--mark-bg-green); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='blue'] { --table-cell-tint: var(--mark-bg-blue); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='pink'] { --table-cell-tint: var(--mark-bg-pink); }
 
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='red'] { color: var(--table-text-red); }
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
@@ -70,4 +77,79 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Frozen rows and columns (YAZ-3769, S3, `tableFreeze.ts`). Columns stick inside the table block's
+   sideways scroll, at the widths of the columns before them. Rows move down by the offset that keeps
+   them at the top of the note (the folder page's method). Both paint their tint over the page colour,
+   so the cells under them do not show through; a frozen row stands above the sticky columns. */
+.milkdown .ProseMirror .milkdown-table-block .table-frozen-row {
+  position: relative;
+  z-index: 2;
+  transform: translateY(var(--table-frozen-y, 0px));
+}
+
+.milkdown .ProseMirror .milkdown-table-block :is(th, td).table-frozen-col {
+  position: sticky;
+  z-index: 1;
+}
+
+.milkdown .ProseMirror .milkdown-table-block :is(.table-frozen-row > *, .table-frozen-col) {
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
+}
+
+/* The cell toolbar (YAZ-3768, D8, `cellToolbar.ts`): Crepe's selection toolbar look (toolbar.css),
+   on its own class, so Crepe's rules for its own toolbar do not reach it. Crepe's variables follow
+   light and dark. */
+.milkdown .cell-toolbar {
+  z-index: 10;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  background: var(--crepe-color-surface);
+  box-shadow: var(--crepe-shadow-1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.milkdown .cell-toolbar[data-show='false'] {
+  display: none;
+}
+
+.milkdown .cell-toolbar .divider {
+  width: 1px;
+  height: 24px;
+  margin: 10px 4px;
+  background: color-mix(in srgb, var(--crepe-color-outline), transparent 80%);
+}
+
+.milkdown .cell-toolbar__label {
+  padding-left: 8px;
+  font-size: 12px;
+  color: var(--crepe-color-outline);
+  white-space: nowrap;
+}
+
+.milkdown .cell-toolbar .toolbar-item {
+  width: 32px;
+  height: 32px;
+  margin: 6px 2px;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--crepe-color-outline);
+}
+
+.milkdown .cell-toolbar .toolbar-item:hover {
+  background: var(--crepe-color-hover);
+}
+
+.milkdown .cell-toolbar .toolbar-item:active {
+  background: var(--crepe-color-selected);
+}
+
+.milkdown .cell-toolbar .toolbar-item svg {
+  width: 24px;
+  height: 24px;
 }
