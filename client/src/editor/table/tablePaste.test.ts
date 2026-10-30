@@ -8,7 +8,7 @@ import { Fragment, Slice, type Node as ProseNode } from '@milkdown/kit/prose/mod
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { cellPos, mountTable, unmountAll } from '../tableTestKit'
+import { cellPos, mountTable, unmountAll } from './tableTestKit'
 import { pasteIntoCells } from './tablePaste'
 
 afterEach(unmountAll)
@@ -135,6 +135,15 @@ describe('paste cells into a table (D4)', () => {
     expect(tables(view)).toHaveLength(1)
     expect(grid(view).map((r) => r.length)).toEqual([2, 2, 2])
     expect(cellAt(view, 1, 0).textContent).toBe('one\ntwoa')
+    expect(cellAt(view, 1, 1).textContent).toBe('b')
+  })
+
+  it('text with a line that starts with a tab stays text in a cell, as outside a table (indented code)', async () => {
+    const view = await mountTable()
+    caretIn(view, 1, 0)
+    pasteText(view, 'if (x) {\n\treturn 1\n}')
+    expect(grid(view).map((r) => r.length)).toEqual([2, 2, 2])
+    expect(cellAt(view, 1, 0).textContent).toContain('return 1')
     expect(cellAt(view, 1, 1).textContent).toBe('b')
   })
 

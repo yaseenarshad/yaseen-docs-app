@@ -28,7 +28,14 @@ import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown
 import { CellSelection, deleteCellSelection, selectedRect } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { ALIGNS, FILL_COLORS, TEXT_COLORS, type TableAlign } from './tableStyle'
+import { setCellsAttr } from './cells'
+import { FILL_COLORS, TEXT_COLORS } from './tableStyle'
+
+/** A column's GFM alignments, as the toolbar and "Align all columns" (`tableRows.ts`) offer them. */
+export const ALIGNS = ['left', 'center', 'right'] as const
+export type TableAlign = (typeof ALIGNS)[number]
+/** A menu label from a value: `blue` → `Blue`. */
+export const capital = (word: string) => word[0].toUpperCase() + word.slice(1)
 
 const SVG = (body: string) => `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${body}</svg>`
 /** A square swatch; `null` is "none": an empty square with a slash. */
@@ -48,16 +55,10 @@ const alignIcon = (align: TableAlign) => {
 }
 const CLEAR = SVG('<path d="M8 8l8 8M16 8l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
 
-const capital = (word: string) => word[0].toUpperCase() + word.slice(1)
-
 /** One cell attribute on every selected cell, in one transaction. */
 function setCells(view: EditorView, attr: 'fill' | 'color', value: string | null): void {
-  const { selection } = view.state
-  if (!(selection instanceof CellSelection)) return
-  const tr = closeHistory(view.state.tr)
-  selection.forEachCell((cell, pos) => {
-    if (cell.attrs[attr] !== value) tr.setNodeAttribute(pos, attr, value)
-  })
+  if (!(view.state.selection instanceof CellSelection)) return
+  const tr = setCellsAttr(closeHistory(view.state.tr), selectedRect(view.state), attr, value)
   if (tr.docChanged) view.dispatch(tr)
 }
 
@@ -90,14 +91,8 @@ function toggleMark(view: EditorView, name: string): void {
 /** The alignment of each selected column, every row of it. */
 function alignColumns(view: EditorView, align: TableAlign): void {
   if (!(view.state.selection instanceof CellSelection)) return
-  const { map, tableStart, left, right } = selectedRect(view.state)
-  const tr = closeHistory(view.state.tr)
-  for (let row = 0; row < map.height; row++) {
-    for (let col = left; col < right; col++) {
-      const pos = tableStart + map.map[row * map.width + col]
-      if (view.state.doc.nodeAt(pos)?.attrs.alignment !== align) tr.setNodeAttribute(pos, 'alignment', align)
-    }
-  }
+  const rect = selectedRect(view.state)
+  const tr = setCellsAttr(closeHistory(view.state.tr), { ...rect, top: 0, bottom: rect.map.height }, 'alignment', align)
   if (tr.docChanged) view.dispatch(tr)
 }
 

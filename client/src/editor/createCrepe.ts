@@ -173,7 +173,7 @@
  *    (measured: 23.6 ms per key at 2,500 blocks against 0.19 ms), and its `forChild` answers
  *    "nothing inside a block" without ProseMirror's scan of every root decoration (16.5 ms per
  *    key). A click on a line folds the sections beside it (meta-only, through heading folding).
- *  - Column resize (YAZ-3696 D2, `tableColumnResize.ts`): `prosemirror-tables`' `columnResizing` as
+ *  - Column resize (YAZ-3696 D2, `table/tableColumnResize.ts`): `prosemirror-tables`' `columnResizing` as
  *    installed, put just before `tableEditing` so a grip drag selects no cells, with the drag measured
  *    in layout px under document zoom. The vendored table block draws the `<colgroup>` from `colwidth`.
  *  - Paste into cells (YAZ-3696 D4 / S2, `table/tablePaste.ts`, called from `clipboardPaste.ts`): cells
@@ -240,7 +240,7 @@ import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
 import { visibleFormatting } from './visibleFormatting'
 import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
-import { tableColumnResize } from './tableColumnResize'
+import { tableColumnResize } from './table/tableColumnResize'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import ts from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cellPos, dragColumnEdge, mountTable, unmountAll } from './tableTestKit'
+import { cellPos, dragColumnEdge, mountTable, unmountAll } from './table/tableTestKit'
 
 const runtime = readFileSync(resolve(__dirname, '../../../node_modules/@milkdown/components/lib/table-block/index.js'), 'utf8')
 const parsed = ts.createSourceFile('table-block.js', runtime, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)

@@ -12,9 +12,8 @@
  * blue, stripes -->` (`tableComment.ts` reads and writes it). Obsidian and GitHub hide it and show
  * a plain table.
  *
- * LOAD: `tableStyleRemark` walks every container and joins a `table` with its NEXT sibling when
- * that sibling is our comment — a bare `html` node, or the paragraph Milkdown's
- * `remarkHtmlTransformer` wraps a block `html` in — as `lineStyle.ts` does for `***`. The table's
+ * LOAD: `tableStyleRemark` joins a `table` with its NEXT sibling when that sibling is our comment
+ * (`joinComment.ts`, shared with `lineStyle.ts` for `***`). The table's
  * attributes go on `data.tableAttrs`, each cell's on `data.tableCell`, and the comment leaves the
  * tree. A widths list longer than the table loses its extra widths; a shorter one leaves `auto`.
  * Any other comment — not ours, not right after a table — stays an `html` node, bytes untouched.
@@ -26,14 +25,17 @@
  * attributes and custom properties that `toDOM` writes on the block's `div.milkdown-table-block`,
  * by a node decoration that depends on the attributes only. Cells render through their own
  * `toDOM`, so `data-fill` / `data-color` are on the page as they are. `table.css` draws them.
+ * `changedTables` gives the tables a transaction changed, here and in `tableFreeze.ts`.
  */
 import { tableSchema } from '@milkdown/kit/preset/gfm'
 import type { Node as ProseNode, TagParseRule } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
+import { AttrStep } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { NodeSchema } from '@milkdown/kit/transformer'
 import { $prose, $remark } from '@milkdown/kit/utils'
-import type { Nodes, Parent, RootContent, Table } from 'mdast'
+import type { Nodes, Table } from 'mdast'
+import { joinNextComment } from '../joinComment'
 import {
   BORDER_PX_MAX,
   FILL_COLORS,
@@ -87,7 +89,7 @@ const widthOf = (cell: ProseNode): number | null => {
 }
 
 /** A table node's settings, every value checked. Rows and columns are the node's own, row 1 the header row. */
-export function tableStyleOf(table: ProseNode): TableStyle {
+function tableStyleOf(table: ProseNode): TableStyle {
   const style: TableStyle = { ...plainTable(), ...tableLevel(table.attrs) }
   table.forEach((row, _, r) => {
     row.forEach((cell, __, c) => {
@@ -100,8 +102,8 @@ export function tableStyleOf(table: ProseNode): TableStyle {
   return style
 }
 
-/** The DOM attributes of the table-level parts: on a copy's `<table>` and on the table block. `null` for none. */
-export function tableDomAttrs(attrs: Record<string, unknown>): Record<string, string> | null {
+/** The DOM attributes of the table-level parts on the table block and on a copy's `<table>` (`toDOM` adds the freeze). `null` for none. */
+function tableDomAttrs(attrs: Record<string, unknown>): Record<string, string> | null {
   const level = tableLevel(attrs)
   const out: Record<string, string> = {}
   if (level.border) out.style = `--table-border-width: ${level.border.px}px; --table-border-darkness: ${level.border.darkness}%`
@@ -109,7 +111,6 @@ export function tableDomAttrs(attrs: Record<string, unknown>): Record<string, st
   if (level.stripes) out['data-table-stripes'] = ''
   if (level.height) out['data-table-height'] = level.height
   if (level.nowrap) out['data-table-nowrap'] = ''
-  if (level.freeze) out['data-table-freeze'] = `${level.freeze.rows} ${level.freeze.cols}`
   return Object.keys(out).length === 0 ? null : out
 }
 
@@ -195,15 +196,6 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
   }
 }
 
-/** The comment a block holds, when the block is nothing but our comment: a bare `html`, or a paragraph wrapping only one. */
-const commentStyle = (node: RootContent | undefined): TableStyle | null => {
-  if (node === undefined) return null
-  if (node.type === 'html') return parseTableComment(node.value)
-  if (node.type !== 'paragraph' || node.children.length !== 1) return null
-  const only = node.children[0]
-  return only.type === 'html' ? parseTableComment(only.value) : null
-}
-
 interface TableData {
   tableAttrs?: TableAttrs
 }
@@ -228,33 +220,21 @@ function applyStyle(table: Table, style: TableStyle): void {
   })
 }
 
-/** Every container, depth first: join each `table` with the comment right after it. */
-const joinComments = (node: Nodes): void => {
-  if (!('children' in node)) return
-  const parent = node as Parent
-  for (let i = 0; i < parent.children.length; i++) {
-    const child = parent.children[i]
-    if (child.type === 'table') {
-      const style = commentStyle(parent.children[i + 1])
-      if (style !== null) {
-        applyStyle(child, style)
-        parent.children.splice(i + 1, 1)
-      }
-    } else joinComments(child)
-  }
-}
-
 export const tableStyleRemark = $remark('mdapp-table-style', () => () => (tree) => {
-  joinComments(tree as Nodes)
+  joinNextComment(tree as Nodes, 'table', parseTableComment, (table, style) => applyStyle(table as Table, style))
 })
 
-export const tableStyleSchema = tableSchema.extendSchema((prev) => (ctx) => {
+const tableStyleSchema = tableSchema.extendSchema((prev) => (ctx) => {
   const base = prev(ctx)
   return {
     ...base,
     attrs: Object.fromEntries(Object.entries(TABLE_DEFAULTS).map(([name, value]) => [name, { default: value }])),
     parseDOM: [{ tag: 'table', getAttrs: (dom) => readTableDom(dom as HTMLElement) }],
-    toDOM: (node) => ['table', tableDomAttrs(node.attrs) ?? {}, ['tbody', 0]],
+    toDOM: (node) => {
+      // The freeze goes with a copy only: `tableFreeze.ts` draws it on the page from the attributes.
+      const { freeze } = tableLevel(node.attrs)
+      return ['table', { ...tableDomAttrs(node.attrs), ...(freeze && { 'data-table-freeze': `${freeze.rows} ${freeze.cols}` }) }, ['tbody', 0]]
+    },
     parseMarkdown: {
       match: base.parseMarkdown.match,
       // GFM's runner (each row gets the alignment, the first is the header), with our attributes.
@@ -277,50 +257,63 @@ export const tableStyleSchema = tableSchema.extendSchema((prev) => (ctx) => {
   }
 })
 
-/** The node decoration of each table with settings, from `from` to `to`; a table's cells are not walked. */
-function tableDecorations(doc: ProseNode, from: number, to: number, out: Map<number, Decoration>): void {
+/** Each table between `from` and `to`, by position, into `out`; a table's cells are not walked. */
+function tablesBetween(doc: ProseNode, from: number, to: number, out: Map<number, ProseNode>): Map<number, ProseNode> {
   doc.nodesBetween(from, to, (node, pos) => {
     if (node.type.name !== 'table') return !node.isTextblock
-    const attrs = tableDomAttrs(node.attrs)
-    if (attrs !== null) out.set(pos, Decoration.node(pos, pos + node.nodeSize, attrs))
+    out.set(pos, node)
     return false
   })
+  return out
+}
+
+/**
+ * The tables a transaction changed, by position in `tr.doc`: those in each step's changed range, and
+ * the node of each attribute-only step (`setNodeAttribute`), whose step map is empty (YAZ-3696).
+ */
+export function changedTables(tr: Transaction): Map<number, ProseNode> {
+  const out = new Map<number, ProseNode>()
+  tr.steps.forEach((step, i) => {
+    const rest = tr.mapping.slice(i + 1)
+    if (step instanceof AttrStep) {
+      const pos = rest.map(step.pos)
+      tablesBetween(tr.doc, pos, pos + 1, out)
+    } else tr.mapping.maps[i]!.forEach((_a, _b, start, end) => tablesBetween(tr.doc, rest.map(start, -1), rest.map(end, 1), out))
+  })
+  return out
+}
+
+/** The node decoration of a table with settings, or `null`. */
+function tableDecoration(table: ProseNode, pos: number): Decoration | null {
+  const attrs = tableDomAttrs(table.attrs)
+  return attrs === null ? null : Decoration.node(pos, pos + table.nodeSize, attrs)
 }
 
 const tableStyleKey = new PluginKey<DecorationSet>('mdapp-table-style')
 
 /**
  * The table block's data attributes: a transaction that changes no document does nothing; one that
- * does maps the set and builds again only the tables in the changed ranges.
+ * does maps the set and builds again only the changed tables. A table's own decoration starts at
+ * the table: `find` also gives the decoration of a table that only touches it, which stays.
  */
-export const tableStylePlugin = $prose(
+const tableStylePlugin = $prose(
   () =>
     new Plugin<DecorationSet>({
       key: tableStyleKey,
       state: {
         init: (_, { doc }) => {
-          const out = new Map<number, Decoration>()
-          tableDecorations(doc, 0, doc.content.size, out)
-          return DecorationSet.create(doc, [...out.values()])
+          const decorations = [...tablesBetween(doc, 0, doc.content.size, new Map())].map(([pos, node]) => tableDecoration(node, pos))
+          return DecorationSet.create(doc, decorations.filter((deco) => deco !== null))
         },
         apply: (tr, set) => {
           if (!tr.docChanged) return set
           let next = set.map(tr.mapping, tr.doc)
-          const stale = new Set<Decoration>()
-          const fresh = new Map<number, Decoration>()
-          tr.mapping.maps.forEach((map, i) => {
-            const rest = tr.mapping.slice(i + 1)
-            map.forEach((_a, _b, start, end) => {
-              const from = rest.map(start, -1)
-              const to = rest.map(end, 1)
-              for (const deco of next.find(from, to)) stale.add(deco)
-              tableDecorations(tr.doc, from, to, fresh)
-            })
-          })
-          // A table that only touches a changed range (text typed right after it) is built again too.
-          for (const deco of stale) tableDecorations(tr.doc, deco.from, deco.to, fresh)
-          if (stale.size > 0) next = next.remove([...stale])
-          return fresh.size > 0 ? next.add(tr.doc, [...fresh.values()]) : next
+          const tables = changedTables(tr)
+          if (tables.size === 0) return next
+          const stale = [...tables.keys()].flatMap((pos) => next.find(pos, pos).filter((deco) => deco.from === pos))
+          const fresh = [...tables].map(([pos, node]) => tableDecoration(node, pos)).filter((deco) => deco !== null)
+          if (stale.length > 0) next = next.remove(stale)
+          return fresh.length > 0 ? next.add(tr.doc, fresh) : next
         },
       },
       props: { decorations: (state) => tableStyleKey.getState(state) },

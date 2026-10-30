@@ -4,34 +4,15 @@
  * note and while a mouse drag selects. Each button acts on every selected cell, in one undo step.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe, getMarkdownForSave } from '../createCrepe'
-import { cellPos } from '../tableTestKit'
+import { getMarkdownForSave } from '../createCrepe'
+import { cellPos, mountNote as mount, unmountAll } from './tableTestKit'
 
-const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
-
-async function mount(markdown: string): Promise<{ crepe: Crepe; view: EditorView }> {
-  const root = document.createElement('div')
-  document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown })
-  await crepe.create()
-  mounted.push({ crepe, root })
-  const view = crepe.editor.ctx.get(editorViewCtx)
-  view.focus()
-  return { crepe, view }
-}
-
-afterEach(async () => {
-  for (const m of mounted.splice(0)) {
-    await m.crepe.destroy()
-    m.root.remove()
-  }
-})
+afterEach(unmountAll)
 
 const TABLE = '| h1 | h2 |\n| -- | -- |\n| a  | b  |\n| c  | d  |\n'
 /** The toolbar's throttle (20 ms) has run. */

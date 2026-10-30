@@ -1,17 +1,17 @@
 /**
- * Test helpers for the table block on the real editor in jsdom (YAZ-3696: `tableBlock.test.ts`, `tableZoom.test.ts`).
+ * Test helpers for note tables on the real editor in jsdom (YAZ-3696: the `table/` suites and `tableZoom.test.ts`).
  * jsdom has no layout, so the helpers give each cell a box: 100 × 30 layout px, times the document zoom on screen.
  */
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe } from './createCrepe'
+import { createCrepe } from '../createCrepe'
 
 export const TABLE = '| h1 | h2 |\n| --- | --- |\n| a | b |\n| c | d |\n'
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
 /** Mount a note; `zoom` is the document zoom on `.ProseMirror` (app.css `--document-zoom`). Undo with `unmountAll`. */
-export async function mountTable(markdown = TABLE, zoom = 1): Promise<EditorView> {
+export async function mountNote(markdown = TABLE, zoom = 1): Promise<{ crepe: Crepe; view: EditorView }> {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const crepe = createCrepe({ root, defaultValue: markdown })
@@ -29,8 +29,10 @@ export async function mountTable(markdown = TABLE, zoom = 1): Promise<EditorView
     Object.defineProperty(cell, 'offsetWidth', { value: 100, configurable: true })
     cell.getBoundingClientRect = () => new DOMRect(col * 100 * zoom, row * 30 * zoom, 100 * zoom, 30 * zoom)
   }
-  return view
+  return { crepe, view }
 }
+
+export const mountTable = async (markdown = TABLE, zoom = 1): Promise<EditorView> => (await mountNote(markdown, zoom)).view
 
 export async function unmountAll() {
   for (const m of mounted.splice(0)) {

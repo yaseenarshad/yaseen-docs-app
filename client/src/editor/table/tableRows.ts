@@ -14,9 +14,12 @@
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { TableMap } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuChoice, MenuChoiceField, MenuItem, MenuNumberField, RowProvider } from '../blockHandleMenu'
-import { ALIGNS, TABLE_DEFAULTS, type TableAlign, type TableAttrs } from './tableStyle'
+import { setCellsAttr } from './cells'
+import { ALIGNS, capital, type TableAlign } from './cellToolbar'
+import { TABLE_DEFAULTS, type TableAttrs } from './tableStyle'
 
 /** Crepe's look of a border (table.css): 1px, 20% of the outline colour. */
 const BORDER_DEFAULT = { px: 1, darkness: 20 }
@@ -28,13 +31,10 @@ function targetTable(doc: ProseNode, inside: number): { node: ProseNode; pos: nu
   return node?.type.name === 'table' ? { node, pos: inside } : null
 }
 
-/** Every cell of the table at `pos`, with its document position. */
-function cellsOf(table: ProseNode, pos: number): Array<{ cell: ProseNode; pos: number }> {
-  const out: Array<{ cell: ProseNode; pos: number }> = []
-  table.descendants((cell, offset) => {
-    if (cell.type.spec.tableRole === 'cell' || cell.type.spec.tableRole === 'header_cell') out.push({ cell, pos: pos + 1 + offset })
-    return cell.type.spec.tableRole === 'table' || cell.type.spec.tableRole === 'row'
-  })
+/** Every cell of the table. */
+function cellsOf(table: ProseNode): ProseNode[] {
+  const out: ProseNode[] = []
+  table.forEach((row) => row.forEach((cell) => out.push(cell)))
   return out
 }
 
@@ -51,8 +51,8 @@ function setTable(view: EditorView, pos: number, attrs: Partial<TableAttrs>): vo
 function setCells(view: EditorView, pos: number, attr: string, value: unknown): void {
   const table = view.state.doc.nodeAt(pos)
   if (table?.type.name !== 'table') return
-  const tr = closeHistory(view.state.tr)
-  for (const { cell, pos: at } of cellsOf(table, pos)) if (cell.attrs[attr] !== value) tr.setNodeAttribute(at, attr, value)
+  const map = TableMap.get(table)
+  const tr = setCellsAttr(closeHistory(view.state.tr), { map, table, tableStart: pos + 1, left: 0, top: 0, right: map.width, bottom: map.height }, attr, value)
   if (tr.docChanged) view.dispatch(tr)
 }
 
@@ -78,9 +78,10 @@ export const tableRows: RowProvider = (view, target) => {
   const { pos } = table
   const attrs = table.node.attrs as TableAttrs
   const current = attrs.border ?? BORDER_DEFAULT
-  const cells = cellsOf(table.node, pos)
-  const aligns = new Set(cells.map(({ cell }) => cell.attrs.alignment ?? 'left'))
-  const align = aligns.size === 1 ? ([...aligns][0] as string) : null
+  const cells = cellsOf(table.node)
+  // No alignment on every cell (GFM's `---`) is the default; so are mixed columns.
+  const aligns = new Set(cells.map((cell) => (cell.attrs.alignment as string | null) ?? null))
+  const align = aligns.size === 1 ? [...aligns][0]! : null
   const thickness: MenuNumberField = {
     kind: 'number',
     label: 'Border thickness',
@@ -107,7 +108,7 @@ export const tableRows: RowProvider = (view, target) => {
   }
   const fit = {
     label: 'Fit columns to the page',
-    disabled: cells.every(({ cell }) => cell.attrs.colwidth === null),
+    disabled: cells.every((cell) => cell.attrs.colwidth === null),
     run: () => setCells(view, pos, 'colwidth', null),
   }
   const items: MenuItem[] = [
@@ -120,7 +121,7 @@ export const tableRows: RowProvider = (view, target) => {
       kind: 'choice',
       label: 'Align all columns',
       value: align,
-      choices: ALIGNS.map((value) => ({ value, label: value[0].toUpperCase() + value.slice(1) })),
+      choices: ALIGNS.map((value) => ({ value, label: capital(value) })),
       fallback: 'left',
       // "Default" is GFM's own: no alignment (`---`).
       run: (picked) => setCells(view, pos, 'alignment', picked as TableAlign | null),

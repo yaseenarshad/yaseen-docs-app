@@ -14,13 +14,14 @@ import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import { Plugin } from '@milkdown/kit/prose/state'
 import { columnResizing, columnResizingPluginKey, tableEditingKey } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import { cssZoom } from '../../lib/cssZoom'
 
 function zoomedDrag(view: EditorView) {
   const win = view.dom.ownerDocument.defaultView ?? window
   const toLayout = (event: MouseEvent) => {
     const dragging = columnResizingPluginKey.getState(view.state)?.dragging
-    const zoom = (view.dom as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom
-    if (!dragging || zoom === undefined || !(zoom > 0) || zoom === 1) return
+    const zoom = cssZoom(view.dom)
+    if (!dragging || zoom === 1) return
     Object.defineProperty(event, 'clientX', { value: dragging.startX + (event.clientX - dragging.startX) / zoom })
   }
   win.addEventListener('mousemove', toLayout, true)

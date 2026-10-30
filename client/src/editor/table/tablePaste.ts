@@ -4,11 +4,13 @@
  * table (and so `prosemirror-tables`' own `handlePaste` never runs).
  *
  * - IN A TABLE, the pasted cells are the slice's cells when the HTML has a `<table>` (a copy of
- *   cells in this app, Sheets), else tab-separated `text/plain`. With a caret they fill from its cell, right and
- *   down; with selected cells, from the selection's top-left cell. A paste bigger than the table
- *   adds rows and columns. One value (one cell, or one line of text) fills each selected cell.
- *   Anything else declines: several lines without tabs keep the cell paste of today (YAZ-1452 /
- *   YAZ-1462), and paths stay one line (YAZ-3631).
+ *   cells in this app, Sheets), else tab-separated `text/plain`: one line with a tab is enough. With
+ *   a caret they fill from its cell, right and down; with selected cells, from the selection's
+ *   top-left cell. A paste bigger than the table adds rows and columns. One value (one cell, or one
+ *   line of text) fills each selected cell. Anything else declines: several lines without tabs keep
+ *   the cell paste of today (YAZ-1452 / YAZ-1462), and paths stay one line (YAZ-3631).
+ * - TAB-SEPARATED TEXT is one rule in a table and outside one (`tsvRows`): a line that starts with a
+ *   tab has an empty first cell, and that is indented code, not a sheet: the text stays text.
  * - Cells from HTML bring their `fill` and `color` (none from Sheets, so the target's go, as in
  *   Sheets); text changes the text only. A pasted cell takes its target row's type (header or
  *   body) and keeps its column's `alignment` and `colwidth`.
@@ -16,13 +18,14 @@
  *   `replaceWith` — not `insertCells`, which assumes one row type (GFM has two) and steps per row.
  * - OUTSIDE A TABLE (S2) a Sheets `<table>` already makes a table (Milkdown's `tablePasteRule`).
  *   Tab-separated text with no HTML makes one here: 2 lines or more, the same number of tabs on
- *   each, no line that starts with a tab (that is indented code). The first line is the header row.
+ *   each. The first line is the header row.
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import { Fragment, Slice, type Node as ProseNode, type Schema } from '@milkdown/kit/prose/model'
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
-import { CellSelection, TableMap, __pastedCells, isInTable, selectionCell } from '@milkdown/kit/prose/tables'
+import { CellSelection, TableMap, __pastedCells, isInTable, selectedRect } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import { cellPosAt } from './cells'
 
 /** One pasted cell: its block content, and its `fill` / `color` when it came from HTML (or the source cell, for fill down). */
 export interface Cell {
@@ -35,12 +38,15 @@ export const textCell = (schema: Schema, text: string): Cell => ({
   style: null,
 })
 
-/** Tab-separated text as rows of strings, or `null` when it has no tab. A last empty line is dropped. */
+/**
+ * Tab-separated text as rows of strings, or `null` when it has no tab or a line starts with a tab
+ * (indented code, not a sheet). A last empty line is dropped.
+ */
 function tsvRows(text: string): string[][] | null {
   if (!text.includes('\t')) return null
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   if (lines.length > 1 && lines.at(-1) === '') lines.pop()
-  return lines.map((line) => line.split('\t'))
+  return lines.some((line) => line.startsWith('\t')) ? null : lines.map((line) => line.split('\t'))
 }
 
 /** The slice's cells, as a rectangle. A row of empty header cells that Milkdown added to a `<table>` with no `<th>` is dropped. */
@@ -107,15 +113,13 @@ export function writeCells(tr: Transaction, tableStart: number, top: number, lef
 /** Select the cells of the table at `tableStart` from (top, left) to (bottom, right), inclusive. */
 export function selectCells(tr: Transaction, tableStart: number, top: number, left: number, bottom: number, right: number): Transaction {
   const map = TableMap.get(tr.doc.nodeAt(tableStart - 1)!)
-  const at = (row: number, col: number) => tableStart + map.map[row * map.width + col]!
-  return tr.setSelection(CellSelection.create(tr.doc, at(top, left), at(bottom, right)))
+  return tr.setSelection(CellSelection.create(tr.doc, cellPosAt(map, tableStart, top, left), cellPosAt(map, tableStart, bottom, right)))
 }
 
 /** S2: tab-separated text with no HTML, pasted outside a table, becomes a new table. */
 function pasteTable(view: EditorView, text: string): boolean {
   const rows = tsvRows(text)
-  // A line that starts with a tab has an empty first cell: indented code, not a sheet.
-  if (rows === null || rows.length < 2 || rows.some((row) => row.length !== rows[0]!.length || row[0] === '')) return false
+  if (rows === null || rows.length < 2 || rows.some((row) => row.length !== rows[0]!.length)) return false
   const { schema } = view.state
   const row = (cells: string[], header: boolean) =>
     (header ? schema.nodes.table_header_row : schema.nodes.table_row).create(
@@ -132,17 +136,8 @@ function pasteTable(view: EditorView, text: string): boolean {
 
 /** The table and the cell the paste starts at: the caret's cell, or the top-left cell of the selected cells. */
 function target(state: EditorState): { tableStart: number; top: number; left: number; rect: { width: number; height: number } | null } {
-  const sel = state.selection
-  if (sel instanceof CellSelection) {
-    const tableStart = sel.$anchorCell.start(-1)
-    const map = TableMap.get(sel.$anchorCell.node(-1))
-    const rect = map.rectBetween(sel.$anchorCell.pos - tableStart, sel.$headCell.pos - tableStart)
-    return { tableStart, top: rect.top, left: rect.left, rect: { width: rect.right - rect.left, height: rect.bottom - rect.top } }
-  }
-  const $cell = selectionCell(state)
-  const tableStart = $cell.start(-1)
-  const { top, left } = TableMap.get($cell.node(-1)).findCell($cell.pos - tableStart)
-  return { tableStart, top, left, rect: null }
+  const { tableStart, top, left, right, bottom } = selectedRect(state)
+  return { tableStart, top, left, rect: state.selection instanceof CellSelection ? { width: right - left, height: bottom - top } : null }
 }
 
 /** Paste into table cells, or make a table from tab-separated text outside one. `false` declines (the paste of today runs). */

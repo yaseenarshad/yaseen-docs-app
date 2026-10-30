@@ -6,20 +6,13 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
-import { editorViewCtx } from '@milkdown/kit/core'
 import { undo } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe, getMarkdownForSave } from '../createCrepe'
-
-const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
+import { getMarkdownForSave } from '../createCrepe'
+import { mountNote, unmountAll } from './tableTestKit'
 
 async function mount(markdown: string): Promise<{ crepe: Crepe; view: EditorView; item: HTMLElement }> {
-  const root = document.createElement('div')
-  document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown })
-  await crepe.create()
-  mounted.push({ crepe, root })
-  const view = crepe.editor.ctx.get(editorViewCtx)
+  const { crepe, view } = await mountNote(markdown)
   const handle = document.createElement('div')
   handle.className = 'milkdown-block-handle'
   const item = document.createElement('div')
@@ -30,12 +23,7 @@ async function mount(markdown: string): Promise<{ crepe: Crepe; view: EditorView
   return { crepe, view, item }
 }
 
-afterEach(async () => {
-  for (const m of mounted.splice(0)) {
-    await m.crepe.destroy()
-    m.root.remove()
-  }
-})
+afterEach(unmountAll)
 
 const SMALL = '| a | b |\n| - | - |\n| 1 | 2 |\n'
 
@@ -86,7 +74,7 @@ describe('the menu on a table', () => {
       'Border thickness:1px ▾',
       'Border darkness:20% ▾',
       'Header row:Shaded ▾',
-      'Align all columns:Left ▾',
+      'Align all columns:Default (Left) ▾',
       'row:Fit columns to the page:disabled',
       'Stripes:Off ▾',
       'Row height:Normal ▾',
@@ -151,6 +139,7 @@ describe('each setting saves in the comment, one undo step each', () => {
     })
     expect(cells).toEqual(['center', 'center', 'center', 'center'])
     rightClick(item)
+    expect(pickerNamed(view, 'Align all columns').querySelector('.block-menu-picker__value')!.textContent).toBe('Center ▾')
     pick(view, 'Align all columns', 'Default (Left)')
     expect(getMarkdownForSave(crepe)).toBe(SMALL)
     expect(undo(view.state, view.dispatch)).toBe(true)

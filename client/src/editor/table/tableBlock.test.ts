@@ -21,16 +21,17 @@ const tablePos = (view: EditorView) => {
   })
   return found
 }
-const mouse = (type: string, target: EventTarget, row: number, col: number) => mouseAt(type, target, col * 100 + 50, row * 30 + 15)
+/** A mouse event in the middle of the cell (row, col), in screen px at the document zoom. */
+const mouse = (type: string, target: EventTarget, row: number, col: number, zoom = 1) => mouseAt(type, target, (col * 100 + 50) * zoom, (row * 30 + 15) * zoom)
 const frame = () => new Promise(resolve => requestAnimationFrame(resolve))
 const cellTexts = (view: EditorView) => [1, 2].map(row => [0, 1].map(col => view.state.doc.nodeAt(cellPos(view, row, col))!.textContent))
 
 describe('table block: select cells with the mouse (YAZ-3696 B2)', () => {
-  it('a mousedown and a mousemove across two cells make a CellSelection', async () => {
-    const view = await mount()
-    mouse('mousedown', cellDOM(view, 1, 0).firstChild!, 1, 0)
-    mouse('mousemove', cellDOM(view, 2, 1).firstChild!, 2, 1)
-    mouse('mouseup', cellDOM(view, 2, 1).firstChild!, 2, 1)
+  it.each([1, 0.5, 2])('a mousedown and a mousemove across two cells make a CellSelection, at %× document zoom (R2)', async zoom => {
+    const view = await mount(undefined, zoom)
+    mouse('mousedown', cellDOM(view, 1, 0).firstChild!, 1, 0, zoom)
+    mouse('mousemove', cellDOM(view, 2, 1).firstChild!, 2, 1, zoom)
+    mouse('mouseup', cellDOM(view, 2, 1).firstChild!, 2, 1, zoom)
     const selection = view.state.selection
     expect(selection).toBeInstanceOf(CellSelection)
     expect((selection as CellSelection).$anchorCell.pos).toBe(cellPos(view, 1, 0))
@@ -253,6 +254,34 @@ describe('table block: labeled row and column menus (YAZ-3696 D9)', () => {
     expect(rowsOf(view)).toEqual(rows)
     expect(handle(view, 'row').querySelector('.button-group')!.getAttribute('data-show')).toBe('false')
     undoesInOne(view, before)
+  })
+
+  it('as the right-click menu: the last body row and the last column cannot be deleted', async () => {
+    const view = await mount('| h1 |\n| --- |\n| a |\n')
+    const button = (kind: 'col' | 'row', label: string) =>
+      Array.from(handle(view, kind).querySelectorAll('button')).find(b => b.textContent === label)!
+    openMenu(view, 'row', 1, 0)
+    expect(button('row', 'Delete row').disabled).toBe(true)
+    expect(button('row', 'Duplicate row').disabled).toBe(false)
+    expect(choose(view, 'row', 'Delete row')).toBe(0)
+    openMenu(view, 'col', 1, 0)
+    expect(button('col', 'Delete column').disabled).toBe(true)
+    expect(choose(view, 'col', 'Delete column')).toBe(0)
+    expect(rowsOf(view)).toEqual([['h1'], ['a']])
+    // Two columns: the column can go again.
+    choose(view, 'col', 'Insert column right')
+    openMenu(view, 'col', 1, 0)
+    expect(button('col', 'Delete column').disabled).toBe(false)
+  })
+
+  it('an item is its own undo step, apart from the typing just before it (R4)', async () => {
+    const view = await mount()
+    // Typed in the row the item deletes: without a closed history, the two would join.
+    view.dispatch(view.state.tr.insertText('x', cellPos(view, 1, 0) + 2))
+    const typed = view.state.doc.firstChild!
+    openMenu(view, 'row', 1, 0)
+    expect(choose(view, 'row', 'Delete row')).toBe(1)
+    undoesInOne(view, typed)
   })
 
   it('in a read-only note a handle click opens no menu, and an open menu changes nothing', async () => {

@@ -33,6 +33,8 @@ import {
 } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuAction, MenuSection } from '../../sidebar/menuSections'
+import { setCellsAttr } from './cells'
+import { capital } from './cellToolbar'
 import { FILL_COLORS, type FillColor } from './tableStyle'
 
 type Command = (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean
@@ -71,7 +73,10 @@ function runOn(view: EditorView, pointer: number, command: Command): void {
   })
 }
 
-/** A body row at index `at` of the rect's table, each cell with its column's alignment (Milkdown's `addRowWithAlignment`). */
+/**
+ * A body row at index `at` of the rect's table, each cell with its column's alignment: a copy of
+ * Milkdown's `addRowWithAlignment`, which needs the editor's `ctx`; the note menu has the view only.
+ */
 function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, rect: TableRect, at: number): boolean {
   if (at === 0) return false
   if (dispatch) {
@@ -91,10 +96,7 @@ const rowBelow: Command = (state, dispatch) => insertRow(state, dispatch, select
 const fill =
   (color: FillColor | null): Command =>
   (state, dispatch) => {
-    const tr = state.tr
-    ;(state.selection as CellSelection).forEachCell((cell, pos) => {
-      if (cell.attrs.fill !== color) tr.setNodeAttribute(pos, 'fill', color)
-    })
+    const tr = setCellsAttr(state.tr, selectedRect(state), 'fill', color)
     if (tr.docChanged) dispatch?.(tr)
     return true
   }
@@ -106,8 +108,6 @@ function setFreeze(view: EditorView, tableStart: number, attr: 'freezeRows' | 'f
   view.dispatch(closeHistory(view.state.tr).setNodeAttribute(pos, attr, count))
 }
 
-const capital = (word: string) => word[0].toUpperCase() + word.slice(1)
-
 /** The Table part's three groups, or none: no cell at `pointer`, or a read-only note. */
 export function tableMenuSections(view: EditorView, pointer: number | null): MenuSection[] {
   if (!view.editable || pointer === null) return []
@@ -116,11 +116,7 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
   const target = targetSelection(view.state, cell)
   const map = TableMap.get(cell.table)
   // The target's rows and columns, from its corner cells.
-  const a = map.findCell(target.$anchorCell.pos - cell.tableStart)
-  const b = map.findCell(target.$headCell.pos - cell.tableStart)
-  const top = Math.min(a.top, b.top)
-  const bottom = Math.max(a.bottom, b.bottom)
-  const cols = Math.max(a.right, b.right) - Math.min(a.left, b.left)
+  const { top, bottom, left, right } = map.rectBetween(target.$anchorCell.pos - cell.tableStart, target.$headCell.pos - cell.tableStart)
   const run = (command: Command) => () => runOn(view, pointer, command)
   const { freezeRows, freezeCols } = cell.table.attrs as { freezeRows: number; freezeCols: number }
   const item = (id: string, label: string, onSelect: () => void, disabled = false): MenuAction => ({ id: `table-${id}`, label, onSelect, disabled })
@@ -133,7 +129,7 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
     ],
     [
       item('delete-row', 'Delete row', run(deleteRow), top === 0 || bottom - top >= map.height - 1),
-      item('delete-col', 'Delete column', run(deleteColumn), cols >= map.width),
+      item('delete-col', 'Delete column', run(deleteColumn), right - left >= map.width),
       item('clear', 'Clear cells', run(deleteCellSelection)),
       {
         id: 'table-fill',

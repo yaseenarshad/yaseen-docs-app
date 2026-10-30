@@ -4,34 +4,17 @@
  * does, one undo step each, freeze save and reload, and the freeze counts clamped to the table.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuAction, MenuItem, MenuSection } from '../../sidebar/menuSections'
-import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { getMarkdownForSave } from '../createCrepe'
 import { noteMenuSections } from '../noteMenu'
-import { cellPos } from '../tableTestKit'
+import { cellPos, mountNote as mount, unmountAll } from './tableTestKit'
 
-const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
-
-async function mount(markdown: string): Promise<{ crepe: Crepe; view: EditorView }> {
-  const root = document.createElement('div')
-  document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown })
-  await crepe.create()
-  mounted.push({ crepe, root })
-  return { crepe, view: crepe.editor.ctx.get(editorViewCtx) }
-}
-
-afterEach(async () => {
-  for (const m of mounted.splice(0)) {
-    await m.crepe.destroy()
-    m.root.remove()
-  }
-})
+afterEach(unmountAll)
 
 const TABLE = '| h1 | h2 |\n| -- | -- |\n| a  | b  |\n| c  | d  |\n'
 /** The position inside the text of the cell at (row, col): where a right-click there lands. */
@@ -110,6 +93,13 @@ describe('each row, on the clicked cell, one undo step', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
+  it('a column inserted left of a filled cell moves its fill; the save writes the new address', async () => {
+    const { crepe, view } = await mount(`${TABLE}\n<!-- table: fill B2 blue -->\n`)
+    row(view, 1, 0, 'table-insert-col-left').onSelect()
+    expect(view.state.doc.nodeAt(cellPos(view, 1, 2))!.attrs.fill).toBe('blue')
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: fill C2 blue -->')
+  })
+
   it('acts on the selected cells when there is a CellSelection', async () => {
     const { view } = await mount(TABLE)
     view.dispatch(view.state.tr.setSelection(CellSelection.create(view.state.doc, cellPos(view, 1, 0), cellPos(view, 2, 1))))
@@ -148,6 +138,20 @@ describe('freeze (S3)', () => {
     expect(row(view, 1, 0, 'table-unfreeze-rows').disabled).toBe(true)
     undo(view.state, view.dispatch)
     expect(tableAttrs(view)).toMatchObject({ freezeRows: 0, freezeCols: 1 })
+  })
+
+  it('the page shows a freeze at once, and an unfreeze clears it at once (no edit needed)', async () => {
+    const { view } = await mount(TABLE)
+    const frozenRows = () => [...view.dom.querySelectorAll('tbody[data-content-dom] > tr')].map((tr) => tr.classList.contains('table-frozen-row'))
+    const frozenCols = () => [...view.dom.querySelectorAll('tbody[data-content-dom] > tr:nth-child(3) > *')].map((cell) => cell.classList.contains('table-frozen-col'))
+    row(view, 1, 0, 'table-freeze-rows').onSelect()
+    expect(frozenRows()).toEqual([true, true, false])
+    row(view, 2, 1, 'table-freeze-cols').onSelect()
+    expect(frozenCols()).toEqual([true, true])
+    row(view, 1, 0, 'table-unfreeze-rows').onSelect()
+    expect(frozenRows()).toEqual([false, false, false])
+    row(view, 1, 0, 'table-unfreeze-cols').onSelect()
+    expect(view.dom.querySelector('.table-frozen-row, .table-frozen-col')).toBeNull()
   })
 
   it('a row or column delete keeps the count inside the table', async () => {

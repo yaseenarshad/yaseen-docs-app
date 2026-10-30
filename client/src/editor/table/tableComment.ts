@@ -21,8 +21,6 @@ export type FillColor = (typeof FILL_COLORS)[number]
 /** The cell text colours (YAZ-3696 D8). */
 export const TEXT_COLORS = ['red', 'orange', 'green', 'blue', 'grey'] as const
 export type TextColor = (typeof TEXT_COLORS)[number]
-export const ALIGNS = ['left', 'center', 'right'] as const
-export type TableAlign = (typeof ALIGNS)[number]
 
 /** A table's settings. `fill` and `color` are keyed by A1 address (`cellAddress`). An absent part is the default. */
 export interface TableStyle {
@@ -206,7 +204,9 @@ function formatCells(cells: Map<string, string>): string {
     while (Array.from({ length: w }, (_, i) => col + i).every((c) => same(row + h, c, color))) h++
     for (let r = row; r < row + h; r++) for (let c = col; c < col + w; c++) done.add(cellAddress(r, c))
     const range = w === 1 && h === 1 ? start : `${start}:${cellAddress(row + h - 1, col + w - 1)}`
-    groups.set(color, [...(groups.get(color) ?? []), range])
+    const ranges = groups.get(color)
+    if (ranges === undefined) groups.set(color, [range])
+    else ranges.push(range)
   }
   return [...groups].map(([color, ranges]) => `${ranges.join(' ')} ${color}`).join(' ')
 }

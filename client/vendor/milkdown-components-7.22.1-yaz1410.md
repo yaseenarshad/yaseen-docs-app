@@ -24,7 +24,7 @@
   `updateColumnsOnResize` from `prosemirror-tables`, the function that
   `columnResizing` uses during a drag. So the widths look the same during and
   after a drag. A table with no `colwidth` keeps its old look (no minimum
-  width). `columnResizing` itself is not vendored: `client/src/editor/tableColumnResize.ts`
+  width). `columnResizing` itself is not vendored: `client/src/editor/table/tableColumnResize.ts`
   loads it as installed.
 - YAZ-3696 D9 (YAZ-3762): the column and row handles open labeled menus in
   place of the icon strips. Column: Insert column left, Insert column right,
@@ -37,7 +37,12 @@
   `renderButton` no longer draws the align and delete icons. An item acts on
   `pointerdown` and stops its `click`, so the click does not reach the handle
   and open the menu again. In a read-only note a handle click opens no menu.
-  The menu CSS is in `client/src/app.css`.
+  As in the note's right-click menu, "Delete row" is disabled when the
+  selection holds the header row or every body row, and "Delete column" when
+  it holds every column (YAZ-3773): each item can carry a `disabled` check,
+  the menu sets each button's `disabled` when it opens, and the item does not
+  act while the check holds. Each item first dispatches `closeHistory`, so it
+  is one undo step of its own. The menu CSS is in `client/src/app.css`.
 
 Upstream PR: prepared, awaiting Yasin's go (the patch and PR text are in
 `client/vendor/upstream/list-item-restore/`); drop this hunk under

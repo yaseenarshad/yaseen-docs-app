@@ -10,8 +10,10 @@
  * DECORATIONS, from the attributes only (so no table redraw, B4): each frozen row gets
  * `table-frozen-row`; each cell of a frozen column gets `table-frozen-col` and `left:
  * var(--table-frozen-x-<column>)`. A transaction that changes the document builds them again only
- * for the tables in its changed ranges. A table-level decoration with no attributes marks each
- * frozen table for the view below.
+ * for the tables it changed (`changedTables`), and only when the table's shape (its counts, rows and
+ * columns) changed or a mapped decoration was lost: typing in a cell keeps the mapped set. A
+ * table-level decoration with no attributes marks each frozen table for the view below, and holds
+ * that shape.
  *
  * THE VIEW, one listener set per frozen table, on the table block's own DOM
  * (`div.milkdown-table-block`, the sideways scroll box; never ProseMirror's content DOM):
@@ -30,6 +32,7 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { $prose } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
 import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader'
+import { changedTables } from './tableStyle'
 
 /** A table's freeze counts, inside the table. */
 function counts(table: ProseNode): { rows: number; cols: number } {
@@ -43,11 +46,28 @@ const overCounts = (table: ProseNode): boolean => {
   return rows !== table.attrs.freezeRows || cols !== table.attrs.freezeCols
 }
 
+/** What the decorations of a table depend on, besides its positions: the counts, rows and columns. */
+const shapeOf = (table: ProseNode): string => {
+  const { rows, cols } = counts(table)
+  return `${rows} ${cols} ${table.childCount} ${table.firstChild?.childCount ?? 0}`
+}
+
+/** How many decorations `frozenDecorations` gives the table. */
+function decorationCount(table: ProseNode): number {
+  const { rows, cols } = counts(table)
+  if (rows === 0 && cols === 0) return 0
+  let n = 1 + rows
+  table.forEach((row) => {
+    n += Math.min(cols, row.childCount)
+  })
+  return n
+}
+
 /** The decorations of one table: none when nothing is frozen. */
 function frozenDecorations(table: ProseNode, pos: number): Decoration[] {
   const { rows, cols } = counts(table)
   if (rows === 0 && cols === 0) return []
-  const out = [Decoration.node(pos, pos + table.nodeSize, {}, { frozenTable: true })]
+  const out = [Decoration.node(pos, pos + table.nodeSize, {}, { frozenTable: true, shape: shapeOf(table) })]
   table.forEach((row, rowOffset, r) => {
     const rowPos = pos + 1 + rowOffset
     if (r < rows) out.push(Decoration.node(rowPos, rowPos + row.nodeSize, { class: 'table-frozen-row' }))
@@ -58,15 +78,6 @@ function frozenDecorations(table: ProseNode, pos: number): Decoration[] {
     })
   })
   return out
-}
-
-/** Each table in `doc` between `from` and `to`, by position; a table's cells are not walked. */
-function tablesBetween(doc: ProseNode, from: number, to: number, out: Map<number, ProseNode>): void {
-  doc.nodesBetween(from, to, (node, pos) => {
-    if (node.type.name !== 'table') return !node.isTextblock
-    out.set(pos, node)
-    return false
-  })
 }
 
 interface FreezeState {
@@ -83,6 +94,8 @@ class Freezer {
   #rows = 0
   #cols = 0
   #frame = 0
+  /** The next frame measures the columns too: the table changed or resized, not only scrolled. */
+  #measure = false
   #scroller: HTMLElement | null = null
   #observer: ResizeObserver | null = null
 
@@ -101,7 +114,7 @@ class Freezer {
     const { rows, cols } = counts(node)
     for (let c = cols; c < this.#cols; c++) this.block.style.removeProperty(`--table-frozen-x-${c}`)
     if (this.#observer === null) {
-      this.#observer = new ResizeObserver(this.#schedule)
+      this.#observer = new ResizeObserver(this.#relayout)
       const table = this.#parts()?.table
       if (table) this.#observer.observe(table)
     }
@@ -113,7 +126,7 @@ class Freezer {
     }
     this.#rows = rows
     this.#cols = cols
-    this.#schedule()
+    this.#relayout()
   }
 
   #unlistenRows(): void {
@@ -125,19 +138,29 @@ class Freezer {
     this.block.style.removeProperty('--table-frozen-y')
   }
 
+  /** A scroll: the rows' offset only. */
   #schedule = (): void => {
     if (this.#frame === 0) this.#frame = requestAnimationFrame(this.#sync)
+  }
+
+  /** A table change or a resize: the columns' offsets and the rows'. */
+  #relayout = (): void => {
+    this.#measure = true
+    this.#schedule()
   }
 
   #sync = (): void => {
     this.#frame = 0
     const parts = this.#parts()
     if (parts === null) return
-    const first = parts.body.rows[0]
-    let left = 0
-    for (let c = 0; c < this.#cols; c++) {
-      this.block.style.setProperty(`--table-frozen-x-${c}`, `${left}px`)
-      left += (first?.cells[c] as HTMLElement | undefined)?.offsetWidth ?? 0
+    if (this.#measure) {
+      this.#measure = false
+      const first = parts.body.rows[0]
+      let left = 0
+      for (let c = 0; c < this.#cols; c++) {
+        this.block.style.setProperty(`--table-frozen-x-${c}`, `${left}px`)
+        left += (first?.cells[c] as HTMLElement | undefined)?.offsetWidth ?? 0
+      }
     }
     const scroller = this.#scroller
     const rows = parts.body.rows
@@ -200,20 +223,24 @@ export const tableFreeze = $prose(
       key: freezeKey,
       state: {
         init: (_, { doc }) => {
-          const tables = new Map<number, ProseNode>()
-          tablesBetween(doc, 0, doc.content.size, tables)
-          return { set: DecorationSet.create(doc, [...tables].flatMap(([pos, node]) => frozenDecorations(node, pos))), over: [] }
+          const decorations: Decoration[] = []
+          doc.descendants((node, pos) => {
+            if (node.type.name !== 'table') return !node.isTextblock
+            decorations.push(...frozenDecorations(node, pos))
+            return false
+          })
+          return { set: DecorationSet.create(doc, decorations), over: [] }
         },
         apply: (tr: Transaction, value) => {
           if (!tr.docChanged) return value
           let set = value.set.map(tr.mapping, tr.doc)
-          const tables = new Map<number, ProseNode>()
-          tr.mapping.maps.forEach((map, i) => {
-            const rest = tr.mapping.slice(i + 1)
-            map.forEach((_a, _b, start, end) => tablesBetween(tr.doc, rest.map(start, -1), rest.map(end, 1), tables))
-          })
+          const tables = changedTables(tr)
           for (const [pos, node] of tables) {
-            const old = set.find(pos, pos + node.nodeSize)
+            // The table's own decorations: `find` also gives those of a table that only touches it.
+            const end = pos + node.nodeSize
+            const old = set.find(pos, end).filter((deco) => deco.from >= pos && deco.to <= end)
+            const outer = old.find((deco) => deco.from === pos && deco.to === end)
+            if (old.length === decorationCount(node) && (old.length === 0 || outer?.spec.shape === shapeOf(node))) continue
             if (old.length > 0) set = set.remove(old)
             const fresh = frozenDecorations(node, pos)
             if (fresh.length > 0) set = set.add(tr.doc, fresh)

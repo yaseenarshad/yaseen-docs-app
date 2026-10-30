@@ -2,12 +2,12 @@
  * Fill down (YAZ-3765, YAZ-3696 🔒 S4): the corner handle and the fill it writes, on the real editor in jsdom.
  * `tableTestKit` gives each cell a 100 × 30 layout px box, times the document zoom on screen.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { cellDOM, cellPos, mountTable, mouseAt, unmountAll } from '../tableTestKit'
+import { cellDOM, cellPos, mountNote, mountTable, mouseAt, unmountAll } from './tableTestKit'
 import { fillCells, fillSource } from './tableFill'
 
 afterEach(unmountAll)
@@ -143,5 +143,18 @@ describe('fill handle', () => {
     expect(view.state.doc.eq(before)).toBe(true)
     const selection = view.state.selection as CellSelection
     expect([selection.$anchorCell.pos, selection.$headCell.pos]).toEqual([cellPos(view, 1, 0), cellPos(view, 1, 0)])
+  })
+})
+
+describe('a note closed during a drag', () => {
+  it('drops the drag\'s document listeners: a later mouseup dispatches nothing', async () => {
+    const { crepe, view } = await mountNote(TABLE)
+    selectCells(view, [1, 1], [2, 2])
+    mouseAt('mousedown', handle(view)!, ...at(2, 2, 1))
+    mouseAt('mousemove', cellDOM(view, 4, 1), ...at(4, 1, 1))
+    const dispatch = vi.spyOn(view, 'dispatch')
+    await crepe.destroy()
+    mouseAt('mouseup', document, ...at(4, 1, 1))
+    expect(dispatch).not.toHaveBeenCalled()
   })
 })

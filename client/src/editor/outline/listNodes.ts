@@ -28,6 +28,7 @@ export const itemLabelText = (item: ProseNode): string => {
 }
 
 export interface NestedList {
+  /** The nested list; from `findFoldedChildren`, a table too (YAZ-3696 D11). */
   list: ProseNode
   /** Offset of the list inside the item (`itemPos + 1 + offset` is its document position). */
   offset: number

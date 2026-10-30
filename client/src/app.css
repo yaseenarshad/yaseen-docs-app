@@ -692,6 +692,12 @@ button {
   font: inherit;
   color: var(--crepe-color-on-surface);
 }
+/* An item that cannot act (the last body row or column, as in the right-click menu) is dimmed. */
+.editor-instance .milkdown .milkdown-table-block .cell-handle .button-group button:disabled {
+  opacity: 0.4;
+  background: none;
+  cursor: default;
+}
 .editor-instance .milkdown .milkdown-table-block .cell-handle .button-group .separator {
   height: 1px;
   margin: 4px 0;
