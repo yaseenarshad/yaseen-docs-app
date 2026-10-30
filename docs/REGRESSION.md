@@ -2,7 +2,7 @@
 
 The one list of everything Yaseen Docs does that a change must not lose (YAZ-2171, seeded from the YAZ-2131 scope inventory). Every row has a stable ID. A PR cites the IDs it touches, and each one is proved by the automated test named here, or by walking its hand steps.
 
-- **A** = a Playwright-Electron spec in `desktop/e2e/` (94 specs; run with `npm run e2e`).
+- **A** = a Playwright-Electron spec in `desktop/e2e/` (run with `npm run e2e`, only when Yasin asks for that run).
 - **U** = a unit or jsdom suite (run with `npm test`).
 - **M** = hand steps, listed under [Hand scenarios](#hand-scenarios). Only what automation cannot drive lives there.
 
@@ -17,8 +17,8 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 - [ ] `npm test` green
 - [ ] `npm run typecheck` green
 - [ ] the size/integrity budget gate green, with its numbers pasted
-- [ ] `npm run e2e` green once; three runs in a row for a release candidate
-- [ ] every REGRESSION row this change touches is re-proved (its spec ran, or its hand steps were walked) and listed in the PR body
+- [ ] `npm run e2e` green, when Yasin asked for a run; three runs in a row for a release candidate
+- [ ] every REGRESSION row this change touches is re-proved (its unit test, its spec in an asked-for run, a debug-port check, or its hand steps in the demo) and listed in the PR body
 
 ## Editor
 

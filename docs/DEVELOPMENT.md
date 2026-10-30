@@ -68,7 +68,7 @@ ls "$HOME/Library/Application Support/Yaseen Docs/"
 
 ```bash
 npm test          # vitest suite, FOUR projects: client (jsdom), desktop (node), tools (node — the packaging checks, the budget gate and the perf harness), perf (jsdom — the budget tripwires)
-npm run e2e       # Playwright-Electron suite (desktop/e2e/, 86 specs; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
+npm run e2e       # Playwright-Electron suite (desktop/e2e/; `docs/REGRESSION.md` maps features to specs). Run it only when Yasin asks for that run: even hidden, a launch can take the focus while he works
 npm run typecheck
 npm run build     # electron-vite build → desktop/out, then the share viewer → share/dist/assets
 npm run engine:build    # the drawing engine in engine/ (YAZ-3572): build, test, typecheck and dev run it first; a no-op when no engine file changed
@@ -78,28 +78,19 @@ npm run perf -- all --runs 5 --app <after.app> --vs <before.app>   # local perf 
 ```
 
 - The drawing engine is the app's own copy of Excalidraw, in `engine/` with its history: change it there, in the same PR. How it builds, the one rule (`preserveSymlinks`), and how to take new Excalidraw changes: `engine/README-docs-app.md`.
-- The budget gate (`tools/perf/measureBudget.mjs`) fails when a size row crosses its ceiling in `tools/perf/budget.json` or a shipped file goes missing. **The ratchet:** a change that shrinks a row lowers its ceiling in the same PR; raising one needs Yasin's OK in the PR description. `tools/perf/baseline.json` holds the frozen v0.9.27 numbers. CI (`.github/workflows/ci.yml`) runs typecheck, `npm test`, build and `perf:budget:ci` on every PR and push to main; e2e stays local and its result goes in the PR.
+- The budget gate (`tools/perf/measureBudget.mjs`) fails when a size row crosses its ceiling in `tools/perf/budget.json` or a shipped file goes missing. **The ratchet:** a change that shrinks a row lowers its ceiling in the same PR; raising one needs Yasin's OK in the PR description. `tools/perf/baseline.json` holds the frozen v0.9.27 numbers. CI (`.github/workflows/ci.yml`) runs typecheck, `npm test`, build and `perf:budget:ci` on every PR and push to main; e2e stays local and runs only when Yasin asks.
 
 - If `npm` isn't in the shell's PATH (agent shells often lack it), use its install location directly — e.g. `/opt/homebrew/bin/npm` (ARM mac), `/usr/local/bin/npm` (Intel mac), or the Volta/nvm/fnm install under `$HOME`.
 
 ### Agent note: live checks
 
-The preview tool is gone — there is no browser mode and no URL to point one at. Verify through Playwright-Electron, always launched with a temp `--user-data-dir` so the real app state is never touched; seed `<user-data-dir>/yaseendocs.json` to skip the native folder dialog (see `desktop/e2e/helpers.ts` — `launchApp` + `seedState` — for the pattern; one-off throwaway scripts go under `node_modules/.verify/`, gitignored). A minimal smoke check against the dev build (run `npm run build` first):
+The preview tool is gone — there is no browser mode and no URL to point one at. A check must never take Yasin's mouse, keyboard or focus, so do not drive the app with Playwright unless he asks for that run. Check a running app over its debug port:
 
-```bash
-node --input-type=module -e '
-const { _electron } = await import("playwright")
-const { mkdtemp } = await import("node:fs/promises")
-const { tmpdir } = await import("node:os")
-const { join } = await import("node:path")
-const dir = await mkdtemp(join(tmpdir(), "yaseendocs-smoke-"))
-const app = await _electron.launch({ args: ["desktop/out/main/index.js", `--user-data-dir=${dir}`] })
-const win = await app.firstWindow()
-console.log("window title:", await win.title())
-await app.close()'
-```
+1. Seed `<profile>/yaseendocs.json` with one `windows[]` entry on a scratch vault (the `seededState` shape in `desktop/e2e/helpers.ts`), so no native folder dialog opens.
+2. From the worktree: `YASEEN_DOCS_E2E=1 YASEEN_DOCS_USER_DATA_DIR=<profile> node_modules/.bin/electron desktop/out/main/index.js --user-data-dir=<profile> --remote-debugging-port=9333` (after `npm run build`), or `YASEEN_DOCS_E2E=1 YASEEN_DOCS_USER_DATA_DIR=<profile> npx electron-vite dev --remoteDebuggingPort 9333` from `desktop/` for HMR.
+3. A short node script reads `http://127.0.0.1:9333/json`, opens the page's `webSocketDebuggerUrl` with Node's global `WebSocket`, and sends `Runtime.evaluate` (clicks, input values, keys) and `Page.captureScreenshot`. One-off scripts go under `node_modules/.verify/`, gitignored.
 
-The packaged app is driven the same way with `executablePath: 'desktop/dist-app/mac-arm64/Yaseen Docs.app/Contents/MacOS/Yaseen Docs'` instead of `args[0]` (same launch pattern as `desktop/e2e/helpers.ts`, swapping the entry for the bundle's binary).
+A window appears, but the mouse and keyboard are never taken. When the screen is off the window is hidden and `Input.dispatchMouseEvent` does nothing: dispatch in-page events (`el.click()`, `new MouseEvent('dblclick', { bubbles: true })`) instead. Script clicks do not move focus like real clicks, so leave focus checks to the demo. A scratch vault that is a git repo makes `git status` the proof of what was written.
 
 ## Gotchas
 
