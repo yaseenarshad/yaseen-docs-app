@@ -818,7 +818,7 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
 
   it('the one-line note of outside changes sits in the conflict bar\'s place and hides while that bar shows (YAZ-3704 D6)', async () => {
     const el = await mount(FM + BODY)
-    act(() => outsideChannel().sync({ count: 2, wholeNote: false, activeIndex: -1 }))
+    act(() => outsideChannel().sync({ count: 2, wholeNote: false }))
     expect(el.querySelector('.outside-changes-bar')?.textContent).toContain('2 outside changes in this note')
     type('# Hello\n\nunsaved edit\n')
     diskHas(FM + '# Someone else\n', 2)

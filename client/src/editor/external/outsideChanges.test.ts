@@ -85,7 +85,7 @@ describe('the change list (D3, D4)', () => {
     const { crepe, root, view, channel } = await mount('Alpha one\n\nBeta two\n\nGamma three\n')
     outsideEdit(crepe, (md) => md.replace('Alpha one', 'Alpha ONE').replace('Gamma three', 'Gamma THREE'))
     expect(glowTexts(root)).toEqual(['ONE', 'THREE'])
-    expect(channel.getState()).toEqual({ count: 2, wholeNote: false, activeIndex: -1 })
+    expect(channel.getState()).toEqual({ count: 2, wholeNote: false })
     // Two ranges in one line ("Beta" and "two"), as one outside transaction says them.
     const beta = posOf(view.state.doc, 'Beta')
     const ranges: OutsideRange[] = [
@@ -104,6 +104,36 @@ describe('the change list (D3, D4)', () => {
     expect(getMarkdownForSave(crepe)).toContain('USER-Child')
     expect(glowTexts(root)).toEqual([' EXTERNAL'])
     expect(channel.getState().count).toBe(1)
+  })
+
+  it("an outside edit of a heading's text still glows and counts after Milkdown's heading-id sync (YAZ-3844)", async () => {
+    const { crepe, root, view, channel } = await mount('## Title here\n\nBody text.\n')
+    const idBefore = view.state.doc.firstChild?.attrs.id
+    outsideEdit(crepe, (md) => md.replace('Title here', 'Title there'))
+    // The sync ran: the heading's id follows its new text, in a transaction kept out of the history.
+    expect(view.state.doc.firstChild?.attrs.id).not.toBe(idBefore)
+    expect(channel.getState().count).toBe(1)
+    expect(glowTexts(root).join('')).not.toBe('')
+    expect(root.querySelector(`.${OUTSIDE_CHANGE_CLASS}`)?.closest('h2')?.textContent).toContain('Title there')
+    // One more transaction (a caret move) checks nothing off either.
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOf(view.state.doc, 'Body'))))
+    expect(channel.getState().count).toBe(1)
+  })
+
+  it('removed marks do not pile up: one for each place (the newest), at most five for each change (YAZ-3844)', async () => {
+    const { crepe, root, view, channel } = await mount('The cat sat on the mat by the big red door.\n\nOther line.\n')
+    for (const [from, to] of [['cat', 'dog'], ['dog', 'cow'], ['cow', 'pig'], ['pig', 'hen']]) outsideEdit(crepe, (md) => md.replace(from, to))
+    expect(channel.getState().count).toBe(1)
+    expect(removedMarks(root).map((mark) => mark.title)).toEqual(['Removed: pig'])
+    // Six removals at six places in one line: the newest five marks stay.
+    const words = ['The', 'sat', 'mat', 'big', 'red', 'door']
+    const ranges: OutsideRange[] = words.map((word) => {
+      const at = posOf(view.state.doc, word)
+      return { from: at, to: at, removed: `${word}!` }
+    })
+    for (const range of ranges) view.dispatch(view.state.tr.setMeta(EXTERNAL_EDIT_META, true).setMeta(OUTSIDE_RANGES_META, [range]))
+    expect(channel.getState().count).toBe(1)
+    expect(removedMarks(root).map((mark) => mark.title)).toEqual(['Removed: sat!', 'Removed: mat!', 'Removed: big!', 'Removed: red!', 'Removed: door!'])
   })
 
   it('inserted bullets: one change for each inserted textblock', async () => {
@@ -180,7 +210,7 @@ describe('checking off (D8)', () => {
     expect(glowTexts(root)).toEqual([' grown', ' long'])
     expect(view.state.selection.from).toBe(caret)
     channel.clear()
-    expect(channel.getState()).toEqual({ count: 0, wholeNote: false, activeIndex: -1 })
+    expect(channel.getState()).toEqual({ count: 0, wholeNote: false })
     expect(glowTexts(root)).toEqual([])
     expect(root.querySelectorAll(`.${OUTSIDE_CHECKED_CLASS}`)).toHaveLength(0)
   })
@@ -189,13 +219,13 @@ describe('checking off (D8)', () => {
     const lines = Array.from({ length: MAX_CHANGES + 1 }, (_, i) => `line ${i}`)
     const { crepe, root, channel } = await mount(`${lines.join('\n\n')}\n`)
     outsideEdit(crepe, (md) => md.replace(/line (\d+)/g, 'line $1 edited'))
-    expect(channel.getState()).toEqual({ count: 0, wholeNote: true, activeIndex: -1 })
+    expect(channel.getState()).toEqual({ count: 0, wholeNote: true })
     expect(root.querySelectorAll(`.${OUTSIDE_CHANGE_CLASS}`)).toHaveLength(0)
     channel.clear()
     expect(channel.getState().wholeNote).toBe(false)
     // The host's word after a rebuild (`reload` got 'rebuilt').
     channel.markWholeNote()
-    expect(channel.getState()).toEqual({ count: 0, wholeNote: true, activeIndex: -1 })
+    expect(channel.getState()).toEqual({ count: 0, wholeNote: true })
     channel.clear()
     expect(channel.getState().wholeNote).toBe(false)
   })
@@ -230,6 +260,34 @@ describe('the Glow setting (D5)', () => {
   })
 })
 
+describe('whole-note mode and the Glow time (YAZ-3844)', () => {
+  it("a timed Glow ends whole-note mode after that time; until checked keeps it until Dismiss; Off shows nothing", async () => {
+    const { channel } = await mount(BASE, { glow: '10s' })
+    vi.useFakeTimers()
+    channel.markWholeNote()
+    expect(channel.getState()).toEqual({ count: 0, wholeNote: true })
+    vi.advanceTimersByTime(9_999)
+    expect(channel.getState().wholeNote).toBe(true)
+    vi.advanceTimersByTime(1)
+    expect(channel.getState().wholeNote).toBe(false)
+
+    channel.setGlow('until-checked')
+    channel.markWholeNote()
+    vi.advanceTimersByTime(120_000)
+    expect(channel.getState().wholeNote).toBe(true)
+    // A timed value picked while the line shows starts its time now.
+    channel.setGlow('60s')
+    vi.advanceTimersByTime(59_999)
+    expect(channel.getState().wholeNote).toBe(true)
+    vi.advanceTimersByTime(1)
+    expect(channel.getState().wholeNote).toBe(false)
+
+    channel.setGlow('off')
+    channel.markWholeNote()
+    expect(channel.getState().wholeNote).toBe(false)
+  })
+})
+
 describe('Next change (D9)', () => {
   it('opens the collapsed bullet that hides the second change silently, rings it, and folds it again on the next Next', async () => {
     const doc = '* Top line\n* Parent\n  * Child\n* Leaf tail\n'
@@ -240,13 +298,11 @@ describe('Next change (D9)', () => {
     const selection = view.state.selection
 
     channel.next()
-    expect(channel.getState().activeIndex).toBe(0)
     expect(activeTexts(root)).toEqual([' grown'])
     expect(root.querySelector(`.${OUTSIDE_ACTIVE_CLASS}`)?.closest('li')?.textContent).toContain('Top line')
     expect(foldedEls(root)).toHaveLength(1)
 
     channel.next()
-    expect(channel.getState().activeIndex).toBe(1)
     expect(foldedEls(root)).toHaveLength(0)
     expect(root.querySelector(`.${OUTSIDE_ACTIVE_CLASS}`)?.closest('p')?.textContent).toContain('Child grown')
     expect(view.state.selection.eq(selection)).toBe(true)
@@ -258,8 +314,26 @@ describe('Next change (D9)', () => {
     expect(foldedEls(root)).toHaveLength(0)
 
     channel.next()
-    expect(channel.getState().activeIndex).toBe(0)
+    expect(root.querySelector(`.${OUTSIDE_ACTIVE_CLASS}`)?.closest('li')?.textContent).toContain('Top line')
     expect(foldedEls(root)).toHaveLength(1)
+  })
+
+  it('Mark all checked keeps the landing open: the bullet Next opened for the active change stays open (YAZ-3844)', async () => {
+    const doc = '* Top line\n* Parent\n  * Child\n* Fruit\n  * Kiwi\n* Leaf tail\n'
+    const folds = new Set([getOutlineFoldKey('Parent', 0), getOutlineFoldKey('Fruit', 0)])
+    const { crepe, root, channel } = await mount(doc, { folding: { seedCollapsedKeys: () => folds } })
+    expect(foldedEls(root)).toHaveLength(2)
+    outsideEdit(crepe, (md) => md.replace('Child', 'Child grown').replace('Kiwi', 'Kiwi ripe'))
+    channel.next()
+    expect(foldedEls(root)).toHaveLength(1)
+    expect(root.querySelector(`.${OUTSIDE_ACTIVE_CLASS}`)?.closest('p')?.textContent).toContain('Child grown')
+    channel.clear()
+    expect(channel.getState()).toEqual({ count: 0, wholeNote: false })
+    // Parent (the landing) stays open; Fruit, which Next never opened, stays folded.
+    const folded = foldedEls(root)
+    expect(folded).toHaveLength(1)
+    expect(folded[0].textContent).toContain('Kiwi')
+    expect(folded[0].textContent).not.toContain('Child')
   })
 
   it('a change outside the zoomed bullet zooms out first, and the host hears it', async () => {

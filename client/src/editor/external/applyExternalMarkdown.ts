@@ -21,13 +21,13 @@
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
-import type { Transaction } from '@milkdown/kit/prose/state'
+import type { Transform } from '@milkdown/kit/prose/transform'
 import { getZoomKeyOf, setMarkdown, zoomPageTo } from '../createCrepe'
 import { normalizeEmptyItems } from '../listItemRoundTrip'
 import { diffDocs, type ReplaceRange } from './diffDocs'
 
-/** Share of the old document one range may cover before the edit counts as a rewrite. */
-const REWRITE_SHARE = 0.8
+/** Share of the old document one range may cover before the edit counts as a rewrite (the merge refuses one too). */
+export const REWRITE_SHARE = 0.8
 
 /** Transaction meta stamped on every external apply, for plugins that must tell it from typing. */
 export const EXTERNAL_EDIT_META = 'external-edit'
@@ -48,11 +48,16 @@ export interface OutsideRange {
 /**
  * Lands `ranges` on `tr` right-to-left (each position through `map`, old → `tr`'s coordinates) and
  * says where each one's new content ended up in the FINAL doc: the step's own map, then every later step.
- * `old` is the document the ranges' positions are in, for the removed text.
+ * `old` is the document the ranges' positions are in, for the removed text. An attr range changes its
+ * node's attrs in place (an `AttrStep`, which moves no position) and lands nothing to show.
  */
-export const replaceTracked = (tr: Transaction, ranges: readonly ReplaceRange[], old: ProseNode, map: (pos: number) => number = (pos) => pos): OutsideRange[] => {
+export const replaceTracked = (tr: Transform, ranges: readonly ReplaceRange[], old: ProseNode, map: (pos: number) => number = (pos) => pos): OutsideRange[] => {
   const placed: { step: number; removed: string }[] = []
-  for (const { from, to, slice } of [...ranges].sort((a, b) => b.from - a.from)) {
+  for (const { from, to, slice, attrs } of [...ranges].sort((a, b) => b.from - a.from)) {
+    if (attrs !== undefined) {
+      for (const [key, value] of Object.entries(attrs)) tr.setNodeAttribute(map(from), key, value)
+      continue
+    }
     const step = tr.steps.length
     tr.replace(map(from), map(to), slice)
     if (tr.steps.length > step) placed.push({ step, removed: old.textBetween(from, to, '\n', ' ') })

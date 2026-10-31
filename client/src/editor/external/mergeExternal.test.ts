@@ -118,6 +118,36 @@ describe('mergeExternalMarkdown (YAZ-3704 D1)', () => {
     expect(getMarkdownForSave(crepe)).toContain('USER-Child')
   })
 
+  it('refuses a rewrite even when the typing sits in a block the rewrite left alone', async () => {
+    const long = 'The first paragraph says many things about the project and its plan. '.repeat(12).trim()
+    const base = `${long}\n\nShort tail.\n`
+    const { crepe } = await mount(base)
+    typeBefore(crepe, 'Short tail', 'USER-')
+    expect(mergeExternalMarkdown(crepe, base, `${'An entirely different text written by someone else. '.repeat(12).trim()}\n\nShort tail.\n`)).toBe('conflict')
+    expect(getMarkdownForSave(crepe)).toContain('USER-Short tail')
+  })
+
+  it('merges an item added at the top of an ordered list while the typing sits in a lower item', async () => {
+    const base = '1. Alpha\n2. Beta\n3. Gamma\n'
+    const { crepe } = await mount(base)
+    typeBefore(crepe, 'Gamma', 'USER-')
+    expect(mergeExternalMarkdown(crepe, base, '1. New first\n2. Alpha\n3. Beta\n4. Gamma\n')).toBe('merged')
+    const md = getMarkdownForSave(crepe)
+    expect(md).toContain('New first')
+    expect(md).toContain('USER-Gamma')
+  })
+
+  it('a changed heading glows only the words that changed', async () => {
+    const base = '# Plan for May\n\nSome text.\n'
+    const { crepe } = await mount(base)
+    typeBefore(crepe, 'Some text', 'USER-')
+    const seen = spyDispatch(crepe)
+    expect(mergeExternalMarkdown(crepe, base, '# Plan for early May\n\nSome text.\n')).toBe('merged')
+    const ranges = seen[0].getMeta(OUTSIDE_RANGES_META) as OutsideRange[]
+    expect(ranges.map((r) => seen[0].doc.textBetween(r.from, r.to)).join('|')).toBe('early ')
+    expect(ranges.every((r) => r.removed === '')).toBe(true)
+  })
+
   it('lands nothing when the new file already equals the live note', async () => {
     const { crepe } = await mount()
     typeBefore(crepe, 'Child', 'USER-')

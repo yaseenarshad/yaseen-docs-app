@@ -20,7 +20,9 @@
  * again only when the list changes; a keystroke only maps it.
  *
  * Check off (D8): **Checked**, **Mark all checked**, the Glow time (D5), or the user's OWN edit in a
- * change's textblock — never an outside edit, an undo or redo, or a transaction a plugin appends.
+ * change's textblock — never an outside edit, an undo or redo, a transaction a plugin appends, or one kept out
+ * of the history (Milkdown's heading-id sync after an outside heading edit, YAZ-3844). A timed Glow ends
+ * whole-note mode at the same time; until checked, it stays until Dismiss.
  *
  * Next change (D9), `findInPage.ts`'s fold books: the folds that hide the next change open SILENTLY
  * (⌘Z panic-undo untouched) and fold again when Next moves on. Mark all checked, or a list that empties,
@@ -51,6 +53,8 @@ export const OUTSIDE_CHECKED_CLASS = 'outside-checked'
 export const MAX_CHANGES = 200
 /** D7: a removed text longer than this is cut in the mark's title, with "…". */
 const REMOVED_TITLE_CHARS = 200
+/** One change keeps at most this many removed marks, the newest (YAZ-3844): an agent that saves one line again and again adds no more. */
+export const MAX_REMOVED_PER_CHANGE = 5
 
 interface Span {
   from: number
@@ -63,7 +67,7 @@ interface OutsideChange {
   pos: number
   /** The changed words that glow; empty for a pure deletion. */
   glow: readonly Span[]
-  /** The removed text, at the place it was. */
+  /** The removed text, at the place it was: one mark for each place, the newest, at most `MAX_REMOVED_PER_CHANGE`. */
   removed: readonly { pos: number; text: string }[]
   /** When a timed glow checks itself off (ms since the epoch); null = until checked. */
   ends: number | null
@@ -75,6 +79,8 @@ interface OutsideState {
   /** The change Next put the ring on. */
   activeId: number | null
   wholeNote: boolean
+  /** When whole-note mode ends with a timed Glow (ms since the epoch); null = until Dismiss. */
+  wholeNoteEnds: number | null
   glow: OutsideChangeGlow
   /** Items Next opened; Next folds them again when it moves on. */
   revealed: ReadonlySet<number>
@@ -86,7 +92,7 @@ interface OutsideState {
 type OutsideMeta =
   | { type: 'check'; id: number }
   | { type: 'clear' }
-  | { type: 'whole' }
+  | { type: 'whole'; now: number }
   | { type: 'glow'; glow: OutsideChangeGlow; now: number }
   | { type: 'expire'; now: number }
   | { type: 'active'; id: number; revealed: ReadonlySet<number>; revealedHeadings: ReadonlySet<number> }
@@ -131,12 +137,15 @@ const addRanges = (changes: readonly OutsideChange[], ranges: readonly OutsideRa
   for (const range of ranges) {
     blocksOf(doc, range).forEach(({ pos, glow }, index) => {
       const old = byPos.get(pos)
-      const removed = index === 0 && range.removed !== '' ? [{ pos: range.from, text: range.removed }] : []
+      const marks = old?.removed ?? []
+      // A newer removal at the same place replaces the older mark; the newest few stay.
+      const removed =
+        index === 0 && range.removed !== '' ? [...marks.filter((mark) => mark.pos !== range.from), { pos: range.from, text: range.removed }].slice(-MAX_REMOVED_PER_CHANGE) : marks
       byPos.set(pos, {
         id: old?.id ?? nextId++,
         pos,
         glow: glow === null ? (old?.glow ?? []) : [...(old?.glow ?? []), glow],
-        removed: [...(old?.removed ?? []), ...removed],
+        removed,
         // A new outside edit in the block starts its time again.
         ends,
       })
@@ -145,15 +154,20 @@ const addRanges = (changes: readonly OutsideChange[], ranges: readonly OutsideRa
   return [...byPos.values()].sort((a, b) => a.pos - b.pos)
 }
 
-/** Every change through `mapping`; a change whose textblock is gone (or replaced whole) goes. */
+/**
+ * Every change through `mapping`; a change whose textblock is gone (or replaced whole) goes. The CONTENT start is
+ * what maps: an attr-only change of the block (`setNodeMarkup`, as the heading-id sync does) re-writes the block's
+ * opening token but keeps its content, so the change stays (YAZ-3844).
+ */
 const mapChanges = (changes: readonly OutsideChange[], mapping: Mapping, doc: ProseNode): OutsideChange[] => {
   const mapped: OutsideChange[] = []
   for (const change of changes) {
-    const start = mapping.mapResult(change.pos, 1)
-    if (start.deletedAfter || doc.nodeAt(start.pos)?.isTextblock !== true) continue
+    const start = mapping.mapResult(change.pos + 1, -1)
+    const pos = start.pos - 1
+    if (start.deletedAfter || pos < 0 || doc.nodeAt(pos)?.isTextblock !== true) continue
     mapped.push({
       ...change,
-      pos: start.pos,
+      pos,
       glow: change.glow.map((span) => ({ from: mapping.map(span.from, 1), to: mapping.map(span.to, -1) })).filter((span) => span.to > span.from),
       removed: change.removed.map((mark) => ({ ...mark, pos: mapping.map(mark.pos, -1) })),
     })
@@ -161,9 +175,16 @@ const mapChanges = (changes: readonly OutsideChange[], mapping: Mapping, doc: Pr
   return mapped
 }
 
-/** D8: the user's own edit. Not an outside edit, not an undo or redo, not what a plugin appends. */
+/**
+ * D8: the user's own edit. Not an outside edit, not an undo or redo, not what a plugin appends, and not a
+ * transaction kept out of the history: the user's typing always goes into it, and Milkdown's heading-id sync
+ * (`addToHistory: false`) follows every outside heading edit (YAZ-3844).
+ */
 const isUserEdit = (transaction: Transaction): boolean =>
-  transaction.getMeta(EXTERNAL_EDIT_META) === undefined && transaction.getMeta('history$') === undefined && transaction.getMeta('appendedTransaction') === undefined
+  transaction.getMeta(EXTERNAL_EDIT_META) === undefined &&
+  transaction.getMeta('history$') === undefined &&
+  transaction.getMeta('appendedTransaction') === undefined &&
+  transaction.getMeta('addToHistory') !== false
 
 /** Where a transaction changed the document, in the NEW document. */
 const editedSpans = (transaction: Transaction): Span[] => {
@@ -220,10 +241,12 @@ const buildDecorations = (doc: ProseNode, changes: readonly OutsideChange[], act
     const ringOnBlock = active && change.glow.length === 0 && change.removed.length === 0
     decorations.push(Decoration.node(change.pos, change.pos + block.nodeSize, { class: ringOnBlock ? `${OUTSIDE_BLOCK_CLASS} ${OUTSIDE_ACTIVE_CLASS}` : OUTSIDE_BLOCK_CLASS }))
     for (const span of change.glow) decorations.push(Decoration.inline(span.from, span.to, { class: active ? `${OUTSIDE_CHANGE_CLASS} ${OUTSIDE_ACTIVE_CLASS}` : OUTSIDE_CHANGE_CLASS }))
-    change.removed.forEach((mark, index) => {
+    for (const mark of change.removed) {
       const between = !doc.resolve(mark.pos).parent.inlineContent
-      decorations.push(Decoration.widget(mark.pos, removedMark(mark.text, between, active), { side: -1, ignoreSelection: true, key: `outside-removed-${change.id}-${index}-${active ? 1 : 0}` }))
-    })
+      // The key names the text: a newer removal at the same place must draw its own title, not reuse the old mark.
+      const key = `outside-removed-${change.id}-${active ? 1 : 0}${between ? 1 : 0}-${mark.text.length}-${mark.text.slice(0, REMOVED_TITLE_CHARS)}`
+      decorations.push(Decoration.widget(mark.pos, removedMark(mark.text, between, active), { side: -1, ignoreSelection: true, key }))
+    }
     decorations.push(
       Decoration.widget(change.pos + 1 + block.content.size, checkedButton(change.id), { side: 1, ignoreSelection: true, stopEvent: () => true, key: `outside-checked-${change.id}` }),
     )
@@ -231,27 +254,29 @@ const buildDecorations = (doc: ProseNode, changes: readonly OutsideChange[], act
   return DecorationSet.create(doc, decorations)
 }
 
-const snapshotOf = ({ changes, wholeNote, activeId }: OutsideState): OutsideChangesSnapshot => ({
-  count: changes.length,
-  wholeNote,
-  activeIndex: activeId === null ? -1 : changes.findIndex((change) => change.id === activeId),
-})
+const snapshotOf = ({ changes, wholeNote }: OutsideState): OutsideChangesSnapshot => ({ count: changes.length, wholeNote })
 
 const applyMeta = (meta: OutsideMeta, state: Omit<OutsideState, 'decorations'>): { next: Omit<OutsideState, 'decorations'>; redraw: boolean } => {
   switch (meta.type) {
     case 'check':
       return { next: { ...state, changes: state.changes.filter((change) => change.id !== meta.id) }, redraw: true }
     case 'clear':
-      return { next: { ...state, changes: [], wholeNote: false, activeId: null }, redraw: true }
+      return { next: { ...state, changes: [], wholeNote: false, wholeNoteEnds: null, activeId: null }, redraw: true }
     case 'whole':
-      return state.glow === 'off' ? { next: state, redraw: false } : { next: { ...state, changes: [], wholeNote: true, activeId: null }, redraw: true }
-    case 'glow':
-      // Off clears what shows; a timed glow starts every change's time now.
-      if (meta.glow === 'off') return { next: { ...state, glow: meta.glow, changes: [], wholeNote: false, activeId: null }, redraw: true }
-      return { next: { ...state, glow: meta.glow, changes: state.changes.map((change) => ({ ...change, ends: endsAt(meta.glow, meta.now) })) }, redraw: false }
+      return state.glow === 'off'
+        ? { next: state, redraw: false }
+        : { next: { ...state, changes: [], wholeNote: true, wholeNoteEnds: endsAt(state.glow, meta.now), activeId: null }, redraw: true }
+    case 'glow': {
+      // Off clears what shows; a timed glow starts every change's time now, and whole-note mode's.
+      if (meta.glow === 'off') return { next: { ...state, glow: meta.glow, changes: [], wholeNote: false, wholeNoteEnds: null, activeId: null }, redraw: true }
+      const ends = endsAt(meta.glow, meta.now)
+      return { next: { ...state, glow: meta.glow, changes: state.changes.map((change) => ({ ...change, ends })), wholeNoteEnds: state.wholeNote ? ends : null }, redraw: false }
+    }
     case 'expire': {
       const changes = state.changes.filter((change) => change.ends === null || change.ends > meta.now)
-      return changes.length === state.changes.length ? { next: state, redraw: false } : { next: { ...state, changes }, redraw: true }
+      const wholeNoteEnded = state.wholeNoteEnds !== null && state.wholeNoteEnds <= meta.now
+      if (changes.length === state.changes.length && !wholeNoteEnded) return { next: state, redraw: false }
+      return { next: { ...state, changes, ...(wholeNoteEnded ? { wholeNote: false, wholeNoteEnds: null } : {}) }, redraw: true }
     }
     case 'active':
       return { next: { ...state, activeId: meta.id, revealed: meta.revealed, revealedHeadings: meta.revealedHeadings }, redraw: true }
@@ -295,15 +320,18 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
     clear: () => {
       const state = current()
       if (state === undefined) return
-      // The landing stays open: the folds that hide the active change are not folded again.
+      // `findInPage.ts` close(): fold back all that Next opened, then open again what hides the active change.
+      // The landing stays open (YAZ-3844: a keep-set read before the fold back is empty, as Next opened it already).
       const active = state.changes.find((change) => change.id === state.activeId)
-      const keep = new Set(active === undefined ? [] : collapsedItemsHiding(view.state, active.pos + 1))
-      const keepHeadings = new Set(active === undefined ? [] : collapsedHeadingsHiding(view.state, active.pos + 1))
-      fold([...state.revealed].filter((pos) => !keep.has(pos)), true)
-      foldHeadings([...state.revealedHeadings].filter((pos) => !keepHeadings.has(pos)), true)
+      fold(state.revealed, true)
+      foldHeadings(state.revealedHeadings, true)
+      if (active !== undefined) {
+        fold(collapsedItemsHiding(view.state, active.pos + 1), false)
+        foldHeadings(collapsedHeadingsHiding(view.state, active.pos + 1), false)
+      }
       dispatchMeta({ type: 'clear' })
     },
-    markWholeNote: () => dispatchMeta({ type: 'whole' }),
+    markWholeNote: () => dispatchMeta({ type: 'whole', now: Date.now() }),
     setGlow: (glow) => dispatchMeta({ type: 'glow', glow, now: Date.now() }),
   }
 }
@@ -315,7 +343,7 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
       new Plugin<OutsideState>({
         key: outsideKey,
         state: {
-          init: () => ({ changes: [], activeId: null, wholeNote: false, glow: channel.getGlow(), revealed: NONE, revealedHeadings: NONE, decorations: DecorationSet.empty }),
+          init: () => ({ changes: [], activeId: null, wholeNote: false, wholeNoteEnds: null, glow: channel.getGlow(), revealed: NONE, revealedHeadings: NONE, decorations: DecorationSet.empty }),
           apply: (transaction, previous, _oldState, newState) => {
             const meta: OutsideMeta | undefined = transaction.getMeta(outsideKey)
             const ranges: OutsideRange[] | undefined = transaction.getMeta(OUTSIDE_RANGES_META)
@@ -345,7 +373,7 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
               redraw ||= applied.redraw
             }
             if (state.changes.length > MAX_CHANGES) {
-              state = { ...state, changes: [], wholeNote: true }
+              state = { ...state, changes: [], wholeNote: true, wholeNoteEnds: endsAt(state.glow, Date.now()) }
               redraw = true
             }
             if (state.activeId !== null && !state.changes.some((change) => change.id === state.activeId)) state = { ...state, activeId: null }
@@ -360,14 +388,14 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
         },
         view: (editorView) => {
           const unbind = channel.bind(createController(editorView, channel))
-          // D5: one timer for the view, set to the soonest end of a timed glow.
+          // D5: one timer for the view, set to the soonest end of a timed glow (a change's, or whole-note mode's).
           let timer: ReturnType<typeof setTimeout> | undefined
           let timerAt = Infinity
           const sync = () => {
             const state = outsideKey.getState(editorView.state)
             if (state === undefined) return
             channel.sync(snapshotOf(state))
-            const soonest = state.changes.reduce((min, change) => Math.min(min, change.ends ?? Infinity), Infinity)
+            const soonest = state.changes.reduce((min, change) => Math.min(min, change.ends ?? Infinity), state.wholeNoteEnds ?? Infinity)
             if (soonest === timerAt && (timer !== undefined || soonest === Infinity)) return
             clearTimeout(timer)
             timer = undefined

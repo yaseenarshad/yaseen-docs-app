@@ -3,7 +3,7 @@
  *
  * `findChannel.ts`'s terms: the host makes ONE per editor mount and hands it to `createCrepe` (the plugin
  * binds itself at view creation, unbinds on destroy) and to `OutsideChangesBar`, which subscribes and calls
- * the commands. The channel owns what the bar reads (the count, whole-note mode, the active change) and the
+ * the commands. The channel owns what the bar reads (the count and whole-note mode, nothing else, so a Next re-renders no bar) and the
  * Glow setting (D5), which it keeps while unbound so a rebuilt state starts with it; every command goes to the
  * bound plugin, and while unbound the commands are no-ops.
  */
@@ -14,8 +14,6 @@ export interface OutsideChangesSnapshot {
   count: number
   /** The note changed as a whole (a rebuild, or more than the limit): no glow, the bar says so. */
   wholeNote: boolean
-  /** Index of the change Next put the ring on, −1 for none. */
-  activeIndex: number
 }
 
 /** The engine behind the commands: the plugin binds one per editor view. */
@@ -46,7 +44,7 @@ export interface OutsideChangesChannel {
   zoomedOut(): void
 }
 
-const EMPTY: OutsideChangesSnapshot = { count: 0, wholeNote: false, activeIndex: -1 }
+const EMPTY: OutsideChangesSnapshot = { count: 0, wholeNote: false }
 
 export function createOutsideChangesChannel(onZoomOut: () => void = () => undefined): OutsideChangesChannel {
   let controller: OutsideChangesController | null = null
@@ -78,7 +76,7 @@ export function createOutsideChangesChannel(onZoomOut: () => void = () => undefi
       }
     },
     sync(next) {
-      if (next.count === snapshot.count && next.wholeNote === snapshot.wholeNote && next.activeIndex === snapshot.activeIndex) return
+      if (next.count === snapshot.count && next.wholeNote === snapshot.wholeNote) return
       snapshot = next
       listeners.forEach((listener) => listener())
     },

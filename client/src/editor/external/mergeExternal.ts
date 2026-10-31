@@ -7,7 +7,9 @@
  * the same transaction shape as `applyExternalMarkdown`. prosemirror-history maps the undo items
  * through such a transaction, so ⌘Z keeps undoing your typing and never the outside edit.
  *
- * Two refusals, both 'conflict' (the caller shows the conflict bar, nothing is dispatched):
+ * Three refusals, all 'conflict' (the caller shows the conflict bar, nothing is dispatched):
+ *  - a rewrite: one outside range covers `REWRITE_SHARE` of the note — the rule `applyExternalMarkdown`
+ *    rebuilds on, so a rewrite never lands as one huge glow with every fold mapped onto one point;
  *  - D2: a range of yours and a range of theirs touch the same block (line, bullet, heading, cell)
  *    — "the AI rewrote the line you are typing in" must never merge silently;
  *  - the two orders disagree: yours mapped over theirs, applied on THEIRS, must give the same doc as
@@ -21,14 +23,8 @@ import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Transform } from '@milkdown/kit/prose/transform'
 import { normalizeEmptyItems } from '../listItemRoundTrip'
-import { EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, replaceTracked, withTrailingParagraphOf } from './applyExternalMarkdown'
+import { EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, replaceTracked, REWRITE_SHARE, withTrailingParagraphOf } from './applyExternalMarkdown'
 import { diffDocs, type ReplaceRange } from './diffDocs'
-
-/** Applies `ranges` right-to-left, each position first passed through `map` (old-document → target coordinates). */
-const applyRanges = (tr: Transform, ranges: readonly ReplaceRange[], map: (pos: number) => number = (pos) => pos): Transform => {
-  for (const { from, to, slice } of [...ranges].sort((a, b) => b.from - a.from)) tr.replace(map(from), map(to), slice)
-  return tr
-}
 
 /** The span of the textblock a range touches; a range between blocks (a bullet added or removed) stays as it is. */
 const blockSpan = (doc: ProseNode, { from, to }: ReplaceRange): { from: number; to: number } => {
@@ -67,12 +63,22 @@ export const mergeExternalMarkdown = (crepe: Crepe, baseBody: string, diskBody: 
     const baseDoc = withTrailingParagraphOf(live, base)
     const mine = diffDocs(baseDoc, live)
     const theirs = diffDocs(baseDoc, theirsDoc)
+    const rewriteWidth = baseDoc.content.size * REWRITE_SHARE
+    if (theirs.some(({ from, to }) => to - from >= rewriteWidth)) return
     if (touchSameBlock(baseDoc, mine, theirs)) return
-    const toLive = applyRanges(new Transform(baseDoc), mine).mapping
-    const toTheirs = applyRanges(new Transform(baseDoc), theirs).mapping
+    const onBase = (ranges: readonly ReplaceRange[]): Transform => {
+      const tr = new Transform(baseDoc)
+      replaceTracked(tr, ranges, baseDoc)
+      return tr
+    }
+    const toLive = onBase(mine).mapping
+    const toTheirs = onBase(theirs).mapping
     const tr = view.state.tr
     const landed = replaceTracked(tr, theirs, baseDoc, (pos) => toLive.map(pos))
-    if (!tr.doc.eq(applyRanges(new Transform(theirsDoc), mine, (pos) => toTheirs.map(pos)).doc)) return
+    // The other order: yours over theirs, on THEIRS. A merge that depends on its order is a guess.
+    const other = new Transform(theirsDoc)
+    replaceTracked(other, mine, baseDoc, (pos) => toTheirs.map(pos))
+    if (!tr.doc.eq(other.doc)) return
     tr.setMeta('addToHistory', false).setMeta(EXTERNAL_EDIT_META, true)
     if (!quiet) tr.setMeta(OUTSIDE_RANGES_META, landed)
     view.dispatch(tr)

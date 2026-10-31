@@ -835,7 +835,12 @@ function CrepeHost({
       setDisk(fresh.content)
       diskLanded()
     }
-    reloadRef.current = () => void reload()
+    // The bar's Reload drops the typing, the user's choice: the last saved body lands quietly first, so what
+    // glows is what changed outside the app, never the typing that was dropped (YAZ-3704).
+    reloadRef.current = () => {
+      applyExternalMarkdown(crepe, diskParts().body, true)
+      void reload()
+    }
 
     // A change of this file on disk: from the watcher, at once from a copy of this tab that saved
     // (YAZ-2940 D4, S23 — `twinEditors.ts`; `quiet`, it is the user's own typing), or from a save of
