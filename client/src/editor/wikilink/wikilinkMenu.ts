@@ -18,7 +18,6 @@
 import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { copyNoteId } from '../../lib/copyNoteId'
 import { pathTitles } from '../../lib/pageLabel'
 import { folderLabel, folderRecord } from '../../links/shortcuts'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkMenu } from '../linkMenu'
@@ -62,7 +61,7 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
     : undefined
   // The text the link shows stays, as plain text: the same rule as the pill's (YAZ-3778 D2, D3, S12).
   const remove = view.editable ? () => view.dispatch(view.state.tr.insertText(linkDisplayText(inner, titleOf, named), from, to)) : undefined
-  const copyIdRow = (id: string) => ({ hint: id, run: () => copyNoteId(id, nav.onNotice) })
+  const copyIdRow = (id: string) => ({ hint: id, run: () => copyText(id, 'ID', nav.onNotice) })
   // A note that is gone (S10) and an ID of another vault (S23): what can be said, the ID to copy, and the link's own rows.
   const missing = missingId(inner, source)
   if (missing !== undefined) return { labels: ['Missing note', missing], copyId: copyIdRow(missing), edit, remove }
