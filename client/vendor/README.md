@@ -8,7 +8,8 @@ it builds and how to take new Excalidraw changes.
 ## Three patched Milkdown packages
 
 - `milkdown-components-7.22.1-yaz1410.*`: `@milkdown/components` 7.22.1 with the YAZ-1410 CSS
-  zoom fix and the YAZ-2131 list-item caret restore (🔒 D2). Provenance and rebuild:
+  zoom fix, the YAZ-2131 list-item caret restore (🔒 D2) and the YAZ-3696 table block changes (B2,
+  B4, D2, D9, 2D, 2E; the handles open the app's table menu, YAZ-3820). Provenance and rebuild:
   `milkdown-components-7.22.1-yaz1410.md`.
 - `milkdown-plugin-tooltip-7.22.1-yaz2238.*`: `@milkdown/plugin-tooltip` 7.22.1 with the YAZ-2238
   throttled-update fix. Provenance and rebuild: `milkdown-plugin-tooltip-7.22.1-yaz2238.md`.

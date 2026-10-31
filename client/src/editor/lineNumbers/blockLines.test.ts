@@ -259,3 +259,19 @@ describe('a styled line whose comment is on two lines (YAZ-3206)', () => {
     expect(blockLines('> ***\n> <!-- line: darkness 80%,\n> style wavy -->\n').kinds).toBe('rp')
   })
 })
+
+describe('a table with settings (YAZ-3758, rule 41a)', () => {
+  it('skips the table comment right after a table, and the table ends on it', () => {
+    expect(blockLines('First\n\n| a |\n| - |\n| 1 |\n\n<!-- table: stripes -->\n\nSecond\n')).toEqual({ lines: [1, 3, 9], ends: [1, 7, 9], kinds: 'ptp' })
+    expect(blockLines('| a |\n| - |\n| 1 |\n<!-- table: stripes -->\n')).toEqual({ lines: [1], ends: [4], kinds: 't' })
+    expect(blockLines('- a\n  | a |\n  | - |\n  | 1 |\n  <!-- table: stripes -->\n- b\n')).toEqual({ lines: [1, 2, 6], ends: [1, 5, 6], kinds: 'ptp' })
+  })
+
+  it('keeps every other HTML block: not ours, not right after the table, or a line comment after a table', () => {
+    expect(blockLines('| a |\n| - |\n| 1 |\n\n<!-- table: sparkle -->\n').kinds).toBe('tp')
+    expect(blockLines('| a |\n| - |\n| 1 |\n\nText\n\n<!-- table: stripes -->\n').kinds).toBe('tpp')
+    expect(blockLines('<!-- table: stripes -->\n\n| a |\n| - |\n| 1 |\n').kinds).toBe('pt')
+    expect(blockLines('| a |\n| - |\n| 1 |\n\n<!-- line: darkness 50% -->\n').kinds).toBe('tp')
+    expect(blockLines('***\n\n<!-- table: stripes -->\n').kinds).toBe('rp')
+  })
+})

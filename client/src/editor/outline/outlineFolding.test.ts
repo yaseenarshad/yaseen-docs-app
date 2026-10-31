@@ -439,3 +439,55 @@ describe('decoration reuse (YAZ-2131 4C)', () => {
     expect(toggleFor(root, '!Parent').getAttribute('aria-expanded')).toBe('false')
   })
 })
+
+describe('tables under a bullet (YAZ-3696 D11)', () => {
+  const TABLE_IN_BULLET = `* Parent
+
+  | a | b |
+  | - | - |
+  | 1 | 2 |
+
+* Leaf
+`
+  const TABLE_AND_CHILD = `* Parent
+
+  | a | b |
+  | - | - |
+  | 1 | 2 |
+
+  * Child
+`
+
+  it('a bullet that holds only a table gets a fold arrow; the fold hides the table, the unfold shows it', async () => {
+    const { crepe, root } = await mount({ defaultValue: TABLE_IN_BULLET })
+    const before = getMarkdownForSave(crepe)
+    expect(toggles(root).map((b) => b.getAttribute('aria-label'))).toEqual(['Collapse Parent'])
+
+    toggleFor(root, 'Parent').click()
+    expect(folded(root)).toHaveLength(1)
+    expect(folded(root)[0].querySelector('table')).not.toBeNull()
+    expect(folded(root)[0].textContent).not.toContain('Parent')
+    expect(getMarkdownForSave(crepe)).toBe(before)
+
+    toggleFor(root, 'Parent').click()
+    expect(folded(root)).toHaveLength(0)
+  })
+
+  it('a bullet with a table AND a child list folds both', async () => {
+    const { root } = await mount({ defaultValue: TABLE_AND_CHILD })
+    toggleFor(root, 'Parent').click()
+    const hidden = [...folded(root)]
+    expect(hidden).toHaveLength(2)
+    expect(hidden.some((el) => el.querySelector('table') !== null)).toBe(true)
+    expect(hidden.some((el) => el.textContent?.includes('Child'))).toBe(true)
+  })
+
+  it.each([
+    ['a table in a bullet', TABLE_IN_BULLET],
+    ['a table and a child list in a bullet', TABLE_AND_CHILD],
+    ['a table in a nested bullet', '* a\n  * Parent\n\n    | a | b |\n    | - | - |\n    | 1 | 2 |\n'],
+  ])('round trip: %s saves the markdown it loaded', async (_name, markdown) => {
+    const { crepe } = await mount({ defaultValue: markdown })
+    expect(getMarkdownForSave(crepe)).toBe(markdown)
+  })
+})
