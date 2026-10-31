@@ -1252,6 +1252,12 @@ button {
   background: var(--accent-soft);
 }
 
+/* While a drag is held (YAZ-3719 1A, 1B, `lib/colResize.ts`), no frame takes the mouse: over draw.io's frame the
+   window would get no move and no release, and the drag would go on with the button up. */
+body.drag-held iframe {
+  pointer-events: none;
+}
+
 .sidebar__header {
   display: flex;
   align-items: stretch;
