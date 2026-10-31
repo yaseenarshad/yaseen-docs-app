@@ -318,7 +318,10 @@ function rowButton(row: MenuRow, close: () => void): HTMLButtonElement {
 /** How each open menu closes its flyout alone: `closeSubmenu`. */
 const submenuClosers = new WeakMap<HTMLElement, () => boolean>()
 
-/** Closes the open flyout of `menu` (YAZ-3901), the menu staying: true when one was open. Escape's first press. */
+/**
+ * Closes the open flyout of `menu` (YAZ-3901), the menu staying: true when one was open. Escape's first press. The
+ * menu's own close calls it too, so the flyout's `SWITCH_MS` wait never runs on a removed menu.
+ */
 export function closeSubmenu(menu: HTMLElement): boolean {
   return submenuClosers.get(menu)?.() ?? false
 }
@@ -363,6 +366,7 @@ function renderParent(row: MenuRow, children: MenuRow[][], menu: HTMLElement, cl
       flyout = document.createElement('div')
       flyout.className = 'ctx-menu ctx-menu--editor ctx-menu__sub'
       flyout.setAttribute('role', 'menu')
+      // An empty group is left out here, the one place (a caller hands its groups as they are).
       for (const group of children.filter((list) => list.length > 0)) {
         if (flyout.childElementCount > 0) flyout.appendChild(divider())
         for (const child of group) flyout.appendChild(rowButton(child, close))
@@ -447,6 +451,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           const close = () => {
             // Something in the menu had the focus: it goes back to the editor, not to the page.
             const hadFocus = popup !== null && popup.contains(document.activeElement)
+            if (popup !== null) closeSubmenu(popup)
             popup?.remove()
             popup = null
             if (hadFocus) view.focus()

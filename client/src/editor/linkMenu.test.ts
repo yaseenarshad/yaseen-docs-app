@@ -302,6 +302,24 @@ describe('the flyout of a parent row (YAZ-3901)', () => {
     expect(ran.other).not.toHaveBeenCalled()
   })
 
+  it('closing the menu while the flyout waits to go clears the wait (YAZ-3910 A6)', () => {
+    vi.useFakeTimers()
+    parentRow().parentElement!.dispatchEvent(new MouseEvent('mouseenter'))
+    rowOf(menu, 'Other row').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    expect(vi.getTimerCount()).toBe(1)
+    close()
+    expect(menu.isConnected).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('an empty group of the flyout draws no line', () => {
+    close()
+    close = openMenuAt(document.body, 10, 10, [{ label: 'Open in', run: () => {}, children: [[], [{ label: 'Reveal in Finder', run: ran.reveal }]] }])
+    menu = document.querySelector<HTMLElement>('.ctx-menu--editor')!
+    parentRow().click()
+    expect(shape(flyout()!)).toEqual(['Reveal in Finder'])
+  })
+
   it('the keys: ArrowRight opens it with the focus on its first row; ArrowLeft closes it and gives the focus back', () => {
     parentRow().focus()
     key(parentRow(), 'ArrowRight')

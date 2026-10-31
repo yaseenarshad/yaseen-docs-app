@@ -90,16 +90,17 @@ export function linkMenuRows(menu: LinkMenu): MenuRow[] {
   }
   const row = (label: string, run: (() => void) | undefined, danger?: true): MenuRow | null => (run === undefined ? null : { label, run, danger })
   const copy = (label: string, copied: CopyRow | undefined): MenuRow | null => (copied === undefined ? null : { label, run: copied.run, hint: copied.hint })
+  // The flyout's groups, an empty one kept: `renderMenu` leaves it out.
   const children = [
     [row('New window', menu.openIn?.newWindow), row('VS Code', menu.openIn?.vsCode), row('Default app', menu.openIn?.defaultApp)],
     [row('Reveal in Finder', menu.openIn?.reveal)],
-  ].map((list) => list.filter((child): child is MenuRow => child !== null)).filter((list) => list.length > 0)
+  ].map((list) => list.filter((child): child is MenuRow => child !== null))
   group([row('Open', menu.open), row('Open in new tab', menu.openNew), row('Show in sidebar', menu.showInSidebar)])
   group([copy('Copy name and ID', menu.copyNameAndId), copy('Copy name', menu.copyName), copy('Copy ID', menu.copyId), row('Copy path', menu.copyPath), row('Copy address', menu.copyAddress)])
   group([
     menu.favorite === undefined ? null : { label: menu.favorite.on ? 'Remove from favorites' : 'Add to favorites', run: menu.favorite.run },
     menu.focus === undefined ? null : { label: menu.focus.on ? 'Remove from focus' : 'Add to focus', run: menu.focus.run },
-    children.length === 0 ? null : { label: 'Open in', run: () => {}, children },
+    children.every((list) => list.length === 0) ? null : { label: 'Open in', run: () => {}, children },
   ])
   group([row('Edit link', menu.edit), row('Remove link', menu.remove, true)])
   return rows
@@ -130,6 +131,7 @@ export function placeRows(path: string, actions: LinkActions | undefined, onNoti
  */
 export function openMenuAt(parent: HTMLElement, x: number, y: number, rows: MenuRow[]): () => void {
   const close = () => {
+    closeSubmenu(popup) // its wait for the pointer goes with it
     document.removeEventListener('mousedown', onMouseDown, true)
     document.removeEventListener('scroll', close, true)
     window.removeEventListener('keydown', onKeyDown)
