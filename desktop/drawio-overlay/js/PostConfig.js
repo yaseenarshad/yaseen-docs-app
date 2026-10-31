@@ -69,10 +69,10 @@ window.ICON_SERVICE_PATH = null;
 		installTextScaling(this.editor.graph);
 	};
 
-	// YAZ-3719: a CLOSED shapes panel has nothing to grab. draw.io keeps its drag strip (`geHsplit`,
+	// YAZ-3719 D1: a CLOSED shapes panel has nothing to grab. draw.io keeps its drag strip (`geHsplit`,
 	// 10 px) at the panel's right edge, so at 0 px it lies at the frame's left edge, right beside the
-	// app's sidebar edge, and a press meant for the sidebar opened the panel. Every open and close sets
-	// `hsplitPosition`, then calls `refresh`. `visibility`, because draw.io's `setGraphEnabled` owns `display`.
+	// app's sidebar edge: without this, a press meant for the sidebar opens the panel. Every open and
+	// close sets `hsplitPosition`, then calls `refresh`. `visibility`, because `setGraphEnabled` owns `display`.
 	var refresh = EditorUi.prototype.refresh;
 
 	EditorUi.prototype.refresh = function()

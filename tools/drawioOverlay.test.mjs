@@ -27,8 +27,10 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
   Graph.prototype.isZoomWheelEvent = (evt) => evt.ctrlKey === true
   function EditorUi() {}
   EditorUi.prototype.createUi = function () {}
-  // draw.io's own: lays the panels out at their widths (here, only what PostConfig.js adds to it).
-  EditorUi.prototype.refresh = function () {}
+  // draw.io's own: lays the panels out at their widths (here, only counted).
+  EditorUi.prototype.refresh = function () {
+    this.refreshed = (this.refreshed ?? 0) + 1
+  }
   // draw.io's own: the configure reply's `keyboardShortcuts`, one by one (no ⌥ keys here: the tests need none).
   EditorUi.prototype.installKeyboardShortcuts = function () {
     for (const c of env.Editor.keyboardShortcuts ?? []) this.installKeyboardShortcut(c)
@@ -264,7 +266,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     expect(env.Graph.prototype.isZoomWheelEvent({})).toBe(false)
   })
 
-  it('YAZ-3719: a closed shapes panel has no drag strip, so a press at the frame’s left edge reaches the sidebar edge', () => {
+  it('YAZ-3719 D1: a closed shapes panel has no drag strip, so a press at the frame’s left edge does not open it', () => {
     const { env } = loadPostConfig()
     const { ui } = openEditor(env)
     ui.refresh()
@@ -275,6 +277,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     ui.hsplitPosition = 0 // the open panel dragged shut
     ui.refresh()
     expect(ui.hsplit.style.visibility).toBe('hidden')
+    expect(ui.refreshed).toBe(3)
   })
 
   it('YAZ-3420 D1: nothing else opens by itself — no saved Format width, no restored windows, no Layers for layers, no panel on a wider frame', () => {
@@ -665,9 +668,12 @@ describe.skipIf(!existsSync(APP_MIN_JS))(`every draw.io action we name exists in
       'mxSettings.getSidebarWidth': /getSidebarWidth\s*:\s*function/,
       'EditorUi.createUi': /EditorUi\.prototype\.createUi\s*=\s*function/,
       'EditorUi.hsplitPosition': /\.hsplitPosition\s*=/,
-      // YAZ-3719
+      // YAZ-3719 D1: the strip, the width `refresh` lays out, and every open and close path ending in `refresh`.
       'the drag strip is this.hsplit': /this\.hsplit\s*=\s*this\.createDiv\("geHsplit"\)/,
       'refresh sets the shapes panel to hsplitPosition': /EditorUi\.prototype\.refresh\s*=\s*function[^}]*this\.sidebarContainer\.style\.width\s*=\s*this\.hsplitPosition/,
+      'toggleShapesPanel ends in refresh': /toggleShapesPanel=function[^}]*this\.hsplitPosition=\w+;this\.refresh\(\)/,
+      'the strip drag ends in refresh': /addSplitHandler\(this\.hsplit,[^;]*this\.hsplitPosition=\w+;this\.refresh\(\)/,
+      'toggleFormatPanel clamps, then refreshes': /toggleFormatPanel=function[^}]*this\.hsplitPosition=Math\.min\([^;]*\);this\.refresh\(\)/,
       'Menus.createPopupMenu': /Menus\.prototype\.createPopupMenu\s*=\s*function/,
       'Menus.addMenuItems': /Menus\.prototype\.addMenuItems\s*=\s*function/,
       'EditorUi.installKeyboardShortcuts': /EditorUi\.prototype\.installKeyboardShortcuts\s*=\s*function/,
@@ -720,5 +726,7 @@ describe.skipIf(!existsSync(APP_MIN_JS))(`every draw.io action we name exists in
       'EditorUi.restoreScrollState': /EditorUi\.prototype\.restoreScrollState\s*=\s*function/,
     }
     for (const [name, pattern] of Object.entries(internals)) expect(app, name).toMatch(pattern)
+    // YAZ-3719 D1: the strip's `visibility` is PostConfig's alone.
+    expect(app).not.toMatch(/hsplit\.style\.visibility/)
   })
 })
