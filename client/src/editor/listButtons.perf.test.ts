@@ -47,11 +47,11 @@ describe('listButtons', () => {
     expect(median).toBeLessThan(10)
   })
 
-  // A click is one transaction of about two steps per line (a wrap or a split, then a join); 1,000 lines is a big
-  // selection for a toolbar click. Logged, not gated: the time swings with the machine's load. Measured at load 75
-  // (YAZ-3806 3B): the BUILD of the transaction went from 1,156 ms to 283 ms for 1,000 plain lines once the lines
-  // went last to first (no position maps through the steps before it). Applying it and drawing 1,000 new items
-  // (Crepe's item views) is the rest, as for a plain `setBlockType` over 1,000 headings.
+  // A click is one transaction of about ONE step per line: lines side by side change as one run (a wrap round the
+  // run and a split per line, or a markup per item and a split each side; checker 4D, YAZ-3878). Logged, not gated:
+  // the time swings with the machine's load. Measured at load 55: 1,000 plain lines → Bullet, 1,000 steps (1,999
+  // before the runs), build 186 ms, apply and draw 2,073 ms; 1,000 bullets → Numbered, 1,001 steps (3,998 before),
+  // build 180 ms, apply and draw 967 ms. Most of the draw is 1,000 new items (Crepe's item views).
   it.each([
     ['1,000 plain lines → Bullet', Array.from({ length: 1000 }, (_, i) => `L${i}\n`).join('\n'), 'bulletList'],
     ['1,000 bullets → Numbered (one list, a new type)', Array.from({ length: 1000 }, (_, i) => `* L${i}\n`).join(''), 'numberedList'],

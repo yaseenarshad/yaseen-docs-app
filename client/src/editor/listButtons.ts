@@ -3,13 +3,16 @@
  *
  * A LINE is a visible textblock the selection covers (`coveredLines`, `eachVisibleTextblock`): an item line (the
  * first block of a list item) has the item's kind — `checklist` (its `checked` is a boolean), `numberedList` or
- * `bulletList`; any other line in the page, a quote or an item's later blocks is `text` (a paragraph) or `other` (a
- * heading, a code block).
+ * `bulletList`; any other line in the page or a quote is `text` (a paragraph) or `other` (a heading, a code block).
+ * An item's later block is in a list but has no marker: `other`, so nothing lights, and a click first makes it an
+ * item of its own (a split; checker 4C). The zoomed bullet's later blocks are the page inside the zoom: `text`.
  *
  *  - A button LIGHTS when every line is its kind (`allLinesAre`). T lights for plain paragraphs outside a list.
  *  - Not lit, a click makes each line its own item of that kind (`toggleListKind`): a line outside a list is
- *    wrapped (a heading becomes `* ## x`); an item changes kind, its list split around it when bullet ↔ numbered;
- *    a list that ends up beside one of the same kind joins it.
+ *    wrapped (a heading becomes `* ## x`); an item changes kind, its list split around it when bullet ↔ numbered —
+ *    a numbered part after the split keeps its numbers (checker 4B); a list that ends up beside one of the same kind
+ *    joins it. Lines side by side change as one RUN: one wrap per line and one list round them, or one markup per
+ *    item and one split each side, so a click over 1,000 lines is about one step per line (checker 4D).
  *  - Lit, a click takes each line out of EVERY list level (`liftOut`): its children stay a list right below it, and
  *    the siblings after it follow in that list. Its heading stays a heading; T also makes it a paragraph.
  *  - Inside a zoom, a line leaves the lists only down to the zoomed bullet, so it stays in view (a block of that
@@ -29,7 +32,7 @@
 import { commandsCtx, EditorViewReady } from '@milkdown/kit/core'
 import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import { turnIntoTextCommand, wrapInBulletListCommand } from '@milkdown/kit/preset/commonmark'
-import { Fragment, NodeRange, type Node as ProseNode, type NodeType, type Schema, Slice } from '@milkdown/kit/prose/model'
+import { Fragment, NodeRange, type Node as ProseNode, type NodeType, type ResolvedPos, type Schema, Slice } from '@milkdown/kit/prose/model'
 import type { Command, EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { canJoin, liftTarget, ReplaceAroundStep } from '@milkdown/kit/prose/transform'
 import { coveredLines, eachVisibleTextblock } from './lineSelection'
@@ -63,10 +66,13 @@ const selectedLines = (state: EditorState): readonly Line[] => {
     if (node.type.name === 'list_item' && parent !== null) items.set(pos, kindOfItem(node, parent))
     return !node.isTextblock
   })
+  const zoomed = getZoomedItemPos(state)
   const lines: Line[] = []
   eachVisibleTextblock(state, from, to, (block, pos, parent, index) => {
     if (parent.type.name === 'list_item' && index === 0) lines.push({ pos, kind: items.get(pos - 1)! })
-    else if (CONTAINERS.has(parent.type.name)) lines.push({ pos, kind: block.type.name === 'paragraph' ? 'text' : 'other' })
+    else if (!CONTAINERS.has(parent.type.name)) return
+    else if (parent.type.name === 'list_item' && (zoomed === null || state.doc.resolve(pos).before() !== zoomed)) lines.push({ pos, kind: 'other' })
+    else lines.push({ pos, kind: block.type.name === 'paragraph' ? 'text' : 'other' })
   })
   linesByState.set(state, lines)
   return lines
@@ -108,31 +114,72 @@ const itemAttrs = (kind: ListKind, item: ProseNode | null) => ({
   ...(item === null ? { spread: false } : {}),
 })
 
-/** Make the line at `pos` its own item of `kind`. */
-const setKind = (tr: Transaction, types: Types, pos: number, kind: ListKind): void => {
+/** Is the line at `$pos` an item line (its item's first block)? */
+const isItemLine = ($pos: ResolvedPos, types: Types): boolean => $pos.parent.type === types.item && $pos.index() === 0
+
+/**
+ * An item's later block becomes the first block of an item of its own, right after (a split of the item; checker
+ * 4C), so the list rule can act on it. The zoomed bullet's own blocks stay: they are the page inside the zoom.
+ * Returns where the line is now.
+ */
+const ownItem = (tr: Transaction, types: Types, pos: number, zoomed: number | null): number => {
   const $pos = tr.doc.resolve(pos)
+  if ($pos.parent.type !== types.item || $pos.index() === 0 || $pos.before() === zoomed) return pos
+  tr.split(pos, 1)
+  return pos + 2
+}
+
+/**
+ * The lines in runs, each run the lines side by side in one parent: blocks outside a list, or item lines of one
+ * list. Read off the state: a run's start is where the state has it, as long as the runs go last to first.
+ */
+const runsOf = (state: EditorState, types: Types, lines: readonly Line[]): number[][] => {
+  const runs: number[][] = []
+  let last: { start: number; index: number; item: boolean } | null = null
+  for (const { pos } of lines) {
+    const $pos = state.doc.resolve(pos)
+    const item = isItemLine($pos, types)
+    const here = { start: item ? $pos.start(-1) : $pos.start(), index: item ? $pos.index(-1) : $pos.index(), item }
+    // An item's later block goes alone: `ownItem` splits it first.
+    const later = !item && $pos.parent.type === types.item
+    if (last !== null && !later && last.item === item && last.start === here.start && here.index === last.index + 1) runs[runs.length - 1].push(pos)
+    else runs.push([pos])
+    last = later ? null : here
+  }
+  return runs
+}
+
+/** Make each line of `run` (positions, in order) its own item of `kind`. */
+const setKind = (tr: Transaction, types: Types, run: readonly number[], kind: ListKind, zoomed: number | null): void => {
   const listType = kind === 'numberedList' ? types.ordered : types.bullet
-  const container = $pos.parent
-  if (container.type !== types.item || $pos.index() !== 0) {
-    // A line outside a list: wrap it in a list of one item.
-    const range = new NodeRange($pos, tr.doc.resolve(pos + tr.doc.nodeAt(pos)!.nodeSize), $pos.depth)
-    if (!range.parent.canReplaceWith(range.startIndex, range.endIndex, listType)) return
-    tr.wrap(range, [{ type: listType, attrs: { spread: false } }, { type: types.item, attrs: itemAttrs(kind, null) }])
-    joinNeighbours(tr, pos)
+  const first = run.length === 1 ? ownItem(tr, types, run[0], zoomed) : run[0]
+  const $first = tr.doc.resolve(first)
+  if (!isItemLine($first, types)) {
+    // Lines outside a list: one list and one item round the whole run, then the item split before each line, last
+    // first (a list item may not stand in the page, so the items cannot come first).
+    if (!$first.parent.canReplaceWith($first.index(), $first.index() + run.length, listType)) return
+    const lastPos = run[run.length - 1]
+    const end = lastPos + tr.doc.nodeAt(lastPos)!.nodeSize
+    tr.wrap(new NodeRange($first, tr.doc.resolve(end), $first.depth), [{ type: listType, attrs: { spread: false } }, { type: types.item, attrs: itemAttrs(kind, null) }])
+    for (let i = run.length - 1; i > 0; i--) tr.split(run[i] + 2, 1)
+    joinNeighbours(tr, first)
     return
   }
-  const itemPos = $pos.before()
-  tr.setNodeMarkup(itemPos, undefined, itemAttrs(kind, container))
-  const list = $pos.node(-1)
+  // Item lines of one list: each item's markup, then — bullet ↔ numbered — the run gets a list of its own.
+  const lines = run.length === 1 ? [first] : run
+  for (const pos of lines) tr.setNodeMarkup(pos - 1, undefined, itemAttrs(kind, tr.doc.nodeAt(pos - 1)))
+  const list = $first.node(-1)
   if (list.type === listType) return
-  // Bullet ↔ numbered: the item gets a list of its own (the list split after it, then before it), joined to a
-  // neighbour of its new type.
-  const index = $pos.index(-1)
-  if (index < list.childCount - 1) tr.split(itemPos + container.nodeSize, 1)
-  let listPos = $pos.before(-1)
-  if (index > 0) {
-    tr.split(itemPos, 1)
-    listPos = itemPos + 1
+  const from = $first.index(-1)
+  const to = from + lines.length
+  const lastItem = lines[lines.length - 1] - 1
+  const firstItem = first - 1
+  // The numbered part after the run keeps its numbers: it starts where it stood (checker 4B).
+  if (to < list.childCount) tr.split(lastItem + tr.doc.nodeAt(lastItem)!.nodeSize, 1, [{ type: list.type, attrs: list.type === types.ordered ? { ...list.attrs, order: list.attrs.order + to } : list.attrs }])
+  let listPos = $first.before(-1)
+  if (from > 0) {
+    tr.split(firstItem, 1)
+    listPos = firstItem + 1
   }
   tr.setNodeMarkup(listPos, listType, listType === types.ordered ? { order: 1, spread: list.attrs.spread } : { spread: list.attrs.spread })
   joinNeighbours(tr, listPos)
@@ -209,38 +256,45 @@ const liftOut = (tr: Transaction, types: Types, pos: number, zoomed: number | nu
 }
 
 /**
- * A command that changes each line of the selection in ONE transaction. The lines go LAST to first: a change moves
- * only what comes after its line's start, so each line is still where the state had it, and no position is mapped
- * through the steps before it (that mapping made a click over 1,000 lines quadratic). Declines with no line.
+ * A command that changes the selection's lines in ONE transaction, last to first: a change moves only what comes
+ * after its own start, so each line is still where the state had it, and no position is mapped through the steps
+ * before it (that mapping made a click over 1,000 lines quadratic). Declines with no line.
  */
-const eachLine =
-  (change: (tr: Transaction, types: Types, pos: number, zoomed: number | null) => void): Command =>
+const onLines =
+  (change: (tr: Transaction, types: Types, lines: readonly Line[], zoomed: number | null, state: EditorState) => void): Command =>
   (state, dispatch) => {
     const lines = selectedLines(state)
     if (lines.length === 0) return false
     if (dispatch === undefined) return true
-    const types = typesOf(state.schema)
-    const zoomed = getZoomedItemPos(state)
     const tr = state.tr
-    for (let i = lines.length - 1; i >= 0; i--) change(tr, types, lines[i].pos, zoomed)
+    change(tr, typesOf(state.schema), lines, getZoomedItemPos(state), state)
     dispatch(tr.scrollIntoView())
     return true
   }
 
+/** Take each line out of every list level, an item's later block made an item first; `after` gets each line where it is then. */
+const liftEach = (tr: Transaction, types: Types, lines: readonly Line[], zoomed: number | null, after?: (pos: number) => void): void => {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const at = liftOut(tr, types, ownItem(tr, types, lines[i].pos, zoomed), zoomed)
+    after?.(at)
+  }
+}
+
 /** A list button (T3): lit → every line leaves its lists; not lit → every line becomes an item of `kind`. */
 export const toggleListKind = (kind: ListKind): Command => (state, dispatch, view) =>
-  eachLine(
-    allLinesAre(state, kind)
-      ? (tr, types, pos, zoomed) => void liftOut(tr, types, pos, zoomed)
-      : (tr, types, pos) => setKind(tr, types, pos, kind),
-  )(state, dispatch, view)
+  onLines((tr, types, lines, zoomed) => {
+    if (allLinesAre(state, kind)) return liftEach(tr, types, lines, zoomed)
+    const runs = runsOf(state, types, lines)
+    for (let i = runs.length - 1; i >= 0; i--) setKind(tr, types, runs[i], kind, zoomed)
+  })(state, dispatch, view)
 
 /** T and ⌘⌥0 (T4): every line out of every list level, then a paragraph. */
-export const turnIntoText: Command = eachLine((tr, types, pos, zoomed) => {
-  const at = liftOut(tr, types, pos, zoomed)
-  const block = tr.doc.nodeAt(at)!
-  if (block.type !== types.paragraph) tr.setBlockType(at, at + block.nodeSize, types.paragraph)
-})
+export const turnIntoText: Command = onLines((tr, types, lines, zoomed) =>
+  liftEach(tr, types, lines, zoomed, (at) => {
+    const block = tr.doc.nodeAt(at)!
+    if (block.type !== types.paragraph) tr.setBlockType(at, at + block.nodeSize, types.paragraph)
+  }),
+)
 
 /** Register with `editor.use(listButtons)`, after `visibleFormatting`. */
 export const listButtons: MilkdownPlugin = (ctx) => async () => {

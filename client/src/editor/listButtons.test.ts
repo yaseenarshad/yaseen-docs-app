@@ -8,7 +8,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import { turnIntoTextCommand, wrapInBulletListCommand } from '@milkdown/kit/preset/commonmark'
 import { undo } from '@milkdown/kit/prose/history'
-import { endOf, md, mount, posOf, runCommand, select, unmountAll } from './marks/markTestKit'
+import { endOf, md, mount, posOf, pressKey, runCommand, select, unmountAll } from './marks/markTestKit'
 import { allLinesAre, LIST_KINDS, type ListKind, toggleListKind } from './listButtons'
 import { toggleOutlineFold } from './outline/outlineFolding'
 import { getZoomedItemPos, zoomKeyAt, zoomToKey } from './outline/zoom'
@@ -200,5 +200,44 @@ describe('the list buttons and T (YAZ-3806 T3, T4)', () => {
     expect(press(crepe, 'bulletList')).toBe(true)
     expect(md(crepe)).toBe('* R\n  * A\n\n    B\n')
     expect(getZoomedItemPos(view.state)).toBe(itemPos)
+  })
+})
+
+describe('checker round 1 (PR #220)', () => {
+  it.each(['checklist', 'numberedList'] as const)('4A: inside a zoom, %s on the zoomed bullet\'s own line keeps the zoom', async (kind) => {
+    const { crepe, view } = await mount('* R\n  * X\n  * A\n    * B\n  * Y\n')
+    expect(runCommand(crepe, zoomToKey(zoomKeyAt(view.state.doc, posOf(crepe, 'A') - 2)))).toBe(true)
+    select(crepe, posOf(crepe, 'A'), endOf(crepe, 'A'))
+    expect(press(crepe, kind)).toBe(true)
+    expect(getZoomedItemPos(view.state)).toBe(posOf(crepe, 'A') - 2)
+  })
+
+  it('4A: ⌘Enter (a task tick) on the zoomed bullet\'s own line keeps the zoom — the same cause, in `zoom.ts`', async () => {
+    const { crepe, view } = await mount('* R\n  * A\n    * B\n')
+    const itemPos = posOf(crepe, 'A') - 2
+    expect(runCommand(crepe, zoomToKey(zoomKeyAt(view.state.doc, itemPos)))).toBe(true)
+    select(crepe, posOf(crepe, 'A') + 1)
+    expect(pressKey(crepe, 'Enter', { mod: true })).toBe(true)
+    expect(md(crepe)).toBe('* R\n  * [ ] A\n    * B\n')
+    expect(getZoomedItemPos(view.state)).toBe(itemPos)
+  })
+
+  it.each([
+    ['1. a\n2. b\n3. c\n', 'b', '1. a\n\n* b\n\n3. c\n'],
+    ['3. a\n4. b\n5. c\n', 'b', '3. a\n\n* b\n\n5. c\n'],
+    ['3. a\n4. b\n', 'a', '* a\n\n4. b\n'],
+  ])('4B: %j, Bullet on %s: the numbered lines after it keep their numbers', async (doc, line, out) => {
+    const { crepe } = await mount(doc)
+    select(crepe, posOf(crepe, line), endOf(crepe, line))
+    expect(press(crepe, 'bulletList')).toBe(true)
+    expect(md(crepe)).toBe(out)
+  })
+
+  it('4C: a bullet\'s second paragraph: T does not light, or T makes it a plain line outside the list', async () => {
+    const { crepe } = await mount('* a\n\n  cont\n')
+    select(crepe, posOf(crepe, 'cont'), endOf(crepe, 'cont'))
+    const lit = allLinesAre(crepe.editor.action((ctx) => ctx.get(editorViewCtx).state), 'text')
+    press(crepe, 'text')
+    expect(lit === false || md(crepe) !== '* a\n\n  cont\n').toBe(true)
   })
 })
