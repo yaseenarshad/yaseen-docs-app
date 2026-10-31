@@ -37,50 +37,94 @@ async function mountEditorPage(settings: SettingsState, onChange: (next: Setting
 
 const row = () => el.querySelector<HTMLElement>('[data-setting="selectionToolbar"]')!
 
-describe('Settings › Editor › Selection toolbar (YAZ-3806 T7)', () => {
-  it('lists each group with its buttons in order — a grip, a show box, the icon and the name — and Reset to default', async () => {
+const squares = (group: string) => [...row().querySelectorAll<HTMLButtonElement>(`[data-group="${group}"] .toolbar-arrange__square`)]
+const square = (button: string) => row().querySelector<HTMLButtonElement>(`.toolbar-arrange__square[data-button="${button}"]`)!
+/** The preview strip, as the toolbar draws it: each button's name, a divider as '|'. */
+const preview = () =>
+  [...row().querySelectorAll<HTMLElement>('.toolbar-arrange__preview-button, .toolbar-arrange__divider')].map((el) => (el.classList.contains('toolbar-arrange__divider') ? '|' : el.title))
+
+describe('Settings › Editor › Selection toolbar (YAZ-3806 T7, 4B YAZ-3856)', () => {
+  it('a preview of the strip, then a row of squares per group, and Reset; the group title alone names the row', async () => {
     await mountEditorPage({ ...DEFAULT_SETTINGS }, vi.fn())
-    const groups = [...row().querySelectorAll<HTMLElement>('.toolbar-arrange__group')]
-    expect(groups.map((g) => g.querySelector('.toolbar-arrange__head')!.textContent)).toEqual(['Line type', 'Lists', 'Text style', 'Code and link'])
-    expect(groups.map((g) => [...g.querySelectorAll<HTMLElement>('.toolbar-arrange__row')].map((r) => r.dataset.button))).toEqual([
-      ['h1', 'h2', 'h3', 'text'],
-      ['checklist', 'bulletList', 'numberedList'],
-      ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink'],
-      ['code', 'link'],
+    expect(preview()).toEqual([
+      'Heading 1', 'Heading 2', 'Heading 3', 'Text', '|',
+      'Checklist', 'Bullet list', 'Numbered list', '|',
+      'Bold', 'Italic', 'Underline', 'Strikethrough', 'Highlight', 'Highlight green', 'Highlight blue', 'Highlight pink', '|',
+      'Inline code', 'Link',
     ])
-    const bullet = row().querySelector<HTMLElement>('[data-button="bulletList"]')!
-    expect(bullet.querySelector('.tab-row-panel__grip svg')).not.toBeNull()
-    expect(bullet.querySelector('.toolbar-arrange__icon svg')).not.toBeNull()
-    expect(bullet.querySelector('.toolbar-arrange__name')!.textContent).toBe('Bullet list')
-    expect(bullet.querySelector('[role="checkbox"]')!.getAttribute('aria-checked')).toBe('true')
+    expect([...row().querySelectorAll('.toolbar-arrange__group-name')].map((n) => n.textContent)).toEqual(['Line type', 'Lists', 'Text style', 'Code and link'])
+    expect(squares('lists').map((b) => b.getAttribute('aria-label'))).toEqual(['Show Checklist', 'Show Bullet list', 'Show Numbered list'])
+    expect(square('bulletList').querySelector('svg')).not.toBeNull()
+    expect(square('bulletList').getAttribute('aria-checked')).toBe('true')
+    // A bare row: no second "Selection toolbar" label under the group title.
+    expect(row().querySelector('.setting__label')).toBeNull()
     expect([...row().querySelectorAll('button')].some((b) => b.textContent === 'Reset to default')).toBe(true)
   })
 
-  it('a show box writes the setting: untick hides the button, tick shows it again in its place; Reset writes the default', async () => {
+  it('the preview follows the setting: a hidden button leaves it, a group with none shown takes its divider, the order is the strip\'s', async () => {
+    const prefs = { ...DEFAULT_TOOLBAR, groups: ['insert', 'lineType', 'lists', 'textStyle'] as typeof DEFAULT_TOOLBAR.groups, hidden: ['checklist', 'bulletList', 'numberedList', 'bold'] as typeof DEFAULT_TOOLBAR.hidden }
+    await mountEditorPage({ ...DEFAULT_SETTINGS, selectionToolbar: prefs }, vi.fn())
+    expect(preview()).toEqual(['Inline code', 'Link', '|', 'Heading 1', 'Heading 2', 'Heading 3', 'Text', '|', 'Italic', 'Underline', 'Strikethrough', 'Highlight', 'Highlight green', 'Highlight blue', 'Highlight pink'])
+    expect(square('bold').classList.contains('toolbar-arrange__square--off')).toBe(true)
+    expect(square('bold').getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('a click on a square hides its button, a click on a hidden one shows it in its place; Reset writes the default', async () => {
     const onChange = vi.fn()
     const hidden = { ...DEFAULT_TOOLBAR, hidden: ['bold' as const] }
     await mountEditorPage({ ...DEFAULT_SETTINGS, selectionToolbar: hidden }, onChange)
-    const box = (button: string) => row().querySelector<HTMLButtonElement>(`[data-button="${button}"] [role="checkbox"]`)!
-    expect(box('bold').getAttribute('aria-checked')).toBe('false')
-
-    act(() => box('italic').click())
+    act(() => square('italic').click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, selectionToolbar: { ...hidden, hidden: ['bold', 'italic'] } })
-    act(() => box('bold').click())
+    act(() => square('bold').click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, selectionToolbar: DEFAULT_TOOLBAR })
     act(() => [...row().querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Reset to default')!.click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, selectionToolbar: DEFAULT_TOOLBAR })
   })
+
+  it('a drag shows the tab strip\'s drop line where the square lands, moves nothing on the way, and writes once on release', async () => {
+    const onChange = vi.fn()
+    await mountEditorPage({ ...DEFAULT_SETTINGS }, onChange)
+    // jsdom has no layout: the Code and link squares stand at x 0–38 and 44–82.
+    squares('insert').forEach((el, i) => (el.getBoundingClientRect = () => ({ left: i * 44, width: 38, top: 0, height: 38 }) as DOMRect))
+    const [code, link] = squares('insert')
+    const at = (type: string, x: number, el: HTMLElement) => el.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: 10, button: 0 }))
+    act(() => at('pointerdown', 10, code))
+    act(() => at('pointermove', 90, code))
+    expect(code.classList.contains('toolbar-arrange--dragging')).toBe(true)
+    expect(link.classList.contains('toolbar-arrange--gap-right')).toBe(true)
+    expect(onChange).not.toHaveBeenCalled()
+    act(() => at('pointerup', 90, code))
+    expect(code.classList.contains('toolbar-arrange--dragging')).toBe(false)
+    expect(link.classList.contains('toolbar-arrange--gap-right')).toBe(false)
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, selectionToolbar: moveButton(DEFAULT_TOOLBAR, 'insert', 0, 1) })
+    // The click of the release does not also hide the square.
+    act(() => code.click())
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('Esc during a drag puts it back and writes nothing', async () => {
+    const onChange = vi.fn()
+    await mountEditorPage({ ...DEFAULT_SETTINGS }, onChange)
+    squares('insert').forEach((el, i) => (el.getBoundingClientRect = () => ({ left: i * 44, width: 38, top: 0, height: 38 }) as DOMRect))
+    const [code, link] = squares('insert')
+    act(() => code.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 10, button: 0 })))
+    act(() => code.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 90 })))
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(link.classList.contains('toolbar-arrange--gap-right')).toBe(false)
+    act(() => code.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientX: 90 })))
+    expect(onChange).not.toHaveBeenCalled()
+  })
 })
 
 describe('the last button (YAZ-3806 T7)', () => {
-  it('the one button that still shows cannot be unticked: a strip with no button would be an empty box', async () => {
+  it('the one button that still shows cannot be hidden: a strip with no button would be an empty box', async () => {
     const onChange = vi.fn()
     const hidden = TOOLBAR_BUTTONS.filter((b) => b !== 'link')
     await mountEditorPage({ ...DEFAULT_SETTINGS, selectionToolbar: { ...DEFAULT_TOOLBAR, hidden } }, onChange)
-    const box = (button: string) => row().querySelector<HTMLButtonElement>(`[data-button="${button}"] [role="checkbox"]`)!
-    expect(box('link').disabled).toBe(true)
-    expect(box('code').disabled).toBe(false)
-    act(() => box('code').click())
+    expect(square('link').getAttribute('aria-disabled')).toBe('true')
+    act(() => square('link').click())
+    expect(onChange).not.toHaveBeenCalled()
+    act(() => square('code').click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, selectionToolbar: { ...DEFAULT_TOOLBAR, hidden: hidden.filter((b) => b !== 'code') } })
   })
 })

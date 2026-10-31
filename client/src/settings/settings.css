@@ -1134,95 +1134,191 @@
   }
 }
 
-/* Settings › Editor › Selection toolbar (YAZ-3806 T7): the sidebar Tab row panel's rows, one list per group; the grip and the box are its own classes (app.css `.tab-row-panel__grip` / `__check`). */
+/* Settings › Editor › Selection toolbar (YAZ-3806 T7, redrawn as 4B): the strip's preview, then a row of squares per
+   group. The drop line works as the tab strip's (tabs.css): nothing moves while the drag goes on. It stands on its own
+   in the MIDDLE of the gap, longer than the squares, so it reads as "between" and not as a square's edge (Yaseen, in
+   the demo). A `::before` on the square or group after the slot, or before it for the end slot. */
 .toolbar-arrange {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  font-size: 13px;
+  gap: 14px;
 }
 
-.toolbar-arrange__groups,
-.toolbar-arrange__list {
-  position: relative;
+.toolbar-arrange__preview {
+  align-self: flex-start;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+.toolbar-arrange__preview-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-arrange__preview-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 32px;
+  color: var(--fg);
+}
+
+.toolbar-arrange__divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.toolbar-arrange__svg,
+.toolbar-arrange__svg svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
+.toolbar-arrange__glyph {
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .toolbar-arrange__groups {
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .toolbar-arrange__group {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--bg);
 }
 
-.toolbar-arrange__head,
-.toolbar-arrange__row {
+.toolbar-arrange__handle {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 5px;
-  background: var(--bg);
+  gap: 6px;
+  width: 116px;
+  font-size: 12px;
+  color: var(--fg-muted);
   cursor: grab;
   touch-action: none;
   user-select: none;
 }
 
-.toolbar-arrange__head {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--fg-muted);
-}
-
-.toolbar-arrange__row {
-  position: relative;
-}
-
-.toolbar-arrange__head:hover,
-.toolbar-arrange__row:hover {
-  background: var(--bg-hover);
-}
-
-.toolbar-arrange__icon {
-  display: inline-flex;
-  width: 18px;
-  height: 18px;
+.toolbar-arrange__handle:hover {
   color: var(--fg);
 }
 
-.toolbar-arrange__icon svg {
-  width: 18px;
-  height: 18px;
+.toolbar-arrange__squares {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
-.toolbar-arrange__row:has(.tab-row-panel__check[aria-checked='false']) .toolbar-arrange__icon,
-.toolbar-arrange__row:has(.tab-row-panel__check[aria-checked='false']) .toolbar-arrange__name {
-  opacity: 0.45;
+.toolbar-arrange__square {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
-.toolbar-arrange--lifted {
-  z-index: 2;
+.toolbar-arrange__square:hover {
+  background: var(--bg-hover);
+}
+
+.toolbar-arrange__square--off {
+  border-style: dashed;
+  color: var(--fg-muted);
+}
+
+.toolbar-arrange__square--off > * {
+  opacity: 0.4;
+}
+
+/* The strike over a hidden square: the button is off the strip. */
+.toolbar-arrange__square--off::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  top: 50%;
+  height: 1.5px;
+  background: var(--fg-muted);
+  transform: rotate(-35deg);
+}
+
+.toolbar-arrange__square[aria-disabled='true'] {
+  cursor: default;
+}
+
+.toolbar-arrange--dragging {
+  opacity: 0.5;
   cursor: grabbing;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22), 0 0 0 1.5px var(--accent);
 }
 
-.toolbar-arrange--sorting {
-  cursor: grabbing;
-}
-
-.toolbar-arrange--sorting > :not(.toolbar-arrange--lifted) {
+.toolbar-arrange--gap-left::before,
+.toolbar-arrange--gap-right::before,
+.toolbar-arrange--gap-above::before,
+.toolbar-arrange--gap-below::before {
+  content: '';
+  position: absolute;
+  border-radius: 2px;
+  background: var(--accent);
   pointer-events: none;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .toolbar-arrange--sorting > :not(.toolbar-arrange--lifted) {
-    transition: transform 0.16s cubic-bezier(0.2, 0.7, 0.3, 1);
-  }
+/* The middle of the 10px gap: 6px out from the edge, 2px wide, 6px longer than the square at each end. */
+.toolbar-arrange--gap-left::before,
+.toolbar-arrange--gap-right::before {
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+}
+
+.toolbar-arrange--gap-left::before {
+  left: -7px;
+}
+
+.toolbar-arrange--gap-right::before {
+  right: -7px;
+}
+
+.toolbar-arrange--gap-above::before,
+.toolbar-arrange--gap-below::before {
+  left: -6px;
+  right: -6px;
+  height: 2px;
+}
+
+.toolbar-arrange--gap-above::before {
+  top: -7px;
+}
+
+.toolbar-arrange--gap-below::before {
+  bottom: -7px;
 }
 
 .toolbar-arrange__reset {

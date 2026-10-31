@@ -353,7 +353,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
 
     clickNav(el, 'Editor')
     expect(groupTitles(el)).toEqual(EDITOR_GROUPS)
-    expect(hints()).toEqual([THREADING_HINT, SECTION_INDENT_HINT, 'The buttons over a selection. Drag to reorder; untick to hide. Hotkeys keep working.', TOC_HINT])
+    expect(hints()).toEqual([THREADING_HINT, SECTION_INDENT_HINT, 'The buttons over a selection, as the preview shows them. Drag a square to move it, or a group by its handle; click a square to hide or show it. Hotkeys keep working.', TOC_HINT])
     // The threading rows carry the shortened labels; the group names the feature.
     expect(['bulletThreading', 'threadWidth', 'threadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Show', 'Line width', 'Line colour'])
     for (const id of ['bulletThreading', 'threadWidth', 'threadColor']) expect(row(el, id)?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Bullet threading')

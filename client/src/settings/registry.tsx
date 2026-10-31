@@ -734,13 +734,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       {
         // YAZ-3806 T7: the buttons over a selection, their order and which show. One setting that travels (T5).
         title: 'Selection toolbar',
-        hint: 'The buttons over a selection. Drag to reorder; untick to hide. Hotkeys keep working.',
+        hint: 'The buttons over a selection, as the preview shows them. Drag a square to move it, or a group by its handle; click a square to hide or show it. Hotkeys keep working.',
         items: [
           {
             id: 'selectionToolbar',
             label: 'Selection toolbar',
             keywords: ['toolbar', 'buttons', 'bullet', 'numbered', 'checklist', 'underline', 'hide', 'order', 'reorder', 'format'],
-            wide: true,
+            // YAZ-3856: the control alone; the group title names it (it showed twice).
+            bare: true,
             render: ({ settings, onChange }) => <ToolbarArrange value={settings.selectionToolbar} onChange={(selectionToolbar) => onChange({ ...settings, selectionToolbar })} />,
           },
         ],
