@@ -6,8 +6,11 @@
  *                  Each item cycles from its OWN state (Obsidian toggle-list); only items whose
  *                  first block touches the selection change, so a parent whose text sits above the
  *                  selection stays as it is. Hidden items (a folded item's kids) keep their state
- *                  (YAZ-3209). Outside list items the key falls through (Crepe's table
- *                  `Mod-Enter` = exit table, CodeMirror's = exit code block are untouched).
+ *                  (YAZ-3209). A paragraph or a heading outside a bullet has no task state:
+ *                  the key strikes the whole line through (`~~` in the file), and a line that is
+ *                  all struck loses it (YAZ-3797). Empty lines, a bullet's later paragraphs and
+ *                  table cells are left alone, so in a table the key falls through (Crepe's
+ *                  `Mod-Enter` = exit table; CodeMirror's = exit code block is untouched).
  *  - `Mod-Shift-u` / `Mod-Shift-i` are coordinated across bullets + headings by foldAllHotkeys.ts.
  *  - `Mod-ArrowUp` / `Mod-ArrowDown` (GRO-2092, Logseq's defaults) fold / unfold the caret's item;
  *                  consumed inside any list item (leaf = no-op), falls through outside lists so the
@@ -24,8 +27,8 @@
 import { commandsCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { listItemSchema } from '@milkdown/kit/preset/commonmark'
-import { toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
-import type { NodeType } from '@milkdown/kit/prose/model'
+import { strikethroughSchema, toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
+import type { MarkType, Node, NodeType } from '@milkdown/kit/prose/model'
 import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
 import { coveredLines, eachVisibleTextblock } from '../lineSelection'
@@ -55,11 +58,49 @@ const selectedItemPositions = (itemType: NodeType, state: EditorState): number[]
   return positions
 }
 
-const cycleTaskCommand = (itemType: NodeType): Command => (state, dispatch) => {
+/** A paragraph or heading with text, outside any list item and table cell (YAZ-3797). */
+const isFreeLine = (state: EditorState, block: Node, pos: number): boolean => {
+  if (!['paragraph', 'heading'].includes(block.type.name) || block.content.size === 0) return false
+  const $pos = state.doc.resolve(pos)
+  for (let depth = $pos.depth; depth > 0; depth--) {
+    const role = $pos.node(depth).type.spec.tableRole
+    if ($pos.node(depth).type.name === 'list_item' || role === 'cell' || role === 'header_cell') return false
+  }
+  return true
+}
+
+/** Positions of the visible free lines the covered lines overlap (document order). */
+const selectedFreeLines = (state: EditorState): number[] => {
+  const { from, to } = coveredLines(state)
+  const positions: number[] = []
+  eachVisibleTextblock(state, Math.max(0, from - 1), Math.min(state.doc.content.size, to + 1), (block, pos) => {
+    if (from <= pos + block.nodeSize && to >= pos && isFreeLine(state, block, pos)) positions.push(pos)
+  })
+  return positions
+}
+
+/** True when every text node that can carry the strike has it. */
+const allStruck = (block: Node, strike: MarkType): boolean => {
+  let struck = true
+  block.descendants((node) => {
+    if (node.isText && !strike.isInSet(node.marks) && node.marks.every((mark) => !mark.type.excludes(strike))) struck = false
+    return struck
+  })
+  return struck
+}
+
+const cycleTaskCommand = (itemType: NodeType, strike: MarkType): Command => (state, dispatch) => {
   const positions = selectedItemPositions(itemType, state)
-  if (positions.length === 0) return false
+  const lines = selectedFreeLines(state)
+  if (positions.length === 0 && lines.length === 0) return false
   if (dispatch) {
     const tr = state.tr
+    for (const pos of lines) {
+      const block = state.doc.nodeAt(pos)
+      if (!block) continue
+      if (allStruck(block, strike)) tr.removeMark(pos + 1, pos + block.nodeSize - 1, strike)
+      else tr.addMark(pos + 1, pos + block.nodeSize - 1, strike.create())
+    }
     for (const pos of positions) {
       const item = state.doc.nodeAt(pos)
       if (!item) continue
@@ -74,10 +115,11 @@ const cycleTaskCommand = (itemType: NodeType): Command => (state, dispatch) => {
 /** Keymap plugin; register with `editor.use(obsidianHotkeys)`. */
 export const obsidianHotkeys = $shortcut((ctx: Ctx) => {
   const itemType = listItemSchema.type(ctx)
+  const strikeType = strikethroughSchema.type(ctx)
   const strike: Command = () => ctx.get(commandsCtx).call(toggleStrikethroughCommand.key)
   // The keys are the rows' (`shared/keys/note.ts`, YAZ-3564 K4).
   return {
-    ...rowShortcuts(ctx, 'note.cycleTask', 'CycleTask', { priority: PRIORITY, onRun: () => cycleTaskCommand(itemType) }),
+    ...rowShortcuts(ctx, 'note.cycleTask', 'CycleTask', { priority: PRIORITY, onRun: () => cycleTaskCommand(itemType, strikeType) }),
     ...rowShortcuts(ctx, 'note.foldHere', 'FoldItem', { priority: PRIORITY, onRun: () => setOutlineFoldAtSelection(true) }),
     ...rowShortcuts(ctx, 'note.unfoldHere', 'UnfoldItem', { priority: PRIORITY, onRun: () => setOutlineFoldAtSelection(false) }),
     ...rowShortcuts(ctx, 'note.undo', 'UndoFold', { priority: PRIORITY, onRun: () => undoLastFold }),

@@ -34,7 +34,7 @@ export const NOTE_KEYS: readonly KeyRow[] = [
   note('quote', 'Quote', []),
   note('codeBlock', 'Code block', ['CmdOrCtrl+Alt+C']),
   note('bulletList', 'Bullet list', ['CmdOrCtrl+Alt+8']),
-  note('cycleTask', 'Cycle bullet → task → done', ['CmdOrCtrl+Enter'], { hint: 'In a table: leave the table' }),
+  note('cycleTask', 'Cycle bullet → task → done', ['CmdOrCtrl+Enter'], { hint: 'On text or a heading outside a bullet: strikes the line through. In a table: leave the table' }),
   // The outline.
   note('indent', 'Indent bullet', ['CmdOrCtrl+]'], { hint: 'In a table: the next cell' }),
   note('outdent', 'Outdent bullet', ['CmdOrCtrl+['], { hint: 'In a table: the cell before' }),

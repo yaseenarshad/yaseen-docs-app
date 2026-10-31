@@ -7,8 +7,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { undo } from '@milkdown/kit/prose/history'
+import { type Command, TextSelection } from '@milkdown/kit/prose/state'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
+import { setHeadingFoldAtSelection } from './headingFolding'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_FOLDED_IMAGE_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
 
 const OUTLINE = `* L1 a
@@ -127,11 +129,87 @@ describe('Mod-Enter (task cycle)', () => {
     expect(md(crepe)).toBe('* [ ] L1 a\n  * [ ] L2 a\n    * L3 a\n  * [ ] L2 b\n* L1 b\n')
   })
 
-  it('falls through outside list items', async () => {
+})
+
+/** Runs a command on the view, as a key would. */
+const run = (crepe: Crepe, command: Command): boolean =>
+  crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx)
+    return command(view.state, view.dispatch)
+  })
+
+describe('Mod-Enter on a line outside a bullet: strike the line (YAZ-3797)', () => {
+  it('strikes a paragraph through, and a second press removes the strike', async () => {
     const { crepe } = await mount('Just a paragraph\n')
     caretIn(crepe, 'Just')
-    expect(press(crepe, 'Mod-Enter')).toBe(false)
+    expect(press(crepe, 'Mod-Enter')).toBe(true)
+    expect(md(crepe)).toBe('~~Just a paragraph~~\n')
+    expect(press(crepe, 'Mod-Enter')).toBe(true)
     expect(md(crepe)).toBe('Just a paragraph\n')
+  })
+
+  it('strikes a heading through and it stays a heading', async () => {
+    const { crepe } = await mount('## Plan for May\n\nbody\n')
+    caretIn(crepe, 'Plan', 2)
+    expect(press(crepe, 'Mod-Enter')).toBe(true)
+    expect(md(crepe)).toBe('## ~~Plan for May~~\n\nbody\n')
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toBe('## Plan for May\n\nbody\n')
+  })
+
+  it('a line with only part struck gets the strike on all of it first', async () => {
+    const { crepe } = await mount('one ~~two~~ three\n')
+    caretIn(crepe, 'one', 1)
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toBe('~~one two three~~\n')
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toBe('one two three\n')
+  })
+
+  it('each line changes from its own state; a bullet in the same selection still cycles', async () => {
+    const { crepe } = await mount('first\n\n~~second~~\n\n* item\n')
+    select(crepe, posOf(crepe, 'first', 1), posOf(crepe, 'item', 2))
+    expect(press(crepe, 'Mod-Enter')).toBe(true)
+    expect(md(crepe)).toBe('~~first~~\n\nsecond\n\n* [ ] item\n')
+  })
+
+  it('a second paragraph inside a bullet does not change', async () => {
+    const { crepe } = await mount('* item\n\n  more\n')
+    caretIn(crepe, 'more', 1)
+    expect(press(crepe, 'Mod-Enter')).toBe(false)
+    expect(md(crepe)).toBe('* item\n\n  more\n')
+  })
+
+  it('an empty line does not change', async () => {
+    const { crepe } = await mount('above\n\n<br />\n\nbelow\n')
+    select(crepe, posOf(crepe, 'above') + 'above'.length + 2)
+    expect(press(crepe, 'Mod-Enter')).toBe(false)
+    expect(md(crepe)).toBe('above\n\n<br />\n\nbelow\n')
+  })
+
+  it('in a table the key falls through to the table, and nothing is struck', async () => {
+    const { crepe } = await mount('| a | b |\n| - | - |\n| c | d |\n')
+    caretIn(crepe, 'c')
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).not.toContain('~~')
+  })
+
+  it('lines hidden in a folded heading do not change', async () => {
+    const { crepe } = await mount('## Section\n\nhidden body\n\n## Next\n')
+    caretIn(crepe, 'Section')
+    expect(run(crepe, setHeadingFoldAtSelection(true))).toBe(true)
+    select(crepe, posOf(crepe, 'Section', 1), posOf(crepe, 'Next', 2))
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toBe('## ~~Section~~\n\nhidden body\n\n## ~~Next~~\n')
+  })
+
+  it('one press is one undo', async () => {
+    const { crepe } = await mount('first\n\nsecond\n')
+    select(crepe, posOf(crepe, 'first', 1), posOf(crepe, 'second', 2))
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toBe('~~first~~\n\n~~second~~\n')
+    run(crepe, undo)
+    expect(md(crepe)).toBe('first\n\nsecond\n')
   })
 })
 
