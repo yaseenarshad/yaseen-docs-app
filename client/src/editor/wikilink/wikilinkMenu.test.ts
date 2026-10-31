@@ -51,13 +51,13 @@ const popupOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTML
 const rowsOf = (popup: HTMLElement) => Array.from(popup.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
 const rowNamed = (view: EditorView, label: string) => rowsOf(popupOf(view)!).find((row) => row.textContent === label)!
 /** The one link menu's rows (D23, YAZ-3740) after its labels, with no App doors: an id link's, with Copy ID. */
-const idMenu = (...labels: string[]) => [...labels, 'Open', 'Open in new tab', 'Copy name and ID', 'Copy ID', 'Copy path', 'Edit link', 'Remove link']
+const idMenu = (...labels: string[]) => [...(labels.length === 0 ? [] : [labels.join(' · ')]), 'Open', 'Open in new tab', 'Copy name and ID', 'Copy ID', 'Copy path', 'Edit link', 'Remove link']
 /** A found name link's: no Copy ID. */
-const nameMenu = (...labels: string[]) => [...labels, 'Open', 'Open in new tab', 'Copy name', 'Copy path', 'Edit link', 'Remove link']
+const nameMenu = (...labels: string[]) => [...(labels.length === 0 ? [] : [labels.join(' · ')]), 'Open', 'Open in new tab', 'Copy name', 'Copy path', 'Edit link', 'Remove link']
 /** A name link that finds nothing: no path to copy. */
-const deadNameMenu = (...labels: string[]) => [...labels, 'Open', 'Open in new tab', 'Copy name', 'Edit link', 'Remove link']
+const deadNameMenu = (...labels: string[]) => [...(labels.length === 0 ? [] : [labels.join(' · ')]), 'Open', 'Open in new tab', 'Copy name', 'Edit link', 'Remove link']
 /** A note that is gone (YAZ-3905 S10): what can be said, its ID to copy, Edit and Remove. */
-const missingMenu = (id: string) => ['Missing note', id, 'Copy ID', 'Edit link', 'Remove link']
+const missingMenu = (id: string) => [`Missing note · ${id}`, 'Copy ID', 'Edit link', 'Remove link']
 
 /** jsdom has no clipboard; the menu's only job is to hand the id to it, so spy on writeText. */
 let writeText: Mock
@@ -82,7 +82,7 @@ describe('right-click on a rendered id link', () => {
     expect(mouse(linkSpan(root, 'Road Map'), 'contextmenu').defaultPrevented).toBe(true)
     const rows = rowsOf(popupOf(view)!)
     expect(rows.map((row) => row.textContent)).toEqual(idMenu('Road Map', ID))
-    expect(rows.map((row) => row.disabled)).toEqual([true, true, false, false, false, false, false, false, false])
+    expect(rows.map((row) => row.disabled)).toEqual([true, false, false, false, false, false, false, false])
   })
 
   it('Copy ID copies exactly the id, says so, closes — and the document keeps every byte', async () => {
@@ -91,7 +91,7 @@ describe('right-click on a rendered id link', () => {
     mouse(linkSpan(root, 'Road Map'), 'contextmenu')
     rowNamed(view, 'Copy ID').click()
     expect(writeText).toHaveBeenCalledExactlyOnceWith(ID)
-    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('Copied ID'))
+    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith(`Copied: ${ID}`))
     expect(popupOf(view)).toBeNull()
     expect(getMarkdownForSave(crepe)).toBe(md)
   })
@@ -238,10 +238,10 @@ describe('a name link gets the same menu (YAZ-3609 D23)', () => {
     const { root, nav, view } = await mount('pad [[Known#Q1|the plan]] tail\n')
     mouse(linkSpan(root, 'the plan'), 'contextmenu')
     expect(rowNamed(view, 'Copy link')).toBeUndefined()
-    expect(rowNamed(view, 'Copy name').dataset.hint).toBe('Known')
+    expect(rowNamed(view, 'Copy name').dataset.hint).toBeUndefined() // demo M1: the notice says it
     rowNamed(view, 'Copy name').click()
     expect(writeText).toHaveBeenCalledExactlyOnceWith('Known')
-    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('Copied name'))
+    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('Copied: Known'))
   })
 
   it('Edit link puts the caret in the raw `[[…]]` with its target selected: the link shows as text', async () => {

@@ -138,9 +138,9 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     const { root, view } = await mount('pad [[YAS-466]] tail\n')
     const menu = menuOf(root, view, 'AR v2 plan')
     expect(shape(menu)).toEqual([
-      '(AR v2 plan)', '(YAS-466)', '──',
+      '(AR v2 plan · YAS-466)', '──',
       'Open', 'Open in new tab', 'Show in sidebar', '──',
-      'Copy name and ID · AR v2 plan (YAS-466)', 'Copy ID · YAS-466', 'Copy path', '──',
+      'Copy name and ID', 'Copy ID', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
       'Edit link', 'Remove link',
     ])
@@ -153,7 +153,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(menu)).toEqual([
       '(Plans/Road Map)', '──',
       'Open', 'Open in new tab', 'Show in sidebar', '──',
-      'Copy name · Road Map', 'Copy path', '──',
+      'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
       'Edit link', 'Remove link',
     ])
@@ -166,7 +166,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(menu)).toEqual([
       '(Projects (folder))', '──',
       'Open', 'Open in new tab', 'Show in sidebar', '──',
-      'Copy name · Projects', 'Copy path', '──',
+      'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
       'Edit link', 'Remove link',
     ])
@@ -180,7 +180,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(menu)).toEqual([
       '(Plan (Other Vault))', '──',
       'Open', 'Open in new tab', 'Show in sidebar', '──',
-      'Copy name · Plan', 'Copy path', '──',
+      'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
       'Edit link', 'Remove link',
     ])
@@ -196,9 +196,9 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
   it('with no doors from App the place rows that need one are left out; Copy path stays', async () => {
     const { root, view } = await mount('pad [[YAS-466]] tail\n', false)
     expect(shape(menuOf(root, view, 'AR v2 plan'))).toEqual([
-      '(AR v2 plan)', '(YAS-466)', '──',
+      '(AR v2 plan · YAS-466)', '──',
       'Open', 'Open in new tab', '──',
-      'Copy name and ID · AR v2 plan (YAS-466)', 'Copy ID · YAS-466', 'Copy path', '──',
+      'Copy name and ID', 'Copy ID', 'Copy path', '──',
       'Edit link', 'Remove link',
     ])
   })
@@ -219,12 +219,20 @@ describe('each new row calls its door with the link\'s target (YAZ-3740)', () =>
     expect(acts.listState).toHaveBeenCalledWith(NOTE)
   })
 
-  it('Copy name and ID, Copy name and Copy path copy what their hints say, and say so', async () => {
+  it('demo M2: only Copy path, Add to focus and Add to favorites carry an icon, as in the tab menu; no row has a hint', async () => {
+    const { root, view } = await mount('pad [[YAS-466]] tail\n')
+    const menu = menuOf(root, view, 'AR v2 plan')
+    const rows = Array.from(menu.querySelectorAll<HTMLElement>(':scope > .ctx-menu__item, :scope > .ctx-menu__parent > .ctx-menu__item'))
+    expect(rows.filter((row) => row.querySelector('svg') !== null).map((row) => row.textContent)).toEqual(['Copy path', 'Remove from favorites', 'Add to focus'])
+    expect(rows.filter((row) => row.dataset.hint !== undefined && row.dataset.hint !== '')).toEqual([])
+  })
+
+  it('Copy name and ID, Copy name and Copy path copy their text; the notice shows what a name or ID row copied (demo M1)', async () => {
     const { crepe, root, view, onNotice } = await mount('a [[YAS-466]] b [[Plans/Road Map]] c\n')
     rowOf(menuOf(root, view, 'AR v2 plan'), 'Copy name and ID').click()
-    await vi.waitFor(() => expect(onNotice).toHaveBeenLastCalledWith('Copied name and ID'))
+    await vi.waitFor(() => expect(onNotice).toHaveBeenLastCalledWith('Copied: AR v2 plan (YAS-466)'))
     rowOf(menuOf(root, view, 'Road Map'), 'Copy name').click()
-    await vi.waitFor(() => expect(onNotice).toHaveBeenLastCalledWith('Copied name'))
+    await vi.waitFor(() => expect(onNotice).toHaveBeenLastCalledWith('Copied: Road Map'))
     rowOf(menuOf(root, view, 'Road Map'), 'Copy path').click()
     await vi.waitFor(() => expect(onNotice).toHaveBeenLastCalledWith('Copied path'))
     expect(writeText.mock.calls).toEqual([['AR v2 plan (YAS-466)'], ['Road Map'], [ROAD]])
@@ -354,24 +362,24 @@ describe('the menus of a missing note and an ID of another vault (YAZ-3905; thei
   it('S10: its menu says what it can, and copies the ID', async () => {
     const { root, view, onNotice } = await mount('pad [[YAS-999]] tail\n')
     const menu = menuOf(root, view, 'Missing note · YAS-999')
-    expect(shape(menu)).toEqual(['(Missing note)', '(YAS-999)', '──', 'Copy ID · YAS-999', '──', 'Edit link', 'Remove link'])
+    expect(shape(menu)).toEqual(['(Missing note · YAS-999)', '──', 'Copy ID', '──', 'Edit link', 'Remove link'])
     rowOf(menu, 'Copy ID').click()
     expect(writeText).toHaveBeenCalledExactlyOnceWith('YAS-999')
-    await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith('Copied ID'))
+    await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith('Copied: YAS-999'))
   })
 
   it('S23: an ID with another open vault\'s letters: its menu says whose ID it is', async () => {
     const { root, view } = await mount('pad [[INL-4]] tail\n')
-    expect(shape(menuOf(root, view, 'INL-4'))).toEqual(['(INL-4)', '(ID from the In-harness-lab vault)', '──', 'Copy ID · INL-4', '──', 'Edit link', 'Remove link'])
+    expect(shape(menuOf(root, view, 'INL-4'))).toEqual(['(INL-4 · ID from the In-harness-lab vault)', '──', 'Copy ID', '──', 'Edit link', 'Remove link'])
   })
 
   it('S23: letters that two open vaults share name no vault: "another vault"', async () => {
     const { root, view } = await mount('pad [[TWO-3]] tail\n')
-    expect(shape(menuOf(root, view, 'TWO-3'))).toEqual(['(TWO-3)', '(ID from another vault)', '──', 'Copy ID · TWO-3', '──', 'Edit link', 'Remove link'])
+    expect(shape(menuOf(root, view, 'TWO-3'))).toEqual(['(TWO-3 · ID from another vault)', '──', 'Copy ID', '──', 'Edit link', 'Remove link'])
   })
 
   it('S23: letters no open vault has stay a name link, with a name link\'s menu', async () => {
     const plain = await mount('pad [[GPT-4]] tail\n')
-    expect(shape(menuOf(plain.root, plain.view, 'GPT-4'))).toEqual(['(GPT-4)', '──', 'Open', 'Open in new tab', '──', 'Copy name · GPT-4', '──', 'Edit link', 'Remove link'])
+    expect(shape(menuOf(plain.root, plain.view, 'GPT-4'))).toEqual(['(GPT-4)', '──', 'Open', 'Open in new tab', '──', 'Copy name', '──', 'Edit link', 'Remove link'])
   })
 })
