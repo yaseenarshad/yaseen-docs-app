@@ -36,12 +36,12 @@ export function isTaskBox(view: EditorView, t: EventTarget | null): boolean {
 }
 
 /**
- * A right-click on a bullet's own dot (YAZ-3646 D8): its list item, as the handle would point at it. A task's
- * checkbox is no dot (its click toggles the task), and another editor's dot is not this one's.
+ * A right-click on a bullet's own dot (YAZ-3646 D8), a number, or a task's checkbox (YAZ-3727 D20: a right press
+ * there ticks nothing, YAZ-3694 F7): its list item, as the handle would point at it. Another editor's dot is not this one's.
  */
 export function bulletDotTarget(view: EditorView, t: EventTarget | null): HandleTarget | null {
   const dot = t instanceof Element ? t.closest('.label-wrapper') : null
-  if (dot === null || !view.dom.contains(dot) || isTaskBox(view, dot)) return null
+  if (dot === null || !view.dom.contains(dot)) return null
   // As the handle's probe gives it for a hovered item: the position BEFORE the list_item (`nearestListItem`).
   const $pos = view.state.doc.resolve(view.posAtDOM(dot, 0))
   if (!isListItem($pos.parent)) return null
