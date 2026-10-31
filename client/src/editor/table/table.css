@@ -143,6 +143,19 @@
   border-left-width: var(--table-border-width, 1px);
 }
 
+/* The freeze line (YAZ-3804): a thicker border after the last frozen row and the last frozen column, the
+   border colour 40% darker. The cells draw their own bottom and right borders (above), so the line moves
+   with the frozen rows and sticks with the frozen columns. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] .table-frozen-row-end > * {
+  border-bottom-width: 3px;
+  border-bottom-color: color-mix(in srgb, var(--crepe-color-outline) min(100%, calc(var(--table-border-darkness, 20%) + 40%)), transparent);
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] :is(th, td).table-frozen-col-end {
+  border-right-width: 3px;
+  border-right-color: color-mix(in srgb, var(--crepe-color-outline) min(100%, calc(var(--table-border-darkness, 20%) + 40%)), transparent);
+}
+
 /* A frozen row's `translateY` is a Web Animation on the row (`tableFreeze.ts`, YAZ-3792), not a custom
    property here: one on the block restyled every cell of the table on each scroll. */
 .milkdown .ProseMirror .milkdown-table-block .table-frozen-row {

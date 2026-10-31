@@ -56,3 +56,28 @@ describe('a frozen column sticks only while its block scrolls sideways (YAZ-3790
     expect(stacked).toEqual(['.milkdown .ProseMirror .milkdown-table-block[data-table-scrolls] :is(th, td).table-frozen-col'])
   })
 })
+
+// YAZ-3804 (4F): a thicker line after the last frozen row and column (about 3px, the border colour
+// darker). Each cell of a frozen table draws its own bottom and right border, so the line moves with
+// the rows and sticks with the columns. Crepe's outline colour follows light and dark.
+describe('the freeze line (YAZ-3804)', () => {
+  const LINE = 'min(100%, calc(var(--table-border-darkness, 20%) + 40%))'
+  it('the last frozen row draws a 3px bottom border, darker than the table\'s border', () => {
+    expect(bodyOf(`${FROZEN} .table-frozen-row-end > *`)).toBe(
+      `border-bottom-width: 3px; border-bottom-color: color-mix(in srgb, var(--crepe-color-outline) ${LINE}, transparent);`,
+    )
+  })
+
+  it('each cell of the last frozen column draws a 3px right border, the same colour', () => {
+    expect(bodyOf(`${FROZEN} :is(th, td).table-frozen-col-end`)).toBe(
+      `border-right-width: 3px; border-right-color: color-mix(in srgb, var(--crepe-color-outline) ${LINE}, transparent);`,
+    )
+  })
+
+  it('outranks the table\'s border rule (the frozen table\'s own cell rule sets only the top and left)', () => {
+    const border = '.milkdown .ProseMirror .milkdown-table-block :is(th, td)'
+    expect(rules(tableCss).find(({ selectors, body }) => selectors.includes(border) && body.includes('border-width'))).toBeDefined()
+    for (const line of [`${FROZEN} .table-frozen-row-end > *`, `${FROZEN} :is(th, td).table-frozen-col-end`])
+      expect(weight(line)).toBeGreaterThan(weight(border))
+  })
+})

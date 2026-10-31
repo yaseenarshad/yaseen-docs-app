@@ -8,6 +8,9 @@
  * - DOCUMENT ZOOM (R2): the plugin adds the mouse travel in screen px to a width in layout px, so under the CSS
  *   zoom on `.ProseMirror` the edge ran ahead of (or behind) the cursor. While an edge drags, a window capture
  *   listener gives each `mousemove`/`mouseup` the travel in layout px, before the plugin reads it.
+ * - HEADER ROW ONLY (YAZ-3800, 2D): as in Sheets, a column resizes only from a header cell's edge. Over a body
+ *   cell (`td`) the plugin's mousemove clears the grip (its own `mouseleave` code), and its mousedown does not
+ *   run, so `tableEditing` starts a cell selection there.
  */
 import { SchemaReady, prosePluginsCtx } from '@milkdown/kit/core'
 import type { MilkdownPlugin } from '@milkdown/kit/ctx'
@@ -34,9 +37,32 @@ function zoomedDrag(view: EditorView) {
   }
 }
 
+const inBody = (event: Event) => event.target instanceof Element && event.target.closest('td, th')?.tagName === 'TD'
+
+/** `columnResizing` with its grip on the header row only: the same key, state and decorations. */
+function headerResizing(): Plugin {
+  const { spec } = columnResizing({ View: null, cellMinWidth: 60 })
+  const { mousemove, mouseleave, mousedown } = spec.props!.handleDOMEvents!
+  return new Plugin({
+    ...spec,
+    props: {
+      ...spec.props,
+      handleDOMEvents: {
+        mousemove(view, event) {
+          return inBody(event) ? mouseleave!.call(this, view, event) : mousemove!.call(this, view, event)
+        },
+        mouseleave,
+        mousedown(view, event) {
+          return inBody(event) ? false : mousedown!.call(this, view, event)
+        },
+      },
+    },
+  })
+}
+
 export const tableColumnResize: MilkdownPlugin = (ctx) => async () => {
   await ctx.wait(SchemaReady)
-  const plugins = [columnResizing({ View: null, cellMinWidth: 60 }), new Plugin({ view: zoomedDrag })]
+  const plugins = [headerResizing(), new Plugin({ view: zoomedDrag })]
   ctx.update(prosePluginsCtx, (ps) => {
     const at = ps.findIndex((plugin) => plugin.spec.key === tableEditingKey)
     return at < 0 ? [...ps, ...plugins] : [...ps.slice(0, at), ...plugins, ...ps.slice(at)]

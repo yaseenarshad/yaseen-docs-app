@@ -10,7 +10,9 @@
  * DECORATIONS, from the attributes only (so no table redraw, B4): each frozen row gets
  * `table-frozen-row`; each cell of a frozen column gets `table-frozen-col` and `--table-frozen-left:
  * var(--table-frozen-x-<column>)` (the sticky rule's `left`; a plain `left` would move a cell that
- * is not sticky). A table-level decoration puts `data-table-frozen` on the table
+ * is not sticky). The last frozen row also gets `table-frozen-row-end`, and each cell of the last frozen
+ * column `table-frozen-col-end`: the thick freeze line after them (`table.css`, YAZ-3804). A table-level
+ * decoration puts `data-table-frozen` on the table
  * block (its cells draw their own borders, `table.css`, YAZ-3788), marks each frozen table for the
  * view below, and holds the table's shape. Typing (each step changes the text of one textblock) only
  * maps the set: no table changes its shape, and each node decoration maps (YAZ-3790). Any other
@@ -80,11 +82,12 @@ function frozenDecorations(table: ProseNode, pos: number): Decoration[] {
   const out = [Decoration.node(pos, pos + table.nodeSize, { 'data-table-frozen': '' }, { frozenTable: true, shape: shapeOf(table) })]
   table.forEach((row, rowOffset, r) => {
     const rowPos = pos + 1 + rowOffset
-    if (r < rows) out.push(Decoration.node(rowPos, rowPos + row.nodeSize, { class: 'table-frozen-row' }))
+    if (r < rows) out.push(Decoration.node(rowPos, rowPos + row.nodeSize, { class: r === rows - 1 ? 'table-frozen-row table-frozen-row-end' : 'table-frozen-row' }))
     row.forEach((cell, cellOffset, c) => {
       if (c >= cols) return
       const cellPos = rowPos + 1 + cellOffset
-      out.push(Decoration.node(cellPos, cellPos + cell.nodeSize, { class: 'table-frozen-col', style: `--table-frozen-left: var(--table-frozen-x-${c}, 0px)` }))
+      const className = c === cols - 1 ? 'table-frozen-col table-frozen-col-end' : 'table-frozen-col'
+      out.push(Decoration.node(cellPos, cellPos + cell.nodeSize, { class: className, style: `--table-frozen-left: var(--table-frozen-x-${c}, 0px)` }))
     })
   })
   return out

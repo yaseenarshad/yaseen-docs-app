@@ -106,6 +106,21 @@ describe('the frozen cells', () => {
     expect(view.dom.querySelector('.table-frozen-row, .table-frozen-col')).toBeNull()
   })
 
+  // YAZ-3804 (4F): the thick freeze line goes after the last frozen row and the last frozen column.
+  it('the last frozen row and each cell of the last frozen column carry the line\'s class; it moves with the counts', async () => {
+    const { view } = await mount('<!-- table: freeze 2 rows 2 cols -->')
+    const rowEnds = () => rowsOf(view).map((row) => row.classList.contains('table-frozen-row-end'))
+    const colEnds = () => rowsOf(view).map((row) => [...row.cells].map((cell) => cell.classList.contains('table-frozen-col-end')))
+    expect(rowEnds()).toEqual([false, true, false, false])
+    expect(colEnds()).toEqual(Array.from({ length: 4 }, () => [false, true, false]))
+    setFreeze(view, 1, 0)
+    expect(rowEnds()).toEqual([true, false, false, false])
+    expect(view.dom.querySelector('.table-frozen-col-end')).toBeNull()
+    setFreeze(view, 0, 3)
+    expect(view.dom.querySelector('.table-frozen-row-end')).toBeNull()
+    expect(colEnds()).toEqual(Array.from({ length: 4 }, () => [false, false, true]))
+  })
+
   it('a frozen table block carries `data-table-frozen` (its cells draw their own borders, YAZ-3788); unfreeze drops it', async () => {
     const { view, block } = await mount('<!-- table: freeze 1 row -->')
     expect(block.hasAttribute('data-table-frozen')).toBe(true)

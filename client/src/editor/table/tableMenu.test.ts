@@ -154,6 +154,31 @@ describe('freeze (S3)', () => {
     expect(view.dom.querySelector('.table-frozen-row, .table-frozen-col')).toBeNull()
   })
 
+  // YAZ-3804 (4F): the menu shows where the freeze ends; a click on the checked item unfreezes.
+  it('a check on the row and the column where the freeze ends; a click on it unfreezes that direction', async () => {
+    const { view } = await mount(TABLE)
+    const label = (r: number, c: number, id: string) => row(view, r, c, id).label
+    expect(label(1, 0, 'table-freeze-rows')).toBe('Freeze up to this row')
+    expect(label(1, 0, 'table-freeze-cols')).toBe('Freeze up to this column')
+    expect(row(view, 1, 0, 'table-unfreeze-rows').disabled).toBe(true)
+    expect(row(view, 1, 0, 'table-unfreeze-cols').disabled).toBe(true)
+    row(view, 1, 0, 'table-freeze-rows').onSelect()
+    row(view, 1, 0, 'table-freeze-cols').onSelect()
+    expect(label(1, 0, 'table-freeze-rows')).toBe('✓ Frozen up to this row')
+    expect(label(1, 0, 'table-freeze-cols')).toBe('✓ Frozen up to this column')
+    expect(label(2, 1, 'table-freeze-rows')).toBe('Freeze up to this row')
+    expect(label(2, 1, 'table-freeze-cols')).toBe('Freeze up to this column')
+    expect(label(0, 0, 'table-freeze-rows')).toBe('Freeze up to this row')
+    expect(row(view, 2, 1, 'table-unfreeze-rows').disabled).toBe(false)
+    row(view, 1, 1, 'table-freeze-rows').onSelect()
+    expect(tableAttrs(view)).toMatchObject({ freezeRows: 0, freezeCols: 1 })
+    row(view, 2, 0, 'table-freeze-cols').onSelect()
+    expect(tableAttrs(view)).toMatchObject({ freezeRows: 0, freezeCols: 0 })
+    // One undo step each.
+    undo(view.state, view.dispatch)
+    expect(tableAttrs(view)).toMatchObject({ freezeRows: 0, freezeCols: 1 })
+  })
+
   it('a row or column delete keeps the count inside the table', async () => {
     const { crepe, view } = await mount(`${TABLE}\n<!-- table: freeze 3 rows 2 cols -->\n`)
     row(view, 2, 1, 'table-delete-row').onSelect()
@@ -169,5 +194,68 @@ describe('freeze (S3)', () => {
     const { crepe, view } = await mount(`${TABLE}\n<!-- table: freeze 9 rows 5 cols -->\n`)
     expect(tableAttrs(view)).toMatchObject({ freezeRows: 3, freezeCols: 2 })
     expect(getMarkdownForSave(crepe)).toContain('<!-- table: freeze 3 rows 2 cols -->')
+  })
+})
+
+// YAZ-3801 (2E): the labels count the selected rows and columns, as in Sheets; insert N inserts N.
+const WIDE = '| h1 | h2 | h3 | h4 |\n| -- | -- | -- | -- |\n| a | b | c | d |\n| e | f | g | h |\n| i | j | k | l |\n'
+const selectCells = (view: EditorView, from: [number, number], to: [number, number]) =>
+  view.dispatch(view.state.tr.setSelection(CellSelection.create(view.state.doc, cellPos(view, ...from), cellPos(view, ...to))))
+/** The Table part's insert, delete, clear and fill rows. */
+const labelsOf = (view: EditorView, r: number, c: number) =>
+  sectionsAt(view, r, c).flat().filter((item) => item.id.startsWith('table-') && !item.id.includes('freeze')).map((item) => item.label)
+
+describe('the labels count the selection (YAZ-3801)', () => {
+  it('one cell: the labels as before', async () => {
+    const { view } = await mount(WIDE)
+    expect(labelsOf(view, 1, 0)).toEqual(['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Delete row', 'Delete column', 'Clear cells', 'Fill'])
+  })
+
+  it.each<[[number, number], [number, number], string[]]>([
+    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Fill']],
+    [[1, 1], [1, 3], ['Insert row above', 'Insert row below', 'Insert 3 columns left', 'Insert 3 columns right', 'Delete row', 'Delete 3 columns', 'Clear cells', 'Fill']],
+  ])('cells %j to %j', async (from, to, labels) => {
+    const { view } = await mount(WIDE)
+    selectCells(view, from, to)
+    expect(labelsOf(view, ...from)).toEqual(labels)
+  })
+
+  it.each<[string, [number, number], [number, number], string[]]>([
+    ['table-insert-row-above', [1, 0], [2, 0], ['h1', '', '', 'a', 'e', 'i']],
+    ['table-insert-row-below', [1, 0], [2, 0], ['h1', 'a', 'e', '', '', 'i']],
+    ['table-delete-row', [1, 0], [2, 0], ['h1', 'i']],
+  ])('%s on 2 rows: 2 rows, one undo step', async (id, from, to, firstColumn) => {
+    const { crepe, view } = await mount(WIDE)
+    const before = getMarkdownForSave(crepe)
+    selectCells(view, from, to)
+    row(view, ...from, id).onSelect()
+    expect(texts(view).map((r) => r[0])).toEqual(firstColumn)
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it.each<[string, string[]]>([
+    ['table-insert-col-left', ['h1', '', '', '', 'h2', 'h3', 'h4']],
+    ['table-insert-col-right', ['h1', 'h2', 'h3', 'h4', '', '', '']],
+    ['table-delete-col', ['h1']],
+  ])('%s on 3 columns: 3 columns, one undo step', async (id, header) => {
+    const { crepe, view } = await mount(WIDE)
+    const before = getMarkdownForSave(crepe)
+    selectCells(view, [1, 1], [1, 3])
+    row(view, 1, 1, id).onSelect()
+    expect(texts(view)[0]).toEqual(header)
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('the guards stay: the header row, every body row, every column', async () => {
+    const { view } = await mount(WIDE)
+    selectCells(view, [0, 0], [1, 3])
+    expect(row(view, 0, 0, 'table-insert-row-above').disabled).toBe(true)
+    expect(row(view, 0, 0, 'table-delete-row').disabled).toBe(true)
+    expect(row(view, 0, 0, 'table-delete-col').disabled).toBe(true)
+    selectCells(view, [1, 0], [3, 0])
+    expect(row(view, 1, 0, 'table-delete-row').label).toBe('Delete 3 rows')
+    expect(row(view, 1, 0, 'table-delete-row').disabled).toBe(true)
   })
 })

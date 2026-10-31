@@ -128,12 +128,58 @@ describe('table block: resize columns (YAZ-3696 D2)', () => {
     expect(colwidths(view)[0]![0]).toEqual([150])
   })
 
+  // YAZ-3800 (2D): as in Sheets, a column resizes only from the header row's cell edges.
+  it.each([1, 0.5, 2])('a body cell edge shows no grip and does not resize; its drag selects cells, at %× zoom', async zoom => {
+    const view = await mount(undefined, zoom)
+    const cell = cellDOM(view, 1, 0).firstChild!
+    const edge = (100 - 2) * zoom, y = (30 + 15) * zoom
+    mouseAt('mousemove', cell, edge, y)
+    expect(view.dom.querySelector('.column-resize-handle')).toBeNull()
+    mouseAt('mousedown', cell, edge, y)
+    mouse('mousemove', cellDOM(view, 2, 1).firstChild!, 2, 1, zoom)
+    mouse('mouseup', cellDOM(view, 2, 1).firstChild!, 2, 1, zoom)
+    expect(colwidths(view).flat().every(width => width === null)).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(CellSelection)
+    expect((view.state.selection as CellSelection).$anchorCell.pos).toBe(cellPos(view, 1, 0))
+  })
+
+  it('a grip from a header edge goes away over a body cell, and a mousedown there does not resize', async () => {
+    const view = await mount()
+    mouseAt('mousemove', cellDOM(view, 0, 0).firstChild!, 98, 15)
+    expect(view.dom.querySelector('.column-resize-handle')).not.toBeNull()
+    mouseAt('mousemove', cellDOM(view, 1, 0).firstChild!, 98, 45)
+    expect(view.dom.querySelector('.column-resize-handle')).toBeNull()
+    mouseAt('mousedown', cellDOM(view, 1, 0).firstChild!, 98, 45)
+    mouseAt('mousemove', cellDOM(view, 1, 0).firstChild!, 148, 45)
+    mouseAt('mouseup', cellDOM(view, 1, 0).firstChild!, 148, 45)
+    expect(colwidths(view).flat().every(width => width === null)).toBe(true)
+  })
+
   it('a read-only note shows no grip and does not resize', async () => {
     const view = await mount()
     view.setProps({ editable: () => false })
     dragColumnEdge(view, 0, 50)
     expect(view.dom.querySelector('.column-resize-handle')).toBeNull()
     expect(colwidths(view).flat().every(width => width === null)).toBe(true)
+  })
+})
+
+// YAZ-3800 (2D): no hover "+" insert line. Insert stays in the handle menus and the right-click menu.
+// The two line elements stay as the drop line of a row or column drag, with no button.
+describe('table block: no insert line (YAZ-3800)', () => {
+  it('the block has no "+" button, and a pointer at a cell edge shows no line', async () => {
+    const view = await mount()
+    const block = view.dom.querySelector('.milkdown-table-block')!
+    expect(block.querySelector('.add-button')).toBeNull()
+    expect(block.querySelectorAll('.line-handle button')).toHaveLength(0)
+    // Near the right edge of a body cell, then near the bottom edge: the old insert line places.
+    mouseAt('pointermove', cellDOM(view, 1, 0).firstChild!, 98, 45)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    mouseAt('pointermove', cellDOM(view, 1, 0).firstChild!, 50, 58)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    for (const line of block.querySelectorAll<HTMLElement>('.line-handle')) expect(line.dataset.show).toBe('false')
+    // The cell handles show instead, as on any hover in a cell.
+    expect(block.querySelector<HTMLElement>('[data-role="col-drag-handle"]')!.dataset.show).toBe('true')
   })
 })
 
@@ -294,5 +340,148 @@ describe('table block: labeled row and column menus (YAZ-3696 D9)', () => {
     handle(view, 'col').querySelector('.button-group')!.setAttribute('data-show', 'false')
     handle(view, 'col').dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(handle(view, 'col').querySelector('.button-group')!.getAttribute('data-show')).toBe('false')
+  })
+})
+
+// YAZ-3801 (2E): a right-click on a handle opens its labeled menu; the labels count the selection.
+const WIDE = '| h1 | h2 | h3 | h4 |\n| --- | --- | --- | --- |\n| a | b | c | d |\n| e | f | g | h |\n| i | j | k | l |\n'
+/** A right-click on the handle: answers whether the note's own `contextmenu` listener heard it. */
+function rightClick(view: EditorView, kind: 'col' | 'row'): boolean {
+  let heard = false
+  const listener = () => { heard = true }
+  view.dom.addEventListener('contextmenu', listener)
+  const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })
+  handle(view, kind).dispatchEvent(event)
+  view.dom.removeEventListener('contextmenu', listener)
+  expect(event.defaultPrevented).toBe(true)
+  return heard
+}
+const selectCols = (view: EditorView, from: number, to: number) =>
+  view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, from)), view.state.doc.resolve(cellPos(view, 0, to)))))
+const selectRows = (view: EditorView, from: number, to: number) =>
+  view.dispatch(view.state.tr.setSelection(CellSelection.rowSelection(view.state.doc.resolve(cellPos(view, from, 0)), view.state.doc.resolve(cellPos(view, to, 0)))))
+const isOpen = (view: EditorView, kind: 'col' | 'row') => handle(view, kind).querySelector('.button-group')!.getAttribute('data-show') === 'true'
+/** The [row, column] of each selected cell. */
+const selectedRect = (view: EditorView) => {
+  const selection = view.state.selection as CellSelection
+  const rows = rowsOf(view)
+  const cells: number[][] = []
+  selection.forEachCell((_, pos) => {
+    rows.forEach((row, r) => row.forEach((_, c) => { if (cellPos(view, r, c) === pos) cells.push([r, c]) }))
+  })
+  return cells
+}
+
+describe('table block: right-click on a handle (YAZ-3801)', () => {
+  it.each(['col', 'row'] as const)('a right-click on the %s handle selects it and opens its menu, not the note menu', async kind => {
+    const view = await mount()
+    mouse('pointermove', cellDOM(view, 1, 1).firstChild!, 1, 1)
+    expect(rightClick(view, kind)).toBe(false)
+    const selection = view.state.selection as CellSelection
+    expect(kind === 'col' ? selection.isColSelection() : selection.isRowSelection()).toBe(true)
+    expect(isOpen(view, kind)).toBe(true)
+    // A second right-click keeps it open (a left click toggles it).
+    rightClick(view, kind)
+    expect(isOpen(view, kind)).toBe(true)
+    expect(menuLabels(view, kind)).toEqual((kind === 'col' ? COL_MENU : ROW_MENU).flatMap((group, i) => i === 0 ? group : ['|', ...group]))
+  })
+
+  it('the header row has no row menu on a right-click either', async () => {
+    const view = await mount()
+    mouse('pointermove', cellDOM(view, 0, 0).firstChild!, 0, 0)
+    expect(rightClick(view, 'row')).toBe(false)
+    expect(isOpen(view, 'row')).toBe(false)
+  })
+
+  it('in a read-only note a right-click on a handle selects nothing and opens no menu', async () => {
+    const view = await mount()
+    mouse('pointermove', cellDOM(view, 1, 1).firstChild!, 1, 1)
+    view.setProps({ editable: () => false })
+    const before = view.state.selection
+    handle(view, 'col').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+    expect(view.state.selection).toBe(before)
+    expect(isOpen(view, 'col')).toBe(false)
+  })
+})
+
+describe('table block: menu labels count the selection (YAZ-3801)', () => {
+  it('a handle click in a selection of whole columns keeps it; outside it, selects the one column', async () => {
+    const view = await mount(WIDE)
+    selectCols(view, 0, 2)
+    openMenu(view, 'col', 1, 1)
+    expect(new Set(selectedRect(view).map(([, c]) => c))).toEqual(new Set([0, 1, 2]))
+    expect(menuLabels(view, 'col')).toEqual([
+      'Insert 3 columns left', 'Insert 3 columns right', '|', 'Align left', 'Align center', 'Align right', '|',
+      'Sort A to Z', 'Sort Z to A', '|', 'Clear 3 columns', 'Delete 3 columns',
+    ])
+    await new Promise(resolve => setTimeout(resolve, 30))
+    openMenu(view, 'col', 1, 3)
+    expect(new Set(selectedRect(view).map(([, c]) => c))).toEqual(new Set([3]))
+    expect(menuLabels(view, 'col')[0]).toBe('Insert column left')
+  })
+
+  it('Shift + click on a handle grows the selection to that column or row', async () => {
+    const view = await mount(WIDE)
+    // The handles follow the pointer once each 20 ms (a throttle).
+    const pause = () => new Promise(resolve => setTimeout(resolve, 30))
+    openMenu(view, 'col', 1, 0)
+    await pause()
+    mouse('pointermove', cellDOM(view, 1, 2).firstChild!, 1, 2)
+    handle(view, 'col').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+    expect(new Set(selectedRect(view).map(([, c]) => c))).toEqual(new Set([0, 1, 2]))
+    expect(menuLabels(view, 'col').at(-1)).toBe('Delete 3 columns')
+    await pause()
+    openMenu(view, 'row', 1, 0)
+    await pause()
+    mouse('pointermove', cellDOM(view, 2, 0).firstChild!, 2, 0)
+    handle(view, 'row').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+    expect(new Set(selectedRect(view).map(([r]) => r))).toEqual(new Set([1, 2]))
+    expect(menuLabels(view, 'row').at(-1)).toBe('Delete 2 rows')
+  })
+
+  // Columns 2 and 3 (h2, h3) selected.
+  it.each([
+    ['Insert 2 columns left', [['h1', '', '', 'h2', 'h3', 'h4'], ['a', '', '', 'b', 'c', 'd']]],
+    ['Insert 2 columns right', [['h1', 'h2', 'h3', '', '', 'h4'], ['a', 'b', 'c', '', '', 'd']]],
+    ['Clear 2 columns', [['h1', '', '', 'h4'], ['a', '', '', 'd']]],
+    ['Delete 2 columns', [['h1', 'h4'], ['a', 'd']]],
+  ])('%s: one transaction, one undo step', async (label, rows) => {
+    const view = await mount(WIDE)
+    const before = view.state.doc.firstChild!
+    selectCols(view, 1, 2)
+    openMenu(view, 'col', 1, 1)
+    expect(choose(view, 'col', label)).toBe(1)
+    expect(rowsOf(view).slice(0, 2)).toEqual(rows)
+    if (label.startsWith('Insert')) expect(new Set(selectedRect(view).map(([, c]) => rowsOf(view)[0]![c]))).toEqual(new Set(['h2', 'h3']))
+    undoesInOne(view, before)
+  })
+
+  it.each([
+    ['Insert 2 rows above', [['h1'], [''], [''], ['a'], ['e'], ['i']]],
+    ['Insert 2 rows below', [['h1'], ['a'], ['e'], [''], [''], ['i']]],
+    ['Duplicate 2 rows', [['h1'], ['a'], ['e'], ['a'], ['e'], ['i']]],
+    ['Clear 2 rows', [['h1'], [''], [''], ['i']]],
+    ['Delete 2 rows', [['h1'], ['i']]],
+  ])('%s: one transaction, one undo step', async (label, rows) => {
+    const view = await mount(WIDE)
+    const before = view.state.doc.firstChild!
+    selectRows(view, 1, 2)
+    openMenu(view, 'row', 2, 0)
+    expect(choose(view, 'row', label)).toBe(1)
+    expect(rowsOf(view).map(row => [row[0]])).toEqual(rows)
+    undoesInOne(view, before)
+  })
+
+  it('the guards stay: never the last column, never every body row', async () => {
+    const view = await mount('| h1 | h2 |\n| --- | --- |\n| a | b |\n| c | d |\n')
+    const button = (kind: 'col' | 'row', label: string) =>
+      Array.from(handle(view, kind).querySelectorAll('button')).find(b => b.textContent === label)!
+    selectCols(view, 0, 1)
+    openMenu(view, 'col', 1, 0)
+    expect(button('col', 'Delete 2 columns').disabled).toBe(true)
+    selectRows(view, 1, 2)
+    openMenu(view, 'row', 1, 0)
+    expect(button('row', 'Delete 2 rows').disabled).toBe(true)
+    expect(choose(view, 'row', 'Delete 2 rows')).toBe(0)
   })
 })

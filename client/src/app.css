@@ -655,17 +655,14 @@ button {
   overflow-x: auto;
 }
 
-/* Column resize (YAZ-3696 D2): the grip at a column edge takes the theme colour (prosemirror-tables
-   draws it light blue). The table block's "+" line sits on the same edge: the line lets the mouse
-   through to the cell, where the grip is, and only its button takes the mouse. */
+/* Column resize (YAZ-3696 D2): the grip at a header cell's edge (YAZ-3800) takes the theme colour
+   (prosemirror-tables draws it light blue). The table block's drop line (it has no "+" button since
+   YAZ-3800) lets the mouse through to the cells. */
 .editor-instance .milkdown .milkdown-table-block .column-resize-handle {
   background-color: var(--crepe-color-primary);
 }
 .editor-instance .milkdown .milkdown-table-block .line-handle {
   pointer-events: none;
-}
-.editor-instance .milkdown .milkdown-table-block .line-handle .add-button {
-  pointer-events: auto;
 }
 
 /* Labeled row and column menus (YAZ-3696 D9): Crepe's strip of icons becomes a column of labeled

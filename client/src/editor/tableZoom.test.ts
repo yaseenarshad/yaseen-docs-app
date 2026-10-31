@@ -53,7 +53,7 @@ function fixture(zoom: number) {
     dragPreviewRef: { value: preview }, tableWrapperRef: { value: wrapper }, contentWrapperRef: { value: content },
     yLineHandleRef: { value: yHandle }, xLineHandleRef: { value: xHandle },
     colHandleRef: { value: document.createElement('div') }, rowHandleRef: { value: document.createElement('div') },
-    hoverIndex: { value: [1, 0] }, lineHoverIndex: { value: [-1, -1] },
+    hoverIndex: { value: [1, 0] },
     dragInfo: { value: { type: 'col', startCoords: [300 + 50 * zoom, 200 + 45 * zoom], startIndex: 0, endIndex: 0 } },
   }
   computePosition.mockClear(); offset.mockClear()
@@ -101,17 +101,17 @@ describe.each([0.5, 1, 1.25, 2])('shipped Milkdown table geometry at zoom %s', z
     expect(refs.dragInfo.value.endIndex).toBe(0)
     expect(offset).toHaveBeenLastCalledWith(-4)
   })
-  it('sizes insertion lines and offsets in layout pixels', async () => {
+  // YAZ-3800 (2D): the "+" insert lines are gone; a pointer at a cell edge shows no line.
+  it('shows no insertion line at a cell edge', async () => {
     const { refs, yHandle, xHandle } = fixture(zoom)
     const pointer = geometry.createPointerMoveHandler(refs, { editable: true })
     pointer({ clientX: 300 + zoom, clientY: 200 + 45 * zoom })
-    await Promise.resolve()
-    expect(yHandle.style.height).toBe('90px')
-    expect(offset).toHaveBeenLastCalledWith(-4)
     pointer({ clientX: 300 + 75 * zoom, clientY: 200 + 31 * zoom })
     await Promise.resolve()
-    expect(xHandle.style.width).toBe('300px')
-    expect(offset).toHaveBeenLastCalledWith(-4)
+    for (const line of [yHandle, xHandle]) {
+      expect(line.dataset.show).toBe('false')
+      expect(line.style.height + line.style.width + line.style.left + line.style.top).toBe('')
+    }
   })
 })
 
