@@ -176,14 +176,16 @@ const addRanges = (
 /**
  * Every change through `mapping`; a change whose textblock is gone (or replaced whole) goes. The CONTENT start is
  * what maps: an attr-only change of the block (`setNodeMarkup`, as the heading-id sync does) re-writes the block's
- * opening token but keeps its content, so the change stays (YAZ-3844).
+ * opening token but keeps its content, so the change stays (YAZ-3844). An edit that starts AT the content start (a
+ * first word replaced, an undo of typing there) only touches it: the change stays, with its glow and its Before
+ * (checker on YAZ-3947); only a range across it goes.
  */
 const mapChanges = (changes: readonly OutsideChange[], mapping: Mapping, doc: ProseNode): OutsideChange[] => {
   const mapped: OutsideChange[] = []
   for (const change of changes) {
     const start = mapping.mapResult(change.pos + 1, -1)
     const pos = start.pos - 1
-    if (start.deletedAfter || pos < 0 || doc.nodeAt(pos)?.isTextblock !== true) continue
+    if (start.deletedAcross || pos < 0 || doc.nodeAt(pos)?.isTextblock !== true) continue
     mapped.push({
       ...change,
       pos,

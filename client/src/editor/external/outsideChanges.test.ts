@@ -219,6 +219,23 @@ describe('the Before hover (YAZ-3947)', () => {
     expect(glowTitles(root)).toEqual(['Before: Leaf tail', 'Before: Leaf tail'])
   })
 
+  it('an edit at the very START of a changed line keeps the change: its glow and its first Before (checker on YAZ-3947)', async () => {
+    const { crepe, root, view, channel } = await mount('* Alpha one\n* Other line\n')
+    outsideEdit(crepe, (md) => md.replace('Alpha one', 'Alpha one X'))
+    outsideEdit(crepe, (md) => md.replace('Alpha one X', 'Beta one X'))
+    expect(channel.getState().count).toBe(1)
+    expect(glowTexts(root)).toContain(' X')
+    expect(glowTitles(root)).toEqual(glowTitles(root).map(() => 'Before: Alpha one'))
+    // An undo of the user's own text at the start of a changed line checks nothing off; nor does a quiet apply there.
+    typeBefore(view, 'Other', 'U-')
+    outsideEdit(crepe, (md) => md.replace('U-Other line', 'U-Other line Y'))
+    undo(view.state, view.dispatch)
+    expect(glowTexts(root)).toContain(' Y')
+    outsideEdit(crepe, (md) => md.replace('Other line Y', 'Mine Other line Y'), true)
+    expect(glowTexts(root)).toContain(' Y')
+    expect(channel.getState().count).toBe(2)
+  })
+
   it('a task tick and a heading level show what they were, and a long line is cut at 200 chars', async () => {
     const long = 'y'.repeat(250)
     const { crepe, root } = await mount(`## Section\n\n- [ ] task one\n- [ ] task two\n\n${long}\n`)
