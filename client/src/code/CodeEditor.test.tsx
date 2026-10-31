@@ -330,7 +330,7 @@ describe('no read-only switch in the file (YAZ-3448)', () => {
     await opened('a\n')
     const chips = [...container.querySelector('.status-chips')!.children].map((chip) => chip.className.split(' ')[0])
     // The text size pill (YAZ-3451) is this tab's own; no cog without a door to the settings.
-    expect(chips).toEqual(['document-zoom', 'sync-indicator', 'save-indicator'])
+    expect(chips).toEqual(['fold-all__trigger', 'document-zoom', 'sync-indicator', 'save-indicator'])
     expect(container.querySelector('.page-settings')).toBeNull()
     expect(container.querySelector('.read-only-chip')).toBeNull()
     type('b\n')
@@ -947,6 +947,21 @@ describe('collapse all and expand all (YAZ-3478)', () => {
     const event = rightClick(editor().input)
     expect(event.defaultPrevented).toBe(false)
     expect(menuItems()).toEqual([])
+  })
+
+  it("YAZ-3938 D4: the fold-all button, first in the chips row: a look names what a click does, with its key; a click runs Monaco's fold all, the next its unfold all", async () => {
+    await focused()
+    const button = container.querySelector<HTMLButtonElement>('.status-chips > .fold-all__trigger')!
+    await act(async () => button.focus())
+    expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+    await act(async () => button.click())
+    expect(editor().triggered).toEqual(['editor.foldAll'])
+    expect([...editor().folded].sort((a, b) => a - b)).toEqual([1, 2, 5])
+    expect(button.getAttribute('aria-label')).toBe('Expand all (⌘⇧I)')
+    await act(async () => button.click())
+    expect(editor().triggered).toEqual(['editor.foldAll', 'editor.unfoldAll'])
+    expect([...editor().folded]).toEqual([])
+    expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
   })
 })
 

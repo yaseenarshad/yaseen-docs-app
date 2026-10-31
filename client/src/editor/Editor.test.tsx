@@ -1601,11 +1601,11 @@ describe('the page settings cog (YAZ-2643)', () => {
     return container
   }
 
-  it('is the first chip of a Markdown note: cog, zoom pill, sync chip, save chip (S1)', async () => {
+  it('is the first chip of a Markdown note after the fold-all button (YAZ-3938): cog, zoom pill, sync chip, save chip (S1)', async () => {
     readFile.mockResolvedValueOnce({ path: PATH, content: BODY, mtime: 1, size: BODY.length })
     await open(PATH, { sync: { root: '/vault', state: 'synced' }, onSyncNow: noop })
     const chips = [...container!.querySelector('.status-chips')!.children].map((chip) => chip.className.split(' ')[0])
-    expect(chips).toEqual(['page-settings', 'document-zoom', 'sync-indicator', 'save-indicator'])
+    expect(chips).toEqual(['fold-all__trigger', 'page-settings', 'document-zoom', 'sync-indicator', 'save-indicator'])
     expect(container!.querySelector('.editor-host')!.contains(container!.querySelector('.page-settings'))).toBe(false)
   })
 
@@ -2152,7 +2152,7 @@ describe('the cog’s "Read only" row, the chip and the "Allow edits?" box on a 
     expect(menuSwitch(el, 'Read only').getAttribute('aria-pressed')).toBe('true')
     expect(askBox(el)).toBeNull()
     expect(readonlyOf()).toBe(true)
-    expect([...el.querySelector('.status-chips')!.children].map((c) => c.className)).toEqual(['page-settings', 'document-zoom', 'read-only-chip', expect.stringContaining('save-indicator')])
+    expect([...el.querySelector('.status-chips')!.children].map((c) => c.className)).toEqual(['fold-all__trigger', 'page-settings', 'document-zoom', 'read-only-chip', expect.stringContaining('save-indicator')])
     // The watcher's echo of the switch carries this editor's mtime: no read, no reload, no bar (S12, S17).
     const reads = readFile.mock.calls.length
     await emit({ type: 'change', path: PATH, mtime: 12 })

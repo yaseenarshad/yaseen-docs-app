@@ -4,8 +4,9 @@
  * one Cmd+Z restores both exact prior sets. Individual chevrons and caret-local folds stay owned by
  * their existing keymaps.
  */
-import type { Command } from '@milkdown/kit/prose/state'
+import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
+import type { FoldNext } from '../FoldAllButton'
 import { rowShortcuts } from '../noteKeys'
 import { addHeadingFoldAllMeta, addHeadingFoldUndoMeta } from './headingFolding'
 import { addOutlineFoldAllMeta, addOutlineFoldUndoMeta } from './outlineFolding'
@@ -13,7 +14,8 @@ import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 const PRIORITY = 100
 
-const setAllDocumentFolds =
+/** The keys' command, and the fold-all button's (YAZ-3938): `true` folds every bullet and heading, `false` opens them. */
+export const setAllDocumentFolds =
   (collapsed: boolean): Command =>
   (state, dispatch) => {
     const transaction = state.tr
@@ -25,6 +27,10 @@ const setAllDocumentFolds =
     dispatch?.(transaction.setMeta(VIEW_ACTION_META, action))
     return true
   }
+
+/** What the fold-all button does now (YAZ-3938 D2): with no dispatch, each command only says if it would change a fold. */
+export const nextDocumentFold = (state: EditorState): FoldNext =>
+  setAllDocumentFolds(true)(state) ? 'collapse' : setAllDocumentFolds(false)(state) ? 'expand' : 'none'
 
 /** Only consumes Cmd+Z when both plugins have a pending undo — the signature of one combined fold. */
 const undoCombinedDocumentFold: Command = (state, dispatch) => {

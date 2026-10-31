@@ -3238,14 +3238,16 @@ body.drag-held iframe {
 .document-zoom__trigger[aria-expanded="true"],
 .document-zoom__step:hover:enabled,
 .page-settings__trigger:hover,
-.page-settings__trigger[aria-expanded="true"] {
+.page-settings__trigger[aria-expanded="true"],
+.fold-all__trigger:hover {
   background: var(--bg-hover);
   color: var(--fg);
 }
 
 .document-zoom__trigger:focus-visible,
 .document-zoom__step:focus-visible,
-.page-settings__trigger:focus-visible {
+.page-settings__trigger:focus-visible,
+.fold-all__trigger:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -3510,7 +3512,9 @@ body.drag-held iframe {
   display: inline-flex;
 }
 
-.page-settings__trigger {
+/* The fold-all button (YAZ-3938 D1) left of the cog, in the cog's look. */
+.page-settings__trigger,
+.fold-all__trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;

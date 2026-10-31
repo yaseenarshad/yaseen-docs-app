@@ -45,14 +45,16 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CodeOutlineSort, type CodeSymbolKind, type PageView, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
-import { HOTKEY_COMMANDS, appKeyId, keyFor, sameKey, toDisplay, type HotkeyId, type HotkeyOverrides, type KeyPress } from '@shared/hotkeyBindings'
-import { keyRow, keysOf, stepsAside, type HotkeyAside } from '@shared/keys'
+import { HOTKEY_COMMANDS, appKeyId, keyFor, sameKey, type HotkeyId, type HotkeyOverrides, type KeyPress } from '@shared/hotkeyBindings'
+import { keyRow, stepsAside, type HotkeyAside } from '@shared/keys'
 import { api, BridgeRequestError } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
 import { stepZoomByKey } from '../editor/DocumentZoom'
+import type { FoldNext } from '../editor/FoldAllButton'
 import { usePageSwitch } from '../editor/usePageSwitch'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
+import { hintOf } from '../lib/keyHint'
 import type { NoticeKind } from '../lib/notice'
 import { registerPageView } from '../lib/pageView'
 import { storage } from '../lib/storage'
@@ -66,6 +68,7 @@ import { keepBackView, takeBackView, trackCodeTab } from './codeOpener'
 import { attachLanguageClient } from './languageClient'
 import { lineBreakOf, withOneLineBreak } from './lineBreak'
 import { applyAppTheme, monaco } from './monaco'
+import { foldingModelOf } from './monacoInternals'
 import { attachMenuLook } from './monacoMenuLook'
 import { monacoThemeName } from './monacoTheme'
 import { CodeOutline, type OutlineEditorLike } from './outline/CodeOutline'
@@ -132,13 +135,6 @@ export function appCommandOf(event: KeyPress, overrides: HotkeyOverrides | undef
     return row !== undefined && stepsAside(row, 'code', aside)
   }
   return HOTKEY_COMMANDS.find((c) => !inCode(c.id) && pressed.some((p) => sameKey(keyFor(c.id, overrides), p)))?.id ?? null
-}
-
-/** A code row's first key as it is now, as a menu writes it ('⌘⇧U'); undefined with no key. */
-const hintOf = (rowId: string): string | undefined => {
-  const row = keyRow(rowId)
-  const key = row === undefined ? undefined : keysOf(row, storage.getSettings()?.hotkeys)[0]
-  return key === undefined ? undefined : key.split(' ').map(toDisplay).join(' ')
 }
 
 const BOM = '\uFEFF'
@@ -232,6 +228,15 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
   /** A menu row: Monaco's own action, so the folds are saved as any fold is (`attachFolds`). */
   const runFold = (action: 'editor.foldAll' | 'editor.unfoldAll'): void => {
     editorRef.current?.trigger('keyboard', action, null)
+  }
+
+  /** What the fold-all chip does now (YAZ-3938 D4): collapse while a block is open, expand once every block is folded. */
+  const readFold = async (): Promise<FoldNext> => {
+    const editor = editorRef.current
+    const folding = editor === null ? null : await foldingModelOf(editor)
+    if (folding == null || folding.regions.length === 0) return 'none'
+    for (let i = 0; i < folding.regions.length; i++) if (!folding.regions.isCollapsed(i)) return 'collapse'
+    return 'expand'
   }
 
   /** The bytes to write: the model's value with its BOM, or the text it held when the tab closed. */
@@ -477,6 +482,13 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
               editorRef.current?.focus()
             }}
             onCancel={() => setAskingUnlock(false)}
+            fold={{
+              read: readFold,
+              run: (collapse) => {
+                runFold(collapse ? 'editor.foldAll' : 'editor.unfoldAll')
+                editorRef.current?.focus()
+              },
+            }}
           />
         }
       />
