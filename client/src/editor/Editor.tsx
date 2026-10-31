@@ -17,6 +17,7 @@ import { redrawLinkPills } from './markdownLink'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { createCrepe, editorViewOf, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, setMarkdown, zoomPageTo } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
+import { mergeExternalMarkdown } from './external/mergeExternal'
 import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
 import { TableOfContents } from './toc/TableOfContents'
@@ -549,7 +550,7 @@ function CrepeHost({
     if (always || now !== from) reportZoom(now, true, getZoomLabelOf(crepe), from)
   }, [reportZoom])
   const autosave = useAutosave(file.path)
-  const { attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts } = autosave
+  const { attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused } = autosave
   // The user's own edit keeps a preview tab (YAZ-2648 D2), and the signal is the note turning
   // UNSAVED, never `onMarkdownUpdated`: that fires for a silent reload of an outside change too.
   // The autosave turns unsaved only when the editor's text differs from what it last read or
@@ -803,11 +804,12 @@ function CrepeHost({
     // scroll ride ProseMirror's position mapping instead of being rebuilt from scratch. Only a
     // whole-document rewrite falls back to `setMarkdown`, whose key-based reseed is the better
     // answer once mapping has nothing left to map.
-    const reload = async () => {
+    // `quiet`: the bytes are the user's own typing from a copy of this tab (YAZ-3704), so the change list is not told.
+    const reload = async (quiet = false) => {
       const fresh = await api.readFile(file.path)
       if (cancelled) return
       const split = splitFrontmatter(fresh.content)
-      applyExternalMarkdown(crepe, split.body)
+      applyExternalMarkdown(crepe, split.body, quiet)
       // A rebuild makes new plugin views, so the zoom's settle timer is gone: a bullet the rewrite removed is told here (YAZ-3676 F3).
       tellRealZoom(crepe, zoomKeyRef.current ?? null)
       markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter, split.body)
@@ -816,9 +818,10 @@ function CrepeHost({
     }
     reloadRef.current = () => void reload()
 
-    // A change of this file on disk: from the watcher, or at once from a copy of this tab that
-    // saved (YAZ-2940 D4, S23 — `twinEditors.ts`). The echo check skips this editor's own save.
-    const onDiskChange = (mtime: number) => {
+    // A change of this file on disk: from the watcher, at once from a copy of this tab that saved
+    // (YAZ-2940 D4, S23 — `twinEditors.ts`; `quiet`, it is the user's own typing), or from a save of
+    // this editor that the disk refused (YAZ-3704 D1). The echo check skips this editor's own save.
+    const onDiskChange = (mtime: number, quiet = false) => {
       if (controller === null) return
       const c = controller
       // On slow filesystems (e.g. NFS vaults) the watcher event for our own write can arrive
@@ -831,6 +834,8 @@ function CrepeHost({
         // silently so unsaved body edits and the caret survive (GRO-2186).
         const fresh = await api.readFile(file.path)
         if (cancelled) return
+        // The same write can be reported twice (the watcher AND a refused save): the first one landed it.
+        if (fresh.mtime === c.mtime) return
         if (absorbFrontmatterOnly(fresh.content, fresh.mtime)) {
           setDisk(fresh.content) // the body is untouched; the panel still has to see the new properties
           diskLanded()
@@ -839,14 +844,23 @@ function CrepeHost({
         // The listener plugin debounces markdownUpdated by 200ms, so pull the live content
         // before deciding whether in-progress typing would be lost by a silent reload.
         c.update(getMarkdownForSave(crepe))
-        if (c.dirty) reportConflict(mtime)
-        else void reload()
+        if (!c.dirty) return void reload(quiet)
+        // Unsaved typing (YAZ-3704 D1): merge the outside edit over it. The bar only when it cannot be
+        // placed (D2), and then nothing changed. A merge makes the new file the baseline, so the merged
+        // note differs from it and the autosave writes it 500 ms later, against the new mtime.
+        const split = splitFrontmatter(fresh.content)
+        if (mergeExternalMarkdown(crepe, diskParts().body, split.body, quiet) === 'conflict') return reportConflict(mtime)
+        markReloaded(() => split.body, fresh.mtime, split.frontmatter, split.body)
+        c.update(getMarkdownForSave(crepe))
+        setDisk(fresh.content)
+        diskLanded()
       })
     }
     const unsubscribe = watch.subscribe((ev) => {
       if (ev.type === 'change' && ev.path === file.path) onDiskChange(ev.mtime)
     })
-    const offTwin = onTwinSave(file.path, onDiskChange)
+    const offTwin = onTwinSave(file.path, (mtime) => onDiskChange(mtime, true))
+    const offRefused = onSaveRefused((mtime) => onDiskChange(mtime))
 
     return () => {
       cancelled = true
@@ -854,9 +868,10 @@ function CrepeHost({
       offPageView?.()
       unsubscribe()
       offTwin()
+      offRefused()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel, linkHover, reportZoom, tellRealZoom])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel, linkHover, reportZoom, tellRealZoom])
 
   /**
    * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1): pending typing saves first
