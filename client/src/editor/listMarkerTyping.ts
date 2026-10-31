@@ -24,8 +24,8 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { canJoin, findWrapping } from '@milkdown/kit/prose/transform'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 
-/** The whole text before the caret: `n.` (a number) or `*` / `-` / `+` (a bullet). */
-const MARKER = /^(?:(\d+)\.|[-*+])$/
+/** The whole text before the caret: `n.` (a number of 1 to 9 digits, as CommonMark reads it) or `*` / `-` / `+` (a bullet). */
+const MARKER = /^(?:(\d{1,9})\.|[-*+])$/
 
 const typingKey = new PluginKey<boolean>('YAZ_LIST_MARKER_TYPING')
 

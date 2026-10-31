@@ -132,6 +132,28 @@ describe('alignNestedIndent (YAZ-3727 D1)', () => {
     )
   })
 
+  it('after a blank line, text indented past an item\'s marker belongs to that item (a loose list)', () => {
+    expect(alignNestedIndent('10. ten\n\n   Para\n   * child\n')).toBe('10. ten\n\n    Para\n    * child\n')
+    expect(alignNestedIndent('9. nine\n\n   Para of nine\n\n10. ten\n\n   Para of ten\n')).toBe('9. nine\n\n   Para of nine\n\n10. ten\n\n    Para of ten\n')
+    // A heading and a quote take the same rule; past the text column a line keeps its distance from it.
+    expect(alignNestedIndent('10. a\n\n   # H\n\n   > q\n')).toBe('10. a\n\n    # H\n\n    > q\n')
+    expect(alignNestedIndent('10. a\n   * kid\n\n       two past\n')).toBe('10. a\n    * kid\n\n        two past\n')
+    // The next lines of a text line let in at 3 spaces go with it: a table's rows, a paragraph's lines. A line further left stays.
+    expect(alignNestedIndent('10. x\n\n   | a |\n   | - |\n   | 1 |\n')).toBe('10. x\n\n    | a |\n    | - |\n    | 1 |\n')
+    expect(alignNestedIndent('10. x\n\n   one\n   two\nlazy\n   * kid\n')).toBe('10. x\n\n    one\n    two\nlazy\n    * kid\n')
+  })
+
+  it('after a blank line, a line 4 or more columns past its item\'s text column is indented code: it opens no level', () => {
+    expect(alignNestedIndent('1. one\n\n       - code line\n')).toBe('1. one\n\n       - code line\n')
+    // The code goes on while the indent holds; it moves with its item, so it stays code.
+    expect(alignNestedIndent('10. ten\n   1. one\n\n          - code\n          - more\n   2. two\n')).toBe(
+      '10. ten\n    1. one\n\n           - code\n           - more\n    2. two\n',
+    )
+    expect(alignNestedIndent('para\n\n    - top code\n')).toBe('para\n\n    - top code\n')
+    // No blank line: not code, a too-deep line nests.
+    expect(alignNestedIndent('1. one\n       - deep\n')).toBe('1. one\n   - deep\n')
+  })
+
   it('a blank line and a paragraph end the list; a fence inside an item keeps its bytes', () => {
     expect(alignNestedIndent('1. one\n   * kid\n\nPlain paragraph\n')).toBe('1. one\n   * kid\n\nPlain paragraph\n')
     expect(alignNestedIndent('* a\n  ```\n  * code\n  ```\n* b\n')).toBe('* a\n  ```\n  * code\n  ```\n* b\n')

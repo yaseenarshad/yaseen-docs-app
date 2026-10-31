@@ -5,12 +5,13 @@
  *
  * Replaces Milkdown's `syncListOrderPlugin` (removed in `createCrepe()`). That plugin fixed items in numbered lists
  * only, skipped every transaction with metadata (a paste, a drop) or `addToHistory: false`, and walked the WHOLE note
- * on each change: median 19.3 ms, p95 184.8 ms per keystroke at 6,000 lines in jsdom (B4). This one runs after every
- * document change and visits only the lists around or inside the ranges the change wrote: each list that holds an end
- * of a range (the ancestor walk, so an insert at the top of a long list relabels the items after it) and each list
- * inside one. It sets each item's `listType` and `label` from its list: `ordered` and `${index + order}.`, or `bullet`
- * and `•`. Only the items whose attrs differ get a `setNodeMarkup`, in one appended transaction that stays out of the
- * undo history.
+ * on each change: median 19.3 ms, p95 184.8 ms per keystroke at 6,000 lines in jsdom (B4; `listMarkers.perf.test.ts`
+ * holds this plugin's budget). This one runs after every document change and visits only the lists around or inside
+ * the ranges the change wrote: each list that holds an end of a range (the ancestor walk, so an insert at the top of a
+ * long list relabels the items after it) and each list inside one. A change whose every step writes inside one
+ * textblock, in the document before the step and after it (typing), returns at once: it moves no item. It sets each
+ * item's `listType` and `label` from its list: `ordered` and `${index + order}.`, or `bullet` and `•`. Only the items
+ * whose attrs differ get a `setNodeMarkup`, in one appended transaction that stays out of the undo history.
  *
  * Milkdown's plugin also turned a `bullet_list` whose FIRST item had `listType: 'ordered'` into an `ordered_list`.
  * That branch is gone: the item follows its list, never the reverse.
@@ -23,12 +24,31 @@ import { LIST_NODE_NAMES } from './listNodes'
 
 export const listMarkersKey = new PluginKey('YAZ_LIST_MARKERS')
 
+const inOneTextblock = (doc: Node, from: number, to: number): boolean => {
+  const $from = doc.resolve(from)
+  return $from.parent.isTextblock && $from.sameParent(doc.resolve(to))
+}
+
 export const listMarkers = $prose(
   (ctx) =>
     new Plugin({
       key: listMarkersKey,
       appendTransaction: (transactions, _oldState, state) => {
         if (!transactions.some((tr) => tr.docChanged)) return null
+        // Typing (YAZ-3855): a step whose ranges sit inside one textblock, before AND after it, moves no item, so it
+        // changes no label. Both sides: a join deletes across two items, yet lands inside one textblock.
+        const typing = transactions.every((tr) =>
+          tr.steps.every((step, i) => {
+            const before = tr.docs[i]
+            const after = tr.docs[i + 1] ?? tr.doc
+            let inside = true
+            step.getMap().forEach((oldFrom, oldTo, from, to) => {
+              inside &&= inOneTextblock(before, oldFrom, oldTo) && inOneTextblock(after, from, to)
+            })
+            return inside
+          }),
+        )
+        if (typing) return null
         const itemType = listItemSchema.type(ctx)
         const orderedType = orderedListSchema.type(ctx)
         // The ranges the change wrote, mapped forward to the new document.

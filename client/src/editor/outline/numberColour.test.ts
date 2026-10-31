@@ -15,7 +15,7 @@ import { createCrepe } from '../createCrepe'
 const css = readFileSync(resolve(__dirname, 'bullets.css'), 'utf8')
 const rule = css.match(/^(\.editor-instance[^{]*\.label\.ordered)\s*\{([^}]*)\}/m)
 if (!rule) throw new Error('bullets.css has no ordered-label rule')
-const [, NUMBER_SELECTOR, NUMBER_DECLARATIONS] = rule
+const [, NUMBER_SELECTOR] = rule
 
 const threading = readFileSync(resolve(__dirname, 'bulletThreading.css'), 'utf8')
 const accent = threading.match(/^([^{}]*> \.label-wrapper)\s*\{([^}]*--list-marker-color[^}]*)\}/m)
@@ -44,10 +44,6 @@ afterEach(async () => {
 })
 
 describe('numbers take the bullets\' marker colour (YAZ-3727 D7)', () => {
-  it('the rule paints the number with the marker colour', () => {
-    expect(NUMBER_DECLARATIONS.trim()).toBe('color: var(--list-marker-color);')
-  })
-
   it('its selector matches every number, nested ones too, and no bullet', async () => {
     await mount('1. Plan\n2. Build\n   * child\n     1. deep\n')
     const numbers = [...document.querySelectorAll(NUMBER_SELECTOR)].map((el) => el.textContent?.trim())

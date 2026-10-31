@@ -116,6 +116,19 @@ describe('typing a marker on a plain line starts a list line (YAZ-3727 D8)', () 
     expect(saved(crepe)).toBe('* a / * c')
   })
 
+  it('a number of 10 or more digits stays text, as CommonMark reloads it; 9 digits converts', async () => {
+    const long = await mount('para\n', 'para')
+    press(long.view, 'Enter')
+    type(long.view, '1234567890. hello')
+    expect(caretLine(long.view)).toBe('paragraph')
+    // remark escapes the dot: the reload reads text, as the screen shows.
+    expect(saved(long.crepe)).toBe('para /  / 1234567890\\. hello')
+    const nine = await mount('para\n', 'para')
+    press(nine.view, 'Enter')
+    type(nine.view, '123456789. ')
+    expect(caretLine(nine.view)).toBe('ordered_list from 123456789')
+  })
+
   it('in a quote "1. " makes a numbered line inside the quote', async () => {
     const { crepe, view } = await mount('> q\n', 'q')
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from - 1)))

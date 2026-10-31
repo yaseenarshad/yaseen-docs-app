@@ -93,10 +93,15 @@ export function externalNumberedHTML(html: string): HTMLTemplateElement | null {
   return template.content.querySelector('ol, [data-pm-slice]') ? template : null
 }
 
+/** CSS `list-style-type` as an `<ol>` type: Google Docs and Word set letters and roman numerals this way, not with `type`. */
+const CSS_LIST_TYPES: Record<string, string> = { 'lower-alpha': 'a', 'lower-latin': 'a', 'upper-alpha': 'A', 'upper-latin': 'A', 'lower-roman': 'i', 'upper-roman': 'I' }
+/** No inline `list-style-type`, or `decimal`. */
+const decimalStyle = (element: HTMLElement): boolean => /^(decimal)?$/.test(element.style.listStyleType)
+
 /**
  * Keep inline formatting and nested blocks, replacing only external ordered-list markers. Where the editor
- * `holdsNumbers`, a plain decimal `<ol>` (no `reversed`, no item `value`, type `1` or none) stays a list and pastes as
- * real numbers from its `start` (YAZ-3727 D6).
+ * `holdsNumbers`, a plain decimal `<ol>` (no `reversed`, no item `value`, type `1` or none, no inline `list-style-type`
+ * but `decimal` on it or its items) stays a list and pastes as real numbers from its `start` (YAZ-3727 D6).
  */
 export function literalNumberedHTML(html: string, keepPlain: boolean): string {
   const template = externalNumberedHTML(html)
@@ -106,11 +111,11 @@ export function literalNumberedHTML(html: string, keepPlain: boolean): string {
   // Prefix parents before converting children, so empty parent labels stay separate.
   for (const list of template.content.querySelectorAll('ol')) {
     const items = [...list.children].filter((child): child is HTMLLIElement => child.tagName === 'LI')
-    if (keepPlain && !list.reversed && /^1?$/.test(list.type) && items.every((item) => !item.hasAttribute('value') && /^1?$/.test(item.type))) continue
+    if (keepPlain && !list.reversed && /^1?$/.test(list.type) && decimalStyle(list) && items.every((item) => !item.hasAttribute('value') && /^1?$/.test(item.type) && decimalStyle(item))) continue
     let number = list.hasAttribute('start') ? list.start : list.reversed ? items.length : 1
     for (const item of items) {
       if (item.hasAttribute('value')) number = item.value
-      const type = /^[1aAiI]$/.test(item.type) ? item.type : list.type
+      const type = /^[1aAiI]$/.test(item.type) ? item.type : (CSS_LIST_TYPES[item.style.listStyleType || list.style.listStyleType] ?? list.type)
       prependLabel(item, `${ordinalLabel(number, type)}. `)
       number += list.reversed ? -1 : 1
       const block = document.createElement('div')

@@ -26,7 +26,10 @@ export function childListState(doc: Node, inside: number): 'bullet' | 'ordered' 
   return first === null ? null : first.list.type.name === 'bullet_list' ? 'bullet' : 'ordered'
 }
 
-/** Flip every direct child list of the enclosing list_item. Grandchildren untouched. One transaction. Never touches text. */
+/**
+ * Flip every direct child list of the enclosing list_item. Grandchildren untouched. One transaction. Never touches text.
+ * Each item's `listType` and `label` follow on dispatch: `listMarkers` sets them from the new list (YAZ-3727 D2).
+ */
 export function toggleNumberedChildren(state: EditorState, inside: number, ctx: Ctx): Transaction | null {
   const item = nearestListItem(state.doc, inside)
   if (!item) return null
@@ -42,13 +45,6 @@ export function toggleNumberedChildren(state: EditorState, inside: number, ctx: 
       toOrdered ? orderedListSchema.type(ctx) : bulletListSchema.type(ctx),
       toOrdered ? { order: 1, spread: list.attrs.spread } : { spread: list.attrs.spread },
     )
-    list.forEach((li, liOffset, i) => {
-      tr.setNodeMarkup(listPos + 1 + liOffset, undefined, {
-        ...li.attrs,
-        listType: toOrdered ? 'ordered' : 'bullet',
-        label: toOrdered ? `${i + 1}.` : '•',
-      })
-    })
   }
   return tr
 }

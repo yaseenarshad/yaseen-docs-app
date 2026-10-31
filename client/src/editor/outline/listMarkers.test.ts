@@ -122,6 +122,24 @@ describe('listMarkers: the marker follows its list (YAZ-3727 D2)', () => {
     expect(labels.every((line, i) => line.endsWith(` ordered ${i + 1}.`))).toBe(true)
   })
 
+  it('typing skips the walk (YAZ-3855), but a structural change in a long flat list still relabels: Enter, a join, a delete', async () => {
+    const { crepe, view } = await mount(`${Array.from({ length: 500 }, (_, i) => `${i + 1}. item ${i}`).join('\n')}\n`)
+    const numbered = () => markers(crepe).every((line, i) => line.endsWith(` ordered ${i + 1}.`))
+    select(crepe, endOf(crepe, 'item 0'))
+    expect(press(crepe, 'Enter')).toBe(true)
+    expect(markers(crepe)).toHaveLength(501)
+    expect(numbered()).toBe(true)
+    // A join writes into one textblock in the new document, but its deleted range in the old one spans two items.
+    view.dispatch(view.state.tr.delete(endOf(crepe, 'item 1'), posOf(crepe, 'item 2')))
+    expect(markers(crepe)[2]).toBe('item 1item 2: ordered 3.')
+    expect(markers(crepe)).toHaveLength(500)
+    expect(numbered()).toBe(true)
+    const pos = itemPos(crepe, 'item 3')
+    view.dispatch(view.state.tr.delete(pos, pos + view.state.doc.nodeAt(pos)!.nodeSize))
+    expect(markers(crepe)).toHaveLength(499)
+    expect(numbered()).toBe(true)
+  })
+
   it('a text edit inside a list with right labels appends nothing', async () => {
     const { crepe, view } = await mount('* a\n  1. one\n  2. two\n')
     const before = view.state

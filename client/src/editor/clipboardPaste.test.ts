@@ -142,6 +142,22 @@ describe('pasted numbers: a plain run is a real list (YAZ-3727 D6), any other la
       expect(textOf(view)).toBe(expected)
     },
   )
+  it.each([
+    ['<ol style="list-style-type:lower-alpha"><li>first</li><li>second</li></ol>', 'a. first\nb. second'],
+    // Google Docs sets the style on each <li>.
+    ['<ol style="margin-top:0"><li dir="ltr" style="list-style-type:upper-roman;font-size:11pt">first</li><li style="list-style-type:upper-roman">second</li></ol>', 'I. first\nII. second'],
+    ['<ol style="list-style-type:lower-greek"><li>first</li><li>second</li></ol>', '1. first\n2. second'],
+  ])('a CSS list-style-type other than decimal (Google Docs, Word) keeps the labels as text: %s', async (html, expected) => {
+    const { view } = await mount()
+    pasteHtml(view, html)
+    expectNoNumberedLists(view)
+    expect(textOf(view)).toBe(expected)
+  })
+  it('a CSS list-style-type of decimal is still a plain <ol>: real numbers (D6)', async () => {
+    const { view } = await mount()
+    pasteHtml(view, '<ol style="list-style-type:decimal"><li style="list-style-type:decimal">Plan</li><li>Build</li></ol>', 'Plan\nBuild')
+    expect(numberedLists(view)).toEqual(['1: Plan, Build'])
+  })
   it('preserves nested bullets, paragraphs and code around external numbered items', async () => {
     const { view } = await mount()
     pasteHtml(view, '<ul><li><p>parent</p><ol><li><p>child</p><ul><li>bullet</li></ul><p>continuation</p></li><li value="2">next</li></ol></li></ul><pre><code>1. literal\n2. code</code></pre>')

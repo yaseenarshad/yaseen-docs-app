@@ -65,6 +65,14 @@ describe('toggleNumberedChildren', () => {
     flip(view, ctx, 'Fundamentals')
     expect(getMarkdownForSave(crepe)).toBe('* Fundamentals\n  1. Setup\n     * deep\n  2. VS Code\n')
     expect(childListState(view.state.doc, insideOf(view, 'Fundamentals'))).toBe('ordered')
+    // What Crepe draws: `listMarkers` sets each item's attrs from its new list on dispatch (YAZ-3727 D2).
+    const drawn = (text: string) => {
+      const item = view.state.doc.nodeAt(insideOf(view, text))!
+      return `${item.attrs.listType as string} ${item.attrs.label as string}`
+    }
+    expect(['Setup', 'deep', 'VS Code'].map(drawn)).toEqual(['ordered 1.', 'bullet •', 'ordered 2.'])
+    flip(view, ctx, 'Fundamentals')
+    expect(['Setup', 'deep', 'VS Code'].map(drawn)).toEqual(['bullet •', 'bullet •', 'bullet •'])
   })
 
   it('toggles back to the original markdown', async () => {

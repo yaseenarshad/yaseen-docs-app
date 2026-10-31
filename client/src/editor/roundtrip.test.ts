@@ -282,6 +282,25 @@ describe('list depth from indentation (YAZ-3727 D1)', () => {
     { shape: 'a heading right under the list closes it', file: '10. a\n# H\n  * x\n', saved: '10. a\n\n# H\n\n* x\n' },
     { shape: 'a fence right under the list closes it', file: '10. a\n```\ncode\n```\n  * x\n', saved: '10. a\n\n```\ncode\n```\n\n* x\n' },
     { shape: 'a CRLF file', file: '9. a\r\n   * k\r\n10. b\r\n   * k2\r\n', saved: '9. a\n   * k\n10. b\n    * k2\n' },
+    { shape: 'a loose list: a paragraph and a child under 10.', file: '10. ten\n\n   Para\n   * child\n', saved: '10. ten\n\n    Para\n\n    * child\n' },
+    {
+      shape: 'a loose list: a paragraph under 9. and under 10.',
+      file: '9. nine\n\n   Para of nine\n\n10. ten\n\n   Para of ten\n',
+      saved: '9. nine\n\n   Para of nine\n\n10. ten\n\n    Para of ten\n',
+    },
+    // Milkdown writes every code block as a fence: the line stays code, in item 1.
+    { shape: 'indented code after a blank line in an item', file: '1. one\n\n       - code line\n', saved: '1. one\n\n   ```\n   - code line\n   ```\n' },
+    { shape: 'a table in an empty bullet (`*` + the indented table, YAZ-3696 D12)', file: '*\n  | a | b |\n  | - | - |\n  | 1 | 2 |\n', saved: '*\n  | a | b |\n  | - | - |\n  | 1 | 2 |\n' },
+    {
+      shape: 'a table under 10. at its text column',
+      file: '10. x\n    | a | b |\n    | - | - |\n    | 1 | 2 |\n11. y\n',
+      saved: '10. x\n    | a | b |\n    | - | - |\n    | 1 | 2 |\n11. y\n',
+    },
+    {
+      shape: 'a table under 10. at 3 spaces after a blank line',
+      file: '10. x\n\n   | a | b |\n   | - | - |\n   | 1 | 2 |\n',
+      saved: '10. x\n\n    | a | b |\n    | - | - |\n    | 1 | 2 |\n',
+    },
   ])('$shape: nests and saves canonical', async ({ file, saved }) => {
     expect(await roundTrip(file)).toBe(saved)
     expect(await roundTrip(saved)).toBe(saved)
