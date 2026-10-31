@@ -3,12 +3,13 @@
  * vault's `.obsidian/hotkeys.json` + obsidian-toggle-list / obsidian-outliner settings:
  *
  *  - `Mod-Enter`   cycle the list item(s) under the selection: bullet → `[ ]` → `[x]` → bullet.
- *                  Each item cycles from its OWN state (Obsidian toggle-list); only items whose
- *                  first block touches the selection change, so a parent whose text sits above the
- *                  selection stays as it is. Hidden items (a folded item's kids) keep their state
- *                  (YAZ-3209). A paragraph or a heading outside a bullet has no task state:
- *                  the key strikes the whole line through (`~~` in the file), and a line that is
- *                  all struck loses it (YAZ-3797). Empty lines, a bullet's later paragraphs and
+ *                  The selection moves as ONE group (YAZ-3799): every line goes to the step after
+ *                  the line furthest behind, so a mixed selection never ends up out of step. Only
+ *                  items whose first block touches the selection change, so a parent whose text
+ *                  sits above the selection stays as it is. Hidden items (a folded item's kids)
+ *                  keep their state (YAZ-3209). A paragraph or a heading outside a bullet has no
+ *                  task state: it counts as a task, not done (plain) or done (struck through, `~~`
+ *                  in the file), and never needs the task step (YAZ-3797). Empty lines, a bullet's later paragraphs and
  *                  table cells are left alone, so in a table the key falls through (Crepe's
  *                  `Mod-Enter` = exit table; CodeMirror's = exit code block is untouched).
  *  - `Mod-Shift-u` / `Mod-Shift-i` are coordinated across bullets + headings by foldAllHotkeys.ts.
@@ -40,8 +41,8 @@ const PRIORITY = 100
 
 type Checked = boolean | null
 
-/** bullet → unchecked task → checked task → bullet */
-const nextChecked = (checked: Checked): Checked => (checked === null ? false : checked === false ? true : null)
+/** The cycle's steps, in order: bullet (`null`) → unchecked task → checked task → bullet. */
+const STEPS: Checked[] = [null, false, true]
 
 /**
  * Positions of the list_items whose FIRST block overlaps the covered lines (document order;
@@ -94,18 +95,22 @@ const cycleTaskCommand = (itemType: NodeType, strike: MarkType): Command => (sta
   const lines = selectedFreeLines(state)
   if (positions.length === 0 && lines.length === 0) return false
   if (dispatch) {
+    // Each line's step: an item's own; a free line is a task, done when struck (YAZ-3799).
+    const stepOf = (item: Node): number => STEPS.indexOf(typeof item.attrs.checked === 'boolean' ? item.attrs.checked : null)
+    const steps = [
+      ...positions.map((pos) => stepOf(state.doc.nodeAt(pos)!)),
+      ...lines.map((pos) => (allStruck(state.doc.nodeAt(pos)!, strike) ? 2 : 1)),
+    ]
+    const target = (Math.min(...steps) + 1) % STEPS.length
     const tr = state.tr
     for (const pos of lines) {
-      const block = state.doc.nodeAt(pos)
-      if (!block) continue
-      if (allStruck(block, strike)) tr.removeMark(pos + 1, pos + block.nodeSize - 1, strike)
-      else tr.addMark(pos + 1, pos + block.nodeSize - 1, strike.create())
+      const block = state.doc.nodeAt(pos)!
+      if (target === 2) tr.addMark(pos + 1, pos + block.nodeSize - 1, strike.create())
+      else tr.removeMark(pos + 1, pos + block.nodeSize - 1, strike)
     }
     for (const pos of positions) {
-      const item = state.doc.nodeAt(pos)
-      if (!item) continue
-      const checked: Checked = typeof item.attrs.checked === 'boolean' ? item.attrs.checked : null
-      tr.setNodeMarkup(pos, undefined, { ...item.attrs, checked: nextChecked(checked) })
+      const item = state.doc.nodeAt(pos)!
+      tr.setNodeMarkup(pos, undefined, { ...item.attrs, checked: STEPS[target] })
     }
     dispatch(tr.scrollIntoView())
   }

@@ -122,11 +122,15 @@ describe('Mod-Enter (task cycle)', () => {
     expect(md(crepe)).toBe('* done\n* [x] open\n* [ ]\n')
   })
 
-  it('cycles each item of a multi-item selection independently; the parent above the selection is untouched', async () => {
+  it('a selection moves as one group, to the step after the line furthest behind; the parent above the selection is untouched (YAZ-3799)', async () => {
     const { crepe } = await mount('* [ ] L1 a\n  * L2 a\n    * [x] L3 a\n  * L2 b\n* L1 b\n')
     select(crepe, posOf(crepe, 'L2 a', 1), posOf(crepe, 'L2 b', 2))
     expect(press(crepe, 'Mod-Enter')).toBe(true)
-    expect(md(crepe)).toBe('* [ ] L1 a\n  * [ ] L2 a\n    * L3 a\n  * [ ] L2 b\n* L1 b\n')
+    expect(md(crepe)).toBe('* [ ] L1 a\n  * [ ] L2 a\n    * [ ] L3 a\n  * [ ] L2 b\n* L1 b\n')
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toBe('* [ ] L1 a\n  * [x] L2 a\n    * [x] L3 a\n  * [x] L2 b\n* L1 b\n')
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toBe('* [ ] L1 a\n  * L2 a\n    * L3 a\n  * L2 b\n* L1 b\n')
   })
 
 })
@@ -166,11 +170,24 @@ describe('Mod-Enter on a line outside a bullet: strike the line (YAZ-3797)', () 
     expect(md(crepe)).toBe('one two three\n')
   })
 
-  it('each line changes from its own state; a bullet in the same selection still cycles', async () => {
+  it('plain bullets and text lines: the bullets become tasks, then everything is done together, then all back (YAZ-3799)', async () => {
     const { crepe } = await mount('first\n\n~~second~~\n\n* item\n')
     select(crepe, posOf(crepe, 'first', 1), posOf(crepe, 'item', 2))
     expect(press(crepe, 'Mod-Enter')).toBe(true)
-    expect(md(crepe)).toBe('~~first~~\n\nsecond\n\n* [ ] item\n')
+    expect(md(crepe)).toBe('first\n\nsecond\n\n* [ ] item\n')
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toBe('~~first~~\n\n~~second~~\n\n* [x] item\n')
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toBe('first\n\nsecond\n\n* item\n')
+  })
+
+  it('tasks and text lines: one press makes everything done (YAZ-3799)', async () => {
+    const { crepe } = await mount('## Plan\n\n* [ ] one\n* [x] two\n')
+    select(crepe, posOf(crepe, 'Plan', 1), posOf(crepe, 'two', 2))
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toBe('## ~~Plan~~\n\n* [x] one\n* [x] two\n')
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toBe('## Plan\n\n* one\n* two\n')
   })
 
   it('a second paragraph inside a bullet does not change', async () => {
