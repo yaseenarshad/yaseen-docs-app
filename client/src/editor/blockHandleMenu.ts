@@ -60,6 +60,8 @@ export interface MenuNumberField {
   presets: number[]
   /** The current default: the first item reads "Default (<n><unit>)" and picks null. */
   fallback: number
+  /** True when the default value means nothing of its own (a table's `1px` saves no part): the presets leave it out, so the list holds it once (YAZ-3791). */
+  defaultOnce?: boolean
   min: number
   max: number
   /** What a bad value shows, e.g. "Use a whole number from 5–100%." */
@@ -84,6 +86,8 @@ export interface MenuChoiceField {
   choices: MenuChoice[]
   /** The current default choice's value: the first item reads "Default (<its label>)" with its sample, and picks null. */
   fallback: string
+  /** True when the default choice means nothing of its own (a table's `Shaded` saves no part): the list leaves it out after "Default (…)" (YAZ-3791). */
+  defaultOnce?: boolean
   /** A new value only (null: the "Default" item): the current value never runs. */
   run: (value: string | null) => void
 }
@@ -196,7 +200,7 @@ function numberPanel(field: MenuNumberField, id: string, close: () => void): { p
   custom.appendChild(input)
   const presets = [
     optionButton(defaultLabel(field), field.value === null, () => apply(null)),
-    ...field.presets.map((preset) => optionButton(`${preset}${field.unit}`, preset === field.value, () => apply(preset))),
+    ...field.presets.filter((preset) => !field.defaultOnce || preset !== field.fallback).map((preset) => optionButton(`${preset}${field.unit}`, preset === field.value, () => apply(preset))),
   ]
   return { parts: [custom, divider(), optionList(`${field.label} presets`, presets)], box: input }
 }
@@ -210,7 +214,7 @@ function choicePanel(field: MenuChoiceField, close: () => void): HTMLElement[] {
   const fallback = field.choices.find((c) => c.value === field.fallback)
   const buttons = [
     optionButton(defaultLabel(field), field.value === null, pick(null), fallback?.sample),
-    ...field.choices.map((choice) => optionButton(choice.label, choice.value === field.value, pick(choice.value), choice.sample)),
+    ...field.choices.filter((choice) => !field.defaultOnce || choice.value !== field.fallback).map((choice) => optionButton(choice.label, choice.value === field.value, pick(choice.value), choice.sample)),
   ]
   return [optionList(`${field.label} choices`, buttons)]
 }
