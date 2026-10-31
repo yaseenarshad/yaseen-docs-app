@@ -9,6 +9,11 @@
  * from outside would make ProseMirror redraw the line. A widget (an ID link's title, a vault name) takes no decoration,
  * so its class is set on its DOM after each update, only in the textblocks the selection touches: ProseMirror ignores a
  * class change on a widget, and keeps a widget's DOM while its key is the same.
+ *
+ * The lit box is as tall as the browser's selection, which fills the line: `wikilink.css` pads it by half the line's
+ * leading, and the leading needs the height of the font's letters. The first selection that lights a pill measures
+ * that height once, as a part of the font size (`--pill-letters` on the editor's root); before that, and in a test's
+ * DOM, the CSS uses the system font's 1.19.
  */
 import { AllSelection, Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
@@ -55,6 +60,18 @@ function selectedWidgets(view: EditorView): Set<Element> {
   return out
 }
 
+/** Measures a lit pill's letters (its box without the padding) as a part of its font size; true once it has. */
+function measureLetters(view: EditorView): boolean {
+  const sample = view.dom.querySelector(`.${WIKILINK_CLASS}.${PILL_SELECTED_CLASS}`)
+  if (!(sample instanceof HTMLElement)) return false
+  const style = getComputedStyle(sample)
+  const font = parseFloat(style.fontSize)
+  const letters = sample.getBoundingClientRect().height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+  if (!(font > 0 && letters > 0)) return false
+  ;(view.dom.parentElement ?? view.dom).style.setProperty('--pill-letters', (letters / font).toFixed(4))
+  return true
+}
+
 export const createPillSelection = () =>
   $prose(
     () =>
@@ -63,6 +80,7 @@ export const createPillSelection = () =>
         props: { decorations: pieceDecorations },
         view: (view) => {
           let lit = new Set<Element>()
+          let measured = false
           return {
             update: () => {
               if (lit.size === 0 && view.state.selection.empty) return
@@ -70,6 +88,8 @@ export const createPillSelection = () =>
               for (const el of lit) if (!next.has(el)) el.classList.remove(PILL_SELECTED_CLASS)
               for (const el of next) if (!el.classList.contains(PILL_SELECTED_CLASS)) el.classList.add(PILL_SELECTED_CLASS)
               lit = next
+              // After the widgets are lit: a line of ID links has no other lit piece to measure.
+              if (!measured) measured = measureLetters(view)
             },
           }
         },

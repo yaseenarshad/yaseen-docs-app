@@ -93,3 +93,22 @@ describe('a selected link is one lit box (YAZ-3747 demo)', () => {
     expect(lit(root)).toEqual([])
   })
 })
+
+describe('the lit box is as tall as the line (YAZ-3747 demo)', () => {
+  it('measures a lit pill\'s letters once, as a part of the font size, on the editor\'s root', async () => {
+    const { root, view } = await mount(`pad [[Named]] tail\n`)
+    const host = view.dom.parentElement!
+    // jsdom draws nothing: a pill's letters 19px high at 16px.
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ height: 19, width: 40, top: 0, left: 0, right: 40, bottom: 19, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+    const style = vi.spyOn(window, 'getComputedStyle').mockReturnValue({ fontSize: '16px', paddingTop: '0px', paddingBottom: '0px' } as CSSStyleDeclaration)
+    select(view, 1, 18)
+    expect(lit(root)).toEqual(['Named'])
+    expect(host.style.getPropertyValue('--pill-letters')).toBe('1.1875')
+    const reads = rect.mock.calls.length
+    select(view, 1)
+    select(view, 1, 18)
+    expect(rect.mock.calls.length).toBe(reads) // once per editor
+    rect.mockRestore()
+    style.mockRestore()
+  })
+})
