@@ -65,7 +65,9 @@ function glyphOf(make: () => SVGElement): ReactNode {
  * The line part (YAZ-3727 D15): the bullet menu's rows for the line right-clicked at `pointer`, one section
  * per group as on the dot. `selection` is the note's selection from before the right-click, which may
  * have selected the word under the pointer: the strip reads a highlight from it. None off a line's text
- * (code, a table cell). A row does nothing once the note has changed under the open menu.
+ * (code, a table cell). A row does nothing once the note has changed under the open menu. No hints (D17): the
+ * bullet menu's name a click on the dot ("⇧-click"), which on the text only extends the selection, and the
+ * hint alone made the menu wider.
  */
 export function lineSections(view: EditorView, pointer: number | null, selection: Selection): MenuEntry[][] {
   const target = pointer === null ? null : textLineTarget(view.state.doc, pointer, selection)
@@ -83,7 +85,7 @@ export function lineSections(view: EditorView, pointer: number | null, selection
     sections[sections.length - 1].push(
       item.kind === 'strip'
         ? { kind: 'strip', id, label: item.label, buttons: item.buttons.map((b) => ({ label: b.label, icon: glyphOf(b.icon), active: b.active, onSelect: guarded(b.run) })) }
-        : { id, label: item.label, hint: item.hint, danger: item.danger, disabled: item.disabled, icon: item.icon && glyphOf(item.icon), onSelect: guarded(item.run) },
+        : { id, label: item.label, danger: item.danger, disabled: item.disabled, icon: item.icon && glyphOf(item.icon), onSelect: guarded(item.run) },
     )
   })
   return sections
