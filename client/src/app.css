@@ -3346,14 +3346,13 @@ body.drag-held iframe {
 }
 
 /* The block handle menu's strip (YAZ-3727 D14): the selection toolbar's list buttons and T in one menu row, drawn
-   as the toolbar draws them (Crepe's `toolbar.css`): 32px boxes, 24px glyphs in the outline colour, the lit one in the
-   primary colour, the toolbar's hover. Scoped under `.ctx-menu--editor` so Crepe's `.milkdown button` reset does not win;
+   as the toolbar draws them (Crepe's `toolbar.css`): 32px boxes, 24px glyphs in the outline colour, the toolbar's
+   hover. The lit one sits in a soft accent box in the accent colour (D16): the toolbar's dark-on-grey was too faint. Scoped under `.ctx-menu--editor` so Crepe's `.milkdown button` reset does not win;
    a note's right-click menu (D15) draws it in a `.ctx-menu__group`. */
 /* A note's right-click menu (D15) is drawn outside the editor, where Crepe's theme sets no `--crepe-color-*`:
-   the app's tokens stand in, so the lit button reads as on the bullet's menu (dark against grey). */
+   the app's tokens stand in, so the buttons look as on the bullet's menu. */
 .ctx-menu__group > .ctx-menu__strip {
   --crepe-color-outline: var(--fg-muted);
-  --crepe-color-primary: var(--fg);
   --crepe-color-hover: var(--bg-hover);
   --crepe-color-selected: var(--bg-hover-row);
 }
@@ -3387,7 +3386,8 @@ body.drag-held iframe {
 }
 
 :is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip > .ctx-menu__strip-button.active {
-  color: var(--crepe-color-primary);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 :is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip > .ctx-menu__strip-button > svg {
