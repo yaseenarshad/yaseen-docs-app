@@ -22,6 +22,9 @@
   "perfTolerance": 0.15,
   "perf": {
     "$comment": "Timing ceilings for the local harness (`npm run perf`, YAZ-3044 A19): a scenario's median over `max` by more than `perfTolerance` fails the run. Never gated in CI (the harness opens real windows). `drawio.drawioOpenMs` is Draw's ceiling for the same scenario, kept by YAZ-3028 D5 (Draw's budget.json: max 760, target 650, perfTolerance 0.15). Not yet measured on Docs: run `npm run perf -- drawio --runs 5` after `npm run desktop:build` for a baseline.",
-    "drawio.drawioOpenMs": { "max": 760, "target": 650 }
+    "drawio.drawioOpenMs": { "max": 760, "target": 650 },
+    "long-day.heapEndOverStartRatio": { "$comment": "YAZ-3737 D7: the renderer's JS heap after GC at the last cycle over cycle 1's. Memory, not timing noise: tolerance 0.", "max": 1.1, "tolerance": 0 },
+    "long-day.heapSlopeMbPerCycle": { "$comment": "YAZ-3737 D7: the least-squares growth of that heap per cycle, in MB. Tolerance 0.", "max": 1, "tolerance": 0 },
+    "long-day.rendererRssEndMb": { "$comment": "YAZ-3737 D7: RSS summed over every renderer helper after the last cycle. Before run on 5ed554db9 (runs/long-day-before.json, YAZ-3861): 841.8 MB at the end; an earlier run of the same code ended at 988.8 MB, and over cycles 5 to 10 of both runs the samples spread from 838 to 1,191 MB. So the ceiling is 1,200 MB: the base code passes on noise alone, and a change that adds memory fails. Lower it (ratchet) once the leak fixes land.", "max": 1200, "tolerance": 0 }
   }
 }

@@ -29,7 +29,11 @@ export function claimWorkDir(dir) {
       fs.mkdirSync(d, { recursive: true })
       return d
     },
-    remove: () => fs.rmSync(at, { recursive: true, force: true }),
+    /** Removes the dir; with `keep`, everything but that entry and the marker (long-day's heap snapshots, YAZ-3861). */
+    remove(keep) {
+      if (keep === undefined) return fs.rmSync(at, { recursive: true, force: true })
+      for (const e of fs.readdirSync(at)) if (e !== keep && e !== MARKER) fs.rmSync(path.join(at, e), { recursive: true, force: true })
+    },
   }
 }
 

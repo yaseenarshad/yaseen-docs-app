@@ -7,7 +7,7 @@ Three tools: a size and integrity gate that CI runs and a local perf harness tha
 | `measureBudget.mjs` | `npm run perf:budget` / `perf:budget:ci`: the gate (see `docs/CONTRACTS.md` "Packaging") |
 | `budget.json` | the gate's ceilings. **Ratchet:** a PR that shrinks a row lowers its ceiling; raising one needs Yasin's OK |
 | `baseline.json` | FROZEN v0.9.27 @ 63aeeea numbers: `size` from the gate, `perf` from the harness. Never edited |
-| `run.mjs`, `scenarios/`, `lib/`, `genVault.mjs` | `npm run perf`: the harness |
+| `run.mjs`, `scenarios/`, `lib/`, `genVault.mjs` | `npm run perf`: the harness. `--app` takes a packaged `.app` or an unpacked build's `desktop/out/main/index.js` |
 | `runs/` | the raw before/after A/B and budget JSON behind the 7A ratchet (YAZ-2204) |
 | `sidebarLinesRecalc.mjs` | `node tools/perf/sidebarLinesRecalc.mjs` after `npm run build`: the style and layout cost of the sidebar's level lines and thread for each action, at 10,207 open rows, in headless Chromium (no window), with the real `levelLinesHover.ts`. It also checks what jsdom cannot see (the keyboard and the mouse marks, S2, S3, D11, the rename chevron of YAZ-3342) and exits 1 if a check fails. Local only, not in CI (YAZ-3329) |
 
@@ -45,7 +45,10 @@ The big notes copy the shapes the YAZ-2132 scope measured (`genVault.mjs`), so t
 | `idle` | 60 s alone: CPU % and RSS per process kind (main, renderer, gpu, utility) |
 | `quit` | `app.quit()` → main process gone |
 | `drawio` | click a `.drawio` (30 boxes) in the tree → draw.io's `load` message, marked in the page as `window.__drawioLoad` (Draw's scenario, YAZ-3044 A19). Ceiling: `drawio.drawioOpenMs` 760 ms. Written, not yet run |
+| `long-day` | **Opt-in** (not in `all`), 1 run, no warm-up, the app HIDDEN (`YASEEN_DOCS_E2E_HIDDEN=1`, in-page events only). One window on a 2k-note vault, `--cycles` cycles (10): each opens 20 kept tabs (double click on the tree row: 1k and 5k bullet notes, 5k prose, twelve 200-line notes, a `.drawio`, an `.excalidraw` with 3 pictures, small `.ts` and `.py`, the 5 MB `.ts`), switches tabs, types, shows and hides the right panel, then closes them all with their ✕. After each cycle, GC 3 times: the renderer's JS heap, its workers' heaps (Monaco's TS worker), Blink's heap, the DOM counters, RSS summed over every renderer helper, and main's heap (S12); per cycle in the JSON's `series`. Before the cycles (S11): the RSS and heap of a window with no tab and of one with one tab, and of a no-tab window on an empty vault (the gap is the vault's cost per window). `--snapshots`: heap snapshots after cycle 1 and the last into `<work>/snapshots`, kept when the run ends. Before numbers: `runs/long-day-before.json` (YAZ-3861). `npm run build && npm run perf -- long-day --app desktop/out/main/index.js` |
 
 ## Timing ceilings
 
 `budget.json`'s `perf` rows (`<scenario>.<metric>`, YAZ-3044 A19) are checked against each scenario's median after a run: a median over `max` by more than `perfTolerance` (15 %) prints `OVER:` and the run exits 1. `drawio.drawioOpenMs` (760 ms) is Draw's ceiling, kept by YAZ-3028 D5. Local only, like the harness.
+
+A row's own `tolerance` replaces `perfTolerance`. long-day's three memory rows (YAZ-3737 D7) have `tolerance: 0`: `heapEndOverStartRatio` ≤ 1.1 (the JS heap after GC at the last cycle over cycle 1's), `heapSlopeMbPerCycle` ≤ 1 MB, and `rendererRssEndMb` under the before run plus a margin (see its `$comment`).

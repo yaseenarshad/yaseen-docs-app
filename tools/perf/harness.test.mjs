@@ -3,8 +3,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { sentinel, writeNote } from './genVault.mjs'
-import { abba, loadSensitive, overCeilings, summarizeRuns } from './lib/stats.mjs'
+import { noisePng, sentinel, writeCode, writeDrawing, writeNote } from './genVault.mjs'
+import { abba, loadSensitive, overCeilings, slope, summarizeRuns } from './lib/stats.mjs'
+import * as longDay from './scenarios/long-day.mjs'
 import { flowDiagram } from './scenarios/drawio.mjs'
 import { claimWorkDir, writeState } from './lib/work.mjs'
 import { RING, crosses, seedVaults } from './scenarios/multi-vault.mjs'
@@ -43,6 +44,24 @@ describe('perf ceilings (YAZ-3044 A19)', () => {
     expect(overCeilings('drawio', { drawioOpenMs: { median: 870 } }, ceilings, 0.15)).toEqual([])
     expect(overCeilings('drawio', { drawioOpenMs: { median: 880 } }, ceilings, 0.15)).toEqual(['drawio.drawioOpenMs median 880 > ceiling 760'])
     expect(overCeilings('drawio', { drawioOpenMs: { median: null } }, ceilings, 0)).toEqual([])
+  })
+
+  it('a row\'s own tolerance wins over perfTolerance: long-day\'s ratio ceiling 1.1 fails at 1.11, not only past 1.265 (YAZ-3861)', () => {
+    const ceilings = { 'long-day.heapEndOverStartRatio': { max: 1.1, tolerance: 0 } }
+    expect(overCeilings('long-day', { heapEndOverStartRatio: { median: 1.1 } }, ceilings, 0.15)).toEqual([])
+    expect(overCeilings('long-day', { heapEndOverStartRatio: { median: 1.11 } }, ceilings, 0.15)).toEqual(['long-day.heapEndOverStartRatio median 1.11 > ceiling 1.1'])
+    // Under 10 a summary keeps 2 decimals, so 1.14 is not rounded down to a passing 1.1.
+    expect(summarizeRuns([{ r: 1.144 }, { r: 123.44 }]).r).toMatchObject({ min: 1.14, max: 123.4 })
+  })
+
+  it('budget.json holds long-day\'s three ceilings at tolerance 0: ratio 1.1, slope 1 MB per cycle, renderer RSS (YAZ-3737 D7)', () => {
+    const { perf } = JSON.parse(fs.readFileSync(new URL('./budget.json', import.meta.url), 'utf8'))
+    expect(perf['long-day.heapEndOverStartRatio']).toMatchObject({ max: 1.1, tolerance: 0 })
+    expect(perf['long-day.heapSlopeMbPerCycle']).toMatchObject({ max: 1, tolerance: 0 })
+    expect(perf['long-day.rendererRssEndMb']).toMatchObject({ tolerance: 0 })
+    expect(perf['long-day.rendererRssEndMb'].max).toBeGreaterThan(0)
+    // None is load-sensitive: the names end in neither Ms, Sec nor Pct.
+    expect(Object.keys(perf).filter((k) => k.startsWith('long-day.') && loadSensitive(k))).toEqual([])
   })
 
   it('budget.json keeps Draw\'s draw.io open ceiling (YAZ-3028 D5)', () => {
@@ -142,5 +161,65 @@ describe('the 5 MB code file of open-big-code and typing-code (YAZ-3501)', () =>
     const file = writeBigCode(dir)
     fs.writeFileSync(file, 'typed into')
     expect(fs.readFileSync(writeBigCode(dir), 'utf8')).toBe(text)
+  })
+})
+
+describe('long-day (YAZ-3861, YAZ-3737 D7)', () => {
+  it('is opt-in, one run, no warm-up', () => {
+    expect([longDay.optIn, longDay.runs, longDay.warmup]).toEqual([true, 1, 0])
+  })
+
+  it('the slope is the least-squares growth per cycle; the ratio is the last cycle over the first', () => {
+    expect(slope([100, 102, 104, 106])).toBe(2)
+    expect(slope([300, 310, 310, 300])).toBe(0)
+    expect(slope([42])).toBe(0)
+    expect(longDay.leakMetrics([200, 205, 210, 220])).toEqual({ heapStartMb: 200, heapEndMb: 220, heapEndOverStartRatio: 1.1, heapSlopeMbPerCycle: 6.5 })
+  })
+
+  it('a cycle opens 20 files of every kind the issue names, once each', () => {
+    const dir = tmp()
+    const fx = longDay.setup(dir, { cycles: 3, snapshots: path.join(dir, 'snapshots') })
+    expect(fx.files).toHaveLength(20)
+    expect(new Set(fx.files.map((f) => f.file)).size).toBe(20)
+    const count = (kind) => fx.files.filter((f) => f.kind === kind).length
+    expect([count('note'), count('diagram'), count('drawing'), count('code'), count('bigCode')]).toEqual([15, 1, 1, 2, 1])
+    expect(fx.files.map((f) => path.basename(f.file)).filter((b) => !b.endsWith('.md'))).toEqual(['Flow.drawio', 'Sketch.excalidraw', 'Small TS.ts', 'Small PY.py', 'big-5mb.ts'])
+    expect(fx.files.every((f) => f.file.startsWith(fx.vault + path.sep) && fs.existsSync(f.file))).toBe(true)
+    expect(fs.readdirSync(fx.emptyVault)).toEqual([])
+    expect(fs.existsSync(fx.snapshots)).toBe(true)
+  })
+
+  it('the drawing carries its pictures in `files`: one PNG per image element, real and the same every time (D14)', () => {
+    const [a, b] = [tmp(), tmp()]
+    const text = fs.readFileSync(writeDrawing(a, 'Sketch'), 'utf8')
+    expect(fs.readFileSync(writeDrawing(b, 'Sketch'), 'utf8')).toBe(text)
+    const scene = JSON.parse(text)
+    const images = scene.elements.filter((e) => e.type === 'image')
+    expect(images).toHaveLength(3)
+    for (const { fileId } of images) {
+      const png = Buffer.from(scene.files[fileId].dataURL.replace('data:image/png;base64,', ''), 'base64')
+      expect(png.subarray(1, 4).toString()).toBe('PNG')
+      expect(png.readUInt32BE(16)).toBe(256) // IHDR width
+    }
+    expect(noisePng(8, 1).equals(noisePng(8, 1))).toBe(true)
+    expect(noisePng(8, 1).equals(noisePng(8, 2))).toBe(false)
+  })
+
+  it('small code files open with their sentinel as the first line', () => {
+    const dir = tmp()
+    const ts = fs.readFileSync(writeCode(dir, 'Small TS', 'ts'), 'utf8').split('\n')
+    const py = fs.readFileSync(writeCode(dir, 'Small PY', 'py', 30), 'utf8').split('\n')
+    expect([ts[0], py[0]]).toEqual(['// sentinel-small-ts', '# sentinel-small-py'])
+    expect([ts.length, py.length]).toEqual([122, 32])
+  })
+
+  it('the end of a --snapshots run removes the work dir but its snapshots', () => {
+    const d = path.join(tmp(), 'work')
+    const work = claimWorkDir(d)
+    fs.writeFileSync(path.join(work.dirFor('long-day'), 'x'), '')
+    fs.mkdirSync(path.join(work.root, 'snapshots'))
+    work.remove('snapshots')
+    expect(fs.readdirSync(d).sort()).toEqual(['.yaseen-docs-perf', 'snapshots'])
+    expect(() => claimWorkDir(d)).not.toThrow() // still ours
   })
 })
