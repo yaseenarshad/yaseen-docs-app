@@ -17,7 +17,9 @@
  *  2. `cellSchemas` ($nodeSchema extensions): a table cell serialises its paragraph content
  *     directly. Milkdown's paragraph runner always drops a paragraph's LAST hardbreak (right for
  *     prose, wrong in a cell — a trailing `<br>` would decay one per save), and wrote `<br />` for
- *     an empty cell. Several paragraphs in one cell are joined by a break.
+ *     an empty cell. Several paragraphs in one cell are joined by a break. `withCellStyle` adds
+ *     the cell's `fill` and `color` (YAZ-3758) in the same extension: `extendSchema` always derives
+ *     from the ORIGINAL schema, so a second extension would drop this one.
  *  3. `cellBreakKeymap` ($shortcut): Enter and Shift-Enter inside a table cell always insert a
  *     hardbreak — a new line in the cell, as in Google Docs (🔒 YAZ-1462); Mod-Enter still exits
  *     the table. Milkdown's own Shift-Enter refuses to run inside tables, and its "second
@@ -34,6 +36,7 @@ import type { RootContent } from 'mdast'
 import { defaultHandlers } from 'mdast-util-to-markdown'
 import type { Options as ToMarkdownOptions } from 'mdast-util-to-markdown'
 import { visit } from 'unist-util-visit'
+import { withCellStyle } from './table/tableStyle'
 
 const BR = /^<br\s*\/?>$/i
 const isBr = (node: RootContent): boolean => node.type === 'html' && BR.test(node.value.trim())
@@ -83,8 +86,8 @@ const cellToMarkdown = (typeName: string) => ({
 })
 
 export const cellSchemas = [
-  tableCellSchema.extendSchema((prev) => (ctx) => ({ ...prev(ctx), toMarkdown: cellToMarkdown('table_cell') })),
-  tableHeaderSchema.extendSchema((prev) => (ctx) => ({ ...prev(ctx), toMarkdown: cellToMarkdown('table_header') })),
+  tableCellSchema.extendSchema((prev) => (ctx) => withCellStyle({ ...prev(ctx), toMarkdown: cellToMarkdown('table_cell') })),
+  tableHeaderSchema.extendSchema((prev) => (ctx) => withCellStyle({ ...prev(ctx), toMarkdown: cellToMarkdown('table_header') })),
 ]
 
 const CELL_TYPES = new Set(['table_cell', 'table_header'])

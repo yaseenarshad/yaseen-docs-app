@@ -88,7 +88,7 @@ async function openOnLine(markdown: string) {
 }
 
 describe('which blocks get the pickers', () => {
-  it('S40: a line gets "Number children" (disabled), then one row each for "Line darkness", "Line thickness" and "Line style"', async () => {
+  it('S40: a line gets one row each for "Line darkness", "Line thickness" and "Line style" (no "Number children" off a bullet, YAZ-3696 B3)', async () => {
     const { view } = await openOnLine('a\n\n***\n\nb\n')
     const parts = [...popupOf(view)!.children].map((el) => {
       if (el.classList.contains('ctx-menu__item')) return `row:${el.textContent}${(el as HTMLButtonElement).disabled ? ':disabled' : ''}`
@@ -96,8 +96,6 @@ describe('which blocks get the pickers', () => {
       return el.className
     })
     expect(parts).toEqual([
-      'row:Number children:disabled',
-      'document-zoom__divider',
       'picker:Line darkness:Default (50%) ▾',
       'picker:Line thickness:Default (3px) ▾',
       'picker:Line style:Default (Solid) ▾',
@@ -108,13 +106,13 @@ describe('which blocks get the pickers', () => {
     expect(labels(2)).toEqual(['Default (Solid)', 'Solid', 'Dotted', 'Dashed'])
   })
 
-  it('S41: a paragraph, a heading and a bullet get the menu of today', async () => {
+  it('S41: a paragraph, a heading and a bullet get no pickers (a bullet keeps "Number children"; the others have no menu, YAZ-3696 B3)', async () => {
     const { view, item } = await mount('# H\n\ntext\n\n* bullet\n')
     for (const type of ['heading', 'paragraph', 'list_item']) {
       aim(view, nth(view, type))
       rightClick(item)
-      expect(popupOf(view)!.querySelectorAll('.ctx-menu__item')).toHaveLength(1)
-      expect(popupOf(view)!.querySelector('.block-menu-picker')).toBeNull()
+      expect(popupOf(view)?.querySelectorAll('.ctx-menu__item').length ?? 0).toBe(type === 'list_item' ? 1 : 0)
+      expect(popupOf(view)?.querySelector('.block-menu-picker') ?? null).toBeNull()
     }
   })
 

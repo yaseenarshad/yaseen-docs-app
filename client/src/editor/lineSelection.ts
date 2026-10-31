@@ -29,7 +29,7 @@ import { type Command, type EditorState, NodeSelection, Plugin, PluginKey, Selec
 import { liftTarget } from '@milkdown/kit/prose/transform'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { collapsedSectionAround, collapsedSectionBlocks } from './outline/headingFolding'
-import { isListItem, LIST_NODE_NAMES } from './outline/listNodes'
+import { findFoldedChildren, isListItem, LIST_NODE_NAMES } from './outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed } from './outline/outlineFolding'
 import { getZoomedItemPos } from './outline/zoom'
 
@@ -147,7 +147,7 @@ export const onCoveredLines = (cmd: Command): Command => (state, dispatch, view)
  *
  * It answers `isHiddenTextblock`'s question without asking it per line: that rescans every fold
  * entry for each position, so a walk over 1,000 folded parents costs ~30 ms. Here a folded item is
- * found on the way (one Set lookup) and its nested lists are skipped whole — only those: its own
+ * found on the way (one Set lookup) and its nested lists and tables (YAZ-3696 D11) are skipped whole — only those: its own
  * other blocks stay visible, as the fold shows them (bug 1B2), and a folded ancestor of the zoomed
  * item hides nothing, as zoom.css shows it expanded (bug 1B1). A folded heading's section is a set
  * of whole blocks, skipped by their start; the zoom is one range. Each check is O(1), so the walk
@@ -182,11 +182,11 @@ export const eachVisibleTextblock = (
       return false
     }
     if (isListItem(node) && isOutlineItemCollapsed(state, pos)) {
-      node.forEach((child, offset) => {
+      for (const { list: child, offset } of findFoldedChildren(node)) {
         const start = pos + 1 + offset
         const holdsZoom = zoomed !== null && zoomed > start && zoomed < start + child.nodeSize
-        if (LIST_NODE_NAMES.has(child.type.name) && !holdsZoom) foldedLists.add(start)
-      })
+        if (!holdsZoom) foldedLists.add(start)
+      }
     }
     return true
   })

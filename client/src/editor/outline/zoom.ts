@@ -375,8 +375,13 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen }: Zo
                 undoLevel = !mappedLast.deleted && isListItem(newState.doc.nodeAt(mappedLast.pos)) ? mappedLast.pos : undefined
               }
               if (itemPos !== null) {
+                // A change of the zoomed item's own attributes — a task tick (⌘Enter), a list button
+                // (YAZ-3806 4A) — is a `setNodeMarkup`: it replaces the item's opening token, so the item's start
+                // maps as deleted. The start of its content does not: the item is still there, one token before.
                 const mapped = transaction.mapping.mapResult(itemPos, 1)
-                itemPos = !mapped.deleted && isListItem(newState.doc.nodeAt(mapped.pos)) ? mapped.pos : null
+                const inside = transaction.mapping.mapResult(itemPos + 1, 1)
+                const pos = !mapped.deleted ? mapped.pos : !inside.deleted ? inside.pos - 1 : null
+                itemPos = pos !== null && isListItem(newState.doc.nodeAt(pos)) ? pos : null
               }
             }
             return itemPos === previous.itemPos && undoLevel === previous.undoLevel ? previous : { ...previous, itemPos, undoLevel }
