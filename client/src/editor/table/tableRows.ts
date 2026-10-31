@@ -26,11 +26,21 @@ import { TABLE_DEFAULTS, type TableAttrs } from './tableStyle'
 /** Crepe's look of a border (table.css): 1px, 20% of the outline colour. */
 const BORDER_DEFAULT = { px: 1, darkness: 20 }
 
-/** The table the handle points at, and where it starts; null when it points at anything else. */
+/**
+ * The table the handle points at, and where it starts; null when it points at anything else. Below the
+ * table's top edge the handle's probe lands in its first cell (YAZ-3795), so the nearest table ancestor
+ * counts too: Crepe's handle never belongs to a block inside a table. A bullet's handle probes its own
+ * line, which no table holds.
+ */
 function targetTable(doc: ProseNode, inside: number): { node: ProseNode; pos: number } | null {
   if (inside < 0 || inside >= doc.content.size) return null
   const node = doc.nodeAt(inside)
-  return node?.type.name === 'table' ? { node, pos: inside } : null
+  if (node?.type.name === 'table') return { node, pos: inside }
+  const $pos = doc.resolve(inside)
+  for (let depth = $pos.depth; depth > 0; depth--) {
+    if ($pos.node(depth).type.name === 'table') return { node: $pos.node(depth), pos: $pos.before(depth) }
+  }
+  return null
 }
 
 /** Every cell of the table. */

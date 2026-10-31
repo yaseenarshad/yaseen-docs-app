@@ -1,10 +1,11 @@
 /**
  * S6 (YAZ-3696): the speed of a big note table on the real editor in jsdom — open a 500 × 10 table, type in a
  * cell, paste 50 × 4 tab-separated cells; then the same table frozen and styled (`freeze 1 row 2 cols, stripes,
- * fill`), where each key must not build the frozen cells' decorations again. jsdom has no layout, so the numbers
- * are the editor's own work (parse, transactions, DOM updates), not paint. Runs in the `perf` project (YAZ-740),
- * each budget on the MEDIAN (`src/test-perf.ts`). The frozen tables are held as a ratio to the plain one, their
- * keys typed in turn with its keys, so a slower or a busy machine moves all of them alike. The measured numbers print, with a plain note of the same text for scale.
+ * fill`). jsdom has no layout, so the numbers are the editor's own work (parse, transactions, DOM updates), not
+ * paint. Runs in the `perf` project (YAZ-740), each budget on the MEDIAN (`src/test-perf.ts`). The frozen tables'
+ * keys are typed in turn with the plain one's, and their ratios to it print. "No change in typing speed" is held by
+ * counts, not by this ratio (YAZ-3796): `tableSpeed.test.ts` fails when a key reads layout or does work on the
+ * freeze's or the styles' decorations. The measured numbers print, with a plain note of the same text for scale.
  */
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -120,17 +121,17 @@ describe('S6: a 500 × 10 table stays fast', () => {
     }
     const [note, table, frozen, styled, paste] = [median(keys.note), median(keys.table), median(keys.frozen), median(keys.styled), median(pastes)]
     console.log(
-      `S6: open ${median(opens).toFixed(0)} ms · type ms/key: note ${note.toFixed(2)}, table ${table.toFixed(2)}, frozen table ${frozen.toFixed(2)}, frozen styled table ${styled.toFixed(2)} (medians of 48 keys, typed in turn) · paste 50×4 ${paste.toFixed(1)} ms (median of 3, jsdom)`,
+      `S6: open ${median(opens).toFixed(0)} ms · type ms/key: note ${note.toFixed(2)}, table ${table.toFixed(2)}, frozen table ${frozen.toFixed(2)}, frozen styled table ${styled.toFixed(2)} (medians of 48 keys, typed in turn; ratios ${(frozen / table).toFixed(2)} / ${(styled / table).toFixed(2)}) · paste 50×4 ${paste.toFixed(1)} ms (median of 3, jsdom)`,
     )
     // The note is for the log: Milkdown's own `keepTableAlignPlugin` walks every cell of the table on each key
     // (main has it too), so the table types ~9× slower than a note of the same text at idle (~7 ms against ~0.8).
     // 60 ms catches a rescan of our own on top of it.
     expect(table).toBeLessThan(60)
-    // "No change in typing speed" (YAZ-3790): the freeze and the styles add no work per key, so the frozen table
-    // and the frozen, styled table type as fast as the plain one (0.91–1.10 measured at idle). 1.25 leaves room for
-    // a loaded machine (1.21 seen at load 26) and still catches work per key, which costs a multiple.
-    expect(frozen / table).toBeLessThan(1.25)
-    expect(styled / table).toBeLessThan(1.25)
+    // The ratios only print (YAZ-3796): the round-1 freeze cost 1.17–1.24, and a loaded machine reached 1.21 with
+    // the fix, so no time ceiling tells them apart. `tableSpeed.test.ts` holds "no change in typing speed" (YAZ-3790)
+    // by counts; the 60 ms ceiling above still catches a gross cost in a frozen table.
+    expect(frozen).toBeLessThan(60)
+    expect(styled).toBeLessThan(60)
     // The approved number (YAZ-3697): ~15 ms measured.
     expect(paste).toBeLessThan(50)
   }, 120_000)

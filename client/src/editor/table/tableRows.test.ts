@@ -109,6 +109,45 @@ describe('the menu on a table', () => {
     expect(pickerNamed(view, 'Stripes')).toBeTruthy()
   })
 
+  describe('a right-click on any point of the six dots (YAZ-3795)', () => {
+    // The real probe: `handleTargetPos` and ProseMirror's own `posAtCoords`. Only the browser's hit test is given,
+    // as jsdom lays nothing out: below the table's top 9 px, the probe right of the handle hits the first header cell.
+    const BULLET = `* item\n\n  ${SMALL.trimEnd().split('\n').join('\n  ')}\n`
+    async function openWithHit(markdown: string, hit: (view: EditorView) => Element) {
+      const m = await mount(markdown)
+      delete (m.view as Partial<EditorView>).posAtCoords
+      const at = hit(m.view)
+      Object.assign(document, { elementFromPoint: () => at })
+      try {
+        rightClick(m.item)
+      } finally {
+        delete (document as Partial<Document>).elementFromPoint
+      }
+      return m
+    }
+    const firstHeader = (view: EditorView) => view.dom.querySelector('th')!
+    const labels = (view: EditorView) => [...popupOf(view)!.querySelectorAll('.ctx-menu__item, .block-menu-picker__label')].map((el) => el.textContent)
+    const SETTINGS = ['Border thickness', 'Border darkness', 'Header row', 'Align all columns', 'Fit columns to the page', 'Stripes', 'Row height', 'Wrap text']
+
+    it.each([
+      ['the first header cell', firstHeader],
+      ['the text in it', (view: EditorView) => firstHeader(view).querySelector('p') ?? firstHeader(view)],
+    ])('a top-level table: the probe in %s opens the eight settings', async (_where, hit) => {
+      const { view } = await openWithHit(SMALL, hit)
+      expect(labels(view)).toEqual(SETTINGS)
+    })
+
+    it('a table in a bullet: the probe in its first header cell opens the bullet\'s row and the eight settings', async () => {
+      const { view } = await openWithHit(BULLET, firstHeader)
+      expect(labels(view)).toEqual(['Number children', ...SETTINGS])
+    })
+
+    it('the bullet\'s own handle (the probe on its line) shows the bullet\'s row only, no table settings', async () => {
+      const { view } = await openWithHit(BULLET, (v) => v.dom.querySelector('li p')!)
+      expect(labels(view)).toEqual(['Number children'])
+    })
+  })
+
   it('a read-only note shows no rows', async () => {
     const { view, item } = await mount(SMALL)
     view.setProps({ editable: () => false })
