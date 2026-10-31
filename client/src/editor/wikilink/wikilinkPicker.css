@@ -48,7 +48,7 @@
   color: var(--accent);
 }
 
-/* The "nothing matches" row: inserts the typed text as a link to a not-yet-existing page. */
+/* The Create row, last, while no row has the typed name (YAZ-3748 B1): makes the page and links it. */
 .wikilink-picker__item--create {
   font-style: italic;
 }

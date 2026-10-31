@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../views/engine'
-import { MAX_SUGGESTIONS, titleCandidates, linkCandidates, matchLinkCandidates, mergeLinkCandidates, nameCandidate, trailingLinkFragment } from './completion'
+import { MAX_SUGGESTIONS, titleCandidates, linkCandidates, matchLinkCandidates, matchRanges, mergeLinkCandidates, nameCandidate, readNeedle, trailingLinkFragment } from './completion'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -103,12 +103,89 @@ describe('matchLinkCandidates ranking (F2, GRO-2197)', () => {
     expect(names(['Alpha', 'Beta'], 'alpha ')).toEqual(['Alpha'])
   })
 
-  it('internal whitespace stays significant', () => {
-    expect(names(['alphabet soup', 'alphabetsoup'], 'et sou')).toEqual(['alphabet soup'])
+  it('internal whitespace is significant to the text tiers: the name that holds `et sou` ranks above the one that holds it joined (YAZ-3748 D2 added the joined tier)', () => {
+    expect(names(['alphabetsoup', 'alphabet soup'], 'et sou')).toEqual(['alphabet soup', 'alphabetsoup'])
   })
 
   it('matches a hand-built literal without the precomputed lower (derived on the fly)', () => {
     expect(matchLinkCandidates([{ name: 'Alpha', insert: 'Alpha', label: 'Alpha' }], 'ALPHA')).toHaveLength(1)
+  })
+})
+
+describe('matchLinkCandidates: a name found by its words (YAZ-3748 D2, B5)', () => {
+  const names = (candidates: string[], fragment: string, loose?: boolean): string[] =>
+    matchLinkCandidates(candidates.map(nameCandidate), fragment, MAX_SUGGESTIONS, loose).map((c) => c.name)
+  // The names of the issue's screenshots, with two that must stay out.
+  const VAULT = ['Yaseen-Eval-Work-Workinglog', 'Working-Log', '1-yaseen-engineering-workflow', 'Yaseen LN product working Log', 'Working Log', 'WorkingLog', 'Catalog', 'Table']
+
+  it('ranks exact, prefix, substring, then a word match (each typed word starts a word, any order), then a joined match; input order holds inside each tier', () => {
+    expect(names(['x working log', 'Yaseen-Eval-Work-Workinglog', 'Working-Log', 'working log', 'working log 2', 'Log of working'], 'working log')).toEqual([
+      'working log', // 0 exact
+      'working log 2', // 1 prefix
+      'x working log', // 2 substring
+      'Working-Log', // 3 word match
+      'Log of working', // 3 word match, the words in the other order
+      'Yaseen-Eval-Work-Workinglog', // 4 joined: `log` starts no word, `workinglog` is in the name
+    ])
+  })
+
+  it.each([
+    ['yaseen workflow', ['1-yaseen-engineering-workflow']],
+    ['workflow yaseen', ['1-yaseen-engineering-workflow']],
+    ['working log', ['Working Log', 'Yaseen LN product working Log', 'Working-Log', 'Yaseen-Eval-Work-Workinglog', 'WorkingLog']],
+    ['workinglog', ['WorkingLog', 'Yaseen-Eval-Work-Workinglog', 'Working-Log', 'Yaseen LN product working Log', 'Working Log']],
+    ['working-log', ['Working-Log', 'Yaseen LN product working Log', 'Working Log', 'Yaseen-Eval-Work-Workinglog', 'WorkingLog']],
+    // B5: `ab` is in `table`, but a joined match needs 3 letters. D4: no typo is forgiven.
+    ['a b', []],
+    ['workflwo', []],
+  ])('the scenario table: %s', (typed, found) => {
+    expect(names(VAULT, typed)).toEqual(found)
+  })
+
+  it('D4: a combining mark is part of its letter, so `resume` finds `Résumé` in neither NFC nor NFD form (no accent folding); a typed NFD word still finds its NFD name', () => {
+    const nfc = 'Résumé'.normalize('NFC')
+    const nfd = 'Résumé'.normalize('NFD')
+    expect(nfd).not.toBe(nfc)
+    expect(names([nfc, nfd], 'resume')).toEqual([])
+    expect(names([nfd], 'résumé'.normalize('NFD'))).toEqual([nfd])
+  })
+
+  it('a text of separators only reads no words: the text tiers alone, so `-` finds the names that hold a hyphen and nothing by word or joined match', () => {
+    expect(names(['Working-Log', 'Working Log', 'a.b'], '-')).toEqual(['Working-Log'])
+    expect(names(['Working-Log', 'Working Log', 'a.b'], ' . ')).toEqual(['a.b'])
+  })
+
+  it('loose: false keeps the three text tiers alone (Settings, D1): no word or joined match', () => {
+    expect(names(VAULT, 'working log', false)).toEqual(['Working Log', 'Yaseen LN product working Log'])
+    expect(names(VAULT, 'workinglog', false)).toEqual(['WorkingLog', 'Yaseen-Eval-Work-Workinglog'])
+  })
+})
+
+describe('matchRanges: the parts of a search row to mark (YAZ-3748 D3, B5, B7)', () => {
+  const marks = (label: string, typed: string): string[] => matchRanges(label, readNeedle(typed)).map(([start, end]) => label.slice(start, end))
+
+  it('the whole text where the label holds it; else each typed word, in label order and overlaps as one; else the joined text across the marks it skipped; else none', () => {
+    expect(matchRanges('Yaseen LN product working Log', readNeedle(' Working LOG '))).toEqual([[18, 29]])
+    expect(marks('1-yaseen-engineering-workflow', 'workflow yaseen')).toEqual(['yaseen', 'workflow'])
+    expect(marks('Working-Log', 'working log')).toEqual(['Working', 'Log'])
+    expect(marks('Working-Log', 'work working')).toEqual(['Working'])
+    expect(marks('Yaseen-Eval-Work-Workinglog', 'working log')).toEqual(['Workinglog'])
+    expect(marks('Working-Log', 'workinglog')).toEqual(['Working-Log'])
+    expect(marks('Customer Acquisition Cost', 'cac')).toEqual([]) // the alias matched: nothing in this label
+    expect(marks('Table', 'a b')).toEqual([]) // B5: a joined text of 2 letters marks nothing, as it matches nothing
+    expect(marks('Alpha', '  ')).toEqual([])
+    // A text of separators only marks where the label holds it, as the text tier found it, and nothing else.
+    expect(marks('Working-Log', '-')).toEqual(['-'])
+    expect(marks('Working Log', ' - ')).toEqual([])
+  })
+
+  it('B7: the ranges point at the label\'s own letters when lowercasing makes it longer (Turkish İ is two code units lowercased)', () => {
+    const label = 'İstanbul Working-Log'
+    expect(label.toLowerCase()).toHaveLength(label.length + 1)
+    expect(marks(label, 'working log')).toEqual(['Working', 'Log'])
+    expect(marks(label, 'workinglog')).toEqual(['Working-Log'])
+    expect(marks(label, 'log')).toEqual(['Log'])
+    expect(marks(label, 'i̇stanbul')).toEqual(['İstanbul']) // the whole İ, never half of it
   })
 })
 

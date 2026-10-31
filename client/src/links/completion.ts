@@ -3,8 +3,8 @@
  * (`views/view/EditableCell.tsx` — LinkEditor and ChipsEditor) and the editor's `[[` picker
  * (`editor/wikilink/wikilinkPicker.ts`) all match through here, so completion behaves the same
  * everywhere — which is how the F2 ranking upgrade (GRO-2197) landed once, in place. Matching
- * is case-insensitive over the candidate NAME, ranked exact → prefix → substring, capped at
- * MAX_SUGGESTIONS after ranking.
+ * is case-insensitive over the candidate NAME, ranked exact → prefix → substring → word → joined
+ * (YAZ-3748 D2), capped at MAX_SUGGESTIONS after ranking.
  *
  * `linkCandidates(records)` derives the editor picker's candidates from an index snapshot:
  * every markdown note under its TITLE (YAZ-2420 🔒 D17 — the basename of a note that has no
@@ -94,35 +94,163 @@ export function trailingLinkFragment(text: string): string | null {
 }
 
 /**
- * Candidates matching `fragment`, RANKED (GRO-2197): exact name match first, then prefix
- * matches, then substring matches — case-insensitive over the candidate NAME (an alias row
+ * A run of characters that are not letters, digits or combining marks: what splits a name into words, and what a joined
+ * match leaves out (YAZ-3748 D2). A combining mark is part of its letter: `é` stored as `e` + U+0301 (NFD, as macOS file
+ * names can be) stays one word, so `resume` finds no `Résumé` in either form — no accent folding (D4).
+ */
+const NOT_WORD = /[^\p{L}\p{N}\p{M}]+/gu
+const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u
+
+/** The fewest letters a joined match reads (YAZ-3748 B5): `a b` joins to `ab`, which half the names hold, so it finds no `Table`. */
+const JOINED_MIN = 3
+
+/** The typed text as the matcher reads it, read once per keystroke (YAZ-3748): trimmed and lowercased, its words, and its words run together. */
+export interface Needle {
+  text: string
+  words: string[]
+  joined: string
+}
+
+/** `loose: false` reads no words, so only the three text tiers can match (the Settings search, YAZ-3408 — D1). */
+export function readNeedle(fragment: string, loose = true): Needle {
+  const text = fragment.trim().toLowerCase()
+  const words = loose ? text.split(NOT_WORD).filter((w) => w !== '') : []
+  return { text, words, joined: words.join('') }
+}
+
+/**
+ * A letter, digit or combining mark at `i` of `s`: an ASCII test first, so a plain name costs no regex and no new string
+ * per character. It reads one UTF-16 unit, so a letter outside the BMP (`𝐀`, two units) reads as a split here, while
+ * `readNeedle` splits by code point. Accepted: such names are rare, and the worst case is one extra word start.
+ */
+function wordCharAt(s: string, i: number): boolean {
+  const c = s.charCodeAt(i)
+  return c < 128 ? (c >= 48 && c <= 57) || (c >= 97 && c <= 122) || (c >= 65 && c <= 90) : WORD_CHAR.test(s[i])
+}
+
+/** Where `q` first starts a word of `lower` (at 0, or after a character that is no letter, digit or mark), or -1. */
+function wordStart(lower: string, q: string): number {
+  for (let at = lower.indexOf(q); at !== -1; at = lower.indexOf(q, at + 1)) if (at === 0 || !wordCharAt(lower, at - 1)) return at
+  return -1
+}
+
+/** Each of `words` starts a word of `lower`: a plain loop, as it runs for most rows on each keystroke. */
+function startsEachWord(lower: string, words: readonly string[]): boolean {
+  for (const q of words) if (wordStart(lower, q) === -1) return false
+  return true
+}
+
+/**
+ * Where `joined` first sits in `lower` with the characters that are no letter, digit or mark skipped (`workinglog` in
+ * `working-log` → [0, 11], YAZ-3748 D2), as a [start, end) range of `lower`; null when it does not. It makes no string
+ * and keeps no cache: it runs for most rows on each keystroke, and every index change makes new rows.
+ */
+function joinedAt(lower: string, joined: string): [number, number] | null {
+  for (let start = lower.indexOf(joined[0]); start !== -1; start = lower.indexOf(joined[0], start + 1)) {
+    let i = start
+    let j = 0
+    while (i < lower.length && j < joined.length) {
+      if (lower[i] === joined[j]) i++, j++
+      else if (!wordCharAt(lower, i)) i++
+      else break
+    }
+    if (j === joined.length) return [start, i]
+  }
+  return null
+}
+
+/**
+ * A row's tier for `needle`, best first (GRO-2197, YAZ-3748 D2): 0 the same name, 1 a name that starts with the text,
+ * 2 a name that holds it, 3 a name where each typed word starts a word, in any order (`yaseen workflow` →
+ * `1-yaseen-engineering-workflow`), 4 a name that holds the joined text (`working log` → `Workinglog`, `workinglog` →
+ * `Working-Log`) once it has JOINED_MIN letters (B5); -1 no match. Case-insensitive over the row's NAME.
+ */
+export function matchTier(row: { name: string; lower?: string }, needle: Needle): number {
+  const lower = row.lower ?? row.name.toLowerCase()
+  const at = lower.indexOf(needle.text)
+  if (at !== -1) return lower === needle.text ? 0 : at === 0 ? 1 : 2
+  if (needle.words.length === 0) return -1
+  // One word that is the whole text cannot start a word here: the text tier just failed to find it at all.
+  if (!(needle.words.length === 1 && needle.words[0] === needle.text) && startsEachWord(lower, needle.words)) return 3
+  return needle.joined.length >= JOINED_MIN && joinedAt(lower, needle.joined) !== null ? 4 : -1
+}
+
+/**
+ * Candidates matching `fragment`, RANKED (GRO-2197, YAZ-3748 D2) by `matchTier`: exact name match first, then prefix
+ * matches, then substring matches, then word and joined matches — case-insensitive over the candidate NAME (an alias row
  * matches on the alias, never on the note half of its label or insert), input order preserved
- * within each bucket. The needle is the fragment with its ENDS trimmed (Obsidian: `[[ al`
- * still matches Alpha) — internal whitespace stays significant. Ranking needs the full scan,
- * so there is no early exit: the per-candidate work is one `indexOf` over the precomputed
- * `lower`, and `cap` (MAX_SUGGESTIONS by default) caps the result AFTER ranking (the
- * completion.test perf smoke keeps 1,000+ files honest). An empty fragment matches everything —
- * the first cap-full. Generic over the row type so surfaces with their own richer candidate
+ * within each tier. The needle is the fragment with its ENDS trimmed (Obsidian: `[[ al`
+ * still matches Alpha); inside it, a space is a letter to the first three tiers and a split between words to the
+ * last two. Ranking needs the full scan, so there is no early exit: the per-candidate work is one `indexOf` over the
+ * precomputed `lower`, plus a word scan and a joined scan (`joinedAt`) for a row the text does not hold, and
+ * `cap` (MAX_SUGGESTIONS by default) caps the result AFTER ranking (the completion.test perf smoke keeps 1,000+ files
+ * honest). An empty fragment matches everything — the first cap-full. `loose: false` keeps the first three tiers alone
+ * (Settings, D1). Generic over the row type so surfaces with their own richer candidate
  * (title search, YAZ-802) match through here without fabricating link-only fields.
  */
 export function matchLinkCandidates<T extends { name: string; lower?: string }>(
   candidates: readonly T[],
   fragment: string,
   cap: number = MAX_SUGGESTIONS,
+  loose = true,
 ): T[] {
-  const needle = fragment.trim().toLowerCase()
-  const exact: T[] = []
-  const prefix: T[] = []
-  const substring: T[] = []
+  const needle = readNeedle(fragment, loose)
+  const tiers: T[][] = [[], [], [], [], []]
   for (const candidate of candidates) {
-    const lower = candidate.lower ?? candidate.name.toLowerCase()
-    const at = lower.indexOf(needle)
-    if (at === -1) continue
-    if (lower === needle) exact.push(candidate)
-    else if (at === 0) prefix.push(candidate)
-    else substring.push(candidate)
+    const tier = matchTier(candidate, needle)
+    if (tier !== -1) tiers[tier].push(candidate)
   }
-  return [...exact, ...prefix, ...substring].slice(0, cap)
+  return tiers.flat().slice(0, cap)
+}
+
+/**
+ * `label` lowercased, with a way back from a [start, end) range of the lowercased text to the same letters of `label`
+ * (YAZ-3748 B7). Nearly every label keeps its length, so the range is its own. A few letters grow (Turkish `İ` is `i̇`,
+ * two code units): then the label is lowered one character at a time, and each code unit keeps where its character stands.
+ */
+function lowered(label: string): { lower: string; back: (start: number, end: number) => [number, number] } {
+  const whole = label.toLowerCase()
+  if (whole.length === label.length) return { lower: whole, back: (start, end) => [start, end] }
+  let lower = ''
+  const starts: number[] = []
+  const ends: number[] = []
+  let at = 0
+  for (const ch of label) {
+    const low = ch.toLowerCase()
+    for (let i = 0; i < low.length; i++) starts.push(at), ends.push(at + ch.length)
+    lower += low
+    at += ch.length
+  }
+  return { lower, back: (start, end) => [starts[start], ends[end - 1]] }
+}
+
+/**
+ * Where `needle` shows in `label`, as [start, end) ranges to mark (YAZ-3748 D3), tried in the matcher's own order: the
+ * whole text where the label holds it, else each typed word where it starts a word (overlaps as one), else the joined
+ * text across the marks it skipped (B5: once it has JOINED_MIN letters). None when nothing fits — an alias or an id
+ * matched — or the text is empty. The ranges are the LABEL's positions, even where lowercasing changes its length (B7).
+ */
+export function matchRanges(label: string, needle: Needle): [number, number][] {
+  if (needle.text === '') return []
+  const { lower, back } = lowered(label)
+  const at = lower.indexOf(needle.text)
+  if (at !== -1) return [back(at, at + needle.text.length)]
+  if (needle.words.length === 0) return []
+  const starts = needle.words.map((q) => wordStart(lower, q))
+  if (starts.every((start) => start !== -1)) return merged(starts.map((start, i) => back(start, start + needle.words[i].length)))
+  const range = needle.joined.length < JOINED_MIN ? null : joinedAt(lower, needle.joined)
+  return range === null ? [] : [back(range[0], range[1])]
+}
+
+/** Ranges in label order, overlapping or touching ones as one (`work working` marks `Working` once). Sorts `ranges` in place: its caller makes it new. */
+function merged(ranges: [number, number][]): [number, number][] {
+  const out: [number, number][] = []
+  for (const [start, end] of ranges.sort((a, b) => a[0] - b[0])) {
+    const last = out[out.length - 1]
+    if (last !== undefined && start <= last[1]) last[1] = Math.max(last[1], end)
+    else out.push([start, end])
+  }
+  return out
 }
 
 /** Folder depth exactly as `makeResolver` counts it: root = 0. */

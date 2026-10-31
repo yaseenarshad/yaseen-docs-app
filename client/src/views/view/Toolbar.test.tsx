@@ -632,7 +632,6 @@ describe('filter menu (YAZ-1227-1229)', () => {
       'Sort',
       'Properties',
       'Filter',
-      'Preview on hover',
       'New note',
       'Search',
     ])
@@ -1975,52 +1974,6 @@ describe('card style toggles (YAZ-1206/YAZ-1217): per-property cardStyle writes 
   })
 })
 
-/**
- * Preview mode's eye (YAZ-1244): per-view `preview: true` in the views YAML. The toolbar reads
- * `view.preview` and writes through `onUpdate` — one write per toggle, and off CLEANS the key
- * (absent is off). Table and board only: cards/list have no preview, and the document skin has
- * no rows to hover.
- */
-describe('preview mode toggle (YAZ-1244)', () => {
-  const EYE = 'Preview on hover'
-  const BOARD_VIEW = 'views:\n  - type: board\n    name: B\n    groupBy:\n      property: note.status\n'
-  const OUTLINE_VIEW = 'views:\n  - type: outline\n    name: Outline\n'
-
-  it('the eye is offered on table and board views only', () => {
-    const { el } = mount()
-    expect(byLabel(el, EYE)).toBeDefined()
-    click(byText(el, '[role="tab"]', 'View')) // the cards view
-    expect(el.querySelector(`[aria-label="${EYE}"]`)).toBeNull()
-    expect(byLabel(mount(BOARD_VIEW).el, EYE)).toBeDefined()
-    expect(mount(OUTLINE_VIEW, { folderPath: '/vault/Topic.md' }).el.querySelector(`[aria-label="${EYE}"]`)).toBeNull()
-  })
-
-  it('toggling writes preview: true in ONE write and toggling off cleans the YAML', () => {
-    const { el, def, yaml, onChange } = mount()
-    click(byLabel(el, EYE))
-    expect(onChange).toHaveBeenCalledTimes(1)
-    expect(def().views[0].preview).toBe(true)
-    expect(yaml()).toContain('preview: true')
-    expect(def().views[1].preview).toBeUndefined()
-    expect(def().views[2].preview).toBeUndefined()
-    click(byLabel(el, EYE))
-    expect(onChange).toHaveBeenCalledTimes(2)
-    expect(def().views[0].preview).toBeUndefined()
-    expect(yaml()).not.toContain('preview')
-  })
-
-  it('pressed state reflects the YAML', () => {
-    const { el } = mount('views:\n  - type: table\n    name: T\n    preview: true\n')
-    const on = byLabel(el, EYE)
-    expect(on.getAttribute('aria-pressed')).toBe('true')
-    expect(on.className).toContain('view-toolbar__btn--on')
-    const { el: el2 } = mount()
-    const off = byLabel(el2, EYE)
-    expect(off.getAttribute('aria-pressed')).toBe('false')
-    expect(off.className).not.toContain('view-toolbar__btn--on')
-  })
-})
-
 describe('searchable column controls (YAZ-1395–1397)', () => {
   const SEARCHABLE = `properties:
   status: { displayName: Stage }
@@ -2168,12 +2121,12 @@ views:
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('grouped board keeps collapse beside preview and creation immediately before search', () => {
+  it('grouped board keeps collapse after filter and creation immediately before search', () => {
     const { el, onChange } = mount(SEARCHABLE)
     click(byText(el, '[role="tab"]', 'Board'))
     const actions = q(el, '.view-toolbar__actions')
     expect([...actions.querySelectorAll('.view-toolbar__btn')].map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Sort', 'Properties', 'Filter', 'Collapse all groups', 'Preview on hover', 'New note', 'Search',
+      'Sort', 'Properties', 'Filter', 'Collapse all groups', 'New note', 'Search',
     ])
     expect(actions.lastElementChild?.className).toBe('view-toolbar__count')
     expect(onChange).not.toHaveBeenCalled()

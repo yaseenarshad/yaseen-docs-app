@@ -2690,6 +2690,13 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(shape(el)).toEqual(['Plans', '  Zed'])
   })
 
+  it('YAZ-3748 D3: `yaseen workflow` finds `1-yaseen-engineering-workflow` by its words and marks each word; the parts between stay plain. B2: the bar draws no spelling line', async () => {
+    const { el, v, input } = await search('yaseen workflow', {}, { nodes: (v) => [note(`${v}/1-yaseen-engineering-workflow.md`), note(`${v}/Working-Log.md`)] })
+    expect(input.getAttribute('spellcheck')).toBe('false')
+    expect(shape(el)).toEqual(['1-yaseen-engineering-workflow'])
+    expect(row(el, `${v}/1-yaseen-engineering-workflow.md`)?.querySelector('.tree__label')?.innerHTML).toBe('1-<mark class="tree__mark">yaseen</mark>-engineering-<mark class="tree__mark">workflow</mark>')
+  })
+
   it('S37, S38, S40, S9, S10: a match shows the typed text bold where it first sits — whatever its case, spaces aside — and every other row steps back; a tree outside a search is drawn as ever (R7)', async () => {
     const vault = await search('', {}, {
       records: (root) => notePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Alpha.md') ? { aliases: ['First letter'] } : path.endsWith('/Zed.md') ? { id: 'k3m9x2pq7abc' } : {})),
@@ -2766,9 +2773,10 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     await type(input, 'scan')
     await press(input, 'Enter')
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/skills/scan.pdf`)
-    // S12: a note is found by its title and aliases, never by its file name.
+    // S12, as YAZ-3748 B4 changed it: a note whose file was named by hand (`up-001.md`, titled "Abdul") is found by
+    // that file name too, through its `up-001 — Abdul` row; a file name the app made from the title still finds nothing.
     await type(input, 'up-001')
-    expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('No matches')
+    expect(shape(el)).toEqual(['up-001'])
     await type(input, 'abdul')
     expect(shape(el)).toEqual(['up-001']) // the row's label is the window index's business; the search found it by title
   })

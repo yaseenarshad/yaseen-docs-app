@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import type { TreeNode } from '@shared/types'
 import { withoutPaths } from '../../lib/treeState'
+import { readNeedle } from '../../links/completion'
 import { bestScores, NO_SCORES } from '../../search/bestMatch'
 import { filterOn, filterTest, NO_FILTER, NO_TIMES, timesByPath, timeStart, type SearchFilter } from '../../search/searchFilter'
 import { searchTree } from '../../search/searchTree'
@@ -130,7 +131,7 @@ export function useSidebarSearch(
   // And the full ID of each row found by its number (YAZ-2677 S70): `searchRows` puts it in front of that row's label.
   const marks: TreeMarks = useMemo(() => {
     const ids = new Map(results.flatMap((r) => (r.id !== undefined && r.label.startsWith(`${r.id} — `) ? [[r.path, r.id] as const] : [])))
-    return { hits, needle: query.trim().toLowerCase(), ...(ids.size > 0 && { ids }) }
+    return { hits, needle: readNeedle(query), ...(ids.size > 0 && { ids }) }
   }, [hits, query, results])
   // Best match's score of each row of the cut (D12), only while Best match sorts.
   const scores = useMemo(() => (bestMatch && found !== NO_FOUND ? bestScores(results, query, [...found.top, ...found.rest], found.open) : NO_SCORES), [bestMatch, results, query, found])

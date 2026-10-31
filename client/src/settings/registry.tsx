@@ -332,7 +332,7 @@ const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string; hint?: stri
   { place: 'tabBoard', label: 'Tab board', hint: 'Mission Control: each open tab as a card.', keywords: ['tab board', 'mission control', 'cards', 'overview'] },
   { place: 'tabs', label: 'Tabs', hint: "A tab you're not on.", keywords: ['tabs', 'tab strip', 'tab bar'] },
   { place: 'backlinks', label: 'Linked mentions', hint: 'The list under a note.', keywords: ['backlinks', 'linked mentions', 'references'] },
-  { place: 'folderViews', label: 'Folder views', hint: 'Table, board, cards and list. A view whose own Preview is on keeps its own card.', keywords: ['folder', 'views', 'table', 'board', 'cards', 'list', 'kanban'] },
+  { place: 'folderViews', label: 'Folder views', hint: 'Table, board, cards and list.', keywords: ['folder', 'views', 'table', 'board', 'cards', 'list', 'kanban'] },
   { place: 'links', label: 'Links in notes', hint: '[[Links]] in the text.', keywords: ['links', 'wikilinks', 'editor', 'text'] },
 ]
 

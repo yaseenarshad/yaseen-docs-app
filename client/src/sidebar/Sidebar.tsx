@@ -1558,6 +1558,7 @@ export function Sidebar({
             placeholder="Search"
             title={titleWithKey('Search', 'search', settings.hotkeys)}
             aria-label="Search notes"
+            spellCheck={false} // a search is names, not prose: no red line under `yaseen` (YAZ-3748 B2)
             value={query}
             onChange={changeQuery}
             // With no text → and ↓ have nothing to do in the bar: they go to the first row of the

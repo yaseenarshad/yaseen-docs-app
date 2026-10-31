@@ -166,7 +166,10 @@ describe('selection and interaction', () => {
     expect(img.style.getPropertyValue('--image-width')).toBe('250px') // live while dragging, nothing dispatched yet
     expect(getMarkdownForSave(crepe)).toBe('![alt](images/a.png)\n')
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 220 }))
+    // YAZ-3719 1B: no frame takes the mouse while the handle is held, so a release over a diagram still ends it.
+    expect(document.body.classList.contains('drag-held')).toBe(true)
     document.dispatchEvent(new MouseEvent('mouseup', {}))
+    expect(document.body.classList.contains('drag-held')).toBe(false)
     expect(getMarkdownForSave(crepe)).toBe('![alt|320](images/a.png)\n')
     expect(imgOf(root)?.style.getPropertyValue('--image-width')).toBe('320px')
   })

@@ -1252,6 +1252,12 @@ button {
   background: var(--accent-soft);
 }
 
+/* While a drag is held (YAZ-3719 1A, 1B, `lib/colResize.ts`), no frame takes the mouse: over draw.io's frame the
+   window would get no move and no release, and the drag would go on with the button up. */
+body.drag-held iframe {
+  pointer-events: none;
+}
+
 .sidebar__header {
   display: flex;
   align-items: stretch;
@@ -3049,7 +3055,7 @@ button {
   display: inline;
 }
 
-/* Search (YAZ-2620 🔒 D5): the typed text, where it sits in a match — the `==highlight==` wash
+/* Search (YAZ-2620 🔒 D5): each part of a row that matched (YAZ-3748 D3), in the tree and in the flat lists — the `==highlight==` wash
    (`--mark-bg`) and weight. Weight alone was too faint at this size (Yasin's walk). The wash is
    translucent and the text keeps its colour, so it holds on the open and the highlighted row, in both themes. */
 .tree__mark {
