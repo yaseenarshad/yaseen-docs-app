@@ -31,6 +31,8 @@ import type { MenuTargets } from './Sidebar'
  * (YAZ-2619 R6). On a row of Search, Focus or Favorites "Show in sidebar" leads it (YAZ-2638 D1, D3).
  */
 interface MenuItemBase {
+  /** Only a strip has one. */
+  kind?: undefined
   id: string
   label: string
   /** Right-aligned shortcut hint (⌘X …), drawn from `data-hint` by CSS — never part of the label. */
@@ -65,7 +67,30 @@ export interface MenuParent extends MenuItemBase {
   children: readonly MenuAction[][]
 }
 
+/** One button of a strip: its icon, its name as the tooltip and the accessible name, lit when `active`. */
+export interface MenuStripButton {
+  label: string
+  icon: ReactNode
+  active: boolean
+  onSelect: () => void
+}
+
+/**
+ * A row of icon buttons (YAZ-3727 D15): the block menu's Turn into strip in a note's right-click menu. A
+ * click runs one and closes the whole menu, as a leaf does. It has no hint, glyph slot or flyout.
+ */
+export interface MenuStrip {
+  kind: 'strip'
+  id: string
+  /** The group's accessible name. */
+  label: string
+  buttons: readonly MenuStripButton[]
+}
+
 export type MenuItem = MenuAction | MenuParent
+
+/** What `ContextMenu` draws: an item, or a strip (only a note's menu has one). */
+export type MenuEntry = MenuItem | MenuStrip
 
 export type MenuSection = MenuItem[]
 

@@ -11,7 +11,7 @@ import type { MenuAction, MenuItem, MenuSection } from '../sidebar/menuSections'
 import type { CopyAsMode } from '@shared/types'
 import { caretIn, endOf, md, mount, posOf, runCommand, select, unmountAll } from './marks/markTestKit'
 import { toggleOutlineFold } from './outline/outlineFolding'
-import { misspellingAt, NoteMenu, noteMenuSections, TABLE_HANDLE_MENU } from './noteMenu'
+import { lineSections, misspellingAt, NoteMenu, noteMenuSections, TABLE_HANDLE_MENU } from './noteMenu'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import { cellDOM, cellPos, mountNote as mountTable, mouseAt, unmountAll as unmountTables } from './table/tableTestKit'
 
@@ -134,7 +134,8 @@ describe('the right-click (YAZ-3653)', () => {
     pointAt(view, posOf(crepe, 'one'))
     const event = rightClick(view.dom.querySelector('p')!)
     expect(event.defaultPrevented).toBe(true)
-    expect([...document.querySelectorAll('.ctx-menu [role=menuitem]')].map((b) => b.textContent)).toEqual(['Cut', 'Copy', 'Copy as', 'Paste', 'Paste as'])
+    // The bullet's Turn into strip first (YAZ-3727 D15), then the clipboard rows.
+    expect([...document.querySelectorAll('.ctx-menu [role=menuitem]')].map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['Checklist', 'Bullet list', 'Numbered list', 'Text', 'Cut', 'Copy', 'Copy as', 'Paste', 'Paste as'])
   })
 
   it('Without folded lines on a right-clicked bullet: main is asked, and the copy is that bullet without its folded lines', async () => {
@@ -241,5 +242,112 @@ describe('the right-click (YAZ-3653)', () => {
     view.dom.querySelector('p')!.append(image)
     expect(rightClick(image).defaultPrevented).toBe(false)
     expect(document.querySelector('.ctx-menu')).toBeNull()
+  })
+})
+
+describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ-3727 D15)', () => {
+  async function open(markdown: string, options: { onOpen?: () => void; suggest?: (word: string) => string[] | null } = {}) {
+    const mounted = await mount(markdown, options.onOpen === undefined ? {} : { zoom: { title: () => 'Note', onOpen: options.onOpen } })
+    window.yaseenDocs = { ...window.yaseenDocs, spell: { suggestions: options.suggest ?? (() => null) } } as typeof window.yaseenDocs
+    const host = document.createElement('div')
+    document.body.append(host)
+    act(() => {
+      root = createRoot(host)
+      root.render(<NoteMenu view={mounted.view} />)
+    })
+    return mounted
+  }
+  /** A right press on the text of `text`'s line, then its contextmenu. `between` runs in between: what the press selects. */
+  function rightClickOn(view: EditorView, at: number, between?: () => void) {
+    pointAt(view, at)
+    const target = view.domAtPos(at).node.parentElement!
+    act(() => void target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 2 })))
+    between?.()
+    act(() => void target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+  }
+  /** The menu's groups: each row's label, a strip's buttons as `<Checklist, Bullet list*, …>` (`*` lit). */
+  const groups = () =>
+    [...document.querySelectorAll('.ctx-menu > .ctx-menu__group')].map((group) =>
+      [...group.children].map((el) =>
+        el.classList.contains('ctx-menu__strip') ? `<${[...el.querySelectorAll('button')].map((b) => `${b.getAttribute('aria-label')}${b.getAttribute('aria-pressed') === 'true' ? '*' : ''}`).join(', ')}>` : el.textContent,
+      ),
+    )
+  const STRIP = (lit: string | null) => `<${['Checklist', 'Bullet list', 'Numbered list', 'Text'].map((label) => (label === lit ? `${label}*` : label)).join(', ')}>`
+  const CLIPBOARD = [['Cut', 'Copy', 'Copy as'], ['Paste', 'Paste as']]
+  const press = (label: string) => act(() => document.querySelector<HTMLButtonElement>(`.ctx-menu__strip button[aria-label="${label}"]`)!.click())
+
+  it('on a bullet with children: Open in new tab, the strip, the children rows, then the clipboard rows, in groups', async () => {
+    const { crepe, view } = await open('* a\n  * kid\n* b\n', { onOpen: vi.fn() })
+    rightClickOn(view, posOf(crepe, 'a'))
+    expect(groups()).toEqual([['Open in new tab'], [STRIP('Bullet list')], ['Number children'], ...CLIPBOARD])
+    // The strip's glyphs are the bullet menu's own SVGs.
+    expect(document.querySelectorAll('.ctx-menu__strip button > svg')).toHaveLength(4)
+  })
+
+  it('a misspelled word: the spelling rows first, then the line\'s rows', async () => {
+    const { crepe, view } = await open('* teh list\n', { suggest: (word) => (word === 'teh' ? ['the'] : null) })
+    rightClickOn(view, posOf(crepe, 'teh') + 1)
+    expect(groups()).toEqual([['the', 'Add to dictionary'], [STRIP('Bullet list')], ...CLIPBOARD])
+  })
+
+  it('a strip button changes the whole list, as on the dot, and closes the menu', async () => {
+    const { crepe, view } = await open('* a\n* b\n* c\n')
+    rightClickOn(view, posOf(crepe, 'b'))
+    press('Numbered list')
+    expect(md(crepe)).toBe('1. a\n2. b\n3. c\n')
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('the word the right press selected is no highlight: still the whole list', async () => {
+    const { crepe, view } = await open('* a\n* bee\n* c\n')
+    caretIn(crepe, 'a')
+    rightClickOn(view, posOf(crepe, 'bee') + 1, () => select(crepe, posOf(crepe, 'bee'), endOf(crepe, 'bee')))
+    expect(groups()[0]).toEqual([STRIP('Bullet list')])
+    press('Numbered list')
+    expect(md(crepe)).toBe('1. a\n2. bee\n3. c\n')
+  })
+
+  it('text highlighted before the right-click: only the highlighted lines change', async () => {
+    const { crepe, view } = await open('* a\n* b\n* c\n')
+    select(crepe, posOf(crepe, 'b'), endOf(crepe, 'c'))
+    rightClickOn(view, posOf(crepe, 'b'))
+    press('Numbered list')
+    expect(md(crepe)).toBe('* a\n\n1. b\n2. c\n')
+  })
+
+  it('a plain line: the strip with Text lit, no Open in new tab; ⌘Z gives it back', async () => {
+    const { crepe, view } = await open('p1\n\np2\n', { onOpen: vi.fn() })
+    rightClickOn(view, posOf(crepe, 'p2'))
+    expect(groups()).toEqual([[STRIP('Text')], ...CLIPBOARD])
+    press('Bullet list')
+    expect(md(crepe)).toBe('p1\n\n* p2\n')
+    undo(view.state, view.dispatch)
+    expect(md(crepe)).toBe('p1\n\np2\n')
+  })
+
+  it('in a code block or a table cell: no line rows', async () => {
+    const { crepe, view } = await open('```\ncode\n```\n')
+    rightClickOn(view, posOf(crepe, 'code') + 1)
+    expect(document.querySelector('.ctx-menu__strip')).toBeNull()
+    act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    const table = await mountTable('| h1 | h2 |\n| -- | -- |\n| a | b |\n')
+    expect(lineSections(table.view, cellPos(table.view, 1, 0) + 2, table.view.state.selection)).toEqual([])
+  })
+
+  it('a note that cannot change: no strip and no children rows; Open in new tab stays', async () => {
+    const { crepe, view } = await open('* a\n  * kid\n', { onOpen: vi.fn() })
+    crepe.setReadonly(true)
+    rightClickOn(view, posOf(crepe, 'a'))
+    expect(groups()[0]).toEqual(['Open in new tab'])
+    expect(document.querySelector('.ctx-menu__strip')).toBeNull()
+  })
+
+  it('the note changed under the open menu: a strip button changes nothing', async () => {
+    const { crepe, view } = await open('* a\n* b\n')
+    rightClickOn(view, posOf(crepe, 'a'))
+    const button = document.querySelector<HTMLButtonElement>('.ctx-menu__strip button[aria-label="Numbered list"]')!
+    view.dispatch(view.state.tr.insertText('x', endOf(crepe, 'b')))
+    act(() => button.click())
+    expect(md(crepe)).toBe('* a\n* bx\n')
   })
 })

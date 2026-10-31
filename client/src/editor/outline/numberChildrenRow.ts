@@ -3,13 +3,14 @@
  * children, after the "turn into" rows (YAZ-3727 D13). No row when the item has no direct child list (it was a
  * disabled row before D13); the row only dispatches
  * toggleNumberedChildren's transaction and never touches text. No row when the block is not in a
- * list item (YAZ-3696 B3): a table, a line or a heading at the top level has nothing to number.
+ * list item (YAZ-3696 B3): a table, a line or a heading at the top level has nothing to number. No row in a note
+ * that cannot change (YAZ-3727 D15: a right-click on the text shows these rows too).
  */
 import type { RowProvider } from '../blockHandleMenu'
 import { childListState, nearestListItem, toggleNumberedChildren, writeNumbersAsText } from './numberChildren'
 
 export const numberChildrenRow: RowProvider = (view, target, ctx) => {
-  if (target.inside < 0 || nearestListItem(view.state.doc, target.inside) === null) return []
+  if (!view.editable || target.inside < 0 || nearestListItem(view.state.doc, target.inside) === null) return []
   const s = childListState(view.state.doc, target.inside)
   if (s === null) return []
   return [
@@ -32,7 +33,7 @@ export const numberChildrenRow: RowProvider = (view, target, ctx) => {
  * bullets with each number written as `n) ` text. No row on any other line.
  */
 export const writtenNumbersRow: RowProvider = (view, target, ctx) => {
-  if (target.inside < 0 || writeNumbersAsText(view.state, target.inside, ctx) === null) return []
+  if (!view.editable || target.inside < 0 || writeNumbersAsText(view.state, target.inside, ctx) === null) return []
   return [
     {
       label: 'Bullets with written numbers',

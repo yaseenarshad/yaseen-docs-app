@@ -379,12 +379,24 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
   return el
 }
 
+/** Each mounted editor's rows, for its note menu (`noteMenu.tsx`). */
+const providers = new WeakMap<EditorView, (target: HandleTarget) => MenuItem[]>()
+
+/**
+ * The menu's rows and strips for `target` in `view` (YAZ-3727 D15): a right-click on a line's text shows them
+ * too, in the note's own menu, so both menus come from one list of rows. No pickers: they stay on the handle.
+ */
+export function blockMenuItems(view: EditorView, target: HandleTarget): Array<MenuRow | MenuStrip> {
+  return (providers.get(view)?.(target) ?? []).filter((item): item is MenuRow | MenuStrip => item.kind !== 'number' && item.kind !== 'choice')
+}
+
 export const createBlockHandleMenu = (rows: RowProvider) =>
   $prose(
     (ctx) =>
       new Plugin({
         key: new PluginKey('mdapp-block-handle-menu'),
         view: (view) => {
+          providers.set(view, (target) => rows(view, target, ctx))
           // Exists only while open: `.ctx-menu` means "open" everywhere (the sidebar menu is
           // mounted only while open too), so nothing lingers per mounted editor.
           let popup: HTMLElement | null = null
@@ -457,6 +469,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
               if (v.state.doc !== prevState.doc) close()
             },
             destroy: () => {
+              providers.delete(view)
               document.removeEventListener('pointerdown', onPointerDown, true)
               document.removeEventListener('mousedown', onMouseDown, true)
               document.removeEventListener('mouseup', onMouseUp, true)

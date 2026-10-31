@@ -1,7 +1,7 @@
 /**
  * The block menu's strip (YAZ-3727 D13, D14): Checklist, Bullet list, Numbered list and Text, the selection toolbar's
  * list buttons and T (`listButtons.ts`, YAZ-3806) as one row of icon buttons, from a right-click on a line's handle or
- * dot, for those who find the bullet easier to reach than a selection. The same commands, so the same rule: one
+ * dot, or on its text (D15, in the note's own menu: `blockMenuItems`), for those who find the bullet easier to reach than a selection. The same commands, so the same rule: one
  * transaction, folds and zoom kept, and the lit button takes the lines out of their list. T is last: the least used.
  *
  * The LINE is the item's first block, or the paragraph or heading, that the handle points at; never a code block, a
@@ -10,8 +10,9 @@
  *  - else, on an item line: the whole list it is in, one level (its siblings; their children keep their kind). The
  *    zoomed bullet's own line asks for itself: its siblings are hidden;
  *  - else (a paragraph, a heading, an item's later block): that line.
+ * A note that cannot change has no strip.
  */
-import { TextSelection, type Command, type EditorState } from '@milkdown/kit/prose/state'
+import { TextSelection, type Command, type EditorState, type Selection } from '@milkdown/kit/prose/state'
 import type { Node } from '@milkdown/kit/prose/model'
 import type { MenuStrip, RowProvider } from '../blockHandleMenu'
 import { allLinesAre, LIST_KINDS, listLines, toggleListKind, turnLinesIntoText, type LinePick, type ListKind } from '../listButtons'
@@ -34,10 +35,8 @@ function menuLine(doc: Node, inside: number): number | null {
 }
 
 /** Highlighted text that covers the line: its lines are the ones that change. */
-const coversLine = (state: EditorState, line: number): boolean => {
-  const { selection } = state
-  return selection instanceof TextSelection && !selection.empty && selection.from < state.doc.resolve(line).end() && selection.to > line
-}
+const coversLine = (state: EditorState, selection: Selection, line: number): boolean =>
+  selection instanceof TextSelection && !selection.empty && selection.from < state.doc.resolve(line).end() && selection.to > line
 
 /** The list the line's item is in, when the line is an item's first block and not the zoomed bullet's own line. */
 function wholeList(state: EditorState, line: number): number | null {
@@ -60,10 +59,11 @@ const glyph = (id: ListKind | 'text') => (): SVGElement => {
 }
 
 export const turnIntoRows: RowProvider = (view, target) => {
-  const line = menuLine(view.state.doc, target.inside)
+  const line = view.editable ? menuLine(view.state.doc, target.inside) : null
   if (line === null) return []
-  // What the strip shows lit is read on the lines it would change; a lone line is read with the caret on it.
-  const highlighted = coversLine(view.state, line)
+  // What the strip shows lit is read on the lines it would change; a lone line is read with the caret on it. A
+  // right-click on the text reads the selection from before it (D15): the word it selected is no highlight.
+  const highlighted = coversLine(view.state, target.selection ?? view.state.selection, line)
   const listPos = highlighted ? null : wholeList(view.state, line)
   const pick: LinePick | undefined = listPos === null ? undefined : listLines(listPos)
   const shown = highlighted || pick !== undefined ? view.state : view.state.apply(view.state.tr.setSelection(TextSelection.create(view.state.doc, line)))

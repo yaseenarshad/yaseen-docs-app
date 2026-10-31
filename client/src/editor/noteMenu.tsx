@@ -7,17 +7,22 @@
  * (`menu.edit`), as the native menu's roles do. A suggestion replaces the word in the note itself,
  * so ⌘Z undoes it like typing. A right-click in a table cell adds the Table part after the paste rows (YAZ-3769, `table/tableMenu.ts`). A right-click a link's own menu took (the one link menu, YAZ-3609 D23) opens
  * only that menu. With words selected, "Add link…" opens the link box on them (YAZ-3609 D17). Copy as › Without folded lines with the selection inside one line
- * copies the bullet under the pointer: its line and the lines you see under it.
+ * copies the bullet under the pointer: its line and the lines you see under it. On a line's text, the bullet menu's
+ * rows for that line come after the spelling rows (YAZ-3727 D15): Open in new tab, the Turn into strip and the
+ * children rows, from the same list of rows (`blockMenuItems`), so a right-click on the text and one on the dot agree.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import type { Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { NoteMenuAction } from '@shared/types'
 import { api } from '../api'
+import { blockMenuItems } from './blockHandleMenu'
+import { textLineTarget } from './blockHandleTarget'
 import { bulletToCopy, copyVisibleNext, forgetCopyVisible } from './clipboardCopyOut'
 import { addLinkOn } from './markdownLink'
 import { TABLE_HANDLE_MENU, tableMenuSections } from './table/tableMenu'
 import { ContextMenu } from '../sidebar/ContextMenu'
-import type { MenuSection } from '../sidebar/menuSections'
+import type { MenuEntry, MenuSection } from '../sidebar/menuSections'
 
 /** The misspelled word under the pointer: its document range and the spellchecker's first guesses. */
 export interface Misspelling {
@@ -49,6 +54,41 @@ export function misspellingAt(view: EditorView, x: number, y: number, suggest: (
   return null
 }
 
+/** A bullet-menu glyph, an SVG element its row makes, as React draws it: the same markup. */
+function glyphOf(make: () => SVGElement): ReactNode {
+  const svg = make()
+  const attrs = Object.fromEntries([...svg.attributes].map(({ name, value }) => [name === 'class' ? 'className' : /^(aria|data)-/.test(name) ? name : name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()), value]))
+  return <svg {...attrs} dangerouslySetInnerHTML={{ __html: svg.innerHTML }} />
+}
+
+/**
+ * The line part (YAZ-3727 D15): the bullet menu's rows for the line right-clicked at `pointer`, one section
+ * per group as on the dot. `selection` is the note's selection from before the right-click, which may
+ * have selected the word under the pointer: the strip reads a highlight from it. None off a line's text
+ * (code, a table cell). A row does nothing once the note has changed under the open menu.
+ */
+export function lineSections(view: EditorView, pointer: number | null, selection: Selection): MenuEntry[][] {
+  const target = pointer === null ? null : textLineTarget(view.state.doc, pointer, selection)
+  if (target === null) return []
+  const doc = view.state.doc
+  const guarded = (run: () => void) => () => {
+    if (view.state.doc === doc) run()
+  }
+  const sections: MenuEntry[][] = []
+  let group: string | undefined
+  blockMenuItems(view, target).forEach((item, index) => {
+    if (sections.length === 0 || item.group !== group) sections.push([])
+    group = item.group
+    const id = `line-${index}`
+    sections[sections.length - 1].push(
+      item.kind === 'strip'
+        ? { kind: 'strip', id, label: item.label, buttons: item.buttons.map((b) => ({ label: b.label, icon: glyphOf(b.icon), active: b.active, onSelect: guarded(b.run) })) }
+        : { id, label: item.label, hint: item.hint, danger: item.danger, disabled: item.disabled, icon: item.icon && glyphOf(item.icon), onSelect: guarded(item.run) },
+    )
+  })
+  return sections
+}
+
 /**
  * Whether nothing is selected: in the note's state and on the page. A right-click can select the word
  * under the pointer on the page before the note reads it, and Cut and Copy act on the page's.
@@ -74,7 +114,7 @@ function selectedWords(view: EditorView): { from: number; to: number } {
 
 /**
  * The rows, as data: the spelling group (only on a misspelled word), then the copy group, then the
- * paste group. A row that cannot act is shown but inert, as the native menu greys it: Cut and the
+ * paste group. The menu puts the line part (`lineSections`, D15) after the spelling group. A row that cannot act is shown but inert, as the native menu greys it: Cut and the
  * copies with no selection, Cut and the pastes in a read-only note. Without folded lines stays on in
  * a bullet (`pointer`, the document position right-clicked): it copies that bullet.
  */
@@ -143,6 +183,8 @@ interface OpenMenu {
   /** The document position right-clicked, and the document it is in: a bullet there is Without folded lines' copy. */
   pointer: number | null
   doc: EditorView['state']['doc']
+  /** The note's selection from before the right-click (D15). */
+  selection: Selection
   /** What held the focus at the right-click: the note, or a code block inside it. */
   focused: HTMLElement | null
 }
@@ -154,7 +196,14 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
   const [menu, setMenu] = useState<OpenMenu | null>(null)
   useEffect(() => {
     if (view === null) return
+    // The selection before a right press (D15): the press can select the word under the pointer before the menu opens.
+    let pressed: { doc: EditorView['state']['doc']; selection: Selection } | null = null
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button === 2 || event.ctrlKey) pressed = { doc: view.state.doc, selection: view.state.selection }
+    }
     const onContextMenu = (event: MouseEvent) => {
+      const before = pressed !== null && pressed.doc === view.state.doc ? pressed.selection : view.state.selection
+      pressed = null
       // A link's own menu (`markdownLink.ts`, `wikilinkMenu.ts`) has claimed it first; an image keeps the native menu.
       if (event.defaultPrevented || !(event.target instanceof Element) || event.target.closest('img') !== null) return
       event.preventDefault()
@@ -165,6 +214,7 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
         misspelling: misspellingAt(view, event.clientX, event.clientY, (word) => api.spell.suggestions(word)),
         pointer: view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null,
         doc: view.state.doc,
+        selection: before,
         focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null,
       })
     }
@@ -173,16 +223,19 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
     const onHandleMenu = (event: Event) => {
       const { x, y, pos } = (event as CustomEvent<{ x: number; y: number; pos: number }>).detail
       const active = document.activeElement
-      setMenu({ x, y, misspelling: null, pointer: pos + 1, doc: view.state.doc, focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null })
+      setMenu({ x, y, misspelling: null, pointer: pos + 1, doc: view.state.doc, selection: view.state.selection, focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null })
     }
+    view.dom.addEventListener('mousedown', onMouseDown, true)
     view.dom.addEventListener('contextmenu', onContextMenu)
     view.dom.addEventListener(TABLE_HANDLE_MENU, onHandleMenu)
     return () => {
+      view.dom.removeEventListener('mousedown', onMouseDown, true)
       view.dom.removeEventListener('contextmenu', onContextMenu)
       view.dom.removeEventListener(TABLE_HANDLE_MENU, onHandleMenu)
     }
   }, [view])
   if (view === null || menu === null) return null
+  const pointer = menu.doc === view.state.doc ? menu.pointer : null
   const refocus = () => (menu.focused ?? view.dom).focus()
   const run = (action: NoteMenuAction, word?: string) => {
     refocus()
@@ -194,11 +247,12 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
       console.error('Menu action failed', error)
     })
   }
+  const [spelling, ...rest] = noteMenuSections(view, menu.misspelling, run, pointer)
   return (
     <ContextMenu
       x={menu.x}
       y={menu.y}
-      sections={noteMenuSections(view, menu.misspelling, run, menu.doc === view.state.doc ? menu.pointer : null)}
+      sections={[spelling, ...lineSections(view, pointer, menu.selection), ...rest]}
       onClose={() => {
         setMenu(null)
         refocus()
