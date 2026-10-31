@@ -18,6 +18,7 @@ import { $prose } from '@milkdown/kit/utils'
 import { fileKind } from '@shared/fileKind'
 import { fileLabel } from '../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkActions, type LinkMenu } from './linkMenu'
+import { vaultSpan } from './wikilink/wikilinkPlugin'
 
 /** The link menu's place rows (YAZ-3740: `showInSidebar`, Focus and Favorites, "Open in ▸") are App's `LinkActions`: absent, no row. */
 export interface MarkdownLinkNav extends LinkActions {
@@ -107,15 +108,6 @@ function linkHit(view: EditorView, ctx: Ctx, target: EventTarget | null): LinkHi
   return { href: mark.attrs.href, mark, from: spans[first]!.from, to: spans[last]!.to }
 }
 
-/** The vault name a pill into another vault ends with (D22, YAZ-3738 D4): a piece of the pill, never text. */
-const vaultSpan = (vault: string): HTMLElement => {
-  const span = document.createElement('span')
-  span.className = 'wikilink link-pill link-pill--last link-pill__vault'
-  span.spellcheck = false
-  span.textContent = ` (${vault})`
-  return span
-}
-
 /**
  * The link pills of the textblocks between `from` and `to` (D19), in `set` with those blocks' old pills
  * replaced: each run of one link mark whose path is in a vault of the window. The first piece of a run
@@ -144,7 +136,7 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
         // Its vault's name is the pill's last piece (YAZ-3738 D4): drawn before the caret at the link's end, so the
         // caret shows after the whole pill. Inside the link's anchor: a click on it opens the link, as on the text.
         const mark = run.mark
-        if (vault !== null) fresh.push(Decoration.widget(run.pieces[last]![1], () => vaultSpan(vault), { side: -1, marks: [mark], key: `vault:${vault}` }))
+        if (vault !== null) fresh.push(Decoration.widget(run.pieces[last]![1], () => vaultSpan('wikilink link-pill link-pill--last', vault), { side: -1, marks: [mark], key: `vault:${vault}` }))
       }
       run = null
     }
@@ -178,14 +170,13 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
   const local = hit.href.startsWith('#')
   // Only a file or folder that is there, found as a click finds it.
   const found = path === null ? null : (nav.inApp?.(hit.href) ?? null)
-  const leaf = found === null ? '' : found.slice(Math.max(found.lastIndexOf('/'), found.lastIndexOf('\\')) + 1)
   return {
     labels: name === null || name === '' ? [] : [vault === null ? name : `${name} (${vault})`],
     open: local ? undefined : () => follow(hit.href, false),
     openNew: path === null ? undefined : () => follow(hit.href, true),
     copyName: name === null || name === '' ? undefined : { hint: name, run: () => copyText(name, 'name', nav.onNotice, nav.copy) },
     copyAddress: path === null ? () => copyText(hit.href, 'address', nav.onNotice, nav.copy) : undefined,
-    ...(found === null ? {} : placeRows(found, fileKind(leaf) !== null, nav, nav.onNotice, nav.copy)),
+    ...(found === null ? {} : placeRows(found, nav, nav.onNotice, nav.copy)),
     edit: view.editable ? () => ctx.get(linkTooltipAPI.key).editLink(hit.mark, hit.from, hit.to) : undefined,
     remove: view.editable ? () => ctx.get(linkTooltipAPI.key).removeLink(hit.from, hit.to) : undefined,
   }

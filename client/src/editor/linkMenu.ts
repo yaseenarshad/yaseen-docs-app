@@ -26,6 +26,7 @@
  * (YAZ-3905). No "Copy link": a selected pill and ⌘C copy a working link. The popup is
  * `blockHandleMenu.ts`'s (`renderMenu`), with its flyout for "Open in ▸" (YAZ-3901).
  */
+import { fileKind } from '@shared/fileKind'
 import { closeSubmenu, renderMenu, type MenuRow } from './blockHandleMenu'
 import type { ListState } from '../lists/useVaultListsHere'
 
@@ -105,11 +106,12 @@ export function linkMenuRows(menu: LinkMenu): MenuRow[] {
 }
 
 /**
- * The place rows of a link whose target is there (YAZ-3740): `path` and the App doors it has. `file` is false for
- * a folder, which has no "New window" (as in the sidebar). Every one absent leaves its row out.
+ * The place rows of a link whose target is there (YAZ-3740): `path` and the App doors it has. A folder (no file kind)
+ * has no "New window", as in the sidebar. Every one absent leaves its row out.
  */
-export function placeRows(path: string, file: boolean, actions: LinkActions | undefined, onNotice: (message: string) => void, copy?: (text: string) => Promise<void> | void): Pick<LinkMenu, 'showInSidebar' | 'copyPath' | 'favorite' | 'focus' | 'openIn'> {
+export function placeRows(path: string, actions: LinkActions | undefined, onNotice: (message: string) => void, copy?: (text: string) => Promise<void> | void): Pick<LinkMenu, 'showInSidebar' | 'copyPath' | 'favorite' | 'focus' | 'openIn'> {
   const a = actions ?? {}
+  const file = fileKind(path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)) !== null
   const lists = a.listState?.(path) ?? null
   const bind = (run: ((path: string) => void) | undefined) => (run === undefined ? undefined : () => run(path))
   return {

@@ -18,8 +18,6 @@
 import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { fileKind } from '@shared/fileKind'
-import { basename } from '@shared/types'
 import { copyNoteId } from '../../lib/copyNoteId'
 import { pathTitles } from '../../lib/pageLabel'
 import { folderLabel, folderRecord } from '../../links/shortcuts'
@@ -90,7 +88,7 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
       ? { copyNameAndId: { hint: nameAndId(title, id), run: () => copyText(nameAndId(title, id), 'name and ID', nav.onNotice) } }
       : shown !== '' && found ? { copyName: { hint: shown, run: () => copyText(shown, 'name', nav.onNotice) } } : {}),
     copyId: id === null ? undefined : copyIdRow(id),
-    ...(path === null ? {} : placeRows(path, fileKind(basename(path)) !== null, nav, nav.onNotice)),
+    ...(path === null ? {} : placeRows(path, nav, nav.onNotice)),
     edit,
     remove,
   }

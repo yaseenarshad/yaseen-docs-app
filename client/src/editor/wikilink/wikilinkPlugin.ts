@@ -341,12 +341,15 @@ export function linkIsResolved(inner: string, source: WikilinkResolveSource, vie
   return source.resolve === null || target === '' || source.resolve(target) !== null
 }
 
-/** The DOM of a vault's name after an ID of another vault (YAZ-3905 S23): quiet, as a pill's vault name (D22). */
-function vaultSpan(cls: string, vault: string | null): HTMLElement {
+/**
+ * The DOM of a vault's name at a link's end, " (In-harness-lab)", with `cls` and `link-pill__vault`: a pill into another
+ * vault (D22, YAZ-3738 D4, `markdownLink.ts`) and an ID of another vault (YAZ-3905 S23). A piece of the pill, never text.
+ */
+export function vaultSpan(cls: string, vault: string): HTMLElement {
   const span = document.createElement('span')
   span.className = `${cls} link-pill__vault`
   span.spellcheck = false
-  span.textContent = ` (${vault ?? 'another vault'})`
+  span.textContent = ` (${vault})`
   return span
 }
 
@@ -406,7 +409,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
           hide(out, at, at + lead)
           shown(at + lead, at + part.length - trail)
           hide(out, at + part.length - trail, at + part.length)
-          if (other !== null) out.push(Decoration.widget(at + part.length, () => vaultSpan(cls, other.vault), { side: -1, key: `vault:${other.vault ?? ''}` }))
+          if (other !== null) out.push(Decoration.widget(at + part.length, () => vaultSpan(cls, other.vault ?? 'another vault'), { side: -1, key: `vault:${other.vault ?? ''}` }))
         } else if (segments === 0) shown(at, at + part.length)
         else out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}`, spellcheck: 'false' }))
         segments++
