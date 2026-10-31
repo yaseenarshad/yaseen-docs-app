@@ -7,7 +7,7 @@ import { defaultRightPanelIdentity, type FileKind, type RecentRoots, type Window
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, sameKey } from '@shared/hotkeyBindings'
 import { createStore, type Store } from './store'
-import { CANVAS_BACKGROUND_PICKS, HELP_URL, RELOAD_NOT_CLEAN_NOTICE, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, gateOnBoardKind, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile, type ContextMenuActions, type MenuHandlers, type MenuHost, type MenuInputs } from './menu'
+import { CANVAS_BACKGROUND_PICKS, HEAP_SNAPSHOT_BUSY_NOTICE, HELP_URL, RELOAD_NOT_CLEAN_NOTICE, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, gateOnBoardKind, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile, type ContextMenuActions, type MenuHandlers, type MenuHost, type MenuInputs } from './menu'
 
 // ---------- buildMenuTemplate (pure) ----------
 
@@ -37,6 +37,7 @@ const noopHandlers = (): MenuHandlers => ({
   tabOverview: vi.fn(),
   toggleSidebar: vi.fn(),
   reload: vi.fn(),
+  saveHeapSnapshot: vi.fn(),
   openHelp: vi.fn(),
   checkForUpdates: vi.fn(),
   whatsNew: vi.fn(),
@@ -209,8 +210,15 @@ describe('buildMenuTemplate', () => {
     click(reload)
     expect(handlers.reload).toHaveBeenCalledTimes(1)
 
-    const dev = menuOf(build(RECENTS, true), 'View')
+    expect(view.find((i) => i.id === 'menu.view.heap-snapshot')).toBeUndefined()
+
+    // Dev only (YAZ-3737 D9): Save Heap Snapshot sits right after Toggle DevTools.
+    const dev = menuOf(build(RECENTS, true, handlers), 'View')
     expect(dev.map((i) => i.role).filter(Boolean)).toEqual(['toggleDevTools'])
+    const at = dev.findIndex((i) => i.role === 'toggleDevTools')
+    expect([dev[at + 1].id, dev[at + 1].label, dev[at + 1].accelerator]).toEqual(['menu.view.heap-snapshot', 'Save Heap Snapshot', undefined])
+    click(dev[at + 1])
+    expect(handlers.saveHeapSnapshot).toHaveBeenCalledTimes(1)
   })
 
   it('View › Actual Size / Zoom In / Zoom Out own ⌘0 / ⌘+ (and hidden ⌘=) / ⌘− and hand the step to handlers.zoom (YAZ-1710)', () => {
@@ -592,6 +600,7 @@ function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, 
     readClipboardText: vi.fn(() => '# Clipboard\n\nText'),
     openExternal: vi.fn(),
     checkForUpdates: vi.fn(),
+    saveHeapSnapshot: vi.fn(async () => true),
   }
   const handlers = createMenuHandlers(windows, host)
   return { handlers, windows, host }
@@ -739,6 +748,23 @@ describe('createMenuHandlers', () => {
     const none = makeHandlers(undefined)
     none.handlers.reload()
     expect(none.windows.reloadWindow).not.toHaveBeenCalled()
+  })
+
+  it('saveHeapSnapshot (YAZ-3737 D9): the focused window\'s snapshot; a debugger already attached → a notice in that window (S23); no window → nothing', async () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers, host } = makeHandlers(wc)
+    handlers.saveHeapSnapshot()
+    await vi.waitFor(() => expect(host.saveHeapSnapshot).toHaveBeenCalledExactlyOnceWith(wc, 'w1'))
+    await Promise.resolve()
+    expect(wc.send).not.toHaveBeenCalled()
+
+    vi.mocked(host.saveHeapSnapshot).mockResolvedValueOnce(false)
+    handlers.saveHeapSnapshot()
+    await vi.waitFor(() => expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.link.onNotice.channel, HEAP_SNAPSHOT_BUSY_NOTICE))
+
+    const none = makeHandlers(undefined)
+    none.handlers.saveHeapSnapshot()
+    expect(none.host.saveHeapSnapshot).not.toHaveBeenCalled()
   })
 
   it('closeTab / nextTab / prevTab go to the focused renderer only (GRO-2232); no focused window is a no-op', () => {

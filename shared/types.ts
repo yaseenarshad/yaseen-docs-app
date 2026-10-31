@@ -1665,6 +1665,13 @@ export interface SettingsState {
   dailyNoteFormat: string
   /** Make a folder for each day (D9): today's note goes in a folder of the same name. */
   dailyNoteDayFolder: boolean
+  /**
+   * Settings › Memory (YAZ-3737 D10): how long a tab stays unseen before it sleeps (tab sleep, 5A). Travels with the
+   * other settings. Its row is in place before 5A reads it.
+   */
+  tabSleepAfter: TabSleepAfter
+  /** Settings › Memory (YAZ-3737 D6, D10): a window that holds too much memory reloads by itself (6). On by default; travels. */
+  memoryReload: boolean
 }
 
 /** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, a folder or a file by its path inside the vault ('' = the vault root), or today's daily note (YAZ-3607 D1). */
@@ -1689,6 +1696,10 @@ export function hoverOn(settings: Pick<SettingsState, 'hoverPreview' | 'hoverPre
 
 export type DiagramDarkColors = 'adapt' | 'keep'
 export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
+
+/** How long a tab stays unseen before it sleeps (YAZ-3737 D10): 30 min is the default. */
+export type TabSleepAfter = '15m' | '30m' | '1h' | '2h' | 'never'
+export const TAB_SLEEP_AFTER: readonly TabSleepAfter[] = ['15m', '30m', '1h', '2h', 'never']
 
 /** How long a toast stays (YAZ-3303 D5): 4 s (the length before 3303), 8 s, 15 s, or until closed. */
 export type NoticeLength = '4s' | '8s' | '15s' | 'closed'
@@ -1901,6 +1912,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   dailyNoteFolder: '',
   dailyNoteFormat: DEFAULT_DAILY_NOTE_FORMAT,
   dailyNoteDayFolder: false,
+  tabSleepAfter: '30m',
+  memoryReload: true,
 }
 
 export interface WindowBounds {
@@ -2991,6 +3004,34 @@ export function stepZoom(steps: readonly number[], percent: number, direction: 1
 /** One sidebar zoom step (YAZ-3389) along `SIDEBAR_ZOOM_STEPS`: 50% down and 200% up are the walls. */
 export function stepSidebarZoom(percent: number, direction: 1 | -1): number {
   return stepZoom(SIDEBAR_ZOOM_STEPS, percent, direction)
+}
+
+/** The memory meter samples every window this often (YAZ-3737 D1); Settings › Memory asks for its report at the same rate. */
+export const MEMORY_SAMPLE_MS = 30_000
+
+/** One window's row of Settings › Memory (YAZ-3737 D1, D9). Every size is bytes, resident (RSS). */
+export interface MemoryWindowRow {
+  /** The window's id: a click on the row calls `window.showWindow(id)`. */
+  id: string
+  /** `WindowEntry.name`, else the window's title. */
+  title: string
+  /** What it has open, as "2 notes, 2 drawings"; '' with no tab. */
+  open: string
+  /** Its renderer plus every frame process in it (draw.io, PDF). */
+  bytes: number
+  /** The page's JS heap in use, from its preload, read only for this report; null = the window did not answer. */
+  jsHeapBytes: number | null
+  /** ▲: it grew more than 150 MB or 20 % since the sample about 1 h ago. Never in its first hour. */
+  grew: boolean
+}
+
+/** `memory.report()` (YAZ-3737 D1): the windows, biggest first, then App core and the code helpers. */
+export interface MemoryReport {
+  windows: MemoryWindowRow[]
+  /** The main process, the GPU and utility processes, and any process no window owns (`other`, e.g. DevTools). `bytes` is their sum. */
+  core: { bytes: number; main: number; gpu: number; utility: number; other: number }
+  /** The language helpers of the code tab (`ps` RSS); null while none runs. */
+  helpers: { bytes: number; count: number } | null
 }
 
 /**

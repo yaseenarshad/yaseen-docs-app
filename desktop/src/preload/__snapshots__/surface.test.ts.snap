@@ -3,6 +3,7 @@
 exports[`window.yaseenDocs is exactly this surface (YAZ-2200) 1`] = `
 "expose yaseenDocs
 on app:flush
+on memory:heap
 on menu:paste-as
 on menu:copy-as
 app.sound/1: invoke app:sound ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -96,6 +97,7 @@ media.onChanged/1: on media:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","ro
 media.preview/1: invoke media:preview ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.recent/1: invoke media:recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.search/1: invoke media:search ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+memory.report/0: invoke memory:report []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 menu.edit/2: invoke menu:edit ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 menu.onBack/1: on menu:back -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:back
 menu.onCanvasBackground/1: on menu:canvas-background -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:canvas-background

@@ -73,11 +73,11 @@ const groupTitles = (el: HTMLElement) => [...el.querySelectorAll('.settings-grou
 const row = (el: HTMLElement, id: string) => el.querySelector<HTMLElement>(`[data-setting="${id}"]`)
 
 describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
-  it('is a standalone page under the divider, before Hotkeys — and absent with no vault', () => {
+  it('is a standalone page under the divider, after Memory and before Hotkeys — and absent with no vault', () => {
     const { el } = mount(STATS)
-    expect(navTitles(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', 'Storage', 'Hotkeys'])
-    // Under the divider with Hotkeys, a reference page like it.
-    expect(el.querySelector('.settings-nav__divider + .settings-nav__item')?.textContent).toBe('Storage')
+    expect(navTitles(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', 'Memory', 'Storage', 'Hotkeys'])
+    // Under the divider with Memory (YAZ-3737 D9) and Hotkeys, a reference page like them.
+    expect(el.querySelector('.settings-nav__divider + .settings-nav__item + .settings-nav__item')?.textContent).toBe('Storage')
     expect(row(el, 'storageGithub')).toBeNull()
     openStorage(el)
     expect(el.textContent).toContain('This vault only. GitHub refuses any file over 100 MB and wants the whole repo under 1 GB.')

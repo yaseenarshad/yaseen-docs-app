@@ -934,6 +934,64 @@
   font-size: 14px;
 }
 
+/* Settings › Memory (YAZ-3737 D9): one grid row per window, App core, Code helpers; the bar is Storage's. */
+.memory {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.memory__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memory__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 120px 5.5em 1em;
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.memory__row--window {
+  cursor: pointer;
+}
+
+.memory__row--window:hover {
+  background: var(--bg-hover-row);
+}
+
+.memory__name,
+.memory__open {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory__open,
+.memory__grew {
+  color: var(--fg-muted);
+}
+
+.memory__bar {
+  width: 100%;
+}
+
+.memory__size {
+  text-align: right;
+}
+
 /*
  * A narrow window (YAZ-3357 D14: a Files window is about 230 px of page): the nav and the page side
  * by side leave the page no width. The nav stands above the page instead, shorter, and the sheet

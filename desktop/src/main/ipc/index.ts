@@ -3,6 +3,7 @@ import { CONTRACT } from '@shared/ipc'
 import type { GitSyncManager } from '../git/manager'
 import type { Secrets } from '../secrets'
 import type { SettingsFolder } from '../settingsFolder'
+import type { LspPool } from '../lsp/pool'
 import type { Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { resolveLibraryFolder } from '../library/folder'
@@ -32,7 +33,8 @@ import { registerWindowIpc } from './window'
  * Every `ipcMain` handler the preload's bridge invokes; call once before the first window loads.
  *
  * Returns the GitHub sync manager (YAZ-1081, 2C) — the one registration with triggers no renderer
- * can send (window focus, OS wake, the last flush before quit), which `main/index.ts` owns.
+ * can send (window focus, OS wake, the last flush before quit), which `main/index.ts` owns — and the
+ * language helpers' pool, whose PIDs the memory meter reads (YAZ-3737 D1).
  *
  * `places` is passed in rather than read from `app`, so every module under `main/` stays Electron-free
  * and testable against a temp dir. `userData` (YAZ-3038, YAZ-3040) is the default root of the canvas
@@ -46,7 +48,7 @@ export type IpcPlaces = ShareIpcPlaces & {
   appPath?: string
 }
 
-export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets } {
+export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets; lsp: LspPool } {
   const { userData } = places
   registerFsIpc(store, windows)
   registerBoardIpc(store, windows, userData)
@@ -65,7 +67,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // They run only while Settings › Code › "Jump across files" is on, and are a download in `<userData>/lsp`
   // (YAZ-3500). A dev build also takes the `node_modules` copies, unless YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1
   // (the hidden e2e spec of the box; a dev run that shows the download as a packaged app does).
-  registerLspIpc(
+  const lsp = registerLspIpc(
     { lspRoot: join(userData, 'lsp'), devCopies: !places.isPackaged && process.env.YASEEN_DOCS_LSP_DOWNLOAD_ONLY !== '1', appPath: places.appPath ?? '' },
     { on: () => store.get().settings.codeLanguageHelpers, subscribe: (listener) => store.onChange((state) => listener(state.settings.codeLanguageHelpers)) },
   )
@@ -81,5 +83,5 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerMediaStudioIpc(userData, secrets)
   registerShareIpc(userData, secrets, places)
   // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
-  return { sync: registerGithubIpc(store), secrets }
+  return { sync: registerGithubIpc(store), secrets, lsp }
 }

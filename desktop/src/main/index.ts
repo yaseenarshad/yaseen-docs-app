@@ -1,12 +1,12 @@
 import { rendererUrlFor } from './rendererUrl'
-import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell } from 'electron'
+import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileKind } from '@shared/fileKind'
 import { fileLink, isAppLink, parseFileLink } from '@shared/links'
-import { FILES_PREVIEW_FRAME, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
+import { FILES_PREVIEW_FRAME, MEMORY_SAMPLE_MS, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
 import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { APP_SCHEME } from './appScheme'
@@ -19,6 +19,9 @@ import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerUpdateIpc } from './ipc/update'
+import { askHeap, registerMemoryIpc } from './ipc/memory'
+import { createMemoryMeter, helperRss, type MemoryMeter } from './memory'
+import { saveHeapSnapshot } from './heapSnapshot'
 import { claimDeepLinkScheme } from './deepLinkScheme'
 import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
@@ -152,6 +155,7 @@ const manager = createWindowManager(store, {
       })
     })
     win.on('closed', () => {
+      meter?.forget(entry.id)
       const popup = previewByOwner.get(ownerId)
       previewByOwner.delete(ownerId)
       if (popup !== undefined && !popup.isDestroyed()) popup.destroy()
@@ -251,6 +255,9 @@ let lastFocusedWcId: number | undefined
 /** The per-vault GitHub sync manager (YAZ-1081), created with the rest of the IPC once `ready` fires. */
 let gitSync: GitSyncManager | undefined
 
+/** The memory meter (YAZ-3737 D1), made on `ready`: a window that closes drops its history. */
+let meter: MemoryMeter | undefined
+
 /** The menu's apply step, once `ready` made it: a focus change moves which window the board items ask about (YAZ-3037). */
 let rebuildMenuOnFocus: (() => void) | undefined
 
@@ -322,6 +329,14 @@ app.whenReady().then(() => {
         },
         () => manager.linkNotice("Can't check for updates. Try again later"),
       ),
+    // Dev only (YAZ-3737 D9): into the temp folder, never the vault or the profile.
+    saveHeapSnapshot: async (target, windowId) => {
+      const wc = webContents.fromId(target.id)
+      if (wc === undefined) return true
+      const file = await saveHeapSnapshot(wc.debugger, join(app.getPath('temp'), 'yaseen-docs-heap'), windowId, new Date())
+      if (file !== null) shell.showItemInFolder(file)
+      return file !== null
+    },
   })
   // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D10) are enabled only while the window a
   // menu action would target has a board of the right kind in front. Read at build time from the same
@@ -357,7 +372,7 @@ app.whenReady().then(() => {
   // rebuilds only when the board items' answer moves (YAZ-3044 A32).
   subscribeMenuRebuildOnActiveFile(store, applyIfMoved)
   rebuildMenuOnFocus = applyIfMoved
-  const { sync, secrets } = registerIpc(store, manager, {
+  const { sync, secrets, lsp } = registerIpc(store, manager, {
     userData: app.getPath('userData'),
     // YAZ-3040: the share viewer's build, draw.io's webapp and Excalidraw's fonts, which share setup uploads.
     viewerAssetsDir: viewerAssetsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(), mainDir: __dirname, exists: existsSync }),
@@ -378,6 +393,21 @@ app.whenReady().then(() => {
     },
   })
   updater.start()
+  // The memory meter (YAZ-3737 D1): one `getAppMetrics` each 30 s, in memory only. The rest is read only for a report.
+  meter = createMemoryMeter({
+    metrics: () => app.getAppMetrics(),
+    windows: () => BrowserWindow.getAllWindows(),
+    isPreview: (win) => previewPopups.has(win),
+    entryOf: (win) => {
+      const id = manager.idFor(win.webContents)
+      return id === undefined ? undefined : store.get().windows.find((w) => w.id === id)
+    },
+    jsHeap: (win) => askHeap(win.webContents),
+    helperPids: () => lsp.running().map((h) => h.pid),
+    rss: helperRss,
+  })
+  registerMemoryIpc(meter)
+  setInterval(() => meter?.sample(), MEMORY_SAMPLE_MS).unref()
   // YAZ-1081 D3: a lid that just opened is the other "the world moved on while you were away"
   // moment, and the machine that edited the vault meanwhile is usually the other one. Wired here
   // rather than at module scope because powerMonitor is only safe to touch after `ready`.

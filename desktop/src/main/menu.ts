@@ -61,6 +61,8 @@ export interface MenuHandlers {
   toggleSidebar(): void
   /** View › Reload (⌘R, YAZ-3737 D2): the focused window's safe reload — flush, and reload only when every save landed; else a notice in that window. */
   reload(): void
+  /** View › Save Heap Snapshot, dev builds only (YAZ-3737 D9): the focused window's page heap into a file, shown in Finder; with a debugger already attached, a notice in that window and nothing else (S23). */
+  saveHeapSnapshot(): void
   /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused note (YAZ-1710), else the sidebar zoom (YAZ-3389). */
   zoom(step: ZoomStep): void
   openHelp(): void
@@ -237,7 +239,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
         { type: 'separator' },
         // Not the stock role (YAZ-3737 D2): `role: 'reload'` reloads with no flush, so typing that waits to save was lost.
         { id: 'menu.view.reload', label: 'Reload', accelerator: 'CmdOrCtrl+R', click: () => handlers.reload() },
-        ...(isDev ? [{ role: 'toggleDevTools' } satisfies MenuItemConstructorOptions] : []),
+        ...(isDev ? [{ role: 'toggleDevTools' } satisfies MenuItemConstructorOptions, { id: 'menu.view.heap-snapshot', label: 'Save Heap Snapshot', click: () => handlers.saveHeapSnapshot() } satisfies MenuItemConstructorOptions] : []),
         { type: 'separator' },
         // Not the stock zoom roles (YAZ-1710): a registered accelerator never reaches the page on
         // macOS, so main forwards the step and the renderer decides — the focused note or the app.
@@ -431,9 +433,14 @@ export interface MenuHost {
   openExternal(url: string): void
   /** Check for Updates… (YAZ-2976): `index.ts` runs the check and answers for each state (S4–S6). */
   checkForUpdates(): void
+  /** Save Heap Snapshot (YAZ-3737 D9): `saveHeapSnapshot` on `target`'s debugger, then Finder shows the file. `false` = a debugger was already attached (S23). */
+  saveHeapSnapshot(target: { id: number }, windowId: string): Promise<boolean>
 }
 
 type MenuWindows = Pick<WindowManager, 'openRecentBeside' | 'linkNotice' | 'idFor' | 'openFilesWindow' | 'closeWindow' | 'reloadWindow'>
+
+/** What Save Heap Snapshot says in a window whose debugger is already attached (YAZ-3737 S23). */
+export const HEAP_SNAPSHOT_BUSY_NOTICE = 'Heap snapshot not saved: a debugger is already attached (close DevTools first)'
 
 /** What ⌘R says in a window it did not reload (YAZ-3737 D2): a save had a conflict, failed, or did not answer in 5 s. */
 export const RELOAD_NOT_CLEAN_NOTICE = 'Not reloaded: some changes are not saved yet'
@@ -530,6 +537,17 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
       void windows.reloadWindow(id).then((reloaded) => {
         if (!reloaded && windows.idFor(target) === id) target.send(CONTRACT.link.onNotice.channel, RELOAD_NOT_CLEAN_NOTICE)
       })
+    },
+    saveHeapSnapshot() {
+      const target = host.focusedWebContents()
+      const id = target === undefined ? undefined : windows.idFor(target)
+      if (target === undefined || id === undefined) return
+      void host.saveHeapSnapshot(target, id).then(
+        (saved) => {
+          if (!saved) target.send(CONTRACT.link.onNotice.channel, HEAP_SNAPSHOT_BUSY_NOTICE)
+        },
+        (err: unknown) => target.send(CONTRACT.link.onNotice.channel, `Heap snapshot failed: ${err instanceof Error ? err.message : String(err)}`),
+      )
     },
     zoom(step) {
       host.focusedWebContents()?.send(CONTRACT.menu.onZoom.channel, step)

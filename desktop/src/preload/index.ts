@@ -45,6 +45,12 @@ ipcRenderer.on(SPECIAL.appFlush, () => {
   })
 })
 
+// Settings › Memory's JS heap (YAZ-3737 D1): read only when main asks for a report, never polled. The page's
+// own `measureUserAgentSpecificMemory` needs cross-origin isolation, which the app does not have.
+ipcRenderer.on(SPECIAL.memoryHeap, (_e, token: unknown) => {
+  ipcRenderer.send(SPECIAL.memoryHeapReply, { token, bytes: process.getHeapStatistics().usedHeapSize * 1024 })
+})
+
 // Each editor claims only its own focused surface. Ordinary inputs retain native insertion.
 const pasteListeners = new Set<(request: ClipboardPasteRequest) => boolean>()
 ipcRenderer.on(SPECIAL.menuPasteAs, (_event, request: ClipboardPasteRequest) => {
