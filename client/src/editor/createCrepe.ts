@@ -39,6 +39,8 @@
  *    line end, or on a line of its own, is ONE break with the line ending beside it.
  *  - Marks on line breaks (YAZ-2280, `breakMarks.ts`): replaces Milkdown's `hardbreakClearMarkPlugin`;
  *    a mark runs through a soft break, never starts or ends on one, and never sits on a hard break.
+ *  - List markers (YAZ-3727 D2, `outline/listMarkers.ts`): replaces Milkdown's `syncListOrderPlugin`; each item's
+ *    marker follows its list, and a change visits only the lists it touched.
  *  - Zoom into a bullet (GRO-2029, `outline/zoom.ts`): view-state-only decorations + breadcrumbs;
  *    glyph click / Mod-. / Mod-Shift-. ; never a document change.
  *  - List guide lines (GRO-2030, `outline/guideLines.ts` + `.css`): CSS vertical lines on nested
@@ -183,6 +185,7 @@ import {
   listItemKeymap,
   orderedListKeymap,
   remarkPreserveEmptyLinePlugin,
+  syncListOrderPlugin,
   turnIntoTextCommand,
   wrapInHeadingCommand,
   wrapInOrderedListInputRule,
@@ -237,6 +240,7 @@ import { foldAllHotkeys } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { caretReveal, foldHistory } from './outline/foldReveal'
 import { enterTracker, outlinerKeymap } from './outline/listCommands'
+import { listMarkers } from './outline/listMarkers'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
 import { openBulletRow } from './outline/openBulletRow'
@@ -464,6 +468,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // Milkdown's break plugin turns soft breaks hard under any new mark (YAZ-2280); ours replaces it.
   void crepe.editor.remove(hardbreakClearMarkPlugin)
   crepe.editor.use(breakMarks)
+  // Milkdown's list-number plugin walks the whole note on each change and fixes numbered lists only (YAZ-3727 D2); ours replaces it.
+  void crepe.editor.remove(syncListOrderPlugin)
+  crepe.editor.use(listMarkers)
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createHeadingFolding(opts.headingFolding))
   crepe.editor.use(headingLevelTag)
