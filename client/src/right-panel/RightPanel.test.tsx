@@ -135,7 +135,10 @@ describe('RightPanel', () => {
     act(() => separator.dispatchEvent(new MouseEvent('mousedown', { clientX: 500, bubbles: true, cancelable: true })))
     act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 420 })))
     expect((el.querySelector('.right-panel') as HTMLElement).style.getPropertyValue('--right-panel-width')).toBe('520px')
+    // YAZ-3719 1A: no frame takes the mouse while the edge is held, so a release over a diagram still ends it.
+    expect(document.body.classList.contains('col-resizing')).toBe(true)
     act(() => window.dispatchEvent(new MouseEvent('mouseup')))
+    expect(document.body.classList.contains('col-resizing')).toBe(false)
     expect(props.onResizeCommit).toHaveBeenCalledOnce()
     expect(props.onResizeCommit).toHaveBeenCalledWith(520)
 

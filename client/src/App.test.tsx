@@ -1391,6 +1391,14 @@ describe('App sidebar resize (YAZ-738)', () => {
     expect(bridge.state.setSidebarWidth.mock.calls.at(-1)).toEqual([1240])
   })
 
+  it('YAZ-3719 1A: while the edge is held, no frame takes the mouse, so a release over a diagram still ends the drag', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => void el.querySelector('.sidebar-resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 0 })))
+    expect(document.body.classList.contains('col-resizing')).toBe(true)
+    act(() => void window.dispatchEvent(new MouseEvent('mouseup', { clientX: 0 })))
+    expect(document.body.classList.contains('col-resizing')).toBe(false)
+  })
+
   it('the width goes to the sidebar alone, never to the whole window as an inherited variable (YAZ-2194)', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => drag(el, 120))

@@ -21,6 +21,7 @@ import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename
 import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
+import { holdColResize } from './lib/colResize'
 import { transformFile } from './views/writeProperty'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
@@ -529,7 +530,7 @@ export function App() {
       const up = () => {
         window.removeEventListener('mousemove', move)
         window.removeEventListener('mouseup', up)
-        document.body.style.cursor = ''
+        holdColResize(false)
         setResizing(false)
         if (raw < SIDEBAR_MIN_W * 0.6) {
           setSidebarWidth(start)
@@ -541,7 +542,7 @@ export function App() {
       }
       window.addEventListener('mousemove', move)
       window.addEventListener('mouseup', up)
-      document.body.style.cursor = 'col-resize'
+      holdColResize(true)
       setResizing(true)
     },
     [sidebarWidth, toggleSidebar],
