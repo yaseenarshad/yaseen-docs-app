@@ -52,7 +52,10 @@
  *    live-preview style via decorations only (brackets hidden, alias/heading display,
  *    caret-adjacency reveal, resolved/unresolved via `opts.wikilinks`; an id link's id hidden
  *    too, its note's current title drawn by a widget, YAZ-2293) — never a schema or serializer
- *    change, round-trip byte-identical.
+ *    change, round-trip byte-identical. The exception to the reveal: an ID link that shows its
+ *    title opens only from "Edit link" (YAZ-3744 D1).
+ *  - ID link caret (YAZ-3744 D1, `wikilink/idLinkCaret.ts`): a caret that lands inside a closed
+ *    ID link steps over it; Backspace after it and Delete before it remove it whole.
  *  - Wikilink click navigation (GRO-2192, `wikilink/wikilinkClick.ts`): MOUSEDOWN on a
  *    collapsed `.wikilink` span navigates (plain → current tab, ⌘ → background tab,
  *    unresolved → create-then-open via `createFromLink`) and preventDefaults so the caret
