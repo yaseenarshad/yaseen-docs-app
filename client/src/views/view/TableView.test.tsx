@@ -34,7 +34,7 @@ vi.mock('../../api', async (importOriginal) => {
 })
 const reveal = vi.mocked(api.shell.reveal)
 
-/** The hover panel's Crepe is a stand-in here — the real read-only render is `useReadOnlyNote`'s. */
+/** The hover panel's Crepe is a stand-in here — the real read-only render is proven in `search/QuickLook.crepe.test.tsx`. */
 vi.mock('../../editor/createCrepe', () => ({
   createCrepe: vi.fn((opts: { root: HTMLElement; defaultValue?: string }) => {
     opts.root.textContent = opts.defaultValue ?? ''
@@ -917,7 +917,7 @@ describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
     container?.remove()
   }
 
-  it('YAZ-3743 D1: with the setting on, every layout shows the shared panel beside the item — a table row with no eye too', async () => {
+  it('YAZ-3743 D1: with the setting on, every layout shows the shared panel beside the item', async () => {
     const layouts: [string, (el: ParentNode) => Element][] = [
       [TABLE, firstRow],
       ['views:\n  - type: board\n    name: B\n    groupBy:\n      property: note.status\n', (el) => q(el, '.view-board__card')],
@@ -950,7 +950,7 @@ describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
     hover(firstRow(el))
     await settle(HOVER_PREVIEW_DWELL_MS + 50)
     expect(notePanel()).not.toBeNull()
-    expect(document.body.querySelector('.view-preview')).toBeNull()
+    expect(document.body.querySelectorAll('.note-preview')).toHaveLength(1)
   })
 
   it('YAZ-3403 S32, S33: no panel opens while the Space panel shows', async () => {
@@ -965,7 +965,7 @@ describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
     }
   })
 
-  it('a press on the row closes the panel — a drag and a secondary click both start with one — and the page actions still open for that exact row', async () => {
+  it('a right-click closes the panel and opens the page actions for that exact row', async () => {
     const openBackground = vi.fn()
     const { el } = mount(TABLE, { ...on, folder: testFolderHost({ openBackground }) })
     const target = firstRow(el)

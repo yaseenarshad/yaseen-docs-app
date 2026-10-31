@@ -17,8 +17,8 @@ import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 
 export interface BoardViewProps {
-  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): Settings › Preview on hover › Folder views turns it on or off (YAZ-3743). */
-  hover?: ViewHover
+  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): `ViewsPane` always passes it; Settings › Preview on hover › Folder views starts or stops the dwell (YAZ-3743). */
+  hover: ViewHover
   def: ViewSet
   view: ViewDef
   viewIndex: number
@@ -237,7 +237,7 @@ export function BoardView({
           data-flip-key={row.record.path}
           className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
           {...dragSource(row, group, at)}
-          {...hover?.itemProps(row.record.path)}
+          {...hover.itemProps(row.record.path)}
           // Every card is a focusable "cell" (YAZ-1557 D2): a plain click SELECTS it, and only the
           // title, Enter, or a modifier opens — so a card without a title still has a name to read.
           tabIndex={0}

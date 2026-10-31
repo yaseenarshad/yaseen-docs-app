@@ -100,7 +100,7 @@ export const ChevronsIcon = () => (
   </svg>
 )
 
-/** Eye: "Add to focus" in the row and tab menus. */
+/** Eye: the Focus tab, and "Add to focus" in the row and tab menus. */
 export const EyeIcon = () => (
   <svg {...svg}>
     <path d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4-6.5-4-6.5-4z" />
