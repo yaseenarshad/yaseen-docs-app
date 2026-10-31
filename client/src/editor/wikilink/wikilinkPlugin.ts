@@ -18,6 +18,9 @@
  *  - a link that resolves shows its page's NAME (YAZ-3778 D2, D3): the folders of a pathed
  *    `[[folder/name]]` and an extension the sidebar hides (`.md`, a drawing's, a diagram's) are
  *    syntax too. A dead link keeps its text (S12),
+ *  - an ID of this vault that no note has (YAZ-3905 S10) shows "Missing note · YAS-466" in place of
+ *    the id, a widget as the title is; an ID of another vault of the window (S23) shows its vault after
+ *    it, "INL-4 (In-harness-lab)", a widget too. Both stay dimmed (`wikilink--unresolved`),
  *  - a match whose display would be EMPTY (`[[Note|]]`, `[[|]]`, `[[#]]`) stays raw — no
  *    decorations at all, so nothing ever collapses to a zero-width invisible run (FN12,
  *    GRO-2197),
@@ -51,7 +54,7 @@ import { Plugin, PluginKey, type EditorState, type Selection, type Transaction }
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { WIKILINK_RE } from '@shared/linkRewrite'
-import { isNoteId } from '@shared/noteId'
+import { isNoteId, isNumberId, vaultNoteId } from '@shared/noteId'
 import { fileKind } from '@shared/fileKind'
 import { basename, type IndexRecord } from '@shared/types'
 import { fileLabel, pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
@@ -73,6 +76,12 @@ export interface LinkLook {
 
 /** Link target → resolved absolute path — a note's file, else a folder's directory (YAZ-2290 D10) — or null when nothing matches. */
 export type ResolveLink = (target: string) => string | null
+
+/**
+ * The names of the window's vaults whose ID letters are `letters` (in capitals), read live (YAZ-3905 S23): an
+ * unresolved `[[INL-4]]` names the vault it came from. Absent, or [] → no vault.
+ */
+export type VaultsOfLetters = (letters: string) => readonly string[]
 
 /** How the latest resolver reaches the plugin; see `createWikilinkResolveSource`. */
 export interface WikilinkResolveSource {
@@ -183,6 +192,29 @@ export function showsTitle(inner: string, source: WikilinkResolveSource): boolea
 }
 
 /**
+ * The ID of THIS vault a link names whose note is gone (YAZ-3905 S10), as the app writes it, or undefined: a found
+ * link, a name, a vault that does not use IDs, and any link before the index loads (nothing is known yet).
+ */
+export function missingId(inner: string, source: WikilinkResolveSource): string | undefined {
+  if (!source.ids || source.resolve === null) return undefined
+  const page = linkPageName(inner)
+  const id = vaultNoteId(page, source.letters)
+  return id !== undefined && source.resolve(page) === null ? id : undefined
+}
+
+/**
+ * An unresolved `[[LETTERS-NUMBER]]` whose letters are another vault's of the window (YAZ-3905 S23): the ID as
+ * written, and the one vault it names, or null when two or more have those letters ("another vault"). Null for
+ * the rest: this vault's letters win (then it is this vault's ID), a found link, and before the index loads.
+ */
+export function otherVaultId(inner: string, source: WikilinkResolveSource, vaultsOf: VaultsOfLetters | undefined): { id: string; vault: string | null } | null {
+  const page = linkPageName(inner)
+  if (vaultsOf === undefined || source.resolve === null || !isNumberId(page) || vaultNoteId(page, source.letters) !== undefined || source.resolve(page) !== null) return null
+  const names = vaultsOf(page.slice(0, page.indexOf('-')).toUpperCase())
+  return names.length === 0 ? null : { id: page, vault: names.length === 1 ? names[0]! : null }
+}
+
+/**
  * The hidden ends of a link's page part (YAZ-3778 D2, D3): the folders before its name, and an extension the
  * sidebar hides (`fileLabel`: a note's, a drawing's, a diagram's). `[0, 0]` when nothing would be left.
  */
@@ -268,19 +300,24 @@ function titleSpan(cls: string, title: string, icon?: Record<string, string>): H
   return span
 }
 
+/** The file or folder a `[[link]]` opens, or null: unresolved, a heading of a view-only file, or no index yet. The link menu's place rows (YAZ-3740). */
+export function linkPath(inner: string, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined): string | null {
+  const view = viewOnly === undefined ? null : viewOnlyLinkTarget(inner)
+  return view !== null ? (view.hasSubtarget ? null : viewOnly?.resolve?.(view.page) ?? null) : source.resolve?.(linkPageName(inner)) ?? null
+}
+
 /** The icon of the page a resolved link opens (D13), or undefined: no look, unresolved, or no index yet. */
 function linkIcon(inner: string, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, look: LinkLook | undefined): { key: string; attrs: Record<string, string> } | undefined {
   if (look === undefined) return undefined
-  const view = viewOnly === undefined ? null : viewOnlyLinkTarget(inner)
-  const path = view !== null ? (view.hasSubtarget ? null : viewOnly?.resolve?.(view.page) ?? null) : source.resolve?.(linkPageName(inner)) ?? null
+  const path = linkPath(inner, source, viewOnly)
   if (path == null) return undefined
   // A folder resolves to its directory: no file kind.
   const folder = fileKind(basename(path)) === null
   return { key: path, attrs: look.icon(path, folder) }
 }
 
-/** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
-function linkIsResolved(inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): boolean {
+/** Whether a link counts as found: what it opens is there, or nothing is known yet (no index, `[[#heading]]`). The rule `linkDisplayText`'s `named` takes. */
+export function linkIsResolved(inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): boolean {
   const viewSource = viewOnly
   const viewTarget = viewSource === undefined ? null : viewOnlyLinkTarget(inner)
   if (viewTarget !== null && viewSource !== undefined) {
@@ -291,7 +328,17 @@ function linkIsResolved(inner: string, source: WikilinkResolveSource, viewOnly?:
   return source.resolve === null || target === '' || source.resolve(target) !== null
 }
 
-function decorate(out: Decoration[], start: number, inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook): void {
+/** The DOM of a vault's name after an ID of another vault (YAZ-3905 S23): quiet, as a pill's vault name (D22). */
+function vaultSpan(cls: string, vault: string | null): HTMLElement {
+  const span = document.createElement('span')
+  span.className = `${cls} link-pill__vault`
+  span.spellcheck = false
+  span.textContent = ` (${vault ?? 'another vault'})`
+  return span
+}
+
+/** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
+function decorate(out: Decoration[], start: number, inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook, vaultsOf?: VaultsOfLetters): void {
   // A match whose display would be EMPTY ([[Note|]], [[|]], [[#]]) gets NO decorations at all:
   // hiding every character would leave a zero-width invisible run the click handler cannot see
   // and only exact caret placement can recover — raw-and-editable, the revealed state, is the
@@ -321,7 +368,11 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
     let at = innerStart
     let segments = 0
     const parts = inner.split('#')
-    const title = titleOf(parts[0].trim())
+    // A missing note shows that it is missing, with its ID (YAZ-3905 S10): in the title's place, as a title is drawn.
+    const missing = resolved ? undefined : missingId(inner, source)
+    const title = titleOf(parts[0].trim()) ?? (missing === undefined ? undefined : `Missing note · ${missing}`)
+    // An ID of another vault says which vault (S23), after the ID.
+    const other = resolved || missing !== undefined ? null : otherVaultId(inner, source, vaultsOf)
     for (let i = 0; i < parts.length; i++) {
       if (i > 0) {
         hide(out, at, at + 1) // the #
@@ -342,6 +393,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
           hide(out, at, at + lead)
           shown(at + lead, at + part.length - trail)
           hide(out, at + part.length - trail, at + part.length)
+          if (other !== null) out.push(Decoration.widget(at + part.length, () => vaultSpan(cls, other.vault), { side: -1, key: `vault:${other.vault ?? ''}` }))
         } else if (segments === 0) shown(at, at + part.length)
         else out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}`, spellcheck: 'false' }))
         segments++
@@ -358,7 +410,7 @@ function touches(sel: Selection, from: number, to: number): boolean {
 }
 
 /** One textblock's link decorations: the unit of both the full build and the incremental update. */
-function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Selection, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook): void {
+function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Selection, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook, vaultsOf?: VaultsOfLetters): void {
   eachPlainRun(block, pos + 1, (text, runPos) => {
     for (const m of text.matchAll(WIKILINK_RE)) {
       if (m[1] === '!') continue // embeds are someone else's (or nobody's) business
@@ -366,17 +418,17 @@ function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Se
       const to = from + m[0].length
       // An ID link that shows its title opens only with the selection strictly inside it: "Edit link" (YAZ-3744 D1).
       if (showsTitle(m[2], source) ? sel.from > from && sel.to < to : touches(sel, from, to)) continue // caret inside/adjacent → raw, editable syntax
-      decorate(out, from, m[2], source, viewOnly, look)
+      decorate(out, from, m[2], source, viewOnly, look, vaultsOf)
     }
   })
 }
 
-function build(state: EditorState, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook): DecorationSet {
+function build(state: EditorState, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook, vaultsOf?: VaultsOfLetters): DecorationSet {
   const decorations: Decoration[] = []
   state.doc.descendants((node, pos) => {
     if (node.type.name === 'code_block') return false
     if (!node.isTextblock) return true
-    decorateBlock(decorations, node, pos, state.selection, source, viewOnly, look)
+    decorateBlock(decorations, node, pos, state.selection, source, viewOnly, look, vaultsOf)
     return false
   })
   return decorations.length === 0 ? DecorationSet.empty : DecorationSet.create(state.doc, decorations)
@@ -396,6 +448,7 @@ function updateDecorations(
   source: WikilinkResolveSource,
   viewOnly?: ViewOnlyLinkSource,
   look?: LinkLook,
+  vaultsOf?: VaultsOfLetters,
 ): DecorationSet {
   const { doc } = state
   const ranges: [number, number][] = [
@@ -425,7 +478,7 @@ function updateDecorations(
   const fresh: Decoration[] = []
   for (const [pos, block] of blocks) {
     stale.push(...set.find(pos, pos + block.nodeSize))
-    if (block.type.name !== 'code_block') decorateBlock(fresh, block, pos, state.selection, source, viewOnly, look)
+    if (block.type.name !== 'code_block') decorateBlock(fresh, block, pos, state.selection, source, viewOnly, look, vaultsOf)
   }
   return set.remove(stale).add(doc, fresh)
 }
@@ -435,16 +488,16 @@ export function redrawWikilinks(view: EditorView): void {
   view.dispatch(view.state.tr.setMeta(wikilinkKey, 'look-updated').setMeta('addToHistory', false))
 }
 
-export function createWikilink(source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook) {
+export function createWikilink(source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook, vaultsOf?: VaultsOfLetters) {
   return $prose(
     () =>
       new Plugin({
         key: wikilinkKey,
         state: {
-          init: (_, state) => build(state, source, viewOnly, look),
+          init: (_, state) => build(state, source, viewOnly, look, vaultsOf),
           apply: (tr, set, oldState, state) => {
-            if (tr.getMeta(wikilinkKey) !== undefined) return build(state, source, viewOnly, look) // the resolver changed
-            return tr.docChanged || tr.selectionSet ? updateDecorations(set, tr, oldState, state, source, viewOnly, look) : set
+            if (tr.getMeta(wikilinkKey) !== undefined) return build(state, source, viewOnly, look, vaultsOf) // the resolver changed
+            return tr.docChanged || tr.selectionSet ? updateDecorations(set, tr, oldState, state, source, viewOnly, look, vaultsOf) : set
           },
         },
         props: {

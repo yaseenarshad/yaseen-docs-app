@@ -67,6 +67,7 @@ import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
 import { VaultLinksContext } from './links/vaultLinks'
+import type { LinkActions } from './editor/linkMenu'
 import { useVaultIcons } from './sidebar/useVaultIcons'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
@@ -434,7 +435,13 @@ export function App() {
     return home === null ? null : (now.vaults[now.roots.indexOf(home)]?.name ?? storage.vaultName(home))
   }, [])
   const vaultNames = roots.map((vault, i) => vaults[i]?.name ?? storage.vaultName(vault)).join('\n')
-  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, names: vaultNames, vaultOf }), [candidatesOf, askToAdd, roots, vaultNames, vaultOf])
+  /** The window's vaults that use the ID letters `letters`, now or before, by name (YAZ-3905 S23): an unresolved `[[INL-4]]` says whose ID it is. */
+  const vaultsOfLetters = useCallback((letters: string) => {
+    const now = live.current
+    return now.roots.flatMap((vault, i) => (now.vaults[i]?.wikilinks.letters.includes(letters) === true ? [now.vaults[i]?.name ?? storage.vaultName(vault)] : []))
+  }, [])
+  const idLetters = vaults.map((scope) => scope?.wikilinks.letters.join(' ') ?? '').join('\n')
+  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, names: vaultNames, vaultOf, vaultsOfLetters, letters: idLetters }), [candidatesOf, askToAdd, roots, vaultNames, vaultOf, vaultsOfLetters, idLetters])
   /** The scope of the ACTIVE tab's vault (R3, R4, R10); with no tab open, the first vault's. */
   const active = file === null ? first : scopeOf(file)
   /**
@@ -856,6 +863,34 @@ export function App() {
     if (sidebarLens !== 'files') changeLens('files')
     setSidebarRevealRequest({ id: ++sidebarRevealId.current, path })
   }, [sidebarCollapsed, sidebarLens, toggleSidebar, changeLens])
+
+  /**
+   * What a link's menu does with the page it opens (YAZ-3740): Show in sidebar, Focus and Favorites (the tab menu's
+   * lists), and "Open in ▸" (the sidebar's verbs: the same bridge calls, the same notices). One identity for the
+   * window's life, reading the newest doors at click time, so no editor renders again (`RetainedEditor` is memo).
+   */
+  const linkDoors = useRef({ showInSidebar, lists, scopeOf, nameOf, notify })
+  linkDoors.current = { showInSidebar, lists, scopeOf, nameOf, notify }
+  const linkActions = useMemo<LinkActions>(() => {
+    const door = () => linkDoors.current
+    /** A bridge call's failure as the sidebar says it: a gone file by its name, else the error. */
+    const os = (call: Promise<unknown>, path: string, gone: (name: string) => string, failed: string) =>
+      void call.catch((err: unknown) => door().notify(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? gone(door().nameOf(path)) : `${failed}: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+    return {
+      showInSidebar: (path) => door().showInSidebar(path),
+      listState: (path) => door().lists.stateOf(path),
+      toggleFavorite: (paths, isOn) => door().lists.toggleFavorite(paths, isOn),
+      toggleFocus: (paths, isOn) => void door().lists.toggleFocus(paths, isOn),
+      // The vault that holds the file, alone, as the sidebar's "Open in ▸ New window" (YAZ-2602 S33).
+      openNewWindow: (path) => {
+        const root = door().scopeOf(path).root
+        if (root !== null) api.window.open({ root, file: path }).catch((err: unknown) => console.error('[link menu] window.open failed:', err))
+      },
+      openVsCode: (path) => os(api.shell.openVsCode({ path }), path, (name) => `Can't open "${name}" in VS Code — it is no longer there`, "Can't open in VS Code"),
+      openDefault: (path) => os(api.shell.openDefault({ path }), path, (name) => `Can't open "${name}" — it is no longer there`, `Can't open "${door().nameOf(path)}"`),
+      reveal: (path) => os(api.shell.reveal({ path }), path, (name) => `Can't reveal "${name}" — it is no longer there`, "Can't reveal"),
+    }
+  }, [])
 
   // A search row's menu item that draws into the tree (🔒 D2, YAZ-2050), and "Show in sidebar" on a
   // row of Search, Focus or Favorites (YAZ-2638 D1, D3): always the FILES lens, whichever tab was
@@ -3152,7 +3187,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} />
+                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackground} linkActions={linkActions} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} />
                 </div>
               )
             })}

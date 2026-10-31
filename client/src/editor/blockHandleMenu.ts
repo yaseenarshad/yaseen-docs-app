@@ -30,6 +30,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { SWITCH_MS } from '../sidebar/ContextMenu'
 import { bulletDotTarget, handleTargetPos, isOwnHandleGrab, isTaskBox, type HandleTarget } from './blockHandleTarget'
 
 export interface MenuRow {
@@ -47,6 +48,12 @@ export interface MenuRow {
   icon?: () => SVGElement
   /** The click or key that does it too, at the right edge (`data-hint`, drawn by CSS as the tab menu's are). */
   hint?: string
+  /**
+   * A parent row ("Open in ▸", YAZ-3901): its flyout's rows, in groups with a line between two. One level: a child
+   * has no children. Hover, a click and ArrowRight open it; ArrowLeft and Escape close it; a child runs and closes
+   * the whole menu. `run` is not called.
+   */
+  children?: MenuRow[][]
 }
 
 /** A typed number with presets (YAZ-3164 D3): a picker row whose panel is the zoom menu's box and presets. */
@@ -285,12 +292,124 @@ function renderPicker(field: MenuNumberField | MenuChoiceField, menu: HTMLElemen
   return picker
 }
 
+/** One row's button: a click runs it, then `close`. */
+function rowButton(row: MenuRow, close: () => void): HTMLButtonElement {
+  const item = document.createElement('button')
+  item.type = 'button'
+  item.className = `ctx-menu__item${row.danger === true ? ' ctx-menu__item--danger' : ''}`
+  item.setAttribute('role', 'menuitem')
+  item.disabled = row.disabled === true
+  if (row.icon === undefined) item.textContent = row.label
+  else {
+    const label = document.createElement('span')
+    label.className = 'ctx-menu__label'
+    label.append(row.icon(), row.label)
+    item.appendChild(label)
+  }
+  if (row.hint !== undefined) item.dataset.hint = row.hint
+  item.addEventListener('mousedown', (e) => e.preventDefault())
+  item.addEventListener('click', () => {
+    row.run()
+    close()
+  })
+  return item
+}
+
+/** How each open menu closes its flyout alone: `closeSubmenu`. */
+const submenuClosers = new WeakMap<HTMLElement, () => boolean>()
+
+/** Closes the open flyout of `menu` (YAZ-3901), the menu staying: true when one was open. Escape's first press. */
+export function closeSubmenu(menu: HTMLElement): boolean {
+  return submenuClosers.get(menu)?.() ?? false
+}
+
+/**
+ * A parent row and its flyout (YAZ-3901), as the sidebar's "Open in ▸" (`sidebar/ContextMenu.tsx`): its classes and
+ * CSS, its rules. The flyout is a second `.ctx-menu` inside the parent, so a press in it is a press in the menu. It
+ * opens to the right of the row, top-aligned, or to the left when it would spill (Finder's rule), the top clamped.
+ * Hover opens it at once; the pointer on another row of the menu closes it after the sidebar's wait (`SWITCH_MS`),
+ * so a pointer on its way into the flyout may cross a row. A click and ArrowRight (and Enter) open it, the keys with
+ * the focus on its first row; ArrowLeft in it, and Escape (`closeSubmenu`), close it alone, and a focus that was in
+ * it goes back to the parent row. One parent for each menu.
+ */
+function renderParent(row: MenuRow, children: MenuRow[][], menu: HTMLElement, close: () => void): HTMLElement {
+  const wrap = document.createElement('div')
+  wrap.className = 'ctx-menu__parent'
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'ctx-menu__item ctx-menu__item--parent'
+  button.setAttribute('role', 'menuitem')
+  button.setAttribute('aria-haspopup', 'menu')
+  button.setAttribute('aria-expanded', 'false')
+  button.textContent = row.label
+  if (row.hint !== undefined) button.dataset.hint = row.hint
+  wrap.appendChild(button)
+  let flyout: HTMLElement | null = null
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const shut = (): boolean => {
+    clearTimeout(timer)
+    if (flyout === null) return false
+    // The focus was in the flyout (the keys): it goes back to the parent row, not to the page.
+    const hadFocus = flyout.contains(document.activeElement)
+    flyout.remove()
+    flyout = null
+    button.setAttribute('aria-expanded', 'false')
+    if (hadFocus) button.focus({ preventScroll: true })
+    return true
+  }
+  const open = (focus: boolean) => {
+    clearTimeout(timer)
+    if (flyout === null) {
+      flyout = document.createElement('div')
+      flyout.className = 'ctx-menu ctx-menu--editor ctx-menu__sub'
+      flyout.setAttribute('role', 'menu')
+      for (const group of children.filter((list) => list.length > 0)) {
+        if (flyout.childElementCount > 0) flyout.appendChild(divider())
+        for (const child of group) flyout.appendChild(rowButton(child, close))
+      }
+      flyout.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowLeft') return
+        event.preventDefault()
+        event.stopPropagation()
+        shut()
+      })
+      flyout.style.visibility = 'hidden'
+      wrap.appendChild(flyout)
+      const r = flyout.getBoundingClientRect()
+      const p = button.getBoundingClientRect()
+      flyout.style.left = `${p.right + r.width > window.innerWidth ? Math.max(0, p.left - r.width) : p.right}px`
+      flyout.style.top = `${Math.max(0, Math.min(p.top, window.innerHeight - r.height))}px`
+      flyout.style.visibility = ''
+      button.setAttribute('aria-expanded', 'true')
+    }
+    if (focus) flyout.querySelector<HTMLButtonElement>('.ctx-menu__item:not(:disabled)')?.focus({ preventScroll: true })
+  }
+  wrap.addEventListener('mouseenter', () => open(false))
+  // Another row of the menu under the pointer: the flyout goes after the wait, unless the pointer comes back.
+  menu.addEventListener('mouseover', (event) => {
+    if (flyout !== null && event.target instanceof Node && !wrap.contains(event.target) && menu.contains(event.target)) {
+      clearTimeout(timer)
+      timer = setTimeout(shut, SWITCH_MS)
+    }
+  })
+  button.addEventListener('mousedown', (e) => e.preventDefault())
+  button.addEventListener('click', () => open(false))
+  button.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'Enter') return
+    event.preventDefault()
+    event.stopPropagation()
+    open(true)
+  })
+  submenuClosers.set(menu, shut)
+  return wrap
+}
+
 /**
  * Draws the popup into `parent`, unplaced: a clicked row runs, then `close`; a picker works as the
  * header says, every one closed, and nothing takes the focus. Exported for the id link's menu
  * (`wikilink/wikilinkMenu.ts`, YAZ-2293) — the same rows, on another target. Rows look like the tab
  * menu's (YAZ-3646 D8): a line between two groups, a glyph slot on every row once one row has a glyph,
- * and the hint at the right edge.
+ * and the hint at the right edge. A row with `children` is a parent with a flyout (YAZ-3901, `renderParent`).
  */
 export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close: () => void): HTMLElement {
   const el = document.createElement('div')
@@ -309,25 +428,7 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
     // A line parts two kinds of rows (YAZ-3646 D9) and stands above a row that asks for one (YAZ-3609 D23).
     if (el.childElementCount > 0 && (row.divider === true || (previous !== null && previous.group !== row.group))) el.appendChild(divider())
     previous = row
-    const item = document.createElement('button')
-    item.type = 'button'
-    item.className = `ctx-menu__item${row.danger === true ? ' ctx-menu__item--danger' : ''}`
-    item.setAttribute('role', 'menuitem')
-    item.disabled = row.disabled === true
-    if (row.icon === undefined) item.textContent = row.label
-    else {
-      const label = document.createElement('span')
-      label.className = 'ctx-menu__label'
-      label.append(row.icon(), row.label)
-      item.appendChild(label)
-    }
-    if (row.hint !== undefined) item.dataset.hint = row.hint
-    item.addEventListener('mousedown', (e) => e.preventDefault())
-    item.addEventListener('click', () => {
-      row.run()
-      close()
-    })
-    el.appendChild(item)
+    el.appendChild(row.children === undefined ? rowButton(row, close) : renderParent(row, row.children, el, close))
   }
   parent?.appendChild(el)
   return el

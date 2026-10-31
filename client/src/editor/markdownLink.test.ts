@@ -262,12 +262,12 @@ describe('"Add link…" from the note menu (YAZ-3609 D17)', () => {
 })
 
 describe('right-click menu', () => {
-  it('a web link: the one link menu (YAZ-3609 D23) with no name and no new tab: Open, Copy, Edit, Remove', async () => {
+  it('a web link: the one link menu (YAZ-3609 D23, YAZ-3740) with no name and no new tab: Open, Copy address, Edit, Remove', async () => {
     const { nav, root, view } = await mount()
     const event = mouse(anchorOf(root), 'contextmenu', { button: 2 })
 
     expect(event.defaultPrevented).toBe(true)
-    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Copy link', 'Edit link', 'Remove link'])
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Copy address', 'Edit link', 'Remove link'])
     expect(rowNamed(view, 'Remove link').classList.contains('ctx-menu__item--danger')).toBe(true)
     rowNamed(view, 'Open').click()
     expect(nav.open).toHaveBeenCalledExactlyOnceWith('https://example.com')
@@ -283,7 +283,8 @@ describe('right-click menu', () => {
       openPath,
     })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Plan (Other Vault)', 'Open', 'Open in new tab', 'Copy link', 'Edit link', 'Remove link'])
+    // No App doors here: of the place rows only Copy path (YAZ-3740; with the doors: `linkMenu.test.ts`).
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Plan (Other Vault)', 'Open', 'Open in new tab', 'Copy name', 'Copy path', 'Edit link', 'Remove link'])
     expect(rowsOf(view)[0]!.disabled).toBe(true)
     rowNamed(view, 'Open in new tab').click()
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
@@ -295,7 +296,7 @@ describe('right-click menu', () => {
     const { crepe, root, view } = await mount()
     crepe.setReadonly(true)
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Copy link'])
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Copy address'])
   })
 
   it('Edit link opens Crepe\'s existing editor with the current href', async () => {
@@ -305,13 +306,13 @@ describe('right-click menu', () => {
     await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('.milkdown-link-edit input')?.value).toBe('https://example.com'))
   })
 
-  it('Copy link copies only the href and keeps Markdown byte-identical', async () => {
+  it('Copy address copies only the href and keeps Markdown byte-identical', async () => {
     const copy = vi.fn().mockResolvedValue(undefined)
     const { crepe, nav, root, view } = await mount(undefined, { copy })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    rowNamed(view, 'Copy link').click()
+    rowNamed(view, 'Copy address').click()
     expect(copy).toHaveBeenCalledWith('https://example.com')
-    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledWith('Copied link'))
+    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledWith('Copied address'))
     expect(getMarkdownForSave(crepe)).toBe('[Example](https://example.com)\n')
   })
 
@@ -320,8 +321,8 @@ describe('right-click menu', () => {
     const onNotice = vi.fn()
     const { root, view } = await mount(undefined, { copy, onNotice })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    rowNamed(view, 'Copy link').click()
-    await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith("Can't copy link: clipboard denied"))
+    rowNamed(view, 'Copy address').click()
+    await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith("Can't copy address: clipboard denied"))
   })
 
   it('reports a synchronous clipboard failure passively too', async () => {
@@ -331,8 +332,8 @@ describe('right-click menu', () => {
     const onNotice = vi.fn()
     const { root, view } = await mount(undefined, { copy, onNotice })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
-    expect(() => rowNamed(view, 'Copy link').click()).not.toThrow()
-    await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith("Can't copy link: clipboard unavailable"))
+    expect(() => rowNamed(view, 'Copy address').click()).not.toThrow()
+    await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith("Can't copy address: clipboard unavailable"))
   })
 
   it('Remove link removes only the mark and preserves formatted label content', async () => {

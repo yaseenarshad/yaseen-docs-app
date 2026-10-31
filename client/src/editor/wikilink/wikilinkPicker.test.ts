@@ -796,3 +796,30 @@ describe('wikilink picker: walking never opens (YAZ-908)', () => {
     expect(popup()?.dataset.show ?? 'false').toBe('false')
   })
 })
+
+describe('wikilink picker: a row reads as the sidebar names the page (YAZ-3778 S14)', () => {
+  it('a drawing or a diagram reads without its extension, a PDF keeps its own; each row has its file\'s icon; the insert does not change', async () => {
+    const candidates = createWikilinkCandidateSource()
+    candidates.update([
+      { ...nameCandidate('LN Scenarios Diagram.drawio'), path: '/vault/LN Scenarios Diagram.drawio' },
+      { ...nameCandidate('LN Report.pdf'), path: '/vault/LN Report.pdf' },
+    ])
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    // The pills' look (YAZ-3609 D13): the attributes that draw the file's icon, as `fileIconDecoration` gives them.
+    const linkLook = { icon: (path: string, folder: boolean) => ({ class: 'file-icon probe-icon', 'data-path': path, 'data-folder': String(folder) }) }
+    const crepe = createCrepe({ root, defaultValue: 'X\n', wikilinkCandidates: candidates, linkLook })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[LN')
+    expect(rows()).toEqual(['LN Scenarios Diagram', 'LN Report.pdf'])
+    const icons = Array.from(document.querySelectorAll<HTMLElement>(`.${WIKILINK_PICKER_CLASS} [role="option"] > .probe-icon`))
+    expect(icons.map((icon) => [icon.dataset.path, icon.dataset.folder, icon.getAttribute('aria-hidden'), icon.textContent])).toEqual([
+      ['/vault/LN Scenarios Diagram.drawio', 'false', 'true', ''],
+      ['/vault/LN Report.pdf', 'false', 'true', ''],
+    ])
+    press(crepe, 'Enter')
+    expect(getMarkdownForSave(crepe)).toBe('X[[LN Scenarios Diagram.drawio]]\n')
+  })
+})
