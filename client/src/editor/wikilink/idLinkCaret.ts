@@ -26,10 +26,15 @@ export const createIdLinkCaret = (source: WikilinkResolveSource) =>
       new Plugin({
         key: new PluginKey('mdapp-id-link-caret'),
         appendTransaction: (trs, before, state) => {
-          // An edit maps the caret: inside an open link it moves as it types. Only a caret move is stepped.
-          if (trs.some((tr) => tr.docChanged || tr.getMeta(OPEN_ID_LINK) !== undefined) || !(state.selection instanceof TextSelection)) return null
-          // A composition (an accent, a Japanese word) is left alone until it ends: it owns the caret meanwhile.
-          if (trs.some((tr) => tr.getMeta('composition') !== undefined)) return null
+          // An edit maps the caret: inside an open link it moves as it types. Only a caret move is stepped: a redraw or an
+          // index update sets no selection, and costs no scan. A composition (an accent, a Japanese word) is left alone
+          // until it ends: it owns the caret meanwhile.
+          let moved = false
+          for (const tr of trs) {
+            if (tr.docChanged || tr.getMeta(OPEN_ID_LINK) !== undefined || tr.getMeta('composition') !== undefined) return null
+            moved ||= tr.selectionSet
+          }
+          if (!moved || !(state.selection instanceof TextSelection)) return null
           const { anchor, head, empty } = state.selection
           const link = idLinkAround(state, head, source)
           const was = before.selection.head
