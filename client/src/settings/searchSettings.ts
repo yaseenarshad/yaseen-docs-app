@@ -2,7 +2,8 @@
  * Settings search (YAZ-1679 D6): every available setting becomes ONE candidate whose searchable
  * text is its label, hint, keywords, group title, group hint and section title run together, and the match
  * is the `[[` picker's own (`matchLinkCandidates`: exact, then prefix, then substring,
- * case-folded) — one ranking rule in the app, not two. The candidates are built once per dialog
+ * case-folded) — one ranking rule in the app, not two. Settings passes `loose: false`, so the picker's word and joined
+ * tiers (YAZ-3748 D2) stay off here and the word match below keeps its own rule (D1). The candidates are built once per dialog
  * open; the query runs over them on every keystroke.
  *
  * WORD MATCH (YAZ-3397 D5), only when those three tiers find nothing: the rows where every WORD of the
@@ -40,7 +41,8 @@ export function settingCandidates(ctx: SettingsCtx): SettingHit[] {
 
 /** Every hit for `query`, best first; the cap is the whole list — a settings search never truncates. */
 export function searchSettings(candidates: readonly SettingHit[], query: string): SettingHit[] {
-  const direct = matchLinkCandidates(candidates, query, candidates.length)
+  // `loose: false` (YAZ-3748 D1): the matcher's word and joined tiers stay off here, so the word match below keeps its rule.
+  const direct = matchLinkCandidates(candidates, query, candidates.length, false)
   const words = query.trim().toLowerCase().split(/[\s./_-]+/).filter((w) => w !== '')
   if (direct.length > 0 || words.length === 0) return direct
   const byWords = (match: (q: string, w: string) => boolean) => candidates.filter((c) => words.every((q) => c.words.some((w) => match(q, w))))

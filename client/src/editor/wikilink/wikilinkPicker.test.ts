@@ -127,7 +127,7 @@ describe('wikilink picker: open / filter (GRO-2191)', () => {
     expect(rows()).toEqual(['Alpha', 'Beta', 'alphabet soup'])
     expect(popup()?.getAttribute('role')).toBe('listbox')
     type(crepe, 'al')
-    expect(rows()).toEqual(['Alpha', 'alphabet soup'])
+    expect(rows()).toEqual(['Alpha', 'alphabet soup', 'Create "al"'])
   })
 
   it('suggestions cap at 8', async () => {
@@ -246,7 +246,7 @@ describe('wikilink picker: navigate / insert', () => {
     const { crepe } = await mount('X\n', source('Outbound Lead Qualifier.json', 'tool.PY', 'report.PDF', 'Launch Photo.PNG'))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[outbound')
-    expect(rows()).toEqual(['Outbound Lead Qualifier.json'])
+    expect(rows()).toEqual(['Outbound Lead Qualifier.json', 'Create "outbound"'])
     press(crepe, 'Enter')
     expect(getMarkdownForSave(crepe)).toBe('X[[Outbound Lead Qualifier.json]]\n')
   })
@@ -255,7 +255,7 @@ describe('wikilink picker: navigate / insert', () => {
     const { crepe } = await mount('X\n', source('data.json', 'Launch Photo.PNG'))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[launch')
-    expect(rows()).toEqual(['Launch Photo.PNG'])
+    expect(rows()).toEqual(['Launch Photo.PNG', 'Create "launch"'])
     press(crepe, 'Enter')
     expect(getMarkdownForSave(crepe)).toBe('X[[Launch Photo.PNG]]\n')
   })
@@ -264,7 +264,7 @@ describe('wikilink picker: navigate / insert', () => {
     const { crepe } = await mount('before after\n', source('Alpha'))
     caret(crepe, posOf(crepe, ' after'))
     type(crepe, '[[alp')
-    expect(rows()).toEqual(['Alpha'])
+    expect(rows()).toEqual(['Alpha', 'Create "alp"'])
     press(crepe, 'Enter')
     expect(getMarkdownForSave(crepe)).toBe('before[[Alpha]] after\n')
   })
@@ -381,6 +381,28 @@ describe('wikilink picker: create-new row', () => {
     const doomed = await picked('Doomed#Section')
     await main.give('YAZ-44')
     expect(getMarkdownForSave(doomed.crepe)).toBe('X[[Doomed#Section]]\n')
+  })
+
+  it('YAZ-3748 B1: Create shows below the matches while no matched row has the typed name (trimmed, any case); an exact name takes it away (an alias too: the alias tests below show no Create)', async () => {
+    createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
+    mintNoteId.mockResolvedValue('YAZ-43')
+    const n = nav()
+    const { crepe } = await mount('X\n', source('Meeting notes Q4', 'Q4 meeting notes archive'), n, vault(true))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[q4 meeting notes')
+    // A prefix match and a word match (the words of `Meeting notes Q4` in another order), then Create; the best match keeps the highlight.
+    expect(rows()).toEqual(['Q4 meeting notes archive', 'Meeting notes Q4', 'Create "q4 meeting notes"'])
+    expect(selectedRow()).toBe('Q4 meeting notes archive')
+    press(crepe, 'ArrowUp') // wraps to the last row: Create
+    expect(selectedRow()).toBe('Create "q4 meeting notes"')
+    press(crepe, 'Enter')
+    await vi.waitFor(() => expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/q4-meeting-notes-yaz-43.md', content: '---\ntitle: q4 meeting notes\n---\n', id: 'YAZ-43' }))
+    expect(getMarkdownForSave(crepe)).toBe('X[[YAZ-43]]\n')
+
+    const exact = await mount('Y\n', source('Meeting notes Q4', 'Q4 meeting notes archive'), nav(), vault(true))
+    caret(exact.crepe, posOf(exact.crepe, 'Y', 1))
+    type(exact.crepe, '[[ MEETING NOTES q4 ')
+    expect(rows()).toEqual(['Meeting notes Q4', 'Q4 meeting notes archive'])
   })
 
   it('a click on the Create row does the same', async () => {
@@ -578,7 +600,7 @@ describe('wikilink picker: frontmatter aliases (Links E2, GRO-2214)', () => {
     const second = await mount('Y\n', indexSource(CAC))
     caret(second.crepe, posOf(second.crepe, 'Y', 1))
     type(second.crepe, '[[customer')
-    expect(rows()).toEqual(['Customer Acquisition Cost'])
+    expect(rows()).toEqual(['Customer Acquisition Cost', 'Create "customer"'])
     press(second.crepe, 'Enter')
     expect(getMarkdownForSave(second.crepe)).toBe('Y[[Customer Acquisition Cost]]\n')
   })
@@ -589,7 +611,7 @@ describe('wikilink picker: frontmatter aliases (Links E2, GRO-2214)', () => {
       const { crepe } = await mount('X\n', indexSource(withId))
       caret(crepe, posOf(crepe, 'X', 1))
       type(crepe, typed)
-      expect(rows()).toEqual([typed === '[[cac' ? 'CAC — Customer Acquisition Cost' : 'Customer Acquisition Cost'])
+      expect(rows()).toEqual(typed === '[[cac' ? ['CAC — Customer Acquisition Cost'] : ['Customer Acquisition Cost', 'Create "customer"'])
       press(crepe, 'Enter')
       expect(getMarkdownForSave(crepe)).toBe('X[[k3m9x2pq7abc]]\n')
     }
@@ -670,7 +692,7 @@ describe('wikilink picker: folders, by id (scenario K)', () => {
   it('K3 — a folder and a note share a name: the rows read "<name>" and "<name> (folder)", the note first', async () => {
     const { crepe } = await mountVault()
     type(crepe, '[[proj')
-    expect(rows()).toEqual(['Projects', 'Projects (folder)'])
+    expect(rows()).toEqual(['Projects', 'Projects (folder)', 'Create "proj"'])
     press(crepe, 'Enter')
     expect(getMarkdownForSave(crepe)).toBe(`X[[${NOTE_ID}]]\n`)
   })
@@ -703,7 +725,7 @@ describe('wikilink picker: alias and dismissal', () => {
     const { crepe } = await mount('X\n', source('Alpha'))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[Al')
-    expect(rows()).toEqual(['Alpha'])
+    expect(rows()).toEqual(['Alpha', 'Create "Al"'])
     expect(press(crepe, 'Escape')).toBe(true)
     await tick()
     expect(rows()).toEqual([])
@@ -737,7 +759,7 @@ describe('wikilink picker: a closed picker never swallows keys', () => {
     const { crepe } = await mount('* item\n', source('Alpha'))
     caret(crepe, posOf(crepe, 'item', 'item'.length))
     type(crepe, ' [[alp')
-    expect(rows()).toEqual(['Alpha'])
+    expect(rows()).toEqual(['Alpha', 'Create "alp"'])
     expect(press(crepe, 'Enter')).toBe(true)
     // The picker consumed Enter: ONE list item, with the link inserted — no new item.
     expect(getMarkdownForSave(crepe)).toBe('* item [[Alpha]]\n')
@@ -768,9 +790,9 @@ describe('wikilink picker: walking never opens (YAZ-908)', () => {
     const { crepe } = await mount('X\n', source('Alpha'))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[al')
-    expect(rows()).toEqual(['Alpha'])
+    expect(rows()).toEqual(['Alpha', 'Create "al"'])
     caret(crepe, posOf(crepe, '[[al', 3)) // [[a|l — same [[, still open
-    expect(rows()).toEqual(['Alpha'])
+    expect(rows()).toEqual(['Alpha', 'Create "a"'])
     caret(crepe, posOf(crepe, 'X')) // left the fragment — closes
     expect(rows()).toEqual([])
     caret(crepe, posOf(crepe, '[[al', 4)) // walked back in — stays closed
@@ -783,7 +805,7 @@ describe('wikilink picker: walking never opens (YAZ-908)', () => {
     const { crepe } = await mount('see [[Alpha]] here\n', source('Alpha'))
     caret(crepe, posOf(crepe, '[[Alpha]]', 4)) // [[Al|pha]]
     type(crepe, 'p') // doc changed: [[Alp|pha]] — fragment "Alp" prefix-matches Alpha
-    expect(rows()).toEqual(['Alpha'])
+    expect(rows()).toEqual(['Alpha', 'Create "Alp"'])
   })
 
   it('a candidate refresh never opens a closed picker under the caret', async () => {

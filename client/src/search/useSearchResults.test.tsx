@@ -407,14 +407,15 @@ describe('useSearchResults over several vaults (YAZ-2602 R2)', () => {
     expect(labels()).toEqual(['📁/a/plan', '/a/Plan.md', '/a/plan', '/b/Plan', '/a/sub/plan.pdf', '/b/Plan B.md'])
     forget()
     bridge.index.mockClear()
-    await render(list, 'plan.')
+    // `n.p`, not `plan.`: since YAZ-3748 D2 `plan.` is the word `plan` and finds every row above. `n.p` still finds one file by its text.
+    await render(list, 'n.p')
     expect(labels()).toEqual(['/a/sub/plan.pdf'])
     expect(asked.ranked.length).toBeGreaterThan(0)
     expect(new Set(asked.ranked)).toEqual(new Set([6])) // one list: 1 folder, 2 notes, 3 other files
     expect(asked.files.length + asked.notes.length + asked.folders.length).toBe(0)
 
     // The Sidebar's list after a tree of `/b` landed with a new file: `/b`'s file rows, no row of `/a`, no read.
-    await render([list[0], { ...only(b), files: ['/b/Plan', '/b/plan.png'] }], 'plan.')
+    await render([list[0], { ...only(b), files: ['/b/Plan', '/b/plan.png'] }], 'n.p')
     expect(new Set(asked.files)).toEqual(new Set(['/b']))
     expect(asked.notes.length + asked.folders.length).toBe(0)
     expect(bridge.index).not.toHaveBeenCalled()

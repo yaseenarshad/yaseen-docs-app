@@ -7,14 +7,19 @@
  * folders (🔒 D4): a glyph before the label and a `, folder` suffix on the aria-label. A
  * right-click reports the row the same way (YAZ-2050). Each row shows its tree row's icon before the label (YAZ-3440
  * D11, `FileIcon`); with folder icons Off a folder keeps the D4 glyph (app.css hides it while folder icons show).
+ * Each label marks the parts the query matched, as the search tree does (YAZ-3748 B3, `marked`).
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import { readNeedle } from '../links/completion'
+import { marked } from './marked'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
 import { FolderIcon } from '../views/view/icons'
 import type { SearchCandidate } from './searchCandidates'
 
 interface SearchResultsProps {
   results: readonly SearchCandidate[]
+  /** The typed text: what each label marks (YAZ-3748 B3). */
+  query: string
   /** Index of the selected row; the keyboard owns it, hover never moves it. */
   selected: number
   onSelect: (index: number) => void
@@ -24,8 +29,9 @@ interface SearchResultsProps {
   onRowContextMenu: (row: SearchCandidate, e: React.MouseEvent) => void
 }
 
-export function SearchResults({ results, selected, onSelect, onActivate, onRowContextMenu }: SearchResultsProps) {
+export function SearchResults({ results, query, selected, onSelect, onActivate, onRowContextMenu }: SearchResultsProps) {
   const selectedRow = useRef<HTMLLIElement | null>(null)
+  const needle = useMemo(() => readNeedle(query), [query])
 
   // The list scrolls inside `.sidebar__body`, so arrowing past its edge must bring the row along.
   // jsdom has no scrollIntoView — hence the `?.()` (the TabBar idiom).
@@ -61,7 +67,7 @@ export function SearchResults({ results, selected, onSelect, onActivate, onRowCo
           <span className="search-results__label">
             <FileIcon path={r.path} folder={r.kind === 'dir'} />
             {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
-            {r.label}
+            {marked(r.label, needle)}
             {r.kind === 'file' && <NameEnding path={r.path} />}
           </span>
           {r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}

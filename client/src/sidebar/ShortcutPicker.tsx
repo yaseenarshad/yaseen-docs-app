@@ -56,6 +56,7 @@ export function ShortcutPicker({ folder, source, onPick, onClose }: ShortcutPick
             autoFocus
             placeholder="Add note shortcut"
             aria-label="Find a note"
+            spellCheck={false} // names, not prose (YAZ-3748 B2)
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)
@@ -65,7 +66,7 @@ export function ShortcutPicker({ folder, source, onPick, onClose }: ShortcutPick
           />
         </div>
         {results.length > 0 ? (
-          <SearchResults results={results} selected={sel} onSelect={setSelected} onActivate={(hit) => onPick(hit.path)} onRowContextMenu={(_hit, e) => e.preventDefault()} />
+          <SearchResults results={results} query={query} selected={sel} onSelect={setSelected} onActivate={(hit) => onPick(hit.path)} onRowContextMenu={(_hit, e) => e.preventDefault()} />
         ) : (
           <p className="sidebar__msg">No matches</p>
         )}
