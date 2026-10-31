@@ -706,16 +706,24 @@ button {
 }
 
 .welcome__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   font-size: 24px;
   font-weight: 700;
 }
 
-/* A group's label (YAZ-3886): "Workspaces", then "Folders" below a line. Only when a workspace is saved. */
+/* The app's icon left of its name (YAZ-3886 P1): 112 px art, sharp at 36 px on Retina. */
+.welcome__icon {
+  flex: none;
+}
+
+/* A group's label (YAZ-3886): "Workspaces", then "Folders" below a line. Only when a workspace is saved. In line with the row text. */
 .welcome__label {
   align-self: stretch;
   margin-bottom: -14px;
-  padding: 0 12px;
+  padding: 0 16px;
   font-size: 11px;
   color: var(--fg-muted);
 }
@@ -728,7 +736,7 @@ button {
 /* Under "Folders", the empty note lines up with the label. */
 .welcome__label--rule + .welcome__empty {
   align-self: stretch;
-  padding: 0 12px;
+  padding: 0 16px;
 }
 
 .welcome__empty {
@@ -742,7 +750,10 @@ button {
   gap: 2px;
   width: 100%;
   margin: 0;
-  padding: 0;
+  /* Each group on a soft panel (YAZ-3886 P3), so its rows read as buttons. */
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--bg-side);
   list-style: none;
 }
 
@@ -758,7 +769,7 @@ button {
 }
 
 .welcome__recent:hover:not(:disabled) {
-  background: var(--bg-side);
+  background: var(--bg-hover-row);
 }
 
 .welcome__recent:disabled {

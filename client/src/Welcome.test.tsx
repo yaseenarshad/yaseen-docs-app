@@ -60,7 +60,7 @@ describe('Welcome', () => {
       { path: '/vaults/work', lastOpened: Date.now() - DAY },
     ]
     const { el } = mount({ recents })
-    expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
+    expect(el.querySelector('.welcome__title')?.textContent?.trim()).toBe('Yaseen Docs')
     const r = rows(el)
     expect(r.map((b) => b.querySelector('.welcome__recent-name')?.textContent)).toEqual(['notes', 'work'])
     expect(r.map((b) => b.querySelector('.welcome__recent-path')?.textContent)).toEqual(['/vaults/notes', '/vaults/work'])
@@ -144,6 +144,24 @@ describe('Welcome', () => {
     expect(props.onOpenRecent).not.toHaveBeenCalled()
     expect(rows(el)[0]?.disabled).toBe(true)
     expect(rows(el)[0]?.querySelector('.welcome__recent-when')?.textContent).toBe('Folders not found')
+  })
+
+  it('a folder\'s path under the home folder reads "~/…" once main answers; any other path stays in full (YAZ-3886 P2)', async () => {
+    Object.defineProperty(window, 'yaseenDocs', { value: { app: { home: async () => '/Users/me' } }, configurable: true, writable: true })
+    const recents: RecentRoots = ['/Users/me/Documents/notes', '/Users/meg/work', '/Volumes/disk/me'].map((path) => ({ path, lastOpened: Date.now() }))
+    const { el } = mount({ recents })
+    const paths = () => rows(el).map((b) => b.querySelector('.welcome__recent-path')?.textContent)
+    expect(paths()).toEqual(['/Users/me/Documents/notes', '/Users/meg/work', '/Volumes/disk/me'])
+    await act(async () => undefined)
+    expect(paths()).toEqual(['~/Documents/notes', '/Users/meg/work', '/Volumes/disk/me'])
+    delete (window as unknown as Record<string, unknown>).yaseenDocs
+  })
+
+  it('the app\'s icon stands in the title, left of the name (YAZ-3886 P1)', () => {
+    const { el } = mount()
+    const title = el.querySelector('.welcome__title')
+    expect(title?.firstElementChild?.matches('img.welcome__icon')).toBe(true)
+    expect(title?.textContent?.trim()).toBe('Yaseen Docs')
   })
 
   it('disables the Open folder… button while the dialog is open', () => {

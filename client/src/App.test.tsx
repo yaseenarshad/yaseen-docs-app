@@ -509,7 +509,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onChanged: vi.fn(() => () => undefined),
     },
     // The sounds of a gesture (YAZ-3267 D15): App asks once per gesture that lands or trashes something.
-    app: { sound: vi.fn(async (_kind: 'land' | 'trash') => undefined) },
+    app: { sound: vi.fn(async (_kind: 'land' | 'trash') => undefined), home: vi.fn(async () => '/Users/me') },
     // Focus and Favorites of each vault (YAZ-3264 D1): App reads them now, the sidebar draws them. Empty here.
     favorites: { get: vi.fn(async (_root: string): Promise<string[]> => []), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     icons: { get: vi.fn(async (_root: string) => ({ paths: {} })), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
@@ -962,7 +962,7 @@ describe('App notice icon (D10 amended, YAZ-1674)', () => {
 describe('App on a null root (C2, GRO-2164)', () => {
   it('boots to the Welcome screen with the recents and never auto-opens the folder dialog', async () => {
     const { bridge, el } = await mount({ ...defaultAppState(), recents: [recent('/vaults/notes')] }, { id: 'w1', root: null, file: null, tabs: [] })
-    expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
+    expect(el.querySelector('.welcome__title')?.textContent?.trim()).toBe('Yaseen Docs')
     expect([...el.querySelectorAll('.welcome__recent-path')].map((s) => s.textContent)).toEqual(['/vaults/notes'])
     expect(bridge.pickFolder).not.toHaveBeenCalled()
     expect(el.querySelector('[data-editor]')).toBeNull()
@@ -4817,7 +4817,7 @@ describe('App root-missing (C2, GRO-2164)', () => {
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
     expect(el.querySelector('.welcome')).toBeNull()
     act(() => captured.sidebar?.onRootMissing('/v'))
-    expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
+    expect(el.querySelector('.welcome__title')?.textContent?.trim()).toBe('Yaseen Docs')
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(el.querySelector('[data-editor]')).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
