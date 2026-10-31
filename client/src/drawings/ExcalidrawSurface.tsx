@@ -173,8 +173,8 @@ export interface DrawingSurfaceProps {
 }
 
 /**
- * The engine's handle with its scene-changing doors shut (YAZ-3076 D2): `insertElements` and
- * `addFiles` do nothing, and `updateScene` passes only what is not the scene's elements (a view,
+ * The engine's handle with its scene-changing doors shut (YAZ-3076 D2): `insertElements`,
+ * `addFiles` and `pruneFiles` do nothing, and `updateScene` passes only what is not the scene's elements (a view,
  * a dialog, a tool), so the canvas panel can still present and look but never edit a read-only drawing.
  */
 export function readOnlyHandle(api: ImperativeApi): ImperativeApi {
@@ -182,6 +182,7 @@ export function readOnlyHandle(api: ImperativeApi): ImperativeApi {
     ...api,
     insertElements: () => undefined,
     addFiles: () => undefined,
+    pruneFiles: () => undefined,
     updateScene: (scene) => {
       if (scene.elements === undefined) api.updateScene(scene)
     },
@@ -541,6 +542,8 @@ export function ExcalidrawSurface({
         api.updateScene({ elements: restored })
         const entries = Object.values(next.files ?? {}) as Parameters<ImperativeApi['addFiles']>[0]
         if (entries.length > 0) api.addFiles(entries)
+        // The engine's files only grew: drop what neither the new scene nor undo can show (YAZ-3737 D14).
+        api.pruneFiles()
         return version
       },
     })
