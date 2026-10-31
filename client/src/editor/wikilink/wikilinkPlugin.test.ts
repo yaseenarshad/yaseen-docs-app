@@ -189,51 +189,62 @@ describe('wikilink decorations: resolved vs unresolved', () => {
   })
 })
 
-describe('wikilink decorations: caret adjacency reveals the raw syntax', () => {
+describe('wikilink decorations: every link is one unit (YAZ-3935, point 3 of YAZ-3879: D1 extended to name links)', () => {
   // 'pad [[abc]] tail' — the match spans positions 5..12 (paragraph content starts at 1).
   const MD = 'pad [[abc]] tail\n'
   const FROM = 5
   const TO = 12
+  /** "Edit link"'s selection (`wikilinkMenu.ts`): the one way into a link. */
+  const editLink = (crepe: Crepe, from: number, to = from) => {
+    const view = viewOf(crepe)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)).setMeta(OPEN_ID_LINK, true))
+  }
 
-  it('caret inside the match drops its decorations (raw [[abc]] fully visible)', async () => {
+  it('a caret that lands inside steps to the nearer edge and the pill stays; only "Edit link" shows the raw [[abc]]', async () => {
     const { crepe, root } = await mount(MD)
     caret(crepe, FROM + 3)
+    expect(viewOf(crepe).state.selection.head).toBe(FROM)
+    expect(links(root)).toEqual(['abc'])
+    editLink(crepe, FROM + 3)
     expect(links(root)).toEqual([])
     expect(syntax(root)).toBe('')
     expect(viewOf(crepe).dom.textContent).toContain('[[abc]]')
   })
 
-  it('boundaries are inclusive: caret exactly at the edges reveals, one further out collapses', async () => {
+  it('a caret at either edge, or one further out, keeps the pill (the old reveal rule is gone for name links)', async () => {
     const { crepe, root } = await mount(MD)
-    caret(crepe, FROM)
-    expect(links(root)).toEqual([])
-    caret(crepe, TO)
-    expect(links(root)).toEqual([])
-    caret(crepe, FROM - 1)
-    expect(links(root)).toEqual(['abc'])
-    caret(crepe, TO + 1)
-    expect(links(root)).toEqual(['abc'])
+    for (const pos of [FROM, TO, FROM - 1, TO + 1]) {
+      caret(crepe, pos)
+      expect(links(root), String(pos)).toEqual(['abc'])
+    }
   })
 
-  it('a selection range overlapping the match reveals it', async () => {
+  it('a selection range overlapping the match keeps the pill; one strictly inside it ("Edit link") opens it', async () => {
     const { crepe, root } = await mount(MD)
     const view = viewOf(crepe)
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2, FROM + 1)))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2, FROM)))
+    expect(links(root)).toEqual(['abc'])
+    editLink(crepe, FROM + 2, FROM + 5)
     expect(links(root)).toEqual([])
   })
 
-  it('only the match under the caret reveals; other links stay collapsed', async () => {
+  it('only the link "Edit link" opened shows raw; other links stay collapsed', async () => {
     const { crepe, root } = await mount('[[a]] x [[b]]\n')
-    caret(crepe, 3) // inside [[a]]
+    editLink(crepe, 3) // inside [[a]]
     expect(links(root)).toEqual(['b'])
     expect(syntax(root)).toBe('[[]]')
   })
 
-  it('the initial caret at doc start reveals a link that starts the document (arrow-in expands)', async () => {
-    // This is the adjacency rule doing the work for arrow traversal: the caret can never be
-    // trapped against hidden text — at the boundary the whole match is already raw.
+  it('the initial caret at doc start keeps a link that starts the document a pill', async () => {
     const { root } = await mount('[[abc]] tail\n')
+    expect(links(root)).toEqual(['abc'])
+  })
+
+  it('a link with nothing to show ([[Note|]], [[#]]) is no unit: it stays raw text, and a caret walks into it', async () => {
+    const { crepe, root } = await mount('pad [[Note|]] tail\n')
     expect(links(root)).toEqual([])
+    caret(crepe, 8)
+    expect(viewOf(crepe).state.selection.head).toBe(8)
   })
 
   it('typing elsewhere keeps the link collapsed and correct', async () => {
@@ -553,9 +564,12 @@ describe('a resolved link is a pill with its file icon (YAZ-3609 D13)', () => {
     expect(getMarkdownForSave(crepe)).toBe('See [[Roadmap]] now\n')
   })
 
-  it('I5 with the caret beside the link, the raw text shows and no icon', async () => {
+  it('I5 with the caret beside the link the pill and its icon stay (YAZ-3935); "Edit link" shows the raw text and no icon', async () => {
     const { crepe, root } = await mountLook('See [[Roadmap]]\n')
     caret(crepe, 'See [[Roadmap]]'.length + 1)
+    expect(root.querySelector('.wikilink__icon')?.textContent).toBe('Roadmap')
+    const view = viewOf(crepe)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 'See [[Road'.length + 1)).setMeta(OPEN_ID_LINK, true))
     expect(root.querySelector('.wikilink__icon')).toBeNull()
   })
 })

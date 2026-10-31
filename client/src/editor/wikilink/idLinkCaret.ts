@@ -1,27 +1,58 @@
 /**
- * An ID link is one unit (YAZ-3744 D1): it shows its note's title wherever the caret is (`wikilinkPlugin.ts`
- * `showsTitle`). The raw `[[<id>]]` opens only from the link menu's "Edit link", and closes when the caret leaves it.
- *  - A caret or a selection end that lands inside a closed ID link steps over it: from one edge (an arrow) to the
- *    other edge, from anywhere else (a click, ↑/↓) to the nearer edge. Shift moves the head the same way.
+ * Every `[[link]]` is one unit (YAZ-3744 D1 for ID links; YAZ-3935, point 3 of YAZ-3879, for every link that shows as a
+ * pill, `isLinkUnit`): it stays a pill wherever the caret is (`wikilinkPlugin.ts` `opens`). The raw `[[…]]` opens only
+ * from the link menu's "Edit link", and closes when the caret leaves it.
+ *  - A caret or a selection end that lands inside a closed link steps over it: from one edge (an arrow) to the other
+ *    edge, from anywhere else (↑/↓, a drag) to the nearer edge. Shift moves the head the same way. A click on the pill
+ *    itself is `wikilinkClick.ts`'s: it puts the caret at the edge the pointer is nearer, by the pill's middle.
  *  - Backspace right after it, and Delete right before it, remove the whole link, with ⌥ or as ⌃H / ⌃D too. ⌘Z puts it back.
+ *  - A double-click on a word next to a link selects only that word (C2): the browser's word can run on into the pill's
+ *    text, hidden or shown, so the selection is cut at the links on each side of the word clicked.
  * An open link (the selection was strictly inside it before this change) keeps the caret where it goes.
+ *
+ * The check per caret move is one scan of the caret's textblock for the match under it; no index lookup.
  */
 import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { wikilinkMatchAt } from './wikilinkClick'
-import { showsTitle, type WikilinkResolveSource } from './wikilinkPlugin'
+import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, isLinkUnit } from './wikilinkPlugin'
 
-/** Set on "Edit link"'s selection (`wikilinkMenu.ts`): the one way into an ID link. */
+/** Set on "Edit link"'s selection (`wikilinkMenu.ts`): the one way into a link. */
 export const OPEN_ID_LINK = 'mdapp-open-id-link'
 
-/** The ID link that shows a title and holds `pos` strictly inside it, or null. */
-function idLinkAround(state: EditorState, pos: number, source: WikilinkResolveSource): { from: number; to: number } | null {
+/** The link that is a unit and holds `pos` strictly inside it, or null. */
+function linkAround(state: EditorState, pos: number): { from: number; to: number } | null {
   const match = wikilinkMatchAt(state.doc, pos)
-  return match !== null && pos > match.from && showsTitle(match.inner, source) ? match : null
+  return match !== null && pos > match.from && isLinkUnit(match.inner) ? match : null
 }
 
-export const createIdLinkCaret = (source: WikilinkResolveSource) =>
-  $prose(
+/** The span between the units of `pos`'s textblock that holds `pos`: the most a word clicked at `pos` may cover. */
+function gapAround(state: EditorState, pos: number): { from: number; to: number } | null {
+  const $pos = state.doc.resolve(pos)
+  if (!$pos.parent.isTextblock) return null
+  let from = $pos.start()
+  let to = $pos.end()
+  eachPlainRun($pos.parent, $pos.start(), (text, runPos) => {
+    for (const m of text.matchAll(WIKILINK_RE)) {
+      if (m[1] === '!' || !isLinkUnit(m[2])) continue
+      const start = runPos + m.index
+      const end = start + m[0].length
+      if (end <= pos) from = Math.max(from, end)
+      else if (start >= pos) to = Math.min(to, start)
+      else {
+        // The word is the link itself (no click plugin took the double-click): exactly the link.
+        from = start
+        to = end
+      }
+    }
+  })
+  return { from, to }
+}
+
+export const createIdLinkCaret = () => {
+  /** Where the latest double-click on text (not on a pill) landed, until its word selection arrives. */
+  let wordAt: number | null = null
+  return $prose(
     () =>
       new Plugin({
         key: new PluginKey('mdapp-id-link-caret'),
@@ -30,19 +61,45 @@ export const createIdLinkCaret = (source: WikilinkResolveSource) =>
           // index update sets no selection, and costs no scan. A composition (an accent, a Japanese word) is left alone
           // until it ends: it owns the caret meanwhile.
           let moved = false
+          let pointer = false
           for (const tr of trs) {
             if (tr.docChanged || tr.getMeta(OPEN_ID_LINK) !== undefined || tr.getMeta('composition') !== undefined) return null
             moved ||= tr.selectionSet
+            pointer ||= tr.getMeta('pointer') === true
           }
           if (!moved || !(state.selection instanceof TextSelection)) return null
           const { anchor, head, empty } = state.selection
-          const link = idLinkAround(state, head, source)
+          if (pointer && !empty && wordAt !== null) {
+            // The double-click's word (C2): cut where a link starts or ends, on the word's side of it.
+            const gap = gapAround(state, wordAt)
+            wordAt = null
+            const from = Math.max(state.selection.from, gap?.from ?? 0)
+            const to = Math.min(state.selection.to, gap?.to ?? state.doc.content.size)
+            if (gap !== null && from < to && (from !== state.selection.from || to !== state.selection.to)) {
+              return state.tr.setSelection(anchor <= head ? TextSelection.create(state.doc, from, to) : TextSelection.create(state.doc, to, from))
+            }
+          }
+          const link = linkAround(state, head)
           const was = before.selection.head
           if (link === null || (was > link.from && was < link.to)) return null
           const edge = was === link.from ? link.to : was === link.to ? link.from : head - link.from <= link.to - head ? link.from : link.to
           return state.tr.setSelection(TextSelection.create(state.doc, empty ? edge : anchor, edge))
         },
         props: {
+          handleDOMEvents: {
+            mousedown: (view, event) => {
+              // Only a double-click on text is noted; the click itself stays the browser's.
+              const onPill = event.target instanceof Element && event.target.closest(`.${WIKILINK_CLASS}`) !== null
+              wordAt = null
+              if (event.detail !== 2 || event.button !== 0 || onPill) return false
+              try {
+                wordAt = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null
+              } catch {
+                wordAt = null // no layout (a test's DOM): the word is the browser's alone
+              }
+              return false
+            },
+          },
           handleKeyDown: (view, event) => {
             // ⌥⌫ and ⌃H delete back too, ⌥⌦ and ⌃D forward (macOS): left to the browser, they would cut the hidden text (YAZ-3747 checker).
             const back = event.key === 'Backspace' || (event.ctrlKey && event.key === 'h')
@@ -50,7 +107,7 @@ export const createIdLinkCaret = (source: WikilinkResolveSource) =>
             if ((!back && !forward) || event.metaKey || event.isComposing || !view.state.selection.empty) return false
             const pos = view.state.selection.head
             // The link that ends right at the caret (Backspace), or starts right at it (Delete).
-            const link = idLinkAround(view.state, back ? pos - 1 : pos + 1, source)
+            const link = linkAround(view.state, back ? pos - 1 : pos + 1)
             if (link === null || (back ? link.to : link.from) !== pos) return false
             view.dispatch(view.state.tr.delete(link.from, link.to).scrollIntoView())
             return true
@@ -58,3 +115,4 @@ export const createIdLinkCaret = (source: WikilinkResolveSource) =>
         },
       }),
   )
+}

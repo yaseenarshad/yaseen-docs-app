@@ -2,7 +2,8 @@
  * An ID link is one unit (YAZ-3744 D1, `idLinkCaret.ts`): a real editor (`createCrepe`) with an ID link that shows
  * its title. Pinned here: the caret steps over it (arrows, a click, Shift), Backspace and Delete remove it whole and
  * ⌘Z puts it back, two side by side are two units (S19), a composition is left alone (S18), "Edit link" is the one way
- * inside, and a name link keeps the reveal rule.
+ * inside, and every other `[[link]]` is one unit too (YAZ-3935, point 3). A double-click on a word next to a link selects
+ * only that word (C2).
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -120,11 +121,31 @@ describe('the caret steps over an ID link (YAZ-3744 D1)', () => {
     expect(links(root)).toEqual(['AR v2 plan'])
   })
 
-  it('a name link keeps the reveal rule: a caret at its edge shows the raw [[Named]]', async () => {
-    const { root, view } = await mount('pad [[Named]] tail\n')
+  it('YAZ-3935 point 3: a name link is one unit too: a caret at its edge keeps the pill, the arrows step over it, Backspace removes it whole', async () => {
+    // 'pad [[Named]] tail': the link spans 5..14.
+    const { crepe, root, view } = await mount('pad [[Named]] tail\n')
     select(view, 14)
-    expect(links(root)).toEqual([])
-    expect(view.dom.textContent).toContain('[[Named]]')
+    expect(links(root)).toEqual(['Named'])
+    select(view, 13) // ArrowLeft
+    expect(view.state.selection.head).toBe(5)
+    select(view, 6) // ArrowRight
+    expect(view.state.selection.head).toBe(14)
+    expect(key(view, 'Backspace')).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('pad  tail\n')
+  })
+
+  it.each([
+    ['a dead link', 'pad [[Nowhere]] tail\n', 15],
+    ['an alias', 'pad [[Named|the name]] tail\n', 23],
+    ['a pathed link', 'pad [[sub/Named]] tail\n', 18],
+    ['a heading link', 'pad [[Named#Part]] tail\n', 19],
+  ])('%s is one unit: Delete before it removes it whole, a caret inside steps out', async (_name, markdown, to) => {
+    const { crepe, view } = await mount(markdown)
+    select(view, 7)
+    expect([5, to]).toContain(view.state.selection.head)
+    select(view, 5)
+    expect(key(view, 'Delete')).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('pad  tail\n')
   })
 
   it('the flow: an ID link ends a bullet; a click after it, the arrows, Backspace and ⌘Z', async () => {
@@ -190,5 +211,44 @@ describe('the caret steps over an ID link (YAZ-3744 D1)', () => {
     select(view, to)
     expect(key(view, 'Backspace')).toBe(true)
     expect(view.state.doc.textContent).toBe(text.replace(`[[${A}]]`, ''))
+  })
+})
+
+describe('a double-click on a word next to a link selects only that word (YAZ-3935 C2)', () => {
+  /** A double-click at `pos` on text, then the word selection the browser makes (`from`..`to`), as ProseMirror reads it. */
+  const doubleClick = (view: EditorView, pos: number, from: number, to: number) => {
+    view.posAtCoords = () => ({ pos, inside: -1 })
+    const text = view.dom.querySelector('p') as HTMLElement
+    text.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail: 2 }))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)).setMeta('pointer', true))
+  }
+
+  it('the word before a pill: the browser ran into the hidden text; the selection is cut at the link', async () => {
+    // 'word[[Named]] tail': the link spans 5..14; the browser's word runs to 11, inside the link.
+    const { view } = await mount('word[[Named]] tail\n')
+    doubleClick(view, 2, 1, 11)
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([1, 5])
+  })
+
+  it('the word after a pill: the browser took the pill\'s shown name with it; the selection is only the word', async () => {
+    // 'pad [[Named]]tail': the link spans 5..14, "tail" is 14..18; the browser's word is "Namedtail".
+    const { view } = await mount('pad [[Named]]tail\n')
+    doubleClick(view, 16, 7, 18)
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([14, 18])
+  })
+
+  it('a word between two pills, and a word with no link near it, keep the browser\'s selection', async () => {
+    const { view } = await mount(`[[Named]]mid[[${A}]] and plain words\n`)
+    // [[Named]] spans 1..10, "mid" 10..13, the ID link 13..29.
+    doubleClick(view, 11, 3, 20)
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([10, 13])
+    doubleClick(view, 36, 34, 39)
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([34, 39])
+  })
+
+  it('a drag selection (no double-click) is not cut: only its head steps out of a link', async () => {
+    const { view } = await mount('word[[Named]] tail\n')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 16)).setMeta('pointer', true))
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([1, 16])
   })
 })

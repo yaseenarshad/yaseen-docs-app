@@ -190,6 +190,8 @@ export interface PreviewPanelProps {
   root: string
   /** A note's name as the app shows it (its title): the note panel's header. */
   name: string
+  /** One quiet line under the header: how to open it (a note's link, YAZ-3935: "⌘-click to open"). Absent → none. */
+  hint?: string
   wikilinks: WikilinkResolveSource
   textVars: CSSProperties
   /** The mtime the caller knows (the tree's); the board head's read can only make it newer. 0 = none. */
@@ -205,7 +207,7 @@ export interface PreviewPanelProps {
  * picture, the kind by its path; anything else shows nothing. The caller decides WHEN (a dwell, Space on the board)
  * and mounts it `key={path}`. A board reads its head once on open and follows the watch feed (see the module doc).
  */
-export function PreviewPanel({ path, root, name, wikilinks, textVars, knownMtime = 0, watch, diagramDarkColors, anchor }: PreviewPanelProps) {
+export function PreviewPanel({ path, root, name, hint, wikilinks, textVars, knownMtime = 0, watch, diagramDarkColors, anchor }: PreviewPanelProps) {
   const theme = useAppliedTheme()
   // The board's mtime as its file says now (see the module doc); the tree's until the read answers.
   // A note has no head and no watch (C27): only a BOARD gets a `boardPath`.
@@ -246,7 +248,7 @@ export function PreviewPanel({ path, root, name, wikilinks, textVars, knownMtime
     const NotePreview = notePreviewModule?.default ?? LazyNotePreview
     return (
       <Suspense fallback={null}>
-        <NotePreview root={root} node={node} name={name} wikilinks={wikilinks} textVars={textVars} anchor={anchor} />
+        <NotePreview root={root} node={node} name={name} hint={hint} wikilinks={wikilinks} textVars={textVars} anchor={anchor} />
       </Suspense>
     )
   }
@@ -254,7 +256,7 @@ export function PreviewPanel({ path, root, name, wikilinks, textVars, knownMtime
   const mtime = Math.max(knownMtime, head.mtime)
   return (
     <Suspense fallback={null}>
-      <BoardPreview root={root} node={node} cacheKey={boardPreviewKey(root, { path, mtime }, theme, diagramDarkColors)} anchor={anchor} />
+      <BoardPreview root={root} node={node} hint={hint} cacheKey={boardPreviewKey(root, { path, mtime }, theme, diagramDarkColors)} anchor={anchor} />
     </Suspense>
   )
 }

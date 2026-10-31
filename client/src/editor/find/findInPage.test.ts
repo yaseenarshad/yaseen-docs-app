@@ -25,6 +25,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
+import { OPEN_ID_LINK } from '../wikilink/idLinkCaret'
 import { getHeadingFoldKey, HEADING_FOLDED_ATTR, isHeadingCollapsed, undoLastHeadingFold } from '../outline/headingFolding'
 import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
@@ -465,15 +466,15 @@ describe('pills (YAZ-3744 S9, S17)', () => {
     expect(marked.every((el) => el.classList.contains(WIKILINK_CLASS) && el.classList.contains(FIND_ACTIVE_CLASS))).toBe(true)
   })
 
-  it('an open link (the caret beside it) is searched as plain text', async () => {
+  it('an open link ("Edit link" put the caret inside it, YAZ-3935) is searched as plain text', async () => {
     const { root, view, channel } = await mountPills()
     channel.open()
     channel.setQuery('named]]')
     expect(channel.getState().total).toBe(1)
     expect(matchEls(root).map((el) => el.textContent).join('')).toBe('Named') // the pill, its `]]` hidden
     channel.close()
-    const end = posOfText(view.state.doc, 'Named') + 'Named]]'.length
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, end)))
+    const inside = posOfText(view.state.doc, 'Named') + 2
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, inside)).setMeta(OPEN_ID_LINK, true))
     channel.open()
     channel.setQuery('named]]')
     expect(channel.getState().total).toBe(1)

@@ -10,7 +10,7 @@
  */
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
-import { gestureAction, type GestureAction, type MouseMods } from '@shared/keys'
+import { gestureAction, gestureDisplay, gestureFor, type GestureAction, type MouseMods } from '@shared/keys'
 
 /** On the editor's root while a bound open gesture's modifiers are held: the CSS shows the hand on its links. */
 export const LINK_HAND_ATTR = 'data-link-hand'
@@ -23,6 +23,21 @@ export function linkClickAction(view: EditorView, event: MouseMods, hotkeys: Hot
   if (bound !== null) return bound
   // A read-only note and a preview keep "a click opens" (YAZ-3879 point 6): there is no caret to put.
   return !view.editable && plain(event) ? 'thisTab' : null
+}
+
+const OPEN_WORDS: Record<GestureAction, string> = { thisTab: 'to open', newTab: 'to open in a new tab', backgroundTab: 'to open in a background tab' }
+
+/**
+ * The hover card's one quiet line (YAZ-3879 point 9): how to open the link now, from the bound gestures. "⌘-click to
+ * open" (Open in this tab), else the first action that has a gesture; none bound, no line. A read-only note: "Click to open".
+ */
+export function linkOpenHint(hotkeys: HotkeyOverrides | undefined, editable: boolean): string | undefined {
+  if (!editable) return 'Click to open'
+  for (const action of ['thisTab', 'newTab', 'backgroundTab'] as const) {
+    const gesture = gestureFor('links', action, hotkeys)
+    if (gesture !== null) return `${gestureDisplay(gesture)} ${OPEN_WORDS[action]}`
+  }
+  return undefined
 }
 
 const MODIFIER_KEYS = new Set(['Meta', 'Control', 'Alt', 'Shift'])

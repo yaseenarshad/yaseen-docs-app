@@ -559,8 +559,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook, opts.vaultsOfLetters))
-  // An ID link is one unit (YAZ-3744 D1): the caret steps over it, Backspace removes it whole.
-  crepe.editor.use(createIdLinkCaret(wikilinks))
+  // Every [[link]] is one unit (YAZ-3744 D1, YAZ-3935): the caret steps over it, Backspace removes it whole.
+  crepe.editor.use(createIdLinkCaret())
   if (opts.wikilinkNav !== undefined) {
     // A click and the link menu's Open rows follow a link the same way (YAZ-3609 D23).
     const follow = wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks, opts.vaultsOfLetters)

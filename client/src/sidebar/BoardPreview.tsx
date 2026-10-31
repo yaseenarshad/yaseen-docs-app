@@ -19,11 +19,13 @@ interface BoardPreviewProps {
   node: { path: string }
   /** `boardPreviewKey(root, node, theme, darkColors)` — a new key (a save, a theme flip) swaps the picture in place. */
   cacheKey: string
+  /** One quiet line under the header: how to open the board (a link's card, YAZ-3935). Absent → none. */
+  hint?: string
   /** What the panel sits beside: the `<aside className="sidebar">`, or a card of the tab board (YAZ-3343). */
   anchor: PreviewAnchor
 }
 
-export default function BoardPreview({ root, node, cacheKey, anchor }: BoardPreviewProps) {
+export default function BoardPreview({ root, node, cacheKey, hint, anchor }: BoardPreviewProps) {
   const placement = usePlacement(anchor, 'board')
   // The last settled picture. Mounted `key={path}` by the Sidebar, so a stale one is always THIS board's —
   // shown while a new key (a save, a theme flip) draws, instead of flashing "Loading".
@@ -50,6 +52,7 @@ export default function BoardPreview({ root, node, cacheKey, anchor }: BoardPrev
         <span className="board-preview__name">{name}</span>
         <span className="board-preview__folder">{boardFolder(root, node.path)}</span>
       </div>
+      {hint !== undefined && <div className="board-preview__hint">{hint}</div>}
       <div className="board-preview__body">
         {src !== null && (
           <img

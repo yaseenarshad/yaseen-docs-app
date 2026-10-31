@@ -16,6 +16,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { IndexRecord } from '@shared/types'
 import { isNoteId } from '@shared/noteId'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { OPEN_ID_LINK } from './idLinkCaret'
 import { api, BridgeRequestError } from '../../api'
 
 vi.mock('../../api', async (importOriginal) => ({
@@ -76,6 +77,12 @@ function posOf(crepe: Crepe, text: string, offset = 0): number {
 function caret(crepe: Crepe, pos: number): void {
   const view = viewOf(crepe)
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)))
+}
+
+/** The caret inside a closed link, as "Edit link" puts it there: the one way in, since every link is one unit (YAZ-3935). */
+function editLinkAt(crepe: Crepe, pos: number): void {
+  const view = viewOf(crepe)
+  view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)).setMeta(OPEN_ID_LINK, true))
 }
 
 /** Insert at the caret (the selection maps to the end, like real typing). */
@@ -432,7 +439,7 @@ describe('wikilink picker: create-new row', () => {
     const main = door()
     createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
     const { crepe, n } = await picked('Plan')
-    caret(crepe, posOf(crepe, 'Plan', 4))
+    editLinkAt(crepe, posOf(crepe, 'Plan', 4))
     type(crepe, 's')
     await main.give('YAZ-43')
     expect(getMarkdownForSave(crepe)).toBe('X[[Plans]]\n')
@@ -442,7 +449,7 @@ describe('wikilink picker: create-new row', () => {
     createFile.mockReset()
     createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk full'))
     const other = await picked('Draft')
-    caret(other.crepe, posOf(other.crepe, 'Draft'))
+    editLinkAt(other.crepe, posOf(other.crepe, 'Draft'))
     type(other.crepe, 'My ')
     await main.give('YAZ-44')
     expect(getMarkdownForSave(other.crepe)).toBe('X[[My Draft]]\n')
@@ -780,9 +787,9 @@ describe('wikilink picker: walking never opens (YAZ-908)', () => {
     expect(popup()?.dataset.show ?? 'false').toBe('false')
   })
 
-  it('typing inside a closed [[Alpha]] still opens suggestions (editing the tag — the Obsidian/Roam default)', async () => {
+  it('typing inside a link "Edit link" opened still opens suggestions (editing the tag — the Obsidian/Roam default)', async () => {
     const { crepe } = await mount('see [[Alpha]] here\n', source('Alpha'))
-    caret(crepe, posOf(crepe, '[[Alpha]]', 4)) // [[Al|pha]]
+    editLinkAt(crepe, posOf(crepe, '[[Alpha]]', 4)) // [[Al|pha]], the one way in (YAZ-3935)
     type(crepe, 'p') // doc changed: [[Alp|pha]] — fragment "Alp" prefix-matches Alpha
     expect(rows()).toEqual(['Alpha'])
   })

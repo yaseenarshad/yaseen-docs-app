@@ -28,6 +28,7 @@ import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { redrawWikilinks, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import type { WikilinkHover } from './wikilink/wikilinkHover'
+import { linkOpenHint } from './linkGesture'
 import './outline/outlineFolding.css'
 import './outline/headingFolding.css'
 import './outline/headingLevelTag.css'
@@ -436,11 +437,11 @@ function CrepeHost({
   // its page: the plugin leaves one page before it hovers the next. The link's box is kept here; the dwell lives in the
   // panel's tiny store, so nothing of the note draws for it. The plugin is wired once, with the editor; the setting is
   // read live by the dwell.
-  const linkAt = useRef<{ path: string; rect: AnchorRect } | null>(null)
+  const linkAt = useRef<{ path: string; rect: AnchorRect; editable: boolean } | null>(null)
   const linkPreview = useCardPreview(hoverLinks, (path) => (linkAt.current?.path === path ? linkAt.current.rect : null))
   const [linkHover] = useState<WikilinkHover>(() => ({
-    onHover: (path, rect) => {
-      linkAt.current = { path, rect }
+    onHover: (path, rect, editable) => {
+      linkAt.current = { path, rect, editable }
       linkPreview.hoverCard(path, path)
     },
     onLeave: () => {
@@ -448,7 +449,8 @@ function CrepeHost({
       linkAt.current = null
     },
   }))
-  const linkCard = (_: string, path: string): { root: string | null; name: string } => ({ root: null, name: pageLabel(path, false, titles) })
+  // The card says how to open the link, as the gestures are now (YAZ-3879 point 9): "⌘-click to open".
+  const linkCard = (_: string, path: string): { root: string | null; name: string; hint?: string } => ({ root: null, name: pageLabel(path, false, titles), hint: linkOpenHint(hotkeysNow(), linkAt.current?.editable ?? true) })
   // This note owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,
   // body, comments, the zoom pill (YAZ-1710). Same ladder as the pill; ⌘0 is 100%; a wall is a no-op.
   useEffect(() => {

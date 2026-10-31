@@ -1,15 +1,25 @@
 /*
  * Wikilink rendering (Links A, GRO-2190) — classes applied by wikilinkPlugin.ts.
  *
- * A collapsed link is CLICKABLE (Links C, GRO-2192, wikilinkClick.ts navigates on mousedown),
- * hence the pointer cursor; revealed raw text carries no class, so it keeps the text cursor.
+ * A link in an editable note is part of the text (YAZ-3935 C1): the text cursor, and the hand only
+ * while the modifiers of a bound open gesture are held (`data-link-hand` on the editor's root,
+ * `linkGesture.ts`). A read-only note opens a link on a plain click, so it shows the hand.
  * Hiding is `display: none` on TEXT SPANS inside a line (the tabs-layer scroll caveat is about
- * hiding whole layers, not inline spans); the caret never has to cross hidden text because the
- * plugin reveals the whole match while the selection touches its boundaries.
+ * hiding whole layers, not inline spans); the caret never has to cross hidden text because every
+ * link is one unit (`idLinkCaret.ts` steps the caret over it).
  */
 
 .wikilink {
   color: var(--accent);
+  cursor: text;
+}
+.milkdown .ProseMirror a {
+  cursor: text;
+}
+.milkdown .ProseMirror[data-link-hand] .wikilink,
+.milkdown .ProseMirror[data-link-hand] a,
+.milkdown .ProseMirror[contenteditable='false'] .wikilink,
+.milkdown .ProseMirror[contenteditable='false'] a {
   cursor: pointer;
 }
 

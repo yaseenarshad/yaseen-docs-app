@@ -13,6 +13,10 @@
  * they were, so a ⌘ background open leaves the document's focused/unfocused state untouched. A revealed (raw) match
  * has no `.wikilink` decoration span, so this handler ignores it (normal caret placement).
  *
+ * A CLICK AS ON TEXT (YAZ-3935, C1 and C2 of YAZ-3879): in an editable note a plain click on a pill puts the caret at
+ * its nearer edge (the pointer against the pill's middle), and a double-click selects exactly the link; both on
+ * mousedown with the default prevented, so the link never flashes its raw text. The link is one unit (`idLinkCaret.ts`).
+ *
  * An UNRESOLVED link is created first (`createFromLink` — bare targets under `nav.createFolder()`, the Files & Links
  * "default location for new notes" setting read at CLICK time; C2-, GRO-2240), then opened by the same gesture: a
  * dead link makes its page only through an open gesture (point 5). Failures surface via `nav.onNotice` (App's
@@ -27,14 +31,14 @@
  * segment. `[[#h]]` (same-file, empty target) is a no-op — the heading jump is GRO-2239.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { vaultNoteId } from '@shared/noteId'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction } from '@shared/keys'
 import { createFromLink } from './createFromLink'
-import { linkClickAction } from '../linkGesture'
+import { linkClickAction, trackLinkHand } from '../linkGesture'
 import type { LinkActions } from '../linkMenu'
 import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, linkPageName, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
@@ -174,29 +178,63 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
 }
 
 /**
+ * The edge of the link at `from`..`to` that a click at `x` is nearer, by the pill's middle (YAZ-3935 C1): the boxes of
+ * the link's shown pieces on the clicked piece's line. Read on a click only.
+ */
+function nearerEdge(view: EditorView, span: Element, from: number, to: number, x: number): number {
+  const line = span.getBoundingClientRect()
+  let left = line.left
+  let right = line.right
+  const block = span.parentElement?.closest('p, h1, h2, h3, h4, h5, h6, li, td, th') ?? view.dom
+  for (const piece of block.querySelectorAll(`.${WIKILINK_CLASS}`)) {
+    const pos = linkPosAtDOM(view, piece)
+    if (pos < from || pos >= to) continue
+    const box = piece.getBoundingClientRect()
+    if (Math.abs(box.top - line.top) > Math.max(1, line.height / 2)) continue
+    left = Math.min(left, box.left)
+    right = Math.max(right, box.right)
+  }
+  return x < (left + right) / 2 ? from : to
+}
+
+/**
  * The click: `follow` is the editor's one `wikilinkFollower`, shared with the link menu's Open rows; `hotkeys` the
  * user's changes, read at each click (`linkClickAction`).
+ *
+ * In an editable note a click no gesture has works as on text (YAZ-3935 C1, C2): a plain click puts the caret at the
+ * pill's nearer edge, a double-click selects exactly the link. Both prevent the default, so the link never flashes
+ * its raw text. Any other click (⇧, ⌥) is the editor's. The plugin also keeps the hand cursor in step with the held
+ * modifiers (`trackLinkHand`).
  */
 export function createWikilinkClick(follow: LinkFollow, hotkeys: () => HotkeyOverrides | undefined = () => undefined) {
   return $prose(
     () =>
       new Plugin({
         key: wikilinkClickKey,
+        view: (view) => ({ destroy: trackLinkHand(view, hotkeys) }),
         props: {
           handleDOMEvents: {
             mousedown: (view, event) => {
               if (event.button !== 0 || !(event.target instanceof Element)) return false
               const span = event.target.closest(`.${WIKILINK_CLASS}`)
-              // A `.wikilink` span exists ONLY while the match is collapsed (the adjacency rule
-              // drops every decoration of a revealed match) — raw text falls through to editing.
+              // A `.wikilink` span exists ONLY while the match is collapsed (an open link has no
+              // decorations) — raw text falls through to editing.
               if (span === null || !view.dom.contains(span)) return false
-              const inner = wikilinkInnerAt(view.state.doc, linkPosAtDOM(view, span))
-              if (inner === null) return false
+              const match = wikilinkMatchAt(view.state.doc, linkPosAtDOM(view, span))
+              if (match === null) return false
               const where = linkClickAction(view, event, hotkeys())
-              if (where === null) return false
-              // From here the gesture is ours: no caret placement, no focus change, no reveal.
+              if (where !== null) {
+                // From here the gesture is ours: no caret placement, no focus change, no reveal.
+                event.preventDefault()
+                follow(match.inner, where)
+                return true
+              }
+              // A click as on text (C1, C2): a modified one, and a triple-click (the paragraph), stay the browser's.
+              if (!view.editable || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.detail > 2) return false
               event.preventDefault()
-              follow(inner, where)
+              const selection = event.detail === 2 ? TextSelection.create(view.state.doc, match.from, match.to) : TextSelection.create(view.state.doc, nearerEdge(view, span, match.from, match.to, event.clientX))
+              view.dispatch(view.state.tr.setSelection(selection))
+              view.focus()
               return true
             },
           },

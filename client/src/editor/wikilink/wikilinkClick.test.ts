@@ -18,6 +18,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
+import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -26,6 +27,7 @@ import { api, BridgeRequestError } from '../../api'
 import { linkResolver } from '../../links/folderLinks'
 import { buildViewOnlyCatalog } from '../../links/viewOnlyCatalog'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { OPEN_ID_LINK } from './idLinkCaret'
 import { WIKILINK_CLASS, WIKILINK_UNRESOLVED_CLASS, createWikilinkResolveSource } from './wikilinkPlugin'
 import { createViewOnlyLinkSource, type MutableViewOnlyLinkSource } from './viewOnlyLinkSource'
 
@@ -593,10 +595,10 @@ describe('wikilink click: what does NOT navigate (GRO-2192)', () => {
   })
 
   it('REVEALED raw text falls through to plain editing: no navigation, default untouched', async () => {
-    // 'pad [[Known]] tail' — caret at 7 sits inside the match, which reveals it (Links A).
+    // 'pad [[Known]] tail' — "Edit link" puts the caret at 7, inside the match, which reveals it (YAZ-3935: the one way in).
     const { crepe, root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
     const view = viewOf(crepe)
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 7)))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 7)).setMeta(OPEN_ID_LINK, true))
     expect(root.querySelectorAll(`.${WIKILINK_CLASS}`)).toHaveLength(0) // raw, editable
     const paragraph = root.querySelector('.ProseMirror p')
     expect(paragraph).not.toBeNull()
@@ -604,9 +606,9 @@ describe('wikilink click: what does NOT navigate (GRO-2192)', () => {
     expectNoNav(nav)
   })
 
-  it('a click no gesture has never navigates (YAZ-3936): plain, alt- and shift-clicks are the editor\'s; a ctrl-click and a right mousedown are kept for the link menu (YAZ-3609 D23)', async () => {
+  it('a click no gesture has never navigates (YAZ-3936): a plain click puts the caret (YAZ-3935), alt- and shift-clicks are the browser\'s; a ctrl-click and a right mousedown are kept for the link menu (YAZ-3609 D23)', async () => {
     const { root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
-    expect(mousedown(linkSpan(root, 'Known'))).toBe(true)
+    expect(mousedown(linkSpan(root, 'Known'))).toBe(false) // prevented: the caret goes to an edge, no raw-text flash
     expect(mousedown(linkSpan(root, 'Known'), { altKey: true })).toBe(true)
     expect(mousedown(linkSpan(root, 'Known'), { shiftKey: true })).toBe(true)
     // macOS's other right-click, and the right button: swallowed so the link is still drawn when the menu opens.
@@ -642,7 +644,8 @@ describe('wikilink click: the gestures of Settings › Hotkeys, read at the clic
     const { root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
     let hotkeys: HotkeyOverrides = {}
     nav.hotkeys = () => hotkeys
-    expect(mousedown(linkSpan(root, 'Known'))).toBe(true) // the default: a plain click is the editor's
+    mousedown(linkSpan(root, 'Known')) // the default: a plain click puts the caret (YAZ-3935)
+    expect(nav.openCurrent).not.toHaveBeenCalled()
     hotkeys = { 'links.thisTab': 'Click' } // a change in Settings works at once: no new editor
     expect(mousedown(linkSpan(root, 'Known'))).toBe(false)
     expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
@@ -676,5 +679,98 @@ describe('wikilink click: the gestures of Settings › Hotkeys, read at the clic
     openBehind(linkSpan(root, 'Known'))
     expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
     expect(mousedown(linkSpan(root, 'Known'), { altKey: true })).toBe(true) // a click no gesture has stays the editor's
+  })
+})
+
+describe('a click on a link works like text (YAZ-3935, C1 and C2 of YAZ-3879)', () => {
+  /** Gives `el` a box on screen (jsdom draws none). */
+  const box = (el: Element, left: number, width: number, top = 10) =>
+    vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({ left, right: left + width, width, top, bottom: top + 16, height: 16, x: left, y: top, toJSON: () => ({}) } as DOMRect)
+
+  it('a plain click puts the caret at the pill\'s nearer edge, by the pointer against its middle; nothing opens, no raw text', async () => {
+    // 'pad [[Known]] tail': the link spans 5..14.
+    const { crepe, root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
+    const view = viewOf(crepe)
+    box(linkSpan(root, 'Known'), 100, 40) // its middle is x 120
+    expect(mousedown(linkSpan(root, 'Known'), { clientX: 105 })).toBe(false)
+    expect(view.state.selection.head).toBe(5)
+    expect(mousedown(linkSpan(root, 'Known'), { clientX: 135 })).toBe(false)
+    expect(view.state.selection.head).toBe(14)
+    expect(linkSpan(root, 'Known')).toBeDefined() // still a pill
+    expectNoNav(nav)
+  })
+
+  it('the middle is the whole pill\'s: a link of two pieces ([[Known#Part]]) reads both boxes on the line', async () => {
+    // 'pad [[Known#Part]] tail': the link spans 5..19.
+    const { crepe, root } = await mount('pad [[Known#Part]] tail\n', resolveKnown)
+    const view = viewOf(crepe)
+    box(linkSpan(root, 'Known'), 100, 40)
+    box(linkSpan(root, 'Part'), 140, 60) // the pill is 100..200: its middle is x 150
+    mousedown(linkSpan(root, 'Known'), { clientX: 138 })
+    expect(view.state.selection.head).toBe(5)
+    mousedown(linkSpan(root, 'Part'), { clientX: 160 })
+    expect(view.state.selection.head).toBe(19)
+  })
+
+  it('a double-click selects exactly the link; the pill stays; a triple-click is the browser\'s', async () => {
+    const { crepe, root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
+    const view = viewOf(crepe)
+    mousedown(linkSpan(root, 'Known'), { detail: 1 })
+    expect(mousedown(linkSpan(root, 'Known'), { detail: 2 })).toBe(false)
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([5, 14])
+    expect(linkSpan(root, 'Known')).toBeDefined()
+    expect(mousedown(linkSpan(root, 'Known'), { detail: 3 })).toBe(true)
+    expectNoNav(nav)
+  })
+
+  it('an ID link and a dead link work the same: a click puts the caret, and a dead link makes no page', async () => {
+    const { crepe, root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
+    box(linkSpan(root, 'Missing'), 100, 40)
+    mousedown(linkSpan(root, 'Missing'), { clientX: 130 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(viewOf(crepe).state.selection.head).toBe(16)
+    expect(createFile).not.toHaveBeenCalled()
+    expectNoNav(nav)
+  })
+
+  it('the pointer: the hand only while an open gesture\'s modifiers are held, on the editor\'s root; "the old way" shows it with none', async () => {
+    const { crepe, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
+    const dom = viewOf(crepe).dom
+    const press = (type: 'keydown' | 'keyup', key: string, init: KeyboardEventInit = {}) => window.dispatchEvent(new KeyboardEvent(type, { key, ...init }))
+    expect(dom.hasAttribute('data-link-hand')).toBe(false)
+    press('keydown', 'Meta', { metaKey: true })
+    expect(dom.hasAttribute('data-link-hand')).toBe(true)
+    press('keydown', 'Shift', { metaKey: true, shiftKey: true }) // ⌘⇧: Open in a background tab
+    expect(dom.hasAttribute('data-link-hand')).toBe(true)
+    press('keydown', 'Alt', { metaKey: true, shiftKey: true, altKey: true })
+    expect(dom.hasAttribute('data-link-hand')).toBe(false)
+    press('keydown', 'a', { metaKey: true }) // a typing key changes nothing held
+    expect(dom.hasAttribute('data-link-hand')).toBe(false)
+    press('keyup', 'Alt', { metaKey: true })
+    expect(dom.hasAttribute('data-link-hand')).toBe(true)
+    window.dispatchEvent(new Event('blur'))
+    expect(dom.hasAttribute('data-link-hand')).toBe(false)
+    nav.hotkeys = () => ({ 'links.thisTab': 'Click' })
+    dom.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(dom.hasAttribute('data-link-hand')).toBe(true)
+  })
+
+  it('the flow: click into the text after a pill, type, click the pill, Backspace removes it whole, ⌘Z puts it back, ⌘-click opens', async () => {
+    const { crepe, root, nav } = await mount('see [[Known]] now\n', resolveKnown)
+    const view = viewOf(crepe)
+    box(linkSpan(root, 'Known'), 100, 40)
+    mousedown(linkSpan(root, 'Known'), { clientX: 139 }) // the right half: the caret after the pill
+    view.dispatch(view.state.tr.insertText('!'))
+    vi.advanceTimersByTime(1000) // a pause: the Backspace is its own undo step
+    expect(getMarkdownForSave(crepe)).toBe('see [[Known]]! now\n')
+    expect(linkSpan(root, 'Known')).toBeDefined() // typing next to it keeps the pill
+    box(linkSpan(root, 'Known'), 100, 40)
+    mousedown(linkSpan(root, 'Known'), { clientX: 139 })
+    expect(view.someProp('handleKeyDown', (f) => f(view, new KeyboardEvent('keydown', { key: 'Backspace' })))).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('see ! now\n')
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe('see [[Known]]! now\n')
+    open(linkSpan(root, 'Known'))
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
   })
 })

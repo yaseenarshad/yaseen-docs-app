@@ -19,8 +19,8 @@ import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSourc
 
 /** Where a link hover goes: the editor's host. */
 export interface WikilinkHover {
-  /** The pointer came onto a resolved link: the page it opens, and the link's box on screen. */
-  onHover: (path: string, rect: AnchorRect) => void
+  /** The pointer came onto a resolved link: the page it opens, the link's box on screen, and whether the note is editable (the card's open line, YAZ-3935). */
+  onHover: (path: string, rect: AnchorRect, editable: boolean) => void
   /** The pointer left the link. */
   onLeave: () => void
   /** A Markdown link pill's address as the page it opens (YAZ-3609 D20), as a click resolves it; null when it opens none. */
@@ -75,7 +75,7 @@ export function createWikilinkHover(source: WikilinkResolveSource, hover: Wikili
               // On a pill the page preview stands in for the editor's own address bar (D20): it says where the link goes.
               pillHover(view, link.span.classList.contains('link-pill'))
               const box = link.span.getBoundingClientRect()
-              hover.onHover(link.path, { left: box.left, top: box.top, right: box.right, bottom: box.bottom })
+              hover.onHover(link.path, { left: box.left, top: box.top, right: box.right, bottom: box.bottom }, view.editable)
               return false
             },
             mouseout: (view, event) => {

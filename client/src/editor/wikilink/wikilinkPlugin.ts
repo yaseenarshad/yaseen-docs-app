@@ -24,21 +24,16 @@
  *  - a match whose display would be EMPTY (`[[Note|]]`, `[[|]]`, `[[#]]`) stays raw — no
  *    decorations at all, so nothing ever collapses to a zero-width invisible run (FN12,
  *    GRO-2197),
- *  - visible segments get `wikilink` (accent + pointer cursor), plus `wikilink--unresolved`
- *    (dimmed) when the resolve source cannot find the target. Click handling lives in the
- *    sibling `wikilinkClick.ts` (Links C, GRO-2192), which navigates on mousedown over these
- *    decorated spans; this plugin stays decoration-only.
+ *  - visible segments get `wikilink` (accent), plus `wikilink--unresolved` (dimmed) when the
+ *    resolve source cannot find the target. Click handling lives in the sibling
+ *    `wikilinkClick.ts` (Links C, GRO-2192; YAZ-3935), which puts the caret or opens on mousedown
+ *    over these decorated spans; this plugin stays decoration-only.
  *
- * Caret inside or immediately adjacent (selection overlapping the match, boundaries INCLUSIVE):
- * that match's decorations drop entirely — raw `[[syntax]]` is visible and editable. This is
- * also what makes arrow traversal work with `display: none` hiding: the caret can never sit
- * against hidden text, because by the time it reaches a match boundary the match is already raw.
- * The title widget sits INSIDE the match (after the `[[`), so the same rule covers it: no caret
- * is ever beside it, and it is gone before the caret reaches the id.
- *
- * An ID link that shows its title is the exception (YAZ-3744 D1): it opens only with the selection
- * STRICTLY inside it, which "Edit link" alone puts there. Its sibling `idLinkCaret.ts` steps a
- * caret over it and removes it whole, so no caret is left against its hidden text.
+ * Every link is ONE UNIT (YAZ-3744 D1 for ID links; YAZ-3935, point 3 of YAZ-3879, for every link): it
+ * opens — its decorations drop and the raw `[[syntax]]` is visible and editable — only with the
+ * selection STRICTLY inside it, which "Edit link" alone puts there. A caret next to it keeps the pill.
+ * Its sibling `idLinkCaret.ts` steps a caret over it and removes it whole, so no caret is left
+ * against its hidden text, and the selection closes it again as it leaves.
  *
  * Exclusions: `![[…]]` embeds (image embeds stay plain),
  * `code_block` nodes and inline-`code` marked text (mirrors the index's `stripCode`,
@@ -186,10 +181,17 @@ export function idLinkTitle(target: string, resolve: ResolveLink | null, titles:
   return path === null ? undefined : pageLabel(path, false, titles)
 }
 
-/** An unpiped ID link that shows its note's title (YAZ-3744 D1): one unit, which the caret steps over (`idLinkCaret.ts`). */
+/** An unpiped ID link that shows its note's title (YAZ-3744 D1). */
 export function showsTitle(inner: string, source: WikilinkResolveSource): boolean {
   return !inner.includes('|') && idLinkTitle(linkPageName(inner), source.resolve, pathTitles(source.records, source.folders)) !== undefined
 }
+
+/**
+ * A `[[link]]` that collapses to a pill, and so is one unit (YAZ-3935, point 3 of YAZ-3879: D1 extended to every
+ * link): the caret steps over it (`idLinkCaret.ts`), and only "Edit link" opens its raw text. A link with nothing to
+ * show (`[[Note|]]`, `[[#]]`) stays raw text (FN12). A title only adds text, so the check needs no index: one string scan.
+ */
+export const isLinkUnit = (inner: string): boolean => linkDisplayText(inner) !== ''
 
 /**
  * The ID of THIS vault that a link's page part is, as the app writes it (YAZ-2677 R2), or undefined: a vault with no IDs
@@ -435,12 +437,12 @@ function touches(sel: Selection, from: number, to: number): boolean {
 }
 
 /**
- * Does the selection open the `[[inner]]` at `from`..`to` (raw, editable syntax)? A link the caret is inside or next to
- * opens; an ID link that shows its title opens only with the selection strictly inside it: "Edit link" (YAZ-3744 D1).
- * `showsTitle` (a resolve and a title lookup) runs only for a link the selection touches: most links do not.
+ * Does the selection open the `[[inner]]` at `from`..`to` (raw, editable syntax)? Every link is one unit (YAZ-3935,
+ * D1 extended to name links): it opens only with the selection strictly inside it, which "Edit link" alone puts there
+ * (`idLinkCaret.ts` steps any other caret to an edge). A caret next to it keeps the pill.
  */
-function opens(sel: Selection, from: number, to: number, inner: string, source: WikilinkResolveSource): boolean {
-  return touches(sel, from, to) && (!showsTitle(inner, source) || (sel.from > from && sel.to < to))
+function opens(sel: Selection, from: number, to: number): boolean {
+  return touches(sel, from, to) && sel.from > from && sel.to < to
 }
 
 /** One textblock's link decorations: the unit of both the full build and the incremental update. */
@@ -450,7 +452,7 @@ function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Se
       if (m[1] === '!') continue // embeds are someone else's (or nobody's) business
       const from = runPos + m.index
       const to = from + m[0].length
-      if (opens(sel, from, to, m[2], source)) continue // caret inside/adjacent → raw, editable syntax
+      if (opens(sel, from, to)) continue // "Edit link" put the selection inside → raw, editable syntax
       decorate(out, from, m[2], source, viewOnly, look, vaultsOf)
     }
   })
@@ -481,7 +483,7 @@ export function pillLinks(block: ProseNode, pos: number, sel: Selection, source:
       if (m[1] === '!') continue
       const from = runPos + m.index
       const to = from + m[0].length
-      if (opens(sel, from, to, m[2], source)) continue
+      if (opens(sel, from, to)) continue
       const drawn: Decoration[] = []
       decorate(drawn, from, m[2], source, viewOnly)
       if (drawn.length === 0) continue
