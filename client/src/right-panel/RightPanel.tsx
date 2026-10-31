@@ -72,6 +72,8 @@ export function RightPanel({ roots, titles, windowId, items, expanded, width, ov
   }, [dropAt])
 
   const startResize = (event: ReactMouseEvent): void => {
+    // The left button only (YAZ-3719 1B): a right press's release can go to the native menu and never come.
+    if (event.button !== 0) return
     event.preventDefault()
     resizeCleanup.current?.()
     const x0 = event.clientX

@@ -1026,7 +1026,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
     expect(press(m, 1000).defaultPrevented).toBe(true)
     expect(document.body.style.cursor).toBe('col-resize')
     // YAZ-3719 1A: no frame takes the mouse while the edge is held (a diagram in the next pane).
-    expect(document.body.classList.contains('col-resizing')).toBe(true)
+    expect(document.body.classList.contains('drag-held')).toBe(true)
     expect(edge(m)?.hasAttribute('data-active')).toBe(true)
 
     const commits = m.commits()
@@ -1050,7 +1050,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
     release()
     expect(m.onChangeWidth).toHaveBeenCalledExactlyOnceWith(321)
     expect(document.body.style.cursor).toBe('')
-    expect(document.body.classList.contains('col-resizing')).toBe(false)
+    expect(document.body.classList.contains('drag-held')).toBe(false)
     expect(edge(m)?.hasAttribute('data-active')).toBe(false)
     // Until the setting comes back the variable keeps the drag's last width, so the column does not jump.
     expect(widthOf(m)).toBe('321px')

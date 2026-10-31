@@ -508,6 +508,8 @@ export function App() {
   // sidebar collapses and the remembered width stays whatever it was before the drag.
   const startSidebarResize = useCallback(
     (e: ReactMouseEvent) => {
+      // The left button only (YAZ-3719 1B): a right press's release can go to the native menu and never come.
+      if (e.button !== 0) return
       e.preventDefault()
       const start = sidebarWidth
       const x0 = e.clientX
